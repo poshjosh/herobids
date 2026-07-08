@@ -1098,6 +1098,43 @@ export const SharedServicesConfigSchema = z.object({
 /** Shared-service connectivity config for agent runtimes. */
 export type SharedServicesConfig = z.infer<typeof SharedServicesConfigSchema>;
 
+// ── Nomad Runtime Backend ───────────────────────────────────────────────────
+
+/**
+ * Runtime backend selector — which scheduler the worker uses to place
+ * agent containers. 'docker' is the default single-host path; 'nomad'
+ * enables cluster scheduling through HashiCorp Nomad.
+ */
+export const RUNTIME_BACKENDS = ['docker', 'nomad', 'stub'] as const;
+export type RuntimeBackend = typeof RUNTIME_BACKENDS[number];
+
+export const NomadConfigSchema = z.object({
+  /** Nomad API base URL (e.g. 'http://10.0.0.1:4646'). Required when runtimeBackend is 'nomad'. */
+  addr: z.string().url().default('http://localhost:4646'),
+  /** Nomad ACL token for authenticated API access. Override: NOMAD_TOKEN */
+  token: z.string().optional(),
+  /** Nomad region. Default: 'global'. */
+  region: z.string().default('global'),
+  /** Nomad datacenters for agent job placement. */
+  datacenters: z.array(z.string()).default(['dc1']),
+  /** Nomad namespace for agent jobs (isolates agent workloads from other Nomad jobs). */
+  namespace: z.string().default('herobids-agents'),
+  /** Agent Docker image used in the Nomad task config. Override: NOMAD_AGENT_IMAGE */
+  agentImage: z.string().default('herobids-agent:latest'),
+  /** Docker network for agent tasks. Leave empty for Nomad's default bridge network. */
+  dockerNetwork: z.string().optional(),
+  /**
+   * Interval (ms) between termination polls.
+   * The adapter polls Nomad allocation statuses to detect agent crashes.
+   * Default: 30_000 (30 seconds).
+   */
+  terminationPollIntervalMs: z.number().int().min(5_000).default(30_000),
+  /** Nomad API request timeout in ms. Default: 10_000 (10 seconds). */
+  requestTimeoutMs: z.number().int().min(1_000).default(10_000),
+});
+
+export type NomadConfig = z.infer<typeof NomadConfigSchema>;
+
 export const AppConfigSchema = z.object({
   app: z.object({
     port: z.number().default(3000),
@@ -1114,6 +1151,16 @@ export const AppConfigSchema = z.object({
   }),
   /** Shared-service addresses passed to agent runtimes for cluster-safe connectivity. */
   sharedServices: SharedServicesConfigSchema.default({}),
+  /**
+   * Runtime backend selector — which scheduler the worker uses to place agent containers.
+   * 'docker' = local Docker daemon (default, single-host).
+   * 'nomad'  = HashiCorp Nomad cluster (multi-node orchestration).
+   * 'stub'   = in-memory fake (local dev without any container runtime).
+   * Override: RUNTIME_BACKEND env var.
+   */
+  runtimeBackend: z.enum(RUNTIME_BACKENDS).default('docker'),
+  /** Nomad runtime backend config. Only used when runtimeBackend is 'nomad'. */
+  nomad: NomadConfigSchema.default({}),
   venues: z.record(VenueConfigSchema).default({}),
   execution: z.object({
     defaultSlippageBps: z.number().min(0).default(50),

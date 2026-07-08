@@ -45,6 +45,7 @@ import {
   AgentReconnectHandler,
   InstanceEventPublisher,
   DockerRuntimeAdapter,
+  NomadRuntimeAdapter,
 } from './agents/index.js';
 import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/index.js';
 import { DockerAgentManager } from './agents/docker-agent-manager.js';
@@ -241,11 +242,22 @@ const idGen: IdGenerator & { planId(): string; decisionId(): string } = {
   decisionId: () => crypto.randomUUID(),
 };
 
-const runtimeMode = (process.env['AGENT_RUNTIME_MODE'] ?? 'stub') as 'docker' | 'stub';
-logger.info({ mode: runtimeMode }, 'Agent runtime mode');
+// Runtime backend selection — config-driven with env var override.
+// Priority: RUNTIME_BACKEND env var > appConfig.runtimeBackend > 'docker' (default).
+// Legacy AGENT_RUNTIME_MODE is still honoured as a fallback for existing deployments.
+const runtimeBackend = (process.env['RUNTIME_BACKEND']
+  ?? appConfig.runtimeBackend
+  ?? process.env['AGENT_RUNTIME_MODE']
+  ?? 'docker') as 'docker' | 'nomad' | 'stub';
+logger.info({ backend: runtimeBackend }, 'Runtime backend');
 
-if (runtimeMode === 'docker' && !appConfig.llm.provider) {
-  logger.fatal('llm.provider config is required when AGENT_RUNTIME_MODE=docker');
+if ((runtimeBackend === 'docker' || runtimeBackend === 'nomad') && !appConfig.llm.provider) {
+  logger.fatal('llm.provider config is required for Docker and Nomad runtime backends');
+  process.exit(1);
+}
+
+if (runtimeBackend === 'nomad' && !appConfig.nomad?.addr) {
+  logger.fatal('nomad.addr config is required when runtimeBackend is nomad');
   process.exit(1);
 }
 
@@ -292,83 +304,117 @@ const agentRuntimeConfigJson = JSON.stringify({
   },
 });
 
-const agentRuntimeLauncher = runtimeMode === 'docker'
-  ? (() => {
-      const dockerManager = new DockerAgentManager(
-        {
-          dockerHost: process.env['DOCKER_HOST'] ?? 'tcp://docker-proxy:2375',
-          dockerNetwork: process.env['DOCKER_NETWORK'] ?? 'herobids_default',
-          agentImage: process.env['AGENT_IMAGE'] ?? 'herobids-agent:latest',
-          redisUrl: appConfig.redis.url,
-          databaseUrl: appConfig.database.url,
-          llmProvider: appConfig.llm.provider,
-          llmModel: appConfig.llm.model,
-          llmBaseUrl: appConfig.llm.baseUrl,
-          llmMaxTokens: appConfig.llm.maxTokens,
-          llmTimeoutMs: appConfig.llm.timeoutMs,
-          llmTickIntervalMs: appConfig.llm.tickIntervalMs,
-          llmHeartbeatIntervalMs: appConfig.llm.heartbeatIntervalMs,
-          llmServerCostUsdPerHour: appConfig.llm.serverCostUsdPerHour,
-          memoryLimitMb: appConfig.agentRuntime.sandboxDefaults.memoryMb,
-          cpuShares: appConfig.agentRuntime.sandboxDefaults.cpuShares,
-          tempStorageMb: appConfig.agentRuntime.sandboxDefaults.tempStorageMb,
-          maxProcesses: appConfig.agentRuntime.sandboxDefaults.maxProcesses,
-          agentRuntimeConfigJson,
-          ...(appConfig.llm.tradingHours
-            ? { llmTradingHoursJson: JSON.stringify(appConfig.llm.tradingHours) }
-            : {}),
-          ...(appConfig.marketData
-            ? { marketDataConfigJson: JSON.stringify(appConfig.marketData) }
-            : {}),
-          onAgentCrashed: (agentId) => cascadeStopAgentBots(agentId),
-        },
-        agentRepo,
-        // platformAlerts is constructed later in this file — pass undefined now,
-        // it is wired into the health monitor below at the AgentSessionManager level.
-        undefined,
-      );
-      const dockerAdapter = new DockerRuntimeAdapter(dockerManager, agentRepo);
-      return new AgentRuntimeLauncher({
-        port: dockerAdapter,
-        agentRepo,
-        defaultResources: {
-          memoryLimitMb: appConfig.agentRuntime.sandboxDefaults.memoryMb,
-          cpuShares: appConfig.agentRuntime.sandboxDefaults.cpuShares,
-          maxProcesses: appConfig.agentRuntime.sandboxDefaults.maxProcesses,
-          tempStorageMb: appConfig.agentRuntime.sandboxDefaults.tempStorageMb,
-          maxWallClockMs: appConfig.agentRuntime.sandboxDefaults.maxWallClockMs,
-        },
-        envConfig: {
-          redisUrl: appConfig.redis.url,
-          databaseUrl: appConfig.database.url,
-          agentRuntimeConfigJson,
-          llmProvider: appConfig.llm.provider,
-          llmBaseUrl: appConfig.llm.baseUrl,
-          llmModel: appConfig.llm.model,
-          llmMaxTokens: appConfig.llm.maxTokens,
-          llmTimeoutMs: appConfig.llm.timeoutMs,
-          llmTickIntervalMs: appConfig.llm.tickIntervalMs,
-          llmHeartbeatIntervalMs: appConfig.llm.heartbeatIntervalMs,
-          llmServerCostUsdPerHour: appConfig.llm.serverCostUsdPerHour,
-          ...(appConfig.llm.tradingHours
-            ? { llmTradingHoursJson: JSON.stringify(appConfig.llm.tradingHours) }
-            : {}),
-          ...(appConfig.marketData
-            ? { marketDataConfigJson: JSON.stringify(appConfig.marketData) }
-            : {}),
-          marketDataDexscreenerBaseUrl: appConfig.marketData?.dexscreenerBaseUrl,
-          marketDataDexscreenerRpm: appConfig.marketData?.dexscreenerRpm,
-          marketDataBinanceBaseUrl: appConfig.marketData?.binanceBaseUrl,
-          marketDataBinanceRpm: appConfig.marketData?.binanceRpm,
-          marketDataTimeoutMs: appConfig.marketData?.timeoutMs,
-          providersYamlJson: JSON.stringify(providersYaml),
-          // Pass shared-service cluster addresses so agent containers on
-          // remote Nomad nodes can reach Redis/Postgres via private IPs.
-          sharedServices: appConfig.sharedServices,
-        },
-      });
-    })()
-  : new AgentRuntimeLauncher({ redis: redisClient });
+const agentRuntimeLauncher = (() => {
+  // Shared env config used by both Docker and Nomad paths
+  const envConfig = {
+    redisUrl: appConfig.redis.url,
+    databaseUrl: appConfig.database.url,
+    agentRuntimeConfigJson,
+    llmProvider: appConfig.llm.provider,
+    llmBaseUrl: appConfig.llm.baseUrl,
+    llmModel: appConfig.llm.model,
+    llmMaxTokens: appConfig.llm.maxTokens,
+    llmTimeoutMs: appConfig.llm.timeoutMs,
+    llmTickIntervalMs: appConfig.llm.tickIntervalMs,
+    llmHeartbeatIntervalMs: appConfig.llm.heartbeatIntervalMs,
+    llmServerCostUsdPerHour: appConfig.llm.serverCostUsdPerHour,
+    ...(appConfig.llm.tradingHours
+      ? { llmTradingHoursJson: JSON.stringify(appConfig.llm.tradingHours) }
+      : {}),
+    ...(appConfig.marketData
+      ? { marketDataConfigJson: JSON.stringify(appConfig.marketData) }
+      : {}),
+    marketDataDexscreenerBaseUrl: appConfig.marketData?.dexscreenerBaseUrl,
+    marketDataDexscreenerRpm: appConfig.marketData?.dexscreenerRpm,
+    marketDataBinanceBaseUrl: appConfig.marketData?.binanceBaseUrl,
+    marketDataBinanceRpm: appConfig.marketData?.binanceRpm,
+    marketDataTimeoutMs: appConfig.marketData?.timeoutMs,
+    providersYamlJson: JSON.stringify(providersYaml),
+    // Pass shared-service cluster addresses so agent containers on
+    // remote Nomad nodes can reach Redis/Postgres via private IPs.
+    sharedServices: appConfig.sharedServices,
+  };
+
+  const defaultResources = {
+    memoryLimitMb: appConfig.agentRuntime.sandboxDefaults.memoryMb,
+    cpuShares: appConfig.agentRuntime.sandboxDefaults.cpuShares,
+    maxProcesses: appConfig.agentRuntime.sandboxDefaults.maxProcesses,
+    tempStorageMb: appConfig.agentRuntime.sandboxDefaults.tempStorageMb,
+    maxWallClockMs: appConfig.agentRuntime.sandboxDefaults.maxWallClockMs,
+  };
+
+  if (runtimeBackend === 'docker') {
+    const dockerManager = new DockerAgentManager(
+      {
+        dockerHost: process.env['DOCKER_HOST'] ?? 'tcp://docker-proxy:2375',
+        dockerNetwork: process.env['DOCKER_NETWORK'] ?? 'herobids_default',
+        agentImage: process.env['AGENT_IMAGE'] ?? 'herobids-agent:latest',
+        redisUrl: appConfig.redis.url,
+        databaseUrl: appConfig.database.url,
+        llmProvider: appConfig.llm.provider,
+        llmModel: appConfig.llm.model,
+        llmBaseUrl: appConfig.llm.baseUrl,
+        llmMaxTokens: appConfig.llm.maxTokens,
+        llmTimeoutMs: appConfig.llm.timeoutMs,
+        llmTickIntervalMs: appConfig.llm.tickIntervalMs,
+        llmHeartbeatIntervalMs: appConfig.llm.heartbeatIntervalMs,
+        llmServerCostUsdPerHour: appConfig.llm.serverCostUsdPerHour,
+        memoryLimitMb: appConfig.agentRuntime.sandboxDefaults.memoryMb,
+        cpuShares: appConfig.agentRuntime.sandboxDefaults.cpuShares,
+        tempStorageMb: appConfig.agentRuntime.sandboxDefaults.tempStorageMb,
+        maxProcesses: appConfig.agentRuntime.sandboxDefaults.maxProcesses,
+        agentRuntimeConfigJson,
+        ...(appConfig.llm.tradingHours
+          ? { llmTradingHoursJson: JSON.stringify(appConfig.llm.tradingHours) }
+          : {}),
+        ...(appConfig.marketData
+          ? { marketDataConfigJson: JSON.stringify(appConfig.marketData) }
+          : {}),
+        onAgentCrashed: (agentId) => cascadeStopAgentBots(agentId),
+      },
+      agentRepo,
+      // platformAlerts is constructed later in this file — pass undefined now,
+      // it is wired into the health monitor below at the AgentSessionManager level.
+      undefined,
+    );
+    const dockerAdapter = new DockerRuntimeAdapter(dockerManager, agentRepo);
+    return new AgentRuntimeLauncher({
+      port: dockerAdapter,
+      agentRepo,
+      defaultResources,
+      envConfig,
+    });
+  }
+
+  if (runtimeBackend === 'nomad') {
+    const nomadAdapter = new NomadRuntimeAdapter({
+      nomadAddr: appConfig.nomad.addr,
+      token: appConfig.nomad.token,
+      region: appConfig.nomad.region,
+      datacenters: appConfig.nomad.datacenters,
+      namespace: appConfig.nomad.namespace,
+      agentImage: process.env['NOMAD_AGENT_IMAGE'] ?? appConfig.nomad.agentImage,
+      dockerNetwork: appConfig.nomad.dockerNetwork,
+      defaultResources: {
+        memoryLimitMb: defaultResources.memoryLimitMb,
+        cpuShares: defaultResources.cpuShares,
+        tempStorageMb: defaultResources.tempStorageMb,
+        maxProcesses: defaultResources.maxProcesses,
+      },
+      terminationPollIntervalMs: appConfig.nomad.terminationPollIntervalMs,
+      requestTimeoutMs: appConfig.nomad.requestTimeoutMs,
+    });
+    return new AgentRuntimeLauncher({
+      port: nomadAdapter,
+      agentRepo,
+      defaultResources,
+      envConfig,
+    });
+  }
+
+  // 'stub' — in-memory fake for local dev without containers
+  return new AgentRuntimeLauncher({ redis: redisClient });
+})();
 
 // Worker-scoped oracle mark source (stateless, safe to share)
 const oracleMarkSource = new OracleMarkSource({
@@ -1725,6 +1771,7 @@ process.on('SIGTERM', async () => {
   await alertDispatcher.stop();
   await backtestRuntime.stop();
   await evaluationRuntime.stop();
+  await agentRuntimeLauncher.shutdown();
   await runtime.shutdown();
   await publicStreamPool?.shutdown();
   await lifecycleQueue.close();
@@ -1750,6 +1797,7 @@ process.on('SIGINT', async () => {
   await alertDispatcher.stop();
   await backtestRuntime.stop();
   await evaluationRuntime.stop();
+  await agentRuntimeLauncher.shutdown();
   await runtime.shutdown();
   await publicStreamPool?.shutdown();
   await lifecycleQueue.close();

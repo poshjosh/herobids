@@ -11,7 +11,7 @@
 | Phase 1 - Orchestration contract | DONE |
 | Phase 2 - Cluster topology & infra | DONE |
 | Phase 3 - Shared service connectivity | DONE |
-| Phase 4 - Nomad runtime adapter | PENDING |
+| Phase 4 - Nomad runtime adapter | DONE |
 | Phase 5 - Per-tier resource profiles | PENDING |
 | Phase 6 - Autoscale-out with flock+Terraform | PENDING |
 | Phase 7 - Safety net & nightly scale-in | PENDING |
@@ -279,7 +279,7 @@ Agents scheduled on any node can still use Redis, Postgres, and required control
 1. a test agent scheduled on a remote node can connect successfully to Redis and Postgres
 2. no remaining runtime path requires the agent to be on the same host as the worker
 
-### Phase 4 - Implement the Nomad runtime adapter **[PENDING]**
+### Phase 4 - Implement the Nomad runtime adapter **[DONE]**
 
 #### Goal
 
@@ -562,6 +562,14 @@ This feature is complete when all of the following are true:
 ### [Phase 3] Missing test coverage for sharedServices path in buildAgentEnv (MEDIUM)
 - `runtime-lifecycle.test.ts` only tests the fallback branch (no `sharedServices`). No test verifies the `sharedServices` → cluster-safe URL path.
 - **Fix:** Add 2-3 test cases for `sharedServices` URL construction before Phase 4.
+
+### [Phase 4] config.network from RuntimeLaunchConfig ignored (LOW)
+- `buildNomadJobSpec` uses `adapterConfig.dockerNetwork` instead of `config.network` from the port contract.
+- **Fix:** Wire the port's network field or document why adapter-level config is used.
+
+### [Phase 4] agentImage in NomadRuntimeAdapterConfig is dead config (LOW)
+- Adapter stores `agentImage` but `buildNomadJobSpec` reads `config.image` from `RuntimeLaunchConfig`. Marked `@deprecated`.
+- **Fix:** Either remove the field or use it as fallback when `config.image` is empty.
 
 ## Follow-Up Work Explicitly Deferred
 

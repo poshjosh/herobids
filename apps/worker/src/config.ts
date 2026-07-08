@@ -88,6 +88,8 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   SHARED_POSTGRES_USER: { path: 'sharedServices.postgresUser', type: 'string' },
   SHARED_POSTGRES_PASSWORD: { path: 'sharedServices.postgresPassword', type: 'string' },
   SHARED_POSTGRES_DATABASE: { path: 'sharedServices.postgresDatabase', type: 'string' },
+  // Nomad
+  NOMAD_TOKEN: { path: 'nomad.token', type: 'string' },
 };
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {

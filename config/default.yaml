@@ -336,6 +336,30 @@ worker:
     healthCheckIntervalMs: 2000  # AgentSessionManager health poll cadence in ms
     botOrphanSweepIntervalMs: 60000  # Bot orphan sweep cadence in ms
 
+# ── Runtime Backend ──────────────────────────────────────────────────────────
+# Controls which scheduler the worker uses to place agent containers.
+#
+#   docker  — local Docker daemon (default, single-host, works out of the box)
+#   nomad   — HashiCorp Nomad cluster (multi-node orchestration for production)
+#   stub    — in-memory fake (local dev without any container runtime at all)
+#
+# Override: RUNTIME_BACKEND env var.
+# runtimeBackend: docker
+
+# Nomad runtime backend — only active when runtimeBackend is 'nomad'.
+# The Nomad server must be reachable from the worker container (private network).
+nomad:
+  addr: http://localhost:4646            # Nomad API URL; override: NOMAD_ADDR
+  token:                                 # Nomad ACL token; override: NOMAD_TOKEN
+  region: global
+  datacenters:
+    - dc1
+  namespace: herobids-agents             # namespace for agent job isolation
+  agentImage: herobids-agent:latest      # Docker image for agent tasks; override: NOMAD_AGENT_IMAGE
+  dockerNetwork:                         # Docker network for agent tasks (empty = Nomad default bridge)
+  terminationPollIntervalMs: 30000       # how often to poll Nomad for agent allocation crashes (ms)
+  requestTimeoutMs: 10000                # Nomad HTTP API request timeout (ms)
+
 # Agent runtime — behavior policy for agent containers.
 #
 # These are OPERATOR-LEVEL FALLBACKS. Each agent can override every runtime

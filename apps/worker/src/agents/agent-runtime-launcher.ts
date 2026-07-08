@@ -219,6 +219,17 @@ export class AgentRuntimeLauncher {
   }
 
   /**
+   * Shut down the runtime adapter — tear down any background polling,
+   * timers, or persistent connections. Must be called during graceful
+   * worker shutdown to avoid leaking resources.
+   */
+  async shutdown(): Promise<void> {
+    if (this.port.shutdown) {
+      await this.port.shutdown();
+    }
+  }
+
+  /**
    * Reconcile desired vs actual runtimes via the port.
    *
    * Reconciliation compares desired vs actual runtimes and handles:

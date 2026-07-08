@@ -174,4 +174,11 @@ export interface RuntimePort {
    * invoking the handler for each detected event.
    */
   onTermination(handler: RuntimeTerminationHandler): () => void;
+
+  /**
+   * Shut down the adapter — tear down any background polling, timers,
+   * or persistent connections that would otherwise leak on process exit.
+   * Optional: only adapters that hold long-lived resources need to implement this.
+   */
+  shutdown?(): Promise<void>;
 }
