@@ -9,7 +9,7 @@
 # Usage:
 #   infra/hetzner/scripts/reset-and-run.sh --env-file <path> [--env <staging|production>] [<server-ip>]
 #   infra/hetzner/scripts/reset-and-run.sh --env staging --env-file .env.setup.staging
-#   ADMIN_EMAIL=... ADMIN_PASSWORD=... ./reset-and-run.sh --env-file .env.setup.prod
+#   ADMIN_EMAIL=... ADMIN_PASSWORD=... ./reset-and-run.sh --env-file .env.setup.remote
 #
 # Environment:
 #   HEROBIDS_ENV       Deployment environment: staging | production (default: production).
@@ -39,7 +39,7 @@ shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
-ENV_FILE="${REPO_ROOT}/scripts/shell/ops/.env.setup.prod"
+ENV_FILE="${REPO_ROOT}/scripts/shell/ops/.env.setup.remote"
 SERVER_IP=""
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
@@ -81,12 +81,12 @@ done
 # ─── Validate env file ───────────────────────────────────────────────────────
 
 if [[ -z "$ENV_FILE" ]]; then
-  # Default: look for .env.setup.prod
-  ENV_FILE="$REPO_ROOT/scripts/shell/ops/.env.setup.prod"
+  # Default: look for .env.setup.remote
+  ENV_FILE="$REPO_ROOT/scripts/shell/ops/.env.setup.remote"
   if [[ ! -f "$ENV_FILE" ]]; then
     die "No --env-file specified and default ${ENV_FILE} not found.
   Create one:
-    cp ${REPO_ROOT}/scripts/shell/ops/.env.setup.prod.example ${ENV_FILE}
+    cp ${REPO_ROOT}/scripts/shell/ops/.env.setup.remote.example ${ENV_FILE}
     # edit and fill in values"
   fi
 fi

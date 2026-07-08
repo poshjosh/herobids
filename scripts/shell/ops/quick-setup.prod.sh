@@ -13,8 +13,8 @@
 # Two primary execution modes:
 #
 #   Local (pointing at a remote API):
-#     scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.prod
-#     scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.prod --mode guided
+#     scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.remote
+#     scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.remote --mode guided
 #
 #   Remote (pipe over SSH, run against local docker compose API):
 #     ssh root@<server-ip> 'bash -s' < scripts/shell/ops/quick-setup.prod.sh \
@@ -26,21 +26,21 @@
 #     ENV
 #
 #   Post-deploy (run as a deploy.sh step):
-#     scripts/shell/ops/quick-setup.prod.sh --ssh <server-ip> --env-file .env.setup.prod
+#     scripts/shell/ops/quick-setup.prod.sh --ssh <server-ip> --env-file .env.setup.remote
 #
 # Usage:
-#   scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.prod
-#   scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.prod --mode guided
-#   scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.prod --yes
-#   scripts/shell/ops/quick-setup.prod.sh --ssh 1.2.3.4 --env-file .env.setup.prod
+#   scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.remote
+#   scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.remote --mode guided
+#   scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.remote --yes
+#   scripts/shell/ops/quick-setup.prod.sh --ssh 1.2.3.4 --env-file .env.setup.remote
 #   scripts/shell/ops/quick-setup.prod.sh --help
 #
 # Setup:
-#   cp scripts/shell/ops/.env.setup.prod.example scripts/shell/ops/.env.setup.prod
+#   cp scripts/shell/ops/.env.setup.remote.example scripts/shell/ops/.env.setup.remote
 #   # fill in the variables, then:
-#   scripts/shell/ops/quick-setup.prod.sh --env-file scripts/shell/ops/.env.setup.prod
+#   scripts/shell/ops/quick-setup.prod.sh --env-file scripts/shell/ops/.env.setup.remote
 #
-# Required env vars — see .env.setup.prod.example for the full list:
+# Required env vars — see .env.setup.remote.example for the full list:
 #   API_BASE_URL, SETUP_EMAIL, SETUP_PASSWORD, SETUP_DISPLAY_NAME,
 #   TELEGRAM_CHAT_ID, venue secrets (HL_*, BYBIT_*, ONEINCH_*)
 
@@ -274,12 +274,12 @@ if [[ "$ENV_FILE" == "-" ]]; then
   # shellcheck disable=SC2064
   trap 'rm -f "$ENV_FILE"' EXIT
 elif [[ -z "$ENV_FILE" ]]; then
-  # Default: look for .env.setup.prod next to the script
-  ENV_FILE="$SCRIPT_DIR/.env.setup.prod"
+  # Default: look for .env.setup.remote next to the script
+  ENV_FILE="$SCRIPT_DIR/.env.setup.remote"
   if [[ ! -f "$ENV_FILE" ]]; then
     die "No --env-file specified and default ${ENV_FILE} not found.
   Create one:
-    cp ${SCRIPT_DIR}/.env.setup.prod.example ${ENV_FILE}
+    cp ${SCRIPT_DIR}/.env.setup.remote.example ${ENV_FILE}
     # edit and fill in values"
   fi
 elif [[ ! -f "$ENV_FILE" ]]; then
