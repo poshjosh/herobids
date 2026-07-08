@@ -1,10 +1,10 @@
-You can transfer raw text into the CSV format required for importing into [Bitwarden](https://vault.bitwarden.com/)
+You can convert raw text into the CSV format required for importing into [Bitwarden](https://vault.bitwarden.com/)
 
 To do so: 
 
 - You need input text, which ought to be provide by the user
 
-- If none has been provided, ask for input text to convert into the CSV format required for importing into [Bitwarden](https://vault.bitwarden.com/)
+- If none has been provided, ask for the input text, explaining the purpose to the user.
 
 - Once you have the input text, create output in csv format with the first line comprising of the following exact row headings:
 
@@ -12,11 +12,11 @@ To do so:
 folder,favorite,type,name,notes,fields,login_uri,login_username,login_password,login_totp
 ```
 
-- Analyse the input text to identify credential info which will be used to populate all subsequent rows, in the CSV output, in line with the above row headings.
+- Analyse the input text to identify secret/credential info which will be used to populate all subsequent lines/rows, in the CSV output, in line with the above row headings.
 
 - Each extracted row should correspond to a single secret or credential set (e.g. username and password)
 
-- Extract each identified credential info from the input text and add to the CSV respecting the following COLUMN DEFINITIONS and guided by the subsequent EXAMPLES
+- Extract each identified secret/credential info from the input text and add to the CSV respecting the below COLUMN DEFINITIONS and guided by the subsequent EXAMPLES
 
 COLUMN DEFINITIONS
 
