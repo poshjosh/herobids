@@ -311,7 +311,7 @@ export function pnlColor(pnl: string | number | null | undefined): string {
 
 | Step | What | Files | Depends on | Status |
 |---|---|---|---|---|
-| 1 | Bulk PnL endpoint | `apps/api/src/routes/agents.ts` | — | PENDING |
+| 1 | Bulk PnL endpoint | `apps/api/src/routes/agents.ts` | — | DONE |
 | 2 | Extend dashboard overview with PnL | `apps/api/src/routes/dashboard.ts` | — | PENDING |
 | 3 | API client types + methods | `apps/web/src/lib/api-client.ts` | 1, 2 | PENDING |
 | 4 | `formatPnl` helper | `apps/web/src/lib/formatting.ts` | — | PENDING |
@@ -368,3 +368,10 @@ can be done in any order after 1–4.
 - **MEDIUM** — `Number()` on `sum(realizedPnl)` loses PostgreSQL `numeric` precision to IEEE 754 double. Acceptable for display-only endpoint but would be problematic if used for settlement. Document this is display-only.
 - **LOW** — Duplicate merge construction logic between `directResults` and `botOwnedResults` loops. Extract a helper for DRY.
 - **LOW** — Missing response type annotation on the route handler for consistency with other endpoints in the file.
+
+### [Step 2] Dashboard overview PnL
+
+- **LOW** — Missing `connectionId` null guard comment in Part 2 bot join condition; `bots.connectionId` is `.notNull()` per schema so no runtime risk.
+- **LOW** — Frontend `DashboardOverview` type not yet extended (planned for Step 3).
+- **LOW** — `.toFixed(6)` is a duplicated magic number across `dashboard.ts`, `agents.ts`, `trading.ts`. Could extract to shared constant.
+- **LOW** — Comment could clarify why no per-agent grouping (dashboard is aggregate-only; per-agent lives at `GET /agents/performance`).
