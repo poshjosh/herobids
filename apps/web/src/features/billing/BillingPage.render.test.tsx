@@ -67,13 +67,16 @@ describe('BillingPage rendering', () => {
 
     expect(html).toContain('AI Usage — Current Period');
     expect(html).toContain(messages['billing.usage.emptyAccount']);
-    expect(html).toContain('Usage by Meter');
-    expect(html).toContain(messages['billing.usage.emptyBreakdown']);
-    expect(html).toContain('Usage by Agent');
-    expect(html).toContain('Usage Events');
-    expect(html).toContain('No usage events recorded yet.');
-    expect(html).toContain('Billing Periods');
-    expect(html).toContain(messages['billing.usage.emptyPeriods']);
+    // Detail sections are collapsed by default — verify toggle is present
+    expect(html).toContain('View details ▸');
+    // Detail tables should NOT be visible when collapsed
+    expect(html).not.toContain('Usage by Meter');
+    expect(html).not.toContain(messages['billing.usage.emptyBreakdown']);
+    expect(html).not.toContain('Usage by Agent');
+    expect(html).not.toContain('Usage Events');
+    expect(html).not.toContain('No usage events recorded yet.');
+    expect(html).not.toContain('Billing Periods');
+    expect(html).not.toContain(messages['billing.usage.emptyPeriods']);
   });
 
   it('renders Subscribe buttons for new users with the plan display label', () => {

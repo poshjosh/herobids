@@ -123,7 +123,7 @@ billing.usage.totalCredit         "Total credit"
 - `billing.usage.emptyAccount` — keep
 - `billing.usage.emptyPeriod` — keep
 
-### Phase 4 — Cleanup **[PENDING]**
+### Phase 4 — Cleanup **[DONE]**
 
 **Files:**
 - `apps/web/src/features/billing/BillingPage.tsx`
