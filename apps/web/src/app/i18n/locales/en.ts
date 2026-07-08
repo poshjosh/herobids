@@ -192,6 +192,7 @@ export const messages: Record<string, string> = {
   'missionControl.metric.paused': 'Paused',
   'missionControl.metric.unhealthy': 'Unhealthy',
   'missionControl.metric.stopped': 'Stopped',
+  'missionControl.metric.totalPnl': 'Total Realized P&L',
   'missionControl.section.agents': 'Your AI agents',
   'missionControl.section.recentActivity': 'Recent activity',
   'missionControl.noActivityYet.title': 'No activity yet',
@@ -202,6 +203,14 @@ export const messages: Record<string, string> = {
   'missionControl.setup.cta': 'Connect AI agent',
   'missionControl.setup.successDismiss': 'Done',
   'missionControl.setup.successMessage': '{label} ({provider}) is ready for your AI agents.',
+
+  // Exposure
+  'exposure.title': 'Exposure',
+  'exposure.subtitle': 'Current positions and risk concentration',
+  'exposure.totalRealizedPnl': 'Total Realized P&L',
+  'exposure.openPositions': 'Open Positions',
+  'exposure.emptyTitle': 'No open positions',
+  'exposure.emptyMessage': 'Positions will appear here once your AI agents start trading.',
 
   // Outcomes
   'outcomes.title': 'Outcome Board',
@@ -388,6 +397,9 @@ export const messages: Record<string, string> = {
   'agents.summary.openAgent': 'Open AI agent',
   'agents.summary.openCapability': 'Open {capability} capability',
   'agents.summary.configureCapability': 'Configure {capability} capability',
+  'agents.summary.pnl': 'P&L',
+  'agents.summary.tradeCount': '{count, plural, one {# trade} other {# trades}}',
+  'agents.summary.winRate': 'Win: {rate, number}%',
   'agents.create.title': 'Create AI agent',
   'agents.create.name': 'Name',
   'agents.create.namePlaceholder': 'e.g. market-watch-01',

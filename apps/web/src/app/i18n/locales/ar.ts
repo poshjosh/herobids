@@ -192,6 +192,7 @@ export const messages: Record<string, string> = {
   'missionControl.metric.paused': 'متوقف مؤقتاً',
   'missionControl.metric.unhealthy': 'غير سليم',
   'missionControl.metric.stopped': 'متوقف',
+  'missionControl.metric.totalPnl': 'إجمالي الربح والخسارة المحقق',
   'missionControl.section.agents': 'وكلاء الذكاء الاصطناعي لديك',
   'missionControl.section.recentActivity': 'النشاط الأخير',
   'missionControl.noActivityYet.title': 'لا نشاط حتى الآن',
@@ -202,6 +203,14 @@ export const messages: Record<string, string> = {
   'missionControl.setup.cta': 'توصيل وكيل الذكاء الاصطناعي',
   'missionControl.setup.successDismiss': 'تم',
   'missionControl.setup.successMessage': 'أصبح {label} ({provider}) جاهزاً لوكلاء الذكاء الاصطناعي لديك.',
+
+  // Exposure
+  'exposure.title': 'التعرض',
+  'exposure.subtitle': 'المراكز الحالية وتركيز المخاطر',
+  'exposure.totalRealizedPnl': 'إجمالي الربح والخسارة المحقق',
+  'exposure.openPositions': 'المراكز المفتوحة',
+  'exposure.emptyTitle': 'لا توجد مراكز مفتوحة',
+  'exposure.emptyMessage': 'ستظهر المراكز هنا بمجرد أن يبدأ وكلاء الذكاء الاصطناعي التداول.',
 
   // Outcomes
   'outcomes.title': 'لوحة النتائج',
@@ -388,6 +397,9 @@ export const messages: Record<string, string> = {
   'agents.summary.openAgent': 'فتح وكيل الذكاء الاصطناعي',
   'agents.summary.openCapability': 'فتح قدرة {capability}',
   'agents.summary.configureCapability': 'تهيئة قدرة {capability}',
+  'agents.summary.pnl': 'الربح والخسارة',
+  'agents.summary.tradeCount': '{count, plural, =1 {# صفقة} =2 {# صفقتان} few {# صفقات} many {# صفقة} other {# صفقة}}',
+  'agents.summary.winRate': 'فوز: {rate, number}%',
   'agents.create.title': 'إنشاء وكيل ذكاء اصطناعي',
   'agents.create.goal': 'ما الذي يجب أن يفعله وكيل الذكاء الاصطناعي؟',
   'agents.create.goalBoth': 'تعليمات / هدف',

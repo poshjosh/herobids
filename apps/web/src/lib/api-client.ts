@@ -223,7 +223,7 @@ export interface DashboardOverview {
     entitlements: PlanEntitlements;
   } | null;
   bots: BotSummary[];
-  summary: { totalBots: number; runningBots: number; totalOpenPositions: number };
+  summary: { totalBots: number; runningBots: number; totalOpenPositions: number; totalRealizedPnl: string };
 }
 
 export interface ActivityEvent {
@@ -986,6 +986,14 @@ export interface AgentPosition {
   holdMs: number | null;
 }
 
+export interface AgentPerformance {
+  agentId: string;
+  totalRealizedPnl: string;
+  openPositionCount: number;
+  closedPositionCount: number;
+  winningClosedCount: number;
+}
+
 export const agents = {
   list: () => request<Agent[]>('/agents'),
   get: (id: string) => request<Agent>(`/agents/${id}`),
@@ -1116,6 +1124,7 @@ export const agents = {
     getBundleUrl: (agentId: string, runId: string) =>
       `${config.apiBaseUrl}/agents/${agentId}/evaluations/${runId}/artifacts/bundle`,
   },
+  performance: () => request<{ performances: AgentPerformance[] }>('/agents/performance'),
 };
 
 // ---------------------------------------------------------------------------

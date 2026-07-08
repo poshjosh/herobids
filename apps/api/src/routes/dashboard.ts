@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { eq, and, or, isNull, inArray, notInArray, desc, sql } from 'drizzle-orm';
+import { eq, and, or, isNull, isNotNull, inArray, notInArray, desc, sql, sum } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import {
   users,
@@ -8,6 +8,7 @@ import {
   journalEvents,
   venueAccounts,
   agents,
+  agentConnections,
   agentMessages,
   agentRuntimeSessions,
 } from '@herobids/db';
@@ -133,10 +134,11 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
   app.get('/dashboard/overview', async (request, reply) => {
     const userId = request.userId;
 
-    // Fetch user + instances + venue account labels in parallel
-    const [userRow, botRows] = await Promise.all([
+    // Fetch user + instances + venue account labels + agent IDs in parallel
+    const [userRow, botRows, agentRows] = await Promise.all([
       db.select().from(users).where(eq(users.id, userId)).limit(1),
       db.select().from(bots).where(eq(bots.userId, userId)),
+      db.select({ id: agents.id }).from(agents).where(eq(agents.userId, userId)),
     ]);
 
     const user = userRow[0];
@@ -198,6 +200,42 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
     const runningCount = botsSummary.filter((b) => b.status === 'running').length;
     const totalOpenPositions = botsSummary.reduce((sum, b) => sum + b.openPositionsCount, 0);
 
+    // ── Aggregate realized PnL across all user agents ──────────────────────
+    // Two-part query: agent-direct positions + bot-owned positions attributed
+    // via agent_connections → bots.  No per-agent grouping — single SUM.
+    const agentIds = agentRows.map((a) => a.id);
+
+    let combinedPnl = 0;
+    if (agentIds.length > 0) {
+      // Part 1: Agent-direct positions
+      const directPnlQuery = db
+        .select({ totalPnl: sum(positions.realizedPnl) })
+        .from(positions)
+        .where(and(
+          eq(positions.actorType, 'agent'),
+          inArray(positions.actorId, agentIds),
+          isNotNull(positions.actorId),
+        ));
+
+      // Part 2: Bot-owned positions attributed via agent_connections → bots
+      const botOwnedPnlQuery = db
+        .select({ totalPnl: sum(positions.realizedPnl) })
+        .from(positions)
+        .innerJoin(bots, and(
+          eq(bots.id, positions.actorId),
+          eq(positions.actorType, 'bot'),
+        ))
+        .innerJoin(agentConnections, eq(agentConnections.connectionId, bots.connectionId))
+        .where(inArray(agentConnections.agentId, agentIds));
+
+      const [directPnlRow, botOwnedPnlRow] = await Promise.all([
+        directPnlQuery.then((r) => r[0]),
+        botOwnedPnlQuery.then((r) => r[0]),
+      ]);
+
+      combinedPnl = Number(directPnlRow?.totalPnl ?? '0') + Number(botOwnedPnlRow?.totalPnl ?? '0');
+    }
+
     return reply.send({
       user: {
         id: user.id,
@@ -212,6 +250,7 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
         totalBots: botsSummary.length,
         runningBots: runningCount,
         totalOpenPositions,
+        totalRealizedPnl: combinedPnl.toFixed(6),
       },
     });
   });

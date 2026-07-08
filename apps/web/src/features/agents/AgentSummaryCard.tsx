@@ -1,16 +1,18 @@
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, skills as skillsApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
+import { agents as agentsApi, skills as skillsApi, type Agent, type AgentPerformance, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Card, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
+import { formatPnl, pnlColor } from '../../lib/formatting.js';
 import { extractAgentObjective, formatExecutionMode, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
 
 interface AgentSummaryCardProps {
   agent: Agent;
+  performance?: AgentPerformance;
   onOpen?: () => void;
 }
 
-export function AgentSummaryCard({ agent, onOpen }: AgentSummaryCardProps) {
+export function AgentSummaryCard({ agent, performance, onOpen }: AgentSummaryCardProps) {
   const navigate = useNavigate();
   const intl = useIntl();
   const objective = extractAgentObjective(agent.prompt);
@@ -100,6 +102,21 @@ export function AgentSummaryCard({ agent, onOpen }: AgentSummaryCardProps) {
           </span>
         )}
       </div>
+
+      {performance && (
+        <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+          <span>
+            {intl.formatMessage({ id: 'agents.summary.pnl' })}:{' '}
+            <span style={{ color: pnlColor(performance.totalRealizedPnl), fontWeight: '500' }}>
+              {formatPnl(performance.totalRealizedPnl)}
+            </span>
+          </span>
+          <span>{intl.formatMessage({ id: 'agents.summary.tradeCount' }, { count: performance.closedPositionCount })}</span>
+          {performance.closedPositionCount > 0 && (
+            <span>{intl.formatMessage({ id: 'agents.summary.winRate' }, { rate: Math.round((performance.winningClosedCount / performance.closedPositionCount) * 100) })}</span>
+          )}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
         <KV label={intl.formatMessage({ id: 'common.created' })} value={<RelativeTime timestamp={agent.createdAt} />} />

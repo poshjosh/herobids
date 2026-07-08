@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, inArray, notInArray, desc, sql, or, asc, isNull } from 'drizzle-orm';
+import { eq, and, inArray, notInArray, desc, sql, or, asc, isNull, isNotNull, sum } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
 import {
@@ -25,6 +25,7 @@ import {
   skills,
   users,
   venueAccounts,
+  positions,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import {
@@ -823,6 +824,108 @@ export async function agentRoutes(
       }),
       ...enrichAgentResponse(agent),
     })));
+  });
+
+  // ─── GET /agents/performance ────────────────────────────────────────────────
+  // Bulk PnL endpoint: returns realized PnL, trade counts, and win-rate inputs
+  // for all of the user's agents in a single query. Two-part union merges
+  // agent-direct positions and bot-owned positions attributed via agent_connections.
+  app.get('/agents/performance', async (request, reply) => {
+    const agentRows = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(eq(agents.userId, request.userId));
+
+    const agentIds = agentRows.map((a) => a.id);
+
+    if (agentIds.length === 0) {
+      return reply.send({ performances: [] });
+    }
+
+    // Part 1: Agent-direct positions — grouped by actorId (the agent itself).
+    const directQuery = db
+      .select({
+        agentId: positions.actorId,
+        totalPnl: sum(positions.realizedPnl),
+        openPositionCount: sql<number>`COUNT(*) FILTER (WHERE ${positions.closedAt} IS NULL)::int`,
+        winningClosedCount: sql<number>`COUNT(*) FILTER (WHERE ${positions.closedAt} IS NOT NULL AND ${positions.realizedPnl} > '0')::int`,
+        closedPositionCount: sql<number>`COUNT(*) FILTER (WHERE ${positions.closedAt} IS NOT NULL)::int`,
+      })
+      .from(positions)
+      .where(and(
+        eq(positions.actorType, 'agent'),
+        inArray(positions.actorId, agentIds),
+        isNotNull(positions.actorId),
+      ))
+      .groupBy(positions.actorId);
+
+    // Part 2: Bot-owned positions attributed via agent_connections → bots.
+    const botOwnedQuery = db
+      .select({
+        agentId: agentConnections.agentId,
+        totalPnl: sum(positions.realizedPnl),
+        openPositionCount: sql<number>`COUNT(*) FILTER (WHERE ${positions.closedAt} IS NULL)::int`,
+        winningClosedCount: sql<number>`COUNT(*) FILTER (WHERE ${positions.closedAt} IS NOT NULL AND ${positions.realizedPnl} > '0')::int`,
+        closedPositionCount: sql<number>`COUNT(*) FILTER (WHERE ${positions.closedAt} IS NOT NULL)::int`,
+      })
+      .from(positions)
+      .innerJoin(bots, and(
+        eq(bots.id, positions.actorId),
+        eq(positions.actorType, 'bot'),
+      ))
+      .innerJoin(agentConnections, eq(agentConnections.connectionId, bots.connectionId))
+      .where(inArray(agentConnections.agentId, agentIds))
+      .groupBy(agentConnections.agentId);
+
+    const [directResults, botOwnedResults] = await Promise.all([directQuery, botOwnedQuery]);
+
+    // Merge both result sets by agentId.
+    const perfByAgent = new Map<string, {
+      totalPnl: number;
+      openPositionCount: number;
+      winningClosedCount: number;
+      closedPositionCount: number;
+    }>();
+
+    for (const row of directResults) {
+      perfByAgent.set(row.agentId, {
+        totalPnl: Number(row.totalPnl ?? '0'),
+        openPositionCount: row.openPositionCount ?? 0,
+        winningClosedCount: row.winningClosedCount ?? 0,
+        closedPositionCount: row.closedPositionCount ?? 0,
+      });
+    }
+
+    for (const row of botOwnedResults) {
+      const existing = perfByAgent.get(row.agentId);
+      if (existing) {
+        existing.totalPnl += Number(row.totalPnl ?? '0');
+        existing.openPositionCount += row.openPositionCount ?? 0;
+        existing.winningClosedCount += row.winningClosedCount ?? 0;
+        existing.closedPositionCount += row.closedPositionCount ?? 0;
+      } else {
+        perfByAgent.set(row.agentId, {
+          totalPnl: Number(row.totalPnl ?? '0'),
+          openPositionCount: row.openPositionCount ?? 0,
+          winningClosedCount: row.winningClosedCount ?? 0,
+          closedPositionCount: row.closedPositionCount ?? 0,
+        });
+      }
+    }
+
+    // Always include every agent, even those with zero positions.
+    const performances = agentIds.map((agentId) => {
+      const perf = perfByAgent.get(agentId);
+      return {
+        agentId,
+        totalRealizedPnl: (perf?.totalPnl ?? 0).toFixed(6),
+        openPositionCount: perf?.openPositionCount ?? 0,
+        closedPositionCount: perf?.closedPositionCount ?? 0,
+        winningClosedCount: perf?.winningClosedCount ?? 0,
+      };
+    });
+
+    return reply.send({ performances });
   });
 
   // Get single agent
