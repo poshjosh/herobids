@@ -149,6 +149,7 @@ export function BillingPage() {
   const [spendCapsError, setSpendCapsError] = useState<string | null>(null);
   const [topUpError, setTopUpError] = useState<string | null>(null);
   const [checkoutBanner, setCheckoutBanner] = useState<'success' | 'cancelled' | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
   const [ledgerOffset, setLedgerOffset] = useState(0);
   const [ledgerDirectionFilter, setLedgerDirectionFilter] = useState('');
   const USAGE_EVENTS_PAGE_SIZE = 50;
@@ -543,9 +544,58 @@ export function BillingPage() {
               )}
             </>
           )}
+          {/* Top-up row */}
+          {usageAccount && (
+            <>
+              <div style={{ marginTop: '16px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px' }}>
+                  <select
+                    value={selectedTopUpPackId}
+                    onChange={(e) => setSelectedTopUpPackId(e.target.value)}
+                    disabled={(usageSummary?.topUpPacks?.length ?? 0) === 0}
+                    style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
+                  >
+                    {(usageSummary?.topUpPacks?.length ?? 0) === 0 && <option value="">No packs available</option>}
+                    {(usageSummary?.topUpPacks ?? []).map((pack) => (
+                      <option key={`${pack.provider}_${pack.packId}`} value={pack.packId}>
+                        {pack.packId} · {formatCurrencyFromCents(intl, pack.cents)} · {pack.provider}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="primary"
+                    disabled={topUpMutation.isPending || (usageSummary?.topUpPacks?.length ?? 0) === 0 || selectedTopUpPackId.length === 0}
+                    onClick={() => topUpMutation.mutate(selectedTopUpPackId)}
+                  >
+                    {topUpMutation.isPending ? 'Opening...' : 'Buy Top-up'}
+                  </Button>
+                </div>
+                {topUpError && (
+                  <ErrorBanner message={topUpError} onDismiss={() => setTopUpError(null)} />
+                )}
+                {(usageSummary?.topUpPacks?.length ?? 0) === 0 && (
+                  <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                    Top-ups are not enabled for this plan.
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </Card>
 
-          <Card style={{ padding: '20px' }}>
+        {/* Details toggle */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button
+            variant="secondary"
+            onClick={() => setShowDetails(!showDetails)}
+          >
+            {showDetails ? 'Hide details ▾' : 'View details ▸'}
+          </Button>
+        </div>
+
+        {showDetails && (
+          <>
+            {/* Spend Controls */}
             <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               Spend Controls
             </div>
@@ -578,42 +628,9 @@ export function BillingPage() {
             {spendCapsError && (
               <ErrorBanner message={spendCapsError} onDismiss={() => setSpendCapsError(null)} />
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px' }}>
-              <select
-                value={selectedTopUpPackId}
-                onChange={(e) => setSelectedTopUpPackId(e.target.value)}
-                disabled={(usageSummary?.topUpPacks?.length ?? 0) === 0}
-                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-              >
-                {(usageSummary?.topUpPacks?.length ?? 0) === 0 && <option value="">No packs available</option>}
-                {(usageSummary?.topUpPacks ?? []).map((pack) => (
-                  <option key={`${pack.provider}_${pack.packId}`} value={pack.packId}>
-                    {pack.packId} · {formatCurrencyFromCents(intl, pack.cents)} · {pack.provider}
-                  </option>
-                ))}
-              </select>
-              <Button
-                variant="primary"
-                disabled={topUpMutation.isPending || (usageSummary?.topUpPacks?.length ?? 0) === 0 || selectedTopUpPackId.length === 0}
-                onClick={() => topUpMutation.mutate(selectedTopUpPackId)}
-              >
-                {topUpMutation.isPending ? 'Opening...' : 'Buy Top-up'}
-              </Button>
-            </div>
-            {topUpError && (
-              <ErrorBanner message={topUpError} onDismiss={() => setTopUpError(null)} />
-            )}
-            {(usageSummary?.topUpPacks?.length ?? 0) === 0 && (
-              <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                {usageAccount
-                  ? 'Top-ups are not enabled for this plan.'
-                  : intl.formatMessage({ id: 'billing.usage.noAccountControls' })}
-              </div>
-            )}
-          </Card>
 
-          <Card style={{ padding: '20px' }}>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            {/* Usage Filters */}
+            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '16px' }}>
               Usage Filters
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
@@ -674,7 +691,6 @@ export function BillingPage() {
                 style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
               />
             </div>
-          </Card>
 
           {/* By-meter breakdown */}
           <Card style={{ padding: '20px' }}>
@@ -957,6 +973,8 @@ export function BillingPage() {
               </table>
             )}
           </Card>
+        </>
+      )}
       </div>
     </PageShell>
   );

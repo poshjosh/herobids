@@ -59,7 +59,7 @@ A billing page where the user instantly understands their credit situation at a 
 - Option B: Skip this and compute on the frontend. The formula `Math.max(0, balanceMicrousd + usageChargeMicrousd - includedCreditMicrousd)` is correct as long as no manual adjustments exist.
 - **Decision: Go with Option B for v1** to keep this frontend-only. We can add the field later if needed.
 
-### Phase 1 — Create the credit gauge component **[PENDING]**
+### Phase 1 — Create the credit gauge component **[DONE]**
 
 **Files:**
 - `apps/web/src/features/billing/BillingPage.tsx` (inline or extracted)
@@ -178,3 +178,13 @@ billing.usage.totalCredit         "Total credit"
 | LOW | L5 | No text truncation on long `planName`. | Add `text-overflow: ellipsis` if needed. |
 | LOW | L6 | Status badge next to dollar amount instead of plan name. | Cosmetic, functional equivalence. |
 | LOW | L7 | `CreditGauge` not wrapped in `React.memo`. | Low impact for component this simple.
+
+### [Phase 2] Card Layout Reorganization
+
+| Severity | # | Issue | Resolution |
+|---|---|---|---|
+| MEDIUM | M1 | Orphaned i18n key `billing.usage.noAccountControls` — the `!usageAccount` code path is now unreachable. | Clean up in Phase 3/4. Key remains in locale files but is dead code. |
+| MEDIUM | M2 | All detail queries fire unconditionally on page load even when details collapsed. | Address in Phase 4 (add `enabled: showDetails` to queries). |
+| MEDIUM | M3 | Top-up row renders even without `currentPeriod` (gated on `usageAccount` only). | Minor UX inconsistency; align in follow-up. |
+| LOW | L1 | Hardcoded English strings from Phase 2 additions (toggle labels, section headers). | Handled in Phase 3. |
+| LOW | L2 | Spend Controls/Usage Filters have no visual container in details section, creating inconsistency with carded tables below. | Consider wrapping in shared `<Card>` or adding separator. |
