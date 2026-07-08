@@ -1,0 +1,12 @@
+- **Status:** FIXED
+- **Severity:** High
+- **Date:** 2026-07-08
+- **Summary:** Tick gate never skips for agents without active watches — `computeWatchSummaryDigest` returns `__unknown__` for null summary, causing `shouldSkipTick` to produce a different context hash on every tick. Results in ~3× LLM token consumption and ~2× daily cost.
+- **Root Cause:** `loadActiveWatchSummary` returned `null` when an agent had no active watches. `computeWatchSummaryDigest(null)` returned `'__unknown__'`, which `shouldSkipTick` resolved to `'__unknown__${tickNumber}'` — a different hash every tick. Contrast with `computeWakeSignalDigest` which correctly returns the stable `'__none__'` sentinel for empty buffers.
+- **Fix:** Changed `loadActiveWatchSummary` to return an empty summary object `{ totalCount: 0, uniqueCount: 0, lines: [], overflowCount: 0 }` instead of `null` when the agent has no watches. This produces a stable digest across ticks. The `__unknown__` sentinel is preserved for true failures (e.g., Redis unavailable).
+- **Files Changed:**
+  - `apps/worker/src/agent.ts` — `loadActiveWatchSummary`: return empty summary instead of null for zero watches
+- **Verification:**
+  - 180 tests pass (tick-gates, tick-gate-state, runtime-composition)
+  - `pnpm lint` clean
+  - Expected: scheduled ticks with unchanged price/PnL/regime now skip when agent has no watches
