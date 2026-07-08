@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.15 - 2026-07-08
+
+### Added
+
+- **Staging environment:** Split the single-environment deploy model into separate staging and production environments with isolated infrastructure, secrets, domains, and runtime policy. Staging runs with `NODE_ENV=staging`, mock billing, and live trading disabled by default. Production runs with `NODE_ENV=production` and enforces non-mock billing. Includes separate compose overlays (`docker-compose.staging.yaml` / `docker-compose.prod.yaml`), Caddyfiles (`Caddyfile.staging` / `Caddyfile.prod`), env file conventions, Terraform variables, and staging config validation tests.
+
 ## v0.0.14 - 2026-07-08
 
 ### Fixed

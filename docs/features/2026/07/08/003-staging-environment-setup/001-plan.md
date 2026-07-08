@@ -2,7 +2,7 @@
 
 ## Status
 
-`draft`
+`implemented`
 
 ## Problem
 
@@ -340,12 +340,12 @@ Production behavior is aligned with the code’s real production safety model.
 
 ## TODOs Resolved By This Feature
 
-This feature should explicitly close these known staging-setup follow-ups:
+All known staging-setup follow-ups are resolved:
 
-1. `docker-compose.prod.yaml`: replace the temporary `NODE_ENV: staging` values with true production runtime values.
-2. `docker-compose.prod.yaml`: stop hardcoding production-only auth origins as the only deploy option.
-3. `infra/hetzner/.env.prod`: stop relying on mock billing for the real production environment.
-4. `SCATCHPAD.md`: remove the staging-setup reminder once staging exists and the production split is complete.
+1. ✅ `docker-compose.prod.yaml`: replaced temporary `NODE_ENV: staging` with `NODE_ENV: production` (Phase 3).
+2. ✅ `docker-compose.prod.yaml`: auth origins are parameterized per-environment via separate overlays (Phase 3).
+3. ✅ `infra/hetzner/.env.prod`: production enforces non-mock billing via startup guard in `config.ts` (Phase 4).
+4. ✅ `SCATCHPAD.md`: file never existed — no scratchpad was created during the original workaround period. No action needed.
 
 ## Validation Plan
 
