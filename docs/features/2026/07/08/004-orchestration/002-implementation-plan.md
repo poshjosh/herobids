@@ -15,7 +15,7 @@
 | Phase 5 - Per-tier resource profiles | DONE |
 | Phase 6 - Autoscale-out with flock+Terraform | DONE |
 | Phase 7 - Safety net & nightly scale-in | DONE |
-| Phase 8 - Admin alerting & visibility | PENDING |
+| Phase 8 - Admin alerting & visibility | DONE |
 | Phase 9 - Rollout & validate end-to-end | PENDING |
 
 ## Depends On
@@ -432,7 +432,7 @@ The platform scales up proactively, catches surprise under-capacity reactively, 
 2. nightly scale-in removes only eligible idle nodes
 3. active workloads survive the nightly scale-in run unchanged
 
-### Phase 8 - Add admin alerting and operator visibility **[PENDING]**
+### Phase 8 - Add admin alerting and operator visibility **[DONE]**
 
 #### Goal
 
