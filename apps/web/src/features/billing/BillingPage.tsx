@@ -5,6 +5,7 @@ import { billing, agents as agentsApi } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button } from '../../lib/ui.js';
 import { formatCurrencyFromCents, formatShortDate } from '../../lib/formatting.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
+import { BillingDetails, formatMicrousd } from './BillingDetails.js';
 
 function statusLabel(intl: ReturnType<typeof useIntl>, status: string): { text: string; color: string } {
   switch (status) {
@@ -17,30 +18,108 @@ function statusLabel(intl: ReturnType<typeof useIntl>, status: string): { text: 
   }
 }
 
-function usageAccountStatusLabel(status: string): { text: string; color: string } {
+function usageAccountStatusLabel(intl: ReturnType<typeof useIntl>, status: string): { text: string; color: string } {
   switch (status) {
-    case 'active': return { text: 'Active', color: 'var(--color-success)' };
-    case 'soft_limited': return { text: 'Approaching Limit', color: 'var(--color-warning)' };
-    case 'hard_limited': return { text: 'Usage Limit Reached', color: 'var(--color-danger, #e53e3e)' };
-    case 'suspended': return { text: 'Suspended', color: 'var(--color-text-muted)' };
+    case 'active': return { text: intl.formatMessage({ id: 'billing.usage.status.active' }), color: 'var(--color-success)' };
+    case 'soft_limited': return { text: intl.formatMessage({ id: 'billing.usage.status.softLimited' }), color: 'var(--color-warning)' };
+    case 'hard_limited': return { text: intl.formatMessage({ id: 'billing.usage.status.hardLimited' }), color: 'var(--color-danger, #e53e3e)' };
+    case 'suspended': return { text: intl.formatMessage({ id: 'billing.usage.status.suspended' }), color: 'var(--color-text-muted)' };
     default: return { text: status, color: 'var(--color-text-muted)' };
   }
 }
 
-function formatMicrousd(microusd: number): string {
-  return `$${(microusd / 1_000_000).toFixed(4)}`;
+interface CreditGaugeProps {
+  balanceMicrousd: number;
+  totalCreditMicrousd: number;
+  usageChargeMicrousd: number;
+  includedCreditMicrousd: number;
+  status: string;
+  planLabel?: string;
+  intl: ReturnType<typeof useIntl>;
 }
 
-const LEDGER_ENTRY_TYPE_LABELS: Record<string, string> = {
-  included_credit: 'Included credits',
-  top_up_credit: 'Credit top-up',
-  usage_charge: 'Usage charge',
-  manual_adjustment: 'Manual adjustment',
-  reversal: 'Reversal',
-  reservation: 'Reservation',
-  reservation_release: 'Reservation release',
-  invoice_settlement: 'Invoice settlement',
-};
+function CreditGauge({
+  balanceMicrousd,
+  totalCreditMicrousd,
+  usageChargeMicrousd,
+  includedCreditMicrousd,
+  status,
+  planLabel,
+  intl,
+}: CreditGaugeProps) {
+  const remainingPct = totalCreditMicrousd > 0 ? balanceMicrousd / totalCreditMicrousd : 0;
+  const topUpMicrousd = Math.max(0, totalCreditMicrousd - includedCreditMicrousd);
+  const planName = planLabel || intl.formatMessage({ id: 'billing.usage.yourPlan' });
+  const statusInfo = usageAccountStatusLabel(intl, status);
+
+  let barColor = 'var(--color-success)';
+  if (remainingPct < 0.2) {
+    barColor = 'var(--color-danger, #e53e3e)';
+  } else if (remainingPct < 0.5) {
+    barColor = 'var(--color-warning)';
+  }
+
+  const isOverLimit = balanceMicrousd <= 0;
+  const barFillPct = Math.max(0, Math.min(100, remainingPct * 100));
+
+  return (
+    <div>
+      {/* Main amount + status badge */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
+        <div>
+          {isOverLimit ? (
+            <span style={{ fontSize: '24px', fontWeight: '600', color: 'var(--color-danger, #e53e3e)' }}>
+              {formatMicrousd(Math.abs(balanceMicrousd))} {intl.formatMessage({ id: 'billing.usage.overLimit' })}
+            </span>
+          ) : (
+            <span style={{ fontSize: '24px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+              {formatMicrousd(balanceMicrousd)} {intl.formatMessage({ id: 'billing.usage.creditLeft' })}
+            </span>
+          )}
+        </div>
+        <span style={{
+          padding: '2px 10px',
+          borderRadius: '12px',
+          fontSize: '12px',
+          fontWeight: '500',
+          background: `${statusInfo.color}1a`,
+          color: statusInfo.color,
+        }}>
+          {statusInfo.text}
+        </span>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{
+        width: '100%',
+        height: '8px',
+        borderRadius: '4px',
+        background: 'var(--color-surface-2)',
+        marginBottom: '10px',
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          width: `${barFillPct}%`,
+          height: '100%',
+          borderRadius: '4px',
+          background: barColor,
+          transition: 'width 0.3s ease',
+        }} />
+      </div>
+
+      {/* Used this month */}
+      <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+        {formatMicrousd(usageChargeMicrousd)} {intl.formatMessage({ id: 'billing.usage.usedThisMonth' })}
+      </div>
+
+      {/* Plan breakdown */}
+      <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+        {formatMicrousd(includedCreditMicrousd)} {intl.formatMessage({ id: 'billing.usage.includedWithPlan' }, { planName })}
+        {topUpMicrousd > 0 && <> + {formatMicrousd(topUpMicrousd)} {intl.formatMessage({ id: 'billing.usage.topUps' })}</>}
+      </div>
+    </div>
+  );
+}
 
 export function BillingPage() {
   const intl = useIntl();
@@ -58,6 +137,7 @@ export function BillingPage() {
   const [spendCapsError, setSpendCapsError] = useState<string | null>(null);
   const [topUpError, setTopUpError] = useState<string | null>(null);
   const [checkoutBanner, setCheckoutBanner] = useState<'success' | 'cancelled' | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
   const [ledgerOffset, setLedgerOffset] = useState(0);
   const [ledgerDirectionFilter, setLedgerDirectionFilter] = useState('');
   const USAGE_EVENTS_PAGE_SIZE = 50;
@@ -85,11 +165,13 @@ export function BillingPage() {
   const usageBreakdownQuery = useQuery({
     queryKey: ['billing', 'usage-breakdown', usageFilters.periodId, usageFilters.from, usageFilters.to],
     queryFn: () => billing.usageBreakdown({ periodId: usageFilters.periodId, from: usageFilters.from, to: usageFilters.to }),
+    enabled: showDetails,
   });
 
   const usageEventsQuery = useQuery({
     queryKey: ['billing', 'usage-events', usageEventOffset, usageFilters],
     queryFn: () => billing.usageEvents({ limit: USAGE_EVENTS_PAGE_SIZE, offset: usageEventOffset, ...usageFilters }),
+    enabled: showDetails,
   });
 
   const ledgerQuery = useQuery({
@@ -100,11 +182,13 @@ export function BillingPage() {
       periodId: usageFilters.periodId || undefined,
       direction: (ledgerDirectionFilter as 'credit' | 'debit') || undefined,
     }),
+    enabled: showDetails,
   });
 
   const periodsQuery = useQuery({
     queryKey: ['billing', 'periods'],
     queryFn: () => billing.periods(),
+    enabled: showDetails,
   });
 
   const checkoutMutation = useMutation({
@@ -163,13 +247,11 @@ export function BillingPage() {
   const agentsQuery = useQuery({
     queryKey: ['agents', 'list'],
     queryFn: () => agentsApi.list(),
+    enabled: showDetails,
   });
 
   const summary = summaryQuery.data;
   const usageSummary = usageSummaryQuery.data;
-  const usageBreakdown = usageBreakdownQuery.data;
-  const usageEvents = usageEventsQuery.data;
-  const ledgerEntries = ledgerQuery.data;
   const usageAccount = usageSummary?.account ?? null;
 
   useEffect(() => {
@@ -229,13 +311,13 @@ export function BillingPage() {
         >
           <span>
             {checkoutBanner === 'success'
-              ? 'Payment successful — your credits will be applied shortly.'
-              : 'Checkout was cancelled — your payment was not processed.'}
+              ? intl.formatMessage({ id: 'billing.checkout.success' })
+              : intl.formatMessage({ id: 'billing.checkout.cancelled' })}
           </span>
           <button
             onClick={() => setCheckoutBanner(null)}
             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 0 0 12px', color: 'inherit' }}
-            aria-label="Dismiss"
+            aria-label={intl.formatMessage({ id: 'common.dismiss' })}
           >
             ✕
           </button>
@@ -395,14 +477,14 @@ export function BillingPage() {
             fontSize: '13px',
           }}>
             {usageAccount.status === 'hard_limited'
-              ? 'Usage limit reached — AI agent actions are paused until your limit is adjusted or the billing period resets.'
-              : 'Approaching usage limit — agents may be paused if spending continues.'}
+              ? intl.formatMessage({ id: 'billing.usage.warning.hardLimited' })
+              : intl.formatMessage({ id: 'billing.usage.warning.softLimited' })}
           </div>
         )}
         <Card style={{ padding: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              AI Usage — Current Period
+              {intl.formatMessage({ id: 'billing.usage.sectionTitle' })}
             </div>
             {usageSummary?.currentPeriod && (
               <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
@@ -429,32 +511,15 @@ export function BillingPage() {
           )}
           {usageAccount && usageSummary?.currentPeriod && (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '16px' }}>
-                <div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Account Status</div>
-                  <div style={{ fontWeight: '500', color: usageAccountStatusLabel(usageAccount.status).color }}>
-                    {usageAccountStatusLabel(usageAccount.status).text}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Usage Charges</div>
-                  <div style={{ fontWeight: '500' }}>{formatMicrousd(usageSummary.currentPeriod.usageChargeMicrousd)}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Credits Applied</div>
-                  <div style={{ fontWeight: '500' }}>{formatMicrousd(usageSummary.currentPeriod.creditAppliedMicrousd)}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Balance</div>
-                  <div style={{ fontWeight: '500' }}>{formatMicrousd(usageSummary.currentPeriod.balanceMicrousd)}</div>
-                </div>
-                {usageSummary.currentPeriod.hardCapMicrousd != null && (
-                  <div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Hard Cap</div>
-                    <div style={{ fontWeight: '500' }}>{formatMicrousd(usageSummary.currentPeriod.hardCapMicrousd)}</div>
-                  </div>
-                )}
-              </div>
+              <CreditGauge
+                balanceMicrousd={usageSummary.currentPeriod.balanceMicrousd}
+                totalCreditMicrousd={usageSummary.currentPeriod.balanceMicrousd + usageSummary.currentPeriod.usageChargeMicrousd}
+                usageChargeMicrousd={usageSummary.currentPeriod.usageChargeMicrousd}
+                includedCreditMicrousd={usageSummary.currentPeriod.includedCreditMicrousd}
+                status={usageAccount.status}
+                planLabel={summary?.planLabel}
+                intl={intl}
+              />
 
               {usageSummary.warnings.some((w) => w.reached) && (
                 <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -463,427 +528,100 @@ export function BillingPage() {
                       key={w.thresholdPct}
                       style={{ padding: '2px 8px', background: 'var(--color-surface-2)', borderRadius: '4px', fontSize: '12px', color: 'var(--color-warning-text, #92400e)' }}
                     >
-                      {w.thresholdPct}% threshold reached
+                      {intl.formatMessage({ id: 'billing.usage.thresholdReached' }, { pct: w.thresholdPct })}
                     </span>
                   ))}
                 </div>
               )}
             </>
           )}
+          {/* Top-up row */}
+          {usageAccount && (
+            <>
+              <div style={{ marginTop: '16px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px' }}>
+                  <select
+                    value={selectedTopUpPackId}
+                    onChange={(e) => setSelectedTopUpPackId(e.target.value)}
+                    disabled={(usageSummary?.topUpPacks?.length ?? 0) === 0}
+                    style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
+                  >
+                    {(usageSummary?.topUpPacks?.length ?? 0) === 0 && <option value="">{intl.formatMessage({ id: 'common.noPacksAvailable' })}</option>}
+                    {(usageSummary?.topUpPacks ?? []).map((pack) => (
+                      <option key={`${pack.provider}_${pack.packId}`} value={pack.packId}>
+                        {pack.packId} · {formatCurrencyFromCents(intl, pack.cents)} · {pack.provider}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="primary"
+                    disabled={topUpMutation.isPending || (usageSummary?.topUpPacks?.length ?? 0) === 0 || selectedTopUpPackId.length === 0}
+                    onClick={() => topUpMutation.mutate(selectedTopUpPackId)}
+                  >
+                    {topUpMutation.isPending ? intl.formatMessage({ id: 'billing.usage.openingCheckout' }) : intl.formatMessage({ id: 'billing.usage.buyTopUp' })}
+                  </Button>
+                </div>
+                {topUpError && (
+                  <ErrorBanner message={topUpError} onDismiss={() => setTopUpError(null)} />
+                )}
+                {(usageSummary?.topUpPacks?.length ?? 0) === 0 && (
+                  <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                    {intl.formatMessage({ id: 'billing.usage.topUpsNotEnabled' })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </Card>
 
-          <Card style={{ padding: '20px' }}>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Spend Controls
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', marginBottom: '10px' }}>
-              <input
-                value={softCapInput}
-                onChange={(e) => setSoftCapInput(e.target.value)}
-                placeholder="Soft cap (cents)"
-                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-              />
-              <input
-                value={hardCapInput}
-                onChange={(e) => setHardCapInput(e.target.value)}
-                placeholder="Hard cap (cents)"
-                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-              />
-              <Button
-                variant="secondary"
-                disabled={spendCapsMutation.isPending || !usageAccount}
-                onClick={() => {
-                  const soft = softCapInput.trim() === '' ? null : Number.parseInt(softCapInput, 10);
-                  const hard = hardCapInput.trim() === '' ? null : Number.parseInt(hardCapInput, 10);
-                  if ((soft != null && Number.isNaN(soft)) || (hard != null && Number.isNaN(hard))) return;
-                  spendCapsMutation.mutate({ softCapCents: soft, hardCapCents: hard });
-                }}
-              >
-                {spendCapsMutation.isPending ? 'Saving...' : 'Update Spend Caps'}
-              </Button>
-            </div>
-            {spendCapsError && (
-              <ErrorBanner message={spendCapsError} onDismiss={() => setSpendCapsError(null)} />
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px' }}>
-              <select
-                value={selectedTopUpPackId}
-                onChange={(e) => setSelectedTopUpPackId(e.target.value)}
-                disabled={(usageSummary?.topUpPacks?.length ?? 0) === 0}
-                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-              >
-                {(usageSummary?.topUpPacks?.length ?? 0) === 0 && <option value="">No packs available</option>}
-                {(usageSummary?.topUpPacks ?? []).map((pack) => (
-                  <option key={`${pack.provider}_${pack.packId}`} value={pack.packId}>
-                    {pack.packId} · {formatCurrencyFromCents(intl, pack.cents)} · {pack.provider}
-                  </option>
-                ))}
-              </select>
-              <Button
-                variant="primary"
-                disabled={topUpMutation.isPending || (usageSummary?.topUpPacks?.length ?? 0) === 0 || selectedTopUpPackId.length === 0}
-                onClick={() => topUpMutation.mutate(selectedTopUpPackId)}
-              >
-                {topUpMutation.isPending ? 'Opening...' : 'Buy Top-up'}
-              </Button>
-            </div>
-            {topUpError && (
-              <ErrorBanner message={topUpError} onDismiss={() => setTopUpError(null)} />
-            )}
-            {(usageSummary?.topUpPacks?.length ?? 0) === 0 && (
-              <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                {usageAccount
-                  ? 'Top-ups are not enabled for this plan.'
-                  : intl.formatMessage({ id: 'billing.usage.noAccountControls' })}
-              </div>
-            )}
-          </Card>
+        {/* Details toggle */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button
+            variant="secondary"
+            onClick={() => setShowDetails(!showDetails)}
+          >
+            {showDetails ? intl.formatMessage({ id: 'billing.usage.hideDetails' }) : intl.formatMessage({ id: 'billing.usage.viewDetails' })}
+          </Button>
+        </div>
 
-          <Card style={{ padding: '20px' }}>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Usage Filters
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
-              <select
-                value={meterFilter}
-                onChange={(e) => { setMeterFilter(e.target.value); setUsageEventOffset(0); }}
-                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-              >
-                <option value="">All meters</option>
-                <option value="llm.input_tokens">llm.input_tokens</option>
-                <option value="llm.cached_input_tokens">llm.cached_input_tokens</option>
-                <option value="llm.output_tokens">llm.output_tokens</option>
-                <option value="llm.reasoning_tokens">llm.reasoning_tokens</option>
-                <option value="agent.runtime_ms">agent.runtime_ms</option>
-              </select>
-
-              <select
-                value={agentFilter}
-                onChange={(e) => { setAgentFilter(e.target.value); setUsageEventOffset(0); }}
-                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-              >
-                <option value="">All agents</option>
-                {(agentsQuery.data ?? []).map((agent) => (
-                  <option key={agent.id} value={agent.id}>{agent.name}</option>
-                ))}
-              </select>
-
-              <select
-                value={periodFilter}
-                onChange={(e) => { setPeriodFilter(e.target.value); setUsageEventOffset(0); }}
-                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-              >
-                <option value="">All periods</option>
-                {(periodsQuery.data?.periods ?? []).map((period) => (
-                  <option key={period.id} value={period.id}>
-                    {formatShortDate(intl, period.periodStart)} - {formatShortDate(intl, period.periodEnd)}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                value={sessionFilter}
-                onChange={(e) => { setSessionFilter(e.target.value); setUsageEventOffset(0); }}
-                placeholder="Session ID"
-                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-              />
-
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => { setFromDate(e.target.value); setUsageEventOffset(0); }}
-                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-              />
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => { setToDate(e.target.value); setUsageEventOffset(0); }}
-                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-              />
-            </div>
-          </Card>
-
-          {/* By-meter breakdown */}
-          <Card style={{ padding: '20px' }}>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Usage by Meter
-            </div>
-            {usageBreakdownQuery.isLoading && <LoadingRows count={3} />}
-            {usageBreakdownQuery.isError && (
-              <ErrorState
-                message={localizeApiError(intl, usageBreakdownQuery.error, 'common.errorTitle')}
-                onRetry={() => void usageBreakdownQuery.refetch()}
-              />
-            )}
-            {usageBreakdown && usageBreakdown.byMeter.length === 0 && (
-              <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
-                {intl.formatMessage({ id: 'billing.usage.emptyBreakdown' })}
-              </div>
-            )}
-            {usageBreakdown && usageBreakdown.byMeter.length > 0 && (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                    <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Meter</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Quantity</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Charge</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {usageBreakdown.byMeter.map((row) => (
-                    <tr key={row.meterKey} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                      <td style={{ padding: '8px', fontFamily: 'monospace' }}>{row.meterKey}</td>
-                      <td style={{ padding: '8px', textAlign: 'right' }}>{row.quantity.toLocaleString()}</td>
-                      <td style={{ padding: '8px', textAlign: 'right' }}>{formatMicrousd(row.chargeMicrousd)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </Card>
-
-          {/* By-agent breakdown */}
-          <Card style={{ padding: '20px' }}>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Usage by Agent
-            </div>
-            {usageBreakdownQuery.isLoading && <LoadingRows count={3} />}
-            {usageBreakdownQuery.isError && (
-              <ErrorState
-                message={localizeApiError(intl, usageBreakdownQuery.error, 'common.errorTitle')}
-                onRetry={() => void usageBreakdownQuery.refetch()}
-              />
-            )}
-            {usageBreakdown && usageBreakdown.byAgent.length === 0 && (
-              <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
-                {intl.formatMessage({ id: 'billing.usage.emptyBreakdown' })}
-              </div>
-            )}
-            {usageBreakdown && usageBreakdown.byAgent.length > 0 && (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                    <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Agent</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Quantity</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Charge</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {usageBreakdown.byAgent.map((row) => (
-                    <tr key={row.agentId} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                      <td style={{ padding: '8px' }}>{row.agentName}</td>
-                      <td style={{ padding: '8px', textAlign: 'right' }}>{row.quantity.toLocaleString()}</td>
-                      <td style={{ padding: '8px', textAlign: 'right' }}>{formatMicrousd(row.chargeMicrousd)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </Card>
-
-          {/* Billing Ledger */}
-          <Card style={{ padding: '20px' }}>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Billing Ledger
-            </div>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-              <select
-                value={ledgerDirectionFilter}
-                onChange={(e) => { setLedgerDirectionFilter(e.target.value); setLedgerOffset(0); }}
-                style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)', fontSize: '13px' }}
-              >
-                <option value="">All Entries</option>
-                <option value="credit">Credits Only</option>
-                <option value="debit">Debits Only</option>
-              </select>
-            </div>
-            {ledgerQuery.isLoading && <LoadingRows count={5} />}
-            {ledgerQuery.isError && (
-              <ErrorState
-                message={localizeApiError(intl, ledgerQuery.error, 'common.errorTitle')}
-                onRetry={() => void ledgerQuery.refetch()}
-              />
-            )}
-            {ledgerEntries && ledgerEntries.records.length === 0 && (
-              <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
-                No billing ledger entries recorded yet.
-              </div>
-            )}
-            {ledgerEntries && ledgerEntries.records.length > 0 && (
-              <>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>Date</th>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Type</th>
-                        <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ledgerEntries.records.map((entry) => (
-                        <tr key={entry.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                          <td style={{ padding: '8px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-                            {new Date(entry.createdAt).toLocaleString()}
-                          </td>
-                          <td style={{ padding: '8px' }}>
-                            <div>{LEDGER_ENTRY_TYPE_LABELS[entry.entryType] ?? entry.entryType}</div>
-                            {entry.description && (
-                              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>{entry.description}</div>
-                            )}
-                          </td>
-                          <td style={{
-                            padding: '8px',
-                            textAlign: 'right',
-                            fontWeight: '500',
-                            color: entry.direction === 'credit' ? 'var(--color-success-text, #276749)' : 'var(--color-danger, #e53e3e)',
-                          }}>
-                            {entry.direction === 'credit' ? '+' : '−'}{formatMicrousd(entry.amountMicrousd)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'flex-end' }}>
-                  <Button
-                    variant="secondary"
-                    disabled={ledgerOffset === 0}
-                    onClick={() => setLedgerOffset(Math.max(0, ledgerOffset - LEDGER_PAGE_SIZE))}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={(ledgerEntries.offset + ledgerEntries.records.length) >= ledgerEntries.total}
-                    onClick={() => setLedgerOffset(ledgerOffset + LEDGER_PAGE_SIZE)}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </>
-            )}
-          </Card>
-
-          {/* Usage event ledger */}
-          <Card style={{ padding: '20px' }}>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Usage Events
-            </div>
-            {usageEventsQuery.isLoading && <LoadingRows count={5} />}
-            {usageEventsQuery.isError && (
-              <ErrorState
-                message={localizeApiError(intl, usageEventsQuery.error, 'common.errorTitle')}
-                onRetry={() => void usageEventsQuery.refetch()}
-              />
-            )}
-            {usageEvents && usageEvents.records.length === 0 && (
-              <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
-                No usage events recorded yet.
-              </div>
-            )}
-            {usageEvents && usageEvents.records.length > 0 && (
-              <>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Time</th>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Meter</th>
-                        <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Quantity</th>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Agent</th>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Session</th>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Provider/Model</th>
-                        <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Charge</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {usageEvents.records.map((ev) => (
-                        <tr key={ev.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                          <td style={{ padding: '8px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-                            {new Date(ev.occurredAt).toLocaleString()}
-                          </td>
-                          <td style={{ padding: '8px', fontFamily: 'monospace' }}>{ev.meterKey}</td>
-                          <td style={{ padding: '8px', textAlign: 'right' }}>{ev.quantity.toLocaleString()} {ev.unit}</td>
-                          <td style={{ padding: '8px' }}>{ev.agent?.name ?? '—'}</td>
-                          <td style={{ padding: '8px' }}>
-                            {ev.session?.id ? (
-                              <a href={`/sessions/${ev.session.id}`} style={{ color: 'var(--color-brand)' }}>
-                                {ev.session.id.slice(0, 12)}...
-                              </a>
-                            ) : '—'}
-                          </td>
-                          <td style={{ padding: '8px', color: 'var(--color-text-muted)' }}>
-                            {[ev.provider, ev.model].filter(Boolean).join(' / ') || '—'}
-                          </td>
-                          <td style={{ padding: '8px', textAlign: 'right' }}>{formatMicrousd(ev.chargeMicrousd)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'flex-end' }}>
-                  <Button
-                    variant="secondary"
-                    disabled={usageEventOffset === 0}
-                    onClick={() => setUsageEventOffset(Math.max(0, usageEventOffset - USAGE_EVENTS_PAGE_SIZE))}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={(usageEvents.offset + usageEvents.records.length) >= usageEvents.total}
-                    onClick={() => setUsageEventOffset(usageEventOffset + USAGE_EVENTS_PAGE_SIZE)}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </>
-            )}
-          </Card>
-
-          {/* Historical periods */}
-          <Card style={{ padding: '20px' }}>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Billing Periods
-            </div>
-            {periodsQuery.isLoading && <LoadingRows count={3} />}
-            {periodsQuery.isError && (
-              <ErrorState
-                message={localizeApiError(intl, periodsQuery.error, 'common.errorTitle')}
-                onRetry={() => void periodsQuery.refetch()}
-              />
-            )}
-            {periodsQuery.data && periodsQuery.data.periods.length === 0 && (
-              <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
-                {intl.formatMessage({ id: 'billing.usage.emptyPeriods' })}
-              </div>
-            )}
-            {periodsQuery.data && periodsQuery.data.periods.length > 0 && (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                    <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Period</th>
-                    <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Status</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Usage Charges</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Balance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {periodsQuery.data.periods.map((p) => (
-                    <tr key={p.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                      <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
-                        {formatShortDate(intl, p.periodStart)} - {formatShortDate(intl, p.periodEnd)}
-                      </td>
-                      <td style={{ padding: '8px' }}>{p.status}</td>
-                      <td style={{ padding: '8px', textAlign: 'right' }}>{formatMicrousd(p.usageChargeMicrousd)}</td>
-                      <td style={{ padding: '8px', textAlign: 'right' }}>{formatMicrousd(p.balanceMicrousd)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </Card>
+        {showDetails && (
+          <BillingDetails
+            softCapInput={softCapInput}
+            setSoftCapInput={setSoftCapInput}
+            hardCapInput={hardCapInput}
+            setHardCapInput={setHardCapInput}
+            spendCapsError={spendCapsError}
+            setSpendCapsError={setSpendCapsError}
+            spendCapsMutation={spendCapsMutation}
+            usageAccount={usageAccount}
+            meterFilter={meterFilter}
+            setMeterFilter={setMeterFilter}
+            agentFilter={agentFilter}
+            setAgentFilter={setAgentFilter}
+            sessionFilter={sessionFilter}
+            setSessionFilter={setSessionFilter}
+            periodFilter={periodFilter}
+            setPeriodFilter={setPeriodFilter}
+            fromDate={fromDate}
+            setFromDate={setFromDate}
+            toDate={toDate}
+            setToDate={setToDate}
+            agentsQuery={agentsQuery}
+            usageBreakdownQuery={usageBreakdownQuery}
+            usageEventsQuery={usageEventsQuery}
+            ledgerQuery={ledgerQuery}
+            periodsQuery={periodsQuery}
+            ledgerOffset={ledgerOffset}
+            setLedgerOffset={setLedgerOffset}
+            ledgerDirectionFilter={ledgerDirectionFilter}
+            setLedgerDirectionFilter={setLedgerDirectionFilter}
+            usageEventOffset={usageEventOffset}
+            setUsageEventOffset={setUsageEventOffset}
+            usageEventsPageSize={USAGE_EVENTS_PAGE_SIZE}
+            ledgerPageSize={LEDGER_PAGE_SIZE}
+            intl={intl}
+          />
+        )}
       </div>
     </PageShell>
   );

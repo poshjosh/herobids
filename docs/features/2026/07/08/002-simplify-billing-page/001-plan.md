@@ -59,7 +59,7 @@ A billing page where the user instantly understands their credit situation at a 
 - Option B: Skip this and compute on the frontend. The formula `Math.max(0, balanceMicrousd + usageChargeMicrousd - includedCreditMicrousd)` is correct as long as no manual adjustments exist.
 - **Decision: Go with Option B for v1** to keep this frontend-only. We can add the field later if needed.
 
-### Phase 1 — Create the credit gauge component
+### Phase 1 — Create the credit gauge component **[DONE]**
 
 **Files:**
 - `apps/web/src/features/billing/BillingPage.tsx` (inline or extracted)
@@ -80,7 +80,7 @@ A billing page where the user instantly understands their credit situation at a 
 - The gauge replaces the current 4–5 field stat grid entirely.
 - When `balanceMicrousd <= 0`, the bar is empty and the text shows out-of-pocket spend: `$X.XX over limit`
 
-### Phase 2 — Reorganize card layout
+### Phase 2 — Reorganize card layout **[DONE]**
 
 **Files:**
 - `apps/web/src/features/billing/BillingPage.tsx`
@@ -105,7 +105,7 @@ A billing page where the user instantly understands their credit situation at a 
 - The standalone "Spend Controls" card — merged into details
 - The standalone "Usage Filters" card — filters stay above their respective tables inside the details section
 
-### Phase 3 — i18n keys
+### Phase 3 — i18n keys **[DONE]**
 
 **Keys to add:**
 ```
@@ -123,7 +123,7 @@ billing.usage.totalCredit         "Total credit"
 - `billing.usage.emptyAccount` — keep
 - `billing.usage.emptyPeriod` — keep
 
-### Phase 4 — Cleanup
+### Phase 4 — Cleanup **[DONE]**
 
 **Files:**
 - `apps/web/src/features/billing/BillingPage.tsx`
@@ -160,3 +160,47 @@ billing.usage.totalCredit         "Total credit"
 - [ ] Page is significantly shorter in default view (no more long scroll)
 - [ ] No backend API change required
 - [ ] No database migration required
+
+---
+
+## Outstanding Issues
+
+### [Phase 1] CreditGauge Component
+
+| Severity | # | Issue | Resolution |
+|---|---|---|---|
+| MEDIUM | M1 | Hardcoded `'Pro plan'` fallback in `CreditGauge` — misleading for users on Basic/Enterprise/custom plans. | Fix in Phase 3 when adding i18n keys: use `intl.formatMessage()` or blank out instead of assuming "Pro". |
+| MEDIUM | M2 | `totalCreditMicrousd = balanceMicrousd + usageChargeMicrousd` derivation is fragile when manual adjustments/reversals exist in ledger. | Known limitation per plan Decision #2/Option B. File follow-up task for API-side `topUpTotalMicrousd`. |
+| LOW | L1 | All user-facing strings are hardcoded English — expected, Phase 3 handles i18n. | No action (Phase 3). |
+| LOW | L2 | `status` prop typed as `string` instead of union type. | Consider using `AccountStatus` type if available. |
+| LOW | L3 | `$0.0000 over limit` when balance is exactly $0 (technically "at limit"). | Minor UX — could differentiate "No credit remaining" vs "over limit". |
+| LOW | L4 | Bar color uses percentage not account status (plan says "colored by status"). | Reasonable interpretation; status badge already carries color. |
+| LOW | L5 | No text truncation on long `planName`. | Add `text-overflow: ellipsis` if needed. |
+| LOW | L6 | Status badge next to dollar amount instead of plan name. | Cosmetic, functional equivalence. |
+| LOW | L7 | `CreditGauge` not wrapped in `React.memo`. | Low impact for component this simple.
+
+### [Phase 2] Card Layout Reorganization
+
+| Severity | # | Issue | Resolution |
+|---|---|---|---|
+| MEDIUM | M1 | Orphaned i18n key `billing.usage.noAccountControls` — the `!usageAccount` code path is now unreachable. | Clean up in Phase 3/4. Key remains in locale files but is dead code. |
+| MEDIUM | M2 | All detail queries fire unconditionally on page load even when details collapsed. | Address in Phase 4 (add `enabled: showDetails` to queries). |
+| MEDIUM | M3 | Top-up row renders even without `currentPeriod` (gated on `usageAccount` only). | Minor UX inconsistency; align in follow-up. |
+| LOW | L1 | Hardcoded English strings from Phase 2 additions (toggle labels, section headers). | Handled in Phase 3. |
+| LOW | L2 | Spend Controls/Usage Filters have no visual container in details section, creating inconsistency with carded tables below. | Consider wrapping in shared `<Card>` or adding separator. |
+
+### [Phase 3] i18n Keys
+
+| Severity | # | Issue | Resolution |
+|---|---|---|---|
+| MEDIUM | N1-N23 | ~24 hardcoded English strings remain in details section, tables, empty states, pagination, filters, and `LEDGER_ENTRY_TYPE_LABELS`. These were pre-existing and not in Phase 3 scope. | File follow-up task for full i18n pass on detail sections (Phase 4 or separate). |
+| LOW | N24 | `LEDGER_ENTRY_TYPE_LABELS` static map has 8 hardcoded English labels. | Convert to i18n keys or `intl.formatMessage()` at render time. |
+
+### [Phase 4] Cleanup
+
+| Severity | # | Issue | Resolution |
+|---|---|---|---|
+| MEDIUM | M1 | Spend Controls + Usage Filters lack `<Card>` wrapper in BillingDetails, creating visual inconsistency with carded tables. | Pre-existing; consider follow-up. |
+| MEDIUM | M2 | ~10 hardcoded English strings remain in BillingDetails (section headers, filters, empty states). | Pre-existing from Phase 3; file follow-up i18n pass. |
+| LOW | L1 | `formatMicrousd` should live in shared `lib/formatting.js`. | Moved to BillingDetails.tsx and exported; shared lib extraction in follow-up. |
+| LOW | L2 | `BillingDetailsProps` has 30+ props — consider grouping. | Refactor in follow-up pass. |
