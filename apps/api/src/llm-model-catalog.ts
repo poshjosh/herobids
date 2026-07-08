@@ -590,6 +590,12 @@ export async function validateAiModelSelection(
   // 'openrouter' (OpenAI, Anthropic, DeepSeek, Google cross-referenced).
   if (providerConfig?.catalogMode === 'dynamic' || providerConfig?.pricingSource === 'openrouter') {
     const models = await getProviderModels(selection.provider, deps);
+    // Grace period: on fresh deploys the pricing snapshot may not have loaded yet.
+    // An empty model list means the catalog hasn't been populated — skip validation
+    // rather than rejecting valid models selected by the operator.
+    if (models.length === 0) {
+      return [];
+    }
     const issues: Array<{ code: 'custom'; path: string[]; message: string }> = [];
     if (!models.includes(selection.lightModel)) {
       issues.push({ code: 'custom', path: ['lightModel'], message: 'Selected economy model is not available for this provider' });
