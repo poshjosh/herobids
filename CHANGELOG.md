@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.12 - 2026-07-08
+
 ### Removed
 
 Removed links to the following from the sidebar: Trading Setup, Exposure, Activity, Outcomes
