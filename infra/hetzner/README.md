@@ -36,6 +36,37 @@ All deploy scripts accept `--env staging` or `--env production`. If omitted, `HE
 HEROBIDS_ENV=staging ./scripts/logs.sh -- api worker
 ```
 
+### Runtime Policy
+
+Each environment enforces a specific runtime policy through config defaults and startup guards. The table below summarizes what each environment is permitted to do:
+
+| Capability | Staging | Production |
+|---|---|---|
+| **Live trading** | Disabled by default (`liveRollout.enabled: false`). Override via `LIVE_ROLLOUT_ENABLED=true` for smoke tests only. | Requires explicit opt-in (`LIVE_ROLLOUT_ENABLED=true`). |
+| **Billing** | Mock by default (`billing.primaryProvider: mock`). No real charges. | **Real billing required.** Startup guard refuses to boot if `primaryProvider` is `mock` when `NODE_ENV=production`. Set `BILLING_PRIMARY_PROVIDER=creem` (or `stripe`). |
+| **Alerts** | Disabled by default (`alerts.enabled: false`). Enable explicitly for webhook/debugging smoke tests. | Requires explicit opt-in (`ALERTS_ENABLED=true`). |
+| **Log level** | `debug` — verbose output for troubleshooting. | `info` (default) — normal operational logging. |
+| **Secrets** | Separate `.env.staging` with test-only credentials, OAuth clients, Telegram tokens, and LLM keys. | Separate `.env.prod` with production secrets. Never share secrets between environments. |
+| **Data isolation** | Independent server, volumes, DB, Redis. No shared state with production. | Independent server, volumes, DB, Redis. |
+| **Server lifecycle** | No `prevent_destroy` — can be torn down and recreated freely. | `prevent_destroy = true` in Terraform — accidental destroy is blocked. |
+| **Auth origins** | `staging.herobids.com` | `herobids.com` / `www.herobids.com` / `app.herobids.com` |
+| **LLM provider** | Same provider as production (OpenRouter). Use separate API keys to isolate costs. | OpenRouter with production API key. |
+
+#### Startup Guards
+
+The following guards are enforced at process startup and are verified to work correctly with the environment split:
+
+| Guard | File | Behavior |
+|---|---|---|
+| **Production billing** | `apps/api/src/config.ts`, `apps/worker/src/config.ts` | Refuses to start if `NODE_ENV=production` and `billing.primaryProvider === 'mock'`. Staging (`NODE_ENV=staging`) is not affected. |
+| **Insecure JWT secret** | `apps/api/src/plugins/auth.ts` | Refuses to start if `AUTH_JWT_SECRET` is the default placeholder in any non-dev, non-test environment. Both staging and production are protected. |
+| **Dev-only LLM models** | `apps/api/src/llm-model-catalog.ts` | Filters out models marked `devOnly: true` and disables dynamic catalog mode when `NODE_ENV=production`. Staging is not affected. |
+| **Ollama discovery** | `apps/api/src/llm-model-catalog.ts` | Skips local Ollama model discovery in production. Staging and development can use it. |
+
+All guards key off `NODE_ENV` which is set correctly per environment in the compose overlays:
+- `docker-compose.staging.yaml` → `NODE_ENV: staging`
+- `docker-compose.prod.yaml` → `NODE_ENV: production`
+
 ## Directory Structure
 
 ```

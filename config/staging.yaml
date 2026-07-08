@@ -4,6 +4,9 @@
 # STAGING: Safe defaults — no live trading, mock billing, alerts disabled.
 # All destructive/paid features require explicit opt-in via env vars.
 
+app:
+  logLevel: debug                        # Verbose logging for staging troubleshooting
+
 llm:
   provider: openrouter                  # LLM provider: openrouter | openai | anthropic | ollama | deepseek
   model: deepseek/deepseek-v4-pro       # Model for non-agent API calls (e.g. /ai/generate-config). Agent model is set in agent config or user AI settings.
