@@ -2,7 +2,7 @@
 
 This is a followup to docs/features/2026/07/08/004-orchestration/002-implementation-plan.md
 
-### 1. Termination listener double-registration (MEDIUM) — PENDING
+### 1. Termination listener double-registration (MEDIUM) — DONE
 - Both `DockerRuntimeAdapter` constructor and `AgentRuntimeLauncher` constructor register termination listeners on the same `DockerAgentManager`. Any `onTermination()` subscriber would receive duplicate events per container death.
 - **Impact:** None currently — no production code calls `.onTermination()` yet. 
 - **Fix:** Remove the duplicate listener registration from the launcher. The adapter already bridges its own events.
@@ -36,3 +36,8 @@ This is a followup to docs/features/2026/07/08/004-orchestration/002-implementat
 - 🟡 MEDIUM — Stale docstring on `DockerRuntimeAdapter.notifyTermination()` in `apps/worker/src/agents/docker-runtime-agent.ts`. The JSDoc says "Called by AgentRuntimeLauncher" but the launcher no longer calls it after this fix. Should be updated to reflect it's called by the adapter's own constructor-registered listener.
 - 🟡 MEDIUM — No test coverage for termination event bridging. Once termination handlers are added (e.g., crash reconciliation), they could receive duplicate events without tests verifying single-firing. Add a test in `runtime-lifecycle.test.ts`.
 - 🔵 LOW — Comment in `agent-runtime-launcher.ts` could be more explicit about *why* the code was removed (prevent double-notification of onTermination subscribers).
+
+### [Item 2: Missing test coverage for sharedServices path]
+- 🟡 MEDIUM — Pre-existing bug: `DATABASE_URL` password is not URL-encoded in `buildAgentEnv`. Passwords with `@`, `:`, `/`, `%` would produce malformed URLs. Should add `encodeURIComponent` to postgresPassword interpolation. Tests use `s3cr3t` (no special chars) so bug goes undetected. File follow-up bug report.
+- 🔵 LOW — Test 3 uses realistic `redis://localhost:6379` as ignored value; should use self-documenting placeholder like `redis://should-be-ignored:6379` for consistency.
+- 🔵 LOW — Test password `s3cr3t` could trigger secret-scanning false positives; use obviously fake password like `test-pg-pass`.

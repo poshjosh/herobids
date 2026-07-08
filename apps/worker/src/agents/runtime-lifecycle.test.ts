@@ -4,7 +4,7 @@ import {
   buildAgentLabels,
   buildRuntimeLaunchConfig,
 } from './runtime-lifecycle.js';
-import type { AgentEnvConfig, RuntimeResourceProfile } from '@herobids/domain';
+import type { AgentEnvConfig, RuntimeResourceProfile, SharedServicesConfig } from '@herobids/domain';
 
 const BASE_ENV_CONFIG: AgentEnvConfig = {
   redisUrl: 'redis://localhost:6379',
@@ -169,6 +169,77 @@ describe('buildAgentEnv', () => {
     };
     const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
     expect(env['PROVIDERS_YAML']).toBe(JSON.stringify({ providers: { openai: {} } }));
+  });
+
+  it('constructs REDIS_URL from sharedServices when provided', () => {
+    const sharedServices: SharedServicesConfig = {
+      redisHost: 'redis.internal',
+      redisPort: 6380,
+      postgresHost: 'pg.internal',
+      postgresPort: 5432,
+      postgresUser: 'herobids',
+      postgresPassword: 'secret',
+      postgresDatabase: 'herobids',
+    };
+
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      sharedServices,
+      // redisUrl should be ignored when sharedServices is set
+      redisUrl: 'redis://should-be-ignored:6379',
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['REDIS_URL']).toBe('redis://redis.internal:6380');
+  });
+
+  it('constructs DATABASE_URL from sharedServices when provided', () => {
+    const sharedServices: SharedServicesConfig = {
+      redisHost: 'redis.internal',
+      redisPort: 6379,
+      postgresHost: '10.0.0.50',
+      postgresPort: 5433,
+      postgresUser: 'appuser',
+      postgresPassword: 's3cr3t',
+      postgresDatabase: 'herobids_prod',
+    };
+
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      sharedServices,
+      // databaseUrl should be ignored when sharedServices is set
+      databaseUrl: 'postgres://should-be-ignored:5432/herobids',
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['DATABASE_URL']).toBe('postgres://appuser:s3cr3t@10.0.0.50:5433/herobids_prod');
+  });
+
+  it('skips databaseUrl fallback when sharedServices is provided', () => {
+    // When sharedServices is present, DATABASE_URL is built from sharedServices.
+    // The config.databaseUrl / process.env fallback path is never entered,
+    // so a missing databaseUrl in config should NOT throw.
+    const sharedServices: SharedServicesConfig = {
+      redisHost: 'redis.shared',
+      redisPort: 6379,
+      postgresHost: 'pg.shared',
+      postgresPort: 5432,
+      postgresUser: 'herobids',
+      postgresPassword: 'herobids',
+      postgresDatabase: 'herobids',
+    };
+
+    const config: AgentEnvConfig = {
+      redisUrl: 'redis://localhost:6379',
+      agentRuntimeConfigJson: '{}',
+      sharedServices,
+      // databaseUrl intentionally omitted
+    };
+    delete process.env['DATABASE_URL'];
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['DATABASE_URL']).toBe('postgres://herobids:herobids@pg.shared:5432/herobids');
+    expect(env['REDIS_URL']).toBe('redis://redis.shared:6379');
   });
 });
 
