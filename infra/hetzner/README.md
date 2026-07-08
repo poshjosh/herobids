@@ -13,7 +13,7 @@ Deployment of Herobids on Hetzner Cloud VPS (CPX22, Ubuntu 24.04). Supports two 
 | **Env file** | `.env.staging` | `.env.prod` |
 | **Compose overlay** | `docker-compose.staging.yaml` | `docker-compose.prod.yaml` |
 | **NODE_ENV** | `staging` | `production` |
-| **Terraform state** | Separate `terraform.tfvars` per environment (future: workspaces) | |
+| **Terraform state** | Terraform workspaces (`staging` / `production`) | Terraform workspaces (`staging` / `production`) |
 
 ### Naming conventions
 
@@ -21,7 +21,7 @@ Deployment of Herobids on Hetzner Cloud VPS (CPX22, Ubuntu 24.04). Supports two 
 - **App domain**: `herobids.com` for production, `staging.herobids.com` for staging. Override via `app_domain` in `terraform.tfvars`.
 - **Env file**: `.env.staging` and `.env.prod` in the repo root (gitignored). The `--file` flag on `setup-env.sh` accepts any path.
 - **Compose overlay**: `docker-compose.{staging,prod}.yaml`. Scripts auto-select the correct overlay from `HEROBIDS_ENV`.
-- **Terraform state**: Use separate `terraform.tfvars` files per environment (e.g., `terraform.tfvars.staging`, `terraform.tfvars.prod`) and symlink or copy the active one to `terraform.tfvars` before running `provision.sh`.
+- **Terraform state**: Managed via workspaces. `provision.sh --env <name>` automatically selects the correct workspace. For manual terraform commands, switch first: `terraform workspace select staging` or `terraform workspace select production`.
 
 ### Selecting an environment
 
@@ -34,6 +34,42 @@ All deploy scripts accept `--env staging` or `--env production`. If omitted, `HE
 
 # Set via environment variable
 HEROBIDS_ENV=staging ./scripts/logs.sh -- api worker
+```
+
+### Terraform Workspaces
+
+Each environment has its own Terraform workspace:
+
+| Workspace | Environment |
+|---|---|
+| `staging` | Staging server (`herobids-staging`) |
+| `production` | Production server (`herobids`) |
+| `default` | Deprecated — do not use |
+
+All deploy scripts automatically select the correct workspace via the `--env` flag.
+
+**Manual terraform commands** require explicit workspace selection:
+```bash
+cd infra/hetzner
+terraform workspace select staging    # or: production
+terraform plan                        # scoped to the selected environment
+terraform state list                  # shows only that environment's resources
+```
+
+**Common workspace commands:**
+```bash
+terraform workspace list              # show all workspaces and which is active
+terraform workspace show              # print the current workspace name
+terraform workspace select staging    # switch to staging
+```
+
+**Provisioning a new environment:**
+```bash
+# Staging (already exists)
+./scripts/provision.sh --env staging
+
+# Production (created on first run)
+./scripts/provision.sh --env production --var-file production.tfvars
 ```
 
 ### Runtime Policy
@@ -819,14 +855,16 @@ cp production.tfvars.example production.tfvars
 ```
 
 The `--var-file` flag is passed through to `terraform plan` and `terraform apply`.
-Ad-hoc terraform commands must also include `-var-file`:
+Ad-hoc terraform commands must also include workspace selection and `-var-file`:
 
 ```bash
-terraform plan -var-file=staging.tfvars
-terraform output -var-file=staging.tfvars
+terraform workspace select staging && terraform plan -var-file=staging.tfvars
+terraform workspace select staging && terraform output -var-file=staging.tfvars
 ```
 
 **Approach B: Symlink (legacy, simpler for single-env workflows).**
+
+> **Note:** With workspaces, Approach A (`--var-file`) is recommended. The symlink approach still works but workspace selection handles state isolation automatically.
 
 Keep source-of-truth tfvars files and symlink the active one as `terraform.tfvars`.
 
@@ -953,8 +991,11 @@ All commands accept `--env staging|production` (default: `production`).
 # Stream logs from a specific server
 ./scripts/logs.sh 1.2.3.4 -- api
 
-# SSH into the server
+# SSH into the server (with workspaces: select the workspace first, then read output)
+terraform workspace select staging
 ssh root@$(terraform output -raw server_ipv4)
+# Or use the deploy scripts which handle this automatically:
+./scripts/logs.sh --env staging
 
 # Re-run database migrations manually (replace <compose-overlay> with docker-compose.prod.yaml or docker-compose.staging.yaml)
 ssh root@<IP> 'cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.prod.yaml run --rm migrate'

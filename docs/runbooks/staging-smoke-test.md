@@ -2,7 +2,12 @@
 
 Run this checklist after every staging deploy to verify the environment is healthy.
 
-**Prerequisites:** You have the staging server IP (`terraform output -raw server_ipv4` from the staging tfvars) and the staging domain (`staging.herobids.com`).
+**Prerequisites:** You have the staging server IP and the staging domain (`staging.herobids.com`). Get the IP via:
+```bash
+cd infra/hetzner
+terraform workspace select staging
+terraform output -raw server_ipv4
+```
 
 ## 1. API Health Endpoint
 
