@@ -24,7 +24,7 @@ This is a followup to docs/features/2026/07/08/004-orchestration/002-implementat
 - **Fix:** Use `??` consistently: `this.defaultResources.memoryLimitMb ?? 512`.
 - **File:** `apps/worker/src/agents/agent-runtime-launcher.ts`
 
-### 5. Competing tfvars templates (LOW) — PENDING
+### 5. Competing tfvars templates (LOW) — DONE
 - Three tfvars templates exist: `terraform.tfvars.example`, `staging.tfvars.example`, `production.tfvars.example`. May confuse new operators.
 - **Fix:** Add note directing to per-environment templates, or deprecate legacy template.
 
