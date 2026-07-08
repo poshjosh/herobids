@@ -14,6 +14,14 @@
 #   HEROBIDS_ENV          Deployment environment: staging | production (default: production).
 #
 # Scripts that accept --env can call parse_env_flag() to set HEROBIDS_ENV.
+# When using --env, it MUST be the first argument (before any other flags):
+#   Correct:   script.sh --env staging --skip-deploy
+#   Incorrect: script.sh --skip-deploy --env staging
+
+# ─── Terraform directory ─────────────────────────────────────────────────
+
+: "${TF_DIR:="$(dirname "$(dirname "${BASH_SOURCE[0]}")")"}"
+export TF_DIR
 
 # ─── Resolve the key path ─────────────────────────────────────────────────
 
@@ -21,7 +29,7 @@ _HEROBIDS_SSH_KEY="${HEROBIDS_SSH_KEY:-}"
 
 if [[ -z "${_HEROBIDS_SSH_KEY}" ]]; then
   # Derive from terraform.tfvars: read ssh_public_key_path, strip .pub
-  _TFVARS="$(dirname "$(dirname "${BASH_SOURCE[0]}")")/terraform.tfvars"
+  _TFVARS="${TF_DIR}/terraform.tfvars"
   if [[ -f "${_TFVARS}" ]]; then
     _PUB_KEY=$(grep -o 'ssh_public_key_path\s*=\s*"[^"]*"' "${_TFVARS}" 2>/dev/null \
       | cut -d'"' -f2 | sed 's|^~|'"${HOME}"'|')
@@ -62,6 +70,12 @@ export HEROBIDS_ENV COMPOSE_OVERLAY COMPOSE_OVERLAY_PATH
 
 # parse_env_flag — parse --env <name> from the current argument list.
 # Call this after sourcing _ssh_opts.sh, before your own arg parsing.
+#
+# IMPORTANT: --env must appear BEFORE any other flags (e.g., --skip-deploy, --yes).
+# parse_env_flag stops scanning at the first non---env argument.
+# Correct:   script.sh --env staging --skip-deploy
+# Incorrect: script.sh --skip-deploy --env staging
+#
 # Usage: parse_env_flag "$@"; shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 # Sets HEROBIDS_ENV and HEROBIDS_ENV_SHIFT (number of args consumed).
 parse_env_flag() {
@@ -98,6 +112,23 @@ parse_env_flag() {
   esac
   COMPOSE_OVERLAY_PATH="/opt/herobids/${COMPOSE_OVERLAY}"
   export HEROBIDS_ENV COMPOSE_OVERLAY COMPOSE_OVERLAY_PATH
+}
+
+# terraform_output — workspace-aware terraform output wrapper.
+# Usage: terraform_output [-raw] <output_name>
+# Runs in a subshell from TF_DIR, selects the correct workspace first.
+# Prints the output value to stdout.
+# Exits with a clear error if the workspace doesn't exist yet.
+terraform_output() {
+  (
+    cd "${TF_DIR}" || { echo "ERROR: Cannot access terraform directory ${TF_DIR}" >&2; exit 1; }
+    terraform workspace select "${HEROBIDS_ENV}" 2>/dev/null || {
+      echo "ERROR: Terraform workspace '${HEROBIDS_ENV}' does not exist." >&2
+      echo "Run provision.sh --env ${HEROBIDS_ENV} first to create it." >&2
+      exit 1
+    }
+    terraform output "$@"
+  )
 }
 
 # Clean up internal variables

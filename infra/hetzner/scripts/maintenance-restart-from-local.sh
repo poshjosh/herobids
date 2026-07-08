@@ -61,13 +61,13 @@ done
 
 if [[ -z "${SERVER_IP}" ]]; then
   if command -v terraform &>/dev/null; then
-    SERVER_IP="$(cd "${TF_DIR}" && terraform output -raw server_ipv4 2>/dev/null || true)"
+    SERVER_IP="$(terraform_output -raw server_ipv4 2>/dev/null || true)"
   fi
 fi
 
 if [[ -z "${SERVER_IP}" ]]; then
   echo "ERROR: Could not determine server IP." >&2
-  echo "  Run from the repo root, ensure terraform is in PATH, or pass the IP explicitly: $0 <ip>" >&2
+  echo "  Run provision.sh --env ${HEROBIDS_ENV} first, or pass the IP explicitly: $0 <ip>" >&2
   exit 1
 fi
 

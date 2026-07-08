@@ -80,7 +80,7 @@ done
 
 if [[ -z "${SERVER_IP}" ]]; then
   if command -v terraform &>/dev/null; then
-    SERVER_IP="$(cd "${TF_DIR}" && terraform output -raw server_ipv4 2>/dev/null || true)"
+    SERVER_IP="$(terraform_output -raw server_ipv4 2>/dev/null || true)"
   fi
 fi
 
@@ -88,8 +88,8 @@ if [[ -z "${SERVER_IP}" ]]; then
   echo "ERROR: No server IP provided." >&2
   echo "" >&2
   echo "Usage: $0 [--env-file <path>] <server-ip>" >&2
-  echo "  Or run from the terraform directory to auto-detect:" >&2
-  echo "    cd infra/hetzner && terraform output -raw server_ipv4" >&2
+  echo "  Or run provision.sh first to provision the server:" >&2
+  echo "    infra/hetzner/scripts/provision.sh --env ${HEROBIDS_ENV}" >&2
   echo "" >&2
   echo "terraform not found in PATH; provide server IP as argument: $0 <ip>" >&2
   exit 1
@@ -190,8 +190,8 @@ echo "========================================"
 echo ""
 
 # Try to get URLs from terraform output, fall back to IP-based URLs
-FRONTEND_URL="$(cd "${TF_DIR}" && terraform output -raw frontend_url 2>/dev/null || echo "http://${SERVER_IP}:3000")"
-API_URL="$(cd "${TF_DIR}" && terraform output -raw api_url 2>/dev/null || echo "http://${SERVER_IP}:3000/api")"
+FRONTEND_URL="$(terraform_output -raw frontend_url 2>/dev/null || echo "http://${SERVER_IP}:3000")"
+API_URL="$(terraform_output -raw api_url 2>/dev/null || echo "http://${SERVER_IP}:3000/api")"
 
 echo "  Frontend URL:  ${FRONTEND_URL}"
 echo "  API URL:       ${API_URL}"

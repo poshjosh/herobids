@@ -51,7 +51,7 @@ fi
 
 if [[ -z "${SERVER_IP}" ]]; then
   if command -v terraform &>/dev/null; then
-    SERVER_IP="$(cd "${TF_DIR}" && terraform output -raw server_ipv4 2>/dev/null || true)"
+    SERVER_IP="$(terraform_output -raw server_ipv4 2>/dev/null || true)"
   fi
 fi
 
@@ -59,8 +59,8 @@ if [[ -z "${SERVER_IP}" ]]; then
   echo "ERROR: No server IP provided." >&2
   echo "" >&2
   echo "Usage: $0 [--yes|-y] <server-ip>" >&2
-  echo "  Or run from the terraform directory to auto-detect:" >&2
-  echo "    cd infra/hetzner && terraform output -raw server_ipv4" >&2
+  echo "  Or run provision.sh first to provision the server:" >&2
+  echo "    infra/hetzner/scripts/provision.sh --env ${HEROBIDS_ENV}" >&2
   echo "" >&2
   echo "terraform not found in PATH; provide server IP as argument: $0 <ip>" >&2
   exit 1

@@ -133,14 +133,14 @@ fi
 
 if [[ -z "${SERVER_IP}" ]]; then
   if command -v terraform &>/dev/null; then
-    SERVER_IP="$(cd "${TF_DIR}" && terraform output -raw server_ipv4 2>/dev/null || true)"
+    SERVER_IP="$(terraform_output -raw server_ipv4 2>/dev/null || true)"
   fi
 fi
 
 if [[ -z "${SERVER_IP}" ]]; then
   die "No server IP provided.
   Usage: $0 --env-file <path> [<server-ip>]
-  Or auto-detect: cd infra/hetzner && terraform output -raw server_ipv4"
+  Or run provision.sh first: infra/hetzner/scripts/provision.sh --env ${HEROBIDS_ENV}"
 fi
 
 # ─── Confirmation ────────────────────────────────────────────────────────────
@@ -354,7 +354,7 @@ ssh ${SSH_OPTS} "root@${SERVER_IP}" 'rm -f /tmp/herobids-setup.env /tmp/create-a
 
 log_section "Reset + Provision Complete"
 
-FRONTEND_URL="$(cd "${TF_DIR}" 2>/dev/null && terraform output -raw frontend_url 2>/dev/null || echo "http://${SERVER_IP}")"
+FRONTEND_URL="$(terraform_output -raw frontend_url 2>/dev/null || echo "http://${SERVER_IP}")"
 
 echo ""
 echo "========================================"
