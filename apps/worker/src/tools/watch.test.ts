@@ -41,6 +41,7 @@ function makeCtx(overrides: {
   redis?: Partial<ToolContext['redis']>;
   priceService?: ToolContext['priceService'] | null;
   instrumentRepo?: ToolContext['instrumentRepo'] | null;
+  botRepo?: ToolContext['botRepo'] | null;
 } = {}): ToolContext {
   const hstore = new Map<string, Record<string, string>>();
   const sets = new Map<string, Set<string>>();
@@ -92,6 +93,7 @@ function makeCtx(overrides: {
     publishToInbound: vi.fn().mockResolvedValue(undefined),
     priceService: overrides.priceService === null ? undefined : overrides.priceService,
     instrumentRepo: overrides.instrumentRepo === null ? undefined : overrides.instrumentRepo,
+    botRepo: overrides.botRepo === null ? undefined : overrides.botRepo,
   } as unknown as ToolContext;
 }
 
@@ -1260,5 +1262,258 @@ describe('watch_token — coverage', () => {
     );
     const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
     expect(storedWatch.coverage).toBeUndefined();
+  });
+
+  // ── Auto-link protective watches ───────────────────────────────────
+
+  it('auto-links a protective watch to a single matching open position', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('BTC-USD', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const getOpenPositions = vi.fn().mockResolvedValue([
+      {
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        venue: 'hyperliquid',
+        instrumentId: 'BTC-USD',
+        symbol: 'BTC',
+        side: 'long',
+        size: '0.008',
+        entryPrice: '62825',
+        openedAt: new Date(),
+      },
+    ]);
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: {
+        search: vi.fn().mockResolvedValue([
+          makeInstrumentRow({ id: 'BTC-USD', symbol: 'BTC-USD', venue: 'hyperliquid' }),
+        ]),
+      },
+      botRepo: { getOpenPositionsByCreator: getOpenPositions } as unknown as ToolContext['botRepo'],
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'BTC-USD', chain: 'hyperliquid', thresholdPrice: 70_000, condition: 'above', purpose: 'take_profit' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.coverage).toBeDefined();
+    expect(storedWatch.coverage.positionKey).toBe('hyperliquid::BTC-USD::long');
+  });
+
+  it('auto-links using instrumentId when available (canonical identity)', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('BTC-USD', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const getOpenPositions = vi.fn().mockResolvedValue([
+      {
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        venue: 'hyperliquid',
+        instrumentId: 'BTC-USD-PERP',
+        symbol: 'BTC-PERP',
+        side: 'long',
+        size: '0.008',
+        entryPrice: '62825',
+        openedAt: new Date(),
+      },
+    ]);
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: {
+        search: vi.fn().mockResolvedValue([
+          makeInstrumentRow({ id: 'BTC-USD-PERP', symbol: 'BTC-USD', venue: 'hyperliquid' }),
+        ]),
+      },
+      botRepo: { getOpenPositionsByCreator: getOpenPositions } as unknown as ToolContext['botRepo'],
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'BTC-USD', chain: 'hyperliquid', thresholdPrice: 70_000, condition: 'above', purpose: 'stop_loss' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    // instrumentId matching wins: the position has BTC-USD-PERP but the
+    // instrument repo resolved the same instrumentId, so it matches.
+    expect(storedWatch.coverage.positionKey).toBe('hyperliquid::BTC-USD-PERP::long');
+  });
+
+  it('falls back to symbol matching when instrumentId match fails', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('BTC-USD', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const getOpenPositions = vi.fn().mockResolvedValue([
+      {
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        venue: 'hyperliquid',
+        instrumentId: 'BTC-DIFFERENT-ID',
+        symbol: 'BTC-USD',
+        side: 'long',
+        size: '0.008',
+        entryPrice: '62825',
+        openedAt: new Date(),
+      },
+    ]);
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: {
+        search: vi.fn().mockResolvedValue([
+          makeInstrumentRow({ id: 'BTC-USD', symbol: 'BTC-USD', venue: 'hyperliquid' }),
+        ]),
+      },
+      botRepo: { getOpenPositionsByCreator: getOpenPositions } as unknown as ToolContext['botRepo'],
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'BTC-USD', chain: 'hyperliquid', thresholdPrice: 70_000, condition: 'above', purpose: 'take_profit' },
+      ctx,
+    );
+
+    // Falls back to symbol match, auto-links successfully.
+    expect(result.success).toBe(true);
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.coverage.positionKey).toBe('hyperliquid::BTC-DIFFERENT-ID::long');
+  });
+
+  it('rejects protective watch when no open position matches (zero matches)', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('BTC-USD', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const getOpenPositions = vi.fn().mockResolvedValue([]);
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: {
+        search: vi.fn().mockResolvedValue([
+          makeInstrumentRow({ id: 'BTC-USD', symbol: 'BTC-USD', venue: 'hyperliquid' }),
+        ]),
+      },
+      botRepo: { getOpenPositionsByCreator: getOpenPositions } as unknown as ToolContext['botRepo'],
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'BTC-USD', chain: 'hyperliquid', thresholdPrice: 70_000, condition: 'above', purpose: 'stop_loss' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('No open position found');
+  });
+
+  it('rejects protective watch when multiple positions match (ambiguous)', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('BTC-USD', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const getOpenPositions = vi.fn().mockResolvedValue([
+      {
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        venue: 'hyperliquid',
+        instrumentId: 'BTC-USD',
+        symbol: 'BTC-USD',
+        side: 'long',
+        size: '0.008',
+        entryPrice: '62825',
+        openedAt: new Date(),
+      },
+      {
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        venue: 'hyperliquid',
+        instrumentId: 'BTC-USD',
+        symbol: 'BTC-USD',
+        side: 'short',
+        size: '0.002',
+        entryPrice: '63000',
+        openedAt: new Date(),
+      },
+    ]);
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: {
+        search: vi.fn().mockResolvedValue([
+          makeInstrumentRow({ id: 'BTC-USD', symbol: 'BTC-USD', venue: 'hyperliquid' }),
+        ]),
+      },
+      botRepo: { getOpenPositionsByCreator: getOpenPositions } as unknown as ToolContext['botRepo'],
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'BTC-USD', chain: 'hyperliquid', thresholdPrice: 70_000, condition: 'above', purpose: 'stop_loss' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Ambiguous target');
+  });
+
+  it('skips auto-link for non-protective purposes (backward compat)', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('BTC-USD', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const getOpenPositions = vi.fn().mockResolvedValue([
+      {
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        venue: 'hyperliquid',
+        instrumentId: 'BTC-USD',
+        symbol: 'BTC-USD',
+        side: 'long',
+        size: '0.008',
+        entryPrice: '62825',
+        openedAt: new Date(),
+      },
+    ]);
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: {
+        search: vi.fn().mockResolvedValue([
+          makeInstrumentRow({ id: 'BTC-USD', symbol: 'BTC-USD', venue: 'hyperliquid' }),
+        ]),
+      },
+      botRepo: { getOpenPositionsByCreator: getOpenPositions } as unknown as ToolContext['botRepo'],
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'BTC-USD', chain: 'hyperliquid', thresholdPrice: 70_000, condition: 'above', purpose: 'monitor' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    // Non-protective → no auto-link, no positionKey
+    expect(storedWatch.coverage?.positionKey).toBeUndefined();
   });
 });

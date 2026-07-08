@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.13 - 2026-07-08
+
+### Fixed
+
+- **Watch coverage auto-link:** `watch_token` now auto-derives `coverage.positionKey` when the agent creates a protective watch (`stop_loss`, `take_profit`, `exit`) without explicitly providing `coverage.targetPosition`. Resolves the agent's open position by venue + symbol and links the watch automatically. Prevents the escalation loop where `open_position_uncovered` forces the judge on every tick despite protective watches existing.
+
 ## v0.0.12 - 2026-07-08
 
 ### Removed

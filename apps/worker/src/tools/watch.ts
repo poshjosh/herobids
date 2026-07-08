@@ -333,6 +333,99 @@ const watchTokenTool: AgentTool = {
       const { positionKey: _, ...rest } = resolvedCoverage;
       resolvedCoverage = Object.keys(rest).length > 0 ? (rest as WatchCoverageLink) : undefined;
     }
+
+    // --- Auto-link protective watches to open positions ---
+    // When the agent creates a watch with a protective purpose (stop_loss,
+    // take_profit, exit) but doesn't explicitly provide coverage.targetPosition,
+    // the worker auto-resolves the target position from the agent's open positions.
+    // This prevents the common failure mode where LLM agents set protective watches
+    // without the coverage linkage, causing every subsequent tick to escalate to
+    // the judge for "open_position_uncovered".
+    //
+    // Matching strategy (best-effort, strongest identity first):
+    // 1. instrument.venue + instrument.instrumentId (canonical, avoids alias issues)
+    // 2. instrument.venue + effectiveSymbol (fallback when no instrumentId available)
+    //
+    // Protective watches that cannot be auto-linked are REJECTED — this matches
+    // the existing contract for explicit coverage.targetPosition: a stop_loss or
+    // take_profit must target a real, resolvable open position.
+    if (
+      !coverage?.targetPosition &&
+      purpose &&
+      (PROTECTIVE_WATCH_PURPOSES as readonly string[]).includes(purpose) &&
+      instrument?.venue &&
+      ctx.botRepo
+    ) {
+      try {
+        const openPositions = await ctx.botRepo.getOpenPositionsByCreator('agent', ctx.agentId);
+
+        // Prefer instrumentId-based matching (canonical, alias-safe), fall back to symbol.
+        let venueMatches = instrument.instrumentId
+          ? openPositions.filter(
+              (p) => p.venue === instrument.venue &&
+                p.instrumentId === instrument.instrumentId,
+            )
+          : openPositions.filter(
+              (p) => p.venue === instrument.venue &&
+                p.symbol.toUpperCase() === effectiveSymbol.toUpperCase(),
+            );
+
+        // If instrumentId matching returned zero, retry with symbol as a fallback.
+        // This handles cases where the instrument repo resolved a different
+        // instrumentId than what the position carries (e.g., a perp alias).
+        if (venueMatches.length === 0 && instrument.instrumentId) {
+          venueMatches = openPositions.filter(
+            (p) => p.venue === instrument.venue &&
+              p.symbol.toUpperCase() === effectiveSymbol.toUpperCase(),
+          );
+        }
+
+        if (venueMatches.length === 1) {
+          const match = venueMatches[0]!;
+          const derivedKey = derivePositionKey({
+            venue: match.venue,
+            symbol: match.symbol,
+            side: match.side,
+            instrumentId: match.instrumentId ?? undefined,
+          });
+          resolvedCoverage = {
+            ...(resolvedCoverage ?? {}),
+            positionKey: derivedKey,
+          };
+          logger.info(
+            { agentId: ctx.agentId, symbol: effectiveSymbol, positionKey: derivedKey },
+            'Auto-linked protective watch to open position',
+          );
+        } else if (venueMatches.length > 1) {
+          return {
+            success: false,
+            error: `Ambiguous target: ${venueMatches.length} open positions match venue=${instrument.venue} symbol=${effectiveSymbol}. Cannot safely auto-link a protective watch — use coverage.targetPosition with instrumentId for disambiguation.`,
+            retryable: false,
+            fault: false,
+          };
+        } else {
+          // Zero matches: protective watches MUST target an existing open position.
+          return {
+            success: false,
+            error: `No open position found matching venue=${instrument.venue} symbol=${effectiveSymbol}. Protective watches must target an existing open position. Create the position first, or use a non-protective purpose.`,
+            retryable: false,
+            fault: false,
+          };
+        }
+      } catch (err) {
+        logger.warn(
+          { err, agentId: ctx.agentId, symbol: effectiveSymbol },
+          'Failed to auto-link protective watch',
+        );
+        return {
+          success: false,
+          error: 'Failed to resolve open positions for protective watch auto-link. Retry or provide an explicit coverage.targetPosition.',
+          retryable: true,
+          fault: false,
+        };
+      }
+    }
+
     if (coverage?.targetPosition) {
       const { venue, symbol: posSymbol, side, instrumentId: targetInstrumentId } = coverage.targetPosition;
       const isProtective = purpose ? (PROTECTIVE_WATCH_PURPOSES as readonly string[]).includes(purpose) : false;
