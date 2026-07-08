@@ -66,6 +66,16 @@ output "agent_node_count" {
   value       = var.agent_node_count
 }
 
+output "min_agent_nodes" {
+  description = "Minimum number of agent nodes (scale-in floor)"
+  value       = var.min_agent_nodes
+}
+
+output "max_agent_nodes" {
+  description = "Maximum number of agent nodes (scale-out ceiling)"
+  value       = var.max_agent_nodes
+}
+
 output "agent_node_public_ips" {
   description = "Public IPv4 addresses of agent nodes"
   value       = var.enable_nomad ? hcloud_server.agent[*].ipv4_address : []
@@ -87,4 +97,31 @@ output "agent_ssh_commands" {
     for i, ip in hcloud_server.agent[*].ipv4_address :
     "ssh root@${ip}"
   ] : []
+}
+
+# ── Autoscale Configuration ───────────────────────────────
+
+output "scale_out_cooldown_seconds" {
+  description = "Minimum seconds between consecutive scale-out operations"
+  value       = var.scale_out_cooldown_seconds
+}
+
+output "scale_out_memory_threshold_pct" {
+  description = "Free memory percentage below which scale-out triggers"
+  value       = var.scale_out_memory_threshold_pct
+}
+
+output "scale_out_slot_threshold" {
+  description = "Free agent slots below which scale-out triggers"
+  value       = var.scale_out_slot_threshold
+}
+
+output "scale_out_increment" {
+  description = "Number of agent nodes to add per scale-out event"
+  value       = var.scale_out_increment
+}
+
+output "agent_memory_reservation_mb" {
+  description = "Scheduling memory reservation per agent slot (MB)"
+  value       = var.agent_memory_reservation_mb
 }

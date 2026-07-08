@@ -92,7 +92,10 @@ infra/hetzner/
     ├── reset-and-run.sh            # Nuclear reset + full provision
     ├── create-agents.sh            # Create agents on a HeroBids instance
     ├── maintenance-restart.sh              # Server-side agent container restart
-    └── maintenance-restart-from-local.sh   # Run maintenance restart from local machine
+    ├── maintenance-restart-from-local.sh   # Run maintenance restart from local machine
+    ├── scale-common.sh             # Autoscale shared functions (Nomad API, cooldown, flock, logging)
+    ├── check-nomad-capacity.sh     # Poll Nomad cluster and compute free headroom
+    └── scale-out.sh                # Main autoscale loop: evaluate + provision agent nodes
 ```
 
 ## Architecture
@@ -238,6 +241,170 @@ Agent nodes use a dedicated cloud-init template (`cloud-init-nomad-client.yaml`)
 3. Joins the cluster via `retry_join` to the Nomad server's private IP.
 4. Sets up UFW to allow only SSH from the internet — all other traffic is private-network only.
 5. Registers `environment`, `node_pool`, and `node_index` metadata for scheduling.
+
+## Autoscale-Out (Phase 6)
+
+The autoscale-out system automatically provisions additional agent nodes when Nomad cluster
+capacity drops below configured thresholds. It uses a simple, low-cost design: a systemd timer
+polls the Nomad API every 60 seconds, and when free capacity is low, provisions new agent nodes
+via Terraform with `flock` serialization.
+
+### How It Works
+
+```
+┌──────────────────────────────────────────────────────┐
+│  systemd timer (every 60s)                           │
+│    │                                                  │
+│    ▼                                                  │
+│  scale-out.sh                                        │
+│    │                                                  │
+│    ├─ 1. Read current agent_node_count from TF state │
+│    ├─ 2. Check if at max_agent_nodes → skip          │
+│    ├─ 3. Call check-nomad-capacity.sh                │
+│    │     ├─ Poll Nomad /v1/nodes + /v1/node/{id}     │
+│    │     ├─ Sum free memory across ready nodes       │
+│    │     └─ Compute free agent slots                 │
+│    ├─ 4. Compare vs thresholds (memory % + slots)    │
+│    ├─ 5. Check cooldown → skip if too soon           │
+│    ├─ 6. Acquire flock on lockfile                   │
+│    └─ 7. terraform apply -auto-approve               │
+│          -var agent_node_count=N+1                   │
+└──────────────────────────────────────────────────────┘
+```
+
+### Scripts
+
+| Script | Purpose |
+|---|---|
+| `scripts/scale-common.sh` | Shared functions: Nomad API helpers, logging, cooldown management, flock wrappers |
+| `scripts/check-nomad-capacity.sh` | Poll Nomad API, compute free memory and agent slots, output key=value or JSON |
+| `scripts/scale-out.sh` | Main autoscale loop: evaluate thresholds, acquire lock, run Terraform |
+
+### Configuration
+
+Autoscale behavior is controlled by Terraform variables (tracked in tfvars) and exposed to
+the autoscale scripts via systemd environment directives in `cloud-init.yaml`.
+
+| Variable | Default | Description |
+|---|---|---|
+| `scale_out_cooldown_seconds` | 300 (prod) / 120 (staging) | Minimum seconds between scale-out events |
+| `scale_out_memory_threshold_pct` | 20 (prod) / 30 (staging) | Scale when free memory drops below this % |
+| `scale_out_slot_threshold` | 3 (prod) / 2 (staging) | Scale when free agent slots drop below this count |
+| `scale_out_increment` | 1 | Nodes to add per scale-out event |
+| `agent_memory_reservation_mb` | 256 | MB per agent slot (used to compute slot count) |
+
+All thresholds are also overridable via environment variables at runtime:
+
+```bash
+# Manual scale-out with custom thresholds
+NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT=10 \
+NOMAD_SCALE_OUT_SLOT_THRESHOLD=1 \
+  /opt/herobids/infra/hetzner/scripts/scale-out.sh
+
+# Dry-run to check what would happen
+/opt/herobids/infra/hetzner/scripts/scale-out.sh --dry-run
+
+# Force scale-out (bypass thresholds, respect cooldown/max)
+/opt/herobids/infra/hetzner/scripts/scale-out.sh --force
+
+# Emergency scale-out (bypass cooldown too — safety-net path)
+/opt/herobids/infra/hetzner/scripts/scale-out.sh --force --bypass-cooldown
+```
+
+### Checking Capacity Manually
+
+```bash
+# Human-readable output (logs to stderr, data to stdout)
+/opt/herobids/infra/hetzner/scripts/check-nomad-capacity.sh
+
+# JSON output for scripting
+/opt/herobids/infra/hetzner/scripts/check-nomad-capacity.sh --json | jq .
+
+# Dry-run
+/opt/herobids/infra/hetzner/scripts/check-nomad-capacity.sh --dry-run
+```
+
+### Systemd Units
+
+Two systemd units are installed by cloud-init on the control-plane host:
+
+- **`nomad-autoscale.timer`** — triggers every 60 seconds (with 15s randomization).
+  Starts 120s after boot. Depends on `timers.target`.
+- **`nomad-autoscale.service`** — oneshot service that runs `scale-out.sh`.
+  Depends on `nomad.service`. Logs to journald.
+
+```bash
+# Check timer status
+systemctl status nomad-autoscale.timer
+systemctl list-timers nomad-autoscale.timer
+
+# Check service run history
+systemctl status nomad-autoscale.service
+journalctl -u nomad-autoscale.service -n 50
+
+# Manual trigger (outside the timer schedule)
+systemctl start nomad-autoscale.service
+
+# View autoscale log
+tail -f /var/log/nomad-autoscale.log
+```
+
+### Cron Fallback
+
+For environments without systemd, a cron entry achieves the same effect:
+
+```bash
+# /etc/cron.d/nomad-autoscale
+# Run every minute with randomized sleep to avoid thundering herd
+* * * * * root sleep $((RANDOM \% 15)) && /opt/herobids/infra/hetzner/scripts/scale-out.sh >> /var/log/nomad-autoscale.log 2>&1
+```
+
+### Safety Guarantees
+
+1. **Flock serialization**: only one Terraform operation runs at a time. Lock file:
+   `/var/run/nomad-autoscale.lock`.
+2. **Cooldown**: prevents flapping by enforcing a minimum interval between scale-out events.
+   Cooldown file: `/var/run/nomad-autoscale-last-scale-out`.
+3. **Max node cap**: `max_agent_nodes` is a hard ceiling — the autoscaler will never
+   provision beyond it.
+4. **Safe node naming**: agent nodes are named `${server_name}-agent-${index+1}`.
+   Terraform's `count.index` ensures stable identification — adding nodes appends,
+   reducing nodes removes from the end. No mid-list destruction.
+5. **Dry-run mode**: `--dry-run` shows what WOULD happen without making changes.
+6. **No secrets in scripts**: all credentials come from environment variables or
+   the Terraform tfvars file. Scripts accept config via env vars with sensible defaults.
+7. **TOCTOU-safe cooldown**: the cooldown check is re-evaluated inside the flock
+   critical section, preventing a race where two concurrent invocations both pass
+   the initial cooldown check and scale out back-to-back.
+
+### Nightly Scale-In (Phase 7)
+
+A conservative nightly scale-in routine reduces idle agent nodes down to `min_agent_nodes`,
+running at a configured time (default: 3 AM per environment). The scale-in policy is
+designed to never interrupt active agent workloads:
+
+1. **Candidate selection**: nodes are marked ineligible for new placements (Nomad node
+   drain with `-no-deadline`), preventing new agent allocations from landing on them.
+
+2. **Idle-only drain**: only nodes with zero running agent allocations are drained.
+   Nodes with active agents are skipped — the routine never kills running workloads
+   to reach the floor.
+
+3. **Floor enforcement**: draining stops when the cluster reaches `min_agent_nodes`
+   (configured per environment). The floor is a hard lower bound.
+
+4. **Manual override**: scale-in can be run manually for testing or emergency:
+   ```bash
+   # Dry-run to see what would be scaled in
+   /opt/herobids/infra/hetzner/scripts/scale-in.sh --dry-run
+
+   # Force scale-in down to min_agent_nodes
+   /opt/herobids/infra/hetzner/scripts/scale-in.sh
+   ```
+
+5. **Safety property**: a node that still has running allocations after the drain
+   deadline is NOT destroyed. The routine logs a warning and leaves the node in the
+   cluster. Operators should investigate stuck allocations manually.
 
 ## Isolation Model
 

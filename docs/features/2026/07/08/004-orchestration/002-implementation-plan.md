@@ -13,7 +13,7 @@
 | Phase 3 - Shared service connectivity | DONE |
 | Phase 4 - Nomad runtime adapter | DONE |
 | Phase 5 - Per-tier resource profiles | DONE |
-| Phase 6 - Autoscale-out with flock+Terraform | PENDING |
+| Phase 6 - Autoscale-out with flock+Terraform | DONE |
 | Phase 7 - Safety net & nightly scale-in | PENDING |
 | Phase 8 - Admin alerting & visibility | PENDING |
 | Phase 9 - Rollout & validate end-to-end | PENDING |
@@ -358,7 +358,7 @@ Agent density, tier behavior, and autoscale thresholds are config-driven and adj
 1. changing tier resource config changes submitted Nomad job reservations without code edits
 2. invalid resource profiles fail fast at startup
 
-### Phase 6 - Implement autoscale-out with `flock`-guarded Terraform **[PENDING]**
+### Phase 6 - Implement autoscale-out with `flock`-guarded Terraform **[DONE]**
 
 #### Goal
 

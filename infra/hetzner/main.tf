@@ -149,18 +149,29 @@ resource "hcloud_server" "default" {
   firewall_ids = [hcloud_firewall.default.id]
 
   user_data = templatefile("${path.module}/cloud-init.yaml", {
-    git_repo_url               = var.git_repo_url
-    git_branch                 = var.git_branch
-    app_domain                 = var.app_domain
-    deploy_ssh_private_key_b64 = base64encode(var.deploy_ssh_private_key)
-    server_name                = var.server_name
-    environment                = var.environment
-    compose_overlay            = var.environment == "staging" ? "docker-compose.staging.yaml" : "docker-compose.prod.yaml"
-    env_file                   = var.environment == "staging" ? ".env.staging" : ".env.prod"
-    enable_nomad               = tostring(var.enable_nomad)
-    nomad_version              = var.nomad_version
-    private_subnet             = var.subnet_ip_range
-    nomad_bootstrap_expect     = 1
+    git_repo_url                   = var.git_repo_url
+    git_branch                     = var.git_branch
+    app_domain                     = var.app_domain
+    deploy_ssh_private_key_b64     = base64encode(var.deploy_ssh_private_key)
+    server_name                    = var.server_name
+    environment                    = var.environment
+    compose_overlay                = var.environment == "staging" ? "docker-compose.staging.yaml" : "docker-compose.prod.yaml"
+    env_file                       = var.environment == "staging" ? ".env.staging" : ".env.prod"
+    enable_nomad                   = tostring(var.enable_nomad)
+    nomad_version                  = var.nomad_version
+    terraform_version              = var.terraform_version
+    private_subnet                 = var.subnet_ip_range
+    nomad_bootstrap_expect         = 1
+    agent_node_count               = var.agent_node_count
+    max_agent_nodes                = var.max_agent_nodes
+    min_agent_nodes                = var.min_agent_nodes
+    scale_out_cooldown_seconds     = var.scale_out_cooldown_seconds
+    scale_out_memory_threshold_pct = var.scale_out_memory_threshold_pct
+    scale_out_slot_threshold       = var.scale_out_slot_threshold
+    scale_out_increment            = var.scale_out_increment
+    agent_memory_reservation_mb    = var.agent_memory_reservation_mb
+    agent_node_server_type         = var.agent_node_server_type
+    location                       = var.location
   })
 
   labels = {

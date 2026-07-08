@@ -68,6 +68,15 @@ app_domain = "staging.herobids.com"
 # max_agent_nodes         = 3    # small pool for staging
 # agent_node_server_type  = "cpx21"
 
+# ── Autoscale Configuration ───────────────────────────────
+# Staging uses tighter thresholds for faster validation:
+
+# scale_out_cooldown_seconds     = 120  # 2 min (shorter for staging validation)
+# scale_out_memory_threshold_pct  = 30   # scale when free memory < 30% (earlier for testing)
+# scale_out_slot_threshold        = 2    # scale when free slots < 2
+# scale_out_increment             = 1    # add 1 node per event
+# agent_memory_reservation_mb     = 256  # MB per agent slot (scheduling reservation)
+
 # ─────────────────────────────────────────────────────────────
 # Sensitive variables (hcloud_token, deploy_ssh_private_key)
 # are marked sensitive in Terraform and will not appear in

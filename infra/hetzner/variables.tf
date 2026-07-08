@@ -110,6 +110,12 @@ variable "nomad_version" {
   default     = "1.9.7"
 }
 
+variable "terraform_version" {
+  type        = string
+  description = "Terraform version to install on the control-plane server for autoscale operations. Do NOT include the Debian package revision suffix (e.g., use '1.11.0' not '1.11.0-1')."
+  default     = "1.11.0"
+}
+
 # ── Private Network ───────────────────────────────────────
 
 variable "network_zone" {
@@ -189,5 +195,62 @@ variable "agent_node_server_type" {
   validation {
     condition     = can(regex("^(cx|ccx|cpx|CAX)\\d+$", var.agent_node_server_type))
     error_message = "agent_node_server_type must be a valid Hetzner instance type (e.g., cpx21, cx32, ccx53)."
+  }
+}
+
+# ── Autoscale Configuration ───────────────────────────────
+
+variable "scale_out_cooldown_seconds" {
+  type        = number
+  description = "Minimum seconds between consecutive scale-out operations. Prevents flapping during transient capacity dips."
+  default     = 300
+
+  validation {
+    condition     = var.scale_out_cooldown_seconds >= 0
+    error_message = "scale_out_cooldown_seconds must be >= 0."
+  }
+}
+
+variable "scale_out_memory_threshold_pct" {
+  type        = number
+  description = "Scale out when free allocatable memory across the Nomad cluster drops below this percentage of total memory."
+  default     = 20
+
+  validation {
+    condition     = var.scale_out_memory_threshold_pct >= 1 && var.scale_out_memory_threshold_pct <= 100
+    error_message = "scale_out_memory_threshold_pct must be between 1 and 100."
+  }
+}
+
+variable "scale_out_slot_threshold" {
+  type        = number
+  description = "Scale out when free agent slots (free memory / agent memory reservation) drops below this count."
+  default     = 3
+
+  validation {
+    condition     = var.scale_out_slot_threshold >= 0
+    error_message = "scale_out_slot_threshold must be >= 0."
+  }
+}
+
+variable "scale_out_increment" {
+  type        = number
+  description = "Number of agent nodes to add per scale-out event. Keep at 1 for gradual scaling; increase for burst capacity provisioning."
+  default     = 1
+
+  validation {
+    condition     = var.scale_out_increment >= 1
+    error_message = "scale_out_increment must be >= 1."
+  }
+}
+
+variable "agent_memory_reservation_mb" {
+  type        = number
+  description = "Scheduling memory reservation per agent slot (MB). Used by the autoscaler to compute free slot counts from available cluster memory."
+  default     = 256
+
+  validation {
+    condition     = var.agent_memory_reservation_mb >= 64
+    error_message = "agent_memory_reservation_mb must be >= 64."
   }
 }
