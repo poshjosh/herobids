@@ -313,7 +313,7 @@ export function pnlColor(pnl: string | number | null | undefined): string {
 |---|---|---|---|---|
 | 1 | Bulk PnL endpoint | `apps/api/src/routes/agents.ts` | — | DONE |
 | 2 | Extend dashboard overview with PnL | `apps/api/src/routes/dashboard.ts` | — | DONE |
-| 3 | API client types + methods | `apps/web/src/lib/api-client.ts` | 1, 2 | PENDING |
+| 3 | API client types + methods | `apps/web/src/lib/api-client.ts` | 1, 2 | DONE |
 | 4 | `formatPnl` helper | `apps/web/src/lib/formatting.ts` | — | PENDING |
 | 5 | Mission Control PnL card (1a) | `MissionControlPage.tsx` | 2, 3, 4 | PENDING |
 | 6 | Exposure page PnL header (1b) | `ExposurePage.tsx` | 2, 3, 4 | PENDING |
@@ -381,3 +381,13 @@ can be done in any order after 1–4.
 - **MEDIUM** — Plan doc Phase 6 sample UI code references `perf.winRate` but the `AgentPerformance` type exposes `winningClosedCount` (raw count). Step 7 implementer must compute rate as `winningClosedCount / closedPositionCount`.
 - **LOW** — Missing JSDoc on `AgentPerformance` interface for field documentation.
 - **LOW** — No test coverage for new types/methods (acceptable for type-only change).
+
+### [Step 4] formatPnl helper
+
+- **MEDIUM** (fixed) — Negative dollar format was `$-50.00`, now corrected to `-$50.00` (standard).
+- **MEDIUM** (fixed) — Zero PnL color was `var(--color-text-secondary)`, now aligned with existing `AgentTradesTable` convention (`var(--color-text)`).
+- **LOW** — `formatPnl(0)` shows `+$0.00` with plus prefix; existing `AgentTradesTable` omits `+` for zero. Minor inconsistency.
+- **LOW** — No guard against invalid Decimal input (throws on empty string, NaN). Backend always returns valid decimal strings, so low risk.
+- **LOW** — Missing trailing newline at end of file.
+- **LOW** — No JSDoc on new functions.
+- **LOW** — `AgentTradesTable` duplicates inline PnL logic; should eventually use shared helpers.
