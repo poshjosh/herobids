@@ -888,6 +888,7 @@ export async function agentRoutes(
     }>();
 
     for (const row of directResults) {
+      if (!row.agentId) continue;
       perfByAgent.set(row.agentId, {
         totalPnl: Number(row.totalPnl ?? '0'),
         openPositionCount: row.openPositionCount ?? 0,
@@ -897,6 +898,7 @@ export async function agentRoutes(
     }
 
     for (const row of botOwnedResults) {
+      if (!row.agentId) continue;
       const existing = perfByAgent.get(row.agentId);
       if (existing) {
         existing.totalPnl += Number(row.totalPnl ?? '0');
