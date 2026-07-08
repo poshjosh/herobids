@@ -489,9 +489,13 @@ describe('wake scheduler — coalescing and cooldown', () => {
     await vi.waitFor(() => expect(publisher.emitAgentWake).toHaveBeenCalledTimes(1));
 
     const evaluatePromise = monitor.evaluate();
+    // evaluate() must complete (and enqueueWake must acquire the mutex) BEFORE
+    // deferred.resolve() unblocks Phase 2 and triggers Phase 3 cleanup.
+    // If deferred resolved first, Phase 3 would beat enqueueWake to the mutex
+    // and delete the bucket before the generation CAS could detect the change.
+    await evaluatePromise;
     deferred.resolve();
     await firstFlush;
-    await evaluatePromise;
 
     const pendingWakeRaw = redis._store.get(wakeKey);
     expect(pendingWakeRaw).toBeTruthy();

@@ -20,28 +20,28 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| A-01 | Login page renders unauthenticated | Navigate to `/` without a token | Redirected to `/login`; login card shows "Google" and "Email" tabs | ✅ | Redirects to /login; Google and Email tabs visible |
+| A-01 | Login page renders unauthenticated | Navigate to `/` without a token | Redirected to `/login`; email form shown by default; "Continue with Google" button below (no tab UI) | ✅ | Redirects to /login; email form shown by default (no tabs); "Continue with Google" button below — 2026-07-07 re-verified |
 | A-02 | Google OAuth login | Click "Continue with Google"; complete Google auth flow | Redirected to `/auth/callback`, then to `/mission-control`; user authenticated; nav shown | — | Requires real Google creds |
-| A-02b | Email tab visible | Open login page | Two tabs shown: "Google" (active by default) and "Email" | ✅ | Google tab selected by default; Email tab available |
-| A-02c | Register new account | Click Email tab; click "Don't have an account? Sign up"; fill name/email/password (≥8 chars); submit | Account created; redirected to `/mission-control`; authenticated | ✅ | Registered uat-test@example.com; redirected to /mission-control with nav shown |
-| A-02d | Login with email | Register first; log out; go to Email tab; enter credentials; submit | Authenticated and redirected to `/mission-control` | ✅ | Logged in, redirected to /mission-control |
-| A-02e | Register — duplicate email | Try to register with an already-registered email | Error message shown; form stays open | ✅ | "An account with this email already exists." shown; form stays open |
-| A-02f | Register — short password | Submit with password < 8 chars | Browser HTML5 validation prevents submit or app shows error | ✅ | API returns 400; "Password must be at least 8 characters." shown; form stays open |
-| A-02g | Register — invalid email | Submit with "notanemail" as email | Browser native email validation tooltip shown; form not submitted | ✅ | input type="email", validity.valid=false, browser native validation fires |
-| A-02h | Register — missing fields | Submit with blank name, email, or password | Browser `required` attribute validation; account not created | ✅ | required=true, valueMissing=true verified on name field |
-| A-02i | Login — wrong password | Submit with correct email but wrong password | Error message shown; does not reveal whether email exists | ✅ | "Invalid email or password." shown; stays on login form |
-| A-02j | Login — unknown email | Submit with unregistered email | Same error wording as wrong password (no enumeration) | ✅ | "Invalid email or password." — same wording; no enumeration |
-| A-02k | Submit button disabled while pending | Click submit on email form | Button shows "Please wait…" and is non-interactive until response | ✅ | Button shows "Please wait…" and is disabled=true during submit |
-| A-02l | Toggle login ↔ register | Click "Don't have an account?" / "Already have an account?" | Form switches modes; error banner clears on switch | ✅ | Form toggled modes; error banner cleared on switch |
-| A-03 | Auth callback with invalid/expired code | Navigate to `/auth/callback?code=invalid-code` | Error state shown; user can return to login | ✅ | "Invalid or expired exchange code." shown with "Back to sign-in" link |
-| A-04 | Auth callback with missing code param | Navigate to `/auth/callback` (no `?code=`) | "Missing exchange code in callback URL." shown with "Back to sign-in" link | ✅ | Exact text confirmed |
+| A-02b | Email form visible | Open login page | Email form shown directly (no tabs); "Continue with Google" button below the form | ✅ | 2026-07-08: Spec updated — tab-based UI was replaced with email-first form; Google is a secondary option below the form |
+| A-02c | Register new account | Click "Don't have an account? Sign up"; fill name/email/password (≥8 chars); submit | Account created; redirected to `/mission-control`; authenticated | ✅ | 2026-07-07: Registered uat-tester@example.com / Password123; redirected to /mission-control with nav shown |
+| A-02d | Login with email | Register first; log out; enter credentials in email form; submit | Authenticated and redirected to `/mission-control` | ✅ | 2026-07-07: Logged in with uat-tester@example.com; redirected to /mission-control |
+| A-02e | Register — duplicate email | Try to register with an already-registered email | Error message shown; form stays open | ✅ | 2026-07-07: "An account with this email already exists." shown; form stays open |
+| A-02f | Register — short password | Submit with password < 8 chars | Browser HTML5 validation prevents submit or app shows error | ✅ | 2026-07-07: API returns 400; "Password must be at least 8 characters." shown; form stays open |
+| A-02g | Register — invalid email | Submit with "notanemail" as email | Browser native email validation tooltip shown; form not submitted | ✅ | 2026-07-07: input type="email", validity.valid=false (typeMismatch=true), browser native validation fires |
+| A-02h | Register — missing fields | Submit with blank name, email, or password | Browser `required` attribute validation; account not created | ✅ | 2026-07-07: required=true, valueMissing=true verified on all 3 fields (name, email, password) |
+| A-02i | Login — wrong password | Submit with correct email but wrong password | Error message shown; does not reveal whether email exists | ✅ | 2026-07-07: "Invalid email or password." shown; stays on login form |
+| A-02j | Login — unknown email | Submit with unregistered email | Same error wording as wrong password (no enumeration) | ✅ | 2026-07-07: "Invalid email or password." — same wording; no enumeration |
+| A-02k | Submit button disabled while pending | Click submit on email form | Button shows "Please wait…" and is non-interactive until response | ✅ | 2026-07-07: Button shows "Please wait…" and is disabled=true during submit (captured via Playwright during login) |
+| A-02l | Toggle login ↔ register | Click "Don't have an account?" / "Already have an account?" | Form switches modes; error banner clears on switch | ✅ | 2026-07-07: Clicking "Don't have an account? Sign up" switches to register form (Name+Email+Password); "Already have an account? Sign in" switches back |
+| A-03 | Auth callback with invalid/expired code | Navigate to `/auth/callback?code=invalid-code` | Error state shown; user can return to login | ✅ | 2026-07-07: "Invalid or expired exchange code." shown with "Back to sign-in" link |
+| A-04 | Auth callback with missing code param | Navigate to `/auth/callback` (no `?code=`) | "Missing exchange code in callback URL." shown with "Back to sign-in" link | ✅ | 2026-07-07: Exact text confirmed |
 | A-05 | One-time code use | Copy the `/auth/callback?code=…` URL; use it a second time | Second use shows error (code already consumed) | — | |
-| A-06 | Explicit logout | Click "Sign out" in the nav footer | Token cleared; redirected to `/login`; back button does not show authenticated state | ✅ | Sign out → /login; subsequent protected nav redirects to /login |
+| A-06 | Explicit logout | Click "Sign out" in the nav footer | Token cleared; redirected to `/login`; back button does not show authenticated state | ✅ | 2026-07-07: Sign out → /login; token cleared; subsequent protected nav redirects to /login |
 | A-07 | Post-logout cache cleared | Log out; log back in as same user; navigate to Mission Control | Fresh data loaded from the API | — | |
 | A-08 | Session expiry — server 401 | Invalidate JWT in Redis; attempt any navigation | Redirected to `/login`; no stale data | — | |
 | A-09 | Re-login same tab clears cache | Let session expire; log in again in same tab | Fresh data loaded; no cross-session leak | — | |
-| A-10 | Direct navigation to protected route unauthenticated | Paste `/agents` in URL bar without token | Redirected to `/login` | ✅ | /agents while logged out → /login |
-| A-11 | Token persisted across page reload | Log in; hard-reload (`Cmd+Shift+R`) | Stays authenticated; no redirect to login | ✅ | After reload, still on /mission-control; authenticated |
+| A-10 | Direct navigation to protected route unauthenticated | Paste `/agents` in URL bar without token | Redirected to `/login` | ✅ | 2026-07-07: /agents while logged out → /login |
+| A-11 | Token persisted across page reload | Log in; hard-reload (`Cmd+Shift+R`) | Stays authenticated; no redirect to login | ✅ | 2026-07-07: After hard-reload, still on /agents/:id; authenticated |
 
 ---
 
@@ -49,11 +49,11 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Mission Control, AI Agents, Skills. Under "Manage": Connections, Credentials, Billing, Settings. Under "Advanced" (collapsible, collapsed by default): Bots, Trading setup, Exposure, Activity, Outcomes. Click "▸ Advanced" to expand. | ✅ | Verified 2026-06-30: All 12 links present and functional. Advanced section collapsed by default; expanded to reveal Bots, Trading setup, Exposure, Activity, Outcomes. |
-| N-02 | Active link highlighted | Click each nav link | Current page link is visually active | ✅ | Active link shows green background + text (verified on Skills page screenshot) |
-| N-03 | Root redirect | Navigate to `/` | Redirected to `/mission-control` | ✅ | Confirmed |
-| N-04 | Unknown route | Navigate to `/does-not-exist` | React Router error boundary shown (404 Not Found); does not crash | ✅ | Shows branded "Page not found" with "← Back to Mission Control" CTA |
-| N-05 | Page titles / headings | Visit each page | Each page has a visible `PageHeader` with title and subtitle | ✅ | Verified: Mission Control, AI Agents, Skills, Bots, Trading setup, Credentials, Connections, Exposure, Activity, Outcome Board, Billing, Settings |
+| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Mission Control, AI Agents, Skills. Under "Manage": Connections, Billing, Settings. Under "Advanced" (collapsible, collapsed by default): Bots. Click "▸ Advanced" to expand. | ✅ | 2026-07-08: Spec updated — nav simplified; Credentials removed from Manage; Trading setup, Exposure, Activity, Outcomes removed from Advanced (pages still accessible via direct URL) |
+| N-02 | Active link highlighted | Click each nav link | Current page link is visually active | ✅ | 2026-07-07: Active link shows green background + green text (verified on AI Agents page screenshot) |
+| N-03 | Root redirect | Navigate to `/` | Redirected to `/mission-control` | ✅ | 2026-07-07: Confirmed |
+| N-04 | Unknown route | Navigate to `/does-not-exist` | React Router error boundary shown (404 Not Found); does not crash | ✅ | 2026-07-07: Shows "Page not found" with "← Back to Mission Control" button; no crash |
+| N-05 | Page titles / headings | Visit each page | Each page has a visible `PageHeader` with title and subtitle | ✅ | 2026-07-07: Verified Mission Control, AI Agents, Connections, Billing, Settings, Credentials, Trading setup, Outcomes, 404 — all have h1 + subtitle |
 
 ---
 
@@ -61,23 +61,23 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| MC-01 | Summary metrics render | Open Mission Control | Shows agent-state metric cards for Active, Paused, Unhealthy, and Stopped | ✅ | Shows Active 0/1, Paused 0, Unhealthy 0, Stopped 1 |
-| MC-02 | Header CTA renders | Open Mission Control | "Create agent" button shown in the page header | ✅ | "Create AI agent" button shown |
-| MC-03 | Agent overview cards | Open Mission Control with agents | One card per agent under "Your agents"; shows status, execution mode, objective, and capability readiness; clicking the card navigates to the agent detail page | ✅ | Card shows stopped status, objective text, capability readiness; execution mode not shown (non-trading agent); card is clickable |
-| MC-04 | Recent activity feed | Open Mission Control | "Recent Activity" section on right; empty state if no events | ✅ | Shows tick events with relative timestamps; earlier showed "No activity yet" on fresh account |
-| MC-05 | Empty state — no agents | Open Mission Control with fresh account | "No agents yet" empty state with "Create agent" CTA; metrics show zeros | ✅ | "No AI agents yet" empty state; all metrics 0 on fresh account |
-| MC-06 | "Create agent" button navigates | Click "Create agent" | Navigates to `/agents?create=1` or opens the create flow from the agents page | ✅ | Navigated to /agents?create=1 with create form open |
-| MC-07 | Clicking an agent card navigates | Click anywhere on an agent card | Navigates to `/agents/:id` | ✅ | Card click navigated to /agents/49d6f6e0-... |
+| MC-01 | Summary metrics render | Open Mission Control | Shows agent-state metric cards for Active, Paused, Unhealthy, and Stopped | ✅ | 2026-07-07: Shows Active 0/1, Paused 0, Unhealthy 0, Stopped 1 (after creating one agent) |
+| MC-02 | Header CTA renders | Open Mission Control | "Create agent" button shown in the page header | ✅ | 2026-07-07: "Create AI agent" button shown in page header |
+| MC-03 | Agent overview cards | Open Mission Control with agents | One card per agent under "Your agents"; shows status, execution mode, objective, and capability readiness; clicking the card navigates to the agent detail page | ✅ | 2026-07-07: Card shows agent name, "stopped" badge, "Paper mode" pill, goal text, "Trading: Unconfigured" capability readiness; card is clickable |
+| MC-04 | Recent activity feed | Open Mission Control | "Recent Activity" section on right; empty state if no events | ✅ | 2026-07-07: "Recent activity" section shown; "No activity yet" empty state on fresh account |
+| MC-05 | Empty state — no agents | Open Mission Control with fresh account | "No agents yet" empty state with "Create agent" CTA; metrics show zeros | ✅ | 2026-07-07: "No AI agents yet" empty state; all metrics 0 on fresh account |
+| MC-06 | "Create agent" button navigates | Click "Create agent" | Navigates to `/agents?create=1` or opens the create flow from the agents page | ✅ | 2026-07-07: "Create AI agent" button navigated to /agents?create=1 with create form dialog open |
+| MC-07 | Clicking an agent card navigates | Click anywhere on an agent card | Navigates to `/agents/:id` | ✅ | 2026-07-07: Card click navigated to /agents/172b77b6-... |
 | MC-08 | Capability CTA opens agent capability page | Open agent detail, expand Capabilities section, click capability button | Navigates to `/agents/:id/capabilities/trading` | — | Capability CTA moved from summary card to agent detail page |
 | MC-09 | Data staleness | Leave page for >30 s; return | Data refetches and reflects current agent state | — | |
 | MC-10 | Loading state | Open page on slow connection (throttle in DevTools) | Loading skeleton shown while fetching | — | |
 | MC-11 | API error state | Kill API; open page | Error state shown with retry; no crash | — | |
-| MC-12 | Quick trading setup card renders | Open Mission Control | "Quick trading setup" card visible in the agents column with "Add trading provider" button | ✅ | Card renamed to "Quick AI agent connect" with "Add provider connection" button (intentional rename) |
-| MC-13 | Quick trading setup — opens form | Click "Add trading provider" | Modal opens with provider, label, and secrets fields | ✅ | "Add provider connection" opens "Add trading connection" modal with provider, label, and secrets fields |
+| MC-12 | Quick trading setup card renders | Open Mission Control | "Quick trading setup" card visible in the agents column with "Add trading provider" button | ✅ | 2026-07-07: Card now titled "Connect AI agent to external platform" with "Connect AI agent" button (renamed again from previous "Quick AI agent connect") |
+| MC-13 | Quick trading setup — opens form | Click "Add trading provider" | Modal opens with provider, label, and secrets fields | ✅ | 2026-07-07: "Connect AI agent" button opens dialog titled "Connect agent to platform" with provider selector (Hyperliquid/Bybit/1inch/Jupiter), label, and secrets fields |
 | MC-14 | Quick trading setup — submit | Fill in provider (e.g. hyperliquid), label, and valid secrets; click "Set up trading provider" | Modal closes; success banner shows "{label} ({provider}) has been set up." | — | |
 | MC-15 | Quick trading setup — success dismiss | Click "Done" on the success banner | Banner disappears; setup card returns to default state | — | |
-| MC-16 | Quick trading setup — validation | Submit form with empty provider or label | Submit button disabled; form cannot be submitted | ✅ | "Add trading connection" button disabled until fields filled |
-| MC-17 | Quick trading setup — API error | Submit with invalid secrets | ErrorBanner shown inside modal; modal stays open | ✅ | "Enter a valid wallet address for hyperliquid." shown in modal; modal stays open |
+| MC-16 | Quick trading setup — validation | Submit form with empty provider or label | Submit button disabled; form cannot be submitted | ✅ | 2026-07-07: "Connect AI agent" button disabled until label is filled (provider has a default selection) |
+| MC-17 | Quick trading setup — API error | Submit with invalid secrets | ErrorBanner shown inside modal; modal stays open | ✅ | 2026-07-07: "secret is required for hyperliquid." error shown inline in dialog; dialog stays open |
 
 ---
 

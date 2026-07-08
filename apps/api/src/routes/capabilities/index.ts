@@ -59,7 +59,7 @@ export async function capabilityRoutes(
         .from(agentConnections)
         .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
         .innerJoin(providers, eq(connections.provider, providers.id))
-        .where(and(eq(agentConnections.agentId, agentId), eq(agentConnections.status, 'active')));
+        .where(eq(agentConnections.agentId, agentId));
 
       // Collect all families from provider capabilities across all rows
       const allFamilies = new Set<string>();
@@ -76,7 +76,12 @@ export async function capabilityRoutes(
       const capabilities: CapabilityReadiness[] = [];
       for (const family of allFamilies) {
         const familyRows = rows.filter((row) => (row.capabilities ?? []).includes(family));
-        const latest = chooseLatest(familyRows);
+        const activeInFamily = familyRows.filter((row) => row.grantStatus === 'active');
+        // Surface 'revoked' only when the connection itself was revoked. Removed
+        // grants (PATCH connectionIds: []) should show 'unconfigured' instead.
+        const connectionRevokedInFamily = familyRows.filter((row) => row.connectionStatus === 'revoked');
+        const relevantRows = activeInFamily.length > 0 ? activeInFamily : connectionRevokedInFamily;
+        const latest = chooseLatest(relevantRows);
         const readiness = deriveReadiness(latest, family);
         capabilities.push(readiness);
       }

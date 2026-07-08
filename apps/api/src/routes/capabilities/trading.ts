@@ -294,15 +294,17 @@ export async function tradingCapabilityRoutes(
       }
 
       const rows = await selectAgentTradingAssignmentRows(db, agentId);
-      // Filter to active-only to match runtime descriptor semantics —
-      // revoked assignments are treated as if they never existed.
+      // Active assignments take precedence.
       const activeRows = rows.filter((r) => r.grantStatus === 'active');
-      if (activeRows.length === 0) {
-        return reply.send(deriveReadiness(undefined, 'trading'));
+      if (activeRows.length > 0) {
+        const latest = chooseLatestAssignment(activeRows)!;
+        return reply.send(deriveReadiness(latest, 'trading'));
       }
-      const latest = chooseLatestAssignment(activeRows)!;
-      const readiness = deriveReadiness(latest, 'trading');
-      return reply.send(readiness);
+      // Surface 'revoked' only when the connection itself was revoked. If only
+      // the agent grant was removed (PATCH connectionIds: []), return 'unconfigured'.
+      const connectionRevokedRows = rows.filter((r) => r.connectionStatus === 'revoked');
+      const latest = chooseLatestAssignment(connectionRevokedRows);
+      return reply.send(deriveReadiness(latest, 'trading'));
     },
   );
 
