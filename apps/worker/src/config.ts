@@ -153,10 +153,10 @@ export function loadConfig(configDir?: string): AppConfig {
 
   const config = AppConfigSchema.parse(merged);
 
-  if (env === 'production' && config.liveRollout.enabled && config.billing.primaryProvider === 'mock') {
+  if (env === 'production' && config.billing.primaryProvider === 'mock') {
     throw new Error(
-      "billing.primaryProvider is 'mock' in a production environment with liveRollout enabled — " +
-      "set BILLING_PRIMARY_PROVIDER=creem (or stripe) or add billing.primaryProvider to config/production.yaml",
+      "billing.primaryProvider is 'mock' in a production environment — " +
+      "set BILLING_PRIMARY_PROVIDER=creem (or stripe) in .env.prod or override billing.primaryProvider in config/production.yaml",
     );
   }
 

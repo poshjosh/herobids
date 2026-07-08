@@ -1,5 +1,8 @@
 # Operator configuration — self-documenting reference.
 # Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
+#
+# STAGING: Safe defaults — no live trading, mock billing, alerts disabled.
+# All destructive/paid features require explicit opt-in via env vars.
 
 llm:
   provider: openrouter                  # LLM provider: openrouter | openai | anthropic | ollama | deepseek
@@ -20,10 +23,16 @@ agentRuntime:
       lightModel: deepseek/deepseek-v4-flash  # suggested economy (scout) model
       heavyModel: deepseek/deepseek-v4-pro    # suggested premium (judge) model
 
+# Billing — mock by default in staging. No real charges.
 billing:
   primaryProvider: mock                       # 'mock' | 'creem' | 'stripe'
-  # fallbackProvider: creem                   # optional — uncomment to enable failover
 
-# Alerting — dispatches journal events to Telegram channels.
+# Live trading — explicitly disabled for staging safety.
+# Override with LIVE_ROLLOUT_ENABLED=true only for targeted smoke tests.
+liveRollout:
+  enabled: false
+
+# Alerting — disabled by default in staging to avoid noise on test channels.
+# Enable explicitly for webhook/debugging smoke tests via ALERTS_ENABLED=true.
 alerts:
-  enabled: true                   # master switch — override: ALERTS_ENABLED
+  enabled: false

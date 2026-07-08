@@ -1,5 +1,10 @@
 # Operator configuration — self-documenting reference.
 # Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
+#
+# PRODUCTION: Billing must be a real provider (not mock). The startup guard
+# in apps/*/src/config.ts enforces this — the process will refuse to start if
+# billing.primaryProvider is still 'mock' when NODE_ENV=production.
+# Set BILLING_PRIMARY_PROVIDER=creem (or stripe) in .env.prod.
 
 llm:
   provider: openrouter                  # LLM provider: openrouter | openai | anthropic | ollama | deepseek
@@ -20,7 +25,13 @@ agentRuntime:
       lightModel: deepseek/deepseek-v4-flash  # suggested economy (scout) model
       heavyModel: deepseek/deepseek-v4-pro    # suggested premium (judge) model
 
-billing:
-  primaryProvider: mock                       # 'mock' | 'creem' | 'stripe'
-  # fallbackProvider: creem                   # optional — uncomment to enable failover
+# Billing — no default here. The production startup guard (apps/*/src/config.ts)
+# enforces non-mock billing when NODE_ENV=production.
+# Set BILLING_PRIMARY_PROVIDER=creem (or stripe) in .env.prod.
+
+# Live trading — no default here. Operators opt in explicitly via
+# LIVE_ROLLOUT_ENABLED=true. See config/default.yaml for the full liveRollout schema.
+
+# Alerting — no default here. Operators opt in explicitly via
+# ALERTS_ENABLED=true and the Telegram/email env vars in .env.prod.
 

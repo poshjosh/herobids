@@ -198,6 +198,7 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=test-pass ./scripts/seed-admin.sh -
 - Database and Redis URLs default to docker-compose values and do not need to be in `.env` unless using external services.
 - `AUTH_PUBLIC_BASE_URL`, `AUTH_FRONTEND_ORIGIN`, and `VITE_API_ORIGIN` are set per environment in the compose overlay (`docker-compose.prod.yaml` / `docker-compose.staging.yaml`). Each overlay uses the correct domain for its environment — no manual editing needed.
 - Staging should use separate secrets from production: different JWT secret, OAuth client IDs, Telegram bot tokens, LLM API keys, and billing credentials.
+- **Production billing guard**: The API and worker will refuse to start if `NODE_ENV=production` and `billing.primaryProvider` is still `'mock'`. Set `BILLING_PRIMARY_PROVIDER=creem` (or `stripe`) in `.env.prod`. See `apps/api/src/config.ts` and `apps/worker/src/config.ts` for the guard implementation.
 
 ## Day-to-Day Operations
 
