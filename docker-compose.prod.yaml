@@ -6,6 +6,7 @@
 #   - Caddy reverse proxy added (TLS termination, Let's Encrypt)
 #   - Production auth URLs set on the API service
 #   - Web depends_on api (healthy); caddy depends_on web (started)
+#   - VITE_API_ORIGIN build arg set for OAuth redirect URLs in the SPA
 #
 # NOTE: Docker Compose merges sequence attributes (ports) by concatenation,
 # not replacement — host port bindings for postgres (5432), redis (6379),
@@ -23,18 +24,19 @@ services:
 
   api:
     environment:
-      # TODO: staging-setup Change from staging to production
-      NODE_ENV: staging
+      NODE_ENV: production
       AUTH_PUBLIC_BASE_URL: https://herobids.com
       AUTH_FRONTEND_ORIGIN: https://herobids.com
 
   worker:
     environment:
-      # TODO: staging-setup Change from staging to production
-      NODE_ENV: staging
+      NODE_ENV: production
 
   web:
     restart: unless-stopped
+    build:
+      args:
+        VITE_API_ORIGIN: https://herobids.com
     depends_on:
       api:
         condition: service_healthy
@@ -45,7 +47,7 @@ services:
       - '80:80'
       - '443:443'
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     restart: unless-stopped
