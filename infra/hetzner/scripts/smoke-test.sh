@@ -108,18 +108,22 @@ fi
 
 echo "── 2. Docker Containers ──"
 
-# docker ps -a shows all containers; we check both existence and running state
-CONTAINERS_ALL=$(ssh ${SSH_OPTS} "root@${SERVER_IP}" \
-  'docker ps -a --format "{{.Names}} {{.Status}}" 2>&1' || true)
+# Use running containers only (fast); docker ps -a can hang on large setups.
+# For stopped containers, operator can check manually.
+RUNNING=$(ssh ${SSH_OPTS} -o ConnectTimeout=10 "root@${SERVER_IP}" \
+  'docker ps --format "{{.Names}}" 2>&1' || true)
 
 for svc in caddy api web worker postgres redis; do
-  LINE=$(echo "${CONTAINERS_ALL}" | grep -i "${svc}" | head -1)
-  if [[ -z "${LINE}" ]]; then
-    fail "Container '${svc}'" "not found — may not be deployed"
-  elif echo "${LINE}" | grep -q "^Up"; then
+  if echo "${RUNNING}" | grep -q "${svc}"; then
     pass "Container '${svc}' is running"
   else
-    fail "Container '${svc}'" "exists but not running"
+    CONTAINER_EXISTS=$(ssh ${SSH_OPTS} -o ConnectTimeout=10 "root@${SERVER_IP}" \
+      "docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '${svc}' && echo yes || echo no" 2>/dev/null || echo "unknown")
+    if [[ "${CONTAINER_EXISTS}" == "yes" ]]; then
+      fail "Container '${svc}'" "exists but not running"
+    else
+      fail "Container '${svc}'" "not deployed"
+    fi
   fi
 done
 
