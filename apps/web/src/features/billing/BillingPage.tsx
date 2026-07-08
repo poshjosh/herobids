@@ -31,6 +31,97 @@ function formatMicrousd(microusd: number): string {
   return `$${(microusd / 1_000_000).toFixed(4)}`;
 }
 
+interface CreditGaugeProps {
+  balanceMicrousd: number;
+  totalCreditMicrousd: number;
+  usageChargeMicrousd: number;
+  includedCreditMicrousd: number;
+  status: string;
+  planLabel?: string;
+}
+
+function CreditGauge({
+  balanceMicrousd,
+  totalCreditMicrousd,
+  usageChargeMicrousd,
+  includedCreditMicrousd,
+  status,
+  planLabel,
+}: CreditGaugeProps) {
+  const remainingPct = totalCreditMicrousd > 0 ? balanceMicrousd / totalCreditMicrousd : 0;
+  const topUpMicrousd = Math.max(0, totalCreditMicrousd - includedCreditMicrousd);
+  const planName = planLabel || 'Pro plan';
+  const statusInfo = usageAccountStatusLabel(status);
+
+  let barColor = 'var(--color-success)';
+  if (remainingPct < 0.2) {
+    barColor = 'var(--color-danger, #e53e3e)';
+  } else if (remainingPct < 0.5) {
+    barColor = 'var(--color-warning)';
+  }
+
+  const isOverLimit = balanceMicrousd <= 0;
+  const barFillPct = Math.max(0, Math.min(100, remainingPct * 100));
+
+  return (
+    <div>
+      {/* Main amount + status badge */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
+        <div>
+          {isOverLimit ? (
+            <span style={{ fontSize: '24px', fontWeight: '600', color: 'var(--color-danger, #e53e3e)' }}>
+              {formatMicrousd(Math.abs(balanceMicrousd))} over limit
+            </span>
+          ) : (
+            <span style={{ fontSize: '24px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+              {formatMicrousd(balanceMicrousd)} left
+            </span>
+          )}
+        </div>
+        <span style={{
+          padding: '2px 10px',
+          borderRadius: '12px',
+          fontSize: '12px',
+          fontWeight: '500',
+          background: `${statusInfo.color}1a`,
+          color: statusInfo.color,
+        }}>
+          {statusInfo.text}
+        </span>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{
+        width: '100%',
+        height: '8px',
+        borderRadius: '4px',
+        background: 'var(--color-surface-2)',
+        marginBottom: '10px',
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          width: `${barFillPct}%`,
+          height: '100%',
+          borderRadius: '4px',
+          background: barColor,
+          transition: 'width 0.3s ease',
+        }} />
+      </div>
+
+      {/* Used this month */}
+      <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+        {formatMicrousd(usageChargeMicrousd)} used this month
+      </div>
+
+      {/* Plan breakdown */}
+      <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+        {formatMicrousd(includedCreditMicrousd)} {planName} included
+        {topUpMicrousd > 0 && <> + {formatMicrousd(topUpMicrousd)} top-ups</>}
+      </div>
+    </div>
+  );
+}
+
 const LEDGER_ENTRY_TYPE_LABELS: Record<string, string> = {
   included_credit: 'Included credits',
   top_up_credit: 'Credit top-up',
@@ -429,32 +520,14 @@ export function BillingPage() {
           )}
           {usageAccount && usageSummary?.currentPeriod && (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '16px' }}>
-                <div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Account Status</div>
-                  <div style={{ fontWeight: '500', color: usageAccountStatusLabel(usageAccount.status).color }}>
-                    {usageAccountStatusLabel(usageAccount.status).text}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Usage Charges</div>
-                  <div style={{ fontWeight: '500' }}>{formatMicrousd(usageSummary.currentPeriod.usageChargeMicrousd)}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Credits Applied</div>
-                  <div style={{ fontWeight: '500' }}>{formatMicrousd(usageSummary.currentPeriod.creditAppliedMicrousd)}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Balance</div>
-                  <div style={{ fontWeight: '500' }}>{formatMicrousd(usageSummary.currentPeriod.balanceMicrousd)}</div>
-                </div>
-                {usageSummary.currentPeriod.hardCapMicrousd != null && (
-                  <div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Hard Cap</div>
-                    <div style={{ fontWeight: '500' }}>{formatMicrousd(usageSummary.currentPeriod.hardCapMicrousd)}</div>
-                  </div>
-                )}
-              </div>
+              <CreditGauge
+                balanceMicrousd={usageSummary.currentPeriod.balanceMicrousd}
+                totalCreditMicrousd={usageSummary.currentPeriod.balanceMicrousd + usageSummary.currentPeriod.usageChargeMicrousd}
+                usageChargeMicrousd={usageSummary.currentPeriod.usageChargeMicrousd}
+                includedCreditMicrousd={usageSummary.currentPeriod.includedCreditMicrousd}
+                status={usageAccount.status}
+                planLabel={summary?.planLabel}
+              />
 
               {usageSummary.warnings.some((w) => w.reached) && (
                 <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
