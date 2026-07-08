@@ -65,6 +65,10 @@ while [[ $# -gt 0 ]]; do
       echo "  --env <name>        Target environment: staging or production." >&2
       echo "  --var-file <path>   Path to terraform.tfvars file for this environment." >&2
       echo "  --yes, --auto-approve  Skip the confirmation prompt and auto-approve apply." >&2
+      echo "  Note: production applies require an additional 'yes' confirmation." >&2
+      echo "" >&2
+      echo "Terraform workspaces are automatically managed from --env." >&2
+      echo "Each environment (staging/production) gets its own isolated state." >&2
       echo "" >&2
       echo "Examples:" >&2
       echo "  $0 --env staging --var-file staging.tfvars" >&2
@@ -129,6 +133,25 @@ if [[ -z "${VAR_FILE}" ]]; then
   fi
 fi
 
+# ─── Terraform workspace ─────────────────────────────────────────────────────
+
+# Check BEFORE selecting — warn if still on deprecated default workspace
+CURRENT_WS="$(terraform workspace show)"
+if [[ "${CURRENT_WS}" == "default" ]]; then
+  echo "" >&2
+  echo "⚠️  WARNING: You are on the 'default' terraform workspace." >&2
+  echo "   The default workspace is deprecated. Use --env staging|production." >&2
+  echo "" >&2
+fi
+
+echo "==> Selecting terraform workspace: ${HEROBIDS_ENV}"
+terraform workspace select "${HEROBIDS_ENV}" 2>/dev/null || \
+  terraform workspace new "${HEROBIDS_ENV}" || {
+    echo "ERROR: Failed to select or create terraform workspace '${HEROBIDS_ENV}'." >&2
+    echo "Check that terraform is functional and the state is not corrupted." >&2
+    exit 1
+  }
+
 # ─── Terraform init ──────────────────────────────────────────────────────────
 
 echo "==> [${HEROBIDS_ENV}] Running terraform init..."
@@ -140,6 +163,24 @@ echo ""
 echo "==> [${HEROBIDS_ENV}] Running terraform plan..."
 # shellcheck disable=SC2086
 terraform plan ${TF_CLI_ARGS}
+
+# ─── Production confirmation ─────────────────────────────────────────────────
+
+if [[ "${HEROBIDS_ENV}" == "production" ]]; then
+  echo ""
+  printf "\033[1;31m⚠️  PRODUCTION WORKSPACE — this will modify live production infrastructure.\033[0m\n"
+  printf "\033[1;31m   Are you ABSOLUTELY sure you want to proceed?\033[0m\n"
+  echo ""
+  read -rp "Type 'yes' to confirm: " PROD_CONFIRM || {
+    echo ""
+    echo "Aborted (no interactive input available). Use --yes for automated runs (not recommended for production)."
+    exit 1
+  }
+  if [[ "${PROD_CONFIRM}" != "yes" ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+fi
 
 # ─── Confirmation ────────────────────────────────────────────────────────────
 
