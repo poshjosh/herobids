@@ -11,7 +11,7 @@ import type {
 import { ok, err } from '@herobids/domain';
 import { RUNTIME_ERROR_CODES } from '@herobids/domain';
 import { DockerAgentManager } from './docker-agent-manager.js';
-import type { DockerAgentManagerConfig, DockerStartOverrides } from './docker-agent-manager.js';
+import type { DockerStartOverrides } from './docker-agent-manager.js';
 import type { AgentRepository } from '@herobids/db';
 import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
 

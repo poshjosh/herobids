@@ -1036,7 +1036,7 @@ export const AgentRuntimeConfigSchema = z.object({
     maxWallClockMs: z.number().int().min(0).optional(),
   })).default({}).refine(
     (profiles) => {
-      for (const [tier, profile] of Object.entries(profiles)) {
+      for (const [, profile] of Object.entries(profiles)) {
         if (profile.memoryReservationMb !== undefined && profile.memoryReservationMb > profile.memoryLimitMb) {
           return false;
         }
@@ -1163,7 +1163,7 @@ export const NomadConfigSchema = z.object({
   /** Nomad API base URL (e.g. 'http://10.0.0.1:4646'). Required when runtimeBackend is 'nomad'. */
   addr: z.string().url().default('http://localhost:4646'),
   /** Nomad ACL token for authenticated API access. Override: NOMAD_TOKEN */
-  token: z.string().optional(),
+  token: z.string().nullable().optional(),
   /** Nomad region. Default: 'global'. */
   region: z.string().default('global'),
   /** Nomad datacenters for agent job placement. */
@@ -1173,7 +1173,7 @@ export const NomadConfigSchema = z.object({
   /** Agent Docker image used in the Nomad task config. Override: NOMAD_AGENT_IMAGE */
   agentImage: z.string().default('herobids-agent:latest'),
   /** Docker network for agent tasks. Leave empty for Nomad's default bridge network. */
-  dockerNetwork: z.string().optional(),
+  dockerNetwork: z.string().nullable().optional(),
   /**
    * Interval (ms) between termination polls.
    * The adapter polls Nomad allocation statuses to detect agent crashes.
@@ -1343,6 +1343,24 @@ export const AppConfigSchema = z.object({
         });
       }
     }
+
+  // When runtimeBackend is 'nomad', validate that required Nomad fields are present.
+  if (data.runtimeBackend === 'nomad') {
+    if (!data.nomad.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'nomad.token is required when runtimeBackend is "nomad". Set NOMAD_TOKEN or configure nomad.token in operator config.',
+        path: ['nomad', 'token'],
+      });
+    }
+    if (!data.nomad.dockerNetwork) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'nomad.dockerNetwork is required when runtimeBackend is "nomad" (e.g. "bridge" or a custom network name).',
+        path: ['nomad', 'dockerNetwork'],
+      });
+    }
+  }
 
     // When both primary and fallback providers are real (non-mock), validate that
     // every plan/interval in the primary mapping also exists in the fallback.

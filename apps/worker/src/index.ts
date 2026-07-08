@@ -324,10 +324,10 @@ const agentRuntimeLauncher = (() => {
     ...(appConfig.marketData
       ? { marketDataConfigJson: JSON.stringify(appConfig.marketData) }
       : {}),
-    marketDataDexscreenerBaseUrl: appConfig.marketData?.dexscreenerBaseUrl,
-    marketDataDexscreenerRpm: appConfig.marketData?.dexscreenerRpm,
-    marketDataBinanceBaseUrl: appConfig.marketData?.binanceBaseUrl,
-    marketDataBinanceRpm: appConfig.marketData?.binanceRpm,
+    marketDataDexscreenerBaseUrl: appConfig.marketData?.dexscreener?.baseUrl,
+    marketDataDexscreenerRpm: appConfig.marketData?.dexscreener?.search?.requestsPerMinute,
+    marketDataBinanceBaseUrl: appConfig.marketData?.binance?.baseUrl,
+    marketDataBinanceRpm: appConfig.marketData?.binance?.requestsPerMinute,
     marketDataTimeoutMs: appConfig.marketData?.timeoutMs,
     providersYamlJson: JSON.stringify(providersYaml),
     // Pass shared-service cluster addresses so agent containers on
@@ -394,12 +394,12 @@ const agentRuntimeLauncher = (() => {
   if (runtimeBackend === 'nomad') {
     const nomadAdapter = new NomadRuntimeAdapter({
       nomadAddr: appConfig.nomad.addr,
-      token: appConfig.nomad.token,
+      token: appConfig.nomad.token!,
       region: appConfig.nomad.region,
       datacenters: appConfig.nomad.datacenters,
       namespace: appConfig.nomad.namespace,
       agentImage: process.env['NOMAD_AGENT_IMAGE'] ?? appConfig.nomad.agentImage,
-      dockerNetwork: appConfig.nomad.dockerNetwork,
+      dockerNetwork: appConfig.nomad.dockerNetwork!,
       defaultResources: {
         memoryLimitMb: defaultResources.memoryLimitMb,
         cpuShares: defaultResources.cpuShares,

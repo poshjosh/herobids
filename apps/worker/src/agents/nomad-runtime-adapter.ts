@@ -608,7 +608,7 @@ export class NomadRuntimeAdapter implements RuntimePort {
         });
 
       // Update local tracking from actual state
-      for (const [agentId, job] of actualJobs) {
+      for (const [agentId] of actualJobs) {
         const jobId = agentJobId(agentId);
         if (!this.knownAllocations.has(jobId)) {
           // Discovered a running job we didn't know about — track it
