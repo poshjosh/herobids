@@ -108,14 +108,18 @@ fi
 
 echo "── 2. Docker Containers ──"
 
-CONTAINERS=$(ssh ${SSH_OPTS} "root@${SERVER_IP}" \
-  'docker ps --format "{{.Names}}" 2>&1' || true)
+# docker ps -a shows all containers; we check both existence and running state
+CONTAINERS_ALL=$(ssh ${SSH_OPTS} "root@${SERVER_IP}" \
+  'docker ps -a --format "{{.Names}} {{.Status}}" 2>&1' || true)
 
 for svc in caddy api web worker postgres redis; do
-  if echo "${CONTAINERS}" | grep -q "${svc}"; then
+  LINE=$(echo "${CONTAINERS_ALL}" | grep -i "${svc}" | head -1)
+  if [[ -z "${LINE}" ]]; then
+    fail "Container '${svc}'" "not found — may not be deployed"
+  elif echo "${LINE}" | grep -q "^Up"; then
     pass "Container '${svc}' is running"
   else
-    fail "Container '${svc}'" "not running"
+    fail "Container '${svc}'" "exists but not running"
   fi
 done
 
@@ -149,11 +153,20 @@ else
   pass "Worker logs — no guard failures"
 fi
 
-# Check NODE_ENV appears in logs (any format)
-if echo "${WORKER_LOG}" | grep -qi 'NODE_ENV'; then
-  pass "Worker NODE_ENV is configured"
+# Check NODE_ENV from container env, not logs (more reliable)
+NODE_ENV_VAL=$(ssh ${SSH_OPTS} "root@${SERVER_IP}" \
+  'docker inspect herobids-worker-1 --format "{{range .Config.Env}}{{println .}}{{end}}" 2>/dev/null | grep NODE_ENV | cut -d= -f2' || true)
+
+if [[ -z "${NODE_ENV_VAL}" ]]; then
+  # Fallback: try via compose
+  NODE_ENV_VAL=$(ssh ${SSH_OPTS} "root@${SERVER_IP}" \
+    "cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.prod.yaml -f docker-compose.staging.yaml exec -T worker printenv NODE_ENV 2>/dev/null" || true)
+fi
+
+if [[ -n "${NODE_ENV_VAL}" ]]; then
+  pass "Worker NODE_ENV = ${NODE_ENV_VAL}"
 else
-  fail "Worker NODE_ENV" "no NODE_ENV found in recent logs"
+  fail "Worker NODE_ENV" "could not read from container"
 fi
 
 # ─── Check 5: Database migrations ────────────────────────────────────────────
