@@ -5,13 +5,14 @@
 **Source inputs:**
 - `docs/features/pending/020-wake-driven-cost-reduction/000-analysis.md`
 - Production data from 8 agents on 2026-07-08
-- Code trace of `market-intelligence/monitor.ts`, `agent-wake-scheduler.ts`, `agent.ts`
+- Code trace of `apps/worker/src/market-intelligence/monitor.ts`, `apps/worker/src/agent-wake-scheduler.ts`, `apps/worker/src/agent.ts`
+- Runtime/orchestration constraints from `docs/features/2026/07/08/004-orchestration/002-implementation-plan.md`
 
 ## Problem
 
 After deploying 010-llm-cost-reduction (tick gate fingerprint expansion), LLM costs did not decrease. Investigation revealed the tick gate is working correctly — **54% skip rate on scheduled ticks** — but scheduled ticks account for only 29% of all ticks. The other 71% are wake-triggered and always fire the LLM.
 
-The primary wake source is the market monitor's **discovery delta** system (`market-intelligence/monitor.ts`). Every 15 seconds it evaluates the "top set" of tokens from Redis, finds newly-entered tokens, and publishes a wake signal to ALL active agents. Each wake triggers an LLM call.
+The primary wake source is the market monitor's **discovery delta** system (`apps/worker/src/market-intelligence/monitor.ts`). Every 15 seconds it evaluates the top set of tokens from Redis, finds newly-entered tokens, and publishes a wake signal broadly enough that the tick gate rarely gets a chance to suppress cost.
 
 ### Evidence (2026-07-08 production)
 
@@ -22,7 +23,7 @@ The primary wake source is the market monitor's **discovery delta** system (`mar
 | Scheduled ticks that ran LLM | 137 | 13% |
 | **Total** | 1,013 | 100% |
 
-Discovery delta events: ~69/hour. Delivered to all 8 agents. Per-agent wake cooldown (30s) caps at ~2 wake-driven LLM calls per minute per agent from ALL sources combined.
+Discovery delta events: ~69/hour. Delivered broadly enough that several agents are effectively wake-driven most of the time.
 
 ### Current pipeline
 
@@ -31,217 +32,300 @@ Every 15s: evaluateDiscoveryDeltas()
   → Reads "top set" from market-intel:discovery:latest
   → Finds newly-entered tokens (not in previous snapshot)
   → For each new token (per-symbol dedupe: 10 min):
-      → For each of 8 agents:
+      → For each target agent:
+          → emit market.discovery.detected
           → enqueueWake() → per-agent bucket (coalescing: 3s)
 
 Every 3s: flushPendingWakes()
-  → For each agent bucket (per-agent cooldown: 30s):
-      → Publish AgentWakePayload to Redis stream
+  → For each pending bucket:
+      → Check single per-agent cooldown
+      → Publish agent.wake to Redis stream
 
-Agent picks up wake → wakePending=true → scheduleNextTick
-  → minIntervalMs check (15s) → LLM call
+Agent runtime:
+  → Reads outbound stream messages
+  → agent.wake sets wakePending=true and schedules an earlier tick
+  → Wake-driven tick bypasses context-hash suppression and runs the LLM
 ```
 
 ## Design
 
+### Design Constraints
+
+1. The plan must remain **scheduler-agnostic**. It cannot depend on local Docker behavior and must work the same for Docker, Nomad, and future runtime backends.
+2. Shared wake/context delivery must keep using the **existing outbound Redis stream**. Do not add a separate side-channel key for context-only market events.
+3. Per-agent wake preferences are **control-plane state**, not runtime env. Updating them must **not** require restarting or rescheduling the agent runtime.
+4. Operator-wide wake policy belongs under **`marketIntelligence`**, because the worker-owned market monitor consumes that config directly.
+5. Per-agent wake preferences belong on **`agents`**, not on bots and not in legacy trading-instance config.
+
 ### Architecture: Layered Wake Policy
 
-Three layers, each operating independently at a different point in the pipeline:
+Three layers, each operating at a different point in the pipeline:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  Layer 3: Subscription filter (instance config)     │
-│  "Does this agent want this wake source?"            │
-│  If no → drop, zero cost                            │
-├─────────────────────────────────────────────────────┤
-│  Layer 2: Source-specific throttle (operator config) │
-│  "How often can this source wake an agent?"          │
-│  Within cooldown → coalesce, deliver later           │
-├─────────────────────────────────────────────────────┤
-│  Layer 1: Delivery mode (operator config)            │
-│  "Wake, batch, or context-only?"                     │
-│  Context-only → attach to next tick, don't wake      │
-└─────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│  Layer 3: Agent subscription filter                        │
+│  "Should this agent receive this monitor-owned source?"   │
+│  If no → do not emit event or wake for that source         │
+├────────────────────────────────────────────────────────────┤
+│  Layer 2: Source-scoped throttle and coalescing            │
+│  "How often can this source wake this agent?"             │
+│  Separate bucket + cooldown per (agentId, source)          │
+├────────────────────────────────────────────────────────────┤
+│  Layer 1: Delivery mode                                    │
+│  "Wake now, wake later, or context only?"                 │
+│  Uses the existing outbound Redis stream in all cases      │
+└────────────────────────────────────────────────────────────┘
 ```
 
-### Config Model (Two-Layer)
+### Config Model
 
-**Operator config** (`config/default.yaml`) — platform-wide defaults:
+**Operator config** (`config/default.yaml`) — platform-wide wake policy for the market monitor:
 
 ```yaml
-agentRuntime:
-  marketMonitor:
-    wakePolicy:
-      watch_threshold:
-        mode: wake           # always wake the agent immediately
-        cooldownMs: 15000    # max 4 wakes/min from this source
-      discovery_delta:
-        mode: batched        # wake after cooldown or next scheduled tick
-        cooldownMs: 300000   # max 1 wake/5min from this source
-      regime_change:
-        mode: batched
-        cooldownMs: 120000   # max 1 wake/2min
-      scanner:
-        mode: wake
-        cooldownMs: 15000
+marketIntelligence:
+  wakeCoalescingWindowMs: 3000
+  wakeCooldownMs: 30000        # fallback for unknown sources only
+  wakePolicy:
+    watch_threshold:
+      mode: wake
+      cooldownMs: 15000
+    discovery_delta:
+      mode: batched
+      cooldownMs: 300000
+    regime_change:
+      mode: batched
+      cooldownMs: 120000
 ```
 
-**Instance config** (`trading_instances.config` JSONB, per-agent, set via API/UI):
+Notes:
+- `wakeCoalescingWindowMs` stays operator-owned and global.
+- `wakeCooldownMs` remains as the fallback for unknown sources and backward compatibility.
+- Phase 1 can ship with `discovery_delta: batched`; Phase 2 adds the option to move discovery to `mode: context` without changing the transport.
+
+**Per-agent preferences** (`agents.wake_preferences` JSONB, exposed via API/UI as `wakePreferences`) — control-plane state:
 
 ```json
 {
-  "wakePreferences": {
-    "subscribedSources": ["watch_threshold", "regime_change", "scanner"]
-  }
+  "subscribedSources": ["watch_threshold", "regime_change"]
 }
 ```
 
-If `wakePreferences.subscribedSources` is absent, the agent receives all sources (backward compatible). If present, only listed sources deliver wakes.
+Notes:
+- If `subscribedSources` is absent, the agent receives all monitor-owned sources.
+- Phase 3 stores this on `agents`, not `bots`.
+- The worker mirrors active preferences into a Redis projection that the market monitor can read without querying Postgres on every evaluation cycle.
+- Updating `wakePreferences` must take effect without restarting the runtime.
+
+### Recipient Resolution
+
+Do not use one generic `getActiveAgentIds()` path for every source.
+
+1. `watch_threshold`
+   - Evaluate from the watch key owner as today.
+   - Before emitting the event or wake, consult the Redis preference projection to confirm the owner still subscribes to `watch_threshold`.
+
+2. `discovery_delta` and `regime_change`
+   - Resolve recipients from a Redis projection of active agents plus their subscribed monitor-owned sources.
+   - Do not infer discovery/regime recipients from watch keys.
+
+3. Other wake producers
+   - This plan only changes **market-monitor-owned** sources.
+   - Other producers may opt into the same projection later, but that is not required for this feature.
 
 ### Wake Delivery Modes
 
 | Mode | Behavior | Use case |
 |------|----------|----------|
-| `wake` | Publish wake immediately (subject to cooldown). Agent wakes and runs LLM. | Stop-loss, take-profit, scanner signals |
-| `batched` | Hold until cooldown expires OR next scheduled tick fires. Deliver as wake at that point. | Regime changes, discovery deltas (moderate urgency) |
-| `context` | Attach to agent's context stream. Never triggers a wake. Agent sees it on its next tick (wake or scheduled). | Discovery deltas (informational only) |
+| `wake` | Emit the underlying market event and enqueue a normal wake bucket for that source. | Stop-loss, take-profit, urgent actionable signals |
+| `batched` | Emit the underlying market event immediately, but keep the source bucket scheduled so the wake only emits when that source becomes eligible. No dependency on the agent's local tick timer. | Discovery deltas and regime changes when we still want bounded wake-ups |
+| `context` | Emit the underlying market event to the outbound stream, but do **not** emit `agent.wake`. The runtime records it as pending market context, includes it in the prompt on the next tick, and includes a digest of the pending events in the tick-gate fingerprint so the next scheduled tick is not skipped as unchanged context. | Informational market deltas that do not justify immediate LLM work |
 
-## Part A — Source-Specific Cooldowns (Phase 1)
+## Part A — Source-Scoped Cooldowns and Coalescing (Phase 1)
 
 ### Why
 
-The current `WAKE_COOLDOWN_MS = 30_000` applies uniformly to all wake sources. This means a stop-loss trigger and a "new memecoin" notification share the same throttle. Stop-loss needs sub-30s responsiveness; discovery deltas do not.
+The current monitor uses a single per-agent cooldown and a single per-agent pending wake bucket. That is the wrong unit for a source-aware policy:
+
+- a low-urgency discovery event can throttle a watch-threshold wake
+- a watch-threshold wake can cause discovery events to inherit urgent semantics
+- mixed-source coalescing forces `primarySource` first-wins behavior that prevents correct per-source throttling
 
 ### Approach
 
-Replace the single `WAKE_COOLDOWN_MS` constant with a per-source lookup in `flushPendingWakes()`. Cooldowns come from operator config under `agentRuntime.marketMonitor.wakePolicy.<source>.cooldownMs`.
+Replace the single per-agent wake bucket with **one bucket per `(agentId, source)`** and one last-wake timestamp per `(agentId, source)`.
+
+This keeps coalescing and cooldown logic source-local and makes source-specific policy correct.
 
 ### Changes
 
-**`apps/worker/src/market-intelligence/monitor.ts`**:
-- In `flushPendingWakes()`: read `primarySource` from the pending wake, look up its cooldown from config, apply instead of hardcoded `WAKE_COOLDOWN_MS`
-- Keep existing `WAKE_COOLDOWN_MS` as fallback for unknown sources
+**`apps/worker/src/market-intelligence/monitor.ts`**
+- Replace the current `market-monitor:wake:${agentId}` bucket with a source-scoped key such as `market-monitor:wake:${agentId}:${source}`
+- Replace the single last-wake key with `market-monitor:wake:last:${agentId}:${source}`
+- Preserve coalescing within the same source bucket
+- Use `marketIntelligence.wakePolicy.<source>.cooldownMs` for known sources
+- Fall back to `marketIntelligence.wakeCooldownMs` for unknown sources
 
-**`config/default.yaml`**:
-- Add `agentRuntime.marketMonitor.wakePolicy` with per-source `cooldownMs` defaults
+**`config/default.yaml`**
+- Add `marketIntelligence.wakePolicy`
+- Keep existing `wakeCoalescingWindowMs` and `wakeCooldownMs` as the shared defaults/fallbacks
 
-**`packages/domain/src/config/schema.ts`**:
-- Add `wakePolicy` schema to `AgentRuntimeConfig`
+**`packages/domain/src/config/schema.ts`**
+- Extend `MarketIntelligenceConfigSchema`, not `AgentRuntimeConfigSchema`
+- Add a schema for `wakePolicy` keyed by known monitor-owned sources
 
 ### Acceptance criteria
 
-- Discovery delta wakes respect a 5-minute cooldown per agent
-- Watch threshold wakes still respect a 15-second cooldown
-- Unknown wake sources fall back to the existing 30-second default
-- Existing tests pass, new tests cover per-source cooldown behavior
+- Discovery delta wakes respect a 5-minute cooldown per agent **for `discovery_delta` only**
+- Watch threshold wakes still respect a 15-second cooldown per agent **for `watch_threshold` only**
+- Interleaved `watch_threshold` and `discovery_delta` events no longer throttle each other
+- Unknown wake sources still fall back to the existing default cooldown behavior
+- Existing tests pass, and new tests cover source-scoped cooldown behavior
 
 ## Part B — Batched and Context Delivery Modes (Phase 2)
 
 ### Why
 
-Discovery deltas are informational — they don't require immediate LLM response. Delivering them as context on the next tick (rather than triggering a wake) eliminates their cost entirely. The `batched` mode provides an intermediate option for sources that warrant attention but not urgency.
+Source-scoped cooldowns are the quick win, but they do not change the more important fact: discovery deltas are often informational and do not always justify an immediate LLM invocation.
+
+We need a delivery policy that can:
+
+1. keep urgent sources wakeable
+2. delay moderate-urgency sources without relying on agent-local timer knowledge
+3. deliver informational sources as prompt context only, without introducing a second transport
 
 ### Approach
 
-**Market monitor side:**
-- When `mode: context`, publish the event to a `market-monitor:context:<agentId>` Redis key instead of `enqueueWake()`
-- When `mode: batched`, enqueue normally but mark the wake with `deliveryMode: 'batched'` so the flush logic applies the cooldown more aggressively
-- When `mode: wake`, current behavior (enqueue + flush with cooldown)
+**Transport rule:** the underlying market event always continues to use the existing outbound Redis stream.
 
-**Agent runtime side:**
-- On tick start, read `market-monitor:context:<agentId>`, drain events into `runtimeState.metrics.pendingContextEvents`
-- Render pending context events in the prompt alongside other enrichment
-- Clear the context key after draining
+Then delivery mode decides only whether and how `agent.wake` is emitted.
+
+**Market monitor side**
+- `mode: wake`
+  - emit the market event
+  - enqueue a source-scoped wake bucket with the normal coalescing window
+- `mode: batched`
+  - emit the market event
+  - enqueue a source-scoped wake bucket that remains scheduled until the source is eligible to wake that agent
+- `mode: context`
+  - emit the market event
+  - do not enqueue `agent.wake`
+
+**Agent runtime side**
+- extend `applyRuntimeMessage()` so monitor-owned market events can be stored as structured pending market context rather than falling through as generic platform messages
+- compute a stable digest of pending context-only market events before the tick-gate decision
+- include that digest in the context-hash fingerprint so a new context-only event can force the next scheduled tick to run even when price/position state is unchanged
+- render pending market context events in the prompt
+- clear the pending market context after the tick completes
 
 ### Changes
 
-**`apps/worker/src/market-intelligence/monitor.ts`**:
-- In `evaluateDiscoveryDeltas()` and `evaluateRegimeChanges()`: check source mode; if `context`, write to context key instead of calling `enqueueWake()`
-- In `enqueueWake()`: accept optional `deliveryMode` field on `PendingWake`
-- In `flushPendingWakes()`: respect `deliveryMode`
+**`apps/worker/src/market-intelligence/monitor.ts`**
+- In `evaluateDiscoveryDeltas()` and `evaluateRegimeChanges()`, always emit the underlying market event
+- Choose `wake` / `batched` / `context` from `marketIntelligence.wakePolicy.<source>.mode`
+- For `context`, skip `enqueueWake()` entirely
+- For `batched`, keep the source bucket scheduled until the source is eligible to emit a wake
 
-**`apps/worker/src/runtime-composition.ts`**:
-- Add `pendingContextEvents` field to `RuntimeSessionMetrics`
-- Add `recordPendingContextEvents()` function to drain context key into metrics
+**`apps/worker/src/runtime-composition.ts`**
+- Add structured runtime storage for pending market-monitor context events
+- Teach `applyRuntimeMessage()` to parse and record `market.discovery.detected` and `market.regime.changed` as structured context
+- Add a prompt block that renders pending market context events in a compact, actionable form
 
-**`apps/worker/src/agent.ts`**:
-- Before tick gate: drain `market-monitor:context:<agentId>` into runtime state
-- Include pending context events in prompt enrichment
+**`apps/worker/src/tick-gates.ts` and `apps/worker/src/tick-gate-state.ts`**
+- Add a stable digest for pending market context events
+- Include that digest in the decision-context hash
 
-**`config/default.yaml`** — add `mode` field per source
+**`apps/worker/src/agent.ts`**
+- Compute the pending market-event digest before the skip decision
+- Include pending market context in the prompt on the next tick
+- Clear that pending context after the tick, similar to current single-tick wake context cleanup
 
-**`packages/domain/src/config/schema.ts`** — add `mode` to wake policy schema
+**`config/default.yaml` and `packages/domain/src/config/schema.ts`**
+- Add `mode` to each known wake-policy source
 
 ### Acceptance criteria
 
-- `mode: context` sources never trigger a wake, regardless of event volume
-- Context events appear in the agent's next tick prompt
-- `mode: batched` sources respect their cooldown and the next-scheduled-tick delivery rule
-- `mode: wake` sources behave identically to current behavior
-- Existing wake behavior (watch thresholds, scanner) unchanged
+- `mode: context` sources never emit `agent.wake`
+- Context-only market events appear in the next tick prompt
+- A new context-only market event prevents the next scheduled tick from being skipped as `context_unchanged`
+- `mode: batched` emits wakes from the source-scoped bucket without requiring the market monitor to know the agent's local next-tick timer
+- `mode: wake` preserves current wake semantics for urgent sources
 
 ## Part C — Per-Agent Wake Subscriptions (Phase 3)
 
 ### Why
 
-Not every agent needs every wake source. A perps-trading agent doesn't need discovery deltas from Solana memecoins. Letting agents opt out of irrelevant wake sources reduces cross-agent amplification and gives creators control over their cost profile.
+Not every agent wants every market-monitor source. Discovery and regime changes are cross-agent fan-out sources, so a subscription filter is a direct cost lever.
+
+This filter must live in control-plane state and must not require runtime restart, especially now that runtimes can be scheduled remotely.
 
 ### Approach
 
-Add `wakePreferences.subscribedSources` to the agent instance config (NOT operator config). If absent, agent receives all sources (backward compatible). If present, only listed sources deliver events.
+Add a dedicated `wake_preferences` JSONB field on `agents`, expose it via API/UI as `wakePreferences`, and mirror effective preferences for active agents into Redis for the market monitor.
 
-The market monitor checks the agent's instance config before enqueuing or context-writing for that agent. The check happens in `getActiveAgentIds()` result processing — filter agents by subscription before iterating.
+This phase filters **monitor-owned** sources only.
 
 ### Changes
 
-**`packages/domain/src/config/schema.ts`**:
-- Add `wakePreferences` to agent instance config schema (the one validated at API write time for `trading_instances.config`)
+**Database / API**
+- Add `wake_preferences` JSONB to `agents`
+- Add `wakePreferences` to agent create/update/read payloads
 
-**`apps/worker/src/market-intelligence/monitor.ts`**:
-- `getActiveAgentIds()` → return `Array<{ agentId: string; subscribedSources?: string[] }>` instead of `string[]`
-- Before enqueuing/context-writing for an agent, check if the source is in `subscribedSources` (or if `subscribedSources` is absent → allow all)
+**Worker / Redis projection**
+- Add a worker-owned projection of active agent wake preferences in Redis
+- Update that projection when:
+  - an agent session starts
+  - an agent session stops
+  - an agent's `wakePreferences` change
+- Apply updates without restarting the runtime
 
-**`apps/web/src/` (agent form)**:
-- Add wake source subscription checkboxes to agent configuration UI
-- Only shown for agents with trading capability
+**`apps/worker/src/market-intelligence/monitor.ts`**
+- Replace the generic discovery/regime recipient path with a Redis-backed lookup of active agent subscriptions
+- For watch-threshold events, consult the same projection before emitting the event or wake
+
+**`apps/web/src/` (agent form)**
+- Add agent-level wake source checkboxes for the monitor-owned sources
 
 ### Acceptance criteria
 
-- Agent with `subscribedSources: ["watch_threshold"]` receives watch threshold wakes but NOT discovery delta or regime change wakes
-- Agent without `subscribedSources` receives ALL wake sources (backward compatible)
-- Changing `subscribedSources` via API takes effect on the next market monitor evaluation cycle
-- UI allows toggling individual wake sources
+- Agent without `wakePreferences.subscribedSources` receives all monitor-owned sources
+- Agent with `subscribedSources: ["watch_threshold"]` receives watch-threshold events only and does not receive discovery/regime events
+- Changing `wakePreferences` via API updates effective routing without restarting or rescheduling the agent runtime
+- UI exposes the agent-level subscription controls for the monitor-owned sources
 
 ## Non-Goals
 
-- Do not change the market monitor evaluation interval (separate tuning concern)
+- Do not change the market monitor evaluation interval in this feature
 - Do not change the discovery delta snapshot format or top-set selection logic
-- Do not change the agent-side `wake.minIntervalMs` (agent tick scheduling is separate)
-- Do not remove any existing wake source
+- Do not change the agent-side `wake.minIntervalMs`; wake scheduling inside the runtime remains separate
+- Do not redesign non-monitor wake producers in this feature
+- Do not add scheduler-specific wake logic; the design must remain backend-agnostic
 
 ## Test Plan
 
 ### Part A
-- Per-source cooldown lookup returns correct value for each known source
-- Unknown source falls back to default
-- Cooldown respected in `flushPendingWakes()` — wake suppressed when within window
-- Multiple sources interleaved: each source's cooldown tracked independently
+- Per-source cooldown lookup returns the correct value for each known source
+- Unknown source falls back to the default cooldown
+- Cooldown is respected independently per `(agentId, source)`
+- Interleaved source traffic does not cross-throttle other source buckets
 
 ### Part B
-- `mode: context` writes to context key, does NOT call `enqueueWake()`
-- Agent drains context key on tick start and includes events in prompt
-- `mode: batched` delivers wake after cooldown or on next scheduled tick
-- `mode: wake` unchanged from current behavior
+- `mode: context` emits the underlying market event but never emits `agent.wake`
+- `mode: batched` keeps the wake in the source bucket until the source becomes eligible
+- The runtime records context-only market events as structured pending context
+- The market-event digest changes when new context-only events arrive
+- The next scheduled tick does not skip as `context_unchanged` when that digest changes
+- `mode: wake` remains unchanged for urgent sources
 
 ### Part C
-- Agent without `subscribedSources` receives all sources
-- Agent with `subscribedSources: ["watch_threshold"]` only receives watch threshold events
-- Subscription check bypasses rate limiting and enqueuing entirely for filtered sources
+- Agent without `wakePreferences` receives all monitor-owned sources
+- Agent with a restricted `subscribedSources` list receives only those sources
+- Discovery/regime recipient resolution comes from the Redis projection, not watch-key scanning
+- Updating `wakePreferences` via API changes effective routing without a runtime restart
 
 ## Rollout Notes
 
-- **Phase 1** ships independently — single file change, immediate cost impact (~40-50% reduction)
-- **Phase 2** builds on Phase 1's config structure, adds new delivery modes without changing existing behavior
-- **Phase 3** adds user-facing control; dependent on Phase 1 config being in place
-- All phases are backward compatible — agents without new config fields behave identically to today
-- Defaults in operator config should mirror current behavior (all sources `mode: wake`, cooldowns at current values) until explicitly tuned
+- **Phase 1** is the quickest cost win and can ship independently
+- **Phase 2** builds on Phase 1's config model and transport, without introducing a second delivery channel
+- **Phase 3** adds the user-facing control layer and a Redis projection for active preferences
+- All phases remain compatible with Docker and Nomad runtime backends because they use worker-owned control-plane state plus the existing outbound Redis stream
+- The final rollout should preserve current behavior by default: known sources start with explicit configured modes/cooldowns, and agents without `wakePreferences` continue receiving all monitor-owned sources
