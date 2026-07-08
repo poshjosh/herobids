@@ -521,3 +521,273 @@ describe('wake scheduler — coalescing and cooldown', () => {
     expect(publisher.emitAgentWake).toHaveBeenCalledTimes(2);
   });
 });
+
+// ===========================================================================
+// Source-scoped cooldowns (Part A — Wake-Driven Cost Reduction)
+// ===========================================================================
+
+describe('wake scheduler — source-scoped cooldowns', () => {
+  let redis: ReturnType<typeof makeRedisMock>;
+  let publisher: ReturnType<typeof makePublisherMock>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    redis = makeRedisMock();
+    publisher = makePublisherMock();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('uses per-source cooldown from wakePolicy for each known source', async () => {
+    // Three buckets for the same agent, each with a different source.
+    // Each last-wake timestamp falls within its source-specific cooldown.
+    const agentId = 'agent-src-001';
+
+    const wtKey = `market-monitor:wake:${agentId}:watch_threshold`;
+    redis._store.set(wtKey, JSON.stringify({
+      agentId, source: 'watch_threshold', eventIds: ['ev-wt'],
+      scheduledAt: Date.now() - 100,
+    }));
+    // 10s ago — within 15s watch_threshold cooldown → suppressed
+    redis._store.set(`market-monitor:wake:last:${agentId}:watch_threshold`, String(Date.now() - 10_000));
+    redis._scanKeys.push(wtKey);
+
+    const ddKey = `market-monitor:wake:${agentId}:discovery_delta`;
+    redis._store.set(ddKey, JSON.stringify({
+      agentId, source: 'discovery_delta', eventIds: ['ev-dd'],
+      scheduledAt: Date.now() - 100,
+    }));
+    // 250s ago — within 300s discovery_delta cooldown → suppressed
+    redis._store.set(`market-monitor:wake:last:${agentId}:discovery_delta`, String(Date.now() - 250_000));
+    redis._scanKeys.push(ddKey);
+
+    const rcKey = `market-monitor:wake:${agentId}:regime_change`;
+    redis._store.set(rcKey, JSON.stringify({
+      agentId, source: 'regime_change', eventIds: ['ev-rc'],
+      scheduledAt: Date.now() - 100,
+    }));
+    // 100s ago — within 120s regime_change cooldown → suppressed
+    redis._store.set(`market-monitor:wake:last:${agentId}:regime_change`, String(Date.now() - 100_000));
+    redis._scanKeys.push(rcKey);
+
+    const monitor = createMarketMonitor(
+      {
+        enabled: true,
+        wakeCoalescingWindowMs: 3000,
+        wakeCooldownMs: 30000,
+        wakePolicy: {
+          watch_threshold: { cooldownMs: 15_000 },
+          discovery_delta: { cooldownMs: 300_000 },
+          regime_change: { cooldownMs: 120_000 },
+        },
+      },
+      { redis, publisher },
+    );
+
+    await monitor.flushWakes();
+
+    // All three should be suppressed by their respective source cooldowns
+    expect(publisher.emitAgentWake).not.toHaveBeenCalled();
+    expect(monitor.getMetrics().wakeRequestsSuppressed).toBe(3);
+  });
+
+  it('unknown source falls back to default wakeCooldownMs', async () => {
+    // 'scanner' is a valid AgentWakeSource but not in wakePolicy — should use default
+    const agentId = 'agent-src-002';
+    const wakeKey = `market-monitor:wake:${agentId}:scanner`;
+    const lastWakeKey = `market-monitor:wake:last:${agentId}:scanner`;
+
+    redis._store.set(wakeKey, JSON.stringify({
+      agentId, source: 'scanner', eventIds: ['ev-1'],
+      scheduledAt: Date.now() - 100,
+    }));
+    // 10s ago — within the 30s default cooldown → suppressed
+    redis._store.set(lastWakeKey, String(Date.now() - 10_000));
+    redis._scanKeys.push(wakeKey);
+
+    const monitor = createMarketMonitor(
+      {
+        enabled: true,
+        wakeCoalescingWindowMs: 3000,
+        wakeCooldownMs: 30000, // default fallback
+        wakePolicy: {
+          watch_threshold: { cooldownMs: 15_000 },
+        },
+      },
+      { redis, publisher },
+    );
+
+    await monitor.flushWakes();
+
+    expect(publisher.emitAgentWake).not.toHaveBeenCalled();
+    expect(monitor.getMetrics().wakeRequestsSuppressed).toBe(1);
+  });
+
+  it('cooldown is independent per (agentId, source) — discovery suppression does not block watch_threshold', async () => {
+    // Same agent, two sources. discovery_delta is suppressed (within its long cooldown),
+    // but watch_threshold fires because its shorter cooldown has elapsed.
+    const agentId = 'agent-src-003';
+
+    // discovery_delta: last wake 0s ago → suppressed by 300s cooldown
+    const ddKey = `market-monitor:wake:${agentId}:discovery_delta`;
+    redis._store.set(ddKey, JSON.stringify({
+      agentId, source: 'discovery_delta', eventIds: ['ev-dd'],
+      scheduledAt: Date.now() - 100,
+    }));
+    redis._store.set(`market-monitor:wake:last:${agentId}:discovery_delta`, String(Date.now()));
+    redis._scanKeys.push(ddKey);
+
+    // watch_threshold: last wake 20s ago → beyond 15s cooldown → fires
+    const wtKey = `market-monitor:wake:${agentId}:watch_threshold`;
+    redis._store.set(wtKey, JSON.stringify({
+      agentId, source: 'watch_threshold', eventIds: ['ev-wt'],
+      scheduledAt: Date.now() - 100,
+    }));
+    redis._store.set(`market-monitor:wake:last:${agentId}:watch_threshold`, String(Date.now() - 20_000));
+    redis._scanKeys.push(wtKey);
+
+    const monitor = createMarketMonitor(
+      {
+        enabled: true,
+        wakeCoalescingWindowMs: 3000,
+        wakeCooldownMs: 30000,
+        wakePolicy: {
+          watch_threshold: { cooldownMs: 15_000 },
+          discovery_delta: { cooldownMs: 300_000 },
+        },
+      },
+      { redis, publisher },
+    );
+
+    await monitor.flushWakes();
+
+    // watch_threshold fires, discovery_delta suppressed
+    expect(publisher.emitAgentWake).toHaveBeenCalledTimes(1);
+    expect(publisher.emitAgentWake).toHaveBeenCalledWith(
+      agentId,
+      expect.objectContaining({
+        source: 'watch_threshold',
+        eventIds: ['ev-wt'],
+      }),
+    );
+    expect(monitor.getMetrics().wakeRequestsEmitted).toBe(1);
+    expect(monitor.getMetrics().wakeRequestsSuppressed).toBe(1);
+  });
+
+  it('interleaved source traffic does not cross-throttle other source buckets', async () => {
+    // Same agent, two different sources. Both are beyond their respective
+    // cooldowns — both should fire independently.
+    const agentId = 'agent-src-004';
+
+    const wtKey = `market-monitor:wake:${agentId}:watch_threshold`;
+    redis._store.set(wtKey, JSON.stringify({
+      agentId, source: 'watch_threshold', eventIds: ['ev-wt'],
+      scheduledAt: Date.now() - 100,
+    }));
+    redis._store.set(`market-monitor:wake:last:${agentId}:watch_threshold`, String(Date.now() - 20_000));
+    redis._scanKeys.push(wtKey);
+
+    const ddKey = `market-monitor:wake:${agentId}:discovery_delta`;
+    redis._store.set(ddKey, JSON.stringify({
+      agentId, source: 'discovery_delta', eventIds: ['ev-dd'],
+      scheduledAt: Date.now() - 100,
+    }));
+    redis._store.set(`market-monitor:wake:last:${agentId}:discovery_delta`, String(Date.now() - 310_000));
+    redis._scanKeys.push(ddKey);
+
+    const monitor = createMarketMonitor(
+      {
+        enabled: true,
+        wakeCoalescingWindowMs: 3000,
+        wakeCooldownMs: 30000,
+        wakePolicy: {
+          watch_threshold: { cooldownMs: 15_000 },
+          discovery_delta: { cooldownMs: 300_000 },
+        },
+      },
+      { redis, publisher },
+    );
+
+    await monitor.flushWakes();
+
+    // Both sources should fire
+    expect(publisher.emitAgentWake).toHaveBeenCalledTimes(2);
+
+    const sources = publisher.emitAgentWake.mock.calls.map(
+      ([, payload]: [string, { source: string }]) => payload.source,
+    );
+    expect(sources).toContain('watch_threshold');
+    expect(sources).toContain('discovery_delta');
+
+    expect(monitor.getMetrics().wakeRequestsEmitted).toBe(2);
+    expect(monitor.getMetrics().wakeRequestsSuppressed).toBe(0);
+  });
+
+  it('backward-compat: missing source field defaults to watch_threshold', async () => {
+    // Old-format bucket (pre source-scoped keys) — no `source` field in JSON.
+    // The defensive code in flushPendingWakes should default to 'watch_threshold'
+    // and not produce a key suffix of 'undefined'.
+    const agentId = 'agent-src-005';
+    // JSON payload is missing the `source` field (simulating pre-A1 bucket).
+    // The defensive code in flushPendingWakes should default to 'watch_threshold'.
+    const wakeKey = `market-monitor:wake:${agentId}:watch_threshold`;
+    redis._store.set(wakeKey, JSON.stringify({
+      agentId,
+      // source field omitted intentionally (old-format bucket)
+      eventIds: ['ev-old'],
+      scheduledAt: Date.now() - 100,
+    }));
+    // Last watch_threshold wake 35s ago — beyond 30s default cooldown
+    redis._store.set(`market-monitor:wake:last:${agentId}:watch_threshold`, String(Date.now() - 35_000));
+    redis._scanKeys.push(wakeKey);
+
+    const monitor = createMarketMonitor(
+      { enabled: true, wakeCoalescingWindowMs: 3000, wakeCooldownMs: 30000 },
+      { redis, publisher },
+    );
+
+    await monitor.flushWakes();
+
+    // Should emit — treated as watch_threshold with 30s default cooldown
+    expect(publisher.emitAgentWake).toHaveBeenCalledTimes(1);
+    expect(monitor.getMetrics().wakeRequestsEmitted).toBe(1);
+  });
+
+  it('config not provided — all sources use default wakeCooldownMs', async () => {
+    // Create monitor without wakePolicy. Both discovery_delta and watch_threshold
+    // should use the same default cooldown (30s).
+    const agentId = 'agent-src-006';
+
+    const wtKey = `market-monitor:wake:${agentId}:watch_threshold`;
+    redis._store.set(wtKey, JSON.stringify({
+      agentId, source: 'watch_threshold', eventIds: ['ev-wt'],
+      scheduledAt: Date.now() - 100,
+    }));
+    // 10s ago — within 30s default cooldown → suppressed
+    redis._store.set(`market-monitor:wake:last:${agentId}:watch_threshold`, String(Date.now() - 10_000));
+    redis._scanKeys.push(wtKey);
+
+    const ddKey = `market-monitor:wake:${agentId}:discovery_delta`;
+    redis._store.set(ddKey, JSON.stringify({
+      agentId, source: 'discovery_delta', eventIds: ['ev-dd'],
+      scheduledAt: Date.now() - 100,
+    }));
+    // 10s ago — within 30s default cooldown → suppressed
+    redis._store.set(`market-monitor:wake:last:${agentId}:discovery_delta`, String(Date.now() - 10_000));
+    redis._scanKeys.push(ddKey);
+
+    // No wakePolicy — all sources fall back to wakeCooldownMs (30s)
+    const monitor = createMarketMonitor(
+      { enabled: true, wakeCoalescingWindowMs: 3000, wakeCooldownMs: 30000 },
+      { redis, publisher },
+    );
+
+    await monitor.flushWakes();
+
+    // Both suppressed by the same 30s default cooldown
+    expect(publisher.emitAgentWake).not.toHaveBeenCalled();
+    expect(monitor.getMetrics().wakeRequestsSuppressed).toBe(2);
+  });
+});
