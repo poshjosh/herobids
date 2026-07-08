@@ -315,7 +315,7 @@ export function pnlColor(pnl: string | number | null | undefined): string {
 | 2 | Extend dashboard overview with PnL | `apps/api/src/routes/dashboard.ts` | — | DONE |
 | 3 | API client types + methods | `apps/web/src/lib/api-client.ts` | 1, 2 | DONE |
 | 4 | `formatPnl` helper | `apps/web/src/lib/formatting.ts` | — | DONE |
-| 5 | Mission Control PnL card (1a) | `MissionControlPage.tsx` | 2, 3, 4 | PENDING |
+| 5 | Mission Control PnL card (1a) | `MissionControlPage.tsx` | 2, 3, 4 | DONE |
 | 6 | Exposure page PnL header (1b) | `ExposurePage.tsx` | 2, 3, 4 | PENDING |
 | 7 | Per-agent PnL on cards (1c) | `AgentsPage.tsx`, `AgentSummaryCard.tsx` | 1, 3, 4 | PENDING |
 | 8 | i18n strings | `apps/web/src/app/i18n/` | 5, 6, 7 | PENDING |
@@ -398,3 +398,8 @@ can be done in any order after 1–4.
 - **MEDIUM** — `overviewQuery` error state is silently swallowed — PnL card shows `—` with no error indicator or retry affordance. Inconsistent with the activity section's explicit LoadingRows/ErrorState pattern.
 - **LOW** — `overviewQuery` never invalidates on trading events — PnL card won't refresh when agents make trades. Add invalidation or refetchInterval.
 - **LOW** — `AgentTradesTable.tsx` has pre-existing duplicate PnL color logic not using the new shared helper.
+
+### [Step 6] Exposure page PnL header
+
+- **LOW** — Nested `<span>` redundancy: `KV` wraps value in a styled `<span>`, and the PnL value is itself a styled `<span>`. Visual output correct but DOM unnecessarily nested.
+- **LOW** — `pnlColor` zero-value return differs from plan spec (`var(--color-text)` vs plan's `var(--color-text-secondary)`). Already consistent across Mission Control and Exposure, but diverges from original plan.

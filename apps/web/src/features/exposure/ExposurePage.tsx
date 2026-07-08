@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
 import { dashboard, bots as botsApi } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel } from '../../lib/ui.js';
+import { formatPnl, pnlColor } from '../../lib/formatting.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel, KV } from '../../lib/ui.js';
 
 export function ExposurePage() {
   const overviewQuery = useQuery({
@@ -35,6 +36,22 @@ export function ExposurePage() {
           title="No open positions"
           message="Positions will appear here once your AI agents start trading."
         />
+      )}
+
+      {overview && (
+        <Card style={{ marginBottom: '24px', padding: '20px 24px' }}>
+          <div style={{ display: 'flex', gap: '32px' }}>
+            <KV
+              label="Total Realized P&L"
+              value={
+                <span style={{ color: pnlColor(overview.summary.totalRealizedPnl), fontWeight: '600', fontSize: '18px' }}>
+                  {formatPnl(overview.summary.totalRealizedPnl)}
+                </span>
+              }
+            />
+            <KV label="Open Positions" value={overview.summary.totalOpenPositions} />
+          </div>
+        </Card>
       )}
 
       {overview && instancesWithPositions.length > 0 && (
