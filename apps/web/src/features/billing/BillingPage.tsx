@@ -28,10 +28,6 @@ function usageAccountStatusLabel(intl: ReturnType<typeof useIntl>, status: strin
   }
 }
 
-function formatMicrousd(microusd: number): string {
-  return `$${(microusd / 1_000_000).toFixed(4)}`;
-}
-
 interface CreditGaugeProps {
   balanceMicrousd: number;
   totalCreditMicrousd: number;
@@ -321,7 +317,7 @@ export function BillingPage() {
           <button
             onClick={() => setCheckoutBanner(null)}
             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 0 0 12px', color: 'inherit' }}
-            aria-label="Dismiss"
+            aria-label={intl.formatMessage({ id: 'common.dismiss' })}
           >
             ✕
           </button>
@@ -488,7 +484,7 @@ export function BillingPage() {
         <Card style={{ padding: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              AI Usage — Current Period
+              {intl.formatMessage({ id: 'billing.usage.sectionTitle' })}
             </div>
             {usageSummary?.currentPeriod && (
               <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
@@ -532,7 +528,7 @@ export function BillingPage() {
                       key={w.thresholdPct}
                       style={{ padding: '2px 8px', background: 'var(--color-surface-2)', borderRadius: '4px', fontSize: '12px', color: 'var(--color-warning-text, #92400e)' }}
                     >
-                      {w.thresholdPct}% threshold reached
+                      {intl.formatMessage({ id: 'billing.usage.thresholdReached' }, { pct: w.thresholdPct })}
                     </span>
                   ))}
                 </div>
@@ -550,7 +546,7 @@ export function BillingPage() {
                     disabled={(usageSummary?.topUpPacks?.length ?? 0) === 0}
                     style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
                   >
-                    {(usageSummary?.topUpPacks?.length ?? 0) === 0 && <option value="">No packs available</option>}
+                    {(usageSummary?.topUpPacks?.length ?? 0) === 0 && <option value="">{intl.formatMessage({ id: 'common.noPacksAvailable' })}</option>}
                     {(usageSummary?.topUpPacks ?? []).map((pack) => (
                       <option key={`${pack.provider}_${pack.packId}`} value={pack.packId}>
                         {pack.packId} · {formatCurrencyFromCents(intl, pack.cents)} · {pack.provider}
@@ -562,7 +558,7 @@ export function BillingPage() {
                     disabled={topUpMutation.isPending || (usageSummary?.topUpPacks?.length ?? 0) === 0 || selectedTopUpPackId.length === 0}
                     onClick={() => topUpMutation.mutate(selectedTopUpPackId)}
                   >
-                    {topUpMutation.isPending ? 'Opening...' : 'Buy Top-up'}
+                    {topUpMutation.isPending ? intl.formatMessage({ id: 'billing.usage.openingCheckout' }) : intl.formatMessage({ id: 'billing.usage.buyTopUp' })}
                   </Button>
                 </div>
                 {topUpError && (
@@ -570,7 +566,7 @@ export function BillingPage() {
                 )}
                 {(usageSummary?.topUpPacks?.length ?? 0) === 0 && (
                   <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                    Top-ups are not enabled for this plan.
+                    {intl.formatMessage({ id: 'billing.usage.topUpsNotEnabled' })}
                   </div>
                 )}
               </div>
