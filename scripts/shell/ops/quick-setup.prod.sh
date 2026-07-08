@@ -488,7 +488,7 @@ build_flight_deal_skill_payload() {
   local instructions
   local promptTemplate
   [[ -f "$FLIGHT_DEAL_SKILL_SOURCE_FILE" ]] || die "Skill source file not found: $FLIGHT_DEAL_SKILL_SOURCE_FILE"
-  instructions="$(tail -n +3 "$FLIGHT_DEAL_SKILL_SOURCE_FILE")"
+  instructions="$(cat "$FLIGHT_DEAL_SKILL_SOURCE_FILE")"
 
   if [[ -f "$FLIGHT_DEAL_SKILL_PROMPT_TEMPLATE_FILE" ]]; then
     promptTemplate="$(< "$FLIGHT_DEAL_SKILL_PROMPT_TEMPLATE_FILE")"
@@ -517,7 +517,7 @@ build_flight_deal_skill_payload() {
 build_ai4trade_skill_payload() {
   local instructions
   [[ -f "$AI4TRADE_SKILL_SOURCE_FILE" ]] || die "Skill source file not found: $AI4TRADE_SKILL_SOURCE_FILE"
-  instructions="$(tail -n +3 "$AI4TRADE_SKILL_SOURCE_FILE")"
+  instructions="$(cat "$AI4TRADE_SKILL_SOURCE_FILE")"
 
   jq -n \
     --arg name "$AI4TRADE_SKILL_NAME" \
@@ -539,7 +539,7 @@ build_ai4trade_skill_payload() {
 build_ict_bearish_skill_payload() {
   local instructions
   [[ -f "$ICT_BEARISH_SKILL_SOURCE_FILE" ]] || die "Skill source file not found: $ICT_BEARISH_SKILL_SOURCE_FILE"
-  instructions="$(tail -n +3 "$ICT_BEARISH_SKILL_SOURCE_FILE")"
+  instructions="$(cat "$ICT_BEARISH_SKILL_SOURCE_FILE")"
 
   jq -n \
     --arg name "$ICT_BEARISH_SKILL_NAME" \
@@ -561,7 +561,7 @@ build_ict_bearish_skill_payload() {
 build_ict_bullish_skill_payload() {
   local instructions
   [[ -f "$ICT_BULLISH_SKILL_SOURCE_FILE" ]] || die "Skill source file not found: $ICT_BULLISH_SKILL_SOURCE_FILE"
-  instructions="$(tail -n +3 "$ICT_BULLISH_SKILL_SOURCE_FILE")"
+  instructions="$(cat "$ICT_BULLISH_SKILL_SOURCE_FILE")"
 
   jq -n \
     --arg name "$ICT_BULLISH_SKILL_NAME" \
