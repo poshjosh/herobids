@@ -12,7 +12,7 @@ This is a followup to docs/features/2026/07/08/004-orchestration/002-implementat
 - `runtime-lifecycle.test.ts` only tests the fallback branch (no `sharedServices`). No test verifies the `sharedServices` → cluster-safe URL path.
 - **Fix:** Add 2-3 test cases for `sharedServices` URL construction.
 
-### 3. list_eligible_agent_nodes doesn't exclude control-plane client node (MEDIUM) — PENDING
+### 3. list_eligible_agent_nodes doesn't exclude control-plane client node (MEDIUM) — DONE
 - `scale-common.sh:list_eligible_agent_nodes()` filters Nomad nodes by eligibility but doesn't exclude the Nomad server's own client node (the server runs a client on the control-plane host per `cloud-init.yaml`). If that node ever appears idle, the scale-in routine could theoretically drain the control-plane host.
 - **Impact:** Low in practice — the server node carries system allocations and `min_agent_nodes` only tracks the agent pool count. Still worth hardening before production rollout.
 - **Fix:** Add a node-name prefix filter (`herobids-agent-*`) or Nomad meta-attribute filter so the control-plane client is never a scale-in candidate.
@@ -46,3 +46,7 @@ This is a followup to docs/features/2026/07/08/004-orchestration/002-implementat
 - 🟡 MEDIUM — `current_agent_node_count()` Nomad API fallback path lacks the same `NodeClass == "agent"` filter. If the state file goes missing and the control plane ever runs a Nomad client, the count would be inflated, affecting scale-in/out guards. Should add the filter for consistency.
 - 🔵 LOW — Implementation uses `NodeClass` (idiomatic Nomad) instead of plan's suggested name-prefix or meta-attribute approaches. Accept as improvement; consider updating plan.
 - 🔵 LOW — Plan risk description slightly inaccurate: `cloud-init.yaml` has `client { enabled = false }`, so control plane doesn't currently run a Nomad client. Fix is still valid defense-in-depth.
+
+### [Item 4: `||` → `??` operator fix]
+- 🟡 MEDIUM — Plan doc item 4 is stale: identifies `agent-runtime-launcher.ts` as the file needing the fix, but that file already used `??`. The actual fix was in `nomad-runtime-adapter.ts:188` (the last remaining `||` holdout). Plan should be updated to reflect correct file.
+- 🔵 LOW — No remaining `||` resource fallbacks exist anywhere in the agent runtime codebase after this fix.

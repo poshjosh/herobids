@@ -185,7 +185,7 @@ function buildNomadJobSpec(
   adapterConfig: NomadRuntimeAdapterConfig,
 ): NomadJobSpec {
   const resources = config.resources;
-  const memoryLimitMb = resources.memoryLimitMb || adapterConfig.defaultResources.memoryLimitMb;
+  const memoryLimitMb = resources.memoryLimitMb ?? adapterConfig.defaultResources.memoryLimitMb;
   // Scheduling reservation: use the configured soft reservation if present,
   // otherwise fall back to half the hard limit for soft-overcommit, then to
   // the adapter default. The reservation must never exceed the hard limit.
