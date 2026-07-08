@@ -8,7 +8,7 @@ This is a followup to docs/features/2026/07/08/004-orchestration/002-implementat
 - **Fix:** Remove the duplicate listener registration from the launcher. The adapter already bridges its own events.
 - **Files:** `apps/worker/src/agents/agent-runtime-launcher.ts`, `apps/worker/src/agents/docker-runtime-adapter.ts`
 
-### 2. Missing test coverage for sharedServices path in buildAgentEnv (MEDIUM) — PENDING
+### 2. Missing test coverage for sharedServices path in buildAgentEnv (MEDIUM) — DONE
 - `runtime-lifecycle.test.ts` only tests the fallback branch (no `sharedServices`). No test verifies the `sharedServices` → cluster-safe URL path.
 - **Fix:** Add 2-3 test cases for `sharedServices` URL construction.
 

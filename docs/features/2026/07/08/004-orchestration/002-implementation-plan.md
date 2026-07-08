@@ -546,11 +546,6 @@ This feature is complete when all of the following are true:
 - **Fix:** Use `??` consistently: `this.defaultResources.memoryLimitMb ?? 512`.
 - **File:** `apps/worker/src/agents/agent-runtime-launcher.ts`
 
-### [Phase 2] Private network UFW rules only open Nomad ports, not Redis/Postgres (MEDIUM)
-- `cloud-init.yaml` opens ports 4646–4648 (Nomad) from private subnet but does NOT open 6379 (Redis) or 5432 (Postgres). Agent nodes can't reach shared services yet.
-- **Impact:** Non-blocking for Phase 2. Phase 3 is explicitly designed to address this. No agents run on agent nodes until Phase 4.
-- **Fix:** Add Redis/Postgres UFW rules in Phase 3.
-
 ### [Phase 2] Competing tfvars templates (LOW)
 - Three tfvars templates exist: `terraform.tfvars.example`, `staging.tfvars.example`, `production.tfvars.example`. May confuse new operators.
 - **Fix:** Add note directing to per-environment templates, or deprecate legacy template.
@@ -570,6 +565,12 @@ This feature is complete when all of the following are true:
 ### [Phase 4] agentImage in NomadRuntimeAdapterConfig is dead config (LOW)
 - Adapter stores `agentImage` but `buildNomadJobSpec` reads `config.image` from `RuntimeLaunchConfig`. Marked `@deprecated`.
 - **Fix:** Either remove the field or use it as fallback when `config.image` is empty.
+
+### [Phase 7] list_eligible_agent_nodes doesn't exclude control-plane client node (MEDIUM)
+- `scale-common.sh:list_eligible_agent_nodes()` filters Nomad nodes by eligibility but doesn't exclude the Nomad server's own client node (the server runs a client on the control-plane host per `cloud-init.yaml`). If that node ever appears idle, the scale-in routine could theoretically drain the control-plane host.
+- **Impact:** Low in practice — the server node carries system allocations and `min_agent_nodes` only tracks the agent pool count. Still worth hardening before production rollout.
+- **Fix:** Add a node-name prefix filter (`herobids-agent-*`) or Nomad meta-attribute filter so the control-plane client is never a scale-in candidate.
+- **File:** `infra/hetzner/scripts/scale-common.sh`
 
 ## Follow-Up Work Explicitly Deferred
 
