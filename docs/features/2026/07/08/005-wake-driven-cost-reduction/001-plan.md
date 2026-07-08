@@ -329,3 +329,46 @@ This phase filters **monitor-owned** sources only.
 - **Phase 3** adds the user-facing control layer and a Redis projection for active preferences
 - All phases remain compatible with Docker and Nomad runtime backends because they use worker-owned control-plane state plus the existing outbound Redis stream
 - The final rollout should preserve current behavior by default: known sources start with explicit configured modes/cooldowns, and agents without `wakePreferences` continue receiving all monitor-owned sources
+
+## Implementation Task List
+
+### Part A — Source-Scoped Cooldowns and Coalescing
+
+| # | Task | Status |
+|---|------|--------|
+| A1 | Replace single per-agent wake bucket with source-scoped `(agentId, source)` bucket in `monitor.ts` | PENDING |
+| A2 | Add `marketIntelligence.wakePolicy` to `config/default.yaml` | PENDING |
+| A3 | Extend `MarketIntelligenceConfigSchema` in `packages/domain/src/config/schema.ts` | PENDING |
+| A4 | Write tests for source-scoped cooldown behavior | PENDING |
+
+### Part B — Batched and Context Delivery Modes
+
+| # | Task | Status |
+|---|------|--------|
+| B1 | Add mode-based delivery (wake/batched/context) in `monitor.ts` | PENDING |
+| B2 | Add structured runtime storage for pending market-monitor context events in `runtime-composition.ts` | PENDING |
+| B3 | Add stable digest for pending market context events in `tick-gates.ts` | PENDING |
+| B4 | Compute pending market-event digest before skip decision and render context in prompt in `agent.ts` | PENDING |
+| B5 | Add `mode` to each known wake-policy source in config and schema | PENDING |
+
+### Part C — Per-Agent Wake Subscriptions
+
+| # | Task | Status |
+|---|------|--------|
+| C1 | Add `wake_preferences` JSONB to `agents` table (DB schema + migration) | PENDING |
+| C2 | Add `wakePreferences` to agent create/update/read API payloads | PENDING |
+| C3 | Add worker-owned Redis projection of active agent wake preferences | PENDING |
+| C4 | Replace generic discovery/regime recipient path with Redis-backed lookup in `monitor.ts` | PENDING |
+| C5 | Add agent-level wake source checkboxes in web UI agent form | PENDING |
+
+## Outstanding Issues
+
+### [A1] Source-Scoped Wake Buckets
+
+| # | Severity | Issue |
+|---|----------|-------|
+| 1 | CRITICAL | `wakePolicy` not passed to `createMarketMonitor()` in `index.ts` — feature dead at runtime. Fix in A2/A3. |
+| 2 | HIGH | Config schema (`MarketIntelligenceConfigSchema`) not extended with `wakePolicy` — deferred to A3. |
+| 3 | HIGH | `config/default.yaml` not updated with `wakePolicy` section — deferred to A2. |
+| 4 | MEDIUM | Missing test for old-format wake bucket backward-compat fallback (source field missing). |
+| 5 | LOW | Backward-compat `logger.warn` could be noisy on first deploy; consider `logger.info`.

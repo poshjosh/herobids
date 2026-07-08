@@ -118,9 +118,10 @@ describe('wake scheduler — coalescing and cooldown', () => {
   it('coalesces multiple wake requests into a single emit after the window', async () => {
     // Set up a pending wake in Redis with scheduledAt in the past (ready to flush)
     const agentId = 'agent-001';
-    const wakeKey = `market-monitor:wake:${agentId}`;
+    const wakeKey = `market-monitor:wake:${agentId}:watch_threshold`;
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-1', 'ev-2', 'ev-3'],
       scheduledAt: Date.now() - 100, // already past due
     }));
@@ -150,12 +151,13 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
   it('suppresses wake when cooldown has not elapsed', async () => {
     const agentId = 'agent-002';
-    const wakeKey = `market-monitor:wake:${agentId}`;
-    const lastWakeKey = `market-monitor:wake:last:${agentId}`;
+    const wakeKey = `market-monitor:wake:${agentId}:watch_threshold`;
+    const lastWakeKey = `market-monitor:wake:last:${agentId}:watch_threshold`;
 
     // Pending wake ready to flush
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-1'],
       scheduledAt: Date.now() - 100,
     }));
@@ -178,11 +180,12 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
   it('counts a suppressed wake only once across repeated flush cycles', async () => {
     const agentId = 'agent-009';
-    const wakeKey = `market-monitor:wake:${agentId}`;
-    const lastWakeKey = `market-monitor:wake:last:${agentId}`;
+    const wakeKey = `market-monitor:wake:${agentId}:watch_threshold`;
+    const lastWakeKey = `market-monitor:wake:last:${agentId}:watch_threshold`;
 
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-1'],
       scheduledAt: Date.now() - 100,
     }));
@@ -203,11 +206,12 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
   it('does not flush wakes whose scheduledAt is in the future', async () => {
     const agentId = 'agent-003';
-    const wakeKey = `market-monitor:wake:${agentId}`;
+    const wakeKey = `market-monitor:wake:${agentId}:watch_threshold`;
 
     // Pending wake with scheduledAt in the future
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-1'],
       scheduledAt: Date.now() + 5_000, // 5 seconds from now
     }));
@@ -226,12 +230,13 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
   it('emits wake after cooldown has elapsed', async () => {
     const agentId = 'agent-004';
-    const wakeKey = `market-monitor:wake:${agentId}`;
-    const lastWakeKey = `market-monitor:wake:last:${agentId}`;
+    const wakeKey = `market-monitor:wake:${agentId}:watch_threshold`;
+    const lastWakeKey = `market-monitor:wake:last:${agentId}:watch_threshold`;
 
     // Pending wake ready to flush
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-1'],
       scheduledAt: Date.now() - 100,
     }));
@@ -253,10 +258,11 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
   it('does not emit concurrent wakes for the same agent', async () => {
     const agentId = 'agent-005';
-    const wakeKey = `market-monitor:wake:${agentId}`;
+    const wakeKey = `market-monitor:wake:${agentId}:watch_threshold`;
 
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-1'],
       scheduledAt: Date.now() - 100,
     }));
@@ -274,6 +280,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
     // Now the cooldown key is set — a new wake enqueued should be suppressed
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-2'],
       scheduledAt: Date.now() - 100,
     }));
@@ -288,11 +295,12 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
   it('caps coalesced event IDs at MAX_COALESCED_EVENT_IDS (5)', async () => {
     const agentId = 'agent-006';
-    const wakeKey = `market-monitor:wake:${agentId}`;
+    const wakeKey = `market-monitor:wake:${agentId}:watch_threshold`;
 
     // Pre-populate with 5 events already
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-1', 'ev-2', 'ev-3', 'ev-4', 'ev-5'],
       scheduledAt: Date.now() - 100,
     }));
@@ -316,11 +324,12 @@ describe('wake scheduler — coalescing and cooldown', () => {
   it('wake state survives between evaluate cycles (Redis-backed)', async () => {
     // This test verifies that wake state is in Redis, not in-memory
     const agentId = 'agent-007';
-    const wakeKey = `market-monitor:wake:${agentId}`;
+    const wakeKey = `market-monitor:wake:${agentId}:watch_threshold`;
 
     // Simulate that a wake was triggered and wake was enqueued to Redis
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-triggered'],
       scheduledAt: Date.now() - 100,
     }));
@@ -344,10 +353,11 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
   it('retains the pending wake bucket when publish fails', async () => {
     const agentId = 'agent-008';
-    const wakeKey = `market-monitor:wake:${agentId}`;
+    const wakeKey = `market-monitor:wake:${agentId}:watch_threshold`;
 
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-failed'],
       scheduledAt: Date.now() - 100,
     }));
@@ -366,11 +376,12 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
   it('does not duplicate wake emission when flush is called concurrently', async () => {
     const agentId = 'agent-010';
-    const wakeKey = `market-monitor:wake:${agentId}`;
+    const wakeKey = `market-monitor:wake:${agentId}:watch_threshold`;
     const deferred = createDeferred<void>();
 
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-1'],
       scheduledAt: Date.now() - 100,
     }));
@@ -395,12 +406,13 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
   it('preserves bucket when enqueue happens at cap during in-flight publish', async () => {
     const agentId = 'agent-012';
-    const wakeKey = `market-monitor:wake:${agentId}`;
+    const wakeKey = `market-monitor:wake:${agentId}:watch_threshold`;
     const deferred = createDeferred<void>();
 
     // Bucket already at MAX_COALESCED_EVENT_IDS (5) with generation 5
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-1', 'ev-2', 'ev-3', 'ev-4', 'ev-5'],
       scheduledAt: Date.now() - 100,
       generation: 5,
@@ -421,6 +433,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
     // but eventIds stays at cap length (same last element).
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-1', 'ev-2', 'ev-3', 'ev-4', 'ev-5'],
       scheduledAt: Date.now() + 3_000,
       generation: 6,
@@ -443,7 +456,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
   it('preserves a new wake enqueued while a flush is in flight', async () => {
     const agentId = 'agent-011';
-    const wakeKey = `market-monitor:wake:${agentId}`;
+    const wakeKey = `market-monitor:wake:${agentId}:watch_threshold`;
     const deferred = createDeferred<void>();
 
     redis._store.set('market-intel:discovery:latest', JSON.stringify({
@@ -474,6 +487,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
     redis._store.set(wakeKey, JSON.stringify({
       agentId,
+      source: 'watch_threshold',
       eventIds: ['ev-existing'],
       scheduledAt: Date.now() - 100,
     }));

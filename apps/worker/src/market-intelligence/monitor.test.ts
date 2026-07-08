@@ -999,7 +999,7 @@ describe('createMarketMonitor — wake coalescing', () => {
 
     monitor.stop();
 
-    redis._store.set('market-monitor:wake:last:agent-1', '0');
+    redis._store.set('market-monitor:wake:last:agent-1:watch_threshold', '0');
     expect(publisher.emitAgentWake).not.toHaveBeenCalled();
   });
 });

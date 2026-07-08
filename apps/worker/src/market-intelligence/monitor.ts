@@ -25,6 +25,11 @@ const MAX_COALESCED_EVENT_IDS = 5;
 const DISCOVERY_COOLDOWN_MS = 600_000; // 10 minutes
 const REGIME_COOLDOWN_MS = 300_000; // 5 minutes
 
+export interface WakePolicyEntry {
+  /** Cooldown in ms for this wake source. */
+  cooldownMs?: number;
+}
+
 export interface MonitorConfig {
   /** Enable/disable monitor. Default: true */
   enabled?: boolean;
@@ -40,6 +45,8 @@ export interface MonitorConfig {
   wakeCoalescingWindowMs?: number;
   /** Wake cooldown in ms. Default: 30000 */
   wakeCooldownMs?: number;
+  /** Per-source wake policy overrides. Falls back to wakeCooldownMs for unknown sources. */
+  wakePolicy?: Record<string, WakePolicyEntry>;
 }
 
 export interface MonitorDeps {
@@ -49,6 +56,8 @@ export interface MonitorDeps {
 
 interface PendingWake {
   agentId: string;
+  /** Wake source this bucket belongs to (determines key namespace and cooldown). */
+  source: AgentWakeSource;
   eventIds: string[];
   scheduledAt: number;
   /** Monotonically incremented on every enqueue — used as a CAS token by flush. */
@@ -82,7 +91,12 @@ export interface MarketMonitor {
 export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): MarketMonitor {
   const { enabled = true, evaluationIntervalMs = 15_000 } = config;
   const WAKE_COALESCING_WINDOW_MS = config.wakeCoalescingWindowMs ?? DEFAULT_WAKE_COALESCING_WINDOW_MS;
-  const WAKE_COOLDOWN_MS = config.wakeCooldownMs ?? DEFAULT_WAKE_COOLDOWN_MS;
+  const DEFAULT_COOLDOWN_MS = config.wakeCooldownMs ?? DEFAULT_WAKE_COOLDOWN_MS;
+
+  /** Resolve cooldown for a wake source: wakePolicy override → global fallback → hard default. */
+  function getWakeCooldownMs(source: AgentWakeSource): number {
+    return config.wakePolicy?.[source]?.cooldownMs ?? DEFAULT_COOLDOWN_MS;
+  }
   const families = {
     watchThresholds: config.families?.watchThresholds ?? true,
     discoveryDeltas: config.families?.discoveryDeltas ?? true,
@@ -593,8 +607,12 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
   // Wake coalescing — Redis-backed for failover safety
   // -----------------------------------------------------------------------
 
-  function wakeKey(agentId: string): string {
-    return `market-monitor:wake:${agentId}`;
+  function wakeKey(agentId: string, source: AgentWakeSource): string {
+    return `market-monitor:wake:${agentId}:${source}`;
+  }
+
+  function lastWakeKey(agentId: string, source: AgentWakeSource): string {
+    return `market-monitor:wake:last:${agentId}:${source}`;
   }
 
   function withWakeMutationLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -610,9 +628,12 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     source?: AgentWakeSource,
     context?: WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext,
   ): Promise<void> {
+    const effectiveSource: AgentWakeSource = source ?? 'watch_threshold';
+    const sourceCooldown = getWakeCooldownMs(effectiveSource);
+
     return withWakeMutationLock(async () => {
-      const key = wakeKey(agentId);
-      const wakeBucketTtlMs = Math.max(WAKE_COALESCING_WINDOW_MS * 3, WAKE_COOLDOWN_MS + WAKE_COALESCING_WINDOW_MS);
+      const key = wakeKey(agentId, effectiveSource);
+      const wakeBucketTtlMs = Math.max(WAKE_COALESCING_WINDOW_MS * 3, sourceCooldown + WAKE_COALESCING_WINDOW_MS);
       const existingRaw = await redis.get(key);
       if (existingRaw) {
         try {
@@ -626,16 +647,25 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           metrics.wakeRequestsCoalesced++;
         } catch {
           // Malformed — overwrite
-          const wake: PendingWake = { agentId, eventIds: [eventId], scheduledAt: Date.now() + WAKE_COALESCING_WINDOW_MS, generation: 1, primaryReason: reason, primarySource: source, primaryContext: context };
+          const wake: PendingWake = { agentId, source: effectiveSource, eventIds: [eventId], scheduledAt: Date.now() + WAKE_COALESCING_WINDOW_MS, generation: 1, primaryReason: reason, primarySource: source, primaryContext: context };
           await redis.set(key, JSON.stringify(wake), 'PX', wakeBucketTtlMs);
         }
       } else {
-        const wake: PendingWake = { agentId, eventIds: [eventId], scheduledAt: Date.now() + WAKE_COALESCING_WINDOW_MS, generation: 1, primaryReason: reason, primarySource: source, primaryContext: context };
+        const wake: PendingWake = { agentId, source: effectiveSource, eventIds: [eventId], scheduledAt: Date.now() + WAKE_COALESCING_WINDOW_MS, generation: 1, primaryReason: reason, primarySource: source, primaryContext: context };
         await redis.set(key, JSON.stringify(wake), 'PX', wakeBucketTtlMs);
       }
     });
   }
 
+  /**
+   * Flush pending wake buckets.
+   *
+   * Migration note: old-format buckets (pre source-scoped keys, without a `source`
+   * field in the JSON payload) may still exist in Redis after deploy. They will be
+   * parsed and flushed once on the first cycle. The defensive check below defaults
+   * missing `source` to `"watch_threshold"` to avoid `undefined` key suffixes.
+   * This one-time blast radius is acceptable. Stale buckets expire via TTL naturally.
+   */
   async function flushPendingWakes(): Promise<void> {
     if (stopped || wakeFlushInFlight) return;
     wakeFlushInFlight = true;
@@ -648,7 +678,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
         const wakeKeys = await scanKeys('market-monitor:wake:*');
         if (stopped) return [];
 
-        const eligible: Array<{ key: string; wake: PendingWake; lastWakeKey: string }> = [];
+        const eligible: Array<{ key: string; wake: PendingWake; lastWakeKey: string; sourceCooldownMs: number }> = [];
 
         for (const key of wakeKeys) {
           if (key.includes(':last:')) continue;
@@ -663,29 +693,37 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             continue;
           }
 
+          // Defensive: old-format buckets (pre source-scoped keys) lack `source`.
+          // Default to legacy behaviour so they fire once on first flush instead
+          // of producing `market-monitor:wake:last:<agentId>:undefined` keys.
+          if (!wake.source) {
+            logger.warn({ agentId: wake.agentId }, 'Wake bucket missing source field, defaulting to watch_threshold');
+            wake.source = 'watch_threshold';
+          }
+
           if (now < wake.scheduledAt) continue;
 
-          // Check wake cooldown
-          const lastWakeKey = `market-monitor:wake:last:${wake.agentId}`;
-          const lastWakeRaw = await redis.get(lastWakeKey);
+          const sourceCooldownMs = getWakeCooldownMs(wake.source);
+          const effectiveLastWakeKey = lastWakeKey(wake.agentId, wake.source);
+          const lastWakeRaw = await redis.get(effectiveLastWakeKey);
           if (stopped) return [];
           if (lastWakeRaw) {
             const lastWakeTime = Number(lastWakeRaw);
-            if (now - lastWakeTime < WAKE_COOLDOWN_MS) {
+            if (now - lastWakeTime < sourceCooldownMs) {
               metrics.wakeRequestsSuppressed++;
-              const nextEligibleAt = lastWakeTime + WAKE_COOLDOWN_MS;
+              const nextEligibleAt = lastWakeTime + sourceCooldownMs;
               wake.scheduledAt = nextEligibleAt;
               const nextWakeBucketTtlMs = Math.max(
                 WAKE_COALESCING_WINDOW_MS * 3,
                 nextEligibleAt - now + WAKE_COALESCING_WINDOW_MS,
               );
               await redis.set(key, JSON.stringify(wake), 'PX', nextWakeBucketTtlMs);
-              logger.debug({ agentId: wake.agentId }, 'Wake suppressed by cooldown');
+              logger.debug({ agentId: wake.agentId, source: wake.source }, 'Wake suppressed by cooldown');
               continue;
             }
           }
 
-          eligible.push({ key, wake, lastWakeKey });
+          eligible.push({ key, wake, lastWakeKey: effectiveLastWakeKey, sourceCooldownMs });
         }
 
         return eligible;
@@ -695,7 +733,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
 
       // Phase 2: Publish outside the lock so concurrent enqueues can proceed.
       const now = Date.now();
-      for (const { key, wake, lastWakeKey } of claimed) {
+      for (const { key, wake, lastWakeKey, sourceCooldownMs } of claimed) {
         if (stopped) return;
 
         const payload = {
@@ -704,12 +742,12 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           eventIds: wake.eventIds,
           priority: 'normal',
           requestedAt: new Date().toISOString(),
-          source: wake.primarySource ?? 'watch_threshold',
+          source: wake.primarySource ?? wake.source,
           ...(wake.primaryContext !== undefined && { context: wake.primaryContext }),
         } as AgentWakePayload;
 
         await publisher.emitAgentWake(wake.agentId, payload);
-        await redis.set(lastWakeKey, String(now), 'PX', WAKE_COOLDOWN_MS);
+        await redis.set(lastWakeKey, String(now), 'PX', sourceCooldownMs);
 
         // Phase 3: Delete the claimed bucket only if its generation hasn't
         // advanced since we claimed it. A higher generation means a new enqueue
