@@ -160,5 +160,14 @@ export function loadConfig(configDir?: string): AppConfig {
     );
   }
 
+  // Warn if staging is accidentally connected to a real billing provider.
+  // Staging should always use mock billing unless explicitly testing payments.
+  if (env === 'staging' && config.billing.primaryProvider !== 'mock') {
+    console.warn(
+      `⚠️  staging is using billing.primaryProvider='${config.billing.primaryProvider}' (not mock). ` +
+      'Real charges may apply. Override with BILLING_PRIMARY_PROVIDER=mock in .env.staging if unintended.',
+    );
+  }
+
   return config;
 }
