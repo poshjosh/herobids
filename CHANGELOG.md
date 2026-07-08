@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.14 - 2026-07-08
+
+### Fixed
+
+- docs/bug-reports/2026/07/08/001-watch-digest-unknown-blocks-tick-gate.md
+
 ### Changed
 
 - **Billing page simplification:** Replaced the four-field AI Usage stat grid with a visual `CreditGauge` component showing a progress bar, remaining credit, usage breakdown, and status badge. Detail sections (spend controls, usage filters, ledger, events, periods, breakdowns) are now collapsed behind a "View details" toggle, making the default view significantly shorter. No backend changes required.
