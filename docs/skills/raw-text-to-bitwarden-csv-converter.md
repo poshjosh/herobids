@@ -46,7 +46,7 @@ EXAMPLES
 
 ```csv
 folder,favorite,type,name,notes,fields,login_uri,login_username,login_password,login_totp
-,1,login,Netflix,,,"https://netflix.com",myemail@gmail.com,SuperSecretPassword123,
+my-logins,1,login,Netflix,,,"https://netflix.com",myemail@gmail.com,SuperSecretPassword123,
 ,,card,My Visa,,Cardholder Name=John Doe|Number=4111222233334444|Expiration Month=12|Expiration Year=2028|Security Code=123,,,,
 ,,securenote,Crypto Wallet,Private Key: 5Kb8kLf9zgq...xxxx,,,,,,
 ```
