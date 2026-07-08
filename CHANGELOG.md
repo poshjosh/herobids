@@ -54,7 +54,7 @@ Removed links to the following from the sidebar: Trading Setup, Exposure, Activi
 - **Eliminate static LLM pricing (ADR 001):** All provider model pricing (OpenAI, Anthropic, DeepSeek, Google) now cross-referenced from the OpenRouter `llm_pricing_snapshots` table instead of hardcoded YAML.
 - **Restructure public content to `{lang}/{type}/` layout:** Content files moved from `content/{type}/{locale}/` (and flat `content/{type}/` for English-only) to the standard `content/{locale}/{type}/` layout. `loadContent()` simplified to a single unified path. All 14 markdown files now live under `content/en/`.
 - **API key gating:** `GET /ai/available-models` now hides providers without a configured `LLM_API_KEY_<PROVIDER>` or generic `LLM_API_KEY` environment variable (ollama exempt).
-- **Locality gating for ollama:** Dev-only providers now use `isProduction` flag instead of `NODE_ENV` to determine availability.
+- **Locality gating reverted:** Dev-only provider gating restored to `NODE_ENV`-based check. Removed hostname inspection (`isLocalProviderEndpoint`) and `llm.catalog.locality` config key.
 - **Single-provider UI mode:** When only one LLM provider is available, the provider dropdown is auto-selected and hidden in the UI.
 - **Relaxed provider schema:** `ProviderConfigSchema` now supports `pricingSource: 'openrouter' | 'inline' | 'none'` to control pricing origin.
 - **Venue-aware bot symbol field:** The bot creation modal now adapts the symbol input label and placeholder based on the selected connection's venue type — "Instrument (e.g. WETH/USDC)" for swap venues (jupiter, 1inch) and "Symbol (e.g. BTC-PERP)" for orderbook venues (hyperliquid, bybit).

@@ -3,6 +3,8 @@ import { llmPricingSnapshots, type Database } from '@herobids/db';
 import { eq, and } from 'drizzle-orm';
 import { discoverOllamaModels } from './ollama-model-discovery.js';
 
+const isProduction = () => process.env['NODE_ENV'] === 'production';
+
 // --- Provider catalog metadata ---
 
 export interface ModelPricingMetadata {
@@ -412,27 +414,26 @@ export function makeCatalogContext(llmConfig: {
 
 export async function getAvailableProviders(deps: LlmCatalogDeps): Promise<string[]> {
   const providers: string[] = [];
-  const isProduction = process.env['NODE_ENV'] === 'production';
 
   for (const [providerId, config] of Object.entries(deps.providersYaml.providers)) {
     // In production, only expose providers whose pricing is sourced from the DB
     // (dynamic fetch or openrouter cross-reference). Inline-priced static providers
     // are dev-only because their YAML prices go stale between deploys.
-    if (isProduction) {
+    if (isProduction()) {
       const hasLivePricing = config.catalogMode === 'dynamic' || config.pricingSource === 'openrouter';
       if (!hasLivePricing) continue;
     }
 
     // Dev-only providers (like ollama) are skipped in production.
     // In development, they are shown (NODE_ENV !== production).
-    if (config.devOnly && isProduction) continue;
+    if (config.devOnly && isProduction()) continue;
 
     // Pricing availability check: providers whose pricing comes from the DB
     // must have an active snapshot. Dynamic providers (OpenRouter) need their own
     // snapshot; openrouter-derived providers need the OpenRouter snapshot with
     // matching prefix models. If pricing is unavailable, the provider is hidden
     // — never fall back to stale prices.
-    if (config.catalogMode === 'dynamic' && isProduction) {
+    if (config.catalogMode === 'dynamic' && isProduction()) {
       const hasSnapshot = !!(await getDbPricingSnapshot(deps.db, providerId));
       if (!hasSnapshot) continue;
     }
@@ -529,9 +530,7 @@ export async function getProviderCatalogEntry(
 
   const models = await getProviderModels(provider, deps);
 
-  const isProduction = process.env['NODE_ENV'] === 'production';
-
-  if (provider === 'ollama' && !isProduction) {
+  if (provider === 'ollama' && !isProduction()) {
     return {
       provider,
       models: mapProviderModels(models, () => ({ label: 'Free', source: 'local' })),

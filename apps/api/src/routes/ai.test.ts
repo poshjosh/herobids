@@ -850,7 +850,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe('no_ai_provider');
 
-    vi.unstubAllEnv();
+    vi.unstubAllEnvs();
   });
 
   it('marks ollama as Free in non-production environments', async () => {
@@ -899,7 +899,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe('no_ai_provider');
 
-    vi.unstubAllEnv();
+    vi.unstubAllEnvs();
   });
 });
 
