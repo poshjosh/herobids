@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Wake-Driven Cost Reduction (005-wake-cost):** Three-layer wake policy to reduce unnecessary LLM invocations. Source-scoped cooldowns (Part A) prevent low-urgency discovery events from throttling urgent watch-threshold wakes. Mode-based delivery (Part B) adds `wake`, `batched`, and `context` delivery modes — `context` mode emits market events without triggering `agent.wake`, storing them as structured pending context that appears in the next tick prompt and prevents `context_unchanged` skips. Per-agent wake subscriptions (Part C) let agents filter which monitor-owned sources they receive via `wake_preferences` JSONB, exposed through API and UI with Redis-backed real-time routing.
+
 - **Nomad agent orchestration (004-orchestration):** Agents now launch on a Nomad cluster instead of the worker's local Docker daemon, enabling multi-node horizontal scaling. Includes: Nomad runtime adapter (Phase 4), per-tier resource profiles with soft overcommit (Phase 5), autoscale-out via flock-guarded Terraform (Phase 6), nightly conservative scale-in and placement-failure safety net (Phase 7), admin email alerting for scaling failures (Phase 8), and staging/production runbooks with explicit rollback procedure (Phase 9). Control plane remains on Docker Compose; agent nodes are stateless, disposable Nomad clients on a private Hetzner Cloud network.
 
 ### Fixed

@@ -359,7 +359,7 @@ This phase filters **monitor-owned** sources only.
 | C2 | Add `wakePreferences` to agent create/update/read API payloads | DONE |
 | C3 | Add worker-owned Redis projection of active agent wake preferences | DONE |
 | C4 | Replace generic discovery/regime recipient path with Redis-backed lookup in `monitor.ts` | DONE |
-| C5 | Add agent-level wake source checkboxes in web UI agent form | PENDING |
+| C5 | Add agent-level wake source checkboxes in web UI agent form | DONE |
 
 ## Outstanding Issues
 
