@@ -224,12 +224,111 @@ cp ../../.env.example .env.staging
 ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=test-pass ./scripts/seed-admin.sh --env staging
 ```
 
+### Managing Terraform State Per Environment
+
+You need a separate `terraform.tfvars` for each environment because each points to a
+different server, domain, and lifecycle policy. There is only one active `terraform.tfvars`
+file at a time — Terraform reads `terraform.tfvars` from the current directory.
+
+**Recommended workflow: keep source-of-truth files and symlink the active one.**
+
+```bash
+# Create the source-of-truth files (only needed once)
+cp terraform.tfvars.example terraform.tfvars.prod
+cp terraform.tfvars.example terraform.tfvars.staging
+
+# Edit each with the correct environment values:
+#   terraform.tfvars.prod  → environment = "production", server_name = "herobids", ...
+#   terraform.tfvars.staging → environment = "staging", server_name = "herobids-staging", ...
+```
+
+**Provisioning production:**
+
+```bash
+cd infra/hetzner
+ln -sf terraform.tfvars.prod terraform.tfvars
+./scripts/provision.sh --env production
+# Wait for cloud-init to finish (~3-5 minutes). Check progress:
+#   ssh root@<IP> 'tail -f /var/log/cloud-init-output.log'
+# Once complete, the server is ready for deploy.
+```
+
+**Provisioning staging:**
+
+```bash
+cd infra/hetzner
+ln -sf terraform.tfvars.staging terraform.tfvars
+./scripts/provision.sh --env staging
+# Wait for cloud-init, then deploy.
+```
+
+**Alternative: use `-var-file` instead of symlinks.**
+
+```bash
+# This works but means you must pass -var-file to every terraform command.
+terraform plan -var-file=terraform.tfvars.staging
+terraform apply -var-file=terraform.tfvars.staging
+```
+
+The symlink approach is simpler because all scripts (`provision.sh`, deploy helpers,
+ad-hoc terraform commands) automatically pick up the active `terraform.tfvars`.
+
+> **Important:** Always check which environment is active before running terraform
+> commands. `grep environment terraform.tfvars` tells you at a glance.
+
 ### Environment variable notes
 
 - Database and Redis URLs default to docker-compose values and do not need to be in `.env` unless using external services.
 - `AUTH_PUBLIC_BASE_URL`, `AUTH_FRONTEND_ORIGIN`, and `VITE_API_ORIGIN` are set per environment in the compose overlay (`docker-compose.prod.yaml` / `docker-compose.staging.yaml`). Each overlay uses the correct domain for its environment — no manual editing needed.
 - Staging should use separate secrets from production: different JWT secret, OAuth client IDs, Telegram bot tokens, LLM API keys, and billing credentials.
 - **Production billing guard**: The API and worker will refuse to start if `NODE_ENV=production` and `billing.primaryProvider` is still `'mock'`. Set `BILLING_PRIMARY_PROVIDER=creem` (or `stripe`) in `.env.prod`. See `apps/api/src/config.ts` and `apps/worker/src/config.ts` for the guard implementation.
+
+## DNS & TLS
+
+Both environments use Caddy for automatic TLS certificate provisioning via Let's Encrypt.
+You must create DNS A records before the deploy will work over HTTPS.
+
+### Required DNS Records
+
+| Environment | Hostname | Type | Points To |
+|---|---|---|---|
+| **Production** | `herobids.com` | A | Production server IP |
+| | `www.herobids.com` | A (or CNAME → `herobids.com`) | Production server IP |
+| | `app.herobids.com` | A (or CNAME → `herobids.com`) | Production server IP |
+| **Staging** | `staging.herobids.com` | A | Staging server IP |
+
+> The production Caddyfile also handles `www.herobids.com` and `app.herobids.com` as
+> alternative names on the same certificate. Staging uses a single domain.
+
+### How TLS Works
+
+1. Caddy starts and sees the configured domain(s) in its Caddyfile.
+2. On first request, Caddy attempts a Let's Encrypt HTTP-01 challenge on port 80.
+3. If port 80 is reachable from the internet, Let's Encrypt issues a certificate.
+4. Caddy stores the certificate in the `caddy_data` Docker volume for renewal.
+5. Renewals happen automatically ~30 days before expiry.
+
+### Prerequisites for TLS
+
+- **DNS must be configured before deploy.** The A record(s) must point to the server IP.
+- **Port 80 must be reachable.** The Hetzner firewall (created by Terraform) and UFW
+  (configured by cloud-init) both allow port 80 and 443 by default.
+- **No other process on port 80/443.** Caddy binds these ports exclusively.
+
+### Verifying TLS
+
+```bash
+# Check Caddy logs for certificate issuance
+./scripts/logs.sh --env staging -- caddy | grep -i "certificate\|acme"
+
+# Verify the certificate from your machine
+curl -svI https://staging.herobids.com 2>&1 | grep -i "subject\|issuer\|expire"
+```
+
+If the certificate doesn't issue within a few minutes of the first HTTPS request:
+- Verify DNS propagation: `dig staging.herobids.com` should return the server IP.
+- Check the Hetzner firewall rules in the cloud console.
+- See the troubleshooting table at the bottom of this document.
 
 ## Day-to-Day Operations
 
@@ -286,6 +385,85 @@ The deploy target is determined by `--env` (or `HEROBIDS_ENV`), which selects th
 # Staging deploy
 ./deploy.sh --env staging --env-file .env.staging
 ```
+
+## Secret Rotation
+
+To rotate secrets (JWT, API keys, OAuth credentials, etc.) for an environment:
+
+### 1. Update the local env file
+
+Edit `.env.staging` or `.env.prod` with the new secret values.
+
+### 2. Upload the updated env file
+
+```bash
+# Staging
+./scripts/setup-env.sh --env staging --file .env.staging
+
+# Production
+./scripts/setup-env.sh --env production --file .env.prod
+```
+
+This copies the file to `/opt/herobids/.env` on the target server with `chmod 600`.
+
+### 3. Restart affected services
+
+Most env var changes require a service restart to take effect. The simplest way is a
+full redeploy:
+
+```bash
+# Staging
+./scripts/push.sh --env staging --yes
+
+# Production
+./scripts/push.sh --env production --yes
+```
+
+To restart only specific services without a full git pull + rebuild:
+
+```bash
+ssh root@<IP> 'cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.staging.yaml up -d api worker'
+```
+
+### Secrets That Require Special Handling
+
+| Secret | Rotate In | Also Update |
+|---|---|---|
+| JWT secret (`AUTH_JWT_SECRET`) | `.env.*` | All existing sessions are invalidated — users must re-login. |
+| OAuth client secret | `.env.*` + OAuth provider console | Google Cloud Console / GitHub OAuth Apps / etc. |
+| Telegram bot token | `.env.*` + BotFather | Rotating the token invalidates the old webhook. Re-register after restart. |
+| LLM API key | `.env.*` | New key takes effect on next worker/agent restart. No other action needed. |
+| Billing provider key | `.env.*` | Verify webhook endpoints still work after rotation. |
+| `CREDENTIAL_ENCRYPTION_KEY` | `.env.*` | **Do NOT rotate unless you have a migration plan.** All stored venue credentials are encrypted with this key. Rotating it without re-encrypting existing data will make all stored credentials unreadable. |
+
+### Verifying Secrets Took Effect
+
+```bash
+# Check that the worker picks up new env vars
+./scripts/logs.sh --env staging -- worker | head -30
+
+# Verify the API serves without startup guard failures
+curl -sf https://staging.herobids.com/health
+```
+
+## Smoke-Test Checklist
+
+After every staging deploy, run the smoke-test checklist to verify the environment is
+healthy before using it for pre-production validation.
+
+See the full runbook: **[Staging Smoke-Test Checklist](../../docs/runbooks/staging-smoke-test.md)**
+
+Quick reference:
+
+| # | Check | Expected |
+|---|-------|----------|
+| 1 | `curl -sf https://staging.herobids.com/health` | HTTP 200 |
+| 2 | Open `https://staging.herobids.com` in browser | Page loads, no cert errors |
+| 3 | OAuth login flow | Redirects use staging domain |
+| 4 | Billing page | Renders without errors |
+| 5 | `./scripts/logs.sh --env staging -- worker` | No startup guard failures |
+| 6 | Telegram webhook (if configured) | Bot responds to messages |
+| 7 | DB migrations | `docker compose ... run --rm migrate` succeeds |
 
 ## Troubleshooting
 
