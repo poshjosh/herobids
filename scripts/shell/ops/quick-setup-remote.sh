@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# quick-setup.prod.sh — Bootstrap a HeroBids user account on production.
+# quick-setup-remote.sh — Bootstrap a HeroBids user account on remote servers.
 #
 # Production variant of quick-setup.sh with hardened defaults:
 #   - HTTPS-first (TLS validation on by default)
@@ -13,11 +13,11 @@
 # Two primary execution modes:
 #
 #   Local (pointing at a remote API):
-#     scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.remote
-#     scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.remote --mode guided
+#     scripts/shell/ops/quick-setup-remote.sh --env-file .env.setup.remote
+#     scripts/shell/ops/quick-setup-remote.sh --env-file .env.setup.remote --mode guided
 #
 #   Remote (pipe over SSH, run against local docker compose API):
-#     ssh root@<server-ip> 'bash -s' < scripts/shell/ops/quick-setup.prod.sh \
+#     ssh root@<server-ip> 'bash -s' < scripts/shell/ops/quick-setup-remote.sh \
 #       --env-file - --yes <<'ENV'
 #     API_BASE_URL=http://api:3000
 #     SETUP_EMAIL=user@example.com
@@ -26,19 +26,19 @@
 #     ENV
 #
 #   Post-deploy (run as a deploy.sh step):
-#     scripts/shell/ops/quick-setup.prod.sh --ssh <server-ip> --env-file .env.setup.remote
+#     scripts/shell/ops/quick-setup-remote.sh --ssh <server-ip> --env-file .env.setup.remote
 #
 # Usage:
-#   scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.remote
-#   scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.remote --mode guided
-#   scripts/shell/ops/quick-setup.prod.sh --env-file .env.setup.remote --yes
-#   scripts/shell/ops/quick-setup.prod.sh --ssh 1.2.3.4 --env-file .env.setup.remote
-#   scripts/shell/ops/quick-setup.prod.sh --help
+#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.setup.remote
+#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.setup.remote --mode guided
+#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.setup.remote --yes
+#   scripts/shell/ops/quick-setup-remote.sh --ssh 1.2.3.4 --env-file .env.setup.remote
+#   scripts/shell/ops/quick-setup-remote.sh --help
 #
 # Setup:
 #   cp scripts/shell/ops/.env.setup.remote.example scripts/shell/ops/.env.setup.remote
 #   # fill in the variables, then:
-#   scripts/shell/ops/quick-setup.prod.sh --env-file scripts/shell/ops/.env.setup.remote
+#   scripts/shell/ops/quick-setup-remote.sh --env-file scripts/shell/ops/.env.setup.remote
 #
 # Required env vars — see .env.setup.remote.example for the full list:
 #   API_BASE_URL, SETUP_EMAIL, SETUP_PASSWORD, SETUP_DISPLAY_NAME,
@@ -228,7 +228,7 @@ if [[ -n "$SSH_HOST" ]]; then
     die "When using --ssh, --env-file must be '-' (stdin) or a valid local path (got: ${ENV_FILE})"
   fi
 
-  log_info "SSH mode: forwarding quick-setup.prod.sh to ${SSH_HOST} ..."
+  log_info "SSH mode: forwarding quick-setup-remote.sh to ${SSH_HOST} ..."
 
   # Build forwarded args (strip --ssh and --env-file, add back --env-file - for stdin)
   FORWARD_ARGS=()

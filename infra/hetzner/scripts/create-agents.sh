@@ -105,7 +105,7 @@ done
 # ─── Resolve env file ────────────────────────────────────────────────────────
 
 if [[ -z "$ENV_FILE" ]]; then
-  # Default: look for .env.setup.remote next to quick-setup.prod.sh
+  # Default: look for .env.setup.remote next to quick-setup-remote.sh
   ENV_FILE="$REPO_ROOT/scripts/shell/ops/.env.setup.remote"
   if [[ ! -f "$ENV_FILE" ]]; then
     die "No --env-file specified and default ${ENV_FILE} not found.
@@ -233,7 +233,7 @@ if [[ "$HTTP_STATUS" -eq 200 ]]; then
   log_ok "Logged in as ${SETUP_EMAIL}"
 else
   log_error "Login failed (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
-  die "Authentication failed. Make sure quick-setup.prod.sh has run first."
+  die "Authentication failed. Make sure quick-setup-remote.sh has run first."
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
