@@ -111,6 +111,7 @@ export type {
   SessionCircuitBreakerConfig,
   AgentRuntimeConfig,
   AgentRuntimePolicy,
+  AgentResourceProfilesConfig,
   ModelDefaults,
   AgentRiskDefaultsConfig,
   AgentCostEstimatesConfig,

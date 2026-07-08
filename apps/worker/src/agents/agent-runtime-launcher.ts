@@ -39,6 +39,8 @@ export interface LauncherLaunchConfig {
   toolPolicy?: Record<string, unknown>;
   /** Container image for the agent runtime */
   image?: string;
+  /** Optional plan tier for resource profile selection (e.g. 'free', 'pro', 'enterprise'). */
+  planTier?: string;
   /** Resource limits */
   limits?: {
     cpuShares?: number;
@@ -84,6 +86,18 @@ export interface AgentRuntimeLauncherConfig {
    * back to zero-value defaults as a last resort.
    */
   defaultResources?: RuntimeResourceProfile;
+  /**
+   * Per-tier resource profiles keyed by plan tier ID (e.g. 'free', 'pro',
+   * 'enterprise'). Resolved at launch time when the caller provides a
+   * `planTier`. Profiles take precedence over {@link defaultResources}.
+   * Wired from operator config (`agentRuntime.resourceProfiles`).
+   */
+  resourceProfiles?: Record<string, RuntimeResourceProfile>;
+  /**
+   * Default plan tier used when the caller does not pass an explicit tier
+   * at launch time. Typically the `plans.defaultPlanId` from operator config.
+   */
+  defaultTier?: string;
   /**
    * Runtime mode — 'docker' uses DockerAgentManager (production),
    * 'stub' keeps the in-memory fake (local dev without Docker).
@@ -145,6 +159,8 @@ export class AgentRuntimeLauncher {
   private readonly agentRepo?: AgentRepository;
   private readonly envConfig?: AgentEnvConfig;
   private readonly defaultResources: RuntimeResourceProfile;
+  private readonly resourceProfiles: Record<string, RuntimeResourceProfile>;
+  private readonly defaultTier?: string;
 
   constructor(config?: AgentRuntimeLauncherConfig) {
     this.redis = config?.redis;
@@ -152,6 +168,8 @@ export class AgentRuntimeLauncher {
     this.heartbeatIntervalMs = config?.heartbeatIntervalMs ?? 5_000;
     this.agentRepo = config?.agentRepo;
     this.envConfig = config?.envConfig;
+    this.resourceProfiles = config?.resourceProfiles ?? {};
+    this.defaultTier = config?.defaultTier;
     this.defaultResources = config?.defaultResources ?? {
       memoryLimitMb: 0,
       cpuShares: 0,
@@ -198,7 +216,34 @@ export class AgentRuntimeLauncher {
     }
 
     const portType = this.port.constructor.name;
-    logger.info({ portType, hasEnvConfig: !!this.envConfig }, 'Agent runtime launcher initialized');
+    logger.info({ portType, hasEnvConfig: !!this.envConfig, tiers: Object.keys(this.resourceProfiles) }, 'Agent runtime launcher initialized');
+  }
+
+  /**
+   * Resolve the effective {@link RuntimeResourceProfile} for a plan tier.
+   *
+   * Resolution order:
+   * 1. Exact match in `resourceProfiles[tier]`
+   * 2. `resourceProfiles[defaultTier]` (when a non-matching tier is requested)
+   * 3. `defaultResources` (sandboxDefaults from operator config)
+   *
+   * This ensures unknown or unconfigured tiers fall back to the operator's
+   * default platform profile rather than silently getting zero resources.
+   */
+  resolveProfile(tier?: string): RuntimeResourceProfile {
+    if (tier && this.resourceProfiles[tier]) {
+      return this.resourceProfiles[tier]!;
+    }
+    // When a tier is specified but has no profile entry, fall back to the
+    // configured default tier profile (if any) before falling to sandboxDefaults.
+    if (tier && this.defaultTier && this.resourceProfiles[this.defaultTier]) {
+      logger.debug({ tier, defaultTier: this.defaultTier }, 'No resource profile for tier, falling back to default tier profile');
+      return this.resourceProfiles[this.defaultTier]!;
+    }
+    if (!tier && this.defaultTier && this.resourceProfiles[this.defaultTier]) {
+      return this.resourceProfiles[this.defaultTier]!;
+    }
+    return this.defaultResources;
   }
 
   /**
@@ -287,12 +332,17 @@ export class AgentRuntimeLauncher {
       ? buildAgentLabels(config.agentId, config.sessionId)
       : {};
 
+    const profile = this.resolveProfile(config.planTier);
+
     const resources: RuntimeResourceProfile = {
-      memoryLimitMb: config.limits?.memoryMb ?? (this.defaultResources.memoryLimitMb || 512),
-      cpuShares: config.limits?.cpuShares ?? (this.defaultResources.cpuShares || 256),
-      maxProcesses: config.limits?.maxProcesses ?? (this.defaultResources.maxProcesses || 10),
-      tempStorageMb: config.limits?.tempStorageMb ?? (this.defaultResources.tempStorageMb || 100),
-      maxWallClockMs: config.limits?.wallClockMs ?? (this.defaultResources.maxWallClockMs || undefined),
+      memoryLimitMb: config.limits?.memoryMb ?? profile.memoryLimitMb ?? 512,
+      memoryReservationMb: config.limits?.memoryMb !== undefined
+        ? undefined // caller set explicit memory; reservation is implicit
+        : profile.memoryReservationMb,
+      cpuShares: config.limits?.cpuShares ?? profile.cpuShares ?? 256,
+      maxProcesses: config.limits?.maxProcesses ?? profile.maxProcesses ?? 50,
+      tempStorageMb: config.limits?.tempStorageMb ?? profile.tempStorageMb ?? 100,
+      maxWallClockMs: config.limits?.wallClockMs ?? profile.maxWallClockMs,
     };
 
     const portResult = await this.port.launch({

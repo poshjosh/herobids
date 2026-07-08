@@ -343,6 +343,9 @@ const agentRuntimeLauncher = (() => {
     maxWallClockMs: appConfig.agentRuntime.sandboxDefaults.maxWallClockMs,
   };
 
+  const resourceProfiles = appConfig.agentRuntime.resourceProfiles;
+  const defaultTier = appConfig.plans.defaultPlanId;
+
   if (runtimeBackend === 'docker') {
     const dockerManager = new DockerAgentManager(
       {
@@ -382,6 +385,8 @@ const agentRuntimeLauncher = (() => {
       port: dockerAdapter,
       agentRepo,
       defaultResources,
+      resourceProfiles,
+      defaultTier,
       envConfig,
     });
   }
@@ -408,12 +413,14 @@ const agentRuntimeLauncher = (() => {
       port: nomadAdapter,
       agentRepo,
       defaultResources,
+      resourceProfiles,
+      defaultTier,
       envConfig,
     });
   }
 
   // 'stub' — in-memory fake for local dev without containers
-  return new AgentRuntimeLauncher({ redis: redisClient });
+  return new AgentRuntimeLauncher({ redis: redisClient, defaultResources, resourceProfiles, defaultTier });
 })();
 
 // Worker-scoped oracle mark source (stateless, safe to share)

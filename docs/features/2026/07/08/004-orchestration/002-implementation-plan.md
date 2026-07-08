@@ -12,7 +12,7 @@
 | Phase 2 - Cluster topology & infra | DONE |
 | Phase 3 - Shared service connectivity | DONE |
 | Phase 4 - Nomad runtime adapter | DONE |
-| Phase 5 - Per-tier resource profiles | PENDING |
+| Phase 5 - Per-tier resource profiles | DONE |
 | Phase 6 - Autoscale-out with flock+Terraform | PENDING |
 | Phase 7 - Safety net & nightly scale-in | PENDING |
 | Phase 8 - Admin alerting & visibility | PENDING |
@@ -321,7 +321,7 @@ The worker can launch, stop, reconcile, and classify agent runtimes through Noma
 2. stopping an agent updates status correctly and does not misclassify the stop as a crash
 3. a forced runtime exit on a client node is detected and classified correctly
 
-### Phase 5 - Configure per-tier resource profiles and scheduling policy **[PENDING]**
+### Phase 5 - Configure per-tier resource profiles and scheduling policy **[DONE]**
 
 #### Goal
 

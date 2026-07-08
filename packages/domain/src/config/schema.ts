@@ -1004,6 +1004,57 @@ export const AgentRuntimeConfigSchema = z.object({
     maxResponseBytes: z.number().int().min(1).default(10_485_760),
     maxTotalDownloadBytes: z.number().int().min(1).default(104_857_600),
   }).default({}),
+  /**
+   * Per-tier resource profiles for agent runtime containers.
+   *
+   * Each profile maps a plan tier (e.g. 'free', 'pro', 'enterprise') to
+   * scheduler-level resource constraints: memory hard limit, scheduling
+   * reservation, CPU shares, process limit, and temp storage.
+   *
+   * Fallback: when a tier has no matching profile, the launcher uses
+   * {@link sandboxDefaults} as the final fallback.
+   *
+   * Operator config controls the absolute platform ceiling per tier.
+   * Plan-specific product behaviour (e.g. enterprise-only dedicated nodes)
+   * can evolve separately without changing these profiles.
+   */
+  resourceProfiles: z.record(z.string(), z.object({
+    /** Hard memory limit in MB (OOM kill boundary). */
+    memoryLimitMb: z.number().int().min(64),
+    /**
+     * Soft memory for scheduling decisions.
+     * Must be ≤ memoryLimitMb. When unset, defaults to memoryLimitMb / 2.
+     */
+    memoryReservationMb: z.number().int().min(1).optional(),
+    /** CPU shares (relative weight; e.g. 256 ≈ 0.25 vCPU on a 1024-scale). */
+    cpuShares: z.number().int().min(1),
+    /** Max number of PIDs / processes inside the runtime. */
+    maxProcesses: z.number().int().min(1),
+    /** Temp storage limit in MB (e.g. /tmp tmpfs size). */
+    tempStorageMb: z.number().int().min(1),
+    /** Wall-clock timeout in ms (0 = unlimited, runtime is killed after this). */
+    maxWallClockMs: z.number().int().min(0).optional(),
+  })).default({}).refine(
+    (profiles) => {
+      for (const [tier, profile] of Object.entries(profiles)) {
+        if (profile.memoryReservationMb !== undefined && profile.memoryReservationMb > profile.memoryLimitMb) {
+          return false;
+        }
+      }
+      return true;
+    },
+    (profiles) => {
+      for (const [tier, profile] of Object.entries(profiles)) {
+        if (profile.memoryReservationMb !== undefined && profile.memoryReservationMb > profile.memoryLimitMb) {
+          return {
+            message: `agentRuntime.resourceProfiles.${tier}: memoryReservationMb (${profile.memoryReservationMb}) must be ≤ memoryLimitMb (${profile.memoryLimitMb})`,
+          };
+        }
+      }
+      // Should never reach here since refine only calls this when validation fails
+      return { message: 'agentRuntime.resourceProfiles: memoryReservationMb must be ≤ memoryLimitMb' };
+    },
+  ),
   tools: z.object({
     codeExecute: z.object({
       defaultTimeoutMs: z.number().int().min(1000).default(60_000),
@@ -1333,6 +1384,8 @@ export type WorkerConfig = z.infer<typeof WorkerConfigSchema>;
 export type SessionCircuitBreakerConfig = z.infer<typeof SessionCircuitBreakerSchema>;
 export type AgentRuntimeConfig = z.infer<typeof AgentRuntimeConfigSchema>;
 export type AgentRuntimePolicy = z.infer<typeof AgentRuntimePolicySchema>;
+/** Per-tier resource profile — maps plan tier IDs (e.g. 'free', 'pro') to resource constraints. */
+export type AgentResourceProfilesConfig = AgentRuntimeConfig['resourceProfiles'];
 export type ModelDefaults = z.infer<typeof ModelDefaultsSchema>;
 export type BacktestingConfig = z.infer<typeof BacktestingConfigSchema>;
 export type EvaluationConfig = z.infer<typeof EvaluationConfigSchema>;

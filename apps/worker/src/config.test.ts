@@ -898,6 +898,160 @@ agentRuntime:
 
       expect(() => loadConfig(tmpDir)).toThrow();
     });
+
+    it('loads agentRuntime.resourceProfiles from YAML', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), `
+app:
+  port: 3000
+database:
+  url: postgres://localhost/test
+redis:
+  url: redis://localhost:6379
+execution:
+  defaultSlippageBps: 50
+risk:
+  globalMaxDrawdownPct: 20
+agentRuntime:
+  defaultBudgets:
+    maxHistoryMessages: 20
+    maxHistoryTokens: 40000
+    maxRecentToolMessages: 6
+    maxToolResultChars: 4000
+    maxVisibleToolSchemas: 64
+    maxContextBlockChars: 4000
+  resourceProfiles:
+    free:
+      memoryLimitMb: 512
+      memoryReservationMb: 256
+      cpuShares: 256
+      maxProcesses: 50
+      tempStorageMb: 100
+    pro:
+      memoryLimitMb: 512
+      cpuShares: 256
+      maxProcesses: 50
+      tempStorageMb: 100
+    enterprise:
+      memoryLimitMb: 4096
+      memoryReservationMb: 2048
+      cpuShares: 1024
+      maxProcesses: 200
+      tempStorageMb: 1000
+      maxWallClockMs: 0
+`);
+
+      const config = loadConfig(tmpDir);
+
+      const profiles = config.agentRuntime.resourceProfiles;
+      expect(profiles['free']).toBeDefined();
+      expect(profiles['free']!.memoryLimitMb).toBe(512);
+      expect(profiles['free']!.memoryReservationMb).toBe(256);
+      expect(profiles['free']!.cpuShares).toBe(256);
+
+      // pro: memoryReservationMb is optional — absent in YAML → undefined
+      expect(profiles['pro']).toBeDefined();
+      expect(profiles['pro']!.memoryLimitMb).toBe(512);
+      expect(profiles['pro']!.memoryReservationMb).toBeUndefined();
+
+      // enterprise: all fields, including optional maxWallClockMs
+      expect(profiles['enterprise']).toBeDefined();
+      expect(profiles['enterprise']!.memoryLimitMb).toBe(4096);
+      expect(profiles['enterprise']!.memoryReservationMb).toBe(2048);
+      expect(profiles['enterprise']!.cpuShares).toBe(1024);
+      expect(profiles['enterprise']!.maxWallClockMs).toBe(0);
+    });
+
+    it('rejects agentRuntime.resourceProfiles with memoryLimitMb below minimum (64)', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), `
+app:
+  port: 3000
+database:
+  url: postgres://localhost/test
+redis:
+  url: redis://localhost:6379
+execution:
+  defaultSlippageBps: 50
+risk:
+  globalMaxDrawdownPct: 20
+agentRuntime:
+  defaultBudgets:
+    maxHistoryMessages: 20
+    maxHistoryTokens: 40000
+    maxRecentToolMessages: 6
+    maxToolResultChars: 4000
+    maxVisibleToolSchemas: 64
+    maxContextBlockChars: 4000
+  resourceProfiles:
+    free:
+      memoryLimitMb: 32
+      cpuShares: 256
+      maxProcesses: 50
+      tempStorageMb: 100
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+
+    it('rejects agentRuntime.resourceProfiles with memoryReservationMb > memoryLimitMb', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), `
+app:
+  port: 3000
+database:
+  url: postgres://localhost/test
+redis:
+  url: redis://localhost:6379
+execution:
+  defaultSlippageBps: 50
+risk:
+  globalMaxDrawdownPct: 20
+agentRuntime:
+  defaultBudgets:
+    maxHistoryMessages: 20
+    maxHistoryTokens: 40000
+    maxRecentToolMessages: 6
+    maxToolResultChars: 4000
+    maxVisibleToolSchemas: 64
+    maxContextBlockChars: 4000
+  resourceProfiles:
+    free:
+      memoryLimitMb: 512
+      memoryReservationMb: 1024
+      cpuShares: 256
+      maxProcesses: 50
+      tempStorageMb: 100
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow(
+        'memoryReservationMb (1024) must be ≤ memoryLimitMb (512)',
+      );
+    });
+
+    it('defaults resourceProfiles to empty record when absent from YAML', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), `
+app:
+  port: 3000
+database:
+  url: postgres://localhost/test
+redis:
+  url: redis://localhost:6379
+execution:
+  defaultSlippageBps: 50
+risk:
+  globalMaxDrawdownPct: 20
+agentRuntime:
+  defaultBudgets:
+    maxHistoryMessages: 20
+    maxHistoryTokens: 40000
+    maxRecentToolMessages: 6
+    maxToolResultChars: 4000
+    maxVisibleToolSchemas: 64
+    maxContextBlockChars: 4000
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.agentRuntime.resourceProfiles).toEqual({});
+    });
   });
 
   describe('marketData fail-fast validation', () => {

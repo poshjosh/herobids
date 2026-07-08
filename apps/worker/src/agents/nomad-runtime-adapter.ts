@@ -60,6 +60,7 @@ export interface NomadRuntimeAdapterConfig {
   /** Default resource profile applied when not specified per-tier. */
   defaultResources: {
     memoryLimitMb: number;
+    memoryReservationMb?: number;
     cpuShares: number;
     tempStorageMb: number;
     maxProcesses: number;
@@ -185,8 +186,17 @@ function buildNomadJobSpec(
 ): NomadJobSpec {
   const resources = config.resources;
   const memoryLimitMb = resources.memoryLimitMb || adapterConfig.defaultResources.memoryLimitMb;
-  const cpuShares = resources.cpuShares || adapterConfig.defaultResources.cpuShares;
-  const maxProcesses = resources.maxProcesses || adapterConfig.defaultResources.maxProcesses;
+  // Scheduling reservation: use the configured soft reservation if present,
+  // otherwise fall back to half the hard limit for soft-overcommit, then to
+  // the adapter default. The reservation must never exceed the hard limit.
+  const memoryReservationMb = resources.memoryReservationMb
+    ?? Math.min(
+      Math.floor(memoryLimitMb / 2),
+      adapterConfig.defaultResources.memoryLimitMb,
+    );
+  const effectiveMemoryReservationMb = Math.min(memoryReservationMb, memoryLimitMb);
+  const cpuShares = resources.cpuShares ?? adapterConfig.defaultResources.cpuShares;
+  const maxProcesses = resources.maxProcesses ?? adapterConfig.defaultResources.maxProcesses;
 
   // Build Nomad-flavoured labels (Nomad uses 'meta' for job-level, Docker labels for task-level)
   const dockerLabels: Record<string, string> = {
@@ -224,8 +234,8 @@ function buildNomadJobSpec(
                 pids_limit: maxProcesses,
               } as NomadJobSpec['Job']['TaskGroups'][0]['Tasks'][0]['Config'],
               Resources: {
-                MemoryMB: memoryLimitMb,
-                MemoryMaxMB: memoryLimitMb, // hard limit = reservation (no overcommit for agents)
+                MemoryMB: effectiveMemoryReservationMb, // soft scheduling reservation
+                MemoryMaxMB: memoryLimitMb,             // hard OOM ceiling
                 CPU: cpuShares,
               },
               LogConfig: {
