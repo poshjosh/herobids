@@ -346,9 +346,9 @@ This phase filters **monitor-owned** sources only.
 | # | Task | Status |
 |---|------|--------|
 | B1 | Add mode-based delivery (wake/batched/context) in `monitor.ts` | DONE |
-| B2 | Add structured runtime storage for pending market-monitor context events in `runtime-composition.ts` | PENDING |
-| B3 | Add stable digest for pending market context events in `tick-gates.ts` | PENDING |
-| B4 | Compute pending market-event digest before skip decision and render context in prompt in `agent.ts` | PENDING |
+| B2 | Add structured runtime storage for pending market-monitor context events in `runtime-composition.ts` | DONE |
+| B3 | Add stable digest for pending market context events in `tick-gates.ts` | DONE |
+| B4 | Compute pending market-event digest before skip decision and render context in prompt in `agent.ts` | DONE |
 | B5 | Add `mode` to each known wake-policy source in config and schema | PENDING |
 
 ### Part C — Per-Agent Wake Subscriptions
@@ -390,3 +390,13 @@ This phase filters **monitor-owned** sources only.
 | 2 | MEDIUM | Missing test: `regime_change` with `wake` or `batched` mode — only `context` mode tested for regime_change. |
 | 3 | LOW | `batched` and `wake` are identical at monitor level (by design — differentiation is in cooldownMs). |
 | 4 | LOW | Default config doesn't include `mode` fields — all sources default to `'wake'`.
+
+### [B2/B3/B4] Runtime Context Handling
+
+| # | Severity | Issue |
+|---|----------|-------|
+| 1 | LOW | Regime pass mismatch in recomputation when positions are open — causes one extra LLM call, errs safely. |
+| 2 | LOW | No event ordering stability in `computeMarketEventDigest` (events not sorted before hashing). |
+| 3 | LOW | Context provider doesn't handle unknown event types gracefully (else branch casts incorrectly). |
+| 4 | LOW | `PendingMarketEvent.type` union not derived from domain constants. |
+| 5 | LOW | Root `pnpm lint` silently misses TypeScript errors in referenced projects (pre-existing `composite` + `--noEmit` issue).

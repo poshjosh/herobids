@@ -52,6 +52,7 @@ import {
   recordActiveWatchSummary,
   summarizeActiveWatches,
   recordPositionCoverage,
+  computeMarketEventDigest,
   type RuntimeActiveWatch,
   type RuntimeActiveWatchSummary,
   type RuntimeCompositionState,
@@ -59,7 +60,7 @@ import {
 import { parseWatch, toRuntimeActiveWatch } from './watch-types.js';
 import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
 import type { TradingSessionName } from '@herobids/domain';
-import { computeWakeSignalDigest, computeWatchSummaryDigest, computeRiskPlaybookDigest, shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
+import { computeWakeSignalDigest, computeWatchSummaryDigest, computeRiskPlaybookDigest, computeDecisionContextHash, shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
 import { resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
 import { evaluatePositionCoverage, PROTECTIVE_WATCH_PURPOSES, type PositionInput } from './position-coverage.js';
@@ -2110,6 +2111,10 @@ async function runTick(): Promise<void> {
       drawdownPct: sessionMetrics.portfolio.drawdownPct,
     });
 
+    // Compute market event digest from pending context-only events.
+    // New context-only events change the digest → context hash changes → skip prevented.
+    const marketEventDigest = computeMarketEventDigest(runtimeState.metrics.pendingMarketContext);
+
     const tickGateState = buildTickGateState({
       tickNumber: tickCount,
       incomingMessages,
@@ -2120,6 +2125,7 @@ async function runTick(): Promise<void> {
       watchSummaryDigest,
       wakeSignalDigest,
       riskPlaybookDigest,
+      marketEventDigest,
       previousContextHash,
       baseTickIntervalMs: costProfile.tickIntervalMs,
       currentTickIntervalMs: effectiveTickIntervalMs,
@@ -2165,7 +2171,7 @@ async function runTick(): Promise<void> {
     // Context hash is stored in a local variable; only persisted to previousContextHash
     // after the judge actually runs (Fix B: prevents context_unchanged gate from locking
     // the agent after a scout hold where no work was done).
-    const tickContextHash = skipDecision.contextHash ?? previousContextHash;
+    let tickContextHash = skipDecision.contextHash ?? previousContextHash;
     if (tradingTickWorkPlan.shouldRecordRegimeEvaluation) {
       recordRegimeEvaluation(
         runtimeState,
@@ -2449,6 +2455,35 @@ async function runTick(): Promise<void> {
 
     // Build context for this tick.
     const fullUserContext = buildTickUserContext(runtimeState, [], enrichmentPolicy);
+
+    // Fix: if context-only market events were consumed by buildTickUserContext,
+    // recompute the context hash with the post-consumption __none__ digest
+    // so the persisted previousContextHash matches the next tick's empty-buffer
+    // state and the context_unchanged gate can correctly skip.
+    if (marketEventDigest !== '__none__') {
+      // Resolve effective digests with the same __unknown__ sentinel
+      // transformation used by shouldSkipTick, so the recomputed hash
+      // matches what the tick gate will compute on the next tick.
+      const effectiveWatchDigest = tickGateState.watchSummaryDigest === '__unknown__'
+        ? `__unknown__${tickGateState.tickNumber}`
+        : tickGateState.watchSummaryDigest;
+      const effectiveRiskPlaybookDigest = tickGateState.riskPlaybookDigest === '__unknown__'
+        ? `__unknown__${tickGateState.tickNumber}`
+        : tickGateState.riskPlaybookDigest;
+
+      tickContextHash = computeDecisionContextHash({
+        positionSide: tickGateState.positionSide,
+        latestPrice: tickGateState.latestPrice,
+        portfolioPnlUsd: tickGateState.portfolioPnlUsd,
+        regimePass: skipDecision.regime?.pass ?? null,
+        instrumentSnapshots: tickGateState.instrumentSnapshots,
+        watchSummaryDigest: effectiveWatchDigest,
+        wakeSignalDigest: tickGateState.wakeSignalDigest,
+        riskPlaybookDigest: effectiveRiskPlaybookDigest,
+        marketEventDigest: '__none__',
+      });
+    }
+
     const incrementalContext = buildIncrementalContext({
       previousContext: previousFullUserContext,
       currentContext: fullUserContext,

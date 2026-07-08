@@ -20,6 +20,10 @@ export interface BuildTickGateStateParams {
    *  `"__unknown__"` when the data is unavailable.
    *  `undefined` means risk state is not incorporated (backward compat). */
   riskPlaybookDigest?: string;
+  /** Stable digest of pending market context-only events (no agent.wake).
+   *  `"__none__"` when the buffer is empty.
+   *  `undefined` means context events are not incorporated (backward compat). */
+  marketEventDigest?: string;
   previousContextHash?: string | null;
   baseTickIntervalMs?: number;
   currentTickIntervalMs?: number;
@@ -149,6 +153,7 @@ export function buildTickGateState(params: BuildTickGateStateParams): TickGateSt
     watchSummaryDigest: params.watchSummaryDigest,
     wakeSignalDigest: params.wakeSignalDigest,
     riskPlaybookDigest: params.riskPlaybookDigest,
+    marketEventDigest: params.marketEventDigest,
     previousContextHash: params.previousContextHash,
     baseTickIntervalMs: params.baseTickIntervalMs,
     currentTickIntervalMs: params.currentTickIntervalMs,

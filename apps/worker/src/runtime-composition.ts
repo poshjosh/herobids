@@ -1,5 +1,6 @@
-import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext } from '@herobids/domain';
+import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload } from '@herobids/domain';
 import { formatAgentGoalLiteralBlock, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
+import crypto from 'node:crypto';
 import type { RegimeResult } from '@herobids/market-data';
 import type { ScoredSignal } from '@herobids/strategy';
 import type { PromptTimingContext } from './prompt-timing-context.js';
@@ -137,6 +138,14 @@ export interface RuntimeQueuedWakeSignal {
   receivedAt: number;
 }
 
+/** Pending market-monitor context-only events (no agent.wake). Accumulated between ticks. */
+export interface PendingMarketEvent {
+  eventId: string;
+  type: 'market.discovery.detected' | 'market.regime.changed';
+  receivedAt: number;
+  payload: MarketDiscoveryDetectedPayload | MarketRegimeChangedPayload;
+}
+
 export type ActivityTimelineEvent =
   | { kind: 'USER'; text: string; timestamp: number }
   | { kind: 'MEMORY'; key: string; value: string; timestamp: number }
@@ -174,6 +183,8 @@ export interface RuntimeSessionMetrics {
   activityTimeline: ActivityTimelineEvent[];
   /** Position coverage evaluation from structured watch metadata (purpose, instrument, coverage links). */
   positionCoverage: CoverageEvaluationResult | null;
+  /** Pending market-monitor context-only events (no agent.wake). Accumulated between ticks. */
+  pendingMarketContext: PendingMarketEvent[];
 }
 
 export interface RuntimeCompositionState {
@@ -667,6 +678,17 @@ function computePerformanceSummary(state: RuntimeCompositionState): string {
   ].join('\n');
 }
 
+/**
+ * Produces a stable digest from pending market context events.
+ * Only hashes type + eventId pairs for stability — NOT timestamps.
+ * Returns "__none__" when the buffer is empty.
+ */
+export function computeMarketEventDigest(events: PendingMarketEvent[]): string {
+  if (events.length === 0) return '__none__';
+  const normalized = events.map(e => ({ type: e.type, eventId: e.eventId }));
+  return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+}
+
 export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
   {
     id: 'core-platform',
@@ -975,6 +997,35 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
           `Current state: ${ctx.currentState}`,
           `Changed at: ${ctx.changedAt}`,
         ].join('\n') + emphasis,
+      };
+    },
+  },
+  {
+    id: 'pending-market-context',
+    costTier: 'free',
+    section: 'dynamic',
+    requiredFamilies: [],
+    trimOrder: 80,
+    preserveWhenTrimmed: true,
+    build: (state) => {
+      const events = state.metrics.pendingMarketContext;
+      if (events.length === 0) return null;
+
+      const lines = events.map(e => {
+        if (e.type === 'market.discovery.detected') {
+          const p = e.payload as MarketDiscoveryDetectedPayload;
+          return `• [Discovery] ${p.symbol} (${p.network}) — ${p.reason}`;
+        } else {
+          const p = e.payload as MarketRegimeChangedPayload;
+          return `• [Regime] ${p.benchmarkSymbol}: ${p.previousState} → ${p.currentState}`;
+        }
+      });
+
+      return {
+        id: 'pendingMarketContext',
+        title: '📊 Market Context',
+        provider: 'pending-market-context',
+        content: lines.join('\n'),
       };
     },
   },
@@ -1327,6 +1378,7 @@ export function createRuntimeCompositionState(
       queuedWakeSignals: [],
       activityTimeline: [],
       positionCoverage: null,
+      pendingMarketContext: [],
     },
   };
 }
@@ -1686,6 +1738,19 @@ export function applyRuntimeMessage(
 
     if (wake.source === 'watch_threshold' || wake.source === 'discovery_delta' || wake.source === 'regime_change' || wake.source === 'scanner') {
       state.metrics.currentMarketWake = { wakeId, source: wake.source, reason, requestedAt, context: wake.context as WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext };
+
+      // Remove pending context-only market events that this wake will render.
+      // Prevents duplicate rendering when context-only events arrive before agent.wake.
+      if (wake.source === 'discovery_delta') {
+        state.metrics.pendingMarketContext = state.metrics.pendingMarketContext.filter(
+          e => e.type !== 'market.discovery.detected'
+        );
+      } else if (wake.source === 'regime_change') {
+        state.metrics.pendingMarketContext = state.metrics.pendingMarketContext.filter(
+          e => e.type !== 'market.regime.changed'
+        );
+      }
+
       const summary = reason || `Wake: ${wake.source}`;
       pushRecentEvent(state, type, summary);
       return summary;
@@ -1813,6 +1878,66 @@ export function applyRuntimeMessage(
     return summary;
   }
 
+  // Market monitor context-only events (no agent.wake).
+  // Stored as pending context for the next tick digest and prompt rendering.
+  // If a preceding agent.wake already set currentMarketWake for the same event
+  // source, skip the push to avoid duplicate rendering in the same tick.
+  if (type === 'market.discovery.detected') {
+    if (state.metrics.currentMarketWake?.source === 'discovery_delta') {
+      return ''; // Already rendered via discovery-trigger-context provider
+    }
+    const parsed = payload as unknown as MarketDiscoveryDetectedPayload;
+    if (parsed.eventId && parsed.symbol && parsed.network) {
+      // Deduplicate by eventId — same event may arrive via wake + batched modes
+      if (state.metrics.pendingMarketContext.some(e => e.eventId === parsed.eventId)) {
+        return '';
+      }
+      // Cap at 50 events to prevent unbounded memory growth
+      if (state.metrics.pendingMarketContext.length >= 50) {
+        console.warn('pendingMarketContext exceeded 50-event cap — oldest events dropped');
+        state.metrics.pendingMarketContext.shift();
+      }
+      state.metrics.pendingMarketContext.push({
+        eventId: parsed.eventId,
+        type: 'market.discovery.detected',
+        receivedAt: Date.now(),
+        payload: parsed,
+      });
+      const summary = `Market discovery: ${parsed.symbol} (${parsed.network}) — ${parsed.reason}`;
+      pushRecentEvent(state, type, summary);
+      return summary;
+    }
+    return '';
+  }
+
+  if (type === 'market.regime.changed') {
+    if (state.metrics.currentMarketWake?.source === 'regime_change') {
+      return ''; // Already rendered via regime-change-context provider
+    }
+    const parsed = payload as unknown as MarketRegimeChangedPayload;
+    if (parsed.eventId && parsed.benchmarkSymbol) {
+      // Deduplicate by eventId
+      if (state.metrics.pendingMarketContext.some(e => e.eventId === parsed.eventId)) {
+        return '';
+      }
+      // Cap at 50 events
+      if (state.metrics.pendingMarketContext.length >= 50) {
+        console.warn('pendingMarketContext exceeded 50-event cap — oldest events dropped');
+        state.metrics.pendingMarketContext.shift();
+      }
+      state.metrics.pendingMarketContext.push({
+        eventId: parsed.eventId,
+        type: 'market.regime.changed',
+        receivedAt: Date.now(),
+        payload: parsed,
+      });
+      const summary = `Regime change: ${parsed.benchmarkSymbol} ${parsed.previousState} → ${parsed.currentState}`;
+      pushRecentEvent(state, type, summary);
+      return summary;
+    }
+    return '';
+  }
+
   const summary = `Platform message: ${type}`;
   pushRecentEvent(state, type, summary);
   return summary;
@@ -1861,6 +1986,7 @@ export function buildTickUserContext(state: RuntimeCompositionState, incomingMes
   // Reminder context and market wake context should only influence the tick immediately triggered by them.
   state.metrics.currentReminder = null;
   state.metrics.currentMarketWake = null;
+  state.metrics.pendingMarketContext = [];
 
   return output;
 }

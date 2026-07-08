@@ -38,6 +38,10 @@ export interface TickGateState {
    * the data was unavailable and the gate will err on the side of running the
    * LLM. Undefined means risk state is not incorporated (backward compat). */
   riskPlaybookDigest?: string;
+  /** Stable digest of pending market context-only events (no agent.wake).
+   * When "__none__", the buffer was empty. Undefined means context events are
+   * not incorporated (backward compat). */
+  marketEventDigest?: string;
   previousContextHash?: string | null;
   baseTickIntervalMs?: number;
   currentTickIntervalMs?: number;
@@ -261,6 +265,7 @@ export function computeDecisionContextHash(input: {
   watchSummaryDigest?: string;
   wakeSignalDigest?: string;
   riskPlaybookDigest?: string;
+  marketEventDigest?: string;
 }): string {
   // When multi-instrument snapshots are available, use the sorted per-instrument
   // summary for a stable, order-independent hash. This ensures a price move in
@@ -278,6 +283,9 @@ export function computeDecisionContextHash(input: {
     }
     if (input.riskPlaybookDigest !== undefined) {
       payload.riskPlaybookDigest = input.riskPlaybookDigest;
+    }
+    if (input.marketEventDigest !== undefined) {
+      payload.marketEventDigest = input.marketEventDigest;
     }
     return crypto
       .createHash('sha256')
@@ -300,6 +308,9 @@ export function computeDecisionContextHash(input: {
   }
   if (input.riskPlaybookDigest !== undefined) {
     payload.riskPlaybookDigest = input.riskPlaybookDigest;
+  }
+  if (input.marketEventDigest !== undefined) {
+    payload.marketEventDigest = input.marketEventDigest;
   }
   return crypto
     .createHash('sha256')
@@ -441,6 +452,7 @@ export async function shouldSkipTick(
       watchSummaryDigest: effectiveWatchDigest,
       wakeSignalDigest: state.wakeSignalDigest,
       riskPlaybookDigest: effectiveRiskPlaybookDigest,
+      marketEventDigest: state.marketEventDigest,
     });
 
     if (
@@ -488,6 +500,7 @@ export async function shouldSkipTick(
     watchSummaryDigest: effectiveWatchDigest,
     wakeSignalDigest: state.wakeSignalDigest,
     riskPlaybookDigest: effectiveRiskPlaybookDigest,
+    marketEventDigest: state.marketEventDigest,
   });
 
   if (regime !== null && !regime.pass) {
