@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
+import { useIntl } from 'react-intl';
 import Decimal from 'decimal.js';
 import { dashboard, bots as botsApi } from '../../lib/api-client.js';
 import { formatPnl, pnlColor } from '../../lib/formatting.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel, KV } from '../../lib/ui.js';
 
 export function ExposurePage() {
+  const intl = useIntl();
   const overviewQuery = useQuery({
     queryKey: ['dashboard', 'overview'],
     queryFn: () => dashboard.overview(),
@@ -19,8 +21,8 @@ export function ExposurePage() {
   return (
     <PageShell>
       <PageHeader
-        title="Exposure"
-        subtitle="Current positions and risk concentration"
+        title={intl.formatMessage({ id: 'exposure.title' })}
+        subtitle={intl.formatMessage({ id: 'exposure.subtitle' })}
       />
 
       {overviewQuery.isLoading && <LoadingRows count={3} />}
@@ -33,8 +35,8 @@ export function ExposurePage() {
 
       {overview && instancesWithPositions.length === 0 && (
         <EmptyState
-          title="No open positions"
-          message="Positions will appear here once your AI agents start trading."
+          title={intl.formatMessage({ id: 'exposure.emptyTitle' })}
+          message={intl.formatMessage({ id: 'exposure.emptyMessage' })}
         />
       )}
 
@@ -42,14 +44,14 @@ export function ExposurePage() {
         <Card style={{ marginBottom: '24px', padding: '20px 24px' }}>
           <div style={{ display: 'flex', gap: '32px' }}>
             <KV
-              label="Total Realized P&L"
+              label={intl.formatMessage({ id: 'exposure.totalRealizedPnl' })}
               value={
                 <span style={{ color: pnlColor(overview.summary.totalRealizedPnl), fontWeight: '600', fontSize: '18px' }}>
                   {formatPnl(overview.summary.totalRealizedPnl)}
                 </span>
               }
             />
-            <KV label="Open Positions" value={overview.summary.totalOpenPositions} />
+            <KV label={intl.formatMessage({ id: 'exposure.openPositions' })} value={overview.summary.totalOpenPositions} />
           </div>
         </Card>
       )}

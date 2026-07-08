@@ -317,7 +317,7 @@ export function pnlColor(pnl: string | number | null | undefined): string {
 | 4 | `formatPnl` helper | `apps/web/src/lib/formatting.ts` | — | DONE |
 | 5 | Mission Control PnL card (1a) | `MissionControlPage.tsx` | 2, 3, 4 | DONE |
 | 6 | Exposure page PnL header (1b) | `ExposurePage.tsx` | 2, 3, 4 | DONE |
-| 7 | Per-agent PnL on cards (1c) | `AgentsPage.tsx`, `AgentSummaryCard.tsx` | 1, 3, 4 | PENDING |
+| 7 | Per-agent PnL on cards (1c) | `AgentsPage.tsx`, `AgentSummaryCard.tsx` | 1, 3, 4 | DONE |
 | 8 | i18n strings | `apps/web/src/app/i18n/` | 5, 6, 7 | PENDING |
 
 Steps 1–4 can be done in parallel. Steps 5–7 are independent of each other and
@@ -411,3 +411,10 @@ can be done in any order after 1–4.
 - **LOW** — Win rate uses `toFixed(0)` (whole-number percent). For small trade counts, consider `toFixed(1)`.
 - **LOW** — `performanceQuery` variable unused except for `.data` (could be inlined).
 - **LOW** — PnL row renders for all agents, not just trading-capability agents. Defensive concern — practically harmless since non-trading agents won't have performance data.
+
+### [Step 8] i18n strings
+
+- **HIGH** (fixed) — EmptyState in ExposurePage had hardcoded title/message strings. Now i18n-ized with `exposure.emptyTitle` / `exposure.emptyMessage` keys.
+- **MEDIUM** (fixed) — `agents.summary.tradeCount` used string concatenation instead of ICU plural. Now uses `{count, plural, ...}` syntax in all locales.
+- **MEDIUM** — InstancePositions sub-component (ExposurePage lines 84, 103, 108, 112, 116) still has pre-existing hardcoded English strings ("No open positions", "LONG"/"SHORT", "Size", "Entry", "Realized P&L"). Outside scope of this diff — separate follow-up task.
+- **LOW** — `agents.summary.winRate` embeds "Win:" label and "%" suffix in translation string; changing design requires updating all locales.

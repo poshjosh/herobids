@@ -106,14 +106,14 @@ export function AgentSummaryCard({ agent, performance, onOpen }: AgentSummaryCar
       {performance && (
         <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
           <span>
-            P&L:{' '}
+            {intl.formatMessage({ id: 'agents.summary.pnl' })}:{' '}
             <span style={{ color: pnlColor(performance.totalRealizedPnl), fontWeight: '500' }}>
               {formatPnl(performance.totalRealizedPnl)}
             </span>
           </span>
-          <span>{performance.closedPositionCount} trades</span>
+          <span>{intl.formatMessage({ id: 'agents.summary.tradeCount' }, { count: performance.closedPositionCount })}</span>
           {performance.closedPositionCount > 0 && (
-            <span>Win: {((performance.winningClosedCount / performance.closedPositionCount) * 100).toFixed(0)}%</span>
+            <span>{intl.formatMessage({ id: 'agents.summary.winRate' }, { rate: Math.round((performance.winningClosedCount / performance.closedPositionCount) * 100) })}</span>
           )}
         </div>
       )}

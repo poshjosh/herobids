@@ -204,6 +204,14 @@ export const messages: Record<string, string> = {
   'missionControl.setup.successDismiss': 'हो गया',
   'missionControl.setup.successMessage': '{label} ({provider}) आपके AI एजेंटों के लिए तैयार है।',
 
+  // Exposure
+  'exposure.title': 'एक्सपोज़र',
+  'exposure.subtitle': 'वर्तमान पोजीशन और जोखिम केंद्रण',
+  'exposure.totalRealizedPnl': 'कुल वास्तविक P&L',
+  'exposure.openPositions': 'खुली पोजीशन',
+  'exposure.emptyTitle': 'कोई खुली पोजीशन नहीं',
+  'exposure.emptyMessage': 'आपके AI एजेंट ट्रेडिंग शुरू करने पर पोजीशन यहां दिखाई देंगी।',
+
   // Outcomes
   'outcomes.title': 'परिणाम बोर्ड',
   'outcomes.subtitle': 'प्रत्येक AI एजेंट कैसे आगे बढ़ रहा है',
@@ -389,6 +397,9 @@ export const messages: Record<string, string> = {
   'agents.summary.openAgent': 'AI एजेंट खोलें',
   'agents.summary.openCapability': '{capability} क्षमता खोलें',
   'agents.summary.configureCapability': '{capability} क्षमता कॉन्फ़िगर करें',
+  'agents.summary.pnl': 'P&L',
+  'agents.summary.tradeCount': '{count, plural, one {# ट्रेड} other {# ट्रेड}}',
+  'agents.summary.winRate': 'जीत: {rate, number}%',
   'agents.create.title': 'AI एजेंट बनाएं',
   'agents.create.goal': 'AI एजेंट को क्या करना चाहिए?',
   'agents.create.goalBoth': 'निर्देश / लक्ष्य',
