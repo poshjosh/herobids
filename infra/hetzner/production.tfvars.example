@@ -89,6 +89,19 @@ app_domain = "herobids.com"
 # placement_failure_threshold        = 5     # blocked evals to trigger safety-net
 # placement_failure_cooldown_seconds = 600   # min seconds between safety-net triggers
 
+# ── Admin Alerting (Phase 8) ───────────────────────────────
+
+# alert_failure_threshold            = 3     # consecutive failures before alert
+# alert_rate_limit_seconds           = 3600  # min seconds between alerts (1 hour)
+# alert_send_recovery                = "false" # send recovery email on resume
+# alert_smtp_host                    = ""    # SMTP relay hostname
+# alert_smtp_port                    = 587   # SMTP relay port
+# alert_smtp_use_tls                 = "true" # use TLS for SMTP
+# alert_from                         = ""    # from address for alerts
+# alert_to                           = ""    # recipient (default admin)
+# alert_smtp_user                    = ""    # SMTP auth username (sensitive)
+# alert_smtp_pass                    = ""    # SMTP auth password (sensitive)
+
 # ─────────────────────────────────────────────────────────────
 # Sensitive variables (hcloud_token, deploy_ssh_private_key)
 # are marked sensitive in Terraform and will not appear in

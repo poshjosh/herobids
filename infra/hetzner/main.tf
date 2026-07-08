@@ -180,6 +180,17 @@ resource "hcloud_server" "default" {
     placement_failure_window_seconds   = var.placement_failure_window_seconds
     placement_failure_threshold        = var.placement_failure_threshold
     placement_failure_cooldown_seconds = var.placement_failure_cooldown_seconds
+    # Phase 8 — admin alerting
+    alert_failure_threshold  = var.alert_failure_threshold
+    alert_rate_limit_seconds = var.alert_rate_limit_seconds
+    alert_send_recovery      = var.alert_send_recovery
+    alert_smtp_host          = var.alert_smtp_host
+    alert_smtp_port          = var.alert_smtp_port
+    alert_smtp_use_tls       = var.alert_smtp_use_tls
+    alert_from               = var.alert_from
+    alert_to                 = var.alert_to
+    alert_smtp_user          = var.alert_smtp_user
+    alert_smtp_pass          = var.alert_smtp_pass
   })
 
   labels = {

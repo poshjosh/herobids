@@ -39,6 +39,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/scale-common.sh"
+source "${SCRIPT_DIR}/alert-common.sh"
 
 # ─── Scale-in defaults ────────────────────────────────────────────────────────
 
@@ -329,6 +330,11 @@ done
 
 if [[ "${#DRAIN_OK[@]}" -eq 0 ]]; then
   log "No nodes successfully processed — terraform apply skipped."
+
+  if alert_failure; then
+    send_alert "scale_in_no_drainable_nodes" "No idle nodes could be successfully marked ineligible and drained. Scale-in aborted."
+  fi
+
   exit 1
 fi
 
@@ -379,6 +385,9 @@ if terraform apply -auto-approve ${TF_ARGS} -var "agent_node_count=${NEW_COUNT}"
 
   # Persist the new count
   write_node_count "${NEW_COUNT}"
+
+  # Clear failure count — successful scale-in resets the alert streak
+  clear_failure_count
 else
   log ""
   log "ERROR: Terraform apply failed. Agent node count unchanged at ${CURRENT_COUNT}."
@@ -387,6 +396,11 @@ else
     mark_node_eligible "${node_id}" || true
   done
   log "Run scale-in again after resolving the terraform error."
+
+  if alert_failure; then
+    send_alert "scale_in_failed" "Terraform apply failed while attempting to scale in from ${CURRENT_COUNT} to ${NEW_COUNT} agent nodes."
+  fi
+
   exit 1
 fi
 

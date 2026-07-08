@@ -330,3 +330,87 @@ variable "placement_failure_cooldown_seconds" {
     error_message = "placement_failure_cooldown_seconds must be >= 60."
   }
 }
+
+# ── Admin Alerting (Phase 8) ───────────────────────────────
+
+variable "alert_failure_threshold" {
+  type        = number
+  description = "Number of consecutive autoscale failures before an alert email is sent."
+  default     = 3
+
+  validation {
+    condition     = var.alert_failure_threshold >= 1
+    error_message = "alert_failure_threshold must be >= 1."
+  }
+}
+
+variable "alert_rate_limit_seconds" {
+  type        = number
+  description = "Minimum seconds between consecutive alert emails. Prevents spam during persistent failures."
+  default     = 3600
+
+  validation {
+    condition     = var.alert_rate_limit_seconds >= 300
+    error_message = "alert_rate_limit_seconds must be >= 300 (5 minutes)."
+  }
+}
+
+variable "alert_send_recovery" {
+  type        = string
+  description = "Whether to send a recovery email when the autoscaler resumes normal operation after a failure streak (true or false)."
+  default     = "false"
+
+  validation {
+    condition     = contains(["true", "false"], var.alert_send_recovery)
+    error_message = "alert_send_recovery must be 'true' or 'false'."
+  }
+}
+
+variable "alert_smtp_host" {
+  type        = string
+  description = "SMTP relay hostname for sending alert emails. Leave empty to disable SMTP (falls back to logger)."
+  default     = ""
+}
+
+variable "alert_smtp_port" {
+  type        = number
+  description = "SMTP relay port (typically 587 for STARTTLS, 465 for implicit TLS)."
+  default     = 587
+}
+
+variable "alert_smtp_use_tls" {
+  type        = string
+  description = "Whether to use TLS when connecting to the SMTP relay (true or false)."
+  default     = "true"
+
+  validation {
+    condition     = contains(["true", "false"], var.alert_smtp_use_tls)
+    error_message = "alert_smtp_use_tls must be 'true' or 'false'."
+  }
+}
+
+variable "alert_from" {
+  type        = string
+  description = "From address for alert emails (e.g. herobids-alerts@example.com)."
+  default     = ""
+}
+
+variable "alert_to" {
+  type        = string
+  description = "Recipient address for alert emails (the default admin)."
+  default     = ""
+}
+
+variable "alert_smtp_user" {
+  type        = string
+  description = "SMTP auth username. Leave empty if SMTP relay does not require authentication. Must be paired with alert_smtp_pass."
+  sensitive   = true
+  default     = ""
+}
+
+variable "alert_smtp_pass" {
+  type        = string
+  description = "SMTP auth password. Leave empty if SMTP relay does not require authentication. Must be paired with alert_smtp_user."
+  sensitive   = true
+  default     = ""
+}

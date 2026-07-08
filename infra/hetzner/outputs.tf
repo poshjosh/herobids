@@ -164,3 +164,42 @@ output "placement_failure_cooldown_seconds" {
   description = "Minimum seconds between safety-net scale-out triggers"
   value       = var.placement_failure_cooldown_seconds
 }
+
+# ── Admin Alerting (Phase 8) ──────────────────────────────
+
+output "alert_failure_threshold" {
+  description = "Consecutive autoscale failures before an alert is sent"
+  value       = var.alert_failure_threshold
+}
+
+output "alert_rate_limit_seconds" {
+  description = "Minimum seconds between consecutive alert emails"
+  value       = var.alert_rate_limit_seconds
+}
+
+output "alert_send_recovery" {
+  description = "Whether recovery emails are sent after a failure streak resolves"
+  value       = var.alert_send_recovery
+}
+
+output "alert_smtp_host" {
+  description = "Configured SMTP relay hostname for alert emails"
+  value       = var.alert_smtp_host
+  sensitive   = true
+}
+
+output "alert_smtp_port" {
+  description = "Configured SMTP relay port"
+  value       = var.alert_smtp_port
+}
+
+output "alert_from" {
+  description = "From address for alert emails"
+  value       = var.alert_from
+}
+
+output "alert_to" {
+  description = "Recipient address for alert emails"
+  value       = var.alert_to
+  sensitive   = true
+}

@@ -28,6 +28,7 @@ packages:
   - ufw
   - fail2ban
   - unattended-upgrades
+  - bsd-mailx
 
 # ── Write files (runs before runcmd) ───────────────────────
 
@@ -147,6 +148,20 @@ write_files:
       Environment=NOMAD_AUTOSCALE_LOG_FILE=/var/log/nomad-autoscale.log
       Environment=NOMAD_AUTOSCALE_NODE_COUNT_FILE=/var/run/nomad-autoscale-node-count
 
+      # Alerting (Phase 8)
+      Environment=NOMAD_AUTOSCALE_FAILURE_COUNT_FILE=/var/run/nomad-autoscale-failure-count
+      Environment=NOMAD_AUTOSCALE_LAST_ALERT_FILE=/var/run/nomad-autoscale-last-alert
+      Environment=ALERT_FAILURE_THRESHOLD=${alert_failure_threshold}
+      Environment=ALERT_RATE_LIMIT_SECONDS=${alert_rate_limit_seconds}
+      Environment=ALERT_SEND_RECOVERY=${alert_send_recovery}
+      Environment=ALERT_SMTP_HOST=${alert_smtp_host}
+      Environment=ALERT_SMTP_PORT=${alert_smtp_port}
+      Environment=ALERT_SMTP_USE_TLS=${alert_smtp_use_tls}
+      Environment=ALERT_FROM=${alert_from}
+      Environment=ALERT_TO=${alert_to}
+      Environment=ALERT_SMTP_USER=${alert_smtp_user}
+      Environment=ALERT_SMTP_PASS=${alert_smtp_pass}
+
       # TF_VAR_* env vars are automatically read by terraform.
       # These mirror the autoscale config so terraform apply picks them up.
       Environment=TF_VAR_max_agent_nodes=${max_agent_nodes}
@@ -220,6 +235,20 @@ write_files:
       Environment=NOMAD_AUTOSCALE_LOG_FILE=/var/log/nomad-autoscale.log
       Environment=NOMAD_AUTOSCALE_NODE_COUNT_FILE=/var/run/nomad-autoscale-node-count
 
+      # Alerting (Phase 8)
+      Environment=NOMAD_AUTOSCALE_FAILURE_COUNT_FILE=/var/run/nomad-autoscale-failure-count
+      Environment=NOMAD_AUTOSCALE_LAST_ALERT_FILE=/var/run/nomad-autoscale-last-alert
+      Environment=ALERT_FAILURE_THRESHOLD=${alert_failure_threshold}
+      Environment=ALERT_RATE_LIMIT_SECONDS=${alert_rate_limit_seconds}
+      Environment=ALERT_SEND_RECOVERY=${alert_send_recovery}
+      Environment=ALERT_SMTP_HOST=${alert_smtp_host}
+      Environment=ALERT_SMTP_PORT=${alert_smtp_port}
+      Environment=ALERT_SMTP_USE_TLS=${alert_smtp_use_tls}
+      Environment=ALERT_FROM=${alert_from}
+      Environment=ALERT_TO=${alert_to}
+      Environment=ALERT_SMTP_USER=${alert_smtp_user}
+      Environment=ALERT_SMTP_PASS=${alert_smtp_pass}
+
       # TF_VAR_* env vars for terraform (same as scale-out)
       Environment=TF_VAR_max_agent_nodes=${max_agent_nodes}
       Environment=TF_VAR_min_agent_nodes=${min_agent_nodes}
@@ -278,6 +307,20 @@ write_files:
       Environment=NOMAD_AUTOSCALE_LOG_FILE=/var/log/nomad-autoscale.log
       Environment=NOMAD_AUTOSCALE_NODE_COUNT_FILE=/var/run/nomad-autoscale-node-count
       Environment=NOMAD_AUTOSCALE_COOLDOWN_FILE=/var/run/nomad-autoscale-last-scale-out
+
+      # Alerting (Phase 8)
+      Environment=NOMAD_AUTOSCALE_FAILURE_COUNT_FILE=/var/run/nomad-autoscale-failure-count
+      Environment=NOMAD_AUTOSCALE_LAST_ALERT_FILE=/var/run/nomad-autoscale-last-alert
+      Environment=ALERT_FAILURE_THRESHOLD=${alert_failure_threshold}
+      Environment=ALERT_RATE_LIMIT_SECONDS=${alert_rate_limit_seconds}
+      Environment=ALERT_SEND_RECOVERY=${alert_send_recovery}
+      Environment=ALERT_SMTP_HOST=${alert_smtp_host}
+      Environment=ALERT_SMTP_PORT=${alert_smtp_port}
+      Environment=ALERT_SMTP_USE_TLS=${alert_smtp_use_tls}
+      Environment=ALERT_FROM=${alert_from}
+      Environment=ALERT_TO=${alert_to}
+      Environment=ALERT_SMTP_USER=${alert_smtp_user}
+      Environment=ALERT_SMTP_PASS=${alert_smtp_pass}
 
       # Security hardening
       NoNewPrivileges=true
@@ -377,6 +420,11 @@ runcmd:
       # file after each successful terraform apply.
       mkdir -p /var/run
       echo "${agent_node_count}" > /var/run/nomad-autoscale-node-count
+
+      # Seed the alert failure count file (Phase 8).
+      # Initialized to 0 — the autoscaler increments it on failures and
+      # clears it on successful scale operations.
+      echo "0" > /var/run/nomad-autoscale-failure-count
 
       # Open Nomad ports on the private network interface
       # Nomad server ports: 4646 (HTTP), 4647 (RPC), 4648 (Serf)

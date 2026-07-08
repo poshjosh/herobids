@@ -40,6 +40,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/scale-common.sh"
+source "${SCRIPT_DIR}/alert-common.sh"
 
 # ─── Parse arguments ──────────────────────────────────────────────────────────
 
@@ -190,8 +191,20 @@ rm -f "${CAPACITY_STDERR}"
 if [[ ${CAPACITY_EXIT_CODE} -eq 2 ]]; then
   log "No ready Nomad client nodes — cannot assess capacity."
   log "If this is a fresh cluster, at least one agent node must be provisioned manually first."
+
+  # Track failure for alerting — no ready nodes blocks all scaling
+  if alert_failure; then
+    send_alert "scale_out_no_ready_nodes" "Nomad cluster has no ready client nodes. Cannot assess capacity or scale out. Ensure at least one agent node is provisioned and joined to the cluster."
+  fi
+
   exit 2
 elif [[ ${CAPACITY_EXIT_CODE} -ne 0 ]]; then
+  log "Capacity check failed with exit code ${CAPACITY_EXIT_CODE}."
+
+  if alert_failure; then
+    send_alert "scale_out_capacity_check_failed" "Nomad capacity check (check-nomad-capacity.sh) exited with code ${CAPACITY_EXIT_CODE}. Scale-out cannot proceed."
+  fi
+
   die "Capacity check failed with exit code ${CAPACITY_EXIT_CODE}." 1
 fi
 
@@ -347,10 +360,19 @@ if terraform apply -auto-approve ${TF_ARGS} -var "agent_node_count=${NEW_COUNT}"
 
   # Update cooldown timestamp
   touch_cooldown
+
+  # Clear failure count — successful scale-out resets the alert streak
+  clear_failure_count
 else
   log ""
   log "ERROR: Terraform apply failed. Agent node count unchanged at ${CURRENT_COUNT}."
   log "Check terraform logs for details."
+
+  # Track failure for alerting
+  if alert_failure; then
+    send_alert "scale_out_failed" "Terraform apply failed while attempting to scale from ${CURRENT_COUNT} to ${NEW_COUNT} agent nodes. Reason: ${SCALE_REASON}."
+  fi
+
   exit 1
 fi
 

@@ -98,6 +98,8 @@ infra/hetzner/
     ├── scale-out.sh                # Main autoscale loop: evaluate + provision agent nodes
     ├── scale-in.sh                 # Nightly conservative scale-in: drain idle nodes (Phase 7)
     └── check-placement-failures.sh # Safety net: detect resource-exhaustion placement failures (Phase 7)
+    ├── alert-common.sh             # Alert threshold tracking + email sending (Phase 8)
+    └── send-alert.sh               # Standalone alert test/manual trigger (Phase 8)
 ```
 
 ## Architecture
@@ -495,6 +497,182 @@ journalctl -u nomad-placement-failure-watcher -n 50
 Both the scale-in routine and placement-failure safety net share the same `flock` lockfile
 as `scale-out.sh`, ensuring only one Terraform operation (scale-out, scale-in, or
 safety-net) runs at a time.
+
+### Admin Alerting (Phase 8)
+
+The autoscaler sends email alerts to the default admin when repeated scaling failures
+occur, preventing silent cluster capacity degradation.
+
+**Alert thresholds:**
+
+| Trigger | Description |
+|---|---|
+| 3 consecutive scale-loop failures | Any scale-out or scale-in failure increments a counter. On the 3rd consecutive failure, an alert is sent. |
+| Repeated safety-net failures | If the placement-failure watcher triggers scale-out but the safety-net itself fails, the counter increments. |
+| No ready Nomad client nodes | The cluster has zero ready nodes — scaling is impossible. |
+
+**State files:**
+
+| File | Purpose |
+|---|---|
+| `/var/run/nomad-autoscale-failure-count` | Consecutive failure counter. Incremented on each failure, reset to 0 on any successful scale operation. |
+| `/var/run/nomad-autoscale-last-alert` | Timestamp of last sent alert. Enforces rate limiting (default: 1 alert/hour). |
+
+**How it works:**
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Any autoscale failure (scale-out, scale-in,         │
+│  safety-net, capacity check)                         │
+│    │                                                  │
+│    ▼                                                  │
+│  alert_failure()                                     │
+│    │                                                  │
+│    ├─ Increment failure counter                      │
+│    ├─ If counter < threshold → return (no alert)     │
+│    ├─ Check alert rate limit → skip if too soon      │
+│    └─ build_alert_context() + send_alert()           │
+│         ├─ Environment (staging/production)          │
+│         ├─ Failure type and reason                   │
+│         ├─ Current node count                        │
+│         ├─ Recent Nomad eval errors (last 5)         │
+│         ├─ Nomad capacity snapshot                   │
+│         ├─ Terraform state info                      │
+│         └─ Recent autoscale log tail                 │
+│                                                      │
+│  On success:                                         │
+│    clear_failure_count()                             │
+│      └─ Optionally send recovery email               │
+└──────────────────────────────────────────────────────┘
+```
+
+**SMTP configuration:**
+
+Alerts are sent via one of three backends, tried in order:
+
+1. `sendmail` (available with `bsd-mailx` package, installed by cloud-init)
+2. `mail` / `mailx` command
+3. `curl` SMTP relay (direct connection to an SMTP server)
+
+If none are configured, alerts fall back to `logger` (syslog).
+
+| Variable | Default | Description |
+|---|---|---|
+| `alert_failure_threshold` | 3 | Consecutive failures before alert |
+| `alert_rate_limit_seconds` | 3600 | Min seconds between alerts (1 hour) |
+| `alert_send_recovery` | `"false"` | Send recovery email on resume |
+| `alert_smtp_host` | `""` | SMTP relay hostname (empty = use sendmail/logger) |
+| `alert_smtp_port` | 587 | SMTP relay port |
+| `alert_smtp_use_tls` | `"true"` | Use TLS for SMTP connection |
+| `alert_from` | `""` | From address for alert emails |
+| `alert_to` | `""` | Recipient address (default admin) |
+
+**SMTP configuration example (terraform.tfvars):**
+
+```hcl
+# Mailgun or similar SMTP relay
+alert_smtp_host     = "smtp.mailgun.org"
+alert_smtp_port     = 587
+alert_smtp_use_tls  = "true"
+alert_from          = "herobids-alerts@mg.yourdomain.com"
+alert_to            = "admin@yourdomain.com"
+alert_send_recovery = "true"
+```
+
+**Testing alert delivery:**
+
+```bash
+# Dry-run: preview alert content without sending
+/opt/herobids/infra/hetzner/scripts/send-alert.sh --test --dry-run
+
+# Send a test alert to verify email delivery
+/opt/herobids/infra/hetzner/scripts/send-alert.sh --test
+
+# Test recovery alert
+/opt/herobids/infra/hetzner/scripts/send-alert.sh --recovery
+
+# Send a custom alert
+/opt/herobids/infra/hetzner/scripts/send-alert.sh \
+  --type "manual_test" \
+  --reason "Operator-triggered test alert."
+```
+
+**Inspecting alert state:**
+
+```bash
+# View current failure count
+cat /var/run/nomad-autoscale-failure-count
+
+# View last alert timestamp
+cat /var/run/nomad-autoscale-last-alert
+
+# Manually reset failure counter (if you've fixed the issue)
+echo "0" > /var/run/nomad-autoscale-failure-count
+
+# View alert logs in journal
+journalctl -t nomad-autoscale-alert -n 50
+```
+
+**Manual recovery procedures:**
+
+When an alert is received, follow these steps:
+
+1. **Check autoscale logs:**
+   ```bash
+   ssh root@<control-plane-ip>
+   tail -100 /var/log/nomad-autoscale.log
+   journalctl -u nomad-autoscale -u nomad-scale-in -u nomad-placement-failure-watcher -n 100
+   ```
+
+2. **Verify Nomad cluster health:**
+   ```bash
+   nomad server members
+   nomad node status
+   nomad job status
+   ```
+
+3. **Check Terraform state:**
+   ```bash
+   cd /opt/herobids/infra/hetzner
+   terraform plan
+   ```
+
+4. **Common recovery actions:**
+   - **Terraform state lock:** If a previous `terraform apply` was interrupted, remove the lock:
+     ```bash
+     terraform force-unlock <LOCK_ID>
+     ```
+   - **Failed agent node:** If a newly provisioned node didn't join the cluster, check its cloud-init:
+     ```bash
+     ssh root@<agent-ip> 'tail -100 /var/log/cloud-init-output.log'
+     ```
+   - **Stuck scale-in drain:** If a draining node has stuck allocations, force-stop them:
+     ```bash
+     nomad alloc stop <alloc-id>
+     ```
+   - **Manual scale-out:** If the autoscaler is down, scale manually:
+     ```bash
+     cd /opt/herobids/infra/hetzner
+     terraform apply -auto-approve -var "agent_node_count=<N+1>"
+     echo "<N+1>" > /var/run/nomad-autoscale-node-count
+     ```
+   - **Reset alert state after manual fix:**
+     ```bash
+     echo "0" > /var/run/nomad-autoscale-failure-count
+     ```
+
+5. **Verify recovery:** After fixing the issue, wait for the next autoscale cycle or trigger one manually:
+   ```bash
+   /opt/herobids/infra/hetzner/scripts/scale-out.sh --dry-run
+   /opt/herobids/infra/hetzner/scripts/scale-out.sh
+   ```
+
+### Scripts Reference (Phase 8)
+
+| Script | Purpose |
+|---|---|
+| `scripts/alert-common.sh` | Shared alert functions: failure tracking, context builder, email sending |
+| `scripts/send-alert.sh` | Standalone CLI for testing and manually triggering alerts |
 
 ## Isolation Model
 

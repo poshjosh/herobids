@@ -29,6 +29,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/scale-common.sh"
+source "${SCRIPT_DIR}/alert-common.sh"
 
 # ─── Safety-net defaults ──────────────────────────────────────────────────────
 
@@ -252,11 +253,21 @@ touch_placement_failure_state
 # flock, cooldown bypass, and max-node enforcement.
 if "${SCALE_OUT_SCRIPT}" --bypass-cooldown --force; then
   log "Safety-net scale-out completed successfully."
+  # Successful safety-net scale-out resets the failure streak
+  clear_failure_count
   exit 0
 else
   local scale_out_exit=$?
   log "WARNING: Safety-net scale-out exited with code ${scale_out_exit}."
   log "Placement failures may persist until additional capacity is provisioned."
+
+  # Track failure for alerting — safety-net failure means the cluster
+  # cannot self-heal from resource exhaustion.
+  if alert_failure; then
+    send_alert "safety_net_scale_out_failed" \
+      "Safety-net scale-out (triggered by ${BLOCKED_COUNT} blocked evaluations) failed with exit code ${scale_out_exit}. The cluster may be unable to place new workloads."
+  fi
+
   # Don't clear the state file — let the cooldown prevent spam; operator can
   # intervene manually if needed.
   exit 0
