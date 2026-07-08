@@ -68,6 +68,7 @@ export interface CreateAgentIntentPayloadInput {
   strategyPreset?: string;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
   runtimePolicyOverrides?: RuntimePolicyOverrides;
+  subscribedSources?: string[];
 }
 
 export interface UpdateAgentPayloadInput {
@@ -105,6 +106,7 @@ export interface UpdateAgentPayloadInput {
   style?: string;
   strategyPreset?: string;
   runtimePolicyOverrides?: RuntimePolicyOverrides;
+  subscribedSources?: string[];
 }
 
 export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
@@ -133,10 +135,15 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   style?: string;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
   runtimePolicyOverrides?: RuntimePolicyOverrides | null;
+  wakePreferences?: { subscribedSources?: string[] } | null;
 } {
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'both';
   const includeTechnical = input.technicalPreFilterEnabled;
+
+  const subscribedSources = input.subscribedSources ?? [];
+  const wakePreferences: { subscribedSources?: string[] } | undefined =
+    subscribedSources.length > 0 ? { subscribedSources } : undefined;
 
   return {
     name: input.name.trim(),
@@ -166,6 +173,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) ? { openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) } : {}),
     ...(input.runtimePolicyOverrides ? { runtimePolicyOverrides: input.runtimePolicyOverrides } : {}),
     ...(includeTechnical && input.technical ? { technical: input.technical } : {}),
+    ...(wakePreferences ? { wakePreferences } : {}),
   };
 }
 
@@ -199,6 +207,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
   style?: string | null;
   runtimePolicyOverrides?: RuntimePolicyOverrides | null;
+  wakePreferences?: { subscribedSources?: string[] } | null;
 } {
   const parsedTickInterval = input.preserveOriginalTickIntervalMs
     ? undefined
@@ -209,6 +218,14 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
 
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'both';
   const includeTechnical = input.technicalPreFilterEnabled;
+
+  // Resolve wakePreferences for update:
+  // - subscribedSources provided with items → send wakePreferences with those sources
+  // - subscribedSources explicitly empty (user cleared all) → send wakePreferences: null to reset
+  // - subscribedSources not provided at all → omit wakePreferences (don't touch)
+  const wakePreferences = input.subscribedSources !== undefined
+    ? (input.subscribedSources.length > 0 ? { subscribedSources: input.subscribedSources } : null)
+    : undefined;
 
   return {
     name: input.name.trim(),
@@ -237,5 +254,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     ...(input.style ? { style: input.style } : {}),
     ...(input.strategyPreset !== undefined ? { strategyPreset: input.strategyPreset } : {}),
     ...(input.runtimePolicyOverrides ? { runtimePolicyOverrides: input.runtimePolicyOverrides } : {}),
+    ...(wakePreferences !== undefined ? { wakePreferences } : {}),
   };
 }

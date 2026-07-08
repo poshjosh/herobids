@@ -64,6 +64,7 @@ interface IntentState {
   openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
   runtimePolicyOverrides: RuntimePolicyOverrides | null;
   strategyPreset: string;
+  subscribedSources: string[];
 }
 
 export function AgentsPage() {
@@ -197,6 +198,7 @@ function CreateAgentFlow({
     openPositionEscalationToJudgePolicy: styleDefaults.openPositionEscalationToJudgePolicy,
     runtimePolicyOverrides: null,
     strategyPreset: '',
+    subscribedSources: [],
     };
   });
   const [modelTouched, setModelTouched] = useState(false);
@@ -412,6 +414,7 @@ function CreateAgentFlow({
         strategyPreset: intent.strategyPreset || undefined,
         openPositionEscalationToJudgePolicy: intent.openPositionEscalationToJudgePolicy,
         runtimePolicyOverrides: intent.runtimePolicyOverrides ?? undefined,
+        subscribedSources: intent.subscribedSources,
       }));
 
       return agent;
@@ -655,6 +658,8 @@ function CreateAgentFlow({
             onBlurField={validateFieldOnBlur}
             validationConstraints={validationConstraints}
             tickIntervalError={tickIntervalError}
+            subscribedSources={intent.subscribedSources}
+            onSubscribedSourcesChange={(sources) => setIntent((state) => ({ ...state, subscribedSources: sources }))}
             computeBudgetSlot={
               <RuntimePolicySection
                 style={intent.style}

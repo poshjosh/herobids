@@ -50,6 +50,9 @@ export interface AgentFormState {
 
   // Style-based strategy preset
   strategyPreset: string;
+
+  // Wake source subscriptions (empty = all sources)
+  subscribedSources: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +130,7 @@ export function agentToFormState(agent: Agent): AgentFormState {
     // metadata but with a technical config fall back to 'custom'; agents with
     // neither fall back to '' (no selection yet).
     strategyPreset: agent.strategyPreset ?? (agent.technical != null ? 'custom' : ''),
+    subscribedSources: agent.wakePreferences?.subscribedSources ?? [],
   };
 }
 
@@ -162,6 +166,7 @@ export function intentToFormState(intent: {
   stopLossCooldownSecs: string;
   openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
   strategyPreset: string;
+  subscribedSources: string[];
 }): AgentFormState {
   const {
     name,
@@ -186,6 +191,7 @@ export function intentToFormState(intent: {
     stopLossCooldownSecs,
     openPositionEscalationToJudgePolicy,
     strategyPreset,
+    subscribedSources,
   } = intent;
   return {
     name,
@@ -210,5 +216,6 @@ export function intentToFormState(intent: {
     stopLossCooldownSecs,
     openPositionEscalationToJudgePolicy,
     strategyPreset,
+    subscribedSources,
   };
 }

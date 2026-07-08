@@ -919,6 +919,8 @@ export interface Agent {
   strategyPreset: string | null;
   /** Human-readable preset name (e.g. "Momentum — Day"), stored alongside the key in metadata. */
   strategyPresetName: string | null;
+  /** Per-agent wake source subscriptions. null/absent = all sources are delivered. */
+  wakePreferences?: { subscribedSources?: string[] } | null;
   createdAt: string;
   updatedAt: string;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;
@@ -1015,6 +1017,7 @@ export const agents = {
     style?: string | null;
     runtimePolicyOverrides?: Record<string, unknown> | null;
     openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
+    wakePreferences?: { subscribedSources?: string[] } | null;
   }) =>
     request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: {
@@ -1044,6 +1047,7 @@ export const agents = {
     style?: string | null;
     runtimePolicyOverrides?: Record<string, unknown> | null;
     openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
+    wakePreferences?: { subscribedSources?: string[] } | null;
   }) =>
     request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),

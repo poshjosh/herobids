@@ -299,6 +299,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         modelForm,
         style,
         runtimePolicyOverrides: runtimePolicyOverrides ?? undefined,
+        subscribedSources: form.subscribedSources,
       }));
     },
     onSuccess: () => {
@@ -505,6 +506,8 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             tickIntervalError={tickIntervalError}
             tickIntervalNotice={tickIntervalNotice}
             effectiveTickIntervalMs={effectiveTickIntervalMs}
+            subscribedSources={form.subscribedSources}
+            onSubscribedSourcesChange={(sources) => setForm((prev) => ({ ...prev, subscribedSources: sources }))}
             computeBudgetSlot={
               <RuntimePolicySection
                 style={style}

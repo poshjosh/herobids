@@ -8,6 +8,7 @@ import { TechnicalConfigSection } from './TechnicalConfigSection.js';
 import { StrategyPresetSelector } from '../../lib/StrategyPresetSelector.js';
 import { AdvancedSettingsSection } from './AdvancedSettingsSection.js';
 import { AgentControlsSection } from './AgentControlsSection.js';
+import { WakeSourceSection } from './WakeSourceSection.js';
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
 
 // ---------------------------------------------------------------------------
@@ -112,6 +113,10 @@ export interface AgentFormBodyProps {
   tradingSetupSlot?: React.ReactNode;
   computeBudgetSlot?: React.ReactNode;
   nameAutoHint?: React.ReactNode;
+
+  // Wake source subscriptions
+  subscribedSources: string[];
+  onSubscribedSourcesChange: (sources: string[]) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +338,10 @@ export function AgentFormBody(props: AgentFormBodyProps) {
               onBlurField={handleFieldBlur}
             />
             {props.computeBudgetSlot}
+            <WakeSourceSection
+              selected={props.subscribedSources}
+              onChange={props.onSubscribedSourcesChange}
+            />
           </div>
         }
         tradingSetup={props.tradingSetupSlot}

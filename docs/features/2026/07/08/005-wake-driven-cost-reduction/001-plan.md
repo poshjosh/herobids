@@ -355,10 +355,10 @@ This phase filters **monitor-owned** sources only.
 
 | # | Task | Status |
 |---|------|--------|
-| C1 | Add `wake_preferences` JSONB to `agents` table (DB schema + migration) | PENDING |
-| C2 | Add `wakePreferences` to agent create/update/read API payloads | PENDING |
-| C3 | Add worker-owned Redis projection of active agent wake preferences | PENDING |
-| C4 | Replace generic discovery/regime recipient path with Redis-backed lookup in `monitor.ts` | PENDING |
+| C1 | Add `wake_preferences` JSONB to `agents` table (DB schema + migration) | DONE |
+| C2 | Add `wakePreferences` to agent create/update/read API payloads | DONE |
+| C3 | Add worker-owned Redis projection of active agent wake preferences | DONE |
+| C4 | Replace generic discovery/regime recipient path with Redis-backed lookup in `monitor.ts` | DONE |
 | C5 | Add agent-level wake source checkboxes in web UI agent form | PENDING |
 
 ## Outstanding Issues
