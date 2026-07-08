@@ -13,6 +13,20 @@ database:
 redis:
   url: redis://localhost:6379   # override: REDIS_URL
 
+# Shared-service addresses injected into agent runtime containers.
+# These differ from the worker's own database.url / redis.url because agent
+# containers may run on remote Nomad nodes that cannot resolve Compose
+# service names. Defaults use Compose service names for local dev; override
+# with SHARED_REDIS_HOST, SHARED_POSTGRES_HOST, etc. for cluster deployments.
+sharedServices:
+  redisHost: redis          # Compose service name for local dev; override with private IP in prod/staging
+  redisPort: 6379
+  postgresHost: postgres    # Compose service name for local dev; override with private IP in prod/staging
+  postgresPort: 5432
+  postgresUser: herobids
+  postgresPassword: herobids
+  postgresDatabase: herobids
+
 venues:
   hyperliquid:
     baseUrl: https://api.hyperliquid.xyz

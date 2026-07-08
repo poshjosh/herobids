@@ -1078,6 +1078,26 @@ export const MarketIntelligenceConfigSchema = z.object({
   wakeCooldownMs: z.number().int().min(1_000).default(30_000),
 });
 
+export const SharedServicesConfigSchema = z.object({
+  /** Redis hostname or IP reachable from agent runtimes. Default: 'redis' (Compose service name for local dev). */
+  redisHost: z.string().default('redis'),
+  /** Redis port. Default: 6379 */
+  redisPort: z.number().int().min(1).max(65535).default(6379),
+  /** Postgres hostname or IP reachable from agent runtimes. Default: 'postgres' (Compose service name for local dev). */
+  postgresHost: z.string().default('postgres'),
+  /** Postgres port. Default: 5432 */
+  postgresPort: z.number().int().min(1).max(65535).default(5432),
+  /** Postgres user for agent runtime connections. */
+  postgresUser: z.string().default('herobids'),
+  /** Postgres password for agent runtime connections. */
+  postgresPassword: z.string().default('herobids'),
+  /** Postgres database name for agent runtime connections. */
+  postgresDatabase: z.string().default('herobids'),
+});
+
+/** Shared-service connectivity config for agent runtimes. */
+export type SharedServicesConfig = z.infer<typeof SharedServicesConfigSchema>;
+
 export const AppConfigSchema = z.object({
   app: z.object({
     port: z.number().default(3000),
@@ -1092,6 +1112,8 @@ export const AppConfigSchema = z.object({
   redis: z.object({
     url: z.string().default('redis://localhost:6379'),
   }),
+  /** Shared-service addresses passed to agent runtimes for cluster-safe connectivity. */
+  sharedServices: SharedServicesConfigSchema.default({}),
   venues: z.record(VenueConfigSchema).default({}),
   execution: z.object({
     defaultSlippageBps: z.number().min(0).default(50),

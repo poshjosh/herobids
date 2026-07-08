@@ -1,4 +1,4 @@
-import type { RuntimeResourceProfile, RuntimeLaunchConfig } from '@herobids/domain';
+import type { RuntimeResourceProfile, RuntimeLaunchConfig, SharedServicesConfig } from '@herobids/domain';
 
 // ── Agent Env Config ────────────────────────────────────────────────────────
 
@@ -28,6 +28,14 @@ export interface AgentEnvConfig {
   marketDataTimeoutMs?: number;
   /** Providers YAML serialised to JSON, forwarded to agent for rate-card seeding. */
   providersYamlJson?: string;
+  /**
+   * Optional: Shared services cluster addresses for agent runtime connectivity.
+   * When provided, REDIS_URL and DATABASE_URL are constructed from these
+   * addresses instead of using the worker's own connection strings. This
+   * ensures agent containers on remote Nomad nodes can reach shared services
+   * via private IPs rather than local Compose service names.
+   */
+  sharedServices?: SharedServicesConfig;
 }
 
 // ── Env Building ────────────────────────────────────────────────────────────
@@ -47,8 +55,29 @@ export function buildAgentEnv(
   config: AgentEnvConfig,
   processEnv?: NodeJS.ProcessEnv,
 ): Record<string, string> {
+  // Resolve Redis URL: prefer shared-services cluster address, fall back to worker's URL.
+  // sharedServices is always populated via config defaults (default.yaml → SharedServicesConfigSchema).
+  // The fallback exists for programmatic callers that construct AgentEnvConfig manually (e.g., tests).
+  const redisUrl = config.sharedServices
+    ? `redis://${config.sharedServices.redisHost}:${config.sharedServices.redisPort}`
+    : config.redisUrl;
+
+  // Resolve Database URL: prefer shared-services cluster address, fall back to worker's URL or env.
+  const resolvedEnv = processEnv ?? process.env;
+  const databaseUrl = config.sharedServices
+    ? `postgres://${config.sharedServices.postgresUser}:${config.sharedServices.postgresPassword}@${config.sharedServices.postgresHost}:${config.sharedServices.postgresPort}/${config.sharedServices.postgresDatabase}`
+    : (config.databaseUrl ?? resolvedEnv['DATABASE_URL']);
+
+  if (!databaseUrl) {
+    throw new Error(
+      `DATABASE_URL not available — agent container ${agentId} cannot launch. ` +
+      'Direct DB access is required for list_bots, get_bot_status, and other agent tools.',
+    );
+  }
+
   const envOut: Record<string, string> = {
-    REDIS_URL: config.redisUrl,
+    REDIS_URL: redisUrl,
+    DATABASE_URL: databaseUrl,
     AGENT_ID: agentId,
     SESSION_ID: sessionId,
     AGENT_CONFIG: agentConfigJson,
@@ -77,18 +106,7 @@ export function buildAgentEnv(
   if (config.marketDataBinanceRpm != null) envOut['BINANCE_RPM'] = String(config.marketDataBinanceRpm);
   if (config.marketDataTimeoutMs != null) envOut['MARKET_DATA_TIMEOUT_MS'] = String(config.marketDataTimeoutMs);
 
-  // Database URL — fail fast if unavailable (required for agent tool behaviour).
-  const dbUrl = config.databaseUrl ?? (processEnv ?? process.env)['DATABASE_URL'];
-  if (!dbUrl) {
-    throw new Error(
-      `DATABASE_URL not available — agent container ${agentId} cannot launch. ` +
-      'Direct DB access is required for list_bots, get_bot_status, and other agent tools.',
-    );
-  }
-  envOut['DATABASE_URL'] = dbUrl;
-
   // LLM API keys — forwarded from worker environment.
-  const resolvedEnv = processEnv ?? process.env;
   for (const key of ['LLM_API_KEY', 'LLM_API_KEY_DEEPSEEK', 'LLM_API_KEY_OPENROUTER', 'LLM_API_KEY_ANTHROPIC', 'LLM_API_KEY_OPENAI']) {
     if (resolvedEnv[key]) envOut[key] = resolvedEnv[key]!;
   }

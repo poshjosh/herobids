@@ -362,6 +362,9 @@ const agentRuntimeLauncher = runtimeMode === 'docker'
           marketDataBinanceRpm: appConfig.marketData?.binanceRpm,
           marketDataTimeoutMs: appConfig.marketData?.timeoutMs,
           providersYamlJson: JSON.stringify(providersYaml),
+          // Pass shared-service cluster addresses so agent containers on
+          // remote Nomad nodes can reach Redis/Postgres via private IPs.
+          sharedServices: appConfig.sharedServices,
         },
       });
     })()

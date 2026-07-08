@@ -10,7 +10,7 @@
 |-------|--------|
 | Phase 1 - Orchestration contract | DONE |
 | Phase 2 - Cluster topology & infra | DONE |
-| Phase 3 - Shared service connectivity | PENDING |
+| Phase 3 - Shared service connectivity | DONE |
 | Phase 4 - Nomad runtime adapter | PENDING |
 | Phase 5 - Per-tier resource profiles | PENDING |
 | Phase 6 - Autoscale-out with flock+Terraform | PENDING |
@@ -250,7 +250,7 @@ Each environment can provision a control plane plus a separate pool of disposabl
 2. a provisioned agent node joins the correct Nomad cluster automatically
 3. agent nodes can reach Redis and Postgres over private networking only
 
-### Phase 3 - Make shared service connectivity cluster-safe **[PENDING]**
+### Phase 3 - Make shared service connectivity cluster-safe **[DONE]**
 
 #### Goal
 
@@ -558,6 +558,10 @@ This feature is complete when all of the following are true:
 ### [Phase 2] Client cloud-init missing nomad_version format comment (LOW)
 - Control-plane `cloud-init.yaml` documents that `nomad_version` must not include the Debian revision suffix. Client template uses same pattern but lacks the comment.
 - **Fix:** Add the same note to `cloud-init-nomad-client.yaml` variable block.
+
+### [Phase 3] Missing test coverage for sharedServices path in buildAgentEnv (MEDIUM)
+- `runtime-lifecycle.test.ts` only tests the fallback branch (no `sharedServices`). No test verifies the `sharedServices` → cluster-safe URL path.
+- **Fix:** Add 2-3 test cases for `sharedServices` URL construction before Phase 4.
 
 ## Follow-Up Work Explicitly Deferred
 

@@ -80,6 +80,14 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   GOOGLE_CLIENT_SECRET: { path: 'auth.googleClientSecret', type: 'string' },
   // Evaluation
   EVALUATION_STORAGE_ROOT: { path: 'evaluation.storageRoot', type: 'string' },
+  // Shared-service connectivity — override with private IPs for cluster deployments
+  SHARED_REDIS_HOST: { path: 'sharedServices.redisHost', type: 'string' },
+  SHARED_REDIS_PORT: { path: 'sharedServices.redisPort', type: 'number' },
+  SHARED_POSTGRES_HOST: { path: 'sharedServices.postgresHost', type: 'string' },
+  SHARED_POSTGRES_PORT: { path: 'sharedServices.postgresPort', type: 'number' },
+  SHARED_POSTGRES_USER: { path: 'sharedServices.postgresUser', type: 'string' },
+  SHARED_POSTGRES_PASSWORD: { path: 'sharedServices.postgresPassword', type: 'string' },
+  SHARED_POSTGRES_DATABASE: { path: 'sharedServices.postgresDatabase', type: 'string' },
 };
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
