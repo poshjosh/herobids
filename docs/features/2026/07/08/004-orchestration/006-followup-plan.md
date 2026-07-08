@@ -18,7 +18,7 @@ This is a followup to docs/features/2026/07/08/004-orchestration/002-implementat
 - **Fix:** Add a node-name prefix filter (`herobids-agent-*`) or Nomad meta-attribute filter so the control-plane client is never a scale-in candidate.
 - **File:** `infra/hetzner/scripts/scale-common.sh`
 
-### 4. `||` operator in resource fallback treats `0` as falsy (LOW) — PENDING
+### 4. `||` operator in resource fallback treats `0` as falsy (LOW) — DONE
 - `this.defaultResources.memoryLimitMb || 512` silently falls back to hardcoded default if operator configures a resource to `0`. For `maxWallClockMs`, `0` means "unlimited" but `0 || undefined` loses that semantic.
 - **Impact:** None currently — no operator config uses `0` for the main resources, and `maxWallClockMs` is not consumed by any adapter yet.
 - **Fix:** Use `??` consistently: `this.defaultResources.memoryLimitMb ?? 512`.
@@ -50,3 +50,8 @@ This is a followup to docs/features/2026/07/08/004-orchestration/002-implementat
 ### [Item 4: `||` → `??` operator fix]
 - 🟡 MEDIUM — Plan doc item 4 is stale: identifies `agent-runtime-launcher.ts` as the file needing the fix, but that file already used `??`. The actual fix was in `nomad-runtime-adapter.ts:188` (the last remaining `||` holdout). Plan should be updated to reflect correct file.
 - 🔵 LOW — No remaining `||` resource fallbacks exist anywhere in the agent runtime codebase after this fix.
+
+### [Item 5: Competing tfvars templates]
+- 🔵 LOW — `provision.sh` header comment still references old template as primary path; should reverse ordering to lead with per-environment templates via `--var-file`.
+- 🔵 LOW — Deprecated template body could be trimmed further (all variables now documented in per-environment templates). Acceptable as-is, minor cleanup opportunity.
+- 🔵 LOW — No code changes needed beyond the deprecation notice.

@@ -1,14 +1,19 @@
 # ─────────────────────────────────────────────────────────────
-# Terraform Variables Template — Herobids Hetzner Deployment
+# ⚠️  DEPRECATED — Use per-environment templates instead.
 # ─────────────────────────────────────────────────────────────
 #
-# Copy this file to terraform.tfvars and fill in your values:
+# This template is kept for reference only. For new deployments, use
+# the per-environment templates which include environment-specific
+# defaults and comments:
 #
-#   cp terraform.tfvars.example terraform.tfvars
+#   Staging:     cp staging.tfvars.example staging.tfvars
+#   Production:  cp production.tfvars.example production.tfvars
 #
-# For environment-specific setup, use the separate templates:
-#   cp staging.tfvars.example staging.tfvars
-#   cp production.tfvars.example production.tfvars
+# Then provision with:
+#   ./scripts/provision.sh --env <staging|production> --var-file <staging|production>.tfvars
+#
+# The old workflow (cp terraform.tfvars.example terraform.tfvars) is
+# unsupported for new setups and may miss environment-specific settings.
 #
 # terraform.tfvars is gitignored — never commit real secrets.
 # ─────────────────────────────────────────────────────────────
