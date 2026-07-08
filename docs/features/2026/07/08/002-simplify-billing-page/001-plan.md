@@ -105,7 +105,7 @@ A billing page where the user instantly understands their credit situation at a 
 - The standalone "Spend Controls" card — merged into details
 - The standalone "Usage Filters" card — filters stay above their respective tables inside the details section
 
-### Phase 3 — i18n keys **[PENDING]**
+### Phase 3 — i18n keys **[DONE]**
 
 **Keys to add:**
 ```
@@ -195,3 +195,12 @@ billing.usage.totalCredit         "Total credit"
 |---|---|---|---|
 | MEDIUM | N1-N23 | ~24 hardcoded English strings remain in details section, tables, empty states, pagination, filters, and `LEDGER_ENTRY_TYPE_LABELS`. These were pre-existing and not in Phase 3 scope. | File follow-up task for full i18n pass on detail sections (Phase 4 or separate). |
 | LOW | N24 | `LEDGER_ENTRY_TYPE_LABELS` static map has 8 hardcoded English labels. | Convert to i18n keys or `intl.formatMessage()` at render time. |
+
+### [Phase 4] Cleanup
+
+| Severity | # | Issue | Resolution |
+|---|---|---|---|
+| MEDIUM | M1 | Spend Controls + Usage Filters lack `<Card>` wrapper in BillingDetails, creating visual inconsistency with carded tables. | Pre-existing; consider follow-up. |
+| MEDIUM | M2 | ~10 hardcoded English strings remain in BillingDetails (section headers, filters, empty states). | Pre-existing from Phase 3; file follow-up i18n pass. |
+| LOW | L1 | `formatMicrousd` should live in shared `lib/formatting.js`. | Moved to BillingDetails.tsx and exported; shared lib extraction in follow-up. |
+| LOW | L2 | `BillingDetailsProps` has 30+ props — consider grouping. | Refactor in follow-up pass. |
