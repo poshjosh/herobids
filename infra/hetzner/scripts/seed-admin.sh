@@ -135,7 +135,7 @@ ADMIN_EMAIL_B64="$1"
 ADMIN_PASSWORD_B64="$2"
 PASS_DB_URL="$3"
 DB_URL_B64="${4:-}"
-COMPOSE_OVERLAY="${5:-}"
+COMPOSE_OVERLAY="${5:-docker-compose.prod.yaml}"
 
 cd /opt/herobids
 
