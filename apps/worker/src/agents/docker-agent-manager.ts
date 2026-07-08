@@ -1,8 +1,15 @@
 import pino from 'pino';
-import type { RuntimeDescriptor } from '@herobids/domain';
+import type { RuntimeDescriptor, RuntimeReconcileResult } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
 import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
 import { PLATFORM_ALERT_EVENTS } from '../alerting/platform-alert-service.js';
+
+/** Listener invoked when a container termination is detected. */
+export type DockerTerminationListener = (
+  agentId: string,
+  sessionId: string | undefined,
+  reason: string,
+) => void;
 
 const logger = pino({ name: 'docker-agent-manager' });
 
@@ -70,6 +77,29 @@ export interface DockerContainerSpec {
 }
 
 /**
+ * Overrides for individual launch-time values.
+ * When provided, these take precedence over construction-time config.
+ * Used by {@link DockerRuntimeAdapter} to pass through port-level config.
+ */
+export interface DockerStartOverrides {
+  /** Pre-built env strings in Docker format (`KEY=VALUE`). */
+  envVars?: string[];
+  /** Pre-built metadata labels. */
+  labels?: Record<string, string>;
+  /** Resource overrides. */
+  resources?: {
+    memoryLimitMb?: number;
+    cpuShares?: number;
+    tempStorageMb?: number;
+    maxProcesses?: number;
+  };
+  /** Container image override. */
+  image?: string;
+  /** Docker network override. */
+  network?: string;
+}
+
+/**
  * DockerAgentManager — launches, stops, and reconciles agent containers.
  *
  * Communicates with Docker via a socket-proxy (restricted API surface).
@@ -105,6 +135,7 @@ export class DockerAgentManager {
   private readonly tempStorageMb: number;
   private readonly maxProcesses: number;
   private readonly onAgentCrashed?: (agentId: string) => Promise<void>;
+  private readonly terminationListeners: DockerTerminationListener[] = [];
 
   private eventStreamAbort: AbortController | null = null;
 
@@ -151,94 +182,103 @@ export class DockerAgentManager {
    *
    * If a container with the same name already exists (running or stopped),
    * force-remove it first so Docker name reuse cannot fail with 409.
+   *
+   * @param spec Agent/session identifiers and config payloads.
+   * @param overrides Optional per-launch overrides. When provided, these
+   *   take precedence over construction-time config for env, labels,
+   *   resources, image, and network.
    */
-  async start(spec: DockerContainerSpec): Promise<{ containerId: string }> {
+  async start(
+    spec: DockerContainerSpec,
+    overrides?: DockerStartOverrides,
+  ): Promise<{ containerId: string }> {
     const name = `herobids-agent-${spec.agentId}`;
 
     // Remove any existing container with the same name to allow restart
     await this.removeExistingContainer(name);
 
-    const agentConfigJson = JSON.stringify({
-      ...spec.agentConfig,
-      ...(spec.runtimeDescriptor ? { runtimeDescriptor: spec.runtimeDescriptor } : {}),
-    });
-    const toolPolicyJson = JSON.stringify(spec.toolPolicy);
+    // Resolve effective image, network, and resources — overrides win.
+    const effectiveImage = overrides?.image ?? this.image;
+    const effectiveNetwork = overrides?.network ?? this.network;
+    const effectiveMemoryMb = overrides?.resources?.memoryLimitMb ?? (this.memoryBytes / (1024 * 1024));
+    const effectiveCpuShares = overrides?.resources?.cpuShares ?? this.cpuShares;
+    const effectiveTempStorageMb = overrides?.resources?.tempStorageMb ?? this.tempStorageMb;
+    const effectiveMaxProcesses = overrides?.resources?.maxProcesses ?? this.maxProcesses;
 
-    const env: string[] = [
-      `REDIS_URL=${this.redisUrl}`,
-      `AGENT_ID=${spec.agentId}`,
-      `SESSION_ID=${spec.sessionId}`,
-      `AGENT_CONFIG=${agentConfigJson}`,
-      `TOOL_POLICY=${toolPolicyJson}`,
-      ...(this.llmProvider ? [`LLM_PROVIDER=${this.llmProvider}`] : []),
-      ...(this.llmBaseUrl ? [`LLM_BASE_URL=${this.llmBaseUrl}`] : []),
-      ...(this.llmModel ? [`LLM_MODEL=${this.llmModel}`] : []),
-      ...(this.llmMaxTokens != null ? [`LLM_MAX_TOKENS=${this.llmMaxTokens}`] : []),
-      ...(this.llmTimeoutMs != null ? [`LLM_TIMEOUT_MS=${this.llmTimeoutMs}`] : []),
-      ...(this.llmTickIntervalMs != null ? [`TICK_INTERVAL_MS=${this.llmTickIntervalMs}`] : []),
-      ...(this.llmHeartbeatIntervalMs != null ? [`HEARTBEAT_INTERVAL_MS=${this.llmHeartbeatIntervalMs}`] : []),
-      ...(this.llmServerCostUsdPerHour != null ? [`LLM_SERVER_COST_USD_PER_HOUR=${this.llmServerCostUsdPerHour}`] : []),
-      ...(this.llmTradingHoursJson ? [`TRADING_HOURS_JSON=${this.llmTradingHoursJson}`] : []),
-      ...(this.marketDataConfigJson ? [`MARKET_DATA_CONFIG_JSON=${this.marketDataConfigJson}`] : []),
-      `AGENT_RUNTIME_CONFIG_JSON=${this.agentRuntimeConfigJson}`,
-      // Workspace root — tools use this to agree on the per-agent workspace path
-      'AGENT_WORKSPACE_ROOT=/workspace',
-      // Market data config forwarded so agent tools use operator-controlled values
-      // Both providers must be present — check_regime needs Binance, search_tokens needs DexScreener.
-      ...(this.marketDataDexscreenerBaseUrl && this.marketDataBinanceBaseUrl ? [`MARKET_DATA_CONFIGURED=1`] : []),
-      ...(this.marketDataDexscreenerBaseUrl ? [`DEXSCREENER_BASE_URL=${this.marketDataDexscreenerBaseUrl}`] : []),
-      ...(this.marketDataDexscreenerRpm != null ? [`DEXSCREENER_RPM=${this.marketDataDexscreenerRpm}`] : []),
-      ...(this.marketDataBinanceBaseUrl ? [`BINANCE_BASE_URL=${this.marketDataBinanceBaseUrl}`] : []),
-      ...(this.marketDataBinanceRpm != null ? [`BINANCE_RPM=${this.marketDataBinanceRpm}`] : []),
-      ...(this.marketDataTimeoutMs != null ? [`MARKET_DATA_TIMEOUT_MS=${this.marketDataTimeoutMs}`] : []),
-      // Database URL forwarded so the agent container can make direct DB calls.
-      // Required for correct agent tool behaviour (list_bots, get_bot_status, etc.).
-      // Prefer the resolved config URL; fall back to the raw env var, then fail fast.
-      ...((() => {
-        const dbUrl = this.databaseUrl ?? process.env['DATABASE_URL'];
-        if (!dbUrl) {
-          throw new Error(
-            `DATABASE_URL not available — agent container ${spec.agentId} cannot launch. ` +
-            'Direct DB access is required for list_bots, get_bot_status, and other agent tools.',
-          );
-        }
-        return [`DATABASE_URL=${dbUrl}`];
-      })()),
-      // LLM API keys must be in the worker's environment and forwarded explicitly
-      ...(process.env['LLM_API_KEY'] ? [`LLM_API_KEY=${process.env['LLM_API_KEY']}`] : []),
-      ...(process.env['LLM_API_KEY_DEEPSEEK'] ? [`LLM_API_KEY_DEEPSEEK=${process.env['LLM_API_KEY_DEEPSEEK']}`] : []),
-      ...(process.env['LLM_API_KEY_OPENROUTER'] ? [`LLM_API_KEY_OPENROUTER=${process.env['LLM_API_KEY_OPENROUTER']}`] : []),
-      ...(process.env['LLM_API_KEY_ANTHROPIC'] ? [`LLM_API_KEY_ANTHROPIC=${process.env['LLM_API_KEY_ANTHROPIC']}`] : []),
-      ...(process.env['LLM_API_KEY_OPENAI'] ? [`LLM_API_KEY_OPENAI=${process.env['LLM_API_KEY_OPENAI']}`] : []),
-      // Tavily API key for search_web tool — optional; tool handles missing key gracefully
-      ...(process.env['TAVILY_API_KEY'] ? [`TAVILY_API_KEY=${process.env['TAVILY_API_KEY']}`] : []),
-      // Usage billing — forwarded to agent containers so they can record LLM events
-      ...(process.env['USAGE_BILLING_RATE_CARD'] ? [`USAGE_BILLING_RATE_CARD=${process.env['USAGE_BILLING_RATE_CARD']}`] : []),
-      ...(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ? [`USAGE_BILLING_RUNTIME_WINDOW_MS=${process.env['USAGE_BILLING_RUNTIME_WINDOW_MS']}`] : []),
-    ];
+    // Env: overrides take full precedence; when absent, build internally.
+    const env: string[] = overrides?.envVars ?? (() => {
+      const agentConfigJson = JSON.stringify({
+        ...spec.agentConfig,
+        ...(spec.runtimeDescriptor ? { runtimeDescriptor: spec.runtimeDescriptor } : {}),
+      });
+      const toolPolicyJson = JSON.stringify(spec.toolPolicy);
+
+      return [
+        `REDIS_URL=${this.redisUrl}`,
+        `AGENT_ID=${spec.agentId}`,
+        `SESSION_ID=${spec.sessionId}`,
+        `AGENT_CONFIG=${agentConfigJson}`,
+        `TOOL_POLICY=${toolPolicyJson}`,
+        ...(this.llmProvider ? [`LLM_PROVIDER=${this.llmProvider}`] : []),
+        ...(this.llmBaseUrl ? [`LLM_BASE_URL=${this.llmBaseUrl}`] : []),
+        ...(this.llmModel ? [`LLM_MODEL=${this.llmModel}`] : []),
+        ...(this.llmMaxTokens != null ? [`LLM_MAX_TOKENS=${this.llmMaxTokens}`] : []),
+        ...(this.llmTimeoutMs != null ? [`LLM_TIMEOUT_MS=${this.llmTimeoutMs}`] : []),
+        ...(this.llmTickIntervalMs != null ? [`TICK_INTERVAL_MS=${this.llmTickIntervalMs}`] : []),
+        ...(this.llmHeartbeatIntervalMs != null ? [`HEARTBEAT_INTERVAL_MS=${this.llmHeartbeatIntervalMs}`] : []),
+        ...(this.llmServerCostUsdPerHour != null ? [`LLM_SERVER_COST_USD_PER_HOUR=${this.llmServerCostUsdPerHour}`] : []),
+        ...(this.llmTradingHoursJson ? [`TRADING_HOURS_JSON=${this.llmTradingHoursJson}`] : []),
+        ...(this.marketDataConfigJson ? [`MARKET_DATA_CONFIG_JSON=${this.marketDataConfigJson}`] : []),
+        `AGENT_RUNTIME_CONFIG_JSON=${this.agentRuntimeConfigJson}`,
+        'AGENT_WORKSPACE_ROOT=/workspace',
+        ...(this.marketDataDexscreenerBaseUrl && this.marketDataBinanceBaseUrl ? [`MARKET_DATA_CONFIGURED=1`] : []),
+        ...(this.marketDataDexscreenerBaseUrl ? [`DEXSCREENER_BASE_URL=${this.marketDataDexscreenerBaseUrl}`] : []),
+        ...(this.marketDataDexscreenerRpm != null ? [`DEXSCREENER_RPM=${this.marketDataDexscreenerRpm}`] : []),
+        ...(this.marketDataBinanceBaseUrl ? [`BINANCE_BASE_URL=${this.marketDataBinanceBaseUrl}`] : []),
+        ...(this.marketDataBinanceRpm != null ? [`BINANCE_RPM=${this.marketDataBinanceRpm}`] : []),
+        ...(this.marketDataTimeoutMs != null ? [`MARKET_DATA_TIMEOUT_MS=${this.marketDataTimeoutMs}`] : []),
+        ...((() => {
+          const dbUrl = this.databaseUrl ?? process.env['DATABASE_URL'];
+          if (!dbUrl) {
+            throw new Error(
+              `DATABASE_URL not available — agent container ${spec.agentId} cannot launch. ` +
+              'Direct DB access is required for list_bots, get_bot_status, and other agent tools.',
+            );
+          }
+          return [`DATABASE_URL=${dbUrl}`];
+        })()),
+        ...(process.env['LLM_API_KEY'] ? [`LLM_API_KEY=${process.env['LLM_API_KEY']}`] : []),
+        ...(process.env['LLM_API_KEY_DEEPSEEK'] ? [`LLM_API_KEY_DEEPSEEK=${process.env['LLM_API_KEY_DEEPSEEK']}`] : []),
+        ...(process.env['LLM_API_KEY_OPENROUTER'] ? [`LLM_API_KEY_OPENROUTER=${process.env['LLM_API_KEY_OPENROUTER']}`] : []),
+        ...(process.env['LLM_API_KEY_ANTHROPIC'] ? [`LLM_API_KEY_ANTHROPIC=${process.env['LLM_API_KEY_ANTHROPIC']}`] : []),
+        ...(process.env['LLM_API_KEY_OPENAI'] ? [`LLM_API_KEY_OPENAI=${process.env['LLM_API_KEY_OPENAI']}`] : []),
+        ...(process.env['TAVILY_API_KEY'] ? [`TAVILY_API_KEY=${process.env['TAVILY_API_KEY']}`] : []),
+        ...(process.env['USAGE_BILLING_RATE_CARD'] ? [`USAGE_BILLING_RATE_CARD=${process.env['USAGE_BILLING_RATE_CARD']}`] : []),
+        ...(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ? [`USAGE_BILLING_RUNTIME_WINDOW_MS=${process.env['USAGE_BILLING_RUNTIME_WINDOW_MS']}`] : []),
+      ];
+    })();
+
+    // Labels: overrides take full precedence; when absent, build default.
+    const labels: Record<string, string> = overrides?.labels ?? {
+      'herobids.role': 'agent',
+      'herobids.agentId': spec.agentId,
+      'herobids.sessionId': spec.sessionId,
+    };
 
     const body = {
-      Image: this.image,
+      Image: effectiveImage,
       name,
       Env: env,
       HostConfig: {
-        NetworkMode: this.network,
-        Memory: this.memoryBytes,
-        CpuShares: this.cpuShares,
-        // Tmpfs mount enforces tempStorageMb — writes beyond this fail with ENOSPC.
-        Tmpfs: { '/tmp': `size=${this.tempStorageMb}m,noexec` },
-        // PidsLimit enforces maxProcesses inside the container.
-        PidsLimit: this.maxProcesses,
-        // sandbox-exec.sh needs NET_ADMIN for network namespace wiring and
-        // SYS_ADMIN for ip netns mount propagation setup.
+        NetworkMode: effectiveNetwork,
+        Memory: effectiveMemoryMb * 1024 * 1024,
+        CpuShares: effectiveCpuShares,
+        Tmpfs: { '/tmp': `size=${effectiveTempStorageMb}m,noexec` },
+        PidsLimit: effectiveMaxProcesses,
         CapAdd: ['NET_ADMIN', 'SYS_ADMIN'],
         RestartPolicy: { Name: 'no' },
       },
-      Labels: {
-        'herobids.role': 'agent',
-        'herobids.agentId': spec.agentId,
-        'herobids.sessionId': spec.sessionId,
-      },
+      Labels: labels,
     };
 
     const createRes = await this.dockerRequest('POST', `/containers/create?name=${encodeURIComponent(name)}`, body);
@@ -323,16 +363,57 @@ export class DockerAgentManager {
   }
 
   /**
+   * Gracefully stop a container by its raw Docker container ID.
+   *
+   * Unlike {@link stop}, this uses the container ID directly without the
+   * `herobids-agent-{agentId}` naming convention. Used by the runtime
+   * adapter when the caller has a Docker container ID from a prior launch.
+   */
+  async stopByContainerId(containerId: string): Promise<void> {
+    const res = await this.dockerRequest('POST', `/containers/${containerId}/stop`, undefined, '?t=10');
+    if (!res.ok && res.status !== 404 && res.status !== 304) {
+      throw new Error(`Docker container stop failed for ${containerId}: HTTP ${res.status}`);
+    }
+    logger.info({ containerId }, 'Agent container stopped by container ID');
+  }
+
+  /**
+   * Forcefully kill a container (SIGKILL, no grace period).
+   *
+   * Uses the Docker kill API (`POST /containers/{id}/kill`). This sends
+   * SIGKILL immediately unlike {@link stopByContainerId} which sends
+   * SIGTERM and waits for a graceful shutdown.
+   */
+  async killContainer(containerId: string): Promise<void> {
+    const res = await this.dockerRequest('POST', `/containers/${containerId}/kill`);
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Docker container kill failed for ${containerId}: HTTP ${res.status}`);
+    }
+    logger.info({ containerId }, 'Agent container killed');
+  }
+
+  /**
+   * Register a termination listener invoked on every container die detection.
+   * Used by {@link DockerRuntimeAdapter} to bridge Docker events into the
+   * port-level {@link RuntimePort.onTermination} contract.
+   */
+  addTerminationListener(fn: DockerTerminationListener): void {
+    this.terminationListeners.push(fn);
+  }
+
+  /**
    * Reconcile: compare running containers against DB agents with status='active'.
    * - Containers running but agent not active → stop orphan
    * - Agents with status='active' but no container → restart
+   *
+   * @returns Structured reconciliation result with orphan/missing/running counts.
    */
-  async reconcile(): Promise<void> {
+  async reconcile(): Promise<RuntimeReconcileResult> {
     try {
       const containersRes = await this.dockerRequest('GET', '/containers/json?filters=%7B%22label%22%3A%5B%22herobids.role%3Dagent%22%5D%7D');
       if (!containersRes.ok) {
         logger.warn({ status: containersRes.status }, 'Failed to list agent containers during reconciliation');
-        return;
+        return { orphans: [], missing: [], runningCount: 0 };
       }
 
       const containers = await containersRes.json() as Array<{ Names: string[]; State: string; Labels: Record<string, string> }>;
@@ -373,8 +454,10 @@ export class DockerAgentManager {
       // or when a container is launched outside the normal API provisioning flow.
       const activeAgentIds = new Set(activeAgents.map((a) => a.id));
       const liveSessionAgentIds = new Set(liveSessions.map((session) => session.agentId));
+      const orphans: string[] = [];
       for (const agentId of runningAgentIds) {
         if (!activeAgentIds.has(agentId) && !liveSessionAgentIds.has(agentId)) {
+          orphans.push(agentId);
           logger.warn({ agentId }, 'Reconcile: container running but no active agent in DB — stopping orphan');
           await this.stop(agentId).catch((err: unknown) => {
             logger.error({ err, agentId }, 'Reconcile: failed to stop orphan container');
@@ -382,9 +465,16 @@ export class DockerAgentManager {
         }
       }
 
-      logger.info({ runningCount: runningAgentIds.size }, 'Agent container reconciliation complete');
+      // Agents with status='active' but no running container are missing.
+      const missing = activeAgents
+        .filter((a) => !runningAgentIds.has(a.id))
+        .map((a) => a.id);
+
+      logger.info({ runningCount: runningAgentIds.size, orphanCount: orphans.length, missingCount: missing.length }, 'Agent container reconciliation complete');
+      return { orphans, missing, runningCount: runningAgentIds.size };
     } catch (err) {
       logger.error({ err }, 'Agent container reconciliation failed');
+      return { orphans: [], missing: [], runningCount: 0 };
     }
   }
 
@@ -446,6 +536,15 @@ export class DockerAgentManager {
         await this.onAgentCrashed?.(agentId);
       } catch (err) {
         logger.error({ err, agentId }, 'onAgentCrashed callback failed');
+      }
+
+      // Notify port-level termination listeners (e.g. DockerRuntimeAdapter).
+      for (const listener of this.terminationListeners) {
+        try {
+          listener(agentId, sessionId, reason);
+        } catch (err) {
+          logger.error({ err, agentId }, 'Termination listener failed');
+        }
       }
     } catch (err) {
       logger.error({ err, agentId }, 'Error handling container die event');
@@ -536,6 +635,89 @@ export class DockerAgentManager {
   stopEventStream(): void {
     this.eventStreamAbort?.abort();
     this.eventStreamAbort = null;
+  }
+
+  /**
+   * Inspect a single agent container by its Docker container ID.
+   * Returns status information for the RuntimePort contract.
+   */
+  async inspectContainer(containerId: string): Promise<{
+    agentId: string;
+    status: 'running' | 'stopped' | 'crashed' | 'unknown';
+    exitCode?: number;
+    startedAt?: string;
+    finishedAt?: string;
+  }> {
+    try {
+      const res = await this.dockerRequest('GET', `/containers/${containerId}/json`);
+      if (!res.ok) {
+        return { agentId: containerId, status: 'unknown' };
+      }
+      const data = await res.json() as {
+        State?: { Status?: string; ExitCode?: number; StartedAt?: string; FinishedAt?: string };
+        Config?: { Labels?: Record<string, string> };
+      };
+      const state = data.State;
+      const dockerStatus = state?.Status ?? '';
+      let status: 'running' | 'stopped' | 'crashed' | 'unknown' = 'unknown';
+      if (dockerStatus === 'running') status = 'running';
+      else if (dockerStatus === 'exited' || dockerStatus === 'dead') {
+        status = (state?.ExitCode ?? 0) !== 0 ? 'crashed' : 'stopped';
+      }
+      return {
+        agentId: data.Config?.Labels?.['herobids.agentId'] ?? containerId,
+        status,
+        exitCode: state?.ExitCode,
+        startedAt: state?.StartedAt,
+        finishedAt: state?.FinishedAt,
+      };
+    } catch {
+      return { agentId: containerId, status: 'unknown' };
+    }
+  }
+
+  /**
+   * List all agent containers managed by Docker.
+   * Returns minimal status info for reconciliation.
+   */
+  async listAgentContainers(): Promise<Array<{
+    containerId: string;
+    agentId: string;
+    status: 'running' | 'stopped' | 'crashed' | 'unknown';
+    exitCode?: number;
+    startedAt?: string;
+    finishedAt?: string;
+  }>> {
+    try {
+      const filters = encodeURIComponent(JSON.stringify({
+        label: ['herobids.role=agent'],
+      }));
+      const res = await this.dockerRequest('GET', `/containers/json?all=true&filters=${filters}`);
+      if (!res.ok) return [];
+      const containers = await res.json() as Array<{
+        Id: string;
+        State: string;
+        Status: string;
+        Labels?: Record<string, string>;
+      }>;
+      return containers.map((c) => {
+        const dockerState = c.State;
+        let status: 'running' | 'stopped' | 'crashed' | 'unknown' = 'unknown';
+        if (dockerState === 'running') status = 'running';
+        else if (dockerState === 'exited' || dockerState === 'dead') {
+          // Without ExitCode in the list endpoint, assume non-running = stopped
+          // (crash classification is done by the event stream, not list)
+          status = 'stopped';
+        }
+        return {
+          containerId: c.Id,
+          agentId: c.Labels?.['herobids.agentId'] ?? c.Id,
+          status,
+        };
+      });
+    } catch {
+      return [];
+    }
   }
 
   private async removeExistingContainer(name: string): Promise<void> {

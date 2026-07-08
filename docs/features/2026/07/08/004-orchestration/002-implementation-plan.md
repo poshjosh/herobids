@@ -4,6 +4,20 @@
 
 `draft`
 
+## Phase Status
+
+| Phase | Status |
+|-------|--------|
+| Phase 1 - Orchestration contract | DONE |
+| Phase 2 - Cluster topology & infra | PENDING |
+| Phase 3 - Shared service connectivity | PENDING |
+| Phase 4 - Nomad runtime adapter | PENDING |
+| Phase 5 - Per-tier resource profiles | PENDING |
+| Phase 6 - Autoscale-out with flock+Terraform | PENDING |
+| Phase 7 - Safety net & nightly scale-in | PENDING |
+| Phase 8 - Admin alerting & visibility | PENDING |
+| Phase 9 - Rollout & validate end-to-end | PENDING |
+
 ## Depends On
 
 This feature starts only after `docs/features/2026/07/08/003-staging-environment-setup/001-plan.md` is implemented.
@@ -141,7 +155,7 @@ Operationally:
 
 ## Implementation Plan
 
-### Phase 1 - Define the orchestration contract
+### Phase 1 - Define the orchestration contract **[DONE]**
 
 #### Goal
 
@@ -185,7 +199,7 @@ The codebase can support more than one runtime backend without duplicating lifec
 1. existing Docker-backed behavior still passes targeted tests
 2. the new port is narrow enough that a Nomad adapter can implement it without leaking Docker assumptions
 
-### Phase 2 - Define cluster topology and Hetzner infrastructure split
+### Phase 2 - Define cluster topology and Hetzner infrastructure split **[PENDING]**
 
 #### Goal
 
@@ -236,7 +250,7 @@ Each environment can provision a control plane plus a separate pool of disposabl
 2. a provisioned agent node joins the correct Nomad cluster automatically
 3. agent nodes can reach Redis and Postgres over private networking only
 
-### Phase 3 - Make shared service connectivity cluster-safe
+### Phase 3 - Make shared service connectivity cluster-safe **[PENDING]**
 
 #### Goal
 
@@ -265,7 +279,7 @@ Agents scheduled on any node can still use Redis, Postgres, and required control
 1. a test agent scheduled on a remote node can connect successfully to Redis and Postgres
 2. no remaining runtime path requires the agent to be on the same host as the worker
 
-### Phase 4 - Implement the Nomad runtime adapter
+### Phase 4 - Implement the Nomad runtime adapter **[PENDING]**
 
 #### Goal
 
@@ -307,7 +321,7 @@ The worker can launch, stop, reconcile, and classify agent runtimes through Noma
 2. stopping an agent updates status correctly and does not misclassify the stop as a crash
 3. a forced runtime exit on a client node is detected and classified correctly
 
-### Phase 5 - Configure per-tier resource profiles and scheduling policy
+### Phase 5 - Configure per-tier resource profiles and scheduling policy **[PENDING]**
 
 #### Goal
 
@@ -344,7 +358,7 @@ Agent density, tier behavior, and autoscale thresholds are config-driven and adj
 1. changing tier resource config changes submitted Nomad job reservations without code edits
 2. invalid resource profiles fail fast at startup
 
-### Phase 6 - Implement autoscale-out with `flock`-guarded Terraform
+### Phase 6 - Implement autoscale-out with `flock`-guarded Terraform **[PENDING]**
 
 #### Goal
 
@@ -382,7 +396,7 @@ The system provisions more agent nodes automatically before the cluster fully ex
 2. concurrent trigger attempts serialize correctly through `flock`
 3. repeated cron runs do not create duplicate or conflicting Terraform operations
 
-### Phase 7 - Implement placement-failure safety net and nightly scale-in
+### Phase 7 - Implement placement-failure safety net and nightly scale-in **[PENDING]**
 
 #### Goal
 
@@ -418,7 +432,7 @@ The platform scales up proactively, catches surprise under-capacity reactively, 
 2. nightly scale-in removes only eligible idle nodes
 3. active workloads survive the nightly scale-in run unchanged
 
-### Phase 8 - Add admin alerting and operator visibility
+### Phase 8 - Add admin alerting and operator visibility **[PENDING]**
 
 #### Goal
 
@@ -456,7 +470,7 @@ Scaling failures are no longer silent and the default admin has enough context t
 2. repeat failures do not spam unbounded email volume
 3. recovery behavior is predictable and documented
 
-### Phase 9 - Roll out by environment and validate end-to-end
+### Phase 9 - Roll out by environment and validate end-to-end **[PENDING]**
 
 #### Goal
 
@@ -517,6 +531,20 @@ This feature is complete when all of the following are true:
 4. **scale-in** is the most operationally risky part of the selected approach and must remain conservative
 5. **Terraform node identity design** must avoid accidental destruction of the wrong client during scale-in
 6. **email alerting** is only useful if the default admin email path is already real and monitored after feature docs/features/2026/07/08/003-staging-environment-setup/001-plan.md
+
+## Outstanding Issues
+
+### [Phase 1] Termination listener double-registration (MEDIUM)
+- Both `DockerRuntimeAdapter` constructor and `AgentRuntimeLauncher` constructor register termination listeners on the same `DockerAgentManager`. Any `onTermination()` subscriber would receive duplicate events per container death.
+- **Impact:** None currently — no production code calls `.onTermination()` yet. Must be fixed before Phase 4 when Nomad subscription code starts using it.
+- **Fix:** Remove the duplicate listener registration from the launcher. The adapter already bridges its own events.
+- **Files:** `apps/worker/src/agents/agent-runtime-launcher.ts`, `apps/worker/src/agents/docker-runtime-adapter.ts`
+
+### [Phase 1] `||` operator in resource fallback treats `0` as falsy (LOW)
+- `this.defaultResources.memoryLimitMb || 512` silently falls back to hardcoded default if operator configures a resource to `0`. For `maxWallClockMs`, `0` means "unlimited" but `0 || undefined` loses that semantic.
+- **Impact:** None currently — no operator config uses `0` for the main resources, and `maxWallClockMs` is not consumed by any adapter yet.
+- **Fix:** Use `??` consistently: `this.defaultResources.memoryLimitMb ?? 512`.
+- **File:** `apps/worker/src/agents/agent-runtime-launcher.ts`
 
 ## Follow-Up Work Explicitly Deferred
 

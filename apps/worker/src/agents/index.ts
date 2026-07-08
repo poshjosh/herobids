@@ -7,9 +7,25 @@ export type { AgentIntakeResolverDeps } from './agent-intake-resolver.js';
 export { AgentSessionManager } from './agent-session-manager.js';
 export type { AgentSessionManagerConfig } from './agent-session-manager.js';
 export { AgentRuntimeLauncher } from './agent-runtime-launcher.js';
-export type { RuntimeLaunchConfig, RuntimeHandle, AgentRuntimeLauncherConfig } from './agent-runtime-launcher.js';
+export type {
+  LauncherLaunchConfig,
+  LauncherRuntimeHandle,
+  RuntimeLaunchConfig,  // @deprecated — use LauncherLaunchConfig
+  RuntimeHandle,        // @deprecated — use LauncherRuntimeHandle
+  AgentRuntimeLauncherConfig,
+} from './agent-runtime-launcher.js';
 export { DockerAgentManager } from './docker-agent-manager.js';
-export type { DockerAgentManagerConfig, DockerContainerSpec } from './docker-agent-manager.js';
+export type {
+  DockerAgentManagerConfig,
+  DockerContainerSpec,
+  DockerStartOverrides,
+} from './docker-agent-manager.js';
+export { DockerRuntimeAdapter } from './docker-runtime-adapter.js';
+export { StubRuntimeAdapter } from './stub-runtime-adapter.js';
+export { NomadRuntimeAdapter } from './nomad-runtime-adapter.js';
+export type { NomadRuntimeAdapterConfig, NomadAgentJobConfig } from './nomad-runtime-adapter.js';
+export { buildAgentEnv, buildAgentLabels, buildRuntimeLaunchConfig } from './runtime-lifecycle.js';
+export type { AgentEnvConfig } from './runtime-lifecycle.js';
 export { InstanceEventPublisher } from './instance-event-publisher.js';
 export { AgentStreamConsumer } from './agent-stream-consumer.js';
 export type { AgentStreamConsumerConfig } from './agent-stream-consumer.js';

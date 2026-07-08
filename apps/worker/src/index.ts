@@ -44,8 +44,10 @@ import {
   AgentHealthMonitor,
   AgentReconnectHandler,
   InstanceEventPublisher,
+  DockerRuntimeAdapter,
 } from './agents/index.js';
 import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/index.js';
+import { DockerAgentManager } from './agents/docker-agent-manager.js';
 import { UserEventPublisher } from './user-event-publisher.js';
 import { ActorHealthPublisher } from './actor-health-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
@@ -275,53 +277,94 @@ async function cascadeStopAgentBots(agentId: string): Promise<void> {
   }
 }
 
+// Build the agentRuntimeConfigJson once — shared between the Docker manager
+// config and any future runtime adapter config.
+const agentRuntimeConfigJson = JSON.stringify({
+  ...appConfig.agentRuntime,
+  llm: {
+    retry: appConfig.llm.retry,
+    scout: {
+      ...appConfig.llm.scout,
+      ...appConfig.agentRuntime.llm.scout,
+    },
+    judge: appConfig.agentRuntime.llm.judge,
+    thinking: appConfig.llm.thinking,
+  },
+});
+
 const agentRuntimeLauncher = runtimeMode === 'docker'
-  ? new AgentRuntimeLauncher({
-      mode: 'docker',
-      agentRepo,
-      dockerConfig: {
-        dockerHost: process.env['DOCKER_HOST'] ?? 'tcp://docker-proxy:2375',
-        dockerNetwork: process.env['DOCKER_NETWORK'] ?? 'herobids_default',
-        agentImage: process.env['AGENT_IMAGE'] ?? 'herobids-agent:latest',
-        redisUrl: appConfig.redis.url,
-        databaseUrl: appConfig.database.url,
-        llmProvider: appConfig.llm.provider,
-        llmModel: appConfig.llm.model,
-        llmBaseUrl: appConfig.llm.baseUrl,
-        llmMaxTokens: appConfig.llm.maxTokens,
-        llmTimeoutMs: appConfig.llm.timeoutMs,
-        llmTickIntervalMs: appConfig.llm.tickIntervalMs,
-        llmHeartbeatIntervalMs: appConfig.llm.heartbeatIntervalMs,
-        llmServerCostUsdPerHour: appConfig.llm.serverCostUsdPerHour,
-        memoryLimitMb: appConfig.agentRuntime.sandboxDefaults.memoryMb,
-        cpuShares: appConfig.agentRuntime.sandboxDefaults.cpuShares,
-        tempStorageMb: appConfig.agentRuntime.sandboxDefaults.tempStorageMb,
-        maxProcesses: appConfig.agentRuntime.sandboxDefaults.maxProcesses,
-        agentRuntimeConfigJson: JSON.stringify({
-          ...appConfig.agentRuntime,
-          llm: {
-            retry: appConfig.llm.retry,
-            scout: {
-              ...appConfig.llm.scout,
-              ...appConfig.agentRuntime.llm.scout,
-            },
-            judge: appConfig.agentRuntime.llm.judge,
-            thinking: appConfig.llm.thinking,
-          },
-        }),
-        ...(appConfig.llm.tradingHours
-          ? {
-              llmTradingHoursJson: JSON.stringify(appConfig.llm.tradingHours),
-            }
-          : {}),
-        ...(appConfig.marketData
-          ? {
-              marketDataConfigJson: JSON.stringify(appConfig.marketData),
-            }
-          : {}),
-        onAgentCrashed: (agentId) => cascadeStopAgentBots(agentId),
-      },
-    })
+  ? (() => {
+      const dockerManager = new DockerAgentManager(
+        {
+          dockerHost: process.env['DOCKER_HOST'] ?? 'tcp://docker-proxy:2375',
+          dockerNetwork: process.env['DOCKER_NETWORK'] ?? 'herobids_default',
+          agentImage: process.env['AGENT_IMAGE'] ?? 'herobids-agent:latest',
+          redisUrl: appConfig.redis.url,
+          databaseUrl: appConfig.database.url,
+          llmProvider: appConfig.llm.provider,
+          llmModel: appConfig.llm.model,
+          llmBaseUrl: appConfig.llm.baseUrl,
+          llmMaxTokens: appConfig.llm.maxTokens,
+          llmTimeoutMs: appConfig.llm.timeoutMs,
+          llmTickIntervalMs: appConfig.llm.tickIntervalMs,
+          llmHeartbeatIntervalMs: appConfig.llm.heartbeatIntervalMs,
+          llmServerCostUsdPerHour: appConfig.llm.serverCostUsdPerHour,
+          memoryLimitMb: appConfig.agentRuntime.sandboxDefaults.memoryMb,
+          cpuShares: appConfig.agentRuntime.sandboxDefaults.cpuShares,
+          tempStorageMb: appConfig.agentRuntime.sandboxDefaults.tempStorageMb,
+          maxProcesses: appConfig.agentRuntime.sandboxDefaults.maxProcesses,
+          agentRuntimeConfigJson,
+          ...(appConfig.llm.tradingHours
+            ? { llmTradingHoursJson: JSON.stringify(appConfig.llm.tradingHours) }
+            : {}),
+          ...(appConfig.marketData
+            ? { marketDataConfigJson: JSON.stringify(appConfig.marketData) }
+            : {}),
+          onAgentCrashed: (agentId) => cascadeStopAgentBots(agentId),
+        },
+        agentRepo,
+        // platformAlerts is constructed later in this file — pass undefined now,
+        // it is wired into the health monitor below at the AgentSessionManager level.
+        undefined,
+      );
+      const dockerAdapter = new DockerRuntimeAdapter(dockerManager, agentRepo);
+      return new AgentRuntimeLauncher({
+        port: dockerAdapter,
+        agentRepo,
+        defaultResources: {
+          memoryLimitMb: appConfig.agentRuntime.sandboxDefaults.memoryMb,
+          cpuShares: appConfig.agentRuntime.sandboxDefaults.cpuShares,
+          maxProcesses: appConfig.agentRuntime.sandboxDefaults.maxProcesses,
+          tempStorageMb: appConfig.agentRuntime.sandboxDefaults.tempStorageMb,
+          maxWallClockMs: appConfig.agentRuntime.sandboxDefaults.maxWallClockMs,
+        },
+        envConfig: {
+          redisUrl: appConfig.redis.url,
+          databaseUrl: appConfig.database.url,
+          agentRuntimeConfigJson,
+          llmProvider: appConfig.llm.provider,
+          llmBaseUrl: appConfig.llm.baseUrl,
+          llmModel: appConfig.llm.model,
+          llmMaxTokens: appConfig.llm.maxTokens,
+          llmTimeoutMs: appConfig.llm.timeoutMs,
+          llmTickIntervalMs: appConfig.llm.tickIntervalMs,
+          llmHeartbeatIntervalMs: appConfig.llm.heartbeatIntervalMs,
+          llmServerCostUsdPerHour: appConfig.llm.serverCostUsdPerHour,
+          ...(appConfig.llm.tradingHours
+            ? { llmTradingHoursJson: JSON.stringify(appConfig.llm.tradingHours) }
+            : {}),
+          ...(appConfig.marketData
+            ? { marketDataConfigJson: JSON.stringify(appConfig.marketData) }
+            : {}),
+          marketDataDexscreenerBaseUrl: appConfig.marketData?.dexscreenerBaseUrl,
+          marketDataDexscreenerRpm: appConfig.marketData?.dexscreenerRpm,
+          marketDataBinanceBaseUrl: appConfig.marketData?.binanceBaseUrl,
+          marketDataBinanceRpm: appConfig.marketData?.binanceRpm,
+          marketDataTimeoutMs: appConfig.marketData?.timeoutMs,
+          providersYamlJson: JSON.stringify(providersYaml),
+        },
+      });
+    })()
   : new AgentRuntimeLauncher({ redis: redisClient });
 
 // Worker-scoped oracle mark source (stateless, safe to share)
