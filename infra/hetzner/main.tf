@@ -198,13 +198,17 @@ resource "hcloud_server" "default" {
     environment = var.environment
   }
 
-  # prevent_destroy protects production against accidental teardown.
-  # Staging servers can be destroyed freely for iteration.
-  # To intentionally destroy a production server:
-  #   temporarily set environment = "staging" and apply, then terraform destroy.
-  #   Or: terraform state rm 'hcloud_server.default' then terraform destroy.
+  # prevent_destroy protects against accidental teardown in ALL environments.
+  #
+  # To destroy a STAGING server:
+  #   1. Temporarily change this to `false`, then `terraform apply`.
+  #   2. Run `terraform destroy`.
+  #   Or: `terraform state rm 'hcloud_server.default'` then `terraform destroy`.
+  #
+  # To destroy a PRODUCTION server:
+  #   Same procedure, plus: remove any agent nodes first.  
   lifecycle {
-    prevent_destroy = var.environment == "production"
+    prevent_destroy = true
   }
 }
 
