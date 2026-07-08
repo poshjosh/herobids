@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Nomad agent orchestration (004-orchestration):** Agents now launch on a Nomad cluster instead of the worker's local Docker daemon, enabling multi-node horizontal scaling. Includes: Nomad runtime adapter (Phase 4), per-tier resource profiles with soft overcommit (Phase 5), autoscale-out via flock-guarded Terraform (Phase 6), nightly conservative scale-in and placement-failure safety net (Phase 7), admin email alerting for scaling failures (Phase 8), and staging/production runbooks with explicit rollback procedure (Phase 9). Control plane remains on Docker Compose; agent nodes are stateless, disposable Nomad clients on a private Hetzner Cloud network.
+
 ## v0.0.15 - 2026-07-08
 
 ### Added

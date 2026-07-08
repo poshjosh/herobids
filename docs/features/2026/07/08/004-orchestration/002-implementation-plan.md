@@ -2,7 +2,7 @@
 
 ## Status
 
-`draft`
+`done`
 
 ## Phase Status
 
@@ -16,7 +16,7 @@
 | Phase 6 - Autoscale-out with flock+Terraform | DONE |
 | Phase 7 - Safety net & nightly scale-in | DONE |
 | Phase 8 - Admin alerting & visibility | DONE |
-| Phase 9 - Rollout & validate end-to-end | PENDING |
+| Phase 9 - Rollout & validate end-to-end | DONE |
 
 ## Depends On
 
@@ -470,7 +470,7 @@ Scaling failures are no longer silent and the default admin has enough context t
 2. repeat failures do not spam unbounded email volume
 3. recovery behavior is predictable and documented
 
-### Phase 9 - Roll out by environment and validate end-to-end **[PENDING]**
+### Phase 9 - Roll out by environment and validate end-to-end **[DONE]**
 
 #### Goal
 

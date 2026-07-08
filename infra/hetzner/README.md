@@ -1063,6 +1063,66 @@ Quick reference:
 | 6 | Telegram webhook (if configured) | Bot responds to messages |
 | 7 | DB migrations | `docker compose ... run --rm migrate` succeeds |
 
+## Orchestration Rollout & Runbooks (Phase 9)
+
+The Nomad-based agent orchestration feature (004-orchestration) has dedicated
+runbooks for each environment. These cover the full validation checklist: agent
+lifecycle through Nomad, autoscaling, alerting, rollback, and troubleshooting.
+
+| Runbook | Environment | Purpose |
+|---|---|---|
+| **[Staging Orchestration Runbook](../../docs/features/2026/07/08/004-orchestration/004-staging-runbook.md)** | Staging | End-to-end validation of all orchestration flows before production rollout |
+| **[Production Orchestration Runbook](../../docs/features/2026/07/08/004-orchestration/005-production-runbook.md)** | Production | Rollout guide with explicit rollback procedure to local-Docker runtime mode |
+
+### Quick Reference: Nomad Commands
+
+```bash
+# Cluster health
+nomad server members
+nomad node status
+nomad node status -verbose
+
+# Agent job management
+nomad job status -namespace=herobids-agents
+nomad alloc status -namespace=herobids-agents <alloc-id>
+
+# Autoscale systemd control
+systemctl list-timers nomad-autoscale.timer nomad-scale-in.timer nomad-placement-failure-watcher.timer
+systemctl status nomad-autoscale.service
+
+# Autoscale manual operations
+/opt/herobids/infra/hetzner/scripts/scale-out.sh --dry-run
+/opt/herobids/infra/hetzner/scripts/scale-out.sh --force
+/opt/herobids/infra/hetzner/scripts/scale-in.sh --dry-run
+/opt/herobids/infra/hetzner/scripts/check-nomad-capacity.sh --json | jq .
+
+# Alert testing
+/opt/herobids/infra/hetzner/scripts/send-alert.sh --test
+/opt/herobids/infra/hetzner/scripts/send-alert.sh --test --dry-run
+
+# Unified autoscale logs
+journalctl -u nomad-autoscale -u nomad-scale-in -u nomad-placement-failure-watcher -n 100
+tail -f /var/log/nomad-autoscale.log
+```
+
+### Rollback to Docker Mode
+
+If the Nomad orchestration path is compromised, switch the worker back to
+local-Docker mode and stop autoscale timers:
+
+```bash
+ssh root@<control-plane-ip> <<'EOF'
+cd /opt/herobids
+sed -i 's/^RUNTIME_BACKEND=nomad$/RUNTIME_BACKEND=docker/' .env.prod  # or .env.staging
+docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --force-recreate worker
+systemctl stop nomad-autoscale.timer nomad-scale-in.timer nomad-placement-failure-watcher.timer
+systemctl disable nomad-autoscale.timer nomad-scale-in.timer nomad-placement-failure-watcher.timer
+EOF
+```
+
+See the production runbook for the full rollback procedure including agent node drain
+and re-enable steps.
+
 ## Troubleshooting
 
 | Issue | Diagnosis | Fix |
