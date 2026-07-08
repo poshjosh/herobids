@@ -192,6 +192,7 @@ export const messages: Record<string, string> = {
   'missionControl.metric.paused': 'متوقف مؤقتاً',
   'missionControl.metric.unhealthy': 'غير سليم',
   'missionControl.metric.stopped': 'متوقف',
+  'missionControl.metric.totalPnl': 'إجمالي الربح والخسارة المحقق',
   'missionControl.section.agents': 'وكلاء الذكاء الاصطناعي لديك',
   'missionControl.section.recentActivity': 'النشاط الأخير',
   'missionControl.noActivityYet.title': 'لا نشاط حتى الآن',

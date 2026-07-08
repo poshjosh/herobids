@@ -192,6 +192,7 @@ export const messages: Record<string, string> = {
   'missionControl.metric.paused': 'रुका हुआ',
   'missionControl.metric.unhealthy': 'अस्वस्थ',
   'missionControl.metric.stopped': 'बंद',
+  'missionControl.metric.totalPnl': 'कुल वास्तविक P&L',
   'missionControl.section.agents': 'आपके AI एजेंट',
   'missionControl.section.recentActivity': 'हाल की गतिविधि',
   'missionControl.noActivityYet.title': 'अभी तक कोई गतिविधि नहीं',

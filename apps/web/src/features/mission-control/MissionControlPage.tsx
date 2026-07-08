@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import type { ProviderSetupResult } from '../../lib/api-client.js';
 import { agents as agentsApi, dashboard } from '../../lib/api-client.js';
+import { formatPnl, pnlColor } from '../../lib/formatting.js';
 import { PageShell, PageHeader, EmptyState, ErrorState, LoadingRows, Button, Card, SectionLabel } from '../../lib/ui.js';
 import { AgentSummaryCard } from '../agents/AgentSummaryCard.js';
 import { ActivityItem } from '../activity/ActivityItem.js';
@@ -58,7 +59,7 @@ export function MissionControlPage() {
     queryFn: () => agentsApi.list(),
   });
 
-  const overviewQuery = useQuery({
+  const activityQuery = useQuery({
     queryKey: ['dashboard', 'activity', { limit: 8 }],
     queryFn: () => dashboard.activity({ limit: 8 }),
   });
@@ -69,8 +70,13 @@ export function MissionControlPage() {
     refetchInterval: 30_000,
   });
 
+  const overviewQuery = useQuery({
+    queryKey: ['dashboard', 'overview'],
+    queryFn: () => dashboard.overview(),
+  });
+
   const agents = agentsQuery.data ?? [];
-  const mergedRecentActivity = mergeActivityFeedItems(agentActivityQuery.data?.entries ?? [], overviewQuery.data?.events ?? []);
+  const mergedRecentActivity = mergeActivityFeedItems(agentActivityQuery.data?.entries ?? [], activityQuery.data?.events ?? []);
   const counts = {
     active: agents.filter((agent) => agent.status === 'active' || agent.status === 'starting').length,
     paused: agents.filter((agent) => agent.status === 'paused').length,
@@ -102,7 +108,7 @@ export function MissionControlPage() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: 'repeat(5, 1fr)',
             gap: '12px',
             marginBottom: '32px',
           }}
@@ -111,6 +117,11 @@ export function MissionControlPage() {
           <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.paused' })} value={counts.paused} />
           <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.unhealthy' })} value={counts.unhealthy} />
           <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.stopped' })} value={counts.stopped} />
+          <MetricCard
+            label={intl.formatMessage({ id: 'missionControl.metric.totalPnl' })}
+            value={formatPnl(overviewQuery.data?.summary.totalRealizedPnl)}
+            color={pnlColor(overviewQuery.data?.summary.totalRealizedPnl)}
+          />
         </div>
       )}
 
@@ -175,27 +186,27 @@ export function MissionControlPage() {
           <SectionLabel>{intl.formatMessage({ id: 'missionControl.section.recentActivity' })}</SectionLabel>
 
           <Card style={{ padding: '0' }}>
-            {(overviewQuery.isLoading || agentActivityQuery.isLoading) && (
+            {(activityQuery.isLoading || agentActivityQuery.isLoading) && (
               <div style={{ padding: '20px' }}>
                 <LoadingRows count={4} />
               </div>
             )}
-            {(overviewQuery.isError || agentActivityQuery.isError) && (
+            {(activityQuery.isError || agentActivityQuery.isError) && (
               <ErrorState
                 message={intl.formatMessage({ id: 'common.errorTitle', defaultMessage: 'Something went wrong' })}
                 onRetry={() => {
-                  void overviewQuery.refetch();
+                  void activityQuery.refetch();
                   void agentActivityQuery.refetch();
                 }}
               />
             )}
-            {overviewQuery.isSuccess && agentActivityQuery.isSuccess && (overviewQuery.data?.events.length ?? 0) === 0 && (agentActivityQuery.data?.entries.length ?? 0) === 0 && (
+            {activityQuery.isSuccess && agentActivityQuery.isSuccess && (activityQuery.data?.events.length ?? 0) === 0 && (agentActivityQuery.data?.entries.length ?? 0) === 0 && (
               <EmptyState
                 title={intl.formatMessage({ id: 'missionControl.noActivityYet.title' })}
                 message={intl.formatMessage({ id: 'missionControl.noActivityYet.message' })}
               />
             )}
-            {overviewQuery.isSuccess && agentActivityQuery.isSuccess && ((overviewQuery.data?.events.length ?? 0) > 0 || (agentActivityQuery.data?.entries.length ?? 0) > 0) && (
+            {activityQuery.isSuccess && agentActivityQuery.isSuccess && ((activityQuery.data?.events.length ?? 0) > 0 || (agentActivityQuery.data?.entries.length ?? 0) > 0) && (
               <div>
                 {mergedRecentActivity.map((item, index) => (
                   item.kind === 'agent'
@@ -250,13 +261,13 @@ export function MissionControlPage() {
   );
 }
 
-function MetricCard({ label, value, total }: { label: string; value: string | number; total?: number }) {
+function MetricCard({ label, value, total, color }: { label: string; value: string | number; total?: number; color?: string }) {
   return (
     <Card style={{ padding: '16px 20px' }}>
       <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
         {label}
       </div>
-      <div style={{ fontSize: '24px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+      <div style={{ fontSize: '24px', fontWeight: '600', color: color ?? 'var(--color-text-primary)' }}>
         {value}
         {total !== undefined && (
           <span style={{ fontSize: '14px', fontWeight: '400', color: 'var(--color-text-muted)', marginLeft: '4px' }}>

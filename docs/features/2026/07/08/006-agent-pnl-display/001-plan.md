@@ -314,7 +314,7 @@ export function pnlColor(pnl: string | number | null | undefined): string {
 | 1 | Bulk PnL endpoint | `apps/api/src/routes/agents.ts` | — | DONE |
 | 2 | Extend dashboard overview with PnL | `apps/api/src/routes/dashboard.ts` | — | DONE |
 | 3 | API client types + methods | `apps/web/src/lib/api-client.ts` | 1, 2 | DONE |
-| 4 | `formatPnl` helper | `apps/web/src/lib/formatting.ts` | — | PENDING |
+| 4 | `formatPnl` helper | `apps/web/src/lib/formatting.ts` | — | DONE |
 | 5 | Mission Control PnL card (1a) | `MissionControlPage.tsx` | 2, 3, 4 | PENDING |
 | 6 | Exposure page PnL header (1b) | `ExposurePage.tsx` | 2, 3, 4 | PENDING |
 | 7 | Per-agent PnL on cards (1c) | `AgentsPage.tsx`, `AgentSummaryCard.tsx` | 1, 3, 4 | PENDING |
@@ -391,3 +391,10 @@ can be done in any order after 1–4.
 - **LOW** — Missing trailing newline at end of file.
 - **LOW** — No JSDoc on new functions.
 - **LOW** — `AgentTradesTable` duplicates inline PnL logic; should eventually use shared helpers.
+
+### [Step 5] Mission Control PnL card
+
+- **MEDIUM** — `pnlColor` returns `'var(--color-text)'` for zero PnL, but this CSS variable is not defined. Should use `'var(--color-text-primary)'` or omit the color prop for zero to let the MetricCard default handle it.
+- **MEDIUM** — `overviewQuery` error state is silently swallowed — PnL card shows `—` with no error indicator or retry affordance. Inconsistent with the activity section's explicit LoadingRows/ErrorState pattern.
+- **LOW** — `overviewQuery` never invalidates on trading events — PnL card won't refresh when agents make trades. Add invalidation or refetchInterval.
+- **LOW** — `AgentTradesTable.tsx` has pre-existing duplicate PnL color logic not using the new shared helper.

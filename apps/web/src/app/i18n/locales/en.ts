@@ -192,6 +192,7 @@ export const messages: Record<string, string> = {
   'missionControl.metric.paused': 'Paused',
   'missionControl.metric.unhealthy': 'Unhealthy',
   'missionControl.metric.stopped': 'Stopped',
+  'missionControl.metric.totalPnl': 'Total Realized P&L',
   'missionControl.section.agents': 'Your AI agents',
   'missionControl.section.recentActivity': 'Recent activity',
   'missionControl.noActivityYet.title': 'No activity yet',
