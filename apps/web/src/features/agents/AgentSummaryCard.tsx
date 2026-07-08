@@ -1,18 +1,18 @@
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, skills as skillsApi, type Agent, type AgentPerformance, type CapabilityReadiness } from '../../lib/api-client.js';
+import { agents as agentsApi, skills as skillsApi, type Agent, type AgentOutcomes, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Card, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
 import { formatPnl, pnlColor } from '../../lib/formatting.js';
 import { extractAgentObjective, formatExecutionMode, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
 
 interface AgentSummaryCardProps {
   agent: Agent;
-  performance?: AgentPerformance;
+  outcomes?: AgentOutcomes['outcomes'];
   onOpen?: () => void;
 }
 
-export function AgentSummaryCard({ agent, performance, onOpen }: AgentSummaryCardProps) {
+export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardProps) {
   const navigate = useNavigate();
   const intl = useIntl();
   const objective = extractAgentObjective(agent.prompt);
@@ -103,17 +103,17 @@ export function AgentSummaryCard({ agent, performance, onOpen }: AgentSummaryCar
         )}
       </div>
 
-      {performance && (
+      {outcomes?.trading && hasTradingCapability && (
         <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
           <span>
             {intl.formatMessage({ id: 'agents.summary.pnl' })}:{' '}
-            <span style={{ color: pnlColor(performance.totalRealizedPnl), fontWeight: '500' }}>
-              {formatPnl(performance.totalRealizedPnl)}
+            <span style={{ color: pnlColor(outcomes.trading.totalRealizedPnl), fontWeight: '500' }}>
+              {formatPnl(outcomes.trading.totalRealizedPnl)}
             </span>
           </span>
-          <span>{intl.formatMessage({ id: 'agents.summary.tradeCount' }, { count: performance.closedPositionCount })}</span>
-          {performance.closedPositionCount > 0 && (
-            <span>{intl.formatMessage({ id: 'agents.summary.winRate' }, { rate: Math.round((performance.winningClosedCount / performance.closedPositionCount) * 100) })}</span>
+          <span>{intl.formatMessage({ id: 'agents.summary.tradeCount' }, { count: outcomes.trading.closedPositionCount })}</span>
+          {outcomes.trading.closedPositionCount > 0 && (
+            <span>{intl.formatMessage({ id: 'agents.summary.winRate' }, { rate: Math.round((outcomes.trading.winningClosedCount / outcomes.trading.closedPositionCount) * 100) })}</span>
           )}
         </div>
       )}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, type AgentPerformance, type Skill } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, type AgentOutcomes, type Skill } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, type SkillPresetId } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
@@ -86,18 +86,18 @@ export function AgentsPage() {
     queryFn: () => agentsApi.list(),
   });
 
-  const performanceQuery = useQuery({
-    queryKey: ['agents', 'performance'],
-    queryFn: () => agentsApi.performance(),
+  const outcomesQuery = useQuery({
+    queryKey: ['agents', 'outcomes'],
+    queryFn: () => agentsApi.outcomes(),
   });
 
-  const perfByAgentId = useMemo(() => {
-    const map = new Map<string, AgentPerformance>();
-    for (const perf of performanceQuery.data?.performances ?? []) {
-      map.set(perf.agentId, perf);
+  const outcomesByAgentId = useMemo(() => {
+    const map = new Map<string, AgentOutcomes['outcomes']>();
+    for (const entry of outcomesQuery.data?.outcomes ?? []) {
+      map.set(entry.agentId, entry.outcomes);
     }
     return map;
-  }, [performanceQuery.data]);
+  }, [outcomesQuery.data]);
 
   const skillsQuery = useQuery({
     queryKey: ['skills'],
@@ -139,7 +139,7 @@ export function AgentsPage() {
       {query.isSuccess && items.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {items.map((agent) => (
-            <AgentSummaryCard key={agent.id} agent={agent} performance={perfByAgentId.get(agent.id)} />
+            <AgentSummaryCard key={agent.id} agent={agent} outcomes={outcomesByAgentId.get(agent.id)} />
           ))}
         </div>
       )}

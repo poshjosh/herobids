@@ -119,8 +119,8 @@ export function MissionControlPage() {
           <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.stopped' })} value={counts.stopped} />
           <MetricCard
             label={intl.formatMessage({ id: 'missionControl.metric.totalPnl' })}
-            value={formatPnl(overviewQuery.data?.summary.totalRealizedPnl)}
-            color={pnlColor(overviewQuery.data?.summary.totalRealizedPnl)}
+            value={formatPnl(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
+            color={pnlColor(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
           />
         </div>
       )}

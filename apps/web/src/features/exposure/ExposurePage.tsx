@@ -46,8 +46,8 @@ export function ExposurePage() {
             <KV
               label={intl.formatMessage({ id: 'exposure.totalRealizedPnl' })}
               value={
-                <span style={{ color: pnlColor(overview.summary.totalRealizedPnl), fontWeight: '600', fontSize: '18px' }}>
-                  {formatPnl(overview.summary.totalRealizedPnl)}
+                <span style={{ color: pnlColor(overview.summary.outcomes.trading?.totalRealizedPnl), fontWeight: '600', fontSize: '18px' }}>
+                  {formatPnl(overview.summary.outcomes.trading?.totalRealizedPnl)}
                 </span>
               }
             />

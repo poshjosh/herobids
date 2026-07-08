@@ -250,7 +250,11 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
         totalBots: botsSummary.length,
         runningBots: runningCount,
         totalOpenPositions,
-        totalRealizedPnl: combinedPnl.toFixed(6),
+        outcomes: {
+          trading: {
+            totalRealizedPnl: combinedPnl.toFixed(6),
+          },
+        },
       },
     });
   });

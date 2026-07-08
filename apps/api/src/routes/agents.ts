@@ -826,11 +826,15 @@ export async function agentRoutes(
     })));
   });
 
-  // ─── GET /agents/performance ────────────────────────────────────────────────
-  // Bulk PnL endpoint: returns realized PnL, trade counts, and win-rate inputs
-  // for all of the user's agents in a single query. Two-part union merges
-  // agent-direct positions and bot-owned positions attributed via agent_connections.
-  app.get('/agents/performance', async (request, reply) => {
+  // ─── GET /agents/outcomes ──────────────────────────────────────────────────
+  // Capability-keyed outcomes for all of the user's agents in a single query.
+  // Each capability family contributes its own outcome shape; the frontend
+  // renders whichever families are present rather than assuming trading.
+  //
+  // Trading outcomes: realized PnL, trade counts, win-rate inputs via a
+  // two-part union of agent-direct positions and bot-owned positions
+  // attributed via agent_connections → bots.
+  app.get('/agents/outcomes', async (request, reply) => {
     const agentRows = await db
       .select({ id: agents.id })
       .from(agents)
@@ -839,7 +843,7 @@ export async function agentRoutes(
     const agentIds = agentRows.map((a) => a.id);
 
     if (agentIds.length === 0) {
-      return reply.send({ performances: [] });
+      return reply.send({ outcomes: [] });
     }
 
     // Part 1: Agent-direct positions — grouped by actorId (the agent itself).
@@ -880,7 +884,7 @@ export async function agentRoutes(
     const [directResults, botOwnedResults] = await Promise.all([directQuery, botOwnedQuery]);
 
     // Merge both result sets by agentId.
-    const perfByAgent = new Map<string, {
+    const tradingByAgent = new Map<string, {
       totalPnl: number;
       openPositionCount: number;
       winningClosedCount: number;
@@ -889,7 +893,7 @@ export async function agentRoutes(
 
     for (const row of directResults) {
       if (!row.agentId) continue;
-      perfByAgent.set(row.agentId, {
+      tradingByAgent.set(row.agentId, {
         totalPnl: Number(row.totalPnl ?? '0'),
         openPositionCount: row.openPositionCount ?? 0,
         winningClosedCount: row.winningClosedCount ?? 0,
@@ -899,14 +903,14 @@ export async function agentRoutes(
 
     for (const row of botOwnedResults) {
       if (!row.agentId) continue;
-      const existing = perfByAgent.get(row.agentId);
+      const existing = tradingByAgent.get(row.agentId);
       if (existing) {
         existing.totalPnl += Number(row.totalPnl ?? '0');
         existing.openPositionCount += row.openPositionCount ?? 0;
         existing.winningClosedCount += row.winningClosedCount ?? 0;
         existing.closedPositionCount += row.closedPositionCount ?? 0;
       } else {
-        perfByAgent.set(row.agentId, {
+        tradingByAgent.set(row.agentId, {
           totalPnl: Number(row.totalPnl ?? '0'),
           openPositionCount: row.openPositionCount ?? 0,
           winningClosedCount: row.winningClosedCount ?? 0,
@@ -915,19 +919,24 @@ export async function agentRoutes(
       }
     }
 
-    // Always include every agent, even those with zero positions.
-    const performances = agentIds.map((agentId) => {
-      const perf = perfByAgent.get(agentId);
+    const outcomes = agentIds.map((agentId) => {
+      const trading = tradingByAgent.get(agentId);
+      const agentOutcomes: Record<string, unknown> = {};
+      if (trading) {
+        agentOutcomes.trading = {
+          totalRealizedPnl: trading.totalPnl.toFixed(6),
+          openPositionCount: trading.openPositionCount,
+          closedPositionCount: trading.closedPositionCount,
+          winningClosedCount: trading.winningClosedCount,
+        };
+      }
       return {
         agentId,
-        totalRealizedPnl: (perf?.totalPnl ?? 0).toFixed(6),
-        openPositionCount: perf?.openPositionCount ?? 0,
-        closedPositionCount: perf?.closedPositionCount ?? 0,
-        winningClosedCount: perf?.winningClosedCount ?? 0,
+        outcomes: agentOutcomes as { trading?: { totalRealizedPnl: string; openPositionCount: number; closedPositionCount: number; winningClosedCount: number } },
       };
     });
 
-    return reply.send({ performances });
+    return reply.send({ outcomes });
   });
 
   // Get single agent
