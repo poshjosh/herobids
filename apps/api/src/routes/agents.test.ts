@@ -2640,4 +2640,219 @@ describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () 
   });
 });
 
+// ---------------------------------------------------------------------------
+// C3.4 — PATCH wakePreferences syncs to Redis immediately
+// ---------------------------------------------------------------------------
 
+function makeRedisMockForApi() {
+  const store = new Map<string, string>();
+  return {
+    _store: store,
+    get: vi.fn(async (key: string) => store.get(key) ?? null),
+    set: vi.fn(async (key: string, value: string) => { store.set(key, value); return 'OK'; }),
+    del: vi.fn(async (...keys: string[]) => {
+      let deleted = 0;
+      for (const k of keys) {
+        if (store.delete(k)) deleted++;
+      }
+      return deleted;
+    }),
+    publish: vi.fn().mockResolvedValue(0),
+  } as any;
+}
+
+describe('agent routes — wakePreferences Redis sync (C3.4)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('PATCH with wakePreferences sets agent:wake:prefs:{id} key immediately', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const redis = makeRedisMockForApi();
+    const updatedAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      name: 'test',
+      prompt: 'p',
+      modelPolicy: null,
+    };
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, redis);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        wakePreferences: { subscribedSources: ['watch_threshold'] },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Redis key set immediately
+    expect(redis.set).toHaveBeenCalledWith(
+      'agent:wake:prefs:agent-1',
+      JSON.stringify({ subscribedSources: ['watch_threshold'] }),
+    );
+    // Verify store
+    const stored = JSON.parse(redis._store.get('agent:wake:prefs:agent-1')!);
+    expect(stored).toEqual({ subscribedSources: ['watch_threshold'] });
+  });
+
+  it('PATCH with wakePreferences:null deletes agent:wake:prefs:{id} key immediately', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const redis = makeRedisMockForApi();
+    // Pre-populate the key so we can verify deletion
+    redis._store.set('agent:wake:prefs:agent-1', JSON.stringify({ subscribedSources: ['discovery_delta'] }));
+
+    const updatedAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      name: 'test',
+      prompt: 'p',
+    };
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, redis);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { wakePreferences: null },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Redis key deleted
+    expect(redis.del).toHaveBeenCalledWith('agent:wake:prefs:agent-1');
+    // Key no longer in store
+    expect(redis._store.has('agent:wake:prefs:agent-1')).toBe(false);
+  });
+
+  it('PATCH without wakePreferences field leaves existing Redis key untouched', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const redis = makeRedisMockForApi();
+    // Pre-populate the key
+    redis._store.set('agent:wake:prefs:agent-1', JSON.stringify({ subscribedSources: ['watch_threshold'] }));
+
+    const updatedAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      name: 'new name',
+      prompt: 'p',
+    };
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, redis);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { name: 'new name' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Redis prefs key unchanged — no set/del called for prefs
+    const prefsSetCalls = (redis.set as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c: [string]) => c[0] === 'agent:wake:prefs:agent-1',
+    );
+    const prefsDelCalls = (redis.del as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c: [string]) => c[0] === 'agent:wake:prefs:agent-1',
+    );
+    expect(prefsSetCalls).toHaveLength(0);
+    expect(prefsDelCalls).toHaveLength(0);
+    // Existing key still present
+    expect(redis._store.get('agent:wake:prefs:agent-1')).toBe(
+      JSON.stringify({ subscribedSources: ['watch_threshold'] }),
+    );
+  });
+
+  it('PATCH with wakePreferences changes existing Redis key to new value', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const redis = makeRedisMockForApi();
+    // Pre-populate with old prefs
+    redis._store.set('agent:wake:prefs:agent-1', JSON.stringify({ subscribedSources: ['watch_threshold'] }));
+
+    const updatedAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      name: 'test',
+      prompt: 'p',
+    };
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, undefined, undefined, undefined, undefined, redis);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        wakePreferences: { subscribedSources: ['discovery_delta', 'regime_change'] },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Key updated to new value
+    const stored = JSON.parse(redis._store.get('agent:wake:prefs:agent-1')!);
+    expect(stored).toEqual({ subscribedSources: ['discovery_delta', 'regime_change'] });
+  });
+
+  it('does not touch Redis when no redisClient is provided (graceful no-op)', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      name: 'test',
+      prompt: 'p',
+    };
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    // No redisClient passed — should not error
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        wakePreferences: { subscribedSources: ['watch_threshold'] },
+      },
+    });
+
+    // Should succeed without Redis
+    expect(res.statusCode).toBe(200);
+  });
+});

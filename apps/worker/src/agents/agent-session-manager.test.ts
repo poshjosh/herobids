@@ -1624,4 +1624,413 @@ describe('AgentSessionManager', () => {
       expect(reconcile).toHaveBeenCalledTimes(1);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Redis projection lifecycle (C3)
+  // ---------------------------------------------------------------------------
+
+  function makeRedisMock() {
+    const store = new Map<string, string>();
+    const sset = new Map<string, Set<string>>();
+    return {
+      _store: store,
+      _sset: sset,
+      get: vi.fn(async (key: string) => store.get(key) ?? null),
+      set: vi.fn(async (key: string, value: string) => { store.set(key, value); return 'OK'; }),
+      del: vi.fn(async (...keys: string[]) => {
+        let deleted = 0;
+        for (const k of keys) {
+          if (store.delete(k)) deleted++;
+          if (sset.delete(k)) deleted++;
+        }
+        return deleted;
+      }),
+      sadd: vi.fn(async (key: string, ...members: string[]) => {
+        if (!sset.has(key)) sset.set(key, new Set());
+        let added = 0;
+        for (const m of members) {
+          if (!sset.get(key)!.has(m)) { sset.get(key)!.add(m); added++; }
+        }
+        return added;
+      }),
+      srem: vi.fn(async (key: string, ...members: string[]) => {
+        const s = sset.get(key);
+        if (!s) return 0;
+        let removed = 0;
+        for (const m of members) {
+          if (s.delete(m)) removed++;
+        }
+        return removed;
+      }),
+      smembers: vi.fn(async (key: string) => [...(sset.get(key) ?? [])]),
+      sismember: vi.fn(async (key: string, member: string) => (sset.get(key)?.has(member) ? 1 : 0)),
+      incr: vi.fn(async (key: string) => {
+        const v = Number(store.get(key) ?? '0') + 1;
+        store.set(key, String(v));
+        return v;
+      }),
+      decr: vi.fn(async (key: string) => {
+        const v = Number(store.get(key) ?? '0') - 1;
+        store.set(key, String(v));
+        return v;
+      }),
+    } as any;
+  }
+
+  function makeAgent(overrides: Record<string, unknown> = {}) {
+    return {
+      id: overrides.id ?? 'agent-1',
+      userId: 'user-1',
+      prompt: 'Test agent',
+      skillIds: [],
+      toolPolicy: null,
+      modelPolicy: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+      executionMode: 'paper',
+      dailyTokenBudget: null,
+      dailyLossLimit: null,
+      maxBots: null,
+      maxSlippageBps: null,
+      ...overrides,
+    };
+  }
+
+  const HEARTBEAT_ENVELOPE = {
+    schemaVersion: 'v1' as const,
+    messageId: 'msg-hb-1',
+    correlationId: 'corr-hb-1',
+    initiatorType: 'agent' as const,
+    initiatorId: 'agent-1',
+    type: 'agent.runtime.heartbeat' as const,
+    createdAt: new Date().toISOString(),
+    payload: {},
+  };
+
+  // C3.1 — First session activation creates Redis projection
+  describe('Redis projection — first activation (C3.1)', () => {
+    it('creates agent:sessions:count, agent:sessions:active, and agent:wake:prefs on first heartbeat', async () => {
+      const redis = makeRedisMock();
+      const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        {} as any,
+        runtimeLauncher as any,
+        { budgets: TEST_RUNTIME_BUDGETS },
+        reconnectHandler as any,
+        undefined,
+        redis,
+      );
+
+      (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'sess-1',
+        agentId: 'agent-1',
+        status: 'starting',
+      });
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue(
+        makeAgent({ wakePreferences: { subscribedSources: ['discovery_delta', 'watch_threshold'] } }),
+      );
+
+      await manager.handleHeartbeat(
+        { ...HEARTBEAT_ENVELOPE, initiatorId: 'agent-1', messageId: 'msg-c31-1' },
+        { sessionId: 'sess-1', status: 'ready' },
+      );
+
+      // Count key set to 1
+      expect(redis._store.get('agent:sessions:count:agent-1')).toBe('1');
+      // Agent added to active set
+      expect(redis._sset.get('agent:sessions:active')?.has('agent-1')).toBe(true);
+      // Wake preferences stored
+      const prefsJson = redis._store.get('agent:wake:prefs:agent-1');
+      expect(prefsJson).toBeDefined();
+      const prefs = JSON.parse(prefsJson!);
+      expect(prefs).toEqual({ subscribedSources: ['discovery_delta', 'watch_threshold'] });
+    });
+
+    it('does not create agent:wake:prefs when agent has no wakePreferences configured', async () => {
+      const redis = makeRedisMock();
+      const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        {} as any,
+        runtimeLauncher as any,
+        { budgets: TEST_RUNTIME_BUDGETS },
+        reconnectHandler as any,
+        undefined,
+        redis,
+      );
+
+      (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'sess-1',
+        agentId: 'agent-1',
+        status: 'starting',
+      });
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue(
+        makeAgent({ wakePreferences: undefined }),
+      );
+
+      await manager.handleHeartbeat(
+        { ...HEARTBEAT_ENVELOPE, initiatorId: 'agent-1', messageId: 'msg-c31-2' },
+        { sessionId: 'sess-1', status: 'ready' },
+      );
+
+      // Count and active set are created
+      expect(redis._store.get('agent:sessions:count:agent-1')).toBe('1');
+      expect(redis._sset.get('agent:sessions:active')?.has('agent-1')).toBe(true);
+      // But prefs key is absent
+      expect(redis._store.has('agent:wake:prefs:agent-1')).toBe(false);
+    });
+
+    it('only adds to active set when count transitions from 0 to 1 (first session)', async () => {
+      const redis = makeRedisMock();
+      const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        {} as any,
+        runtimeLauncher as any,
+        { budgets: TEST_RUNTIME_BUDGETS },
+        reconnectHandler as any,
+        undefined,
+        redis,
+      );
+
+      // First session
+      (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'sess-1',
+        agentId: 'agent-1',
+        status: 'starting',
+      });
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue(makeAgent());
+
+      await manager.handleHeartbeat(
+        { ...HEARTBEAT_ENVELOPE, initiatorId: 'agent-1', messageId: 'msg-c31-first' },
+        { sessionId: 'sess-1', status: 'ready' },
+      );
+
+      expect(redis._store.get('agent:sessions:count:agent-1')).toBe('1');
+      expect(redis.sadd).toHaveBeenCalledWith('agent:sessions:active', 'agent-1');
+
+      // Second session for same agent — count increments but sadd should NOT be called again
+      // (count > 1, so sadd only fires when count === 1)
+      (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'sess-2',
+        agentId: 'agent-1',
+        status: 'starting',
+      });
+
+      await manager.handleHeartbeat(
+        { ...HEARTBEAT_ENVELOPE, initiatorId: 'agent-1', messageId: 'msg-c31-second' },
+        { sessionId: 'sess-2', status: 'ready' },
+      );
+
+      expect(redis._store.get('agent:sessions:count:agent-1')).toBe('2');
+      // sadd for active set should only have been called once (for first session)
+      const saddActiveCalls = (redis.sadd as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c: [string]) => c[0] === 'agent:sessions:active',
+      );
+      expect(saddActiveCalls).toHaveLength(1);
+    });
+  });
+
+  // C3.2 — Multiple concurrent sessions ref-count correctly
+  describe('Redis projection — multi-session ref-count (C3.2)', () => {
+    it('increments count to 2 for two sessions, decrements on stop, cleans up on last stop', async () => {
+      const redis = makeRedisMock();
+      const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        {} as any,
+        runtimeLauncher as any,
+        { budgets: TEST_RUNTIME_BUDGETS },
+        reconnectHandler as any,
+        undefined,
+        redis,
+      );
+
+      // Activate first session
+      (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'sess-1',
+        agentId: 'agent-1',
+        status: 'starting',
+      });
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue(
+        makeAgent({ wakePreferences: { subscribedSources: ['watch_threshold'] } }),
+      );
+
+      await manager.handleHeartbeat(
+        { ...HEARTBEAT_ENVELOPE, initiatorId: 'agent-1', messageId: 'msg-c32-s1' },
+        { sessionId: 'sess-1', status: 'ready' },
+      );
+      expect(redis._store.get('agent:sessions:count:agent-1')).toBe('1');
+
+      // Activate second session (same agent)
+      (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'sess-2',
+        agentId: 'agent-1',
+        status: 'starting',
+      });
+
+      await manager.handleHeartbeat(
+        { ...HEARTBEAT_ENVELOPE, initiatorId: 'agent-1', messageId: 'msg-c32-s2' },
+        { sessionId: 'sess-2', status: 'ready' },
+      );
+      expect(redis._store.get('agent:sessions:count:agent-1')).toBe('2');
+
+      // Stop first session — count decrements, keys survive
+      (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'sess-1',
+        agentId: 'agent-1',
+        status: 'running',
+      });
+      (agentRepo.markSessionStopped as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await manager.stopSession('sess-1');
+      expect(redis._store.get('agent:sessions:count:agent-1')).toBe('1');
+      // Active membership survives
+      expect(redis._sset.get('agent:sessions:active')?.has('agent-1')).toBe(true);
+      // Prefs key survives
+      expect(redis._store.has('agent:wake:prefs:agent-1')).toBe(true);
+
+      // Stop second session — count goes to 0, all keys removed
+      (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'sess-2',
+        agentId: 'agent-1',
+        status: 'running',
+      });
+
+      await manager.stopSession('sess-2');
+      // Count key deleted when count <= 0
+      expect(redis._store.has('agent:sessions:count:agent-1')).toBe(false);
+      // Removed from active set
+      expect(redis._sset.get('agent:sessions:active')?.has('agent-1')).toBeFalsy();
+      // Prefs key deleted
+      expect(redis._store.has('agent:wake:prefs:agent-1')).toBe(false);
+    });
+  });
+
+  // C3.3 — registerSurvivedSessions rebuilds from DB, no double increment on recovery heartbeat
+  describe('Redis projection — survived session recovery (C3.3)', () => {
+    it('rebuilds Redis projection from DB state without double increment on recovery heartbeat', async () => {
+      const redis = makeRedisMock();
+      const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+
+      // Seed two survived running sessions for the same agent
+      (agentRepo.getSessionsByStatuses as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'sess-surv-1', agentId: 'agent-1', status: 'running' },
+        { id: 'sess-surv-2', agentId: 'agent-1', status: 'running' },
+      ]);
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue(
+        makeAgent({ wakePreferences: { subscribedSources: ['discovery_delta'] } }),
+      );
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        {} as any,
+        runtimeLauncher as any,
+        { budgets: TEST_RUNTIME_BUDGETS },
+        reconnectHandler as any,
+        undefined,
+        redis,
+      );
+
+      // Call registerSurvivedSessions directly to rebuild projection
+      await (manager as unknown as { registerSurvivedSessions: () => Promise<void> }).registerSurvivedSessions();
+
+      // Redis projection rebuilt from DB: count = 2 (two survived sessions)
+      expect(redis._store.get('agent:sessions:count:agent-1')).toBe('2');
+      expect(redis._sset.get('agent:sessions:active')?.has('agent-1')).toBe(true);
+      const prefs = JSON.parse(redis._store.get('agent:wake:prefs:agent-1')!);
+      expect(prefs).toEqual({ subscribedSources: ['discovery_delta'] });
+
+      // Now simulate a recovery heartbeat for one of the survived sessions.
+      // isFirstBoot is false (status is 'running'), so the Redis projection
+      // must NOT increment again.
+      (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'sess-surv-1',
+        agentId: 'agent-1',
+        status: 'running',
+      });
+      (runtimeLauncher.hasRuntime as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+      await manager.handleHeartbeat(
+        { ...HEARTBEAT_ENVELOPE, initiatorId: 'agent-1', messageId: 'msg-c33-recovery' },
+        { sessionId: 'sess-surv-1', status: 'ready' },
+      );
+
+      // Count must still be 2 — no double increment
+      expect(redis._store.get('agent:sessions:count:agent-1')).toBe('2');
+    });
+
+    it('sets count from DB (not increment) during rebuild', async () => {
+      const redis = makeRedisMock();
+      const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+
+      // Seed 3 survived sessions
+      (agentRepo.getSessionsByStatuses as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'sess-a', agentId: 'agent-1', status: 'running' },
+        { id: 'sess-b', agentId: 'agent-1', status: 'running' },
+        { id: 'sess-c', agentId: 'agent-1', status: 'running' },
+      ]);
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue(makeAgent());
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        {} as any,
+        runtimeLauncher as any,
+        { budgets: TEST_RUNTIME_BUDGETS },
+        reconnectHandler as any,
+        undefined,
+        redis,
+      );
+
+      await (manager as unknown as { registerSurvivedSessions: () => Promise<void> }).registerSurvivedSessions();
+
+      // Count is SET (not INCR) from the DB count of sessions
+      expect(redis._store.get('agent:sessions:count:agent-1')).toBe('3');
+      // Verify it was set, not incremented (incr would have been called if handleHeartbeat path was used)
+      const incrCalls = (redis.incr as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c: [string]) => c[0] === 'agent:sessions:count:agent-1',
+      );
+      expect(incrCalls).toHaveLength(0);
+    });
+
+    it('rebuilds prefs for multiple agents from DB', async () => {
+      const redis = makeRedisMock();
+      const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+
+      (agentRepo.getSessionsByStatuses as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'sess-1', agentId: 'agent-a', status: 'running' },
+        { id: 'sess-2', agentId: 'agent-b', status: 'running' },
+      ]);
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(makeAgent({ id: 'agent-a', wakePreferences: { subscribedSources: ['watch_threshold'] } }))
+        .mockResolvedValueOnce(makeAgent({ id: 'agent-b', wakePreferences: { subscribedSources: ['discovery_delta', 'regime_change'] } }));
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        {} as any,
+        runtimeLauncher as any,
+        { budgets: TEST_RUNTIME_BUDGETS },
+        reconnectHandler as any,
+        undefined,
+        redis,
+      );
+
+      await (manager as unknown as { registerSurvivedSessions: () => Promise<void> }).registerSurvivedSessions();
+
+      // Both agents in active set
+      expect(redis._sset.get('agent:sessions:active')?.has('agent-a')).toBe(true);
+      expect(redis._sset.get('agent:sessions:active')?.has('agent-b')).toBe(true);
+
+      // Both prefs keys present
+      expect(JSON.parse(redis._store.get('agent:wake:prefs:agent-a')!)).toEqual({ subscribedSources: ['watch_threshold'] });
+      expect(JSON.parse(redis._store.get('agent:wake:prefs:agent-b')!)).toEqual({ subscribedSources: ['discovery_delta', 'regime_change'] });
+
+      // Counts
+      expect(redis._store.get('agent:sessions:count:agent-a')).toBe('1');
+      expect(redis._store.get('agent:sessions:count:agent-b')).toBe('1');
+    });
+  });
 });

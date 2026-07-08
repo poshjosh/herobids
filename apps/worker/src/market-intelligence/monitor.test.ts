@@ -9,6 +9,7 @@ function makeRedisMock(overrides: Record<string, unknown> = {}) {
   const store = new Map<string, string>();
   const hstore = new Map<string, Map<string, string>>();
   const zstore = new Map<string, Map<string, number>>();
+  const sset = new Map<string, Set<string>>();
   const scanKeys: string[] = [];
 
   return {
@@ -16,6 +17,7 @@ function makeRedisMock(overrides: Record<string, unknown> = {}) {
     _store: store,
     _hstore: hstore,
     _zstore: zstore,
+    _sset: sset,
     _scanKeys: scanKeys,
     // Redis methods
     get: vi.fn(async (key: string) => store.get(key) ?? null),
@@ -46,6 +48,7 @@ function makeRedisMock(overrides: Record<string, unknown> = {}) {
       for (const key of keys) {
         if (store.delete(key)) deleted++;
       }
+      if (sset.delete(key)) deleted++;
       return deleted;
     }),
     exists: vi.fn(async (key: string) => (store.has(key) ? 1 : 0)),
@@ -70,12 +73,39 @@ function makeRedisMock(overrides: Record<string, unknown> = {}) {
       return v;
     }),
     expire: vi.fn(async () => 1),
+    // Set operations
+    sadd: vi.fn(async (key: string, ...members: string[]) => {
+      if (!sset.has(key)) sset.set(key, new Set());
+      let added = 0;
+      for (const m of members) {
+        if (!sset.get(key)!.has(m)) { sset.get(key)!.add(m); added++; }
+      }
+      return added;
+    }),
+    srem: vi.fn(async (key: string, ...members: string[]) => {
+      const s = sset.get(key);
+      if (!s) return 0;
+      let removed = 0;
+      for (const m of members) {
+        if (s.delete(m)) removed++;
+      }
+      return removed;
+    }),
+    smembers: vi.fn(async (key: string) => [...(sset.get(key) ?? [])]),
+    sismember: vi.fn(async (key: string, member: string) => (sset.get(key)?.has(member) ? 1 : 0)),
     pipeline: vi.fn(() => {
+      const queuedGets: Array<string> = [];
       const pipeline = {
         incr: vi.fn().mockReturnThis(),
         expire: vi.fn().mockReturnThis(),
         zadd: vi.fn().mockReturnThis(),
-        exec: vi.fn().mockResolvedValue([]),
+        get: vi.fn((key: string) => { queuedGets.push(key); return pipeline; }),
+        exec: vi.fn(async () => {
+          if (queuedGets.length > 0) {
+            return queuedGets.map((key) => [null, store.get(key) ?? null]);
+          }
+          return [];
+        }),
       };
       return pipeline;
     }),
@@ -204,6 +234,7 @@ describe('createMarketMonitor — watch thresholds', () => {
   });
 
   function seedWatch(agentId: string, watchData: ReturnType<typeof makeWatch>) {
+    redis.sadd('agent:sessions:active', agentId);
     redis._hstore.set(`agent:watches:${agentId}`, new Map([['watch-1', watchData]]));
     redis._scanKeys.push(`agent:watches:${agentId}`);
   }
@@ -575,6 +606,7 @@ describe('createMarketMonitor — family toggles', () => {
       ['watch-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: true })],
     ]));
     redis._scanKeys.push('agent:watches:agent-1');
+    redis.sadd('agent:sessions:active', 'agent-1');
     redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
       { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 150 },
     ]));
@@ -634,6 +666,7 @@ describe('createMarketMonitor — discovery deltas', () => {
     publisher = makePublisherMock();
     // Add an active agent watch key so getActiveAgentIds returns something
     redis._scanKeys.push('agent:watches:agent-1');
+    redis.sadd('agent:sessions:active', 'agent-1');
   });
 
   it('emits entered_top_set for tokens not in previous snapshot', async () => {
@@ -773,6 +806,7 @@ describe('createMarketMonitor — regime changes', () => {
     redis = makeRedisMock();
     publisher = makePublisherMock();
     redis._scanKeys.push('agent:watches:agent-1');
+    redis.sadd('agent:sessions:active', 'agent-1');
   });
 
   it('emits regime changed when pass flips from true to false', async () => {
@@ -895,6 +929,7 @@ describe('createMarketMonitor — metrics', () => {
 
     redis._hstore.set('agent:watches:agent-1', new Map([['w1', makeWatch({ condition: 'above', thresholdPrice: 100, lastConditionMet: false })]]));
     redis._scanKeys.push('agent:watches:agent-1');
+    redis.sadd('agent:sessions:active', 'agent-1');
     redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([{ network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 200 }]));
     redis._store.set(`market-monitor:dedupe:watch:${DEFAULT_WATCH_ID}:cross:above`, '1');
 
@@ -933,6 +968,7 @@ describe('createMarketMonitor — wake coalescing', () => {
       [W2, makeWatch({ watchId: W2, symbol: 'SOL', condition: 'above', thresholdPrice: 150, lastConditionMet: false })],
     ]));
     redis._scanKeys.push('agent:watches:agent-1');
+    redis.sadd('agent:sessions:active', 'agent-1');
     redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
       { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 200 },
     ]));
@@ -960,6 +996,7 @@ describe('createMarketMonitor — wake coalescing', () => {
     }
     redis._hstore.set('agent:watches:agent-1', watches);
     redis._scanKeys.push('agent:watches:agent-1');
+    redis.sadd('agent:sessions:active', 'agent-1');
     redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
       { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 200 },
     ]));
@@ -988,6 +1025,7 @@ describe('createMarketMonitor — wake coalescing', () => {
       [W2, makeWatch({ watchId: W2, symbol: 'SOL', condition: 'above', thresholdPrice: 150, lastConditionMet: false })],
     ]));
     redis._scanKeys.push('agent:watches:agent-1');
+    redis.sadd('agent:sessions:active', 'agent-1');
     redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([{ network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 200 }]));
 
     const monitor = createMarketMonitor(
@@ -1016,6 +1054,9 @@ describe('createMarketMonitor — mode-based delivery', () => {
     redis = makeRedisMock();
     publisher = makePublisherMock();
     redis._scanKeys.push('agent:watches:agent-1');
+    // Populate active sessions so getSubscribedAgentIds and evaluateWatches
+    // can find the agent (required after C4 subscription-filtering refactor).
+    redis.sadd('agent:sessions:active', 'agent-1');
   });
 
   // --- backward compatibility (no mode configured = wake) ---
@@ -1245,4 +1286,330 @@ describe('createMarketMonitor — mode-based delivery', () => {
       { network, address: `0x${symbol}`, symbol, priceUsd },
     ]));
   }
+});
+
+// ===========================================================================
+// C4 — subscription filtering via agent:sessions:active and wake preferences
+// ===========================================================================
+
+describe('createMarketMonitor — subscription filtering (C4)', () => {
+  let redis: ReturnType<typeof makeRedisMock>;
+  let publisher: ReturnType<typeof makePublisherMock>;
+
+  beforeEach(() => {
+    redis = makeRedisMock();
+    publisher = makePublisherMock();
+  });
+
+  function addActiveAgent(agentId: string) {
+    redis.sadd('agent:sessions:active', agentId);
+  }
+
+  function setWakePrefs(agentId: string, prefs: { subscribedSources?: string[] } | null) {
+    if (prefs === null) {
+      redis._store.delete(`agent:wake:prefs:${agentId}`);
+    } else {
+      redis._store.set(`agent:wake:prefs:${agentId}`, JSON.stringify(prefs));
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // C4.1 — getSubscribedAgentIds returns all active agents when no prefs key
+  // -----------------------------------------------------------------------
+
+  it('returns all active agents for discovery_delta when no prefs key exists', async () => {
+    addActiveAgent('agent-1');
+    addActiveAgent('agent-2');
+    // No prefs keys set — both agents should be subscribed to everything
+
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xWIF', symbol: 'WIF', discoveryVectors: ['trending'] },
+    ]));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: false, discoveryDeltas: true, regimeChanges: false } },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    // Both agents receive the discovery event
+    expect(publisher.emitMarketDiscoveryDetected).toHaveBeenCalledTimes(2);
+    const agentIds = publisher.emitMarketDiscoveryDetected.mock.calls.map((c: [string, unknown]) => c[0]);
+    expect(agentIds).toContain('agent-1');
+    expect(agentIds).toContain('agent-2');
+  });
+
+  it('returns all active agents for regime_change when no prefs key exists', async () => {
+    addActiveAgent('agent-1');
+    addActiveAgent('agent-2');
+
+    redis._scanKeys.push('market-intel:regime:BTC');
+    redis._store.set('market-intel:regime:BTC', JSON.stringify({ pass: false, details: {} }));
+    redis._store.set('market-monitor:regime:last-state:BTC', JSON.stringify({ pass: true }));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: false, discoveryDeltas: false, regimeChanges: true } },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    // Both agents receive the regime event
+    expect(publisher.emitMarketRegimeChanged).toHaveBeenCalledTimes(2);
+    const agentIds = publisher.emitMarketRegimeChanged.mock.calls.map((c: [string, unknown]) => c[0]);
+    expect(agentIds).toContain('agent-1');
+    expect(agentIds).toContain('agent-2');
+  });
+
+  // -----------------------------------------------------------------------
+  // C4.2 — getSubscribedAgentIds filters correctly per source
+  // -----------------------------------------------------------------------
+
+  it('filters agents per source when prefs are restricted', async () => {
+    // agent-1: no prefs → all sources
+    addActiveAgent('agent-1');
+
+    // agent-2: only watch_threshold
+    addActiveAgent('agent-2');
+    setWakePrefs('agent-2', { subscribedSources: ['watch_threshold'] });
+
+    // agent-3: discovery_delta + regime_change
+    addActiveAgent('agent-3');
+    setWakePrefs('agent-3', { subscribedSources: ['discovery_delta', 'regime_change'] });
+
+    // Test discovery_delta: agents 1 and 3 should receive, agent 2 should NOT
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xWIF', symbol: 'WIF', discoveryVectors: ['trending'] },
+    ]));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: false, discoveryDeltas: true, regimeChanges: false } },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    const discoveryAgentIds = publisher.emitMarketDiscoveryDetected.mock.calls.map((c: [string, unknown]) => c[0]);
+    expect(discoveryAgentIds).toContain('agent-1');
+    expect(discoveryAgentIds).not.toContain('agent-2');
+    expect(discoveryAgentIds).toContain('agent-3');
+  });
+
+  it('filters agents for regime_change when prefs are restricted', async () => {
+    addActiveAgent('agent-1');
+    addActiveAgent('agent-2');
+    setWakePrefs('agent-2', { subscribedSources: ['watch_threshold'] });
+    addActiveAgent('agent-3');
+    setWakePrefs('agent-3', { subscribedSources: ['discovery_delta'] });
+
+    redis._scanKeys.push('market-intel:regime:BTC');
+    redis._store.set('market-intel:regime:BTC', JSON.stringify({ pass: false, details: {} }));
+    redis._store.set('market-monitor:regime:last-state:BTC', JSON.stringify({ pass: true }));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: false, discoveryDeltas: false, regimeChanges: true } },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    const regimeAgentIds = publisher.emitMarketRegimeChanged.mock.calls.map((c: [string, unknown]) => c[0]);
+    // agent-1: no prefs → gets regime
+    expect(regimeAgentIds).toContain('agent-1');
+    // agent-2: only watch_threshold → NOT regime
+    expect(regimeAgentIds).not.toContain('agent-2');
+    // agent-3: only discovery_delta → NOT regime
+    expect(regimeAgentIds).not.toContain('agent-3');
+  });
+
+  // -----------------------------------------------------------------------
+  // C4.3 — evaluateWatches excludes stopped agents even with stale watch keys
+  // -----------------------------------------------------------------------
+
+  it('skips agents not in agent:sessions:active even if watch keys remain', async () => {
+    // Seed a watch key for agent-1 but do NOT add to active set
+    redis._hstore.set('agent:watches:agent-1', new Map([
+      ['watch-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false })],
+    ]));
+    redis._scanKeys.push('agent:watches:agent-1');
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
+    ]));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    // No watch event emitted despite price crossing threshold — agent is not active
+    expect(publisher.emitMarketWatchTriggered).not.toHaveBeenCalled();
+  });
+
+  it('emits watch event for active agent with watch key', async () => {
+    addActiveAgent('agent-1');
+    redis._hstore.set('agent:watches:agent-1', new Map([
+      ['watch-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false })],
+    ]));
+    redis._scanKeys.push('agent:watches:agent-1');
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
+    ]));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    // Active agent receives the watch trigger
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+    const [agentId] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
+    expect(agentId).toBe('agent-1');
+  });
+
+  // -----------------------------------------------------------------------
+  // C4.4 — evaluateWatches reads prefs once per agent per cycle
+  // -----------------------------------------------------------------------
+
+  it('reads wake prefs once per agent per evaluation cycle', async () => {
+    addActiveAgent('agent-1');
+    // Two watches for the same agent
+    const W1 = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+    const W2 = 'b2c3d4e5-f6a7-8901-bcde-f12345678901';
+    redis._hstore.set('agent:watches:agent-1', new Map([
+      [W1, makeWatch({ watchId: W1, symbol: 'SOL', condition: 'above', thresholdPrice: 100, lastConditionMet: false })],
+      [W2, makeWatch({ watchId: W2, symbol: 'SOL', condition: 'above', thresholdPrice: 150, lastConditionMet: false })],
+    ]));
+    redis._scanKeys.push('agent:watches:agent-1');
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 200 },
+    ]));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    // Both watches trigger, but prefs are only read once (hoisted before the per-watch loop).
+    // The get spy is called for agent:wake:prefs:agent-1 exactly once (per agent).
+    // Also called during watch evaluation for price lookups, but those are hgetall.
+    const prefsCalls = redis.get.mock.calls.filter(
+      (c: [string]) => c[0] === 'agent:wake:prefs:agent-1',
+    );
+    expect(prefsCalls).toHaveLength(1);
+  });
+
+  // Edge: agent with prefs that exclude watch_threshold — prefs still read once, then skipped
+  it('reads prefs once then skips all watches when watch_threshold not in subscribedSources', async () => {
+    addActiveAgent('agent-1');
+    setWakePrefs('agent-1', { subscribedSources: ['discovery_delta'] });
+    redis._hstore.set('agent:watches:agent-1', new Map([
+      ['watch-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false })],
+    ]));
+    redis._scanKeys.push('agent:watches:agent-1');
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
+    ]));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    // Watch event NOT emitted — agent only wants discovery_delta
+    expect(publisher.emitMarketWatchTriggered).not.toHaveBeenCalled();
+    // Prefs fetched once
+    const prefsCalls = redis.get.mock.calls.filter(
+      (c: [string]) => c[0] === 'agent:wake:prefs:agent-1',
+    );
+    expect(prefsCalls).toHaveLength(1);
+  });
+
+  // -----------------------------------------------------------------------
+  // C4.5 — Malformed prefs JSON fails open (treated as all sources)
+  // -----------------------------------------------------------------------
+
+  it('treats malformed prefs JSON as all sources (fail open)', async () => {
+    addActiveAgent('agent-1');
+    // Malformed JSON in prefs key
+    redis._store.set('agent:wake:prefs:agent-1', '{broken json!!!');
+
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xWIF', symbol: 'WIF', discoveryVectors: ['trending'] },
+    ]));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: false, discoveryDeltas: true, regimeChanges: false } },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    // Agent should still receive discovery events (fail open)
+    expect(publisher.emitMarketDiscoveryDetected).toHaveBeenCalled();
+    const agentIds = publisher.emitMarketDiscoveryDetected.mock.calls.map((c: [string, unknown]) => c[0]);
+    expect(agentIds).toContain('agent-1');
+  });
+
+  it('treats malformed prefs JSON as all sources for watch thresholds (fail open)', async () => {
+    addActiveAgent('agent-1');
+    redis._store.set('agent:wake:prefs:agent-1', '{not valid}');
+    redis._hstore.set('agent:watches:agent-1', new Map([
+      ['watch-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false })],
+    ]));
+    redis._scanKeys.push('agent:watches:agent-1');
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
+    ]));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    // Watch event should still fire (fail open)
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+  });
+
+  // -----------------------------------------------------------------------
+  // Additional edge: empty subscribedSources array → subscribed to nothing
+  // -----------------------------------------------------------------------
+
+  it('excludes agent with empty subscribedSources array from all monitor sources', async () => {
+    addActiveAgent('agent-1');
+    setWakePrefs('agent-1', { subscribedSources: [] });
+
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xWIF', symbol: 'WIF', discoveryVectors: ['trending'] },
+    ]));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: false, discoveryDeltas: true, regimeChanges: false } },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    // Agent has empty subscribedSources — receives nothing
+    expect(publisher.emitMarketDiscoveryDetected).not.toHaveBeenCalled();
+  });
+
+  // -----------------------------------------------------------------------
+  // Edge: no active agents → no recipients
+  // -----------------------------------------------------------------------
+
+  it('returns empty recipients when no agents are active', async () => {
+    // No active agents added
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xWIF', symbol: 'WIF', discoveryVectors: ['trending'] },
+    ]));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: false, discoveryDeltas: true, regimeChanges: false } },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    // No one to notify
+    expect(publisher.emitMarketDiscoveryDetected).not.toHaveBeenCalled();
+  });
 });
