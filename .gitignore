@@ -55,6 +55,7 @@ drizzle/meta/.snapshot.json
 # Terraform
 *.tfstate
 *.tfstate.*
+infra/hetzner/terraform.tfstate.d/
 .terraform/
 *.tfvars
 !.tfvars.example
