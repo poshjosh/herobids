@@ -1144,14 +1144,46 @@ function emitToolResultEvent(params: {
   });
 }
 
-// Track previous CPU usage for computing CPU% between heartbeats.
+// ── Container memory — cgroup-aware, includes all child processes ──────────
+// Docker enforces memory limits via cgroups. Reading the cgroup memory file
+// gives the container's total current usage, which is more accurate than
+// process RSS alone (it covers sandbox_exec children, subprocesses, etc.).
+//
+// Fallback chain: cgroup v2 → cgroup v1 → process RSS (local dev / non-Docker).
+
+const CGROUP_V2_MEMORY_CURRENT = '/sys/fs/cgroup/memory.current';
+const CGROUP_V1_MEMORY_USAGE   = '/sys/fs/cgroup/memory/memory.usage_in_bytes';
+
+function readContainerMemoryBytes(): number | undefined {
+  // cgroup v2 (modern Docker / Kubernetes, unified hierarchy)
+  try {
+    const raw = fs.readFileSync(CGROUP_V2_MEMORY_CURRENT, 'utf8');
+    const n = Number(raw.trim());
+    if (Number.isFinite(n) && n > 0) return n;
+  } catch { /* not v2 or not accessible */ }
+
+  // cgroup v1 (older Docker / legacy systems)
+  try {
+    const raw = fs.readFileSync(CGROUP_V1_MEMORY_USAGE, 'utf8');
+    const n = Number(raw.trim());
+    if (Number.isFinite(n) && n > 0) return n;
+  } catch { /* not v1 or not accessible */ }
+
+  // Last resort: Node.js process RSS (excludes subprocesses)
+  try {
+    return process.memoryUsage().rss;
+  } catch {
+    return undefined;
+  }
+}
+
+// ── Resource usage snapshot — CPU% + container memory ──────────────────────
 let lastCpuUsage: ReturnType<typeof process.cpuUsage> | null = null;
 let lastCpuTime: [number, number] | null = null; // [seconds, nanoseconds]
 
 function getResourceUsage(): { cpuPct: number | undefined; memoryBytes: number | undefined } {
   try {
-    const mem = process.memoryUsage();
-    const memoryBytes = mem.rss; // Node process RSS only — excludes subprocess memory (e.g. sandbox_exec child)
+    const memoryBytes = readContainerMemoryBytes();
 
     // Compute CPU% from the delta since the last measurement.
     const now = process.hrtime();
