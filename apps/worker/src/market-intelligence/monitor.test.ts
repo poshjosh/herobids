@@ -1003,3 +1003,246 @@ describe('createMarketMonitor — wake coalescing', () => {
     expect(publisher.emitAgentWake).not.toHaveBeenCalled();
   });
 });
+
+// ===========================================================================
+// mode-based delivery (wake / batched / context)
+// ===========================================================================
+
+describe('createMarketMonitor — mode-based delivery', () => {
+  let redis: ReturnType<typeof makeRedisMock>;
+  let publisher: ReturnType<typeof makePublisherMock>;
+
+  beforeEach(() => {
+    redis = makeRedisMock();
+    publisher = makePublisherMock();
+    redis._scanKeys.push('agent:watches:agent-1');
+  });
+
+  // --- backward compatibility (no mode configured = wake) ---
+
+  it('defaults to wake mode when no wakePolicy is configured (watch threshold)', async () => {
+    seedWatchInRedis();
+    seedDiscoveryPriceInRedis('SOL', 'solana', 204);
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    // Event IS emitted
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+    // Wake IS enqueued (key exists in Redis)
+    expect(redis._store.has('market-monitor:wake:agent-1:watch_threshold')).toBe(true);
+  });
+
+  // --- watch threshold: context mode ---
+
+  it('emits event but does NOT enqueue wake when watch_threshold mode is context', async () => {
+    seedWatchInRedis();
+    seedDiscoveryPriceInRedis('SOL', 'solana', 204);
+
+    const monitor = createMarketMonitor(
+      {
+        families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false },
+        wakePolicy: { watch_threshold: { mode: 'context' } },
+      },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    // Event IS emitted
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+    // Wake is NOT enqueued
+    expect(redis._store.has('market-monitor:wake:agent-1:watch_threshold')).toBe(false);
+  });
+
+  // --- watch threshold: wake mode (explicit) ---
+
+  it('emits event and enqueues wake when watch_threshold mode is wake', async () => {
+    seedWatchInRedis();
+    seedDiscoveryPriceInRedis('SOL', 'solana', 204);
+
+    const monitor = createMarketMonitor(
+      {
+        families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false },
+        wakePolicy: { watch_threshold: { mode: 'wake' } },
+      },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+    expect(redis._store.has('market-monitor:wake:agent-1:watch_threshold')).toBe(true);
+  });
+
+  // --- watch threshold: batched mode ---
+
+  it('emits event and enqueues wake when watch_threshold mode is batched', async () => {
+    seedWatchInRedis();
+    seedDiscoveryPriceInRedis('SOL', 'solana', 204);
+
+    const monitor = createMarketMonitor(
+      {
+        families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false },
+        wakePolicy: { watch_threshold: { mode: 'batched' } },
+      },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+    expect(redis._store.has('market-monitor:wake:agent-1:watch_threshold')).toBe(true);
+  });
+
+  // --- discovery delta: entered_top_set — context mode ---
+
+  it('emits discovery event but does NOT enqueue wake when discovery_delta mode is context (entered_top_set)', async () => {
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xWIF', symbol: 'WIF', discoveryVectors: ['trending'] },
+    ]));
+
+    const monitor = createMarketMonitor(
+      {
+        families: { watchThresholds: false, discoveryDeltas: true, regimeChanges: false },
+        wakePolicy: { discovery_delta: { mode: 'context' } },
+      },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketDiscoveryDetected).toHaveBeenCalledOnce();
+    const [, payload] = publisher.emitMarketDiscoveryDetected.mock.calls[0]!;
+    expect(payload.reason).toBe('entered_top_set');
+    expect(redis._store.has('market-monitor:wake:agent-1:discovery_delta')).toBe(false);
+  });
+
+  // --- discovery delta: entered_top_set — wake mode (explicit) ---
+
+  it('emits discovery event and enqueues wake when discovery_delta mode is wake (entered_top_set)', async () => {
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xWIF', symbol: 'WIF', discoveryVectors: ['trending'] },
+    ]));
+
+    const monitor = createMarketMonitor(
+      {
+        families: { watchThresholds: false, discoveryDeltas: true, regimeChanges: false },
+        wakePolicy: { discovery_delta: { mode: 'wake' } },
+      },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketDiscoveryDetected).toHaveBeenCalledOnce();
+    expect(redis._store.has('market-monitor:wake:agent-1:discovery_delta')).toBe(true);
+  });
+
+  // --- discovery delta: multi_vector_confirmation — context mode ---
+
+  it('respects context mode for multi_vector_confirmation call site', async () => {
+    const tokenAddress = '0xWIF';
+    const prevSnap = makeDiscoverySnapshot([
+      { network: 'solana', address: tokenAddress, symbol: 'WIF', discoveryVectors: ['trending'] },
+    ]);
+    const currSnap = makeDiscoverySnapshot([
+      { network: 'solana', address: tokenAddress, symbol: 'WIF', discoveryVectors: ['trending', 'boosts_latest'] },
+    ]);
+    redis._store.set('market-monitor:discovery:previous-snapshot', prevSnap);
+    redis._store.set('market-intel:discovery:latest', currSnap);
+
+    const monitor = createMarketMonitor(
+      {
+        families: { watchThresholds: false, discoveryDeltas: true, regimeChanges: false },
+        wakePolicy: { discovery_delta: { mode: 'context' } },
+      },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketDiscoveryDetected).toHaveBeenCalledOnce();
+    const [, payload] = publisher.emitMarketDiscoveryDetected.mock.calls[0]!;
+    expect(payload.reason).toBe('multi_vector_confirmation');
+    expect(redis._store.has('market-monitor:wake:agent-1:discovery_delta')).toBe(false);
+  });
+
+  // --- discovery delta: reappeared_after_cooldown — context mode ---
+
+  it('respects context mode for reappeared_after_cooldown call site', async () => {
+    const fourHoursAgo = Date.now() - 4 * 60 * 60 * 1000 - 1;
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xWIF', symbol: 'WIF' },
+    ]));
+    redis._zstore.set('market-intel:discovery:seen', new Map([['solana:0xWIF', fourHoursAgo]]));
+
+    const monitor = createMarketMonitor(
+      {
+        families: { watchThresholds: false, discoveryDeltas: true, regimeChanges: false },
+        wakePolicy: { discovery_delta: { mode: 'context' } },
+      },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    const reasons = publisher.emitMarketDiscoveryDetected.mock.calls.map(
+      ([, p]: [string, { reason: string }]) => p.reason,
+    );
+    expect(reasons).toContain('reappeared_after_cooldown');
+    expect(redis._store.has('market-monitor:wake:agent-1:discovery_delta')).toBe(false);
+  });
+
+  // --- discovery delta: wake mode with batched ---
+
+  it('enqueues wake for discovery_delta when mode is batched', async () => {
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xWIF', symbol: 'WIF', discoveryVectors: ['trending'] },
+    ]));
+
+    const monitor = createMarketMonitor(
+      {
+        families: { watchThresholds: false, discoveryDeltas: true, regimeChanges: false },
+        wakePolicy: { discovery_delta: { mode: 'batched' } },
+      },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketDiscoveryDetected).toHaveBeenCalled();
+    expect(redis._store.has('market-monitor:wake:agent-1:discovery_delta')).toBe(true);
+  });
+
+  // --- regime change: context mode ---
+
+  it('emits regime event but does NOT enqueue wake when regime_change mode is context', async () => {
+    redis._scanKeys.push('market-intel:regime:BTC');
+    redis._store.set('market-intel:regime:BTC', JSON.stringify({ pass: false, details: { emaAlignment: 'bearish' } }));
+    redis._store.set('market-monitor:regime:last-state:BTC', JSON.stringify({ pass: true }));
+
+    const monitor = createMarketMonitor(
+      {
+        families: { watchThresholds: false, discoveryDeltas: false, regimeChanges: true },
+        wakePolicy: { regime_change: { mode: 'context' } },
+      },
+      { redis, publisher },
+    );
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketRegimeChanged).toHaveBeenCalledOnce();
+    const [, payload] = publisher.emitMarketRegimeChanged.mock.calls[0]!;
+    expect(payload.monitorType).toBe('regime_change');
+    expect(redis._store.has('market-monitor:wake:agent-1:regime_change')).toBe(false);
+  });
+
+  // --- helpers reused across mode-based delivery tests ---
+
+  function seedWatchInRedis() {
+    redis._hstore.set('agent:watches:agent-1', new Map([
+      ['watch-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false })],
+    ]));
+  }
+
+  function seedDiscoveryPriceInRedis(symbol: string, network: string, priceUsd: number) {
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network, address: `0x${symbol}`, symbol, priceUsd },
+    ]));
+  }
+});

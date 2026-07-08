@@ -28,6 +28,15 @@ const REGIME_COOLDOWN_MS = 300_000; // 5 minutes
 export interface WakePolicyEntry {
   /** Cooldown in ms for this wake source. */
   cooldownMs?: number;
+  /**
+   * Delivery mode for this wake source.
+   * - `wake`: emit event + enqueue wake bucket (default, backward-compatible)
+   * - `batched`: emit event + enqueue wake bucket; the per-source cooldown
+   *   mechanism already defers the wake emit until the source becomes eligible
+   * - `context`: emit event only; do NOT enqueue `agent.wake` — the runtime
+   *   records it as pending market context
+   */
+  mode?: 'wake' | 'batched' | 'context';
 }
 
 export interface MonitorConfig {
@@ -96,6 +105,11 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
   /** Resolve cooldown for a wake source: wakePolicy override → global fallback → hard default. */
   function getWakeCooldownMs(source: AgentWakeSource): number {
     return config.wakePolicy?.[source]?.cooldownMs ?? DEFAULT_COOLDOWN_MS;
+  }
+
+  /** Resolve delivery mode for a wake source. Defaults to 'wake' (backward-compatible). */
+  function getWakeMode(source: AgentWakeSource): 'wake' | 'batched' | 'context' {
+    return config.wakePolicy?.[source]?.mode ?? 'wake';
   }
   const families = {
     watchThresholds: config.families?.watchThresholds ?? true,
@@ -269,28 +283,35 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           await publisher.emitMarketWatchTriggered(agentId, payload);
           await recordDedupe(dedupeKey);
           await incrementRateCounter(agentId, 'watch_threshold');
-          await enqueueWake(
-            agentId,
-            eventId,
-            `${effectiveSymbol} crossed ${watch.condition === 'above' ? 'above' : 'below'} ${watch.thresholdPrice}`,
-            'watch_threshold',
-            {
-              symbol: effectiveSymbol,
-              chain: effectiveChain,
-              condition: watch.condition,
-              thresholdPrice: watch.thresholdPrice,
-              currentPrice: priceData.priceUsd,
-              stale: priceData.stale,
-              triggeredAt: payload.triggeredAt,
-              watchId: watch.watchId,
-              ...(watch.note ? { note: watch.note } : {}),
-              ...(watch.purpose ? { purpose: watch.purpose } : {}),
-              ...(watch.instrument?.venue ? { instrumentVenue: watch.instrument.venue } : {}),
-              ...(watch.instrument?.instrumentId ? { instrumentId: watch.instrument.instrumentId } : {}),
-              ...(watch.coverage?.positionKey ? { positionKey: watch.coverage.positionKey } : {}),
-              ...(watch.schemaVersion ? { schemaVersion: watch.schemaVersion } : {}),
-            },
-          );
+          const watchWakeMode = getWakeMode('watch_threshold');
+          // context mode: emit the event to the outbound stream but do NOT
+          // enqueue agent.wake — the runtime records it as pending context.
+          // wake and batched modes both enqueue; the per-source cooldown
+          // mechanism already defers batched wakes until eligibility.
+          if (watchWakeMode !== 'context') {
+            await enqueueWake(
+              agentId,
+              eventId,
+              `${effectiveSymbol} crossed ${watch.condition === 'above' ? 'above' : 'below'} ${watch.thresholdPrice}`,
+              'watch_threshold',
+              {
+                symbol: effectiveSymbol,
+                chain: effectiveChain,
+                condition: watch.condition,
+                thresholdPrice: watch.thresholdPrice,
+                currentPrice: priceData.priceUsd,
+                stale: priceData.stale,
+                triggeredAt: payload.triggeredAt,
+                watchId: watch.watchId,
+                ...(watch.note ? { note: watch.note } : {}),
+                ...(watch.purpose ? { purpose: watch.purpose } : {}),
+                ...(watch.instrument?.venue ? { instrumentVenue: watch.instrument.venue } : {}),
+                ...(watch.instrument?.instrumentId ? { instrumentId: watch.instrument.instrumentId } : {}),
+                ...(watch.coverage?.positionKey ? { positionKey: watch.coverage.positionKey } : {}),
+                ...(watch.schemaVersion ? { schemaVersion: watch.schemaVersion } : {}),
+              },
+            );
+          }
           metrics.eventsEmitted++;
           logger.info({ agentId, watchId: watch.watchId, symbol: effectiveSymbol, pinnedChain: effectiveChain }, 'Watch triggered');
         }
@@ -371,22 +392,25 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           if (rateLimited) continue;
           await publisher.emitMarketDiscoveryDetected(agentId, payload);
           await incrementRateCounter(agentId, 'discovery_delta');
-          await enqueueWake(
-            agentId,
-            eventId,
-            `${token.symbol} entered top discovery set`,
-            'discovery_delta',
-            {
-              symbol: token.symbol,
-              network: token.network,
-              address: token.address,
-              reason: 'entered_top_set',
-              rank: token.rank,
-              liquidityUsd: token.liquidityUsd,
-              volume24hUsd: token.volume24hUsd,
-              detectedAt: payload.detectedAt,
-            },
-          );
+          const ddWakeMode = getWakeMode('discovery_delta');
+          if (ddWakeMode !== 'context') {
+            await enqueueWake(
+              agentId,
+              eventId,
+              `${token.symbol} entered top discovery set`,
+              'discovery_delta',
+              {
+                symbol: token.symbol,
+                network: token.network,
+                address: token.address,
+                reason: 'entered_top_set',
+                rank: token.rank,
+                liquidityUsd: token.liquidityUsd,
+                volume24hUsd: token.volume24hUsd,
+                detectedAt: payload.detectedAt,
+              },
+            );
+          }
         }
 
         logger.info({ symbol: token.symbol, network: token.network }, 'Discovery delta: entered top set');
@@ -425,22 +449,25 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             if (rateLimited) continue;
             await publisher.emitMarketDiscoveryDetected(agentId, payload);
             await incrementRateCounter(agentId, 'discovery_delta');
-            await enqueueWake(
-              agentId,
-              eventId,
-              `${token.symbol} confirmed by multiple discovery vectors`,
-              'discovery_delta',
-              {
-                symbol: token.symbol,
-                network: token.network,
-                address: token.address,
-                reason: 'multi_vector_confirmation',
-                rank: token.rank,
-                liquidityUsd: token.liquidityUsd,
-                volume24hUsd: token.volume24hUsd,
-                detectedAt: payload.detectedAt,
-              },
-            );
+            const ddWakeMode = getWakeMode('discovery_delta');
+            if (ddWakeMode !== 'context') {
+              await enqueueWake(
+                agentId,
+                eventId,
+                `${token.symbol} confirmed by multiple discovery vectors`,
+                'discovery_delta',
+                {
+                  symbol: token.symbol,
+                  network: token.network,
+                  address: token.address,
+                  reason: 'multi_vector_confirmation',
+                  rank: token.rank,
+                  liquidityUsd: token.liquidityUsd,
+                  volume24hUsd: token.volume24hUsd,
+                  detectedAt: payload.detectedAt,
+                },
+              );
+            }
           }
 
           logger.info({ symbol: token.symbol, network: token.network }, 'Discovery delta: multi vector confirmation');
@@ -487,22 +514,25 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             if (rateLimited) continue;
             await publisher.emitMarketDiscoveryDetected(agentId, payload);
             await incrementRateCounter(agentId, 'discovery_delta');
-            await enqueueWake(
-              agentId,
-              eventId,
-              `${token.symbol} reappeared in discovery set`,
-              'discovery_delta',
-              {
-                symbol: token.symbol,
-                network: token.network,
-                address: token.address,
-                reason: 'reappeared_after_cooldown',
-                rank: token.rank,
-                liquidityUsd: token.liquidityUsd,
-                volume24hUsd: token.volume24hUsd,
-                detectedAt: payload.detectedAt,
-              },
-            );
+            const ddWakeMode = getWakeMode('discovery_delta');
+            if (ddWakeMode !== 'context') {
+              await enqueueWake(
+                agentId,
+                eventId,
+                `${token.symbol} reappeared in discovery set`,
+                'discovery_delta',
+                {
+                  symbol: token.symbol,
+                  network: token.network,
+                  address: token.address,
+                  reason: 'reappeared_after_cooldown',
+                  rank: token.rank,
+                  liquidityUsd: token.liquidityUsd,
+                  volume24hUsd: token.volume24hUsd,
+                  detectedAt: payload.detectedAt,
+                },
+              );
+            }
           }
 
           logger.info({ symbol: token.symbol, network: token.network }, 'Discovery delta: reappeared after cooldown');
@@ -584,19 +614,22 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
         if (rateLimited) continue;
         await publisher.emitMarketRegimeChanged(agentId, payload);
         await incrementRateCounter(agentId, 'regime_change');
-        await enqueueWake(
-          agentId,
-          eventId,
-          `${benchmarkSymbol} regime changed to ${currentState}`,
-          'regime_change',
-          {
-            benchmarkSymbol,
-            previousState,
-            currentState,
-            changedAt: payload.changedAt,
-            details: current.details,
-          },
-        );
+        const regimeWakeMode = getWakeMode('regime_change');
+        if (regimeWakeMode !== 'context') {
+          await enqueueWake(
+            agentId,
+            eventId,
+            `${benchmarkSymbol} regime changed to ${currentState}`,
+            'regime_change',
+            {
+              benchmarkSymbol,
+              previousState,
+              currentState,
+              changedAt: payload.changedAt,
+              details: current.details,
+            },
+          );
+        }
       }
 
       logger.info({ benchmarkSymbol, previousState, currentState }, 'Regime changed');

@@ -339,13 +339,13 @@ This phase filters **monitor-owned** sources only.
 | A1 | Replace single per-agent wake bucket with source-scoped `(agentId, source)` bucket in `monitor.ts` | DONE |
 | A2 | Add `marketIntelligence.wakePolicy` to `config/default.yaml` | DONE |
 | A3 | Extend `MarketIntelligenceConfigSchema` in `packages/domain/src/config/schema.ts` | DONE |
-| A4 | Write tests for source-scoped cooldown behavior | PENDING |
+| A4 | Write tests for source-scoped cooldown behavior | DONE |
 
 ### Part B — Batched and Context Delivery Modes
 
 | # | Task | Status |
 |---|------|--------|
-| B1 | Add mode-based delivery (wake/batched/context) in `monitor.ts` | PENDING |
+| B1 | Add mode-based delivery (wake/batched/context) in `monitor.ts` | DONE |
 | B2 | Add structured runtime storage for pending market-monitor context events in `runtime-composition.ts` | PENDING |
 | B3 | Add stable digest for pending market context events in `tick-gates.ts` | PENDING |
 | B4 | Compute pending market-event digest before skip decision and render context in prompt in `agent.ts` | PENDING |
@@ -381,3 +381,12 @@ This phase filters **monitor-owned** sources only.
 | 2 | MEDIUM | `WakePolicyEntry` interface in monitor.ts doesn't declare `mode` field yet — forward-compat gap for Part B. |
 | 3 | LOW | YAML comment references `mode` but no mode entries exist yet (Part B). |
 | 4 | LOW | Schema `cooldownMs` minimum of 1000ms is undocumented.
+
+### [B1] Mode-Based Delivery (Monitor Side)
+
+| # | Severity | Issue |
+|---|----------|-------|
+| 1 | HIGH | Runtime-side work for context-mode events not yet implemented (deferred to B2-B5). `mode: context` at monitor level works but events are silently dropped until runtime support exists. |
+| 2 | MEDIUM | Missing test: `regime_change` with `wake` or `batched` mode — only `context` mode tested for regime_change. |
+| 3 | LOW | `batched` and `wake` are identical at monitor level (by design — differentiation is in cooldownMs). |
+| 4 | LOW | Default config doesn't include `mode` fields — all sources default to `'wake'`.
