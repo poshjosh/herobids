@@ -5,7 +5,6 @@ import type {
   RuntimeDescriptor,
   RuntimePort,
   RuntimeResourceProfile,
-  RuntimeTerminationEvent,
 } from '@herobids/domain';
 import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
 import { DockerRuntimeAdapter } from './docker-runtime-adapter.js';
@@ -183,17 +182,7 @@ export class AgentRuntimeLauncher {
       if (config.port instanceof DockerRuntimeAdapter) {
         this.dockerAdapter = config.port;
         this.dockerManager = config.port.getManager();
-        // Bridge Docker termination events → port termination contract.
-        // This ensures onTermination() subscribers on the port are notified
-        // when the Docker event stream detects a container crash.
-        this.dockerManager.addTerminationListener((agentId, sessionId, reason) => {
-          this.dockerAdapter?.notifyTermination({
-            runtimeId: agentId,
-            agentId,
-            sessionId,
-            reason: reason as RuntimeTerminationEvent['reason'],
-          });
-        });
+        // Termination events are bridged by DockerRuntimeAdapter's own constructor.
       }
     } else {
       // Legacy path — construct DockerAgentManager internally from mode + dockerConfig
