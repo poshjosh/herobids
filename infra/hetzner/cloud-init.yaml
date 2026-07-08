@@ -6,6 +6,9 @@
 #   ${app_domain}                  — Application domain name
 #   ${deploy_ssh_private_key_b64}  — SSH deploy key (base64-encoded)
 #   ${server_name}                 — Server hostname
+#   ${environment}                 — Deployment environment: staging | production
+#   ${compose_overlay}             — Compose overlay filename (e.g. docker-compose.prod.yaml)
+#   ${env_file}                    — Environment file name (e.g. .env.prod)
 
 package_update: true
 package_upgrade: true
@@ -29,7 +32,7 @@ write_files:
     permissions: '0644'
     content: |
       # Daily Postgres backup with 14-day retention
-      0 3 * * * root docker compose -f /opt/herobids/docker-compose.yaml -f /opt/herobids/docker-compose.prod.yaml exec -T postgres pg_dump -U herobids herobids > /opt/herobids-backup/herobids-$(date +\%Y\%m\%d).sql 2>> /var/log/herobids-backup.log || logger -t herobids-backup "pg_dump failed"
+      0 3 * * * root docker compose -f /opt/herobids/docker-compose.yaml -f /opt/herobids/${compose_overlay} exec -T postgres pg_dump -U herobids herobids > /opt/herobids-backup/herobids-$(date +\%Y\%m\%d).sql 2>> /var/log/herobids-backup.log || logger -t herobids-backup "pg_dump failed"
 
   - path: /etc/systemd/system/herobids.service
     permissions: '0644'
@@ -42,8 +45,8 @@ write_files:
       [Service]
       Type=simple
       WorkingDirectory=/opt/herobids
-      ExecStart=docker compose -f /opt/herobids/docker-compose.yaml -f /opt/herobids/docker-compose.prod.yaml up
-      ExecStop=docker compose -f /opt/herobids/docker-compose.yaml -f /opt/herobids/docker-compose.prod.yaml down
+      ExecStart=docker compose -f /opt/herobids/docker-compose.yaml -f /opt/herobids/${compose_overlay} up
+      ExecStop=docker compose -f /opt/herobids/docker-compose.yaml -f /opt/herobids/${compose_overlay} down
       Restart=always
       RestartSec=10
 
@@ -93,8 +96,8 @@ runcmd:
   - git -C /opt/herobids config core.sshCommand "ssh -i /root/.ssh/deploy_key -o StrictHostKeyChecking=accept-new"
 
   # ── Create .env from example ─────────────────────────────
-  - cp -n /opt/herobids/.env.example /opt/herobids/.env
-  - chmod 600 /opt/herobids/.env
+  - cp -n /opt/herobids/.env.example /opt/herobids/${env_file}
+  - chmod 600 /opt/herobids/${env_file}
 
   # ── Setup backup directory ───────────────────────────────
   - mkdir -p /opt/herobids-backup
@@ -103,4 +106,4 @@ runcmd:
   - systemctl daemon-reload
   - systemctl enable herobids.service
 
-final_message: "Cloud-init complete. SSH in and upload .env, then run: cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --build"
+final_message: "Cloud-init complete (${environment}). SSH in and upload ${env_file}, then run: cd /opt/herobids && docker compose -f docker-compose.yaml -f ${compose_overlay} up -d --build"

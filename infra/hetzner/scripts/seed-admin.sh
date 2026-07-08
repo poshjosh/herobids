@@ -128,13 +128,14 @@ ADMIN_PASSWORD_B64="$(printf '%s' "${ADMIN_PASSWORD}" | base64 | tr -d '\n')"
 
 # Pipe the seed script into the running API service via docker compose exec.
 # The API service has Node.js, @herobids/db, and drizzle-orm already installed.
-ssh ${SSH_OPTS} "root@${SERVER_IP}" bash -s -- "${ADMIN_EMAIL_B64}" "${ADMIN_PASSWORD_B64}" "${PASS_DB_URL}" "${DB_URL_B64:-}" << 'REMOTE'
+ssh ${SSH_OPTS} "root@${SERVER_IP}" bash -s -- "${ADMIN_EMAIL_B64}" "${ADMIN_PASSWORD_B64}" "${PASS_DB_URL}" "${DB_URL_B64:-}" "${COMPOSE_OVERLAY}" << 'REMOTE'
 set -euo pipefail
 
 ADMIN_EMAIL_B64="$1"
 ADMIN_PASSWORD_B64="$2"
 PASS_DB_URL="$3"
 DB_URL_B64="${4:-}"
+COMPOSE_OVERLAY="$5"
 
 cd /opt/herobids
 
@@ -147,7 +148,7 @@ if [[ "${PASS_DB_URL}" -eq 1 ]]; then
   DOCKER_EXEC_ARGS+=( -e "DB_URL_B64=${DB_URL_B64}" )
 fi
 
-docker compose -f docker-compose.yaml -f docker-compose.prod.yaml exec \
+docker compose -f docker-compose.yaml -f "${COMPOSE_OVERLAY}" exec \
   "${DOCKER_EXEC_ARGS[@]}" \
   api node --input-type=module << 'NODESCRIPT'
 import crypto from 'node:crypto';

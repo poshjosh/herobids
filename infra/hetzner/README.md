@@ -64,7 +64,7 @@ infra/hetzner/
 ## Architecture
 
 ```
-Internet (herobids.com)
+Internet (herobids.com / staging.herobids.com)
   │
   └─ Caddy (TLS termination, port 80/443, Let's Encrypt auto-renewal)
        ├─ /health          → api:3000
@@ -85,6 +85,50 @@ Host-level security:
   UFW firewall (configured by cloud-init) allows only ports 22, 80, 443.
   Docker-published ports for postgres, redis, api, and web are blocked at the host
   level — all access goes through Caddy.
+```
+
+## Isolation Model
+
+Staging and production run on **separate Hetzner servers**. Each server has its own:
+
+| Resource | Isolation |
+|---|---|
+| **Server** | Separate Hetzner Cloud instance (different IP, hostname) |
+| **PostgreSQL** | Independent Docker named volume (`pgdata`) per server |
+| **Redis** | Independent container per server (no shared state) |
+| **Docker network** | Separate `herobids_default` bridge network per server |
+| **Caddy data** | Independent `caddy_data` and `caddy_config` volumes (TLS certs per domain) |
+| **Evaluation data** | Independent `evaldata` volume per server |
+| **Secrets** | Separate `.env.staging` and `.env.prod` files |
+
+Because Docker named volumes are local to each host, the separate-server model provides full
+data isolation without any additional configuration. Staging mistakes cannot affect production
+state.
+
+Both environments share the same:
+- Terraform configuration (`main.tf`, `variables.tf`, `cloud-init.yaml`)
+- Docker base compose file (`docker-compose.yaml`)
+- Codebase (deployed from the same git repo and branch)
+
+Environment differentiation comes from `terraform.tfvars` values (server name, domain, compose
+overlay selection) and environment-specific `.env` files.
+
+### Server Lifecycle Protection
+
+Production servers have `prevent_destroy = true` in Terraform to guard against accidental
+`terraform destroy`. Staging servers do **not** have this protection — they can be torn down
+and recreated freely for iteration.
+
+To intentionally destroy a production server:
+1. Temporarily set `environment = "staging"` in `terraform.tfvars`, run `terraform apply`,
+   then `terraform destroy`.
+2. Or: `terraform state rm 'hcloud_server.default'` then `terraform destroy`.
+
+This protection is enforced in `main.tf` via:
+```hcl
+lifecycle {
+  prevent_destroy = var.environment == "production"
+}
 ```
 
 ## Prerequisites
