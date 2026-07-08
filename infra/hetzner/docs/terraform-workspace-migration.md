@@ -29,6 +29,8 @@ cp terraform.tfstate terraform.tfstate.pre-migration.backup
 terraform workspace new -state=terraform.tfstate staging
 ```
 
+> **Ignore this message:** Terraform prints *"You're now on a new, empty workspace"* after every `workspace new`, even when the `-state` flag populated it. Your staging workspace **does** contain the state — you'll verify this in step 3.
+
 > ⚠️ **CRITICAL: Stop here until step 4 is complete.** Between steps 2 and 4, both the `default` and `staging` workspaces reference the same live Hetzner resources. Do NOT run `terraform apply`, `terraform destroy`, or `terraform plan` against the `default` workspace — you could modify or destroy live staging infrastructure.
 
 ```bash
@@ -54,7 +56,7 @@ mv terraform.tfstate.backup terraform.tfstate.backup.archived 2>/dev/null || tru
 
 # 5. Confirm the default workspace is now empty.
 terraform workspace select default
-terraform state list   # should show no resources
+terraform state list   # "No state file was found!" is EXPECTED — default is empty ✓
 ```
 
 ## Verification
