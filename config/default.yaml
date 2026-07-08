@@ -573,10 +573,13 @@ marketIntelligence:
   wakeCooldownMs: 30000            # minimum gap between wakes to the same agent
   wakePolicy:                      # per-source wake policy (cooldown, mode). Falls back to wakeCooldownMs for unknown sources.
     watch_threshold:
+      mode: wake                   # immediate wake — urgent actionable signals
       cooldownMs: 15000
     discovery_delta:
+      mode: batched                # delayed wake — bounded by cooldown
       cooldownMs: 300000
     regime_change:
+      mode: batched                # delayed wake — bounded by cooldown
       cooldownMs: 120000
 
 # Alerting — dispatches journal events to Telegram channels.
