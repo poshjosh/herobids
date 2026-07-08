@@ -95,3 +95,99 @@ variable "app_domain" {
   description = "Application domain name. Convention: herobids.com (production), staging.herobids.com (staging)."
   default     = "herobids.com"
 }
+
+# ── Nomad Orchestration ───────────────────────────────────
+
+variable "enable_nomad" {
+  type        = bool
+  description = "Feature flag: provision Nomad cluster, private network, and agent nodes. Disable for environments that only need the single-server control plane."
+  default     = true
+}
+
+variable "nomad_version" {
+  type        = string
+  description = "Nomad version to install on servers and agent nodes. Do NOT include the Debian package revision suffix (e.g., use '1.9.7' not '1.9.7-1')."
+  default     = "1.9.7"
+}
+
+# ── Private Network ───────────────────────────────────────
+
+variable "network_zone" {
+  type        = string
+  description = "Hetzner Cloud network zone for the private network (eu-central)."
+  default     = "eu-central"
+}
+
+variable "network_ip_range" {
+  type        = string
+  description = "CIDR range for the environment's private network. Must not overlap with other environments in the same Hetzner project."
+  default     = "10.0.0.0/16"
+
+  validation {
+    condition     = can(cidrhost(var.network_ip_range, 0))
+    error_message = "network_ip_range must be a valid CIDR notation (e.g., 10.0.0.0/16)."
+  }
+}
+
+variable "subnet_ip_range" {
+  type        = string
+  description = "CIDR range for the private network subnet within network_ip_range."
+  default     = "10.0.0.0/24"
+
+  validation {
+    condition     = can(cidrhost(var.subnet_ip_range, 0))
+    error_message = "subnet_ip_range must be a valid CIDR notation (e.g., 10.0.0.0/24)."
+  }
+
+  # ⚠️  MANUAL CHECK REQUIRED: Terraform cannot fully validate that subnet_ip_range
+  #     is within network_ip_range. The hcloud_network_subnet precondition catches
+  #     prefix-length mismatches, but an operator MUST verify that the subnet
+  #     address range (e.g. 10.0.0.0/24) falls within the network range (e.g. 10.0.0.0/16).
+  #     A mismatch (subnet 10.1.0.0/24 inside network 10.0.0.0/16) will fail at apply time.
+}
+
+# ── Agent Node Pool ───────────────────────────────────────
+
+variable "agent_node_count" {
+  type        = number
+  description = "Number of Nomad client (agent) nodes to provision. The autoscaler (Phase 6) adjusts this count at runtime."
+  default     = 0
+
+  validation {
+    condition     = var.agent_node_count >= 0
+    error_message = "agent_node_count must be >= 0."
+  }
+}
+
+variable "min_agent_nodes" {
+  type        = number
+  description = "Minimum number of agent nodes (scale-in floor). Enforced by the nightly scale-in routine."
+  default     = 0
+
+  validation {
+    condition     = var.min_agent_nodes >= 0
+    error_message = "min_agent_nodes must be >= 0."
+  }
+}
+
+variable "max_agent_nodes" {
+  type        = number
+  description = "Maximum number of agent nodes (scale-out ceiling). Enforced by the autoscale loop."
+  default     = 5
+
+  validation {
+    condition     = var.max_agent_nodes >= 0
+    error_message = "max_agent_nodes must be >= 0."
+  }
+}
+
+variable "agent_node_server_type" {
+  type        = string
+  description = "Hetzner instance type for agent (Nomad client) nodes."
+  default     = "cpx21"
+
+  validation {
+    condition     = can(regex("^(cx|ccx|cpx|CAX)\\d+$", var.agent_node_server_type))
+    error_message = "agent_node_server_type must be a valid Hetzner instance type (e.g., cpx21, cx32, ccx53)."
+  }
+}

@@ -71,25 +71,28 @@ All guards key off `NODE_ENV` which is set correctly per environment in the comp
 
 ```
 infra/hetzner/
-├── main.tf                    # Terraform: server, firewall, SSH key
-├── variables.tf               # Terraform: input variables (includes environment)
-├── outputs.tf                 # Terraform: output values (IPs, URLs, SSH command)
-├── cloud-init.yaml            # First-boot provisioning (Docker, UFW, git clone, backups)
-├── terraform.tfvars.example   # Template for terraform variables
-├── deploy.sh                  # Full deploy orchestrator (env → push → seed → verify)
-├── README.md                  # This file
+├── main.tf                         # Terraform: server, firewall, SSH key, network, agent pool
+├── variables.tf                    # Terraform: input variables (includes environment, Nomad, agent pool)
+├── outputs.tf                      # Terraform: output values (IPs, URLs, SSH command, Nomad cluster)
+├── cloud-init.yaml                 # Control-plane first-boot provisioning (Docker, Nomad server, UFW, git clone)
+├── cloud-init-nomad-client.yaml    # Agent node first-boot provisioning (Docker, Nomad client, UFW)
+├── terraform.tfvars.example        # Template for terraform variables (single-file setup)
+├── staging.tfvars.example          # Staging-specific tfvars template
+├── production.tfvars.example       # Production-specific tfvars template
+├── deploy.sh                       # Full deploy orchestrator (env → push → seed → verify)
+├── README.md                       # This file
 └── scripts/
-    ├── _ssh_opts.sh           # Shared SSH options + environment helpers
-    ├── provision.sh           # Terraform init + apply
-    ├── push.sh                # Deploy latest code to server (git pull → build → compose up)
-    ├── setup-env.sh           # Upload .env file to server
-    ├── seed-admin.sh          # Create or promote admin user on the server
-    ├── logs.sh                # Stream container logs from the server
-    ├── reset.sh               # Wipe DB, Redis, Caddy; fresh start
-    ├── reset-and-run.sh       # Nuclear reset + full provision
-    ├── create-agents.sh       # Create agents on a HeroBids instance
-    ├── maintenance-restart.sh         # Server-side agent container restart
-    └── maintenance-restart-from-local.sh  # Run maintenance restart from local machine
+    ├── _ssh_opts.sh                # Shared SSH options + environment helpers
+    ├── provision.sh                # Terraform init + plan + apply (supports --var-file)
+    ├── push.sh                     # Deploy latest code to server (git pull → build → compose up)
+    ├── setup-env.sh                # Upload .env file to server
+    ├── seed-admin.sh               # Create or promote admin user on the server
+    ├── logs.sh                     # Stream container logs from the server
+    ├── reset.sh                    # Wipe DB, Redis, Caddy; fresh start
+    ├── reset-and-run.sh            # Nuclear reset + full provision
+    ├── create-agents.sh            # Create agents on a HeroBids instance
+    ├── maintenance-restart.sh              # Server-side agent container restart
+    └── maintenance-restart-from-local.sh   # Run maintenance restart from local machine
 ```
 
 ## Architecture
@@ -118,6 +121,124 @@ Host-level security:
   level — all access goes through Caddy.
 ```
 
+## Nomad Cluster Topology
+
+When `enable_nomad = true` (default), each environment provisions its own Nomad cluster
+for agent orchestration. The control plane remains on Docker Compose; agent containers
+are scheduled by Nomad across disposable agent nodes.
+
+### Cluster Layout
+
+```
+┌── Control Plane (Docker Compose) ──────────────────────┐
+│  Caddy  │  API  │  Web  │  Worker  │  Postgres  │  Redis  │
+│                          │                              │
+│                   Nomad Server                          │
+│                   (port 4646/4647/4648)                  │
+└──────────────────────┬──────────────────────────────────┘
+                       │ Private Network (10.x.0.0/16)
+       ┌───────────────┼───────────────┐
+       │               │               │
+┌──────┴──────┐ ┌──────┴──────┐ ┌──────┴──────┐
+│ Agent Node 1│ │ Agent Node 2│ │ Agent Node N│
+│ Nomad Client│ │ Nomad Client│ │ Nomad Client│
+│ Docker      │ │ Docker      │ │ Docker      │
+└─────────────┘ └─────────────┘ └─────────────┘
+```
+
+### Nomad Topology (Phase 2)
+
+- **Nomad server**: runs on the control-plane host (single server, no HA quorum).
+  Installed natively via cloud-init. Configured as server-only (`client { enabled = false }`).
+- **Nomad clients**: run on every agent node. Installed via `cloud-init-nomad-client.yaml`.
+  Agents join the cluster using the server's private IP over the private network.
+- **No HA quorum**: the single-server topology is sufficient for the initial scale target
+  (200-2000 agents). HA Nomad (3-5 servers) can be added later if needed.
+
+### Private Network
+
+Each environment gets its own Hetzner Cloud Network (`hcloud_network`) with a `/16` CIDR
+and a `/24` subnet. All control-plane and agent-node communication uses this private network.
+
+| Environment | Network CIDR | Subnet CIDR |
+|---|---|---|
+| **Staging** | `10.0.0.0/16` | `10.0.0.0/24` |
+| **Production** | `10.1.0.0/16` | `10.1.0.0/24` |
+
+> ⚠️ If staging and production share a Hetzner project, their network CIDRs MUST NOT overlap.
+
+### Agent Nodes
+
+Agent nodes are disposable Nomad clients — cattle, not pets. They run only Docker + Nomad
+and have no persistent state. Key characteristics:
+
+- **Server type**: `cpx21` by default (2 vCPU, 4 GB RAM, 80 GB disk). Configurable via `agent_node_server_type`.
+- **Firewall**: only SSH (port 22) from the internet. All Nomad traffic is internal on the private network.
+- **Labels**: each node registers `environment`, `node_pool`, and `node_index` metadata for Nomad scheduling constraints.
+- **Lifecycle**: agent nodes can be destroyed and recreated safely. The autoscaler (Phase 6) will manage node count.
+
+### Port Reference
+
+| Port | Service | Interface | Purpose |
+|---|---|---|---|
+| 4646 | Nomad HTTP API | Private network | CLI, UI, and worker adapter access to Nomad server |
+| 4647 | Nomad RPC | Private network | Server ↔ client communication |
+| 4648 | Nomad Serf | Private network | Gossip protocol for cluster membership |
+| 22 | SSH | Public internet | Management access to all nodes |
+
+### Feature Flag
+
+Nomad infrastructure is toggleable via the `enable_nomad` Terraform variable. When `false`:
+- No private network is created.
+- No Nomad server is installed on the control plane.
+- No agent nodes are provisioned.
+- The existing single-server Docker Compose deployment is unchanged.
+
+Set `enable_nomad = false` in your `terraform.tfvars` to disable all Nomad resources.
+
+### Provisioning with Nomad
+
+```bash
+# Staging with Nomad + 1 agent node
+cd infra/hetzner
+cp staging.tfvars.example staging.tfvars
+# Edit staging.tfvars: set agent_node_count = 1, fill in secrets
+./scripts/provision.sh --env staging --var-file staging.tfvars
+
+# Production with Nomad + 2 agent nodes (separate network range)
+cp production.tfvars.example production.tfvars
+# Edit production.tfvars: set agent_node_count = 2, fill in secrets
+./scripts/provision.sh --env production --var-file production.tfvars
+```
+
+### Verifying the Cluster
+
+After provisioning, verify the Nomad cluster is healthy:
+
+```bash
+# SSH to the control-plane server
+ssh root@<control-plane-ip>
+
+# Check Nomad server status
+nomad server members
+
+# Check Nomad client nodes (should list all agent nodes)
+nomad node status
+
+# Check cluster health from agent nodes
+ssh root@<agent-node-ip>
+nomad node status -self
+```
+
+### Agent Node Cloud-Init
+
+Agent nodes use a dedicated cloud-init template (`cloud-init-nomad-client.yaml`) that:
+1. Installs Docker CE and Nomad.
+2. Configures Nomad as a client with Docker plugin.
+3. Joins the cluster via `retry_join` to the Nomad server's private IP.
+4. Sets up UFW to allow only SSH from the internet — all other traffic is private-network only.
+5. Registers `environment`, `node_pool`, and `node_index` metadata for scheduling.
+
 ## Isolation Model
 
 Staging and production run on **separate Hetzner servers**. Each server has its own:
@@ -137,12 +258,13 @@ data isolation without any additional configuration. Staging mistakes cannot aff
 state.
 
 Both environments share the same:
-- Terraform configuration (`main.tf`, `variables.tf`, `cloud-init.yaml`)
+- Terraform configuration (`main.tf`, `variables.tf`, `cloud-init.yaml`, `cloud-init-nomad-client.yaml`)
 - Docker base compose file (`docker-compose.yaml`)
 - Codebase (deployed from the same git repo and branch)
 
 Environment differentiation comes from `terraform.tfvars` values (server name, domain, compose
-overlay selection) and environment-specific `.env` files.
+overlay selection, network IP range, agent node count) and environment-specific `.env` files.
+Per-environment `staging.tfvars` and `production.tfvars` templates are provided for clarity.
 
 ### Server Lifecycle Protection
 
@@ -174,13 +296,19 @@ lifecycle {
 ### Production
 
 ```bash
-# 1. Copy and fill in terraform variables
-# Set environment = "production" in terraform.tfvars (or leave default).
+# Option A: Single-file setup (traditional)
 cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars — fill in hcloud_token, ssh_public_key_path, deploy_ssh_private_key, git_repo_url
+# edit terraform.tfvars — set environment = "production", fill in secrets
 
-# 2. Provision the server (Terraform init + apply)
+# Option B: Per-environment tfvars (recommended for multi-env clarity)
+cp production.tfvars.example production.tfvars
+# edit production.tfvars — fill in hcloud_token, ssh_public_key_path, deploy_ssh_private_key, git_repo_url
+
+# 2. Provision the server (Terraform init + plan + apply)
+# With Option A:
 ./scripts/provision.sh
+# With Option B:
+./scripts/provision.sh --env production --var-file production.tfvars
 
 # 3. Copy and fill in environment variables
 cp ../../.env.example .env.prod
@@ -200,15 +328,22 @@ ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=strong-pass ./scripts/seed-admin.sh
 ### Staging
 
 ```bash
-# 1. Copy and fill in terraform variables for staging
+# Option A: Edit terraform.tfvars for staging
 cp terraform.tfvars.example terraform.tfvars
 # edit terraform.tfvars:
 #   environment = "staging"
 #   server_name = "herobids-staging"   # optional — follows convention
 #   app_domain  = "staging.herobids.com"
 
+# Option B: Use per-environment tfvars (recommended)
+cp staging.tfvars.example staging.tfvars
+# edit staging.tfvars — fill in secrets, agent_node_count = 1 for Nomad
+
 # 2. Provision the staging server
+# With Option A:
 ./scripts/provision.sh --env staging
+# With Option B:
+./scripts/provision.sh --env staging --var-file staging.tfvars
 
 # 3. Create staging env file
 cp ../../.env.example .env.staging
@@ -226,11 +361,39 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=test-pass ./scripts/seed-admin.sh -
 
 ### Managing Terraform State Per Environment
 
-You need a separate `terraform.tfvars` for each environment because each points to a
-different server, domain, and lifecycle policy. There is only one active `terraform.tfvars`
-file at a time — Terraform reads `terraform.tfvars` from the current directory.
+Each environment needs its own set of variable values because each points to a
+different server, domain, network IP range, lifecycle policy, and agent node pool.
+There are two supported approaches:
 
-**Recommended workflow: keep source-of-truth files and symlink the active one.**
+**Approach A: `--var-file` (recommended for Phase 2+).**
+
+Use per-environment tfvars files directly. No symlinks needed.
+
+```bash
+cd infra/hetzner
+
+# Provision staging
+cp staging.tfvars.example staging.tfvars
+# edit staging.tfvars with staging values
+./scripts/provision.sh --env staging --var-file staging.tfvars
+
+# Provision production
+cp production.tfvars.example production.tfvars
+# edit production.tfvars with production values
+./scripts/provision.sh --env production --var-file production.tfvars
+```
+
+The `--var-file` flag is passed through to `terraform plan` and `terraform apply`.
+Ad-hoc terraform commands must also include `-var-file`:
+
+```bash
+terraform plan -var-file=staging.tfvars
+terraform output -var-file=staging.tfvars
+```
+
+**Approach B: Symlink (legacy, simpler for single-env workflows).**
+
+Keep source-of-truth tfvars files and symlink the active one as `terraform.tfvars`.
 
 ```bash
 # Create the source-of-truth files (only needed once)

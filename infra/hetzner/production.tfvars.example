@@ -1,24 +1,20 @@
 # ─────────────────────────────────────────────────────────────
-# Terraform Variables Template — Herobids Hetzner Deployment
+# Production Terraform Variables — Herobids Hetzner Deployment
 # ─────────────────────────────────────────────────────────────
 #
-# Copy this file to terraform.tfvars and fill in your values:
+# Copy this file to production.tfvars and fill in your values:
 #
-#   cp terraform.tfvars.example terraform.tfvars
-#
-# For environment-specific setup, use the separate templates:
-#   cp staging.tfvars.example staging.tfvars
 #   cp production.tfvars.example production.tfvars
 #
-# terraform.tfvars is gitignored — never commit real secrets.
+# Then provision with:
+#   ./scripts/provision.sh --env production --var-file production.tfvars
+#
+# production.tfvars is gitignored — never commit real secrets.
 # ─────────────────────────────────────────────────────────────
 
 # ── Environment ───────────────────────────────────────────
 
-# environment = "production"   # staging | production (default: production)
-#                              # Controls naming conventions, labels, and compose overlay selection.
-#                              #   production → server_name=herobids, app_domain=herobids.com
-#                              #   staging    → server_name=herobids-staging, app_domain=staging.herobids.com
+environment = "production"
 
 # ── Provider ──────────────────────────────────────────────
 
@@ -26,7 +22,7 @@ hcloud_token = "your-hetzner-cloud-api-token"  # required, sensitive
 
 # ── Server ────────────────────────────────────────────────
 
-# server_name = "herobids"          # override if default convention doesn't fit
+server_name = "herobids"
 # server_type = "cx23"
 # location    = "fsn1"
 # image       = "ubuntu-24.04"
@@ -45,35 +41,35 @@ EOT
 # ── Deployment ────────────────────────────────────────────
 
 git_repo_url = "git@github.com:your-org/herobids.git"  # required
-
 # git_branch = "main"
-# app_domain = "herobids.com"
+app_domain = "herobids.com"
 
-# ── Nomad Orchestration (Feature 004 — Agent Orchestration) ──
+# ── Nomad Orchestration ───────────────────────────────────
 
-# enable_nomad = true            # Feature flag: provision Nomad cluster + agent nodes.
-#                                # Set to false for single-server environments without agent orchestration.
-# nomad_version = "1.9.7"       # Nomad version to install
+# enable_nomad = true            # feature flag
+# nomad_version = "1.9.7"
 
 # ── Private Network ───────────────────────────────────────
-# Each environment gets its own private network for control-plane ↔ agent node communication.
-# Staging and production MUST use non-overlapping IP ranges if they share a Hetzner project.
+# Production network: 10.1.0.0/16 (do NOT overlap with staging's 10.0.0.0/16)
+#
+# ⚠️  MANUAL CHECK REQUIRED: Verify subnet_ip_range falls within network_ip_range.
+#     Terraform cannot fully validate CIDR containment at plan time.
+#     Example: network_ip_range = "10.1.0.0/16" + subnet_ip_range = "10.1.0.0/24" ✓
+#              network_ip_range = "10.1.0.0/16" + subnet_ip_range = "10.0.0.0/24" ✗
 
-# network_zone     = "eu-central"        # Hetzner network zone
-# network_ip_range = "10.0.0.0/16"       # Private network CIDR (staging default)
-#                                         # Production: use 10.1.0.0/16
-# subnet_ip_range  = "10.0.0.0/24"       # Subnet within network_ip_range
+# network_zone     = "eu-central"
+# network_ip_range = "10.1.0.0/16"
+# subnet_ip_range  = "10.1.0.0/24"
 
 # ── Agent Node Pool ───────────────────────────────────────
-# Agent nodes are disposable Nomad clients. The autoscaler (Phase 6) adjusts agent_node_count at runtime.
 
-# agent_node_count        = 0         # Current number of agent nodes
-# min_agent_nodes         = 0         # Scale-in floor
-# max_agent_nodes         = 5         # Scale-out ceiling
-# agent_node_server_type  = "cpx21"   # Hetzner instance type for agent nodes
+# agent_node_count        = 0    # autoscaler adjusts at runtime
+# min_agent_nodes         = 1    # keep at least 1 node
+# max_agent_nodes         = 10   # room to grow
+# agent_node_server_type  = "cpx21"
 
 # ─────────────────────────────────────────────────────────────
 # Sensitive variables (hcloud_token, deploy_ssh_private_key)
 # are marked sensitive in Terraform and will not appear in
-# plan/apply output. Store terraform.tfvars securely.
+# plan/apply output. Store production.tfvars securely.
 # ─────────────────────────────────────────────────────────────

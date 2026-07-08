@@ -9,7 +9,7 @@
 | Phase | Status |
 |-------|--------|
 | Phase 1 - Orchestration contract | DONE |
-| Phase 2 - Cluster topology & infra | PENDING |
+| Phase 2 - Cluster topology & infra | DONE |
 | Phase 3 - Shared service connectivity | PENDING |
 | Phase 4 - Nomad runtime adapter | PENDING |
 | Phase 5 - Per-tier resource profiles | PENDING |
@@ -199,7 +199,7 @@ The codebase can support more than one runtime backend without duplicating lifec
 1. existing Docker-backed behavior still passes targeted tests
 2. the new port is narrow enough that a Nomad adapter can implement it without leaking Docker assumptions
 
-### Phase 2 - Define cluster topology and Hetzner infrastructure split **[PENDING]**
+### Phase 2 - Define cluster topology and Hetzner infrastructure split **[DONE]**
 
 #### Goal
 
@@ -545,6 +545,19 @@ This feature is complete when all of the following are true:
 - **Impact:** None currently — no operator config uses `0` for the main resources, and `maxWallClockMs` is not consumed by any adapter yet.
 - **Fix:** Use `??` consistently: `this.defaultResources.memoryLimitMb ?? 512`.
 - **File:** `apps/worker/src/agents/agent-runtime-launcher.ts`
+
+### [Phase 2] Private network UFW rules only open Nomad ports, not Redis/Postgres (MEDIUM)
+- `cloud-init.yaml` opens ports 4646–4648 (Nomad) from private subnet but does NOT open 6379 (Redis) or 5432 (Postgres). Agent nodes can't reach shared services yet.
+- **Impact:** Non-blocking for Phase 2. Phase 3 is explicitly designed to address this. No agents run on agent nodes until Phase 4.
+- **Fix:** Add Redis/Postgres UFW rules in Phase 3.
+
+### [Phase 2] Competing tfvars templates (LOW)
+- Three tfvars templates exist: `terraform.tfvars.example`, `staging.tfvars.example`, `production.tfvars.example`. May confuse new operators.
+- **Fix:** Add note directing to per-environment templates, or deprecate legacy template.
+
+### [Phase 2] Client cloud-init missing nomad_version format comment (LOW)
+- Control-plane `cloud-init.yaml` documents that `nomad_version` must not include the Debian revision suffix. Client template uses same pattern but lacks the comment.
+- **Fix:** Add the same note to `cloud-init-nomad-client.yaml` variable block.
 
 ## Follow-Up Work Explicitly Deferred
 
