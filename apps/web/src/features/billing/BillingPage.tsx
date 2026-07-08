@@ -17,12 +17,12 @@ function statusLabel(intl: ReturnType<typeof useIntl>, status: string): { text: 
   }
 }
 
-function usageAccountStatusLabel(status: string): { text: string; color: string } {
+function usageAccountStatusLabel(intl: ReturnType<typeof useIntl>, status: string): { text: string; color: string } {
   switch (status) {
-    case 'active': return { text: 'Active', color: 'var(--color-success)' };
-    case 'soft_limited': return { text: 'Approaching Limit', color: 'var(--color-warning)' };
-    case 'hard_limited': return { text: 'Usage Limit Reached', color: 'var(--color-danger, #e53e3e)' };
-    case 'suspended': return { text: 'Suspended', color: 'var(--color-text-muted)' };
+    case 'active': return { text: intl.formatMessage({ id: 'billing.usage.status.active' }), color: 'var(--color-success)' };
+    case 'soft_limited': return { text: intl.formatMessage({ id: 'billing.usage.status.softLimited' }), color: 'var(--color-warning)' };
+    case 'hard_limited': return { text: intl.formatMessage({ id: 'billing.usage.status.hardLimited' }), color: 'var(--color-danger, #e53e3e)' };
+    case 'suspended': return { text: intl.formatMessage({ id: 'billing.usage.status.suspended' }), color: 'var(--color-text-muted)' };
     default: return { text: status, color: 'var(--color-text-muted)' };
   }
 }
@@ -38,6 +38,7 @@ interface CreditGaugeProps {
   includedCreditMicrousd: number;
   status: string;
   planLabel?: string;
+  intl: ReturnType<typeof useIntl>;
 }
 
 function CreditGauge({
@@ -47,11 +48,12 @@ function CreditGauge({
   includedCreditMicrousd,
   status,
   planLabel,
+  intl,
 }: CreditGaugeProps) {
   const remainingPct = totalCreditMicrousd > 0 ? balanceMicrousd / totalCreditMicrousd : 0;
   const topUpMicrousd = Math.max(0, totalCreditMicrousd - includedCreditMicrousd);
-  const planName = planLabel || 'Pro plan';
-  const statusInfo = usageAccountStatusLabel(status);
+  const planName = planLabel || intl.formatMessage({ id: 'billing.usage.yourPlan' });
+  const statusInfo = usageAccountStatusLabel(intl, status);
 
   let barColor = 'var(--color-success)';
   if (remainingPct < 0.2) {
@@ -70,11 +72,11 @@ function CreditGauge({
         <div>
           {isOverLimit ? (
             <span style={{ fontSize: '24px', fontWeight: '600', color: 'var(--color-danger, #e53e3e)' }}>
-              {formatMicrousd(Math.abs(balanceMicrousd))} over limit
+              {formatMicrousd(Math.abs(balanceMicrousd))} {intl.formatMessage({ id: 'billing.usage.overLimit' })}
             </span>
           ) : (
             <span style={{ fontSize: '24px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
-              {formatMicrousd(balanceMicrousd)} left
+              {formatMicrousd(balanceMicrousd)} {intl.formatMessage({ id: 'billing.usage.creditLeft' })}
             </span>
           )}
         </div>
@@ -110,13 +112,13 @@ function CreditGauge({
 
       {/* Used this month */}
       <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
-        {formatMicrousd(usageChargeMicrousd)} used this month
+        {formatMicrousd(usageChargeMicrousd)} {intl.formatMessage({ id: 'billing.usage.usedThisMonth' })}
       </div>
 
       {/* Plan breakdown */}
       <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-        {formatMicrousd(includedCreditMicrousd)} {planName} included
-        {topUpMicrousd > 0 && <> + {formatMicrousd(topUpMicrousd)} top-ups</>}
+        {formatMicrousd(includedCreditMicrousd)} {intl.formatMessage({ id: 'billing.usage.includedWithPlan' }, { planName })}
+        {topUpMicrousd > 0 && <> + {formatMicrousd(topUpMicrousd)} {intl.formatMessage({ id: 'billing.usage.topUps' })}</>}
       </div>
     </div>
   );
@@ -321,8 +323,8 @@ export function BillingPage() {
         >
           <span>
             {checkoutBanner === 'success'
-              ? 'Payment successful — your credits will be applied shortly.'
-              : 'Checkout was cancelled — your payment was not processed.'}
+              ? intl.formatMessage({ id: 'billing.checkout.success' })
+              : intl.formatMessage({ id: 'billing.checkout.cancelled' })}
           </span>
           <button
             onClick={() => setCheckoutBanner(null)}
@@ -487,8 +489,8 @@ export function BillingPage() {
             fontSize: '13px',
           }}>
             {usageAccount.status === 'hard_limited'
-              ? 'Usage limit reached — AI agent actions are paused until your limit is adjusted or the billing period resets.'
-              : 'Approaching usage limit — agents may be paused if spending continues.'}
+              ? intl.formatMessage({ id: 'billing.usage.warning.hardLimited' })
+              : intl.formatMessage({ id: 'billing.usage.warning.softLimited' })}
           </div>
         )}
         <Card style={{ padding: '20px' }}>
@@ -528,6 +530,7 @@ export function BillingPage() {
                 includedCreditMicrousd={usageSummary.currentPeriod.includedCreditMicrousd}
                 status={usageAccount.status}
                 planLabel={summary?.planLabel}
+                intl={intl}
               />
 
               {usageSummary.warnings.some((w) => w.reached) && (
@@ -589,7 +592,7 @@ export function BillingPage() {
             variant="secondary"
             onClick={() => setShowDetails(!showDetails)}
           >
-            {showDetails ? 'Hide details ▾' : 'View details ▸'}
+            {showDetails ? intl.formatMessage({ id: 'billing.usage.hideDetails' }) : intl.formatMessage({ id: 'billing.usage.viewDetails' })}
           </Button>
         </div>
 

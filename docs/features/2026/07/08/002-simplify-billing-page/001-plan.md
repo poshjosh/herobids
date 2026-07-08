@@ -80,7 +80,7 @@ A billing page where the user instantly understands their credit situation at a 
 - The gauge replaces the current 4–5 field stat grid entirely.
 - When `balanceMicrousd <= 0`, the bar is empty and the text shows out-of-pocket spend: `$X.XX over limit`
 
-### Phase 2 — Reorganize card layout **[PENDING]**
+### Phase 2 — Reorganize card layout **[DONE]**
 
 **Files:**
 - `apps/web/src/features/billing/BillingPage.tsx`
@@ -188,3 +188,10 @@ billing.usage.totalCredit         "Total credit"
 | MEDIUM | M3 | Top-up row renders even without `currentPeriod` (gated on `usageAccount` only). | Minor UX inconsistency; align in follow-up. |
 | LOW | L1 | Hardcoded English strings from Phase 2 additions (toggle labels, section headers). | Handled in Phase 3. |
 | LOW | L2 | Spend Controls/Usage Filters have no visual container in details section, creating inconsistency with carded tables below. | Consider wrapping in shared `<Card>` or adding separator. |
+
+### [Phase 3] i18n Keys
+
+| Severity | # | Issue | Resolution |
+|---|---|---|---|
+| MEDIUM | N1-N23 | ~24 hardcoded English strings remain in details section, tables, empty states, pagination, filters, and `LEDGER_ENTRY_TYPE_LABELS`. These were pre-existing and not in Phase 3 scope. | File follow-up task for full i18n pass on detail sections (Phase 4 or separate). |
+| LOW | N24 | `LEDGER_ENTRY_TYPE_LABELS` static map has 8 hardcoded English labels. | Convert to i18n keys or `intl.formatMessage()` at render time. |
