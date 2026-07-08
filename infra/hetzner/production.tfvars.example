@@ -76,6 +76,19 @@ app_domain = "herobids.com"
 # scale_out_increment            = 1    # add 1 node per event
 # agent_memory_reservation_mb    = 256  # MB per agent slot (scheduling reservation)
 
+# ── Scale-In Configuration (Phase 7) ───────────────────────
+
+# enable_scale_in                    = false # set true to enable nightly scale-in
+# scale_in_drain_deadline_seconds    = 600   # max seconds to wait for drain
+# scale_in_max_nodes_per_run         = 1     # max nodes to drain per nightly run
+# scale_in_time_utc                  = 3     # UTC hour to run nightly scale-in (default: 3)
+
+# ── Placement-Failure Safety Net (Phase 7) ─────────────────
+
+# placement_failure_window_seconds   = 300   # lookback window for blocked evals
+# placement_failure_threshold        = 5     # blocked evals to trigger safety-net
+# placement_failure_cooldown_seconds = 600   # min seconds between safety-net triggers
+
 # ─────────────────────────────────────────────────────────────
 # Sensitive variables (hcloud_token, deploy_ssh_private_key)
 # are marked sensitive in Terraform and will not appear in

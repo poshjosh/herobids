@@ -254,3 +254,79 @@ variable "agent_memory_reservation_mb" {
     error_message = "agent_memory_reservation_mb must be >= 64."
   }
 }
+
+# ── Scale-In Configuration (Phase 7) ──────────────────────
+
+variable "enable_scale_in" {
+  type        = bool
+  description = "Feature flag: enable nightly scale-in (Phase 7). When true, the nomad-scale-in systemd timer drains idle agent nodes at the configured time. Set false to disable conservative scale-down."
+  default     = false
+}
+
+variable "scale_in_drain_deadline_seconds" {
+  type        = number
+  description = "Maximum seconds to wait for a draining node to empty its allocations before terraform destroy. Idle nodes drain immediately; this deadline covers nodes with residual system or terminal allocations."
+  default     = 600
+
+  validation {
+    condition     = var.scale_in_drain_deadline_seconds >= 60
+    error_message = "scale_in_drain_deadline_seconds must be >= 60."
+  }
+}
+
+variable "scale_in_max_nodes_per_run" {
+  type        = number
+  description = "Maximum number of agent nodes to drain and remove per nightly scale-in run. Keeps scale-in gradual; set higher for more aggressive cost reduction."
+  default     = 1
+
+  validation {
+    condition     = var.scale_in_max_nodes_per_run >= 1
+    error_message = "scale_in_max_nodes_per_run must be >= 1."
+  }
+}
+
+variable "scale_in_time_utc" {
+  type        = string
+  description = "UTC time for nightly scale-in, as a crontab-style hour field (0-23). The systemd timer fires daily at this hour. Default 3 = 3 AM UTC."
+  default     = "3"
+
+  validation {
+    condition     = can(regex("^\\d{1,2}$", var.scale_in_time_utc)) && tonumber(var.scale_in_time_utc) >= 0 && tonumber(var.scale_in_time_utc) <= 23
+    error_message = "scale_in_time_utc must be a number between 0 and 23 (UTC hour)."
+  }
+}
+
+# ── Placement-Failure Safety Net (Phase 7) ─────────────────
+
+variable "placement_failure_window_seconds" {
+  type        = number
+  description = "Time window (seconds) to look back for blocked resource-exhaustion evaluations. The safety-net watcher polls the Nomad evaluations API and triggers emergency scale-out when blocked eval count exceeds the threshold within this window."
+  default     = 300
+
+  validation {
+    condition     = var.placement_failure_window_seconds >= 60
+    error_message = "placement_failure_window_seconds must be >= 60."
+  }
+}
+
+variable "placement_failure_threshold" {
+  type        = number
+  description = "Number of resource-exhaustion blocked evaluations within the lookback window that triggers a safety-net scale-out. Set higher to reduce false positives; lower for faster reaction to capacity exhaustion."
+  default     = 5
+
+  validation {
+    condition     = var.placement_failure_threshold >= 1
+    error_message = "placement_failure_threshold must be >= 1."
+  }
+}
+
+variable "placement_failure_cooldown_seconds" {
+  type        = number
+  description = "Minimum seconds between consecutive safety-net scale-out triggers. Prevents cascading scale-out events from the placement-failure watcher."
+  default     = 600
+
+  validation {
+    condition     = var.placement_failure_cooldown_seconds >= 60
+    error_message = "placement_failure_cooldown_seconds must be >= 60."
+  }
+}

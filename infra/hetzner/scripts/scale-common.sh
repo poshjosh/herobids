@@ -281,3 +281,176 @@ dry_run_log() {
 is_dry_run() {
   [[ "${DRY_RUN}" == "true" ]]
 }
+
+# ─── Nomad node helpers (Phase 7) ─────────────────────────────────────────────
+#
+# These helpers are used by both check-placement-failures.sh (safety net) and
+# scale-in.sh (nightly drain). They provide a shared source of truth for node
+# inventory and drain operations, consistent with check-nomad-capacity.sh.
+
+# NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS — max time to wait for drain to complete
+NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS="${NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS:-600}"
+
+# list_eligible_agent_nodes — returns newline-separated Nomad node IDs for all
+# ready, eligible agent nodes (excluding the Nomad server if it runs a client).
+list_eligible_agent_nodes() {
+  local nodes_json
+  nodes_json="$(nomad_api GET "/v1/nodes" || true)"
+  if [[ -z "${nodes_json}" ]]; then
+    log "ERROR: Could not fetch node list from Nomad."
+    return 1
+  fi
+
+  echo "${nodes_json}" | jq -r '.[] | select(.Status == "ready" and .SchedulingEligibility == "eligible") | .ID'
+}
+
+# node_is_idle <node_id> — returns 0 if the node has zero non-terminal
+# allocations (running or pending), 1 otherwise.
+node_is_idle() {
+  local node_id="$1"
+
+  local allocs_json
+  allocs_json="$(nomad_api GET "/v1/node/${node_id}/allocations" || echo "[]")"
+
+  local running_count
+  running_count="$(echo "${allocs_json}" | jq -r '[.[] | select(.ClientStatus == "running" or .ClientStatus == "pending")] | length' 2>/dev/null || echo "0")"
+
+  [[ "${running_count}" -eq 0 ]]
+}
+
+# node_running_alloc_count <node_id> — returns the count of non-terminal
+# allocations (running or pending) on the given node.
+node_running_alloc_count() {
+  local node_id="$1"
+
+  local allocs_json
+  allocs_json="$(nomad_api GET "/v1/node/${node_id}/allocations" || echo "[]")"
+
+  echo "${allocs_json}" | jq -r '[.[] | select(.ClientStatus == "running" or .ClientStatus == "pending")] | length' 2>/dev/null || echo "0"
+}
+
+# mark_node_ineligible <node_id> — set a node's scheduling eligibility to
+# "ineligible", preventing new placements on it.
+mark_node_ineligible() {
+  local node_id="$1"
+
+  if is_dry_run; then
+    log "[DRY-RUN] Would mark node ${node_id} ineligible."
+    return 0
+  fi
+
+  # Nomad expects a JSON body with the Eligibility field.
+  # POST /v1/node/{nodeId}/eligibility
+  nomad_api POST "/v1/node/${node_id}/eligibility" \
+    -H "Content-Type: application/json" \
+    -d '{"Eligibility": "ineligible"}' > /dev/null || {
+    log "ERROR: Failed to mark node ${node_id} ineligible."
+    return 1
+  }
+  log "Node ${node_id} marked ineligible."
+}
+
+# drain_node <node_id> [<deadline_seconds>] — initiate a drain on the given node.
+# The drain deadline defaults to NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS.
+# A drain tells Nomad to migrate or stop all allocations on the node within the
+# deadline. Returns 0 if drain was initiated, 1 on error.
+drain_node() {
+  local node_id="$1"
+  local deadline="${2:-${NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS}}"
+
+  if is_dry_run; then
+    log "[DRY-RUN] Would drain node ${node_id} with deadline ${deadline}s."
+    return 0
+  fi
+
+  # Convert seconds to nanoseconds (Nomad API uses nanoseconds)
+  local deadline_ns=$(( deadline * 1000000000 ))
+
+  # POST /v1/node/{nodeId}/drain
+  local body
+  body="{\"DrainSpec\": {\"Deadline\": ${deadline_ns}, \"IgnoreSystemJobs\": true}}"
+  nomad_api POST "/v1/node/${node_id}/drain" \
+    -H "Content-Type: application/json" \
+    -d "${body}" > /dev/null || {
+    log "ERROR: Failed to initiate drain for node ${node_id}."
+    return 1
+  }
+  log "Drain initiated on node ${node_id} (deadline: ${deadline}s)."
+}
+
+# wait_for_drain_complete <node_id> <timeout_seconds> [<poll_interval_seconds>]
+# Wait for a draining node to have zero running allocations.
+# Returns 0 when the node is fully drained, 1 on timeout.
+wait_for_drain_complete() {
+  local node_id="$1"
+  local timeout_seconds="${2:-${NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS}}"
+  local poll_interval="${3:-15}"
+
+  local elapsed=0
+  log "Waiting for node ${node_id} to drain (timeout: ${timeout_seconds}s, poll: ${poll_interval}s)..."
+
+  while [[ ${elapsed} -lt ${timeout_seconds} ]]; do
+    local running
+    running="$(node_running_alloc_count "${node_id}")" || running=0
+
+    if [[ "${running}" -eq 0 ]]; then
+      log "Node ${node_id} fully drained after ${elapsed}s."
+      return 0
+    fi
+
+    log "  Node ${node_id}: ${running} running allocation(s) remaining (${elapsed}s elapsed)..."
+    sleep "${poll_interval}"
+    elapsed=$(( elapsed + poll_interval ))
+  done
+
+  log "WARNING: Node ${node_id} did not drain within ${timeout_seconds}s. Remaining allocations will be force-stopped on destruction."
+  return 1
+}
+
+# is_node_draining <node_id> — returns 0 if the node is currently in drain mode.
+is_node_draining() {
+  local node_id="$1"
+
+  local node_json
+  node_json="$(nomad_api GET "/v1/node/${node_id}" || true)"
+  if [[ -z "${node_json}" ]]; then
+    return 1
+  fi
+
+  local drain
+  drain="$(echo "${node_json}" | jq -r '.Drain // false' 2>/dev/null || echo "false")"
+  [[ "${drain}" == "true" ]]
+}
+
+# node_name <node_id> — returns the node's human-readable name (e.g. "herobids-agent-3").
+# Returns empty string on error.
+node_name() {
+  local node_id="$1"
+
+  local node_json
+  node_json="$(nomad_api GET "/v1/node/${node_id}" || true)"
+  if [[ -z "${node_json}" ]]; then
+    return 1
+  fi
+
+  echo "${node_json}" | jq -r '.Name // ""' 2>/dev/null || echo ""
+}
+
+# mark_node_eligible <node_id> — undo mark_node_ineligible, restoring the node
+# so it can receive new placements again.
+mark_node_eligible() {
+  local node_id="$1"
+
+  if is_dry_run; then
+    log "[DRY-RUN] Would mark node ${node_id} eligible."
+    return 0
+  fi
+
+  nomad_api POST "/v1/node/${node_id}/eligibility" \
+    -H "Content-Type: application/json" \
+    -d '{"Eligibility": "eligible"}' > /dev/null || {
+    log "ERROR: Failed to re-mark node ${node_id} as eligible."
+    return 1
+  }
+  log "Node ${node_id} re-marked eligible (terraform apply failed)."
+}

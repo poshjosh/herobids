@@ -172,6 +172,14 @@ resource "hcloud_server" "default" {
     agent_memory_reservation_mb    = var.agent_memory_reservation_mb
     agent_node_server_type         = var.agent_node_server_type
     location                       = var.location
+    # Phase 7 — scale-in & safety net
+    enable_scale_in                    = tostring(var.enable_scale_in)
+    scale_in_drain_deadline_seconds    = var.scale_in_drain_deadline_seconds
+    scale_in_max_nodes_per_run         = var.scale_in_max_nodes_per_run
+    scale_in_time_utc                  = var.scale_in_time_utc
+    placement_failure_window_seconds   = var.placement_failure_window_seconds
+    placement_failure_threshold        = var.placement_failure_threshold
+    placement_failure_cooldown_seconds = var.placement_failure_cooldown_seconds
   })
 
   labels = {

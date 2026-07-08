@@ -190,6 +190,118 @@ write_files:
       [Install]
       WantedBy=timers.target
 
+  - path: /etc/systemd/system/nomad-scale-in.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Nomad Scale-In (Nightly Conservative Drain)
+      Documentation=https://github.com/your-org/herobids
+      Wants=network-online.target nomad.service
+      After=network-online.target nomad.service
+      Requires=nomad.service
+
+      [Service]
+      Type=oneshot
+      WorkingDirectory=/opt/herobids/infra/hetzner
+      ExecStart=/opt/herobids/infra/hetzner/scripts/scale-in.sh
+      StandardOutput=journal
+      StandardError=journal
+      SyslogIdentifier=nomad-scale-in
+
+      # Scale-in configuration (overridable via drop-in or env)
+      Environment=NOMAD_ADDR=http://127.0.0.1:4646
+      Environment=HEROBIDS_ENV=${environment}
+      Environment=TERRAFORM_DIR=/opt/herobids/infra/hetzner
+      Environment=ENABLE_SCALE_IN=${enable_scale_in}
+      Environment=NOMAD_SCALE_IN_MAX_NODES_PER_RUN=${scale_in_max_nodes_per_run}
+      Environment=NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS=${scale_in_drain_deadline_seconds}
+      Environment=NOMAD_AUTOSCALE_LOCKFILE=/var/run/nomad-autoscale.lock
+      Environment=NOMAD_AUTOSCALE_COOLDOWN_FILE=/var/run/nomad-autoscale-last-scale-out
+      Environment=NOMAD_AUTOSCALE_LOG_FILE=/var/log/nomad-autoscale.log
+      Environment=NOMAD_AUTOSCALE_NODE_COUNT_FILE=/var/run/nomad-autoscale-node-count
+
+      # TF_VAR_* env vars for terraform (same as scale-out)
+      Environment=TF_VAR_max_agent_nodes=${max_agent_nodes}
+      Environment=TF_VAR_min_agent_nodes=${min_agent_nodes}
+      Environment=TF_VAR_agent_node_server_type=${agent_node_server_type}
+      Environment=TF_VAR_location=${location}
+
+      # Security hardening (same profile as autoscale-out)
+      NoNewPrivileges=true
+      PrivateTmp=true
+      ProtectSystem=strict
+      ProtectHome=true
+      ReadWritePaths=/var/run /var/log /opt/herobids/infra/hetzner
+
+  - path: /etc/systemd/system/nomad-scale-in.timer
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Nomad Scale-In Timer (Nightly Conservative Drain)
+      Documentation=https://github.com/your-org/herobids
+
+      [Timer]
+      OnCalendar=*-*-* ${scale_in_time_utc}:00:00
+      Persistent=true
+      RandomizedDelaySec=300s
+      Unit=nomad-scale-in.service
+
+      [Install]
+      WantedBy=timers.target
+
+  - path: /etc/systemd/system/nomad-placement-failure-watcher.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Nomad Placement-Failure Safety Net Watcher
+      Documentation=https://github.com/your-org/herobids
+      Wants=network-online.target nomad.service
+      After=network-online.target nomad.service
+      Requires=nomad.service
+
+      [Service]
+      Type=oneshot
+      WorkingDirectory=/opt/herobids/infra/hetzner
+      ExecStart=/opt/herobids/infra/hetzner/scripts/check-placement-failures.sh
+      StandardOutput=journal
+      StandardError=journal
+      SyslogIdentifier=nomad-placement-failure-watcher
+
+      # Placement-failure safety net configuration
+      Environment=NOMAD_ADDR=http://127.0.0.1:4646
+      Environment=HEROBIDS_ENV=${environment}
+      Environment=NOMAD_PLACEMENT_FAILURE_WINDOW_SECONDS=${placement_failure_window_seconds}
+      Environment=NOMAD_PLACEMENT_FAILURE_THRESHOLD=${placement_failure_threshold}
+      Environment=NOMAD_PLACEMENT_FAILURE_COOLDOWN_SECONDS=${placement_failure_cooldown_seconds}
+      Environment=NOMAD_PLACEMENT_FAILURE_STATE_FILE=/var/run/nomad-placement-failure-state
+      Environment=NOMAD_AUTOSCALE_LOCKFILE=/var/run/nomad-autoscale.lock
+      Environment=NOMAD_AUTOSCALE_LOG_FILE=/var/log/nomad-autoscale.log
+      Environment=NOMAD_AUTOSCALE_NODE_COUNT_FILE=/var/run/nomad-autoscale-node-count
+      Environment=NOMAD_AUTOSCALE_COOLDOWN_FILE=/var/run/nomad-autoscale-last-scale-out
+
+      # Security hardening
+      NoNewPrivileges=true
+      PrivateTmp=true
+      ProtectSystem=strict
+      ProtectHome=true
+      ReadWritePaths=/var/run /var/log /opt/herobids/infra/hetzner
+
+  - path: /etc/systemd/system/nomad-placement-failure-watcher.timer
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Nomad Placement-Failure Watcher Timer
+      Documentation=https://github.com/your-org/herobids
+
+      [Timer]
+      OnUnitActiveSec=120s
+      OnBootSec=180s
+      RandomizedDelaySec=30s
+      Unit=nomad-placement-failure-watcher.service
+
+      [Install]
+      WantedBy=timers.target
+
 # ── Boot commands (all POSIX sh — NO bash-isms, NO pipefail) ──
 
 runcmd:
@@ -281,6 +393,21 @@ runcmd:
       # gracefully until scale-out.sh is available at /opt/herobids/infra/hetzner/scripts/.
       systemctl enable nomad-autoscale.timer
       systemctl start nomad-autoscale.timer
+
+      # Enable placement-failure safety net watcher (Phase 7)
+      # Polls Nomad evaluations for resource-exhaustion failures and triggers
+      # emergency scale-out via scale-out.sh --safety-net.
+      # The timer starts 180s after boot (after autoscale-out timer).
+      systemctl enable nomad-placement-failure-watcher.timer
+      systemctl start nomad-placement-failure-watcher.timer
+
+      # Enable nightly scale-in timer (Phase 7)
+      # The timer fires daily; the service is a no-op when ENABLE_SCALE_IN != true
+      # or when already at min_agent_nodes.
+      if [ "${enable_scale_in}" = "true" ]; then
+        systemctl enable nomad-scale-in.timer
+        systemctl start nomad-scale-in.timer
+      fi
 
       # TODO(Phase 8): Enable Nomad ACLs for cluster security.
       # Currently the Nomad cluster has no access control — any process on the

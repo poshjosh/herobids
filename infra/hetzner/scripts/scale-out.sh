@@ -14,6 +14,8 @@
 #   --force             Force a scale-out even if thresholds are not crossed
 #                       (still respects max_agent_nodes and cooldown).
 #   --bypass-cooldown   Bypass the cooldown check (safety-net escape hatch).
+#   --safety-net        Convenience alias for --bypass-cooldown --force.
+#                       Used by check-placement-failures.sh (Phase 7).
 #
 # Exit codes:
 #   0  Success (scale-out completed, or no action needed).
@@ -63,6 +65,13 @@ while [[ $# -gt 0 ]]; do
       BYPASS_COOLDOWN=true
       shift
       ;;
+    --safety-net)
+      # Convenience alias: bypass cooldown and force scale-out.
+      # Used by check-placement-failures.sh for the placement-failure safety net (Phase 7).
+      BYPASS_COOLDOWN=true
+      FORCE=true
+      shift
+      ;;
     -*)
       echo "ERROR: Unknown option: $1" >&2
       exit 1
@@ -89,6 +98,8 @@ Options:
                       (still respects max_agent_nodes and cooldown).
   --bypass-cooldown   Bypass cooldown check (safety-net escape hatch for
                       placement-failure detection in Phase 7).
+  --safety-net        Convenience alias for --bypass-cooldown --force.
+                      Used by check-placement-failures.sh (Phase 7).
 
 Configuration (env vars, see scale-common.sh for defaults):
   NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT  Free memory % below which we scale out (default: 20).

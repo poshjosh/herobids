@@ -14,7 +14,7 @@
 | Phase 4 - Nomad runtime adapter | DONE |
 | Phase 5 - Per-tier resource profiles | DONE |
 | Phase 6 - Autoscale-out with flock+Terraform | DONE |
-| Phase 7 - Safety net & nightly scale-in | PENDING |
+| Phase 7 - Safety net & nightly scale-in | DONE |
 | Phase 8 - Admin alerting & visibility | PENDING |
 | Phase 9 - Rollout & validate end-to-end | PENDING |
 
@@ -396,7 +396,7 @@ The system provisions more agent nodes automatically before the cluster fully ex
 2. concurrent trigger attempts serialize correctly through `flock`
 3. repeated cron runs do not create duplicate or conflicting Terraform operations
 
-### Phase 7 - Implement placement-failure safety net and nightly scale-in **[PENDING]**
+### Phase 7 - Implement placement-failure safety net and nightly scale-in **[DONE]**
 
 #### Goal
 

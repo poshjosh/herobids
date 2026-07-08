@@ -95,7 +95,9 @@ infra/hetzner/
     ├── maintenance-restart-from-local.sh   # Run maintenance restart from local machine
     ├── scale-common.sh             # Autoscale shared functions (Nomad API, cooldown, flock, logging)
     ├── check-nomad-capacity.sh     # Poll Nomad cluster and compute free headroom
-    └── scale-out.sh                # Main autoscale loop: evaluate + provision agent nodes
+    ├── scale-out.sh                # Main autoscale loop: evaluate + provision agent nodes
+    ├── scale-in.sh                 # Nightly conservative scale-in: drain idle nodes (Phase 7)
+    └── check-placement-failures.sh # Safety net: detect resource-exhaustion placement failures (Phase 7)
 ```
 
 ## Architecture
@@ -309,6 +311,9 @@ NOMAD_SCALE_OUT_SLOT_THRESHOLD=1 \
 
 # Emergency scale-out (bypass cooldown too — safety-net path)
 /opt/herobids/infra/hetzner/scripts/scale-out.sh --force --bypass-cooldown
+
+# Safety-net convenience alias (equivalent to --force --bypass-cooldown)
+/opt/herobids/infra/hetzner/scripts/scale-out.sh --safety-net
 ```
 
 ### Checking Capacity Manually
@@ -326,26 +331,28 @@ NOMAD_SCALE_OUT_SLOT_THRESHOLD=1 \
 
 ### Systemd Units
 
-Two systemd units are installed by cloud-init on the control-plane host:
+The following systemd units are installed by cloud-init on the control-plane host:
 
-- **`nomad-autoscale.timer`** — triggers every 60 seconds (with 15s randomization).
-  Starts 120s after boot. Depends on `timers.target`.
-- **`nomad-autoscale.service`** — oneshot service that runs `scale-out.sh`.
-  Depends on `nomad.service`. Logs to journald.
+| Unit | Type | Purpose |
+|---|---|---|
+| `nomad-autoscale.timer` | Timer (60s) | Triggers scale-out capacity check |
+| `nomad-autoscale.service` | Oneshot | Runs `scale-out.sh` |
+| `nomad-scale-in.timer` | Timer (daily, 3 AM) | Triggers nightly scale-in |
+| `nomad-scale-in.service` | Oneshot | Runs `scale-in.sh` |
+| `nomad-placement-failure-watcher.timer` | Timer (120s) | Triggers placement-failure safety net |
+| `nomad-placement-failure-watcher.service` | Oneshot | Runs `check-placement-failures.sh` |
 
 ```bash
-# Check timer status
-systemctl status nomad-autoscale.timer
-systemctl list-timers nomad-autoscale.timer
+# Check all autoscale timer status
+systemctl list-timers nomad-autoscale.timer nomad-scale-in.timer nomad-placement-failure-watcher.timer
 
 # Check service run history
 systemctl status nomad-autoscale.service
-journalctl -u nomad-autoscale.service -n 50
+systemctl status nomad-scale-in.service
+systemctl status nomad-placement-failure-watcher.service
 
-# Manual trigger (outside the timer schedule)
-systemctl start nomad-autoscale.service
-
-# View autoscale log
+# View unified autoscale log
+journalctl -u nomad-autoscale -u nomad-scale-in -u nomad-placement-failure-watcher -n 50
 tail -f /var/log/nomad-autoscale.log
 ```
 
@@ -380,31 +387,114 @@ For environments without systemd, a cron entry achieves the same effect:
 ### Nightly Scale-In (Phase 7)
 
 A conservative nightly scale-in routine reduces idle agent nodes down to `min_agent_nodes`,
-running at a configured time (default: 3 AM per environment). The scale-in policy is
-designed to never interrupt active agent workloads:
+running at a configured time (default: 3 AM UTC). The scale-in policy is designed to never
+interrupt active agent workloads.
 
-1. **Candidate selection**: nodes are marked ineligible for new placements (Nomad node
-   drain with `-no-deadline`), preventing new agent allocations from landing on them.
+**Safety rules (from plan):**
+- Never kill active agent allocations to reach the floor.
+- Mark candidate nodes ineligible for new placements first.
+- Drain only nodes that are idle (zero running allocations) — nodes with active agents are skipped.
+- Stop draining when `min_agent_nodes` is reached.
 
-2. **Idle-only drain**: only nodes with zero running agent allocations are drained.
-   Nodes with active agents are skipped — the routine never kills running workloads
-   to reach the floor.
+**Configuration:**
 
-3. **Floor enforcement**: draining stops when the cluster reaches `min_agent_nodes`
-   (configured per environment). The floor is a hard lower bound.
+| Variable | Default | Description |
+|---|---|---|
+| `enable_scale_in` | `false` | Feature flag — must be `true` for nightly scale-in |
+| `scale_in_drain_deadline_seconds` | 600 | Max seconds to wait for a draining node to empty |
+| `scale_in_max_nodes_per_run` | 1 | Max nodes to drain per nightly run |
+| `scale_in_time_utc` | `"3"` | UTC hour for nightly scale-in (0-23) |
 
-4. **Manual override**: scale-in can be run manually for testing or emergency:
-   ```bash
-   # Dry-run to see what would be scaled in
-   /opt/herobids/infra/hetzner/scripts/scale-in.sh --dry-run
+**How it works:**
 
-   # Force scale-in down to min_agent_nodes
-   /opt/herobids/infra/hetzner/scripts/scale-in.sh
-   ```
+```
+┌──────────────────────────────────────────────────────┐
+│  systemd timer (daily, 3 AM UTC)                     │
+│    │                                                  │
+│    ▼                                                  │
+│  scale-in.sh                                         │
+│    │                                                  │
+│    ├─ 1. Check ENABLE_SCALE_IN == true               │
+│    ├─ 2. Read current agent_node_count               │
+│    ├─ 3. If current ≤ min_agent_nodes → skip         │
+│    ├─ 4. List eligible agent nodes                   │
+│    ├─ 5. For each node: check if idle (0 running)    │
+│    ├─ 6. Mark idle candidates ineligible             │
+│    ├─ 7. Drain idle candidates                       │
+│    ├─ 8. Wait for drain to complete                  │
+│    ├─ 9. Acquire flock (same lock as scale-out)      │
+│    └─ 10. terraform apply -auto-approve              │
+│           -var agent_node_count=N - 1                │
+└──────────────────────────────────────────────────────┘
+```
 
-5. **Safety property**: a node that still has running allocations after the drain
-   deadline is NOT destroyed. The routine logs a warning and leaves the node in the
-   cluster. Operators should investigate stuck allocations manually.
+```bash
+# Dry-run to see what would be scaled in
+/opt/herobids/infra/hetzner/scripts/scale-in.sh --dry-run
+
+# Manual scale-in (respects all safety rules)
+ENABLE_SCALE_IN=true /opt/herobids/infra/hetzner/scripts/scale-in.sh
+
+# Manual scale-in with custom max nodes per run
+ENABLE_SCALE_IN=true NOMAD_SCALE_IN_MAX_NODES_PER_RUN=3 \
+  /opt/herobids/infra/hetzner/scripts/scale-in.sh
+```
+
+**Safety property:** a node that still has running allocations after the drain deadline
+is NOT destroyed. The routine logs a warning and leaves the node in the cluster.
+Operators should investigate stuck allocations manually.
+
+### Placement-Failure Safety Net (Phase 7)
+
+The placement-failure watcher (`check-placement-failures.sh`) detects repeated Nomad
+evaluation failures caused by exhausted cluster resources and triggers emergency
+scale-out via `scale-out.sh --safety-net`. This is a reactive safety net that catches
+capacity exhaustion missed by the proactive capacity-check loop (e.g., a sudden surge
+of agent launches that outpaces the polling interval).
+
+**How it works:**
+
+```
+┌──────────────────────────────────────────────────────┐
+│  systemd timer (every 120s)                          │
+│    │                                                  │
+│    ▼                                                  │
+│  check-placement-failures.sh                         │
+│    │                                                  │
+│    ├─ 1. Poll GET /v1/evaluations from Nomad         │
+│    ├─ 2. Filter blocked evals with resource keywords │
+│    ├─ 3. Count blocked evals within time window      │
+│    ├─ 4. If count > threshold → ALERT                │
+│    ├─ 5. Check safety-net cooldown                   │
+│    ├─ 6. Record trigger timestamp                    │
+│    └─ 7. Trigger: scale-out.sh --bypass-cooldown     │
+│          --force (shared flock, TOCTOU-safe)         │
+└──────────────────────────────────────────────────────┘
+```
+
+**Configuration:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `placement_failure_window_seconds` | 300 | Lookback window for counting blocked evals |
+| `placement_failure_threshold` | 5 | Blocked evals in window to trigger safety-net |
+| `placement_failure_cooldown_seconds` | 600 | Min seconds between safety-net triggers |
+
+```bash
+# Dry-run to see what the safety net would do
+/opt/herobids/infra/hetzner/scripts/check-placement-failures.sh --dry-run
+
+# Manual safety-net check
+NOMAD_PLACEMENT_FAILURE_THRESHOLD=3 \
+  /opt/herobids/infra/hetzner/scripts/check-placement-failures.sh
+
+# View placement-failure watcher logs
+journalctl -u nomad-placement-failure-watcher -n 50
+```
+
+Both the scale-in routine and placement-failure safety net share the same `flock` lockfile
+as `scale-out.sh`, ensuring only one Terraform operation (scale-out, scale-in, or
+safety-net) runs at a time.
 
 ## Isolation Model
 

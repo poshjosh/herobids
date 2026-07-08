@@ -125,3 +125,42 @@ output "agent_memory_reservation_mb" {
   description = "Scheduling memory reservation per agent slot (MB)"
   value       = var.agent_memory_reservation_mb
 }
+
+# ── Scale-In Configuration (Phase 7) ──────────────────────
+
+output "enable_scale_in" {
+  description = "Whether nightly scale-in is enabled"
+  value       = var.enable_scale_in
+}
+
+output "scale_in_drain_deadline_seconds" {
+  description = "Maximum seconds to wait for a draining node to empty"
+  value       = var.scale_in_drain_deadline_seconds
+}
+
+output "scale_in_max_nodes_per_run" {
+  description = "Maximum nodes to drain per nightly scale-in run"
+  value       = var.scale_in_max_nodes_per_run
+}
+
+output "scale_in_time_utc" {
+  description = "UTC hour for nightly scale-in (0-23)"
+  value       = var.scale_in_time_utc
+}
+
+# ── Placement-Failure Safety Net (Phase 7) ─────────────────
+
+output "placement_failure_window_seconds" {
+  description = "Time window for counting placement-failure evaluations"
+  value       = var.placement_failure_window_seconds
+}
+
+output "placement_failure_threshold" {
+  description = "Blocked evals in window to trigger safety-net scale-out"
+  value       = var.placement_failure_threshold
+}
+
+output "placement_failure_cooldown_seconds" {
+  description = "Minimum seconds between safety-net scale-out triggers"
+  value       = var.placement_failure_cooldown_seconds
+}
