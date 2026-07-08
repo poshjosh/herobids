@@ -1,6 +1,6 @@
 ### 1. What specific problem is orchestration solving?
 
-After feature 015 lands, you'll have two independent Hetzner servers (staging + production), each running Docker Compose. What drives the need to go beyond that? The orchestration doc mentions "8 containers per server, then add another" — but **what kind of containers** are filling up server capacity?
+After feature docs/features/2026/07/08/003-staging-environment-setup/001-plan.md lands, you'll have two independent Hetzner servers (staging + production), each running Docker Compose. What drives the need to go beyond that? The orchestration doc mentions "8 containers per server, then add another" — but **what kind of containers** are filling up server capacity?
 
 - Is it the **agent runtime containers** (spun up per-agent via the worker's Docker-in-Docker)?
 - Is it **horizontal scaling** of the API/worker/web services themselves?
@@ -36,7 +36,7 @@ Nothing has been decided except: "very low or zero cost of orchestration"
 
 ### 4. Does orchestration apply to staging, production, or both?
 
-After 015, staging and production are separate environments. Should orchestration be:
+After docs/features/2026/07/08/003-staging-environment-setup/001-plan.md, staging and production are separate environments. Should orchestration be:
 
 - **Production only** (staging stays single-server Compose for simplicity)?
 - **Both** independently (each with its own scheduler)?
@@ -234,4 +234,4 @@ Is this the right mental model? Or does every agent node also run a subset of pl
 
 **Answer**
 
-Platform services: Dedicated control plane server(s). Postgres, Redis, API, Worker, Web, Caddy stay on Compose as they are today (one per environment, per feature 015). Agent nodes are Nomad-only, stateless, disposable. The worker on the control plane talks to Nomad's HTTP API to submit agent jobs. When you eventually move to managed cloud DB/Redis, the agent nodes don't change — just swap connection strings. This keeps the stateful and stateless layers cleanly separated.
+Platform services: Dedicated control plane server(s). Postgres, Redis, API, Worker, Web, Caddy stay on Compose as they are today (one per environment, per feature docs/features/2026/07/08/003-staging-environment-setup/001-plan.md). Agent nodes are Nomad-only, stateless, disposable. The worker on the control plane talks to Nomad's HTTP API to submit agent jobs. When you eventually move to managed cloud DB/Redis, the agent nodes don't change — just swap connection strings. This keeps the stateful and stateless layers cleanly separated.

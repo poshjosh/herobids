@@ -6,15 +6,15 @@
 
 ## Depends On
 
-This feature starts only after `docs/features/pending/015-staging-environment-setup/001-plan.md` is implemented.
+This feature starts only after `docs/features/2026/07/08/003-staging-environment-setup/001-plan.md` is implemented.
 
-Feature 015 gives HeroBids two explicit environments with separate control-plane servers, domains, secrets, and deploy flows. Feature 020 builds on that split and adds independent agent-orchestration clusters for staging and production.
+Feature docs/features/2026/07/08/003-staging-environment-setup/001-plan.md gives HeroBids two explicit environments with separate control-plane servers, domains, secrets, and deploy flows. Feature 020 builds on that split and adds independent agent-orchestration clusters for staging and production.
 
 ## Problem
 
 HeroBids currently launches agent runtimes as local Docker containers from the worker through `docker-proxy`. That model works on a single host, but it does not scale to the intended agent-as-a-service workload where each user-created agent is an isolated container.
 
-After feature 015, staging and production will each have their own dedicated control-plane server running Docker Compose. That is necessary, but not sufficient. The remaining gaps are:
+After feature docs/features/2026/07/08/003-staging-environment-setup/001-plan.md, staging and production will each have their own dedicated control-plane server running Docker Compose. That is necessary, but not sufficient. The remaining gaps are:
 
 1. agent placement is still single-host and tied to the worker's local Docker daemon
 2. agent containers assume local-network access to Redis and Postgres instead of cluster-wide private-network access
@@ -27,7 +27,7 @@ Without orchestration, HeroBids cannot support hundreds to low-thousands of conc
 ## Goals
 
 1. orchestrate agent containers, not the API, worker, web, Caddy, Postgres, or Redis services
-2. support independent staging and production orchestration clusters, each attached to its own control plane from feature 015
+2. support independent staging and production orchestration clusters, each attached to its own control plane from feature docs/features/2026/07/08/003-staging-environment-setup/001-plan.md
 3. adopt Nomad as the first orchestrator with a design that preserves a future move to ECS or Kubernetes
 4. keep control-plane services on Docker Compose and keep agent nodes stateless, disposable, and Nomad-only
 5. move from worker-local Docker placement to Model C: worker-owned lifecycle logic with a scheduler-specific runtime adapter
@@ -203,7 +203,7 @@ Provision explicit Nomad infrastructure for agent nodes while keeping the contro
 
 #### Tasks
 
-1. extend the environment contract from feature 015 so each environment owns:
+1. extend the environment contract from feature docs/features/2026/07/08/003-staging-environment-setup/001-plan.md so each environment owns:
    - one control-plane stack
    - one Nomad cluster
    - one private network for control plane and agent nodes
@@ -516,7 +516,7 @@ This feature is complete when all of the following are true:
 3. **soft overcommit** can increase density cheaply, but badly tuned reservations may produce more OOM churn than expected
 4. **scale-in** is the most operationally risky part of the selected approach and must remain conservative
 5. **Terraform node identity design** must avoid accidental destruction of the wrong client during scale-in
-6. **email alerting** is only useful if the default admin email path is already real and monitored after feature 015
+6. **email alerting** is only useful if the default admin email path is already real and monitored after feature docs/features/2026/07/08/003-staging-environment-setup/001-plan.md
 
 ## Follow-Up Work Explicitly Deferred
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# maintenance.sh — Run the maintenance restart from your local machine.
+# maintenance-restart-from-local.sh — Run the maintenance restart from your local machine.
 #
 # Auto-detects the server IP from Terraform and the SSH key from terraform.tfvars.
 # Syncs the latest maintenance-restart.sh to the server first, then runs it and
 # streams output back to your terminal.
 #
 # Usage:
-#   infra/hetzner/scripts/maintenance.sh [--skip-deploy] [--include-live] [--yes|-y] [<server-ip>]
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh [--skip-deploy] [--include-live] [--yes|-y] [<server-ip>]
 #
 # Options:
 #   --skip-deploy    Skip code pull and image rebuild — restart agents on current image.
@@ -15,10 +15,10 @@
 #   <server-ip>      Override server IP (auto-detected from Terraform if omitted).
 #
 # Examples:
-#   infra/hetzner/scripts/maintenance.sh                   # deploy + restart agents
-#   infra/hetzner/scripts/maintenance.sh --skip-deploy     # restart agents only
-#   infra/hetzner/scripts/maintenance.sh --yes             # no confirmation prompt
-#   infra/hetzner/scripts/maintenance.sh --yes 1.2.3.4     # explicit IP, no prompt
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh                   # deploy + restart agents
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh --skip-deploy     # restart agents only
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh --yes             # no confirmation prompt
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh --yes 1.2.3.4     # explicit IP, no prompt
 
 set -euo pipefail
 
