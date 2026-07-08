@@ -9,13 +9,20 @@
 # terraform.tfvars is gitignored — never commit real secrets.
 # ─────────────────────────────────────────────────────────────
 
+# ── Environment ───────────────────────────────────────────
+
+# environment = "production"   # staging | production (default: production)
+#                              # Controls naming conventions, labels, and compose overlay selection.
+#                              #   production → server_name=herobids, app_domain=herobids.com
+#                              #   staging    → server_name=herobids-staging, app_domain=staging.herobids.com
+
 # ── Provider ──────────────────────────────────────────────
 
 hcloud_token = "your-hetzner-cloud-api-token"  # required, sensitive
 
 # ── Server ────────────────────────────────────────────────
 
-# server_name = "herobids"
+# server_name = "herobids"          # override if default convention doesn't fit
 # server_type = "cx23"
 # location    = "fsn1"
 # image       = "ubuntu-24.04"

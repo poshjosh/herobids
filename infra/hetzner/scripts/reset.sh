@@ -6,16 +6,20 @@
 # full clean deploy from a blank database.
 #
 # Usage:
-#   infra/hetzner/scripts/reset.sh [<server-ip>]
-#   infra/hetzner/scripts/reset.sh                        # auto-detect IP via terraform
-#   infra/hetzner/scripts/reset.sh 1.2.3.4                # explicit IP
+#   infra/hetzner/scripts/reset.sh [--env <staging|production>] [--yes|-y] [--seed] [<server-ip>]
+#   infra/hetzner/scripts/reset.sh --env staging --yes           # reset staging
+#   infra/hetzner/scripts/reset.sh 1.2.3.4                       # explicit IP
 #
 # Flags:
-#   --yes | -y    Skip confirmation prompt
-#   --seed        Also seed the admin user after reset (requires ADMIN_EMAIL + ADMIN_PASSWORD)
+#   --env <name>   Target environment: staging or production (default: production).
+#   --yes | -y     Skip confirmation prompt
+#   --seed         Also seed the admin user after reset (requires ADMIN_EMAIL + ADMIN_PASSWORD)
+#
+# Environment:
+#   HEROBIDS_ENV   Deployment environment: staging | production (default: production).
 #
 # Examples:
-#   ./reset.sh --yes
+#   ./reset.sh --env staging --yes
 #   ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=changeme ./reset.sh --yes --seed
 #   ./reset.sh 1.2.3.4
 #
@@ -29,6 +33,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(dirname "$SCRIPT_DIR")"
 source "$(dirname "${BASH_SOURCE[0]}")/_ssh_opts.sh"
+
+# ─── Parse environment flag first ────────────────────────────────────────────
+
+parse_env_flag "$@"
+shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
@@ -49,18 +58,20 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --help|-h)
-      echo "Usage: $0 [--yes] [--seed] [<server-ip>]" >&2
+      echo "Usage: $0 [--env <staging|production>] [--yes] [--seed] [<server-ip>]" >&2
       echo "" >&2
       echo "Flags:" >&2
-      echo "  --yes | -y    Skip confirmation prompt." >&2
-      echo "  --seed        Seed admin user after reset (requires ADMIN_EMAIL + ADMIN_PASSWORD)." >&2
+      echo "  --env <name>   Target environment: staging or production (default: production)." >&2
+      echo "  --yes | -y     Skip confirmation prompt." >&2
+      echo "  --seed         Seed admin user after reset (requires ADMIN_EMAIL + ADMIN_PASSWORD)." >&2
       echo "" >&2
       echo "Arguments:" >&2
-      echo "  <server-ip>   Server IP (auto-detected from terraform if omitted)." >&2
+      echo "  <server-ip>    Server IP (auto-detected from terraform if omitted)." >&2
       echo "" >&2
       echo "Environment variables:" >&2
-      echo "  ADMIN_EMAIL     Email for admin user seeding." >&2
-      echo "  ADMIN_PASSWORD  Password for admin user seeding." >&2
+      echo "  HEROBIDS_ENV   Deployment environment." >&2
+      echo "  ADMIN_EMAIL    Email for admin user seeding." >&2
+      echo "  ADMIN_PASSWORD Password for admin user seeding." >&2
       exit 0
       ;;
     -*)
@@ -96,7 +107,9 @@ if [[ "${SKIP_CONFIRM}" != "true" ]]; then
   echo "================================================"
   echo " DESTRUCTIVE RESET"
   echo "================================================"
-  echo " Server:  ${SERVER_IP}"
+  echo " Server:      ${SERVER_IP}"
+  echo " Environment: ${HEROBIDS_ENV}"
+  echo " Compose:     ${COMPOSE_OVERLAY}"
   echo ""
   echo "This will:"
   echo "  - Stop all services"
@@ -120,16 +133,18 @@ fi
 # ─── Reset ───────────────────────────────────────────────────────────────────
 
 echo ""
-echo "==> Resetting server ${SERVER_IP}..."
+echo "==> Resetting ${HEROBIDS_ENV} server ${SERVER_IP}..."
 echo ""
 
-ssh ${SSH_OPTS} "root@${SERVER_IP}" bash -s << 'RESET'
+ssh ${SSH_OPTS} "root@${SERVER_IP}" HEROBIDS_ENV="${HEROBIDS_ENV}" COMPOSE_OVERLAY="${COMPOSE_OVERLAY}" bash -s << 'RESET'
 set -euo pipefail
 
 cd /opt/herobids
+COMPOSE_FILES="-f docker-compose.yaml -f ${COMPOSE_OVERLAY}"
 
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Environment: ${HEROBIDS_ENV}"
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Stopping all services..."
-docker compose -f docker-compose.yaml -f docker-compose.prod.yaml down --remove-orphans 2>/dev/null || true
+docker compose ${COMPOSE_FILES} down --remove-orphans 2>/dev/null || true
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Removing Docker volumes (pgdata, caddy_data, caddy_config)..."
 docker volume rm herobids_pgdata 2>/dev/null || echo "    Volume pgdata not found — skipping."
@@ -154,7 +169,7 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Building agent runtime image (herobids-ag
 docker build --pull -f docker/Dockerfile.agent -t herobids-agent:latest .
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Starting services (postgres, redis → migrate → api, worker, web)..."
-docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --build --remove-orphans
+docker compose ${COMPOSE_FILES} up -d --build --remove-orphans
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Waiting for API health check..."
 for i in $(seq 1 30); do
@@ -182,7 +197,7 @@ if [[ "${SEED_AFTER}" == "true" ]]; then
     echo "  To seed later: ADMIN_EMAIL=<email> ADMIN_PASSWORD=<pw> ${SCRIPT_DIR}/seed-admin.sh ${SERVER_IP}"
   else
     echo "-- Step: Seed admin user --"
-    if ADMIN_EMAIL="${ADMIN_EMAIL}" ADMIN_PASSWORD="${ADMIN_PASSWORD}" "${SCRIPT_DIR}/seed-admin.sh" "${SERVER_IP}"; then
+    if ADMIN_EMAIL="${ADMIN_EMAIL}" ADMIN_PASSWORD="${ADMIN_PASSWORD}" "${SCRIPT_DIR}/seed-admin.sh" --env "${HEROBIDS_ENV}" "${SERVER_IP}"; then
       echo "Admin user seeded."
     else
       echo "WARNING: Admin seeding failed (non-fatal)."
@@ -197,7 +212,8 @@ echo "========================================"
 echo " Fresh Start Complete"
 echo "========================================"
 echo ""
-echo "  Server:  ${SERVER_IP}"
+echo "  Server:      ${SERVER_IP}"
+echo "  Environment: ${HEROBIDS_ENV}"
 echo "  SSH:     ssh root@${SERVER_IP}"
 echo "  Logs:    ${SCRIPT_DIR}/logs.sh ${SERVER_IP}"
 echo "  Health:  http://${SERVER_IP}:3000/health"

@@ -29,7 +29,17 @@
 set -euo pipefail
 
 ROOT="${HEROBIDS_ROOT:-/opt/herobids}"
-COMPOSE_FILES="-f docker-compose.yaml -f docker-compose.prod.yaml"
+
+# Determine environment and compose overlay.
+# On the server, HEROBIDS_ENV should be set in the environment or via cron.
+# Default to production for backward compatibility.
+HEROBIDS_ENV="${HEROBIDS_ENV:-production}"
+case "${HEROBIDS_ENV}" in
+  staging)    COMPOSE_OVERLAY="docker-compose.staging.yaml" ;;
+  production) COMPOSE_OVERLAY="docker-compose.prod.yaml" ;;
+  *)          echo "ERROR: Unknown HEROBIDS_ENV=${HEROBIDS_ENV}. Must be staging or production." >&2; exit 1 ;;
+esac
+COMPOSE_FILES="-f docker-compose.yaml -f ${COMPOSE_OVERLAY}"
 
 # ─── Parse args ──────────────────────────────────────────────────────────────
 

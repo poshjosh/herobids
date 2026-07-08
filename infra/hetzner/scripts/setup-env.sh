@@ -2,19 +2,27 @@
 # setup-env.sh — Upload a local .env file to the Hetzner server.
 #
 # Copies a local .env file to /opt/herobids/.env on the server and sets
-# restrictive permissions (chmod 600). This file contains production secrets
+# restrictive permissions (chmod 600). This file contains secrets
 # (API keys, JWT secret, etc.) and must never be world-readable.
 #
+# Naming convention for env files:
+#   .env.staging  → staging environment secrets
+#   .env.prod     → production environment secrets
+#
 # Usage:
-#   infra/hetzner/scripts/setup-env.sh [<server-ip>] --file <path>
-#   infra/hetzner/scripts/setup-env.sh --file .env.prod              # auto-detect IP via terraform
-#   infra/hetzner/scripts/setup-env.sh 1.2.3.4 --file ../.env.prod   # explicit IP
-#   infra/hetzner/scripts/setup-env.sh                               # interactive prompt
+#   infra/hetzner/scripts/setup-env.sh [--env <staging|production>] [<server-ip>] --file <path>
+#   infra/hetzner/scripts/setup-env.sh --env staging --file .env.staging
+#   infra/hetzner/scripts/setup-env.sh 1.2.3.4 --file ../.env.prod      # explicit IP
+#   infra/hetzner/scripts/setup-env.sh                                  # interactive prompt
+#
+# Environment:
+#   HEROBIDS_ENV   Deployment environment: staging | production (default: production).
 #
 # Examples:
-#   ./setup-env.sh --file .env.prod
+#   ./setup-env.sh --env staging --file .env.staging
+#   ./setup-env.sh --env-file .env.prod
 #   ./setup-env.sh 1.2.3.4 --file ../.env.prod
-#   ./setup-env.sh                     # prompts for path
+#   ./setup-env.sh                        # prompts for path
 
 set -euo pipefail
 
@@ -23,6 +31,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(dirname "$SCRIPT_DIR")"
 source "$(dirname "${BASH_SOURCE[0]}")/_ssh_opts.sh"
+
+# ─── Parse environment flag first ────────────────────────────────────────────
+
+parse_env_flag "$@"
+shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
@@ -40,11 +53,12 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --help|-h)
-      echo "Usage: $0 [<server-ip>] [--file <path>]" >&2
+      echo "Usage: $0 [--env <staging|production>] [<server-ip>] [--file <path>]" >&2
       echo "" >&2
       echo "Options:" >&2
-      echo "  --file <path>   Path to local .env file to upload." >&2
-      echo "  <server-ip>     Server IP address (auto-detected from terraform if omitted)." >&2
+      echo "  --env <name>      Target environment: staging or production (default: production)." >&2
+      echo "  --file <path>     Path to local .env file to upload." >&2
+      echo "  <server-ip>       Server IP address (auto-detected from terraform if omitted)." >&2
       echo "" >&2
       echo "If --file is omitted, the script prompts interactively." >&2
       exit 0
@@ -93,7 +107,7 @@ fi
 
 # ─── Upload ──────────────────────────────────────────────────────────────────
 
-echo "==> Ensuring target directory exists on ${SERVER_IP}..."
+echo "==> [${HEROBIDS_ENV}] Ensuring target directory exists on ${SERVER_IP}..."
 ssh ${SSH_OPTS} "root@${SERVER_IP}" 'mkdir -p /opt/herobids' || {
   echo "ERROR: Cannot create /opt/herobids on server." >&2
   exit 1

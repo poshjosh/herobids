@@ -4,9 +4,17 @@
 # Pre-flight checks:
 #   - terraform.tfvars must exist (not just the .example).
 #     Copy terraform.tfvars.example → terraform.tfvars and fill in the values.
+#   - Set environment = "staging" or "production" in terraform.tfvars
+#     (or pass --env on the command line).
 #
 # Usage:
-#   infra/hetzner/scripts/provision.sh
+#   infra/hetzner/scripts/provision.sh [--env <staging|production>]
+#
+# Environment:
+#   HEROBIDS_ENV   Deployment environment (default: production).
+#                  Terraform reads this via the environment variable in terraform.tfvars.
+#                  The --env flag is informational here and sets HEROBIDS_ENV for
+#                  subsequent script calls; it does not override terraform.tfvars.
 #
 # Requires:
 #   - terraform (>= 1.0)
@@ -14,10 +22,19 @@
 
 set -euo pipefail
 
-# ─── Resolve terraform directory ─────────────────────────────────────────────
+# ─── Resolve directories ─────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Source _ssh_opts.sh for HEROBIDS_ENV and parse_env_flag (ignores SSH key for provision)
+source "${SCRIPT_DIR}/_ssh_opts.sh"
+
+# ─── Parse environment flag ──────────────────────────────────────────────────
+
+parse_env_flag "$@"
+shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
+
 cd "${TF_DIR}"
 
 # Verify terraform is installed
@@ -36,16 +53,17 @@ if [[ ! -f terraform.tfvars ]]; then
   echo "Create it from the example:" >&2
   echo "  cp terraform.tfvars.example terraform.tfvars" >&2
   echo "  # edit terraform.tfvars and fill in required values" >&2
+  echo "  # Set environment = \"staging\" or environment = \"production\" in terraform.tfvars" >&2
   exit 1
 fi
 
 # ─── Terraform init ──────────────────────────────────────────────────────────
 
-echo "==> Running terraform init..."
+echo "==> [${HEROBIDS_ENV}] Running terraform init..."
 terraform init
 
 # ─── Terraform apply ─────────────────────────────────────────────────────────
 
 echo ""
-echo "==> Running terraform apply..."
+echo "==> [${HEROBIDS_ENV}] Running terraform apply..."
 terraform apply

@@ -6,19 +6,18 @@
 #   2. quick-setup.prod.sh — provision user, credentials, venue connections, skills
 #   3. create-agents.sh   — create security-auditor agent
 #
-# This is the production equivalent of scripts/shell/run/reset-and-run.sh.
-#
 # Usage:
-#   infra/hetzner/scripts/reset-and-run.sh --env-file <path>
-#   infra/hetzner/scripts/reset-and-run.sh --env-file <path> [<server-ip>]
+#   infra/hetzner/scripts/reset-and-run.sh --env-file <path> [--env <staging|production>] [<server-ip>]
+#   infra/hetzner/scripts/reset-and-run.sh --env staging --env-file .env.setup.staging
 #   ADMIN_EMAIL=... ADMIN_PASSWORD=... ./reset-and-run.sh --env-file .env.setup.prod
 #
-# Environment variables:
-#   ADMIN_EMAIL          Admin user email for seeding (required).
-#   ADMIN_PASSWORD       Admin user password for seeding (required).
-#   AGENT_PROVIDER       LLM provider override (default: openrouter).
-#   AGENT_LIGHT_MODEL    Fast model override (default: deepseek/deepseek-v4-flash via OpenRouter).
-#   AGENT_HEAVY_MODEL    Capable model override (default: deepseek/deepseek-v4-pro via OpenRouter).
+# Environment:
+#   HEROBIDS_ENV       Deployment environment: staging | production (default: production).
+#   ADMIN_EMAIL        Admin user email for seeding (required).
+#   ADMIN_PASSWORD     Admin user password for seeding (required).
+#   AGENT_PROVIDER     LLM provider override (default: openrouter).
+#   AGENT_LIGHT_MODEL  Fast model override (default: deepseek/deepseek-v4-flash via OpenRouter).
+#   AGENT_HEAVY_MODEL  Capable model override (default: deepseek/deepseek-v4-pro via OpenRouter).
 #   AGENT_TICK_INTERVAL_MS  Agent reasoning loop interval in ms (default: 86400000 = 24h).
 #
 # WARNING: This destroys ALL data on the server. Do not run against a live
@@ -32,6 +31,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(dirname "$SCRIPT_DIR")"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 source "$(dirname "${BASH_SOURCE[0]}")/_ssh_opts.sh"
+
+# ─── Parse environment flag first ────────────────────────────────────────────
+
+parse_env_flag "$@"
+shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
@@ -145,6 +149,7 @@ echo "================================================"
 echo " DESTRUCTIVE RESET + FULL PROVISION"
 echo "================================================"
 echo " Server:      ${SERVER_IP}"
+echo " Environment: ${HEROBIDS_ENV}"
 echo " Env file:    ${ENV_FILE}"
 echo " Admin user:  ${ADMIN_EMAIL}"
 echo " Setup user:  ${SETUP_EMAIL}"
@@ -217,7 +222,7 @@ log_ok "Remote dependencies verified"
 log_section "Step 1/3: Reset server (wipe + seed admin)"
 
 ADMIN_EMAIL="${ADMIN_EMAIL}" ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
-  "${SCRIPT_DIR}/reset.sh" --yes --seed "${SERVER_IP}" || \
+  "${SCRIPT_DIR}/reset.sh" --env "${HEROBIDS_ENV}" --yes --seed "${SERVER_IP}" || \
   die "reset.sh failed. Aborting."
 
 log_ok "Reset complete — server is fresh, admin seeded."

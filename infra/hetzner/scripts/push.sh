@@ -6,14 +6,20 @@
 # A post-deploy health check waits for the API to become healthy.
 #
 # Usage:
-#   infra/hetzner/scripts/push.sh [--yes|-y] [<server-ip>]
-#   infra/hetzner/scripts/push.sh                 # reads IP from terraform output, asks for confirmation
-#   infra/hetzner/scripts/push.sh --yes 1.2.3.4   # skips confirmation, deploys to 1.2.3.4
-#   infra/hetzner/scripts/push.sh --yes           # skips confirmation, auto-detects IP via terraform
+#   infra/hetzner/scripts/push.sh [--env <staging|production>] [--yes|-y] [<server-ip>]
+#   infra/hetzner/scripts/push.sh                       # reads IP from terraform output, asks for confirmation
+#   infra/hetzner/scripts/push.sh --env staging --yes   # deploy to staging, skip confirmation
+#   infra/hetzner/scripts/push.sh --yes 1.2.3.4         # skips confirmation, deploys to 1.2.3.4
+#   infra/hetzner/scripts/push.sh --yes                 # skips confirmation, auto-detects IP via terraform
+#
+# Environment:
+#   HEROBIDS_ENV   Deployment environment: staging | production (default: production).
+#                  Can also be set via --env flag.
 #
 # Examples:
 #   ./push.sh 1.2.3.4
-#   ./push.sh --yes                               # auto-detect IP, no confirmation prompt
+#   ./push.sh --env staging --yes
+#   ./push.sh --yes                                    # auto-detect IP, no confirmation prompt
 
 set -euo pipefail
 
@@ -22,6 +28,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(dirname "$SCRIPT_DIR")"
 source "$(dirname "${BASH_SOURCE[0]}")/_ssh_opts.sh"
+
+# ─── Parse environment flag first ────────────────────────────────────────────
+
+parse_env_flag "$@"
+shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 
 # ─── Parse flags ─────────────────────────────────────────────────────────────
 
@@ -67,13 +78,19 @@ if [[ "${SKIP_CONFIRM}" != "true" ]]; then
   fi
 fi
 
-echo "==> Deploying to ${SERVER_IP}..."
+echo "==> Deploying to ${SERVER_IP} (${HEROBIDS_ENV})..."
 
 # ─── Deploy (single SSH session) ─────────────────────────────────────────────
 
-ssh ${SSH_OPTS} "root@${SERVER_IP}" bash -s << 'DEPLOY'
+# Pass HEROBIDS_ENV and COMPOSE_OVERLAY into the heredoc so the server-side
+# commands use the correct compose files.
+ssh ${SSH_OPTS} "root@${SERVER_IP}" HEROBIDS_ENV="${HEROBIDS_ENV}" COMPOSE_OVERLAY="${COMPOSE_OVERLAY}" bash -s << 'DEPLOY'
 set -euo pipefail
 cd /opt/herobids
+
+COMPOSE_FILES="-f docker-compose.yaml -f ${COMPOSE_OVERLAY}"
+
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Environment: ${HEROBIDS_ENV}"
 
 # Guard: stash local changes before reset
 if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
@@ -88,7 +105,7 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Building agent image..."
 docker build --pull -f docker/Dockerfile.agent -t herobids-agent:latest .
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Starting services..."
-docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --build --remove-orphans
+docker compose ${COMPOSE_FILES} up -d --build --remove-orphans
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Waiting for services to be healthy..."
 for i in $(seq 1 30); do
@@ -107,4 +124,4 @@ echo "==> Deploy complete."
 echo ""
 echo "Migrations run automatically via the migrate service's depends_on."
 echo "To manually re-run migrations:"
-echo "  ssh root@${SERVER_IP} 'cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.prod.yaml run --rm migrate'"
+echo "  ssh root@${SERVER_IP} 'cd /opt/herobids && docker compose -f docker-compose.yaml -f ${COMPOSE_OVERLAY} run --rm migrate'"

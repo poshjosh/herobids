@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# seed-admin.sh — Run the admin user seeding script against the production database.
+# seed-admin.sh — Run the admin user seeding script against a server database.
 #
-# Creates or promotes a user to admin on the production server. The script is
+# Creates or promotes a user to admin on the target server. The script is
 # idempotent — safe to re-run against an existing admin user.
 #
 # Requires ADMIN_EMAIL and ADMIN_PASSWORD environment variables.
@@ -9,13 +9,18 @@
 # configured DATABASE_URL from docker compose.
 #
 # Usage:
-#   infra/hetzner/scripts/seed-admin.sh [<server-ip>]
+#   infra/hetzner/scripts/seed-admin.sh [--env <staging|production>] [<server-ip>]
 #   ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=changeme ./seed-admin.sh
+#   ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=changeme ./seed-admin.sh --env staging
 #   ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=changeme ./seed-admin.sh 1.2.3.4
 #   DATABASE_URL=postgres://... ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=changeme ./seed-admin.sh
 #
+# Environment:
+#   HEROBIDS_ENV   Deployment environment: staging | production (default: production).
+#
 # Examples:
 #   ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=super-secret ./seed-admin.sh
+#   ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=super-secret ./seed-admin.sh --env staging
 #   ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=super-secret ./seed-admin.sh 1.2.3.4
 
 set -euo pipefail
@@ -26,6 +31,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(dirname "$SCRIPT_DIR")"
 source "$(dirname "${BASH_SOURCE[0]}")/_ssh_opts.sh"
 
+# ─── Parse environment flag first ────────────────────────────────────────────
+
+parse_env_flag "$@"
+shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
+
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
 SERVER_IP=""
@@ -33,14 +43,17 @@ SERVER_IP=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --help|-h)
-      echo "Usage: $0 [<server-ip>]" >&2
+      echo "Usage: $0 [--env <staging|production>] [<server-ip>]" >&2
+      echo "" >&2
+      echo "Options:" >&2
+      echo "  --env <name>        Target environment: staging or production (default: production)." >&2
       echo "" >&2
       echo "Required environment variables:" >&2
-      echo "  ADMIN_EMAIL      Email of the user to create/promote to admin." >&2
-      echo "  ADMIN_PASSWORD   Password for the admin user." >&2
+      echo "  ADMIN_EMAIL         Email of the user to create/promote to admin." >&2
+      echo "  ADMIN_PASSWORD      Password for the admin user." >&2
       echo "" >&2
       echo "Optional environment variables:" >&2
-      echo "  DATABASE_URL     Database connection string override (defaults to the API service DATABASE_URL)." >&2
+      echo "  DATABASE_URL        Database connection string override (defaults to the API service DATABASE_URL)." >&2
       exit 0
       ;;
     -*)

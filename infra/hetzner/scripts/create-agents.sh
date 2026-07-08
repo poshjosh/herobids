@@ -9,12 +9,13 @@
 #   - The env file must contain valid credentials and API_BASE_URL.
 #
 # Usage:
-#   infra/hetzner/scripts/create-agents.sh --env-file <path>
+#   infra/hetzner/scripts/create-agents.sh --env-file <path> [--env <staging|production>]
 #   infra/hetzner/scripts/create-agents.sh --env-file <path> --api-url <url>
 #   infra/hetzner/scripts/create-agents.sh --env-file <path> --dry-run
 #   infra/hetzner/scripts/create-agents.sh --help
 #
-# Environment overrides (all optional — sensible production defaults):
+# Environment:
+#   HEROBIDS_ENV          Deployment environment: staging | production (default: production).
 #   AGENT_PROVIDER        LLM provider (default: openrouter)
 #   AGENT_LIGHT_MODEL     Fast/cheap model (default: deepseek/deepseek-v4-flash via OpenRouter)
 #   AGENT_HEAVY_MODEL     Capable model for conviction (default: deepseek/deepseek-v4-pro via OpenRouter)
@@ -27,7 +28,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-# ─── Agent defaults (production) ─────────────────────────────────────────────
+# ─── Environment selection (minimal — this script does not use docker-compose) ─
+
+HEROBIDS_ENV="${HEROBIDS_ENV:-production}"
+
+# ─── Agent defaults ──────────────────────────────────────────────────────────
 
 AGENT_PROVIDER="${AGENT_PROVIDER:-openrouter}"
 AGENT_LIGHT_MODEL="${AGENT_LIGHT_MODEL:-deepseek/deepseek-v4-flash}"
@@ -64,6 +69,15 @@ DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --env)
+      [[ -z "${2:-}" ]] && die "--env requires a value (staging or production)"
+      HEROBIDS_ENV="$2"
+      shift 2
+      ;;
+    --env=*)
+      HEROBIDS_ENV="${1#*=}"
+      shift
+      ;;
     --env-file)
       [[ -z "${2:-}" ]] && die "--env-file requires a path argument"
       ENV_FILE="$2"

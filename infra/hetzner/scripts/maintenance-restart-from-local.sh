@@ -6,25 +6,35 @@
 # streams output back to your terminal.
 #
 # Usage:
-#   infra/hetzner/scripts/maintenance-restart-from-local.sh [--skip-deploy] [--include-live] [--yes|-y] [<server-ip>]
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh [--env <staging|production>] [--skip-deploy] [--include-live] [--yes|-y] [<server-ip>]
 #
 # Options:
+#   --env <name>     Target environment: staging or production (default: production).
 #   --skip-deploy    Skip code pull and image rebuild — restart agents on current image.
 #   --include-live   Also restart live-mode agents (skipped by default).
 #   --yes|-y         Skip confirmation prompt.
 #   <server-ip>      Override server IP (auto-detected from Terraform if omitted).
 #
+# Environment:
+#   HEROBIDS_ENV   Deployment environment: staging | production (default: production).
+#
 # Examples:
-#   infra/hetzner/scripts/maintenance-restart-from-local.sh                   # deploy + restart agents
-#   infra/hetzner/scripts/maintenance-restart-from-local.sh --skip-deploy     # restart agents only
-#   infra/hetzner/scripts/maintenance-restart-from-local.sh --yes             # no confirmation prompt
-#   infra/hetzner/scripts/maintenance-restart-from-local.sh --yes 1.2.3.4     # explicit IP, no prompt
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh --env staging    # staging maintenance
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh                  # deploy + restart agents
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh --skip-deploy    # restart agents only
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh --yes            # no confirmation prompt
+#   infra/hetzner/scripts/maintenance-restart-from-local.sh --yes 1.2.3.4    # explicit IP, no prompt
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(dirname "$SCRIPT_DIR")"
 source "${SCRIPT_DIR}/_ssh_opts.sh"
+
+# ─── Parse environment flag first ────────────────────────────────────────────
+
+parse_env_flag "$@"
+shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 
 # ─── Parse args ──────────────────────────────────────────────────────────────
 
@@ -69,12 +79,12 @@ for a in "${REMOTE_ARGS[@]+"${REMOTE_ARGS[@]}"}"; do
 done
 
 if [[ "${SKIP_CONFIRM}" != "true" ]]; then
-  echo "Maintenance restart on ${SERVER_IP} — ${DEPLOY_NOTE}"
+  echo "Maintenance restart on ${SERVER_IP} (${HEROBIDS_ENV}) — ${DEPLOY_NOTE}"
   read -rp "Continue? [y/N] " CONFIRM
   [[ "${CONFIRM}" =~ ^[Yy] ]] || { echo "Aborted."; exit 0; }
 fi
 
-echo "==> Connecting to ${SERVER_IP}..."
+echo "==> Connecting to ${SERVER_IP} (${HEROBIDS_ENV})..."
 echo ""
 
 # ─── Sync latest script then run it ─────────────────────────────────────────
@@ -82,10 +92,11 @@ echo ""
 # latest version runs, without a full reset that belongs to the script itself.
 
 # shellcheck disable=SC2086
-ssh ${SSH_OPTS} "root@${SERVER_IP}" bash -s -- "${REMOTE_ARGS[@]+"${REMOTE_ARGS[@]}"}" << 'REMOTE'
+ssh ${SSH_OPTS} "root@${SERVER_IP}" HEROBIDS_ENV="${HEROBIDS_ENV}" bash -s -- "${REMOTE_ARGS[@]+"${REMOTE_ARGS[@]}"}" << 'REMOTE'
 set -euo pipefail
 cd /opt/herobids
 
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Environment: ${HEROBIDS_ENV}"
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)]      Syncing maintenance-restart.sh from origin/main..."
 git fetch --all --quiet
 git checkout origin/main -- infra/hetzner/scripts/maintenance-restart.sh

@@ -1,3 +1,16 @@
+# ── Environment ────────────────────────────────────────────
+
+variable "environment" {
+  type        = string
+  description = "Deployment environment: staging or production"
+  default     = "production"
+
+  validation {
+    condition     = contains(["staging", "production"], var.environment)
+    error_message = "environment must be 'staging' or 'production'."
+  }
+}
+
 # ── Provider ───────────────────────────────────────────────
 
 variable "hcloud_token" {
@@ -16,7 +29,7 @@ variable "hcloud_token" {
 
 variable "server_name" {
   type        = string
-  description = "Server hostname"
+  description = "Server hostname. Convention: herobids (production), herobids-staging (staging)."
   default     = "herobids"
 }
 
@@ -79,6 +92,6 @@ variable "git_branch" {
 
 variable "app_domain" {
   type        = string
-  description = "Application domain name"
+  description = "Application domain name. Convention: herobids.com (production), staging.herobids.com (staging)."
   default     = "herobids.com"
 }
