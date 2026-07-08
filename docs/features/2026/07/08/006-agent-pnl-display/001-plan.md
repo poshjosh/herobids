@@ -1,6 +1,6 @@
 # Plan: Agent PnL Display — Aggregate & Per-Agent
 
-**Status:** Proposed — not yet implemented
+**Status:** In Progress — implementing
 **Date:** 2026-07-08
 **Prior art:** `apps/api/src/routes/capabilities/trading.ts` (`/state` and `/outcomes` endpoints), `apps/api/src/routes/exports.ts` (`computeReport()`)
 
@@ -309,16 +309,16 @@ export function pnlColor(pnl: string | number | null | undefined): string {
 
 ## Implementation Order
 
-| Step | What | Files | Depends on |
-|---|---|---|---|
-| 1 | Bulk PnL endpoint | `apps/api/src/routes/agents.ts` | — |
-| 2 | Extend dashboard overview with PnL | `apps/api/src/routes/dashboard.ts` | — |
-| 3 | API client types + methods | `apps/web/src/lib/api-client.ts` | 1, 2 |
-| 4 | `formatPnl` helper | `apps/web/src/lib/formatting.ts` | — |
-| 5 | Mission Control PnL card (1a) | `MissionControlPage.tsx` | 2, 3, 4 |
-| 6 | Exposure page PnL header (1b) | `ExposurePage.tsx` | 2, 3, 4 |
-| 7 | Per-agent PnL on cards (1c) | `AgentsPage.tsx`, `AgentSummaryCard.tsx` | 1, 3, 4 |
-| 8 | i18n strings | `apps/web/src/app/i18n/` | 5, 6, 7 |
+| Step | What | Files | Depends on | Status |
+|---|---|---|---|---|
+| 1 | Bulk PnL endpoint | `apps/api/src/routes/agents.ts` | — | PENDING |
+| 2 | Extend dashboard overview with PnL | `apps/api/src/routes/dashboard.ts` | — | PENDING |
+| 3 | API client types + methods | `apps/web/src/lib/api-client.ts` | 1, 2 | PENDING |
+| 4 | `formatPnl` helper | `apps/web/src/lib/formatting.ts` | — | PENDING |
+| 5 | Mission Control PnL card (1a) | `MissionControlPage.tsx` | 2, 3, 4 | PENDING |
+| 6 | Exposure page PnL header (1b) | `ExposurePage.tsx` | 2, 3, 4 | PENDING |
+| 7 | Per-agent PnL on cards (1c) | `AgentsPage.tsx`, `AgentSummaryCard.tsx` | 1, 3, 4 | PENDING |
+| 8 | i18n strings | `apps/web/src/app/i18n/` | 5, 6, 7 | PENDING |
 
 Steps 1–4 can be done in parallel. Steps 5–7 are independent of each other and
 can be done in any order after 1–4.
@@ -357,3 +357,14 @@ can be done in any order after 1–4.
 | Bulk endpoint query is slow with many agents/positions | The `idx_positions_actor` index covers the query; benchmark with realistic data volumes. Add a materialized cache if needed (unlikely at current scale). |
 | Bot-owned position attribution via `agent_connections` is complex | The existing `selectAgentTradingAssignmentRows` helper in `trading.ts` already solves this. Reuse it. |
 | `AgentSummaryCard` already has multiple data dependencies | Add PnL as an optional prop — card renders fine without it. |
+
+---
+
+## Outstanding Issues
+
+### [Step 1] Bulk PnL endpoint
+
+- **MEDIUM** — `totalRealizedPnl` returns a string (`toFixed(6)`) while other fields return numbers. API response type inconsistency. Consider either converting to `Number()` or using strings for all monetary fields consistently.
+- **MEDIUM** — `Number()` on `sum(realizedPnl)` loses PostgreSQL `numeric` precision to IEEE 754 double. Acceptable for display-only endpoint but would be problematic if used for settlement. Document this is display-only.
+- **LOW** — Duplicate merge construction logic between `directResults` and `botOwnedResults` loops. Extract a helper for DRY.
+- **LOW** — Missing response type annotation on the route handler for consistency with other endpoints in the file.
