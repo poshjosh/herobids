@@ -126,7 +126,7 @@ export function SkillsPage() {
   ];
 
   const renderSkillGrid = (skills: Skill[], mode: 'built-in' | 'mine' | 'marketplace' | 'admin') => (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', alignItems: 'start' }}>
       {skills.map((skill) => (
         <SkillCard key={skill.id} skill={skill} mode={mode} onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} tools={toolsQuery.data?.tools ?? []} categories={toolsQuery.data?.categories ?? []} toolsLoading={toolsQuery.isLoading} toolsError={toolsQuery.error} />
       ))}
@@ -632,7 +632,7 @@ function SkillCard({
   const metrics = metricsQuery.data as SkillMetrics | undefined;
 
   return (
-    <Card style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+    <Card style={{ display: 'flex', flexDirection: 'column', gap: '12px', ...(isEditing ? { gridColumn: '1 / -1' } : {}) }}>
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
           <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)' }}>{skill.name}</div>
