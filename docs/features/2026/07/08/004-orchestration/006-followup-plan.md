@@ -41,3 +41,8 @@ This is a followup to docs/features/2026/07/08/004-orchestration/002-implementat
 - 🟡 MEDIUM — Pre-existing bug: `DATABASE_URL` password is not URL-encoded in `buildAgentEnv`. Passwords with `@`, `:`, `/`, `%` would produce malformed URLs. Should add `encodeURIComponent` to postgresPassword interpolation. Tests use `s3cr3t` (no special chars) so bug goes undetected. File follow-up bug report.
 - 🔵 LOW — Test 3 uses realistic `redis://localhost:6379` as ignored value; should use self-documenting placeholder like `redis://should-be-ignored:6379` for consistency.
 - 🔵 LOW — Test password `s3cr3t` could trigger secret-scanning false positives; use obviously fake password like `test-pg-pass`.
+
+### [Item 3: list_eligible_agent_nodes filter]
+- 🟡 MEDIUM — `current_agent_node_count()` Nomad API fallback path lacks the same `NodeClass == "agent"` filter. If the state file goes missing and the control plane ever runs a Nomad client, the count would be inflated, affecting scale-in/out guards. Should add the filter for consistency.
+- 🔵 LOW — Implementation uses `NodeClass` (idiomatic Nomad) instead of plan's suggested name-prefix or meta-attribute approaches. Accept as improvement; consider updating plan.
+- 🔵 LOW — Plan risk description slightly inaccurate: `cloud-init.yaml` has `client { enabled = false }`, so control plane doesn't currently run a Nomad client. Fix is still valid defense-in-depth.

@@ -293,6 +293,8 @@ NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS="${NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS:-
 
 # list_eligible_agent_nodes — returns newline-separated Nomad node IDs for all
 # ready, eligible agent nodes (excluding the Nomad server if it runs a client).
+# Filters by NodeClass == "agent" so the control-plane client node (which has no
+# node_class or a different class) is never a scale-in candidate.
 list_eligible_agent_nodes() {
   local nodes_json
   nodes_json="$(nomad_api GET "/v1/nodes" || true)"
@@ -301,7 +303,7 @@ list_eligible_agent_nodes() {
     return 1
   fi
 
-  echo "${nodes_json}" | jq -r '.[] | select(.Status == "ready" and .SchedulingEligibility == "eligible") | .ID'
+  echo "${nodes_json}" | jq -r '.[] | select(.Status == "ready" and .SchedulingEligibility == "eligible" and .NodeClass == "agent") | .ID'
 }
 
 # node_is_idle <node_id> — returns 0 if the node has zero non-terminal
