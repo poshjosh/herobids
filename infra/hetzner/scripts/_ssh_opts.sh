@@ -170,7 +170,7 @@ parse_env_flag() {
 terraform_output() {
   (
     cd "${TF_DIR}" || { echo "ERROR: Cannot access terraform directory ${TF_DIR}" >&2; exit 1; }
-    terraform workspace select "${HEROBIDS_ENV}" 2>/dev/null || {
+    terraform workspace select "${HEROBIDS_ENV}" >/dev/null 2>&1 || {
       echo "ERROR: Terraform workspace '${HEROBIDS_ENV}' does not exist." >&2
       echo "Run provision.sh --env ${HEROBIDS_ENV} first to create it." >&2
       exit 1
