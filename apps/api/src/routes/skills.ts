@@ -52,6 +52,7 @@ const ListSkillsQuerySchema = z.object({
   priceMax: z.coerce.number().int().min(0).optional(),
   likedByMe: z.coerce.boolean().optional(),
   tag: z.string().min(1).optional(),
+  q: z.string().min(1).optional(),
 });
 
 const PublishSkillSchema = z.object({
@@ -557,6 +558,16 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
 
     if (query.tag) {
       whereClauses.push(sql`${query.tag} = ANY(${skills.tags})`);
+    }
+
+    if (query.q) {
+      const pattern = `%${query.q}%`;
+      whereClauses.push(
+        or(
+          sql`${skills.name} ILIKE ${pattern}`,
+          sql`${skills.description} ILIKE ${pattern}`,
+        )!,
+      );
     }
 
     let rowsQuery = db.select().from(skills).$dynamic();

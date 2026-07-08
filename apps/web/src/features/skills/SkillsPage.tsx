@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { skills as skillsApi, agentTools, type CreateSkillRequest, type Skill, type SkillMetrics } from '../../lib/api-client.js';
@@ -6,6 +6,16 @@ import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Secti
 import { useSession } from '../../app/providers/SessionProvider.js';
 
 type SkillCategoryTab = 'all' | 'mine' | 'built-in' | 'marketplace' | 'admin';
+
+function filterSkillsBySearch(skills: Skill[], term: string): Skill[] {
+  const t = term.trim().toLowerCase();
+  if (!t) return skills;
+  return skills.filter(
+    (skill) =>
+      skill.name.toLowerCase().includes(t) ||
+      skill.description.toLowerCase().includes(t),
+  );
+}
 
 export function SkillsPage() {
   const intl = useIntl();
@@ -27,6 +37,7 @@ export function SkillsPage() {
   const canCreatePrivateSkills = skillsEntitlements?.canCreatePrivateSkills ?? true;
 
   const [activeCategory, setActiveCategory] = useState<SkillCategoryTab>('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [showCreateComposer, setShowCreateComposer] = useState(false);
   const [createDraft, setCreateDraft] = useState<CreateSkillRequest>({
     name: '',
@@ -91,12 +102,17 @@ export function SkillsPage() {
     },
   });
 
-  const builtIn = (selectableQuery.data?.skills ?? []).filter((skill) => skill.sourceKind === 'system');
-  const mySkills = mineQuery.data?.skills ?? [];
-  const marketplaceSkills = canViewMarketplace
+  const rawBuiltIn = (selectableQuery.data?.skills ?? []).filter((skill) => skill.sourceKind === 'system');
+  const rawMySkills = mineQuery.data?.skills ?? [];
+  const rawMarketplaceSkills = canViewMarketplace
     ? (marketplaceQuery.data?.skills ?? []).filter((skill) => skill.sourceKind === 'user')
     : [];
-  const adminSkills = adminQuery.data?.skills ?? [];
+  const rawAdminSkills = adminQuery.data?.skills ?? [];
+
+  const builtIn = filterSkillsBySearch(rawBuiltIn, searchTerm);
+  const mySkills = filterSkillsBySearch(rawMySkills, searchTerm);
+  const marketplaceSkills = filterSkillsBySearch(rawMarketplaceSkills, searchTerm);
+  const adminSkills = filterSkillsBySearch(rawAdminSkills, searchTerm);
   const adminAccessDenied = adminQuery.data === null;
   const hasAnySkills = builtIn.length > 0 || mySkills.length > 0 || marketplaceSkills.length > 0 || adminSkills.length > 0;
   const isLoading = selectableQuery.isLoading || mineQuery.isLoading || (canViewMarketplace && marketplaceQuery.isLoading) || (adminQuery.isLoading && builtIn.length === 0 && mySkills.length === 0 && marketplaceSkills.length === 0);
@@ -439,6 +455,22 @@ export function SkillsPage() {
 
       {!isLoading && !queryError && hasAnySkills && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+          <input
+            type="text"
+            placeholder={intl.formatMessage({ id: 'skills.searchPlaceholder', defaultMessage: 'Search skills…' })}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              padding: '8px 12px',
+              fontSize: '14px',
+              border: '1px solid var(--color-border)',
+              borderRadius: '8px',
+              background: 'var(--color-bg)',
+              color: 'var(--color-text)',
+              outline: 'none',
+              maxWidth: '360px',
+            }}
+          />
           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
             {skillTabs.map((tab) => (
               <Button

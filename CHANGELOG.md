@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## Added
+
+- Option to search skills on the skills page
+- Option to search skills when creating/editing agents
+
 ## v0.0.13 - 2026-07-08
 
 ### Fixed

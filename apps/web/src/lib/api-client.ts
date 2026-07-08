@@ -398,6 +398,7 @@ export const skills = {
     priceMax?: number;
     likedByMe?: boolean;
     tag?: string;
+    q?: string;
   }) => {
     const qs = new URLSearchParams();
     if (params?.scope) qs.set('scope', params.scope);
@@ -407,6 +408,7 @@ export const skills = {
     if (params?.priceMax !== undefined) qs.set('priceMax', String(params.priceMax));
     if (params?.likedByMe !== undefined) qs.set('likedByMe', String(params.likedByMe));
     if (params?.tag) qs.set('tag', params.tag);
+    if (params?.q) qs.set('q', params.q);
     const query = qs.toString() ? `?${qs.toString()}` : '';
     return request<{ skills: Skill[] }>(`/skills${query}`);
   },

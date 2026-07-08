@@ -65,7 +65,6 @@ describe('BillingPage rendering', () => {
   it('renders usage sections and empty states even when no usage account exists', () => {
     const html = renderPage();
 
-    expect(html).toContain('Provider: mock');
     expect(html).toContain('AI Usage — Current Period');
     expect(html).toContain(messages['billing.usage.emptyAccount']);
     expect(html).toContain('Usage by Meter');

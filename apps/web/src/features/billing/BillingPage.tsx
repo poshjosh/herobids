@@ -260,9 +260,6 @@ export function BillingPage() {
                   {intl.formatMessage({ id: 'billing.currentPlan' })}
                 </div>
                 <div style={{ fontSize: '18px', fontWeight: '600' }}>{summary.planLabel}</div>
-                <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                  {intl.formatMessage({ id: 'billing.providerLabel' }, { provider: summary.provider })}
-                </div>
                 {summary.billingInterval && (
                   <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                     {intl.formatMessage({ id: 'billing.billedInterval' }, { interval: intl.formatMessage({ id: `billing.interval.${summary.billingInterval}` }) })}
@@ -720,7 +717,6 @@ export function BillingPage() {
                       <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
                         <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>Date</th>
                         <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Type</th>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Direction</th>
                         <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Amount</th>
                       </tr>
                     </thead>
@@ -736,20 +732,14 @@ export function BillingPage() {
                               <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>{entry.description}</div>
                             )}
                           </td>
-                          <td style={{ padding: '8px' }}>
-                            <span style={{
-                              display: 'inline-block',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              fontSize: '12px',
-                              fontWeight: '500',
-                              background: entry.direction === 'credit' ? 'var(--color-success-bg, #f0fff4)' : 'var(--color-danger-bg, #fff5f5)',
-                              color: entry.direction === 'credit' ? 'var(--color-success-text, #276749)' : 'var(--color-danger, #e53e3e)',
-                            }}>
-                              {entry.direction === 'credit' ? '+ CREDIT' : '- DEBIT'}
-                            </span>
+                          <td style={{
+                            padding: '8px',
+                            textAlign: 'right',
+                            fontWeight: '500',
+                            color: entry.direction === 'credit' ? 'var(--color-success-text, #276749)' : 'var(--color-danger, #e53e3e)',
+                          }}>
+                            {entry.direction === 'credit' ? '+' : '−'}{formatMicrousd(entry.amountMicrousd)}
                           </td>
-                          <td style={{ padding: '8px', textAlign: 'right' }}>{formatMicrousd(entry.amountMicrousd)}</td>
                         </tr>
                       ))}
                     </tbody>
