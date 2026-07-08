@@ -300,7 +300,7 @@ export const messages: Record<string, string> = {
   'billing.usage.totalCredit': 'Total credit',
   'billing.usage.yourPlan': 'your plan',
   'billing.usage.sectionTitle': 'AI Usage — Current Period',
-  'billing.usage.buyTopUp': 'Buy Top-up',
+  'billing.usage.buyTopUp': 'Top up',
   'billing.usage.openingCheckout': 'Opening...',
   'billing.usage.thresholdReached': '{pct}% threshold reached',
   'billing.usage.topUpsNotEnabled': 'Top-ups are not enabled for this plan.',

@@ -8,7 +8,7 @@ import { TechnicalConfigSection } from './TechnicalConfigSection.js';
 import { StrategyPresetSelector } from '../../lib/StrategyPresetSelector.js';
 import { AdvancedSettingsSection } from './AdvancedSettingsSection.js';
 import { AgentControlsSection } from './AgentControlsSection.js';
-import { WakeSourceSection } from './WakeSourceSection.js';
+import { WakeSourceSection, TRADING_WAKE_SOURCES } from './WakeSourceSection.js';
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
 
 // ---------------------------------------------------------------------------
@@ -338,13 +338,39 @@ export function AgentFormBody(props: AgentFormBodyProps) {
               onBlurField={handleFieldBlur}
             />
             {props.computeBudgetSlot}
-            <WakeSourceSection
-              selected={props.subscribedSources}
-              onChange={props.onSubscribedSourcesChange}
-            />
           </div>
         }
-        tradingSetup={props.tradingSetupSlot}
+        tradingSetup={
+          props.requiresTradingSetup ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {props.tradingSetupSlot}
+              <WakeSourceSection
+                sources={TRADING_WAKE_SOURCES}
+                selected={props.subscribedSources}
+                onChange={(sources) => {
+                  // DESIGN DECISION: Reminders are always-on for ALL agents.
+                  //
+                  // Rationale:
+                  // - Non-trading agents (personal assistants): only wake source that matters.
+                  //   Always on, no UI toggle needed — the agent needs to be reachable for
+                  //   user-scheduled reminders.
+                  // - Trading agents: reminders are forced into every non-empty wake-source
+                  //   selection so they are always included in the backend request. The four
+                  //   trading-specific sources (watch thresholds, discovery deltas, regime
+                  //   changes, scanner) are optional and surfaced in the Trading Setup tab.
+                  //
+                  // An empty selection (sources.length === 0) means "all sources" and is
+                  // passed through unchanged — the backend treats empty as the full set.
+                  if (sources.length > 0 && !sources.includes('reminder')) {
+                    props.onSubscribedSourcesChange([...sources, 'reminder']);
+                  } else {
+                    props.onSubscribedSourcesChange(sources);
+                  }
+                }}
+              />
+            </div>
+          ) : props.tradingSetupSlot
+        }
         strategy={
           props.requiresTradingSetup ? (
             <div>

@@ -276,9 +276,29 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
           </div>
         ))}
 
+        {/* weekendPause */}
+        <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <input
+            id="rp-weekendPause"
+            type="checkbox"
+            checked={overrides?.weekendPause ?? defaults.weekendPause}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              if (checked === defaults.weekendPause) {
+                clearOverride('weekendPause');
+              } else {
+                setOverride('weekendPause', checked);
+              }
+            }}
+          />
+          <label htmlFor="rp-weekendPause" style={{ fontWeight: 600, fontSize: '14px', cursor: 'pointer' }}>
+            {intl.formatMessage({ id: 'agents.runtimePolicy.weekendPause' })}
+          </label>
+        </div>
+
         {/* allowedHoursUtc */}
         <div style={{ gridColumn: '1 / -1' }}>
-          <FieldLabel htmlFor="rp-allowedHoursUtc">
+          <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
             {intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtc' })}
             {(() => {
               const activeSessions = overrides?.tradingSessions;
@@ -287,7 +307,7 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
               }
               return null;
             })()}
-          </FieldLabel>
+          </div>
           <HourGrid
             selected={(() => {
               const activeSessions = overrides?.tradingSessions;
@@ -315,30 +335,10 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
           </div>
         </div>
 
-        {/* weekendPause */}
-        <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <input
-            id="rp-weekendPause"
-            type="checkbox"
-            checked={overrides?.weekendPause ?? defaults.weekendPause}
-            onChange={(e) => {
-              const checked = e.target.checked;
-              if (checked === defaults.weekendPause) {
-                clearOverride('weekendPause');
-              } else {
-                setOverride('weekendPause', checked);
-              }
-            }}
-          />
-          <label htmlFor="rp-weekendPause" style={{ fontSize: '13px', cursor: 'pointer' }}>
-            {intl.formatMessage({ id: 'agents.runtimePolicy.weekendPause' })}
-          </label>
-        </div>
-
         {/* Trading Session Presets */}
         {showTradingSessionPresets && (
           <div style={{ gridColumn: '1 / -1' }}>
-            <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '6px' }}>
+            <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
               {intl.formatMessage({ id: 'agents.runtimePolicy.tradingSessionsLabel' })}
             </div>
             <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
@@ -392,7 +392,7 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
                       }}
                       style={{ accentColor: 'var(--color-brand)' }}
                     />
-                    <span style={{ fontWeight: checked ? 600 : 400 }}>{intl.formatMessage({ id: labelId })}</span>
+                    <span style={{ fontSize: '12px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>{intl.formatMessage({ id: labelId })}</span>
                     <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: subId })}</span>
                   </label>
                 );

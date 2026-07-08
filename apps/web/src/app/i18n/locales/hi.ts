@@ -300,7 +300,7 @@ export const messages: Record<string, string> = {
   'billing.usage.totalCredit': 'कुल क्रेडिट',
   'billing.usage.yourPlan': 'आपकी योजना',
   'billing.usage.sectionTitle': 'AI उपयोग — वर्तमान अवधि',
-  'billing.usage.buyTopUp': 'टॉप-अप खरीदें',
+  'billing.usage.buyTopUp': 'टॉप-अप करें',
   'billing.usage.openingCheckout': 'खोला जा रहा है...',
   'billing.usage.thresholdReached': '{pct}% सीमा तक पहुँच गया',
   'billing.usage.topUpsNotEnabled': 'इस योजना के लिए टॉप-अप सक्षम नहीं हैं।',

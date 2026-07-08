@@ -300,7 +300,7 @@ export const messages: Record<string, string> = {
   'billing.usage.totalCredit': 'إجمالي الرصيد',
   'billing.usage.yourPlan': 'خطتك',
   'billing.usage.sectionTitle': 'استخدام AI — الفترة الحالية',
-  'billing.usage.buyTopUp': 'شراء تعبئة رصيد',
+  'billing.usage.buyTopUp': 'تعبئة رصيد',
   'billing.usage.openingCheckout': 'جارٍ الفتح...',
   'billing.usage.thresholdReached': 'تم بلوغ {pct}% من الحد',
   'billing.usage.topUpsNotEnabled': 'تعبئة الرصيد غير مفعلة لهذه الخطة.',

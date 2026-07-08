@@ -183,6 +183,10 @@ Route: `/agents?create=1` — simplified create-agent form with Style selector, 
 | AG-S09 | Max bots plan-derived | In create form with bot-management skill, expand Advanced Settings → check for max bots | No max bots input field. Informational text reads "Maximum concurrent bots is determined by your plan." | — | |
 | AG-S10 | Override Style in Advanced | Select Style = Careful; open Advanced Settings → AI Configuration; change cost preset to premium | Tick interval and daily budget update accordingly. The visual Style indicator may change (or show "Custom"). | — | |
 | AG-S11 | Review step reflects simplified fields | Create agent with trading preset, Balanced style, capital=1000; click Review | Review summary shows: name, goal, capability mode ("Trading + Intelligence"), style label ("Balanced"), capital ("1000"), execution mode ("Paper"). No raw config IDs or internal field names. | — | |
+| AG-W01 | Wake sources — non-trading agent | Create a non-trading agent (personal-assistant); open Advanced Settings → AI Configuration | No wake source checkboxes shown. Reminders are always-on — no UI needed. | — | |
+| AG-W02 | Wake sources — trading agent layout | Create a trading agent; open Advanced Settings | AI Configuration tab: no wake source checkboxes. Trading Setup tab: shows "Receiving all wake sources. Select specific sources to filter." with 4 checkboxes — Watch Thresholds, Discovery Deltas, Regime Changes, Scanner. Reminders is NOT listed (always-on, forced by design). | — | |
+| AG-W03 | Wake sources — reminders forced | In Trading Setup, select exactly one trading source (e.g. Watch Thresholds) | Status text reads "Receiving 1 of 4 wake sources." — counts only the visible trading sources, not the hidden forced reminder. Check all 4 boxes → "Receiving 4 of 4." Uncheck all → "Receiving all wake sources." | — | |
+| AG-W04 | Wake sources — edit preserves selection | Create a trading agent with specific wake sources; open the Edit modal → Advanced Settings → Trading Setup | Previously selected wake sources are reflected in the checkboxes. Changing them updates the count correctly. | — | |
 
 ---
 
