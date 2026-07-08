@@ -1,5 +1,5 @@
 import { pgTable, text, varchar, timestamp, jsonb, integer, numeric, index } from 'drizzle-orm/pg-core';
-import type { AgentRiskOverrides, UnifiedAgentConfig, AgentRuntimePolicyOverrides } from '@herobids/domain';
+import type { AgentRiskOverrides, UnifiedAgentConfig, AgentRuntimePolicyOverrides, WakePreferences } from '@herobids/domain';
 import { users } from './users.js';
 
 /**
@@ -61,6 +61,8 @@ export const agents = pgTable('agents', {
   riskOverrides: jsonb('risk_overrides').$type<AgentRiskOverrides | null>(),
   /** Unified agent config — technical + intelligence + execution + risk overrides set by the agent at runtime. */
   unifiedConfig: jsonb('unified_config').$type<UnifiedAgentConfig | null>(),
+  /** Per-agent wake source subscription preferences. If absent/empty, agent receives all sources. */
+  wakePreferences: jsonb('wake_preferences').$type<WakePreferences | null>(),
   /** Per-agent open position escalation to judge policy: never | uncovered_or_triggered | always */
   openPositionEscalationToJudgePolicy: text('open_position_escalation_to_judge_policy').notNull().default('uncovered_or_triggered'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

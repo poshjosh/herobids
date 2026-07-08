@@ -35,6 +35,7 @@ import {
   TechnicalConfigSchema,
   validateExecutionCapability,
   venueTypeFromProvider,
+  WakePreferencesSchema,
   type AgentRiskDefaultsConfig,
   type AgentCostEstimatesConfig,
   agentStyleToPresetStyle,
@@ -125,6 +126,7 @@ const CreateAgentSchema = z.object({
   runtimePolicyOverrides: AgentRuntimePolicyOverridesSchema.optional(),
   openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
   connectionIds: z.array(z.string().min(1)).max(20).optional(),
+  wakePreferences: WakePreferencesSchema.optional(),
 }).superRefine((data, ctx) => {
   if (!data.technical && !data.prompt) {
     ctx.addIssue({
@@ -181,6 +183,7 @@ const UpdateAgentSchema = z.object({
   runtimePolicyOverrides: AgentRuntimePolicyOverridesSchema.nullable().optional(),
   openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
   connectionIds: z.array(z.string().min(1)).max(20).optional(),
+  wakePreferences: WakePreferencesSchema.nullable().optional(),
 });
 
 const PauseAgentSchema = z.object({
@@ -731,6 +734,7 @@ export async function agentRoutes(
           runtimePolicyOverrides: parsed.data.runtimePolicyOverrides ?? null,
           openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
           ...(finalUnifiedConfig ? { unifiedConfig: finalUnifiedConfig } : {}),
+          wakePreferences: parsed.data.wakePreferences ?? null,
           createdAt: now,
           updatedAt: now,
         });

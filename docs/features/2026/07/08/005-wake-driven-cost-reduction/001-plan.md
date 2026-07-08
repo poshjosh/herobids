@@ -349,7 +349,7 @@ This phase filters **monitor-owned** sources only.
 | B2 | Add structured runtime storage for pending market-monitor context events in `runtime-composition.ts` | DONE |
 | B3 | Add stable digest for pending market context events in `tick-gates.ts` | DONE |
 | B4 | Compute pending market-event digest before skip decision and render context in prompt in `agent.ts` | DONE |
-| B5 | Add `mode` to each known wake-policy source in config and schema | PENDING |
+| B5 | Add `mode` to each known wake-policy source in config and schema | DONE |
 
 ### Part C — Per-Agent Wake Subscriptions
 

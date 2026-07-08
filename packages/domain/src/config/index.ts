@@ -87,9 +87,11 @@ export {
   SentimentConfigSchema,
   deriveStrategyPreset,
   extractStrategyFromConfig,
+  WakePreferencesSchema,
 } from './schema.js';
 
 export type {
+  WakePreferences,
   SwapVenue,
   OrderbookVenue,
   SupportedTokenSafetyNetwork,
