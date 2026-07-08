@@ -312,7 +312,7 @@ export function pnlColor(pnl: string | number | null | undefined): string {
 | Step | What | Files | Depends on | Status |
 |---|---|---|---|---|
 | 1 | Bulk PnL endpoint | `apps/api/src/routes/agents.ts` | — | DONE |
-| 2 | Extend dashboard overview with PnL | `apps/api/src/routes/dashboard.ts` | — | PENDING |
+| 2 | Extend dashboard overview with PnL | `apps/api/src/routes/dashboard.ts` | — | DONE |
 | 3 | API client types + methods | `apps/web/src/lib/api-client.ts` | 1, 2 | PENDING |
 | 4 | `formatPnl` helper | `apps/web/src/lib/formatting.ts` | — | PENDING |
 | 5 | Mission Control PnL card (1a) | `MissionControlPage.tsx` | 2, 3, 4 | PENDING |
@@ -375,3 +375,9 @@ can be done in any order after 1–4.
 - **LOW** — Frontend `DashboardOverview` type not yet extended (planned for Step 3).
 - **LOW** — `.toFixed(6)` is a duplicated magic number across `dashboard.ts`, `agents.ts`, `trading.ts`. Could extract to shared constant.
 - **LOW** — Comment could clarify why no per-agent grouping (dashboard is aggregate-only; per-agent lives at `GET /agents/performance`).
+
+### [Step 3] API client types + methods
+
+- **MEDIUM** — Plan doc Phase 6 sample UI code references `perf.winRate` but the `AgentPerformance` type exposes `winningClosedCount` (raw count). Step 7 implementer must compute rate as `winningClosedCount / closedPositionCount`.
+- **LOW** — Missing JSDoc on `AgentPerformance` interface for field documentation.
+- **LOW** — No test coverage for new types/methods (acceptable for type-only change).
