@@ -17,6 +17,7 @@ import type { AgentRuntimeLauncher } from './agent-runtime-launcher.js';
 import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
 import { PLATFORM_ALERT_EVENTS } from '../alerting/platform-alert-service.js';
 import { resolveEffectiveLlmSelection } from '../llm-selection.js';
+import type { Redis } from 'ioredis';
 import pino from 'pino';
 
 const logger = pino({ name: 'agent-session-manager' });
@@ -99,6 +100,7 @@ export class AgentSessionManager {
     config: Pick<AgentSessionManagerConfig, 'budgets'> & Partial<Omit<AgentSessionManagerConfig, 'budgets'>>,
     private readonly reconnectHandler?: AgentReconnectHandler,
     private readonly platformAlerts?: PlatformAlertService,
+    private readonly redis?: Redis,
   ) {
     this.config = {
       heartbeatTimeoutMs: 30_000,
@@ -152,6 +154,39 @@ export class AgentSessionManager {
     for (const session of sessions) {
       if (!this.runtimeLauncher.hasRuntime(session.id)) {
         this.runtimeLauncher.registerRecoveredRuntime(session.agentId, session.id);
+      }
+    }
+
+    // Rebuild Redis projection for survived sessions so that the ref counter
+    // and active set reflect the true state before any heartbeats can arrive.
+    // Without this, handleHeartbeat() re-increments the counter on the first
+    // post-restart heartbeat, causing unbounded growth across deploys.
+    if (this.redis && sessions.length > 0) {
+      try {
+        const agentCounts = new Map<string, number>();
+        for (const session of sessions) {
+          agentCounts.set(session.agentId, (agentCounts.get(session.agentId) ?? 0) + 1);
+        }
+        const uniqueAgentIds = [...agentCounts.keys()];
+        const agentRecords = await Promise.all(
+          uniqueAgentIds.map((id) => this.agentRepo.getAgent(id).catch(() => null)),
+        );
+        const agentMap = new Map<string, (typeof agentRecords)[number]>();
+        for (let i = 0; i < uniqueAgentIds.length; i++) {
+          const id = uniqueAgentIds[i]!;
+          const record = agentRecords[i];
+          if (record) agentMap.set(id, record);
+        }
+        for (const [agentId, count] of agentCounts) {
+          await this.redis.set(`agent:sessions:count:${agentId}`, String(count));
+          await this.redis.sadd('agent:sessions:active', agentId);
+          const agentRecord = agentMap.get(agentId);
+          if (agentRecord?.wakePreferences) {
+            await this.redis.set(`agent:wake:prefs:${agentId}`, JSON.stringify(agentRecord.wakePreferences));
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, 'Failed to rebuild Redis projection for survived sessions');
       }
     }
 
@@ -480,6 +515,22 @@ export class AgentSessionManager {
 
     this.activatedSessions.delete(sessionId);
 
+    // Clean up Redis projection used by market-monitor recipient lookup (C3).
+    // Ref-counted: only remove from active set and delete prefs when all sessions
+    // for this agent have stopped (supports multi-session agents).
+    if (this.redis) {
+      try {
+        const count = await this.redis.decr(`agent:sessions:count:${session.agentId}`);
+        if (count <= 0) {
+          await this.redis.srem('agent:sessions:active', session.agentId);
+          await this.redis.del(`agent:wake:prefs:${session.agentId}`);
+          await this.redis.del(`agent:sessions:count:${session.agentId}`);
+        }
+      } catch (err) {
+        logger.warn({ err, agentId: session.agentId }, 'Failed to clean up wake preferences from Redis on session stop');
+      }
+    }
+
     // Stop and deregister the agent trading actor
     if (this.config.onSessionStopped) {
       this.config.onSessionStopped(session.agentId, session.id);
@@ -511,6 +562,22 @@ export class AgentSessionManager {
     }
 
     this.activatedSessions.delete(sessionId);
+
+    // Clean up Redis projection used by market-monitor recipient lookup (C3).
+    // Ref-counted: only remove from active set and delete prefs when all sessions
+    // for this agent have ended (supports multi-session agents).
+    if (this.redis) {
+      try {
+        const count = await this.redis.decr(`agent:sessions:count:${agentId}`);
+        if (count <= 0) {
+          await this.redis.srem('agent:sessions:active', agentId);
+          await this.redis.del(`agent:wake:prefs:${agentId}`);
+          await this.redis.del(`agent:sessions:count:${agentId}`);
+        }
+      } catch (err) {
+        logger.warn({ err, agentId }, 'Failed to clean up wake preferences from Redis on runtime session end');
+      }
+    }
 
     // Trigger in-memory actor cleanup (same path as stopSession)
     if (this.config.onSessionStopped) {
@@ -597,6 +664,28 @@ export class AgentSessionManager {
       }
       if (activationEstablished) {
         this.activatedSessions.add(payload.sessionId);
+        // Maintain Redis projection for market-monitor recipient lookup (C3).
+        // Only increment for genuinely new sessions (starting/launching → active).
+        // Survived sessions were already rebuilt by registerSurvivedSessions() and
+        // must NOT increment here, or the counter grows without bound on each restart.
+        if (this.redis && isFirstBoot) {
+          const agentRecord = await this.agentRepo.getAgent(session.agentId).catch(() => null);
+          if (agentRecord) {
+            try {
+              // Increment session count for this agent — ref-counted to support multi-session agents.
+              // Only add to active set when the first session becomes active.
+              const count = await this.redis.incr(`agent:sessions:count:${session.agentId}`);
+              if (count === 1) {
+                await this.redis.sadd('agent:sessions:active', session.agentId);
+              }
+              if (agentRecord.wakePreferences) {
+                await this.redis.set(`agent:wake:prefs:${session.agentId}`, JSON.stringify(agentRecord.wakePreferences));
+              }
+            } catch (err) {
+              logger.warn({ err, agentId: session.agentId }, 'Failed to write wake preferences to Redis on session active');
+            }
+          }
+        }
       }
       await this.agentRepo.updateAgent(session.agentId, { status: 'active' });
       // Notify real-time event stream (best-effort)

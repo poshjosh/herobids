@@ -847,7 +847,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
   plansConfig: appConfig.plans,
   usageBillingConfig: appConfig.usageBilling,
   providersYaml,
-}, agentReconnectHandler, platformAlerts);
+}, agentReconnectHandler, platformAlerts, redisClient);
 
 // Queue used by the broker callback to enqueue bot start jobs
 const lifecycleQueue = new Queue(QUEUE_NAME, { connection: redisConnection });

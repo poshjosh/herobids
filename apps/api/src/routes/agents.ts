@@ -1280,6 +1280,22 @@ export async function agentRoutes(
       return reply.status(txResult.status).send(txResult.body);
     }
 
+    // Sync wake preferences to Redis so the market monitor picks up changes
+    // immediately (no restart required). null = all sources = delete the key
+    // so the monitor treats the agent as "subscribed to everything".
+    if (redisClient && 'wakePreferences' in parsed.data) {
+      const prefsKey = `agent:wake:prefs:${id}`;
+      try {
+        if (parsed.data.wakePreferences === null) {
+          await redisClient.del(prefsKey);
+        } else {
+          await redisClient.set(prefsKey, JSON.stringify(parsed.data.wakePreferences));
+        }
+      } catch (err) {
+        request.log.warn({ err, agentId: id }, 'Failed to sync wake preferences to Redis');
+      }
+    }
+
     await syncAgentSkillAssignments(db, id, request.userId, assignmentResolution.assignments ?? []);
 
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));

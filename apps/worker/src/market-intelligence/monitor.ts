@@ -201,6 +201,26 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
       const agentId = key.replace('agent:watches:', '');
       if (agentId.startsWith('summary:')) continue;
 
+      // Only evaluate watches for agents with an active session.
+      // Stopped/crashed agents should not receive watch-threshold events
+      // due to stale watch keys left behind after a session ends.
+      const isActive = await redis.sismember('agent:sessions:active', agentId);
+      if (!isActive) continue;
+
+      // Fetch wake prefs once per agent per cycle — hoisted to avoid duplicate
+      // redis.get calls inside the per-watch processing loop.
+      let agentSubscribedSources: AgentWakeSource[] | null = null;
+      const prefsJson = await redis.get(`agent:wake:prefs:${agentId}`);
+      if (prefsJson) {
+        try {
+          const prefs = JSON.parse(prefsJson) as { subscribedSources?: AgentWakeSource[] };
+          agentSubscribedSources = prefs.subscribedSources ?? null;
+        } catch { /* malformed → proceed as if all sources are subscribed */ }
+      }
+
+      // If agent has explicit prefs and doesn't include watch_threshold, skip all watches for this agent.
+      if (agentSubscribedSources !== null && !agentSubscribedSources.includes('watch_threshold')) continue;
+
       const raw = await redis.hgetall(key);
       if (!raw || Object.keys(raw).length === 0) continue;
 
@@ -356,8 +376,8 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     await redis.set('market-monitor:discovery:previous-snapshot', snapshotRaw, 'EX', 3600);
     if (stopped) return;
 
-    // Get all agent IDs that have active watches or are running
-    const agentIds = await getActiveAgentIds();
+    // Get all agent IDs that are active and subscribed to discovery_delta
+    const agentIds = await getSubscribedAgentIds('discovery_delta');
     if (stopped) return;
 
     for (const token of snapshot.tokens) {
@@ -594,7 +614,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
       const suppressed = await checkDedupe(dedupeKey, REGIME_COOLDOWN_MS);
       if (suppressed) continue;
 
-      const agentIds = await getActiveAgentIds();
+      const agentIds = await getSubscribedAgentIds('regime_change');
       const eventId = crypto.randomUUID();
       const payload: MarketRegimeChangedPayload = {
         eventId,
@@ -874,6 +894,44 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     return watchKeys
       .map((k) => k.replace('agent:watches:', ''))
       .filter((id) => !id.startsWith('summary:'));
+  }
+
+  /**
+   * Get agent IDs that are both active (have a live session) AND subscribed to
+   * the given monitor-owned wake source. Agents with no wake preferences key
+   * (all sources) or with the source listed in subscribedSources are included.
+   * Agents not in agent:sessions:active are excluded regardless of preferences.
+   */
+  async function getSubscribedAgentIds(source: AgentWakeSource): Promise<string[]> {
+    const activeIds = await redis.smembers('agent:sessions:active');
+    if (activeIds.length === 0) return [];
+
+    const pipeline = redis.pipeline();
+    for (const agentId of activeIds) {
+      pipeline.get(`agent:wake:prefs:${agentId}`);
+    }
+    const results = await pipeline.exec();
+
+    const subscribed: string[] = [];
+    for (let i = 0; i < activeIds.length; i++) {
+      const agentId = activeIds[i]!;
+      const raw = results?.[i]?.[1] as string | null;
+      if (raw === null) {
+        // No prefs key → agent receives all sources
+        subscribed.push(agentId);
+        continue;
+      }
+      try {
+        const prefs = JSON.parse(raw) as { subscribedSources?: AgentWakeSource[] };
+        if (!prefs.subscribedSources || prefs.subscribedSources.includes(source)) {
+          subscribed.push(agentId);
+        }
+      } catch {
+        // Malformed JSON → treat as all sources (safety)
+        subscribed.push(agentId);
+      }
+    }
+    return subscribed;
   }
 
   async function checkDedupe(dedupeKey: string, _cooldownMs: number): Promise<boolean> {
