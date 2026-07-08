@@ -1,6 +1,6 @@
 # Plan: Agent PnL Display — Aggregate & Per-Agent
 
-**Status:** In Progress — implementing
+**Status:** Complete ✅
 **Date:** 2026-07-08
 **Prior art:** `apps/api/src/routes/capabilities/trading.ts` (`/state` and `/outcomes` endpoints), `apps/api/src/routes/exports.ts` (`computeReport()`)
 
@@ -318,7 +318,7 @@ export function pnlColor(pnl: string | number | null | undefined): string {
 | 5 | Mission Control PnL card (1a) | `MissionControlPage.tsx` | 2, 3, 4 | DONE |
 | 6 | Exposure page PnL header (1b) | `ExposurePage.tsx` | 2, 3, 4 | DONE |
 | 7 | Per-agent PnL on cards (1c) | `AgentsPage.tsx`, `AgentSummaryCard.tsx` | 1, 3, 4 | DONE |
-| 8 | i18n strings | `apps/web/src/app/i18n/` | 5, 6, 7 | PENDING |
+| 8 | i18n strings | `apps/web/src/app/i18n/` | 5, 6, 7 | DONE |
 
 Steps 1–4 can be done in parallel. Steps 5–7 are independent of each other and
 can be done in any order after 1–4.
