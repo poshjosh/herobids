@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { RegimeResult } from '@herobids/market-data';
 import { calculateAtrPercent, computeDecisionContextHash, computeRiskPlaybookDigest, computeWakeSignalDigest, computeWatchSummaryDigest, isWithinTradingHours, resolveAdaptiveIntervalMs, shouldSkipTick } from './tick-gates.js';
 import type { RuntimeActiveWatchSummary } from './runtime-composition.js';
+import { computeMarketEventDigest } from './runtime-composition.js';
 
 function makeRegimeResult(pass: boolean, reasons: string[]): RegimeResult {
   return {
@@ -1461,5 +1462,400 @@ describe('adaptive interval helpers', () => {
     });
 
     expect(recovered.nextTickIntervalMs).toBe(600_000);
+  });
+});
+
+// ── B3: Market-Event Digest Integration with Tick Gate ───────────────────
+
+describe('computeMarketEventDigest (B3.1)', () => {
+  it('returns "__none__" for empty array', () => {
+    expect(computeMarketEventDigest([])).toBe('__none__');
+  });
+
+  it('produces a stable hex digest for one event', () => {
+    const events = [
+      {
+        eventId: 'evt-disc-001',
+        type: 'market.discovery.detected' as const,
+        receivedAt: 1000,
+        payload: {
+          eventId: 'evt-disc-001',
+          monitorType: 'discovery_delta' as const,
+          symbol: 'WIF',
+          network: 'solana',
+          address: '0xabc',
+          reason: 'entered_top_set' as const,
+          detectedAt: '2026-06-11T00:00:00.000Z',
+        },
+      },
+    ];
+    const digest = computeMarketEventDigest(events);
+    expect(digest).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('produces identical digests for the same event repeated', () => {
+    const events = [
+      {
+        eventId: 'evt-disc-001',
+        type: 'market.discovery.detected' as const,
+        receivedAt: 1000,
+        payload: {
+          eventId: 'evt-disc-001',
+          monitorType: 'discovery_delta' as const,
+          symbol: 'WIF',
+          network: 'solana',
+          address: '0xabc',
+          reason: 'entered_top_set' as const,
+          detectedAt: '2026-06-11T00:00:00.000Z',
+        },
+      },
+    ];
+    const digest1 = computeMarketEventDigest(events);
+    const digest2 = computeMarketEventDigest(events);
+    expect(digest1).toBe(digest2);
+  });
+
+  it('produces different digests when eventId differs', () => {
+    const eventsA = [
+      {
+        eventId: 'evt-disc-001',
+        type: 'market.discovery.detected' as const,
+        receivedAt: 1000,
+        payload: {
+          eventId: 'evt-disc-001',
+          monitorType: 'discovery_delta' as const,
+          symbol: 'WIF',
+          network: 'solana',
+          address: '0xabc',
+          reason: 'entered_top_set' as const,
+          detectedAt: '2026-06-11T00:00:00.000Z',
+        },
+      },
+    ];
+    const eventsB = [
+      {
+        eventId: 'evt-disc-002',
+        type: 'market.discovery.detected' as const,
+        receivedAt: 2000,
+        payload: {
+          eventId: 'evt-disc-002',
+          monitorType: 'discovery_delta' as const,
+          symbol: 'BONK',
+          network: 'solana',
+          address: '0xdef',
+          reason: 'entered_top_set' as const,
+          detectedAt: '2026-06-11T00:00:00.000Z',
+        },
+      },
+    ];
+    expect(computeMarketEventDigest(eventsA)).not.toBe(computeMarketEventDigest(eventsB));
+  });
+
+  it('produces different digests when event type differs (same eventId)', () => {
+    const discoveryEvent = [
+      {
+        eventId: 'evt-001',
+        type: 'market.discovery.detected' as const,
+        receivedAt: 1000,
+        payload: {
+          eventId: 'evt-001',
+          monitorType: 'discovery_delta' as const,
+          symbol: 'WIF',
+          network: 'solana',
+          address: '0xabc',
+          reason: 'entered_top_set' as const,
+          detectedAt: '2026-06-11T00:00:00.000Z',
+        },
+      },
+    ];
+    const regimeEvent = [
+      {
+        eventId: 'evt-001',
+        type: 'market.regime.changed' as const,
+        receivedAt: 1000,
+        payload: {
+          eventId: 'evt-001',
+          monitorType: 'regime_change' as const,
+          benchmarkSymbol: 'BTC',
+          previousState: 'favorable',
+          currentState: 'unfavorable',
+          changedAt: '2026-06-11T00:00:00.000Z',
+        },
+      },
+    ];
+    expect(computeMarketEventDigest(discoveryEvent)).not.toBe(computeMarketEventDigest(regimeEvent));
+  });
+});
+
+describe('computeDecisionContextHash with marketEventDigest (B3.2)', () => {
+  it('produces the same hash when marketEventDigest is not provided (backward compat)', () => {
+    const hashWithout = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+    });
+    const hashWithUndefined = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+      marketEventDigest: undefined,
+    });
+    expect(hashWithout).toBe(hashWithUndefined);
+  });
+
+  it('produces different hashes when marketEventDigest differs (single-instrument)', () => {
+    const hashA = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+      marketEventDigest: '__none__',
+    });
+    const hashB = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+      marketEventDigest: 'abc123',
+    });
+    expect(hashA).not.toBe(hashB);
+  });
+
+  it('includes marketEventDigest in multi-instrument hash path', () => {
+    const hashWith = computeDecisionContextHash({
+      instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '10', side: 'long' }],
+      marketEventDigest: '__none__',
+    });
+    const hashWithout = computeDecisionContextHash({
+      instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '10', side: 'long' }],
+    });
+    expect(hashWith).not.toBe(hashWithout);
+  });
+});
+
+describe('shouldSkipTick with marketEventDigest (B3.3)', () => {
+  it('new context-only events prevent context_unchanged skip (B3.3)', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+
+    // First tick: no market events, digest is __none__
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        marketEventDigest: '__none__',
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+    expect(first.skip).toBe(false);
+    expect(first.contextHash).toBeDefined();
+
+    // Second tick: same market/position inputs but new marketEventDigest with pending events
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        marketEventDigest: 'abc123def456',
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    // Should NOT skip because marketEventDigest changed the hash
+    expect(second.skip).toBe(false);
+  });
+
+  it('skips when marketEventDigest is __none__ on consecutive ticks with identical state', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        marketEventDigest: '__none__',
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        marketEventDigest: '__none__',
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(second.skip).toBe(true);
+    expect(second.reason).toBe('context_unchanged');
+  });
+
+  it('hasWakeSignal=true still bypasses context hash gate with marketEventDigest present', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 0,
+        marketEventDigest: '__none__',
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const wakeTickResult = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        hasWakeSignal: true,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 0,
+        marketEventDigest: '__none__',
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(wakeTickResult.skip).toBe(false);
+  });
+});
+
+// ── B4.1: Post-Consumption Hash Does Not Force Extra LLM Tick ───────────
+
+describe('post-consumption hash (B4.1)', () => {
+  it('post-consumption hash allows context_unchanged skip on next tick', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+
+    // Tick with pending market events → digest is non-none, hash reflects that
+    const eventDigest = computeMarketEventDigest([
+      {
+        eventId: 'evt-disc-001',
+        type: 'market.discovery.detected' as const,
+        receivedAt: Date.now(),
+        payload: {
+          eventId: 'evt-disc-001',
+          monitorType: 'discovery_delta' as const,
+          symbol: 'WIF',
+          network: 'solana',
+          address: '0xabc',
+          reason: 'entered_top_set' as const,
+          detectedAt: '2026-06-11T00:00:00.000Z',
+        },
+      },
+    ]);
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        marketEventDigest: eventDigest,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+    expect(first.skip).toBe(false);
+
+    // Simulate post-consumption: prompt-building clears pendingMarketContext,
+    // so agent.ts recomputes hash with marketEventDigest: '__none__'
+    const postConsumptionHash = computeDecisionContextHash({
+      positionSide: 'flat',
+      latestPrice: 100,
+      portfolioPnlUsd: 12,
+      regimePass: true,
+      marketEventDigest: '__none__',
+    });
+    // Verify the post-consumption hash differs from the pre-consumption hash
+    expect(postConsumptionHash).not.toBe(first.contextHash);
+
+    // Next tick: no new events, identical market state, persisted post-consumption hash
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        marketEventDigest: '__none__',
+        previousContextHash: postConsumptionHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    // Should be eligible for context_unchanged skip
+    expect(second.skip).toBe(true);
+    expect(second.reason).toBe('context_unchanged');
+  });
+
+  it('post-consumption hash with multi-instrument path allows skip on next tick', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+
+    const eventDigest = computeMarketEventDigest([
+      {
+        eventId: 'evt-reg-001',
+        type: 'market.regime.changed' as const,
+        receivedAt: Date.now(),
+        payload: {
+          eventId: 'evt-reg-001',
+          monitorType: 'regime_change' as const,
+          benchmarkSymbol: 'BTC',
+          previousState: 'favorable',
+          currentState: 'unfavorable',
+          changedAt: '2026-06-11T00:00:00.000Z',
+        },
+      },
+    ]);
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: true,
+        positionSide: 'long',
+        latestPrice: 100,
+        portfolioPnlUsd: 5,
+        instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '5', side: 'long' }],
+        marketEventDigest: eventDigest,
+      },
+      {},
+    );
+    expect(first.skip).toBe(false);
+
+    // Post-consumption: events consumed, digest becomes __none__
+    const postConsumptionHash = computeDecisionContextHash({
+      instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '5', side: 'long' }],
+      marketEventDigest: '__none__',
+    });
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: true,
+        positionSide: 'long',
+        latestPrice: 100,
+        portfolioPnlUsd: 5,
+        instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '5', side: 'long' }],
+        marketEventDigest: '__none__',
+        previousContextHash: postConsumptionHash,
+      },
+      {},
+    );
+
+    // Should skip because hash was recomputed after consumption
+    expect(second.skip).toBe(true);
+    expect(second.reason).toBe('context_unchanged');
   });
 });

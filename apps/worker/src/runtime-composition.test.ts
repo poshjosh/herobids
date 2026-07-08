@@ -4,6 +4,7 @@ import {
   buildVenueLines,
   buildSystemPrompt,
   buildTickUserContext,
+  computeMarketEventDigest,
   createRuntimeCompositionState,
   getVisibleToolNames,
   recordAgentMemory,
@@ -2024,6 +2025,322 @@ describe('runtime composition helpers', () => {
       expect(result!.id).toBe('positionCoverage');
       expect(result!.title).toBe('Position Coverage');
       expect(result!.provider).toBe('position-coverage');
+    });
+  });
+
+  // ── B2: Pending Market Context (context-only events) ─────────────────────
+
+  describe('pending market context (context-only events)', () => {
+    it('stores context-only market events as structured pending context', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      applyRuntimeMessage(state, {
+        type: 'market.discovery.detected',
+        payload: {
+          eventId: 'evt-disc-001',
+          monitorType: 'discovery_delta',
+          symbol: 'WIF',
+          network: 'solana',
+          address: '0xabc123',
+          reason: 'entered_top_set',
+          rank: 3,
+          liquidityUsd: 1_450_000,
+          volume24hUsd: 8_300_000,
+          detectedAt: '2026-06-11T00:00:00.000Z',
+        },
+      });
+
+      applyRuntimeMessage(state, {
+        type: 'market.regime.changed',
+        payload: {
+          eventId: 'evt-reg-001',
+          monitorType: 'regime_change',
+          benchmarkSymbol: 'BTC',
+          previousState: 'favorable',
+          currentState: 'unfavorable',
+          changedAt: '2026-06-11T00:00:00.000Z',
+        },
+      });
+
+      expect(state.metrics.pendingMarketContext).toHaveLength(2);
+      expect(state.metrics.pendingMarketContext[0]!).toMatchObject({
+        eventId: 'evt-disc-001',
+        type: 'market.discovery.detected',
+        receivedAt: expect.any(Number),
+        payload: expect.objectContaining({ symbol: 'WIF', network: 'solana' }),
+      });
+      expect(state.metrics.pendingMarketContext[1]!).toMatchObject({
+        eventId: 'evt-reg-001',
+        type: 'market.regime.changed',
+        receivedAt: expect.any(Number),
+        payload: expect.objectContaining({ benchmarkSymbol: 'BTC' }),
+      });
+      // Neither event sets currentMarketWake
+      expect(state.metrics.currentMarketWake).toBeNull();
+    });
+
+    it('deduplicates context-only market events by eventId', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      const msg = {
+        type: 'market.discovery.detected' as const,
+        payload: {
+          eventId: 'evt-disc-001',
+          monitorType: 'discovery_delta' as const,
+          symbol: 'WIF',
+          network: 'solana',
+          address: '0xabc123',
+          reason: 'entered_top_set' as const,
+          detectedAt: '2026-06-11T00:00:00.000Z',
+        },
+      };
+
+      applyRuntimeMessage(state, msg);
+      applyRuntimeMessage(state, msg);
+
+      expect(state.metrics.pendingMarketContext).toHaveLength(1);
+      expect(state.metrics.pendingMarketContext[0]!.eventId).toBe('evt-disc-001');
+
+      // Digest is stable across repeated duplicate deliveries
+      const digest1 = computeMarketEventDigest(state.metrics.pendingMarketContext);
+      const digest2 = computeMarketEventDigest(state.metrics.pendingMarketContext);
+      expect(digest1).toBe(digest2);
+    });
+
+    it('caps pending context at 50 events (oldest dropped, newest present)', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      for (let i = 1; i <= 51; i++) {
+        applyRuntimeMessage(state, {
+          type: 'market.discovery.detected',
+          payload: {
+            eventId: `evt-disc-${String(i).padStart(3, '0')}`,
+            monitorType: 'discovery_delta',
+            symbol: `TOKEN${i}`,
+            network: 'solana',
+            address: `0x${i}`,
+            reason: 'entered_top_set',
+            detectedAt: '2026-06-11T00:00:00.000Z',
+          },
+        });
+      }
+
+      expect(state.metrics.pendingMarketContext).toHaveLength(50);
+      // Oldest (evt-disc-001) dropped, newest at tail
+      expect(state.metrics.pendingMarketContext[0]!.eventId).toBe('evt-disc-002');
+      expect(state.metrics.pendingMarketContext[49]!.eventId).toBe('evt-disc-051');
+    });
+
+    it('does not duplicate prompt context when wake and market event arrive in same tick (wake first)', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      const userContext = buildTickUserContext(state, [
+        {
+          type: 'agent.wake',
+          payload: {
+            wakeId: 'wake-d-001',
+            reason: 'WIF entered top discovery set',
+            eventIds: ['evt-2'],
+            priority: 'normal',
+            requestedAt: '2026-06-11T00:00:00.000Z',
+            source: 'discovery_delta',
+            context: {
+              symbol: 'WIF',
+              network: 'solana',
+              address: '0xabc',
+              reason: 'entered_top_set',
+              rank: 3,
+              liquidityUsd: 1_450_000,
+              volume24hUsd: 8_300_000,
+              detectedAt: '2026-06-11T00:00:00.000Z',
+            },
+          },
+        },
+        {
+          type: 'market.discovery.detected',
+          payload: {
+            eventId: 'evt-2',
+            monitorType: 'discovery_delta',
+            symbol: 'WIF',
+            network: 'solana',
+            address: '0xabc',
+            reason: 'entered_top_set',
+            detectedAt: '2026-06-11T00:00:00.000Z',
+          },
+        },
+      ]);
+
+      // Discovery context should appear once via wake provider, not via pending-market-context
+      expect(userContext).toContain('## Discovery Trigger Context');
+      expect(userContext).not.toContain('📊 Market Context');
+      // pendingMarketContext should be filtered when wake owns the event
+      expect(state.metrics.pendingMarketContext).toHaveLength(0);
+    });
+
+    it('does not duplicate prompt context when market event arrives before wake in same tick', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      const userContext = buildTickUserContext(state, [
+        {
+          type: 'market.discovery.detected',
+          payload: {
+            eventId: 'evt-2',
+            monitorType: 'discovery_delta',
+            symbol: 'WIF',
+            network: 'solana',
+            address: '0xabc',
+            reason: 'entered_top_set',
+            detectedAt: '2026-06-11T00:00:00.000Z',
+          },
+        },
+        {
+          type: 'agent.wake',
+          payload: {
+            wakeId: 'wake-d-001',
+            reason: 'WIF entered top discovery set',
+            eventIds: ['evt-2'],
+            priority: 'normal',
+            requestedAt: '2026-06-11T00:00:00.000Z',
+            source: 'discovery_delta',
+            context: {
+              symbol: 'WIF',
+              network: 'solana',
+              address: '0xabc',
+              reason: 'entered_top_set',
+              rank: 3,
+              liquidityUsd: 1_450_000,
+              volume24hUsd: 8_300_000,
+              detectedAt: '2026-06-11T00:00:00.000Z',
+            },
+          },
+        },
+      ]);
+
+      // Same single-render guarantee holds regardless of message order
+      expect(userContext).toContain('## Discovery Trigger Context');
+      expect(userContext).not.toContain('📊 Market Context');
+      expect(state.metrics.pendingMarketContext).toHaveLength(0);
+    });
+
+    it('renders pending market context in prompt when no wake consumes it', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      const userContext = buildTickUserContext(state, [
+        {
+          type: 'market.discovery.detected',
+          payload: {
+            eventId: 'evt-disc-001',
+            monitorType: 'discovery_delta',
+            symbol: 'BONK',
+            network: 'solana',
+            address: '0xdef456',
+            reason: 'entered_top_set',
+            detectedAt: '2026-06-11T00:00:00.000Z',
+          },
+        },
+        {
+          type: 'market.regime.changed',
+          payload: {
+            eventId: 'evt-reg-002',
+            monitorType: 'regime_change',
+            benchmarkSymbol: 'ETH',
+            previousState: 'neutral',
+            currentState: 'favorable',
+            changedAt: '2026-06-11T00:00:00.000Z',
+          },
+        },
+      ]);
+
+      // Pending context should be rendered when no wake consumes it
+      expect(userContext).toContain('📊 Market Context');
+      expect(userContext).toContain('[Discovery] BONK (solana) — entered_top_set');
+      expect(userContext).toContain('[Regime] ETH: neutral → favorable');
+    });
+
+    it('computeMarketEventDigest returns __none__ for empty buffer', () => {
+      expect(computeMarketEventDigest([])).toBe('__none__');
+    });
+
+    it('computeMarketEventDigest produces a stable hex digest for non-empty events', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      applyRuntimeMessage(state, {
+        type: 'market.discovery.detected',
+        payload: {
+          eventId: 'evt-disc-001',
+          monitorType: 'discovery_delta',
+          symbol: 'WIF',
+          network: 'solana',
+          address: '0xabc123',
+          reason: 'entered_top_set',
+          detectedAt: '2026-06-11T00:00:00.000Z',
+        },
+      });
+
+      const digest = computeMarketEventDigest(state.metrics.pendingMarketContext);
+      expect(digest).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it('computeMarketEventDigest changes when event identity changes', () => {
+      const state1 = createRuntimeCompositionState(baseDescriptor);
+      const state2 = createRuntimeCompositionState(baseDescriptor);
+
+      applyRuntimeMessage(state1, {
+        type: 'market.discovery.detected',
+        payload: {
+          eventId: 'evt-disc-001',
+          monitorType: 'discovery_delta',
+          symbol: 'WIF',
+          network: 'solana',
+          address: '0xabc123',
+          reason: 'entered_top_set',
+          detectedAt: '2026-06-11T00:00:00.000Z',
+        },
+      });
+
+      applyRuntimeMessage(state2, {
+        type: 'market.discovery.detected',
+        payload: {
+          eventId: 'evt-disc-002',
+          monitorType: 'discovery_delta',
+          symbol: 'BONK',
+          network: 'solana',
+          address: '0xdef456',
+          reason: 'entered_top_set',
+          detectedAt: '2026-06-11T00:00:00.000Z',
+        },
+      });
+
+      const digest1 = computeMarketEventDigest(state1.metrics.pendingMarketContext);
+      const digest2 = computeMarketEventDigest(state2.metrics.pendingMarketContext);
+      expect(digest1).not.toBe(digest2);
+    });
+
+    // ── B4.2: Pending market context is cleared after the tick ──────────────
+
+    it('clears pending market context after the tick (B4.2)', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      // Queue one context-only event
+      applyRuntimeMessage(state, {
+        type: 'market.discovery.detected',
+        payload: {
+          eventId: 'evt-disc-001',
+          monitorType: 'discovery_delta',
+          symbol: 'WIF',
+          network: 'solana',
+          address: '0xabc123',
+          reason: 'entered_top_set',
+          detectedAt: '2026-06-11T00:00:00.000Z',
+        },
+      });
+
+      expect(state.metrics.pendingMarketContext).toHaveLength(1);
+
+      // Build tick user context — should drain pending context
+      buildTickUserContext(state, []);
+
+      expect(state.metrics.pendingMarketContext).toHaveLength(0);
+      expect(state.metrics.currentReminder).toBeNull();
+      expect(state.metrics.currentMarketWake).toBeNull();
     });
   });
 });
