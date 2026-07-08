@@ -888,14 +888,6 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     return priceMap;
   }
 
-  async function getActiveAgentIds(): Promise<string[]> {
-    // Target only agents that have active watches (expressed interest in market data)
-    const watchKeys = await scanKeys('agent:watches:*');
-    return watchKeys
-      .map((k) => k.replace('agent:watches:', ''))
-      .filter((id) => !id.startsWith('summary:'));
-  }
-
   /**
    * Get agent IDs that are both active (have a live session) AND subscribed to
    * the given monitor-owned wake source. Agents with no wake preferences key
