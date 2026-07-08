@@ -1127,6 +1127,14 @@ export const MarketIntelligenceConfigSchema = z.object({
   wakeCoalescingWindowMs: z.number().int().min(500).default(3_000),
   /** Wake cooldown in ms. Default: 30000 */
   wakeCooldownMs: z.number().int().min(1_000).default(30_000),
+  /** Per-source wake policy overrides (cooldown, mode). Unknown sources fall back to wakeCooldownMs. */
+  wakePolicy: z.record(
+    z.string(),
+    z.object({
+      cooldownMs: z.number().int().min(1_000).optional(),
+      mode: z.enum(['wake', 'batched', 'context']).optional(),
+    }),
+  ).optional().default({}),
 });
 
 export const SharedServicesConfigSchema = z.object({

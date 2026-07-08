@@ -336,9 +336,9 @@ This phase filters **monitor-owned** sources only.
 
 | # | Task | Status |
 |---|------|--------|
-| A1 | Replace single per-agent wake bucket with source-scoped `(agentId, source)` bucket in `monitor.ts` | PENDING |
-| A2 | Add `marketIntelligence.wakePolicy` to `config/default.yaml` | PENDING |
-| A3 | Extend `MarketIntelligenceConfigSchema` in `packages/domain/src/config/schema.ts` | PENDING |
+| A1 | Replace single per-agent wake bucket with source-scoped `(agentId, source)` bucket in `monitor.ts` | DONE |
+| A2 | Add `marketIntelligence.wakePolicy` to `config/default.yaml` | DONE |
+| A3 | Extend `MarketIntelligenceConfigSchema` in `packages/domain/src/config/schema.ts` | DONE |
 | A4 | Write tests for source-scoped cooldown behavior | PENDING |
 
 ### Part B — Batched and Context Delivery Modes
@@ -372,3 +372,12 @@ This phase filters **monitor-owned** sources only.
 | 3 | HIGH | `config/default.yaml` not updated with `wakePolicy` section — deferred to A2. |
 | 4 | MEDIUM | Missing test for old-format wake bucket backward-compat fallback (source field missing). |
 | 5 | LOW | Backward-compat `logger.warn` could be noisy on first deploy; consider `logger.info`.
+
+### [A2/A3] Config YAML and Schema
+
+| # | Severity | Issue |
+|---|----------|-------|
+| 1 | MEDIUM | Schema uses `z.record(z.string(), ...)` which accepts any string key — typos in source names would pass validation silently. Consider using `z.object({ watch_threshold: ..., discovery_delta: ..., regime_change: ... }).partial()` for compile-time key validation. |
+| 2 | MEDIUM | `WakePolicyEntry` interface in monitor.ts doesn't declare `mode` field yet — forward-compat gap for Part B. |
+| 3 | LOW | YAML comment references `mode` but no mode entries exist yet (Part B). |
+| 4 | LOW | Schema `cooldownMs` minimum of 1000ms is undocumented.

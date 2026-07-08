@@ -571,6 +571,13 @@ marketIntelligence:
       enabled: true
   wakeCoalescingWindowMs: 3000     # wake coalescing window before flush
   wakeCooldownMs: 30000            # minimum gap between wakes to the same agent
+  wakePolicy:                      # per-source wake policy (cooldown, mode). Falls back to wakeCooldownMs for unknown sources.
+    watch_threshold:
+      cooldownMs: 15000
+    discovery_delta:
+      cooldownMs: 300000
+    regime_change:
+      cooldownMs: 120000
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:

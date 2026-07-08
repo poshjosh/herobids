@@ -1631,6 +1631,7 @@ const marketMonitor = createMarketMonitor(
     },
     wakeCoalescingWindowMs: miConfig.wakeCoalescingWindowMs,
     wakeCooldownMs: miConfig.wakeCooldownMs,
+    wakePolicy: miConfig.wakePolicy,
   },
   { redis: redisClient, publisher: eventPublisher },
 );
