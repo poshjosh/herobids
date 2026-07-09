@@ -1,5 +1,5 @@
 /**
- * Journey 8: Mission Control reflects an enabled capability and opens the
+ * Journey 8: AI Agents page reflects an enabled capability and opens the
  * agent-scoped capability page from the agent detail page.
  */
 
@@ -22,8 +22,8 @@ function rowValue(card: ReturnType<typeof readinessCard>, label: RegExp) {
   return card.getByText(label).locator('xpath=following-sibling::span');
 }
 
-test.describe('Journey 8: Mission Control reflects enabled capability', () => {
-  test('mission control shows the ready capability CTA and opens the capability page', async ({ page, request }) => {
+test.describe('Journey 8: AI Agents page reflects enabled capability', () => {
+  test('AI Agents page shows the ready capability CTA and opens the capability page', async ({ page, request }) => {
     await registerUser(page, EMAIL, PASSWORD, 'E2E User J8');
 
     // Create agent via API so we can set skillIds without hitting the
@@ -35,7 +35,7 @@ test.describe('Journey 8: Mission Control reflects enabled capability', () => {
     }
     const agentRes = await request.post('/api/agents', {
       headers: { Authorization: `Bearer ${token}` },
-      data: { name: 'Trading agent', prompt: 'Run the trading capability and reflect readiness in mission control.', skillIds: ['bot-management'] },
+      data: { name: 'Trading agent', prompt: 'Run the trading capability and reflect readiness in AI Agents.', skillIds: ['bot-management'] },
     });
     if (!agentRes.ok()) {
       test.skip(true, `Failed to create agent: ${agentRes.status()} ${await agentRes.text()}`);
@@ -45,7 +45,7 @@ test.describe('Journey 8: Mission Control reflects enabled capability', () => {
 
     const { connectionId } = await setupTradingLink(page, request, {
       provider: 'hyperliquid',
-      label: 'Mission control connection',
+      label: 'AI Agents connection',
       secrets: {
         apiKey: 'test-api-key',
         secret: 'test-secret',
@@ -55,8 +55,8 @@ test.describe('Journey 8: Mission Control reflects enabled capability', () => {
 
     await assignTradingConnection(page, request, agentId, connectionId);
 
-    await page.goto('/mission-control');
-    await expect(page.getByRole('heading', { name: /Mission Control/i })).toBeVisible({ timeout: 5_000 });
+    await page.goto('/agents');
+    await expect(page.getByRole('heading', { name: /AI Agents/i })).toBeVisible({ timeout: 5_000 });
 
     // The summary card now navigates to agent detail on click (no explicit
     // "Open trading capability" button — capability config moved to detail page).

@@ -2,7 +2,7 @@
  * Journey 9: Connections page renders with correct heading and subtitle.
  *
  * Verifies the Connections page shows the advanced-use framing and directs
- * users to Mission Control for guided setup.
+ * users to AI Agents for guided setup.
  */
 
 import { test, expect } from '@playwright/test';
