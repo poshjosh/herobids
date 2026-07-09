@@ -782,7 +782,7 @@ cp production.tfvars.example production.tfvars
 ./scripts/provision.sh --env production --var-file production.tfvars
 
 # 3. Copy and fill in environment variables
-cp ../../.env.dev.example .env.prod
+cp ../../.env.example .env.prod
 # edit .env.prod — fill in secrets (JWT, OAuth, billing, LLM keys, etc.)
 
 # 4. Upload your .env file (production secrets)
@@ -817,7 +817,7 @@ cp staging.tfvars.example staging.tfvars
 ./scripts/provision.sh --env staging --var-file staging.tfvars
 
 # 3. Create staging env file
-cp ../../.env.dev.example .env.staging
+cp ../../.env.example .env.staging
 # edit .env.staging — use staging-safe secrets, test OAuth clients, mock billing
 
 # 4. Upload staging env file

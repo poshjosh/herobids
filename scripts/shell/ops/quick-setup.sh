@@ -43,8 +43,8 @@
 #                         e.g. http://localhost:3000
 #
 # Auth
-#   SETUP_EMAIL           User email address
-#   SETUP_PASSWORD        Password (≥ 8 characters)
+#   AUTH_EMAIL           User email address
+#   AUTH_PASSWORD        Password (≥ 8 characters)
 #   SETUP_DISPLAY_NAME    Display name used when registering a new account
 #                         e.g. "Alice"
 #
@@ -602,8 +602,8 @@ ensure_ict_bullish_skill() {
 
 # Core
 require_var API_BASE_URL
-require_var SETUP_EMAIL
-require_var SETUP_PASSWORD
+require_var AUTH_EMAIL
+require_var AUTH_PASSWORD
 require_var SETUP_DISPLAY_NAME
 
 case "$SETUP_MODE" in
@@ -801,34 +801,34 @@ api_call() {
 
 log_section "Step 1: Authenticate"
 
-log_info "Attempting login as ${SETUP_EMAIL} ..."
+log_info "Attempting login as ${AUTH_EMAIL} ..."
 
 api_call POST /auth/login "$(jq -n \
-  --arg email    "$SETUP_EMAIL" \
-  --arg password "$SETUP_PASSWORD" \
+  --arg email    "$AUTH_EMAIL" \
+  --arg password "$AUTH_PASSWORD" \
   '{ email: $email, password: $password }')"
 
 if [[ "$HTTP_STATUS" -eq 200 ]]; then
   AUTH_TOKEN="$(echo "$RESPONSE_BODY" | jq -r '.token')"
-  log_ok "Logged in as ${SETUP_EMAIL}"
+  log_ok "Logged in as ${AUTH_EMAIL}"
 
 elif [[ "$HTTP_STATUS" -eq 401 ]]; then
   log_warn "Login failed (HTTP ${HTTP_STATUS}) — $(echo "$RESPONSE_BODY" | jq -r '.error // "no error field"')"
-  log_info "Attempting registration as ${SETUP_EMAIL} ..."
+  log_info "Attempting registration as ${AUTH_EMAIL} ..."
 
   api_call POST /auth/register "$(jq -n \
-    --arg email       "$SETUP_EMAIL" \
-    --arg password    "$SETUP_PASSWORD" \
+    --arg email       "$AUTH_EMAIL" \
+    --arg password    "$AUTH_PASSWORD" \
     --arg displayName "$SETUP_DISPLAY_NAME" \
     '{ email: $email, password: $password, displayName: $displayName }')"
 
   if [[ "$HTTP_STATUS" -eq 201 ]]; then
     AUTH_TOKEN="$(echo "$RESPONSE_BODY" | jq -r '.token')"
-    log_ok "Registered and authenticated as ${SETUP_EMAIL}"
+    log_ok "Registered and authenticated as ${AUTH_EMAIL}"
   elif [[ "$HTTP_STATUS" -eq 409 ]]; then
     # Account exists but the supplied password was wrong — treat as a hard failure
     # so the operator knows to check their credentials.
-    log_error "Account already exists (HTTP 409) but login failed. Check SETUP_PASSWORD."
+    log_error "Account already exists (HTTP 409) but login failed. Check AUTH_PASSWORD."
     die "Authentication step failed."
   else
     log_error "Registration failed (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
@@ -1024,7 +1024,7 @@ fi
 # ---------------------------------------------------------------------------
 
 log_section "Setup complete"
-log_ok "Email:       ${SETUP_EMAIL}"
+log_ok "Email:       ${AUTH_EMAIL}"
 log_ok "Mode:        ${EFFECTIVE_SETUP_MODE}"
 if [[ -n "${FLIGHT_DEAL_SKILL_ID:-}" && "${FLIGHT_DEAL_SKILL_ID:-}" != "null" ]]; then
   log_ok "Skill:       ${FLIGHT_DEAL_SKILL_ID}  (${FLIGHT_DEAL_SKILL_NAME})"

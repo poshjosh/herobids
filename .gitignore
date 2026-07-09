@@ -15,7 +15,7 @@ build/
 # Environment & secrets
 .env
 .env.*
-!.env.dev.example
+!.env.example
 !.env.ops.dev.example
 !.env.ops.remote.example
 

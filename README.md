@@ -19,7 +19,7 @@ Make using AI-powered agents as simple as describing what you want. No expertise
 pnpm install
 
 # 2. Copy environment template
-cp .env.dev.example .env.dev
+cp .env.example .env
 # Edit .env — at minimum set CREDENTIAL_ENCRYPTION_KEY:
 #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```

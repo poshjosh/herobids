@@ -113,8 +113,8 @@ require_var() {
 }
 
 require_var API_BASE_URL
-require_var SETUP_EMAIL
-require_var SETUP_PASSWORD
+require_var AUTH_EMAIL
+require_var AUTH_PASSWORD
 
 if [[ "$MISSING" -eq 1 ]]; then
   die "One or more required variables are missing. Check $ENV_FILE."
@@ -182,16 +182,16 @@ api_call() {
 
 log_section "Step 1: Authenticate"
 
-log_info "Logging in as ${SETUP_EMAIL} ..."
+log_info "Logging in as ${AUTH_EMAIL} ..."
 
 api_call POST /auth/login "$(jq -n \
-  --arg email    "$SETUP_EMAIL" \
-  --arg password "$SETUP_PASSWORD" \
+  --arg email    "$AUTH_EMAIL" \
+  --arg password "$AUTH_PASSWORD" \
   '{ email: $email, password: $password }')"
 
 if [[ "$HTTP_STATUS" -eq 200 ]]; then
   AUTH_TOKEN="$(echo "$RESPONSE_BODY" | jq -r '.token')"
-  log_ok "Logged in as ${SETUP_EMAIL}"
+  log_ok "Logged in as ${AUTH_EMAIL}"
 else
   log_error "Login failed (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
   die "Authentication failed. Make sure quick-setup.sh has run first."

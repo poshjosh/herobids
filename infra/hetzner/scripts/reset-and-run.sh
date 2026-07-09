@@ -121,8 +121,8 @@ require_var ADMIN_EMAIL
 require_var ADMIN_PASSWORD
 
 # User setup
-require_var SETUP_EMAIL
-require_var SETUP_PASSWORD
+require_var AUTH_EMAIL
+require_var AUTH_PASSWORD
 require_var SETUP_DISPLAY_NAME
 
 if [[ "$MISSING" -eq 1 ]]; then
@@ -152,7 +152,7 @@ echo " Server:      ${SERVER_IP}"
 echo " Environment: ${HEROBIDS_ENV}"
 echo " Env file:    ${ENV_FILE}"
 echo " Admin user:  ${ADMIN_EMAIL}"
-echo " Setup user:  ${SETUP_EMAIL}"
+echo " Setup user:  ${AUTH_EMAIL}"
 echo ""
 echo "This will:"
 echo "  1. WIPE Postgres, Redis, Caddy TLS certs"
@@ -245,8 +245,8 @@ cat > "$SERVER_ENV" << EOF
 # API_BASE_URL uses localhost — quick-setup-remote.sh runs on the host OS via SSH,
 # not inside Docker. Port 3000 is exposed to the host (3000:3000 in compose).
 API_BASE_URL=http://localhost:3000
-SETUP_EMAIL=${SETUP_EMAIL}
-SETUP_PASSWORD=${SETUP_PASSWORD}
+AUTH_EMAIL=${AUTH_EMAIL}
+AUTH_PASSWORD=${AUTH_PASSWORD}
 SETUP_DISPLAY_NAME=${SETUP_DISPLAY_NAME}
 SETUP_MODE=${SETUP_MODE:-auto}
 SETUP_PROVIDER=${SETUP_PROVIDER:-}
@@ -363,7 +363,7 @@ echo "========================================"
 echo ""
 echo "  Server:       ${SERVER_IP}"
 echo "  Admin user:   ${ADMIN_EMAIL}"
-echo "  Setup user:   ${SETUP_EMAIL}"
+echo "  Setup user:   ${AUTH_EMAIL}"
 echo "  Agents:       security-auditor"
 echo "  Agent LLM:    ${AGENT_PROVIDER:-openrouter} / ${AGENT_LIGHT_MODEL:-deepseek/deepseek-v4-flash}"
 echo "  Exec mode:    N/A (non-trading agent)"
