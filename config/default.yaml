@@ -569,18 +569,37 @@ marketIntelligence:
       enabled: true
     regimeChanges:
       enabled: true
-  wakeCoalescingWindowMs: 3000     # wake coalescing window before flush
-  wakeCooldownMs: 30000            # minimum gap between wakes to the same agent
-  wakePolicy:                      # per-source wake policy (cooldown, mode). Falls back to wakeCooldownMs for unknown sources.
+  wakeCoalescingWindowMs: 3000      # (operator) how long to hold a wake in its source bucket before flushing, allowing
+                                    # multiple events for the same (agent, source) to coalesce into a single wake.
+                                    # Lower = more immediate wakes but less batching. Default: 3000ms.
+  wakeCooldownMs: 30000             # (operator) fallback cooldown between successive wakes to the same agent
+                                    # for any source NOT explicitly listed in wakePolicy below. Default: 30000ms.
+  # ── Per-Source Wake Policy ─────────────────────────────────────────────
+  # Delivery modes:
+  #
+  #   wake     — wake the actor immediately for every event. Use for: urgent 
+  #              actionable signals (e.g. price watches).
+  #
+  #   batched  — enqueue a single agent.wake signal for all events that arrive within 
+  #              the coalescing window. Use for: high-volume signals that are actionable 
+  #              but not urgent (e.g. discovery deltas).
+  #
+  #   context  — do not wake the actor; instead, enrich the next scheduled tick with the 
+  #              events. Use for: low-volume signals that are informative but not actionable 
+  #              (e.g. regime changes).
+  wakePolicy:
+    # triggered when a user-configured price watch crosses its threshold (e.g. "BTC drops below $61,000").
     watch_threshold:
-      mode: wake                   # immediate wake — urgent actionable signals
-      cooldownMs: 15000
+      mode: wake                   
+      cooldownMs: 15000            # 15s between successive watch-threshold wakes per agent
+    # triggered when a token enters the top discovery set or reappears after a cooldown period. 
     discovery_delta:
-      mode: batched                # delayed wake — bounded by cooldown
-      cooldownMs: 300000
+      mode: context                
+      cooldownMs: 300000           # 5 min between successive discovery-delta deliveries per agent
+    # triggered when the market regime flips (e.g. favorable → unfavorable).  
     regime_change:
-      mode: batched                # delayed wake — bounded by cooldown
-      cooldownMs: 120000
+      mode: context                
+      cooldownMs: 120000           # 2 min between successive regime-change deliveries per agent
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
