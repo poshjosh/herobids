@@ -11,10 +11,10 @@
 #   5. Each chat ID is reachable (Telegram sendMessage)
 #
 # Usage:
-#   scripts/shell/tests/test-telegram-messaging.sh --env-file .env.local
+#   scripts/shell/tests/test-telegram-messaging.sh --env-file .env.ops.dev
 #
 #   # Override individual vars:
-#   TEST_CHAT_IDS=6846862012 ./test-telegram-messaging.sh --env-file .env.local
+#   TEST_CHAT_IDS=6846862012 ./test-telegram-messaging.sh --env-file .env.ops.dev
 #
 # Required env vars (in env file or environment):
 #   API_BASE_URL           — e.g. https://herobids.com or http://localhost:3000

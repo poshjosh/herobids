@@ -46,7 +46,7 @@ services:
     volumes:
       - evaldata:/app/app-data
     env_file:
-      - path: .env
+      - path: .env.dev
         required: false
     environment:
       DATABASE_URL: postgres://herobids:herobids@postgres:5432/herobids
@@ -100,7 +100,7 @@ services:
     volumes:
       - evaldata:/app/app-data
     env_file:
-      - path: .env
+      - path: .env.dev
         required: false
     environment:
       DATABASE_URL: postgres://herobids:herobids@postgres:5432/herobids

@@ -105,12 +105,12 @@ done
 # ─── Resolve env file ────────────────────────────────────────────────────────
 
 if [[ -z "$ENV_FILE" ]]; then
-  # Default: look for .env.setup.remote next to quick-setup-remote.sh
-  ENV_FILE="$REPO_ROOT/scripts/shell/ops/.env.setup.remote"
+  # Default: look for .env.ops.prod at repo root
+  ENV_FILE="$REPO_ROOT/.env.ops.prod"
   if [[ ! -f "$ENV_FILE" ]]; then
     die "No --env-file specified and default ${ENV_FILE} not found.
   Create one:
-    cp ${REPO_ROOT}/scripts/shell/ops/.env.setup.remote.example ${ENV_FILE}
+    cp ${REPO_ROOT}/.env.ops.remote.example ${ENV_FILE}
     # edit and fill in values"
   fi
 fi

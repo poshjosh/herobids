@@ -197,9 +197,9 @@ DATABASE_URL="postgres://herobids:herobids@localhost:5432/herobids"
 REDIS_URL="redis://localhost:6379"
 export DATABASE_URL REDIS_URL
 
-# Load CREDENTIAL_ENCRYPTION_KEY from .env if not already set in the environment
-if [[ -z "${CREDENTIAL_ENCRYPTION_KEY:-}" && -f "${ROOT}/.env" ]]; then
-  CREDENTIAL_ENCRYPTION_KEY="$(grep -E '^CREDENTIAL_ENCRYPTION_KEY=' "${ROOT}/.env" | cut -d= -f2- | tr -d '[:space:]')"
+# Load CREDENTIAL_ENCRYPTION_KEY from .env.dev if not already set in the environment
+if [[ -z "${CREDENTIAL_ENCRYPTION_KEY:-}" && -f "${ROOT}/.env.dev" ]]; then
+  CREDENTIAL_ENCRYPTION_KEY="$(grep -E '^CREDENTIAL_ENCRYPTION_KEY=' "${ROOT}/.env.dev" | cut -d= -f2- | tr -d '[:space:]')"
 fi
 export CREDENTIAL_ENCRYPTION_KEY
 

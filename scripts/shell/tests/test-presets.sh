@@ -32,7 +32,7 @@ log_error() { echo "[ERROR] $*" >&2; }
 die() { log_error "$*"; exit 1; }
 
 # ---------------------------------------------------------------------------
-# Test user credentials (defaults work for local dev; override via env or .env.local)
+# Test user credentials (defaults work for local dev; override via env or .env.ops.dev)
 # ---------------------------------------------------------------------------
 
 TEST_EMAIL="${TEST_EMAIL:-preset-test@local.test}"

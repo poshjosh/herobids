@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bot-trade-test.sh — Shell wrapper for scripts/ts/bot-trade-test.ts
 #
-# Loads credentials from an env file (default: .env.local),
+# Loads credentials from an env file (default: .env.ops.dev),
 # validates required vars are present, then runs the TypeScript bot lifecycle test.
 #
 # Usage:
@@ -11,13 +11,13 @@
 #   scripts/shell/tests/bot-trade-test.sh --help
 #
 # Setup:
-#   cp .env.local.example .env.local
+#   cp .env.ops.dev.example .env.ops.dev
 #   # fill in your credentials, then:
 #   chmod +x scripts/shell/tests/bot-trade-test.sh
 #   scripts/shell/tests/bot-trade-test.sh
 #
 # ─────────────────────────────────────────────────────────────────
-# Variables in .env.local
+# Variables in .env.ops.dev
 # ─────────────────────────────────────────────────────────────────
 #
 # Required
@@ -68,7 +68,7 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "Shell wrapper for scripts/ts/bot-trade-test.ts"
       echo ""
-      echo "  --env <path>   Path to env file (default: .env.local)"
+      echo "  --env <path>   Path to env file (default: .env.ops.dev)"
       echo "  --dry-run      Print env vars without running"
       echo "  --help         Show this help"
       exit 0
@@ -83,7 +83,7 @@ done
 # ── Load env file ──────────────────────────────────────────────────────
 
 if [[ -z "$ENV_FILE" ]]; then
-  ENV_FILE="$REPO_ROOT/.env.local"
+  ENV_FILE="$REPO_ROOT/.env.ops.dev"
 fi
 
 if [[ -f "$ENV_FILE" ]]; then

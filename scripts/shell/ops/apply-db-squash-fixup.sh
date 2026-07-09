@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# apply-db-squash-fixup.sh — load .env.local if present, then register the
+# apply-db-squash-fixup.sh — load .env.ops.dev if present, then register the
 # squashed baseline migration hash for existing databases.
 #
 # Usage:
@@ -9,7 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-ENV_FILE="$REPO_ROOT/.env.local"
+ENV_FILE="$REPO_ROOT/.env.ops.dev"
 
 if [[ -f "$ENV_FILE" ]]; then
   set -a

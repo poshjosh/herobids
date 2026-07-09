@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # quick-setup.sh — Bootstrap a HeroBids user account via the REST API.
 #
-# Reads configuration from .env.local (or a custom path via --env),
+# Reads configuration from .env.ops.dev (or a custom path via --env),
 # then runs one of two setup flows:
 #
 #   Guided mode   (default when one provider + one label can be derived)
@@ -29,13 +29,13 @@
 #   scripts/shell/ops/quick-setup.sh --help
 #
 # Setup:
-#   cp .env.local.example .env.local
+#   cp .env.ops.dev.example .env.ops.dev
 #   # fill in the variables, then:
 #   chmod +x scripts/shell/ops/quick-setup.sh
 #   scripts/shell/ops/quick-setup.sh
 #
 # ─────────────────────────────────────────────────────────────────
-# Required variables in .env.local
+# Required variables in .env.ops.dev
 # ─────────────────────────────────────────────────────────────────
 #
 # API
@@ -95,7 +95,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-ENV_FILE="$REPO_ROOT/.env.local"
+ENV_FILE="$REPO_ROOT/.env.ops.dev"
 DRY_RUN=0
 SETUP_MODE_CLI=""
 FLIGHT_DEAL_SKILL_NAME="Flight Deal Monitoring"
@@ -173,7 +173,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---------------------------------------------------------------------------
-# Load .env.local
+# Load .env.ops.dev
 # ---------------------------------------------------------------------------
 
 log_section "Loading configuration"
@@ -181,7 +181,7 @@ log_section "Loading configuration"
 if [[ ! -f "$ENV_FILE" ]]; then
   die "$ENV_FILE not found.
   Copy the example and fill in your values:
-    cp .env.local.example .env.local"
+    cp .env.ops.dev.example .env.ops.dev"
 fi
 
 set -a

@@ -13,35 +13,35 @@
 # Two primary execution modes:
 #
 #   Local (pointing at a remote API):
-#     scripts/shell/ops/quick-setup-remote.sh --env-file .env.setup.remote
-#     scripts/shell/ops/quick-setup-remote.sh --env-file .env.setup.remote --mode guided
+#     scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.prod
+#     scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.prod --mode guided
 #
 #   Remote (pipe over SSH, run against local docker compose API):
 #     ssh root@<server-ip> 'bash -s' < scripts/shell/ops/quick-setup-remote.sh \
 #       --env-file - --yes <<'ENV'
 #     API_BASE_URL=http://api:3000
-#     SETUP_EMAIL=user@example.com
-#     SETUP_PASSWORD=...
+#     AUTH_EMAIL=user@example.com
+#     AUTH_PASSWORD=...
 #     ...
 #     ENV
 #
 #   Post-deploy (run as a deploy.sh step):
-#     scripts/shell/ops/quick-setup-remote.sh --ssh <server-ip> --env-file .env.setup.remote
+#     scripts/shell/ops/quick-setup-remote.sh --ssh <server-ip> --env-file .env.ops.prod
 #
 # Usage:
-#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.setup.remote
-#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.setup.remote --mode guided
-#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.setup.remote --yes
-#   scripts/shell/ops/quick-setup-remote.sh --ssh 1.2.3.4 --env-file .env.setup.remote
+#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.prod
+#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.prod --mode guided
+#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.prod --yes
+#   scripts/shell/ops/quick-setup-remote.sh --ssh 1.2.3.4 --env-file .env.ops.prod
 #   scripts/shell/ops/quick-setup-remote.sh --help
 #
 # Setup:
-#   cp scripts/shell/ops/.env.setup.remote.example scripts/shell/ops/.env.setup.remote
+#   cp .env.ops.remote.example .env.ops.prod
 #   # fill in the variables, then:
-#   scripts/shell/ops/quick-setup-remote.sh --env-file scripts/shell/ops/.env.setup.remote
+#   scripts/shell/ops/quick-setup-remote.sh --env-file .env.ops.prod
 #
-# Required env vars — see .env.setup.remote.example for the full list:
-#   API_BASE_URL, SETUP_EMAIL, SETUP_PASSWORD, SETUP_DISPLAY_NAME,
+# Required env vars — see .env.ops.remote.example for the full list:
+#   API_BASE_URL, AUTH_EMAIL, AUTH_PASSWORD, SETUP_DISPLAY_NAME,
 #   TELEGRAM_CHAT_ID, venue secrets (HL_*, BYBIT_*, ONEINCH_*)
 
 set -euo pipefail
@@ -274,12 +274,12 @@ if [[ "$ENV_FILE" == "-" ]]; then
   # shellcheck disable=SC2064
   trap 'rm -f "$ENV_FILE"' EXIT
 elif [[ -z "$ENV_FILE" ]]; then
-  # Default: look for .env.setup.remote next to the script
-  ENV_FILE="$SCRIPT_DIR/.env.setup.remote"
+  # Default: look for .env.ops.prod next to the script
+  ENV_FILE="$REPO_ROOT/.env.ops.prod"
   if [[ ! -f "$ENV_FILE" ]]; then
     die "No --env-file specified and default ${ENV_FILE} not found.
   Create one:
-    cp ${SCRIPT_DIR}/.env.setup.remote.example ${ENV_FILE}
+    cp ${REPO_ROOT}/.env.ops.remote.example ${ENV_FILE}
     # edit and fill in values"
   fi
 elif [[ ! -f "$ENV_FILE" ]]; then
@@ -347,7 +347,7 @@ if [[ "$SKIP_CONFIRM" -eq 0 && "$DRY_RUN" -eq 0 ]]; then
   echo ""
   echo "About to bootstrap a user on:"
   echo "  API:       ${API_BASE_URL}"
-  echo "  Email:     ${SETUP_EMAIL:-<not set>}"
+  echo "  Email:     ${AUTH_EMAIL:-<not set>}"
   echo "  Mode:      ${SETUP_MODE}"
   echo ""
   read -rp "Continue? [y/N] " CONFIRM
@@ -582,8 +582,8 @@ build_ict_bullish_skill_payload() {
 
 # Core required vars
 require_var API_BASE_URL
-require_var SETUP_EMAIL
-require_var SETUP_PASSWORD
+require_var AUTH_EMAIL
+require_var AUTH_PASSWORD
 require_var SETUP_DISPLAY_NAME
 
 case "$SETUP_MODE" in
@@ -746,31 +746,31 @@ api_call() {
 
 log_section "Step 1: Authenticate"
 
-log_info "Attempting login as ${SETUP_EMAIL} ..."
+log_info "Attempting login as ${AUTH_EMAIL} ..."
 
 retry_api_call POST /auth/login "$(jq -n \
-  --arg email    "$SETUP_EMAIL" \
-  --arg password "$SETUP_PASSWORD" \
+  --arg email    "$AUTH_EMAIL" \
+  --arg password "$AUTH_PASSWORD" \
   '{ email: $email, password: $password }')"
 
 if [[ "$HTTP_STATUS" -eq 200 ]]; then
   AUTH_TOKEN="$(echo "$RESPONSE_BODY" | jq -r '.token')"
-  log_ok "Logged in as ${SETUP_EMAIL}"
+  log_ok "Logged in as ${AUTH_EMAIL}"
 
 elif [[ "$HTTP_STATUS" -eq 401 ]]; then
   log_warn "Login failed (HTTP ${HTTP_STATUS}) — attempting registration ..."
 
   retry_api_call POST /auth/register "$(jq -n \
-    --arg email       "$SETUP_EMAIL" \
-    --arg password    "$SETUP_PASSWORD" \
+    --arg email       "$AUTH_EMAIL" \
+    --arg password    "$AUTH_PASSWORD" \
     --arg displayName "$SETUP_DISPLAY_NAME" \
     '{ email: $email, password: $password, displayName: $displayName }')"
 
   if [[ "$HTTP_STATUS" -eq 201 ]]; then
     AUTH_TOKEN="$(echo "$RESPONSE_BODY" | jq -r '.token')"
-    log_ok "Registered and authenticated as ${SETUP_EMAIL}"
+    log_ok "Registered and authenticated as ${AUTH_EMAIL}"
   elif [[ "$HTTP_STATUS" -eq 409 ]]; then
-    log_error "Account already exists (HTTP 409) but login failed. Check SETUP_PASSWORD."
+    log_error "Account already exists (HTTP 409) but login failed. Check AUTH_PASSWORD."
     die "Authentication step failed."
   else
     log_error "Registration failed (HTTP ${HTTP_STATUS})"
@@ -1062,7 +1062,7 @@ fi
 # ---------------------------------------------------------------------------
 
 log_section "Setup complete"
-log_ok "Email:       ${SETUP_EMAIL}"
+log_ok "Email:       ${AUTH_EMAIL}"
 log_ok "Mode:        ${EFFECTIVE_SETUP_MODE}"
 if [[ -n "${FLIGHT_DEAL_SKILL_ID:-}" && "${FLIGHT_DEAL_SKILL_ID:-}" != "null" ]]; then
   log_ok "Skill:       ${FLIGHT_DEAL_SKILL_ID}  (${FLIGHT_DEAL_SKILL_NAME})"

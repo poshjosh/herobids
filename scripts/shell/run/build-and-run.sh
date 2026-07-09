@@ -27,12 +27,12 @@ if ! command -v docker &> /dev/null; then
     error_exit "docker could not be found. Please install Docker"
 fi
 
-# Load .env.local if present (provides ADMIN_EMAIL, ADMIN_PASSWORD, etc. for the seed admin ts script)
+# Load .env.ops.dev if present (provides ADMIN_EMAIL, ADMIN_PASSWORD, etc. for the seed admin ts script)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-ENV_FILE="$REPO_ROOT/.env.local"
+ENV_FILE="$REPO_ROOT/.env.ops.dev"
 if [[ -f "$ENV_FILE" ]]; then
-    log "Loading env from .env.local..."
+    log "Loading env from .env.ops.dev..."
     set -a
     # shellcheck source=/dev/null
     source "$ENV_FILE"

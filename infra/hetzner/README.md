@@ -19,7 +19,7 @@ Deployment of Herobids on Hetzner Cloud VPS (CPX22, Ubuntu 24.04). Supports two 
 
 - **Server name**: `herobids` for production, `herobids-staging` for staging. Override via `server_name` in `terraform.tfvars` if the convention doesn't fit.
 - **App domain**: `herobids.com` for production, `staging.herobids.com` for staging. Override via `app_domain` in `terraform.tfvars`.
-- **Env file**: `.env.staging` and `.env.prod` in the repo root (gitignored). The `--file` flag on `setup-env.sh` accepts any path.
+- **Env file**: `.env.staging` and `.env.prod` in `infra/hetzner/` (gitignored). The `--file` flag on `setup-env.sh` accepts any path.
 - **Compose overlay**: `docker-compose.{staging,prod}.yaml`. Scripts auto-select the correct overlay from `HEROBIDS_ENV`.
 - **Terraform state**: Managed via workspaces. `provision.sh --env <name>` automatically selects the correct workspace. For manual terraform commands, switch first: `terraform workspace select staging` or `terraform workspace select production`.
 
@@ -782,7 +782,7 @@ cp production.tfvars.example production.tfvars
 ./scripts/provision.sh --env production --var-file production.tfvars
 
 # 3. Copy and fill in environment variables
-cp ../../.env.example .env.prod
+cp ../../.env.dev.example .env.prod
 # edit .env.prod — fill in secrets (JWT, OAuth, billing, LLM keys, etc.)
 
 # 4. Upload your .env file (production secrets)
@@ -817,7 +817,7 @@ cp staging.tfvars.example staging.tfvars
 ./scripts/provision.sh --env staging --var-file staging.tfvars
 
 # 3. Create staging env file
-cp ../../.env.example .env.staging
+cp ../../.env.dev.example .env.staging
 # edit .env.staging — use staging-safe secrets, test OAuth clients, mock billing
 
 # 4. Upload staging env file
