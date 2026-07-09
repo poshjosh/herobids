@@ -598,8 +598,10 @@ marketIntelligence:
       cooldownMs: 300000           # 5 min between successive discovery-delta deliveries per agent
     # triggered when the market regime flips (e.g. favorable → unfavorable).  
     regime_change:
-      mode: context                
-      cooldownMs: 120000           # 2 min between successive regime-change deliveries per agent
+      mode: batched  
+      # We figured that rapid regime changes are more confusing than anything else 
+      # So we went for a higher cooldown to avoid waking the agent too frequently.
+      cooldownMs: 900000           # 15 min between successive regime-change deliveries per agent
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:

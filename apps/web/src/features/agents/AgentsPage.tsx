@@ -211,7 +211,7 @@ function CreateAgentFlow({
     openPositionEscalationToJudgePolicy: styleDefaults.openPositionEscalationToJudgePolicy,
     runtimePolicyOverrides: null,
     strategyPreset: '',
-    subscribedSources: ['watch_threshold'],
+    subscribedSources: ['watch_threshold', 'discovery_delta', 'regime_change'],
     };
   });
   const [modelTouched, setModelTouched] = useState(false);
@@ -599,11 +599,10 @@ function CreateAgentFlow({
               onChange={(style) => {
                 const defaults = resolveStyleDefaults(style);
                 setIntent((state) => {
-                  const premiumSources = ['watch_threshold', 'discovery_delta', 'regime_change'];
-                  const baseStyleSources = style === 'bold' ? premiumSources : ['watch_threshold'];
+                  const tradingSources = ['watch_threshold', 'discovery_delta', 'regime_change'];
                   const styleSources = state.technicalPreFilterEnabled
-                    ? (baseStyleSources.includes('scanner') ? baseStyleSources : [...baseStyleSources, 'scanner'])
-                    : baseStyleSources.filter(s => s !== 'scanner');
+                    ? [...tradingSources, 'scanner']
+                    : tradingSources;
                   const next: IntentState = {
                     ...state,
                     style,

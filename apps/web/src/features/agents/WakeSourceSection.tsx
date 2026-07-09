@@ -1,7 +1,7 @@
 
 export const WAKE_SOURCES = [
   { value: 'reminder', label: 'Reminders', description: 'Agent-scheduled reminders' },
-  { value: 'watch_threshold', label: 'Watch Thresholds', description: 'Price threshold alerts' },
+  { value: 'watch_threshold', label: 'Watch Thresholds', description: 'Price alerts' },
   { value: 'discovery_delta', label: 'Discovery Deltas', description: 'Newly trending tokens' },
   { value: 'regime_change', label: 'Regime Changes', description: 'Market regime shifts' },
   { value: 'scanner', label: 'Scanner', description: 'Technical scan signals' },
@@ -48,10 +48,10 @@ export function WakeSourceSection({ selected, onChange, disabled, sources }: Wak
       {visibleSources.length > 0 && (
         <p style={{ fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
           {isAllSources
-            ? 'Receiving all wake sources. Select specific sources to filter.'
+            ? 'No sources selected. Watch Thresholds will be used by default.'
             : hasExplicitVisibleSelection
               ? `Receiving ${visibleSelected.length} of ${totalSources} wake sources.`
-              : 'Receiving all wake sources. Select specific sources to filter.'}
+              : 'No sources selected. Watch Thresholds will be used by default.'}
         </p>
       )}
       {visibleSources.map(source => (

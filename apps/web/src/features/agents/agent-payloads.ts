@@ -143,7 +143,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
 
   const subscribedSources = input.subscribedSources ?? [];
   const wakePreferences: { subscribedSources?: string[] } | undefined =
-    subscribedSources.length > 0 ? { subscribedSources } : undefined;
+    subscribedSources.length > 0 ? { subscribedSources } : { subscribedSources: ['watch_threshold'] };
 
   return {
     name: input.name.trim(),
@@ -221,10 +221,10 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
 
   // Resolve wakePreferences for update:
   // - subscribedSources provided with items → send wakePreferences with those sources
-  // - subscribedSources explicitly empty (user cleared all) → send wakePreferences: null to reset
+  // - subscribedSources explicitly empty (user cleared all) → send default watch_threshold
   // - subscribedSources not provided at all → omit wakePreferences (don't touch)
   const wakePreferences = input.subscribedSources !== undefined
-    ? (input.subscribedSources.length > 0 ? { subscribedSources: input.subscribedSources } : null)
+    ? (input.subscribedSources.length > 0 ? { subscribedSources: input.subscribedSources } : { subscribedSources: ['watch_threshold'] })
     : undefined;
 
   return {

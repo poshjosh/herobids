@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Change `marketIntelligence.wakePolicy` from `batched` to `context` for `discovery_delta`
+
 ## v0.0.15 - 2026-07-09
 
 ### Fixed

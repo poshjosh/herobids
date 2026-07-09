@@ -424,12 +424,11 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 const defaults = resolveStyleDefaults(nextStyle);
                 setTickIntervalTouched(true);
                 setStyle(nextStyle);
-                const premiumSources = ['watch_threshold', 'discovery_delta', 'regime_change'];
-                const baseStyleSources = nextStyle === 'bold' ? premiumSources : ['watch_threshold'];
+                const tradingSources = ['watch_threshold', 'discovery_delta', 'regime_change'];
                 setForm((prev) => {
                   const styleSources = prev.technicalPreFilterEnabled
-                    ? (baseStyleSources.includes('scanner') ? baseStyleSources : [...baseStyleSources, 'scanner'])
-                    : baseStyleSources.filter(s => s !== 'scanner');
+                    ? [...tradingSources, 'scanner']
+                    : tradingSources;
                   return {
                     ...prev,
                     costPreset: defaults.costPreset,
