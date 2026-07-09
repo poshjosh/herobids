@@ -6,7 +6,8 @@ import type { ProviderResponseCache, CachePolicy, CacheSnapshot } from './cache.
  */
 export interface RedisCacheClient {
   get(key: string): Promise<string | null>;
-  set(key: string, value: string, ...args: Array<string | number>): Promise<unknown>;
+  set(key: string, value: string): Promise<unknown>;
+  set(key: string, value: string, expiryMode: 'PX' | 'EX', time: number): Promise<unknown>;
   del(key: string): Promise<unknown>;
 }
 

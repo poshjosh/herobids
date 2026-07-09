@@ -231,7 +231,7 @@ marketData:
       baseUrl: "https://www.forexfactory.com"
       requestTimeoutMs: 15000
       requestsPerMinute: 1
-      userAgent: "Mozilla/5.0 HeroBids/1.0"
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     ohlcDev:
       baseUrl: "https://api.ohlc.dev"
       requestTimeoutMs: 15000

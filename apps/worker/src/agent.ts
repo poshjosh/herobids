@@ -9,6 +9,8 @@
  */
 
 import fs from 'node:fs';
+import https from 'node:https';
+import http from 'node:http';
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import pino from 'pino';
@@ -108,6 +110,49 @@ const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '900000', 1
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env['HEARTBEAT_INTERVAL_MS'] ?? '5000', 10);
 const SERVER_COST_USD_PER_HOUR = Number(process.env['LLM_SERVER_COST_USD_PER_HOUR'] ?? '0.02');
 const TRADING_HOURS_RAW = process.env['TRADING_HOURS_JSON'];
+
+// ── HTTP/1.1 fetch for sites that block HTTP/2 (e.g. Forex Factory) ─────
+
+/**
+ * Fetch implementation using Node's http/https module (HTTP/1.1 only).
+ *
+ * Node's built-in fetch() (undici) negotiates HTTP/2 by default, which
+ * triggers Cloudflare 403 blocks on some sites. This wrapper forces HTTP/1.1.
+ */
+function fetchHttp1(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return new Promise<Response>((resolve, reject) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const parsed = new URL(url);
+    const mod = parsed.protocol === 'https:' ? https : http;
+
+    const req = mod.request(
+      url,
+      {
+        method: init?.method ?? 'GET',
+        headers: init?.headers as Record<string, string> | undefined,
+        signal: init?.signal,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          const body = Buffer.concat(chunks);
+          resolve(new Response(body, {
+            status: res.statusCode ?? 200,
+            statusText: res.statusMessage ?? '',
+            headers: new Headers(
+              Object.entries(res.headers).filter(([, v]) => v != null) as [string, string][],
+            ),
+          }));
+        });
+      },
+    );
+
+    req.on('error', reject);
+    if (init?.body) req.write(init.body as string);
+    req.end();
+  });
+}
 
 // ── Crash telemetry ──────────────────────────────────────────────────────
 
@@ -875,6 +920,7 @@ if (marketDataConfig?.economicCalendar?.enabled) {
     rateLimiter: new TokenBucketRateLimiter({
       requestsPerMinute: ecConfig.forexFactory.requestsPerMinute,
     }),
+    fetchFn: fetchHttp1,  // HTTP/1.1 required — Cloudflare blocks HTTP/2
   };
 
   const ohlcDevConfig: OhlcDevAdapterConfig = {

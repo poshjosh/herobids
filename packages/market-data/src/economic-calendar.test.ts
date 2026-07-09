@@ -90,7 +90,7 @@ function createMockRedisClient(): RedisCacheClient & { _store: Map<string, strin
     async get(key: string) {
       return store.get(key) ?? null;
     },
-    async set(key: string, value: string, ..._args: Array<string | number>) {
+    async set(key: string, value: string, _expiryMode?: 'PX' | 'EX', _time?: number) {
       store.set(key, value);
       return 'OK';
     },
