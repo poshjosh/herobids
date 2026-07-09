@@ -275,7 +275,7 @@ function getCapabilityNextSteps(
 ): Array<{ label: string; path: string; variant: 'primary' | 'secondary' }> {
   if (family === 'trading') {
     return [
-      { label: intl.formatMessage({ id: 'agents.capabilityPage.setupOnMissionControl' }), path: '/mission-control', variant: 'primary' },
+      { label: intl.formatMessage({ id: 'agents.capabilityPage.setupOnAgents' }), path: '/agents', variant: 'primary' },
     ];
   }
 

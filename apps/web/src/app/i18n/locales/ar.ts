@@ -593,7 +593,7 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.bindFailed': 'تعذر تعيين {label}: {error}',
   'agents.capabilityPage.manageConnections': 'إدارة الاتصالات',
   'agents.capabilityPage.manageCredentials': 'إدارة بيانات الاعتماد',
-  'agents.capabilityPage.setupOnMissionControl': 'الذهاب إلى مركز التحكم',
+  'agents.capabilityPage.setupOnAgents': 'الذهاب إلى وكلاء الذكاء الاصطناعي',
 
   // Outcomes extended
   'outcomes.latestArtifact': 'أحدث مخرج',

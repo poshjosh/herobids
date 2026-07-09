@@ -104,9 +104,9 @@ describe('setup flow copy changes', () => {
     expect(enMessages['agents.create.setupTradingNow']).toBe('Set up trading now');
   });
 
-  it('agents.capabilityPage.setupOnMissionControl key exists for the updated next-steps CTA', () => {
-    expect(enMessages['agents.capabilityPage.setupOnMissionControl']).toBeTruthy();
-    expect(enMessages['agents.capabilityPage.setupOnMissionControl']).toBe('Go to Mission Control');
+  it('agents.capabilityPage.setupOnAgents key exists for the updated next-steps CTA', () => {
+    expect(enMessages['agents.capabilityPage.setupOnAgents']).toBeTruthy();
+    expect(enMessages['agents.capabilityPage.setupOnAgents']).toBe('Go to AI Agents');
   });
 
   it('ai model selection copy is defined for settings and agent forms', () => {
@@ -148,14 +148,14 @@ describe('setup flow copy changes', () => {
       new URL('../../features/agents/AgentCapabilityPage.tsx', import.meta.url),
       'utf8',
     );
-    // The trading branch should use the setupOnMissionControl key, not the
+    // The trading branch should use the setupOnAgents key, not the
     // manageConnections key pointing to /connections.
     const tradingBranchStart = source.indexOf("if (family === 'trading')");
     const tradingBranchEnd = source.indexOf('return [', tradingBranchStart + 1);
     const returnEnd = source.indexOf('];', tradingBranchEnd) + 2;
     const tradingReturnBlock = source.slice(tradingBranchStart, returnEnd);
 
-    expect(tradingReturnBlock).toContain('setupOnMissionControl');
+    expect(tradingReturnBlock).toContain('setupOnAgents');
     expect(tradingReturnBlock).not.toContain("path: '/connections'");
   });
 });
