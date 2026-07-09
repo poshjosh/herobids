@@ -43,3 +43,35 @@ export async function fetchJson<T>(params: {
     clearTimeout(timeout);
   }
 }
+
+export async function fetchText(params: {
+  url: string;
+  timeoutMs: number;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  fetchFn?: typeof fetch;
+}): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), params.timeoutMs);
+
+  try {
+    const response = await (params.fetchFn ?? fetch)(params.url, {
+      method: params.method,
+      headers: params.headers,
+      body: params.body,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new HttpError(
+        `HTTP error: ${response.status} ${response.statusText}`,
+        response.status,
+      );
+    }
+
+    return await response.text();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
