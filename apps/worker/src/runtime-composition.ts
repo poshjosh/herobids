@@ -1076,6 +1076,47 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     }),
   },
   {
+    id: 'macro-economic',
+    costTier: 'free',
+    section: 'dynamic',
+    requiredFamilies: ['trading'],
+    trimOrder: 2,
+    preserveWhenTrimmed: true,
+    build: (state) => {
+      const events = state.metrics.macroEvents;
+      if (!events || events.length === 0) return null;
+
+      // Defensive renderer-side cap — mirrors marketData.economicCalendar.maxEventsInContext default.
+      // The actual cap is applied by the provider before writing to macroEvents (Step 7).
+      const maxEvents = 20;
+      const displayEvents = events.slice(0, maxEvents);
+
+      const uniqueCurrencies = [...new Set(displayEvents.map(e => e.currency))].sort();
+      const uniqueSources = [...new Set(displayEvents.flatMap(e => e.sources))].sort();
+
+      const lines: string[] = [];
+      lines.push('## Upcoming Economic Events');
+      lines.push(`Currencies: ${uniqueCurrencies.join(', ')}. Sources: ${uniqueSources.join(', ')}.`);
+      lines.push('');
+      lines.push('| Time (UTC) | Currency | Event | Impact | Forecast | Previous |');
+      lines.push('|------------|----------|-------|--------|----------|----------|');
+
+      for (const event of displayEvents) {
+        const timeShort = event.time.replace('T', ' ').substring(0, 16);
+        const forecast = event.forecast ?? '—';
+        const previous = event.previous ?? '—';
+        lines.push(`| ${timeShort} | ${event.currency} | ${event.event} | ${event.impact} | ${forecast} | ${previous} |`);
+      }
+
+      return {
+        id: 'macroEconomicEvents',
+        title: 'Upcoming Economic Events',
+        provider: 'macro-economic',
+        content: lines.join('\n'),
+      };
+    },
+  },
+  {
     id: 'open-positions',
     costTier: 'cheap',
     section: 'dynamic',
@@ -1223,6 +1264,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     section: 'dynamic',
     requiredFamilies: ['trading'],
     trimOrder: 5,
+    preserveWhenTrimmed: false,
     build: (state) => {
       if (state.metrics.venueSignals.length === 0) {
         return null;
@@ -1246,6 +1288,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     section: 'dynamic',
     requiredFamilies: [],
     trimOrder: 5,
+    preserveWhenTrimmed: false,
     build: (state) => ({
       id: 'recentEvents',
       title: 'Recent Events',
@@ -1261,6 +1304,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     section: 'dynamic',
     requiredFamilies: ['trading'],
     trimOrder: 6,
+    preserveWhenTrimmed: false,
     build: (state) => ({
       id: 'managedBots',
       title: 'Managed Bots',
@@ -1285,30 +1329,30 @@ function trimDynamicBlocks(
   blocks: Array<{ provider: RuntimeContextProvider; block: RuntimeContextBlock }>,
 ): RuntimeContextBlock[] {
   const limit = state.runtimeDescriptor.budgets.maxContextBlockChars * 2;
-  const renderedLength = (entries: RuntimeContextBlock[]): number => entries.reduce((total, block) => total + block.title.length + block.content.length + 8, 0);
+  const blockSize = (block: RuntimeContextBlock): number =>
+    block.title.length + block.content.length + 8;
 
-  let current = blocks.map(({ block }) => ({ ...block, content: trimText(block.content, state.runtimeDescriptor.budgets.maxContextBlockChars) }));
-  if (renderedLength(current) <= limit) {
-    return current;
+  // Trim individual block content to maxContextBlockChars
+  const trimmedBlocks = blocks.map(({ provider, block }) => ({
+    provider,
+    block: { ...block, content: trimText(block.content, state.runtimeDescriptor.budgets.maxContextBlockChars) },
+  }));
+
+  // Sort by trimOrder ascending (lower = higher priority, kept first)
+  const sorted = [...trimmedBlocks].sort((a, b) => a.provider.trimOrder - b.provider.trimOrder);
+
+  const result: RuntimeContextBlock[] = [];
+  let totalSize = 0;
+
+  for (const { provider, block } of sorted) {
+    const size = blockSize(block);
+    if (totalSize + size <= limit || provider.preserveWhenTrimmed) {
+      result.push(block);
+      totalSize += size;
+    }
   }
 
-  for (const block of current) {
-    if (block.id === 'managedBots') {
-      block.content = trimText(block.content.split('\n').slice(0, 2).join('\n'), 250);
-    }
-    if (block.id === 'recentEvents') {
-      block.content = trimText(block.content.split('\n').slice(-3).join('\n'), 350);
-    }
-    if (block.id === 'venueIntelligence') {
-      block.content = trimText(block.content.split('\n').slice(0, 5).join('\n'), 400);
-    }
-
-    if (renderedLength(current) <= limit) {
-      return current;
-    }
-  }
-
-  return current.filter((block) => block.id !== 'venueIntelligence');
+  return result;
 }
 
 function buildContextSection(state: RuntimeCompositionState, section: 'static' | 'dynamic', policy?: PromptEnrichmentPolicy): string {
