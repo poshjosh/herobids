@@ -143,7 +143,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
 
   const subscribedSources = input.subscribedSources ?? [];
   const wakePreferences: { subscribedSources?: string[] } | undefined =
-    subscribedSources.length > 0 ? { subscribedSources } : { subscribedSources: ['watch_threshold'] };
+    subscribedSources.length > 0 ? { subscribedSources } : undefined;
 
   return {
     name: input.name.trim(),

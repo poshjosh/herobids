@@ -201,6 +201,7 @@ describe('CompositeEconomicCalendarProvider — single source', () => {
   it('delegates to adapter and returns events', async () => {
     const provider = new CompositeEconomicCalendarProvider(
       baseCompositeConfig({
+        daysForward: 365,
         forexFactory: baseForexFactoryConfig({
           fetchFn: createMockFetch('<html>x</html>'),
           parseHtmlFn: mockParser([
@@ -221,6 +222,7 @@ describe('CompositeEconomicCalendarProvider — single source', () => {
   it('sorts events by time ascending', async () => {
     const provider = new CompositeEconomicCalendarProvider(
       baseCompositeConfig({
+        daysForward: 365,
         forexFactory: baseForexFactoryConfig({
           fetchFn: createMockFetch('<html>x</html>'),
           parseHtmlFn: mockParser([
@@ -245,6 +247,7 @@ describe('CompositeEconomicCalendarProvider — single source', () => {
 
     const provider = new CompositeEconomicCalendarProvider(
       baseCompositeConfig({
+        daysForward: 365,
         maxEvents: 3,
         forexFactory: baseForexFactoryConfig({
           fetchFn: createMockFetch('<html>x</html>'),
