@@ -1324,7 +1324,7 @@ function buildBlockList(state: RuntimeCompositionState, section: 'static' | 'dyn
     .filter((entry): entry is { provider: RuntimeContextProvider; block: RuntimeContextBlock } => entry.block !== null);
 }
 
-function trimDynamicBlocks(
+export function trimDynamicBlocks(
   state: RuntimeCompositionState,
   blocks: Array<{ provider: RuntimeContextProvider; block: RuntimeContextBlock }>,
 ): RuntimeContextBlock[] {

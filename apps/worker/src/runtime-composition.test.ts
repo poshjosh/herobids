@@ -15,8 +15,10 @@ import {
   recordVenueSignals,
   recordActiveWatches,
   recordActiveWatchSummary,
+  trimDynamicBlocks,
   type PromptEnrichmentPolicy,
   type ActivityTimelineEvent,
+  type RuntimeContextProvider,
   RUNTIME_CONTEXT_PROVIDERS,
 } from './runtime-composition.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
@@ -2341,6 +2343,343 @@ describe('runtime composition helpers', () => {
       expect(state.metrics.pendingMarketContext).toHaveLength(0);
       expect(state.metrics.currentReminder).toBeNull();
       expect(state.metrics.currentMarketWake).toBeNull();
+    });
+  });
+
+  describe('macro-economic context provider', () => {
+    const macroProvider = RUNTIME_CONTEXT_PROVIDERS.find((p) => p.id === 'macro-economic');
+
+    it('returns null when macroEvents is null', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      state.metrics.macroEvents = null;
+
+      const block = macroProvider!.build(state);
+      expect(block).toBeNull();
+    });
+
+    it('returns null when macroEvents is empty array', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      state.metrics.macroEvents = [];
+
+      const block = macroProvider!.build(state);
+      expect(block).toBeNull();
+    });
+
+    it('rendered block excludes volatile fetchedAt', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      state.metrics.macroEvents = [
+        {
+          time: '2026-07-09T14:00:00Z',
+          currency: 'USD',
+          event: 'FOMC Statement',
+          impact: 'high',
+          forecast: null,
+          previous: '5.50%',
+          sources: ['forex-factory'],
+        },
+      ];
+
+      const block = macroProvider!.build(state);
+      expect(block).not.toBeNull();
+      expect(block!.content).not.toContain('fetchedAt');
+    });
+
+    it('renders a markdown table with event details', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      state.metrics.macroEvents = [
+        {
+          time: '2026-07-09T14:00:00Z',
+          currency: 'USD',
+          event: 'FOMC Statement',
+          impact: 'high',
+          forecast: '5.25%',
+          previous: '5.50%',
+          sources: ['forex-factory'],
+        },
+        {
+          time: '2026-07-10T12:30:00Z',
+          currency: 'EUR',
+          event: 'ECB Press Conference',
+          impact: 'medium',
+          forecast: null,
+          previous: null,
+          sources: ['ohlc-dev'],
+        },
+      ];
+
+      const block = macroProvider!.build(state);
+      expect(block).not.toBeNull();
+      expect(block!.title).toBe('Upcoming Economic Events');
+      expect(block!.content).toContain('## Upcoming Economic Events');
+      expect(block!.content).toContain('Currencies: EUR, USD');
+      expect(block!.content).toContain('Sources: forex-factory, ohlc-dev');
+      expect(block!.content).toContain('| Time (UTC) | Currency | Event | Impact | Forecast | Previous |');
+      expect(block!.content).toContain('FOMC Statement');
+      expect(block!.content).toContain('ECB Press Conference');
+      expect(block!.content).toContain('5.25%');
+      expect(block!.content).toContain('5.50%');
+    });
+
+    it('renders — for null forecast/previous values', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      state.metrics.macroEvents = [
+        {
+          time: '2026-07-09T14:00:00Z',
+          currency: 'USD',
+          event: 'Test Event',
+          impact: 'low',
+          forecast: null,
+          previous: null,
+          sources: ['forex-factory'],
+        },
+      ];
+
+      const block = macroProvider!.build(state);
+      expect(block).not.toBeNull();
+      // The em-dash should appear for null values
+      expect(block!.content).toContain('| — | — |');
+    });
+
+    it('defensive renderer-side cap limits events to 20', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      // Create 25 events
+      state.metrics.macroEvents = Array.from({ length: 25 }, (_, i) => ({
+        time: `2026-07-${String(i + 1).padStart(2, '0')}T12:00:00Z`,
+        currency: 'USD',
+        event: `Event ${i + 1}`,
+        impact: 'medium' as const,
+        forecast: null,
+        previous: null,
+        sources: ['forex-factory'],
+      }));
+
+      const block = macroProvider!.build(state);
+      expect(block).not.toBeNull();
+
+      // Count the event rows in the rendered markdown (excluding header rows)
+      const lines = block!.content.split('\n');
+      const eventRows = lines.filter((l) => l.startsWith('| 2026'));
+      expect(eventRows.length).toBeLessThanOrEqual(20);
+    });
+
+    it('deduplicates currencies and sources in the summary line', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      state.metrics.macroEvents = [
+        {
+          time: '2026-07-09T14:00:00Z',
+          currency: 'USD',
+          event: 'Event A',
+          impact: 'high',
+          forecast: null,
+          previous: null,
+          sources: ['forex-factory'],
+        },
+        {
+          time: '2026-07-09T15:00:00Z',
+          currency: 'USD',
+          event: 'Event B',
+          impact: 'high',
+          forecast: null,
+          previous: null,
+          sources: ['forex-factory'],
+        },
+        {
+          time: '2026-07-09T16:00:00Z',
+          currency: 'EUR',
+          event: 'Event C',
+          impact: 'medium',
+          forecast: null,
+          previous: null,
+          sources: ['ohlc-dev'],
+        },
+      ];
+
+      const block = macroProvider!.build(state);
+      expect(block).not.toBeNull();
+      // Currencies should be sorted and deduplicated
+      expect(block!.content).toContain('Currencies: EUR, USD');
+      // Sources should be sorted and deduplicated
+      expect(block!.content).toContain('Sources: forex-factory, ohlc-dev');
+    });
+  });
+
+  describe('trimDynamicBlocks', () => {
+    it('sorts blocks by trimOrder ascending', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      // Override budget to be very large so all blocks fit
+      state.runtimeDescriptor.budgets.maxContextBlockChars = 10_000;
+
+      const providers: Array<RuntimeContextProvider> = [
+        {
+          id: 'block-c',
+          costTier: 'free',
+          section: 'dynamic',
+          requiredFamilies: [],
+          trimOrder: 3,
+          preserveWhenTrimmed: false,
+          build: () => ({ id: 'block-c', title: 'C', content: 'Content C', provider: 'test' }),
+        },
+        {
+          id: 'block-a',
+          costTier: 'free',
+          section: 'dynamic',
+          requiredFamilies: [],
+          trimOrder: 1,
+          preserveWhenTrimmed: false,
+          build: () => ({ id: 'block-a', title: 'A', content: 'Content A', provider: 'test' }),
+        },
+        {
+          id: 'block-b',
+          costTier: 'free',
+          section: 'dynamic',
+          requiredFamilies: [],
+          trimOrder: 2,
+          preserveWhenTrimmed: false,
+          build: () => ({ id: 'block-b', title: 'B', content: 'Content B', provider: 'test' }),
+        },
+      ];
+
+      const blocks = providers.map((p) => ({ provider: p, block: p.build(state)! }));
+      const result = trimDynamicBlocks(state, blocks);
+
+      // Should be ordered by trimOrder: block-a (1), block-b (2), block-c (3)
+      expect(result.map((b) => b.id)).toEqual(['block-a', 'block-b', 'block-c']);
+    });
+
+    it('preserves blocks with preserveWhenTrimmed=true even when total size exceeds limit', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      // Set a tight budget — only ~30 chars total
+      state.runtimeDescriptor.budgets.maxContextBlockChars = 15;
+
+      const providers: Array<RuntimeContextProvider> = [
+        {
+          id: 'essential',
+          costTier: 'free',
+          section: 'dynamic',
+          requiredFamilies: [],
+          trimOrder: 0,
+          preserveWhenTrimmed: true,
+          build: () => ({
+            id: 'essential',
+            title: 'T',
+            content: 'This is essential content that exceeds budget',
+            provider: 'test',
+          }),
+        },
+        {
+          id: 'optional',
+          costTier: 'free',
+          section: 'dynamic',
+          requiredFamilies: [],
+          trimOrder: 1,
+          preserveWhenTrimmed: false,
+          build: () => ({
+            id: 'optional',
+            title: 'X',
+            content: 'This is optional',
+            provider: 'test',
+          }),
+        },
+      ];
+
+      const blocks = providers.map((p) => ({ provider: p, block: p.build(state)! }));
+      const result = trimDynamicBlocks(state, blocks);
+
+      // Both should be included — essential because preserveWhenTrimmed, optional because it fits BEFORE essential in trim order
+      // Wait — with trimOrder 0 (essential) and 1 (optional), sorted order is essential first, then optional.
+      // But the content is trimmed to maxContextBlockChars (15) first.
+      // Essential has title "T" (1) + content trimmed to 15 chars + 8 = 24 bytes
+      // Optional: title "X" (1) + content trimmed to 15 + 8 = 24 bytes
+      // Total limit = 15 * 2 = 30. So both can fit at 24 each = 48 > 30.
+      // Essential (trimOrder=0, preserveWhenTrimmed=true) should still be included.
+      expect(result.map((b) => b.id)).toContain('essential');
+    });
+
+    it('trims individual block content to maxContextBlockChars', () => {
+      // Use a standalone descriptor to avoid shared mutable state across tests
+      const state = createRuntimeCompositionState({
+        ...baseDescriptor,
+        budgets: { ...baseDescriptor.budgets, maxContextBlockChars: 20 },
+      });
+
+      const longContent = 'This is a very long content that should be trimmed significantly';
+
+      const providers: Array<RuntimeContextProvider> = [
+        {
+          id: 'block',
+          costTier: 'free',
+          section: 'dynamic',
+          requiredFamilies: [],
+          trimOrder: 0,
+          preserveWhenTrimmed: false,
+          build: () => ({
+            id: 'block',
+            title: 'X',
+            content: longContent,
+            provider: 'test',
+          }),
+        },
+      ];
+
+      const blocks = providers.map((p) => ({ provider: p, block: p.build(state)! }));
+      const result = trimDynamicBlocks(state, blocks);
+
+      expect(result).toHaveLength(1);
+      // Content should be trimmed (shorter than original)
+      expect(result[0]!.content.length).toBeLessThan(longContent.length);
+      // trimText takes maxChars-1 chars + "..." ellipsis, so ≤ maxChars+2
+      expect(result[0]!.content.length).toBeLessThanOrEqual(22);
+    });
+
+    it('drops non-preserved blocks that exceed total limit', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      // Very tight budget
+      state.runtimeDescriptor.budgets.maxContextBlockChars = 5;
+
+      const providers: Array<RuntimeContextProvider> = [
+        {
+          id: 'first',
+          costTier: 'free',
+          section: 'dynamic',
+          requiredFamilies: [],
+          trimOrder: 0,
+          preserveWhenTrimmed: false,
+          build: () => ({
+            id: 'first',
+            title: 'A',
+            content: 'Content A',
+            provider: 'test',
+          }),
+        },
+        {
+          id: 'second',
+          costTier: 'free',
+          section: 'dynamic',
+          requiredFamilies: [],
+          trimOrder: 1,
+          preserveWhenTrimmed: false,
+          build: () => ({
+            id: 'second',
+            title: 'B',
+            content: 'Content B',
+            provider: 'test',
+          }),
+        },
+      ];
+
+      const blocks = providers.map((p) => ({ provider: p, block: p.build(state)! }));
+      const result = trimDynamicBlocks(state, blocks);
+
+      // With maxContextBlockChars=5, each block content is trimmed to 5.
+      // Block size = title.length + content.length + 8
+      // First block: "A" (1) + trimmed content (5) + 8 = 14
+      // Second: "B" (1) + trimmed content (5) + 8 = 14
+      // Limit = 5 * 2 = 10. First block (14) > 10 → won't fit, not preserved → dropped.
+      // Second same.
+      // Actually wait — trimOrder 0 is processed first. Block size 14 > limit 10, not preserved → dropped.
+      // Then trimOrder 1, same situation → dropped.
+      // So result should be empty.
+      expect(result).toHaveLength(0);
     });
   });
 });
