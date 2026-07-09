@@ -15,7 +15,7 @@ export function AdminPage() {
 
   // Redirect non-admins away from this page
   if (user && !user.isAdmin) {
-    return <Navigate to="/mission-control" replace />;
+    return <Navigate to="/agents" replace />;
   }
   const qc = useQueryClient();
 

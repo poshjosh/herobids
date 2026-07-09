@@ -31,7 +31,7 @@ export function AuthCallbackPage() {
 
     auth.exchange(code)
       .then(({ token }) => login(token))
-      .then(() => navigate('/mission-control', { replace: true }))
+      .then(() => navigate('/agents', { replace: true }))
       .catch((err: unknown) => {
         setState('error');
         setErrorMessage(localizeApiError(intl, err, 'auth.error.default'));
