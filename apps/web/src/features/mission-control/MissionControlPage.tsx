@@ -5,7 +5,7 @@ import { useIntl } from 'react-intl';
 import type { ProviderSetupResult } from '../../lib/api-client.js';
 import { agents as agentsApi, dashboard } from '../../lib/api-client.js';
 import { formatPnl, pnlColor } from '../../lib/formatting.js';
-import { PageShell, PageHeader, EmptyState, ErrorState, LoadingRows, Button, Card, SectionLabel } from '../../lib/ui.js';
+import { PageShell, PageHeader, EmptyState, ErrorState, LoadingRows, Button, Card, SectionLabel, MetricCard } from '../../lib/ui.js';
 import { AgentSummaryCard } from '../agents/AgentSummaryCard.js';
 import { ActivityItem } from '../activity/ActivityItem.js';
 import { AgentActivityItem } from '../activity/AgentActivityItem.js';
@@ -261,20 +261,3 @@ export function MissionControlPage() {
   );
 }
 
-function MetricCard({ label, value, total, color }: { label: string; value: string | number; total?: number; color?: string }) {
-  return (
-    <Card style={{ padding: '16px 20px' }}>
-      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
-        {label}
-      </div>
-      <div style={{ fontSize: '24px', fontWeight: '600', color: color ?? 'var(--color-text-primary)' }}>
-        {value}
-        {total !== undefined && (
-          <span style={{ fontSize: '14px', fontWeight: '400', color: 'var(--color-text-muted)', marginLeft: '4px' }}>
-            / {total}
-          </span>
-        )}
-      </div>
-    </Card>
-  );
-}
