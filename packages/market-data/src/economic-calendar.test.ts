@@ -1,10 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   ForexFactoryCalendarAdapter,
-  OhlcDevCalendarAdapter,
   CompositeEconomicCalendarProvider,
   type ForexFactoryAdapterConfig,
-  type OhlcDevAdapterConfig,
   type CompositeEconomicCalendarConfig,
 } from './economic-calendar.js';
 import { RedisProviderResponseCache, type RedisCacheClient } from './redis-cache.js';
@@ -59,26 +57,13 @@ function baseForexFactoryConfig(overrides: Partial<ForexFactoryAdapterConfig> = 
   };
 }
 
-function baseOhlcDevConfig(overrides: Partial<OhlcDevAdapterConfig> = {}): OhlcDevAdapterConfig {
-  return {
-    baseUrl: 'https://api.ohlc.dev',
-    requestTimeoutMs: 10_000,
-    requestsPerMinute: 60,
-    rateLimiter: createNoopRateLimiter(),
-    ...overrides,
-  };
-}
-
 function baseCompositeConfig(overrides: Partial<CompositeEconomicCalendarConfig> = {}): CompositeEconomicCalendarConfig {
   return {
     daysForward: 7,
     minImpact: 'low',
     currencies: [],
     maxEvents: 50,
-    dedupeWindowMinutes: 30,
-    sourceOrder: ['forex-factory', 'ohlc-dev'],
     forexFactory: baseForexFactoryConfig(),
-    ohlcDev: baseOhlcDevConfig(),
     ...overrides,
   };
 }
@@ -313,161 +298,11 @@ describe('ForexFactoryCalendarAdapter', () => {
 });
 
 // ============================================================================
-// OHLC.dev JSON normalization
+// Composite — single-source (Forex Factory)
 // ============================================================================
 
-describe('OhlcDevCalendarAdapter', () => {
-  const FUTURE_TS = Math.floor(Date.now() / 1000) + 86400; // tomorrow
-  const FUTURE_TS2 = FUTURE_TS + 3600; // +1 hour
-
-  it('normalizes Unix timestamps, impact labels, and currency codes', async () => {
-    const mockBody = JSON.stringify([
-      {
-        timestamp: FUTURE_TS,
-        currency: 'usd',
-        title: 'Fed Interest Rate Decision',
-        impact: 'high-impact',
-        forecast: '5.50%',
-        previous: '5.25%',
-      },
-      {
-        timestamp: FUTURE_TS2,
-        currency: 'eur',
-        title: 'ECB Press Conference',
-        impact: 'moderate',
-        forecast: null,
-        previous: null,
-      },
-    ]);
-
-    const adapter = new OhlcDevCalendarAdapter(
-      baseOhlcDevConfig({
-        fetchFn: createMockFetch(mockBody, 200, 'application/json'),
-      }),
-    );
-
-    const result = await adapter.getUpcomingEvents({ daysForward: 365 });
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-
-    const events = result.data.events;
-    expect(events).toHaveLength(2);
-
-    // Event 1
-    const fed = events.find((e) => e.event === 'Fed Interest Rate Decision');
-    expect(fed).toBeDefined();
-    expect(fed!.currency).toBe('USD');
-    expect(fed!.impact).toBe('high');
-    expect(fed!.forecast).toBe('5.50%');
-    expect(fed!.previous).toBe('5.25%');
-    // Timestamp should be ISO-8601
-    expect(fed!.time).toBe(new Date(FUTURE_TS * 1000).toISOString());
-
-    // Event 2
-    const ecb = events.find((e) => e.event === 'ECB Press Conference');
-    expect(ecb).toBeDefined();
-    expect(ecb!.currency).toBe('EUR');
-    expect(ecb!.impact).toBe('medium');
-    expect(ecb!.forecast).toBeNull();
-    expect(ecb!.previous).toBeNull();
-  });
-
-  it('handles array-shaped response', async () => {
-    const mockBody = JSON.stringify([
-      { timestamp: FUTURE_TS, currency: 'gbp', title: 'GDP m/m', impact: 'low' },
-    ]);
-
-    const adapter = new OhlcDevCalendarAdapter(
-      baseOhlcDevConfig({
-        fetchFn: createMockFetch(mockBody, 200, 'application/json'),
-      }),
-    );
-
-    const result = await adapter.getUpcomingEvents({ daysForward: 365 });
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-    expect(result.data.events).toHaveLength(1);
-    expect(result.data.events[0]!.currency).toBe('GBP');
-  });
-
-  it('handles { events: [...] } response shape', async () => {
-    const mockBody = JSON.stringify({
-      events: [
-        { timestamp: FUTURE_TS, currency: 'jpy', title: 'BOJ Minutes', impact: 'medium' },
-      ],
-    });
-
-    const adapter = new OhlcDevCalendarAdapter(
-      baseOhlcDevConfig({
-        fetchFn: createMockFetch(mockBody, 200, 'application/json'),
-      }),
-    );
-
-    const result = await adapter.getUpcomingEvents({ daysForward: 365 });
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-    expect(result.data.events).toHaveLength(1);
-    expect(result.data.events[0]!.currency).toBe('JPY');
-  });
-
-  it('handles { data: [...] } response shape', async () => {
-    const mockBody = JSON.stringify({
-      data: [
-        { timestamp: FUTURE_TS, currency: 'cad', title: 'CPI y/y', impact: 'high' },
-      ],
-    });
-
-    const adapter = new OhlcDevCalendarAdapter(
-      baseOhlcDevConfig({
-        fetchFn: createMockFetch(mockBody, 200, 'application/json'),
-      }),
-    );
-
-    const result = await adapter.getUpcomingEvents({ daysForward: 365 });
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-    expect(result.data.events).toHaveLength(1);
-    expect(result.data.events[0]!.currency).toBe('CAD');
-  });
-
-  it('defaults unrecognized impact to low', async () => {
-    const mockBody = JSON.stringify([
-      { timestamp: FUTURE_TS, currency: 'usd', title: 'Unknown Event', impact: 'super-duper' },
-    ]);
-
-    const adapter = new OhlcDevCalendarAdapter(
-      baseOhlcDevConfig({
-        fetchFn: createMockFetch(mockBody, 200, 'application/json'),
-      }),
-    );
-
-    const result = await adapter.getUpcomingEvents({ daysForward: 365 });
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-    expect(result.data.events[0]!.impact).toBe('low');
-  });
-
-  it('returns error when fetch fails', async () => {
-    const adapter = new OhlcDevCalendarAdapter(
-      baseOhlcDevConfig({
-        fetchFn: createMockFetch('', 500, 'application/json'),
-      }),
-    );
-
-    const result = await adapter.getUpcomingEvents();
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('Expected error result');
-    expect(result.error.code).toBe('economic-calendar.fetch_failed');
-  });
-});
-
-// ============================================================================
-// Composite merge/dedupe
-// ============================================================================
-
-describe('CompositeEconomicCalendarProvider — merge & dedupe', () => {
+describe('CompositeEconomicCalendarProvider — single source', () => {
   beforeEach(() => {
-    // Set to Jan 1, 2026 so Jul 2026 events are in the future
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
   });
@@ -476,271 +311,113 @@ describe('CompositeEconomicCalendarProvider — merge & dedupe', () => {
     vi.useRealTimers();
   });
 
-  it('merges two events with same currency and time within dedupe window', async () => {
-    // Jul 8, 2026 5:20pm EDT = 21:20 UTC (isEasternDaylightTime uses event date, Jul = EDT = UTC-4)
-    const utcMs = Date.UTC(2026, 6, 8, 21, 20, 0);
-    const sharedTs = Math.floor(utcMs / 1000);
-
+  it('fetches and returns events from Forex Factory', async () => {
     const ffHtml = `
       <html><body>
       <table class="calendar__table">
         <tr class="calendar__row">
           <td class="calendar__date">Tue<br>Jul 8</td>
-          <td class="calendar__time">5:20pm</td>
+          <td class="calendar__time">2:00pm</td>
           <td class="calendar__currency">USD</td>
-          <td class="calendar__event"><span>FOMC Statement</span></td>
-          <td class="calendar__impact">
-            <span class="calendar__impact-icon calendar__impact-icon--red"></span>
-          </td>
-          <td class="calendar__forecast">TBA</td>
+          <td class="calendar__event">FOMC Statement</td>
+          <td class="calendar__impact"><span class="icon icon--ff-impact-red"></span></td>
+          <td class="calendar__forecast"></td>
           <td class="calendar__previous">5.50%</td>
         </tr>
-      </table>
-      </body></html>
-    `;
+      </table></body></html>`;
 
-    const ohlcJson = JSON.stringify([
-      {
-        timestamp: sharedTs,
-        currency: 'usd',
-        title: 'FOMC Statement (Different Title)',
-        impact: 'medium',
-        forecast: '5.25%',
-        previous: null,
-      },
-    ]);
+    const provider = new CompositeEconomicCalendarProvider(
+      baseCompositeConfig({
+        forexFactory: baseForexFactoryConfig({ fetchFn: createMockFetch(ffHtml) }),
+      }),
+    );
 
-    const config = baseCompositeConfig({
-      dedupeWindowMinutes: 30,
-      sourceOrder: ['forex-factory', 'ohlc-dev'],
-    });
-    config.forexFactory.fetchFn = createMockFetch(ffHtml);
-    config.ohlcDev.fetchFn = createMockFetch(ohlcJson, 200, 'application/json');
-
-    const provider = new CompositeEconomicCalendarProvider(config);
-    const result = await provider.getUpcomingEvents({ daysForward: 365 });
-
+    const result = await provider.getUpcomingEvents();
     expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-
-    // Should be deduplicated to 1 event
+    if (!result.ok) throw new Error('Expected ok');
     expect(result.data.events).toHaveLength(1);
-
-    const merged = result.data.events[0]!;
-    // FF title wins (higher sourceOrder priority)
-    expect(merged.event).toBe('FOMC Statement');
-    // FF impact wins (higher sourceOrder priority)
-    expect(merged.impact).toBe('high');
-    // FF previous wins for non-null, FF forecast is non-null so OHLC forecast not adopted
-    expect(merged.previous).toBe('5.50%');
-    expect(merged.forecast).toBe('TBA');
-    // Sources should include both
-    expect(merged.sources.sort()).toEqual(['forex-factory', 'ohlc-dev']);
+    expect(result.data.events[0]!.event).toBe('FOMC Statement');
+    expect(result.data.sources).toEqual(['forex-factory']);
   });
 
-  it('does not merge events with different currencies', async () => {
-    const ts = Math.floor(Date.now() / 1000) + 86400; // tomorrow
-    const ohlcJson = JSON.stringify([
-      { timestamp: ts, currency: 'usd', title: 'FOMC', impact: 'high' },
-      { timestamp: ts, currency: 'eur', title: 'ECB', impact: 'high' },
-    ]);
-
-    const config = baseCompositeConfig();
-    config.forexFactory.fetchFn = createMockFetch('<html><body>No table</body></html>');
-    config.ohlcDev.fetchFn = createMockFetch(ohlcJson, 200, 'application/json');
-
-    const provider = new CompositeEconomicCalendarProvider(config);
-    const result = await provider.getUpcomingEvents({ daysForward: 365 });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-    expect(result.data.events).toHaveLength(2);
-    expect(result.data.events.map((e) => e.currency).sort()).toEqual(['EUR', 'USD']);
-  });
-
-  it('does not merge events outside dedupe window', async () => {
-    const ts = Math.floor(Date.now() / 1000) + 86400; // tomorrow
-    const ohlcJson = JSON.stringify([
-      { timestamp: ts, currency: 'usd', title: 'Event A', impact: 'high' },
-      // 3 hours later — well outside a 30-minute dedupe window
-      { timestamp: ts + 3 * 3600, currency: 'usd', title: 'Event B', impact: 'high' },
-    ]);
-
-    const config = baseCompositeConfig({ dedupeWindowMinutes: 30 });
-    config.forexFactory.fetchFn = createMockFetch('<html><body>No table</body></html>');
-    config.ohlcDev.fetchFn = createMockFetch(ohlcJson, 200, 'application/json');
-
-    const provider = new CompositeEconomicCalendarProvider(config);
-    const result = await provider.getUpcomingEvents({ daysForward: 365 });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-    expect(result.data.events).toHaveLength(2);
-  });
-
-  it('conflict preference: Forex Factory title and impact win over OHLC.dev', async () => {
-    // Jul 10, 2026 10:00am EDT = 14:00 UTC (EDT = UTC-4)
-    const eventUtcMs = Date.UTC(2026, 6, 10, 14, 0, 0);
-    const eventTs = Math.floor(eventUtcMs / 1000);
-
+  it('sorts events by time ascending', async () => {
+    // Jul 9, 2026 10:00am EDT → 14:00 UTC
+    // Jul 8, 2026 2:00pm EDT → 18:00 UTC
     const ffHtml = `
       <html><body>
       <table class="calendar__table">
         <tr class="calendar__row">
-          <td class="calendar__date">Thu<br>Jul 10</td>
+          <td class="calendar__date">Thu<br>Jul 9</td>
           <td class="calendar__time">10:00am</td>
           <td class="calendar__currency">USD</td>
-          <td class="calendar__event"><span>CPI m/m (FF)</span></td>
-          <td class="calendar__impact">
-            <span class="calendar__impact-icon calendar__impact-icon--red"></span>
-          </td>
+          <td class="calendar__event">CPI m/m</td>
+          <td class="calendar__impact"><span class="icon icon--ff-impact-red"></span></td>
           <td class="calendar__forecast">0.2%</td>
-          <td class="calendar__previous">0.3%</td>
+          <td class="calendar__previous">0.1%</td>
         </tr>
-      </table>
-      </body></html>
-    `;
-
-    const ohlcJson = JSON.stringify([
-      {
-        timestamp: eventTs,
-        currency: 'usd',
-        title: 'CPI m/m (OHLC)',
-        impact: 'low',
-        forecast: null,
-        previous: null,
-      },
-    ]);
-
-    const config = baseCompositeConfig({
-      dedupeWindowMinutes: 5,
-      sourceOrder: ['forex-factory', 'ohlc-dev'],
-    });
-    config.forexFactory.fetchFn = createMockFetch(ffHtml);
-    config.ohlcDev.fetchFn = createMockFetch(ohlcJson, 200, 'application/json');
-
-    const provider = new CompositeEconomicCalendarProvider(config);
-    const result = await provider.getUpcomingEvents({ daysForward: 365 });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-
-    expect(result.data.events).toHaveLength(1);
-    const merged = result.data.events[0]!;
-    // FF title should win
-    expect(merged.event).toBe('CPI m/m (FF)');
-    // FF impact should win
-    expect(merged.impact).toBe('high');
-  });
-});
-
-// ============================================================================
-// Composite failure modes
-// ============================================================================
-
-describe('CompositeEconomicCalendarProvider — failure modes', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('returns events from surviving source when one source fails (OHLC fails)', async () => {
-    const ffHtml = `
-      <html><body>
-      <table class="calendar__table">
         <tr class="calendar__row">
-          <td class="calendar__date">Wed<br>Jul 9</td>
+          <td class="calendar__date">Wed<br>Jul 8</td>
           <td class="calendar__time">2:00pm</td>
           <td class="calendar__currency">USD</td>
-          <td class="calendar__event"><span>FOMC</span></td>
-          <td class="calendar__impact"></td>
+          <td class="calendar__event">FOMC Statement</td>
+          <td class="calendar__impact"><span class="icon icon--ff-impact-red"></span></td>
           <td class="calendar__forecast"></td>
-          <td class="calendar__previous"></td>
+          <td class="calendar__previous">5.50%</td>
         </tr>
-      </table>
-      </body></html>
-    `;
+      </table></body></html>`;
 
-    const config = baseCompositeConfig();
-    config.forexFactory.fetchFn = createMockFetch(ffHtml);
-    config.ohlcDev.fetchFn = createMockFetch('', 500, 'application/json');
+    const provider = new CompositeEconomicCalendarProvider(
+      baseCompositeConfig({
+        forexFactory: baseForexFactoryConfig({ fetchFn: createMockFetch(ffHtml) }),
+      }),
+    );
 
-    const provider = new CompositeEconomicCalendarProvider(config);
-    const result = await provider.getUpcomingEvents({ daysForward: 365 });
-
+    const result = await provider.getUpcomingEvents();
     expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-    expect(result.data.events).toHaveLength(1);
-    expect(result.data.events[0]!.event).toBe('FOMC');
-    expect(result.data.sources).toEqual(['forex-factory']);
+    if (!result.ok) throw new Error('Expected ok');
+    // Jul 8 event should be first (earlier time)
+    expect(result.data.events[0]!.event).toBe('FOMC Statement');
+    expect(result.data.events[1]!.event).toBe('CPI m/m');
   });
 
-  it('returns events from surviving source when one source fails (FF fails)', async () => {
-    const ts = Math.floor(Date.now() / 1000) + 86400; // tomorrow
-    const ohlcJson = JSON.stringify([
-      { timestamp: ts, currency: 'eur', title: 'ECB', impact: 'high' },
-    ]);
+  it('truncates to maxEvents', async () => {
+    const rows = Array.from({ length: 10 }, (_, i) => `
+      <tr class="calendar__row">
+        <td class="calendar__date">Wed<br>Jul ${8 + i}</td>
+        <td class="calendar__time">2:00pm</td>
+        <td class="calendar__currency">USD</td>
+        <td class="calendar__event">Event ${i}</td>
+        <td class="calendar__impact"><span class="icon icon--ff-impact-red"></span></td>
+        <td class="calendar__forecast"></td>
+        <td class="calendar__previous"></td>
+      </tr>`).join('');
 
-    const config = baseCompositeConfig();
-    config.forexFactory.fetchFn = createMockFetch('', 500);
-    config.ohlcDev.fetchFn = createMockFetch(ohlcJson, 200, 'application/json');
+    const provider = new CompositeEconomicCalendarProvider(
+      baseCompositeConfig({
+        maxEvents: 3,
+        forexFactory: baseForexFactoryConfig({
+          fetchFn: createMockFetch(`<html><body><table class="calendar__table">${rows}</table></body></html>`),
+        }),
+      }),
+    );
 
-    const provider = new CompositeEconomicCalendarProvider(config);
-    const result = await provider.getUpcomingEvents({ daysForward: 365 });
-
+    const result = await provider.getUpcomingEvents();
     expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-    expect(result.data.events).toHaveLength(1);
-    expect(result.data.events[0]!.event).toBe('ECB');
-    expect(result.data.sources).toEqual(['ohlc-dev']);
+    if (!result.ok) throw new Error('Expected ok');
+    expect(result.data.events).toHaveLength(3);
   });
 
-  it('returns error when both sources fail', async () => {
-    const config = baseCompositeConfig();
-    config.forexFactory.fetchFn = createMockFetch('', 500);
-    config.ohlcDev.fetchFn = createMockFetch('', 500, 'application/json');
+  it('returns error when Forex Factory fails', async () => {
+    const provider = new CompositeEconomicCalendarProvider(
+      baseCompositeConfig({
+        forexFactory: baseForexFactoryConfig({ fetchFn: createMockFetch('', 500) }),
+      }),
+    );
 
-    const provider = new CompositeEconomicCalendarProvider(config);
-    const result = await provider.getUpcomingEvents({ daysForward: 365 });
-
+    const result = await provider.getUpcomingEvents();
     expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('Expected error result');
-    expect(result.error.code).toBe('economic-calendar.all_sources_failed');
-  });
-
-  it('returns events from surviving source when one source throws (not just error result)', async () => {
-    const ffHtml = `
-      <html><body>
-      <table class="calendar__table">
-        <tr class="calendar__row">
-          <td class="calendar__date">Wed<br>Jul 9</td>
-          <td class="calendar__time">2:00pm</td>
-          <td class="calendar__currency">USD</td>
-          <td class="calendar__event"><span>FOMC</span></td>
-          <td class="calendar__impact"></td>
-          <td class="calendar__forecast"></td>
-          <td class="calendar__previous"></td>
-        </tr>
-      </table>
-      </body></html>
-    `;
-
-    const config = baseCompositeConfig();
-    config.forexFactory.fetchFn = createMockFetch(ffHtml);
-    config.ohlcDev.fetchFn = (async () => {
-      throw new Error('Network failure');
-    }) as unknown as typeof fetch;
-
-    const provider = new CompositeEconomicCalendarProvider(config);
-    const result = await provider.getUpcomingEvents({ daysForward: 365 });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-    expect(result.data.sources).toEqual(['forex-factory']);
+    if (result.ok) throw new Error('Expected error');
+    expect(result.error.code).toBe('economic-calendar.fetch_failed');
   });
 });
 
@@ -868,17 +545,25 @@ describe('CompositeEconomicCalendarProvider — cache integration', () => {
   });
 
   it('serves from cache on second call (fresh hit)', async () => {
-    const ts = Math.floor(Date.now() / 1000) + 86400; // tomorrow
-    const ohlcJson = JSON.stringify([
-      { timestamp: ts, currency: 'usd', title: 'FOMC', impact: 'high' },
-    ]);
+    const ffHtml = `
+      <html><body>
+      <table class="calendar__table">
+        <tr class="calendar__row">
+          <td class="calendar__date">Wed<br>Jul 9</td>
+          <td class="calendar__time">2:00pm</td>
+          <td class="calendar__currency">USD</td>
+          <td class="calendar__event">FOMC</td>
+          <td class="calendar__impact"></td>
+          <td class="calendar__forecast"></td>
+          <td class="calendar__previous"></td>
+        </tr>
+      </table></body></html>`;
 
     const config = baseCompositeConfig({
       cache,
       cacheTtlMs: 300_000,
+      forexFactory: baseForexFactoryConfig({ fetchFn: createMockFetch(ffHtml) }),
     });
-    config.forexFactory.fetchFn = createMockFetch('<html><body>No table</body></html>');
-    config.ohlcDev.fetchFn = createMockFetch(ohlcJson, 200, 'application/json');
 
     const provider = new CompositeEconomicCalendarProvider(config);
 

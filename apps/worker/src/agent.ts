@@ -28,7 +28,6 @@ import {
   type CompositeEconomicCalendarConfig,
   type ForexFactoryAdapterConfig,
   type MarketDataConfig,
-  type OhlcDevAdapterConfig,
   type ProviderRegistry,
   type PriceService,
   type TokenInfo,
@@ -923,26 +922,22 @@ if (marketDataConfig?.economicCalendar?.enabled) {
     fetchFn: fetchHttp1,  // HTTP/1.1 required — Cloudflare blocks HTTP/2
   };
 
-  const ohlcDevConfig: OhlcDevAdapterConfig = {
-    baseUrl: ecConfig.ohlcDev.baseUrl,
-    requestTimeoutMs: ecConfig.ohlcDev.requestTimeoutMs,
-    requestsPerMinute: ecConfig.ohlcDev.requestsPerMinute,
-    rateLimiter: new TokenBucketRateLimiter({
-      requestsPerMinute: ecConfig.ohlcDev.requestsPerMinute,
-    }),
-  };
-
   const compositeConfig: CompositeEconomicCalendarConfig = {
     daysForward: ecConfig.daysForward,
     minImpact: ecConfig.minImpact,
     currencies: ecConfig.currencies,
     maxEvents: ecConfig.maxEventsInContext,
-    dedupeWindowMinutes: ecConfig.dedupeWindowMinutes,
-    sourceOrder: ecConfig.sourceOrder,
     forexFactory: forexFactoryConfig,
-    ohlcDev: ohlcDevConfig,
     cache: redisCache,
     cacheTtlMs: ecConfig.cacheTtlMs,
+  };
+
+  economicCalendarProvider = new CompositeEconomicCalendarProvider(compositeConfig);
+
+  logger.info('Economic calendar provider initialized');
+} else {
+  logger.info('Economic calendar disabled — set marketData.economicCalendar.enabled: true to enable');
+}
   };
 
   economicCalendarProvider = new CompositeEconomicCalendarProvider(compositeConfig);

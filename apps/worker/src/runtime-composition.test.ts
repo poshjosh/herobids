@@ -2403,7 +2403,7 @@ describe('runtime composition helpers', () => {
           impact: 'medium',
           forecast: null,
           previous: null,
-          sources: ['ohlc-dev'],
+          sources: ['forex-factory'],
         },
       ];
 
@@ -2412,7 +2412,7 @@ describe('runtime composition helpers', () => {
       expect(block!.title).toBe('Upcoming Economic Events');
       expect(block!.content).toContain('## Upcoming Economic Events');
       expect(block!.content).toContain('Currencies: EUR, USD');
-      expect(block!.content).toContain('Sources: forex-factory, ohlc-dev');
+      expect(block!.content).toContain('Sources: forex-factory');
       expect(block!.content).toContain('| Time (UTC) | Currency | Event | Impact | Forecast | Previous |');
       expect(block!.content).toContain('FOMC Statement');
       expect(block!.content).toContain('ECB Press Conference');
@@ -2499,7 +2499,7 @@ describe('runtime composition helpers', () => {
       // Currencies should be sorted and deduplicated
       expect(block!.content).toContain('Currencies: EUR, USD');
       // Sources should be sorted and deduplicated
-      expect(block!.content).toContain('Sources: forex-factory, ohlc-dev');
+      expect(block!.content).toContain('Sources: forex-factory');
     });
   });
 

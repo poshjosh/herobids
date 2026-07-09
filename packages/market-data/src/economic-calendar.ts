@@ -7,7 +7,7 @@ import type {
 } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
 import type { RequestGate } from './types.js';
-import { fetchJson, fetchText } from './http.js';
+import { fetchText } from './http.js';
 import type { ProviderResponseCache } from './cache.js';
 
 // ============================================================================
@@ -23,26 +23,15 @@ export interface ForexFactoryAdapterConfig {
   fetchFn?: typeof fetch;
 }
 
-export interface OhlcDevAdapterConfig {
-  baseUrl: string;
-  requestTimeoutMs: number;
-  requestsPerMinute: number;
-  rateLimiter: RequestGate;
-  fetchFn?: typeof fetch;
-}
-
 export interface CompositeEconomicCalendarConfig {
   daysForward: number;
   minImpact: 'high' | 'medium' | 'low';
   currencies: string[];
   maxEvents: number;
-  dedupeWindowMinutes: number;
-  sourceOrder: ('forex-factory' | 'ohlc-dev')[];
   forexFactory: ForexFactoryAdapterConfig;
-  ohlcDev: OhlcDevAdapterConfig;
   /** Optional Redis-backed cache shared across agent runtimes. */
   cache?: ProviderResponseCache;
-  /** Cache TTL in milliseconds. Defaults to 1 hour. */
+  /** Cache TTL in milliseconds. Defaults to 3 hours. */
   cacheTtlMs?: number;
 }
 
@@ -57,7 +46,6 @@ const IMPACT_RANK: Record<string, number> = {
 };
 
 const SOURCE_FOREX_FACTORY = 'forex-factory';
-const SOURCE_OHLC_DEV = 'ohlc-dev';
 
 const MONTH_ABBR: Record<string, number> = {
   Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6,
@@ -65,30 +53,8 @@ const MONTH_ABBR: Record<string, number> = {
 };
 
 // ============================================================================
-// OhlcDev API response types
-// ============================================================================
-
-interface OhlcDevEventRaw {
-  timestamp: number;
-  currency: string;
-  title: string;
-  impact: string;
-  forecast?: string | null;
-  previous?: string | null;
-}
-
-// ============================================================================
 // Shared helpers
 // ============================================================================
-
-function normalizeImpact(raw: string): 'high' | 'medium' | 'low' {
-  const lower = raw.toLowerCase().trim();
-  if (lower === 'high' || lower === 'high-impact') return 'high';
-  if (lower === 'medium' || lower === 'moderate' || lower === 'med') return 'medium';
-  if (lower === 'low' || lower === 'low-impact') return 'low';
-  console.warn('Unrecognized impact value, defaulting to low:', raw);
-  return 'low';
-}
 
 function applyFilters(
   events: EconomicEvent[],
@@ -397,75 +363,14 @@ export class ForexFactoryCalendarAdapter implements EconomicCalendarProvider {
 }
 
 // ============================================================================
-// OhlcDevCalendarAdapter
-// ============================================================================
-
-export class OhlcDevCalendarAdapter implements EconomicCalendarProvider {
-  constructor(private readonly config: OhlcDevAdapterConfig) {}
-
-  async getUpcomingEvents(
-    options?: {
-      daysForward?: number;
-      currencies?: string[];
-      minImpact?: 'high' | 'medium' | 'low';
-      maxEvents?: number;
-    },
-  ): Promise<Result<EconomicCalendarResult, EconomicCalendarError>> {
-    try {
-      await this.config.rateLimiter.acquire();
-
-      const data = await fetchJson<OhlcDevEventRaw[] | { events?: OhlcDevEventRaw[]; data?: OhlcDevEventRaw[] }>({
-        url: `${this.config.baseUrl}/economic-calendar`,
-        timeoutMs: this.config.requestTimeoutMs,
-        headers: { Accept: 'application/json' },
-        fetchFn: this.config.fetchFn,
-      });
-
-      // The API may return an array directly or wrap it in { events: [...] }
-      const rawEvents: OhlcDevEventRaw[] = Array.isArray(data)
-        ? data
-        : (data.events ?? data.data ?? []);
-
-      const allEvents = rawEvents.map((raw) => this.normalizeEvent(raw));
-      const filtered = applyFilters(allEvents, options);
-
-      return ok({
-        events: filtered,
-        fetchedAt: new Date().toISOString(),
-        sources: [SOURCE_OHLC_DEV],
-      });
-    } catch (error) {
-      return err({
-        code: 'economic-calendar.fetch_failed',
-        message: `OHLC.dev fetch failed: ${error instanceof Error ? error.message : String(error)}`,
-      });
-    }
-  }
-
-  private normalizeEvent(raw: OhlcDevEventRaw): EconomicEvent {
-    return {
-      time: new Date(raw.timestamp * 1000).toISOString(),
-      currency: raw.currency.toUpperCase(),
-      event: raw.title,
-      impact: normalizeImpact(raw.impact),
-      forecast: raw.forecast ?? null,
-      previous: raw.previous ?? null,
-      sources: [SOURCE_OHLC_DEV],
-    };
-  }
-}
-
-// ============================================================================
 // CompositeEconomicCalendarProvider
 // ============================================================================
 
 export class CompositeEconomicCalendarProvider implements EconomicCalendarProvider {
   private readonly ffAdapter: ForexFactoryCalendarAdapter;
-  private readonly ohlcAdapter: OhlcDevCalendarAdapter;
 
   constructor(private readonly config: CompositeEconomicCalendarConfig) {
     this.ffAdapter = new ForexFactoryCalendarAdapter(config.forexFactory);
-    this.ohlcAdapter = new OhlcDevCalendarAdapter(config.ohlcDev);
   }
 
   async getUpcomingEvents(
@@ -482,8 +387,8 @@ export class CompositeEconomicCalendarProvider implements EconomicCalendarProvid
     const effectiveMaxEvents = options?.maxEvents ?? this.config.maxEvents;
 
     const cache = this.config.cache;
-    const cacheTtlMs = this.config.cacheTtlMs ?? 3_600_000;
-    const cacheKey = `economic-calendar:${effectiveDaysForward}:${effectiveMinImpact}:${effectiveCurrencies.join(',')}:${this.config.sourceOrder.join(',')}`;
+    const cacheTtlMs = this.config.cacheTtlMs ?? 10_800_000;
+    const cacheKey = `economic-calendar:${effectiveDaysForward}:${effectiveMinImpact}:${effectiveCurrencies.join(',')}`;
 
     // Check cache first
     if (cache) {
@@ -492,14 +397,12 @@ export class CompositeEconomicCalendarProvider implements EconomicCalendarProvid
         if (cached && !cached.isStale) {
           return ok(cached.value);
         }
-        // Stale hit — will attempt refresh below, fall back to stale on failure
         if (cached && cached.isStale) {
-          const result = await this.fetchAndMerge(effectiveDaysForward, effectiveMinImpact, effectiveCurrencies, effectiveMaxEvents);
+          const result = await this.fetchFromSource(effectiveDaysForward, effectiveMinImpact, effectiveCurrencies, effectiveMaxEvents);
           if (result.ok) {
             await cache.set(cacheKey, result.data, { ttlMs: cacheTtlMs });
             return result;
           }
-          // Upstream failed — serve stale data as degraded fallback
           console.warn('Economic calendar refresh failed, serving stale cache');
           return ok(cached.value);
         }
@@ -508,8 +411,7 @@ export class CompositeEconomicCalendarProvider implements EconomicCalendarProvid
       }
     }
 
-    // No cache or cache miss — fetch directly
-    const result = await this.fetchAndMerge(effectiveDaysForward, effectiveMinImpact, effectiveCurrencies, effectiveMaxEvents);
+    const result = await this.fetchFromSource(effectiveDaysForward, effectiveMinImpact, effectiveCurrencies, effectiveMaxEvents);
     if (result.ok && cache) {
       try {
         await cache.set(cacheKey, result.data, { ttlMs: cacheTtlMs });
@@ -520,183 +422,33 @@ export class CompositeEconomicCalendarProvider implements EconomicCalendarProvid
     return result;
   }
 
-  private async fetchAndMerge(
+  private async fetchFromSource(
     daysForward: number,
     minImpact: 'high' | 'medium' | 'low',
     currencies: string[],
     maxEvents: number,
   ): Promise<Result<EconomicCalendarResult, EconomicCalendarError>> {
-
-    // maxEvents is intentionally omitted — applied post-merge after dedup
-    const adapterOptions = {
+    const result = await this.ffAdapter.getUpcomingEvents({
       daysForward,
       currencies,
       minImpact,
-    };
+    });
 
-    // Fetch both sources in parallel
-    const [ffResult, ohlcResult] = await Promise.allSettled([
-      this.ffAdapter.getUpcomingEvents(adapterOptions),
-      this.ohlcAdapter.getUpcomingEvents(adapterOptions),
-    ]);
-
-    const allEvents: EconomicEvent[] = [];
-    const contributingSources: string[] = [];
-
-    if (ffResult.status === 'fulfilled' && ffResult.value.ok) {
-      allEvents.push(...ffResult.value.data.events);
-      contributingSources.push(SOURCE_FOREX_FACTORY);
-    } else if (ffResult.status === 'rejected') {
-      console.warn('Forex Factory calendar fetch failed:', ffResult.reason);
-    } else {
-      // Fulfilled but ok=false (error result)
-      const ffErr = ffResult.value as { error: { message: string } };
-      console.warn('Forex Factory calendar fetch failed:', ffErr.error.message);
-    }
-
-    if (ohlcResult.status === 'fulfilled' && ohlcResult.value.ok) {
-      allEvents.push(...ohlcResult.value.data.events);
-      contributingSources.push(SOURCE_OHLC_DEV);
-    } else if (ohlcResult.status === 'rejected') {
-      console.warn('OHLC.dev calendar fetch failed:', ohlcResult.reason);
-    } else {
-      // Fulfilled but ok=false (error result)
-      const ohlcErr = ohlcResult.value as { error: { message: string } };
-      console.warn('OHLC.dev calendar fetch failed:', ohlcErr.error.message);
-    }
-
-    // If both sources failed, return error
-    if (contributingSources.length === 0) {
+    if (!result.ok) {
       return err({
-        code: 'economic-calendar.all_sources_failed',
-        message: 'All economic calendar sources failed to fetch',
+        code: 'economic-calendar.fetch_failed',
+        message: result.error.message,
       });
     }
 
-    // Deduplicate, sort, and truncate
-    const deduped = this.deduplicate(allEvents);
-    const sorted = this.sort(deduped);
+    // Sort by time ascending
+    const sorted = [...result.data.events].sort((a, b) => a.time.localeCompare(b.time));
     const truncated = sorted.slice(0, maxEvents);
 
     return ok({
       events: truncated,
       fetchedAt: new Date().toISOString(),
-      sources: contributingSources,
-    });
-  }
-
-  // ------------------------------------------------------------------
-  // Deduplication
-  // ------------------------------------------------------------------
-
-  private deduplicate(events: EconomicEvent[]): EconomicEvent[] {
-    if (events.length <= 1) return events;
-
-    const dedupeWindowMs = this.config.dedupeWindowMinutes * 60 * 1000;
-
-    // Group by currency
-    const byCurrency = new Map<string, EconomicEvent[]>();
-    for (const event of events) {
-      const list = byCurrency.get(event.currency);
-      if (list) {
-        list.push(event);
-      } else {
-        byCurrency.set(event.currency, [event]);
-      }
-    }
-
-    const merged: EconomicEvent[] = [];
-
-    for (const [, currencyEvents] of byCurrency) {
-      // Sort by time ascending
-      currencyEvents.sort((a, b) => a.time.localeCompare(b.time));
-
-      const deduped: EconomicEvent[] = [];
-
-      for (const event of currencyEvents) {
-        const last = deduped[deduped.length - 1];
-
-        if (last && this.withinWindow(last.time, event.time, dedupeWindowMs)) {
-          // Duplicate detected — merge
-          this.mergeIntoPreferred(last, event);
-        } else {
-          // New unique event — clone to avoid mutating source arrays
-          deduped.push({ ...event, sources: [...event.sources] });
-        }
-      }
-
-      merged.push(...deduped);
-    }
-
-    return merged;
-  }
-
-  private withinWindow(time1: string, time2: string, windowMs: number): boolean {
-    const t1 = new Date(time1).getTime();
-    const t2 = new Date(time2).getTime();
-    return Math.abs(t2 - t1) <= windowMs;
-  }
-
-  /**
-   * Merge `incoming` into `existing` (mutates `existing` in place).
-   * The source that appears first in `sourceOrder` wins for title and impact.
-   * All source ids are preserved in the merged `sources` array.
-   */
-  private mergeIntoPreferred(existing: EconomicEvent, incoming: EconomicEvent): void {
-    const preferredSource = this.resolvePreferredSource(existing, incoming);
-
-    // Combine sources (deduplicated)
-    const combinedSources = [...new Set([...existing.sources, ...incoming.sources])];
-    existing.sources = combinedSources;
-
-    // If the incoming event is from a higher-priority source, adopt its title and impact
-    if (preferredSource === incoming) {
-      existing.event = incoming.event;
-      existing.impact = incoming.impact;
-    }
-
-    // Always take the richer forecast/previous (non-null over null)
-    if (incoming.forecast !== null && existing.forecast === null) {
-      existing.forecast = incoming.forecast;
-    }
-    if (incoming.previous !== null && existing.previous === null) {
-      existing.previous = incoming.previous;
-    }
-  }
-
-  private resolvePreferredSource(a: EconomicEvent, b: EconomicEvent): EconomicEvent {
-    const rankA = this.minSourceRank(a);
-    const rankB = this.minSourceRank(b);
-    return rankA <= rankB ? a : b;
-  }
-
-  private minSourceRank(event: EconomicEvent): number {
-    let minRank = Infinity;
-    for (const source of event.sources) {
-      const idx = this.config.sourceOrder.indexOf(source as 'forex-factory' | 'ohlc-dev');
-      if (idx !== -1 && idx < minRank) {
-        minRank = idx;
-      }
-    }
-    return minRank;
-  }
-
-  // ------------------------------------------------------------------
-  // Sorting
-  // ------------------------------------------------------------------
-
-  private sort(events: EconomicEvent[]): EconomicEvent[] {
-    return [...events].sort((a, b) => {
-      // Primary: time ascending
-      const timeCmp = a.time.localeCompare(b.time);
-      if (timeCmp !== 0) return timeCmp;
-
-      // Secondary: currency ascending
-      const currCmp = a.currency.localeCompare(b.currency);
-      if (currCmp !== 0) return currCmp;
-
-      // Tertiary: event name ascending
-      return a.event.localeCompare(b.event);
+      sources: [SOURCE_FOREX_FACTORY],
     });
   }
 }

@@ -115,10 +115,8 @@ export {
 } from './price-service.js';
 export {
   ForexFactoryCalendarAdapter,
-  OhlcDevCalendarAdapter,
   CompositeEconomicCalendarProvider,
   type ForexFactoryAdapterConfig,
-  type OhlcDevAdapterConfig,
   type CompositeEconomicCalendarConfig,
 } from './economic-calendar.js';
 export { fetchText } from './http.js';

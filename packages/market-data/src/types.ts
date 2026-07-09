@@ -194,18 +194,11 @@ export interface MarketDataConfig {
     currencies: string[];
     cacheTtlMs: number;
     maxEventsInContext: number;
-    dedupeWindowMinutes: number;
-    sourceOrder: ('forex-factory' | 'ohlc-dev')[];
     forexFactory: {
       baseUrl: string;
       requestTimeoutMs: number;
       requestsPerMinute: number;
       userAgent: string;
-    };
-    ohlcDev: {
-      baseUrl: string;
-      requestTimeoutMs: number;
-      requestsPerMinute: number;
     };
   };
   tokenSafety?: {

@@ -881,22 +881,13 @@ export const MarketDataConfigSchema = z.object({
     daysForward: z.number().int().min(1).max(14).default(2),
     minImpact: z.enum(['high', 'medium', 'low']).default('medium'),
     currencies: z.array(z.string()).default([]),
-    cacheTtlMs: z.number().int().min(0).default(3_600_000),
+    cacheTtlMs: z.number().int().min(0).default(10_800_000),
     maxEventsInContext: z.number().int().min(1).max(50).default(20),
-    dedupeWindowMinutes: z.number().int().min(0).max(180).default(30),
-    sourceOrder: z.array(z.enum(['forex-factory', 'ohlc-dev']))
-      .min(2)
-      .default(['forex-factory', 'ohlc-dev']),
     forexFactory: z.object({
       baseUrl: z.string().url().default('https://www.forexfactory.com'),
       requestTimeoutMs: z.number().int().min(1_000).default(10_000),
       requestsPerMinute: z.number().int().min(1).default(2),
-      userAgent: z.string().min(1).default('Mozilla/5.0 HeroBids/1.0'),
-    }).default({}),
-    ohlcDev: z.object({
-      baseUrl: z.string().url().default('https://api.ohlc.dev'),
-      requestTimeoutMs: z.number().int().min(1_000).default(10_000),
-      requestsPerMinute: z.number().int().min(1).default(2),
+      userAgent: z.string().min(1).default('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'),
     }).default({}),
   }).default({}),
   timeoutMs: z.number().min(1000).default(5000),
