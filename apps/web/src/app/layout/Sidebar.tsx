@@ -12,7 +12,6 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
 
   // Rebuild only when locale changes, not on every route re-render.
   const NAV_ITEMS = useMemo(() => [
-    { path: '/mission-control', label: intl.formatMessage({ id: 'nav.missionControl' }), icon: '◈' },
     { path: '/agents', label: intl.formatMessage({ id: 'nav.agents' }), icon: '⊡' },
     { path: '/skills', label: intl.formatMessage({ id: 'nav.skills' }), icon: '✦' },
   // eslint-disable-next-line react-hooks/exhaustive-deps
