@@ -1,6 +1,5 @@
 export const messages: Record<string, string> = {
   // Navigation
-  'nav.missionControl': 'मिशन कंट्रोल',
   'nav.skills': 'कौशल',
   'nav.activity': 'गतिविधि',
   'nav.outcomes': 'परिणाम',

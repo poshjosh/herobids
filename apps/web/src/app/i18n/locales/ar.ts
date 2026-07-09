@@ -1,6 +1,5 @@
 export const messages: Record<string, string> = {
   // Navigation
-  'nav.missionControl': 'مركز التحكم',
   'nav.skills': 'المهارات',
   'nav.activity': 'النشاط',
   'nav.outcomes': 'النتائج',

@@ -142,7 +142,7 @@ describe('setup flow copy changes', () => {
   });
 
   it('AgentCapabilityPage trading next steps no longer route to /connections', () => {
-    // The trading capability page must guide users to Mission Control for setup,
+    // The trading capability page must guide users to AI Agents for setup,
     // not to /connections which is now an advanced/partial tool.
     const source = readFileSync(
       new URL('../../features/agents/AgentCapabilityPage.tsx', import.meta.url),
