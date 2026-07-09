@@ -1,13 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, type AgentOutcomes, type Skill } from '../../lib/api-client.js';
-import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, dashboard, type AgentOutcomes, type ProviderSetupResult, type Skill } from '../../lib/api-client.js';
+import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Card, SectionLabel, MetricCard, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, type SkillPresetId } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
+import { formatPnl, pnlColor } from '../../lib/formatting.js';
+import { ActivityItem } from '../activity/ActivityItem.js';
+import { AgentActivityItem } from '../activity/AgentActivityItem.js';
+import { mergeActivityFeedItems } from '../activity/activity-feed-items.js';
+import { AgentAssignmentStep } from '../setup/AgentAssignmentStep.js';
+import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
 import { resolveCreateAgentModelPayload } from './create-agent-models.js';
@@ -104,7 +110,54 @@ export function AgentsPage() {
     queryFn: () => skillsApi.list({ scope: 'selectable' }),
   });
 
+  // ── Dashboard data (from Mission Control) ──────────────────────
+  const handleEvent = useCallback((event: UserEvent) => {
+    if (event.type === 'agent.status') {
+      void qc.invalidateQueries({ queryKey: ['agents'] });
+      void qc.invalidateQueries({ queryKey: ['dashboard', 'agent-activity'] });
+    } else if (event.type === 'decision.accepted' || event.type === 'decision.rejected') {
+      void qc.invalidateQueries({ queryKey: ['dashboard', 'agent-activity'] });
+      void qc.invalidateQueries({ queryKey: ['dashboard', 'activity'] });
+    } else if (event.type === 'risk.guardrail') {
+      void qc.invalidateQueries({ queryKey: ['dashboard', 'activity'] });
+    }
+  }, [qc]);
+  useEventStream(handleEvent);
+
+  const activityQuery = useQuery({
+    queryKey: ['dashboard', 'activity', { limit: 8 }],
+    queryFn: () => dashboard.activity({ limit: 8 }),
+  });
+
+  const agentActivityQuery = useQuery({
+    queryKey: ['dashboard', 'agent-activity', { limit: 8 }],
+    queryFn: () => dashboard.agentActivity({ limit: 8 }),
+    refetchInterval: 30_000,
+  });
+
+  const overviewQuery = useQuery({
+    queryKey: ['dashboard', 'overview'],
+    queryFn: () => dashboard.overview(),
+  });
+
+  // ── Setup flow state (from Mission Control) ────────────────────
+  const [showSetup, setShowSetup] = useState(false);
+  const [setupStep, setSetupStep] = useState<'form' | 'assign'>('form');
+  const [setupResult, setSetupResult] = useState<ProviderSetupResult | null>(null);
+  const [setupSuccess, setSetupSuccess] = useState<{ label: string; provider: string } | null>(null);
+
   const items = query.data ?? [];
+  const mergedRecentActivity = mergeActivityFeedItems(
+    agentActivityQuery.data?.entries ?? [],
+    activityQuery.data?.events ?? []
+  );
+
+  const counts = {
+    active: items.filter((agent) => agent.status === 'active' || agent.status === 'starting').length,
+    paused: items.filter((agent) => agent.status === 'paused').length,
+    unhealthy: items.filter((agent) => agent.status === 'crashed' || agent.status === 'unhealthy').length,
+    stopped: items.filter((agent) => agent.status === 'stopped').length,
+  };
   const selectableSkills = listSelectableSkills(skillsQuery.data?.skills ?? []);
 
   const openCreate = () => {
@@ -125,6 +178,26 @@ export function AgentsPage() {
         action={<Button variant="primary" onClick={openCreate}>{intl.formatMessage({ id: 'agents.newAgent' })}</Button>}
       />
 
+      {/* ── Summary metrics ─────────────────────────────────────── */}
+      {query.isSuccess && items.length > 0 && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(5, 1fr)',
+          gap: '12px',
+          marginBottom: '24px',
+        }}>
+          <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.active' })} value={counts.active} total={items.length} />
+          <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.paused' })} value={counts.paused} />
+          <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.unhealthy' })} value={counts.unhealthy} />
+          <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.stopped' })} value={counts.stopped} />
+          <MetricCard
+            label={intl.formatMessage({ id: 'missionControl.metric.totalPnl' })}
+            value={overviewQuery.isLoading ? '—' : formatPnl(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
+            color={overviewQuery.isLoading ? undefined : pnlColor(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
+          />
+        </div>
+      )}
+
       {query.isLoading && <LoadingRows count={3} />}
       {query.isError && <ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} />}
 
@@ -136,11 +209,81 @@ export function AgentsPage() {
         />
       )}
 
+      {/* ── Quick trading setup card ─────────────────────────────── */}
       {query.isSuccess && items.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {items.map((agent) => (
-            <AgentSummaryCard key={agent.id} agent={agent} outcomes={outcomesByAgentId.get(agent.id)} />
-          ))}
+        setupSuccess ? (
+          <Card style={{ padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'var(--color-surface-success, rgba(34,197,94,0.08))', border: '1px solid var(--color-border-subtle)' }}>
+            <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+              {intl.formatMessage({ id: 'missionControl.setup.successMessage' }, { label: setupSuccess.label, provider: setupSuccess.provider })}
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setSetupSuccess(null)}>
+              {intl.formatMessage({ id: 'missionControl.setup.successDismiss' })}
+            </Button>
+          </Card>
+        ) : (
+          <Card style={{ padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: '1px solid var(--color-border-subtle)' }}>
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '2px' }}>
+                {intl.formatMessage({ id: 'missionControl.setup.title' })}
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                {intl.formatMessage({ id: 'missionControl.setup.message' })}
+              </div>
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => setShowSetup(true)}>
+              {intl.formatMessage({ id: 'missionControl.setup.cta' })}
+            </Button>
+          </Card>
+        )
+      )}
+
+      {query.isSuccess && items.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '24px', alignItems: 'start' }}>
+          {/* Left: Agent list */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {items.map((agent) => (
+              <AgentSummaryCard key={agent.id} agent={agent} outcomes={outcomesByAgentId.get(agent.id)} />
+            ))}
+          </div>
+
+          {/* Right: Recent activity */}
+          <section aria-label={intl.formatMessage({ id: 'missionControl.section.recentActivity' })}>
+            <SectionLabel>{intl.formatMessage({ id: 'missionControl.section.recentActivity' })}</SectionLabel>
+            <Card style={{ padding: '0' }}>
+              {(activityQuery.isLoading || agentActivityQuery.isLoading) && (
+                <div style={{ padding: '20px' }}><LoadingRows count={4} /></div>
+              )}
+              {(activityQuery.isError || agentActivityQuery.isError) && (
+                <ErrorState
+                  message={intl.formatMessage({ id: 'common.errorTitle', defaultMessage: 'Something went wrong' })}
+                  onRetry={() => { void activityQuery.refetch(); void agentActivityQuery.refetch(); }}
+                />
+              )}
+              {activityQuery.isSuccess && agentActivityQuery.isSuccess &&
+               (activityQuery.data?.events.length ?? 0) === 0 &&
+               (agentActivityQuery.data?.entries.length ?? 0) === 0 && (
+                <EmptyState
+                  title={intl.formatMessage({ id: 'missionControl.noActivityYet.title' })}
+                  message={intl.formatMessage({ id: 'missionControl.noActivityYet.message' })}
+                />
+              )}
+              {activityQuery.isSuccess && agentActivityQuery.isSuccess &&
+               ((activityQuery.data?.events.length ?? 0) > 0 || (agentActivityQuery.data?.entries.length ?? 0) > 0) && (
+                <div>
+                  {mergedRecentActivity.map((item, index) => (
+                    item.kind === 'agent'
+                      ? <AgentActivityItem key={`agent-${item.id}`} entry={item.entry} isLast={index === mergedRecentActivity.length - 1} />
+                      : <ActivityItem key={`bot-${item.id}`} event={item.event} isLast={index === mergedRecentActivity.length - 1} />
+                  ))}
+                  <div style={{ padding: '12px 20px', borderTop: '1px solid var(--color-border-subtle)' }}>
+                    <Button variant="ghost" size="sm" onClick={() => navigate('/activity')} style={{ width: '100%', justifyContent: 'center' }}>
+                      {intl.formatMessage({ id: 'missionControl.viewAllActivity' })}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </section>
         </div>
       )}
 
@@ -154,6 +297,34 @@ export function AgentsPage() {
             setShowCreate(false);
             void qc.invalidateQueries({ queryKey: ['agents'] });
             navigate(`/agents/${id}`);
+          }}
+        />
+      )}
+
+      {/* ── Setup modals ──────────────────────────────────────────── */}
+      {showSetup && setupStep === 'form' && (
+        <ProviderSetupForm
+          defaultCapability="trading"
+          onClose={() => { setShowSetup(false); setSetupStep('form'); }}
+          onSuccess={(result) => {
+            void qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'bindings'] });
+            void qc.invalidateQueries({ queryKey: ['connections'] });
+            setSetupResult(result);
+            setSetupStep('assign');
+          }}
+        />
+      )}
+
+      {showSetup && setupStep === 'assign' && setupResult && (
+        <AgentAssignmentStep
+          connectionId={setupResult.connection.id}
+          connectionLabel={setupResult.connection.label}
+          connectionProvider={setupResult.connection.provider}
+          onDone={() => {
+            setShowSetup(false);
+            setSetupStep('form');
+            setSetupResult(null);
+            setSetupSuccess({ label: setupResult.connection.label, provider: setupResult.connection.provider });
           }}
         />
       )}
