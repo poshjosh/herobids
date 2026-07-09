@@ -216,27 +216,26 @@ marketData:
     apiKey: ""                # override: COINMARKETCAP_API_KEY — required when coinMarketCap.enabled is true
     cacheTtlMs: 3600000
   # Economic calendar for trading agents — disabled by default.
-  # Enable in staging first to observe source stability and cache behavior.
   economicCalendar:
-    enabled: false
-    daysForward: 2
+    enabled: true
+    daysForward: 1
     minImpact: medium
     currencies: []
     cacheTtlMs: 3600000
-    maxEventsInContext: 20
+    maxEventsInContext: 5
     dedupeWindowMinutes: 30
     sourceOrder:
       - forex-factory
       - ohlc-dev
     forexFactory:
       baseUrl: "https://www.forexfactory.com"
-      requestTimeoutMs: 10000
-      requestsPerMinute: 2
+      requestTimeoutMs: 15000
+      requestsPerMinute: 1
       userAgent: "Mozilla/5.0 HeroBids/1.0"
     ohlcDev:
       baseUrl: "https://api.ohlc.dev"
-      requestTimeoutMs: 10000
-      requestsPerMinute: 2
+      requestTimeoutMs: 15000
+      requestsPerMinute: 1
   tokenSafety:
     enabled: true
     defaults:
