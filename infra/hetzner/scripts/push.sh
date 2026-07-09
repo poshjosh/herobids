@@ -115,6 +115,9 @@ for i in $(seq 1 30); do
   fi
   sleep 2
 done
+
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pruning dangling images..."
+docker image prune -f
 DEPLOY
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
