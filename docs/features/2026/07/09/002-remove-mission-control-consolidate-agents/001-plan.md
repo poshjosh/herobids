@@ -230,6 +230,12 @@ The event stream subscription (`useEventStream`) for live invalidation also move
 - **LOW**: Mixed path styles at top level — some routes use absolute paths, `createPublicRoutes()` uses relative. Both work correctly, but consistency would improve readability.
 - **LOW**: Inline styles in `LandingPagePlaceholder` — acceptable for a placeholder, should migrate to CSS modules when real landing page is built.
 
+### [Phase 3] Consolidate into AgentsPage
+- **MEDIUM**: `overviewQuery` never invalidated by event stream — P&L can go stale after initial load. Consider adding `refetchInterval: 30_000` or adding `['dashboard', 'overview']` to event handler invalidations (pre-existing from MissionControlPage).
+- **MEDIUM**: Setup card always shown when agents exist, even if all agents already have connections. UX papercut, pre-existing.
+- **LOW**: Inline style objects recreated on every render — extract to CSS modules in follow-up.
+- **LOW**: Potential double event-stream subscription if MissionControlPage still mounted (resolves when deleted in Phase 4).
+
 ## Rollback Plan
 
 If the consolidated Agents page is problematic in production:
