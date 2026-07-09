@@ -17,7 +17,7 @@ import pino from 'pino';
 import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal } from '@herobids/db';
 import { createUsageBillingService } from './usage-billing-service.js';
-import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml } from '@herobids/domain';
+import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml, EconomicEvent } from '@herobids/domain';
 import { type LlmToolDefinition } from '@herobids/llm';
 import {
   CompositeEconomicCalendarProvider,
@@ -903,6 +903,81 @@ const priceService: PriceService | null = marketDataRegistry
   ? createPriceService(marketDataRegistry)
   : null;
 
+// ── LLM-based HTML parser for economic calendar ──────────────────────────
+
+function createLlmCalendarParser(): (html: string) => Promise<EconomicEvent[]> {
+  // Resolve API endpoint
+  const baseUrl = LLM_BASE_URL
+    || (LLM_PROVIDER === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
+  const apiUrl = baseUrl.endsWith('/v1') ? `${baseUrl}/chat/completions` : `${baseUrl}/chat/completions`;
+
+  // Use light model (cheaper/faster) for simple HTML parsing
+  const model = lightModel;
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (LLM_API_KEY_RESOLVED) {
+    headers['Authorization'] = `Bearer ${LLM_API_KEY_RESOLVED}`;
+  }
+
+  return async (html: string): Promise<EconomicEvent[]> => {
+    // Extract calendar table only (reduce token usage from ~100K to ~20K chars)
+    const tableMatch = html.match(
+      /<table[^>]*class\s*=\s*["'][^"']*calendar[^"']*["'][^>]*>([\s\S]*?)<\/\s*table\s*>/i,
+    );
+    const tableHtml = tableMatch?.[1] ?? html.slice(0, 50_000);
+
+    const systemPrompt = `Extract economic calendar events from this HTML table.
+Return a JSON array. Each event: { time: "ISO-8601 UTC", currency: "3-char code uppercase", event: "title", impact: "high|medium|low", forecast: string|null, previous: string|null }.
+Omit day-breaker rows (colspan headers). Omit rows with no event data.
+Only return JSON, no other text.`;
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: tableHtml },
+        ],
+        temperature: 0,
+        max_tokens: 4096,
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`LLM API returned ${response.status}`);
+    }
+
+    const body = await response.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = body.choices?.[0]?.message?.content;
+    if (!content) throw new Error('Empty LLM response');
+
+    // Extract JSON from response (may be wrapped in markdown code fences)
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error('No JSON array found in LLM response');
+
+    const parsed = JSON.parse(jsonMatch[0]) as unknown[];
+    if (!Array.isArray(parsed)) throw new Error('LLM response is not an array');
+
+    return parsed.map((item: unknown) => {
+      const e = item as Record<string, unknown>;
+      return {
+        time: String(e.time ?? new Date().toISOString()),
+        currency: String(e.currency ?? '').toUpperCase(),
+        event: String(e.event ?? ''),
+        impact: (['high', 'medium', 'low'].includes(String(e.impact)) ? String(e.impact) : 'medium') as 'high' | 'medium' | 'low',
+        forecast: e.forecast ? String(e.forecast) : null,
+        previous: e.previous ? String(e.previous) : null,
+        sources: ['forex-factory'],
+      };
+    });
+  };
+}
+
 // ── Economic calendar provider (optional) ──────────────────────────────────
 let economicCalendarProvider: CompositeEconomicCalendarProvider | null = null;
 if (marketDataConfig?.economicCalendar?.enabled) {
@@ -920,6 +995,7 @@ if (marketDataConfig?.economicCalendar?.enabled) {
       requestsPerMinute: ecConfig.forexFactory.requestsPerMinute,
     }),
     fetchFn: fetchHttp1,  // HTTP/1.1 required — Cloudflare blocks HTTP/2
+    parseHtmlFn: createLlmCalendarParser(),  // LLM-based parser survives HTML changes
   };
 
   const compositeConfig: CompositeEconomicCalendarConfig = {

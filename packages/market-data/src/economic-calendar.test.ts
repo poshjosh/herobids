@@ -87,13 +87,12 @@ function createMockRedisClient(): RedisCacheClient & { _store: Map<string, strin
 }
 
 // ============================================================================
-// Forex Factory HTML parsing
+// ForexFactoryCalendarAdapter — LLM parser
 // ============================================================================
 
 describe('ForexFactoryCalendarAdapter', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    // Set date to Jan 1, 2026 so all Jul 2026 events are in the future
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
   });
 
@@ -101,199 +100,83 @@ describe('ForexFactoryCalendarAdapter', () => {
     vi.useRealTimers();
   });
 
-  it('parses a realistic calendar table and extracts event fields', async () => {
-    const fixtureHtml = `
-      <html><body>
-      <table class="calendar__table">
-        <tr class="calendar__row" data-eventid="123">
-          <td class="calendar__date">Wed<br>Jul 9</td>
-          <td class="calendar__time">2:00pm</td>
-          <td class="calendar__currency">USD</td>
-          <td class="calendar__event">
-            <span>FOMC Statement</span>
-          </td>
-          <td class="calendar__impact">
-            <span class="calendar__impact-icon calendar__impact-icon--red" title="High Impact Expected"></span>
-          </td>
-          <td class="calendar__forecast">TBA</td>
-          <td class="calendar__previous">5.50%</td>
-        </tr>
-        <tr class="calendar__row" data-eventid="124">
-          <td class="calendar__date">Thu<br>Jul 10</td>
-          <td class="calendar__time">8:30am</td>
-          <td class="calendar__currency">EUR</td>
-          <td class="calendar__event">
-            <span>CPI m/m</span>
-          </td>
-          <td class="calendar__impact">
-            <span class="calendar__impact-icon calendar__impact-icon--ora" title="Medium Impact Expected"></span>
-          </td>
-          <td class="calendar__forecast">0.2%</td>
-          <td class="calendar__previous">0.1%</td>
-        </tr>
-      </table>
-      </body></html>
-    `;
+  function mockEvents(events: EconomicEvent[]): (html: string) => Promise<EconomicEvent[]> {
+    return async () => events;
+  }
 
+  it('delegates to parseHtmlFn and returns events', async () => {
     const adapter = new ForexFactoryCalendarAdapter(
-      baseForexFactoryConfig({ fetchFn: createMockFetch(fixtureHtml) }),
+      baseForexFactoryConfig({
+        fetchFn: createMockFetch('<html>calendar</html>'),
+        parseHtmlFn: mockEvents([
+          makeEvent({ time: '2026-07-09T18:00:00Z', currency: 'USD', event: 'FOMC Statement', impact: 'high', previous: '5.50%' }),
+          makeEvent({ time: '2026-07-10T12:30:00Z', currency: 'EUR', event: 'CPI m/m', impact: 'medium', forecast: '0.2%', previous: '0.1%' }),
+        ]),
+      }),
     );
 
     const result = await adapter.getUpcomingEvents({ daysForward: 365 });
     expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-
-    const events = result.data.events;
-    expect(events).toHaveLength(2);
-
-    // Event 1: FOMC Statement, high impact, USD, Jul 9 2:00pm ET = 18:00 UTC (EST, Jan → offset 5)
-    const fomc = events.find((e) => e.event === 'FOMC Statement');
-    expect(fomc).toBeDefined();
-    expect(fomc!.currency).toBe('USD');
-    expect(fomc!.impact).toBe('high');
-    expect(fomc!.previous).toBe('5.50%');
-    expect(fomc!.forecast).toBe('TBA');
-    // July 9 = EDT (UTC-4), so 2:00pm ET = 18:00 UTC
-    expect(fomc!.time).toContain('2026-07-09T18:00:00');
-
-    // Event 2: CPI m/m, medium impact, EUR, Jul 10 8:30am ET = 12:30 UTC (EDT)
-    const cpi = events.find((e) => e.event === 'CPI m/m');
-    expect(cpi).toBeDefined();
-    expect(cpi!.currency).toBe('EUR');
-    expect(cpi!.impact).toBe('medium');
-    expect(cpi!.forecast).toBe('0.2%');
-    expect(cpi!.previous).toBe('0.1%');
-    expect(cpi!.time).toContain('2026-07-10T12:30:00');
+    if (!result.ok) throw new Error('Expected ok');
+    expect(result.data.events).toHaveLength(2);
+    expect(result.data.events[0]!.event).toBe('FOMC Statement');
   });
 
-  it('parses impact from orange/yellow class names', async () => {
-    const fixtureHtml = `
-      <html><body>
-      <table class="calendar__table">
-        <tr class="calendar__row">
-          <td class="calendar__date">Wed<br>Jul 9</td>
-          <td class="calendar__time">9:00am</td>
-          <td class="calendar__currency">GBP</td>
-          <td class="calendar__event"><span>Manufacturing PMI</span></td>
-          <td class="calendar__impact">
-            <span class="icon icon--ff-impact-yel"></span>
-          </td>
-          <td class="calendar__forecast">52.0</td>
-          <td class="calendar__previous">51.5</td>
-        </tr>
-      </table>
-      </body></html>
-    `;
-
+  it('applies currency filter', async () => {
     const adapter = new ForexFactoryCalendarAdapter(
-      baseForexFactoryConfig({ fetchFn: createMockFetch(fixtureHtml) }),
+      baseForexFactoryConfig({
+        fetchFn: createMockFetch('<html>x</html>'),
+        parseHtmlFn: mockEvents([
+          makeEvent({ time: '2026-07-09T14:00:00Z', currency: 'USD', event: 'FOMC', impact: 'high' }),
+          makeEvent({ time: '2026-07-09T15:00:00Z', currency: 'EUR', event: 'ECB', impact: 'medium' }),
+        ]),
+      }),
     );
 
-    const result = await adapter.getUpcomingEvents({ daysForward: 365 });
+    const result = await adapter.getUpcomingEvents({ currencies: ['USD'], daysForward: 365 });
     expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-
+    if (!result.ok) throw new Error('Expected ok');
     expect(result.data.events).toHaveLength(1);
-    expect(result.data.events[0]!.impact).toBe('low');
+    expect(result.data.events[0]!.currency).toBe('USD');
   });
 
-  it('skips rows with missing required fields', async () => {
-    const fixtureHtml = `
-      <html><body>
-      <table class="calendar__table">
-        <tr class="calendar__row">
-          <td class="calendar__date"></td>
-          <td class="calendar__time">2:00pm</td>
-          <td class="calendar__currency">USD</td>
-          <td class="calendar__event"><span>Event</span></td>
-          <td class="calendar__impact"></td>
-          <td class="calendar__forecast"></td>
-          <td class="calendar__previous"></td>
-        </tr>
-        <tr class="calendar__row">
-          <td class="calendar__date">Wed<br>Jul 9</td>
-          <td class="calendar__time">2:00pm</td>
-          <td class="calendar__currency">invalid-currency</td>
-          <td class="calendar__event"><span>Event</span></td>
-          <td class="calendar__impact"></td>
-          <td class="calendar__forecast"></td>
-          <td class="calendar__previous"></td>
-        </tr>
-      </table>
-      </body></html>
-    `;
-
+  it('returns error when no parseHtmlFn configured', async () => {
     const adapter = new ForexFactoryCalendarAdapter(
-      baseForexFactoryConfig({ fetchFn: createMockFetch(fixtureHtml) }),
+      baseForexFactoryConfig({ fetchFn: createMockFetch('<html>x</html>') }),
     );
 
-    const result = await adapter.getUpcomingEvents({ daysForward: 365 });
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-
-    expect(result.data.events).toHaveLength(0);
-  });
-
-  it('returns empty array for HTML without calendar table', async () => {
-    const adapter = new ForexFactoryCalendarAdapter(
-      baseForexFactoryConfig({ fetchFn: createMockFetch('<html><body>No table here</body></html>') }),
-    );
-
-    const result = await adapter.getUpcomingEvents({ daysForward: 365 });
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-    expect(result.data.events).toHaveLength(0);
+    const result = await adapter.getUpcomingEvents();
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('Expected error');
+    expect(result.error.code).toBe('economic-calendar.no_parser');
   });
 
   it('returns error when fetch fails', async () => {
     const adapter = new ForexFactoryCalendarAdapter(
       baseForexFactoryConfig({
         fetchFn: createMockFetch('', 500),
+        parseHtmlFn: mockEvents([]),
       }),
     );
 
     const result = await adapter.getUpcomingEvents();
     expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('Expected error result');
+    if (result.ok) throw new Error('Expected error');
     expect(result.error.code).toBe('economic-calendar.fetch_failed');
   });
 
-  it('filters by currency', async () => {
-    const fixtureHtml = `
-      <html><body>
-      <table class="calendar__table">
-        <tr class="calendar__row">
-          <td class="calendar__date">Wed<br>Jul 9</td>
-          <td class="calendar__time">2:00pm</td>
-          <td class="calendar__currency">USD</td>
-          <td class="calendar__event"><span>FOMC</span></td>
-          <td class="calendar__impact"></td>
-          <td class="calendar__forecast"></td>
-          <td class="calendar__previous"></td>
-        </tr>
-        <tr class="calendar__row">
-          <td class="calendar__date">Wed<br>Jul 9</td>
-          <td class="calendar__time">3:00pm</td>
-          <td class="calendar__currency">EUR</td>
-          <td class="calendar__event"><span>ECB</span></td>
-          <td class="calendar__impact"></td>
-          <td class="calendar__forecast"></td>
-          <td class="calendar__previous"></td>
-        </tr>
-      </table>
-      </body></html>
-    `;
-
+  it('returns error when parseHtmlFn throws', async () => {
     const adapter = new ForexFactoryCalendarAdapter(
-      baseForexFactoryConfig({ fetchFn: createMockFetch(fixtureHtml) }),
+      baseForexFactoryConfig({
+        fetchFn: createMockFetch('<html>x</html>'),
+        parseHtmlFn: async () => { throw new Error('LLM down'); },
+      }),
     );
 
-    const result = await adapter.getUpcomingEvents({ currencies: ['USD'], daysForward: 365 });
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('Expected ok result');
-
-    expect(result.data.events).toHaveLength(1);
-    expect(result.data.events[0]!.currency).toBe('USD');
+    const result = await adapter.getUpcomingEvents();
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('Expected error');
+    expect(result.error.code).toBe('economic-calendar.fetch_failed');
   });
 });
 
@@ -311,24 +194,19 @@ describe('CompositeEconomicCalendarProvider — single source', () => {
     vi.useRealTimers();
   });
 
-  it('fetches and returns events from Forex Factory', async () => {
-    const ffHtml = `
-      <html><body>
-      <table class="calendar__table">
-        <tr class="calendar__row">
-          <td class="calendar__date">Tue<br>Jul 8</td>
-          <td class="calendar__time">2:00pm</td>
-          <td class="calendar__currency">USD</td>
-          <td class="calendar__event">FOMC Statement</td>
-          <td class="calendar__impact"><span class="icon icon--ff-impact-red"></span></td>
-          <td class="calendar__forecast"></td>
-          <td class="calendar__previous">5.50%</td>
-        </tr>
-      </table></body></html>`;
+  function mockParser(events: EconomicEvent[]) {
+    return async () => events;
+  }
 
+  it('delegates to adapter and returns events', async () => {
     const provider = new CompositeEconomicCalendarProvider(
       baseCompositeConfig({
-        forexFactory: baseForexFactoryConfig({ fetchFn: createMockFetch(ffHtml) }),
+        forexFactory: baseForexFactoryConfig({
+          fetchFn: createMockFetch('<html>x</html>'),
+          parseHtmlFn: mockParser([
+            makeEvent({ time: '2026-07-09T18:00:00Z', currency: 'USD', event: 'FOMC Statement', impact: 'high', previous: '5.50%' }),
+          ]),
+        }),
       }),
     );
 
@@ -341,62 +219,36 @@ describe('CompositeEconomicCalendarProvider — single source', () => {
   });
 
   it('sorts events by time ascending', async () => {
-    // Jul 9, 2026 10:00am EDT → 14:00 UTC
-    // Jul 8, 2026 2:00pm EDT → 18:00 UTC
-    const ffHtml = `
-      <html><body>
-      <table class="calendar__table">
-        <tr class="calendar__row">
-          <td class="calendar__date">Thu<br>Jul 9</td>
-          <td class="calendar__time">10:00am</td>
-          <td class="calendar__currency">USD</td>
-          <td class="calendar__event">CPI m/m</td>
-          <td class="calendar__impact"><span class="icon icon--ff-impact-red"></span></td>
-          <td class="calendar__forecast">0.2%</td>
-          <td class="calendar__previous">0.1%</td>
-        </tr>
-        <tr class="calendar__row">
-          <td class="calendar__date">Wed<br>Jul 8</td>
-          <td class="calendar__time">2:00pm</td>
-          <td class="calendar__currency">USD</td>
-          <td class="calendar__event">FOMC Statement</td>
-          <td class="calendar__impact"><span class="icon icon--ff-impact-red"></span></td>
-          <td class="calendar__forecast"></td>
-          <td class="calendar__previous">5.50%</td>
-        </tr>
-      </table></body></html>`;
-
     const provider = new CompositeEconomicCalendarProvider(
       baseCompositeConfig({
-        forexFactory: baseForexFactoryConfig({ fetchFn: createMockFetch(ffHtml) }),
+        forexFactory: baseForexFactoryConfig({
+          fetchFn: createMockFetch('<html>x</html>'),
+          parseHtmlFn: mockParser([
+            makeEvent({ time: '2026-07-10T14:00:00Z', currency: 'USD', event: 'CPI m/m', impact: 'high' }),
+            makeEvent({ time: '2026-07-09T18:00:00Z', currency: 'USD', event: 'FOMC Statement', impact: 'high' }),
+          ]),
+        }),
       }),
     );
 
     const result = await provider.getUpcomingEvents();
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('Expected ok');
-    // Jul 8 event should be first (earlier time)
     expect(result.data.events[0]!.event).toBe('FOMC Statement');
     expect(result.data.events[1]!.event).toBe('CPI m/m');
   });
 
   it('truncates to maxEvents', async () => {
-    const rows = Array.from({ length: 10 }, (_, i) => `
-      <tr class="calendar__row">
-        <td class="calendar__date">Wed<br>Jul ${8 + i}</td>
-        <td class="calendar__time">2:00pm</td>
-        <td class="calendar__currency">USD</td>
-        <td class="calendar__event">Event ${i}</td>
-        <td class="calendar__impact"><span class="icon icon--ff-impact-red"></span></td>
-        <td class="calendar__forecast"></td>
-        <td class="calendar__previous"></td>
-      </tr>`).join('');
+    const events = Array.from({ length: 10 }, (_, i) =>
+      makeEvent({ time: `2026-07-${String(8 + i).padStart(2, '0')}T14:00:00Z`, currency: 'USD', event: `Event ${i}`, impact: 'high' }),
+    );
 
     const provider = new CompositeEconomicCalendarProvider(
       baseCompositeConfig({
         maxEvents: 3,
         forexFactory: baseForexFactoryConfig({
-          fetchFn: createMockFetch(`<html><body><table class="calendar__table">${rows}</table></body></html>`),
+          fetchFn: createMockFetch('<html>x</html>'),
+          parseHtmlFn: mockParser(events),
         }),
       }),
     );
@@ -410,7 +262,10 @@ describe('CompositeEconomicCalendarProvider — single source', () => {
   it('returns error when Forex Factory fails', async () => {
     const provider = new CompositeEconomicCalendarProvider(
       baseCompositeConfig({
-        forexFactory: baseForexFactoryConfig({ fetchFn: createMockFetch('', 500) }),
+        forexFactory: baseForexFactoryConfig({
+          fetchFn: createMockFetch('', 500),
+          parseHtmlFn: mockParser([]),
+        }),
       }),
     );
 
@@ -545,24 +400,15 @@ describe('CompositeEconomicCalendarProvider — cache integration', () => {
   });
 
   it('serves from cache on second call (fresh hit)', async () => {
-    const ffHtml = `
-      <html><body>
-      <table class="calendar__table">
-        <tr class="calendar__row">
-          <td class="calendar__date">Wed<br>Jul 9</td>
-          <td class="calendar__time">2:00pm</td>
-          <td class="calendar__currency">USD</td>
-          <td class="calendar__event">FOMC</td>
-          <td class="calendar__impact"></td>
-          <td class="calendar__forecast"></td>
-          <td class="calendar__previous"></td>
-        </tr>
-      </table></body></html>`;
-
     const config = baseCompositeConfig({
       cache,
       cacheTtlMs: 300_000,
-      forexFactory: baseForexFactoryConfig({ fetchFn: createMockFetch(ffHtml) }),
+      forexFactory: baseForexFactoryConfig({
+        fetchFn: createMockFetch('<html>x</html>'),
+        parseHtmlFn: async () => [
+          makeEvent({ time: '2026-07-09T18:00:00Z', currency: 'USD', event: 'FOMC', impact: 'high' }),
+        ],
+      }),
     });
 
     const provider = new CompositeEconomicCalendarProvider(config);
