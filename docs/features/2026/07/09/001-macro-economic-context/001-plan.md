@@ -266,7 +266,7 @@ Cache characteristics:
 
 ## Implementation Steps
 
-### Step 1: Define the domain port
+### Step 1: Define the domain port — **DONE**
 
 **Files:**
 
@@ -275,7 +275,7 @@ Cache characteristics:
 
 Add `EconomicEvent`, `EconomicCalendarResult`, `EconomicCalendarError`, and `EconomicCalendarProvider`.
 
-### Step 2: Move config into marketData
+### Step 2: Move config into marketData — **DONE**
 
 **Files:**
 
@@ -287,7 +287,7 @@ Add `marketData.economicCalendar` under `MarketDataConfigSchema` and update the 
 
 Do not preserve the old top-level `economicCalendar` proposal.
 
-### Step 3: Implement both adapters and the composite provider
+### Step 3: Implement both adapters and the composite provider — **DONE**
 
 **Files:**
 
@@ -302,7 +302,7 @@ Implement:
 
 The composite provider is the public entry point used by the agent runtime.
 
-### Step 4: Introduce Redis-backed provider caching
+### Step 4: Introduce Redis-backed provider caching — **DONE**
 
 **Files:**
 
@@ -313,14 +313,14 @@ Add a Redis-backed `ProviderResponseCache` implementation and thread it through 
 
 If the existing market-data registry can reuse this cache abstraction cleanly, do that rather than creating a second caching abstraction.
 
-### Step 5: Add runtime metrics state
+### Step 5: Add runtime metrics state — **DONE**
 
 **File:** `apps/worker/src/runtime-composition.ts`
 
 - add `macroEvents: EconomicEvent[] | null` to `RuntimeSessionMetrics`
 - initialize it to `null` in `createRuntimeCompositionState()`
 
-### Step 6: Refactor dynamic trimming and add the context provider
+### Step 6: Refactor dynamic trimming and add the context provider — **DONE**
 
 **File:** `apps/worker/src/runtime-composition.ts`
 
@@ -329,7 +329,7 @@ If the existing market-data registry can reuse this cache abstraction cleanly, d
 - cap output to `maxEventsInContext`
 - replace block-id-specific trimming with provider-driven trimming that honors `trimOrder`
 
-### Step 7: Instantiate and call the provider in the agent runtime
+### Step 7: Instantiate and call the provider in the agent runtime — **DONE**
 
 **File:** `apps/worker/src/agent.ts`
 
@@ -355,7 +355,7 @@ Logging:
 - log event count
 - log latency
 
-### Step 8: Reuse existing runtime payload wiring
+### Step 8: Reuse existing runtime payload wiring — **DONE** (verified, no changes needed)
 
 **Files:**
 
@@ -367,7 +367,7 @@ No new top-level runtime payload is needed if the config lives under `marketData
 
 Verify that the existing `MARKET_DATA_CONFIG_JSON` forwarding path carries the new `economicCalendar` subtree unchanged.
 
-### Step 9: Add tests
+### Step 9: Add tests — **DONE**
 
 **Files:**
 
@@ -389,7 +389,7 @@ Required coverage:
 - `maxEventsInContext` truncation
 - provider-driven trimming behavior
 
-### Step 10: Integration smoke test
+### Step 10: Integration smoke test — **MANUAL** (deployment step)
 
 - enable `marketData.economicCalendar.enabled: true` in development config
 - start the worker and launch a trading agent
