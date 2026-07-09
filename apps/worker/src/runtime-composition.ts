@@ -1,4 +1,4 @@
-import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload } from '@herobids/domain';
+import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, EconomicEvent } from '@herobids/domain';
 import { formatAgentGoalLiteralBlock, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
 import crypto from 'node:crypto';
 import type { RegimeResult } from '@herobids/market-data';
@@ -185,6 +185,8 @@ export interface RuntimeSessionMetrics {
   positionCoverage: CoverageEvaluationResult | null;
   /** Pending market-monitor context-only events (no agent.wake). Accumulated between ticks. */
   pendingMarketContext: PendingMarketEvent[];
+  /** Upcoming economic events for context injection. Null when calendar is disabled or unavailable. */
+  macroEvents: EconomicEvent[] | null;
 }
 
 export interface RuntimeCompositionState {
@@ -1379,6 +1381,7 @@ export function createRuntimeCompositionState(
       activityTimeline: [],
       positionCoverage: null,
       pendingMarketContext: [],
+      macroEvents: null,
     },
   };
 }
