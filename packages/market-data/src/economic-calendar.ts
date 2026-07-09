@@ -3,6 +3,7 @@ import type {
   EconomicCalendarResult,
   EconomicCalendarError,
   EconomicCalendarProvider,
+  Result,
 } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
 import type { RequestGate } from './types.js';
@@ -223,6 +224,7 @@ export class ForexFactoryCalendarAdapter implements EconomicCalendarProvider {
     if (!tableMatch) return events;
 
     const tableHtml = tableMatch[1];
+    if (!tableHtml) return events;
 
     // Try rows with the specific calendar__row class first
     let rows = this.extractCalendarRows(tableHtml);
@@ -246,7 +248,8 @@ export class ForexFactoryCalendarAdapter implements EconomicCalendarProvider {
       /<\s*tr[^>]*class\s*=\s*["'][^"']*calendar__row[^"']*["'][^>]*>([\s\S]*?)<\s*\/\s*tr\s*>/gi;
     let match: RegExpExecArray | null;
     while ((match = rowRegex.exec(tableHtml)) !== null) {
-      rows.push(match[1]);
+      const rowContent = match[1];
+      if (rowContent) rows.push(rowContent);
     }
     return rows;
   }
@@ -256,9 +259,11 @@ export class ForexFactoryCalendarAdapter implements EconomicCalendarProvider {
     const rowRegex = /<\s*tr[^>]*>([\s\S]*?)<\s*\/\s*tr\s*>/gi;
     let match: RegExpExecArray | null;
     while ((match = rowRegex.exec(tableHtml)) !== null) {
+      const rowContent = match[1];
+      if (!rowContent) continue;
       // Skip header rows that contain <th> elements
-      if (/<\s*th[\s>]/i.test(match[1])) continue;
-      rows.push(match[1]);
+      if (/<\s*th[\s>]/i.test(rowContent)) continue;
+      rows.push(rowContent);
     }
     return rows;
   }
@@ -300,7 +305,8 @@ export class ForexFactoryCalendarAdapter implements EconomicCalendarProvider {
     const tdRegex = /<\s*td[^>]*>([\s\S]*?)<\s*\/\s*td\s*>/gi;
     let match: RegExpExecArray | null;
     while ((match = tdRegex.exec(rowHtml)) !== null) {
-      cells.push(match[1]);
+      const cellContent = match[1];
+      if (cellContent) cells.push(cellContent);
     }
     return cells;
   }
@@ -344,9 +350,9 @@ export class ForexFactoryCalendarAdapter implements EconomicCalendarProvider {
     const dateMatch = dateStr.match(/([A-Z][a-z]{2})\s+(\d{1,2})/);
     if (!dateMatch) return null;
 
-    const monthAbbr = dateMatch[1];
+    const monthAbbr = dateMatch[1]!;
     const month = MONTH_ABBR[monthAbbr];
-    const day = parseInt(dateMatch[2], 10);
+    const day = parseInt(dateMatch[2]!, 10);
     if (!month || day < 1 || day > 31) return null;
 
     // Determine the correct year (handle Dec → Jan boundary)
@@ -368,9 +374,9 @@ export class ForexFactoryCalendarAdapter implements EconomicCalendarProvider {
     } else {
       const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})(am|pm)/i);
       if (timeMatch) {
-        hours = parseInt(timeMatch[1], 10);
-        minutes = parseInt(timeMatch[2], 10);
-        const ampm = timeMatch[3].toLowerCase();
+        hours = parseInt(timeMatch[1]!, 10);
+        minutes = parseInt(timeMatch[2]!, 10);
+        const ampm = timeMatch[3]!.toLowerCase();
         if (ampm === 'pm' && hours !== 12) hours += 12;
         if (ampm === 'am' && hours === 12) hours = 0;
       }
@@ -492,7 +498,9 @@ export class CompositeEconomicCalendarProvider implements EconomicCalendarProvid
     } else if (ffResult.status === 'rejected') {
       console.warn('Forex Factory calendar fetch failed:', ffResult.reason);
     } else {
-      console.warn('Forex Factory calendar fetch failed:', ffResult.value.error.message);
+      // Fulfilled but ok=false (error result)
+      const ffErr = ffResult.value as { error: { message: string } };
+      console.warn('Forex Factory calendar fetch failed:', ffErr.error.message);
     }
 
     if (ohlcResult.status === 'fulfilled' && ohlcResult.value.ok) {
@@ -501,7 +509,9 @@ export class CompositeEconomicCalendarProvider implements EconomicCalendarProvid
     } else if (ohlcResult.status === 'rejected') {
       console.warn('OHLC.dev calendar fetch failed:', ohlcResult.reason);
     } else {
-      console.warn('OHLC.dev calendar fetch failed:', ohlcResult.value.error.message);
+      // Fulfilled but ok=false (error result)
+      const ohlcErr = ohlcResult.value as { error: { message: string } };
+      console.warn('OHLC.dev calendar fetch failed:', ohlcErr.error.message);
     }
 
     // If both sources failed, return error

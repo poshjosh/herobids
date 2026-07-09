@@ -15,9 +15,9 @@ export interface CacheSnapshot<T> {
 }
 
 export interface ProviderResponseCache {
-  get<T>(key: string, now?: number): CacheSnapshot<T> | undefined;
-  set<T>(key: string, value: T, policy: CachePolicy, now?: number): void;
-  delete(key: string): void;
+  get<T>(key: string, now?: number): CacheSnapshot<T> | undefined | Promise<CacheSnapshot<T> | undefined>;
+  set<T>(key: string, value: T, policy: CachePolicy, now?: number): void | Promise<void>;
+  delete(key: string): void | Promise<void>;
 }
 
 interface CacheRecord<T> {
@@ -107,7 +107,7 @@ export async function loadWithCache<T>(params: {
   now?: number;
 }): Promise<ProviderResult<T>> {
   const now = params.now ?? Date.now();
-  const cached = params.policy.ttlMs > 0 ? params.cache.get<T>(params.cacheKey, now) : undefined;
+  const cached = params.policy.ttlMs > 0 ? await params.cache.get<T>(params.cacheKey, now) : undefined;
 
   // Fresh cache hit — return immediately without calling the loader.
   if (cached && !cached.isStale) {
@@ -130,7 +130,7 @@ export async function loadWithCache<T>(params: {
     try {
       const data = await params.loader();
       if (params.policy.ttlMs > 0) {
-        params.cache.set(params.cacheKey, data, params.policy, now);
+        await params.cache.set(params.cacheKey, data, params.policy, now);
       }
       return buildProviderResult({
         provider: params.provider,
@@ -162,7 +162,7 @@ export async function loadWithCache<T>(params: {
   // No usable cache entry — must fetch unconditionally.
   const data = await params.loader();
   if (params.policy.ttlMs > 0) {
-    params.cache.set(params.cacheKey, data, params.policy, now);
+    await params.cache.set(params.cacheKey, data, params.policy, now);
   }
 
   return buildProviderResult({

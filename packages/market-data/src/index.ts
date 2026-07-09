@@ -32,6 +32,7 @@ export {
 	type SharedRateBudgetCoordinator,
 } from './rate-limiter.js';
 export { InMemoryProviderResponseCache, loadWithCache, type CachePolicy, type ProviderResponseCache } from './cache.js';
+export { RedisProviderResponseCache, type RedisCacheClient } from './redis-cache.js';
 export {
   ema,
   adx,
