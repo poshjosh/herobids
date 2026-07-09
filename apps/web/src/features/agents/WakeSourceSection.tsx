@@ -10,9 +10,10 @@ export const WAKE_SOURCES = [
 export type WakeSourceValue = (typeof WAKE_SOURCES)[number]['value'];
 
 /** Wake sources that are only relevant for trading agents.
- *  Excludes 'reminder' — reminders are always-on for all agents (see
- *  AgentFormBody for the enforcement logic). */
-export const TRADING_WAKE_SOURCES = WAKE_SOURCES.filter(s => s.value !== 'reminder');
+ *  Excludes 'reminder' (always-on for all agents) and 'scanner' (implicitly
+ *  controlled by the technical pre-filter toggle — when pre-filter is on,
+ *  scanner wakes are delivered; when off, they are not). */
+export const TRADING_WAKE_SOURCES = WAKE_SOURCES.filter(s => s.value !== 'reminder' && s.value !== 'scanner');
 
 interface WakeSourceSectionProps {
   selected: string[];

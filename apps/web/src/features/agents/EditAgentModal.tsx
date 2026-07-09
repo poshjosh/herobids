@@ -424,15 +424,23 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 const defaults = resolveStyleDefaults(nextStyle);
                 setTickIntervalTouched(true);
                 setStyle(nextStyle);
-                setForm((prev) => ({
-                  ...prev,
-                  costPreset: defaults.costPreset,
-                  tickIntervalMins: defaults.tickIntervalMins,
-                  dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
-                  ...(policyManuallySetRef.current
-                    ? {}
-                    : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
-                }));
+                const premiumSources = ['watch_threshold', 'discovery_delta', 'regime_change'];
+                const baseStyleSources = nextStyle === 'bold' ? premiumSources : ['watch_threshold'];
+                setForm((prev) => {
+                  const styleSources = prev.technicalPreFilterEnabled
+                    ? (baseStyleSources.includes('scanner') ? baseStyleSources : [...baseStyleSources, 'scanner'])
+                    : baseStyleSources.filter(s => s !== 'scanner');
+                  return {
+                    ...prev,
+                    costPreset: defaults.costPreset,
+                    tickIntervalMins: defaults.tickIntervalMins,
+                    dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
+                    subscribedSources: styleSources,
+                    ...(policyManuallySetRef.current
+                      ? {}
+                      : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
+                  };
+                });
                 if (!maxHoldDurationManuallySetRef.current) {
                   setRuntimePolicyOverrides((current) => applyAutoMaxHoldOverride(
                     nextStyle,
@@ -470,6 +478,15 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             value={form}
             onChange={(patch) => {
               const nextForm = { ...form, ...patch };
+              // When pre-filter is toggled on/off, auto-add/remove scanner from wake sources.
+              if ('technicalPreFilterEnabled' in patch) {
+                const hasScanner = nextForm.subscribedSources.includes('scanner');
+                if (patch.technicalPreFilterEnabled && !hasScanner) {
+                  nextForm.subscribedSources = [...nextForm.subscribedSources, 'scanner'];
+                } else if (!patch.technicalPreFilterEnabled && hasScanner) {
+                  nextForm.subscribedSources = nextForm.subscribedSources.filter(s => s !== 'scanner');
+                }
+              }
               if (patch.tickIntervalMins !== undefined) {
                 setTickIntervalTouched(true);
                 const newTickMs = resolveEditedTickIntervalMs(nextForm.tickIntervalMins, true);
