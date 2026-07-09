@@ -187,6 +187,27 @@ export interface MarketDataConfig {
     apiKey: string;
     cacheTtlMs: number;
   };
+  economicCalendar: {
+    enabled: boolean;
+    daysForward: number;
+    minImpact: 'high' | 'medium' | 'low';
+    currencies: string[];
+    cacheTtlMs: number;
+    maxEventsInContext: number;
+    dedupeWindowMinutes: number;
+    sourceOrder: ('forex-factory' | 'ohlc-dev')[];
+    forexFactory: {
+      baseUrl: string;
+      requestTimeoutMs: number;
+      requestsPerMinute: number;
+      userAgent: string;
+    };
+    ohlcDev: {
+      baseUrl: string;
+      requestTimeoutMs: number;
+      requestsPerMinute: number;
+    };
+  };
   tokenSafety?: {
     enabled: boolean;
     defaults: {
