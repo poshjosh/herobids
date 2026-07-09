@@ -129,7 +129,7 @@ function fetchHttp1(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
       {
         method: init?.method ?? 'GET',
         headers: init?.headers as Record<string, string> | undefined,
-        signal: init?.signal,
+        signal: init?.signal ?? undefined,
       },
       (res) => {
         const chunks: Buffer[] = [];
