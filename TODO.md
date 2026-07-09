@@ -77,12 +77,6 @@ Dependencies: none.
 Risks / open questions: listing providers inline will keep drifting unless you treat one file as the source of truth. The safer long-term option is to reference the catalog rather than duplicate it.
 Test guidance: no unit or integration test needed; this is a documentation consistency fix. No visual verification needed.
 
-- [ ] Low — MissionControlPage.tsx:15: the new exported MissionControlSetupForm wrapper appears to exist primarily for test convenience, which widens the production module API and adds an extra indirection without changing runtime behavior. The production page still depends on the wrapper being used correctly at MissionControlPage.tsx:217, so this is a maintainability tradeoff rather than a functional bug.
-What to change: either keep the wrapper but treat it as an intentional local abstraction with a short comment explaining why it exists, or move the wiring test up to the page/component boundary and collapse the wrapper back into the inline usage.
-Change type: modify structure or add clarifying comment.
-Dependencies: none.
-Risks / open questions: if the wrapper remains purely as test scaffolding, future readers may not know whether it is a real UI abstraction or just a seam for tests.
-Test guidance: if you remove the wrapper, replace it with a narrow component/integration test that proves the Mission Control setup path renders ProviderSetupForm in trading mode. No visual verification needed.
 
 - [ ] Low. agent-broker.test.ts:1457. The new audit-only broker test for agent.llm.completed includes terminatedByLimit: false, but that field is not part of the actual LlmCompletedPayloadSchema. Because Zod strips unknown keys by default, the test still passes, which means it is not actually guarding the real contract and can mask payload drift. Remove the unsupported field from the fixture, or make the test assert the accepted schema shape explicitly.
 

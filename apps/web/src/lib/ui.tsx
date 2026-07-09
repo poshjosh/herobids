@@ -66,6 +66,24 @@ export function Card({
   );
 }
 
+export function MetricCard({ label, value, total, color }: { label: string; value: string | number; total?: number; color?: string }) {
+  return (
+    <Card style={{ padding: '16px 20px' }}>
+      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
+        {label}
+      </div>
+      <div style={{ fontSize: '24px', fontWeight: '600', color: color ?? 'var(--color-text-primary)' }}>
+        {value}
+        {total !== undefined && (
+          <span style={{ fontSize: '14px', fontWeight: '400', color: 'var(--color-text-muted)', marginLeft: '4px' }}>
+            / {total}
+          </span>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Status badge
 // ---------------------------------------------------------------------------

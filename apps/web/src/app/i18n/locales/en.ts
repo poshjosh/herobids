@@ -1,6 +1,5 @@
 export const messages: Record<string, string> = {
   // Navigation
-  'nav.missionControl': 'Mission Control',
   'nav.skills': 'Skills',
   'nav.activity': 'Activity',
   'nav.outcomes': 'Outcomes',
@@ -634,7 +633,7 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.bindFailed': 'Could not assign {label}: {error}',
   'agents.capabilityPage.manageConnections': 'Manage connections',
   'agents.capabilityPage.manageCredentials': 'Manage credentials',
-  'agents.capabilityPage.setupOnMissionControl': 'Go to Mission Control',
+  'agents.capabilityPage.setupOnAgents': 'Go to AI Agents',
 
   // Outcomes extended
   'outcomes.latestArtifact': 'Latest artifact',

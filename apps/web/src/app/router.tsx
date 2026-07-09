@@ -3,7 +3,7 @@ import { RootLayout } from './layout/RootLayout.js';
 import { NotFoundPage } from './NotFoundPage.js';
 import { LoginPage } from '../features/auth/LoginPage.js';
 import { AuthCallbackPage } from '../features/auth/AuthCallbackPage.js';
-import { MissionControlPage } from '../features/mission-control/MissionControlPage.js';
+import { LandingPagePlaceholder } from '../features/landing/LandingPagePlaceholder.js';
 import { ActivityFeedPage } from '../features/activity/ActivityFeedPage.js';
 import { OutcomeBoardPage } from '../features/outcomes/OutcomeBoardPage.js';
 import { ExposurePage } from '../features/exposure/ExposurePage.js';
@@ -22,6 +22,9 @@ import { SettingsPage } from '../features/settings/SettingsPage.js';
 import { AdminPage } from '../features/admin/AdminPage.js';
 
 export const router = createBrowserRouter([
+  // ── Public landing page (no auth) ─────────────────────────────
+  { path: '/', element: <LandingPagePlaceholder /> },
+
   // ── Public pages (no auth) ────────────────────────────────────
   ...createPublicRoutes(),
 
@@ -33,27 +36,26 @@ export const router = createBrowserRouter([
     path: '/auth/callback',
     element: <AuthCallbackPage />,
   },
+  // ── Authenticated routes (RootLayout enforces auth) ───────────
   {
-    path: '/',
     element: <RootLayout />,
     children: [
-      { index: true, element: <Navigate to="/mission-control" replace /> },
-      { path: 'mission-control', element: <MissionControlPage /> },
-      { path: 'skills', element: <SkillsPage /> },
-      { path: 'activity', element: <ActivityFeedPage /> },
-      { path: 'outcomes', element: <OutcomeBoardPage /> },
-      { path: 'bots', element: <BotsPage /> },
-      { path: 'bots/:id', element: <InstanceDetailPage /> },
-      { path: 'connections', element: <ConnectionsPage /> },
-      { path: 'credentials', element: <CredentialsPage /> },
-      { path: 'venue-accounts', element: <VenueAccountsPage /> },
-      { path: 'agents', element: <AgentsPage /> },
-      { path: 'agents/:id', element: <AgentDetailPage /> },
-      { path: 'agents/:agentId/capabilities/:family', element: <AgentCapabilityPage /> },
-      { path: 'exposure', element: <ExposurePage /> },
-      { path: 'billing', element: <BillingPage /> },
-      { path: 'settings', element: <SettingsPage /> },
-      { path: 'admin', element: <AdminPage /> },
+      { path: '/mission-control', element: <Navigate to="/agents" replace /> },
+      { path: '/agents', element: <AgentsPage /> },
+      { path: '/agents/:id', element: <AgentDetailPage /> },
+      { path: '/agents/:agentId/capabilities/:family', element: <AgentCapabilityPage /> },
+      { path: '/skills', element: <SkillsPage /> },
+      { path: '/activity', element: <ActivityFeedPage /> },
+      { path: '/outcomes', element: <OutcomeBoardPage /> },
+      { path: '/bots', element: <BotsPage /> },
+      { path: '/bots/:id', element: <InstanceDetailPage /> },
+      { path: '/connections', element: <ConnectionsPage /> },
+      { path: '/credentials', element: <CredentialsPage /> },
+      { path: '/venue-accounts', element: <VenueAccountsPage /> },
+      { path: '/exposure', element: <ExposurePage /> },
+      { path: '/billing', element: <BillingPage /> },
+      { path: '/settings', element: <SettingsPage /> },
+      { path: '/admin', element: <AdminPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

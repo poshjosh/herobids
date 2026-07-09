@@ -1,8 +1,8 @@
 /**
- * Journey 13: Mission Control guided setup card — full UI flow.
+ * Journey 13: AI Agents guided setup card — full UI flow.
  *
  * Verifies that a new user can:
- * 1. See the quick trading setup card on Mission Control.
+ * 1. See the quick trading setup card on AI Agents.
  * 2. Open the setup form by clicking the CTA button.
  * 3. Fill in provider details and secrets, then submit.
  * 4. See the success banner with the account label and provider.
@@ -15,12 +15,12 @@ import { registerUser } from '../helpers.js';
 const EMAIL = `j13-${Date.now()}@e2e.local`;
 const PASSWORD = 'E2ePassword13!';
 
-test.describe('Journey 13: Mission Control setup card UI flow', () => {
-  test('new user completes guided trading setup from Mission Control', async ({ page }) => {
+test.describe('Journey 13: AI Agents setup card UI flow', () => {
+  test('new user completes guided trading setup from AI Agents', async ({ page }) => {
     await registerUser(page, EMAIL, PASSWORD, 'E2E User J13');
 
-    await page.goto('/mission-control');
-    await expect(page.getByRole('heading', { name: /Mission Control/i })).toBeVisible({ timeout: 5_000 });
+    await page.goto('/agents');
+    await expect(page.getByRole('heading', { name: /AI Agents/i })).toBeVisible({ timeout: 5_000 });
 
     // Setup card is visible with title and CTA
     await expect(page.getByText('Connect AI agent to external platform')).toBeVisible({ timeout: 5_000 });

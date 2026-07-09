@@ -27,8 +27,8 @@ export async function registerUser(
   await page.getByLabel(/email/i).fill(email);
   await page.getByLabel(/password/i).fill(password);
   await page.getByRole('button', { name: /create account|register|sign up/i }).click();
-  // Should redirect to mission control
-  await page.waitForURL('**/mission-control', { timeout: 15_000 });
+  // Should redirect to agents
+  await page.waitForURL('**/agents', { timeout: 15_000 });
 }
 
 /** Log in with existing credentials. */
@@ -42,7 +42,7 @@ export async function loginUser(
   await page.getByLabel(/email/i).fill(email);
   await page.getByLabel(/password/i).fill(password);
   await page.getByRole('button', { name: /sign in|log in|continue/i }).click();
-  await page.waitForURL('**/mission-control', { timeout: 15_000 });
+  await page.waitForURL('**/agents', { timeout: 15_000 });
 }
 
 export async function getAuthToken(page: Page): Promise<string> {

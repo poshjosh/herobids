@@ -25,7 +25,7 @@ test.describe('Journey 2: Recent Decisions section renders on agent detail page'
     await page.getByLabel(/password/i).fill(PASSWORD);
     const submitBtn = page.getByRole('button', { name: /create account|sign in|log in/i }).first();
     await submitBtn.click();
-    await page.waitForURL('**/mission-control', { timeout: 15_000 });
+    await page.waitForURL('**/agents', { timeout: 15_000 });
   });
 
   test('agent detail page renders the Recent Decisions card with empty state', async ({ page, request }) => {

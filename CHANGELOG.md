@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- **Remove Mission Control — Consolidate into AI Agents Page:** Deleted the `/mission-control` dashboard page and moved its widgets (5 metric cards, setup card, activity feed, setup modals) into `/agents`, making it the single home for authenticated users. Added a public landing page placeholder at `/` for unauthenticated visitors. Backward-compat redirect from `/mission-control` → `/agents`. Removed Mission Control nav item from sidebar; AI Agents is now the default. Updated all redirect targets, i18n keys, E2E tests, and spec file names accordingly.
+
 - Change `marketIntelligence.wakePolicy` from `batched` to `context` for `discovery_delta`
 - **Macro-Economic Context Block:** Inject upcoming high-impact economic events (FOMC, NFP, CPI, etc.) into trading agents' context with zero tool calls. Dual-source (Forex Factory HTML + OHLC.dev JSON) with merge/dedupe, Redis-backed shared caching, and provider-driven context trimming. Disabled by default; enable via `marketData.economicCalendar.enabled`.
 

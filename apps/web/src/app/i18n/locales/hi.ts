@@ -1,6 +1,5 @@
 export const messages: Record<string, string> = {
   // Navigation
-  'nav.missionControl': 'मिशन कंट्रोल',
   'nav.skills': 'कौशल',
   'nav.activity': 'गतिविधि',
   'nav.outcomes': 'परिणाम',
@@ -595,7 +594,7 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.bindFailed': '{label} असाइन नहीं कर सका: {error}',
   'agents.capabilityPage.manageConnections': 'कनेक्शन प्रबंधित करें',
   'agents.capabilityPage.manageCredentials': 'क्रेडेंशियल प्रबंधित करें',
-  'agents.capabilityPage.setupOnMissionControl': 'मिशन कंट्रोल पर जाएं',
+  'agents.capabilityPage.setupOnAgents': 'AI एजेंट्स पर जाएं',
 
   // Outcomes extended
   'outcomes.latestArtifact': 'नवीनतम आर्टिफैक्ट',

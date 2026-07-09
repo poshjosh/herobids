@@ -24,7 +24,7 @@ test.describe('Journey 15: Crashed-agent recovery', () => {
     await page.getByLabel(/email/i).fill(EMAIL);
     await page.getByLabel(/password/i).fill(PASSWORD);
     await page.getByRole('button', { name: /create account|register/i }).click();
-    await page.waitForURL('**/mission-control', { timeout: 15_000 });
+    await page.waitForURL('**/agents', { timeout: 15_000 });
 
     const token = await page.evaluate(() => localStorage.getItem('hb_session_token'));
     if (!token) {

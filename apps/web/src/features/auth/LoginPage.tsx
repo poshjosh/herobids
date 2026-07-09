@@ -29,7 +29,7 @@ export function LoginPage() {
         ? await auth.register(email, password, displayName)
         : await auth.login(email, password);
       await login(token);
-      navigate('/mission-control', { replace: true });
+      navigate('/agents', { replace: true });
     } catch (err) {
       setError(localizeApiError(intl, err, 'auth.error.default'));
     } finally {
