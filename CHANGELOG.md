@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.15 - 2026-07-09
+
+### Fixed
+
+- **Orchestration follow-up fixes (006-followup):** Removed duplicate termination listener from `AgentRuntimeLauncher` (already registered by `DockerRuntimeAdapter`). Added `NodeClass == "agent"` filter to `list_eligible_agent_nodes()` so the control-plane client node is never a scale-in candidate. Replaced last remaining `||` resource fallback with `??` in `nomad-runtime-adapter.ts` to preserve `0` as a valid value. Added test coverage for `buildAgentEnv` sharedServices URL construction path. Deprecated legacy `terraform.tfvars.example` in favor of per-environment templates.
+
 ### Added
 
 - **Terraform workspaces (007-terraform-workspaces):** Multi-environment state isolation via Terraform workspaces. `provision.sh` and all deploy scripts (`deploy.sh`, `push.sh`, `setup-env.sh`, `logs.sh`, `seed-admin.sh`, `reset.sh`, `reset-and-run.sh`, `maintenance-restart-from-local.sh`) are now workspace-aware — `--env staging|production` automatically selects the correct Terraform workspace and resolves the matching server IP. SSH key auto-detection falls back to `${HEROBIDS_ENV}.tfvars` when `terraform.tfvars` is absent. Includes a one-time migration procedure for existing staging state, `.gitignore` for workspace state files, and updated README/smoke-test documentation.
@@ -15,14 +21,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Wake-Driven Cost Reduction (005-wake-cost):** Three-layer wake policy to reduce unnecessary LLM invocations. Source-scoped cooldowns (Part A) prevent low-urgency discovery events from throttling urgent watch-threshold wakes. Mode-based delivery (Part B) adds `wake`, `batched`, and `context` delivery modes — `context` mode emits market events without triggering `agent.wake`, storing them as structured pending context that appears in the next tick prompt and prevents `context_unchanged` skips. Per-agent wake subscriptions (Part C) let agents filter which monitor-owned sources they receive via `wake_preferences` JSONB, exposed through API and UI with Redis-backed real-time routing.
 
 - **Nomad agent orchestration (004-orchestration):** Agents now launch on a Nomad cluster instead of the worker's local Docker daemon, enabling multi-node horizontal scaling. Includes: Nomad runtime adapter (Phase 4), per-tier resource profiles with soft overcommit (Phase 5), autoscale-out via flock-guarded Terraform (Phase 6), nightly conservative scale-in and placement-failure safety net (Phase 7), admin email alerting for scaling failures (Phase 8), and staging/production runbooks with explicit rollback procedure (Phase 9). Control plane remains on Docker Compose; agent nodes are stateless, disposable Nomad clients on a private Hetzner Cloud network.
-
-### Fixed
-
-- **Orchestration follow-up fixes (006-followup):** Removed duplicate termination listener from `AgentRuntimeLauncher` (already registered by `DockerRuntimeAdapter`). Added `NodeClass == "agent"` filter to `list_eligible_agent_nodes()` so the control-plane client node is never a scale-in candidate. Replaced last remaining `||` resource fallback with `??` in `nomad-runtime-adapter.ts` to preserve `0` as a valid value. Added test coverage for `buildAgentEnv` sharedServices URL construction path. Deprecated legacy `terraform.tfvars.example` in favor of per-environment templates.
-
-## v0.0.15 - 2026-07-08
-
-### Added
 
 - **Staging environment:** Split the single-environment deploy model into separate staging and production environments with isolated infrastructure, secrets, domains, and runtime policy. Staging runs with `NODE_ENV=staging`, mock billing, and live trading disabled by default. Production runs with `NODE_ENV=production` and enforces non-mock billing. Includes separate compose overlays (`docker-compose.staging.yaml` / `docker-compose.prod.yaml`), Caddyfiles (`Caddyfile.staging` / `Caddyfile.prod`), env file conventions, Terraform variables, and staging config validation tests.
 
