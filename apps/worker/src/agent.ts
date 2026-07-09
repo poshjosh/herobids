@@ -938,14 +938,6 @@ if (marketDataConfig?.economicCalendar?.enabled) {
 } else {
   logger.info('Economic calendar disabled — set marketData.economicCalendar.enabled: true to enable');
 }
-  };
-
-  economicCalendarProvider = new CompositeEconomicCalendarProvider(compositeConfig);
-
-  logger.info({ sourceOrder: ecConfig.sourceOrder }, 'Economic calendar provider initialized');
-} else {
-  logger.info('Economic calendar disabled — set marketData.economicCalendar.enabled: true to enable');
-}
 
 // ---------------------------------------------------------------------------
 // Tool Registry
