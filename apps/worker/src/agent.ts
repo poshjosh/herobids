@@ -130,6 +130,7 @@ function fetchHttp1(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
         method: init?.method ?? 'GET',
         headers: init?.headers as Record<string, string> | undefined,
         signal: init?.signal ?? undefined,
+        family: 4,  // force IPv4 — Docker containers may not have IPv6 connectivity
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -943,7 +944,7 @@ Only return JSON, no other text.`;
         temperature: 0,
         max_tokens: 4096,
       }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
 
     if (!response.ok) {
