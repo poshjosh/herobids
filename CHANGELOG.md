@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.16 - 2026-07-09
+
 - **Remove Mission Control — Consolidate into AI Agents Page:** Deleted the `/mission-control` dashboard page and moved its widgets (5 metric cards, setup card, activity feed, setup modals) into `/agents`, making it the single home for authenticated users. Added a public landing page placeholder at `/` for unauthenticated visitors. Backward-compat redirect from `/mission-control` → `/agents`. Removed Mission Control nav item from sidebar; AI Agents is now the default. Updated all redirect targets, i18n keys, E2E tests, and spec file names accordingly.
 
 - Change `marketIntelligence.wakePolicy` from `batched` to `context` for `discovery_delta`
