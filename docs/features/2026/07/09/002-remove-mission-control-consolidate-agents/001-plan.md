@@ -1,7 +1,7 @@
 # Remove Mission Control — Consolidate into AI Agents Page
 
 **Created:** 2026-07-09
-**Status:** in-progress
+**Status:** complete
 **Depends on:** none
 **Branch:** `remove-mission-control`
 
