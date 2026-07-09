@@ -8,6 +8,7 @@ import type {
 import { ok, err } from '@herobids/domain';
 import type { RequestGate } from './types.js';
 import { fetchJson, fetchText } from './http.js';
+import type { ProviderResponseCache } from './cache.js';
 
 // ============================================================================
 // Config interfaces
@@ -39,6 +40,10 @@ export interface CompositeEconomicCalendarConfig {
   sourceOrder: ('forex-factory' | 'ohlc-dev')[];
   forexFactory: ForexFactoryAdapterConfig;
   ohlcDev: OhlcDevAdapterConfig;
+  /** Optional Redis-backed cache shared across agent runtimes. */
+  cache?: ProviderResponseCache;
+  /** Cache TTL in milliseconds. Defaults to 1 hour. */
+  cacheTtlMs?: number;
 }
 
 // ============================================================================
@@ -476,11 +481,57 @@ export class CompositeEconomicCalendarProvider implements EconomicCalendarProvid
     const effectiveCurrencies = options?.currencies ?? this.config.currencies;
     const effectiveMaxEvents = options?.maxEvents ?? this.config.maxEvents;
 
+    const cache = this.config.cache;
+    const cacheTtlMs = this.config.cacheTtlMs ?? 3_600_000;
+    const cacheKey = `economic-calendar:${effectiveDaysForward}:${effectiveMinImpact}:${effectiveCurrencies.join(',')}:${this.config.sourceOrder.join(',')}`;
+
+    // Check cache first
+    if (cache) {
+      try {
+        const cached = await cache.get<EconomicCalendarResult>(cacheKey);
+        if (cached && !cached.isStale) {
+          return ok(cached.value);
+        }
+        // Stale hit — will attempt refresh below, fall back to stale on failure
+        if (cached && cached.isStale) {
+          const result = await this.fetchAndMerge(effectiveDaysForward, effectiveMinImpact, effectiveCurrencies, effectiveMaxEvents);
+          if (result.ok) {
+            await cache.set(cacheKey, result.data, { ttlMs: cacheTtlMs });
+            return result;
+          }
+          // Upstream failed — serve stale data as degraded fallback
+          console.warn('Economic calendar refresh failed, serving stale cache');
+          return ok(cached.value);
+        }
+      } catch {
+        // Cache error — proceed with direct fetch
+      }
+    }
+
+    // No cache or cache miss — fetch directly
+    const result = await this.fetchAndMerge(effectiveDaysForward, effectiveMinImpact, effectiveCurrencies, effectiveMaxEvents);
+    if (result.ok && cache) {
+      try {
+        await cache.set(cacheKey, result.data, { ttlMs: cacheTtlMs });
+      } catch {
+        // Cache write failed — non-fatal
+      }
+    }
+    return result;
+  }
+
+  private async fetchAndMerge(
+    daysForward: number,
+    minImpact: 'high' | 'medium' | 'low',
+    currencies: string[],
+    maxEvents: number,
+  ): Promise<Result<EconomicCalendarResult, EconomicCalendarError>> {
+
     // maxEvents is intentionally omitted — applied post-merge after dedup
     const adapterOptions = {
-      daysForward: effectiveDaysForward,
-      currencies: effectiveCurrencies,
-      minImpact: effectiveMinImpact,
+      daysForward,
+      currencies,
+      minImpact,
     };
 
     // Fetch both sources in parallel
@@ -525,7 +576,7 @@ export class CompositeEconomicCalendarProvider implements EconomicCalendarProvid
     // Deduplicate, sort, and truncate
     const deduped = this.deduplicate(allEvents);
     const sorted = this.sort(deduped);
-    const truncated = sorted.slice(0, effectiveMaxEvents);
+    const truncated = sorted.slice(0, maxEvents);
 
     return ok({
       events: truncated,

@@ -18,9 +18,15 @@ import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml } from '@herobids/domain';
 import { type LlmToolDefinition } from '@herobids/llm';
 import {
+  CompositeEconomicCalendarProvider,
+  RedisProviderResponseCache,
+  TokenBucketRateLimiter,
   createProviderRegistry,
   createPriceService,
+  type CompositeEconomicCalendarConfig,
+  type ForexFactoryAdapterConfig,
   type MarketDataConfig,
+  type OhlcDevAdapterConfig,
   type ProviderRegistry,
   type PriceService,
   type TokenInfo,
@@ -852,6 +858,53 @@ if (marketDataConfig) {
 const priceService: PriceService | null = marketDataRegistry
   ? createPriceService(marketDataRegistry)
   : null;
+
+// ── Economic calendar provider (optional) ──────────────────────────────────
+let economicCalendarProvider: CompositeEconomicCalendarProvider | null = null;
+if (marketDataConfig?.economicCalendar?.enabled) {
+  const ecConfig = marketDataConfig.economicCalendar;
+
+  // Use Redis-backed cache shared across agent runtimes
+  const redisCache = new RedisProviderResponseCache(redis, 'market-data:cache:');
+
+  const forexFactoryConfig: ForexFactoryAdapterConfig = {
+    baseUrl: ecConfig.forexFactory.baseUrl,
+    requestTimeoutMs: ecConfig.forexFactory.requestTimeoutMs,
+    requestsPerMinute: ecConfig.forexFactory.requestsPerMinute,
+    userAgent: ecConfig.forexFactory.userAgent,
+    rateLimiter: new TokenBucketRateLimiter({
+      requestsPerMinute: ecConfig.forexFactory.requestsPerMinute,
+    }),
+  };
+
+  const ohlcDevConfig: OhlcDevAdapterConfig = {
+    baseUrl: ecConfig.ohlcDev.baseUrl,
+    requestTimeoutMs: ecConfig.ohlcDev.requestTimeoutMs,
+    requestsPerMinute: ecConfig.ohlcDev.requestsPerMinute,
+    rateLimiter: new TokenBucketRateLimiter({
+      requestsPerMinute: ecConfig.ohlcDev.requestsPerMinute,
+    }),
+  };
+
+  const compositeConfig: CompositeEconomicCalendarConfig = {
+    daysForward: ecConfig.daysForward,
+    minImpact: ecConfig.minImpact,
+    currencies: ecConfig.currencies,
+    maxEvents: ecConfig.maxEventsInContext,
+    dedupeWindowMinutes: ecConfig.dedupeWindowMinutes,
+    sourceOrder: ecConfig.sourceOrder,
+    forexFactory: forexFactoryConfig,
+    ohlcDev: ohlcDevConfig,
+    cache: redisCache,
+    cacheTtlMs: ecConfig.cacheTtlMs,
+  };
+
+  economicCalendarProvider = new CompositeEconomicCalendarProvider(compositeConfig);
+
+  logger.info({ sourceOrder: ecConfig.sourceOrder }, 'Economic calendar provider initialized');
+} else {
+  logger.info('Economic calendar disabled — set marketData.economicCalendar.enabled: true to enable');
+}
 
 // ---------------------------------------------------------------------------
 // Tool Registry
@@ -2434,6 +2487,31 @@ async function runTick(): Promise<void> {
         drawdownPct: sessionMetrics.portfolio.drawdownPct,
         netPnlUsd: (sessionMetrics.portfolio.realizedPnlUsd ?? 0) + (sessionMetrics.portfolio.unrealizedPnlUsd ?? 0),
       });
+    }
+
+    // ── Economic calendar fetch ──────────────────────────────────────────
+    if (economicCalendarProvider) {
+      try {
+        const startMs = Date.now();
+        const result = await economicCalendarProvider.getUpcomingEvents();
+        if (result.ok) {
+          runtimeState.metrics.macroEvents = result.data.events;
+          const elapsedMs = Date.now() - startMs;
+          logger.info({
+            eventCount: result.data.events.length,
+            sources: result.data.sources,
+            elapsedMs,
+          }, 'Economic calendar fetched');
+        } else {
+          runtimeState.metrics.macroEvents = null;
+          logger.warn({ error: result.error }, 'Economic calendar fetch failed — block omitted for this tick');
+        }
+      } catch (err) {
+        runtimeState.metrics.macroEvents = null;
+        logger.warn({ err }, 'Economic calendar provider threw — block omitted for this tick');
+      }
+    } else {
+      runtimeState.metrics.macroEvents = null;
     }
 
     // Snapshot before buildTickUserContext clears currentReminder.
