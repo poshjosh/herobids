@@ -200,7 +200,7 @@ Expected result:
 
 The platform has a persistent account-level default for agent email delivery.
 
-### Slice 2 — Agent form override plumbing [PENDING]
+### Slice 2 — Agent form override plumbing [DONE]
 
 Goal: expose per-agent email delivery control in create/edit agent flows.
 

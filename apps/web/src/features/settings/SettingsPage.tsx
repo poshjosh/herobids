@@ -49,6 +49,9 @@ export function SettingsPage() {
   const [telegramChatId, setTelegramChatId] = useState<string>('');
   const [saved, setSaved] = useState(false);
   const savedTelegramChatId = meQuery.data?.telegramChatId ?? '';
+  const savedEmailEnabled = meQuery.data?.notificationPreferences?.sendMessage?.email?.enabled ?? true;
+  const [emailEnabled, setEmailEnabled] = useState<boolean>(true);
+  const [emailDeliverySaved, setEmailDeliverySaved] = useState(false);
   const [modelSettings, setModelSettings] = useState<AiModelSelectionState>(EMPTY_AI_MODEL_SELECTION);
   const [modelTouched, setModelTouched] = useState(false);
   const [modelSaved, setModelSaved] = useState(false);
@@ -59,6 +62,10 @@ export function SettingsPage() {
   useEffect(() => {
     setTelegramChatId(savedTelegramChatId);
   }, [savedTelegramChatId]);
+
+  useEffect(() => {
+    setEmailEnabled(savedEmailEnabled);
+  }, [savedEmailEnabled]);
 
   useEffect(() => {
     if (modelTouched) {
@@ -90,6 +97,16 @@ export function SettingsPage() {
       qc.setQueryData(['me'], updated);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+    },
+  });
+
+  const emailMutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      authApi.updateMe({ notificationPreferences: { sendMessage: { email: { enabled } } } }),
+    onSuccess: (updated) => {
+      qc.setQueryData(['me'], updated);
+      setEmailDeliverySaved(true);
+      setTimeout(() => setEmailDeliverySaved(false), 3000);
     },
   });
 
@@ -323,6 +340,67 @@ export function SettingsPage() {
                   {intl.formatMessage({ id: 'common.remove' })}
                 </Button>
               )}
+            </div>
+          </form>
+        </Card>
+
+        <Card>
+          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>
+            {intl.formatMessage({ id: 'settings.emailDelivery.title' })}
+          </h3>
+          <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+            {intl.formatMessage({ id: 'settings.emailDelivery.description' })}
+          </p>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              emailMutation.mutate(emailEnabled);
+            }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+          >
+            {emailMutation.isError && (
+              <ErrorBanner message={localizeApiError(intl, emailMutation.error, 'common.errorTitle')} />
+            )}
+            {emailDeliverySaved && (
+              <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--color-success-subtle)', color: 'var(--color-success)', fontSize: '13px' }}>
+                {intl.formatMessage({ id: 'settings.emailDelivery.saved' })}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <input
+                type="checkbox"
+                id="email-delivery-toggle"
+                checked={emailEnabled}
+                onChange={(e) => setEmailEnabled(e.target.checked)}
+                disabled={emailMutation.isPending}
+                style={{ marginTop: '2px', flexShrink: 0 }}
+              />
+              <div>
+                <label htmlFor="email-delivery-toggle" style={{ fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer' }}>
+                  {intl.formatMessage({ id: 'settings.emailDelivery.label' })}
+                </label>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                  {intl.formatMessage({ id: 'settings.emailDelivery.help.delivery' })}
+                  {meQuery.data?.email ? (
+                    <> (<strong style={{ color: 'var(--color-text)' }}>{meQuery.data.email}</strong>)</>
+                  ) : null}.{' '}
+                  {intl.formatMessage({ id: 'settings.emailDelivery.help.agentOverride' })}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <Button
+                variant="primary"
+                type="submit"
+                disabled={emailEnabled === savedEmailEnabled || emailMutation.isPending}
+              >
+                {emailMutation.isPending
+                  ? intl.formatMessage({ id: 'common.pleaseWait' })
+                  : intl.formatMessage({ id: 'settings.save' })}
+              </Button>
             </div>
           </form>
         </Card>

@@ -232,6 +232,14 @@ export const messages: Record<string, string> = {
   'settings.telegram.chatId.label': 'معرّف محادثة تيليغرام',
   'settings.telegram.chatId.placeholder': 'مثال: 123456789',
   'settings.telegram.saved': 'تم حفظ معرّف محادثة تيليغرام.',
+  'settings.emailDelivery.title': 'تسليم البريد الإلكتروني للوكلاء',
+  'settings.emailDelivery.description':
+    'يتحكم في ما إذا كان وكلاؤك يمكنهم إرسال بريد إلكتروني إليك بشكل افتراضي عند طلبهم الصريح لتسليم البريد الإلكتروني.',
+  'settings.emailDelivery.label': 'السماح لوكلائي بمراسلتي عبر البريد الإلكتروني عند طلبهم الصريح',
+  'settings.emailDelivery.help.agentOverride':
+    'يمكن للوكلاء الفرديين تجاوز هذا الإعداد الافتراضي في إعداداتهم الخاصة.',
+  'settings.emailDelivery.help.delivery': 'تُرسَل الرسائل إلى عنوان بريدك الإلكتروني المسجَّل',
+  'settings.emailDelivery.saved': 'تم حفظ تفضيل تسليم البريد الإلكتروني.',
   'settings.save': 'حفظ',
   'settings.locale.title': 'اللغة',
   'settings.locale.label': 'لغة العرض',

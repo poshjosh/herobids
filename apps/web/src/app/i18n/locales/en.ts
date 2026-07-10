@@ -232,6 +232,14 @@ export const messages: Record<string, string> = {
   'settings.telegram.chatId.label': 'Telegram Chat ID',
   'settings.telegram.chatId.placeholder': 'e.g. 123456789',
   'settings.telegram.saved': 'Telegram chat ID saved.',
+  'settings.emailDelivery.title': 'Agent Email Delivery',
+  'settings.emailDelivery.description':
+    'Controls whether your agents may email you by default when they explicitly request email delivery.',
+  'settings.emailDelivery.label': 'Allow my agents to email me when they explicitly request email',
+  'settings.emailDelivery.help.agentOverride':
+    'Individual agents can override this default in their own settings.',
+  'settings.emailDelivery.help.delivery': 'Emails go to your account address',
+  'settings.emailDelivery.saved': 'Email delivery preference saved.',
   'settings.save': 'Save',
   'settings.locale.title': 'Language',
   'settings.locale.label': 'Display language',

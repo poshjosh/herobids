@@ -232,6 +232,14 @@ export const messages: Record<string, string> = {
   'settings.telegram.chatId.label': 'Telegram चैट ID',
   'settings.telegram.chatId.placeholder': 'उदा. 123456789',
   'settings.telegram.saved': 'Telegram चैट ID सहेज लिया गया।',
+  'settings.emailDelivery.title': 'एजेंट ईमेल डिलीवरी',
+  'settings.emailDelivery.description':
+    'यह नियंत्रित करता है कि आपके एजेंट डिफ़ॉल्ट रूप से आपको ईमेल भेज सकते हैं या नहीं जब वे स्पष्ट रूप से ईमेल डिलीवरी का अनुरोध करें।',
+  'settings.emailDelivery.label': 'जब मेरे एजेंट स्पष्ट रूप से ईमेल का अनुरोध करें तो उन्हें मुझे ईमेल करने दें',
+  'settings.emailDelivery.help.agentOverride':
+    'व्यक्तिगत एजेंट अपनी सेटिंग्स में इस डिफ़ॉल्ट को ओवरराइड कर सकते हैं।',
+  'settings.emailDelivery.help.delivery': 'ईमेल आपके खाते के पते पर भेजे जाते हैं',
+  'settings.emailDelivery.saved': 'ईमेल डिलीवरी प्राथमिकता सहेज ली गई।',
   'settings.save': 'सहेजें',
   'settings.locale.title': 'भाषा',
   'settings.locale.label': 'प्रदर्शन भाषा',
