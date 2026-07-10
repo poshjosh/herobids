@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.17 - 2026-07-10
+
+### Fixed
+
+- **`get_account_summary` executionMode fallback:** When `agentConfigOps` is unavailable or returns no config, the tool now falls back to `ctx.executionMode` (always set by the agent runtime) instead of returning `"unknown"`. Agents will now always see their actual execution mode.
+
 ## v0.0.16 - 2026-07-09
 
 - **Remove Mission Control — Consolidate into AI Agents Page:** Deleted the `/mission-control` dashboard page and moved its widgets (5 metric cards, setup card, activity feed, setup modals) into `/agents`, making it the single home for authenticated users. Added a public landing page placeholder at `/` for unauthenticated visitors. Backward-compat redirect from `/mission-control` → `/agents`. Removed Mission Control nav item from sidebar; AI Agents is now the default. Updated all redirect targets, i18n keys, E2E tests, and spec file names accordingly.
