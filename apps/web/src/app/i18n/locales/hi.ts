@@ -246,6 +246,14 @@ export const messages: Record<string, string> = {
   'aiModels.loading': 'उपलब्ध मॉडल लोड हो रहे हैं…',
   'aiModels.empty': 'चुने गए प्रदाता के लिए कोई मॉडल उपलब्ध नहीं है।',
   'aiModels.saved': 'AI मॉडल सेटिंग्स सहेज ली गईं।',
+  'aiModels.scoutReasoning.label': 'स्काउट रीज़निंग',
+  'aiModels.scoutReasoning.help': 'प्रत्येक चेक-इन से पहले स्काउट मॉडल कितना सोचता है इसे नियंत्रित करता है। "कोई नहीं" रीज़निंग को पूरी तरह छोड़ देता है (सबसे सस्ता)।',
+  'aiModels.judgeReasoning.label': 'जज रीज़निंग',
+  'aiModels.judgeReasoning.help': 'ट्रेडिंग निर्णयों से पहले जज मॉडल कितना सोचता है इसे नियंत्रित करता है। उच्च स्तर विश्लेषण गुणवत्ता में सुधार करते हैं लेकिन लागत बढ़ाते हैं।',
+  'aiModels.reasoning.none': 'कोई नहीं',
+  'aiModels.reasoning.low': 'कम',
+  'aiModels.reasoning.medium': 'मध्यम',
+  'aiModels.reasoning.high': 'उच्च',
 
   // Extended common
   'common.back': 'वापस',

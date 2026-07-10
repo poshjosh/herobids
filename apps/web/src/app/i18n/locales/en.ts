@@ -246,6 +246,14 @@ export const messages: Record<string, string> = {
   'aiModels.loading': 'Loading available models…',
   'aiModels.empty': 'No models are available for the selected provider.',
   'aiModels.saved': 'AI model settings saved.',
+  'aiModels.scoutReasoning.label': 'Scout reasoning',
+  'aiModels.scoutReasoning.help': 'Controls how much the scout model thinks before each check-in. "None" skips reasoning entirely (cheapest).',
+  'aiModels.judgeReasoning.label': 'Judge reasoning',
+  'aiModels.judgeReasoning.help': 'Controls how much the judge model thinks before trading decisions. Higher levels improve analysis quality but increase costs.',
+  'aiModels.reasoning.none': 'None',
+  'aiModels.reasoning.low': 'Low',
+  'aiModels.reasoning.medium': 'Medium',
+  'aiModels.reasoning.high': 'High',
 
   // Extended common
   'common.back': 'Back',

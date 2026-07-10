@@ -246,6 +246,14 @@ export const messages: Record<string, string> = {
   'aiModels.loading': 'جارٍ تحميل النماذج المتاحة…',
   'aiModels.empty': 'لا توجد نماذج متاحة للمزوّد المحدد.',
   'aiModels.saved': 'تم حفظ إعدادات نموذج الذكاء الاصطناعي.',
+  'aiModels.scoutReasoning.label': 'استدلال الكشاف',
+  'aiModels.scoutReasoning.help': 'يتحكم في مقدار تفكير نموذج الكشاف قبل كل فحص. "لا شيء" يتخطى الاستدلال تماماً (الأرخص).',
+  'aiModels.judgeReasoning.label': 'استدلال الحكم',
+  'aiModels.judgeReasoning.help': 'يتحكم في مقدار تفكير نموذج الحكم قبل قرارات التداول. المستويات الأعلى تحسن جودة التحليل لكنها تزيد التكاليف.',
+  'aiModels.reasoning.none': 'لا شيء',
+  'aiModels.reasoning.low': 'منخفض',
+  'aiModels.reasoning.medium': 'متوسط',
+  'aiModels.reasoning.high': 'عالي',
 
   // Extended common
   'common.back': 'رجوع',

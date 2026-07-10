@@ -194,11 +194,13 @@ export interface AiModelSettings {
   provider: string | null;
   lightModel: string | null;
   heavyModel: string | null;
+  scoutReasoning: string | null;
+  judgeReasoning: string | null;
 }
 
 export type AiModelSettingsUpdate =
-  | { provider: string; lightModel: string; heavyModel: string }
-  | { provider: null; lightModel: null; heavyModel: null };
+  | { provider: string; lightModel: string; heavyModel: string; scoutReasoning?: string | null; judgeReasoning?: string | null }
+  | { provider: null; lightModel: null; heavyModel: null; scoutReasoning?: null; judgeReasoning?: null };
 
 export interface AiModelSettingsResponse {
   aiModelConfig: AiModelSettings | null;

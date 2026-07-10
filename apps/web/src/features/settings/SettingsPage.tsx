@@ -81,7 +81,7 @@ export function SettingsPage() {
     if (!defaultSelection) {
       return;
     }
-    setModelSettings(defaultSelection);
+    setModelSettings({ ...modelSettings, ...defaultSelection });
   }, [availableModelsQuery.data?.providers, aiSettingsQuery.isSuccess, modelSettings.provider, modelTouched, savedModelSettings]);
 
   const telegramMutation = useMutation({
@@ -185,6 +185,8 @@ export function SettingsPage() {
                 provider: modelSettings.provider,
                 lightModel: modelSettings.lightModel,
                 heavyModel: modelSettings.heavyModel,
+                scoutReasoning: modelSettings.scoutReasoning ?? null,
+                judgeReasoning: modelSettings.judgeReasoning ?? null,
               });
             }}
             style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
@@ -203,9 +205,47 @@ export function SettingsPage() {
               premiumHelp={intl.formatMessage({ id: 'aiModels.premium.help' })}
               onChange={(value) => {
                 setModelTouched(true);
-                setModelSettings(value);
+                setModelSettings({ ...modelSettings, ...value });
               }}
             />
+
+            {/* Scout Reasoning Level */}
+            <div>
+              <FieldLabel>{intl.formatMessage({ id: 'aiModels.scoutReasoning.label' })}</FieldLabel>
+              <select
+                aria-label={intl.formatMessage({ id: 'aiModels.scoutReasoning.label' })}
+                value={modelSettings.scoutReasoning}
+                onChange={(e) => {
+                  setModelTouched(true);
+                  setModelSettings({ ...modelSettings, scoutReasoning: e.target.value });
+                }}
+                style={{ ...inputStyle, cursor: 'pointer' }}
+              >
+                <option value="none">{intl.formatMessage({ id: 'aiModels.reasoning.none' })}</option>
+                <option value="low">{intl.formatMessage({ id: 'aiModels.reasoning.low' })}</option>
+                <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
+                <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
+              </select>
+            </div>
+
+            {/* Judge Reasoning Level */}
+            <div>
+              <FieldLabel>{intl.formatMessage({ id: 'aiModels.judgeReasoning.label' })}</FieldLabel>
+              <select
+                aria-label={intl.formatMessage({ id: 'aiModels.judgeReasoning.label' })}
+                value={modelSettings.judgeReasoning}
+                onChange={(e) => {
+                  setModelTouched(true);
+                  setModelSettings({ ...modelSettings, judgeReasoning: e.target.value });
+                }}
+                style={{ ...inputStyle, cursor: 'pointer' }}
+              >
+                <option value="none">{intl.formatMessage({ id: 'aiModels.reasoning.none' })}</option>
+                <option value="low">{intl.formatMessage({ id: 'aiModels.reasoning.low' })}</option>
+                <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
+                <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
+              </select>
+            </div>
 
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <Button variant="primary" type="submit" disabled={modelSaveDisabled}>
