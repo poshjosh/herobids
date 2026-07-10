@@ -6,6 +6,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- LLM reasoning-mode controls: users can now set scout/judge reasoning levels (none/low/medium/high) in User Settings and per-agent\n  - Provider layer modernised to use unified reasoning parameter (OpenRouter/Anthropic standard)\n  - Model-aware mapping: effort-based for Fable 5/Sonnet 5/Opus 4.7+, token-budget for legacy Claude\n  - Reasoning level dropdowns in Settings, Agent Create/Edit, and Runtime Policy section\n  - Reasoning levels stored as runtime policy overrides with style-based defaults\n  - Operator-configurable ceilings (scoutReasoningMax, judgeReasoningMax)
+
 ## v0.0.17 - 2026-07-10
 
 ### Fixed
