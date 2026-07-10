@@ -6,7 +6,7 @@ import type { Database } from '@herobids/db';
 import { users } from '@herobids/db';
 import { callLlmProvider } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml, AgentRuntimeConfig } from '@herobids/domain';
-import { normalizePersistedAiModelConfig } from '@herobids/domain';
+import { normalizePersistedAiModelConfig, ReasoningLevelSchema } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { getAvailableProviders, getProviderCatalogEntry, makeCatalogContext, revalidatePersistedSelection, validateAiModelSelection } from '../llm-model-catalog.js';
 
@@ -38,12 +38,16 @@ const AiModelConfigSchema = z.object({
   provider: z.string().min(1),
   lightModel: z.string().min(1),
   heavyModel: z.string().min(1),
+  scoutReasoning: ReasoningLevelSchema.nullable().optional(),
+  judgeReasoning: ReasoningLevelSchema.nullable().optional(),
 });
 
 const ClearedAiModelConfigSchema = z.object({
   provider: z.null(),
   lightModel: z.null(),
   heavyModel: z.null(),
+  scoutReasoning: z.null().optional(),
+  judgeReasoning: z.null().optional(),
 });
 
 const AiModelPatchSchema = z.union([AiModelConfigSchema, ClearedAiModelConfigSchema]);

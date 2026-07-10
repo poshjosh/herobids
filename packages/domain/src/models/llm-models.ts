@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ReasoningLevelSchema, type ReasoningLevel } from '../config/schema.js';
 
 // ── Provider Registry (single source of truth) ──────────────────────────────
 
@@ -187,24 +188,32 @@ const CurrentAiModelConfigSchema = z.object({
   provider: z.string().min(1),
   lightModel: z.string().min(1),
   heavyModel: z.string().min(1),
+  scoutReasoning: ReasoningLevelSchema.nullable().optional(),
+  judgeReasoning: ReasoningLevelSchema.nullable().optional(),
 });
 
 const ClearedAiModelConfigSchema = z.object({
   provider: z.null(),
   lightModel: z.null(),
   heavyModel: z.null(),
+  scoutReasoning: z.null().optional(),
+  judgeReasoning: z.null().optional(),
 });
 
 export interface LlmModelSelection {
   provider: string;
   lightModel: string;
   heavyModel: string;
+  scoutReasoning?: ReasoningLevel | null;
+  judgeReasoning?: ReasoningLevel | null;
 }
 
 export interface PersistedAiModelConfig {
   provider: string;
   lightModel: string;
   heavyModel: string;
+  scoutReasoning?: ReasoningLevel | null;
+  judgeReasoning?: ReasoningLevel | null;
 }
 
 export function validateLlmModelSelection(
