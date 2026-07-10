@@ -617,14 +617,12 @@ const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appCo
 // Provider selection happens inside the factory; index.ts no longer
 // imports a concrete adapter directly.
 //
-// TODO(workstream-4): once the config schema gains a `provider` field
-// and `alerts.email.resend` / `alerts.email.ses` sub-objects, map those
-// here instead of flattening legacy Resend fields.
+// TODO(workstream-4): once the config schema gains `alerts.email.provider`
+// and `alerts.email.ses.*` fields, map those here.
 const workerEmailConfig: EmailClientConfig = {
   fromEmail: appConfig.alerts.email.fromEmail,
   replyToEmail: appConfig.alerts.email.replyToEmail,
   timeoutMs: appConfig.alerts.email.timeoutMs,
-  resend: { apiKey: appConfig.alerts.email.apiKey },
 };
 const workerEmail = createEmailClient(workerEmailConfig);
 

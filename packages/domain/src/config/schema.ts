@@ -491,9 +491,9 @@ export const AlertsConfigSchema = z.object({
     channels: z.array(TelegramChannelConfigSchema).default([]),
   }).default({}),
   email: z.object({
-    /** Resend API key — override: RESEND_API_KEY */
+    /** Deprecated — formerly Resend API key. Retained for schema compat; no runtime effect. */
     apiKey: z.string().default(''),
-    /** Sender email address (must be verified in Resend) */
+    /** Sender email address for outbound delivery. */
     fromEmail: z.string().default(''),
     /** Optional reply-to address */
     replyToEmail: z.string().optional(),

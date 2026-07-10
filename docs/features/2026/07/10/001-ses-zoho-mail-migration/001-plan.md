@@ -138,7 +138,7 @@ This migration should document and assume:
 
 ---
 
-## 2. [PENDING] Add SES adapter and tests
+## 2. [DONE] Add SES adapter and tests
 
 ### Changes
 
@@ -314,6 +314,12 @@ This is documentation/runbook work, not application runtime code.
 - **L1 (LOW):** `send()` method uses per-request `AbortController` instead of SDK-native `requestTimeout`. Consider passing `requestHandler: { requestTimeout }` to `SESv2Client` constructor for simplicity.
 - **L2 (LOW):** Broad `message.includes('not verified')` fallback in misconfigured classification could theoretically match non-SES errors. Monitor in production; fine for now.
 - **L3 (LOW):** Consider adding an integration/smoke test that sends a real email through SES using real credentials. Deferred to Workstream 6 validation.
+
+### [Workstream 3] Remove Resend code
+
+- **M1 (MEDIUM):** `config/default.yaml` still has `apiKey` field with deprecation comment. Targeted for removal in Workstream 4.
+- **L1 (LOW):** `.env` (gitignored) still contains `RESEND_API_KEY=re_...`. Operators will replace in Workstream 4.
+- **L2 (LOW):** `docs/features/2026/07/08/004-orchestration/003-cluster-safe-connectivity.md` references `RESEND_API_KEY`. Targeted by Workstream 4.
 
 ### Regenerate
 

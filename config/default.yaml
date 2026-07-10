@@ -630,9 +630,9 @@ alerts:
     # webhookUrl: "https://your-public-host/api/telegram/webhook"  # override: TELEGRAM_WEBHOOK_URL
     channels: []                    # configured via env-specific yaml
   email:
-    apiKey: ""                      # Resend API key — override: RESEND_API_KEY
-    fromEmail: ""                   # sender address (must be verified in Resend) — override: RESEND_FROM_EMAIL
-    replyToEmail: ""                # optional reply-to address — override: RESEND_REPLY_TO_EMAIL
+    apiKey: ""                      # deprecated — formerly Resend API key, no longer used
+    fromEmail: ""                   # sender address (must be verified in SES)
+    replyToEmail: ""                # optional reply-to address
     timeoutMs: 10000                # request timeout in ms
 
 # Authentication — Google OAuth + JWT sessions.
