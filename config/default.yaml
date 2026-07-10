@@ -630,10 +630,14 @@ alerts:
     # webhookUrl: "https://your-public-host/api/telegram/webhook"  # override: TELEGRAM_WEBHOOK_URL
     channels: []                    # configured via env-specific yaml
   email:
+    # provider: ses               # outbound provider — override: EMAIL_PROVIDER
     apiKey: ""                      # deprecated — formerly Resend API key, no longer used
-    fromEmail: ""                   # sender address (must be verified in SES)
-    replyToEmail: ""                # optional reply-to address
-    timeoutMs: 10000                # request timeout in ms
+    fromEmail: ""                   # sender address (must be verified in SES) — override: EMAIL_FROM_EMAIL
+    replyToEmail: ""                # optional reply-to address — override: EMAIL_REPLY_TO_EMAIL
+    timeoutMs: 10000                # request timeout in ms — override: EMAIL_TIMEOUT_MS
+    ses:
+      region: us-east-1             # AWS region — override: AWS_REGION
+      # configurationSetName: ""    # optional config set — override: SES_CONFIGURATION_SET_NAME
 
 # Authentication — Google OAuth + JWT sessions.
 auth:

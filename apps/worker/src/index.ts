@@ -614,15 +614,19 @@ if (workerTelegram && appConfig.alerts.telegram.webhookUrl) {
 const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined);
 
 // Email client for agent send_message email fanout — disabled by default.
-// Provider selection happens inside the factory; index.ts no longer
-// imports a concrete adapter directly.
-//
-// TODO(workstream-4): once the config schema gains `alerts.email.provider`
-// and `alerts.email.ses.*` fields, map those here.
+// Provider selection happens inside the factory; index.ts maps operator
+// config to the provider-neutral EmailClientConfig.
 const workerEmailConfig: EmailClientConfig = {
+  provider: appConfig.alerts.email.provider as 'ses' | undefined,
   fromEmail: appConfig.alerts.email.fromEmail,
   replyToEmail: appConfig.alerts.email.replyToEmail,
   timeoutMs: appConfig.alerts.email.timeoutMs,
+  ses: {
+    region: appConfig.alerts.email.ses.region,
+    accessKeyId: process.env['AWS_ACCESS_KEY_ID'] ?? '',
+    secretAccessKey: process.env['AWS_SECRET_ACCESS_KEY'] ?? '',
+    configurationSetName: appConfig.alerts.email.ses.configurationSetName,
+  },
 };
 const workerEmail = createEmailClient(workerEmailConfig);
 

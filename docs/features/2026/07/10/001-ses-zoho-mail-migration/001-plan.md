@@ -174,7 +174,7 @@ Reason:
 
 ---
 
-## 3. [PENDING] Remove Resend code completely
+## 3. [DONE] Remove Resend code completely
 
 ### Changes
 

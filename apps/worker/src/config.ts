@@ -55,7 +55,13 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   TELEGRAM_BOT_TOKEN: { path: 'alerts.telegram.botToken', type: 'string' },
   TELEGRAM_WEBHOOK_SECRET: { path: 'alerts.telegram.webhookSecret', type: 'string' },
   TELEGRAM_WEBHOOK_URL: { path: 'alerts.telegram.webhookUrl', type: 'string' },
-  // Email — outbound provider (SES). Env overrides added in workstream 4.
+  // Email — outbound provider (SES)
+  EMAIL_PROVIDER: { path: 'alerts.email.provider', type: 'string' },
+  EMAIL_FROM_EMAIL: { path: 'alerts.email.fromEmail', type: 'string' },
+  EMAIL_REPLY_TO_EMAIL: { path: 'alerts.email.replyToEmail', type: 'string' },
+  EMAIL_TIMEOUT_MS: { path: 'alerts.email.timeoutMs', type: 'number' },
+  AWS_REGION: { path: 'alerts.email.ses.region', type: 'string' },
+  SES_CONFIGURATION_SET_NAME: { path: 'alerts.email.ses.configurationSetName', type: 'string' },
   // Market data providers
   BIRDEYE_API_KEY: { path: 'marketData.birdeye.apiKey', type: 'string' },
   COINMARKETCAP_API_KEY: { path: 'marketData.coinMarketCap.apiKey', type: 'string' },

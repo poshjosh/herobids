@@ -70,7 +70,7 @@ These secrets are used by the worker/API and must not be exposed to agent contai
 | `AUTH_JWT_SECRET` | JWT signing key — agent has no auth responsibility |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth credentials |
 | `TELEGRAM_BOT_TOKEN` | Alerting bot — agent should not send alerts |
-| `RESEND_API_KEY` | Email sending credentials |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | SES email sending credentials |
 | `BILLING_PRIMARY_PROVIDER` secrets (Stripe, Creem keys) | Payment processing |
 | `BIRDEYE_API_KEY` | Market data API — worker proxies market data for agents |
 | `COINMARKETCAP_API_KEY` | Market data API — same reason |

@@ -145,6 +145,23 @@ billing:
     expect(config.database.url).toBe('postgres://override-host/overridden');
   });
 
+  it('applies SES email env overrides', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+    process.env['EMAIL_PROVIDER'] = 'ses';
+    process.env['EMAIL_FROM_EMAIL'] = 'noreply@openaidom.com';
+    process.env['EMAIL_REPLY_TO_EMAIL'] = 'support@openaidom.com';
+    process.env['EMAIL_TIMEOUT_MS'] = '20000';
+    process.env['AWS_REGION'] = 'eu-west-1';
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.alerts.email.provider).toBe('ses');
+    expect(config.alerts.email.fromEmail).toBe('noreply@openaidom.com');
+    expect(config.alerts.email.replyToEmail).toBe('support@openaidom.com');
+    expect(config.alerts.email.timeoutMs).toBe(20000);
+    expect(config.alerts.email.ses.region).toBe('eu-west-1');
+  });
+
   it('applies BIRDEYE_API_KEY env override without clobbering YAML defaults', () => {
     writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + MINIMAL_MARKET_DATA_YAML);
     process.env['BIRDEYE_API_KEY'] = 'birdeye-env-key';

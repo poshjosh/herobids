@@ -491,14 +491,24 @@ export const AlertsConfigSchema = z.object({
     channels: z.array(TelegramChannelConfigSchema).default([]),
   }).default({}),
   email: z.object({
+    /** Outbound email provider. Only 'ses' is supported. Override: EMAIL_PROVIDER */
+    provider: z.enum(['ses']).optional(),
     /** Deprecated — formerly Resend API key. Retained for schema compat; no runtime effect. */
     apiKey: z.string().default(''),
-    /** Sender email address for outbound delivery. */
+    /** Sender email address for outbound delivery. Override: EMAIL_FROM_EMAIL */
     fromEmail: z.string().default(''),
-    /** Optional reply-to address */
+    /** Optional reply-to address. Override: EMAIL_REPLY_TO_EMAIL */
     replyToEmail: z.string().optional(),
-    /** Request timeout in ms */
+    /** Request timeout in ms. Override: EMAIL_TIMEOUT_MS */
     timeoutMs: z.number().int().min(1000).default(10_000),
+    /** SES-specific configuration. Credentials are sourced from the standard
+     *  AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars. */
+    ses: z.object({
+      /** AWS region for SES endpoint. Override: AWS_REGION */
+      region: z.string().default('us-east-1'),
+      /** Optional SES configuration set name. Override: SES_CONFIGURATION_SET_NAME */
+      configurationSetName: z.string().optional(),
+    }).default({}),
   }).default({}),
 });
 
