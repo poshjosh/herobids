@@ -116,7 +116,7 @@ This migration should document and assume:
 
 ## Implementation Workstreams
 
-## 1. [PENDING] Replace Resend runtime wiring with provider-based composition
+## 1. [DONE] Replace Resend runtime wiring with provider-based composition
 
 ### Changes
 
@@ -308,6 +308,12 @@ This is documentation/runbook work, not application runtime code.
 - **M1 (MEDIUM):** Factory returns `undefined` silently when Resend is unconfigured — no startup diagnostic. Add structured logging at factory-creation time when config is insufficient (e.g., `logger.warn`) so operators get immediate feedback.
 - **M2 (MEDIUM):** `EmailClientConfig.resend.apiKey` is optional-inside-optional (`resend?: { apiKey?: string }`), allowing `resend: {}` to type-check. Tighten to require `apiKey` when `resend` block is present.
 - **L1 (LOW):** Config schema comments in `packages/domain/src/config/schema.ts` still reference "Resend" and `RESEND_API_KEY`. Deferred to Workstream 4 per plan.
+
+### [Workstream 2] SES adapter and tests
+
+- **L1 (LOW):** `send()` method uses per-request `AbortController` instead of SDK-native `requestTimeout`. Consider passing `requestHandler: { requestTimeout }` to `SESv2Client` constructor for simplicity.
+- **L2 (LOW):** Broad `message.includes('not verified')` fallback in misconfigured classification could theoretically match non-SES errors. Monitor in production; fine for now.
+- **L3 (LOW):** Consider adding an integration/smoke test that sends a real email through SES using real credentials. Deferred to Workstream 6 validation.
 
 ### Regenerate
 

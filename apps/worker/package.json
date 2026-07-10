@@ -10,6 +10,7 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1084.0",
     "@herobids/backtesting": "workspace:*",
     "@herobids/db": "workspace:*",
     "@herobids/domain": "workspace:*",

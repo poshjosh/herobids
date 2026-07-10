@@ -8,3 +8,5 @@ export type { PlatformAlertContext, PlatformAlertEvent } from './platform-alert-
 export type { EmailClient, EmailMessage, EmailSendResult } from './email-client.js';
 export { createEmailClient } from './create-email-client.js';
 export type { EmailClientConfig } from './create-email-client.js';
+export { SesEmailClient } from './ses-email-client.js';
+export type { SesEmailClientConfig } from './ses-email-client.js';

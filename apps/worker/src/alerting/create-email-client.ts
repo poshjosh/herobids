@@ -1,4 +1,5 @@
 import { ResendEmailClient } from './resend-email-client.js';
+import { SesEmailClient } from './ses-email-client.js';
 import type { EmailClient } from './email-client.js';
 
 // ---------------------------------------------------------------------------
@@ -40,9 +41,23 @@ export interface EmailClientConfig {
  * Returns undefined when the provider is not configured (email is disabled).
  */
 export function createEmailClient(config: EmailClientConfig): EmailClient | undefined {
-  // SES path — populated in workstream 2 (Add SES adapter and tests).
+  // SES path
   if (config.provider === 'ses') {
-    return undefined; // TODO: wire SesEmailClient in workstream 2
+    const ses = config.ses;
+    if (!ses?.region || !ses?.accessKeyId || !ses?.secretAccessKey || !config.fromEmail) {
+      return undefined; // SES not fully configured — email disabled
+    }
+    return new SesEmailClient(
+      config.fromEmail,
+      config.replyToEmail,
+      {
+        region: ses.region,
+        accessKeyId: ses.accessKeyId,
+        secretAccessKey: ses.secretAccessKey,
+        configurationSetName: ses.configurationSetName,
+        timeoutMs: config.timeoutMs,
+      },
+    );
   }
 
   // Resend path — gated on explicit provider selection (not implicit fallback).
