@@ -33,7 +33,8 @@ import { resolveSwapAssetsFromBinding, resolveSwapNetwork } from './resolve-swap
 import { resolveBotStartupContext, BotStartupError } from './startup-context.js';
 import { buildPublicStreamConnectors, createScopedStreamPoolHandle } from './public-stream-routing.js';
 import { AlertDispatcher } from './alerting/index.js';
-import { TelegramClient, forceReply, PlatformAlertService, ResendEmailClient } from './alerting/index.js';
+import { TelegramClient, forceReply, PlatformAlertService, createEmailClient } from './alerting/index.js';
+import type { EmailClientConfig } from './alerting/index.js';
 import {
   AgentMessageBroker,
   AgentDecisionHandler,
@@ -613,16 +614,19 @@ if (workerTelegram && appConfig.alerts.telegram.webhookUrl) {
 const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined);
 
 // Email client for agent send_message email fanout — disabled by default.
-const workerEmail = appConfig.alerts.email.apiKey && appConfig.alerts.email.fromEmail
-  ? new ResendEmailClient(
-      appConfig.alerts.email.apiKey,
-      appConfig.alerts.email.fromEmail,
-      {
-        replyToEmail: appConfig.alerts.email.replyToEmail,
-        timeoutMs: appConfig.alerts.email.timeoutMs,
-      },
-    )
-  : undefined;
+// Provider selection happens inside the factory; index.ts no longer
+// imports a concrete adapter directly.
+//
+// TODO(workstream-4): once the config schema gains a `provider` field
+// and `alerts.email.resend` / `alerts.email.ses` sub-objects, map those
+// here instead of flattening legacy Resend fields.
+const workerEmailConfig: EmailClientConfig = {
+  fromEmail: appConfig.alerts.email.fromEmail,
+  replyToEmail: appConfig.alerts.email.replyToEmail,
+  timeoutMs: appConfig.alerts.email.timeoutMs,
+  resend: { apiKey: appConfig.alerts.email.apiKey },
+};
+const workerEmail = createEmailClient(workerEmailConfig);
 
 async function sendSessionStartedTelegramAnchor(agentId: string, sessionId: string): Promise<void> {
   if (!workerTelegram) {
