@@ -10,11 +10,19 @@ import {
   TechnicalConfigSchema,
   AgentRuntimePolicyOverridesSchema,
   AgentStyleSchema,
+  ReasoningLevelSchema,
   RUNTIME_POLICY_CEILINGS,
   AGENT_STYLE_RUNTIME_DEFAULTS,
   resolveAgentRuntimePolicy,
   type AgentStyleValue,
+  type ReasoningLevel,
 } from './schema.js';
+
+// ── Helpers for reasoning-level ordering (mirrors schema.ts internals for testing) ──
+const REASONING_LEVEL_ORDER = ['none', 'low', 'medium', 'high'] as const;
+function reasoningLevelIndex(level: string): number {
+  return REASONING_LEVEL_ORDER.indexOf(level as typeof REASONING_LEVEL_ORDER[number]);
+}
 
 describe('UsageBillingConfigSchema', () => {
   it('rejects unknown provider keys in top-up mappings', () => {
@@ -887,6 +895,13 @@ describe('AGENT_STYLE_RUNTIME_DEFAULTS', () => {
       expect(d.judgeMaxTurns).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.judgeMaxTurns);
       expect(d.maxHistoryTokens).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.maxHistoryTokens);
       expect(d.maxHoldDurationMs).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.maxHoldDurationMs);
+      // Reasoning-level ceilings
+      expect(reasoningLevelIndex(d.scoutReasoning)).toBeLessThanOrEqual(
+        reasoningLevelIndex(RUNTIME_POLICY_CEILINGS.scoutReasoningMax),
+      );
+      expect(reasoningLevelIndex(d.judgeReasoning)).toBeLessThanOrEqual(
+        reasoningLevelIndex(RUNTIME_POLICY_CEILINGS.judgeReasoningMax),
+      );
     }
   });
 });
@@ -946,5 +961,154 @@ describe('resolveAgentRuntimePolicy', () => {
     const resolved = resolveAgentRuntimePolicy('careful', {});
     expect(resolved.scoutMaxTurns).toBe(10);
     expect(resolved.maxHoldDurationMs).toBe(27_000_000);  // careful: 5 × tick interval
+  });
+});
+
+// ── ReasoningLevel ──────────────────────────────────────────────────────────
+
+describe('ReasoningLevelSchema', () => {
+  it('accepts all valid reasoning levels', () => {
+    const levels: ReasoningLevel[] = ['none', 'low', 'medium', 'high'];
+    for (const level of levels) {
+      expect(ReasoningLevelSchema.safeParse(level).success).toBe(true);
+    }
+  });
+
+  it('rejects invalid reasoning levels', () => {
+    expect(ReasoningLevelSchema.safeParse('off').success).toBe(false);
+    expect(ReasoningLevelSchema.safeParse('extreme').success).toBe(false);
+    expect(ReasoningLevelSchema.safeParse('').success).toBe(false);
+    expect(ReasoningLevelSchema.safeParse(0).success).toBe(false);
+    expect(ReasoningLevelSchema.safeParse(null).success).toBe(false);
+  });
+});
+
+describe('AgentRuntimePolicyOverridesSchema — reasoning', () => {
+  it('accepts scoutReasoning and judgeReasoning as nullable optional', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({
+      scoutReasoning: 'low',
+      judgeReasoning: 'high',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.scoutReasoning).toBe('low');
+      expect(result.data.judgeReasoning).toBe('high');
+    }
+  });
+
+  // ── Operator ceiling enforcement ──
+
+  it('rejects scoutReasoning high (exceeds medium ceiling)', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({
+      scoutReasoning: 'high',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts scoutReasoning medium (at ceiling)', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({
+      scoutReasoning: 'medium',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts judgeReasoning high (at ceiling)', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({
+      judgeReasoning: 'high',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  // ── end ceiling enforcement ──
+
+  it('accepts null scoutReasoning and judgeReasoning', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({
+      scoutReasoning: null,
+      judgeReasoning: null,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.scoutReasoning).toBeNull();
+      expect(result.data.judgeReasoning).toBeNull();
+    }
+  });
+
+  it('defaults to undefined when not provided', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.scoutReasoning).toBeUndefined();
+      expect(result.data.judgeReasoning).toBeUndefined();
+    }
+  });
+
+  it('rejects invalid reasoning level', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({
+      scoutReasoning: 'extreme',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('AGENT_STYLE_RUNTIME_DEFAULTS — reasoning', () => {
+  it('careful style has scoutReasoning=none, judgeReasoning=low', () => {
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.careful.scoutReasoning).toBe('none');
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.careful.judgeReasoning).toBe('low');
+  });
+
+  it('balanced style has scoutReasoning=none, judgeReasoning=medium', () => {
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.scoutReasoning).toBe('none');
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.balanced.judgeReasoning).toBe('medium');
+  });
+
+  it('bold style has scoutReasoning=low, judgeReasoning=high', () => {
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.bold.scoutReasoning).toBe('low');
+    expect(AGENT_STYLE_RUNTIME_DEFAULTS.bold.judgeReasoning).toBe('high');
+  });
+});
+
+describe('resolveAgentRuntimePolicy — reasoning', () => {
+  it('returns style default when no overrides', () => {
+    const resolved = resolveAgentRuntimePolicy('careful', null);
+    expect(resolved.scoutReasoning).toBe('none');
+    expect(resolved.judgeReasoning).toBe('low');
+  });
+
+  it('null override falls back to style default', () => {
+    const resolved = resolveAgentRuntimePolicy('balanced', {
+      scoutReasoning: null,
+      judgeReasoning: null,
+    });
+    expect(resolved.scoutReasoning).toBe('none'); // balanced default
+    expect(resolved.judgeReasoning).toBe('medium'); // balanced default
+  });
+
+  it('undefined override falls back to style default', () => {
+    const resolved = resolveAgentRuntimePolicy('bold', {});
+    expect(resolved.scoutReasoning).toBe('low'); // bold default
+    expect(resolved.judgeReasoning).toBe('high'); // bold default
+  });
+
+  it('explicit override wins over style default', () => {
+    const resolved = resolveAgentRuntimePolicy('careful', {
+      scoutReasoning: 'medium',
+      judgeReasoning: 'high',
+    });
+    expect(resolved.scoutReasoning).toBe('medium');
+    expect(resolved.judgeReasoning).toBe('high');
+  });
+
+  it('partial override: one explicit, one style default', () => {
+    const resolved = resolveAgentRuntimePolicy('balanced', {
+      judgeReasoning: 'high',
+    });
+    expect(resolved.scoutReasoning).toBe('none'); // balanced default
+    expect(resolved.judgeReasoning).toBe('high'); // override
+  });
+
+  it('falls back to balanced reasoning defaults when style is invalid', () => {
+    const resolved = resolveAgentRuntimePolicy('aggressive', null);
+    expect(resolved.scoutReasoning).toBe('none'); // balanced default
+    expect(resolved.judgeReasoning).toBe('medium'); // balanced default
   });
 });

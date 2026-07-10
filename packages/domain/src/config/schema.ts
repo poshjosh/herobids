@@ -185,7 +185,9 @@ export const TRADING_SESSION_NAMES = [
 export type TradingSessionName = typeof TRADING_SESSION_NAMES[number];
 export const TradingSessionNameSchema = z.enum(TRADING_SESSION_NAMES);
 
-/** Operator ceilings — the absolute max any agent can be configured with. */
+/** Operator ceilings — the absolute max any agent can be configured with.
+ *  For ordered string enums like reasoning levels, the ceiling caps the position
+ *  in the enum array (e.g. scoutReasoningMax: 'medium' allows 'none', 'low', 'medium' but not 'high'). */
 export const RUNTIME_POLICY_CEILINGS = {
   scoutMaxTurns: 500,
   judgeMaxTurns: 1_000,
@@ -193,6 +195,8 @@ export const RUNTIME_POLICY_CEILINGS = {
   judgeMaxTokens: 16_384,
   lightThinkingTokens: 8_192,
   deepThinkingTokens: 32_768,
+  scoutReasoningMax: 'medium' as const,
+  judgeReasoningMax: 'high' as const,
   maxHistoryMessages: 80,
   maxHistoryTokens: 160_000,
   maxRecentToolMessages: 24,
@@ -203,6 +207,15 @@ export const RUNTIME_POLICY_CEILINGS = {
   toolResultMaxStaleChars: 2_000,
   maxHoldDurationMs: 86_400_000, // 24 hours
 } as const;
+
+const REASONING_LEVEL_ORDER = ['none', 'low', 'medium', 'high'] as const;
+function reasoningLevelIndex(level: string): number {
+  return REASONING_LEVEL_ORDER.indexOf(level as typeof REASONING_LEVEL_ORDER[number]);
+}
+
+/** Coarse reasoning level — backend maps to provider-specific wire format. */
+export const ReasoningLevelSchema = z.enum(['none', 'low', 'medium', 'high']);
+export type ReasoningLevel = z.infer<typeof ReasoningLevelSchema>;
 
 /**
  * Per-agent overrides for runtime policy fields.
@@ -228,6 +241,22 @@ export const AgentRuntimePolicyOverridesSchema = z.object({
   toolResultMaxStaleChars: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.toolResultMaxStaleChars).nullable().optional(),
   maxHoldDurationMs: z.number().int().min(0).max(RUNTIME_POLICY_CEILINGS.maxHoldDurationMs).nullable().optional(),
   tradingSessions: z.array(TradingSessionNameSchema).nullable().optional(),
+  scoutReasoning: ReasoningLevelSchema.nullable().optional()
+    .refine(
+      (val) => {
+        if (val === undefined || val === null) return true;
+        return reasoningLevelIndex(val) <= reasoningLevelIndex(RUNTIME_POLICY_CEILINGS.scoutReasoningMax);
+      },
+      { message: `scoutReasoning must not exceed operator ceiling (${RUNTIME_POLICY_CEILINGS.scoutReasoningMax})` },
+    ),
+  judgeReasoning: ReasoningLevelSchema.nullable().optional()
+    .refine(
+      (val) => {
+        if (val === undefined || val === null) return true;
+        return reasoningLevelIndex(val) <= reasoningLevelIndex(RUNTIME_POLICY_CEILINGS.judgeReasoningMax);
+      },
+      { message: `judgeReasoning must not exceed operator ceiling (${RUNTIME_POLICY_CEILINGS.judgeReasoningMax})` },
+    ),
 }).default({});
 
 export type AgentRuntimePolicyOverrides = z.infer<typeof AgentRuntimePolicyOverridesSchema>;
@@ -259,6 +288,8 @@ export interface ResolvedAgentRuntimePolicy {
   toolResultMaxStaleChars: number;
   maxHoldDurationMs: number | undefined;
   tradingSessions: TradingSessionName[] | null;
+  scoutReasoning: ReasoningLevel;
+  judgeReasoning: ReasoningLevel;
 }
 
 /**
@@ -278,6 +309,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     judgeMaxTokens: 2_048,
     lightThinkingTokens: 1_024,
     deepThinkingTokens: 4_096,
+    scoutReasoning: 'none',
+    judgeReasoning: 'low',
     allowedHoursUtc: [14, 15, 16, 17, 18, 19, 20],
     weekendPause: true,
     tradingSessions: null,
@@ -302,6 +335,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     judgeMaxTokens: 4_096,
     lightThinkingTokens: 2_048,
     deepThinkingTokens: 10_240,
+    scoutReasoning: 'none',
+    judgeReasoning: 'medium',
     allowedHoursUtc: [],
     weekendPause: true,
     tradingSessions: null,
@@ -326,6 +361,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     judgeMaxTokens: 8_192,
     lightThinkingTokens: 4_096,
     deepThinkingTokens: 20_480,
+    scoutReasoning: 'low',
+    judgeReasoning: 'high',
     allowedHoursUtc: [],
     weekendPause: false,
     tradingSessions: null,
@@ -376,6 +413,8 @@ export function resolveAgentRuntimePolicy(
     toolResultMaxStaleChars: o.toolResultMaxStaleChars ?? defaults.toolResultMaxStaleChars,
     maxHoldDurationMs: o.maxHoldDurationMs ?? defaults.maxHoldDurationMs,
     tradingSessions: o.tradingSessions ?? defaults.tradingSessions,
+    scoutReasoning: o.scoutReasoning ?? defaults.scoutReasoning,
+    judgeReasoning: o.judgeReasoning ?? defaults.judgeReasoning,
   };
 }
 
