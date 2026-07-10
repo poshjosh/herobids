@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, auth as authApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, type SkillPresetId } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
@@ -58,6 +58,10 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const aiSettingsQuery = useQuery({
     queryKey: ['ai', 'settings'],
     queryFn: () => aiApi.settings(),
+  });
+  const meQuery = useQuery({
+    queryKey: ['me'],
+    queryFn: () => authApi.me(),
   });
   const selectableSkills = listSelectableSkills(skillsQuery.data?.skills ?? []);
   const selectableSkillIds = new Set(selectableSkills.map((skill) => skill.id));
@@ -313,6 +317,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         hasTradingCapability,
         connectionIds: (form.connectionIds ?? []).length > 0 ? form.connectionIds : undefined,
         telegramChatId: form.telegramChatId,
+        emailDelivery: form.emailDelivery,
         costPreset: form.costPreset,
         dailySpendBudgetUsd: form.dailySpendBudgetUsd,
         dailyLossLimit: form.dailyLossLimit,
@@ -544,6 +549,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             requiresTradingSetup={requiresTradingSetup}
             isAdmin={isAdmin ?? false}
             agentStyle={style}
+            accountEmail={meQuery.data?.email ?? null}
             selectableSkills={selectableSkills}
             skillsLoading={skillsQuery.isLoading}
             skillsError={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}

@@ -32,6 +32,8 @@ export interface AgentFormState {
 
   // Notifications
   telegramChatId: string;
+  /** Tri-state email delivery override: inherit account default, always allow, or always disable. */
+  emailDelivery: 'inherit' | 'allow' | 'disable';
 
   // AI cost controls
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
@@ -108,6 +110,9 @@ export function agentToFormState(agent: Agent): AgentFormState {
     executionMode,
     capital: agent.capital ?? '',
     telegramChatId: agent.telegramChatId ?? '',
+    emailDelivery: agent.notificationPolicy?.sendMessage?.email != null
+      ? (agent.notificationPolicy.sendMessage.email.enabled ? 'allow' : 'disable')
+      : 'inherit',
     costPreset,
     dailySpendBudgetUsd:
       agent.dailySpendBudgetUsd != null ? String(agent.dailySpendBudgetUsd) : '',
@@ -154,6 +159,7 @@ export function intentToFormState(intent: {
   executionMode: 'paper' | 'shadow' | 'live' | '';
   capital: string;
   telegramChatId: string;
+  emailDelivery: 'inherit' | 'allow' | 'disable';
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
   tickIntervalMins: string;
@@ -179,6 +185,7 @@ export function intentToFormState(intent: {
     executionMode,
     capital,
     telegramChatId,
+    emailDelivery,
     costPreset,
     dailySpendBudgetUsd,
     tickIntervalMins,
@@ -204,6 +211,7 @@ export function intentToFormState(intent: {
     executionMode,
     capital,
     telegramChatId,
+    emailDelivery,
     costPreset,
     dailySpendBudgetUsd,
     tickIntervalMins,

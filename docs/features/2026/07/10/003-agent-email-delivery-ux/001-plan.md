@@ -183,7 +183,7 @@ This keeps `messageClass` useful while removing the hidden coupling to transport
 
 ## Implementation Plan
 
-### Slice 1 — User preference storage and profile API [PENDING]
+### Slice 1 — User preference storage and profile API [DONE]
 
 Goal: add a user-level default for send-message email delivery.
 

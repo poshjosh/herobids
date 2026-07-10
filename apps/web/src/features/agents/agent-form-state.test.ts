@@ -82,3 +82,38 @@ describe('agentToFormState — strategyPreset hydration', () => {
     expect(form.strategyPreset).toBe('');
   });
 });
+
+describe('agentToFormState — emailDelivery hydration', () => {
+  it('defaults to "inherit" when notificationPolicy is null', () => {
+    const agent = makeAgent({ notificationPolicy: null });
+    expect(agentToFormState(agent).emailDelivery).toBe('inherit');
+  });
+
+  it('defaults to "inherit" when notificationPolicy is undefined', () => {
+    const agent = makeAgent({});
+    expect(agentToFormState(agent).emailDelivery).toBe('inherit');
+  });
+
+  it('defaults to "inherit" when notificationPolicy has no email key', () => {
+    const agent = makeAgent({ notificationPolicy: { sendMessage: {} } });
+    expect(agentToFormState(agent).emailDelivery).toBe('inherit');
+  });
+
+  it('resolves to "allow" when notificationPolicy email.enabled is true', () => {
+    const agent = makeAgent({
+      notificationPolicy: {
+        sendMessage: { email: { enabled: true, source: 'explicit_update' } },
+      },
+    });
+    expect(agentToFormState(agent).emailDelivery).toBe('allow');
+  });
+
+  it('resolves to "disable" when notificationPolicy email.enabled is false', () => {
+    const agent = makeAgent({
+      notificationPolicy: {
+        sendMessage: { email: { enabled: false, source: 'explicit_update' } },
+      },
+    });
+    expect(agentToFormState(agent).emailDelivery).toBe('disable');
+  });
+});

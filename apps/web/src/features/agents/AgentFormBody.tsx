@@ -114,6 +114,9 @@ export interface AgentFormBodyProps {
   computeBudgetSlot?: React.ReactNode;
   nameAutoHint?: React.ReactNode;
 
+  /** Account email shown read-only next to the email delivery control. */
+  accountEmail?: string | null;
+
   // Wake source subscriptions
   subscribedSources: string[];
   onSubscribedSourcesChange: (sources: string[]) => void;
@@ -268,6 +271,33 @@ export function AgentFormBody(props: AgentFormBodyProps) {
           onChange={(e) => props.onChange({ telegramChatId: e.target.value })}
           placeholder={intl.formatMessage({ id: 'agents.create.telegramChatId.placeholder' })}
         />
+      </div>
+
+      {/* Email delivery — tri-state override */}
+      <div style={fieldGap}>
+        <FieldLabel>
+          {intl.formatMessage({ id: 'agents.create.emailDelivery' })}
+        </FieldLabel>
+        <select
+          style={{ ...inputStyle, cursor: 'pointer' }}
+          value={props.value.emailDelivery}
+          onChange={(e) => props.onChange({ emailDelivery: e.target.value as 'inherit' | 'allow' | 'disable' })}
+        >
+          <option value="inherit">{intl.formatMessage({ id: 'agents.create.emailDelivery.inherit' })}</option>
+          <option value="allow">{intl.formatMessage({ id: 'agents.create.emailDelivery.allow' })}</option>
+          <option value="disable">{intl.formatMessage({ id: 'agents.create.emailDelivery.disable' })}</option>
+        </select>
+        {props.accountEmail && (
+          <div style={helperStyle}>
+            {intl.formatMessage({ id: 'agents.create.emailDelivery.help' })}{' '}
+            <span style={{ fontWeight: 500 }}>{props.accountEmail}</span>
+          </div>
+        )}
+        {!props.accountEmail && (
+          <div style={helperStyle}>
+            {intl.formatMessage({ id: 'agents.create.emailDelivery.helpNoEmail' })}
+          </div>
+        )}
       </div>
 
       {/* Name + auto-hint */}

@@ -35,6 +35,27 @@ function parseCooldownMsOrNull(value: string): number | null {
   return Math.round(Number.parseFloat(value) * 1000);
 }
 
+type AgentNotificationPolicy = {
+  sendMessage: {
+    email: {
+      enabled: boolean;
+      source: 'explicit_update';
+    };
+  };
+} | null;
+
+/** Maps the tri-state UI selection to an API notificationPolicy value. */
+function buildEmailDeliveryPolicy(emailDelivery: 'inherit' | 'allow' | 'disable' | undefined): AgentNotificationPolicy | undefined {
+  if (emailDelivery === 'allow') {
+    return { sendMessage: { email: { enabled: true, source: 'explicit_update' } } };
+  }
+  if (emailDelivery === 'disable') {
+    return { sendMessage: { email: { enabled: false, source: 'explicit_update' } } };
+  }
+  // 'inherit' and undefined both mean no override — omit from create, undefined → null (same as inherit) on update
+  return undefined;
+}
+
 export interface CreateAgentIntentPayloadInput {
   name: string;
   goal: string;
@@ -55,6 +76,7 @@ export interface CreateAgentIntentPayloadInput {
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
   telegramChatId: string;
+  emailDelivery?: 'inherit' | 'allow' | 'disable';
   tickIntervalMins: string;
   capital: string;
   dailyLossLimit: string;
@@ -83,6 +105,7 @@ export interface UpdateAgentPayloadInput {
   hasTradingCapability: boolean;
   connectionIds?: string[];
   telegramChatId: string;
+  emailDelivery: 'inherit' | 'allow' | 'disable';
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
   dailyLossLimit: string;
@@ -136,6 +159,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
   runtimePolicyOverrides?: RuntimePolicyOverrides | null;
   wakePreferences?: { subscribedSources?: string[] } | null;
+  notificationPolicy?: { sendMessage: { email: { enabled: boolean; source: 'explicit_update' } } } | null;
 } {
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'both';
@@ -144,6 +168,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   const subscribedSources = input.subscribedSources ?? [];
   const wakePreferences: { subscribedSources?: string[] } | undefined =
     subscribedSources.length > 0 ? { subscribedSources } : undefined;
+  const emailDeliveryPolicy = buildEmailDeliveryPolicy(input.emailDelivery);
 
   return {
     name: input.name.trim(),
@@ -159,6 +184,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.costPreset ? { costPreset: input.costPreset } : {}),
     ...(input.dailySpendBudgetUsd ? { dailySpendBudgetUsd: parseFloat(input.dailySpendBudgetUsd) } : {}),
     ...(input.telegramChatId.trim() ? { telegramChatId: input.telegramChatId.trim() } : {}),
+    ...(emailDeliveryPolicy !== undefined ? { notificationPolicy: emailDeliveryPolicy } : {}),
     ...(tickIntervalMs != null ? { tickIntervalMs } : {}),
     ...(input.capital.trim() ? { capital: input.capital.trim() } : {}),
     ...(input.dailyLossLimit?.trim() ? { dailyLossLimit: input.dailyLossLimit.trim() } : {}),
@@ -208,6 +234,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   style?: string | null;
   runtimePolicyOverrides?: RuntimePolicyOverrides | null;
   wakePreferences?: { subscribedSources?: string[] } | null;
+  notificationPolicy?: { sendMessage: { email: { enabled: boolean; source: 'explicit_update' } } } | null;
 } {
   const parsedTickInterval = input.preserveOriginalTickIntervalMs
     ? undefined
@@ -226,6 +253,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   const wakePreferences = input.subscribedSources !== undefined
     ? (input.subscribedSources.length > 0 ? { subscribedSources: input.subscribedSources } : { subscribedSources: ['watch_threshold'] })
     : undefined;
+  const emailDeliveryPolicy = buildEmailDeliveryPolicy(input.emailDelivery);
 
   return {
     name: input.name.trim(),
@@ -255,5 +283,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     ...(input.strategyPreset !== undefined ? { strategyPreset: input.strategyPreset } : {}),
     ...(input.runtimePolicyOverrides ? { runtimePolicyOverrides: input.runtimePolicyOverrides } : {}),
     ...(wakePreferences !== undefined ? { wakePreferences } : {}),
+    // 'inherit' → send null to clear any existing override; allow/disable → send explicit policy; undefined → null (same as inherit)
+    notificationPolicy: emailDeliveryPolicy ?? null,
   };
 }

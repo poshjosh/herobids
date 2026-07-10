@@ -934,6 +934,15 @@ export interface Agent {
   strategyPresetName: string | null;
   /** Per-agent wake source subscriptions. null/absent = all sources are delivered. */
   wakePreferences?: { subscribedSources?: string[] } | null;
+  /** Per-agent email delivery override. null = inherit user default. */
+  notificationPolicy?: {
+    sendMessage?: {
+      email?: {
+        enabled: boolean;
+        source: 'explicit_prompt' | 'explicit_update';
+      };
+    };
+  } | null;
   createdAt: string;
   updatedAt: string;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;

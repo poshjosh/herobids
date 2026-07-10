@@ -177,6 +177,7 @@ describe('agent payload builders', () => {
       capital: '',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
     })).toEqual({
       name: 'Momentum scout',
       prompt: 'Watch BTC and trade breakouts.',
@@ -198,6 +199,7 @@ describe('agent payload builders', () => {
       lightModel: null,
       heavyModel: null,
       technical: null,
+      notificationPolicy: null,
     });
   });
 
@@ -226,6 +228,7 @@ describe('agent payload builders', () => {
       capital: '',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
     }).tickIntervalMs).toBe(90_000);
   });
 
@@ -253,6 +256,7 @@ describe('agent payload builders', () => {
       capital: '',
       modelOverrideEnabled: true,
       modelForm: { provider: 'openai', lightModel: 'gpt-4.1-mini', heavyModel: 'gpt-4.1' },
+      emailDelivery: 'inherit',
     });
 
     expect(payload.name).toBe('Hybrid scout');
@@ -373,6 +377,7 @@ describe('agent payload builders', () => {
       capital: '',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
     })).toMatchObject({
       name: 'agent',
       prompt: 'trade',
@@ -405,6 +410,7 @@ describe('agent payload builders', () => {
       capital: '',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
     });
     expect(payload).not.toHaveProperty('connectionIds');
   });
@@ -432,6 +438,7 @@ describe('agent payload builders', () => {
       capital: '',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
     });
     expect(payload).not.toHaveProperty('connectionIds');
   });
@@ -460,6 +467,7 @@ describe('agent payload builders', () => {
       capital: '',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
     })).toMatchObject({
       name: 'Technical scout',
       prompt: '',
@@ -519,6 +527,7 @@ describe('agent payload builders', () => {
       capital: '',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
     })).toThrow('Invalid tick interval minutes input');
   });
 
@@ -601,6 +610,7 @@ describe('agent payload builders', () => {
       openPositionEscalationToJudgePolicy: 'never',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
     });
     expect(payload.openPositionEscalationToJudgePolicy).toBe('never');
   });
@@ -628,6 +638,7 @@ describe('agent payload builders', () => {
       capital: '',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
     });
     expect(payload).not.toHaveProperty('openPositionEscalationToJudgePolicy');
   });
@@ -710,6 +721,7 @@ describe('agent payload builders', () => {
       capital: '',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
       runtimePolicyOverrides: { maxHoldDurationMs: 900_000 },
     });
     expect(payload.runtimePolicyOverrides).toEqual({ maxHoldDurationMs: 900_000 });
@@ -738,10 +750,12 @@ describe('agent payload builders', () => {
       capital: '',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
     });
     expect(payload).not.toHaveProperty('runtimePolicyOverrides');
   });
 });
+
 
 describe('normalizeEscalationPolicy', () => {
   it('returns null for null', () => {
@@ -766,5 +780,104 @@ describe('normalizeEscalationPolicy', () => {
     expect(normalizeEscalationPolicy('sometimes')).toBeNull();
     expect(normalizeEscalationPolicy('NEVER')).toBeNull();
     expect(normalizeEscalationPolicy('unknown')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// emailDelivery mapping
+// ---------------------------------------------------------------------------
+
+const BASE_CREATE_INPUT = {
+  name: 'agent',
+  goal: 'do stuff',
+  capabilityMode: 'intelligence' as const,
+  technical: null,
+  skillIds: [],
+  hasBotManagementSkill: false,
+  requiresTradingSetup: false,
+  executionMode: 'paper' as const,
+  modelPayload: { inherits: true },
+  costPreset: '' as const,
+  dailySpendBudgetUsd: '',
+  telegramChatId: '',
+  tickIntervalMins: '',
+  capital: '',
+  dailyLossLimit: '',
+  maxSlippageBps: '',
+  maxOpenPositions: '',
+  maxPositionSizePct: '',
+  stopLossPct: '',
+  stopLossCooldownSecs: '',
+};
+
+const BASE_UPDATE_INPUT = {
+  name: 'agent',
+  prompt: 'do stuff',
+  capabilityMode: 'intelligence' as const,
+  technical: null,
+  skillIds: [],
+  hasBotManagementSkill: false,
+  executionMode: 'paper',
+  hasTradingCapability: false,
+  telegramChatId: '',
+  costPreset: '' as const,
+  dailySpendBudgetUsd: '',
+  dailyLossLimit: '',
+  maxSlippageBps: '',
+  maxOpenPositions: '',
+  maxPositionSizePct: '',
+  stopLossPct: '',
+  stopLossCooldownSecs: '',
+  tickIntervalMins: '',
+  capital: '',
+  modelOverrideEnabled: false,
+  modelForm: { provider: '', lightModel: '', heavyModel: '' },
+  emailDelivery: 'inherit' as const,
+};
+
+describe('buildCreateAgentPayload — emailDelivery mapping', () => {
+  it('omits notificationPolicy when emailDelivery is "inherit"', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, emailDelivery: 'inherit' });
+    expect(payload).not.toHaveProperty('notificationPolicy');
+  });
+
+  it('omits notificationPolicy when emailDelivery is undefined', () => {
+    const payload = buildCreateAgentPayload(BASE_CREATE_INPUT);
+    expect(payload).not.toHaveProperty('notificationPolicy');
+  });
+
+  it('sends enabled: true when emailDelivery is "allow"', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, emailDelivery: 'allow' });
+    expect(payload.notificationPolicy).toEqual({
+      sendMessage: { email: { enabled: true, source: 'explicit_update' } },
+    });
+  });
+
+  it('sends enabled: false when emailDelivery is "disable"', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, emailDelivery: 'disable' });
+    expect(payload.notificationPolicy).toEqual({
+      sendMessage: { email: { enabled: false, source: 'explicit_update' } },
+    });
+  });
+});
+
+describe('buildUpdateAgentPayload — emailDelivery mapping', () => {
+  it('sends notificationPolicy: null when emailDelivery is "inherit" (clears override)', () => {
+    const payload = buildUpdateAgentPayload({ ...BASE_UPDATE_INPUT, emailDelivery: 'inherit' });
+    expect(payload.notificationPolicy).toBeNull();
+  });
+
+  it('sends enabled: true when emailDelivery is "allow"', () => {
+    const payload = buildUpdateAgentPayload({ ...BASE_UPDATE_INPUT, emailDelivery: 'allow' });
+    expect(payload.notificationPolicy).toEqual({
+      sendMessage: { email: { enabled: true, source: 'explicit_update' } },
+    });
+  });
+
+  it('sends enabled: false when emailDelivery is "disable"', () => {
+    const payload = buildUpdateAgentPayload({ ...BASE_UPDATE_INPUT, emailDelivery: 'disable' });
+    expect(payload.notificationPolicy).toEqual({
+      sendMessage: { email: { enabled: false, source: 'explicit_update' } },
+    });
   });
 });

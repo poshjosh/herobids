@@ -50,6 +50,8 @@ interface IntentState {
   heavyModel: string;
   telegramChatId: string;
   connectionIds: string[];
+  /** Per-agent email delivery override. */
+  emailDelivery: 'inherit' | 'allow' | 'disable';
   /** Derived from selected connection's provider, or user-picked for paper mode. */
   venue: string;
   /** Derived from venue: hyperliquid→orderbook, jupiter→swap, etc. */
@@ -365,6 +367,7 @@ function CreateAgentFlow({
     heavyModel: '',
     telegramChatId: '',
     connectionIds: [],
+    emailDelivery: 'inherit' as const,
     venue: '',
     venueType: '',
     style: 'balanced',
@@ -606,6 +609,7 @@ function CreateAgentFlow({
         costPreset: intent.costPreset,
         dailySpendBudgetUsd: intent.dailySpendBudgetUsd,
         telegramChatId: intent.telegramChatId,
+        emailDelivery: intent.emailDelivery,
         tickIntervalMins: intent.tickIntervalMins,
         capital: intent.capital,
         dailyLossLimit: intent.dailyLossLimit,
@@ -870,6 +874,7 @@ function CreateAgentFlow({
             requiresTradingSetup={requiresTradingSetup}
             isAdmin={meQuery.data?.isAdmin ?? false}
             agentStyle={intent.style}
+            accountEmail={meQuery.data?.email ?? null}
             selectableSkills={skills}
             skillsLoading={skillsLoading}
             skillsError={skillsError}
