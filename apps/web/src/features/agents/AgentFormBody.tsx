@@ -294,6 +294,15 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         {props.nameAutoHint}
       </div>
 
+      {/* Divider — visually separates basic fields from Advanced Settings */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '24px 0 12px' }}>
+        <div style={{ flex: 1, height: '2px', background: 'var(--color-text-muted)', opacity: 0.4 }} />
+        <span style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+          {intl.formatMessage({ id: 'agents.create.advancedSettings' })}
+        </span>
+        <div style={{ flex: 1, height: '2px', background: 'var(--color-text-muted)', opacity: 0.4 }} />
+      </div>
+
       {/* Advanced Settings (tabs) */}
       <AdvancedSettingsSection
         expandSeq={advancedExpandSeq}
