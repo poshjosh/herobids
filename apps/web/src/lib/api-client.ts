@@ -94,6 +94,16 @@ function buildQuery(params: Record<string, string | number | boolean | undefined
   return qs ? `?${qs}` : '';
 }
 
+export interface UserNotificationPreferences {
+  sendMessage?: {
+    email?: {
+      enabled: boolean;
+      source: 'explicit_update';
+      enabledAt?: string;
+    };
+  };
+}
+
 export interface MeResponse {
   id: string;
   displayName: string;
@@ -104,6 +114,7 @@ export interface MeResponse {
   planEntitlements: PlanEntitlements | null;
   preferredLocale: string | null;
   telegramChatId: string | null;
+  notificationPreferences: UserNotificationPreferences | null;
   createdAt: string;
 }
 
@@ -154,7 +165,7 @@ export const auth = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<MeResponse>('/auth/me'),
-  updateMe: (data: { preferredLocale?: string | null; telegramChatId?: string | null }) =>
+  updateMe: (data: { preferredLocale?: string | null; telegramChatId?: string | null; notificationPreferences?: { sendMessage?: { email?: { enabled: boolean } } } | null }) =>
     request<MeResponse>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
   logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
 };

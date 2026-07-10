@@ -183,7 +183,7 @@ This keeps `messageClass` useful while removing the hidden coupling to transport
 
 ## Implementation Plan
 
-### Slice 1 — User preference storage and profile API
+### Slice 1 — User preference storage and profile API [PENDING]
 
 Goal: add a user-level default for send-message email delivery.
 
@@ -200,7 +200,7 @@ Expected result:
 
 The platform has a persistent account-level default for agent email delivery.
 
-### Slice 2 — Agent form override plumbing
+### Slice 2 — Agent form override plumbing [PENDING]
 
 Goal: expose per-agent email delivery control in create/edit agent flows.
 
@@ -220,7 +220,7 @@ Expected result:
 
 Users can discover and configure agent email behavior directly from the agent UI.
 
-### Slice 3 — Settings page UI
+### Slice 3 — Settings page UI [PENDING]
 
 Goal: expose the global default in user settings.
 
@@ -237,7 +237,7 @@ Expected result:
 
 The user has one obvious account-level place to say whether their agents may email them by default.
 
-### Slice 4 — Worker resolution and delivery semantics
+### Slice 4 — Worker resolution and delivery semantics [PENDING]
 
 Goal: make explicit email requests send unless explicitly disabled or technically blocked.
 
@@ -259,7 +259,7 @@ Expected result:
 
 The worker enforces the intended precedence model, and `messageClass` no longer acts as a hidden veto.
 
-### Slice 5 — In-app delivery feedback and message presentation
+### Slice 5 — In-app delivery feedback and message presentation [PENDING]
 
 Goal: make delivery outcomes and message class visible to the user.
 

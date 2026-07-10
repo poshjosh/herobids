@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
+import { z } from 'zod';
 import type { AuthConfig, PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { users, oauthIdentities, localIdentities, sessions, userPlans } from '@herobids/db';
@@ -9,6 +10,7 @@ import { eq, and } from 'drizzle-orm';
 import { createSessionToken } from '../plugins/auth.js';
 import { errorPayload } from '../error-payload.js';
 import { resolvePlanEntitlements } from '../plan-guards.js';
+import { resolveNotificationPreferences } from './user-config-helpers.js';
 
 const scrypt = promisify<crypto.BinaryLike, crypto.BinaryLike, number, Buffer>(crypto.scrypt);
 // Supported locales mirror apps/web/src/app/i18n/resolveLocale.ts — keep in sync.
@@ -19,6 +21,12 @@ type SupportedLocale = 'en' | 'ar' | 'hi';
 function isSupportedLocale(value: unknown): value is SupportedLocale {
   return typeof value === 'string' && SUPPORTED_LOCALES.has(value);
 }
+
+const NotificationPreferencesInputSchema = z.object({
+  sendMessage: z.object({
+    email: z.object({ enabled: z.boolean() }).optional(),
+  }).optional(),
+});
 
 async function hashPassword(password: string): Promise<string> {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -379,13 +387,14 @@ export async function authRoutes(
       planEntitlements: profilePlanEntitlements(user.planId, user.isAdmin),
       preferredLocale: user.preferredLocale ?? null,
       telegramChatId: user.telegramChatId ?? null,
+      notificationPreferences: user.notificationPreferences ?? null,
       createdAt: user.createdAt.toISOString(),
     });
   });
 
   /**
    * PATCH /auth/me — Update mutable user profile fields.
-   * Currently supports: preferredLocale and telegramChatId.
+   * Currently supports: preferredLocale, telegramChatId, and notificationPreferences.
    */
   app.patch('/auth/me', async (request, reply) => {
     const userId = request.userId;
@@ -394,7 +403,16 @@ export async function authRoutes(
     }
 
     const body = (request.body ?? {}) as Record<string, unknown>;
-    const updates: { preferredLocale?: SupportedLocale | null; telegramChatId?: string | null; updatedAt: Date } = {
+    const updates: {
+      preferredLocale?: SupportedLocale | null;
+      telegramChatId?: string | null;
+      notificationPreferences?: {
+        sendMessage?: {
+          email?: { enabled: boolean; source: 'explicit_update'; enabledAt?: string };
+        };
+      } | null;
+      updatedAt: Date;
+    } = {
       updatedAt: new Date(),
     };
 
@@ -424,6 +442,23 @@ export async function authRoutes(
       updates.telegramChatId = typeof val === 'string' ? (val.trim() || null) : null;
     }
 
+    if ('notificationPreferences' in body) {
+      const val = body['notificationPreferences'];
+      if (val === null) {
+        updates.notificationPreferences = null;
+      } else {
+        const parsed = NotificationPreferencesInputSchema.safeParse(val);
+        if (!parsed.success) {
+          return reply.status(400).send(
+            errorPayload('auth.profile.invalid_notification_preferences', 'Invalid notificationPreferences value'),
+          );
+        }
+        const [currentUser] = await db.select({ notificationPreferences: users.notificationPreferences }).from(users).where(eq(users.id, userId)).limit(1);
+        const current = currentUser?.notificationPreferences ?? null;
+        updates.notificationPreferences = resolveNotificationPreferences(parsed.data, current);
+      }
+    }
+
     await db.update(users).set(updates).where(eq(users.id, userId));
 
     const [updated] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -438,6 +473,7 @@ export async function authRoutes(
       planEntitlements: profilePlanEntitlements(updated.planId, updated.isAdmin),
       preferredLocale: updated.preferredLocale ?? null,
       telegramChatId: updated.telegramChatId ?? null,
+      notificationPreferences: updated.notificationPreferences ?? null,
       createdAt: updated.createdAt.toISOString(),
     });
   });

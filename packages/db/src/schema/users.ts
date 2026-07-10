@@ -20,6 +20,16 @@ export const users = pgTable('users', {
   telegramChatId: text('telegram_chat_id'),
   /** AI model preference chain: { primary, fallback1, fallback2 } each { provider, model } */
   aiModelConfig: jsonb('ai_model_config').$type<Record<string, unknown>>(),
+  /** Account-level email delivery preferences for agent messages */
+  notificationPreferences: jsonb('notification_preferences').$type<{
+    sendMessage?: {
+      email?: {
+        enabled: boolean;
+        source: 'explicit_update';
+        enabledAt?: string;
+      };
+    };
+  }>(),
   /** Whether this user has admin/operator access */
   isAdmin: boolean('is_admin').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

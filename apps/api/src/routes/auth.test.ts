@@ -74,6 +74,39 @@ describe('auth routes', () => {
       expect(res.statusCode).toBe(404);
     });
 
+    it('returns notificationPreferences as null when not set', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const mockUser = {
+        id: 'user-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+        avatarUrl: null,
+        planId: 'free',
+        isAdmin: false,
+        preferredLocale: null,
+        telegramChatId: null,
+        notificationPreferences: null,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-01'),
+      };
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([mockUser]),
+            }),
+          }),
+        }),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({ method: 'GET', url: '/auth/me' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json<{ notificationPreferences: unknown }>().notificationPreferences).toBeNull();
+    });
+
     it('returns user profile when authenticated', async () => {
       const { authRoutes } = await import('./auth.js');
       const plansConfig = {
@@ -283,6 +316,122 @@ describe('auth routes', () => {
       expect(res.statusCode).toBe(400);
       expect(res.json<{ error: string }>().error).toBe('auth.profile.invalid_preferred_locale');
       expect(res.json<{ params?: { supportedLocales?: string } }>().params?.supportedLocales).toBe('en, ar, hi');
+    });
+
+    it('saves notificationPreferences when PATCH includes sendMessage.email.enabled: true', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const storedPrefs = {
+        sendMessage: { email: { enabled: true, source: 'explicit_update', enabledAt: '2026-07-10T00:00:00.000Z' } },
+      };
+      const updatedUser = {
+        id: 'user-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+        avatarUrl: null,
+        planId: 'free',
+        isAdmin: false,
+        preferredLocale: null,
+        telegramChatId: null,
+        notificationPreferences: storedPrefs,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-07-10'),
+      };
+      // First select: current prefs lookup (notificationPreferences null → first enable)
+      // Second select: return updated user
+      let selectCallCount = 0;
+      const db = {
+        update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
+        select: vi.fn().mockImplementation(() => ({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockImplementation(() => {
+                selectCallCount++;
+                // First call: current prefs lookup returns null prefs
+                if (selectCallCount === 1) return Promise.resolve([{ notificationPreferences: null }]);
+                // Second call: post-update fetch returns updated user
+                return Promise.resolve([updatedUser]);
+              }),
+            }),
+          }),
+        })),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/auth/me',
+        payload: { notificationPreferences: { sendMessage: { email: { enabled: true } } } },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json<{ notificationPreferences: typeof storedPrefs }>();
+      expect(body.notificationPreferences?.sendMessage?.email?.enabled).toBe(true);
+      expect(body.notificationPreferences?.sendMessage?.email?.source).toBe('explicit_update');
+    });
+
+    it('clears notificationPreferences to null when PATCH sends null', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const updatedUser = {
+        id: 'user-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+        avatarUrl: null,
+        planId: 'free',
+        isAdmin: false,
+        preferredLocale: null,
+        telegramChatId: null,
+        notificationPreferences: null,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-07-10'),
+      };
+      const setMock = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+      const db = {
+        update: vi.fn().mockReturnValue({ set: setMock }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([updatedUser]),
+            }),
+          }),
+        }),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/auth/me',
+        payload: { notificationPreferences: null },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json<{ notificationPreferences: unknown }>().notificationPreferences).toBeNull();
+      // Verify null was passed to the update
+      const setArgs = setMock.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(setArgs?.['notificationPreferences']).toBeNull();
+    });
+
+    it('returns 400 when notificationPreferences payload is invalid', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const db = {
+        update: vi.fn(),
+        select: vi.fn(),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/auth/me',
+        payload: { notificationPreferences: { sendMessage: { email: { enabled: 'not-a-boolean' } } } },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('auth.profile.invalid_notification_preferences');
     });
   });
 
