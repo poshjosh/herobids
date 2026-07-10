@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Agent Email Delivery UX:** Users can now control whether their agents email them
+  - Account-level default in Settings (Agent Email Delivery card)
+  - Per-agent tri-state override in create/edit form: inherit / allow / disable
+  - Worker now resolves effective policy: agent override → user default → system default (enabled)
+  - `messageClass` no longer gates email delivery; `emailDelivery: "if_allowed"` is the sole opt-in
+  - `routine` messages can now trigger email when explicitly requested
+  - Email delivery feedback in agent message list: sent / skipped-policy / not-configured / no-recipient / failed
+  - `messageClass` badges in message list: alert (amber), reminder (blue), routine (silent)
+  - New DB migration: `users.notificationPreferences` JSONB column
 - LLM reasoning-mode controls: users can now set scout/judge reasoning levels (none/low/medium/high) in User Settings and per-agent\n  - Provider layer modernised to use unified reasoning parameter (OpenRouter/Anthropic standard)\n  - Model-aware mapping: effort-based for Fable 5/Sonnet 5/Opus 4.7+, token-budget for legacy Claude\n  - Reasoning level dropdowns in Settings, Agent Create/Edit, and Runtime Policy section\n  - Reasoning levels stored as runtime policy overrides with style-based defaults\n  - Operator-configurable ceilings (scoutReasoningMax, judgeReasoningMax)
 
 ## v0.0.17 - 2026-07-10

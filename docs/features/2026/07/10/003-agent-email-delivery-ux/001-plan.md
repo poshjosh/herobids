@@ -259,7 +259,7 @@ Expected result:
 
 The worker enforces the intended precedence model, and `messageClass` no longer acts as a hidden veto.
 
-### Slice 5 — In-app delivery feedback and message presentation [PENDING]
+### Slice 5 — In-app delivery feedback and message presentation [DONE]
 
 Goal: make delivery outcomes and message class visible to the user.
 
@@ -309,3 +309,32 @@ If a user asks “did my agent email me?”, the UI answers clearly.
 This plan assumes the product direction is to default send-message email delivery to enabled when no explicit preference exists yet.
 
 If that assumption changes, the implementation still works, but Slice 1 and Slice 4 would need a different system default and a more cautious rollout plan.
+
+---
+
+## Outstanding Issues
+
+### [Slice 1] User preference storage
+
+- **LOW:** No test for `enabled: false` (disable) path in `auth.test.ts` — `resolveNotificationPreferences` disable branch (drops `enabledAt`) is untested.
+- **LOW:** PATCH enable test doesn't assert `enabledAt` is a truthy ISO string; a regression in that helper wouldn't be caught.
+- **LOW:** No test for `{ sendMessage: {} }` no-op PATCH path.
+
+### [Slice 2] Agent form override plumbing
+
+- **LOW:** `select` `onChange` uses a type cast (`e.target.value as 'inherit' | 'allow' | 'disable'`) — safe in practice since select options are bounded, but not strictly correct.
+- **LOW:** Help text when `accountEmail` is `null` uses a separate i18n key `helpNoEmail` — works correctly, just note it for future locale additions.
+
+### [Slice 3] Settings page UI
+
+- **LOW:** Success banner is not suppressed when a rapid re-save triggers an error (both banners visible simultaneously) — consistent with the Telegram card pattern.
+- **LOW:** Test predicates mirror component logic inline (no live binding to SettingsPage.tsx) — must be kept in sync manually.
+
+### [Slice 4] Worker resolution and delivery
+
+- **LOW:** `makeRow` test helper accepts `null` for `enabled` but the Drizzle schema types it as `boolean`. Tighten to `boolean | undefined` in the test helper.
+- **LOW:** Rate-limit skip and policy-disabled skip both record `email_skipped_policy` — when Slice 5 renders skip reasons, they look identical. Consider adding `email_skipped_rate_limited` as a distinct code.
+
+### [Slice 5] In-app delivery feedback
+
+- **LOW:** `('failed', 'email_sent')` delivery combination renders "Delivered via email" without mentioning that Telegram delivery failed — Telegram failure is visible via StatusBadge so it is not hidden, but it could be clearer.
