@@ -2,6 +2,7 @@
 
 **Status:** draft
 **Created:** 2026-07-08
+**Revised:** 2026-07-10 — added operational policy layer analysis
 
 ## Vision
 
@@ -9,9 +10,11 @@ Agents, bots, blueprints, and skills are **discoverable, rankable, copyable, and
 
 ## Objectives
 
-1. **Template / instance split.** Redesign agent config, bot config, and blueprints around a clean boundary: templates contain only shareable, non-sensitive fields (strategy, skills, prompt, risk posture, technical config, style), while instances hold private runtime state (venue accounts, API keys, P&L, live positions, connection credentials). Blueprints become the unified template entity capable of faithfully recreating either an agent or a bot.
+1. **Template / instance split.** Redesign agent config, bot config, and blueprints around a clean boundary: templates contain only shareable, non-sensitive fields (strategy, skills, prompt, risk posture, technical config, style, operational policies), while instances hold private runtime state (venue accounts, API keys, P&L, live positions, connection credentials). Blueprints become the unified template entity capable of faithfully recreating either an agent or a bot.
 
-2. **Marketplace discovery.** Complete the blueprint data model to capture the full agent recipe — prompt, skills, style, strategy preset, risk posture, technical/intelligence config, execution mode, capital allocation — so that agents and blueprints can be ranked, filtered, browsed, forked, and purchased. Reuse the existing skill ranking infrastructure (popularity/trending scores, usage events, likes, forks) as the foundation.
+2. **Operational completeness.** A copied agent must work out of the box — no hidden configuration that the user has to discover. If the original agent can send emails, the copy must be able to send emails. If the original agent has wake preferences, the copy must inherit them. The blueprint must capture the full operational policy surface, not just the strategy and risk config.
+
+3. **Marketplace discovery.** Complete the blueprint data model to capture the full agent recipe — prompt, skills, style, strategy preset, risk posture, technical/intelligence config, execution mode, capital allocation, operational policies — so that agents and blueprints can be ranked, filtered, browsed, forked, and purchased. Reuse the existing skill ranking infrastructure (popularity/trending scores, usage events, likes, forks) as the foundation.
 
 ---
 
@@ -62,6 +65,7 @@ Blueprints exist but only template the **bot** layer, not the **agent** layer:
 | Risk guardrails (daily loss, max drawdown, max positions) | `agents` columns + `agents.unifiedConfig.risk` |
 | Capital allocation | `agents.capital` |
 | Strategy preset lineage | `agents.unifiedConfig.metadata.strategyPreset` |
+| Operational policies (notification, wake, escalation) | `agents` top-level columns — see Operational Policy Layer below |
 | Marketplace metadata | Not present — no `publicationStatus`, `priceCents`, `likeCount`, `forkCount`, scores |
 
 **Blueprint metadata columns are minimal:** `name`, `description`, `visibility` (private/public), `configVersion`. No marketplace lifecycle, no ranking.
@@ -136,6 +140,8 @@ agents.unifiedConfig (JSONB)
 
 4. **Custom agents have no lineage.** A custom agent's technical config is fully hand-crafted via `TechnicalConfigSection`. The values are valid and used by the runtime, but there is no record of *why* those values were chosen. The agent cannot be categorized, and reproducing it requires copying every individual field.
 
+5. **Operational policies are invisible.** Several top-level agent columns control whether features actually work (email delivery, wake sources, escalation behavior, runtime tuning). These are not part of `unifiedConfig`, not part of blueprints, and have no UI in the create/edit agent form. A copied agent silently lacks these policies — the user has no way to know why their copy behaves differently from the original.
+
 ### Bot Config vs UnifiedAgentConfig — Overlap
 
 The two config schemas overlap in risk and execution but serve different purposes:
@@ -155,6 +161,36 @@ The two config schemas overlap in risk and execution but serve different purpose
 
 The overlap exists because the agent's `unifiedConfig` is *upstream* of the bot's config. The agent decides *what* to scan and *how* to evaluate it; the bot executes a *specific trade* on a *specific venue*. But the boundary is informal — nothing in the schema or code enforces it.
 
+### Operational Policy Layer — Hidden Agent Columns
+
+Beyond `unifiedConfig` and the risk/execution typed columns, agents have a third layer of configuration: **operational policy columns**. These are top-level JSONB or text columns on the `agents` table that control whether features actually function at runtime. They are not part of any config schema, not visible in any UI, and not captured by blueprints.
+
+**Discovery context:** On 2026-07-10, a user asked their agent to send them an email. The agent correctly called `send_message` with `emailDelivery: "if_allowed"`. The email was silently blocked because: (a) the agent's `notificationPolicy` was `NULL` (email not enabled), and (b) the broker rejects `messageClass: "routine"` for email delivery. Neither of these policies is visible to the user or the agent. There is no UI to configure `notificationPolicy`. The user experienced "my agent can't email me" with zero feedback about why.
+
+This is not just a `notificationPolicy` problem — it reveals a category of agent state that is invisible to users and would be silently lost when copying an agent.
+
+**Operational policy columns (template-eligible):**
+
+| Column | Purpose | Has UI? | Should be in blueprint? |
+|--------|---------|:-------:|:-----------------------:|
+| `notificationPolicy` | Controls email fanout for `send_message` | ❌ No UI | ✅ Yes |
+| `wakePreferences` | Which market signals wake this agent | ✅ In create form | ✅ Yes |
+| `openPositionEscalationToJudgePolicy` | When to escalate open positions to judge | ✅ In create form | ✅ Yes |
+| `runtimePolicyOverrides` | Per-agent runtime tuning (scout/judge turns, thinking tokens, budgets) | ✅ In create form | ✅ Yes |
+| `style` | Personality hint (careful/balanced/bold) | ✅ In create form | ✅ Yes |
+| `toolPolicy` | Per-capability tool grants | ❌ API only | ✅ Yes |
+| `modelPolicy` | LLM model configuration | ❌ API only | ✅ Yes |
+
+**Operational policy columns (instance-only, NOT template-eligible):**
+
+| Column | Purpose | Why not in blueprint |
+|--------|---------|---------------------|
+| `telegramChatId` | User's private messaging destination | Private — each user has their own |
+| `riskOverrides` | Agent's self-adjusted risk fields at runtime | Ephemeral runtime state |
+| `pauseState` | Why and when the agent was paused | Runtime state |
+
+**Key insight for blueprints:** A blueprint that captures strategy, risk, and execution but omits operational policies will produce a copy that *looks* right but *behaves* differently. The original agent emails the user on alerts; the copy silently doesn't. The original agent wakes on regime changes; the copy ignores them. This is worse than a missing feature — it's a silent degradation that the user cannot diagnose.
+
 ### Agent Evaluations — Quality Signal Exists but Is Sparse
 
 Agent evaluations produce a 0–100 scorecard across 9 sections (session health, tool usage, cost, security, persistence, trading performance, trading behavior, market data, rate limits). However:
@@ -173,6 +209,8 @@ Agent evaluations produce a 0–100 scorecard across 9 sections (session health,
 | Agent marketplace + ranking | ❌ |
 | Unified template entity (blueprint = agent + bot recipe) | ❌ |
 | Template/instance boundary | ❌ |
+| Operational policies in blueprint | ❌ — `notificationPolicy`, `wakePreferences`, `runtimePolicyOverrides`, etc. not captured |
+| UI for `notificationPolicy` | ❌ — no create/edit form field; API-only |
 | Strategy type as queryable field | ❌ |
 | Blueprint usage tracking | ❌ |
 | Blueprint → agent evaluation link | ❌ |
@@ -180,3 +218,13 @@ Agent evaluations produce a 0–100 scorecard across 9 sections (session health,
 | Agent quality score (persistent) | ❌ |
 | Marketplace UI for agents/blueprints | ❌ |
 | Paid blueprints (purchase flow) | ❌ |
+
+### UX Issues Discovered During Email Testing (2026-07-10)
+
+These are not marketplace blockers but affect the "copied agent works out of the box" objective:
+
+1. **`notificationPolicy` has no UI.** The only way to enable email for an agent is `PATCH /api/agents/:id` with `notificationPolicy.sendMessage.email.enabled: true`. Users cannot discover or configure this.
+
+2. **`messageClass` gates email silently.** The broker rejects email for `messageClass: "routine"` even when the agent explicitly sets `emailDelivery: "if_allowed"`. The user's intent ("email me") is overridden by an internal classification. When `emailDelivery` is explicitly `"if_allowed"`, `messageClass` should not block delivery.
+
+3. **No feedback on email skip.** When email is blocked by policy, the agent gets `{ success: true, note: "message queued for delivery" }` — the same response as a successful send. Neither the user nor the agent knows the email was suppressed.
