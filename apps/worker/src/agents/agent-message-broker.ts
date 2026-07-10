@@ -503,38 +503,28 @@ export class AgentMessageBroker {
     messageClass: string,
     now: number,
   ): Promise<void> {
-    // Rule 4: email requires explicit per-message request
+    // Guard: feed-only mode
     if (payload.emailDelivery !== 'if_allowed') {
       await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'feed_only');
       return;
     }
 
-    // Rule 5: only alert and reminder classes are email-eligible
-    if (messageClass !== 'alert' && messageClass !== 'reminder') {
-      logger.debug({ agentId, messageClass }, 'Email fanout suppressed: routine message class');
-      await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'email_skipped_policy');
-      return;
-    }
-
-    // Rule 7: operator email infrastructure required
+    // Guard: operator email infrastructure
     if (!this.emailClient) {
       logger.debug({ agentId }, 'Email fanout skipped: email client not configured');
       await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'email_skipped_not_configured');
       return;
     }
 
-    // Rule 2: agent must have email enabled in notificationPolicy
-    const agent = await this.agentRepo.getAgent(agentId);
-    const notifPolicy = agent?.notificationPolicy as {
-      sendMessage?: { email?: { enabled?: boolean } };
-    } | null | undefined;
-    if (!notifPolicy?.sendMessage?.email?.enabled) {
-      logger.debug({ agentId }, 'Email fanout suppressed: notificationPolicy.sendMessage.email.enabled is false');
+    // Guard: policy (agent → user → system default)
+    const emailEnabled = await this.agentRepo.getEffectiveEmailEnabled(agentId);
+    if (!emailEnabled) {
+      logger.debug({ agentId }, 'Email fanout suppressed: effective email policy is disabled');
       await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'email_skipped_policy');
       return;
     }
 
-    // Rule 6: recipient is fixed to owning user's verified account email
+    // Guard: no verified recipient
     const recipientEmail = await this.agentRepo.getUserEmailByAgentId(agentId);
     if (!recipientEmail) {
       logger.warn({ agentId }, 'Email fanout skipped: no verified account email for owning user');
@@ -542,7 +532,7 @@ export class AgentMessageBroker {
       return;
     }
 
-    // Rule 8: secondary stricter rate limit for email fanout
+    // Guard: rate limit
     const emailCounter = this.emailFanoutCounters.get(agentId);
     if (emailCounter && now - emailCounter.windowStart < 60_000) {
       if (emailCounter.count >= EMAIL_FANOUT_MAX_PER_MINUTE) {
@@ -556,7 +546,11 @@ export class AgentMessageBroker {
     }
 
     // All rules passed — send email
-    const subject = payload.subject ?? (messageClass === 'reminder' ? 'Reminder from your agent' : 'Alert from your agent');
+    const subject = payload.subject ?? (
+      messageClass === 'reminder' ? 'Reminder from your agent'
+      : messageClass === 'alert' ? 'Alert from your agent'
+      : 'Message from your agent'
+    );
     const result = await this.emailClient.send({ to: recipientEmail, subject, text: body });
 
     if (!result.ok) {

@@ -622,6 +622,40 @@ export class AgentRepository {
   }
 
   /**
+   * Resolve whether email fanout is effectively enabled for an agent's send_message calls.
+   * Precedence: agent-level explicit override → user-level explicit default → system default (true).
+   */
+  async getEffectiveEmailEnabled(agentId: string): Promise<boolean> {
+    const rows = await this.db
+      .select({
+        agentNotificationPolicy: agents.notificationPolicy,
+        userNotificationPreferences: users.notificationPreferences,
+      })
+      .from(agents)
+      .innerJoin(users, eq(agents.userId, users.id))
+      .where(eq(agents.id, agentId))
+      .limit(1);
+
+    const row = rows[0];
+    if (!row) return true; // system default: unknown agent → allow (infra gate handles missing agent)
+
+    // 1. Agent-level explicit override
+    const agentEnabled = row.agentNotificationPolicy?.sendMessage?.email?.enabled;
+    if (agentEnabled !== undefined) {
+      return agentEnabled;
+    }
+
+    // 2. User-level explicit default
+    const userEnabled = row.userNotificationPreferences?.sendMessage?.email?.enabled;
+    if (userEnabled !== undefined) {
+      return userEnabled;
+    }
+
+    // 3. System default: enabled
+    return true;
+  }
+
+  /**
    * Resolve the agent that owns a given Telegram reply.
    *
    * Telegram message IDs are scoped per chat, not globally.  When a user has

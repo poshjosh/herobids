@@ -220,7 +220,7 @@ Expected result:
 
 Users can discover and configure agent email behavior directly from the agent UI.
 
-### Slice 3 — Settings page UI [PENDING]
+### Slice 3 — Settings page UI [DONE]
 
 Goal: expose the global default in user settings.
 
