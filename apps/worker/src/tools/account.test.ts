@@ -121,7 +121,7 @@ describe('get_account_summary', () => {
     const data = result.data as Record<string, unknown>;
     expect(data.capital).toBeNull();
     expect(data.capitalAvailable).toBe(false);
-    expect(data.executionMode).toBe('unknown');
+    expect(data.executionMode).toBe('paper'); // falls back to ctx.executionMode
     expect(data.riskLimits).toBe('unavailable');
     const warnings = data.warnings as string[] | undefined;
     expect(warnings).toBeDefined();

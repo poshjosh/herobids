@@ -117,6 +117,29 @@ export function SkillsPage() {
   const hasAnySkills = builtIn.length > 0 || mySkills.length > 0 || marketplaceSkills.length > 0 || adminSkills.length > 0;
   const isLoading = selectableQuery.isLoading || mineQuery.isLoading || (canViewMarketplace && marketplaceQuery.isLoading) || (adminQuery.isLoading && builtIn.length === 0 && mySkills.length === 0 && marketplaceSkills.length === 0);
   const queryError = selectableQuery.error ?? mineQuery.error ?? (canViewMarketplace ? marketplaceQuery.error : null);
+
+  const allSkills = useMemo(() => {
+    const seen = new Set<string>();
+    const result: Array<{ skill: Skill; mode: 'built-in' | 'mine' | 'marketplace' | 'admin' }> = [];
+    for (const skill of mySkills) {
+      if (!seen.has(skill.id)) { seen.add(skill.id); result.push({ skill, mode: 'mine' as const }); }
+    }
+    for (const skill of builtIn) {
+      if (!seen.has(skill.id)) { seen.add(skill.id); result.push({ skill, mode: 'built-in' as const }); }
+    }
+    if (canViewMarketplace) {
+      for (const skill of marketplaceSkills) {
+        if (!seen.has(skill.id)) { seen.add(skill.id); result.push({ skill, mode: 'marketplace' as const }); }
+      }
+    }
+    if (!adminQuery.isLoading && !adminQuery.isError && !adminAccessDenied) {
+      for (const skill of adminSkills) {
+        if (!seen.has(skill.id)) { seen.add(skill.id); result.push({ skill, mode: 'admin' as const }); }
+      }
+    }
+    return result;
+  }, [mySkills, builtIn, marketplaceSkills, adminSkills, canViewMarketplace, adminQuery.isLoading, adminQuery.isError, adminAccessDenied]);
+
   const skillTabs: Array<{ key: SkillCategoryTab; label: string }> = [
     { key: 'all', label: intl.formatMessage({ id: 'skills.tab.all', defaultMessage: 'All skills' }) },
     { key: 'mine', label: intl.formatMessage({ id: 'skills.tab.mine', defaultMessage: 'Your skills' }) },
@@ -147,27 +170,21 @@ export function SkillsPage() {
   );
 
   const renderAllSkills = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {mySkills.length > 0 && renderCategorySection(
-        intl.formatMessage({ id: 'skills.tab.mine', defaultMessage: 'Your skills' }),
-        mySkills,
-        'mine',
-        intl.formatMessage({ id: 'skills.empty.mine.title', defaultMessage: 'No skills yet' }),
-        intl.formatMessage({ id: 'skills.empty.mine.message', defaultMessage: 'Create your first skill to make it available for reuse across agents.' }),
-      )}
-      {builtIn.length > 0 && renderCategorySection(
-        intl.formatMessage({ id: 'skills.tab.builtIn', defaultMessage: 'Built-in' }),
-        builtIn,
-        'built-in',
-        intl.formatMessage({ id: 'skills.empty.builtIn.title', defaultMessage: 'No built-in skills' }),
-        intl.formatMessage({ id: 'skills.empty.builtIn.message', defaultMessage: 'Built-in skills will appear here when the system catalog is available.' }),
-      )}
-      {canViewMarketplace && marketplaceSkills.length > 0 && renderCategorySection(
-        intl.formatMessage({ id: 'skills.tab.marketplace', defaultMessage: 'Marketplace' }),
-        marketplaceSkills,
-        'marketplace',
-        intl.formatMessage({ id: 'skills.empty.marketplace.title', defaultMessage: 'No marketplace skills' }),
-        intl.formatMessage({ id: 'skills.empty.marketplace.message', defaultMessage: 'Public skills from the marketplace will appear here when they are available for your plan.' }),
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {allSkills.length > 0 ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', alignItems: 'start' }}>
+          {allSkills.map(({ skill, mode }) => (
+            <SkillCard key={skill.id} skill={skill} mode={mode} onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} tools={toolsQuery.data?.tools ?? []} categories={toolsQuery.data?.categories ?? []} toolsLoading={toolsQuery.isLoading} toolsError={toolsQuery.error} />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title={intl.formatMessage({ id: 'skills.empty.all.title', defaultMessage: 'No skills yet' })}
+          message={intl.formatMessage({
+            id: 'skills.empty.all.message',
+            defaultMessage: 'Skills will appear here once built-in or user-authored capability bundles are available.',
+          })}
+        />
       )}
       {!canViewMarketplace && (
         <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
@@ -180,13 +197,6 @@ export function SkillsPage() {
         <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
           {adminUnavailableMessage}
         </div>
-      )}
-      {!adminQuery.isLoading && !adminQuery.isError && adminSkills.length > 0 && renderCategorySection(
-        intl.formatMessage({ id: 'skills.tab.adminCatalog', defaultMessage: 'Admin catalog' }),
-        adminSkills,
-        'admin',
-        intl.formatMessage({ id: 'skills.empty.admin.title', defaultMessage: 'No admin skills' }),
-        intl.formatMessage({ id: 'skills.empty.admin.message', defaultMessage: 'The admin skill catalog is currently empty.' }),
       )}
     </div>
   );

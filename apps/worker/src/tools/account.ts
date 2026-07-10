@@ -113,7 +113,7 @@ const getAccountSummaryTool: AgentTool = {
           agentId: ctx.agentId,
           capital: capital,
           capitalAvailable: capital !== null,
-          executionMode: executionMode ?? 'unknown',
+          executionMode: executionMode ?? ctx.executionMode,
           positionSizeMode: positionSizeMode ?? 'unknown',
           fixedPositionSize: fixedPositionSize ?? null,
           openPositionCount,
