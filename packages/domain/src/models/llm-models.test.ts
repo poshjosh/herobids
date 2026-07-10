@@ -4,6 +4,7 @@ import {
   validateLlmModelSelection,
   getLlmModelPricing,
   getLlmModelRateCardItems,
+  normalizePersistedAiModelConfig,
   ModelPricingSchema,
   ProvidersYamlSchema,
   type LlmProviderDefinition,
@@ -286,5 +287,72 @@ describe('getLlmModelPricing', () => {
 
   it('returns undefined for null snapshot', () => {
     expect(getLlmModelPricing(null, 'model-a')).toBeUndefined();
+  });
+});
+
+describe('normalizePersistedAiModelConfig', () => {
+  it('returns null for null, undefined, non-object, and array inputs', () => {
+    expect(normalizePersistedAiModelConfig(null)).toBeNull();
+    expect(normalizePersistedAiModelConfig(undefined)).toBeNull();
+    expect(normalizePersistedAiModelConfig('string')).toBeNull();
+    expect(normalizePersistedAiModelConfig([])).toBeNull();
+  });
+
+  it('returns the config when all three required fields are present', () => {
+    const raw = { provider: 'openrouter', lightModel: 'haiku', heavyModel: 'sonnet' };
+    expect(normalizePersistedAiModelConfig(raw)).toEqual(raw);
+  });
+
+  it('returns null when a required field is missing', () => {
+    expect(normalizePersistedAiModelConfig({ provider: 'openrouter', lightModel: 'haiku' })).toBeNull();
+    expect(normalizePersistedAiModelConfig({ provider: 'openrouter' })).toBeNull();
+  });
+
+  it('preserves scoutReasoning and judgeReasoning when present', () => {
+    const raw = {
+      provider: 'openrouter',
+      lightModel: 'haiku',
+      heavyModel: 'sonnet',
+      scoutReasoning: 'none',
+      judgeReasoning: 'medium',
+    };
+    expect(normalizePersistedAiModelConfig(raw)).toEqual(raw);
+  });
+
+  it('returns null for invalid reasoning level values', () => {
+    const raw = {
+      provider: 'openrouter',
+      lightModel: 'haiku',
+      heavyModel: 'sonnet',
+      scoutReasoning: 'ultra',  // not a valid ReasoningLevel
+    };
+    expect(normalizePersistedAiModelConfig(raw)).toBeNull();
+  });
+
+  it('accepts null reasoning fields (explicit clear)', () => {
+    const raw = {
+      provider: 'openrouter',
+      lightModel: 'haiku',
+      heavyModel: 'sonnet',
+      scoutReasoning: null,
+      judgeReasoning: null,
+    };
+    const result = normalizePersistedAiModelConfig(raw);
+    expect(result).not.toBeNull();
+    expect(result?.scoutReasoning).toBeNull();
+    expect(result?.judgeReasoning).toBeNull();
+  });
+
+  it('returns null for clear payloads (all fields null)', () => {
+    expect(normalizePersistedAiModelConfig({
+      provider: null, lightModel: null, heavyModel: null,
+    })).toBeNull();
+  });
+
+  it('returns null for clear payloads with reasoning fields also null', () => {
+    expect(normalizePersistedAiModelConfig({
+      provider: null, lightModel: null, heavyModel: null,
+      scoutReasoning: null, judgeReasoning: null,
+    })).toBeNull();
   });
 });

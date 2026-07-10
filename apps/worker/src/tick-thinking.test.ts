@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyTickThinking, extractDrawdownPct } from './tick-thinking.js';
+import { classifyTickThinking, extractDrawdownPct, applyReasoningCeiling, toReasoningLevel } from './tick-thinking.js';
 
 describe('classifyTickThinking', () => {
   it('uses deep thinking for a regime flip', () => {
@@ -100,4 +100,41 @@ describe('extractDrawdownPct', () => {
     expect(extractDrawdownPct('Net P&L: -2.4% today')).toBe(-2.4);
     expect(extractDrawdownPct('+$12.00')).toBeNull();
   });
+});
+
+describe('toReasoningLevel', () => {
+  it('maps none → none', () => expect(toReasoningLevel('none')).toBe('none'));
+  it('maps light → low', () => expect(toReasoningLevel('light')).toBe('low'));
+  it('maps deep → high', () => expect(toReasoningLevel('deep')).toBe('high'));
+});
+
+describe('applyReasoningCeiling', () => {
+  // System level is at or under the user ceiling → pass through unchanged
+  it('passes none through when user ceiling is none', () =>
+    expect(applyReasoningCeiling('none', 'none')).toBe('none'));
+
+  it('passes none through when user ceiling is high (none < high)', () =>
+    expect(applyReasoningCeiling('none', 'high')).toBe('none'));
+
+  it('passes light through when user ceiling is low (equal order)', () =>
+    expect(applyReasoningCeiling('light', 'low')).toBe('light'));
+
+  it('passes light through when user ceiling is medium (light < medium)', () =>
+    expect(applyReasoningCeiling('light', 'medium')).toBe('light'));
+
+  it('passes deep through when user ceiling is high (equal order)', () =>
+    expect(applyReasoningCeiling('deep', 'high')).toBe('deep'));
+
+  // System level exceeds the user ceiling → cap downward
+  it('caps deep to none when user ceiling is none', () =>
+    expect(applyReasoningCeiling('deep', 'none')).toBe('none'));
+
+  it('caps light to none when user ceiling is none', () =>
+    expect(applyReasoningCeiling('light', 'none')).toBe('none'));
+
+  it('caps deep to light when user ceiling is low', () =>
+    expect(applyReasoningCeiling('deep', 'low')).toBe('light'));
+
+  it('caps deep to deep when user ceiling is medium (medium maps to deep)', () =>
+    expect(applyReasoningCeiling('deep', 'medium')).toBe('deep'));
 });
