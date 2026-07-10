@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { callLlmProvider, stripReasoningContent, toOpenAiMessages } from './llm-provider.js';
-import type { LlmMessage } from './llm-provider.js';
+import {
+  callLlmProvider,
+  stripReasoningContent,
+  toOpenAiMessages,
+  isEffortBasedModel,
+  isAdaptiveThinkingOnlyModel,
+  isClaudeModel,
+  resolveReasoningParams,
+} from './llm-provider.js';
+import type { LlmMessage, ReasoningLevel } from './llm-provider.js';
 
 describe('callLlmProvider thinking controls', () => {
   const originalEnv = { ...process.env };
@@ -14,7 +22,7 @@ describe('callLlmProvider thinking controls', () => {
     vi.restoreAllMocks();
   });
 
-  it('maps light thinking to Anthropic thinking budget tokens', async () => {
+  it('maps light thinking (backward compat) to effort for Claude models', async () => {
     process.env['LLM_API_KEY_ANTHROPIC'] = 'test-key';
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       content: [
@@ -53,12 +61,13 @@ describe('callLlmProvider thinking controls', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body['thinking']).toEqual({ type: 'enabled', budget_tokens: 2048 });
+    expect(body['reasoning']).toEqual({ effort: 'low' });
+    expect(body).not.toHaveProperty('thinking');
     expect(body['temperature']).toBe(1);
-    expect(body['max_tokens']).toBe(2560);
+    expect(body['max_tokens']).toBe(512);
   });
 
-  it('maps deep thinking to OpenAI reasoning effort', async () => {
+  it('maps deep thinking (backward compat) to unified reasoning with default deep budget', async () => {
     process.env['LLM_API_KEY_OPENAI'] = 'test-key';
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: 'ok' } }],
@@ -88,7 +97,9 @@ describe('callLlmProvider thinking controls', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body['reasoning_effort']).toBe('high');
+    // Backward compat: 'deep' → ReasoningLevel 'high' → legacy model → max_tokens: deepBudgetTokens (default 10240)
+    expect(body['reasoning']).toEqual({ max_tokens: 10240 });
+    expect(body).not.toHaveProperty('reasoning_effort');
   });
 
   it('maps provider-neutral tools to OpenAI tool definitions and normalizes tool calls', async () => {
@@ -204,7 +215,7 @@ describe('callLlmProvider thinking controls', () => {
     }
   });
 
-  it('ignores thinking for non-OpenAI compatible providers', async () => {
+  it('sends unified reasoning for non-OpenAI providers via OpenRouter (backward compat)', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: 'ok' } }],
       usage: { total_tokens: 12 },
@@ -231,6 +242,8 @@ describe('callLlmProvider thinking controls', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    // Backward compat: 'light' → level 'low' → legacy model → max_tokens: 2048 (default)
+    expect(body['reasoning']).toEqual({ max_tokens: 2048 });
     expect(body).not.toHaveProperty('reasoning_effort');
     expect(body).not.toHaveProperty('thinking');
   });
@@ -519,7 +532,7 @@ describe('callLlmProvider thinking budget config', () => {
     vi.restoreAllMocks();
   });
 
-  it('uses custom lightBudgetTokens from config.thinking', async () => {
+  it('uses effort for Claude models (light) regardless of custom budget config', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       content: [{ type: 'text', text: 'response' }],
       usage: { input_tokens: 10, output_tokens: 5, thinking_tokens: 0 },
@@ -544,11 +557,12 @@ describe('callLlmProvider thinking budget config', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body['thinking']).toEqual({ type: 'enabled', budget_tokens: 4_096 });
-    expect(body['max_tokens']).toBe(512 + 4_096); // maxTokens + lightBudget
+    expect(body['reasoning']).toEqual({ effort: 'low' });
+    expect(body).not.toHaveProperty('thinking');
+    expect(body['max_tokens']).toBe(512);
   });
 
-  it('uses custom deepBudgetTokens from config.thinking', async () => {
+  it('uses effort for Claude models (high) regardless of custom budget config', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       content: [{ type: 'text', text: 'response' }],
       usage: { input_tokens: 10, output_tokens: 5, thinking_tokens: 0 },
@@ -573,11 +587,12 @@ describe('callLlmProvider thinking budget config', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body['thinking']).toEqual({ type: 'enabled', budget_tokens: 20_000 });
-    expect(body['max_tokens']).toBe(512 + 20_000);
+    expect(body['reasoning']).toEqual({ effort: 'high' });
+    expect(body).not.toHaveProperty('thinking');
+    expect(body['max_tokens']).toBe(512);
   });
 
-  it('skips thinking block when config.thinking is absent', async () => {
+  it('uses effort for Claude models when config.thinking is absent (backward compat)', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       content: [{ type: 'text', text: 'response' }],
       usage: { input_tokens: 10, output_tokens: 5, thinking_tokens: 0 },
@@ -592,10 +607,12 @@ describe('callLlmProvider thinking budget config', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body['thinking']).toBeUndefined();
+    // Claude model → effort-based (forward-looking), not max_tokens
+    expect(body['reasoning']).toEqual({ effort: 'low' });
+    expect(body).not.toHaveProperty('thinking');
   });
 
-  it('returns zero thinking budget when thinking mode is "none"', async () => {
+  it('does not send reasoning when thinking mode is "none"', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       content: [{ type: 'text', text: 'response' }],
       usage: { input_tokens: 10, output_tokens: 5 },
@@ -616,8 +633,9 @@ describe('callLlmProvider thinking budget config', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    // No thinking block should appear in the body when mode is 'none'
-    expect(body['thinking']).toBeUndefined();
+    // 'none' → { max_tokens: 0 } → shouldSendReasoning returns false → not sent
+    expect(body).not.toHaveProperty('reasoning');
+    expect(body).not.toHaveProperty('thinking');
     expect(body['max_tokens']).toBe(512);
   });
 });
@@ -897,5 +915,338 @@ describe('toOpenAiMessages', () => {
     expect(result[4]!['role']).toBe('assistant');
     expect(result[4]!['content']).toBe('BTC is trading at $97,000.');
     expect(result[4]).not.toHaveProperty('tool_calls');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Model detection helpers — isEffortBasedModel / isAdaptiveThinkingOnlyModel
+// ---------------------------------------------------------------------------
+
+describe('isEffortBasedModel', () => {
+  it('returns true for Fable 5 variants', () => {
+    expect(isEffortBasedModel('anthropic/claude-fable-5')).toBe(true);
+    expect(isEffortBasedModel('claude-fable')).toBe(true);
+  });
+
+  it('returns true for Sonnet 5 variants', () => {
+    expect(isEffortBasedModel('anthropic/claude-sonnet-5')).toBe(true);
+    expect(isEffortBasedModel('claude-sonnet-5-20251015')).toBe(true);
+  });
+
+  it('returns true for Opus 4.7+ variants', () => {
+    expect(isEffortBasedModel('claude-opus-4-7')).toBe(true);
+    expect(isEffortBasedModel('claude-opus-4-8')).toBe(true);
+    expect(isEffortBasedModel('claude-opus-5')).toBe(true);
+  });
+
+  it('returns false for legacy models', () => {
+    expect(isEffortBasedModel('claude-sonnet')).toBe(false);
+    expect(isEffortBasedModel('claude-opus-4-5')).toBe(false);
+    expect(isEffortBasedModel('gpt-4o')).toBe(false);
+    expect(isEffortBasedModel('qwen')).toBe(false);
+  });
+});
+
+describe('isAdaptiveThinkingOnlyModel', () => {
+  it('returns true for Fable 5', () => {
+    expect(isAdaptiveThinkingOnlyModel('claude-fable')).toBe(true);
+    expect(isAdaptiveThinkingOnlyModel('anthropic/claude-fable-5')).toBe(true);
+  });
+
+  it('returns false for other models', () => {
+    expect(isAdaptiveThinkingOnlyModel('claude-sonnet-5')).toBe(false);
+    expect(isAdaptiveThinkingOnlyModel('claude-opus-4-7')).toBe(false);
+    expect(isAdaptiveThinkingOnlyModel('claude-sonnet')).toBe(false);
+  });
+});
+
+describe('isClaudeModel', () => {
+  it('returns true for Claude-family models', () => {
+    expect(isClaudeModel('claude-sonnet')).toBe(true);
+    expect(isClaudeModel('claude-fable')).toBe(true);
+    expect(isClaudeModel('claude-opus-4-7')).toBe(true);
+    expect(isClaudeModel('anthropic/claude-sonnet-5')).toBe(true);
+    expect(isClaudeModel('claude-future-model')).toBe(true);
+  });
+
+  it('returns false for non-Claude models', () => {
+    expect(isClaudeModel('gpt-4o')).toBe(false);
+    expect(isClaudeModel('qwen')).toBe(false);
+    expect(isClaudeModel('o4-mini')).toBe(false);
+    expect(isClaudeModel('some-new-model')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveReasoningParams — model-aware reasoning resolution
+// ---------------------------------------------------------------------------
+
+describe('resolveReasoningParams', () => {
+  const defaultThinkingConfig = { lightBudgetTokens: 2048, deepBudgetTokens: 10240 };
+
+  describe('level: none', () => {
+    it('returns { max_tokens: 0 } for legacy (non-Claude) models', () => {
+      expect(resolveReasoningParams('none', 'gpt-4o', defaultThinkingConfig))
+        .toEqual({ max_tokens: 0 });
+    });
+
+    it('returns { max_tokens: 0 } for effort-based non-adaptive models', () => {
+      expect(resolveReasoningParams('none', 'claude-sonnet-5', defaultThinkingConfig))
+        .toEqual({ max_tokens: 0 });
+    });
+
+    it('returns { effort: "minimal" } for adaptive-thinking-only models (Fable 5)', () => {
+      expect(resolveReasoningParams('none', 'claude-fable', defaultThinkingConfig))
+        .toEqual({ effort: 'minimal' });
+    });
+  });
+
+  describe('level: low', () => {
+    it('returns { effort: "low" } for effort-based models', () => {
+      expect(resolveReasoningParams('low', 'claude-fable', defaultThinkingConfig))
+        .toEqual({ effort: 'low' });
+      expect(resolveReasoningParams('low', 'claude-sonnet-5', defaultThinkingConfig))
+        .toEqual({ effort: 'low' });
+      expect(resolveReasoningParams('low', 'claude-opus-4-7', defaultThinkingConfig))
+        .toEqual({ effort: 'low' });
+    });
+
+    it('returns { max_tokens: lightBudgetTokens } for non-Claude models', () => {
+      expect(resolveReasoningParams('low', 'gpt-4o', defaultThinkingConfig))
+        .toEqual({ max_tokens: 2048 });
+    });
+
+    it('uses default 2048 when thinkingConfig is undefined', () => {
+      expect(resolveReasoningParams('low', 'gpt-4o', undefined))
+        .toEqual({ max_tokens: 2048 });
+    });
+  });
+
+  describe('level: medium', () => {
+    it('returns { effort: "medium" } for effort-based models', () => {
+      expect(resolveReasoningParams('medium', 'claude-sonnet-5', defaultThinkingConfig))
+        .toEqual({ effort: 'medium' });
+    });
+
+    it('returns { max_tokens: (light+deep)/2 } for non-Claude models', () => {
+      expect(resolveReasoningParams('medium', 'gpt-4o', defaultThinkingConfig))
+        .toEqual({ max_tokens: Math.round((2048 + 10240) / 2) }); // 6144
+    });
+
+    it('uses defaults when thinkingConfig is undefined', () => {
+      expect(resolveReasoningParams('medium', 'gpt-4o', undefined))
+        .toEqual({ max_tokens: Math.round((2048 + 10240) / 2) });
+    });
+  });
+
+  describe('level: high', () => {
+    it('returns { effort: "high" } for effort-based models', () => {
+      expect(resolveReasoningParams('high', 'claude-opus-5', defaultThinkingConfig))
+        .toEqual({ effort: 'high' });
+    });
+
+    it('returns { max_tokens: deepBudgetTokens } for non-Claude models', () => {
+      expect(resolveReasoningParams('high', 'gpt-4o', defaultThinkingConfig))
+        .toEqual({ max_tokens: 10240 });
+    });
+
+    it('uses default 10240 when thinkingConfig is undefined', () => {
+      expect(resolveReasoningParams('high', 'gpt-4o', undefined))
+        .toEqual({ max_tokens: 10240 });
+    });
+  });
+
+  describe('unrecognised model fallback', () => {
+    it('falls back to effort for unrecognised Claude models (forward-looking)', () => {
+      expect(resolveReasoningParams('low', 'claude-future-model', defaultThinkingConfig))
+        .toEqual({ effort: 'low' });
+      expect(resolveReasoningParams('medium', 'claude-next-gen', defaultThinkingConfig))
+        .toEqual({ effort: 'medium' });
+      expect(resolveReasoningParams('high', 'claude-experimental', defaultThinkingConfig))
+        .toEqual({ effort: 'high' });
+    });
+
+    it('falls back to max_tokens for truly unknown non-Claude models', () => {
+      expect(resolveReasoningParams('low', 'some-new-model', defaultThinkingConfig))
+        .toEqual({ max_tokens: 2048 });
+      expect(resolveReasoningParams('medium', 'unknown-provider-model', defaultThinkingConfig))
+        .toEqual({ max_tokens: Math.round((2048 + 10240) / 2) });
+      expect(resolveReasoningParams('high', 'unknown-ai-model', defaultThinkingConfig))
+        .toEqual({ max_tokens: 10240 });
+    });
+
+    it('falls back to max_tokens for unrecognised non-Claude with undefined config', () => {
+      expect(resolveReasoningParams('high', 'some-new-model', undefined))
+        .toEqual({ max_tokens: 10240 });
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unified reasoning parameter — direct usage (non-deprecated path)
+// ---------------------------------------------------------------------------
+
+describe('callLlmProvider unified reasoning parameter', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  it('sends reasoning.effort for effort-based models when reasoning is set directly', async () => {
+    process.env['LLM_API_KEY_ANTHROPIC'] = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: 'response' }],
+      usage: { input_tokens: 10, output_tokens: 5, thinking_tokens: 0 },
+      model: 'claude-fable',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callLlmProvider(
+      {
+        provider: 'anthropic',
+        model: 'claude-fable',
+        maxTokens: 512,
+        timeoutMs: 1_000,
+        thinking: { lightBudgetTokens: 2048, deepBudgetTokens: 10240 },
+      },
+      {
+        messages: [{ role: 'user', content: 'hello' }],
+        maxTokens: 512,
+        reasoning: { effort: 'high' },
+      },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body['reasoning']).toEqual({ effort: 'high' });
+    expect(body).not.toHaveProperty('thinking');
+    // Effort-based models don't need max_tokens adjustment
+    expect(body['max_tokens']).toBe(512);
+    expect(body['temperature']).toBe(1);
+  });
+
+  it('sends reasoning.max_tokens for legacy models when reasoning is set directly', async () => {
+    process.env['LLM_API_KEY_ANTHROPIC'] = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: 'response' }],
+      usage: { input_tokens: 10, output_tokens: 5, thinking_tokens: 0 },
+      model: 'claude-sonnet',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callLlmProvider(
+      {
+        provider: 'anthropic',
+        model: 'claude-sonnet',
+        maxTokens: 512,
+        timeoutMs: 1_000,
+        thinking: { lightBudgetTokens: 2048, deepBudgetTokens: 10240 },
+      },
+      {
+        messages: [{ role: 'user', content: 'hello' }],
+        maxTokens: 512,
+        reasoning: { max_tokens: 5000 },
+      },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body['reasoning']).toEqual({ max_tokens: 5000 });
+    // Legacy models add reasoning max_tokens to total max_tokens
+    expect(body['max_tokens']).toBe(512 + 5000);
+    expect(body['temperature']).toBe(1);
+  });
+
+  it('new reasoning field takes precedence over deprecated thinking field', async () => {
+    process.env['LLM_API_KEY_ANTHROPIC'] = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: 'response' }],
+      usage: { input_tokens: 10, output_tokens: 5, thinking_tokens: 0 },
+      model: 'claude-sonnet',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callLlmProvider(
+      {
+        provider: 'anthropic',
+        model: 'claude-sonnet',
+        maxTokens: 512,
+        timeoutMs: 1_000,
+        thinking: { lightBudgetTokens: 2048, deepBudgetTokens: 10240 },
+      },
+      {
+        messages: [{ role: 'user', content: 'hello' }],
+        maxTokens: 512,
+        thinking: 'light',
+        reasoning: { effort: 'high' },
+      },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    // reasoning takes precedence over thinking
+    expect(body['reasoning']).toEqual({ effort: 'high' });
+  });
+
+  it('does not send reasoning when max_tokens is 0 and no effort', async () => {
+    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { total_tokens: 12 },
+      model: 'gpt-4o',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callLlmProvider(
+      {
+        provider: 'openai',
+        model: 'gpt-4o',
+        maxTokens: 512,
+        timeoutMs: 1_000,
+      },
+      {
+        messages: [{ role: 'user', content: 'hello' }],
+        maxTokens: 512,
+        reasoning: { max_tokens: 0 },
+      },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body).not.toHaveProperty('reasoning');
+  });
+
+  it('sends reasoning with enabled flag', async () => {
+    process.env['LLM_API_KEY_ANTHROPIC'] = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: 'response' }],
+      usage: { input_tokens: 10, output_tokens: 5, thinking_tokens: 0 },
+      model: 'claude-sonnet',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callLlmProvider(
+      {
+        provider: 'anthropic',
+        model: 'claude-sonnet',
+        maxTokens: 512,
+        timeoutMs: 1_000,
+      },
+      {
+        messages: [{ role: 'user', content: 'hello' }],
+        maxTokens: 512,
+        reasoning: { enabled: true },
+      },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body['reasoning']).toEqual({ enabled: true });
   });
 });

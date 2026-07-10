@@ -44,10 +44,23 @@ export type LlmMessage =
 
 export type LlmToolChoice = 'auto' | 'none' | 'required';
 
+/**
+ * Reasoning level for LLM extended thinking / reasoning.
+ * Will move to domain schema in Phase 2; defined inline for Phase 1.
+ */
+export type ReasoningLevel = 'none' | 'low' | 'medium' | 'high';
+
 export interface LlmRequest {
   messages: LlmMessage[];
   maxTokens: number;
   temperature?: number;
+  /** Unified reasoning controls (OpenRouter standard). Replaces the old `thinking` field. */
+  reasoning?: {
+    effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+    max_tokens?: number;
+    enabled?: boolean;
+  };
+  /** @deprecated — use `reasoning` instead. Kept for backward compat during migration. */
   thinking?: 'none' | 'light' | 'deep';
   tools?: LlmToolDefinition[];
   toolChoice?: LlmToolChoice;
@@ -88,6 +101,107 @@ export function stripReasoningContent(content: string): string {
     .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
     .replace(/```(?:thinking|reasoning)[\s\S]*?```/gi, '')
     .trim();
+}
+
+// ── Model detection helpers (heuristic, based on model ID patterns) ──────────
+
+/**
+ * Returns true if the model uses effort-based reasoning (Fable 5, Sonnet 5, Opus 4.7+).
+ * These models accept `reasoning: { effort: "low"|"medium"|"high" }`.
+ */
+export function isEffortBasedModel(model: string): boolean {
+  const effortPatterns = [
+    /claude-fable/,
+    /claude-sonnet-5/,
+    /claude-opus-4-7/,
+    /claude-opus-4-8/,
+    /claude-opus-5/,
+  ];
+  return effortPatterns.some((p) => p.test(model));
+}
+
+/**
+ * Returns true if the model always thinks and cannot disable reasoning (e.g. Fable 5).
+ * For these models, `none` maps to `effort: "minimal"` — the lowest cost, never zero.
+ */
+export function isAdaptiveThinkingOnlyModel(model: string): boolean {
+  const alwaysThinkingPatterns = [/claude-fable/];
+  return alwaysThinkingPatterns.some((p) => p.test(model));
+}
+
+/**
+ * Returns true if the model is a Claude-family model (Anthropic).
+ * Detects any model ID containing 'claude'.
+ */
+export function isClaudeModel(model: string): boolean {
+  return /claude/i.test(model);
+}
+
+/**
+ * Resolve the correct `reasoning` parameter shape for a given reasoning level and model.
+ *
+ * - Effort-based models (Fable 5, Sonnet 5, Opus 4.7+) use `{ effort: level }`.
+ * - Adaptive-thinking-only models (Fable 5) get `{ effort: "minimal" }` when `none` is requested.
+ * - Unrecognised Claude models fall back to effort-based (forward-looking API).
+ * - Truly unknown (non-Claude) models fall back to `max_tokens`.
+ */
+export function resolveReasoningParams(
+  level: ReasoningLevel,
+  model: string,
+  thinkingConfig: LlmProviderConfig['thinking'],
+): LlmRequest['reasoning'] {
+  if (level === 'none') {
+    if (isAdaptiveThinkingOnlyModel(model)) {
+      return { effort: 'minimal' };
+    }
+    return { max_tokens: 0 };
+  }
+  if (isEffortBasedModel(model)) {
+    return { effort: level };
+  }
+  // Unrecognised Claude model — assume effort-based (forward-looking)
+  if (isClaudeModel(model)) {
+    return { effort: level };
+  }
+  // Truly unknown (non-Claude) — fall back to max_tokens
+  const light = thinkingConfig?.lightBudgetTokens ?? 2048;
+  const deep = thinkingConfig?.deepBudgetTokens ?? 10240;
+  const tokens =
+    level === 'low'
+      ? light
+      : level === 'medium'
+        ? Math.round((light + deep) / 2)
+        : deep;
+  return { max_tokens: tokens };
+}
+
+/**
+ * Returns true when the reasoning shape should be sent in the request body.
+ * Skips `{ max_tokens: 0 }` with no effort (equivalent to "no reasoning").
+ */
+function shouldSendReasoning(reasoning: LlmRequest['reasoning']): boolean {
+  if (!reasoning) return false;
+  if (reasoning.effort) return true;
+  if (reasoning.enabled === true) return true;
+  if (reasoning.max_tokens !== undefined && reasoning.max_tokens > 0) return true;
+  return false;
+}
+
+/**
+ * Resolve the effective reasoning for a request, with backward compat for the
+ * deprecated `thinking` field.
+ */
+function resolveEffectiveReasoning(
+  request: LlmRequest,
+  model: string,
+  thinkingConfig: LlmProviderConfig['thinking'],
+): LlmRequest['reasoning'] {
+  if (request.reasoning) return request.reasoning;
+  if (!request.thinking) return undefined;
+  // Map deprecated thinking values to ReasoningLevel
+  const level: ReasoningLevel =
+    request.thinking === 'none' ? 'none' : request.thinking === 'light' ? 'low' : 'high';
+  return resolveReasoningParams(level, model, thinkingConfig);
 }
 
 /**
@@ -141,11 +255,11 @@ async function callOpenAiCompatibleProvider(
     requestBody['tool_choice'] = request.toolChoice === 'required' ? 'required' : 'auto';
   }
 
-  if (config.provider === 'openai') {
-    const reasoningEffort = toOpenAiReasoningEffort(request.thinking);
-    if (reasoningEffort) {
-      requestBody['reasoning_effort'] = reasoningEffort;
-    }
+  // Unified reasoning parameter (replaces provider-specific thinking controls).
+  // Supports both the new `reasoning` field and backward compat via deprecated `thinking`.
+  const reasoning = resolveEffectiveReasoning(request, config.model, config.thinking);
+  if (reasoning && shouldSendReasoning(reasoning)) {
+    requestBody['reasoning'] = reasoning;
   }
 
   // Enable provider-side prompt caching for OpenRouter → Anthropic models.
@@ -263,15 +377,19 @@ async function callAnthropicProvider(
   // Anthropic requires system prompt to be a top-level field, not in messages.
   const systemMessage = request.messages.find((m) => m.role === 'system');
   const chatMessages = request.messages.filter((m) => m.role !== 'system');
-  const thinkingBudgetTokens = config.thinking
-    ? toAnthropicThinkingBudget(request.thinking, config.thinking)
-    : 0;
-  const maxTokens = thinkingBudgetTokens > 0
-    ? request.maxTokens + thinkingBudgetTokens
-    : request.maxTokens;
-  const temperature = thinkingBudgetTokens > 0
-    ? 1
-    : (request.temperature ?? 0);
+
+  // Resolve reasoning: new `reasoning` field takes precedence, deprecated `thinking` as fallback.
+  const reasoning = resolveEffectiveReasoning(request, config.model, config.thinking);
+  const isReasoningActive = reasoning != null && shouldSendReasoning(reasoning);
+
+  // For legacy token-budget models, the reasoning max_tokens must be added to the
+  // top-level max_tokens so the model has enough total budget. Effort-based models
+  // manage their own budget internally.
+  const reasoningBudgetTokens =
+    isReasoningActive && !isEffortBasedModel(config.model) ? (reasoning?.max_tokens ?? 0) : 0;
+  const maxTokens =
+    reasoningBudgetTokens > 0 ? request.maxTokens + reasoningBudgetTokens : request.maxTokens;
+  const temperature = isReasoningActive ? 1 : (request.temperature ?? 0);
 
   const requestBody: Record<string, unknown> = {
     model: config.model,
@@ -293,11 +411,8 @@ async function callAnthropicProvider(
       : { type: 'auto' };
   }
 
-  if (thinkingBudgetTokens > 0) {
-    requestBody['thinking'] = {
-      type: 'enabled',
-      budget_tokens: thinkingBudgetTokens,
-    };
+  if (isReasoningActive) {
+    requestBody['reasoning'] = reasoning;
   }
 
   try {
@@ -594,31 +709,6 @@ function invalidToolArgsError(error: unknown): LlmResult {
       retryable: false,
     },
   };
-}
-
-function toAnthropicThinkingBudget(
-  thinking: LlmRequest['thinking'],
-  budgetConfig: { lightBudgetTokens: number; deepBudgetTokens: number },
-): number {
-  switch (thinking) {
-    case 'light':
-      return budgetConfig.lightBudgetTokens;
-    case 'deep':
-      return budgetConfig.deepBudgetTokens;
-    default:
-      return 0;
-  }
-}
-
-function toOpenAiReasoningEffort(thinking: LlmRequest['thinking']): 'low' | 'high' | undefined {
-  switch (thinking) {
-    case 'light':
-      return 'low';
-    case 'deep':
-      return 'high';
-    default:
-      return undefined;
-  }
 }
 
 function parseRetryAfterMs(retryAfterHeader: string | null): number | undefined {
