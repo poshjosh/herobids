@@ -53,6 +53,8 @@ export type RuntimePolicyOverrides = Partial<{
   toolResultFullRetentionTurns: number | null;
   toolResultMaxStaleChars: number | null;
   maxHoldDurationMs: number | null;
+  scoutReasoning: string | null;
+  judgeReasoning: string | null;
 }>;
 
 export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {

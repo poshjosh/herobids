@@ -87,6 +87,38 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     heavyModel: initialData.heavyModel ?? '',
   });
   const inheritedModelSettings = aiSettingsQuery.data?.aiModelConfig ?? null;
+
+  // Resolve the effective reasoning levels for display in the model override section.
+  // If the agent has an explicit override in runtimePolicyOverrides, use that.
+  // Otherwise, show the inherited value from saved AI settings (or fallback defaults).
+  const resolvedRuntimeOverrides = runtimePolicyOverrides ?? {};
+  const inheritedScoutReasoning = inheritedModelSettings?.scoutReasoning ?? 'none';
+  const inheritedJudgeReasoning = inheritedModelSettings?.judgeReasoning ?? 'medium';
+  const effectiveScoutReasoning = (resolvedRuntimeOverrides.scoutReasoning as string | null) ?? null;
+  const effectiveJudgeReasoning = (resolvedRuntimeOverrides.judgeReasoning as string | null) ?? null;
+
+  function setScoutReasoning(value: string | null) {
+    setRuntimePolicyOverrides((prev) => {
+      if (value === null || value === '') {
+        // Remove from overrides (inherit from settings)
+        const next = { ...(prev ?? {}) };
+        delete next.scoutReasoning;
+        return Object.keys(next).length > 0 ? (next as RuntimePolicyOverrides) : null;
+      }
+      return { ...(prev ?? {}), scoutReasoning: value };
+    });
+  }
+
+  function setJudgeReasoning(value: string | null) {
+    setRuntimePolicyOverrides((prev) => {
+      if (value === null || value === '') {
+        const next = { ...(prev ?? {}) };
+        delete next.judgeReasoning;
+        return Object.keys(next).length > 0 ? (next as RuntimePolicyOverrides) : null;
+      }
+      return { ...(prev ?? {}), judgeReasoning: value };
+    });
+  }
   const tradingCapabilityQuery = useQuery({
     queryKey: ['agents', agentId, 'capability-readiness', 'trading'],
     queryFn: async () => agentsApi.capabilityReadiness(agentId, 'trading') as Promise<CapabilityReadiness>,
@@ -684,6 +716,57 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                         premiumHelp={intl.formatMessage({ id: 'aiModels.premium.help' })}
                         onChange={setModelForm}
                       />
+
+                      {/* Reasoning level dropdowns */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div>
+                          <FieldLabel>{intl.formatMessage({ id: 'agents.edit.models.reasoning.scoutLabel' })}</FieldLabel>
+                          <select
+                            aria-label={intl.formatMessage({ id: 'agents.edit.models.reasoning.scoutLabel' })}
+                            value={effectiveScoutReasoning ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setScoutReasoning(val === '' ? null : val);
+                            }}
+                            style={{ ...inputStyle, cursor: 'pointer', width: '100%' }}
+                          >
+                            <option value="">
+                              {intl.formatMessage({ id: 'agents.edit.models.reasoning.inherit' }, { value: inheritedScoutReasoning })}
+                            </option>
+                            <option value="none">{intl.formatMessage({ id: 'aiModels.reasoning.none' })}</option>
+                            <option value="low">{intl.formatMessage({ id: 'aiModels.reasoning.low' })}</option>
+                            <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
+                            <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
+                          </select>
+                          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                            {intl.formatMessage({ id: 'agents.edit.models.reasoning.scoutHelp' })}
+                          </div>
+                        </div>
+                        <div>
+                          <FieldLabel>{intl.formatMessage({ id: 'agents.edit.models.reasoning.judgeLabel' })}</FieldLabel>
+                          <select
+                            aria-label={intl.formatMessage({ id: 'agents.edit.models.reasoning.judgeLabel' })}
+                            value={effectiveJudgeReasoning ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setJudgeReasoning(val === '' ? null : val);
+                            }}
+                            style={{ ...inputStyle, cursor: 'pointer', width: '100%' }}
+                          >
+                            <option value="">
+                              {intl.formatMessage({ id: 'agents.edit.models.reasoning.inherit' }, { value: inheritedJudgeReasoning })}
+                            </option>
+                            <option value="none">{intl.formatMessage({ id: 'aiModels.reasoning.none' })}</option>
+                            <option value="low">{intl.formatMessage({ id: 'aiModels.reasoning.low' })}</option>
+                            <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
+                            <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
+                          </select>
+                          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                            {intl.formatMessage({ id: 'agents.edit.models.reasoning.judgeHelp' })}
+                          </div>
+                        </div>
+                      </div>
+
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
                         <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                           {intl.formatMessage({ id: 'agents.edit.models.overrideHelp' })}
