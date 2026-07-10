@@ -61,8 +61,9 @@ describe('callLlmProvider thinking controls', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body['reasoning']).toEqual({ effort: 'low' });
-    expect(body).not.toHaveProperty('thinking');
+    expect(body['thinking']).toEqual({ type: 'adaptive' });
+    expect(body['output_config']).toEqual({ effort: 'low' });
+    expect(body).not.toHaveProperty('reasoning');
     expect(body['temperature']).toBe(1);
     expect(body['max_tokens']).toBe(512);
   });
@@ -557,8 +558,9 @@ describe('callLlmProvider thinking budget config', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body['reasoning']).toEqual({ effort: 'low' });
-    expect(body).not.toHaveProperty('thinking');
+    expect(body['thinking']).toEqual({ type: 'adaptive' });
+    expect(body['output_config']).toEqual({ effort: 'low' });
+    expect(body).not.toHaveProperty('reasoning');
     expect(body['max_tokens']).toBe(512);
   });
 
@@ -587,8 +589,9 @@ describe('callLlmProvider thinking budget config', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body['reasoning']).toEqual({ effort: 'high' });
-    expect(body).not.toHaveProperty('thinking');
+    expect(body['thinking']).toEqual({ type: 'adaptive' });
+    expect(body['output_config']).toEqual({ effort: 'high' });
+    expect(body).not.toHaveProperty('reasoning');
     expect(body['max_tokens']).toBe(512);
   });
 
@@ -608,8 +611,9 @@ describe('callLlmProvider thinking budget config', () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     // Claude model → effort-based (forward-looking), not max_tokens
-    expect(body['reasoning']).toEqual({ effort: 'low' });
-    expect(body).not.toHaveProperty('thinking');
+    expect(body['thinking']).toEqual({ type: 'adaptive' });
+    expect(body['output_config']).toEqual({ effort: 'low' });
+    expect(body).not.toHaveProperty('reasoning');
   });
 
   it('does not send reasoning when thinking mode is "none"', async () => {
@@ -636,6 +640,7 @@ describe('callLlmProvider thinking budget config', () => {
     // 'none' → { max_tokens: 0 } → shouldSendReasoning returns false → not sent
     expect(body).not.toHaveProperty('reasoning');
     expect(body).not.toHaveProperty('thinking');
+    expect(body).not.toHaveProperty('output_config');
     expect(body['max_tokens']).toBe(512);
   });
 });
@@ -1124,8 +1129,9 @@ describe('callLlmProvider unified reasoning parameter', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body['reasoning']).toEqual({ effort: 'high' });
-    expect(body).not.toHaveProperty('thinking');
+    expect(body['thinking']).toEqual({ type: 'adaptive' });
+    expect(body['output_config']).toEqual({ effort: 'high' });
+    expect(body).not.toHaveProperty('reasoning');
     // Effort-based models don't need max_tokens adjustment
     expect(body['max_tokens']).toBe(512);
     expect(body['temperature']).toBe(1);
@@ -1157,7 +1163,9 @@ describe('callLlmProvider unified reasoning parameter', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body['reasoning']).toEqual({ max_tokens: 5000 });
+    expect(body['thinking']).toEqual({ type: 'enabled', budget_tokens: 5000 });
+    expect(body).not.toHaveProperty('reasoning');
+    expect(body).not.toHaveProperty('output_config');
     // Legacy models add reasoning max_tokens to total max_tokens
     expect(body['max_tokens']).toBe(512 + 5000);
     expect(body['temperature']).toBe(1);
@@ -1191,7 +1199,9 @@ describe('callLlmProvider unified reasoning parameter', () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     // reasoning takes precedence over thinking
-    expect(body['reasoning']).toEqual({ effort: 'high' });
+    expect(body['thinking']).toEqual({ type: 'adaptive' });
+    expect(body['output_config']).toEqual({ effort: 'high' });
+    expect(body).not.toHaveProperty('reasoning');
   });
 
   it('does not send reasoning when max_tokens is 0 and no effort', async () => {
@@ -1247,6 +1257,9 @@ describe('callLlmProvider unified reasoning parameter', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body['reasoning']).toEqual({ enabled: true });
+    // enabled: true without budget or effort → adaptive thinking (model chooses depth)
+    expect(body['thinking']).toEqual({ type: 'adaptive' });
+    expect(body).not.toHaveProperty('output_config');
+    expect(body).not.toHaveProperty('reasoning');
   });
 });

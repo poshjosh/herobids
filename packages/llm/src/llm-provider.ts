@@ -383,10 +383,10 @@ async function callAnthropicProvider(
   const isReasoningActive = reasoning != null && shouldSendReasoning(reasoning);
 
   // For legacy token-budget models, the reasoning max_tokens must be added to the
-  // top-level max_tokens so the model has enough total budget. Effort-based models
-  // manage their own budget internally.
+  // top-level max_tokens so the model has enough total budget. Adaptive effort-based
+  // models manage their own budget internally via output_config.effort.
   const reasoningBudgetTokens =
-    isReasoningActive && !isEffortBasedModel(config.model) ? (reasoning?.max_tokens ?? 0) : 0;
+    isReasoningActive && (reasoning?.max_tokens ?? 0) > 0 ? (reasoning!.max_tokens!) : 0;
   const maxTokens =
     reasoningBudgetTokens > 0 ? request.maxTokens + reasoningBudgetTokens : request.maxTokens;
   const temperature = isReasoningActive ? 1 : (request.temperature ?? 0);
@@ -412,7 +412,21 @@ async function callAnthropicProvider(
   }
 
   if (isReasoningActive) {
-    requestBody['reasoning'] = reasoning;
+    if ((reasoning!.max_tokens ?? 0) > 0) {
+      // Legacy token-budget models (Opus 4.5, Haiku 4.5, earlier Claude 4)
+      requestBody['thinking'] = { type: 'enabled', budget_tokens: reasoning!.max_tokens };
+    } else if (reasoning!.effort != null) {
+      // Adaptive effort-based models (Fable 5, Mythos 5, Sonnet 5, Opus 4.7+, Opus 4.6, Sonnet 4.6).
+      // On Anthropic native API, effort lives in a separate top-level output_config field,
+      // NOT nested inside thinking. Sending effort inside thinking returns a 400 error.
+      // 'minimal' is our internal concept; the lowest Anthropic accepts is 'low'.
+      const effortLevel = reasoning!.effort === 'minimal' ? 'low' : reasoning!.effort;
+      requestBody['thinking'] = { type: 'adaptive' };
+      requestBody['output_config'] = { effort: effortLevel };
+    } else {
+      // enabled: true without budget or effort — default to adaptive (thinking on, model chooses depth)
+      requestBody['thinking'] = { type: 'adaptive' };
+    }
   }
 
   try {
