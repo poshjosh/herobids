@@ -14,11 +14,11 @@ import http from 'node:http';
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import pino from 'pino';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal } from '@herobids/db';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml, EconomicEvent } from '@herobids/domain';
-import { type LlmToolDefinition } from '@herobids/llm';
+import { type LlmToolDefinition, resolveReasoningParams } from '@herobids/llm';
 import {
   CompositeEconomicCalendarProvider,
   RedisProviderResponseCache,
@@ -76,7 +76,7 @@ import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailur
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { buildTickGateState } from './tick-gate-state.js';
-import { classifyTickThinking, extractDrawdownPct } from './tick-thinking.js';
+import { applyReasoningCeiling, classifyTickThinking, extractDrawdownPct, toReasoningLevel } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { createToolRegistry } from './tools/index.js';
 import { extractCeilings, extractCreatorInput } from './agent-risk-limits.js';
@@ -336,6 +336,8 @@ interface AgentConfig {
     toolResultMaxStaleChars: number;
     maxHoldDurationMs?: number;
     tradingSessions?: TradingSessionName[] | null;
+    scoutReasoning: ReasoningLevel;
+    judgeReasoning: ReasoningLevel;
   };
 }
 
@@ -2864,11 +2866,16 @@ async function runTick(): Promise<void> {
           timeoutMs: LLM_TIMEOUT_MS,
           baseUrl: resolvedBaseUrl,
           providersBaseUrlMap,
+          thinking: agentRuntimePolicy.llm.thinking,
         },
         requestBase: {
           maxTokens: scoutLoopConfig.maxTokens,
           temperature: scoutLoopConfig.temperature,
-          thinking: 'none',
+          reasoning: resolveReasoningParams(
+            agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'none',
+            lightModel,
+            agentRuntimePolicy.llm.thinking,
+          ),
         },
         maxTurns: scoutLoopConfig.maxTurns,
         toolResultFullRetentionTurns: runtimeState.runtimeDescriptor.budgets.toolResultFullRetentionTurns,
@@ -3074,11 +3081,21 @@ async function runTick(): Promise<void> {
       drawdownPct: sessionMetrics.performance.drawdownPct ?? extractDrawdownPct(sessionMetrics.lastPnlSummary),
       drawdownThresholdPct: agentRuntimePolicy.thinking.drawdownThresholdPct,
     });
-    const judgeThinking = costProfile.defaultThinking === 'deep'
-      ? { thinking: 'deep' as const, reason: 'cost_profile_premium' }
-      : thinkingDecision;
+    const systemThinking = costProfile.defaultThinking === 'deep'
+      ? 'deep' as const
+      : thinkingDecision.thinking;
+    const userJudgeLevel = agentConfig.resolvedRuntimePolicy?.judgeReasoning ?? 'medium';
+    const cappedThinking = applyReasoningCeiling(systemThinking, userJudgeLevel);
+    const judgeThinkingReason = costProfile.defaultThinking === 'deep'
+      ? 'cost_profile_premium'
+      : thinkingDecision.reason;
     previousRegimePass = skipDecision.regime?.pass ?? previousRegimePass;
-    logger.info({ thinking: judgeThinking.thinking, reason: judgeThinking.reason }, 'Resolved tick thinking level');
+    const wasCapped = cappedThinking !== systemThinking;
+    logger.info({
+      thinking: cappedThinking,
+      reason: judgeThinkingReason,
+      ...(wasCapped ? { capped: { from: systemThinking, by: userJudgeLevel } } : {}),
+    }, 'Resolved tick thinking level');
 
     emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH, {
       tickId,
@@ -3100,7 +3117,11 @@ async function runTick(): Promise<void> {
       requestBase: {
         maxTokens: LLM_MAX_TOKENS,
         temperature: judgeLoopConfig.temperature,
-        thinking: judgeThinking.thinking,
+        reasoning: resolveReasoningParams(
+          toReasoningLevel(cappedThinking),
+          costProfile.heavyModel,
+          agentRuntimePolicy.llm.thinking,
+        ),
       },
       maxTurns: judgeLoopConfig.maxTurns,
       toolResultFullRetentionTurns: runtimeState.runtimeDescriptor.budgets.toolResultFullRetentionTurns,

@@ -1,3 +1,5 @@
+import type { ReasoningLevel } from '@herobids/domain';
+
 export type TickThinkingLevel = 'none' | 'light' | 'deep';
 
 export interface TickThinkingInput {
@@ -58,4 +60,29 @@ export function extractDrawdownPct(value: unknown): number | null {
 
   const parsed = Number(percentMatch[1]);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Cap the system-determined thinking level with the user's chosen reasoning level.
+ * The user's level acts as a maximum — the system can go lower, never higher.
+ * Maps TickThinkingLevel (none/light/deep) against ReasoningLevel (none/low/medium/high).
+ */
+export function applyReasoningCeiling(
+  systemLevel: TickThinkingLevel,
+  userLevel: ReasoningLevel,
+): TickThinkingLevel {
+  const order: Record<TickThinkingLevel | ReasoningLevel, number> = {
+    none: 0, low: 1, light: 1, medium: 2, high: 3, deep: 3,
+  };
+  if ((order[systemLevel] ?? 0) <= (order[userLevel] ?? 0)) return systemLevel;
+  // Cap at user level — map ReasoningLevel back to TickThinkingLevel
+  if (userLevel === 'none') return 'none';
+  if (userLevel === 'low') return 'light';
+  return 'deep'; // medium and high both cap at deep (our max TickThinkingLevel)
+}
+
+export function toReasoningLevel(tickLevel: TickThinkingLevel): ReasoningLevel {
+  if (tickLevel === 'light') return 'low';
+  if (tickLevel === 'deep') return 'high';
+  return 'none';
 }
