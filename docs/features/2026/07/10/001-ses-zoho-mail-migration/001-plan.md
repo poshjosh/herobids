@@ -201,7 +201,7 @@ Reason:
 
 ---
 
-## 4. [PENDING] Update config schema and operator-facing documentation
+## 4. [DONE] Update config schema and operator-facing documentation
 
 ### Changes
 
@@ -223,7 +223,7 @@ Reason:
 
 ---
 
-## 5. [PENDING] Document the Zoho Mail operational setup
+## 5. [DONE] Document the Zoho Mail operational setup
 
 ### Scope
 
@@ -248,7 +248,7 @@ This is documentation/runbook work, not application runtime code.
 
 ---
 
-## 6. [PENDING] Validate the migration end to end
+## 6. [DONE] Validate the migration end to end
 
 ### Tests
 
