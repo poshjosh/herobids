@@ -1,5 +1,6 @@
-export type { TradingSessionName } from '@herobids/domain';
+import type { ReasoningLevel, TradingSessionName } from '@herobids/domain';
 
+export type { TradingSessionName };
 export type AgentStyleValue = 'careful' | 'balanced' | 'bold';
 
 const MS_PER_MINUTE = 60_000;
@@ -31,6 +32,9 @@ export interface StyleDefaults {
   toolResultMaxStaleChars: number;
   // Scout hold
   maxHoldDurationMs: number;
+  // Reasoning level defaults (per-style base; agent overrides via runtime policy)
+  scoutReasoning: ReasoningLevel;
+  judgeReasoning: ReasoningLevel;
 }
 
 /** Per-field overrides for runtime policy. Fields not present use the style default. */
@@ -53,8 +57,8 @@ export type RuntimePolicyOverrides = Partial<{
   toolResultFullRetentionTurns: number | null;
   toolResultMaxStaleChars: number | null;
   maxHoldDurationMs: number | null;
-  scoutReasoning: string | null;
-  judgeReasoning: string | null;
+  scoutReasoning: ReasoningLevel | null;
+  judgeReasoning: ReasoningLevel | null;
 }>;
 
 export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
@@ -80,6 +84,8 @@ export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
     toolResultFullRetentionTurns: 2,
     toolResultMaxStaleChars: 250,
     maxHoldDurationMs: 27_000_000, // 450 min (5 × tick interval)
+    scoutReasoning: 'none',
+    judgeReasoning: 'low',
   },
   balanced: {
     costPreset: 'standard',
@@ -103,6 +109,8 @@ export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
     toolResultFullRetentionTurns: 3,
     toolResultMaxStaleChars: 500,
     maxHoldDurationMs: 5_400_000, // 90 min (3 × tick interval)
+    scoutReasoning: 'none',
+    judgeReasoning: 'medium',
   },
   bold:     {
     costPreset: 'premium',
@@ -126,6 +134,8 @@ export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
     toolResultFullRetentionTurns: 5,
     toolResultMaxStaleChars: 1_000,
     maxHoldDurationMs: 600_000, // 10 min (1 × tick interval)
+    scoutReasoning: 'low',
+    judgeReasoning: 'high',
   },
 };
 

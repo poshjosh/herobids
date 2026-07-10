@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
 import { type AgentStyleValue, type RuntimePolicyOverrides, resolveStyleDefaults, type TradingSessionName } from './style-mapping.js';
+import type { ReasoningLevel } from '@herobids/domain';
 import { MS_PER_MINUTE } from './tick-interval.js';
 
 interface RuntimePolicySectionProps {
@@ -14,15 +15,13 @@ interface RuntimePolicySectionProps {
   showTradingSessionPresets?: boolean;
 }
 
-type NumericField = Exclude<keyof RuntimePolicyOverrides, 'allowedHoursUtc' | 'weekendPause' | 'tradingSessions'>;
+type NumericField = Exclude<keyof RuntimePolicyOverrides, 'allowedHoursUtc' | 'weekendPause' | 'tradingSessions' | 'scoutReasoning' | 'judgeReasoning'>;
 
 const NUMERIC_FIELDS: NumericField[] = [
   'scoutMaxTurns',
   'judgeMaxTurns',
   'scoutMaxTokens',
   'judgeMaxTokens',
-  'lightThinkingTokens',
-  'deepThinkingTokens',
   'maxHistoryMessages',
   'maxHistoryTokens',
   'maxRecentToolMessages',
@@ -275,6 +274,58 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
             )}
           </div>
         ))}
+
+        {/* Scout Reasoning Level */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <FieldLabel>
+            {intl.formatMessage({ id: 'aiModels.scoutReasoning.label' })}
+          </FieldLabel>
+          <select
+            value={overrides?.scoutReasoning ?? ''}
+            onChange={(e) => {
+              if (e.target.value === '') {
+                clearOverride('scoutReasoning');
+              } else {
+                setOverride('scoutReasoning', e.target.value as ReasoningLevel | null);
+              }
+            }}
+            style={{ ...inputStyle, cursor: 'pointer' }}
+          >
+            <option value="">
+              {intl.formatMessage({ id: 'agents.edit.models.reasoning.inherit' }, { value: intl.formatMessage({ id: `aiModels.reasoning.${defaults.scoutReasoning}` }) })}
+            </option>
+            <option value="none">{intl.formatMessage({ id: 'aiModels.reasoning.none' })}</option>
+            <option value="low">{intl.formatMessage({ id: 'aiModels.reasoning.low' })}</option>
+            <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
+            <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
+          </select>
+        </div>
+
+        {/* Judge Reasoning Level */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <FieldLabel>
+            {intl.formatMessage({ id: 'aiModels.judgeReasoning.label' })}
+          </FieldLabel>
+          <select
+            value={overrides?.judgeReasoning ?? ''}
+            onChange={(e) => {
+              if (e.target.value === '') {
+                clearOverride('judgeReasoning');
+              } else {
+                setOverride('judgeReasoning', e.target.value as ReasoningLevel | null);
+              }
+            }}
+            style={{ ...inputStyle, cursor: 'pointer' }}
+          >
+            <option value="">
+              {intl.formatMessage({ id: 'agents.edit.models.reasoning.inherit' }, { value: intl.formatMessage({ id: `aiModels.reasoning.${defaults.judgeReasoning}` }) })}
+            </option>
+            <option value="none">{intl.formatMessage({ id: 'aiModels.reasoning.none' })}</option>
+            <option value="low">{intl.formatMessage({ id: 'aiModels.reasoning.low' })}</option>
+            <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
+            <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
+          </select>
+        </div>
 
         {/* weekendPause */}
         <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px' }}>
