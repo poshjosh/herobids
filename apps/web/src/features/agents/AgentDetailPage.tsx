@@ -13,6 +13,7 @@ import { AgentTradesTable } from './AgentTradesTable.js';
 import { AgentEvaluations } from './AgentEvaluations.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { getToken } from '../../lib/session.js';
+import { buildDeliveryDescriptors, getMessageClassBadgeVariant } from './agent-message-display.js';
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -67,40 +68,11 @@ export function AgentDetailPage() {
   };
 
   const getMessageDeliveryDetail = (message: AgentOutboundMessage): string | null => {
-    const viaTelegram = message.deliveryStatus === 'sent';
-    const viaEmail = message.emailDeliveryStatus === 'email_sent';
-
-    if (viaTelegram && viaEmail) {
-      return intl.formatMessage({
-        id: 'agents.detail.messageDelivery.both',
-        defaultMessage: 'Delivered via Telegram and email',
-      });
-    }
-    if (viaTelegram) {
-      return intl.formatMessage({
-        id: 'agents.detail.messageDelivery.telegram',
-        defaultMessage: 'Delivered via Telegram',
-      });
-    }
-    if (viaEmail) {
-      return intl.formatMessage({
-        id: 'agents.detail.messageDelivery.email',
-        defaultMessage: 'Delivered via email',
-      });
-    }
-    if (message.deliveryStatus === 'failed' && message.emailDeliveryStatus === 'email_failed_provider') {
-      return intl.formatMessage({
-        id: 'agents.detail.messageDelivery.failedBoth',
-        defaultMessage: 'Telegram and email delivery failed',
-      });
-    }
-    if (message.deliveryStatus === 'failed') {
-      return intl.formatMessage({
-        id: 'agents.detail.messageDelivery.telegramFailed',
-        defaultMessage: 'Telegram delivery failed',
-      });
-    }
-    return null;
+    const descriptors = buildDeliveryDescriptors(message.deliveryStatus, message.emailDeliveryStatus);
+    if (descriptors.length === 0) return null;
+    return descriptors
+      .map((d) => intl.formatMessage({ id: d.id, defaultMessage: d.defaultMessage }))
+      .join(' · ');
   };
 
   const skillsQuery = useQuery({
@@ -475,11 +447,22 @@ export function AgentDetailPage() {
               {messagesQuery.data.map((msg: AgentOutboundMessage) => {
                 const displayStatus = getMessageDisplayStatus(msg);
                 const deliveryDetail = getMessageDeliveryDetail(msg);
+                const classVariant = getMessageClassBadgeVariant(msg.messageClass);
 
                 return <div key={msg.id} style={{ padding: '10px 12px', borderRadius: '6px', background: 'var(--color-surface-raised)', fontSize: '13px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: msg.subject ? '4px' : '0' }}>
-                    <span style={{ fontWeight: '500', color: msg.authoredBy === 'platform' ? 'var(--color-warning)' : 'var(--color-text)' }}>
+                    <span style={{ display: 'flex', gap: '6px', alignItems: 'center', fontWeight: '500', color: msg.authoredBy === 'platform' ? 'var(--color-warning)' : 'var(--color-text)' }}>
                       {msg.authoredBy === 'platform' ? intl.formatMessage({ id: 'agents.detail.messageAuthor.platform' }) : intl.formatMessage({ id: 'agents.detail.messageAuthor.agent' })}
+                      {classVariant === 'alert' && (
+                        <span style={{ padding: '1px 6px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', background: 'var(--color-warning-bg, #fff3cd)', color: 'var(--color-warning, #b45309)' }}>
+                          {intl.formatMessage({ id: 'agents.detail.messageClass.alert' })}
+                        </span>
+                      )}
+                      {classVariant === 'reminder' && (
+                        <span style={{ padding: '1px 6px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', background: 'var(--color-info-bg, #dbeafe)', color: 'var(--color-info, #1d4ed8)' }}>
+                          {intl.formatMessage({ id: 'agents.detail.messageClass.reminder' })}
+                        </span>
+                      )}
                     </span>
                     <span style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                       <StatusBadge status={displayStatus} />

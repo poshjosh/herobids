@@ -968,6 +968,7 @@ export interface AgentOutboundMessage {
   subject: string | null;
   body: string;
   contextRef: string | null;
+  messageClass: 'routine' | 'alert' | 'reminder' | null;
   deliveryStatus: 'pending' | 'sent' | 'failed';
   emailDeliveryStatus:
     | 'feed_only'

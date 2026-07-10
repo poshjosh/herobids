@@ -237,7 +237,7 @@ Expected result:
 
 The user has one obvious account-level place to say whether their agents may email them by default.
 
-### Slice 4 — Worker resolution and delivery semantics [PENDING]
+### Slice 4 — Worker resolution and delivery semantics [DONE]
 
 Goal: make explicit email requests send unless explicitly disabled or technically blocked.
 

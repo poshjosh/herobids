@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SUPPORTED_LOCALES } from './resolveLocale.js';
 import { messages as enMessages } from './locales/en.js';
+import { messages as arMessages } from './locales/ar.js';
+import { messages as hiMessages } from './locales/hi.js';
 
 const webRoot = new URL('../../', import.meta.url);
 
@@ -73,6 +75,16 @@ describe('i18n regressions', () => {
       .sort();
     const webLocales = [...SUPPORTED_LOCALES].sort();
     expect(apiLocales).toEqual(webLocales);
+  });
+
+  it('all en keys are present in every other locale', () => {
+    const enKeys = Object.keys(enMessages);
+    const otherLocales: Record<string, Record<string, string>> = { ar: arMessages, hi: hiMessages };
+    for (const [lang, messages] of Object.entries(otherLocales)) {
+      for (const key of enKeys) {
+        expect(messages, `Missing key "${key}" in ${lang}`).toHaveProperty(key);
+      }
+    }
   });
 });
 
