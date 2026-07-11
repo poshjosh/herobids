@@ -281,6 +281,13 @@
       "when": 1783768027572,
       "tag": "0039_clean_sentinels",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1783977600000,
+      "tag": "0040_stamp_capability_mode",
+      "breakpoints": true
     }
   ]
 }

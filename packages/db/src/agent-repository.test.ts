@@ -311,3 +311,65 @@ describe('AgentRepository.resolveAgentForTelegramReply', () => {
     await expect(repo.resolveAgentForTelegramReply('888', 'chat-b')).resolves.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// getUnifiedConfig — capabilityMode / hybridMode defaulting (004)
+// ---------------------------------------------------------------------------
+
+function buildUnifiedConfigDb(raw: Record<string, unknown> | null) {
+  return {
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue(raw ? [{ unifiedConfig: raw }] : []),
+        }),
+      }),
+    }),
+  };
+}
+
+describe('AgentRepository.getUnifiedConfig (capabilityMode/hybridMode defaults)', () => {
+  it('returns hybridMode: "mixed" when config has capabilityMode: "hybrid" but no hybridMode', async () => {
+    const db = buildUnifiedConfigDb({ capabilityMode: 'hybrid', technical: { venue: 'hyperliquid' } });
+    const repo = new AgentRepository(db as never);
+    const result = await repo.getUnifiedConfig('agent-1');
+    expect(result).toMatchObject({ capabilityMode: 'hybrid', hybridMode: 'mixed' });
+  });
+
+  it('does not stamp hybridMode on intelligence agents', async () => {
+    const db = buildUnifiedConfigDb({ capabilityMode: 'intelligence', intelligence: { prompt: 'test' } });
+    const repo = new AgentRepository(db as never);
+    const result = await repo.getUnifiedConfig('agent-1');
+    expect(result).toMatchObject({ capabilityMode: 'intelligence' });
+    expect(result).not.toHaveProperty('hybridMode');
+  });
+
+  it('preserves explicit hybridMode: "scanner_gated" when already set', async () => {
+    const db = buildUnifiedConfigDb({ capabilityMode: 'hybrid', hybridMode: 'scanner_gated', technical: {} });
+    const repo = new AgentRepository(db as never);
+    const result = await repo.getUnifiedConfig('agent-1');
+    expect(result).toMatchObject({ capabilityMode: 'hybrid', hybridMode: 'scanner_gated' });
+  });
+
+  it('stamps capabilityMode: "hybrid" and hybridMode: "mixed" when config has technical but no capabilityMode', async () => {
+    const db = buildUnifiedConfigDb({ technical: { venue: 'hyperliquid' } });
+    const repo = new AgentRepository(db as never);
+    const result = await repo.getUnifiedConfig('agent-1');
+    expect(result).toMatchObject({ capabilityMode: 'hybrid', hybridMode: 'mixed' });
+  });
+
+  it('stamps capabilityMode: "intelligence" when config has no technical and no capabilityMode', async () => {
+    const db = buildUnifiedConfigDb({ intelligence: { prompt: 'hello' } });
+    const repo = new AgentRepository(db as never);
+    const result = await repo.getUnifiedConfig('agent-1');
+    expect(result).toMatchObject({ capabilityMode: 'intelligence' });
+    expect(result).not.toHaveProperty('hybridMode');
+  });
+
+  it('returns null when there is no stored config', async () => {
+    const db = buildUnifiedConfigDb(null);
+    const repo = new AgentRepository(db as never);
+    const result = await repo.getUnifiedConfig('agent-1');
+    expect(result).toBeNull();
+  });
+});

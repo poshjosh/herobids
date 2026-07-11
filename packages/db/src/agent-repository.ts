@@ -14,6 +14,43 @@ import {
 import { resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
 import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type AgentRiskOverrides, type UnifiedAgentConfig, type ProvidersYaml } from '@herobids/domain';
 
+// --- Helpers ---
+
+/**
+ * 004: Canonical location for stamping `capabilityMode` (and `hybridMode` for
+ * hybrid agents) on raw unifiedConfig JSONB blobs read from the database.
+ * The SQL migration (0040_stamp_capability_mode) handles this at rest, but
+ * this guards in-flight reads before the migration runs or if it was skipped.
+ *
+ * This is also the authoritative default for `hybridMode: 'mixed'` — because
+ * the Zod schema cannot express `.default('mixed')` without breaking
+ * intelligence agents (`.default()` runs before `.superRefine()`, which
+ * discriminates between hybrid and intelligence shapes).
+ *
+ * - Agents with `technical` config → `capabilityMode: 'hybrid'`, `hybridMode: 'mixed'`
+ * - Agents without `technical` config → `capabilityMode: 'intelligence'`
+ * - Idempotent when `capabilityMode` is present:
+ *   - intelligence agents → returned unchanged
+ *   - hybrid agents → still stamps `hybridMode: 'mixed'` if missing
+ */
+function applyCapabilityModeMigrationDefaults(raw: Record<string, unknown>): Record<string, unknown> {
+  if ('capabilityMode' in raw) {
+    // Still need to stamp hybridMode for hybrid agents missing it
+    if (raw.capabilityMode === 'hybrid' && !('hybridMode' in raw)) {
+      return { ...raw, hybridMode: 'mixed' };
+    }
+    return raw;
+  }
+  const config = { ...raw };
+  if ('technical' in config && config.technical != null) {
+    config.capabilityMode = 'hybrid';
+    config.hybridMode = 'mixed';
+  } else {
+    config.capabilityMode = 'intelligence';
+  }
+  return config;
+}
+
 // --- Agent ---
 
 export interface InsertAgent {
@@ -224,12 +261,23 @@ export class AgentRepository {
       .from(agents)
       .where(eq(agents.id, agentId))
       .limit(1);
-    return rows[0]?.unifiedConfig ?? null;
+    const raw = rows[0]?.unifiedConfig ?? null;
+    if (!raw) return null;
+    // 004: Defensive migration default — stamp capabilityMode (and hybridMode
+    // for hybrid agents) if absent from the stored JSONB. The SQL migration
+    // (0040) handles this at rest, but this guards in-flight reads before the
+    // migration runs or if the migration was skipped.
+    return applyCapabilityModeMigrationDefaults(raw as Record<string, unknown>) as UnifiedAgentConfig;
   }
 
   async updateUnifiedConfig(agentId: string, config: UnifiedAgentConfig | null, executionMode?: string): Promise<void> {
+    // 004: Default hybridMode to 'mixed' for hybrid agents (Zod can't do this
+    // because .default() runs before .superRefine(), breaking intelligence agents).
+    const toPersist = config && config.capabilityMode === 'hybrid' && !config.hybridMode
+      ? { ...config, hybridMode: 'mixed' as const }
+      : config;
     await this.db.update(agents).set({
-      unifiedConfig: config,
+      unifiedConfig: toPersist,
       ...(executionMode !== undefined ? { executionMode } : {}),
       updatedAt: new Date(),
     }).where(eq(agents.id, agentId));

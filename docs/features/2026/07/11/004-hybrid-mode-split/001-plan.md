@@ -84,7 +84,7 @@ trading turns.
 - `capabilityMode: 'intelligence'` with `hybridMode` set → reject
 - `hybridMode` defaults to `'mixed'` when absent
 
-## Part B — Database & Repository (Phase 2) [PENDING]
+## Part B — Database & Repository (Phase 2) [DONE]
 
 ### Changes
 
@@ -202,3 +202,13 @@ invalid in the E2E race-condition bug fix.
 **LOW:**
 3. **Redundant migration test.** The test "accepts existing agent with technical config (migration)" duplicates the same code path as "accepts capabilityMode 'hybrid' with hybridMode 'mixed'". Consider varying the migration test to omit `hybridMode` to test the undefined-default path.
 4. **Custom error messages use plain English, not dot-string codes.** Consistent with existing codebase pattern — no action needed.
+
+### [Part B] Database & Repository
+
+**MEDIUM:**
+1. **No test coverage for `updateUnifiedConfig` hybridMode stamping.** The 6 new tests only cover `getUnifiedConfig`. The `updateUnifiedConfig` write-path stamping (HIGH-2 fix) has no test coverage. Add 2-3 tests mocking `db.update` to verify: hybrid agent without `hybridMode` gets `'mixed'` stamped; explicit `hybridMode: 'scanner_gated'` preserved; intelligence agent gets no `hybridMode` injected.
+2. **`CapabilityMode` / `HybridMode` types and schemas not re-exported from domain barrel (`config/index.ts`).** Parts C (API) and D (Runtime) will need standalone type imports. Currently only available via `UnifiedAgentConfig` extraction. Add barrel exports to `packages/domain/src/config/index.ts`.
+
+**LOW:**
+3. **Domain package dist requires rebuild after Part A changes.** `tsc --noEmit` in dependent packages fails until domain is rebuilt. CI should run `pnpm build` before `pnpm lint`.
+4. **`as UnifiedAgentConfig` cast on helper result is type-unsafe.** Follows pre-existing codebase pattern for JSONB access. Consider `safeParse` guard in future hardening pass.
