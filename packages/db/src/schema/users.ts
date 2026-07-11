@@ -8,6 +8,8 @@ export const users = pgTable('users', {
   id: text('id').primaryKey(),               // UUIDv7
   /** Display name (from OAuth profile) */
   displayName: text('display_name').notNull(),
+  /** Canonical username (lowercase, unique per user) */
+  username: text('username').notNull().unique(),
   /** Email (from OAuth profile, unique per user) */
   email: text('email').notNull().unique(),
   /** URL to profile picture (optional) */
