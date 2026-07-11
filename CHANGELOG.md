@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **New-User Link + Unique Username:** Added optional registration affordance to the login-link-first auth screen
+  - `users.username` column (non-null, unique) with migration
+  - `New user` toggle on login page reveals optional username field
+  - CTA changes to `Send registration link` when in new-user mode
+  - Username validation (3-30 chars, lowercase letters/digits/underscores)
+  - Username availability check + Redis reservation during link send
+  - Auto-generated unique username with retry-on-conflict for unset usernames
+  - Humanized displayName derivation from username at account creation
+  - Username generation for OAuth-created users
+  - `username` exposed on `GET /auth/me`
+  - 12 new auth tests covering validation, reservation, callback, and OAuth paths
+
 ## v0.0.18 - 2026-07-11
 
 ### Added
