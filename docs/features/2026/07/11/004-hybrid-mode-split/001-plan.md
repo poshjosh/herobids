@@ -67,7 +67,7 @@ trading turns.
 - Existing agents without `technical` config → `capabilityMode: 'intelligence'`.
 - No data loss. Both modes preserve current behavior by default.
 
-## Part A — Domain Schema (Phase 1)
+## Part A — Domain Schema (Phase 1) [DONE]
 
 ### Changes
 
@@ -84,7 +84,7 @@ trading turns.
 - `capabilityMode: 'intelligence'` with `hybridMode` set → reject
 - `hybridMode` defaults to `'mixed'` when absent
 
-## Part B — Database & Repository (Phase 2)
+## Part B — Database & Repository (Phase 2) [PENDING]
 
 ### Changes
 
@@ -99,7 +99,7 @@ trading turns.
 - Existing agents migrate with correct defaults (see Migration section above)
 - Repository round-trip preserves both fields
 
-## Part C — API (Phase 3)
+## Part C — API (Phase 3) [PENDING]
 
 ### Changes
 
@@ -113,7 +113,7 @@ trading turns.
 - POST with `capabilityMode: 'hybrid'` + no `technical` → 400
 - PATCH `hybridMode: 'scanner_gated'` on an `intelligence` agent → 400
 
-## Part D — Runtime (Phase 4)
+## Part D — Runtime (Phase 4) [PENDING]
 
 ### Changes
 
@@ -134,7 +134,7 @@ trading turns.
 - `scanner_gated` agent: user message or reminder → still processed normally
 - `mixed` agent: behavior unchanged from current hybrid
 
-## Part E — Web UI (Phase 5)
+## Part E — Web UI (Phase 5) [PENDING]
 
 ### Changes
 
@@ -153,7 +153,7 @@ trading turns.
 - `hybrid` + `mixed` → "Hybrid (Mixed Wake)"
 - `hybrid` + `scanner_gated` → "Hybrid (Scanner-Gated)"
 
-## Part F — Remove Dead Capability Value (Phase 6)
+## Part F — Remove Dead Capability Value (Phase 6) [PENDING]
 
 The current `capabilityMode` type includes `'technical'` from the original
 three-value model. This value is unused at runtime and was already flagged as
@@ -190,3 +190,15 @@ invalid in the E2E race-condition bug fix.
 4. Deterministic exits (per-trade SL/TP, portfolio stop-loss) work in all modes.
 5. Migration sets correct defaults for all existing agents.
 6. `pnpm lint` and `pnpm test` pass.
+
+## Outstanding Issues
+
+### [Part A] Domain Schema
+
+**MEDIUM:**
+1. **`hybridMode` default mismatch between plan and implementation.** The plan says `hybridMode` defaults to `'mixed'` when absent, but the schema uses `.optional()` with no `.default('mixed')` because `.default()` would break intelligence agents (Zod applies defaults before `superRefine`). The `'mixed'` default must be applied at the API/repository layer (Parts B/C). The schema should document this tradeoff with a comment.
+2. **Missing test: hybrid agent without explicit `hybridMode`.** No test verifies that `{ capabilityMode: 'hybrid', technical: {...} }` parses successfully with `hybridMode: undefined`. This contract needs to be explicit so Part D implementers know to fill `'mixed'` when absent.
+
+**LOW:**
+3. **Redundant migration test.** The test "accepts existing agent with technical config (migration)" duplicates the same code path as "accepts capabilityMode 'hybrid' with hybridMode 'mixed'". Consider varying the migration test to omit `hybridMode` to test the undefined-default path.
+4. **Custom error messages use plain English, not dot-string codes.** Consistent with existing codebase pattern — no action needed.

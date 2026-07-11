@@ -1865,9 +1865,16 @@ export const IntelligenceConfigSchema = z.object({
   wakeIntervalMs: z.number().int().min(10_000).optional(),
 });
 
+// ── Hybrid mode split (004) ─────────────────────────────────────────────────
+
+export const CapabilityModeSchema = z.enum(['intelligence', 'hybrid']);
+export const HybridModeSchema = z.enum(['mixed', 'scanner_gated']);
+
 export const UnifiedAgentConfigSchema = z.object({
   technical: TechnicalConfigSchema.optional(),
   intelligence: IntelligenceConfigSchema.optional(),
+  capabilityMode: CapabilityModeSchema.default('intelligence'),
+  hybridMode: HybridModeSchema.optional(),
   execution: z.object({
     mode: z.enum(['paper', 'shadow', 'live']).optional(),
     positionSizeMode: z.enum(['fixed', 'percent_equity']).optional(),
@@ -1887,6 +1894,24 @@ export const UnifiedAgentConfigSchema = z.object({
       message: 'At least one of "technical" or "intelligence" must be configured',
     });
   }
+
+  // 004: capabilityMode='hybrid' requires technical config (the scanner)
+  if (data.capabilityMode === 'hybrid' && !data.technical) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: '"technical" config is required when capabilityMode is "hybrid"',
+      path: ['capabilityMode'],
+    });
+  }
+
+  // 004: capabilityMode='intelligence' must not set hybridMode
+  if (data.capabilityMode === 'intelligence' && data.hybridMode !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: '"hybridMode" must not be set when capabilityMode is "intelligence"',
+      path: ['hybridMode'],
+    });
+  }
 });
 
 export type IntelligenceConfig = z.infer<typeof IntelligenceConfigSchema>;
@@ -1903,3 +1928,5 @@ export type PriceActionParams = z.infer<typeof PriceActionParamsSchema>;
 export type SentimentConfig = z.infer<typeof SentimentConfigSchema>;
 export type TechnicalConfig = z.infer<typeof TechnicalConfigSchema>;
 export type UnifiedAgentConfig = z.infer<typeof UnifiedAgentConfigSchema>;
+export type CapabilityMode = z.infer<typeof CapabilityModeSchema>;
+export type HybridMode = z.infer<typeof HybridModeSchema>;

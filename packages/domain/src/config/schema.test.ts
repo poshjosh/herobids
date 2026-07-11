@@ -14,6 +14,9 @@ import {
   RUNTIME_POLICY_CEILINGS,
   AGENT_STYLE_RUNTIME_DEFAULTS,
   resolveAgentRuntimePolicy,
+  CapabilityModeSchema,
+  HybridModeSchema,
+  UnifiedAgentConfigSchema,
   type AgentStyleValue,
   type ReasoningLevel,
 } from './schema.js';
@@ -1174,5 +1177,176 @@ describe('adaptive reasoning defaults', () => {
     });
     expect(resolved.adaptScoutReasoning).toBe(true); // bold default
     expect(resolved.adaptJudgeReasoning).toBe(true); // bold default
+  });
+});
+
+// ── Hybrid mode split (004) — CapabilityMode / HybridMode ───────────────────
+
+describe('CapabilityModeSchema', () => {
+  it('accepts "intelligence"', () => {
+    expect(CapabilityModeSchema.safeParse('intelligence').success).toBe(true);
+  });
+
+  it('accepts "hybrid"', () => {
+    expect(CapabilityModeSchema.safeParse('hybrid').success).toBe(true);
+  });
+
+  it('rejects invalid values', () => {
+    expect(CapabilityModeSchema.safeParse('technical').success).toBe(false);
+    expect(CapabilityModeSchema.safeParse('').success).toBe(false);
+    expect(CapabilityModeSchema.safeParse(0).success).toBe(false);
+    expect(CapabilityModeSchema.safeParse(null).success).toBe(false);
+  });
+});
+
+describe('HybridModeSchema', () => {
+  it('accepts "mixed"', () => {
+    expect(HybridModeSchema.safeParse('mixed').success).toBe(true);
+  });
+
+  it('accepts "scanner_gated"', () => {
+    expect(HybridModeSchema.safeParse('scanner_gated').success).toBe(true);
+  });
+
+  it('rejects invalid values', () => {
+    expect(HybridModeSchema.safeParse('intelligence').success).toBe(false);
+    expect(HybridModeSchema.safeParse('').success).toBe(false);
+    expect(HybridModeSchema.safeParse(null).success).toBe(false);
+  });
+});
+
+describe('UnifiedAgentConfigSchema — capabilityMode / hybridMode', () => {
+  const validTechnical = {
+    filters: { venue: 'hyperliquid', venueType: 'orderbook' as const },
+  };
+
+  it('defaults capabilityMode to "intelligence" and hybridMode to undefined', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      intelligence: { provider: 'openrouter', lightModel: 'test' },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.capabilityMode).toBe('intelligence');
+      expect(result.data.hybridMode).toBeUndefined();
+    }
+  });
+
+  it('accepts capabilityMode "hybrid" with technical config', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      technical: validTechnical,
+      capabilityMode: 'hybrid',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts capabilityMode "hybrid" with hybridMode "mixed"', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      technical: validTechnical,
+      capabilityMode: 'hybrid',
+      hybridMode: 'mixed',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts capabilityMode "hybrid" with hybridMode "scanner_gated"', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      technical: validTechnical,
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects capabilityMode "hybrid" without technical config', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      intelligence: { provider: 'openrouter' },
+      capabilityMode: 'hybrid',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path);
+      expect(paths).toContainEqual(['capabilityMode']);
+    }
+  });
+
+  it('rejects capabilityMode "intelligence" with hybridMode set', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      intelligence: { provider: 'openrouter' },
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path);
+      expect(paths).toContainEqual(['hybridMode']);
+    }
+  });
+
+  it('rejects capabilityMode "intelligence" with hybridMode "scanner_gated"', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      intelligence: { provider: 'openrouter' },
+      capabilityMode: 'intelligence',
+      hybridMode: 'scanner_gated',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path);
+      expect(paths).toContainEqual(['hybridMode']);
+    }
+  });
+
+  it('accepts existing agent with technical config (migration: capabilityMode stamped as "hybrid")', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      technical: validTechnical,
+      capabilityMode: 'hybrid',
+      hybridMode: 'mixed',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts existing agent without technical config (migration: capabilityMode "intelligence")', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      intelligence: { provider: 'openrouter' },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.capabilityMode).toBe('intelligence');
+    }
+  });
+
+  it('preserves existing "at least one of technical or intelligence" validation', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      capabilityMode: 'hybrid',
+    });
+    expect(result.success).toBe(false);
+    // Should have both errors: missing technical/intelligence AND missing technical for hybrid
+    expect(result.error!.issues.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('rejects invalid capabilityMode value', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      intelligence: { provider: 'openrouter' },
+      capabilityMode: 'technical',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects invalid hybridMode value', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      technical: validTechnical,
+      capabilityMode: 'hybrid',
+      hybridMode: 'invalid',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('hybridMode is optional — defaults to undefined when not provided', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      intelligence: { provider: 'openrouter' },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.hybridMode).toBeUndefined();
+    }
   });
 });
