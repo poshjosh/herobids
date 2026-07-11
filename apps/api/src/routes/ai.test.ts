@@ -137,6 +137,7 @@ function buildDbWithOpenrouterSnapshot(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  process.env['NODE_ENV'] = 'development';
   // Set a generic API key so providers pass API key gating by default.
   // Individual tests that need to verify no-key behavior should delete it.
   process.env['LLM_API_KEY'] = 'sk-test';
@@ -821,6 +822,38 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     vi.unstubAllGlobals();
   });
 
+  it('hides ollama devOnly providers in staging', async () => {
+    vi.stubEnv('NODE_ENV', 'staging');
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    const remoteOllamaYaml: ProvidersYaml = {
+      providers: {
+        ollama: {
+          catalogMode: 'dynamic',
+          devOnly: true,
+          baseUrl: 'https://remote-ollama.example.com/v1',
+          models: {},
+        },
+      },
+    };
+    await aiRoutes(app, db, {
+      ...stubLlmConfig,
+      provider: 'ollama',
+      model: 'qwen3:8b',
+      baseUrl: 'https://remote-ollama.example.com/v1',
+    }, redis, remoteOllamaYaml, stubAgentRuntime);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    // devOnly providers are hidden outside development.
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('no_ai_provider');
+
+    vi.unstubAllEnvs();
+  });
+
   it('hides ollama devOnly providers in production', async () => {
     vi.stubEnv('NODE_ENV', 'production');
 
@@ -846,14 +879,14 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     }, redis, remoteOllamaYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
-    // devOnly providers are hidden when NODE_ENV is production
+    // devOnly providers are hidden outside development
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe('no_ai_provider');
 
     vi.unstubAllEnvs();
   });
 
-  it('marks ollama as Free in non-production environments', async () => {
+  it('marks ollama as Free in development environments', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ models: [{ name: 'qwen3:8b' }] }),

@@ -224,68 +224,94 @@ export function LoginPage() {
 
         {/* Action row: Send login link + Sign in with password / Sign in */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button
-            type="button"
-            onClick={() => { void handleSendLoginLink(); }}
-            disabled={pending || !email}
-            style={{
-              flex: 1,
-              padding: '12px',
-              background: 'var(--color-brand)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '15px',
-              fontWeight: '500',
-              cursor: pending || !email ? 'not-allowed' : 'pointer',
-              opacity: pending || !email ? 0.7 : 1,
-            }}
-          >
-            {pending && pageState === 'sendingLoginLink'
-              ? intl.formatMessage({ id: 'common.loading' })
-              : newUser
-                ? intl.formatMessage({ id: 'auth.sendRegistrationLink' })
-                : intl.formatMessage({ id: 'auth.sendLoginLink' })}
-          </button>
-
           {isPasswordExpanded ? (
-            <button
-              type="submit"
-              disabled={pending || !email || !password}
-              style={{
-                flex: 1,
-                padding: '12px',
-                background: 'var(--color-surface-2)',
-                color: 'var(--color-text-primary)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                fontSize: '15px',
-                fontWeight: '500',
-                cursor: pending || !email || !password ? 'not-allowed' : 'pointer',
-                opacity: pending || !email || !password ? 0.5 : 1,
-              }}
-            >
-              {pending && pageState === 'signingInWithPassword'
-                ? intl.formatMessage({ id: 'common.loading' })
-                : intl.formatMessage({ id: 'auth.signIn' })}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => { void handleSendLoginLink(); }}
+                disabled={pending || !email}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  background: 'var(--color-surface-2)',
+                  color: 'var(--color-text-primary)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  fontSize: '15px',
+                  fontWeight: '500',
+                  cursor: pending || !email ? 'not-allowed' : 'pointer',
+                  opacity: pending || !email ? 0.5 : 1,
+                }}
+              >
+                {pending && pageState === 'sendingLoginLink'
+                  ? intl.formatMessage({ id: 'common.loading' })
+                  : newUser
+                    ? intl.formatMessage({ id: 'auth.sendRegistrationLink' })
+                    : intl.formatMessage({ id: 'auth.sendLoginLink' })}
+              </button>
+              <button
+                type="submit"
+                disabled={pending || !email || !password}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  background: 'var(--color-brand)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '15px',
+                  fontWeight: '500',
+                  cursor: pending || !email || !password ? 'not-allowed' : 'pointer',
+                  opacity: pending || !email || !password ? 0.7 : 1,
+                }}
+              >
+                {pending && pageState === 'signingInWithPassword'
+                  ? intl.formatMessage({ id: 'common.loading' })
+                  : intl.formatMessage({ id: 'auth.signIn' })}
+              </button>
+            </>
           ) : (
-            <button
-              type="button"
-              onClick={expandPassword}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '13px',
-                color: 'var(--color-text-muted)',
-                textDecoration: 'underline',
-                whiteSpace: 'nowrap',
-                padding: '12px 8px',
-              }}
-            >
-              {intl.formatMessage({ id: 'auth.signInWithPassword' })}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => { void handleSendLoginLink(); }}
+                disabled={pending || !email}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  background: 'var(--color-brand)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '15px',
+                  fontWeight: '500',
+                  cursor: pending || !email ? 'not-allowed' : 'pointer',
+                  opacity: pending || !email ? 0.7 : 1,
+                }}
+              >
+                {pending && pageState === 'sendingLoginLink'
+                  ? intl.formatMessage({ id: 'common.loading' })
+                  : newUser
+                    ? intl.formatMessage({ id: 'auth.sendRegistrationLink' })
+                    : intl.formatMessage({ id: 'auth.sendLoginLink' })}
+              </button>
+              <button
+                type="button"
+                onClick={expandPassword}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  color: 'var(--color-text-muted)',
+                  textDecoration: 'underline',
+                  whiteSpace: 'nowrap',
+                  padding: '12px 8px',
+                }}
+              >
+                {intl.formatMessage({ id: 'auth.signInWithPassword' })}
+              </button>
+            </>
           )}
         </div>
         {/* New user / Existing user toggle */}

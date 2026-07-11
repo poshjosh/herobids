@@ -51,7 +51,7 @@ providers (e.g. OpenRouter), the worker fetches pricing into `llm_pricing_snapsh
 | Field | Type | Purpose |
 |-------|------|---------|
 | `isMultiProvider` | `boolean` | Provider routes to multiple backend LLM providers (e.g. OpenRouter) |
-| `devOnly` | `boolean` | Provider is only available in non-production environments (e.g. local Ollama) |
+| `devOnly` | `boolean` | Provider is only available in development environments (e.g. local Ollama) |
 
 ## Current Providers
 

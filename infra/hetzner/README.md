@@ -96,8 +96,8 @@ The following guards are enforced at process startup and are verified to work co
 |---|---|---|
 | **Production billing** | `apps/api/src/config.ts`, `apps/worker/src/config.ts` | Refuses to start if `NODE_ENV=production` and `billing.primaryProvider === 'mock'`. Staging (`NODE_ENV=staging`) is not affected. |
 | **Insecure JWT secret** | `apps/api/src/plugins/auth.ts` | Refuses to start if `AUTH_JWT_SECRET` is the default placeholder in any non-dev, non-test environment. Both staging and production are protected. |
-| **Dev-only LLM models** | `apps/api/src/llm-model-catalog.ts` | Filters out models marked `devOnly: true` and disables dynamic catalog mode when `NODE_ENV=production`. Staging is not affected. |
-| **Ollama discovery** | `apps/api/src/llm-model-catalog.ts` | Skips local Ollama model discovery in production. Staging and development can use it. |
+| **Dev-only LLM models** | `apps/api/src/llm-model-catalog.ts` | Filters out models marked `devOnly: true` unless `NODE_ENV=development`, and disables dynamic catalog mode when `NODE_ENV=production`. Staging is blocked too. |
+| **Ollama discovery** | `apps/api/src/llm-model-catalog.ts` | Skips local Ollama model discovery outside development. |
 
 All guards key off `NODE_ENV` which is set correctly per environment in the compose overlays:
 - `docker-compose.staging.yaml` → `NODE_ENV: staging`

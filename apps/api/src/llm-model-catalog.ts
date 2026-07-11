@@ -4,6 +4,7 @@ import { eq, and } from 'drizzle-orm';
 import { discoverOllamaModels } from './ollama-model-discovery.js';
 
 const isProduction = () => process.env['NODE_ENV'] === 'production';
+const isDevelopment = () => process.env['NODE_ENV'] === 'development';
 
 // --- Provider catalog metadata ---
 
@@ -424,9 +425,8 @@ export async function getAvailableProviders(deps: LlmCatalogDeps): Promise<strin
       if (!hasLivePricing) continue;
     }
 
-    // Dev-only providers (like ollama) are skipped in production.
-    // In development, they are shown (NODE_ENV !== production).
-    if (config.devOnly && isProduction()) continue;
+    // Dev-only providers (like ollama) are only shown in development.
+    if (config.devOnly && !isDevelopment()) continue;
 
     // Pricing availability check: providers whose pricing comes from the DB
     // must have an active snapshot. Dynamic providers (OpenRouter) need their own
@@ -530,7 +530,7 @@ export async function getProviderCatalogEntry(
 
   const models = await getProviderModels(provider, deps);
 
-  if (provider === 'ollama' && !isProduction()) {
+  if (provider === 'ollama' && isDevelopment()) {
     return {
       provider,
       models: mapProviderModels(models, () => ({ label: 'Free', source: 'local' })),
