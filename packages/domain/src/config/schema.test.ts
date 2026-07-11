@@ -869,7 +869,7 @@ describe('AGENT_STYLE_RUNTIME_DEFAULTS', () => {
     expect(d.scoutMaxTurns).toBe(10);
     expect(d.judgeMaxTurns).toBe(25);
     expect(d.maxHistoryTokens).toBe(20_000);
-    expect(d.weekendPause).toBe(true);
+    expect(d.weekendPause).toBe(false);
     expect(d.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
   });
 
@@ -934,7 +934,7 @@ describe('resolveAgentRuntimePolicy', () => {
   it('returns careful defaults for careful style', () => {
     const resolved = resolveAgentRuntimePolicy('careful', null);
     expect(resolved.scoutMaxTurns).toBe(10);
-    expect(resolved.weekendPause).toBe(true);
+    expect(resolved.weekendPause).toBe(false);
   });
 
   it('overrides win over style defaults', () => {

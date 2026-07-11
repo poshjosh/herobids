@@ -78,14 +78,18 @@ export function parseRedisUrl(url: string) {
 /** Build a fully wired Fastify app for functional testing. */
 export async function buildApp() {
   // Clear LLM API key env vars to prevent them from leaking into the test
-  // environment. The analytics/AI functional tests expect 503 (no_ai_provider)
-  // when no provider keys are set. If the user's shell has these keys set,
-  // getAvailableProviders picks them up and returns 200/502 instead.
+  // environment, then set a dummy OpenRouter key so getAvailableProviders()
+  // finds at least one provider (openrouter). This makes GET /ai/available-models
+  // return 200. POST /ai/* endpoints resolve to openai (from user config or
+  // operator default) which has no API key, so callLlmProvider returns
+  // provider.no_credentials → 502 — no actual HTTP calls are made.
   const savedLlmEnv: Record<string, string | undefined> = {};
   for (const key of ['LLM_API_KEY', 'LLM_API_KEY_OPENAI', 'LLM_API_KEY_OPENROUTER', 'LLM_API_KEY_OLLAMA']) {
     savedLlmEnv[key] = process.env[key];
     delete process.env[key];
   }
+  // Dummy key only for OpenRouter — enough for provider discovery, not for real LLM calls.
+  process.env['LLM_API_KEY_OPENROUTER'] = 'test-functional-key';
 
   const db = createDatabase(DB_URL);
   const redisConn = parseRedisUrl(REDIS_URL);
@@ -220,7 +224,10 @@ export async function buildApp() {
 
   await app.ready();
 
-  // Restore LLM API key env vars so they don't leak between test files
+  // Restore LLM API key env vars so they don't leak between test files.
+  // The dummy OpenRouter key set at the top is included in savedLlmEnv
+  // (captured as undefined before we set it), so the restore loop deletes it.
+  // Re-set it here so it persists for the lifetime of the test run.
   for (const [key, value] of Object.entries(savedLlmEnv)) {
     if (value === undefined) {
       delete process.env[key];
@@ -228,6 +235,7 @@ export async function buildApp() {
       process.env[key] = value;
     }
   }
+  process.env['LLM_API_KEY_OPENROUTER'] = 'test-functional-key';
 
   return { app, db, redisClient, lifecycleQueue };
 }

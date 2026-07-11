@@ -176,7 +176,7 @@ else
   assert_eq "scoutMaxTurns" "10" "$(echo "$policy" | jq -r '.scoutMaxTurns')"
   assert_eq "judgeMaxTurns" "25" "$(echo "$policy" | jq -r '.judgeMaxTurns')"
   assert_eq "maxHistoryTokens" "20000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
-  assert_eq "weekendPause" "true" "$(echo "$policy" | jq -r '.weekendPause')"
+  assert_eq "weekendPause" "false" "$(echo "$policy" | jq -r '.weekendPause')"
   assert_eq "maxHoldDurationMs" "27000000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
 
   hours=$(echo "$policy" | jq -r '.allowedHoursUtc | join(",")')

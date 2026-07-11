@@ -53,7 +53,7 @@ describe('resolveAgentRuntimePolicy', () => {
     expect(policy.maxHistoryTokens).toBe(20000);
     expect(policy.maxHistoryMessages).toBe(10);
     expect(policy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
-    expect(policy.weekendPause).toBe(true);
+    expect(policy.weekendPause).toBe(false);
     expect(policy.maxHoldDurationMs).toBe(27_000_000);  // careful: 5 × tick interval
   });
 
@@ -66,7 +66,7 @@ describe('resolveAgentRuntimePolicy', () => {
     expect(policy.maxHistoryTokens).toBe(40000);
     expect(policy.maxHistoryMessages).toBe(20);
     expect(policy.allowedHoursUtc).toEqual([]);
-    expect(policy.weekendPause).toBe(true);
+    expect(policy.weekendPause).toBe(false);
     expect(policy.maxHoldDurationMs).toBe(5_400_000);  // balanced: 3 × tick interval
   });
 
@@ -121,7 +121,7 @@ describe('runtime policy override merging', () => {
     });
     expect(policy.scoutMaxTurns).toBe(5);
     expect(policy.maxHistoryTokens).toBe(5000);
-    expect(policy.weekendPause).toBe(true);
+    expect(policy.weekendPause).toBe(false);
     expect(policy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
   });
 

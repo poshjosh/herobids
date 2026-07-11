@@ -64,6 +64,7 @@ services:
       - path: .env
         required: false
     environment:
+      NODE_ENV: development
       DATABASE_URL: postgres://herobids:herobids@postgres:5432/herobids
       REDIS_URL: redis://redis:6379
       EVALUATION_STORAGE_ROOT: /app/app-data/evaluation-output

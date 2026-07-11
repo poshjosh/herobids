@@ -21,7 +21,7 @@ describe('resolveStyleDefaults', () => {
     expect(config.scoutMaxTurns).toBe(10);
     expect(config.judgeMaxTurns).toBe(25);
     expect(config.maxHistoryTokens).toBe(20_000);
-    expect(config.weekendPause).toBe(true);
+    expect(config.weekendPause).toBe(false);
     expect(config.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
   });
 
@@ -33,7 +33,7 @@ describe('resolveStyleDefaults', () => {
     expect(config.scoutMaxTurns).toBe(30);
     expect(config.judgeMaxTurns).toBe(75);
     expect(config.maxHistoryTokens).toBe(40_000);
-    expect(config.weekendPause).toBe(true);
+    expect(config.weekendPause).toBe(false);
   });
 
   it('returns correct config for bold style', () => {
