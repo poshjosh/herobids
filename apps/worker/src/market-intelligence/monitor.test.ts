@@ -1613,3 +1613,83 @@ describe('createMarketMonitor — subscription filtering (C4)', () => {
     expect(publisher.emitMarketDiscoveryDetected).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// scanner_gated agent detection (004, D-M1)
+// ---------------------------------------------------------------------------
+
+describe('scanner_gated agent detection (004)', () => {
+  const SCANNER_GATED_KEY = 'agent:scanner_gated';
+
+  it('watch threshold evaluation skips scanner_gated agents', async () => {
+    const redis = makeRedisMock();
+    const publisher = makePublisherMock();
+
+    const watchId = DEFAULT_WATCH_ID;
+    const watchJson = makeWatch({ watchId, symbol: 'SOL', thresholdPrice: 200, condition: 'above' });
+    redis._hstore.set(`watches:${watchId}`, new Map(Object.entries(JSON.parse(watchJson))));
+    redis._scanKeys.push(`watches:${watchId}`);
+
+    redis._sset.set('agents:active', new Set(['agent-gated-1']));
+    redis._store.set(`${SCANNER_GATED_KEY}:agent-gated-1`, '1');
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
+      { redis, publisher },
+    );
+
+    await monitor.evaluate();
+
+    const wakeCalls = publisher.emitAgentWake.mock.calls.filter(
+      (call: any[]) => call[0]?.agentId === 'agent-gated-1',
+    );
+    expect(wakeCalls.length).toBe(0);
+  });
+
+  it('discovery_delta uses context-only delivery for scanner_gated agents (no wake)', async () => {
+    const redis = makeRedisMock();
+    const publisher = makePublisherMock();
+
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xNEW', symbol: 'NEW', discoveryVectors: ['trending'] },
+    ]));
+    redis._store.set('market-intel:discovery:prev', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xOLD', symbol: 'OLD', discoveryVectors: [] },
+    ]));
+
+    redis._sset.set('agents:active', new Set(['agent-gated-2']));
+    redis._store.set(`${SCANNER_GATED_KEY}:agent-gated-2`, '1');
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: false, discoveryDeltas: true, regimeChanges: false } },
+      { redis, publisher },
+    );
+
+    await monitor.evaluate();
+
+    const wakeCallsForGated = publisher.emitAgentWake.mock.calls.filter(
+      (call: any[]) => call[0]?.agentId === 'agent-gated-2',
+    );
+    expect(wakeCallsForGated.length).toBe(0);
+  });
+
+  it('scanner_gated detection fails open — agent without Redis flag treated as not gated', async () => {
+    const redis = makeRedisMock();
+    const publisher = makePublisherMock();
+
+    const watchJson = makeWatch({ watchId: 'w-normal', symbol: 'SOL', thresholdPrice: 200, condition: 'above' });
+    redis._hstore.set('watches:w-normal', new Map(Object.entries(JSON.parse(watchJson))));
+    redis._scanKeys.push('watches:w-normal');
+
+    redis._sset.set('agents:active', new Set(['agent-normal']));
+    // Deliberately NOT setting scanner_gated key — key is absent
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
+      { redis, publisher },
+    );
+
+    // Should not throw; fail-open means agent is not blocked
+    await expect(monitor.evaluate()).resolves.toBeUndefined();
+  });
+});

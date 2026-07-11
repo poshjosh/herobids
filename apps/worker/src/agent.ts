@@ -14,6 +14,7 @@ import http from 'node:http';
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
+import { scannerGatedKey } from './redis-keys.js';
 import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal } from '@herobids/db';
 import { createUsageBillingService } from './usage-billing-service.js';
@@ -2128,7 +2129,7 @@ async function shutdown(reason: string): Promise<void> {
   await wakeRedis.quit().catch(() => { /* ignore */ });
   // 004: Clean up scanner_gated flag to prevent stale state after shutdown.
   if (IS_SCANNER_GATED) {
-    await redis.del(`agent:scanner_gated:${AGENT_ID!}`).catch(() => { /* ignore */ });
+    await redis.del(scannerGatedKey(AGENT_ID!)).catch(() => { /* ignore */ });
   }
   await redis.quit().catch(() => { /* ignore */ });
   process.exit(0);
@@ -3351,7 +3352,7 @@ async function main(): Promise<void> {
   // delivery for this agent. Expires after 24h as a safety net in case the
   // shutdown path fails to clean up (the agent container has a wall-clock limit).
   if (IS_SCANNER_GATED) {
-    await redis.set(`agent:scanner_gated:${AGENT_ID}`, '1', 'EX', 86400);
+    await redis.set(scannerGatedKey(AGENT_ID), '1', 'EX', 86400);
     logger.info('Agent is scanner-gated — published flag to Redis');
   }
 

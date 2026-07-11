@@ -1,5 +1,6 @@
 import type { Redis } from 'ioredis';
 import { createLogger } from '../logger.js';
+import { scannerGatedKey } from '../redis-keys.js';
 import crypto from 'node:crypto';
 import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
 import type {
@@ -58,6 +59,31 @@ export interface MonitorConfig {
   wakePolicy?: Record<string, WakePolicyEntry>;
 }
 
+// ---------------------------------------------------------------------------
+// 004 — Scanner-gated agent detection (standalone for testability)
+// ---------------------------------------------------------------------------
+
+/**
+ * Check whether an agent is in scanner_gated hybrid mode by reading its
+ * Redis flag. The agent container writes this flag on startup and cleans
+ * it on shutdown.
+ *
+ * Uses {@link scannerGatedKey} to stay in sync with the agent write side.
+ * Fails open (returns false) on Redis errors — the worst case is that the
+ * agent receives non-scanner wakes, never that scanner wakes are blocked.
+ */
+export async function isAgentScannerGated(
+  redis: Pick<Redis, 'get'>,
+  agentId: string,
+): Promise<boolean> {
+  try {
+    const flag = await redis.get(scannerGatedKey(agentId));
+    return flag === '1';
+  } catch {
+    return false;
+  }
+}
+
 export interface MonitorDeps {
   redis: Redis;
   publisher: InstanceEventPublisher;
@@ -113,14 +139,9 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
   }
 
   /** 004: Check whether an agent is in scanner_gated hybrid mode.
-   *  The agent container writes this flag to Redis on startup and cleans it on shutdown. */
-  async function isAgentScannerGated(agentId: string): Promise<boolean> {
-    try {
-      const flag = await redis.get(`agent:scanner_gated:${agentId}`);
-      return flag === '1';
-    } catch {
-      return false;
-    }
+   *  Delegates to the standalone {@link isAgentScannerGated} for testability. */
+  async function checkScannerGated(agentId: string): Promise<boolean> {
+    return isAgentScannerGated(redis, agentId);
   }
   const families = {
     watchThresholds: config.families?.watchThresholds ?? true,
@@ -220,7 +241,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
 
       // 004: Scanner-gated agents disable watch_threshold entirely.
       // They trade exclusively on scanner entry/exit signals.
-      if (await isAgentScannerGated(agentId)) continue;
+      if (await checkScannerGated(agentId)) continue;
 
       // Fetch wake prefs once per agent per cycle — hoisted to avoid duplicate
       // redis.get calls inside the per-watch processing loop.
@@ -399,7 +420,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     // delivery inside the per-token loops without redundant Redis calls.
     const scannerGatedAgentIds = new Set<string>();
     for (const agentId of agentIds) {
-      if (await isAgentScannerGated(agentId)) {
+      if (await checkScannerGated(agentId)) {
         scannerGatedAgentIds.add(agentId);
       }
     }
@@ -651,7 +672,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
       // delivery inside the per-agent loop without redundant Redis calls.
       const scannerGatedAgentIds = new Set<string>();
       for (const agentId of agentIds) {
-        if (await isAgentScannerGated(agentId)) {
+        if (await checkScannerGated(agentId)) {
           scannerGatedAgentIds.add(agentId);
         }
       }
