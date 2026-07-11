@@ -196,7 +196,7 @@ invalid in the E2E race-condition bug fix.
 ### [Part A] Domain Schema
 
 **MEDIUM:**
-1. **`hybridMode` default mismatch between plan and implementation.** The plan says `hybridMode` defaults to `'mixed'` when absent, but the schema uses `.optional()` with no `.default('mixed')` because `.default()` would break intelligence agents (Zod applies defaults before `superRefine`). The `'mixed'` default must be applied at the API/repository layer (Parts B/C). The schema should document this tradeoff with a comment.
+1. **[RESOLVED — comment added to schema.ts]** **`hybridMode` default mismatch between plan and implementation.** The plan says `hybridMode` defaults to `'mixed'` when absent, but the schema uses `.optional()` with no `.default('mixed')` because `.default()` would break intelligence agents (Zod applies defaults before `superRefine`). The `'mixed'` default must be applied at the API/repository layer (Parts B/C). The schema should document this tradeoff with a comment.
 2. **Missing test: hybrid agent without explicit `hybridMode`.** No test verifies that `{ capabilityMode: 'hybrid', technical: {...} }` parses successfully with `hybridMode: undefined`. This contract needs to be explicit so Part D implementers know to fill `'mixed'` when absent.
 
 **LOW:**
@@ -206,7 +206,7 @@ invalid in the E2E race-condition bug fix.
 ### [Part B] Database & Repository
 
 **MEDIUM:**
-1. **No test coverage for `updateUnifiedConfig` hybridMode stamping.** The 6 new tests only cover `getUnifiedConfig`. The `updateUnifiedConfig` write-path stamping (HIGH-2 fix) has no test coverage. Add 2-3 tests mocking `db.update` to verify: hybrid agent without `hybridMode` gets `'mixed'` stamped; explicit `hybridMode: 'scanner_gated'` preserved; intelligence agent gets no `hybridMode` injected.
+1. **[RESOLVED — 4 tests added to agent-repository.test.ts]** **No test coverage for `updateUnifiedConfig` hybridMode stamping.** The 6 new tests only cover `getUnifiedConfig`. The `updateUnifiedConfig` write-path stamping (HIGH-2 fix) has no test coverage. Add 2-3 tests mocking `db.update` to verify: hybrid agent without `hybridMode` gets `'mixed'` stamped; explicit `hybridMode: 'scanner_gated'` preserved; intelligence agent gets no `hybridMode` injected.
 2. **`CapabilityMode` / `HybridMode` types and schemas not re-exported from domain barrel (`config/index.ts`).** Parts C (API) and D (Runtime) will need standalone type imports. Currently only available via `UnifiedAgentConfig` extraction. Add barrel exports to `packages/domain/src/config/index.ts`.
 
 **LOW:**
@@ -216,8 +216,8 @@ invalid in the E2E race-condition bug fix.
 ### [Part C] API
 
 **MEDIUM:**
-1. **No test for POST default `capabilityMode: 'intelligence'` when field omitted.** Verify that omitting `capabilityMode` defaults to `'intelligence'` in inserted values.
-2. **No test for PATCH clearing `capabilityMode` (setting to `null`).** Verify that setting `capabilityMode: null` on a hybrid agent also clears `hybridMode`.
+1. **[RESOLVED — test added]** **No test for POST default `capabilityMode: 'intelligence'` when field omitted.** Verify that omitting `capabilityMode` defaults to `'intelligence'` in inserted values.
+2. **[RESOLVED — test added]** **No test for PATCH clearing `capabilityMode` (setting to `null`).** Verify that setting `capabilityMode: null` on a hybrid agent also clears `hybridMode`.
 
 **LOW:**
 3. **Repeated `as Record<string, unknown>` casts in PATCH handler.** Extract a local typed variable to reduce verbosity.
@@ -226,8 +226,8 @@ invalid in the E2E race-condition bug fix.
 ### [Part D] Runtime
 
 **MEDIUM:**
-1. **No test coverage for market monitor scanner_gated changes (`monitor.ts`).** `isAgentScannerGated` and the three behavioral changes (skip watch_threshold, context-only discovery_delta, context-only regime_change) have zero test coverage.
-2. **Duplicated Redis key format `agent:scanner_gated:${agentId}`** hardcoded identically in `agent.ts` and `monitor.ts`. Extract to a shared constant.
+1. **[RESOLVED — 3 tests added + isAgentScannerGated extracted]** **No test coverage for market monitor scanner_gated changes (`monitor.ts`).** `isAgentScannerGated` and the three behavioral changes (skip watch_threshold, context-only discovery_delta, context-only regime_change) have zero test coverage.
+2. **[RESOLVED — extracted to apps/worker/src/redis-keys.ts]** **Duplicated Redis key format `agent:scanner_gated:${agentId}`** hardcoded identically in `agent.ts` and `monitor.ts`. Extract to a shared constant.
 
 **LOW:**
 3. **Redundant test case in `hybrid-agent-evaluator.test.ts`** — `scanner_gated + no wake signal → false` duplicates the generic `no wake signal` test.
