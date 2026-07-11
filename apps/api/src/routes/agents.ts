@@ -140,8 +140,8 @@ const CreateAgentSchema = z.object({
       message: 'prompt is required when no technical config is provided',
     });
   }
-  // 004: capabilityMode='hybrid' requires technical config
-  if (data.capabilityMode === 'hybrid' && !data.technical) {
+  // 004: capabilityMode='hybrid' requires technical config (or a strategy preset)
+  if (data.capabilityMode === 'hybrid' && !data.technical && !data.strategyPreset) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['capabilityMode'],

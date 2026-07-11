@@ -440,7 +440,8 @@ export async function getAvailableProviders(deps: LlmCatalogDeps): Promise<strin
 
     // OpenRouter-derived providers (openai, anthropic, deepseek, google) must
     // have an active OpenRouter snapshot with matching prefix models.
-    if (config.pricingSource === 'openrouter') {
+    // Only enforced in production — in dev/test, the API key gate is sufficient.
+    if (config.pricingSource === 'openrouter' && isProduction()) {
       const derived = await getOpenRouterDerivedModels(providerId, deps);
       if (derived.length === 0) continue;
     }
@@ -588,7 +589,11 @@ export async function validateAiModelSelection(
   // Validate against the live-discovered catalog for providers whose model list
   // is dynamic: catalogMode 'dynamic' (OpenRouter, Ollama) and pricingSource
   // 'openrouter' (OpenAI, Anthropic, DeepSeek, Google cross-referenced).
-  if (providerConfig?.catalogMode === 'dynamic' || providerConfig?.pricingSource === 'openrouter') {
+  // pricingSource 'openrouter' requires a DB pricing snapshot — only enforced
+  // in production; in dev/test the API key gate is sufficient.
+  const isDynamicCatalog = providerConfig?.catalogMode === 'dynamic';
+  const isOpenRouterDerived = providerConfig?.pricingSource === 'openrouter';
+  if (isDynamicCatalog || (isOpenRouterDerived && isProduction())) {
     const models = await getProviderModels(selection.provider, deps);
     const issues: Array<{ code: 'custom'; path: string[]; message: string }> = [];
     if (!models.includes(selection.lightModel)) {

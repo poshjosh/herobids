@@ -74,7 +74,7 @@ export function agentToFormState(agent: Agent): AgentFormState {
   // with agents created before the capabilityMode field was introduced.
   const capabilityMode: CapabilityMode = (
     agent.capabilityMode === 'intelligence' || agent.capabilityMode === 'hybrid'
-  ) ? agent.capabilityMode
+  ) ? agent.capabilityMode as CapabilityMode
     : agent.technical
       ? 'hybrid'
       : 'intelligence';

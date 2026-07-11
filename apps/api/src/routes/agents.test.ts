@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import {
   agents,
   agentConnections,
@@ -17,6 +19,11 @@ import {
 import type { PlansConfig } from '@herobids/domain';
 import { RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
+
+// Strategy preset YAML files are resolved relative to HEROBIDS_CONFIG_DIR or cwd.
+// In test, cwd is the package dir (apps/api), so we must point to the repo root.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+process.env['HEROBIDS_CONFIG_DIR'] = resolve(__dirname, '../../../..');
 
 const mockLlmCatalogDeps: LlmCatalogDeps = {
   db: {} as never,

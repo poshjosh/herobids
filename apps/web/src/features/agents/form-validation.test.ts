@@ -56,13 +56,13 @@ describe('validateCreateAgentForm', () => {
     expect(result.errors.goal).toBeDefined();
   });
 
-  it('does not require goal in technical mode', () => {
+  it('requires goal in hybrid mode even with trading setup', () => {
     const result = validateCreateAgentForm(
       validIntent({ goal: '', capabilityMode: 'hybrid', requiresTradingSetup: true }),
       DEFAULT_CONSTRAINTS,
     );
-    // goal is not required in technical mode, but other fields may still fail
-    expect(result.errors.goal).toBeUndefined();
+    // hybrid mode includes intelligence, so goal is required regardless of trading setup
+    expect(result.errors.goal).toBeDefined();
   });
 
   it('returns error for missing capital when trading', () => {
@@ -200,7 +200,7 @@ describe('validateCreateAgentForm', () => {
 
   it('returns multiple errors when multiple fields are invalid', () => {
     const result = validateCreateAgentForm(
-      validIntent({ name: '', goal: '', capital: 'abc' }),
+      validIntent({ name: '', goal: '', capital: 'abc', capabilityMode: 'hybrid' }),
       DEFAULT_CONSTRAINTS,
     );
     expect(result.valid).toBe(false);

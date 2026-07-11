@@ -242,11 +242,11 @@ describe('agent payload builders', () => {
     }).tickIntervalMs).toBe(90_000);
   });
 
-  it('buildUpdateAgentPayload preserves both intelligence and technical fields in both mode', () => {
+  it('buildUpdateAgentPayload preserves both intelligence and technical fields in hybrid mode', () => {
     const payload = buildUpdateAgentPayload({
       name: '  Hybrid scout  ',
       prompt: '  Watch BTC and scan order flow.  ',
-      capabilityMode: 'both',
+      capabilityMode: 'hybrid',
       hybridMode: 'mixed',
       technicalPreFilterEnabled: true,
       technical: TECHNICAL_CONFIG,
@@ -471,7 +471,7 @@ describe('agent payload builders', () => {
       skillIds: ['trading'],
       hasBotManagementSkill: false,
       executionMode: 'paper',
-      hasTradingCapability: true,
+      hasTradingCapability: false,
       telegramChatId: '',
       costPreset: '',
       dailySpendBudgetUsd: '',
@@ -488,8 +488,8 @@ describe('agent payload builders', () => {
       emailDelivery: 'inherit',
     })).toMatchObject({
       name: 'Technical scout',
-      prompt: '',
-      skillIds: [],
+      prompt: 'legacy objective',
+      skillIds: ['trading'],
       executionMode: null,
       technical: TECHNICAL_CONFIG,
     });
