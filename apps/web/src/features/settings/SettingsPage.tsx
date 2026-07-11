@@ -272,47 +272,41 @@ export function SettingsPage() {
               </div>
             </div>
 
-            {/* Adaptive reasoning toggles — side by side */}
-            <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flex: '1', minWidth: '240px' }}>
-                <input
-                  type="checkbox"
-                  id="adapt-scout-reasoning"
-                  checked={modelSettings.adaptScoutReasoning}
-                  onChange={(e) => {
-                    setModelTouched(true);
-                    setModelSettings({ ...modelSettings, adaptScoutReasoning: e.target.checked });
-                  }}
-                  style={{ marginTop: '2px', flexShrink: 0 }}
-                />
-                <div>
-                  <label htmlFor="adapt-scout-reasoning" style={{ fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer' }}>
-                    {intl.formatMessage({ id: 'settings.adaptiveScoutReasoning' })}
-                  </label>
-                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
-                    {intl.formatMessage({ id: 'settings.adaptiveScoutReasoningHelp' })}
-                  </p>
-                </div>
+            {/* Adaptive reasoning toggles — side by side (matching reasoning levels grid) */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label htmlFor="adapt-scout-reasoning" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    id="adapt-scout-reasoning"
+                    checked={modelSettings.adaptScoutReasoning}
+                    onChange={(e) => {
+                      setModelTouched(true);
+                      setModelSettings({ ...modelSettings, adaptScoutReasoning: e.target.checked });
+                    }}
+                  />
+                  {intl.formatMessage({ id: 'settings.adaptiveScoutReasoning' })}
+                </label>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                  {intl.formatMessage({ id: 'settings.adaptiveScoutReasoningHelp' })}
+                </p>
               </div>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flex: '1', minWidth: '240px' }}>
-                <input
-                  type="checkbox"
-                  id="adapt-judge-reasoning"
-                  checked={modelSettings.adaptJudgeReasoning}
-                  onChange={(e) => {
-                    setModelTouched(true);
-                    setModelSettings({ ...modelSettings, adaptJudgeReasoning: e.target.checked });
-                  }}
-                  style={{ marginTop: '2px', flexShrink: 0 }}
-                />
-                <div>
-                  <label htmlFor="adapt-judge-reasoning" style={{ fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer' }}>
-                    {intl.formatMessage({ id: 'settings.adaptiveJudgeReasoning' })}
-                  </label>
-                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
-                    {intl.formatMessage({ id: 'settings.adaptiveJudgeReasoningHelp' })}
-                  </p>
-                </div>
+              <div>
+                <label htmlFor="adapt-judge-reasoning" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    id="adapt-judge-reasoning"
+                    checked={modelSettings.adaptJudgeReasoning}
+                    onChange={(e) => {
+                      setModelTouched(true);
+                      setModelSettings({ ...modelSettings, adaptJudgeReasoning: e.target.checked });
+                    }}
+                  />
+                  {intl.formatMessage({ id: 'settings.adaptiveJudgeReasoning' })}
+                </label>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                  {intl.formatMessage({ id: 'settings.adaptiveJudgeReasoningHelp' })}
+                </p>
               </div>
             </div>
 
