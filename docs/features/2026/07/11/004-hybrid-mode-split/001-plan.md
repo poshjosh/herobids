@@ -1,6 +1,6 @@
 # 004 — Hybrid Mode Split: `intelligence` / `hybrid (mixed)` / `hybrid (scanner_gated)`
 
-**Status:** Draft  
+**Status:** Implemented  
 **Created:** 2026-07-11  
 **Source:** [Hybrid agent redesign decisions (revised)](../../06/22/002-hybrid-agent-redesign/000-decisions.md)
 

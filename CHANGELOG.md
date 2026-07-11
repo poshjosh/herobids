@@ -7,6 +7,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Hybrid Mode Split (`capabilityMode` / `hybridMode`):** Replaced implicit hybrid derivation with explicit `capabilityMode` (`'intelligence'` | `'hybrid'`) and `hybridMode` (`'mixed'` | `'scanner_gated'`) fields on agents.
+  - **Domain:** `CapabilityModeSchema`, `HybridModeSchema` with cross-field validation (hybrid requires technical config; intelligence rejects hybridMode).
+  - **DB:** Migration 0040 stamps correct defaults on existing agents; repository applies `'mixed'` default at read/write time.
+  - **API:** POST/PATCH accept and validate both fields with proper mode transitions and orphaned field cleanup.
+  - **Runtime:** `scanner_gated` agents suppress non-scanner market wakes (watch_threshold, discovery_delta, regime_change); route all trading turns through hybrid evaluator; reminders/user messages still processed normally via scout/judge.
+  - **Web UI:** Hybrid mode selector in agent form; wake sources hidden for scanner_gated agents; capabilityMode derived from technicalPreFilterEnabled + trading skill.
+  - **Cleanup:** Removed dead `'technical'` and `'both'` capability mode values.
 - **Adaptive Reasoning Toggle:** Per-agent `adaptScoutReasoning` / `adaptJudgeReasoning` booleans that control whether reasoning levels act as ceilings (adaptive, default) or fixed levels. When adaptive is off, `classifyTickThinking` and `applyReasoningCeiling` are skipped — giving deterministic, cost-predictable reasoning with zero runtime variance. Controls are exposed in Settings (all users) and automatically stamped into agent `runtimePolicyOverrides` at creation/update.
 - **New-User Link + Unique Username:** Added optional registration affordance to the login-link-first auth screen
   - `users.username` column (non-null, unique) with migration
