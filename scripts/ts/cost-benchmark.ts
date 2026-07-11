@@ -260,7 +260,6 @@ async function createBenchmarkAgent(token: string, bc: BenchmarkCase): Promise<s
     name: `bench-${bc.id}`,
     prompt: BENCHMARK_GOAL,
     skillIds: [],
-    executionMode: 'paper',
     tickIntervalMs: TICK_INTERVAL_MS,
     capital: '10000',
     provider: LLM_PROVIDER,
@@ -268,6 +267,10 @@ async function createBenchmarkAgent(token: string, bc: BenchmarkCase): Promise<s
     heavyModel: LLM_HEAVY_MODEL,
     capabilityMode: bc.capabilityMode,
     ...(bc.hybridMode ? { hybridMode: bc.hybridMode } : {}),
+    // scanner_gated agents need minimal technical config (API requires it for hybrid mode)
+    ...(bc.capabilityMode === 'hybrid' ? {
+      technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
+    } : {}),
     runtimePolicyOverrides: {
       scoutReasoning: bc.scoutReasoning ?? 'low',
       judgeReasoning: bc.judgeReasoning ?? 'low',
