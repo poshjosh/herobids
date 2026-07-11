@@ -16,7 +16,7 @@ export interface AgentFormState {
 
   // Capability
   capabilityMode: CapabilityMode;
-  hybridMode: HybridMode;
+  hybridMode?: HybridMode;
   /** true = scanner pre-filters trade candidates before LLM decides (hybrid mode). Only applies to trading agents. */
   technicalPreFilterEnabled: boolean;
   technicalConfig: TechnicalConfigFormState;
@@ -78,14 +78,10 @@ export function agentToFormState(agent: Agent): AgentFormState {
     : agent.technical
       ? 'hybrid'
       : 'intelligence';
-  const hybridMode: HybridMode = (
+  const hybridMode: HybridMode | undefined = (
     agent.hybridMode === 'mixed' || agent.hybridMode === 'scanner_gated'
   ) ? agent.hybridMode
-    : 'mixed';
-  // Note: hybridMode defaults to 'mixed' for all agents. The UI hides the
-  // hybrid-mode selector when capabilityMode !== 'hybrid', and the payload
-  // builders only transmit hybridMode for hybrid agents — so the value for
-  // intelligence agents is never surfaced to users or the API.
+    : capabilityMode === 'hybrid' ? 'mixed' : undefined;
 
   // Runtime-validate union literal fields
   const VALID_EXECUTION_MODES = ['paper', 'shadow', 'live', ''] as const;
