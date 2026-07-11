@@ -568,6 +568,19 @@ export const AuthConfigSchema = z.object({
   googleClientSecret: z.string().default(''),
   /** Use Secure flag on session cookies (should be true in production / HTTPS) */
   secureCookie: z.boolean().default(false),
+
+  // ── Login-link (magic link) settings ────────────────────────────────────
+
+  /** Login-link token TTL in seconds (how long the magic link is valid) */
+  loginLinkTtlSecs: z.number().min(60).default(600),
+  /** Minimum seconds before a new login link can be sent to the same email */
+  loginLinkResendCooldownSecs: z.number().min(10).default(60),
+  /** Max login-link sends allowed within the rolling window for one email */
+  loginLinkMaxSendsPerWindow: z.number().min(1).default(5),
+  /** Rolling window duration in seconds for per-email rate limiting */
+  loginLinkWindowSecs: z.number().min(60).default(3600),
+  /** Max login-link sends allowed within the rolling window for one source IP */
+  loginLinkMaxSendsPerIpWindow: z.number().min(1).default(10),
 });
 
 export const PlanUsagePackagingSchema = z.object({

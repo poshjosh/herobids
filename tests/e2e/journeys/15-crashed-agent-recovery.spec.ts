@@ -10,6 +10,7 @@
  * endpoint correctly enforcing "stop before delete".
  */
 
+import { registerUser } from '../helpers.js';
 import { test, expect } from '@playwright/test';
 
 const EMAIL = `j15-${Date.now()}@e2e.local`;
@@ -17,14 +18,7 @@ const PASSWORD = 'E2ePassword15!';
 
 test.describe('Journey 15: Crashed-agent recovery', () => {
   test('stop → delete works after agent is started', async ({ page, request }) => {
-    // Register
-    await page.goto('/login');
-    await page.getByText(/sign up|don't have an account/i).click();
-    await page.getByLabel(/name/i).fill('E2E User J15');
-    await page.getByLabel(/email/i).fill(EMAIL);
-    await page.getByLabel(/password/i).fill(PASSWORD);
-    await page.getByRole('button', { name: /create account|register/i }).click();
-    await page.waitForURL('**/agents', { timeout: 15_000 });
+    await registerUser(page, EMAIL, PASSWORD, 'E2E User J15');
 
     const token = await page.evaluate(() => localStorage.getItem('hb_session_token'));
     if (!token) {

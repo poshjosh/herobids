@@ -21,6 +21,11 @@ function makeAuthConfig(overrides: Partial<AuthConfig> = {}): AuthConfig {
     googleClientId: 'google-client-id',
     googleClientSecret: 'google-client-secret',
     secureCookie: false,
+    loginLinkTtlSecs: 600,
+    loginLinkResendCooldownSecs: 60,
+    loginLinkMaxSendsPerWindow: 5,
+    loginLinkWindowSecs: 3600,
+    loginLinkMaxSendsPerIpWindow: 10,
     ...overrides,
   };
 }

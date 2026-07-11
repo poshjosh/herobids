@@ -11,11 +11,18 @@ const TEST_USER_ID = 'user-1';
 function makeAuthConfig(overrides: Partial<AuthConfig> = {}): AuthConfig {
   return {
     publicBaseUrl: 'http://localhost:3000',
+    frontendOrigin: 'http://localhost:5173',
     jwtSecret: TEST_JWT_SECRET,
     jwtTtlSecs: 86_400,
+    exchangeCodeTtlSecs: 60,
     googleClientId: 'google-client-id',
     googleClientSecret: 'google-client-secret',
     secureCookie: false,
+    loginLinkTtlSecs: 600,
+    loginLinkResendCooldownSecs: 60,
+    loginLinkMaxSendsPerWindow: 5,
+    loginLinkWindowSecs: 3600,
+    loginLinkMaxSendsPerIpWindow: 10,
     ...overrides,
   };
 }
@@ -647,6 +654,388 @@ describe('auth routes', () => {
       expect(res.statusCode).toBe(400);
       expect(res.json<{ error: string }>().error).toBe('auth.register.password_too_short');
       expect(res.json<{ params?: { minLength?: number } }>().params?.minLength).toBe(8);
+    });
+  });
+
+  describe('POST /auth/send-login-link', () => {
+    function makeRedisMock() {
+      return {
+        set: vi.fn().mockResolvedValue('OK'),
+        getdel: vi.fn().mockResolvedValue(null),
+        incr: vi.fn().mockResolvedValue(1),
+        expire: vi.fn().mockResolvedValue(1),
+        ttl: vi.fn().mockResolvedValue(-2),  // no cooldown key by default
+      };
+    }
+
+    it('returns 400 for invalid email', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, makeRedisMock() as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'not-an-email' },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('auth.send_login_link.invalid_email');
+    });
+
+    it('returns 200 with ok when login link is sent', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      // Provide a mock authMailer to exercise the full token-creation path
+      const authMailer = { sendLoginLink: vi.fn().mockResolvedValue(undefined) };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, redis as any, 'free', undefined, authMailer as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json<{ ok: boolean }>().ok).toBe(true);
+      expect(redis.set).toHaveBeenCalled();
+      expect(authMailer.sendLoginLink).toHaveBeenCalled();
+    });
+
+    it('returns generic success even when no mailer is configured', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      // No authMailer passed — email delivery is disabled, but the response is still generic
+      await authRoutes(app, makeAuthConfig(), {} as any, makeRedisMock() as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json<{ ok: boolean }>().ok).toBe(true);
+    });
+
+    it('returns 429 when resend cooldown is active', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      redis.ttl = vi.fn().mockResolvedValue(42); // 42s remaining on cooldown
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com' },
+      });
+
+      expect(res.statusCode).toBe(429);
+      expect(res.json<{ error: string }>().error).toBe('auth.send_login_link.rate_limited');
+    });
+
+    it('passes cooldown check when ttl returns 0 (exact expiry boundary)', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      redis.ttl = vi.fn().mockResolvedValue(0); // key exists but just expired
+      const authMailer = { sendLoginLink: vi.fn().mockResolvedValue(undefined) };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, redis as any, 'free', undefined, authMailer as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com' },
+      });
+
+      // Cooldown should not block — ttl of 0 means already expired
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('sets cooldown key after successful mailer send', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      const authMailer = { sendLoginLink: vi.fn().mockResolvedValue(undefined) };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      const config = makeAuthConfig();
+      await authRoutes(app, config, {} as any, redis as any, 'free', undefined, authMailer as any);
+
+      await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com' },
+      });
+
+      // Token set + cooldown set = 2 calls
+      expect(redis.set).toHaveBeenCalledTimes(2);
+      const cooldownCall = redis.set.mock.calls[1];
+      expect(cooldownCall?.[0]).toContain('auth:login-link:cooldown:');
+      expect(cooldownCall?.[1]).toBe('1');
+      expect(cooldownCall?.[2]).toBe('EX');
+      expect(cooldownCall?.[3]).toBe(config.loginLinkResendCooldownSecs);
+    });
+
+    it('sets cooldown key when no mailer is configured (dev mode)', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+
+      await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com' },
+      });
+
+      expect(redis.set).toHaveBeenCalledTimes(2);
+      const cooldownCall = redis.set.mock.calls[1];
+      expect(cooldownCall?.[0]).toContain('auth:login-link:cooldown:');
+    });
+
+    it('does not set cooldown key when email send fails', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      const authMailer = { sendLoginLink: vi.fn().mockResolvedValue({ code: 'send_failed', message: 'Failed' }) };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, redis as any, 'free', undefined, authMailer as any);
+
+      await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com' },
+      });
+
+      // Only the token set, no cooldown key
+      expect(redis.set).toHaveBeenCalledTimes(1);
+      expect(redis.set.mock.calls[0]?.[0]).not.toContain('cooldown');
+    });
+
+    it('passes loginLinkTtlSecs to sendLoginLink', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      const authMailer = { sendLoginLink: vi.fn().mockResolvedValue(undefined) };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      const config = makeAuthConfig();
+      await authRoutes(app, config, {} as any, redis as any, 'free', undefined, authMailer as any);
+
+      await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com' },
+      });
+
+      expect(authMailer.sendLoginLink).toHaveBeenCalledWith(
+        'user@example.com',
+        expect.any(String),
+        config.loginLinkTtlSecs,
+      );
+    });
+  });
+
+  describe('GET /auth/login-link/callback', () => {
+    it('returns 400 when token is missing', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = {
+        set: vi.fn(),
+        getdel: vi.fn().mockResolvedValue(null),
+        incr: vi.fn(),
+        expire: vi.fn(),
+      };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, redis as any, 'free');
+
+      const res = await app.inject({ method: 'GET', url: '/auth/login-link/callback' });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('auth.login_link_callback.missing_token');
+    });
+
+    it('returns 400 when token is invalid or expired', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = {
+        set: vi.fn(),
+        getdel: vi.fn().mockResolvedValue(null), // expired/unknown token
+        incr: vi.fn(),
+        expire: vi.fn(),
+      };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, redis as any, 'free');
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/auth/login-link/callback?token=invalid-token',
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('auth.login_link_callback.invalid_token');
+    });
+
+    it('resolves existing user and redirects with exchange code', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const existingUserId = 'existing-user-id';
+      const redis = {
+        set: vi.fn().mockResolvedValue('OK'),
+        getdel: vi.fn().mockResolvedValue(JSON.stringify({ email: 'existing@example.com' })),
+        incr: vi.fn().mockResolvedValue(1),
+        expire: vi.fn().mockResolvedValue(1),
+      };
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ id: existingUserId }]),
+            }),
+          }),
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/auth/login-link/callback?token=valid-token',
+      });
+
+      // Should redirect to the frontend callback URL with an exchange code
+      expect(res.statusCode).toBe(302);
+      const location = res.headers['location'] as string;
+      expect(location).toContain('/auth/callback?code=');
+      expect(redis.getdel).toHaveBeenCalledWith('auth:login-link:token:valid-token');
+      expect(redis.set).toHaveBeenCalledWith(
+        expect.stringContaining('auth:code:'),
+        expect.any(String),
+        'EX',
+        expect.any(Number),
+      );
+    });
+
+    it('creates a new user when email does not exist yet', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const insertedUsers: Array<Record<string, unknown>> = [];
+      const redis = {
+        set: vi.fn().mockResolvedValue('OK'),
+        getdel: vi.fn().mockResolvedValue(JSON.stringify({ email: 'newuser@example.com' })),
+        incr: vi.fn().mockResolvedValue(1),
+        expire: vi.fn().mockResolvedValue(1),
+      };
+      const db = {
+        // First select returns no existing user (email not found)
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+          const tx = {
+            insert: vi.fn().mockImplementation(() => ({
+              values: vi.fn().mockImplementation((vals: Record<string, unknown>) => {
+                insertedUsers.push(vals);
+                return Promise.resolve(undefined);
+              }),
+            })),
+          };
+          return callback(tx);
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/auth/login-link/callback?token=new-user-token',
+      });
+
+      expect(res.statusCode).toBe(302);
+      // First insert is the user row, second is userPlans
+      const userInsert = insertedUsers[0];
+      expect(userInsert).toBeDefined();
+      expect(userInsert!['email']).toBe('newuser@example.com');
+      // Display name should be derived from the email local-part
+      expect(userInsert!['displayName']).toBe('newuser');
+      const location = res.headers['location'] as string;
+      expect(location).toContain('/auth/callback?code=');
+    });
+  });
+
+  describe('POST /auth/login — password_not_available', () => {
+    it('returns password_not_available for a user without local_identities', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      };
+      // First call: user exists
+      // Second call: no localIdentities row
+      db.select
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ id: 'user-1', email: 'google-only@example.com' }]),
+            }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        });
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, {} as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: { email: 'google-only@example.com', password: 'any-password' },
+      });
+
+      expect(res.statusCode).toBe(401);
+      expect(res.json<{ error: string }>().error).toBe('auth.login.password_not_available');
     });
   });
 });

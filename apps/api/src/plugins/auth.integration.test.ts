@@ -15,11 +15,18 @@ const TEST_JWT_TTL = 3600; // 1 hour
 function makeAuthConfig(overrides: Partial<AuthConfig> = {}): AuthConfig {
   return {
     publicBaseUrl: 'http://localhost:3000',
+    frontendOrigin: 'http://localhost:5173',
     jwtSecret: TEST_JWT_SECRET,
     jwtTtlSecs: TEST_JWT_TTL,
+    exchangeCodeTtlSecs: 60,
     googleClientId: 'test-client-id',
     googleClientSecret: 'test-client-secret',
     secureCookie: false,
+    loginLinkTtlSecs: 600,
+    loginLinkResendCooldownSecs: 60,
+    loginLinkMaxSendsPerWindow: 5,
+    loginLinkWindowSecs: 3600,
+    loginLinkMaxSendsPerIpWindow: 10,
     ...overrides,
   };
 }

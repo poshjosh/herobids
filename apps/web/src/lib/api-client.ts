@@ -33,7 +33,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (res.status === 401) {
     // Don't force-redirect on auth endpoints — let the caller handle the error
-    const isAuthEndpoint = path.startsWith('/auth/login') || path.startsWith('/auth/register') || path.startsWith('/auth/exchange');
+    const isAuthEndpoint = path.startsWith('/auth/login') || path.startsWith('/auth/register') || path.startsWith('/auth/exchange') || path.startsWith('/auth/send-login-link');
     if (!isAuthEndpoint) {
       clearToken();
       // Soft redirect to login — avoid hard reload when the router handles this
@@ -163,6 +163,11 @@ export const auth = {
     request<{ token: string }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    }),
+  sendLoginLink: (email: string) =>
+    request<{ ok: boolean }>('/auth/send-login-link', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
     }),
   me: () => request<MeResponse>('/auth/me'),
   updateMe: (data: { preferredLocale?: string | null; telegramChatId?: string | null; notificationPreferences?: { sendMessage?: { email?: { enabled: boolean } } } | null }) =>

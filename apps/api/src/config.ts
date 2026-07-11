@@ -29,6 +29,11 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   AUTH_EXCHANGE_CODE_TTL_SECS: { path: 'auth.exchangeCodeTtlSecs', type: 'number' },
   GOOGLE_CLIENT_ID: { path: 'auth.googleClientId', type: 'string' },
   GOOGLE_CLIENT_SECRET: { path: 'auth.googleClientSecret', type: 'string' },
+  AUTH_LOGIN_LINK_TTL_SECS: { path: 'auth.loginLinkTtlSecs', type: 'number' },
+  AUTH_LOGIN_LINK_RESEND_COOLDOWN_SECS: { path: 'auth.loginLinkResendCooldownSecs', type: 'number' },
+  AUTH_LOGIN_LINK_MAX_SENDS_PER_WINDOW: { path: 'auth.loginLinkMaxSendsPerWindow', type: 'number' },
+  AUTH_LOGIN_LINK_WINDOW_SECS: { path: 'auth.loginLinkWindowSecs', type: 'number' },
+  AUTH_LOGIN_LINK_MAX_SENDS_PER_IP_WINDOW: { path: 'auth.loginLinkMaxSendsPerIpWindow', type: 'number' },
   // Billing
   BILLING_PRIMARY_PROVIDER: { path: 'billing.primaryProvider', type: 'string' },
   STRIPE_SECRET_KEY: { path: 'billing.stripe.secretKey', type: 'string' },
@@ -38,6 +43,13 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   TELEGRAM_BOT_TOKEN: { path: 'alerts.telegram.botToken', type: 'string' },
   TELEGRAM_WEBHOOK_SECRET: { path: 'alerts.telegram.webhookSecret', type: 'string' },
   TELEGRAM_WEBHOOK_URL: { path: 'alerts.telegram.webhookUrl', type: 'string' },
+  // Email — outbound provider (SES)
+  EMAIL_PROVIDER: { path: 'alerts.email.provider', type: 'string' },
+  EMAIL_FROM_EMAIL: { path: 'alerts.email.fromEmail', type: 'string' },
+  EMAIL_REPLY_TO_EMAIL: { path: 'alerts.email.replyToEmail', type: 'string' },
+  EMAIL_TIMEOUT_MS: { path: 'alerts.email.timeoutMs', type: 'number' },
+  AWS_REGION: { path: 'alerts.email.ses.region', type: 'string' },
+  SES_CONFIGURATION_SET_NAME: { path: 'alerts.email.ses.configurationSetName', type: 'string' },
   // Evaluation
   EVALUATION_STORAGE_ROOT: { path: 'evaluation.storageRoot', type: 'string' },
   // Market data providers

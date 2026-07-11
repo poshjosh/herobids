@@ -123,6 +123,9 @@ function isPublicRoute(url: string, method: string): boolean {
   if (path === '/auth/exchange') return true;
   if (path === '/auth/register') return true;
   if (path === '/auth/login') return true;
+  // Login-link (magic link) endpoints — public
+  if (path === '/auth/send-login-link') return true;
+  if (path === '/auth/login-link/callback') return true;
 
   // /auth/me and /auth/logout require a valid session
 

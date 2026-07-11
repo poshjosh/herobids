@@ -7,6 +7,7 @@
  * tests.  This journey covers the UI rendering and empty-state presentation.
  */
 
+import { registerUser } from '../helpers.js';
 import { test, expect } from '@playwright/test';
 
 const EMAIL = `j2-${Date.now()}@e2e.local`;
@@ -15,17 +16,7 @@ let agentId = '';
 
 test.describe('Journey 2: Recent Decisions section renders on agent detail page', () => {
   test.beforeEach(async ({ page }) => {
-    // Register and create an agent via the UI
-    await page.goto('/login');
-    // Login page defaults to login mode — click the toggle to switch to register
-    const signUpLink = page.getByText(/sign up|don't have an account/i);
-    await signUpLink.click();
-    await page.getByLabel(/name/i).fill('E2E User J2');
-    await page.getByLabel(/email/i).fill(EMAIL);
-    await page.getByLabel(/password/i).fill(PASSWORD);
-    const submitBtn = page.getByRole('button', { name: /create account|sign in|log in/i }).first();
-    await submitBtn.click();
-    await page.waitForURL('**/agents', { timeout: 15_000 });
+    await registerUser(page, EMAIL, PASSWORD, 'E2E User J2');
   });
 
   test('agent detail page renders the Recent Decisions card with empty state', async ({ page, request }) => {

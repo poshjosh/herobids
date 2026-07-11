@@ -6,37 +6,311 @@ import { auth } from '../../lib/api-client.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 
-type EmailMode = 'login' | 'register';
+type PageState = 'passwordCollapsed' | 'passwordExpanded' | 'sendingLoginLink' | 'signingInWithPassword' | 'loginLinkSent' | 'resendingLoginLink';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const { login } = useSession();
   const intl = useIntl();
 
-  const [emailMode, setEmailMode] = useState<EmailMode>('login');
+  const [pageState, setPageState] = useState<PageState>('passwordCollapsed');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleEmailSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const isPasswordExpanded = pageState === 'passwordExpanded' || pageState === 'signingInWithPassword';
+  const isLinkSent = pageState === 'loginLinkSent' || pageState === 'resendingLoginLink';
+
+  async function handleSendLoginLink() {
+    if (!email) return;
     setError(null);
     setPending(true);
+    setPageState('sendingLoginLink');
     try {
-      const { token } = emailMode === 'register'
-        ? await auth.register(email, password, displayName)
-        : await auth.login(email, password);
-      await login(token);
-      navigate('/agents', { replace: true });
+      await auth.sendLoginLink(email);
+      setPageState('loginLinkSent');
     } catch (err) {
       setError(localizeApiError(intl, err, 'auth.error.default'));
+      setPageState(isPasswordExpanded ? 'passwordExpanded' : 'passwordCollapsed');
     } finally {
       setPending(false);
     }
   }
 
+  async function handlePasswordSignIn(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email || !password) return;
+    setError(null);
+    setPending(true);
+    setPageState('signingInWithPassword');
+    try {
+      const { token } = await auth.login(email, password);
+      await login(token);
+      navigate('/agents', { replace: true });
+    } catch (err) {
+      setError(localizeApiError(intl, err, 'auth.error.default'));
+      setPageState('passwordExpanded');
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function expandPassword() {
+    setError(null);
+    setPageState('passwordExpanded');
+  }
+
+  function handleEmailKeyDown(e: React.KeyboardEvent) {
+    // Pressing Enter in the collapsed state sends a login link
+    if (e.key === 'Enter' && !isPasswordExpanded) {
+      e.preventDefault();
+      void handleSendLoginLink();
+    }
+  }
+
+  async function handleResendLink() {
+    if (!email) return;
+    setError(null);
+    setPending(true);
+    setPageState('resendingLoginLink');
+    try {
+      await auth.sendLoginLink(email);
+      setPageState('loginLinkSent');
+    } catch (err) {
+      setError(localizeApiError(intl, err, 'auth.error.default'));
+      setPageState('loginLinkSent');
+    } finally {
+      setPending(false);
+    }
+  }
+
+  // --- Login-link sent state ---
+  if (isLinkSent) {
+    return (
+      <PageShell>
+        <div style={{ textAlign: 'center' }}>
+          {/* Mail icon */}
+          <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.6 }}>✉️</div>
+          <div style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px', color: 'var(--color-text-primary)' }}>
+            {intl.formatMessage({ id: 'auth.loginLinkSent.title' })}
+          </div>
+          <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginBottom: '24px', lineHeight: '1.5' }}>
+            {intl.formatMessage({ id: 'auth.loginLinkSent.message' })}
+          </div>
+          {error && (
+            <div style={{
+              fontSize: '13px', color: 'var(--color-danger, #e05252)',
+              padding: '10px 12px', background: 'rgba(224,82,82,0.08)',
+              borderRadius: '6px', marginBottom: '16px',
+            }}>
+              {error}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => { void handleResendLink(); }}
+            disabled={pending}
+            style={{
+              padding: '10px 24px',
+              background: 'var(--color-brand)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: pending ? 'not-allowed' : 'pointer',
+              opacity: pending ? 0.7 : 1,
+            }}
+          >
+            {pending
+              ? intl.formatMessage({ id: 'common.loading' })
+              : intl.formatMessage({ id: 'auth.loginLinkSent.resend' })}
+          </button>
+        </div>
+      </PageShell>
+    );
+  }
+
+  return (
+    <PageShell>
+      <form onSubmit={(e) => { void handlePasswordSignIn(e); }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        {/* Email field */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label htmlFor="login-email" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
+            {intl.formatMessage({ id: 'auth.email.email.label' })}
+          </label>
+          <input
+            id="login-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={handleEmailKeyDown}
+            placeholder="you@example.com"
+            required
+            autoComplete="email"
+            autoFocus
+            style={inputStyle}
+          />
+        </div>
+
+        {/* Password field — conditionally rendered */}
+        {isPasswordExpanded && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label htmlFor="login-password" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
+              {intl.formatMessage({ id: 'auth.email.password.label' })}
+            </label>
+            <div style={{ position: 'relative' }}>
+              <input
+                id="login-password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder=""
+                required
+                autoComplete="current-password"
+                style={{ ...inputStyle, paddingRight: '44px' }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  position: 'absolute',
+                  right: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  color: 'var(--color-text-muted)',
+                  padding: '4px',
+                }}
+                aria-label={showPassword ? intl.formatMessage({ id: 'auth.password.hide' }) : intl.formatMessage({ id: 'auth.password.show' })}
+              >
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {error && (
+          <div style={{ fontSize: '13px', color: 'var(--color-danger, #e05252)', padding: '10px 12px', background: 'rgba(224,82,82,0.08)', borderRadius: '6px' }}>
+            {error}
+          </div>
+        )}
+
+        {/* Action row: Send login link + Sign in with password / Sign in */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={() => { void handleSendLoginLink(); }}
+            disabled={pending || !email}
+            style={{
+              flex: 1,
+              padding: '12px',
+              background: 'var(--color-brand)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '15px',
+              fontWeight: '500',
+              cursor: pending || !email ? 'not-allowed' : 'pointer',
+              opacity: pending || !email ? 0.7 : 1,
+            }}
+          >
+            {pending && pageState === 'sendingLoginLink'
+              ? intl.formatMessage({ id: 'common.loading' })
+              : intl.formatMessage({ id: 'auth.sendLoginLink' })}
+          </button>
+
+          {isPasswordExpanded ? (
+            <button
+              type="submit"
+              disabled={pending || !email || !password}
+              style={{
+                flex: 1,
+                padding: '12px',
+                background: 'var(--color-surface-2)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '8px',
+                fontSize: '15px',
+                fontWeight: '500',
+                cursor: pending || !email || !password ? 'not-allowed' : 'pointer',
+                opacity: pending || !email || !password ? 0.5 : 1,
+              }}
+            >
+              {pending && pageState === 'signingInWithPassword'
+                ? intl.formatMessage({ id: 'common.loading' })
+                : intl.formatMessage({ id: 'auth.signIn' })}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={expandPassword}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '13px',
+                color: 'var(--color-text-muted)',
+                textDecoration: 'underline',
+                whiteSpace: 'nowrap',
+                padding: '12px 8px',
+              }}
+            >
+              {intl.formatMessage({ id: 'auth.signInWithPassword' })}
+            </button>
+          )}
+        </div>
+      </form>
+
+      {/* Divider */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '8px 0' }}>
+        <div style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
+        <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'auth.divider.or' })}</span>
+        <div style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
+      </div>
+
+      {/* Google sign-in */}
+      <a
+        href={config.googleAuthUrl}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '10px',
+          padding: '12px 20px',
+          background: '#FFFFFF',
+          color: 'rgba(0,0,0,0.54)',
+          borderRadius: '8px',
+          border: '1px solid var(--color-border)',
+          textDecoration: 'none',
+          fontSize: '15px',
+          fontWeight: '500',
+          cursor: 'pointer',
+          transition: 'background 0.15s, box-shadow 0.15s',
+        }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = '#F5F5F5'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)'; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = '#FFFFFF'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = 'none'; }}
+      >
+        <GoogleIcon />
+        {intl.formatMessage({ id: 'auth.continueWithGoogle' })}
+      </a>
+
+      <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', textAlign: 'center' }}>
+        {intl.formatMessage({ id: 'auth.terms' })}
+      </div>
+    </PageShell>
+  );
+}
+
+/** Shared page shell used by all states */
+function PageShell({ children }: { children: React.ReactNode }) {
+  const intl = useIntl();
   return (
     <div
       style={{
@@ -50,7 +324,6 @@ export function LoginPage() {
       }}
     >
       <div className="auth-card">
-        {/* Brand */}
         <div style={{ textAlign: 'center' }}>
           <div
             style={{
@@ -63,136 +336,11 @@ export function LoginPage() {
           >
             HeroBids
           </div>
-          <div style={{ color: 'var(--color-text-secondary)', fontSize: '15px' }}>
+          <div style={{ color: 'var(--color-text-secondary)', fontSize: '15px', marginBottom: '20px' }}>
             {intl.formatMessage({ id: 'auth.tagline' })}
           </div>
         </div>
-
-        {/* Email / password form */}
-        <form onSubmit={(e) => { void handleEmailSubmit(e); }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {emailMode === 'register' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label htmlFor="login-name" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
-                {intl.formatMessage({ id: 'auth.email.name.label' })}
-              </label>
-              <input
-                id="login-name"
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder={intl.formatMessage({ id: 'auth.email.name.placeholder' })}
-                required
-                autoComplete="name"
-                style={inputStyle}
-              />
-            </div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label htmlFor="login-email" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
-              {intl.formatMessage({ id: 'auth.email.email.label' })}
-            </label>
-            <input
-              id="login-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-              autoComplete="email"
-              style={inputStyle}
-            />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label htmlFor="login-password" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
-              {intl.formatMessage({ id: 'auth.email.password.label' })}
-            </label>
-            <input
-              id="login-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={emailMode === 'register' ? intl.formatMessage({ id: 'auth.email.password.placeholder' }) : ''}
-              required
-              autoComplete={emailMode === 'register' ? 'new-password' : 'current-password'}
-              style={inputStyle}
-            />
-          </div>
-
-          {error && (
-            <div style={{ fontSize: '13px', color: 'var(--color-danger, #e05252)', padding: '10px 12px', background: 'rgba(224,82,82,0.08)', borderRadius: '6px' }}>
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={pending}
-            style={{
-              padding: '12px',
-              background: 'var(--color-brand)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '15px',
-              fontWeight: '500',
-              cursor: pending ? 'not-allowed' : 'pointer',
-              opacity: pending ? 0.7 : 1,
-            }}
-          >
-            {pending
-              ? intl.formatMessage({ id: 'auth.pendingSubmit' })
-              : emailMode === 'register'
-                ? intl.formatMessage({ id: 'auth.register.submit' })
-                : intl.formatMessage({ id: 'auth.login.submit' })}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setEmailMode(emailMode === 'login' ? 'register' : 'login'); setError(null); }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: 'var(--color-text-muted)', textDecoration: 'underline' }}
-          >
-            {emailMode === 'login'
-              ? intl.formatMessage({ id: 'auth.switchToRegister' })
-              : intl.formatMessage({ id: 'auth.switchToLogin' })}
-          </button>
-        </form>
-
-        {/* Divider */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '8px 0' }}>
-          <div style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
-          <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'auth.divider.or' })}</span>
-          <div style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
-        </div>
-
-        {/* Google sign-in */}
-        <a
-          href={config.googleAuthUrl}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '10px',
-            padding: '12px 20px',
-            background: '#FFFFFF',
-            color: 'rgba(0,0,0,0.54)',
-            borderRadius: '8px',
-            border: '1px solid var(--color-border)',
-            textDecoration: 'none',
-            fontSize: '15px',
-            fontWeight: '500',
-            cursor: 'pointer',
-            transition: 'background 0.15s, box-shadow 0.15s',
-          }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = '#F5F5F5'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)'; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = '#FFFFFF'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = 'none'; }}
-        >
-          <GoogleIcon />
-          {intl.formatMessage({ id: 'auth.continueWithGoogle' })}
-        </a>
-
-        <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', textAlign: 'center' }}>
-          {intl.formatMessage({ id: 'auth.terms' })}
-        </div>
+        {children}
       </div>
     </div>
   );

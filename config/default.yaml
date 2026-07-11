@@ -648,6 +648,11 @@ auth:
   googleClientId: ""                     # override: GOOGLE_CLIENT_ID
   googleClientSecret: ""                 # override: GOOGLE_CLIENT_SECRET
   secureCookie: false                    # set true in production (HTTPS only)
+  loginLinkTtlSecs: 600                  # 10 min — override: AUTH_LOGIN_LINK_TTL_SECS
+  loginLinkResendCooldownSecs: 60        # 1 min — override: AUTH_LOGIN_LINK_RESEND_COOLDOWN_SECS
+  loginLinkMaxSendsPerWindow: 5          # max sends per email per window — override: AUTH_LOGIN_LINK_MAX_SENDS_PER_WINDOW
+  loginLinkWindowSecs: 3600              # 1 hour rolling window — override: AUTH_LOGIN_LINK_WINDOW_SECS
+  loginLinkMaxSendsPerIpWindow: 10       # max sends per IP per window — override: AUTH_LOGIN_LINK_MAX_SENDS_PER_IP_WINDOW
 
 # Plan enforcement — coarse resource limits per user plan.
 #

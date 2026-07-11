@@ -18,6 +18,11 @@ function makeAuthConfig(): AuthConfig {
     googleClientId: '',
     googleClientSecret: '',
     secureCookie: false,
+    loginLinkTtlSecs: 600,
+    loginLinkResendCooldownSecs: 60,
+    loginLinkMaxSendsPerWindow: 5,
+    loginLinkWindowSecs: 3600,
+    loginLinkMaxSendsPerIpWindow: 10,
   };
 }
 

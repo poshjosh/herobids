@@ -37,6 +37,7 @@ import { capabilityRoutes } from './routes/capabilities/index.js';
 import { setupRoutes } from './routes/setup.js';
 import { providerRoutes } from './routes/providers.js';
 import { authPlugin } from './plugins/auth.js';
+import { createAuthMailer } from './auth-mailer.js';
 import { loadConfig } from './config.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -187,7 +188,8 @@ app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOStrin
 await telegramWebhookHandler(app, db, redisClient, appConfig.alerts);
 
 // Auth routes (public — Google OAuth flow + exchange endpoint)
-await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId, appConfig.plans);
+const authMailer = createAuthMailer(appConfig.alerts);
+await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId, appConfig.plans, authMailer);
 
 // ── Capability routes (primary public surface) ────────────────────────────
 await capabilityRoutes(app, db, appConfig.plans, appConfig.agentRuntime.defaultBudgets, redisClient);

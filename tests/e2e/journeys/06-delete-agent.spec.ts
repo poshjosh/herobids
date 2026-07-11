@@ -7,6 +7,7 @@
  * UI delete control is added, extend this journey to exercise the button path.
  */
 
+import { registerUser } from '../helpers.js';
 import { test, expect } from '@playwright/test';
 
 const EMAIL = `j6-${Date.now()}@e2e.local`;
@@ -14,14 +15,7 @@ const PASSWORD = 'E2ePassword6!';
 
 test.describe('Journey 6: Deleted agent is no longer visible in the agents list', () => {
   test('after deletion the agent does not appear in the agents list', async ({ page, request }) => {
-    // Register
-    await page.goto('/login');
-    await page.getByText(/sign up|don't have an account/i).click();
-    await page.getByLabel(/name/i).fill('E2E User J6');
-    await page.getByLabel(/email/i).fill(EMAIL);
-    await page.getByLabel(/password/i).fill(PASSWORD);
-    await page.getByRole('button', { name: /create account|register/i }).click();
-    await page.waitForURL('**/agents', { timeout: 15_000 });
+    await registerUser(page, EMAIL, PASSWORD, 'E2E User J6');
 
     const token = await page.evaluate(() => localStorage.getItem('hb_session_token'));
     if (!token) {

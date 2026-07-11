@@ -18,6 +18,7 @@
     "@herobids/engine": "workspace:*",
     "@herobids/llm": "workspace:*",
     "@herobids/venues": "workspace:*",
+    "@aws-sdk/client-sesv2": "^3.1084.0",
     "archiver": "^8.0.0",
     "bullmq": "^5.77.0",
     "drizzle-orm": "^0.44.7",

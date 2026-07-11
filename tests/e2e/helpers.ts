@@ -13,21 +13,30 @@ export const TEST_EMAIL = `e2e-${Date.now()}@test.local`;
 export const TEST_PASSWORD = 'TestPassword123!';
 export const TEST_DISPLAY_NAME = 'E2E Test User';
 
-/** Register a new user via the login/register form. */
+/** Register a new user via the API (the login page no longer has a register form). */
 export async function registerUser(
   page: Page,
   email = TEST_EMAIL,
   password = TEST_PASSWORD,
   displayName = TEST_DISPLAY_NAME,
 ) {
-  await page.goto('/login');
-  // Login page defaults to login mode — click the toggle to switch to register
-  await page.getByText(/sign up|don't have an account/i).click();
-  await page.getByLabel(/name/i).fill(displayName);
-  await page.getByLabel(/email/i).fill(email);
-  await page.getByLabel(/password/i).fill(password);
-  await page.getByRole('button', { name: /create account|register|sign up/i }).click();
-  // Should redirect to agents
+  // Use the API directly since the login page now defaults to email-link auth
+  const response = await page.request.post('/api/auth/register', {
+    data: { email, password, displayName },
+  });
+
+  if (!response.ok()) {
+    throw new Error(`Failed to register user via API: ${response.status()} ${await response.text()}`);
+  }
+
+  const body = await response.json() as { token: string };
+
+  // Store the token in localStorage so the page is authenticated
+  await page.evaluate((token: string) => {
+    localStorage.setItem('hb_session_token', token);
+  }, body.token);
+
+  await page.goto('/agents');
   await page.waitForURL('**/agents', { timeout: 15_000 });
 }
 
@@ -38,10 +47,11 @@ export async function loginUser(
   password = TEST_PASSWORD,
 ) {
   await page.goto('/login');
-  // Login page defaults to login mode — fill and submit
+  // Click "Sign in with password" to expand the password field
+  await page.getByText(/sign in with password/i).click();
   await page.getByLabel(/email/i).fill(email);
   await page.getByLabel(/password/i).fill(password);
-  await page.getByRole('button', { name: /sign in|log in|continue/i }).click();
+  await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL('**/agents', { timeout: 15_000 });
 }
 

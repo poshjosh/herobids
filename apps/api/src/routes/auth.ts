@@ -11,6 +11,7 @@ import { createSessionToken } from '../plugins/auth.js';
 import { errorPayload } from '../error-payload.js';
 import { resolvePlanEntitlements } from '../plan-guards.js';
 import { resolveNotificationPreferences } from './user-config-helpers.js';
+import type { AuthMailer } from '../auth-mailer.js';
 
 const scrypt = promisify<crypto.BinaryLike, crypto.BinaryLike, number, Buffer>(crypto.scrypt);
 // Supported locales mirror apps/web/src/app/i18n/resolveLocale.ts — keep in sync.
@@ -102,6 +103,7 @@ export async function authRoutes(
   redis: Redis,
   defaultPlanId = 'free',
   plansConfig?: PlansConfig,
+  authMailer?: AuthMailer,
 ) {
   function profilePlanEntitlements(planId: string, isAdmin: boolean) {
     if (!plansConfig) {
@@ -109,6 +111,197 @@ export async function authRoutes(
     }
     return resolvePlanEntitlements(plansConfig, { planId, isAdmin }).entitlements;
   }
+
+  // ── Login-link helpers ──────────────────────────────────────────────────
+
+  function normalizeEmail(raw: string): string {
+    return raw.toLowerCase().trim();
+  }
+
+  function deriveDisplayName(email: string): string {
+    return email.split('@')[0] ?? email;
+  }
+
+  function hashKey(raw: string): string {
+    return crypto.createHash('sha256').update(raw).digest('hex');
+  }
+
+  function makeLoginLinkUrl(token: string): string {
+    const url = new URL('/auth/login-link/callback', config.publicBaseUrl);
+    url.searchParams.set('token', token);
+    return url.toString();
+  }
+
+  async function createAndStoreLoginLinkToken(email: string): Promise<string> {
+    const token = crypto.randomBytes(32).toString('base64url');
+    const payload = JSON.stringify({ email });
+    await redis.set(`auth:login-link:token:${token}`, payload, 'EX', config.loginLinkTtlSecs);
+    return token;
+  }
+
+  async function consumeLoginLinkToken(token: string): Promise<string | null> {
+    const raw = await redis.getdel(`auth:login-link:token:${token}`);
+    if (!raw) return null;
+    try {
+      const { email } = JSON.parse(raw) as { email: string };
+      return email;
+    } catch {
+      return null;
+    }
+  }
+
+  async function checkLoginLinkRateLimit(email: string, ip: string): Promise<{ allowed: boolean; reason?: string; cooldownRemainingSecs?: number }> {
+    const emailHash = hashKey(email);
+
+    // Check resend cooldown — prevent sending before the cooldown expires
+    const cooldownKey = `auth:login-link:cooldown:${emailHash}`;
+    const cooldownTtl = await redis.ttl(cooldownKey);
+    if (cooldownTtl > 0) {
+      return { allowed: false, reason: 'Please wait before requesting another login link.', cooldownRemainingSecs: cooldownTtl };
+    }
+
+    const emailWindowKey = `auth:login-link:email-window:${emailHash}`;
+    const ipWindowKey = `auth:login-link:ip-window:${ip}`;
+    const windowSecs = config.loginLinkWindowSecs;
+
+    // Check email rate limit
+    const emailCount = await redis.incr(emailWindowKey);
+    if (emailCount === 1) {
+      await redis.expire(emailWindowKey, windowSecs);
+    }
+    if (emailCount > config.loginLinkMaxSendsPerWindow) {
+      return { allowed: false, reason: 'Too many login link requests for this email. Please try again later.' };
+    }
+
+    // Check IP rate limit
+    const ipCount = await redis.incr(ipWindowKey);
+    if (ipCount === 1) {
+      await redis.expire(ipWindowKey, windowSecs);
+    }
+    if (ipCount > config.loginLinkMaxSendsPerIpWindow) {
+      return { allowed: false, reason: 'Too many login link requests from this device. Please try again later.' };
+    }
+
+    return { allowed: true };
+  }
+
+  async function resolveOrCreateUserByEmail(email: string): Promise<string> {
+    // Try existing user first
+    const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+    if (existing) return existing.id;
+
+    // Create a new user
+    const userId = crypto.randomUUID();
+    const now = new Date();
+    const displayName = deriveDisplayName(email);
+
+    await db.transaction(async (tx) => {
+      await tx.insert(users).values({
+        id: userId,
+        displayName,
+        email,
+        avatarUrl: null,
+        planId: defaultPlanId,
+        preferredLocale: null,
+        telegramChatId: null,
+        aiModelConfig: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await tx.insert(userPlans).values({
+        id: crypto.randomUUID(),
+        userId,
+        planId: defaultPlanId,
+      });
+    });
+
+    return userId;
+  }
+
+  /**
+   * POST /auth/send-login-link — Send a one-time login link to the given email.
+   * Validates email syntax, applies rate limiting, stores a short-lived token in Redis,
+   * and sends the email. Returns a generic success response regardless of outcome.
+   */
+  app.post('/auth/send-login-link', async (request, reply) => {
+    const body = request.body as Record<string, unknown> | undefined;
+    const email = typeof body?.['email'] === 'string' ? normalizeEmail(body['email']) : undefined;
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return reply.status(400).send(
+        errorPayload('auth.send_login_link.invalid_email', 'Enter a valid email address'),
+      );
+    }
+
+    // Apply rate limiting
+    const ip = request.ip;
+    const rateCheck = await checkLoginLinkRateLimit(email, ip);
+    if (!rateCheck.allowed) {
+      return reply.status(429).send(
+        errorPayload('auth.send_login_link.rate_limited', rateCheck.reason ?? 'Too many requests'),
+      );
+    }
+
+    // Create token and send email (or log link for dev when email is disabled)
+    const token = await createAndStoreLoginLinkToken(email);
+    const link = makeLoginLinkUrl(token);
+    let sendOk = false;
+    if (authMailer) {
+      const sendError = await authMailer.sendLoginLink(email, link, config.loginLinkTtlSecs);
+      if (sendError) {
+        app.log.error({ err: sendError, email }, 'Failed to send login link email');
+      } else {
+        sendOk = true;
+      }
+    } else {
+      // No email provider configured (e.g. local dev) — log the link so the
+      // developer can paste it into a browser to complete the sign-in flow.
+      app.log.info({ loginLink: link }, 'Login link (email delivery disabled — copy this URL to sign in)');
+      sendOk = true;
+    }
+
+    // Apply resend cooldown when delivery succeeded or was simulated (dev mode)
+    if (sendOk) {
+      const cooldownKey = `auth:login-link:cooldown:${hashKey(email)}`;
+      await redis.set(cooldownKey, '1', 'EX', config.loginLinkResendCooldownSecs);
+    }
+
+    // Always return generic success to avoid email enumeration
+    return reply.send({ ok: true });
+  });
+
+  /**
+   * GET /auth/login-link/callback — Consumes a one-time login-link token,
+   * resolves or creates the user, issues a session, stores an exchange code,
+   * and redirects to the frontend callback route.
+   */
+  app.get('/auth/login-link/callback', async (request, reply) => {
+    const { token } = request.query as { token?: string };
+    if (!token) {
+      return reply.status(400).send(
+        errorPayload('auth.login_link_callback.missing_token', 'Missing login token'),
+      );
+    }
+
+    const email = await consumeLoginLinkToken(token);
+    if (!email) {
+      return reply.status(400).send(
+        errorPayload('auth.login_link_callback.invalid_token', 'Invalid or expired login link'),
+      );
+    }
+
+    // Resolve or create the user
+    const userId = await resolveOrCreateUserByEmail(email);
+
+    // Issue session and store behind a one-time exchange code
+    const sessionToken = await issueSession(config, db, userId);
+    const exchangeCode = crypto.randomUUID();
+    await redis.set(`auth:code:${exchangeCode}`, sessionToken, 'EX', config.exchangeCodeTtlSecs);
+
+    const callbackUrl = new URL('/auth/callback', config.frontendOrigin);
+    callbackUrl.searchParams.set('code', exchangeCode);
+    return reply.redirect(callbackUrl.toString());
+  });
 
   /**
    * POST /auth/register — Create a new local (email + password) account.
@@ -203,9 +396,9 @@ export async function authRoutes(
 
     const [identity] = await db.select().from(localIdentities).where(eq(localIdentities.userId, user.id)).limit(1);
     if (!identity) {
-      await hashPassword('dummy-constant-time-work');
+      // Dedicated error: the user exists but has no local password identity
       return reply.status(401).send(
-        errorPayload('auth.login.invalid_credentials', 'Invalid email or password'),
+        errorPayload('auth.login.password_not_available', 'This account uses email-link or Google sign-in. Use those methods to sign in.'),
       );
     }
 
