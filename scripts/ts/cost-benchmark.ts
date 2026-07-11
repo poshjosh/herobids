@@ -1,0 +1,564 @@
+/**
+ * cost-benchmark.ts — Compare LLM token usage across hybrid modes and reasoning levels.
+ *
+ * What it does
+ * ────────────
+ *  Creates multiple agents with different capabilityMode / hybridMode / reasoning
+ *  level configs, runs them simultaneously for a fixed duration, then aggregates
+ *  per-agent token usage from the activity feed and outputs a comparison table.
+ *
+ * Required env vars
+ * ─────────────────
+ *  API_BASE_URL          default http://localhost:3000
+ *  TEST_EMAIL            default trade-test@local.test
+ *  TEST_PASSWORD         default TradeTest123!
+ *  DATABASE_URL          postgres://herobids:herobids@localhost:5432/herobids
+ *
+ * Optional env vars
+ * ─────────────────
+ *  LLM_PROVIDER          ollama (default)
+ *  LLM_LIGHT_MODEL       qwen3:8b (default)
+ *  LLM_HEAVY_MODEL       qwen3.6:35b-a3b-q4_K_M (default)
+ *  TICK_INTERVAL_MS      30000 (default, 30s — faster for benchmarks)
+ *  BENCHMARK_DURATION_MS 300000 (default, 5 minutes)
+ *  SKIP_TEARDOWN         1 to leave agents running for manual inspection
+ *
+ * Usage
+ * ─────
+ *  tsx scripts/ts/cost-benchmark.ts
+ *
+ *  # Override duration and tick interval for longer runs
+ *  BENCHMARK_DURATION_MS=600000 TICK_INTERVAL_MS=15000 tsx scripts/ts/cost-benchmark.ts
+ */
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+const API_BASE_URL = process.env['API_BASE_URL'] ?? 'http://localhost:3000';
+const TEST_EMAIL = process.env['TEST_EMAIL'] ?? 'trade-test@local.test';
+const TEST_PASSWORD = process.env['TEST_PASSWORD'] ?? 'TradeTest123!';
+const LLM_PROVIDER = process.env['LLM_PROVIDER'] ?? 'ollama';
+const LLM_LIGHT_MODEL = process.env['LLM_LIGHT_MODEL'] ?? 'qwen3:8b';
+const LLM_HEAVY_MODEL = process.env['LLM_HEAVY_MODEL'] ?? 'qwen3.6:35b-a3b-q4_K_M';
+const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '30000', 10);
+const BENCHMARK_DURATION_MS = parseInt(process.env['BENCHMARK_DURATION_MS'] ?? '300000', 10);
+const SKIP_TEARDOWN = process.env['SKIP_TEARDOWN'] === '1';
+const POLL_INTERVAL_MS = 5000;
+
+// ---------------------------------------------------------------------------
+// Test matrix
+// ---------------------------------------------------------------------------
+
+interface BenchmarkCase {
+  id: string;
+  capabilityMode: 'intelligence' | 'hybrid';
+  hybridMode?: 'mixed' | 'scanner_gated';
+  scoutReasoning?: 'none' | 'low' | 'medium' | 'high';
+  judgeReasoning?: 'none' | 'low' | 'medium' | 'high';
+  label: string;
+}
+
+const BENCHMARK_CASES: BenchmarkCase[] = [
+  // ── scanner_gated cost comparison ──
+  {
+    id: 'intel-low',
+    capabilityMode: 'intelligence',
+    scoutReasoning: 'low',
+    judgeReasoning: 'low',
+    label: 'Intelligence (low reasoning)',
+  },
+  {
+    id: 'sg-low',
+    capabilityMode: 'hybrid',
+    hybridMode: 'scanner_gated',
+    scoutReasoning: 'low',
+    judgeReasoning: 'low',
+    label: 'Scanner-Gated (low reasoning)',
+  },
+
+  // ── reasoning level cost ladder (intelligence) ──
+  {
+    id: 'intel-none',
+    capabilityMode: 'intelligence',
+    scoutReasoning: 'none',
+    judgeReasoning: 'none',
+    label: 'Intelligence (no reasoning)',
+  },
+  {
+    id: 'intel-medium',
+    capabilityMode: 'intelligence',
+    scoutReasoning: 'medium',
+    judgeReasoning: 'medium',
+    label: 'Intelligence (medium reasoning)',
+  },
+  {
+    id: 'intel-high',
+    capabilityMode: 'intelligence',
+    scoutReasoning: 'high',
+    judgeReasoning: 'high',
+    label: 'Intelligence (high reasoning)',
+  },
+
+  // ── reasoning level cost ladder (scanner_gated) ──
+  {
+    id: 'sg-none',
+    capabilityMode: 'hybrid',
+    hybridMode: 'scanner_gated',
+    scoutReasoning: 'none',
+    judgeReasoning: 'none',
+    label: 'Scanner-Gated (no reasoning)',
+  },
+  {
+    id: 'sg-medium',
+    capabilityMode: 'hybrid',
+    hybridMode: 'scanner_gated',
+    scoutReasoning: 'medium',
+    judgeReasoning: 'medium',
+    label: 'Scanner-Gated (medium reasoning)',
+  },
+  {
+    id: 'sg-high',
+    capabilityMode: 'hybrid',
+    hybridMode: 'scanner_gated',
+    scoutReasoning: 'high',
+    judgeReasoning: 'high',
+    label: 'Scanner-Gated (high reasoning)',
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface ApiResponse<T = unknown> {
+  status: number;
+  body: T;
+}
+
+interface AgentBody {
+  id: string;
+  status?: string;
+  error?: string;
+}
+
+interface AgentActivityEntry {
+  id: string;
+  timestamp: string;
+  eventType: string;
+  summary: string;
+  detail: Record<string, unknown>;
+}
+
+interface AgentActivityFeedResponse {
+  entries: AgentActivityEntry[];
+  hasMore: boolean;
+}
+
+interface BenchmarkResult {
+  caseId: string;
+  label: string;
+  capabilityMode: string;
+  hybridMode?: string;
+  scoutReasoning: string;
+  judgeReasoning: string;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalThinkingTokens: number;
+  totalTokens: number;
+  llmCallCount: number;
+  tickCount: number;
+  error?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function fatal(msg: string): never {
+  console.error(`\n❌ FATAL: ${msg}`);
+  process.exit(1);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function ok(msg: string): void {
+  console.log(`  ✅ ${msg}`);
+}
+
+function info(msg: string): void {
+  console.log(`  ℹ️  ${msg}`);
+}
+
+function section(title: string): void {
+  console.log(`\n━━━ ${title} ━━━`);
+}
+
+async function apiRequest<T = unknown>(
+  method: string,
+  path: string,
+  options?: { body?: unknown; token?: string },
+): Promise<ApiResponse<T>> {
+  const url = `${API_BASE_URL}${path}`;
+  const headers: Record<string, string> = {};
+  if (options?.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (options?.token) {
+    headers['Authorization'] = `Bearer ${options.token}`;
+  }
+  const res = await fetch(url, {
+    method,
+    headers,
+    ...(options?.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+  });
+
+  let body: T;
+  const contentType = res.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    body = (await res.json()) as T;
+  } else {
+    body = (await res.text()) as unknown as T;
+  }
+
+  return { status: res.status, body };
+}
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+async function login(): Promise<string> {
+  const res = await apiRequest<{ token?: string; error?: string }>(
+    'POST', '/auth/login',
+    { body: { email: TEST_EMAIL, password: TEST_PASSWORD } },
+  );
+  if (res.status === 200 && res.body.token) {
+    return res.body.token;
+  }
+  // Try register
+  const regRes = await apiRequest<{ token?: string; error?: string }>(
+    'POST', '/auth/register',
+    { body: { email: TEST_EMAIL, password: TEST_PASSWORD, name: 'Benchmark User' } },
+  );
+  if (regRes.body.token) {
+    return regRes.body.token;
+  }
+  fatal(`Auth failed: ${JSON.stringify(regRes.body)}`);
+}
+
+// ---------------------------------------------------------------------------
+// Agent lifecycle
+// ---------------------------------------------------------------------------
+
+const BENCHMARK_GOAL = 'You are a market analyst. Monitor the market and provide observations. Do NOT submit trading decisions.';
+
+async function createBenchmarkAgent(token: string, bc: BenchmarkCase): Promise<string> {
+  const payload: Record<string, unknown> = {
+    name: `bench-${bc.id}`,
+    prompt: BENCHMARK_GOAL,
+    skillIds: [],
+    executionMode: 'paper',
+    tickIntervalMs: TICK_INTERVAL_MS,
+    capital: '10000',
+    provider: LLM_PROVIDER,
+    lightModel: LLM_LIGHT_MODEL,
+    heavyModel: LLM_HEAVY_MODEL,
+    capabilityMode: bc.capabilityMode,
+    ...(bc.hybridMode ? { hybridMode: bc.hybridMode } : {}),
+    runtimePolicyOverrides: {
+      scoutReasoning: bc.scoutReasoning ?? 'low',
+      judgeReasoning: bc.judgeReasoning ?? 'low',
+    },
+  };
+
+  const res = await apiRequest<AgentBody>('POST', '/agents', { token, body: payload });
+
+  if (res.status === 201 && res.body.id) {
+    return res.body.id;
+  }
+
+  fatal(`Agent creation failed for ${bc.id}: ${res.status} ${JSON.stringify(res.body)}`);
+}
+
+async function startAgent(token: string, agentId: string): Promise<void> {
+  const res = await apiRequest<{ status?: string; error?: string }>(
+    'POST', `/agents/${agentId}/start`, { token },
+  );
+  if (res.status === 202) {
+    return;
+  }
+  fatal(`Agent start failed for ${agentId}: ${res.status} ${JSON.stringify(res.body)}`);
+}
+
+async function stopAgent(token: string, agentId: string): Promise<void> {
+  const res = await apiRequest<{ status?: string; error?: string }>(
+    'POST', `/agents/${agentId}/stop`, { token },
+  );
+  if (res.status === 202 || res.status === 200) {
+    return;
+  }
+  console.warn(`  ⚠️  Stop returned ${res.status} for ${agentId} — may already be stopped`);
+}
+
+async function deleteAgent(token: string, agentId: string): Promise<void> {
+  await apiRequest('DELETE', `/agents/${agentId}`, { token });
+}
+
+// ---------------------------------------------------------------------------
+// Token aggregation from activity feed
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract token counts from an activity entry's detail payload.
+ * LLM call events carry tokensUsed, inputTokens, outputTokens, thinkingTokens.
+ */
+function extractTokens(entry: AgentActivityEntry): {
+  input: number; output: number; thinking: number; total: number;
+} | null {
+  const payload = entry.detail?.['payload'] as Record<string, unknown> | undefined;
+  if (!payload) return null;
+
+  const tokensUsed = typeof payload['tokensUsed'] === 'number' ? payload['tokensUsed'] : 0;
+  const inputTokens = typeof payload['inputTokens'] === 'number' ? payload['inputTokens'] : 0;
+  const outputTokens = typeof payload['outputTokens'] === 'number' ? payload['outputTokens'] : 0;
+  const thinkingTokens = typeof payload['thinkingTokens'] === 'number' ? payload['thinkingTokens'] : 0;
+
+  if (tokensUsed === 0 && inputTokens === 0 && outputTokens === 0) return null;
+
+  return {
+    input: inputTokens,
+    output: outputTokens,
+    thinking: thinkingTokens,
+    total: tokensUsed || (inputTokens + outputTokens),
+  };
+}
+
+async function fetchActivityFeed(
+  token: string, agentId: string, limit = 200,
+): Promise<AgentActivityEntry[]> {
+  const res = await apiRequest<AgentActivityFeedResponse>(
+    'GET', `/agents/${agentId}/activity-feed?limit=${limit}`, { token },
+  );
+  if (res.status !== 200) return [];
+  return res.body.entries ?? [];
+}
+
+async function aggregateAgentTokens(
+  token: string, agentId: string,
+): Promise<{ totalInput: number; totalOutput: number; totalThinking: number; totalTokens: number; llmCallCount: number; tickCount: number }> {
+  const entries = await fetchActivityFeed(token, agentId);
+
+  let totalInput = 0;
+  let totalOutput = 0;
+  let totalThinking = 0;
+  let totalTokens = 0;
+  let llmCallCount = 0;
+  let tickCount = 0;
+
+  for (const entry of entries) {
+    if (entry.eventType === 'TICK_COMPLETED' || entry.eventType === 'TICK_SKIPPED') {
+      tickCount++;
+    }
+
+    const tokens = extractTokens(entry);
+    if (tokens) {
+      totalInput += tokens.input;
+      totalOutput += tokens.output;
+      totalThinking += tokens.thinking;
+      totalTokens += tokens.total;
+      llmCallCount++;
+    }
+  }
+
+  return { totalInput, totalOutput, totalThinking, totalTokens, llmCallCount, tickCount };
+}
+
+// ---------------------------------------------------------------------------
+// Output
+// ---------------------------------------------------------------------------
+
+function printResults(results: BenchmarkResult[]): void {
+  console.log('\n╔══════════════════════════════════════════════════════════════════════════════════════╗');
+  console.log('║                         COST BENCHMARK RESULTS                                      ║');
+  console.log('╠══════════════════════════════════════════════════════════════════════════════════════╣');
+
+  // Header
+  const headerFmt = '║ %-35s │ %6s │ %7s │ %7s │ %7s │ %7s │ %4s ║';
+  console.log(sprintf(headerFmt, 'Configuration', 'Ticks', 'LLM #', 'Input', 'Output', 'Think', 'Total'));
+  console.log('╠═════════════════════════════════════════╪════════╪═════════╪═════════╪═════════╪═════════╪══════╣');
+
+  for (const r of results) {
+    if (r.error) {
+      console.log(`║ ${r.label.padEnd(39)} │ ${'ERROR'.padStart(6)} │ ${r.error.slice(0, 40).padEnd(7)} ${' '.repeat(38)}║`);
+      continue;
+    }
+    console.log(sprintf(
+      '║ %-35s │ %6d │ %7d │ %7d │ %7d │ %7d │ %4d ║',
+      r.label,
+      r.tickCount,
+      r.llmCallCount,
+      r.totalInputTokens,
+      r.totalOutputTokens,
+      r.totalThinkingTokens,
+      r.totalTokens,
+    ));
+  }
+
+  console.log('╚═════════════════════════════════════════╧════════╧═════════╧═════════╧═════════╧═════════╧══════╝');
+
+  // ── Comparison summaries ──
+
+  const intelLow = results.find((r) => r.caseId === 'intel-low');
+  const sgLow = results.find((r) => r.caseId === 'sg-low');
+
+  if (intelLow && sgLow && !intelLow.error && !sgLow.error) {
+    const reduction = intelLow.totalTokens > 0
+      ? ((1 - sgLow.totalTokens / intelLow.totalTokens) * 100).toFixed(1)
+      : 'N/A';
+    console.log(`\n📊 scanner_gated vs intelligence (low reasoning):`);
+    console.log(`   Intelligence:     ${intelLow.totalTokens.toLocaleString()} tokens`);
+    console.log(`   Scanner-Gated:    ${sgLow.totalTokens.toLocaleString()} tokens`);
+    console.log(`   Token reduction:  ${reduction}%`);
+  }
+
+  // ── Reasoning level ladder (intelligence) ──
+  console.log(`\n📊 Reasoning level cost ladder (intelligence):`);
+  for (const r of results.filter((r) => r.capabilityMode === 'intelligence' && !r.error)) {
+    console.log(`   ${r.scoutReasoning.padEnd(6)} → ${r.totalTokens.toLocaleString()} tokens (${r.llmCallCount} LLM calls)`);
+  }
+
+  // ── Reasoning level ladder (scanner_gated) ──
+  console.log(`\n📊 Reasoning level cost ladder (scanner_gated):`);
+  for (const r of results.filter((r) => r.hybridMode === 'scanner_gated' && !r.error)) {
+    console.log(`   ${r.scoutReasoning.padEnd(6)} → ${r.totalTokens.toLocaleString()} tokens (${r.llmCallCount} LLM calls)`);
+  }
+}
+
+// Minimal sprintf-like padding
+function sprintf(fmt: string, ...args: (string | number)[]): string {
+  let result = fmt;
+  for (const arg of args) {
+    result = result.replace(/%[-]?\d+[sd]/, String(arg));
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
+async function main(): Promise<void> {
+  console.log('🚀 Cost Benchmark');
+  console.log(`   API:       ${API_BASE_URL}`);
+  console.log(`   Provider:  ${LLM_PROVIDER} / ${LLM_LIGHT_MODEL} / ${LLM_HEAVY_MODEL}`);
+  console.log(`   Tick:      ${TICK_INTERVAL_MS}ms`);
+  console.log(`   Duration:  ${(BENCHMARK_DURATION_MS / 60_000).toFixed(1)} min`);
+  console.log(`   Cases:     ${BENCHMARK_CASES.length}`);
+
+  // ── Auth ──
+  section('Authentication');
+  const token = await login();
+  ok('Authenticated');
+
+  // ── Create agents ──
+  section(`Creating ${BENCHMARK_CASES.length} benchmark agents`);
+
+  const created: Array<{ bc: BenchmarkCase; agentId: string }> = [];
+  for (const bc of BENCHMARK_CASES) {
+    info(`Creating ${bc.id} (${bc.label})...`);
+    const agentId = await createBenchmarkAgent(token, bc);
+    created.push({ bc, agentId });
+    ok(`${bc.id} → ${agentId}`);
+  }
+
+  // ── Start all agents simultaneously ──
+  section('Starting agents');
+  const startTime = Date.now();
+  for (const { agentId } of created) {
+    await startAgent(token, agentId);
+  }
+  ok(`All ${created.length} agents started at ${new Date(startTime).toISOString()}`);
+
+  // ── Wait for benchmark duration ──
+  section(`Running for ${(BENCHMARK_DURATION_MS / 60_000).toFixed(1)} minutes...`);
+  const deadline = Date.now() + BENCHMARK_DURATION_MS;
+
+  while (Date.now() < deadline) {
+    const remaining = Math.ceil((deadline - Date.now()) / 1000);
+    process.stdout.write(`\r  ⏳ ${remaining}s remaining...`);
+    await sleep(Math.min(POLL_INTERVAL_MS, remaining * 1000));
+  }
+  console.log(''); // newline after progress
+
+  // ── Stop all agents ──
+  section('Stopping agents');
+  for (const { agentId } of created) {
+    await stopAgent(token, agentId);
+  }
+  ok('All agents stopped');
+
+  // ── Give activity feed a moment to flush ──
+  await sleep(3000);
+
+  // ── Aggregate results ──
+  section('Aggregating token usage');
+  const results: BenchmarkResult[] = [];
+
+  for (const { bc, agentId } of created) {
+    info(`Querying ${bc.id}...`);
+    try {
+      const tokens = await aggregateAgentTokens(token, agentId);
+      results.push({
+        caseId: bc.id,
+        label: bc.label,
+        capabilityMode: bc.capabilityMode,
+        hybridMode: bc.hybridMode,
+        scoutReasoning: bc.scoutReasoning ?? 'low',
+        judgeReasoning: bc.judgeReasoning ?? 'low',
+        ...tokens,
+      });
+      ok(`${bc.id}: ${tokens.totalTokens.toLocaleString()} tokens, ${tokens.llmCallCount} LLM calls, ${tokens.tickCount} ticks`);
+    } catch (err) {
+      results.push({
+        caseId: bc.id,
+        label: bc.label,
+        capabilityMode: bc.capabilityMode,
+        hybridMode: bc.hybridMode,
+        scoutReasoning: bc.scoutReasoning ?? 'low',
+        judgeReasoning: bc.judgeReasoning ?? 'low',
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalThinkingTokens: 0,
+        totalTokens: 0,
+        llmCallCount: 0,
+        tickCount: 0,
+        error: String(err),
+      });
+      console.warn(`  ⚠️  ${bc.id}: error — ${String(err)}`);
+    }
+  }
+
+  // ── Print results ──
+  printResults(results);
+
+  // ── Teardown ──
+  if (!SKIP_TEARDOWN) {
+    section('Cleaning up');
+    for (const { agentId } of created) {
+      await deleteAgent(token, agentId);
+    }
+    ok('All agents deleted');
+  } else {
+    info('SKIP_TEARDOWN=1 — agents left running for manual inspection');
+  }
+
+  console.log('\n✅ Benchmark complete.\n');
+}
+
+main().catch((err) => {
+  console.error('Benchmark failed:', err);
+  process.exit(1);
+});
