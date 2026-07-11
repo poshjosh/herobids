@@ -460,6 +460,15 @@ async function main(): Promise<void> {
 
   // ── Auth ──
   section('Authentication');
+
+  // Pre-flight: check API is reachable
+  try {
+    const health = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(5000) });
+    if (!health.ok) fatal(`API returned ${health.status} — is the stack running? Try: docker compose up -d`);
+  } catch {
+    fatal(`API unreachable at ${API_BASE_URL} — is the stack running? Try: docker compose up -d`);
+  }
+
   const token = await login();
   ok('Authenticated');
 
