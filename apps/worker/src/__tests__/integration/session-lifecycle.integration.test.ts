@@ -56,10 +56,17 @@ async function hashPassword(password: string): Promise<string> {
 
 async function seedUser(db: ReturnType<typeof createDatabase>, id = crypto.randomUUID()) {
   const now = new Date();
+  const email = `${id}@worker-test.local`;
+  const username = email.split('@')[0]!.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  const displayName = username
+    .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
   await db.insert(users).values({
     id,
-    displayName: 'Test User',
-    email: `${id}@worker-test.local`,
+    username,
+    displayName,
+    email,
     planId: 'free',
     aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
     createdAt: now,

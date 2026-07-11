@@ -193,6 +193,14 @@ try {
   const now = new Date();
   const passwordHash = await hashPassword(adminPassword);
 
+  // Derive username and displayName from the admin email, consistent with
+  // the auth route user-creation paths.
+  const username = normalizedEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  const displayName = username
+    .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+
   const [existing] = await db
     .select({ id: users.id })
     .from(users)
@@ -209,7 +217,8 @@ try {
     } else {
       await tx.insert(users).values({
         id: userId,
-        displayName: 'Admin',
+        username,
+        displayName,
         email: normalizedEmail,
         avatarUrl: null,
         planId,

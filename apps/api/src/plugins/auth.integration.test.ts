@@ -54,10 +54,17 @@ describe.skipIf(SKIP)('authPlugin JWT verification (integration)', () => {
   });
 
   async function seedUser(id = 'u-integ-1', planId = 'free') {
+    const email = `${id}@integration-test.local`;
+    const username = email.split('@')[0]!.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    const displayName = username
+      .split('_')
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
     await db.insert(users).values({
       id,
-      displayName: 'Integration Test User',
-      email: `${id}@integration-test.local`,
+      username,
+      displayName,
+      email,
       planId,
       createdAt: new Date(),
       updatedAt: new Date(),
