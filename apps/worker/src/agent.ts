@@ -3352,7 +3352,7 @@ async function main(): Promise<void> {
   // delivery for this agent. Expires after 24h as a safety net in case the
   // shutdown path fails to clean up (the agent container has a wall-clock limit).
   if (IS_SCANNER_GATED) {
-    await redis.set(scannerGatedKey(AGENT_ID), '1', 'EX', 86400);
+    await redis.set(scannerGatedKey(AGENT_ID!), '1', 'EX', 86400);
     logger.info('Agent is scanner-gated — published flag to Redis');
   }
 
