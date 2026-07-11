@@ -278,10 +278,10 @@ export const messages: Record<string, string> = {
   'aiModels.reasoning.low': 'कम',
   'aiModels.reasoning.medium': 'मध्यम',
   'aiModels.reasoning.high': 'उच्च',
-  'settings.adaptiveScoutReasoning': 'अनुकूली स्काउट तर्क',
-  'settings.adaptiveScoutReasoningHelp': 'सक्षम होने पर, सिस्टम महत्वपूर्ण घटनाओं जैसे शासन परिवर्तन और गिरावट के लिए गहन तर्क का उपयोग कर सकता है। अक्षम होने पर, कॉन्फ़िगर किया गया स्तर बिल्कुल वैसे ही उपयोग किया जाता है।',
-  'settings.adaptiveJudgeReasoning': 'अनुकूली जज तर्क',
-  'settings.adaptiveJudgeReasoningHelp': 'सक्षम होने पर, सिस्टम महत्वपूर्ण घटनाओं जैसे शासन परिवर्तन और गिरावट के लिए गहन तर्क का उपयोग कर सकता है। अक्षम होने पर, कॉन्फ़िगर किया गया स्तर बिल्कुल वैसे ही उपयोग किया जाता है।',
+  'settings.adaptiveScoutReasoning': 'अनुकूली तर्क (इकोनॉमी)',
+  'settings.adaptiveScoutReasoningHelp': 'स्थिति के अनुसार तर्क अनुकूलित करें',
+  'settings.adaptiveJudgeReasoning': 'अनुकूली तर्क (प्रीमियम)',
+  'settings.adaptiveJudgeReasoningHelp': 'स्थिति के अनुसार तर्क अनुकूलित करें',
 
   // Extended common
   'common.back': 'वापस',

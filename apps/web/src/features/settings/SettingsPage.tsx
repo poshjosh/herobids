@@ -272,9 +272,9 @@ export function SettingsPage() {
               </div>
             </div>
 
-            {/* Adaptive reasoning toggles */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+            {/* Adaptive reasoning toggles — side by side */}
+            <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flex: '1', minWidth: '240px' }}>
                 <input
                   type="checkbox"
                   id="adapt-scout-reasoning"
@@ -294,7 +294,7 @@ export function SettingsPage() {
                   </p>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flex: '1', minWidth: '240px' }}>
                 <input
                   type="checkbox"
                   id="adapt-judge-reasoning"

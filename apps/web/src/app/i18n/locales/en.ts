@@ -278,10 +278,10 @@ export const messages: Record<string, string> = {
   'aiModels.reasoning.low': 'Low',
   'aiModels.reasoning.medium': 'Medium',
   'aiModels.reasoning.high': 'High',
-  'settings.adaptiveScoutReasoning': 'Adaptive scout reasoning',
-  'settings.adaptiveScoutReasoningHelp': 'When enabled, the system may escalate scout reasoning for critical events like regime flips and drawdowns. When disabled, the configured level is used exactly as set.',
-  'settings.adaptiveJudgeReasoning': 'Adaptive judge reasoning',
-  'settings.adaptiveJudgeReasoningHelp': 'When enabled, the system may escalate judge reasoning for critical events like regime flips and drawdowns. When disabled, the configured level is used exactly as set.',
+  'settings.adaptiveScoutReasoning': 'Adaptive reasoning (economy)',
+  'settings.adaptiveScoutReasoningHelp': 'Adapt reasoning to situation',
+  'settings.adaptiveJudgeReasoning': 'Adaptive reasoning (premium)',
+  'settings.adaptiveJudgeReasoningHelp': 'Adapt reasoning to situation',
 
   // Extended common
   'common.back': 'Back',
