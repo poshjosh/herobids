@@ -766,7 +766,7 @@ export async function agentRoutes(
         current['adaptJudgeReasoning'] = userAiConfig.adaptJudgeReasoning;
       }
       if (Object.keys(current).length > 0) {
-        stampedRuntimePolicyOverrides = current as typeof parsed.data.runtimePolicyOverrides;
+        stampedRuntimePolicyOverrides = (current as typeof parsed.data.runtimePolicyOverrides) ?? null;
       }
     }
 
@@ -799,13 +799,13 @@ export async function agentRoutes(
           tickIntervalMs: parsed.data.tickIntervalMs ?? null,
           capital: parsed.data.capital ?? null,
           style: parsed.data.style ?? null,
-          runtimePolicyOverrides: stampedRuntimePolicyOverrides,
+          runtimePolicyOverrides: stampedRuntimePolicyOverrides ?? null,
           openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
           ...(finalUnifiedConfig ? { unifiedConfig: finalUnifiedConfig } : {}),
           wakePreferences: parsed.data.wakePreferences ?? null,
           createdAt: now,
           updatedAt: now,
-        });
+        } as never);
 
         if (connectionIds.length > 0) {
           // Validate connectionIds inside the transaction for a consistent view
@@ -1449,7 +1449,7 @@ export async function agentRoutes(
           toolPolicy: effectiveToolPolicy,
           modelPolicy: effectiveModelPolicy,
           updatedAt: new Date(),
-        }).where(eq(agents.id, id));
+        } as never).where(eq(agents.id, id));
 
         // Declarative sync of agent_connections when connectionIds is explicitly provided
         if (parsed.data.connectionIds !== undefined) {
