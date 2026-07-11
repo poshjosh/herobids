@@ -76,7 +76,7 @@ EOF
 # Parse args
 # ---------------------------------------------------------------------------
 
-DURATION_MIN=5
+DURATION_MIN=8 # 8 min: first tick takes 60-90s due to Forex Factory timeout; need multiple ticks per agent
 TICK_SEC=30
 SKIP_TEARDOWN=""
 

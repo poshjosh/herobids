@@ -42,7 +42,7 @@ const LLM_PROVIDER = process.env['LLM_PROVIDER'] ?? 'ollama';
 const LLM_LIGHT_MODEL = process.env['LLM_LIGHT_MODEL'] ?? 'qwen3:8b';
 const LLM_HEAVY_MODEL = process.env['LLM_HEAVY_MODEL'] ?? 'qwen3.6:35b-a3b-q4_K_M';
 const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '30000', 10);
-const BENCHMARK_DURATION_MS = parseInt(process.env['BENCHMARK_DURATION_MS'] ?? '300000', 10);
+const BENCHMARK_DURATION_MS = parseInt(process.env['BENCHMARK_DURATION_MS'] ?? '480000', 10); // default 8 min (first tick ~60-90s, need multiple ticks per agent)
 const SKIP_TEARDOWN = process.env['SKIP_TEARDOWN'] === '1';
 const POLL_INTERVAL_MS = 5000;
 
@@ -333,7 +333,10 @@ async function fetchActivityFeed(
   const res = await apiRequest<AgentActivityFeedResponse>(
     'GET', `/agents/${agentId}/activity-feed?limit=${limit}`, { token },
   );
-  if (res.status !== 200) return [];
+  if (res.status !== 200) {
+    console.warn(`  ⚠️  Activity feed returned ${res.status} for agent ${agentId}`);
+    return [];
+  }
   return res.body.entries ?? [];
 }
 
@@ -350,7 +353,9 @@ async function aggregateAgentTokens(
   let tickCount = 0;
 
   for (const entry of entries) {
-    if (entry.eventType === 'TICK_COMPLETED' || entry.eventType === 'TICK_SKIPPED') {
+    // Check tick counting uses correct eventType values from the activity mapper
+  // (mapper uses 'tick.started'/'tick.skipped', not uppercase constants)
+  if (entry.eventType === 'tick.started' || entry.eventType === 'tick.skipped' || entry.eventType === 'tick.completed') {
       tickCount++;
     }
 
@@ -446,7 +451,7 @@ async function main(): Promise<void> {
   console.log(`   API:       ${API_BASE_URL}`);
   console.log(`   Provider:  ${LLM_PROVIDER} / ${LLM_LIGHT_MODEL} / ${LLM_HEAVY_MODEL}`);
   console.log(`   Tick:      ${TICK_INTERVAL_MS}ms`);
-  console.log(`   Duration:  ${(BENCHMARK_DURATION_MS / 60_000).toFixed(1)} min`);
+  console.log(`   Duration:  ${(BENCHMARK_DURATION_MS / 60_000).toFixed(1)} min (first tick ~60-90s due to Forex Factory timeout; multiple ticks per agent needed)`);
   console.log(`   Cases:     ${BENCHMARK_CASES.length}`);
 
   // ── Auth ──
@@ -500,8 +505,8 @@ async function main(): Promise<void> {
   }
   ok('All agents stopped');
 
-  // ── Give activity feed a moment to flush ──
-  await sleep(3000);
+  // ── Give activity feed a moment to flush (ticks can take up to 60s) ──
+  await sleep(15000);
 
   // ── Aggregate results ──
   section('Aggregating token usage');
