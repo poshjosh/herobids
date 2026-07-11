@@ -77,7 +77,7 @@ import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailur
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { buildTickGateState } from './tick-gate-state.js';
-import { applyReasoningCeiling, classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
+import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { createToolRegistry } from './tools/index.js';
 import { extractCeilings, extractCreatorInput } from './agent-risk-limits.js';
@@ -341,6 +341,9 @@ interface AgentConfig {
     tradingSessions?: TradingSessionName[] | null;
     scoutReasoning: ReasoningLevel;
     judgeReasoning: ReasoningLevel;
+    /** 003-adaptive-reasoning: per-agent toggle for adaptive ceiling vs fixed level */
+    adaptScoutReasoning?: boolean;
+    adaptJudgeReasoning?: boolean;
   };
 }
 
