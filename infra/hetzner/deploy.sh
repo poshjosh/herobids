@@ -9,10 +9,10 @@
 #
 # Usage:
 #   infra/hetzner/deploy.sh [--env <staging|production>] [--env-file <path>] [<server-ip>]
-#   infra/hetzner/deploy.sh                                          # auto-detect IP, prompt for .env
-#   infra/hetzner/deploy.sh --env staging --env-file .env.staging    # deploy to staging
-#   infra/hetzner/deploy.sh --env-file .env.prod 1.2.3.4             # explicit IP + .env
-#   ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=secret ./deploy.sh --env-file .env.prod
+#   infra/hetzner/deploy.sh                                                                # auto-detect IP, prompt for .env
+#   infra/hetzner/deploy.sh --env staging --env-file infra/hetzner/.env.staging            # deploy to staging
+#   infra/hetzner/deploy.sh --env-file infra/hetzner/.env.prod 1.2.3.4                     # explicit IP + .env
+#   ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=secret ./deploy.sh --env-file infra/hetzner/.env.prod
 #
 # Environment:
 #   HEROBIDS_ENV   Deployment environment: staging | production (default: production).
