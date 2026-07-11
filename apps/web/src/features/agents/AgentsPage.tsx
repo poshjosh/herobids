@@ -1400,7 +1400,7 @@ function CreateAgentFlow({
         {mutation.isError && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between' }}>
-          <Button variant="ghost" onClick={() => { setStep('intent'); setFormErrors({}); }} type="button">{intl.formatMessage({ id: 'common.back' })}</Button>
+          <Button variant="ghost" onClick={() => { setStep('intent'); setFormErrors({}); mutation.reset(); }} type="button">{intl.formatMessage({ id: 'common.back' })}</Button>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
             <Button
