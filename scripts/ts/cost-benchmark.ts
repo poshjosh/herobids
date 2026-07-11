@@ -245,7 +245,9 @@ async function createBenchmarkAgent(token: string, bc: BenchmarkCase): Promise<s
   const payload: Record<string, unknown> = {
     name: `bench-${bc.id}`,
     prompt: BENCHMARK_GOAL,
-    skillIds: [],
+    // 'trading' skill required to run ticks; executionMode: 'paper' keeps it safe
+    skillIds: ['trading'],
+    executionMode: 'paper',
     tickIntervalMs: TICK_INTERVAL_MS,
     capital: '10000',
     provider: LLM_PROVIDER,
@@ -516,7 +518,12 @@ async function main(): Promise<void> {
         hybridMode: bc.hybridMode,
         scoutReasoning: bc.scoutReasoning ?? 'low',
         judgeReasoning: bc.judgeReasoning ?? 'low',
-        ...tokens,
+        totalInputTokens: tokens.totalInput,
+        totalOutputTokens: tokens.totalOutput,
+        totalThinkingTokens: tokens.totalThinking,
+        totalTokens: tokens.totalTokens,
+        llmCallCount: tokens.llmCallCount,
+        tickCount: tokens.tickCount,
       });
       ok(`${bc.id}: ${tokens.totalTokens.toLocaleString()} tokens, ${tokens.llmCallCount} LLM calls, ${tokens.tickCount} ticks`);
     } catch (err) {
