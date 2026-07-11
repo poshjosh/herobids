@@ -3121,4 +3121,75 @@ describe('agent routes — capabilityMode and hybridMode (004)', () => {
     expect(uc['capabilityMode']).toBe('hybrid');
     expect(uc['hybridMode']).toBe('mixed');
   });
+
+  // C-M1: POST defaults capabilityMode to 'intelligence' when omitted
+  it('POST defaults capabilityMode to "intelligence" when field is omitted', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      modelPolicy: null,
+      unifiedConfig: null,
+    };
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      activeLinkRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'no-capability-mode',
+        prompt: 'test prompt',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const uniConfig = insertedValues[0]?.['unifiedConfig'] as Record<string, unknown> | undefined;
+    expect(uniConfig).toBeDefined();
+    expect(uniConfig!['capabilityMode']).toBe('intelligence');
+  });
+
+  // C-M2: PATCH clearing capabilityMode (null) also clears hybridMode
+  it('PATCH capabilityMode=null on hybrid agent clears both capabilityMode and hybridMode', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        unifiedConfig: {
+          capabilityMode: 'hybrid',
+          hybridMode: 'scanner_gated',
+          technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
+        },
+      }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { capabilityMode: null },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Verify both capabilityMode and hybridMode are cleared
+    const unifiedUpdate = updateSets.find((s) => 'unifiedConfig' in s);
+    expect(unifiedUpdate).toBeDefined();
+    const uc = (unifiedUpdate as Record<string, unknown>)['unifiedConfig'] as Record<string, unknown>;
+    expect(uc['capabilityMode']).toBeUndefined();
+    expect(uc['hybridMode']).toBeUndefined();
+  });
 });
