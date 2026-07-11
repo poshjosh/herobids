@@ -7,6 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Adaptive Reasoning Toggle:** Per-agent `adaptScoutReasoning` / `adaptJudgeReasoning` booleans that control whether reasoning levels act as ceilings (adaptive, default) or fixed levels. When adaptive is off, `classifyTickThinking` and `applyReasoningCeiling` are skipped — giving deterministic, cost-predictable reasoning with zero runtime variance. Controls are exposed in Settings (all users) and automatically stamped into agent `runtimePolicyOverrides` at creation/update.
 - **New-User Link + Unique Username:** Added optional registration affordance to the login-link-first auth screen
   - `users.username` column (non-null, unique) with migration
   - `New user` toggle on login page reveals optional username field
