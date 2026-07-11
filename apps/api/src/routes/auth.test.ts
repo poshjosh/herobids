@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
+import crypto from 'node:crypto';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import * as jose from 'jose';
 import type { AuthConfig } from '@herobids/domain';
@@ -502,6 +503,193 @@ describe('auth routes', () => {
     });
   });
 
+  describe('OAuth user creation (username)', () => {
+    function makeRedisMock() {
+      return {
+        set: vi.fn().mockResolvedValue('OK'),
+        getdel: vi.fn().mockResolvedValue(null),
+        incr: vi.fn().mockResolvedValue(1),
+        expire: vi.fn().mockResolvedValue(1),
+      };
+    }
+
+    beforeEach(() => {
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('unexpected fetch call'));
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('generates username for OAuth first-time user', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      redis.set = vi.fn().mockResolvedValue('OK');
+
+      // Mock Google token exchange and userinfo endpoints
+      const fetchMock = vi.spyOn(globalThis, 'fetch');
+      fetchMock
+        .mockResolvedValueOnce(Response.json({
+          access_token: 'test-access-token',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        }))
+        .mockResolvedValueOnce(Response.json({
+          sub: 'google-123',
+          email: 'oauthuser@gmail.com',
+          email_verified: true,
+          name: 'OAuth User',
+          picture: 'https://example.com/pic.jpg',
+        }));
+
+      // Generate valid OAuth state
+      const nonce = 'test-nonce-for-oauth';
+      const sig = crypto.createHmac('sha256', TEST_JWT_SECRET).update(nonce).digest('base64url');
+      const state = `${nonce}.${sig}`;
+
+      let capturedUsername: string | undefined;
+      let capturedDisplayName: string | undefined;
+
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]), // username available
+            }),
+          }),
+        }),
+        transaction: vi.fn().mockImplementation(async (cb: any) => {
+          let selectCallCount = 0;
+          const tx = {
+            insert: vi.fn().mockImplementation(() => ({
+              values: vi.fn().mockImplementation((vals: any) => {
+                if (vals.username) capturedUsername = vals.username;
+                if (vals.displayName) capturedDisplayName = vals.displayName;
+                // Support chaining .onConflictDoNothing() after .values()
+                return { onConflictDoNothing: vi.fn().mockResolvedValue(undefined) };
+              }),
+              onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+            })),
+            select: vi.fn().mockImplementation(() => ({
+              from: vi.fn().mockImplementation(() => ({
+                where: vi.fn().mockImplementation(() => ({
+                  limit: vi.fn().mockImplementation(() => {
+                    selectCallCount++;
+                    // 1st: oauthIdentities lookup → empty (new OAuth user)
+                    // 2nd: users by email → found
+                    // 3rd: re-read oauthIdentity → found
+                    if (selectCallCount === 1) return Promise.resolve([]);
+                    if (selectCallCount === 2) return Promise.resolve([{ id: 'new-oauth-user-id' }]);
+                    return Promise.resolve([{ userId: 'new-oauth-user-id' }]);
+                  }),
+                })),
+              })),
+            })),
+          };
+          return cb(tx);
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`,
+        headers: { cookie: `oauth_state=${state}` },
+      });
+
+      expect(res.statusCode).toBe(302);
+      expect(capturedUsername).toBeDefined();
+      expect(capturedUsername).toMatch(/^oauthuser/);
+      expect(capturedDisplayName).toBeDefined();
+    });
+
+    it('initializes humanized displayName from generated username', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      redis.set = vi.fn().mockResolvedValue('OK');
+
+      const fetchMock = vi.spyOn(globalThis, 'fetch');
+      fetchMock
+        .mockResolvedValueOnce(Response.json({
+          access_token: 'test-access-token',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        }))
+        .mockResolvedValueOnce(Response.json({
+          sub: 'google-456',
+          email: 'john_doe@gmail.com',
+          email_verified: true,
+          name: 'John Doe',
+        }));
+
+      const nonce = 'test-nonce-for-oauth-2';
+      const sig = crypto.createHmac('sha256', TEST_JWT_SECRET).update(nonce).digest('base64url');
+      const state = `${nonce}.${sig}`;
+
+      let capturedDisplayName: string | undefined;
+
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        transaction: vi.fn().mockImplementation(async (cb: any) => {
+          let selectCallCount = 0;
+          const tx = {
+            insert: vi.fn().mockImplementation(() => ({
+              values: vi.fn().mockImplementation((vals: any) => {
+                if (vals.displayName) capturedDisplayName = vals.displayName;
+                return { onConflictDoNothing: vi.fn().mockResolvedValue(undefined) };
+              }),
+              onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+            })),
+            select: vi.fn().mockImplementation(() => ({
+              from: vi.fn().mockImplementation(() => ({
+                where: vi.fn().mockImplementation(() => ({
+                  limit: vi.fn().mockImplementation(() => {
+                    selectCallCount++;
+                    if (selectCallCount === 1) return Promise.resolve([]);
+                    if (selectCallCount === 2) return Promise.resolve([{ id: 'new-oauth-user-id-2' }]);
+                    return Promise.resolve([{ userId: 'new-oauth-user-id-2' }]);
+                  }),
+                })),
+              })),
+            })),
+          };
+          return cb(tx);
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`,
+        headers: { cookie: `oauth_state=${state}` },
+      });
+
+      expect(res.statusCode).toBe(302);
+      // Email 'john_doe@gmail.com' → deriveBaseUsername → 'john_doe' → humanize → 'John Doe'
+      expect(capturedDisplayName).toBe('John Doe');
+    });
+  });
+
   describe('auth plugin — public route exemption', () => {
     it('allows GET /auth/google without token', async () => {
       const { authPlugin } = await import('../plugins/auth.js');
@@ -850,6 +1038,141 @@ describe('auth routes', () => {
         config.loginLinkTtlSecs,
       );
     });
+
+    // ── Username validation ────────────────────────────────────────────────
+
+    it('returns 400 when username is too short', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, makeRedisMock() as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com', username: 'ab' },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('auth.send_login_link.invalid_username');
+    });
+
+    it('returns 400 when username contains invalid characters', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, makeRedisMock() as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com', username: 'Invalid!User' },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('auth.send_login_link.invalid_username');
+    });
+
+    it('returns 400 when username is too long', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, makeRedisMock() as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com', username: 'a'.repeat(31) },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('auth.send_login_link.invalid_username');
+    });
+
+    it('returns 409 when username is already taken', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ id: 'existing-user' }]),
+            }),
+          }),
+        }),
+      };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, redis as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'new@example.com', username: 'existing_user' },
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json<{ error: string }>().error).toBe('auth.send_login_link.username_taken');
+    });
+
+    it('stores username in Redis token when provided', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]), // username available
+            }),
+          }),
+        }),
+      };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com', username: 'new_user' },
+      });
+
+      const tokenSetCall = redis.set.mock.calls.find(
+        (call: any[]) => typeof call[0] === 'string' && (call[0] as string).startsWith('auth:login-link:token:'),
+      );
+      expect(tokenSetCall).toBeDefined();
+      const payload = JSON.parse(tokenSetCall[1]);
+      expect(payload.username).toBe('new_user');
+    });
+
+    it('passes when username is blank (falls back to generated)', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com', username: '' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      // Token should NOT contain username
+      const tokenSetCall = redis.set.mock.calls.find(
+        (call: any[]) => typeof call[0] === 'string' && (call[0] as string).startsWith('auth:login-link:token:'),
+      );
+      expect(tokenSetCall).toBeDefined();
+      const payload = JSON.parse(tokenSetCall[1]);
+      expect(payload.username).toBeUndefined();
+    });
   });
 
   describe('GET /auth/login-link/callback', () => {
@@ -986,10 +1309,196 @@ describe('auth routes', () => {
       const userInsert = insertedUsers[0];
       expect(userInsert).toBeDefined();
       expect(userInsert!['email']).toBe('newuser@example.com');
-      // Display name should be derived from the email local-part
-      expect(userInsert!['displayName']).toBe('newuser');
+      // Display name should be derived from the email local-part via humanizeDisplayName
+      expect(userInsert!['displayName']).toBe('Newuser');
       const location = res.headers['location'] as string;
       expect(location).toContain('/auth/callback?code=');
+    });
+  });
+
+  describe('GET /auth/login-link/callback (username)', () => {
+    function makeRedisMock() {
+      return {
+        set: vi.fn().mockResolvedValue('OK'),
+        getdel: vi.fn().mockResolvedValue(null),
+        incr: vi.fn().mockResolvedValue(1),
+        expire: vi.fn().mockResolvedValue(1),
+      };
+    }
+
+    it('persists reserved username for first-time user', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      redis.getdel = vi.fn().mockResolvedValue(JSON.stringify({
+        email: 'new@example.com',
+        username: 'jane_doe',
+      }));
+
+      let insertedUsername: string | undefined;
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]), // new user, username available
+            }),
+          }),
+        }),
+        transaction: vi.fn().mockImplementation(async (cb: any) => {
+          await cb({
+            insert: vi.fn().mockImplementation(() => ({
+              values: vi.fn().mockImplementation((vals: any) => {
+                // Only capture username from the users insert (not userPlans)
+                if (vals.username) insertedUsername = vals.username;
+                return Promise.resolve(undefined);
+              }),
+            })),
+          });
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      await app.inject({
+        method: 'GET',
+        url: '/auth/login-link/callback?token=valid-token',
+      });
+
+      expect(insertedUsername).toBe('jane_doe');
+    });
+
+    it('initializes humanized displayName from reserved username', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      redis.getdel = vi.fn().mockResolvedValue(JSON.stringify({
+        email: 'new@example.com',
+        username: 'jane_doe',
+      }));
+
+      let insertedDisplayName: string | undefined;
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        transaction: vi.fn().mockImplementation(async (cb: any) => {
+          await cb({
+            insert: vi.fn().mockImplementation(() => ({
+              values: vi.fn().mockImplementation((vals: any) => {
+                if (vals.displayName) insertedDisplayName = vals.displayName;
+                return Promise.resolve(undefined);
+              }),
+            })),
+          });
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      await app.inject({
+        method: 'GET',
+        url: '/auth/login-link/callback?token=valid-token',
+      });
+
+      expect(insertedDisplayName).toBe('Jane Doe');
+    });
+
+    it('generates username when not provided', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      redis.getdel = vi.fn().mockResolvedValue(JSON.stringify({
+        email: 'newuser@example.com',
+        // no username
+      }));
+
+      let capturedUsername: string | undefined;
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]), // no existing user or username conflict
+            }),
+          }),
+        }),
+        transaction: vi.fn().mockImplementation(async (cb: any) => {
+          await cb({
+            insert: vi.fn().mockImplementation(() => ({
+              values: vi.fn().mockImplementation((vals: any) => {
+                if (vals.username) capturedUsername = vals.username;
+                return Promise.resolve(undefined);
+              }),
+            })),
+          });
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      await app.inject({
+        method: 'GET',
+        url: '/auth/login-link/callback?token=valid-token',
+      });
+
+      // Username should be derived from the email local-part
+      expect(capturedUsername).toBeDefined();
+      expect(capturedUsername).toMatch(/^newuser/);
+    });
+
+    it('ignores submitted username for existing user', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      redis.getdel = vi.fn().mockResolvedValue(JSON.stringify({
+        email: 'existing@example.com',
+        username: 'attempted_new_name',
+      }));
+
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ id: 'existing-user-id' }]),
+            }),
+          }),
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/auth/login-link/callback?token=valid-token',
+      });
+
+      // Should redirect (302) — existing user still signs in
+      expect(res.statusCode).toBe(302);
+      // No insert should happen since user exists
+      expect(db.select).toHaveBeenCalled();
     });
   });
 
