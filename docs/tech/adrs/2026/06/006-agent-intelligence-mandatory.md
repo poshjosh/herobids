@@ -1,8 +1,14 @@
 # ADR 006: Agent Intelligence Is Mandatory
 
-Status: Proposed
+Status: Superseded (see [2026-07-11 revision of hybrid decisions][decisions-revised])
 Date: 2026-06-23
 Parent: [002-hybrid-agent-redesign decisions][decisions]
+
+> **2026-07-11 note:** This ADR’s core principle stands (agents always have `intelligence`),
+> but the claim that “no explicit `decisionMode` field is needed on agents” is superseded.
+> Agents now have an explicit `capabilityMode` field (`intelligence` | `hybrid`) and,
+> when hybrid, an explicit `hybridMode` field (`mixed` | `scanner_gated`).
+> See D11 and D12 in the revised [hybrid redesign decisions][decisions-revised].
 
 ## Context
 
@@ -21,30 +27,27 @@ confuses the actor model.
 **Agents always have an `intelligence` config.** An entity without LLM capabilities
 should be modeled as a bot, not an agent.
 
-- The presence of `technical` config on an agent implies hybrid mode — the scanner
-  feeds signals to the LLM for ratification.
-- No explicit `decisionMode` field is needed on agents. For agents, the mode is
-  derived from capability presence:
-  - `intelligence` only → `llm` mode
-  - `intelligence` + `technical` → hybrid mode
+- Agents with `intelligence` only have `capabilityMode: 'intelligence'`.
+- Agents with both `intelligence` and `technical` config have `capabilityMode: 'hybrid'`.
+  Their runtime behavior is further governed by `hybridMode` (`mixed` | `scanner_gated`).
 - Bots continue to use the explicit `decisionMode` field (`mechanical`, `hybrid`,
   `llm`) since bots have no capability concept.
 
-This is a *simplification*: it removes `decisionMode` from the agent config surface,
-reducing configuration errors (e.g., setting `decisionMode: 'mechanical'` on an
-agent — which would be contradictory).
+This ADR’s original claim that hybrid mode is fully derived from config presence
+is superseded. The capability sections (`intelligence`, `technical`) determine what
+is possible; the explicit mode fields determine how the runtime behaves.
 
-## Consequences
+## Consequences (revised)
 
 - Agent config validation rejects agents without `intelligence` — the API returns
   a clear error directing users to create a bot instead.
-- The `decisionMode` field is removed from the agent config schema. It remains on
-  the bot config schema.
-- Migration: any existing agent rows with `decisionMode: 'mechanical'` and no
-  `intelligence` config must be converted to bots, or have `intelligence` added.
-- The capability model (`intelligence` + optional `technical`) becomes the single
-  source of truth for agent behavior classification.
-- Hybrid mode for agents is fully derived — no boolean flag, no enum. If the agent
-  has a `technical` block, the scanner gates LLM invocations.
+- The `capabilityMode` field (`intelligence` | `hybrid`) is explicit on agents.
+- For hybrid agents, `hybridMode` (`mixed` | `scanner_gated`) controls wake policy
+  and LLM invocation gating.
+- The capability sections (`intelligence`, `technical`) remain the source of truth
+  for what capabilities are available. The mode fields control runtime behavior.
+- `decisionMode` remains on the bot config schema only.
+- Migration: existing agents with both `intelligence` and `technical` config
+  default to `capabilityMode: 'hybrid'` and `hybridMode: 'mixed'`.
 
-[decisions]: ../../features/2026/06/22/002-hybrid-agent-redesign/000-decisions.md
+[decisions-revised]: ../../features/2026/06/22/002-hybrid-agent-redesign/000-decisions.md

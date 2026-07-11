@@ -1,7 +1,13 @@
 # ADR 005: Unified Agent Capabilities (Technical + Intelligence)
 
-Status: Proposed  
+Status: Accepted (revised 2026-07-11)
 Date: 2026-06-16
+
+> **2026-07-11 note:** The capability model remains correct — `technical` and
+> `intelligence` are config sections, not agent types. What changed: the runtime
+> behavior is now governed by explicit mode fields (`capabilityMode` and `hybridMode`)
+> rather than being purely derived from which config sections are present.
+> See D11–D13 in the [hybrid redesign decisions][decisions].
 
 ## Context
 
@@ -33,21 +39,31 @@ agent types:
 
 ### Behavioral Emergence
 
-The agent's behavior is determined by which sections are present:
+The agent’s capabilities are determined by which sections are present:
 
-| `technical` | `intelligence` | Behavior |
+| `technical` | `intelligence` | Available capabilities |
 |---|---|---|
-| ✅ | ❌ | Discovery → indicators → mechanical decision |
-| ❌ | ✅ | LLM reasoning → decision (current behavior) |
-| ✅ | ✅ | Discovery → indicators → enriched LLM context → decision |
+| ✅ | ❌ | Scanner-only (discovery → indicators → mechanical decision) |
+| ❌ | ✅ | LLM-only (tools, reasoning → decision) |
+| ✅ | ✅ | Both (scanner pre-filter + LLM ratification) |
+
+Runtime behavior is controlled by explicit mode fields, not derived from capability
+presence alone:
+- `capabilityMode: 'intelligence'` — LLM-only agent
+- `capabilityMode: 'hybrid'` — scanner + LLM agent
+  - `hybridMode: 'mixed'` — scanner + other wake sources may trigger LLM
+  - `hybridMode: 'scanner_gated'` — only scanner events trigger trading LLM turns
 
 ### No Type Discriminator
 
 There is no `agent_kind`, `agent_type`, or similar column. The runtime inspects
-config contents to determine which phases to execute. This means:
-- Adding `technical` to an existing AI agent is just a config update
-- Removing `intelligence` from a hybrid agent makes it rule-based
-- No migration, no type change, no new entity
+config contents to determine which capability phases to execute. The explicit
+`capabilityMode` and `hybridMode` fields control runtime policy (LLM gating,
+wake sources), not which capabilities are available. This means:
+- Adding `technical` to an existing intelligence agent is a config update +
+  setting `capabilityMode` to `hybrid`.
+- Removing `intelligence` from a hybrid agent makes it scanner-only.
+- No migration, no type change, no new entity.
 
 ### Key Design Constraints
 
@@ -65,7 +81,8 @@ config contents to determine which phases to execute. This means:
 - One agent concept in the entire product — no taxonomy for users to learn
 - Zero-cost trading is a config choice, not a product tier
 - "Add AI to my strategy" is a config update, not a new entity
-- Hybrid behavior emerges naturally from enabling both knobs
+- The capability sections (`intelligence`, `technical`) determine what is possible;
+  the mode fields (`capabilityMode`, `hybridMode`) determine how the runtime behaves.
 - Presets ("Momentum Breakouts", "AI Swing Trader") are just default config
   templates with different sections filled
 - No DB schema changes for agent types — config JSONB already supports it
@@ -73,6 +90,8 @@ config contents to determine which phases to execute. This means:
   if not configured, intelligence phase skipped if not configured)
 - Self-configuration by AI agents is natural — they update their own config
   to add/remove `technical` as needed
+
+[decisions]: ../../features/2026/06/22/002-hybrid-agent-redesign/000-decisions.md
 
 ## Alternatives Considered
 

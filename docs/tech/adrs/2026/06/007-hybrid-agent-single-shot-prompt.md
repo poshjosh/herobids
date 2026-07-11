@@ -1,8 +1,12 @@
 # ADR 007: Hybrid Agent Uses Single-Shot Structured-Output Prompt
 
-Status: Proposed
+Status: Accepted (scope narrowed 2026-07-11)
 Date: 2026-06-23
 Parent: [002-hybrid-agent-redesign decisions][decisions]
+
+> **2026-07-11 note:** This ADR now applies specifically to `hybridMode: 'scanner_gated'`.
+> In `mixed` mode, the LLM may still use the full scout/judge tool-calling loop
+> depending on the wake source. See D12 in the [revised decisions][decisions].
 
 ## Context
 
@@ -21,7 +25,11 @@ scanner or ask for redundant data.
 
 ## Decision
 
-**Hybrid agents receive a single-shot structured-output prompt — no tools.**
+**In `scanner_gated` hybrid mode, agents receive a single-shot structured-output prompt — no tools.**
+
+In `mixed` hybrid mode, the LLM may use the full scout/judge tool-calling loop
+or the hybrid evaluator depending on which wake source triggered the turn.
+This ADR describes the `scanner_gated` path.
 
 When scanner signals wake a hybrid agent, the runtime constructs a prompt containing:
 
@@ -80,10 +88,10 @@ The expected response shape:
   before submitting any decisions. Malformed responses are logged and treated as
   "skip all" (failsafe).
 - **Loss of flexibility**: the agent cannot request additional data or run custom
-  analysis beyond what the scanner provides. This is intentional — hybrid mode is
-  for cost-efficient ratification, not deep reasoning. Agents that need exploratory
-  analysis should use `llm` mode (full tool access).
-- The `submit_decision` tool is not presented to the LLM in hybrid mode — the
-  runtime owns submission, not the LLM.
+  analysis beyond what the scanner provides. This is intentional — `scanner_gated`
+  mode is for cost-efficient ratification, not deep reasoning. Agents that need
+  exploratory analysis should use `intelligence` mode or `hybrid` with `mixed` mode.
+- The `submit_decision` tool is not presented to the LLM in `scanner_gated` mode —
+  the runtime owns submission, not the LLM.
 
 [decisions]: ../../features/2026/06/22/002-hybrid-agent-redesign/000-decisions.md
