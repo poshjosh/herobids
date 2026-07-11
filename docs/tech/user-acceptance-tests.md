@@ -302,6 +302,11 @@ Route: `/skills` — capability bundles that tell agents what they can do.
 | BL-08 | Hard cap with open positions notifies clearly | Create an agent with an open position; force hard cap | Notification includes list of open positions and a statement that they are now unmanaged. Agent does not close or modify positions. | — | |
 | BL-09 | Caps can be raised to unblock | After hard-cap stop, raise the cap from the Billing page | Agent resumes on next tick; status returns to active. | — | |
 | ST-01 | Settings page renders | Navigate to `/settings` | Settings page loads without crash | ✅ | Shows Language, AI models, and Telegram Notifications sections; Save button disabled by default |
+| ST-02 | Adaptive reasoning checkboxes visible | Navigate to `/settings` → AI models section | Two checkboxes visible: "Adaptive scout reasoning" and "Adaptive judge reasoning" — both checked by default | — | |
+| ST-03 | Adaptive reasoning checkboxes toggleable | Uncheck both adaptive reasoning checkboxes; click Save | Settings saved; refresh page → both checkboxes remain unchecked | — | |
+| ST-04 | Adaptive reasoning checkboxes visible to all users | Log in as non-admin user; navigate to `/settings` | Both adaptive reasoning checkboxes visible and functional | — | |
+| ST-05 | Agent creation inherits adaptive prefs from settings | Set adaptive reasoning OFF in Settings → create a new agent | New agent's `runtimePolicyOverrides` includes `adaptScoutReasoning: false` and `adaptJudgeReasoning: false` | — | |
+| ST-06 | Non-adaptive agent has deterministic reasoning | Create an agent with `adaptJudgeReasoning: false` and `judgeReasoning: medium` | Every tick uses the same reasoning level — no escalation variance | — | |
 
 ---
 

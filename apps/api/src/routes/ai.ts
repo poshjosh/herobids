@@ -40,6 +40,8 @@ const AiModelConfigSchema = z.object({
   heavyModel: z.string().min(1),
   scoutReasoning: ReasoningLevelSchema.nullable().optional(),
   judgeReasoning: ReasoningLevelSchema.nullable().optional(),
+  adaptScoutReasoning: z.boolean().nullable().optional(),
+  adaptJudgeReasoning: z.boolean().nullable().optional(),
 });
 
 const ClearedAiModelConfigSchema = z.object({
@@ -48,6 +50,8 @@ const ClearedAiModelConfigSchema = z.object({
   heavyModel: z.null(),
   scoutReasoning: z.null().optional(),
   judgeReasoning: z.null().optional(),
+  adaptScoutReasoning: z.null().optional(),
+  adaptJudgeReasoning: z.null().optional(),
 });
 
 const AiModelPatchSchema = z.union([AiModelConfigSchema, ClearedAiModelConfigSchema]);

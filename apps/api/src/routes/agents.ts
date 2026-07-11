@@ -703,6 +703,28 @@ export async function agentRoutes(
         ? String(parsed.data.maxPositionSizePct)
         : (presetRiskMaxPositionSizePct !== undefined ? presetRiskMaxPositionSizePct : null);
 
+    // Stamp adaptive reasoning flags from user's AI model settings into runtimePolicyOverrides.
+    // If the user has set these preferences in Settings, they flow through to new agents
+    // so the worker can apply the correct ceiling/fixed behavior.
+    let stampedRuntimePolicyOverrides = parsed.data.runtimePolicyOverrides ?? null;
+    const [userRow] = await db.select({ aiModelConfig: users.aiModelConfig })
+      .from(users)
+      .where(eq(users.id, request.userId))
+      .limit(1);
+    const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
+    if (userAiConfig) {
+      const current = (stampedRuntimePolicyOverrides ?? {}) as Record<string, unknown>;
+      if (userAiConfig.adaptScoutReasoning !== undefined && current['adaptScoutReasoning'] === undefined) {
+        current['adaptScoutReasoning'] = userAiConfig.adaptScoutReasoning;
+      }
+      if (userAiConfig.adaptJudgeReasoning !== undefined && current['adaptJudgeReasoning'] === undefined) {
+        current['adaptJudgeReasoning'] = userAiConfig.adaptJudgeReasoning;
+      }
+      if (Object.keys(current).length > 0) {
+        stampedRuntimePolicyOverrides = current as typeof parsed.data.runtimePolicyOverrides;
+      }
+    }
+
     const createTxResult = await db.transaction(async (tx): Promise<
       | { kind: 'ok' }
       | { kind: 'conn_error'; status: number; body: Record<string, unknown> }
@@ -732,7 +754,7 @@ export async function agentRoutes(
           tickIntervalMs: parsed.data.tickIntervalMs ?? null,
           capital: parsed.data.capital ?? null,
           style: parsed.data.style ?? null,
-          runtimePolicyOverrides: parsed.data.runtimePolicyOverrides ?? null,
+          runtimePolicyOverrides: stampedRuntimePolicyOverrides,
           openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
           ...(finalUnifiedConfig ? { unifiedConfig: finalUnifiedConfig } : {}),
           wakePreferences: parsed.data.wakePreferences ?? null,
@@ -1149,6 +1171,27 @@ export async function agentRoutes(
       ...agentUpdates
     } = parsed.data;
     void _skillIds;
+
+    // Stamp adaptive reasoning flags from user's AI model settings when runtimePolicyOverrides
+    // is being updated. User-provided values win over stamped defaults.
+    // Explicit null means the user wants to clear all overrides — skip stamping.
+    if (agentUpdates.runtimePolicyOverrides !== undefined && agentUpdates.runtimePolicyOverrides !== null) {
+      const [userRow] = await db.select({ aiModelConfig: users.aiModelConfig })
+        .from(users)
+        .where(eq(users.id, request.userId))
+        .limit(1);
+      const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
+      if (userAiConfig) {
+        const current = (agentUpdates.runtimePolicyOverrides ?? {}) as Record<string, unknown>;
+        if (userAiConfig.adaptScoutReasoning !== undefined && current['adaptScoutReasoning'] === undefined) {
+          current['adaptScoutReasoning'] = userAiConfig.adaptScoutReasoning;
+        }
+        if (userAiConfig.adaptJudgeReasoning !== undefined && current['adaptJudgeReasoning'] === undefined) {
+          current['adaptJudgeReasoning'] = userAiConfig.adaptJudgeReasoning;
+        }
+        agentUpdates.runtimePolicyOverrides = Object.keys(current).length > 0 ? current : null;
+      }
+    }
 
     // Resolve maxBots from plan — if not provided, default to plan limit; if provided, validate ≤ plan limit
     let resolvedMaxBotsPatch: { maxBots: number | null } | Record<string, never> = {};

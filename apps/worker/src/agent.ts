@@ -2811,6 +2811,24 @@ async function runTick(): Promise<void> {
       });
     }
 
+    // Shared thinking classification — computed once when either adaptive flag is on,
+    // and consumed by both scout and judge. Skipped when both are off for deterministic
+    // fixed-level dispatch with zero runtime variance.
+    const needsAdaptiveThinking =
+      agentConfig.resolvedRuntimePolicy?.adaptScoutReasoning !== false ||
+      agentConfig.resolvedRuntimePolicy?.adaptJudgeReasoning !== false;
+    const sharedThinkingDecision = needsAdaptiveThinking
+      ? classifyTickThinking({
+          hasOpenPositions,
+          previousRegimePass,
+          regimePass: skipDecision.regime?.pass ?? null,
+          incomingMessagesCount: incomingMessages.length,
+          userMessageReceived: incomingMessages.some((message) => message['type'] === 'agent.user.message' || message['type'] === 'user.message'),
+          drawdownPct: sessionMetrics.performance.drawdownPct ?? extractDrawdownPct(sessionMetrics.lastPnlSummary),
+          drawdownThresholdPct: agentRuntimePolicy.thinking.drawdownThresholdPct,
+        })
+      : { thinking: 'none' as const, reason: 'routine_tick' as const };
+
     if (preScoutResolution.decision) {
       redis.del(scoutSystemPromptKey, scoutUserContextPromptKey).catch((err: unknown) => {
         logger.warn({ err }, 'Failed to clear skipped scout prompt surfaces from Redis');
@@ -2872,7 +2890,18 @@ async function runTick(): Promise<void> {
           maxTokens: scoutLoopConfig.maxTokens,
           temperature: scoutLoopConfig.temperature,
           reasoning: resolveReasoningParams(
-            agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'none',
+            (() => {
+              const adaptScout = agentConfig.resolvedRuntimePolicy?.adaptScoutReasoning !== false;
+              if (adaptScout) {
+                return toReasoningLevel(
+                  applyReasoningCeiling(
+                    sharedThinkingDecision.thinking,
+                    agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'none',
+                  ),
+                );
+              }
+              return agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'none';
+            })(),
             lightModel,
             agentRuntimePolicy.llm.thinking,
           ),
@@ -3072,27 +3101,25 @@ async function runTick(): Promise<void> {
       ...recentHistory,
     ];
 
-    const thinkingDecision = classifyTickThinking({
-      hasOpenPositions,
-      previousRegimePass,
-      regimePass: skipDecision.regime?.pass ?? null,
-      incomingMessagesCount: incomingMessages.length,
-      userMessageReceived: incomingMessages.some((message) => message['type'] === 'agent.user.message' || message['type'] === 'user.message'),
-      drawdownPct: sessionMetrics.performance.drawdownPct ?? extractDrawdownPct(sessionMetrics.lastPnlSummary),
-      drawdownThresholdPct: agentRuntimePolicy.thinking.drawdownThresholdPct,
-    });
     const systemThinking = costProfile.defaultThinking === 'deep'
       ? 'deep' as const
-      : thinkingDecision.thinking;
+      : sharedThinkingDecision.thinking;
     const userJudgeLevel = agentConfig.resolvedRuntimePolicy?.judgeReasoning ?? 'medium';
-    const cappedThinking = applyReasoningCeiling(systemThinking, userJudgeLevel);
-    const judgeThinkingReason = costProfile.defaultThinking === 'deep'
-      ? 'cost_profile_premium'
-      : thinkingDecision.reason;
+    const adaptJudge = agentConfig.resolvedRuntimePolicy?.adaptJudgeReasoning !== false;
+    const cappedThinking = adaptJudge
+      ? applyReasoningCeiling(systemThinking, userJudgeLevel)
+      : (userJudgeLevel === 'none' ? 'none' : userJudgeLevel === 'low' ? 'light' : 'deep');
+    const judgeThinkingReason = !adaptJudge
+      ? 'direct_mapping'
+      : costProfile.defaultThinking === 'deep'
+        ? 'cost_profile_premium'
+        : sharedThinkingDecision.reason;
     previousRegimePass = skipDecision.regime?.pass ?? previousRegimePass;
     const wasCapped = cappedThinking !== systemThinking;
     logger.info({
       thinking: cappedThinking,
+      adaptJudge,
+      userLevel: userJudgeLevel,
       reason: judgeThinkingReason,
       ...(wasCapped ? { capped: { from: systemThinking, by: userJudgeLevel } } : {}),
     }, 'Resolved tick thinking level');

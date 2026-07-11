@@ -290,3 +290,51 @@ describe('style consistency', () => {
     expect(AGENT_STYLE_RUNTIME_DEFAULTS.bold.costPreset).toBe('premium');
   });
 });
+
+// ── Adaptive reasoning ──────────────────────────────────────────────────────
+
+describe('adaptive reasoning resolution', () => {
+  it('resolves balanced style with adaptive defaults (both true)', () => {
+    const policy = resolveAgentRuntimePolicy('balanced', null);
+    expect(policy.adaptScoutReasoning).toBe(true);
+    expect(policy.adaptJudgeReasoning).toBe(true);
+  });
+
+  it('resolves careful style with adaptive defaults (both true)', () => {
+    const policy = resolveAgentRuntimePolicy('careful', null);
+    expect(policy.adaptScoutReasoning).toBe(true);
+    expect(policy.adaptJudgeReasoning).toBe(true);
+  });
+
+  it('resolves bold style with adaptive defaults (both true)', () => {
+    const policy = resolveAgentRuntimePolicy('bold', null);
+    expect(policy.adaptScoutReasoning).toBe(true);
+    expect(policy.adaptJudgeReasoning).toBe(true);
+  });
+
+  it('overrides can set adaptive flags to false', () => {
+    const policy = resolveAgentRuntimePolicy('bold', {
+      adaptScoutReasoning: false,
+      adaptJudgeReasoning: false,
+    });
+    expect(policy.adaptScoutReasoning).toBe(false);
+    expect(policy.adaptJudgeReasoning).toBe(false);
+  });
+
+  it('partial override: only adaptScoutReasoning set to false', () => {
+    const policy = resolveAgentRuntimePolicy('balanced', {
+      adaptScoutReasoning: false,
+    });
+    expect(policy.adaptScoutReasoning).toBe(false);
+    expect(policy.adaptJudgeReasoning).toBe(true); // balanced default
+  });
+
+  it('null override falls back to style default (true)', () => {
+    const policy = resolveAgentRuntimePolicy('bold', {
+      adaptScoutReasoning: null,
+      adaptJudgeReasoning: null,
+    });
+    expect(policy.adaptScoutReasoning).toBe(true);
+    expect(policy.adaptJudgeReasoning).toBe(true);
+  });
+});

@@ -263,6 +263,8 @@ export const AgentRuntimePolicyOverridesSchema = z.object({
       },
       { message: `judgeReasoning must not exceed operator ceiling (${RUNTIME_POLICY_CEILINGS.judgeReasoningMax})` },
     ),
+  adaptScoutReasoning: z.boolean().nullable().optional(),
+  adaptJudgeReasoning: z.boolean().nullable().optional(),
 }).default({});
 
 export type AgentRuntimePolicyOverrides = z.infer<typeof AgentRuntimePolicyOverridesSchema>;
@@ -296,6 +298,8 @@ export interface ResolvedAgentRuntimePolicy {
   tradingSessions: TradingSessionName[] | null;
   scoutReasoning: ReasoningLevel;
   judgeReasoning: ReasoningLevel;
+  adaptScoutReasoning: boolean;
+  adaptJudgeReasoning: boolean;
 }
 
 /**
@@ -317,6 +321,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     deepThinkingTokens: 4_096,
     scoutReasoning: 'none',
     judgeReasoning: 'low',
+    adaptScoutReasoning: true,
+    adaptJudgeReasoning: true,
     allowedHoursUtc: [14, 15, 16, 17, 18, 19, 20],
     weekendPause: false,
     tradingSessions: null,
@@ -343,6 +349,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     deepThinkingTokens: 10_240,
     scoutReasoning: 'none',
     judgeReasoning: 'medium',
+    adaptScoutReasoning: true,
+    adaptJudgeReasoning: true,
     allowedHoursUtc: [],
     weekendPause: false,
     tradingSessions: null,
@@ -369,6 +377,8 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     deepThinkingTokens: 20_480,
     scoutReasoning: 'low',
     judgeReasoning: 'high',
+    adaptScoutReasoning: true,
+    adaptJudgeReasoning: true,
     allowedHoursUtc: [],
     weekendPause: false,
     tradingSessions: null,
@@ -421,6 +431,8 @@ export function resolveAgentRuntimePolicy(
     tradingSessions: o.tradingSessions ?? defaults.tradingSessions,
     scoutReasoning: o.scoutReasoning ?? defaults.scoutReasoning,
     judgeReasoning: o.judgeReasoning ?? defaults.judgeReasoning,
+    adaptScoutReasoning: o.adaptScoutReasoning ?? defaults.adaptScoutReasoning,
+    adaptJudgeReasoning: o.adaptJudgeReasoning ?? defaults.adaptJudgeReasoning,
   };
 }
 

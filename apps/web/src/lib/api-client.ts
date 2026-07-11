@@ -213,11 +213,13 @@ export interface AiModelSettings {
   heavyModel: string | null;
   scoutReasoning: string | null;
   judgeReasoning: string | null;
+  adaptScoutReasoning: boolean | null;
+  adaptJudgeReasoning: boolean | null;
 }
 
 export type AiModelSettingsUpdate =
-  | { provider: string; lightModel: string; heavyModel: string; scoutReasoning?: string | null; judgeReasoning?: string | null }
-  | { provider: null; lightModel: null; heavyModel: null; scoutReasoning?: null; judgeReasoning?: null };
+  | { provider: string; lightModel: string; heavyModel: string; scoutReasoning?: string | null; judgeReasoning?: string | null; adaptScoutReasoning?: boolean | null; adaptJudgeReasoning?: boolean | null }
+  | { provider: null; lightModel: null; heavyModel: null; scoutReasoning?: null; judgeReasoning?: null; adaptScoutReasoning?: null; adaptJudgeReasoning?: null };
 
 export interface AiModelSettingsResponse {
   aiModelConfig: AiModelSettings | null;

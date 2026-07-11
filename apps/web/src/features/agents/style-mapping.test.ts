@@ -366,3 +366,37 @@ describe('resolveStyleDefaults', () => {
     });
   });
 });
+
+// ── Adaptive reasoning defaults ─────────────────────────────────────────────
+
+describe('adaptive reasoning style defaults', () => {
+  it('STYLE_CONFIG has adaptScoutReasoning true for all styles', () => {
+    for (const style of ['careful', 'balanced', 'bold'] as const) {
+      expect(STYLE_CONFIG[style].adaptScoutReasoning).toBe(true);
+    }
+  });
+
+  it('STYLE_CONFIG has adaptJudgeReasoning true for all styles', () => {
+    for (const style of ['careful', 'balanced', 'bold'] as const) {
+      expect(STYLE_CONFIG[style].adaptJudgeReasoning).toBe(true);
+    }
+  });
+
+  it('resolveStyleDefaults returns adaptive flags for careful', () => {
+    const config = resolveStyleDefaults('careful');
+    expect(config.adaptScoutReasoning).toBe(true);
+    expect(config.adaptJudgeReasoning).toBe(true);
+  });
+
+  it('resolveStyleDefaults returns adaptive flags for balanced', () => {
+    const config = resolveStyleDefaults('balanced');
+    expect(config.adaptScoutReasoning).toBe(true);
+    expect(config.adaptJudgeReasoning).toBe(true);
+  });
+
+  it('resolveStyleDefaults returns adaptive flags for bold', () => {
+    const config = resolveStyleDefaults('bold');
+    expect(config.adaptScoutReasoning).toBe(true);
+    expect(config.adaptJudgeReasoning).toBe(true);
+  });
+});

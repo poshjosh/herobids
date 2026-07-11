@@ -24,15 +24,15 @@ describe('Settings page — AI model Save button disable predicate', () => {
   ];
 
   it('is disabled when provider or either model is empty', () => {
-    expect(shouldDisableAiModelSave({ provider: '', lightModel: '', heavyModel: '', scoutReasoning: 'none', judgeReasoning: 'medium' }, null, false)).toBe(true);
-    expect(shouldDisableAiModelSave({ provider: 'openai', lightModel: '', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium' }, null, false)).toBe(true);
-    expect(shouldDisableAiModelSave({ provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: '', scoutReasoning: 'none', judgeReasoning: 'medium' }, null, false)).toBe(true);
+    expect(shouldDisableAiModelSave({ provider: '', lightModel: '', heavyModel: '', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: true }, null, false)).toBe(true);
+    expect(shouldDisableAiModelSave({ provider: 'openai', lightModel: '', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: true }, null, false)).toBe(true);
+    expect(shouldDisableAiModelSave({ provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: '', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: true }, null, false)).toBe(true);
   });
 
   it('is disabled while the mutation is pending', () => {
     expect(
       shouldDisableAiModelSave(
-        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium' },
+        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: true },
         null,
         true,
       ),
@@ -42,8 +42,8 @@ describe('Settings page — AI model Save button disable predicate', () => {
   it('is disabled when the selection matches the saved settings', () => {
     expect(
       shouldDisableAiModelSave(
-        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium' },
-        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium' },
+        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: true },
+        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: true },
         false,
       ),
     ).toBe(true);
@@ -52,8 +52,8 @@ describe('Settings page — AI model Save button disable predicate', () => {
   it('is enabled when the selection differs from the saved settings', () => {
     expect(
       shouldDisableAiModelSave(
-        { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5', scoutReasoning: 'none', judgeReasoning: 'medium' },
-        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium' },
+        { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: true },
+        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: true },
         false,
       ),
     ).toBe(false);
@@ -62,7 +62,7 @@ describe('Settings page — AI model Save button disable predicate', () => {
   it('is enabled when no settings are saved yet and all selections are present', () => {
     expect(
       shouldDisableAiModelSave(
-        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium' },
+        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: true },
         null,
         false,
       ),
@@ -75,11 +75,43 @@ describe('Settings page — AI model Save button disable predicate', () => {
       ...defaultSelection,
       scoutReasoning: 'none',
       judgeReasoning: 'medium',
+      adaptScoutReasoning: true,
+      adaptJudgeReasoning: true,
     };
     expect(shouldDisableAiModelSave(selection, null, false)).toBe(false);
   });
 
   it('builds a cleared payload for the reset action', () => {
-    expect(createClearedAiModelSettings()).toEqual({ provider: null, lightModel: null, heavyModel: null, scoutReasoning: null, judgeReasoning: null });
+    expect(createClearedAiModelSettings()).toEqual({ provider: null, lightModel: null, heavyModel: null, scoutReasoning: null, judgeReasoning: null, adaptScoutReasoning: null, adaptJudgeReasoning: null });
+  });
+
+  it('enables save when adaptScoutReasoning changes', () => {
+    expect(
+      shouldDisableAiModelSave(
+        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: false, adaptJudgeReasoning: true },
+        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: true },
+        false,
+      ),
+    ).toBe(false);
+  });
+
+  it('enables save when adaptJudgeReasoning changes', () => {
+    expect(
+      shouldDisableAiModelSave(
+        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: false },
+        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: true },
+        false,
+      ),
+    ).toBe(false);
+  });
+
+  it('is disabled when adaptive flags match saved', () => {
+    expect(
+      shouldDisableAiModelSave(
+        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: true },
+        { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: 'none', judgeReasoning: 'medium', adaptScoutReasoning: true, adaptJudgeReasoning: true },
+        false,
+      ),
+    ).toBe(true);
   });
 });

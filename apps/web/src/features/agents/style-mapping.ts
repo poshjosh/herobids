@@ -35,6 +35,8 @@ export interface StyleDefaults {
   // Reasoning level defaults (per-style base; agent overrides via runtime policy)
   scoutReasoning: ReasoningLevel;
   judgeReasoning: ReasoningLevel;
+  adaptScoutReasoning: boolean;
+  adaptJudgeReasoning: boolean;
 }
 
 /** Per-field overrides for runtime policy. Fields not present use the style default. */
@@ -59,6 +61,8 @@ export type RuntimePolicyOverrides = Partial<{
   maxHoldDurationMs: number | null;
   scoutReasoning: ReasoningLevel | null;
   judgeReasoning: ReasoningLevel | null;
+  adaptScoutReasoning: boolean | null;
+  adaptJudgeReasoning: boolean | null;
 }>;
 
 export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
@@ -86,6 +90,8 @@ export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
     maxHoldDurationMs: 27_000_000, // 450 min (5 × tick interval)
     scoutReasoning: 'none',
     judgeReasoning: 'low',
+    adaptScoutReasoning: true,
+    adaptJudgeReasoning: true,
   },
   balanced: {
     costPreset: 'standard',
@@ -111,6 +117,8 @@ export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
     maxHoldDurationMs: 5_400_000, // 90 min (3 × tick interval)
     scoutReasoning: 'none',
     judgeReasoning: 'medium',
+    adaptScoutReasoning: true,
+    adaptJudgeReasoning: true,
   },
   bold:     {
     costPreset: 'premium',
@@ -136,6 +144,8 @@ export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
     maxHoldDurationMs: 600_000, // 10 min (1 × tick interval)
     scoutReasoning: 'low',
     judgeReasoning: 'high',
+    adaptScoutReasoning: true,
+    adaptJudgeReasoning: true,
   },
 };
 

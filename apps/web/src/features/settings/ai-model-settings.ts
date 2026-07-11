@@ -6,6 +6,8 @@ export interface AiModelSelectionState {
   heavyModel: string;
   scoutReasoning: string;
   judgeReasoning: string;
+  adaptScoutReasoning: boolean;
+  adaptJudgeReasoning: boolean;
 }
 
 export const EMPTY_AI_MODEL_SELECTION: AiModelSelectionState = {
@@ -14,6 +16,8 @@ export const EMPTY_AI_MODEL_SELECTION: AiModelSelectionState = {
   heavyModel: '',
   scoutReasoning: 'none',
   judgeReasoning: 'medium',
+  adaptScoutReasoning: true,
+  adaptJudgeReasoning: true,
 };
 
 export function normalizeAiModelSelection(settings: AiModelSettings | null | undefined): AiModelSelectionState {
@@ -23,6 +27,8 @@ export function normalizeAiModelSelection(settings: AiModelSettings | null | und
     heavyModel: settings?.heavyModel ?? '',
     scoutReasoning: settings?.scoutReasoning ?? 'none',
     judgeReasoning: settings?.judgeReasoning ?? 'medium',
+    adaptScoutReasoning: settings?.adaptScoutReasoning ?? true,
+    adaptJudgeReasoning: settings?.adaptJudgeReasoning ?? true,
   };
 }
 
@@ -41,6 +47,8 @@ export function shouldDisableAiModelSave(
         && savedValue.heavyModel === currentInput.heavyModel
         && savedValue.scoutReasoning === currentInput.scoutReasoning
         && savedValue.judgeReasoning === currentInput.judgeReasoning
+        && savedValue.adaptScoutReasoning === currentInput.adaptScoutReasoning
+        && savedValue.adaptJudgeReasoning === currentInput.adaptJudgeReasoning
       : false);
 }
 
@@ -51,5 +59,7 @@ export function createClearedAiModelSettings(): AiModelSettingsUpdate {
     heavyModel: null,
     scoutReasoning: null,
     judgeReasoning: null,
+    adaptScoutReasoning: null,
+    adaptJudgeReasoning: null,
   };
 }

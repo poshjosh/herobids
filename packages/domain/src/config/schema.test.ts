@@ -1112,3 +1112,67 @@ describe('resolveAgentRuntimePolicy — reasoning', () => {
     expect(resolved.judgeReasoning).toBe('medium'); // balanced default
   });
 });
+
+// ── Adaptive reasoning ──────────────────────────────────────────────────────
+
+describe('adaptive reasoning defaults', () => {
+  it('AGENT_STYLE_RUNTIME_DEFAULTS has adaptScoutReasoning true for all styles', () => {
+    for (const style of ['careful', 'balanced', 'bold'] as const) {
+      expect(AGENT_STYLE_RUNTIME_DEFAULTS[style].adaptScoutReasoning).toBe(true);
+    }
+  });
+
+  it('AGENT_STYLE_RUNTIME_DEFAULTS has adaptJudgeReasoning true for all styles', () => {
+    for (const style of ['careful', 'balanced', 'bold'] as const) {
+      expect(AGENT_STYLE_RUNTIME_DEFAULTS[style].adaptJudgeReasoning).toBe(true);
+    }
+  });
+
+  it('AgentRuntimePolicyOverridesSchema accepts adaptScoutReasoning boolean', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({ adaptScoutReasoning: false });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.adaptScoutReasoning).toBe(false);
+    }
+  });
+
+  it('AgentRuntimePolicyOverridesSchema accepts adaptJudgeReasoning boolean', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({ adaptJudgeReasoning: false });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.adaptJudgeReasoning).toBe(false);
+    }
+  });
+
+  it('AgentRuntimePolicyOverridesSchema accepts null for adaptive fields', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({
+      adaptScoutReasoning: null,
+      adaptJudgeReasoning: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('resolveAgentRuntimePolicy returns adaptive defaults when no overrides', () => {
+    const resolved = resolveAgentRuntimePolicy('balanced', null);
+    expect(resolved.adaptScoutReasoning).toBe(true);
+    expect(resolved.adaptJudgeReasoning).toBe(true);
+  });
+
+  it('resolveAgentRuntimePolicy allows overrides to set adaptive flags to false', () => {
+    const resolved = resolveAgentRuntimePolicy('balanced', {
+      adaptScoutReasoning: false,
+      adaptJudgeReasoning: false,
+    });
+    expect(resolved.adaptScoutReasoning).toBe(false);
+    expect(resolved.adaptJudgeReasoning).toBe(false);
+  });
+
+  it('resolveAgentRuntimePolicy falls back to style default when adaptive override is null', () => {
+    const resolved = resolveAgentRuntimePolicy('bold', {
+      adaptScoutReasoning: null,
+      adaptJudgeReasoning: null,
+    });
+    expect(resolved.adaptScoutReasoning).toBe(true); // bold default
+    expect(resolved.adaptJudgeReasoning).toBe(true); // bold default
+  });
+});

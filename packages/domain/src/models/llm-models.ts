@@ -190,6 +190,8 @@ const CurrentAiModelConfigSchema = z.object({
   heavyModel: z.string().min(1),
   scoutReasoning: ReasoningLevelSchema.nullable().optional(),
   judgeReasoning: ReasoningLevelSchema.nullable().optional(),
+  adaptScoutReasoning: z.boolean().nullable().optional(),
+  adaptJudgeReasoning: z.boolean().nullable().optional(),
 });
 
 const ClearedAiModelConfigSchema = z.object({
@@ -198,6 +200,8 @@ const ClearedAiModelConfigSchema = z.object({
   heavyModel: z.null(),
   scoutReasoning: z.null().optional(),
   judgeReasoning: z.null().optional(),
+  adaptScoutReasoning: z.null().optional(),
+  adaptJudgeReasoning: z.null().optional(),
 });
 
 export interface LlmModelSelection {
@@ -206,6 +210,8 @@ export interface LlmModelSelection {
   heavyModel: string;
   scoutReasoning?: ReasoningLevel | null;
   judgeReasoning?: ReasoningLevel | null;
+  adaptScoutReasoning?: boolean | null;
+  adaptJudgeReasoning?: boolean | null;
 }
 
 export interface PersistedAiModelConfig {
@@ -214,6 +220,8 @@ export interface PersistedAiModelConfig {
   heavyModel: string;
   scoutReasoning?: ReasoningLevel | null;
   judgeReasoning?: ReasoningLevel | null;
+  adaptScoutReasoning?: boolean | null;
+  adaptJudgeReasoning?: boolean | null;
 }
 
 export function validateLlmModelSelection(

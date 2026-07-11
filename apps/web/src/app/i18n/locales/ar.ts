@@ -278,6 +278,10 @@ export const messages: Record<string, string> = {
   'aiModels.reasoning.low': 'منخفض',
   'aiModels.reasoning.medium': 'متوسط',
   'aiModels.reasoning.high': 'عالي',
+  'settings.adaptiveScoutReasoning': 'الاستدلال التكيفي للكشاف',
+  'settings.adaptiveScoutReasoningHelp': 'عند التفعيل، قد يستخدم النظام استدلالاً أعمق للأحداث الحرجة مثل تغيرات النظام والانخفاضات. عند التعطيل، يُستخدم المستوى المحدد كما هو.',
+  'settings.adaptiveJudgeReasoning': 'الاستدلال التكيفي للحكم',
+  'settings.adaptiveJudgeReasoningHelp': 'عند التفعيل، قد يستخدم النظام استدلالاً أعمق للأحداث الحرجة مثل تغيرات النظام والانخفاضات. عند التعطيل، يُستخدم المستوى المحدد كما هو.',
 
   // Extended common
   'common.back': 'رجوع',
