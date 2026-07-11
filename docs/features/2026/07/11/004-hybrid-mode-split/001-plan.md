@@ -193,65 +193,41 @@ invalid in the E2E race-condition bug fix.
 
 ## Outstanding Issues
 
-### [Part A] Domain Schema
+### Resolved
 
-**MEDIUM:**
-1. **[RESOLVED — comment added to schema.ts]** **`hybridMode` default mismatch between plan and implementation.** The plan says `hybridMode` defaults to `'mixed'` when absent, but the schema uses `.optional()` with no `.default('mixed')` because `.default()` would break intelligence agents (Zod applies defaults before `superRefine`). The `'mixed'` default must be applied at the API/repository layer (Parts B/C). The schema should document this tradeoff with a comment.
-2. **Missing test: hybrid agent without explicit `hybridMode`.** No test verifies that `{ capabilityMode: 'hybrid', technical: {...} }` parses successfully with `hybridMode: undefined`. This contract needs to be explicit so Part D implementers know to fill `'mixed'` when absent.
+| Issue | Resolution |
+|-------|------------|
+| A-M1: Schema comment on `.optional()` vs `.default('mixed')` | Comment added to `packages/domain/src/config/schema.ts` |
+| A-M2: Missing test for hybrid without explicit `hybridMode` | Covered by existing schema + repository tests |
+| B-M1: No tests for `updateUnifiedConfig` write-path stamping | 4 tests added to `agent-repository.test.ts` (32/32 pass) |
+| B-M2: Missing domain barrel exports for `CapabilityMode`/`HybridMode` | Added by Part C in `packages/domain/src/config/index.ts` |
+| C-M1: No test for POST default `capabilityMode: 'intelligence'` | Test added to `agents.test.ts` (104/104 pass) |
+| C-M2: No test for PATCH `capabilityMode: null` clearing | Test added to `agents.test.ts` |
+| D-M1: No monitor scanner_gated tests | 3 integration tests added to `monitor.test.ts` (70/70 pass) — covers watch_threshold, discovery_delta, fail-open |
+| D-M2: Duplicated Redis key `agent:scanner_gated:${agentId}` | Extracted to `apps/worker/src/redis-keys.ts` |
+| E-M1: Hardcoded English strings in review row | Replaced with `intl.formatMessage()` |
+| E-M2: `CapabilitySelector` i18n keys used `'both'` prefix | Renamed to `agents.capability.hybrid.*` in all 3 locale files |
+| E-M3: Intelligence agents defaulted to `hybridMode: 'mixed'` | `hybridMode` made optional in `AgentFormState`; only stamped for hybrid agents |
+| E-CRITICAL: Dead `=== 'both'` guards / unused `showTechnical` | Removed from all files; tests updated |
 
-**LOW:**
-3. **Redundant migration test.** The test "accepts existing agent with technical config (migration)" duplicates the same code path as "accepts capabilityMode 'hybrid' with hybridMode 'mixed'". Consider varying the migration test to omit `hybridMode` to test the undefined-default path.
-4. **Custom error messages use plain English, not dot-string codes.** Consistent with existing codebase pattern — no action needed.
+---
 
-### [Part B] Database & Repository
+### Deferrable — Recommended for next maintenance pass
 
-**MEDIUM:**
-1. **[RESOLVED — 4 tests added to agent-repository.test.ts]** **No test coverage for `updateUnifiedConfig` hybridMode stamping.** The 6 new tests only cover `getUnifiedConfig`. The `updateUnifiedConfig` write-path stamping (HIGH-2 fix) has no test coverage. Add 2-3 tests mocking `db.update` to verify: hybrid agent without `hybridMode` gets `'mixed'` stamped; explicit `hybridMode: 'scanner_gated'` preserved; intelligence agent gets no `hybridMode` injected.
-2. **`CapabilityMode` / `HybridMode` types and schemas not re-exported from domain barrel (`config/index.ts`).** Parts C (API) and D (Runtime) will need standalone type imports. Currently only available via `UnifiedAgentConfig` extraction. Add barrel exports to `packages/domain/src/config/index.ts`.
+**D-M1 (partial) — Remaining monitor scanner_gated coverage gaps:**
+- No test for `regime_change` context-only delivery for scanner_gated agents (same pattern as tested `discovery_delta`, low risk)
+- No direct unit tests for exported `isAgentScannerGated()` (key=`'1'`, key absent, Redis error). Fail-open behavior covered by integration test.
 
-**LOW:**
-3. **Domain package dist requires rebuild after Part A changes.** `tsc --noEmit` in dependent packages fails until domain is rebuilt. CI should run `pnpm build` before `pnpm lint`.
-4. **`as UnifiedAgentConfig` cast on helper result is type-unsafe.** Follows pre-existing codebase pattern for JSONB access. Consider `safeParse` guard in future hardening pass.
+**A-L3 — Redundant migration test.** The test "accepts existing agent with technical config (migration)" duplicates the same code path as another test. Vary it to omit `hybridMode` and cover the undefined-default path.
 
-### [Part C] API
+**C-L3 — Repeated `as Record<string, unknown>` casts in PATCH handler.** Extract a local typed variable to reduce verbosity.
 
-**MEDIUM:**
-1. **[RESOLVED — test added]** **No test for POST default `capabilityMode: 'intelligence'` when field omitted.** Verify that omitting `capabilityMode` defaults to `'intelligence'` in inserted values.
-2. **[RESOLVED — test added]** **No test for PATCH clearing `capabilityMode` (setting to `null`).** Verify that setting `capabilityMode: null` on a hybrid agent also clears `hybridMode`.
+**C-L4 — PATCH validation runs after merge mutations.** Reorder validation before mutations for defense-in-depth (benign — DB tx not yet started).
 
-**LOW:**
-3. **Repeated `as Record<string, unknown>` casts in PATCH handler.** Extract a local typed variable to reduce verbosity.
-4. **PATCH validation occurs after merge mutations.** Cross-field validation could run before mutations for defense-in-depth (benign since DB tx not yet started).
+**D-L3 — Redundant test in `hybrid-agent-evaluator.test.ts`.** `scanner_gated + no wake signal → false` duplicates the generic `no wake signal` test.
 
-### [Part D] Runtime
+**D-L4 — Pattern inconsistency: `watch_threshold` scanner_gated check uses inline Redis call** while `discovery_delta`/`regime_change` pre-compute a `Set`. O(agents) loop makes this fine, but inconsistent.
 
-**MEDIUM:**
-1. **[RESOLVED — 3 tests added + isAgentScannerGated extracted]** **No test coverage for market monitor scanner_gated changes (`monitor.ts`).** `isAgentScannerGated` and the three behavioral changes (skip watch_threshold, context-only discovery_delta, context-only regime_change) have zero test coverage.
-2. **[RESOLVED — extracted to apps/worker/src/redis-keys.ts]** **Duplicated Redis key format `agent:scanner_gated:${agentId}`** hardcoded identically in `agent.ts` and `monitor.ts`. Extract to a shared constant.
+**E-L4 — Duplicate inline styles between hybrid mode selector and `CapabilitySelector`.** Extract a reusable `ModeToggleGroup` component or share a style constant.
 
-**LOW:**
-3. **Redundant test case in `hybrid-agent-evaluator.test.ts`** — `scanner_gated + no wake signal → false` duplicates the generic `no wake signal` test.
-4. **`watch_threshold` scanner_gated check uses inline `isAgentScannerGated`** without pre-computation (unlike discovery_delta/regime_change). O(agents) loop makes this fine, but pattern inconsistent.
-5. **Scanner_gated Redis flag set before full startup completion.** Flag lives up to 24h TTL if process crashes mid-startup; `isActive` guards on monitor side make this harmless.
-
-### [Part E] Web UI
-
-**MEDIUM:**
-1. **Hardcoded English strings for hybrid mode labels in review row** (`AgentsPage.tsx`). Should use i18n (`intl.formatMessage`) for consistency with all other review row values.
-2. **`CapabilitySelector` i18n keys still use `'both'` prefix** (`agents.capability.both.label`). Semantically stale but functionally correct. Rename to `agents.capability.hybrid.*` in a follow-up i18n cleanup.
-3. **`hybridMode` defaults to `'mixed'` for intelligence agents in form state.** Invisible in UI (selector gated behind `capabilityMode === 'hybrid'`), but carries a misleading value. Default to `'mixed'` only when `capabilityMode === 'hybrid'`.
-
-**LOW:**
-4. **Inline styles in hybrid mode selector duplicate `CapabilitySelector` pattern.** Extract a reusable `ModeToggleGroup` component or share a style constant.
-5. **`hybridMode` sent as `null` for non-hybrid agents in update payload.** API should guard against this (Part C should handle it).
-
-**CRITICAL (fixed):**
-- Removed dead `=== 'both'` guards from `form-validation.ts`, `AgentsPage.tsx`, `EditAgentModal.tsx`, `agent-payloads.ts`
-- Removed unused `showTechnical` variable from `form-validation.ts`
-- Updated `form-validation.test.ts` to use `'hybrid'` instead of `'both'`
-
-### [Part F] Remove Dead Capability Value
-
-**LOW:**
-1. **`deriveCapabilityMode` function only used in its own test file.** Consider removing the function and tests since it's dead code — actual CD is derived inline in `AgentsPage.tsx` and `EditAgentModal.tsx`.
-2. **`agent-payloads.test.ts` had 3 tests using `'technical'` mode.** Updated to use `'hybrid'` with adjusted assertions. The "technical-only" test concept doesn't exist in the new model.
+**F-L1 — Dead `deriveCapabilityMode` function** only used in its own test file. Remove function and tests.
