@@ -2,9 +2,9 @@ import type { Redis } from 'ioredis';
 import type { AgentRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import type { ContextSnapshotPayload } from '@herobids/domain';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'agent-reconnect-handler' });
+const logger = createLogger('agent-reconnect-handler');
 
 export interface ReconnectConfig {
   /** Max number of high-value events to replay on reconnect. Default: 50 */

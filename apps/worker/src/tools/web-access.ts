@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import { resolve4, resolve6 } from 'node:dns/promises';
 import { z } from 'zod';
 import { parseHTML } from 'linkedom';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 
@@ -10,7 +10,7 @@ import { convertZodToJsonSchema } from './registry.js';
 const _require = createRequire(import.meta.url);
 const { Readability } = _require('@mozilla/readability') as { Readability: new (doc: Document) => { parse(): { title: string; textContent: string } | null } };
 
-const logger = pino({ name: 'tools:web-access' });
+const logger = createLogger('tools:web-access');
 
 function nonFaultError(error: string, retryable = false): ToolResult {
   return { success: false, error, retryable, fault: false };

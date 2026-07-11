@@ -9,13 +9,13 @@ import type { DecisionContext, PositionState } from '@herobids/engine';
 import type { IdGenerator } from '@herobids/engine';
 import type { Journal } from '@herobids/engine';
 import type { TradingCyclePersistence } from '@herobids/engine';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 import { buildAgentRiskLimits } from '../agent-risk-limits.js';
 import type { VenueInstrumentCache } from '../venue-instrument-cache.js';
 import type { IntakeResult } from '../execution-actor.js';
 import { resolveSwapNetwork } from '../resolve-swap-assets.js';
 
-const logger = pino({ name: 'agent-intake-resolver' });
+const logger = createLogger('agent-intake-resolver');
 
 export interface AgentIntakeResolverDeps {
   db: Database;

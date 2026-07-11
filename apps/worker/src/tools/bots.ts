@@ -2,9 +2,9 @@ import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { AGENT_MESSAGE_TYPES, checkModeEscalation, deriveStrategyPreset, extractStrategyFromConfig } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'tools:bots' });
+const logger = createLogger('tools:bots');
 
 // --- Agent-facing strategy input — discriminated union on strategy type ---
 

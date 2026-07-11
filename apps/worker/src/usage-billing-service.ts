@@ -8,12 +8,12 @@
  */
 
 import crypto from 'node:crypto';
-import pino from 'pino';
+import { createLogger } from './logger.js';
 import { UsageBillingRepository } from '@herobids/db';
 import type { Database } from '@herobids/db';
 import type { ProvidersYaml } from '@herobids/domain';
 
-const logger = pino({ name: 'usage-billing-service' });
+const logger = createLogger('usage-billing-service');
 
 function getBillingMonthKey(date: Date): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;

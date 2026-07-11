@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import {
   evaluateRegime,
@@ -17,7 +17,7 @@ import {
 } from '../intelligence-tools.js';
 import { convertZodToJsonSchema } from './registry.js';
 
-const logger = pino({ name: 'tools:market-data' });
+const logger = createLogger('tools:market-data');
 
 async function enrichDiscoveryTokenPrices(
   tokens: Array<Record<string, unknown>>,

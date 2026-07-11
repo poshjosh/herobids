@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir, unlink, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { getWorkspacePaths, ensureWorkspaceDirs, resolveWorkspacePath, checkReservedDir } from './workspace.js';
 
-const logger = pino({ name: 'tools:filesystem' });
+const logger = createLogger('tools:filesystem');
 
 // Maximum file size for read_file (1 MiB)
 const MAX_READ_BYTES = 1_048_576;

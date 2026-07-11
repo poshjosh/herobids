@@ -8,12 +8,12 @@
  */
 
 import { z } from 'zod';
-import pino from 'pino';
+import { createLogger } from './logger.js';
 import { WatchPurposeEnum } from '@herobids/domain';
 import type { WatchPurpose } from '@herobids/domain';
 import type { RuntimeActiveWatch } from './runtime-composition.js';
 
-const logger = pino({ name: 'watch-types' });
+const logger = createLogger('watch-types');
 
 // ---------------------------------------------------------------------------
 // Instrument identity

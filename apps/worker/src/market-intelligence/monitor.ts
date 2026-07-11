@@ -1,5 +1,5 @@
 import type { Redis } from 'ioredis';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 import crypto from 'node:crypto';
 import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
 import type {
@@ -15,7 +15,7 @@ import type {
 import { summarizeActiveWatches } from '../runtime-composition.js';
 import { type WatchEntry, parseWatch, toRuntimeActiveWatch } from '../watch-types.js';
 
-const logger = pino({ name: 'market-monitor' });
+const logger = createLogger('market-monitor');
 
 // --- Rate limit constants ---
 const MAX_EVENTS_PER_AGENT_PER_MINUTE = 20;

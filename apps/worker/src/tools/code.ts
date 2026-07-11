@@ -2,13 +2,13 @@ import { z } from 'zod';
 import { writeFile, mkdir, rm, access } from 'node:fs/promises';
 import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { getWorkspacePaths, ensureWorkspaceDirs } from './workspace.js';
 
 const execAsync = promisify(execCb);
-const logger = pino({ name: 'tools:code' });
+const logger = createLogger('tools:code');
 
 // Read code-execute defaults from the agent runtime config injected by the worker.
 // Evaluated lazily at call time so tests can override AGENT_RUNTIME_CONFIG_JSON.

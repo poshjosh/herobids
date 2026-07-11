@@ -143,7 +143,7 @@ export const messages: Record<string, string> = {
   'auth.existingUser': 'Already have an account? Sign in',
   'auth.username.label': 'Username',
   'auth.username.placeholder': 'Choose a username (optional)',
-  'auth.sendRegistrationLink': 'Send registration link',
+  'auth.sendRegistrationLink': 'Sign up',
   'auth.sendLoginLink': 'Send login link',
   'auth.send_login_link.invalid_username': 'Username must be 3–30 characters and may only contain lowercase letters, digits, and underscores.',
   'auth.send_login_link.username_taken': 'This username is already taken.',

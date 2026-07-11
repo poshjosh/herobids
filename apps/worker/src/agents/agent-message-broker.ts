@@ -32,9 +32,9 @@ import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import { CapabilityPolicyEngine, DEFAULT_CAPABILITY_GRANTS } from './capability-policy.js';
 import type { CapabilityGrant } from './capability-policy.js';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'agent-message-broker' });
+const logger = createLogger('agent-message-broker');
 
 /** Brokered send_message rate limit: max messages per agent per minute. */
 const SEND_MESSAGE_MAX_PER_MINUTE = 10;

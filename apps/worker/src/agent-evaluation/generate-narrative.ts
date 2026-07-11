@@ -1,10 +1,10 @@
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 import { callLlmWithRetry } from '../runtime-errors.js';
 import { stripReasoningContent, type LlmProviderConfig, type LlmRequest } from '@herobids/llm';
 import type { EvaluationArtifactStore } from '@herobids/domain';
 import type { ResolvedNarrativeLlmConfig } from '@herobids/db';
 
-const logger = pino({ name: 'generate-narrative' });
+const logger = createLogger('generate-narrative');
 
 // ── Public types ────────────────────────────────────────────────────────────
 

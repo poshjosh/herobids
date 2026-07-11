@@ -1,8 +1,8 @@
 import type { AgentRepository } from '@herobids/db';
 import type { TelegramClient } from './telegram-client.js';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'platform-alert-service' });
+const logger = createLogger('platform-alert-service');
 
 /**
  * Mandatory safety-alert event types.

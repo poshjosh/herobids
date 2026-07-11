@@ -18,9 +18,9 @@ import type { PlatformAlertService } from '../alerting/platform-alert-service.js
 import { PLATFORM_ALERT_EVENTS } from '../alerting/platform-alert-service.js';
 import { resolveEffectiveLlmSelection } from '../llm-selection.js';
 import type { Redis } from 'ioredis';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'agent-session-manager' });
+const logger = createLogger('agent-session-manager');
 
 /** Per-agent timeout for Redis stream subscription during survived-session recovery. */
 const STREAM_SUBSCRIBE_TIMEOUT_MS = 10_000;

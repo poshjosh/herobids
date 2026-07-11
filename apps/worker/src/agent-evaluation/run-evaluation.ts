@@ -14,7 +14,7 @@ import {
 } from '@herobids/db';
 import type { ResolvedEvaluationScope, EvaluationRunResult, EvaluationScorecard, EvaluationArtifactStore, EvaluationThresholds } from '@herobids/domain';
 import type { ResolvedNarrativeLlmConfig } from '@herobids/db';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 import { assembleEvidence } from './collectors/evidence-assembler.js';
 import { analyzeCore } from './analyzers/core.js';
 import { analyzeTrading } from './analyzers/trading.js';
@@ -33,7 +33,7 @@ export const EVIDENCE_ARTIFACTS_FOR_REDACTION = [
   'unified-agent-config.json',
 ] as const;
 
-const logger = pino({ name: 'run-evaluation' });
+const logger = createLogger('run-evaluation');
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

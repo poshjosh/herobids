@@ -1,9 +1,9 @@
 import type Redis from 'ioredis';
 import type { ActorHealthSnapshot } from '@herobids/domain';
 import { actorHealthKey, ACTOR_HEALTH_TTL_SECONDS } from '@herobids/domain';
-import pino from 'pino';
+import { createLogger } from './logger.js';
 
-const logger = pino({ name: 'actor-health-publisher' });
+const logger = createLogger('actor-health-publisher');
 
 /**
  * Publishes actor health snapshots to Redis.

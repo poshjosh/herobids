@@ -1,10 +1,10 @@
 import type { Redis } from 'ioredis';
-import pino from 'pino';
+import { createLogger } from './logger.js';
 import type { InstanceEventPublisher } from './agents/instance-event-publisher.js';
 import type { AgentRepository } from '@herobids/db';
 import type { ReminderRecord } from './tools/tasks.js';
 
-const logger = pino({ name: 'reminder-coordinator' });
+const logger = createLogger('reminder-coordinator');
 
 /** How often to poll Redis for due reminders (ms). */
 const POLL_INTERVAL_MS = 10_000;

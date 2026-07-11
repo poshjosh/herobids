@@ -1,9 +1,9 @@
 import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
-import pino from 'pino';
+import { createLogger } from './logger.js';
 import type { PlatformEventEnvelope } from '@herobids/domain';
 
-const logger = pino({ name: 'user-event-publisher' });
+const logger = createLogger('user-event-publisher');
 
 /**
  * UserEventPublisher — publishes real-time UI events to per-user Redis pub/sub channels.

@@ -1,6 +1,6 @@
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'capability-policy' });
+const logger = createLogger('capability-policy');
 
 /**
  * Capability tiers per docs/tech/agents/tool-access-and-sandboxing.md:

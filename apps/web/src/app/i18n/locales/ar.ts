@@ -74,7 +74,7 @@ export const messages: Record<string, string> = {
   'auth.existingUser': 'لديك حساب بالفعل؟ تسجيل الدخول',
   'auth.username.label': 'اسم المستخدم',
   'auth.username.placeholder': 'اختر اسم مستخدم (اختياري)',
-  'auth.sendRegistrationLink': 'إرسال رابط التسجيل',
+  'auth.sendRegistrationLink': 'إنشاء حساب',
   'auth.sendLoginLink': 'إرسال رابط تسجيل الدخول',
   'auth.send_login_link.invalid_username': 'يجب أن يتراوح اسم المستخدم بين 3 و 30 حرفاً، ويجب أن يحتوي فقط على أحرف صغيرة وأرقام وشرطات سفلية.',
   'auth.send_login_link.username_taken': 'اسم المستخدم هذا مستخدم بالفعل.',

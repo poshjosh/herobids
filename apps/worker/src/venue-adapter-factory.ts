@@ -8,9 +8,9 @@ import { credentialDecryptedEvent } from '@herobids/engine';
 import type { Journal } from '@herobids/engine';
 import { decryptCredential } from './crypto.js';
 import type { StreamConfig } from './trading-actor.js';
-import pino from 'pino';
+import { createLogger } from './logger.js';
 
-const logger = pino({ name: 'venue-adapter-factory' });
+const logger = createLogger('venue-adapter-factory');
 
 export class CredentialResolutionError extends Error {
   constructor(message: string) {

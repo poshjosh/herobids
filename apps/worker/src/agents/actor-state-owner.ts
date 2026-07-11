@@ -9,9 +9,9 @@ import {
   type AgentExecutionMode,
   type AgentVenueType,
 } from '../agent-intake-fallback.js';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'actor-state-owner' });
+const logger = createLogger('actor-state-owner');
 
 /**
  * Centralized owner of per-agent transient session state (pending sessions,

@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq';
 import Redis from 'ioredis';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 import type { Database } from '@herobids/db';
 import { EVALUATION_QUEUE_NAME, markRunning, markTimedOut } from '@herobids/db';
 import { agentEvaluations } from '@herobids/db';
@@ -28,7 +28,7 @@ export interface EvaluationRuntimeConfig {
 
 // ── Logger ──────────────────────────────────────────────────────────────────
 
-const logger = pino({ name: 'evaluation-runtime' });
+const logger = createLogger('evaluation-runtime');
 
 // ── Runtime ─────────────────────────────────────────────────────────────────
 

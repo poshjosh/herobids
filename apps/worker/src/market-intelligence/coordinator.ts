@@ -1,5 +1,5 @@
 import type { Redis } from 'ioredis';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 import crypto from 'node:crypto';
 import { createLeaderElection, type LeaderElection } from './leader-election.js';
 import type { ProviderRegistry } from '@herobids/market-data';
@@ -7,7 +7,7 @@ import type { InstanceEventPublisher } from '../agents/instance-event-publisher.
 import type { MarketMonitor } from './monitor.js';
 import { recordProviderSuccess, recordProviderFailure, recordFreshnessMode, recordRateLimitThrottle, isRateLimitThrottle } from './provider-counters.js';
 
-const logger = pino({ name: 'market-data-coordinator' });
+const logger = createLogger('market-data-coordinator');
 
 export interface CoordinatorConfig {
   workerId: string;

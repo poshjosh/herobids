@@ -16,9 +16,9 @@ import {
   buildAgentLabels,
 } from './runtime-lifecycle.js';
 import type { AgentEnvConfig } from './runtime-lifecycle.js';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'agent-runtime-launcher' });
+const logger = createLogger('agent-runtime-launcher');
 
 // ── Public Types (backward-compatible) ──────────────────────────────────────
 

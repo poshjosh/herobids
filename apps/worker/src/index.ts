@@ -1,5 +1,5 @@
-import pino from 'pino';
 import Redis from 'ioredis';
+import { createLogger } from './logger.js';
 import { Queue } from 'bullmq';
 import { WorkerRuntime, QUEUE_NAME } from './runtime.js';
 import type { PersistedInstance } from './runtime.js';
@@ -131,17 +131,7 @@ class CredentialResolutionError extends Error {
   }
 }
 
-const isPrettyLog = process.env['LOG_FORMAT'] === 'pretty' || process.env['NODE_ENV'] === 'development';
-const logger = pino(
-  isPrettyLog
-    ? {
-        transport: {
-          target: 'pino-pretty',
-          options: { colorize: true, translateTime: 'HH:MM:ss', ignore: 'pid,hostname' },
-        },
-      }
-    : { name: 'herobids-worker' },
-);
+const logger = createLogger('herobids-worker');
 
 // Load operator config: default.yaml → {NODE_ENV}.yaml → env var overrides
 const appConfig = loadConfig();

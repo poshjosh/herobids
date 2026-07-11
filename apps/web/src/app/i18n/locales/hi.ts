@@ -74,7 +74,7 @@ export const messages: Record<string, string> = {
   'auth.existingUser': 'पहले से खाता है? साइन इन करें',
   'auth.username.label': 'उपयोगकर्ता नाम',
   'auth.username.placeholder': 'उपयोगकर्ता नाम चुनें (वैकल्पिक)',
-  'auth.sendRegistrationLink': 'पंजीकरण लिंक भेजें',
+  'auth.sendRegistrationLink': 'साइन अप करें',
   'auth.sendLoginLink': 'लॉगिन लिंक भेजें',
   'auth.send_login_link.invalid_username': 'उपयोगकर्ता नाम 3–30 अक्षरों का होना चाहिए और केवल लोवरकेस अक्षरों, अंकों और अंडरस्कोर का उपयोग कर सकता है।',
   'auth.send_login_link.username_taken': 'यह उपयोगकर्ता नाम पहले से लिया जा चुका है।',

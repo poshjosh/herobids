@@ -11,9 +11,9 @@ import type {
 } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
 import { RUNTIME_ERROR_CODES } from '@herobids/domain';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'nomad-runtime-adapter' });
+const logger = createLogger('nomad-runtime-adapter');
 
 // ── Nomad-Specific Types ────────────────────────────────────────────────────
 

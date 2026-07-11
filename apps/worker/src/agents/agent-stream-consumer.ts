@@ -1,8 +1,8 @@
 import type { Redis } from 'ioredis';
 import type { AgentMessageBroker } from './agent-message-broker.js';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'agent-stream-consumer' });
+const logger = createLogger('agent-stream-consumer');
 
 export interface AgentStreamConsumerConfig {
   /** Consumer group name */

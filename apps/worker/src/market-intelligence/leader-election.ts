@@ -1,7 +1,7 @@
 import type { Redis } from 'ioredis';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'market-intel-leader' });
+const logger = createLogger('market-intel-leader');
 
 const LEADER_KEY = 'market-intel:leader';
 const HEALTH_KEY = 'market-intel:health';

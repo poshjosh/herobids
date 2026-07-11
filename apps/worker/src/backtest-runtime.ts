@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import pino from 'pino';
+import { createLogger } from './logger.js';
 import type { Database } from '@herobids/db';
 import { BacktestingRepository, PgJournal, DecisionRepository } from '@herobids/db';
 import { LlmStrategy, MechanicalStrategy } from '@herobids/strategy';
@@ -32,7 +32,7 @@ export interface BacktestRuntimeConfig {
   validationThresholds?: ValidationThresholds;
 }
 
-const logger = pino({ name: 'backtest-runtime' });
+const logger = createLogger('backtest-runtime');
 
 /**
  * BacktestRuntime — processes bounded backtest jobs via BullMQ.

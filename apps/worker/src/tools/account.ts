@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'tools:account' });
+const logger = createLogger('tools:account');
 
 // --- get_account_summary ---
 

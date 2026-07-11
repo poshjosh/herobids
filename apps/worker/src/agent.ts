@@ -13,7 +13,7 @@ import https from 'node:https';
 import http from 'node:http';
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
-import pino from 'pino';
+import { createLogger } from './logger.js';
 import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal } from '@herobids/db';
 import { createUsageBillingService } from './usage-billing-service.js';
@@ -86,7 +86,7 @@ import { resolveEffectiveLlmSelection, type UserModelDefaults } from './llm-sele
 import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
 import { isTechnicalScanFresh, runHybridEvaluator } from './hybrid-agent-evaluator.js';
 
-const logger = pino({ name: 'agent-runtime', level: process.env['LOG_LEVEL'] ?? 'info' });
+const logger = createLogger('agent-runtime');
 
 // ---------------------------------------------------------------------------
 // Config from environment

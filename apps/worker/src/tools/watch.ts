@@ -13,7 +13,7 @@
 
 import { z } from 'zod';
 import crypto from 'node:crypto';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { WatchPurposeEnum, type WatchPurpose } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
@@ -22,7 +22,7 @@ import { summarizeActiveWatches } from '../runtime-composition.js';
 import { type WatchEntry, type WatchCoverageLink, type WatchInstrumentIdentity, parseWatch, toRuntimeActiveWatch } from '../watch-types.js';
 import { derivePositionKey, type PositionInput, PROTECTIVE_WATCH_PURPOSES } from '../position-coverage.js';
 
-const logger = pino({ name: 'watch-tools' });
+const logger = createLogger('watch-tools');
 
 const EXPLICIT_SUPPORTED_CHAIN_SET = new Set<string>(EXPLICIT_SUPPORTED_CHAINS);
 

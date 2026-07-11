@@ -1,4 +1,4 @@
-import pino from 'pino';
+import { createLogger } from './logger.js';
 import type { ContextSnapshotPayload, OrderbookVenuePort, SwapVenuePort, MarkSource, LiveRolloutConfig, Subscription, SubscriptionState, SwapTokenSafetyPort, Price, Decision, DecisionId, VenueAccountId, InstrumentId, TechnicalConfig, RiskConfig, AgentWakePayload } from '@herobids/domain';
 import type { OrderId } from '@herobids/domain';
 import { quantity, price, Decimal } from '@herobids/domain';
@@ -252,7 +252,7 @@ export class AgentTradingActor implements ExecutionActor {
 
   constructor(private readonly deps: AgentTradingActorDeps) {
     this.agentId = deps.agentId;
-    this.logger = pino({ name: `agent-actor-${deps.agentId.slice(0, 8)}` });
+    this.logger = createLogger(`agent-actor-${deps.agentId.slice(0, 8)}`);
     this.streamPool = deps.streamPool;
   }
 

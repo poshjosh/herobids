@@ -39,6 +39,7 @@ import { providerRoutes } from './routes/providers.js';
 import { authPlugin } from './plugins/auth.js';
 import { createAuthMailer } from './auth-mailer.js';
 import { loadConfig } from './config.js';
+import { createFastifyLogger } from './logger.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { LifecycleJob, BacktestJob } from './types.js';
@@ -82,8 +83,6 @@ const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const MONOREPO_CONFIG_DIR = resolve(MODULE_DIR, '../../../config');
 const providersYaml = loadProvidersConfig(resolve(MONOREPO_CONFIG_DIR, 'providers.yaml'));
 
-const isPrettyLog = process.env['LOG_FORMAT'] === 'pretty' || process.env['NODE_ENV'] === 'development';
-
 // Custom request serializer — redacts JWT tokens from the URL query string
 // while preserving all standard Fastify request log fields (id, method, url,
 // query, params, headers, remoteAddress, remotePort). The Authorization
@@ -125,20 +124,13 @@ function redactQueryToken(query: unknown): unknown {
 // Fastify() infers Http2SecureServer from @types/node v25, but route
 // registrations expect the default http.Server. The type assertion
 // bridges the gap without weakening downstream type safety.
+// We pre-build a pino instance with pino-pretty as a direct stream
+// (bypassing pino v9's broken transport.target resolution inside
+// pnpm deploy --prod containers).
+// Fastify v5 requires custom loggers to be passed via `loggerInstance`
+// (logger: <object> only accepts pino configuration, not instances).
 const app = Fastify({
-  logger: isPrettyLog
-    ? {
-        transport: {
-          target: 'pino-pretty',
-          options: { colorize: true, translateTime: 'HH:MM:ss', ignore: 'pid,hostname' },
-        },
-        redact: ['req.headers.authorization'],
-        serializers: { req: redactReqSerializer },
-      }
-    : {
-        redact: ['req.headers.authorization'],
-        serializers: { req: redactReqSerializer },
-      },
+  loggerInstance: createFastifyLogger({ serializers: { req: redactReqSerializer } }),
 }) as unknown as FastifyInstance;
 
 const parsedRedisUrl = new URL(appConfig.redis.url);

@@ -17,9 +17,9 @@ import type {
 import { INSTANCE_MESSAGE_TYPES, MARKET_MONITOR_MESSAGE_TYPES } from '@herobids/domain';
 import type { TechnicalScanState } from '../runtime-composition.js';
 import crypto from 'node:crypto';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'instance-event-publisher' });
+const logger = createLogger('instance-event-publisher');
 
 /**
  * InstanceEventPublisher — emits instance→agent protocol messages onto Redis Streams.

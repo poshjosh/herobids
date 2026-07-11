@@ -1,4 +1,4 @@
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 import type { RuntimeDescriptor, RuntimeReconcileResult } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
 import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
@@ -11,7 +11,7 @@ export type DockerTerminationListener = (
   reason: string,
 ) => void;
 
-const logger = pino({ name: 'docker-agent-manager' });
+const logger = createLogger('docker-agent-manager');
 
 export interface DockerAgentManagerConfig {
   /** Docker API URL via docker-socket-proxy. Default: tcp://docker-proxy:2375 */

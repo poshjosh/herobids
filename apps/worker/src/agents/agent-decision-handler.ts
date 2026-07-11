@@ -8,9 +8,9 @@ import type { DecisionIntakeDeps, DecisionContext, PositionState, LevelValidatio
 import type { IntakeResult } from '../execution-actor.js';
 import { isIntakeRejection } from '../execution-actor.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'agent-decision-handler' });
+const logger = createLogger('agent-decision-handler');
 
 /** Intents that grow (or initiate) a position — used for level validation and stop-loss/take-profit reminders. */
 const POSITION_GROWING_INTENTS = new Set<DecisionIntent>(['go_long', 'go_short', 'increase']);

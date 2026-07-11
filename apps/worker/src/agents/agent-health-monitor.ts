@@ -3,9 +3,9 @@ import type { Database } from '@herobids/db';
 import { agentRuntimeSessions } from '@herobids/db';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { AgentRuntimeLauncher } from './agent-runtime-launcher.js';
-import pino from 'pino';
+import { createLogger } from '../logger.js';
 
-const logger = pino({ name: 'agent-health-monitor' });
+const logger = createLogger('agent-health-monitor');
 
 export interface HealthMonitorConfig {
   /** Interval between health checks (ms). Default: 10000 */

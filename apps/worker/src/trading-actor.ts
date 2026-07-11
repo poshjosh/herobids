@@ -1,4 +1,4 @@
-import pino from 'pino';
+import { createLogger } from './logger.js';
 import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, SubscriptionState, PrivateStreamFill, PrivateStreamOrder, PrivateStreamPosition, SwapVenuePort, MarkSource, SwapTokenSafetyPort, CandleFetcher } from '@herobids/domain';
 import type { InstanceActor } from './runtime.js';
 import type { ExecutionActor, IntakeResult } from './execution-actor.js';
@@ -234,7 +234,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
     private readonly scanIntervalMs: number = 5000,
   ) {
     this.botId = botId;
-    this.logger = pino({ name: `actor-${botId}` });
+    this.logger = createLogger(`actor-${botId}`);
     this.position = flatPosition(deps.venue, deps.symbol);
 
     // Executor selection based on execution mode

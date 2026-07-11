@@ -1,6 +1,6 @@
 import { Worker, Queue, Job } from 'bullmq';
 import type { ConnectionOptions } from 'bullmq';
-import pino from 'pino';
+import { createLogger } from './logger.js';
 import type { InstanceLease } from './instance-lease.js';
 
 const QUEUE_NAME = 'trading-instance-lifecycle';
@@ -56,7 +56,7 @@ export type InstanceLoader = () => Promise<PersistedInstance[]>;
  * Instances run as long-lived leased actors with internal scan timers.
  */
 export class WorkerRuntime {
-  private readonly logger = pino({ name: 'worker-runtime' });
+  private readonly logger = createLogger('worker-runtime');
   private readonly actors = new Map<string, InstanceActor>();
   private readonly queue: Queue;
   private readonly worker: Worker;
