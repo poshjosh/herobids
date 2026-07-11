@@ -63,7 +63,7 @@ export const messages: Record<string, string> = {
   'auth.callback.backToSignIn': 'العودة إلى تسجيل الدخول',
   'auth.callback.missingCode': 'رمز التبادل مفقود في عنوان URL.',
   'auth.error.default': 'فشل التحقق. يرجى المحاولة مجدداً.',
-  'auth.register.required_fields': 'البريد الإلكتروني وكلمة المرور واسم العرض مطلوبة.',
+  'auth.register.required_fields': 'البريد الإلكتروني وكلمة المرور مطلوبان.',
   'auth.register.password_too_short': 'يجب أن تتكون كلمة المرور من {minLength} أحرف على الأقل.',
   'auth.register.invalid_email': 'أدخل بريدًا إلكترونيًا صالحًا.',
   'auth.register.email_taken': 'يوجد حساب بهذا البريد الإلكتروني بالفعل.',

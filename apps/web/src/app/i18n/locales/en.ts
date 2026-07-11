@@ -132,7 +132,7 @@ export const messages: Record<string, string> = {
   'auth.callback.backToSignIn': 'Back to sign-in',
   'auth.callback.missingCode': 'Missing exchange code in callback URL.',
   'auth.error.default': 'Authentication failed. Please try again.',
-  'auth.register.required_fields': 'Email, password, and display name are required.',
+  'auth.register.required_fields': 'Email and password are required.',
   'auth.register.password_too_short': 'Password must be at least {minLength} characters.',
   'auth.register.invalid_email': 'Enter a valid email address.',
   'auth.register.email_taken': 'An account with this email already exists.',

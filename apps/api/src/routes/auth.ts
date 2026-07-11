@@ -96,6 +96,66 @@ interface GoogleUserInfo {
   picture?: string;
 }
 
+// ── Username helpers ──────────────────────────────────────────────────────
+
+const USERNAME_REGEX = /^[a-z0-9_]{3,30}$/;
+
+function normalizeUsername(raw: string): string {
+  return raw.toLowerCase().trim();
+}
+
+function validateUsername(raw: string): { valid: true } | { valid: false; reason: string } {
+  const normalized = normalizeUsername(raw);
+  if (normalized.length < 3) {
+    return { valid: false, reason: 'Username must be at least 3 characters' };
+  }
+  if (normalized.length > 30) {
+    return { valid: false, reason: 'Username must be at most 30 characters' };
+  }
+  if (!USERNAME_REGEX.test(normalized)) {
+    return { valid: false, reason: 'Username can only contain lowercase letters, digits, and underscores' };
+  }
+  return { valid: true };
+}
+
+function humanizeDisplayName(username: string): string {
+  return username
+    .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function deriveBaseUsername(email: string): string {
+  return email.split('@')[0]!.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+}
+
+function generateUniqueSuffix(): string {
+  return crypto.randomBytes(4).toString('hex');
+}
+
+async function generateUniqueUsername(
+  db: Database,
+  baseCandidate: string,
+  maxRetries = 3,
+): Promise<string> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const suffix = attempt === 0 ? '' : `_${generateUniqueSuffix()}`;
+    const candidate = suffix ? `${baseCandidate.slice(0, 26)}${suffix}` : baseCandidate;
+    // Make sure it's within length limits
+    const finalCandidate = candidate.length > 30 ? candidate.slice(0, 30) : candidate;
+
+    // Check if it's available
+    const [existing] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.username, finalCandidate))
+      .limit(1);
+
+    if (!existing) return finalCandidate;
+  }
+  throw new Error('Failed to generate unique username after retries');
+}
+
 export async function authRoutes(
   app: FastifyInstance,
   config: AuthConfig,
@@ -118,9 +178,7 @@ export async function authRoutes(
     return raw.toLowerCase().trim();
   }
 
-  function deriveDisplayName(email: string): string {
-    return email.split('@')[0] ?? email;
-  }
+
 
   function hashKey(raw: string): string {
     return crypto.createHash('sha256').update(raw).digest('hex');
@@ -132,22 +190,30 @@ export async function authRoutes(
     return url.toString();
   }
 
-  async function createAndStoreLoginLinkToken(email: string): Promise<string> {
+  async function createAndStoreLoginLinkToken(email: string, username?: string): Promise<string> {
     const token = crypto.randomBytes(32).toString('base64url');
-    const payload = JSON.stringify({ email });
-    await redis.set(`auth:login-link:token:${token}`, payload, 'EX', config.loginLinkTtlSecs);
+    const payload: { email: string; username?: string } = { email };
+    if (username) {
+      payload.username = username;
+    }
+    await redis.set(`auth:login-link:token:${token}`, JSON.stringify(payload), 'EX', config.loginLinkTtlSecs);
     return token;
   }
 
-  async function consumeLoginLinkToken(token: string): Promise<string | null> {
+  async function consumeLoginLinkToken(token: string): Promise<{ email: string; username?: string } | null> {
     const raw = await redis.getdel(`auth:login-link:token:${token}`);
     if (!raw) return null;
     try {
-      const { email } = JSON.parse(raw) as { email: string };
-      return email;
+      return JSON.parse(raw) as { email: string; username?: string };
     } catch {
       return null;
     }
+  }
+
+  async function reserveUsername(username: string, token: string): Promise<boolean> {
+    const key = `auth:login-link:username-reservation:${username}`;
+    const result = await redis.set(key, token, 'EX', config.loginLinkTtlSecs, 'NX');
+    return result === 'OK';
   }
 
   async function checkLoginLinkRateLimit(email: string, ip: string): Promise<{ allowed: boolean; reason?: string; cooldownRemainingSecs?: number }> {
@@ -185,7 +251,7 @@ export async function authRoutes(
     return { allowed: true };
   }
 
-  async function resolveOrCreateUserByEmail(email: string): Promise<string> {
+  async function resolveOrCreateUserByEmail(email: string, username?: string): Promise<string> {
     // Try existing user first
     const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
     if (existing) return existing.id;
@@ -193,11 +259,22 @@ export async function authRoutes(
     // Create a new user
     const userId = crypto.randomUUID();
     const now = new Date();
-    const displayName = deriveDisplayName(email);
+
+    // Generate username if not provided
+    let resolvedUsername: string;
+    if (username) {
+      resolvedUsername = username;
+    } else {
+      const base = deriveBaseUsername(email);
+      resolvedUsername = await generateUniqueUsername(db, base);
+    }
+
+    const displayName = humanizeDisplayName(resolvedUsername);
 
     await db.transaction(async (tx) => {
       await tx.insert(users).values({
         id: userId,
+        username: resolvedUsername,
         displayName,
         email,
         avatarUrl: null,
@@ -226,11 +303,36 @@ export async function authRoutes(
   app.post('/auth/send-login-link', async (request, reply) => {
     const body = request.body as Record<string, unknown> | undefined;
     const email = typeof body?.['email'] === 'string' ? normalizeEmail(body['email']) : undefined;
+    const rawUsername = typeof body?.['username'] === 'string' ? body['username'] : undefined;
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return reply.status(400).send(
         errorPayload('auth.send_login_link.invalid_email', 'Enter a valid email address'),
       );
+    }
+
+    // Validate username if provided
+    let normalizedUsername: string | undefined;
+    if (rawUsername && rawUsername.trim().length > 0) {
+      const validation = validateUsername(rawUsername);
+      if (!validation.valid) {
+        return reply.status(400).send(
+          errorPayload('auth.send_login_link.invalid_username', validation.reason),
+        );
+      }
+      normalizedUsername = normalizeUsername(rawUsername);
+
+      // Check availability against existing users
+      const [existing] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.username, normalizedUsername))
+        .limit(1);
+      if (existing) {
+        return reply.status(409).send(
+          errorPayload('auth.send_login_link.username_taken', 'This username is already taken.'),
+        );
+      }
     }
 
     // Apply rate limiting
@@ -242,8 +344,21 @@ export async function authRoutes(
       );
     }
 
+    // Create token with optional username
+    const token = await createAndStoreLoginLinkToken(email, normalizedUsername);
+
+    // Reserve username in Redis if provided
+    if (normalizedUsername) {
+      const reserved = await reserveUsername(normalizedUsername, token);
+      if (!reserved) {
+        // Race condition — another request reserved it between our check and reserve
+        return reply.status(409).send(
+          errorPayload('auth.send_login_link.username_taken', 'This username is already taken.'),
+        );
+      }
+    }
+
     // Create token and send email (or log link for dev when email is disabled)
-    const token = await createAndStoreLoginLinkToken(email);
     const link = makeLoginLinkUrl(token);
     let sendOk = false;
     if (authMailer) {
@@ -283,15 +398,16 @@ export async function authRoutes(
       );
     }
 
-    const email = await consumeLoginLinkToken(token);
-    if (!email) {
+    const payload = await consumeLoginLinkToken(token);
+    if (!payload) {
       return reply.status(400).send(
         errorPayload('auth.login_link_callback.invalid_token', 'Invalid or expired login link'),
       );
     }
 
+    const { email, username } = payload;
     // Resolve or create the user
-    const userId = await resolveOrCreateUserByEmail(email);
+    const userId = await resolveOrCreateUserByEmail(email, username);
 
     // Issue session and store behind a one-time exchange code
     const sessionToken = await issueSession(config, db, userId);
@@ -311,11 +427,10 @@ export async function authRoutes(
     const body = request.body as Record<string, unknown> | undefined;
     const email = typeof body?.['email'] === 'string' ? body['email'].toLowerCase().trim() : undefined;
     const password = typeof body?.['password'] === 'string' ? body['password'] : undefined;
-    const displayName = typeof body?.['displayName'] === 'string' ? body['displayName'].trim() : undefined;
 
-    if (!email || !password || !displayName) {
+    if (!email || !password) {
       return reply.status(400).send(
-        errorPayload('auth.register.required_fields', 'Email, password, and display name are required'),
+        errorPayload('auth.register.required_fields', 'Email and password are required'),
       );
     }
     if (password.length < 8) {
@@ -339,9 +454,15 @@ export async function authRoutes(
     const userId = crypto.randomUUID();
     const now = new Date();
 
+    // Generate username and derive displayName from it
+    const baseUsername = deriveBaseUsername(email);
+    const generatedUsername = await generateUniqueUsername(db, baseUsername);
+    const displayName = humanizeDisplayName(generatedUsername);
+
     await db.transaction(async (tx) => {
       await tx.insert(users).values({
         id: userId,
+        username: generatedUsername,
         displayName,
         email,
         avatarUrl: null,
@@ -572,6 +693,7 @@ export async function authRoutes(
 
     return reply.send({
       id: user.id,
+      username: user.username,
       displayName: user.displayName,
       email: user.email,
       avatarUrl: user.avatarUrl,
@@ -659,6 +781,7 @@ export async function authRoutes(
 
     return reply.send({
       id: updated.id,
+      username: updated.username,
       displayName: updated.displayName,
       email: updated.email,
       avatarUrl: updated.avatarUrl,
@@ -736,9 +859,16 @@ async function findOrCreateUser(db: Database, googleUser: GoogleUserInfo, defaul
     // Try to create the user — silently ignore email conflicts (concurrent first-login)
     const newUserId = crypto.randomUUID();
     const now = new Date();
+
+    // Generate username from email
+    const baseUsername = deriveBaseUsername(googleUser.email);
+    const generatedUsername = await generateUniqueUsername(db, baseUsername);
+    const displayName = humanizeDisplayName(generatedUsername);
+
     await tx.insert(users).values({
       id: newUserId,
-      displayName: googleUser.name,
+      username: generatedUsername,
+      displayName,
       email: googleUser.email,
       avatarUrl: googleUser.picture ?? null,
       planId: defaultPlanId,

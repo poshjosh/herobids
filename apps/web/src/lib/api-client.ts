@@ -106,6 +106,7 @@ export interface UserNotificationPreferences {
 
 export interface MeResponse {
   id: string;
+  username: string;
   displayName: string;
   email: string;
   avatarUrl: string | null;
@@ -154,20 +155,20 @@ export const auth = {
       method: 'POST',
       body: JSON.stringify({ code }),
     }),
-  register: (email: string, password: string, displayName: string) =>
+  register: (email: string, password: string) =>
     request<{ token: string }>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, displayName }),
+      body: JSON.stringify({ email, password }),
     }),
   login: (email: string, password: string) =>
     request<{ token: string }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
-  sendLoginLink: (email: string) =>
+  sendLoginLink: (email: string, username?: string) =>
     request<{ ok: boolean }>('/auth/send-login-link', {
       method: 'POST',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, ...(username ? { username } : {}) }),
     }),
   me: () => request<MeResponse>('/auth/me'),
   updateMe: (data: { preferredLocale?: string | null; telegramChatId?: string | null; notificationPreferences?: { sendMessage?: { email?: { enabled: boolean } } } | null }) =>

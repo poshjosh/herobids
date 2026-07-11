@@ -63,7 +63,7 @@ export const messages: Record<string, string> = {
   'auth.callback.backToSignIn': 'साइन इन पर वापस जाएं',
   'auth.callback.missingCode': 'कॉलबैक URL में एक्सचेंज कोड गायब है।',
   'auth.error.default': 'प्रमाणीकरण विफल। कृपया पुनः प्रयास करें।',
-  'auth.register.required_fields': 'ईमेल, पासवर्ड और प्रदर्शन नाम आवश्यक हैं।',
+  'auth.register.required_fields': 'ईमेल और पासवर्ड आवश्यक है।',
   'auth.register.password_too_short': 'पासवर्ड कम से कम {minLength} अक्षरों का होना चाहिए।',
   'auth.register.invalid_email': 'एक मान्य ईमेल पता दर्ज करें।',
   'auth.register.email_taken': 'इस ईमेल के साथ एक खाता पहले से मौजूद है।',
