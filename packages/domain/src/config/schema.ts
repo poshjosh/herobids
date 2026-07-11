@@ -1874,6 +1874,12 @@ export const UnifiedAgentConfigSchema = z.object({
   technical: TechnicalConfigSchema.optional(),
   intelligence: IntelligenceConfigSchema.optional(),
   capabilityMode: CapabilityModeSchema.default('intelligence'),
+  // hybridMode is intentionally .optional() — NOT .default('mixed').
+  // Zod applies .default() before .superRefine(), so a .default('mixed')
+  // would inject hybridMode onto every intelligence agent, causing the
+  // cross-field validation below to reject all intelligence agents.
+  // The 'mixed' default is instead applied at the repository layer
+  // (packages/db/src/agent-repository.ts) and API layer (apps/api).
   hybridMode: HybridModeSchema.optional(),
   execution: z.object({
     mode: z.enum(['paper', 'shadow', 'live']).optional(),
