@@ -82,7 +82,7 @@ describe('api-client — 401 handling', () => {
 
     let caught: unknown;
     try {
-      await auth.register('test@example.com', 'pass', 'Alice');
+      await auth.register('test@example.com', 'pass');
     } catch (e) {
       caught = e;
     }
@@ -130,7 +130,7 @@ describe('api-client — 401 handling', () => {
 
     let caught: unknown;
     try {
-      await auth.register('test@example.com', 'short', 'Alice');
+      await auth.register('test@example.com', 'short');
     } catch (e) {
       caught = e;
     }

@@ -19,6 +19,8 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [newUser, setNewUser] = useState(false);
+  const [username, setUsername] = useState('');
 
   const isPasswordExpanded = pageState === 'passwordExpanded' || pageState === 'signingInWithPassword';
   const isLinkSent = pageState === 'loginLinkSent' || pageState === 'resendingLoginLink';
@@ -29,7 +31,7 @@ export function LoginPage() {
     setPending(true);
     setPageState('sendingLoginLink');
     try {
-      await auth.sendLoginLink(email);
+      await auth.sendLoginLink(email, newUser && username ? username : undefined);
       setPageState('loginLinkSent');
     } catch (err) {
       setError(localizeApiError(intl, err, 'auth.error.default'));
@@ -76,7 +78,7 @@ export function LoginPage() {
     setPending(true);
     setPageState('resendingLoginLink');
     try {
-      await auth.sendLoginLink(email);
+      await auth.sendLoginLink(email, newUser && username ? username : undefined);
       setPageState('loginLinkSent');
     } catch (err) {
       setError(localizeApiError(intl, err, 'auth.error.default'));
@@ -136,6 +138,24 @@ export function LoginPage() {
   return (
     <PageShell>
       <form onSubmit={(e) => { void handlePasswordSignIn(e); }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        {/* Username field — shown for new users */}
+        {newUser && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label htmlFor="login-username" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
+              {intl.formatMessage({ id: 'auth.username.label' })}
+            </label>
+            <input
+              id="login-username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder={intl.formatMessage({ id: 'auth.username.placeholder' })}
+              autoComplete="username"
+              style={inputStyle}
+            />
+          </div>
+        )}
+
         {/* Email field */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <label htmlFor="login-email" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
@@ -223,7 +243,9 @@ export function LoginPage() {
           >
             {pending && pageState === 'sendingLoginLink'
               ? intl.formatMessage({ id: 'common.loading' })
-              : intl.formatMessage({ id: 'auth.sendLoginLink' })}
+              : newUser
+                ? intl.formatMessage({ id: 'auth.sendRegistrationLink' })
+                : intl.formatMessage({ id: 'auth.sendLoginLink' })}
           </button>
 
           {isPasswordExpanded ? (
@@ -265,6 +287,27 @@ export function LoginPage() {
               {intl.formatMessage({ id: 'auth.signInWithPassword' })}
             </button>
           )}
+        </div>
+        {/* New user / Existing user toggle */}
+        <div style={{ textAlign: 'center', marginTop: '-2px' }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (newUser) { setNewUser(false); setUsername(''); setError(null); }
+              else { setNewUser(true); setError(null); }
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '13px',
+              color: 'var(--color-text-muted)',
+              textDecoration: 'underline',
+              padding: '4px 0',
+            }}
+          >
+            {intl.formatMessage({ id: newUser ? 'auth.existingUser' : 'auth.newUser' })}
+          </button>
         </div>
       </form>
 
