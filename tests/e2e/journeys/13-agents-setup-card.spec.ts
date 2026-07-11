@@ -10,7 +10,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { registerUser } from '../helpers.js';
+import { createAgent, registerUser } from '../helpers.js';
 
 const EMAIL = `j13-${Date.now()}@e2e.local`;
 const PASSWORD = 'E2ePassword13!';
@@ -18,6 +18,8 @@ const PASSWORD = 'E2ePassword13!';
 test.describe('Journey 13: AI Agents setup card UI flow', () => {
   test('new user completes guided trading setup from AI Agents', async ({ page }) => {
     await registerUser(page, EMAIL, PASSWORD, 'E2E User J13');
+
+    await createAgent(page, 'Track markets and surface the setup card.', { preset: 'general' });
 
     await page.goto('/agents');
     await expect(page.getByRole('heading', { name: /AI Agents/i })).toBeVisible({ timeout: 5_000 });
@@ -45,7 +47,7 @@ test.describe('Journey 13: AI Agents setup card UI flow', () => {
     // Submit the form
     await page.getByRole('dialog').getByRole('button', { name: 'Connect AI agent' }).click();
 
-    // Assignment step appears — skip since no agents exist yet
+    // Assignment step appears — skip to keep the setup flow focused on the connection UX.
     await expect(page.getByText(/Which agents should use this connection/i)).toBeVisible({ timeout: 5_000 });
     await page.getByRole('button', { name: 'Skip' }).click();
 

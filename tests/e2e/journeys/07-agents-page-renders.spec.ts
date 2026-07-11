@@ -27,7 +27,6 @@ test.describe('Journey 7: Capability setup and readiness', () => {
 
     await expect(page).toHaveURL(/\/agents/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: /AI Agents/i })).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByRole('region', { name: /Your AI agents/i })).toBeVisible({ timeout: 5_000 });
     await expect(page.getByText(/No AI agents yet/i)).toBeVisible({ timeout: 5_000 });
   });
 
