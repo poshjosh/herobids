@@ -2,23 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { deriveCapabilityMode } from './derive-capability-mode.js';
 
 describe('deriveCapabilityMode', () => {
-  it('returns both when trading skill and goal are present', () => {
-    expect(deriveCapabilityMode([{ capabilityFamilies: ['trading'] }], 'Trade BTC')).toBe('both');
+  it('returns hybrid when trading skill and goal are present', () => {
+    expect(deriveCapabilityMode([{ capabilityFamilies: ['trading'] }], 'Trade BTC')).toBe('hybrid');
   });
 
-  it('returns both when bot-management skill and goal are present', () => {
-    expect(deriveCapabilityMode([{ capabilityFamilies: ['trading'] }], 'Manage my portfolio')).toBe('both');
+  it('returns hybrid when bot-management skill and goal are present', () => {
+    expect(deriveCapabilityMode([{ capabilityFamilies: ['trading'] }], 'Manage my portfolio')).toBe('hybrid');
   });
 
-  it('returns both when both trading and bot-management skills with goal are present', () => {
+  it('returns hybrid when both trading and bot-management skills with goal are present', () => {
     expect(deriveCapabilityMode([
       { capabilityFamilies: ['trading'] },
       { capabilityFamilies: ['trading'] },
-    ], 'Trade BTC')).toBe('both');
+    ], 'Trade BTC')).toBe('hybrid');
   });
 
-  it('returns both when custom skill has trading capability family and goal', () => {
-    expect(deriveCapabilityMode([{ capabilityFamilies: ['trading'] }], 'My custom strategy')).toBe('both');
+  it('returns hybrid when custom skill has trading capability family and goal', () => {
+    expect(deriveCapabilityMode([{ capabilityFamilies: ['trading'] }], 'My custom strategy')).toBe('hybrid');
   });
 
   it('returns intelligence when goal is present but no trading skills', () => {

@@ -7,7 +7,7 @@ export function deriveCapabilityMode(
 ): CapabilityMode {
   const hasTradingSkill = hasCapabilityFamily(skills, 'trading');
   const hasIntelligence = goal.trim().length > 0;
-  if (hasTradingSkill && hasIntelligence) return 'both';
+  if (hasTradingSkill && hasIntelligence) return 'hybrid';
   if (hasIntelligence) return 'intelligence';
   return 'technical';
 }

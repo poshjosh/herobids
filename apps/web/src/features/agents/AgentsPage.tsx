@@ -21,7 +21,7 @@ import { resolveCreateAgentModelPayload } from './create-agent-models.js';
 import { buildCreateAgentPayload, resolveCreateAgentConnectionIds } from './agent-payloads.js';
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, parseTickIntervalMinutesInput } from './tick-interval.js';
-import { type CapabilityMode } from './CapabilitySelector.js';
+import { type CapabilityMode, type HybridMode } from './CapabilitySelector.js';
 import { StyleSelector } from './StyleSelector.js';
 import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
 import { generateAgentName } from './agent-name.js';
@@ -40,6 +40,7 @@ interface IntentState {
   name: string;
   goal: string;
   capabilityMode: CapabilityMode;
+  hybridMode: HybridMode;
   /** true = technical pre-filter scanner runs before LLM decides (ON by default for trading agents) */
   technicalPreFilterEnabled: boolean;
   technicalConfig: TechnicalConfigFormState;
@@ -358,6 +359,7 @@ function CreateAgentFlow({
     name: '',
     goal: '',
     capabilityMode: 'intelligence',
+    hybridMode: 'mixed',
     technicalPreFilterEnabled: false,
     technicalConfig: defaultTechnicalConfigFormState(),
     skillPreset: 'trading',
@@ -506,7 +508,7 @@ function CreateAgentFlow({
         : [];
       const effectiveSkills = resolvedSkills.length > 0 ? resolvedSkills : syntheticTradingSkill;
       const hasTradingSkill = hasCapabilityFamily(effectiveSkills, 'trading');
-      const derived: CapabilityMode = state.technicalPreFilterEnabled && hasTradingSkill ? 'both' : 'intelligence';
+      const derived: CapabilityMode = state.technicalPreFilterEnabled && hasTradingSkill ? 'hybrid' : 'intelligence';
       if (derived !== state.capabilityMode) {
         return { ...state, capabilityMode: derived };
       }
@@ -558,7 +560,7 @@ function CreateAgentFlow({
     { provider: intent.provider, lightModel: intent.lightModel, heavyModel: intent.heavyModel },
     savedModelSettings,
   );
-  const showIntelligence = intent.capabilityMode === 'intelligence' || intent.capabilityMode === 'both';
+  const showIntelligence = intent.capabilityMode === 'intelligence' || intent.capabilityMode === 'hybrid';
   const requiresTradingSetup = intent.skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
   const availableConnections = (tradingConnectionsQuery.data?.connections ?? []).filter(
     (connection) => connection.status === 'active',
@@ -599,6 +601,7 @@ function CreateAgentFlow({
         name: intent.name,
         goal: intent.goal,
         capabilityMode: intent.capabilityMode,
+        hybridMode: intent.hybridMode,
         technicalPreFilterEnabled: intent.technicalPreFilterEnabled,
         technical: technicalPayload,
         skillIds: intent.skillIds,
@@ -774,7 +777,7 @@ function CreateAgentFlow({
 
           {/* 2. Goal */}
           <div data-field="goal" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <FieldLabel>{intl.formatMessage({ id: intent.capabilityMode === 'both' ? 'agents.create.goalBoth' : 'agents.create.goal' })}</FieldLabel>
+            <FieldLabel>{intl.formatMessage({ id: intent.capabilityMode === 'hybrid' || intent.capabilityMode === 'both' ? 'agents.create.goalBoth' : 'agents.create.goal' })}</FieldLabel>
             <textarea
               style={{ ...inputStyle, minHeight: '72px', resize: 'vertical' }}
               value={intent.goal}
@@ -1315,7 +1318,11 @@ function CreateAgentFlow({
             />
             <ReviewRow
               label={intl.formatMessage({ id: 'agents.review.capabilityMode' })}
-              value={intl.formatMessage({ id: `agents.capability.${intent.capabilityMode}.label` })}
+              value={intent.capabilityMode === 'hybrid'
+                ? (intent.hybridMode === 'scanner_gated'
+                  ? 'Hybrid (Scanner-Gated)'
+                  : 'Hybrid (Mixed Wake)')
+                : intl.formatMessage({ id: `agents.capability.${intent.capabilityMode}.label` })}
             />
           </tbody>
         </table>

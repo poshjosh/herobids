@@ -377,10 +377,17 @@ export function AgentFormBody(props: AgentFormBodyProps) {
           props.requiresTradingSetup ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
               {props.tradingSetupSlot}
-              <WakeSourceSection
-                sources={TRADING_WAKE_SOURCES}
-                selected={props.subscribedSources}
-                onChange={(sources) => {
+              {/* Wake sources: hidden in scanner_gated mode (scanner is the implicit/only trading wake source) */}
+              {props.value.hybridMode === 'scanner_gated' ? (
+                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                  Scanner-gated mode: trading LLM turns are triggered only by scanner entry/exit signals.
+                  Other wake sources are disabled.
+                </div>
+              ) : (
+                <WakeSourceSection
+                  sources={TRADING_WAKE_SOURCES}
+                  selected={props.subscribedSources}
+                  onChange={(sources) => {
                   // DESIGN DECISION: Reminders are always-on for ALL agents.
                   //
                   // Rationale:
@@ -401,6 +408,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                   }
                 }}
               />
+              )}
             </div>
           ) : props.tradingSetupSlot
         }
@@ -447,6 +455,47 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                   {intl.formatMessage({ id: 'agents.create.technicalPreFilter.help' })}
                 </span>
               </div>
+
+              {/* Hybrid Mode Selector — only visible when hybrid capability is active */}
+              {props.value.capabilityMode === 'hybrid' && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '8px', color: 'var(--color-text-primary)' }}>
+                    Hybrid Wake Mode
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {([
+                      { value: 'mixed' as const, label: 'Hybrid (Mixed Wake)', description: 'Scanner + LLM. Scanner AND other wake sources may trigger LLM turns.' },
+                      { value: 'scanner_gated' as const, label: 'Hybrid (Scanner-Gated)', description: 'Scanner + LLM. ONLY scanner events trigger trading LLM turns.' },
+                    ]).map((option) => {
+                      const active = props.value.hybridMode === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => props.onChange({ hybridMode: option.value })}
+                          style={{
+                            flex: 1,
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            border: `1.5px solid ${active ? 'var(--color-brand)' : 'var(--color-border)'}`,
+                            background: active ? 'var(--color-brand-subtle, rgba(99,102,241,0.06))' : 'var(--color-surface-1)',
+                            cursor: 'pointer',
+                            textAlign: 'left' as const,
+                            transition: 'border-color 0.12s',
+                          }}
+                        >
+                          <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '4px' }}>
+                            {option.label}
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                            {option.description}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Technical Config — hidden with CSS (not unmounted) to avoid layout jump on toggle */}
               <div style={{ display: props.value.technicalPreFilterEnabled ? 'block' : 'none' }}>

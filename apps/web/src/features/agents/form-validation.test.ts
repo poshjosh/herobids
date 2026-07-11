@@ -11,7 +11,7 @@ function validIntent(overrides: Partial<Parameters<typeof validateCreateAgentFor
   return {
     name: 'test-agent',
     goal: 'Trade BTC',
-    capabilityMode: 'both' as const,
+    capabilityMode: 'hybrid' as const,
     capital: '1000',
     tickIntervalMins: '',
     maxOpenPositions: '',
@@ -47,9 +47,9 @@ describe('validateCreateAgentForm', () => {
     expect(result.errors.goal).toBeDefined();
   });
 
-  it('returns error for missing goal in both mode', () => {
+  it('returns error for missing goal in hybrid mode', () => {
     const result = validateCreateAgentForm(
-      validIntent({ goal: '', capabilityMode: 'both' }),
+      validIntent({ goal: '', capabilityMode: 'hybrid' }),
       DEFAULT_CONSTRAINTS,
     );
     expect(result.valid).toBe(false);

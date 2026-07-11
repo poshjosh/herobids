@@ -1,5 +1,5 @@
 import type { ProviderSetupResult } from '../../lib/api-client.js';
-import type { CapabilityMode } from './CapabilitySelector.js';
+import type { CapabilityMode, HybridMode } from './CapabilitySelector.js';
 import type { TechnicalConfig } from './technical-config-helpers.js';
 import type { RuntimePolicyOverrides } from './style-mapping.js';
 import { parseTickIntervalMinutesInput } from './tick-interval.js';
@@ -60,6 +60,7 @@ export interface CreateAgentIntentPayloadInput {
   name: string;
   goal: string;
   capabilityMode: CapabilityMode;
+  hybridMode: HybridMode;
   technicalPreFilterEnabled: boolean;
   technical: TechnicalConfig | null;
   skillIds: string[];
@@ -97,6 +98,7 @@ export interface UpdateAgentPayloadInput {
   name: string;
   prompt: string;
   capabilityMode: CapabilityMode;
+  hybridMode: HybridMode;
   technicalPreFilterEnabled: boolean;
   technical: TechnicalConfig | null;
   skillIds: string[];
@@ -153,6 +155,8 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   tickIntervalMs?: number;
   capital?: string;
   maxDrawdownPct?: number;
+  capabilityMode?: CapabilityMode;
+  hybridMode?: HybridMode;
   technical?: TechnicalConfig;
   strategyPreset?: string;
   style?: string;
@@ -162,7 +166,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   notificationPolicy?: { sendMessage: { email: { enabled: boolean; source: 'explicit_update' } } } | null;
 } {
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
-  const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'both';
+  const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'hybrid';
   const includeTechnical = input.technicalPreFilterEnabled;
 
   const subscribedSources = input.subscribedSources ?? [];
@@ -200,6 +204,8 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.runtimePolicyOverrides ? { runtimePolicyOverrides: input.runtimePolicyOverrides } : {}),
     ...(includeTechnical && input.technical ? { technical: input.technical } : {}),
     ...(wakePreferences ? { wakePreferences } : {}),
+    capabilityMode: input.capabilityMode,
+    ...(input.capabilityMode === 'hybrid' ? { hybridMode: input.hybridMode } : {}),
   };
 }
 
@@ -228,6 +234,8 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   provider: string | null;
   lightModel: string | null;
   heavyModel: string | null;
+  capabilityMode?: CapabilityMode;
+  hybridMode?: HybridMode | null;
   technical?: TechnicalConfig | null;
   strategyPreset?: string | null;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
@@ -243,7 +251,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     ? (input.originalTickIntervalMs ?? null)
     : parsedTickInterval ?? null;
 
-  const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'both';
+  const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'hybrid';
   const includeTechnical = input.technicalPreFilterEnabled;
 
   // Resolve wakePreferences for update:
@@ -285,5 +293,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     ...(wakePreferences !== undefined ? { wakePreferences } : {}),
     // 'inherit' → send null to clear any existing override; allow/disable → send explicit policy; undefined → null (same as inherit)
     notificationPolicy: emailDeliveryPolicy ?? null,
+    capabilityMode: input.capabilityMode,
+    hybridMode: input.capabilityMode === 'hybrid' ? input.hybridMode : null,
   };
 }

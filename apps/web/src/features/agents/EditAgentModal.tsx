@@ -12,7 +12,7 @@ import { buildUpdateAgentPayload, normalizeEscalationPolicy } from './agent-payl
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval, parseTickIntervalMinutesInput } from './tick-interval.js';
-import { type CapabilityMode } from './CapabilitySelector.js';
+import { type CapabilityMode, type HybridMode } from './CapabilitySelector.js';
 import { StyleSelector } from './StyleSelector.js';
 import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
 import { technicalFormStateToPayload } from './technical-config-helpers.js';
@@ -191,7 +191,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     const parsed = parseTickIntervalMinutesInput(tickIntervalMins);
     return parsed.kind === 'valid' ? parsed.tickIntervalMs : null;
   }
-  const showIntelligence = form.capabilityMode === 'intelligence' || form.capabilityMode === 'both';
+  const showIntelligence = form.capabilityMode === 'intelligence' || form.capabilityMode === 'hybrid';
   const requiresTradingSetup = skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
   // Short-circuit to false when a non-trading preset (Custom or
   // Personal Assistant) is selected — no trading skills are inferred
@@ -223,7 +223,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       const effectiveSkills =
         resolvedSkills.length > 0 ? resolvedSkills : syntheticTradingSkill;
       const hasTradingSkill = hasCapabilityFamily(effectiveSkills, 'trading');
-      const derived: CapabilityMode = state.technicalPreFilterEnabled && hasTradingSkill ? 'both' : 'intelligence';
+      const derived: CapabilityMode = state.technicalPreFilterEnabled && hasTradingSkill ? 'hybrid' : 'intelligence';
       if (derived !== state.capabilityMode) {
         return { ...state, capabilityMode: derived };
       }
@@ -307,6 +307,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         name: form.name,
         prompt: form.goal,
         capabilityMode: form.capabilityMode,
+        hybridMode: form.hybridMode,
         technicalPreFilterEnabled: form.technicalPreFilterEnabled,
         technical: technicalPayload,
         strategyPreset: hasStrategyPreset

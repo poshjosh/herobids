@@ -951,6 +951,10 @@ export interface Agent {
       };
     };
   } | null;
+  /** Capability mode: 'intelligence' | 'hybrid'. Derived from unified config. */
+  capabilityMode?: string | null;
+  /** Hybrid sub-mode: 'mixed' | 'scanner_gated'. Only meaningful when capabilityMode='hybrid'. */
+  hybridMode?: string | null;
   createdAt: string;
   updatedAt: string;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;

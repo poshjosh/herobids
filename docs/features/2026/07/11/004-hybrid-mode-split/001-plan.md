@@ -134,7 +134,7 @@ trading turns.
 - `scanner_gated` agent: user message or reminder → still processed normally
 - `mixed` agent: behavior unchanged from current hybrid
 
-## Part E — Web UI (Phase 5) [PENDING]
+## Part E — Web UI (Phase 5) [DONE]
 
 ### Changes
 
@@ -233,3 +233,19 @@ invalid in the E2E race-condition bug fix.
 3. **Redundant test case in `hybrid-agent-evaluator.test.ts`** — `scanner_gated + no wake signal → false` duplicates the generic `no wake signal` test.
 4. **`watch_threshold` scanner_gated check uses inline `isAgentScannerGated`** without pre-computation (unlike discovery_delta/regime_change). O(agents) loop makes this fine, but pattern inconsistent.
 5. **Scanner_gated Redis flag set before full startup completion.** Flag lives up to 24h TTL if process crashes mid-startup; `isActive` guards on monitor side make this harmless.
+
+### [Part E] Web UI
+
+**MEDIUM:**
+1. **Hardcoded English strings for hybrid mode labels in review row** (`AgentsPage.tsx`). Should use i18n (`intl.formatMessage`) for consistency with all other review row values.
+2. **`CapabilitySelector` i18n keys still use `'both'` prefix** (`agents.capability.both.label`). Semantically stale but functionally correct. Rename to `agents.capability.hybrid.*` in a follow-up i18n cleanup.
+3. **`hybridMode` defaults to `'mixed'` for intelligence agents in form state.** Invisible in UI (selector gated behind `capabilityMode === 'hybrid'`), but carries a misleading value. Default to `'mixed'` only when `capabilityMode === 'hybrid'`.
+
+**LOW:**
+4. **Inline styles in hybrid mode selector duplicate `CapabilitySelector` pattern.** Extract a reusable `ModeToggleGroup` component or share a style constant.
+5. **`hybridMode` sent as `null` for non-hybrid agents in update payload.** API should guard against this (Part C should handle it).
+
+**CRITICAL (fixed):**
+- Removed dead `=== 'both'` guards from `form-validation.ts`, `AgentsPage.tsx`, `EditAgentModal.tsx`, `agent-payloads.ts`
+- Removed unused `showTechnical` variable from `form-validation.ts`
+- Updated `form-validation.test.ts` to use `'hybrid'` instead of `'both'`

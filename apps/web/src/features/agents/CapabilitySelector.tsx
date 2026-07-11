@@ -1,6 +1,8 @@
 import { useIntl } from 'react-intl';
 
-export type CapabilityMode = 'intelligence' | 'technical' | 'both';
+export type CapabilityMode = 'intelligence' | 'hybrid' | 'technical';
+
+export type HybridMode = 'mixed' | 'scanner_gated';
 
 interface CapabilitySelectorProps {
   value: CapabilityMode;
@@ -29,7 +31,7 @@ const MODES: Array<{
     icon: '◈',
   },
   {
-    id: 'both',
+    id: 'hybrid',
     labelKey: 'agents.capability.both.label',
     descriptionKey: 'agents.capability.both.description',
     costKey: 'agents.capability.both.cost',

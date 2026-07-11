@@ -1,4 +1,4 @@
-import type { CapabilityMode } from './CapabilitySelector.js';
+import type { CapabilityMode, HybridMode } from './CapabilitySelector.js';
 import type { TechnicalConfigFormState } from './technical-config-helpers.js';
 import type { Agent } from '../../lib/api-client.js';
 import { extractAgentObjective } from './agent-display.js';
@@ -16,6 +16,7 @@ export interface AgentFormState {
 
   // Capability
   capabilityMode: CapabilityMode;
+  hybridMode: HybridMode;
   /** true = scanner pre-filters trade candidates before LLM decides (hybrid mode). Only applies to trading agents. */
   technicalPreFilterEnabled: boolean;
   technicalConfig: TechnicalConfigFormState;
@@ -68,9 +69,19 @@ export interface AgentFormState {
  */
 export function agentToFormState(agent: Agent): AgentFormState {
   const goal = extractAgentObjective(agent.prompt);
-  const capabilityMode: CapabilityMode = agent.technical
-    ? (goal.trim() ? 'both' : 'technical')
-    : 'intelligence';
+  // Read persisted capabilityMode from agent config when available (004-hybrid-mode-split).
+  // Fall back to derivation from technical config + goal for backward compatibility
+  // with agents created before the capabilityMode field was introduced.
+  const capabilityMode: CapabilityMode = (
+    agent.capabilityMode === 'intelligence' || agent.capabilityMode === 'hybrid' || agent.capabilityMode === 'technical'
+  ) ? agent.capabilityMode
+    : agent.technical
+      ? (goal.trim() ? 'hybrid' : 'technical')
+      : 'intelligence';
+  const hybridMode: HybridMode = (
+    agent.hybridMode === 'mixed' || agent.hybridMode === 'scanner_gated'
+  ) ? agent.hybridMode
+    : 'mixed';
 
   // Runtime-validate union literal fields
   const VALID_EXECUTION_MODES = ['paper', 'shadow', 'live', ''] as const;
@@ -101,6 +112,7 @@ export function agentToFormState(agent: Agent): AgentFormState {
     name: agent.name,
     goal,
     capabilityMode,
+    hybridMode,
     technicalPreFilterEnabled: agent.technical != null,
     technicalConfig: agent.technical
       ? technicalConfigToFormState(agent.technical)
@@ -152,6 +164,7 @@ export function intentToFormState(intent: {
   name: string;
   goal: string;
   capabilityMode: CapabilityMode;
+  hybridMode: HybridMode;
   technicalPreFilterEnabled: boolean;
   technicalConfig: TechnicalConfigFormState;
   skillIds: string[];
@@ -178,6 +191,7 @@ export function intentToFormState(intent: {
     name,
     goal,
     capabilityMode,
+    hybridMode,
     technicalPreFilterEnabled,
     technicalConfig,
     skillIds,
@@ -204,6 +218,7 @@ export function intentToFormState(intent: {
     name,
     goal,
     capabilityMode,
+    hybridMode,
     technicalPreFilterEnabled,
     technicalConfig,
     skillIds,
