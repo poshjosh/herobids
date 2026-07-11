@@ -734,9 +734,11 @@ export const messages: Record<string, string> = {
   'agents.capability.technical.label': 'تقني',
   'agents.capability.technical.description': 'فحص مؤشرات قائم على القواعد. بلا LLM.',
   'agents.capability.technical.cost': 'من دون تكلفة LLM',
-  'agents.capability.both.label': 'الذكاء + التقني',
-  'agents.capability.both.description': 'تقوم المؤشرات بتصفية المرشحين أولاً، ثم يتخذ LLM القرار النهائي.',
-  'agents.capability.both.cost': 'تكلفة LLM أقل',
+  'agents.capability.hybrid.label': 'الذكاء + التقني',
+  'agents.capability.hybrid.description': 'تقوم المؤشرات بتصفية المرشحين أولاً، ثم يتخذ LLM القرار النهائي.',
+  'agents.capability.hybrid.cost': 'تكلفة LLM أقل',
+  'agents.capability.hybrid.mixed.label': 'هجين (تنبيه مختلط)',
+  'agents.capability.hybrid.scannerGated.label': 'هجين (مقيد بالماسح)',
 
   // Technical config section
   'agents.technical.title': 'الإعدادات التقنية',

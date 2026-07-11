@@ -777,7 +777,7 @@ function CreateAgentFlow({
 
           {/* 2. Goal */}
           <div data-field="goal" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <FieldLabel>{intl.formatMessage({ id: intent.capabilityMode === 'hybrid' || intent.capabilityMode === 'both' ? 'agents.create.goalBoth' : 'agents.create.goal' })}</FieldLabel>
+            <FieldLabel>{intl.formatMessage({ id: intent.capabilityMode === 'hybrid' ? 'agents.create.goalBoth' : 'agents.create.goal' })}</FieldLabel>
             <textarea
               style={{ ...inputStyle, minHeight: '72px', resize: 'vertical' }}
               value={intent.goal}
@@ -1318,11 +1318,11 @@ function CreateAgentFlow({
             />
             <ReviewRow
               label={intl.formatMessage({ id: 'agents.review.capabilityMode' })}
-              value={intent.capabilityMode === 'hybrid'
+              value={intl.formatMessage({ id: intent.capabilityMode === 'hybrid'
                 ? (intent.hybridMode === 'scanner_gated'
-                  ? 'Hybrid (Scanner-Gated)'
-                  : 'Hybrid (Mixed Wake)')
-                : intl.formatMessage({ id: `agents.capability.${intent.capabilityMode}.label` })}
+                  ? 'agents.capability.hybrid.scannerGated.label'
+                  : 'agents.capability.hybrid.mixed.label')
+                : `agents.capability.${intent.capabilityMode}.label` })}
             />
           </tbody>
         </table>

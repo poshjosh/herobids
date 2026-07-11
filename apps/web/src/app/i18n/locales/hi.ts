@@ -736,9 +736,11 @@ export const messages: Record<string, string> = {
   'agents.capability.technical.label': 'टेक्निकल',
   'agents.capability.technical.description': 'नियम-आधारित इंडिकेटर स्कैनिंग। LLM नहीं।',
   'agents.capability.technical.cost': 'कोई LLM लागत नहीं',
-  'agents.capability.both.label': 'इंटेलिजेंस + टेक्निकल',
-  'agents.capability.both.description': 'इंडिकेटर उम्मीदवारों को पहले छाँटते हैं, LLM अंतिम निर्णय लेता है।',
-  'agents.capability.both.cost': 'कम LLM लागत',
+  'agents.capability.hybrid.label': 'इंटेलिजेंस + टेक्निकल',
+  'agents.capability.hybrid.description': 'इंडिकेटर उम्मीदवारों को पहले छाँटते हैं, LLM अंतिम निर्णय लेता है।',
+  'agents.capability.hybrid.cost': 'कम LLM लागत',
+  'agents.capability.hybrid.mixed.label': 'हाइब्रिड (मिश्रित वेक)',
+  'agents.capability.hybrid.scannerGated.label': 'हाइब्रिड (स्कैनर-गेटेड)',
 
   // Technical config section
   'agents.technical.title': 'टेक्निकल कॉन्फ़िगरेशन',

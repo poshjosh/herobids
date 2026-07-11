@@ -82,6 +82,10 @@ export function agentToFormState(agent: Agent): AgentFormState {
     agent.hybridMode === 'mixed' || agent.hybridMode === 'scanner_gated'
   ) ? agent.hybridMode
     : 'mixed';
+  // Note: hybridMode defaults to 'mixed' for all agents. The UI hides the
+  // hybrid-mode selector when capabilityMode !== 'hybrid', and the payload
+  // builders only transmit hybridMode for hybrid agents — so the value for
+  // intelligence agents is never surfaced to users or the API.
 
   // Runtime-validate union literal fields
   const VALID_EXECUTION_MODES = ['paper', 'shadow', 'live', ''] as const;

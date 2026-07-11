@@ -776,9 +776,11 @@ export const messages: Record<string, string> = {
   'agents.capability.technical.label': 'Technical',
   'agents.capability.technical.description': 'Rule-based indicator scanning. No LLM.',
   'agents.capability.technical.cost': 'No LLM cost',
-  'agents.capability.both.label': 'Intelligence + Technical',
-  'agents.capability.both.description': 'Indicators pre-filter candidates, LLM makes final call.',
-  'agents.capability.both.cost': 'Reduced LLM cost',
+  'agents.capability.hybrid.label': 'Intelligence + Technical',
+  'agents.capability.hybrid.description': 'Indicators pre-filter candidates, LLM makes final call.',
+  'agents.capability.hybrid.cost': 'Reduced LLM cost',
+  'agents.capability.hybrid.mixed.label': 'Hybrid (Mixed Wake)',
+  'agents.capability.hybrid.scannerGated.label': 'Hybrid (Scanner-Gated)',
 
   // Technical config section
   'agents.technical.title': 'Technical Configuration',

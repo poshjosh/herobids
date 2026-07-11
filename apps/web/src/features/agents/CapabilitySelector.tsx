@@ -25,9 +25,9 @@ const MODES: Array<{
   },
   {
     id: 'hybrid',
-    labelKey: 'agents.capability.both.label',
-    descriptionKey: 'agents.capability.both.description',
-    costKey: 'agents.capability.both.cost',
+    labelKey: 'agents.capability.hybrid.label',
+    descriptionKey: 'agents.capability.hybrid.description',
+    costKey: 'agents.capability.hybrid.cost',
     icon: '⊞',
   },
 ];
