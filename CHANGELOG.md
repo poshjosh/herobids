@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.18 - 2026-07-11
+
 ### Added
 - **Login-Link-First Auth UX:** Replaced the login/register toggle with a single email-first screen. Email login links are now the primary auth path, with password sign-in available as an inline fallback. New `POST /auth/send-login-link` and `GET /auth/login-link/callback` endpoints with Redis-backed one-time tokens, resend cooldown, and rate limiting. Google OAuth unchanged.
 - **Agent Email Delivery UX:** Users can now control whether their agents email them
