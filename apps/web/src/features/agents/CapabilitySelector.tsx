@@ -1,6 +1,6 @@
 import { useIntl } from 'react-intl';
 
-export type CapabilityMode = 'intelligence' | 'hybrid' | 'technical';
+export type CapabilityMode = 'intelligence' | 'hybrid';
 
 export type HybridMode = 'mixed' | 'scanner_gated';
 
@@ -22,13 +22,6 @@ const MODES: Array<{
     descriptionKey: 'agents.capability.intelligence.description',
     costKey: 'agents.capability.intelligence.cost',
     icon: '◎',
-  },
-  {
-    id: 'technical',
-    labelKey: 'agents.capability.technical.label',
-    descriptionKey: 'agents.capability.technical.description',
-    costKey: 'agents.capability.technical.cost',
-    icon: '◈',
   },
   {
     id: 'hybrid',
@@ -83,7 +76,7 @@ export function CapabilitySelector({ value, onChange }: CapabilitySelectorProps)
                 style={{
                   fontSize: '10px',
                   fontWeight: '600',
-                  color: mode.id === 'technical' ? 'var(--color-success, #22c55e)' : 'var(--color-text-muted)',
+                  color: 'var(--color-text-muted)',
                   textTransform: 'uppercase' as const,
                   letterSpacing: '0.04em',
                 }}

@@ -153,7 +153,7 @@ trading turns.
 - `hybrid` + `mixed` → "Hybrid (Mixed Wake)"
 - `hybrid` + `scanner_gated` → "Hybrid (Scanner-Gated)"
 
-## Part F — Remove Dead Capability Value (Phase 6) [PENDING]
+## Part F — Remove Dead Capability Value (Phase 6) [DONE]
 
 The current `capabilityMode` type includes `'technical'` from the original
 three-value model. This value is unused at runtime and was already flagged as
@@ -249,3 +249,9 @@ invalid in the E2E race-condition bug fix.
 - Removed dead `=== 'both'` guards from `form-validation.ts`, `AgentsPage.tsx`, `EditAgentModal.tsx`, `agent-payloads.ts`
 - Removed unused `showTechnical` variable from `form-validation.ts`
 - Updated `form-validation.test.ts` to use `'hybrid'` instead of `'both'`
+
+### [Part F] Remove Dead Capability Value
+
+**LOW:**
+1. **`deriveCapabilityMode` function only used in its own test file.** Consider removing the function and tests since it's dead code — actual CD is derived inline in `AgentsPage.tsx` and `EditAgentModal.tsx`.
+2. **`agent-payloads.test.ts` had 3 tests using `'technical'` mode.** Updated to use `'hybrid'` with adjusted assertions. The "technical-only" test concept doesn't exist in the new model.

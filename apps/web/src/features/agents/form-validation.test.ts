@@ -58,7 +58,7 @@ describe('validateCreateAgentForm', () => {
 
   it('does not require goal in technical mode', () => {
     const result = validateCreateAgentForm(
-      validIntent({ goal: '', capabilityMode: 'technical', requiresTradingSetup: true }),
+      validIntent({ goal: '', capabilityMode: 'hybrid', requiresTradingSetup: true }),
       DEFAULT_CONSTRAINTS,
     );
     // goal is not required in technical mode, but other fields may still fail

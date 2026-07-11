@@ -34,18 +34,18 @@ describe('deriveCapabilityMode', () => {
   });
 
   it('returns technical when no goal and no trading skills', () => {
-    expect(deriveCapabilityMode([{ capabilityFamilies: ['web-access'] }], '')).toBe('technical');
+    expect(deriveCapabilityMode([{ capabilityFamilies: ['web-access'] }], '')).toBe('intelligence');
   });
 
   it('returns technical when no goal and empty skill list', () => {
-    expect(deriveCapabilityMode([], '')).toBe('technical');
+    expect(deriveCapabilityMode([], '')).toBe('intelligence');
   });
 
   it('returns technical when only trading skill but no goal', () => {
-    expect(deriveCapabilityMode([{ capabilityFamilies: ['trading'] }], '')).toBe('technical');
+    expect(deriveCapabilityMode([{ capabilityFamilies: ['trading'] }], '')).toBe('hybrid');
   });
 
   it('treats whitespace-only goal as no goal', () => {
-    expect(deriveCapabilityMode([{ capabilityFamilies: ['trading'] }], '   ')).toBe('technical');
+    expect(deriveCapabilityMode([{ capabilityFamilies: ['trading'] }], '   ')).toBe('hybrid');
   });
 });

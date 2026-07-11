@@ -73,10 +73,10 @@ export function agentToFormState(agent: Agent): AgentFormState {
   // Fall back to derivation from technical config + goal for backward compatibility
   // with agents created before the capabilityMode field was introduced.
   const capabilityMode: CapabilityMode = (
-    agent.capabilityMode === 'intelligence' || agent.capabilityMode === 'hybrid' || agent.capabilityMode === 'technical'
+    agent.capabilityMode === 'intelligence' || agent.capabilityMode === 'hybrid'
   ) ? agent.capabilityMode
     : agent.technical
-      ? (goal.trim() ? 'hybrid' : 'technical')
+      ? 'hybrid'
       : 'intelligence';
   const hybridMode: HybridMode = (
     agent.hybridMode === 'mixed' || agent.hybridMode === 'scanner_gated'

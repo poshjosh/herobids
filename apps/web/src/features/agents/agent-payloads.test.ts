@@ -112,11 +112,11 @@ describe('agent payload builders', () => {
     });
   });
 
-  it('buildCreateAgentPayload includes technical config and clears intelligence fields in technical-only mode', () => {
+  it('buildCreateAgentPayload includes technical config and intelligence fields in hybrid mode', () => {
     expect(buildCreateAgentPayload({
       name: '  technical scout  ',
-      goal: 'This should not be sent',
-      capabilityMode: 'technical',
+      goal: 'Trade BTC',
+      capabilityMode: 'hybrid',
       hybridMode: 'mixed',
       technicalPreFilterEnabled: true,
       technical: TECHNICAL_CONFIG,
@@ -138,10 +138,10 @@ describe('agent payload builders', () => {
       stopLossCooldownSecs: '',
     })).toMatchObject({
       name: 'technical scout',
-      prompt: '',
-      skillIds: [],
+      prompt: 'Trade BTC',
+      skillIds: ['trading'],
       technical: TECHNICAL_CONFIG,
-      capabilityMode: 'technical',
+      capabilityMode: 'hybrid',
     });
   });
 
@@ -460,11 +460,11 @@ describe('agent payload builders', () => {
     expect(payload).not.toHaveProperty('connectionIds');
   });
 
-  it('buildUpdateAgentPayload clears execution mode in technical-only mode even when the current agent used to trade', () => {
+  it('buildUpdateAgentPayload clears execution mode in hybrid mode when hasTradingCapability is false', () => {
     expect(buildUpdateAgentPayload({
       name: '  Technical scout  ',
       prompt: 'legacy objective',
-      capabilityMode: 'technical',
+      capabilityMode: 'hybrid',
       hybridMode: 'mixed',
       technicalPreFilterEnabled: true,
       technical: TECHNICAL_CONFIG,
