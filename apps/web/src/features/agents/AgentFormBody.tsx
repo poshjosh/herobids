@@ -273,33 +273,6 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         />
       </div>
 
-      {/* Email delivery — tri-state override */}
-      <div style={fieldGap}>
-        <FieldLabel>
-          {intl.formatMessage({ id: 'agents.create.emailDelivery' })}
-        </FieldLabel>
-        <select
-          style={{ ...inputStyle, cursor: 'pointer' }}
-          value={props.value.emailDelivery}
-          onChange={(e) => props.onChange({ emailDelivery: e.target.value as 'inherit' | 'allow' | 'disable' })}
-        >
-          <option value="inherit">{intl.formatMessage({ id: 'agents.create.emailDelivery.inherit' })}</option>
-          <option value="allow">{intl.formatMessage({ id: 'agents.create.emailDelivery.allow' })}</option>
-          <option value="disable">{intl.formatMessage({ id: 'agents.create.emailDelivery.disable' })}</option>
-        </select>
-        {props.accountEmail && (
-          <div style={helperStyle}>
-            {intl.formatMessage({ id: 'agents.create.emailDelivery.help' })}{' '}
-            <span style={{ fontWeight: 500 }}>{props.accountEmail}</span>
-          </div>
-        )}
-        {!props.accountEmail && (
-          <div style={helperStyle}>
-            {intl.formatMessage({ id: 'agents.create.emailDelivery.helpNoEmail' })}
-          </div>
-        )}
-      </div>
-
       {/* Name + auto-hint */}
       <div data-field="name" style={fieldGap}>
         <FieldLabel>
@@ -340,7 +313,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         formErrors={props.formErrors}
         fieldTabMap={ADVANCED_FIELD_TAB}
         aiConfig={
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
             {props.modelSlot}
             <AgentControlsSection
               value={{
@@ -377,11 +350,32 @@ export function AgentFormBody(props: AgentFormBodyProps) {
               onBlurField={handleFieldBlur}
             />
             {props.computeBudgetSlot}
+
+            {/* Email delivery — tri-state override */}
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
+                {intl.formatMessage({ id: 'agents.create.emailDelivery' })}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
+                {props.accountEmail
+                  ? `${intl.formatMessage({ id: 'agents.create.emailDelivery.help' })} — ${props.accountEmail}`
+                  : intl.formatMessage({ id: 'agents.create.emailDelivery.helpNoEmail' })}
+              </div>
+              <select
+                style={{ ...inputStyle, cursor: 'pointer' }}
+                value={props.value.emailDelivery}
+                onChange={(e) => props.onChange({ emailDelivery: e.target.value as 'inherit' | 'allow' | 'disable' })}
+              >
+                <option value="inherit">{intl.formatMessage({ id: 'agents.create.emailDelivery.inherit' })}</option>
+                <option value="allow">{intl.formatMessage({ id: 'agents.create.emailDelivery.allow' })}</option>
+                <option value="disable">{intl.formatMessage({ id: 'agents.create.emailDelivery.disable' })}</option>
+              </select>
+            </div>
           </div>
         }
         tradingSetup={
           props.requiresTradingSetup ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
               {props.tradingSetupSlot}
               <WakeSourceSection
                 sources={TRADING_WAKE_SOURCES}

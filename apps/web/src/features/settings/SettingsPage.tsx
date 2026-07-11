@@ -226,42 +226,48 @@ export function SettingsPage() {
               }}
             />
 
-            {/* Scout Reasoning Level */}
-            <div>
-              <FieldLabel>{intl.formatMessage({ id: 'aiModels.scoutReasoning.label' })}</FieldLabel>
-              <select
-                aria-label={intl.formatMessage({ id: 'aiModels.scoutReasoning.label' })}
-                value={modelSettings.scoutReasoning}
-                onChange={(e) => {
-                  setModelTouched(true);
-                  setModelSettings({ ...modelSettings, scoutReasoning: e.target.value });
-                }}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-              >
-                <option value="none">{intl.formatMessage({ id: 'aiModels.reasoning.none' })}</option>
-                <option value="low">{intl.formatMessage({ id: 'aiModels.reasoning.low' })}</option>
-                <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
-                <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
-              </select>
-            </div>
-
-            {/* Judge Reasoning Level */}
-            <div>
-              <FieldLabel>{intl.formatMessage({ id: 'aiModels.judgeReasoning.label' })}</FieldLabel>
-              <select
-                aria-label={intl.formatMessage({ id: 'aiModels.judgeReasoning.label' })}
-                value={modelSettings.judgeReasoning}
-                onChange={(e) => {
-                  setModelTouched(true);
-                  setModelSettings({ ...modelSettings, judgeReasoning: e.target.value });
-                }}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-              >
-                <option value="none">{intl.formatMessage({ id: 'aiModels.reasoning.none' })}</option>
-                <option value="low">{intl.formatMessage({ id: 'aiModels.reasoning.low' })}</option>
-                <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
-                <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
-              </select>
+            {/* Reasoning levels side by side */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <FieldLabel>{intl.formatMessage({ id: 'aiModels.scoutReasoning.label' })}</FieldLabel>
+                <select
+                  aria-label={intl.formatMessage({ id: 'aiModels.scoutReasoning.label' })}
+                  value={modelSettings.scoutReasoning}
+                  onChange={(e) => {
+                    setModelTouched(true);
+                    setModelSettings({ ...modelSettings, scoutReasoning: e.target.value });
+                  }}
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                >
+                  <option value="none">{intl.formatMessage({ id: 'aiModels.reasoning.none' })}</option>
+                  <option value="low">{intl.formatMessage({ id: 'aiModels.reasoning.low' })}</option>
+                  <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
+                  <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
+                </select>
+                <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                  {intl.formatMessage({ id: 'aiModels.scoutReasoning.help' })}
+                </div>
+              </div>
+              <div>
+                <FieldLabel>{intl.formatMessage({ id: 'aiModels.judgeReasoning.label' })}</FieldLabel>
+                <select
+                  aria-label={intl.formatMessage({ id: 'aiModels.judgeReasoning.label' })}
+                  value={modelSettings.judgeReasoning}
+                  onChange={(e) => {
+                    setModelTouched(true);
+                    setModelSettings({ ...modelSettings, judgeReasoning: e.target.value });
+                  }}
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                >
+                  <option value="none">{intl.formatMessage({ id: 'aiModels.reasoning.none' })}</option>
+                  <option value="low">{intl.formatMessage({ id: 'aiModels.reasoning.low' })}</option>
+                  <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
+                  <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
+                </select>
+                <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                  {intl.formatMessage({ id: 'aiModels.judgeReasoning.help' })}
+                </div>
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>

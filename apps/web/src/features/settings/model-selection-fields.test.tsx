@@ -43,9 +43,9 @@ function renderField(value: ModelSelectionValue): string {
       providerLabel="Provider"
       providerPlaceholder="Select a provider"
       economyLabel="Economy model"
-      economyHelp="Used for lighter, lower-cost reasoning."
+      economyHelp="For lighter, lower-cost reasoning."
       premiumLabel="Premium model"
-      premiumHelp="Used when the agent needs stronger reasoning."
+      premiumHelp="For stronger, premium reasoning"
       onChange={() => undefined}
     />,
   );

@@ -93,10 +93,6 @@ export function AgentControlsSection({
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
-    padding: '16px',
-    border: '1px solid var(--color-border)',
-    borderRadius: '8px',
-    background: 'var(--color-surface-1)',
   };
   const rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' };
   const helperTextStyle: React.CSSProperties = { marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' };

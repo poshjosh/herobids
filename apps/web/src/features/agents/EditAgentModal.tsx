@@ -724,7 +724,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                       />
 
                       {/* Reasoning level dropdowns */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
                           <FieldLabel>{intl.formatMessage({ id: 'agents.edit.models.reasoning.scoutLabel' })}</FieldLabel>
                           <select
@@ -744,7 +744,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                             <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
                             <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
                           </select>
-                          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                          <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                             {intl.formatMessage({ id: 'agents.edit.models.reasoning.scoutHelp' })}
                           </div>
                         </div>
@@ -767,7 +767,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                             <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
                             <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
                           </select>
-                          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                          <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                             {intl.formatMessage({ id: 'agents.edit.models.reasoning.judgeHelp' })}
                           </div>
                         </div>
@@ -795,7 +795,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             }
             tradingSetupSlot={
               showTradingControls ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
                   {(requiresTradingSetup || hasTradingCapability) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>

@@ -944,7 +944,7 @@ function CreateAgentFlow({
                     const inheritedJudge = savedReasoning?.judgeReasoning ?? 'medium';
 
                     return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
                           <FieldLabel>{intl.formatMessage({ id: 'agents.edit.models.reasoning.scoutLabel' })}</FieldLabel>
                           <select
@@ -976,7 +976,7 @@ function CreateAgentFlow({
                             <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
                             <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
                           </select>
-                          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                          <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                             {intl.formatMessage({ id: 'agents.edit.models.reasoning.scoutHelp' })}
                           </div>
                         </div>
@@ -1011,7 +1011,7 @@ function CreateAgentFlow({
                             <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
                             <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
                           </select>
-                          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                          <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                             {intl.formatMessage({ id: 'agents.edit.models.reasoning.judgeHelp' })}
                           </div>
                         </div>
@@ -1217,7 +1217,7 @@ function CreateAgentFlow({
                     )}
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
                     <div style={{ fontSize: '14px', fontWeight: '600' }}>
                       {intl.formatMessage({ id: 'agents.create.tradingControls.title' })}
                     </div>
