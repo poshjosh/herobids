@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.19 - 2026-07-11
+
 ### Added
 - **Hybrid Mode Split (`capabilityMode` / `hybridMode`):** Replaced implicit hybrid derivation with explicit `capabilityMode` (`'intelligence'` | `'hybrid'`) and `hybridMode` (`'mixed'` | `'scanner_gated'`) fields on agents.
   - **Domain:** `CapabilityModeSchema`, `HybridModeSchema` with cross-field validation (hybrid requires technical config; intelligence rejects hybridMode).
