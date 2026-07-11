@@ -195,7 +195,7 @@ export const RUNTIME_POLICY_CEILINGS = {
   judgeMaxTokens: 16_384,
   lightThinkingTokens: 8_192,
   deepThinkingTokens: 32_768,
-  scoutReasoningMax: 'medium' as const,
+  scoutReasoningMax: 'high' as const,
   judgeReasoningMax: 'high' as const,
   maxHistoryMessages: 80,
   maxHistoryTokens: 160_000,
