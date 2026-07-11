@@ -146,4 +146,27 @@ log "Cost Benchmark — ${DURATION_MIN}min, ${TICK_SEC}s ticks, ${LLM_PROVIDER}/
 log "API: $API_BASE_URL"
 
 cd "$REPO_ROOT"
-exec pnpm tsx scripts/ts/cost-benchmark.ts
+
+# 1. Start the stack
+log "Starting stack..."
+scripts/shell/run/build-and-run.sh
+ok "Stack is running"
+
+# 2. Run the benchmark
+set +e
+pnpm tsx scripts/ts/cost-benchmark.ts
+BENCHMARK_EXIT=$?
+set -e
+
+# 3. Teardown (unless --skip-teardown)
+if [ "$SKIP_TEARDOWN" = "1" ]; then
+  warn "--skip-teardown: stack and agents left running for manual inspection"
+  log "To shut down later: scripts/shell/run/shutdown.sh"
+  exit $BENCHMARK_EXIT
+fi
+
+log "Shutting down stack..."
+scripts/shell/run/shutdown.sh
+ok "Stack shut down"
+
+exit $BENCHMARK_EXIT
