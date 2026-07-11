@@ -249,6 +249,45 @@ describe('runHybridEvaluator', () => {
     expect(submitDecision).not.toHaveBeenCalled();
     expect(result.errors).toContain('stale_scan');
   });
+
+  // 004: Cost invariant — hybrid evaluator is always single-shot regardless of signal count.
+  it('makes exactly one LLM call even with multiple scanner signals (single-shot)', async () => {
+    const state = makeState();
+    // Simulate a scan with multiple signals — the evaluator must still produce one call.
+    state.metrics.lastTechnicalScan = {
+      ...makeScan(),
+      signals: [
+        { symbol: 'BTC', instrumentId: 'BTC-PERP', confidence: 0.92, reasons: ['RSI'], intent: 'go_long', indicators: {} },
+        { symbol: 'ETH', instrumentId: 'ETH-PERP', confidence: 0.85, reasons: ['MACD'], intent: 'go_short', indicators: {} },
+        { symbol: 'SOL', instrumentId: 'SOL-PERP', confidence: 0.78, reasons: ['volume'], intent: 'go_long', indicators: {} },
+      ],
+    };
+
+    mockedCallLlmProvider.mockResolvedValue({
+      ok: true,
+      data: {
+        content: '```json\n[]\n```',
+        toolCalls: [],
+        model: 'test-model',
+        provider: 'test-provider',
+        tokensUsed: 12,
+        latencyMs: 8,
+        cached: false,
+      },
+    } as Awaited<ReturnType<typeof callLlmProvider>>);
+
+    const submitDecision = vi.fn().mockResolvedValue(undefined);
+
+    await runHybridEvaluator({
+      state,
+      llmConfig: { provider: 'test-provider', model: 'test-model', maxTokens: 500, timeoutMs: 1000 },
+      maxPositions: 5,
+      submitDecision,
+      logger,
+    });
+
+    expect(mockedCallLlmProvider).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ── Hybrid Prompt Enrichment ─────────────────────────────────────────────────

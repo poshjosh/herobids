@@ -1085,6 +1085,53 @@ describe('resolveReasoningParams', () => {
         .toEqual({ max_tokens: 10240 });
     });
   });
+
+  // 004: Reasoning level cost ordering — lower levels must not exceed higher levels.
+  // This guarantees that a user selecting 'low' never accidentally pays for 'high'.
+  describe('cost ordering', () => {
+    const config = { lightBudgetTokens: 2048, deepBudgetTokens: 10240 };
+
+    const nonClaudeModel = 'gpt-4o';
+
+    it('non-Claude: none < low < medium < high in token budget', () => {
+      const none = resolveReasoningParams('none', nonClaudeModel, config);
+      const low = resolveReasoningParams('low', nonClaudeModel, config);
+      const medium = resolveReasoningParams('medium', nonClaudeModel, config);
+      const high = resolveReasoningParams('high', nonClaudeModel, config);
+
+      expect((none as { max_tokens: number }).max_tokens).toBe(0);
+      expect((low as { max_tokens: number }).max_tokens).toBe(2048);
+      expect((medium as { max_tokens: number }).max_tokens).toBe(6144);
+      expect((high as { max_tokens: number }).max_tokens).toBe(10240);
+
+      // Monotonicity: each level ≤ next level
+      expect((none as { max_tokens: number }).max_tokens)
+        .toBeLessThanOrEqual((low as { max_tokens: number }).max_tokens);
+      expect((low as { max_tokens: number }).max_tokens)
+        .toBeLessThanOrEqual((medium as { max_tokens: number }).max_tokens);
+      expect((medium as { max_tokens: number }).max_tokens)
+        .toBeLessThanOrEqual((high as { max_tokens: number }).max_tokens);
+    });
+
+    it('effort-based: none < low < medium < high in effort level (Claude Fable — always adaptive)', () => {
+      const effortOrder: Record<string, number> = { minimal: 0, low: 1, medium: 2, high: 3 };
+      const model = 'claude-fable';
+
+      const none = resolveReasoningParams('none', model, config);
+      const low = resolveReasoningParams('low', model, config);
+      const medium = resolveReasoningParams('medium', model, config);
+      const high = resolveReasoningParams('high', model, config);
+
+      const noneEffort = effortOrder[(none as { effort: string }).effort];
+      const lowEffort = effortOrder[(low as { effort: string }).effort];
+      const mediumEffort = effortOrder[(medium as { effort: string }).effort];
+      const highEffort = effortOrder[(high as { effort: string }).effort];
+
+      expect(noneEffort).toBeLessThanOrEqual(lowEffort);
+      expect(lowEffort).toBeLessThanOrEqual(mediumEffort);
+      expect(mediumEffort).toBeLessThanOrEqual(highEffort);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
