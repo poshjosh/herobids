@@ -373,3 +373,61 @@ describe('AgentRepository.getUnifiedConfig (capabilityMode/hybridMode defaults)'
     expect(result).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// updateUnifiedConfig — hybridMode default stamping on write (004, B-M1)
+// ---------------------------------------------------------------------------
+
+describe('AgentRepository.updateUnifiedConfig (hybridMode write-path stamping)', () => {
+  it('stamps hybridMode: "mixed" on write when hybrid agent has no hybridMode', async () => {
+    const { db, setFn } = buildUpdateDb();
+    const repo = new AgentRepository(db as never);
+    await repo.updateUnifiedConfig('agent-1', {
+      capabilityMode: 'hybrid',
+      technical: { venue: 'hyperliquid' },
+    } as never);
+    expect(setFn).toHaveBeenCalledWith(expect.objectContaining({
+      unifiedConfig: expect.objectContaining({
+        capabilityMode: 'hybrid',
+        hybridMode: 'mixed',
+      }),
+    }));
+  });
+
+  it('preserves explicit hybridMode: "scanner_gated" on write', async () => {
+    const { db, setFn } = buildUpdateDb();
+    const repo = new AgentRepository(db as never);
+    await repo.updateUnifiedConfig('agent-1', {
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+      technical: {},
+    } as never);
+    expect(setFn).toHaveBeenCalledWith(expect.objectContaining({
+      unifiedConfig: expect.objectContaining({
+        capabilityMode: 'hybrid',
+        hybridMode: 'scanner_gated',
+      }),
+    }));
+  });
+
+  it('does not inject hybridMode on write for intelligence agents', async () => {
+    const { db, setFn } = buildUpdateDb();
+    const repo = new AgentRepository(db as never);
+    await repo.updateUnifiedConfig('agent-1', {
+      capabilityMode: 'intelligence',
+      intelligence: { prompt: 'test' },
+    } as never);
+    expect(setFn).toHaveBeenCalledWith(expect.objectContaining({
+      unifiedConfig: expect.not.objectContaining({ hybridMode: expect.anything() }),
+    }));
+  });
+
+  it('handles null config (clearing unified config)', async () => {
+    const { db, setFn } = buildUpdateDb();
+    const repo = new AgentRepository(db as never);
+    await repo.updateUnifiedConfig('agent-1', null);
+    expect(setFn).toHaveBeenCalledWith(expect.objectContaining({
+      unifiedConfig: null,
+    }));
+  });
+});
