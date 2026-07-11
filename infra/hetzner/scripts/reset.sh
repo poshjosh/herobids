@@ -156,6 +156,12 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pruning dangling resources..."
 docker container prune -f 2>/dev/null || true
 docker network prune -f 2>/dev/null || true
 
+# Aggressive build cache cleanup — Docker buildkit overlayfs can consume
+# tens of GB on small Hetzner instances across repeated deploys.
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pruning build cache and dangling images..."
+docker builder prune -af 2>/dev/null || true
+docker image prune -f 2>/dev/null || true
+
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Flushing Redis..."
 # Start a temporary redis-cli in the redis container (if the redis service image is available)
 # We do this via docker run to avoid depending on the compose service being up.
