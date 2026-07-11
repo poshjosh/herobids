@@ -133,27 +133,21 @@ function generateUniqueSuffix(): string {
   return crypto.randomBytes(4).toString('hex');
 }
 
-async function generateUniqueUsername(
-  db: Database,
-  baseCandidate: string,
-  maxRetries = 3,
-): Promise<string> {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const suffix = attempt === 0 ? '' : `_${generateUniqueSuffix()}`;
-    const candidate = suffix ? `${baseCandidate.slice(0, 26)}${suffix}` : baseCandidate;
-    // Make sure it's within length limits
-    const finalCandidate = candidate.length > 30 ? candidate.slice(0, 30) : candidate;
-
-    // Check if it's available
-    const [existing] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.username, finalCandidate))
-      .limit(1);
-
-    if (!existing) return finalCandidate;
+/**
+ * Returns true when a DB error is a unique-constraint violation on the username column.
+ * Handles both inline UNIQUE naming (users_username_key) and named-constraint style
+ * (users_username_unique) since the migration uses inline UNIQUE syntax.
+ */
+function isUsernameUniqueConflict(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as Record<string, unknown>;
+  if (e['code'] !== '23505') return false;
+  const constraint = (e['constraint_name'] ?? e['constraint']) as string | undefined;
+  if (typeof constraint === 'string') {
+    return constraint === 'users_username_key' || constraint === 'users_username_unique';
   }
-  throw new Error('Failed to generate unique username after retries');
+  // Fallback: Postgres detail always contains the column name in "Key (col)=..." format
+  return /\(username\)/.test((e['detail'] as string | undefined) ?? '');
 }
 
 export async function authRoutes(
@@ -256,43 +250,71 @@ export async function authRoutes(
     const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
     if (existing) return existing.id;
 
-    // Create a new user
     const userId = crypto.randomUUID();
     const now = new Date();
 
-    // Generate username if not provided
-    let resolvedUsername: string;
     if (username) {
-      resolvedUsername = username;
-    } else {
-      const base = deriveBaseUsername(email);
-      resolvedUsername = await generateUniqueUsername(db, base);
+      // Explicit username provided — reservation guarantees availability; insert directly.
+      const displayName = humanizeDisplayName(username);
+      await db.transaction(async (tx) => {
+        await tx.insert(users).values({
+          id: userId,
+          username,
+          displayName,
+          email,
+          avatarUrl: null,
+          planId: defaultPlanId,
+          preferredLocale: null,
+          telegramChatId: null,
+          aiModelConfig: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await tx.insert(userPlans).values({
+          id: crypto.randomUUID(),
+          userId,
+          planId: defaultPlanId,
+        });
+      });
+      return userId;
     }
 
-    const displayName = humanizeDisplayName(resolvedUsername);
-
-    await db.transaction(async (tx) => {
-      await tx.insert(users).values({
-        id: userId,
-        username: resolvedUsername,
-        displayName,
-        email,
-        avatarUrl: null,
-        planId: defaultPlanId,
-        preferredLocale: null,
-        telegramChatId: null,
-        aiModelConfig: null,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await tx.insert(userPlans).values({
-        id: crypto.randomUUID(),
-        userId,
-        planId: defaultPlanId,
-      });
-    });
-
-    return userId;
+    // Auto-generate: try the derived base candidate, retry with fresh entropy on actual
+    // unique-constraint conflicts — the pre-insert SELECT is not sufficient alone (TOCTOU).
+    const base = deriveBaseUsername(email);
+    const MAX_RETRIES = 5;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      const stem = attempt === 0 ? base : `${base.slice(0, 26)}_${generateUniqueSuffix()}`;
+      const candidate = stem.length > 30 ? stem.slice(0, 30) : stem;
+      const displayName = humanizeDisplayName(candidate);
+      try {
+        await db.transaction(async (tx) => {
+          await tx.insert(users).values({
+            id: userId,
+            username: candidate,
+            displayName,
+            email,
+            avatarUrl: null,
+            planId: defaultPlanId,
+            preferredLocale: null,
+            telegramChatId: null,
+            aiModelConfig: null,
+            createdAt: now,
+            updatedAt: now,
+          });
+          await tx.insert(userPlans).values({
+            id: crypto.randomUUID(),
+            userId,
+            planId: defaultPlanId,
+          });
+        });
+        return userId;
+      } catch (err) {
+        if (!isUsernameUniqueConflict(err)) throw err;
+        // Username collision on insert — retry with fresh entropy
+      }
+    }
+    throw new Error(`user creation failed: username conflict after ${MAX_RETRIES} attempts`);
   }
 
   /**
@@ -405,9 +427,21 @@ export async function authRoutes(
       );
     }
 
-    const { email, username } = payload;
+    const { email, username: tokenUsername } = payload;
+
+    // Trust the username only if the reservation key still maps to this exact token.
+    // This guards against stale payloads from failed prior flows and satisfies the plan's
+    // "trust only the username reserved for that token" requirement.
+    let verifiedUsername: string | undefined;
+    if (tokenUsername) {
+      const reservationHolder = await redis.get(
+        `auth:login-link:username-reservation:${tokenUsername}`,
+      );
+      verifiedUsername = reservationHolder === token ? tokenUsername : undefined;
+    }
+
     // Resolve or create the user
-    const userId = await resolveOrCreateUserByEmail(email, username);
+    const userId = await resolveOrCreateUserByEmail(email, verifiedUsername);
 
     // Issue session and store behind a one-time exchange code
     const sessionToken = await issueSession(config, db, userId);
@@ -454,41 +488,56 @@ export async function authRoutes(
     const userId = crypto.randomUUID();
     const now = new Date();
 
-    // Generate username and derive displayName from it
-    const baseUsername = deriveBaseUsername(email);
-    const generatedUsername = await generateUniqueUsername(db, baseUsername);
-    const displayName = humanizeDisplayName(generatedUsername);
-
-    await db.transaction(async (tx) => {
-      await tx.insert(users).values({
-        id: userId,
-        username: generatedUsername,
-        displayName,
-        email,
-        avatarUrl: null,
-        planId: defaultPlanId,
-        preferredLocale: null,
-        telegramChatId: null,
-        aiModelConfig: null,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await tx.insert(localIdentities).values({
-        id: crypto.randomUUID(),
-        userId,
-        passwordHash,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await tx.insert(userPlans).values({
-        id: crypto.randomUUID(),
-        userId,
-        planId: defaultPlanId,
-      });
-    });
-
-    const token = await issueSession(config, db, userId);
-    return reply.status(201).send({ token });
+    // Auto-generate username with bounded retry on actual DB unique-constraint conflicts.
+    const base = deriveBaseUsername(email);
+    const MAX_REGISTER_RETRIES = 5;
+    let registrationToken: string | undefined;
+    for (let attempt = 0; attempt < MAX_REGISTER_RETRIES; attempt++) {
+      const stem = attempt === 0 ? base : `${base.slice(0, 26)}_${generateUniqueSuffix()}`;
+      const candidate = stem.length > 30 ? stem.slice(0, 30) : stem;
+      const displayName = humanizeDisplayName(candidate);
+      try {
+        await db.transaction(async (tx) => {
+          await tx.insert(users).values({
+            id: userId,
+            username: candidate,
+            displayName,
+            email,
+            avatarUrl: null,
+            planId: defaultPlanId,
+            preferredLocale: null,
+            telegramChatId: null,
+            aiModelConfig: null,
+            createdAt: now,
+            updatedAt: now,
+          });
+          await tx.insert(localIdentities).values({
+            id: crypto.randomUUID(),
+            userId,
+            passwordHash,
+            createdAt: now,
+            updatedAt: now,
+          });
+          await tx.insert(userPlans).values({
+            id: crypto.randomUUID(),
+            userId,
+            planId: defaultPlanId,
+          });
+        });
+        registrationToken = await issueSession(config, db, userId);
+        break;
+      } catch (err) {
+        if (!isUsernameUniqueConflict(err)) throw err;
+        // Username collision — retry with fresh entropy
+      }
+    }
+    if (!registrationToken) {
+      app.log.error({ email }, 'Registration failed: username conflict after retries');
+      return reply.status(500).send(
+        errorPayload('auth.register.failed', 'Account creation failed. Please try again.'),
+      );
+    }
+    return reply.status(201).send({ token: registrationToken });
   });
 
   /**
@@ -835,96 +884,112 @@ export async function authRoutes(
 
 /** Find existing user by OAuth identity or create a new one.
  *
- * Runs inside a transaction. Uses upsert-style inserts so concurrent logins
- * for the same Google account never produce duplicate rows.
+ * Runs inside a transaction per attempt. Uses targeted onConflictDoNothing so concurrent
+ * first-logins for the same Google account are handled gracefully, while username conflicts
+ * propagate and trigger a retry with fresh entropy.
  */
 async function findOrCreateUser(db: Database, googleUser: GoogleUserInfo, defaultPlanId: string): Promise<string> {
-  return db.transaction(async (tx) => {
-    // Fast path: identity already exists
-    const [existing] = await tx
-      .select({ userId: oauthIdentities.userId })
-      .from(oauthIdentities)
-      .where(
-        and(
-          eq(oauthIdentities.provider, 'google'),
-          eq(oauthIdentities.providerUserId, googleUser.sub),
-        ),
-      )
-      .limit(1);
+  const baseUsername = deriveBaseUsername(googleUser.email);
+  const MAX_RETRIES = 5;
 
-    if (existing) {
-      return existing.userId;
-    }
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const stem = attempt === 0
+      ? baseUsername
+      : `${baseUsername.slice(0, 26)}_${generateUniqueSuffix()}`;
+    const candidate = stem.length > 30 ? stem.slice(0, 30) : stem;
 
-    // Try to create the user — silently ignore email conflicts (concurrent first-login)
-    const newUserId = crypto.randomUUID();
-    const now = new Date();
+    try {
+      return await db.transaction(async (tx) => {
+        // Fast path: identity already exists
+        const [existing] = await tx
+          .select({ userId: oauthIdentities.userId })
+          .from(oauthIdentities)
+          .where(
+            and(
+              eq(oauthIdentities.provider, 'google'),
+              eq(oauthIdentities.providerUserId, googleUser.sub),
+            ),
+          )
+          .limit(1);
 
-    // Generate username from email
-    const baseUsername = deriveBaseUsername(googleUser.email);
-    const generatedUsername = await generateUniqueUsername(db, baseUsername);
-    const displayName = humanizeDisplayName(generatedUsername);
+        if (existing) {
+          return existing.userId;
+        }
 
-    await tx.insert(users).values({
-      id: newUserId,
-      username: generatedUsername,
-      displayName,
-      email: googleUser.email,
-      avatarUrl: googleUser.picture ?? null,
-      planId: defaultPlanId,
-      preferredLocale: null,
-      telegramChatId: null,
-      aiModelConfig: null,
-      createdAt: now,
-      updatedAt: now,
-    }).onConflictDoNothing();
+        // Try to create the user — onConflictDoNothing targets only the email column so that
+        // concurrent first-logins (email conflict) are silently handled while username
+        // conflicts propagate and trigger the outer retry loop.
+        const newUserId = crypto.randomUUID();
+        const now = new Date();
+        const displayName = humanizeDisplayName(candidate);
 
-    // Get the definitive user ID (ours or the pre-existing one linked to this email)
-    const [user] = await tx
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, googleUser.email))
-      .limit(1);
+        await tx.insert(users).values({
+          id: newUserId,
+          username: candidate,
+          displayName,
+          email: googleUser.email,
+          avatarUrl: googleUser.picture ?? null,
+          planId: defaultPlanId,
+          preferredLocale: null,
+          telegramChatId: null,
+          aiModelConfig: null,
+          createdAt: now,
+          updatedAt: now,
+        }).onConflictDoNothing({ target: users.email });
 
-    if (!user) throw new Error('Failed to resolve user for OAuth login');
+        // Get the definitive user ID (ours or the pre-existing one linked to this email)
+        const [user] = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.email, googleUser.email))
+          .limit(1);
 
-    // Seed the canonical plan history row for newly-created users.
-    // Existing users already have a user_plans row from their own first-login;
-    // concurrent first-logins that lost the user-insert race also skip this because
-    // user.id !== newUserId (we detect that we didn't create the row).
-    if (user.id === newUserId) {
-      await tx.insert(userPlans).values({
-        id: crypto.randomUUID(),
-        userId: user.id,
-        planId: defaultPlanId,
+        if (!user) throw new Error('Failed to resolve user for OAuth login');
+
+        // Seed the canonical plan history row for newly-created users.
+        // Existing users already have a user_plans row from their own first-login;
+        // concurrent first-logins that lost the user-insert race also skip this because
+        // user.id !== newUserId (we detect that we didn't create the row).
+        if (user.id === newUserId) {
+          await tx.insert(userPlans).values({
+            id: crypto.randomUUID(),
+            userId: user.id,
+            planId: defaultPlanId,
+          });
+        }
+
+        // Link identity — ignore if a concurrent request already linked it
+        await tx.insert(oauthIdentities).values({
+          id: crypto.randomUUID(),
+          userId: user.id,
+          provider: 'google',
+          providerUserId: googleUser.sub,
+          email: googleUser.email,
+          createdAt: now,
+        }).onConflictDoNothing();
+
+        // Re-read identity to get the definitive userId (may differ from user.id if lost the race)
+        const [identity] = await tx
+          .select({ userId: oauthIdentities.userId })
+          .from(oauthIdentities)
+          .where(
+            and(
+              eq(oauthIdentities.provider, 'google'),
+              eq(oauthIdentities.providerUserId, googleUser.sub),
+            ),
+          )
+          .limit(1);
+
+        if (!identity) throw new Error('Failed to establish OAuth identity');
+        return identity.userId;
       });
+    } catch (err) {
+      if (isUsernameUniqueConflict(err)) continue; // retry with fresh entropy
+      throw err;
     }
+  }
 
-    // Link identity — ignore if a concurrent request already linked it
-    await tx.insert(oauthIdentities).values({
-      id: crypto.randomUUID(),
-      userId: user.id,
-      provider: 'google',
-      providerUserId: googleUser.sub,
-      email: googleUser.email,
-      createdAt: now,
-    }).onConflictDoNothing();
-
-    // Re-read identity to get the definitive userId (may differ from user.id if lost the race)
-    const [identity] = await tx
-      .select({ userId: oauthIdentities.userId })
-      .from(oauthIdentities)
-      .where(
-        and(
-          eq(oauthIdentities.provider, 'google'),
-          eq(oauthIdentities.providerUserId, googleUser.sub),
-        ),
-      )
-      .limit(1);
-
-    if (!identity) throw new Error('Failed to establish OAuth identity');
-    return identity.userId;
-  });
+  throw new Error(`OAuth user creation failed: username conflict after ${MAX_RETRIES} attempts`);
 }
 
 /** Create a new session and return a signed JWT. Shared by OAuth and local auth flows. */

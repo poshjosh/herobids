@@ -1321,6 +1321,7 @@ describe('auth routes', () => {
       return {
         set: vi.fn().mockResolvedValue('OK'),
         getdel: vi.fn().mockResolvedValue(null),
+        get: vi.fn().mockResolvedValue(null),
         incr: vi.fn().mockResolvedValue(1),
         expire: vi.fn().mockResolvedValue(1),
       };
@@ -1333,6 +1334,8 @@ describe('auth routes', () => {
         email: 'new@example.com',
         username: 'jane_doe',
       }));
+      // Reservation maps to the token being consumed
+      redis.get = vi.fn().mockResolvedValue('valid-token');
 
       let insertedUsername: string | undefined;
       const db = {
@@ -1379,6 +1382,8 @@ describe('auth routes', () => {
         email: 'new@example.com',
         username: 'jane_doe',
       }));
+      // Reservation maps to the token being consumed
+      redis.get = vi.fn().mockResolvedValue('valid-token');
 
       let insertedDisplayName: string | undefined;
       const db = {
@@ -1471,6 +1476,8 @@ describe('auth routes', () => {
         email: 'existing@example.com',
         username: 'attempted_new_name',
       }));
+      // Reservation does not matter for existing users — still need get to not throw
+      redis.get = vi.fn().mockResolvedValue(null);
 
       const db = {
         select: vi.fn().mockReturnValue({
@@ -1499,6 +1506,192 @@ describe('auth routes', () => {
       expect(res.statusCode).toBe(302);
       // No insert should happen since user exists
       expect(db.select).toHaveBeenCalled();
+    });
+
+    it('retries on username constraint conflict and succeeds within budget', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      // No username in payload — auto-generation path exercises the retry logic
+      redis.getdel = vi.fn().mockResolvedValue(JSON.stringify({ email: 'new@example.com' }));
+
+      let transactionCallCount = 0;
+      const conflictError = Object.assign(new Error('unique constraint'), {
+        code: '23505',
+        constraint_name: 'users_username_key',
+      });
+
+      const db = {
+        // Email lookup returns no user (new user)
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        // First transaction attempt conflicts on username; second succeeds
+        transaction: vi.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+          transactionCallCount++;
+          if (transactionCallCount === 1) throw conflictError;
+          await cb({
+            insert: vi.fn().mockImplementation(() => ({
+              values: vi.fn().mockResolvedValue(undefined),
+            })),
+          });
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/auth/login-link/callback?token=valid-token',
+      });
+
+      expect(res.statusCode).toBe(302);
+      expect(transactionCallCount).toBe(2); // conflicted once, succeeded on retry
+    });
+
+    it('fails loudly when username retry budget is exhausted', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      redis.getdel = vi.fn().mockResolvedValue(JSON.stringify({ email: 'new@example.com' }));
+
+      const conflictError = Object.assign(new Error('unique constraint'), {
+        code: '23505',
+        constraint_name: 'users_username_key',
+      });
+
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        // All transaction attempts conflict
+        transaction: vi.fn().mockImplementation(async () => { throw conflictError; }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/auth/login-link/callback?token=valid-token',
+      });
+
+      // Fastify surfaces unhandled errors as 500
+      expect(res.statusCode).toBe(500);
+    });
+
+    it('uses reserved username when reservation maps to current token', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      redis.getdel = vi.fn().mockResolvedValue(JSON.stringify({
+        email: 'new@example.com',
+        username: 'reserved_user',
+      }));
+      // Reservation key holds the same token as the one being consumed
+      redis.get = vi.fn().mockResolvedValue('valid-token');
+
+      let insertedUsername: string | undefined;
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        transaction: vi.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+          await cb({
+            insert: vi.fn().mockImplementation(() => ({
+              values: vi.fn().mockImplementation((vals: Record<string, unknown>) => {
+                if (vals['username']) insertedUsername = vals['username'] as string;
+                return Promise.resolve(undefined);
+              }),
+            })),
+          });
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      await app.inject({
+        method: 'GET',
+        url: '/auth/login-link/callback?token=valid-token',
+      });
+
+      expect(insertedUsername).toBe('reserved_user');
+    });
+
+    it('falls back to auto-generation when reservation does not match token', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      redis.getdel = vi.fn().mockResolvedValue(JSON.stringify({
+        email: 'new@example.com',
+        username: 'claimed_by_other',
+      }));
+      // Reservation key holds a different token (stale or stolen reservation)
+      redis.get = vi.fn().mockResolvedValue('some-other-token');
+
+      let insertedUsername: string | undefined;
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        transaction: vi.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+          await cb({
+            insert: vi.fn().mockImplementation(() => ({
+              values: vi.fn().mockImplementation((vals: Record<string, unknown>) => {
+                if (vals['username']) insertedUsername = vals['username'] as string;
+                return Promise.resolve(undefined);
+              }),
+            })),
+          });
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      await app.inject({
+        method: 'GET',
+        url: '/auth/login-link/callback?token=valid-token',
+      });
+
+      // Username should be auto-generated from email, not the stale reservation
+      expect(insertedUsername).toBeDefined();
+      expect(insertedUsername).not.toBe('claimed_by_other');
+      expect(insertedUsername).toMatch(/^new/); // derived from email local-part
     });
   });
 

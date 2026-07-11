@@ -145,6 +145,8 @@ export const messages: Record<string, string> = {
   'auth.username.placeholder': 'Choose a username (optional)',
   'auth.sendRegistrationLink': 'Send registration link',
   'auth.sendLoginLink': 'Send login link',
+  'auth.send_login_link.invalid_username': 'Username must be 3–30 characters and may only contain lowercase letters, digits, and underscores.',
+  'auth.send_login_link.username_taken': 'This username is already taken.',
   'auth.loginLinkSent.title': 'Check your email',
   'auth.loginLinkSent.message': 'A login link has been sent to the email address you provided.',
   'auth.loginLinkSent.resend': 'Send another link',

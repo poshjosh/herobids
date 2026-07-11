@@ -76,6 +76,8 @@ export const messages: Record<string, string> = {
   'auth.username.placeholder': 'उपयोगकर्ता नाम चुनें (वैकल्पिक)',
   'auth.sendRegistrationLink': 'पंजीकरण लिंक भेजें',
   'auth.sendLoginLink': 'लॉगिन लिंक भेजें',
+  'auth.send_login_link.invalid_username': 'उपयोगकर्ता नाम 3–30 अक्षरों का होना चाहिए और केवल लोवरकेस अक्षरों, अंकों और अंडरस्कोर का उपयोग कर सकता है।',
+  'auth.send_login_link.username_taken': 'यह उपयोगकर्ता नाम पहले से लिया जा चुका है।',
   'auth.loginLinkSent.title': 'अपना ईमेल जांचें',
   'auth.loginLinkSent.message': 'आपके द्वारा प्रदान किए गए ईमेल पते पर एक लॉगिन लिंक भेज दिया गया है।',
   'auth.loginLinkSent.resend': 'दूसरा लिंक भेजें',

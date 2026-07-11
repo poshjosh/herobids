@@ -76,6 +76,8 @@ export const messages: Record<string, string> = {
   'auth.username.placeholder': 'اختر اسم مستخدم (اختياري)',
   'auth.sendRegistrationLink': 'إرسال رابط التسجيل',
   'auth.sendLoginLink': 'إرسال رابط تسجيل الدخول',
+  'auth.send_login_link.invalid_username': 'يجب أن يتراوح اسم المستخدم بين 3 و 30 حرفاً، ويجب أن يحتوي فقط على أحرف صغيرة وأرقام وشرطات سفلية.',
+  'auth.send_login_link.username_taken': 'اسم المستخدم هذا مستخدم بالفعل.',
   'auth.loginLinkSent.title': 'تحقق من بريدك الإلكتروني',
   'auth.loginLinkSent.message': 'تم إرسال رابط تسجيل الدخول إلى عنوان البريد الإلكتروني الذي قدمته.',
   'auth.loginLinkSent.resend': 'إرسال رابط آخر',
