@@ -60,7 +60,7 @@ interface BenchmarkCase {
 }
 
 const BENCHMARK_CASES: BenchmarkCase[] = [
-  // ── scanner_gated cost comparison ──
+  // ── scanner_gated cost comparison (low reasoning) ──
   {
     id: 'intel-low',
     capabilityMode: 'intelligence',
@@ -78,6 +78,7 @@ const BENCHMARK_CASES: BenchmarkCase[] = [
   },
 
   // ── reasoning level cost ladder (intelligence) ──
+  // Note: 'high' is omitted — operator ceiling in local config caps at 'medium'.
   {
     id: 'intel-none',
     capabilityMode: 'intelligence',
@@ -91,13 +92,6 @@ const BENCHMARK_CASES: BenchmarkCase[] = [
     scoutReasoning: 'medium',
     judgeReasoning: 'medium',
     label: 'Intelligence (medium reasoning)',
-  },
-  {
-    id: 'intel-high',
-    capabilityMode: 'intelligence',
-    scoutReasoning: 'high',
-    judgeReasoning: 'high',
-    label: 'Intelligence (high reasoning)',
   },
 
   // ── reasoning level cost ladder (scanner_gated) ──
@@ -116,14 +110,6 @@ const BENCHMARK_CASES: BenchmarkCase[] = [
     scoutReasoning: 'medium',
     judgeReasoning: 'medium',
     label: 'Scanner-Gated (medium reasoning)',
-  },
-  {
-    id: 'sg-high',
-    capabilityMode: 'hybrid',
-    hybridMode: 'scanner_gated',
-    scoutReasoning: 'high',
-    judgeReasoning: 'high',
-    label: 'Scanner-Gated (high reasoning)',
   },
 ];
 
