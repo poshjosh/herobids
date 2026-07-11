@@ -195,7 +195,7 @@ export const RUNTIME_POLICY_CEILINGS = {
   judgeMaxTokens: 16_384,
   lightThinkingTokens: 8_192,
   deepThinkingTokens: 32_768,
-  scoutReasoningMax: 'high' as const,
+  scoutReasoningMax: 'medium' as const,
   judgeReasoningMax: 'high' as const,
   maxHistoryMessages: 80,
   maxHistoryTokens: 160_000,
@@ -208,9 +208,15 @@ export const RUNTIME_POLICY_CEILINGS = {
   maxHoldDurationMs: 86_400_000, // 24 hours
 } as const;
 
-const REASONING_LEVEL_ORDER = ['none', 'low', 'medium', 'high'] as const;
+export const REASONING_LEVEL_ORDER = ['none', 'low', 'medium', 'high'] as const;
 function reasoningLevelIndex(level: string): number {
   return REASONING_LEVEL_ORDER.indexOf(level as typeof REASONING_LEVEL_ORDER[number]);
+}
+
+/** Returns the subset of reasoning levels allowed up to (and including) the given ceiling. */
+export function getAllowedReasoningLevels(ceiling: ReasoningLevel): readonly ReasoningLevel[] {
+  const maxIdx = reasoningLevelIndex(ceiling);
+  return REASONING_LEVEL_ORDER.slice(0, maxIdx + 1);
 }
 
 /** Coarse reasoning level — backend maps to provider-specific wire format. */

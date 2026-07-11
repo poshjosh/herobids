@@ -31,6 +31,10 @@ export async function registerUser(
 
   const body = await response.json() as { token: string };
 
+  // Navigate to a page on the app origin first — localStorage is not
+  // accessible on about:blank in Chromium.
+  await page.goto('/login');
+
   // Store the token in localStorage so the page is authenticated
   await page.evaluate((token: string) => {
     localStorage.setItem('hb_session_token', token);

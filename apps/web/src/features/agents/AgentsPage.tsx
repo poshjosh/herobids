@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
+import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
 import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, dashboard, type AgentOutcomes, type ProviderSetupResult, type Skill } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Card, SectionLabel, MetricCard, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, type SkillPresetId } from './agent-display.js';
@@ -971,10 +972,9 @@ function CreateAgentFlow({
                             <option value="">
                               {intl.formatMessage({ id: 'agents.edit.models.reasoning.inherit' }, { value: inheritedScout })}
                             </option>
-                            <option value="none">{intl.formatMessage({ id: 'aiModels.reasoning.none' })}</option>
-                            <option value="low">{intl.formatMessage({ id: 'aiModels.reasoning.low' })}</option>
-                            <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
-                            <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
+                            {getAllowedReasoningLevels(RUNTIME_POLICY_CEILINGS.scoutReasoningMax).map((level) => (
+                              <option key={level} value={level}>{intl.formatMessage({ id: `aiModels.reasoning.${level}` })}</option>
+                            ))}
                           </select>
                           <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                             {intl.formatMessage({ id: 'agents.edit.models.reasoning.scoutHelp' })}

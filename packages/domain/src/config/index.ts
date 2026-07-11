@@ -66,6 +66,8 @@ export {
   AgentCostEstimatesSchema,
   AgentRuntimePolicyOverridesSchema,
   ReasoningLevelSchema,
+  REASONING_LEVEL_ORDER,
+  getAllowedReasoningLevels,
   TRADING_SESSION_NAMES,
   TradingSessionNameSchema,
   AgentStyleSchema,

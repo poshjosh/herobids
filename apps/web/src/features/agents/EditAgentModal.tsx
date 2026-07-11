@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
+import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
 import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, auth as authApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, type SkillPresetId } from './agent-display.js';
@@ -739,10 +740,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                             <option value="">
                               {intl.formatMessage({ id: 'agents.edit.models.reasoning.inherit' }, { value: inheritedScoutReasoning })}
                             </option>
-                            <option value="none">{intl.formatMessage({ id: 'aiModels.reasoning.none' })}</option>
-                            <option value="low">{intl.formatMessage({ id: 'aiModels.reasoning.low' })}</option>
-                            <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
-                            <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
+                            {getAllowedReasoningLevels(RUNTIME_POLICY_CEILINGS.scoutReasoningMax).map((level) => (
+                              <option key={level} value={level}>{intl.formatMessage({ id: `aiModels.reasoning.${level}` })}</option>
+                            ))}
                           </select>
                           <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                             {intl.formatMessage({ id: 'agents.edit.models.reasoning.scoutHelp' })}
