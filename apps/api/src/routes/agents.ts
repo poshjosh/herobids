@@ -230,12 +230,17 @@ function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: st
   technical: unknown;
   strategyPreset: string | null;
   strategyPresetName: string | null;
+  capabilityMode: string | null;
+  hybridMode: string | null;
 } {
   const { strategyPreset, strategyPresetName } = extractPresetMeta(agent.unifiedConfig);
+  const uc = agent.unifiedConfig as Record<string, unknown> | null;
   return {
-    technical: (agent.unifiedConfig as Record<string, unknown> | null)?.['technical'] ?? null,
+    technical: uc?.['technical'] ?? null,
     strategyPreset,
     strategyPresetName,
+    capabilityMode: (uc?.['capabilityMode'] as string) ?? null,
+    hybridMode: (uc?.['hybridMode'] as string) ?? null,
   };
 }
 
