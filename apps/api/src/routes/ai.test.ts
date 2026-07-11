@@ -1091,3 +1091,130 @@ describe('persisted Ollama model revalidation', () => {
   });
 });
 
+// ─── Adaptive reasoning toggle: PATCH /settings/ai-model ────────────────────
+
+describe('PATCH /settings/ai-model — adaptive reasoning', () => {
+  it('accepts and persists adaptScoutReasoning and adaptJudgeReasoning', async () => {
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/settings/ai-model',
+      payload: {
+        provider: 'openai',
+        lightModel: 'gpt-4o-mini',
+        heavyModel: 'gpt-4o',
+        adaptScoutReasoning: false,
+        adaptJudgeReasoning: false,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.aiModelConfig.adaptScoutReasoning).toBe(false);
+    expect(body.aiModelConfig.adaptJudgeReasoning).toBe(false);
+  });
+
+  it('accepts null for adaptive reasoning fields (clearing preference)', async () => {
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/settings/ai-model',
+      payload: {
+        provider: 'openai',
+        lightModel: 'gpt-4o-mini',
+        heavyModel: 'gpt-4o',
+        adaptScoutReasoning: null,
+        adaptJudgeReasoning: null,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().aiModelConfig.adaptScoutReasoning).toBeNull();
+    expect(res.json().aiModelConfig.adaptJudgeReasoning).toBeNull();
+  });
+
+  it('returns persisted adaptive reasoning flags from GET /settings/ai-model', async () => {
+    const persistedConfig = {
+      provider: 'openai',
+      lightModel: 'gpt-4o-mini',
+      heavyModel: 'gpt-4o',
+      scoutReasoning: 'low',
+      judgeReasoning: 'medium',
+      adaptScoutReasoning: false,
+      adaptJudgeReasoning: true,
+    };
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: persistedConfig }])),
+      update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/settings/ai-model',
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.aiModelConfig.adaptScoutReasoning).toBe(false);
+    expect(body.aiModelConfig.adaptJudgeReasoning).toBe(true);
+  });
+
+  it('returns null for adaptive reasoning flags when not set', async () => {
+    const persistedConfig = {
+      provider: 'openai',
+      lightModel: 'gpt-4o-mini',
+      heavyModel: 'gpt-4o',
+    };
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: persistedConfig }])),
+      update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/settings/ai-model',
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.aiModelConfig).not.toBeNull();
+  });
+
+  it('accepts clearing all settings including adaptive reasoning', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', adaptScoutReasoning: true } }])),
+      update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml, stubAgentRuntime);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/settings/ai-model',
+      payload: {
+        provider: null,
+        lightModel: null,
+        heavyModel: null,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().aiModelConfig).toBeNull();
+  });
+});
+

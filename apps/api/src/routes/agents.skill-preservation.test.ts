@@ -77,6 +77,10 @@ describe('agent routes skill preservation', () => {
           return makeChain([{ skillId: 'paid-skill', skillRevisionId: 'paid-skill:v2' }]);
         }
         if (selectCount === 7) {
+          // User aiModelConfig query (adaptive reasoning stamping)
+          return makeChain([{ aiModelConfig: null }]);
+        }
+        if (selectCount === 8) {
           return makeChain([updatedAgent]);
         }
         return makeChain([{ skillId: 'paid-skill' }]);

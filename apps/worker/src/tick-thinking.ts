@@ -86,3 +86,51 @@ export function toReasoningLevel(tickLevel: TickThinkingLevel): ReasoningLevel {
   if (tickLevel === 'deep') return 'high';
   return 'none';
 }
+
+/**
+ * Resolve the scout reasoning level based on the adaptive toggle.
+ *
+ * When adaptive is `true` (default), the system-determined thinking level is
+ * capped by the user's `scoutReasoning` ceiling — critical events can escalate
+ * thinking up to the user's configured maximum.
+ *
+ * When adaptive is `false`, the user's `scoutReasoning` is used directly
+ * as-is — no ceiling logic, deterministic fixed level.
+ */
+export function resolveScoutReasoningLevel(
+  systemThinking: TickThinkingLevel,
+  userLevel: ReasoningLevel,
+  adaptive: boolean,
+): ReasoningLevel {
+  if (adaptive) {
+    return toReasoningLevel(applyReasoningCeiling(systemThinking, userLevel));
+  }
+  return userLevel;
+}
+
+/**
+ * Resolve the judge thinking level based on the adaptive toggle.
+ *
+ * When adaptive is `true` (default), the system-determined thinking level is
+ * capped by the user's `judgeReasoning` ceiling.
+ *
+ * When adaptive is `false`, the user's `judgeReasoning` maps directly to a
+ * `TickThinkingLevel` with no ceiling logic:
+ * - `'none'` → `'none'`
+ * - `'low'` → `'light'`
+ * - `'medium'` → `'deep'`
+ * - `'high'` → `'deep'`
+ */
+export function resolveJudgeThinkingLevel(
+  systemThinking: TickThinkingLevel,
+  userLevel: ReasoningLevel,
+  adaptive: boolean,
+): TickThinkingLevel {
+  if (adaptive) {
+    return applyReasoningCeiling(systemThinking, userLevel);
+  }
+  // Direct mapping — no ceiling logic, deterministic fixed level
+  if (userLevel === 'none') return 'none';
+  if (userLevel === 'low') return 'light';
+  return 'deep'; // medium and high
+}

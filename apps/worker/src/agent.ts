@@ -76,7 +76,7 @@ import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailur
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { buildTickGateState } from './tick-gate-state.js';
-import { applyReasoningCeiling, classifyTickThinking, extractDrawdownPct, toReasoningLevel } from './tick-thinking.js';
+import { applyReasoningCeiling, classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { createToolRegistry } from './tools/index.js';
 import { extractCeilings, extractCreatorInput } from './agent-risk-limits.js';
@@ -2890,18 +2890,11 @@ async function runTick(): Promise<void> {
           maxTokens: scoutLoopConfig.maxTokens,
           temperature: scoutLoopConfig.temperature,
           reasoning: resolveReasoningParams(
-            (() => {
-              const adaptScout = agentConfig.resolvedRuntimePolicy?.adaptScoutReasoning !== false;
-              if (adaptScout) {
-                return toReasoningLevel(
-                  applyReasoningCeiling(
-                    sharedThinkingDecision.thinking,
-                    agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'none',
-                  ),
-                );
-              }
-              return agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'none';
-            })(),
+            resolveScoutReasoningLevel(
+              sharedThinkingDecision.thinking,
+              agentConfig.resolvedRuntimePolicy?.scoutReasoning ?? 'none',
+              agentConfig.resolvedRuntimePolicy?.adaptScoutReasoning !== false,
+            ),
             lightModel,
             agentRuntimePolicy.llm.thinking,
           ),
@@ -3106,9 +3099,7 @@ async function runTick(): Promise<void> {
       : sharedThinkingDecision.thinking;
     const userJudgeLevel = agentConfig.resolvedRuntimePolicy?.judgeReasoning ?? 'medium';
     const adaptJudge = agentConfig.resolvedRuntimePolicy?.adaptJudgeReasoning !== false;
-    const cappedThinking = adaptJudge
-      ? applyReasoningCeiling(systemThinking, userJudgeLevel)
-      : (userJudgeLevel === 'none' ? 'none' : userJudgeLevel === 'low' ? 'light' : 'deep');
+    const cappedThinking = resolveJudgeThinkingLevel(systemThinking, userJudgeLevel, adaptJudge);
     const judgeThinkingReason = !adaptJudge
       ? 'direct_mapping'
       : costProfile.defaultThinking === 'deep'

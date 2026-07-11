@@ -1172,25 +1172,33 @@ export async function agentRoutes(
     } = parsed.data;
     void _skillIds;
 
-    // Stamp adaptive reasoning flags from user's AI model settings when runtimePolicyOverrides
-    // is being updated. User-provided values win over stamped defaults.
-    // Explicit null means the user wants to clear all overrides — skip stamping.
-    if (agentUpdates.runtimePolicyOverrides !== undefined && agentUpdates.runtimePolicyOverrides !== null) {
-      const [userRow] = await db.select({ aiModelConfig: users.aiModelConfig })
-        .from(users)
-        .where(eq(users.id, request.userId))
-        .limit(1);
-      const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
-      if (userAiConfig) {
-        const current = (agentUpdates.runtimePolicyOverrides ?? {}) as Record<string, unknown>;
-        if (userAiConfig.adaptScoutReasoning !== undefined && current['adaptScoutReasoning'] === undefined) {
-          current['adaptScoutReasoning'] = userAiConfig.adaptScoutReasoning;
-        }
-        if (userAiConfig.adaptJudgeReasoning !== undefined && current['adaptJudgeReasoning'] === undefined) {
-          current['adaptJudgeReasoning'] = userAiConfig.adaptJudgeReasoning;
-        }
-        agentUpdates.runtimePolicyOverrides = Object.keys(current).length > 0 ? current : null;
+    // Stamp adaptive reasoning flags from user's AI model settings into runtimePolicyOverrides.
+    // This happens on every edit — the user's current adaptive preferences are always stamped.
+    // User-provided values win over stamped defaults.
+    const [stampUserRow] = await db.select({ aiModelConfig: users.aiModelConfig })
+      .from(users)
+      .where(eq(users.id, request.userId))
+      .limit(1);
+    const stampUserAiConfig = normalizePersistedAiModelConfig(stampUserRow?.aiModelConfig);
+    if (stampUserAiConfig) {
+      // Resolve the base: user-provided overrides, or agent's existing overrides, or empty
+      let baseOverrides: Record<string, unknown>;
+      if (agentUpdates.runtimePolicyOverrides !== undefined && agentUpdates.runtimePolicyOverrides !== null) {
+        baseOverrides = agentUpdates.runtimePolicyOverrides as Record<string, unknown>;
+      } else if (agentUpdates.runtimePolicyOverrides === null) {
+        // User explicitly cleared — start fresh, but stamp adaptive flags
+        baseOverrides = {};
+      } else {
+        // Not provided — use agent's existing overrides as base
+        baseOverrides = (agent.runtimePolicyOverrides as Record<string, unknown> | null) ?? {};
       }
+      if (stampUserAiConfig.adaptScoutReasoning !== undefined && baseOverrides['adaptScoutReasoning'] === undefined) {
+        baseOverrides['adaptScoutReasoning'] = stampUserAiConfig.adaptScoutReasoning;
+      }
+      if (stampUserAiConfig.adaptJudgeReasoning !== undefined && baseOverrides['adaptJudgeReasoning'] === undefined) {
+        baseOverrides['adaptJudgeReasoning'] = stampUserAiConfig.adaptJudgeReasoning;
+      }
+      agentUpdates.runtimePolicyOverrides = Object.keys(baseOverrides).length > 0 ? baseOverrides : null;
     }
 
     // Resolve maxBots from plan — if not provided, default to plan limit; if provided, validate ≤ plan limit

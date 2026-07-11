@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyTickThinking, extractDrawdownPct, applyReasoningCeiling, toReasoningLevel } from './tick-thinking.js';
+import { classifyTickThinking, extractDrawdownPct, applyReasoningCeiling, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
 
 describe('classifyTickThinking', () => {
   it('uses deep thinking for a regime flip', () => {
@@ -137,4 +137,114 @@ describe('applyReasoningCeiling', () => {
 
   it('caps deep to deep when user ceiling is medium (medium maps to deep)', () =>
     expect(applyReasoningCeiling('deep', 'medium')).toBe('deep'));
+});
+
+// ── Adaptive reasoning toggle: resolveScoutReasoningLevel ──────────────────
+
+describe('resolveScoutReasoningLevel', () => {
+  describe('adaptive ON (default) — ceiling applied', () => {
+    it('passes system level through when under user ceiling', () => {
+      expect(resolveScoutReasoningLevel('none', 'high', true)).toBe('none');
+      expect(resolveScoutReasoningLevel('light', 'high', true)).toBe('low');
+      expect(resolveScoutReasoningLevel('light', 'medium', true)).toBe('low');
+    });
+
+    it('caps system level when it exceeds user ceiling', () => {
+      expect(resolveScoutReasoningLevel('deep', 'none', true)).toBe('none');
+      expect(resolveScoutReasoningLevel('deep', 'low', true)).toBe('low');
+      expect(resolveScoutReasoningLevel('light', 'none', true)).toBe('none');
+    });
+
+    it('regime flip (deep → high) passes through when user ceiling is high', () => {
+      expect(resolveScoutReasoningLevel('deep', 'high', true)).toBe('high');
+    });
+
+    it('regime flip (deep) capped to low when user ceiling is low', () => {
+      expect(resolveScoutReasoningLevel('deep', 'low', true)).toBe('low');
+    });
+  });
+
+  describe('adaptive OFF — direct level, no ceiling', () => {
+    it('returns user level directly for all system levels', () => {
+      // Adaptive off: ceiling is never applied — user level is used as-is
+      expect(resolveScoutReasoningLevel('deep', 'none', false)).toBe('none');
+      expect(resolveScoutReasoningLevel('deep', 'low', false)).toBe('low');
+      expect(resolveScoutReasoningLevel('deep', 'medium', false)).toBe('medium');
+      expect(resolveScoutReasoningLevel('deep', 'high', false)).toBe('high');
+
+      // Same user level returned regardless of system thinking
+      expect(resolveScoutReasoningLevel('none', 'medium', false)).toBe('medium');
+      expect(resolveScoutReasoningLevel('light', 'medium', false)).toBe('medium');
+      expect(resolveScoutReasoningLevel('deep', 'medium', false)).toBe('medium');
+    });
+
+    it('regime flip does NOT escalate when adaptive is off', () => {
+      // With adaptive off, system should NOT escalate — user's level is used directly
+      expect(resolveScoutReasoningLevel('deep', 'none', false)).toBe('none');
+      expect(resolveScoutReasoningLevel('deep', 'low', false)).toBe('low');
+    });
+  });
+});
+
+// ── Adaptive reasoning toggle: resolveJudgeThinkingLevel ────────────────────
+
+describe('resolveJudgeThinkingLevel', () => {
+  describe('adaptive ON (default) — ceiling applied', () => {
+    it('passes system level through when under user ceiling', () => {
+      expect(resolveJudgeThinkingLevel('none', 'high', true)).toBe('none');
+      expect(resolveJudgeThinkingLevel('light', 'medium', true)).toBe('light');
+      expect(resolveJudgeThinkingLevel('light', 'high', true)).toBe('light');
+    });
+
+    it('caps system level when it exceeds user ceiling', () => {
+      expect(resolveJudgeThinkingLevel('deep', 'none', true)).toBe('none');
+      expect(resolveJudgeThinkingLevel('deep', 'low', true)).toBe('light');
+      expect(resolveJudgeThinkingLevel('light', 'none', true)).toBe('none');
+    });
+
+    it('preserves existing applyReasoningCeiling behavior', () => {
+      // These should match what applyReasoningCeiling returns directly
+      expect(resolveJudgeThinkingLevel('deep', 'high', true)).toBe('deep');
+      expect(resolveJudgeThinkingLevel('deep', 'medium', true)).toBe('deep');
+      expect(resolveJudgeThinkingLevel('none', 'none', true)).toBe('none');
+      expect(resolveJudgeThinkingLevel('light', 'low', true)).toBe('light');
+    });
+  });
+
+  describe('adaptive OFF — direct mapping, no ceiling', () => {
+    it('maps user level directly: none → none', () => {
+      expect(resolveJudgeThinkingLevel('deep', 'none', false)).toBe('none');
+      expect(resolveJudgeThinkingLevel('light', 'none', false)).toBe('none');
+      expect(resolveJudgeThinkingLevel('none', 'none', false)).toBe('none');
+    });
+
+    it('maps user level directly: low → light', () => {
+      expect(resolveJudgeThinkingLevel('deep', 'low', false)).toBe('light');
+      expect(resolveJudgeThinkingLevel('light', 'low', false)).toBe('light');
+      expect(resolveJudgeThinkingLevel('none', 'low', false)).toBe('light');
+    });
+
+    it('maps user level directly: medium → deep', () => {
+      expect(resolveJudgeThinkingLevel('deep', 'medium', false)).toBe('deep');
+      expect(resolveJudgeThinkingLevel('light', 'medium', false)).toBe('deep');
+      expect(resolveJudgeThinkingLevel('none', 'medium', false)).toBe('deep');
+    });
+
+    it('maps user level directly: high → deep', () => {
+      expect(resolveJudgeThinkingLevel('deep', 'high', false)).toBe('deep');
+      expect(resolveJudgeThinkingLevel('light', 'high', false)).toBe('deep');
+      expect(resolveJudgeThinkingLevel('none', 'high', false)).toBe('deep');
+    });
+
+    it('system thinking (regime flip, drawdown) is ignored when adaptive is off', () => {
+      // Regardless of what the system thinks, the user's level maps directly
+      expect(resolveJudgeThinkingLevel('deep', 'low', false)).toBe('light');
+      expect(resolveJudgeThinkingLevel('deep', 'none', false)).toBe('none');
+    });
+
+    it('medium and high both map to deep (existing behavior preserved)', () => {
+      expect(resolveJudgeThinkingLevel('none', 'medium', false)).toBe('deep');
+      expect(resolveJudgeThinkingLevel('none', 'high', false)).toBe('deep');
+    });
+  });
 });
