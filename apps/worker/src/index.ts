@@ -776,7 +776,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
             });
           },
           emitAgentWake: (wakeAgentId, payload) => eventPublisher.emitAgentWake(wakeAgentId, payload),
-          hasIntelligenceConfig: !!agent?.unifiedConfig?.intelligence,
+          isHybridMode: agent?.unifiedConfig?.capabilityMode === 'hybrid',
           instrumentCache,
           perTradeLevelMonitorIntervalMs: appConfig.agentRiskDefaults.perTradeLevelMonitorIntervalMs,
           onJournalEvent: (event) => {

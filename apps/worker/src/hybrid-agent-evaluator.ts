@@ -18,6 +18,32 @@ export function isTechnicalScanFresh(scan: TechnicalScanState, nowMs = Date.now(
   return nowMs - scanTimestampMs <= 2 * scan.scanIntervalMs;
 }
 
+/** 004: Determines whether the current tick should route through the single-shot
+ *  hybrid evaluator instead of the full scout/judge loop.
+ *
+ *  - scanner_gated: only scanner wakes (reminders and user messages fall through to scout/judge).
+ *  - mixed: only scanner wakes with a fresh technical scan. */
+export function canRouteToHybridEvaluator(params: {
+  isHybrid: boolean;
+  isScannerGated: boolean;
+  hasTradingCapability: boolean;
+  hasWakeSignal?: boolean;
+  isScannerWake: boolean;
+  latestTechnicalScan?: TechnicalScanState;
+}): boolean {
+  if (!params.isHybrid || !params.hasTradingCapability || !params.hasWakeSignal) {
+    return false;
+  }
+
+  if (params.isScannerGated) {
+    return params.isScannerWake;
+  }
+
+  return params.isScannerWake
+    && params.latestTechnicalScan !== undefined
+    && isTechnicalScanFresh(params.latestTechnicalScan);
+}
+
 function resolveDecisionInstrumentId(
   decision: HybridAgentDecision,
   input: HybridEvaluatorInput,

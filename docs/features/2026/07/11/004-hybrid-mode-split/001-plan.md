@@ -113,7 +113,7 @@ trading turns.
 - POST with `capabilityMode: 'hybrid'` + no `technical` → 400
 - PATCH `hybridMode: 'scanner_gated'` on an `intelligence` agent → 400
 
-## Part D — Runtime (Phase 4) [PENDING]
+## Part D — Runtime (Phase 4) [DONE]
 
 ### Changes
 
@@ -222,3 +222,14 @@ invalid in the E2E race-condition bug fix.
 **LOW:**
 3. **Repeated `as Record<string, unknown>` casts in PATCH handler.** Extract a local typed variable to reduce verbosity.
 4. **PATCH validation occurs after merge mutations.** Cross-field validation could run before mutations for defense-in-depth (benign since DB tx not yet started).
+
+### [Part D] Runtime
+
+**MEDIUM:**
+1. **No test coverage for market monitor scanner_gated changes (`monitor.ts`).** `isAgentScannerGated` and the three behavioral changes (skip watch_threshold, context-only discovery_delta, context-only regime_change) have zero test coverage.
+2. **Duplicated Redis key format `agent:scanner_gated:${agentId}`** hardcoded identically in `agent.ts` and `monitor.ts`. Extract to a shared constant.
+
+**LOW:**
+3. **Redundant test case in `hybrid-agent-evaluator.test.ts`** — `scanner_gated + no wake signal → false` duplicates the generic `no wake signal` test.
+4. **`watch_threshold` scanner_gated check uses inline `isAgentScannerGated`** without pre-computation (unlike discovery_delta/regime_change). O(agents) loop makes this fine, but pattern inconsistent.
+5. **Scanner_gated Redis flag set before full startup completion.** Flag lives up to 24h TTL if process crashes mid-startup; `isActive` guards on monitor side make this harmless.

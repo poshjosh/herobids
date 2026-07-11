@@ -84,7 +84,7 @@ import { getWorkspacePaths } from './tools/workspace.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults } from './llm-selection.js';
 import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
-import { isTechnicalScanFresh, runHybridEvaluator } from './hybrid-agent-evaluator.js';
+import { canRouteToHybridEvaluator, runHybridEvaluator } from './hybrid-agent-evaluator.js';
 
 const logger = createLogger('agent-runtime');
 
@@ -312,8 +312,10 @@ interface AgentConfig {
   };
   /** Provider pricing registry forwarded by the worker (config/providers.yaml) */
   providersYaml?: ProvidersYaml;
-  /** True when agent has both technical scanner + LLM intelligence config — ticks are event-driven */
-  hybridMode?: boolean;
+  /** 004: Explicit capability mode from UnifiedAgentConfig ('intelligence' | 'hybrid') */
+  capabilityMode?: 'intelligence' | 'hybrid';
+  /** 004: Hybrid sub-mode from UnifiedAgentConfig ('mixed' | 'scanner_gated'). Only meaningful when capabilityMode === 'hybrid'. */
+  hybridMode?: 'mixed' | 'scanner_gated';
   /** Per-agent open position escalation to judge policy: never | uncovered_or_triggered | always */
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
   /** Resolved per-agent runtime policy — derived from style + overrides at session start */
@@ -411,6 +413,12 @@ if (policy !== undefined && !['never', 'uncovered_or_triggered', 'always'].inclu
   logger.warn({ policy }, 'Invalid openPositionEscalationToJudgePolicy — falling back to default');
   agentConfig.openPositionEscalationToJudgePolicy = undefined; // let ?? default take effect in resolvePreScoutDecision
 }
+
+// 004: Derive explicit mode booleans from UnifiedAgentConfig fields.
+// Defensive defaults ensure backward compatibility with agents that haven't
+// been migrated yet (e.g. during rolling deploy).
+const IS_HYBRID = agentConfig.capabilityMode === 'hybrid';
+const IS_SCANNER_GATED = IS_HYBRID && (agentConfig.hybridMode ?? 'mixed') === 'scanner_gated';
 
 const agentGoal = agentConfig.prompt ?? agentConfig.goal ?? 'No goal provided';
 const skillIds = agentConfig.runtimeDescriptor?.resolvedSkills
@@ -2118,6 +2126,10 @@ async function shutdown(reason: string): Promise<void> {
     reasonCode: reason,
   }).catch(() => { /* ignore */ });
   await wakeRedis.quit().catch(() => { /* ignore */ });
+  // 004: Clean up scanner_gated flag to prevent stale state after shutdown.
+  if (IS_SCANNER_GATED) {
+    await redis.del(`agent:scanner_gated:${AGENT_ID!}`).catch(() => { /* ignore */ });
+  }
   await redis.quit().catch(() => { /* ignore */ });
   process.exit(0);
 }
@@ -2422,18 +2434,49 @@ async function runTick(): Promise<void> {
     // If this tick was triggered by a scanner wake, use the single-shot hybrid
     // evaluator instead of the full scout/judge loop. This avoids unnecessary
     // token spend when the scanner already scored the signals.
+    //
+    // 004: scanner_gated agents suppress ALL non-scanner market wakes and
+    // route every trading turn through the hybrid evaluator (single-shot).
     const isScannerWake = runtimeState.metrics.currentMarketWake?.source === 'scanner';
     const latestTechnicalScan = runtimeState.metrics.lastTechnicalScan;
-    const canUseHybridEvaluator = isScannerWake
-      && tradingTickWorkPlan.hasTradingCapability
-      && latestTechnicalScan !== undefined
-      && isTechnicalScanFresh(latestTechnicalScan);
 
-    if (isScannerWake && tradingTickWorkPlan.hasTradingCapability && !canUseHybridEvaluator) {
+    // ── Scanner-gated: suppress non-scanner market wakes ──────────────────
+    // Only market wakes are suppressed. Reminders and user messages have
+    // currentMarketWake === null and pass through the suppression gate;
+    // they continue to the hybrid evaluator routing check below.
+    if (IS_SCANNER_GATED && runtimeState.metrics.currentMarketWake !== null && !isScannerWake) {
+      const suppressedSource = runtimeState.metrics.currentMarketWake?.source;
+      logger.info({ tickCount, suppressedSource }, 'Scanner-gated agent: suppressing non-scanner wake — skipping LLM dispatch');
+      runtimeState.metrics.currentMarketWake = null;
+      emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
+        tickId,
+        reason: 'scanner_gated_suppress_wake',
+        gate: 'hybrid',
+        trigger: 'wake',
+        positionSide: sessionMetrics.lastPositionSide ?? undefined,
+      });
+      handleTickSuccess();
+      await sendHeartbeat('ready');
+      return;
+    }
+
+    // Determine whether to use the single-shot hybrid evaluator.
+    // - scanner_gated mode: only scanner wakes (reminders/user messages fall through to scout/judge).
+    // - mixed mode: only scanner wakes with a fresh technical scan.
+    const canUseHybridEvaluator = canRouteToHybridEvaluator({
+      isHybrid: IS_HYBRID,
+      isScannerGated: IS_SCANNER_GATED,
+      hasTradingCapability: tradingTickWorkPlan.hasTradingCapability,
+      hasWakeSignal: tickGateState.hasWakeSignal,
+      isScannerWake,
+      latestTechnicalScan,
+    });
+
+    if (!IS_SCANNER_GATED && isScannerWake && tradingTickWorkPlan.hasTradingCapability && !canUseHybridEvaluator) {
       logger.warn({
         hasTechnicalScan: latestTechnicalScan !== undefined,
         scanTimestamp: latestTechnicalScan?.timestamp,
-      }, 'Hybrid agent: scanner wake received without a fresh technical scan — falling back to normal tick');
+      }, 'Hybrid agent (mixed): scanner wake received without a fresh technical scan — falling back to normal tick');
     }
 
     if (canUseHybridEvaluator) {
@@ -2580,7 +2623,7 @@ async function runTick(): Promise<void> {
     // still fire for housekeeping (message ingestion, heartbeats) but must
     // not reach the scout/judge loop — that would leak tokens on every 10th
     // tick or whenever context changes, contradicting the event-driven design.
-    if (agentConfig.hybridMode && !tickGateState.hasWakeSignal) {
+    if (IS_HYBRID && !tickGateState.hasWakeSignal) {
       logger.info({ tickCount }, 'Hybrid agent: timer tick without wake signal — skipping LLM dispatch');
       emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
         tickId,
@@ -3303,6 +3346,14 @@ async function main(): Promise<void> {
   logger.info('Redis connected');
   await wakeRedis.ping();
   logger.info('Wake-signal Redis connected');
+
+  // 004: Publish scanner_gated flag so the market monitor can adjust wake
+  // delivery for this agent. Expires after 24h as a safety net in case the
+  // shutdown path fails to clean up (the agent container has a wall-clock limit).
+  if (IS_SCANNER_GATED) {
+    await redis.set(`agent:scanner_gated:${AGENT_ID}`, '1', 'EX', 86400);
+    logger.info('Agent is scanner-gated — published flag to Redis');
+  }
 
   // Crash handlers need checked (non-null) copies of these identifiers.
   // Passing them explicitly avoids ! non-null assertions in the crash path.

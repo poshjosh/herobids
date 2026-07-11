@@ -111,6 +111,17 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
   function getWakeMode(source: AgentWakeSource): 'wake' | 'batched' | 'context' {
     return config.wakePolicy?.[source]?.mode ?? 'wake';
   }
+
+  /** 004: Check whether an agent is in scanner_gated hybrid mode.
+   *  The agent container writes this flag to Redis on startup and cleans it on shutdown. */
+  async function isAgentScannerGated(agentId: string): Promise<boolean> {
+    try {
+      const flag = await redis.get(`agent:scanner_gated:${agentId}`);
+      return flag === '1';
+    } catch {
+      return false;
+    }
+  }
   const families = {
     watchThresholds: config.families?.watchThresholds ?? true,
     discoveryDeltas: config.families?.discoveryDeltas ?? true,
@@ -206,6 +217,10 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
       // due to stale watch keys left behind after a session ends.
       const isActive = await redis.sismember('agent:sessions:active', agentId);
       if (!isActive) continue;
+
+      // 004: Scanner-gated agents disable watch_threshold entirely.
+      // They trade exclusively on scanner entry/exit signals.
+      if (await isAgentScannerGated(agentId)) continue;
 
       // Fetch wake prefs once per agent per cycle — hoisted to avoid duplicate
       // redis.get calls inside the per-watch processing loop.
@@ -380,6 +395,15 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     const agentIds = await getSubscribedAgentIds('discovery_delta');
     if (stopped) return;
 
+    // 004: Pre-compute scanner_gated agents so we can switch to context-only
+    // delivery inside the per-token loops without redundant Redis calls.
+    const scannerGatedAgentIds = new Set<string>();
+    for (const agentId of agentIds) {
+      if (await isAgentScannerGated(agentId)) {
+        scannerGatedAgentIds.add(agentId);
+      }
+    }
+
     for (const token of snapshot.tokens) {
       const tokenKey = `${token.network}:${token.address}`;
 
@@ -413,7 +437,9 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           await publisher.emitMarketDiscoveryDetected(agentId, payload);
           await incrementRateCounter(agentId, 'discovery_delta');
           const ddWakeMode = getWakeMode('discovery_delta');
-          if (ddWakeMode !== 'context') {
+          // 004: scanner_gated agents always get context-only delivery for discovery
+          const effectiveMode = scannerGatedAgentIds.has(agentId) ? 'context' : ddWakeMode;
+          if (effectiveMode !== 'context') {
             await enqueueWake(
               agentId,
               eventId,
@@ -470,7 +496,9 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             await publisher.emitMarketDiscoveryDetected(agentId, payload);
             await incrementRateCounter(agentId, 'discovery_delta');
             const ddWakeMode = getWakeMode('discovery_delta');
-            if (ddWakeMode !== 'context') {
+            // 004: scanner_gated agents always get context-only delivery
+            const effectiveMode = scannerGatedAgentIds.has(agentId) ? 'context' : ddWakeMode;
+            if (effectiveMode !== 'context') {
               await enqueueWake(
                 agentId,
                 eventId,
@@ -535,7 +563,9 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             await publisher.emitMarketDiscoveryDetected(agentId, payload);
             await incrementRateCounter(agentId, 'discovery_delta');
             const ddWakeMode = getWakeMode('discovery_delta');
-            if (ddWakeMode !== 'context') {
+            // 004: scanner_gated agents always get context-only delivery
+            const effectiveMode = scannerGatedAgentIds.has(agentId) ? 'context' : ddWakeMode;
+            if (effectiveMode !== 'context') {
               await enqueueWake(
                 agentId,
                 eventId,
@@ -615,6 +645,17 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
       if (suppressed) continue;
 
       const agentIds = await getSubscribedAgentIds('regime_change');
+      if (stopped) return;
+
+      // 004: Pre-compute scanner_gated agents so we can switch to context-only
+      // delivery inside the per-agent loop without redundant Redis calls.
+      const scannerGatedAgentIds = new Set<string>();
+      for (const agentId of agentIds) {
+        if (await isAgentScannerGated(agentId)) {
+          scannerGatedAgentIds.add(agentId);
+        }
+      }
+
       const eventId = crypto.randomUUID();
       const payload: MarketRegimeChangedPayload = {
         eventId,
@@ -635,7 +676,9 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
         await publisher.emitMarketRegimeChanged(agentId, payload);
         await incrementRateCounter(agentId, 'regime_change');
         const regimeWakeMode = getWakeMode('regime_change');
-        if (regimeWakeMode !== 'context') {
+        // 004: scanner_gated agents always get context-only delivery for regime changes
+        const effectiveMode = scannerGatedAgentIds.has(agentId) ? 'context' : regimeWakeMode;
+        if (effectiveMode !== 'context') {
           await enqueueWake(
             agentId,
             eventId,

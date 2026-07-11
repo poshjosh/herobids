@@ -2834,7 +2834,7 @@ describe('AgentTradingActor', () => {
         ),
         onTechnicalScanComplete,
         emitAgentWake,
-        hasIntelligenceConfig: true,
+        isHybridMode: true,
       }));
 
       await actor.start();
@@ -2900,7 +2900,7 @@ describe('AgentTradingActor', () => {
         ),
         onTechnicalScanComplete,
         emitAgentWake,
-        hasIntelligenceConfig: true,
+        isHybridMode: true,
       }));
 
       await actor.start();

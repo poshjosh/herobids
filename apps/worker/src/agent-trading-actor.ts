@@ -145,8 +145,9 @@ export interface AgentTradingActorDeps {
   onTechnicalScanComplete?: (agentId: string, scan: TechnicalScanState) => void | Promise<void>;
   /** Emit an agent wake signal (e.g. scanner results) to trigger an early LLM tick */
   emitAgentWake?: (agentId: string, payload: AgentWakePayload) => Promise<void>;
-  /** Whether the agent has an intelligence (LLM) config — implies hybrid mode when technical is also present */
-  hasIntelligenceConfig?: boolean;
+  /** Whether the agent is in hybrid mode (capabilityMode === 'hybrid').
+   *  004: Derived from UnifiedAgentConfig. */
+  isHybridMode?: boolean;
   /** In-memory venue instrument cache for symbol validation at decision intake */
   instrumentCache?: VenueInstrumentCache;
   /** Interval in ms for the per-trade stop-loss / take-profit monitor loop (operator config) */
@@ -1462,7 +1463,7 @@ export class AgentTradingActor implements ExecutionActor {
         riskConfig: { ...(this.deps.technicalRiskConfig ?? {}), maxOpenPositions: this.deps.riskLimits.maxOpenPositions },
         agentId,
         venueAccountId,
-        advisoryMode: !!this.deps.hasIntelligenceConfig,
+        advisoryMode: !!this.deps.isHybridMode,
         discoverCandidates,
         fetchCandles,
         evaluateRegime: (params) => {
@@ -1496,7 +1497,7 @@ export class AgentTradingActor implements ExecutionActor {
       const hasExitAdvisories = phaseResult.positionIndicators.some((ind) => ind.exitAdvisory === true);
       const emitAgentWake = this.deps.emitAgentWake;
       const shouldWake = (phaseResult.signals.length > 0 || hasExitAdvisories)
-        && this.deps.hasIntelligenceConfig
+        && this.deps.isHybridMode
         && emitAgentWake;
 
       if (shouldWake && emitAgentWake) {

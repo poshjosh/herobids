@@ -454,8 +454,10 @@ export class AgentSessionManager {
           stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
           agentRiskDefaults: this.config.agentRiskDefaults,
           runtimeDescriptor,
-          // Hybrid mode: agent has both technical scanner + LLM intelligence
-          hybridMode: !!(agent.unifiedConfig?.technical && agent.unifiedConfig?.intelligence),
+          // 004: Explicit capability / hybrid mode from UnifiedAgentConfig
+          capabilityMode: agent.unifiedConfig?.capabilityMode ?? 'intelligence',
+          hybridMode: agent.unifiedConfig?.hybridMode
+            ?? (agent.unifiedConfig?.capabilityMode === 'hybrid' ? 'mixed' : undefined),
           openPositionEscalationToJudgePolicy: agent.openPositionEscalationToJudgePolicy,
           // Per-agent runtime policy — resolved from style + overrides, sent as env var to container
           resolvedRuntimePolicy: resolveAgentRuntimePolicy(

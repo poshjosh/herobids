@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { callLlmProvider } from '@herobids/llm';
-import { runHybridEvaluator } from './hybrid-agent-evaluator.js';
+import { runHybridEvaluator, canRouteToHybridEvaluator } from './hybrid-agent-evaluator.js';
 import { createRuntimeCompositionState, type TechnicalScanState } from './runtime-composition.js';
 import { buildHybridPrompt } from './hybrid-agent-prompt.js';
 
@@ -376,5 +376,151 @@ describe('buildHybridPrompt enrichments', () => {
 
       expect(prompt).not.toContain('## Recent Agent Decisions');
     });
+  });
+});
+
+// ── Hybrid evaluator routing (004) ───────────────────────────────────────────
+
+describe('canRouteToHybridEvaluator', () => {
+  const freshScan = makeScan();
+
+  it('returns false when not hybrid', () => {
+    expect(canRouteToHybridEvaluator({
+      isHybrid: false,
+      isScannerGated: false,
+      hasTradingCapability: true,
+      hasWakeSignal: true,
+      isScannerWake: true,
+      latestTechnicalScan: freshScan,
+    })).toBe(false);
+  });
+
+  it('returns false when no trading capability', () => {
+    expect(canRouteToHybridEvaluator({
+      isHybrid: true,
+      isScannerGated: false,
+      hasTradingCapability: false,
+      hasWakeSignal: true,
+      isScannerWake: true,
+      latestTechnicalScan: freshScan,
+    })).toBe(false);
+  });
+
+  it('returns false when no wake signal', () => {
+    expect(canRouteToHybridEvaluator({
+      isHybrid: true,
+      isScannerGated: false,
+      hasTradingCapability: true,
+      hasWakeSignal: false,
+      isScannerWake: true,
+      latestTechnicalScan: freshScan,
+    })).toBe(false);
+  });
+
+  // ── scanner_gated ──────────────────────────────────────────────────────
+
+  it('scanner_gated + scanner wake → true', () => {
+    expect(canRouteToHybridEvaluator({
+      isHybrid: true,
+      isScannerGated: true,
+      hasTradingCapability: true,
+      hasWakeSignal: true,
+      isScannerWake: true,
+    })).toBe(true);
+  });
+
+  it('scanner_gated + non-scanner wake → false (suppression happens upstream)', () => {
+    expect(canRouteToHybridEvaluator({
+      isHybrid: true,
+      isScannerGated: true,
+      hasTradingCapability: true,
+      hasWakeSignal: true,
+      isScannerWake: false,
+    })).toBe(false);
+  });
+
+  it('scanner_gated + reminder wake → false (falls through to scout/judge)', () => {
+    // Reminders set hasWakeSignal=true but currentMarketWake=null → isScannerWake=false
+    expect(canRouteToHybridEvaluator({
+      isHybrid: true,
+      isScannerGated: true,
+      hasTradingCapability: true,
+      hasWakeSignal: true,
+      isScannerWake: false,
+    })).toBe(false);
+  });
+
+  it('scanner_gated + no wake signal → false', () => {
+    expect(canRouteToHybridEvaluator({
+      isHybrid: true,
+      isScannerGated: true,
+      hasTradingCapability: true,
+      hasWakeSignal: false,
+      isScannerWake: false,
+    })).toBe(false);
+  });
+
+  // ── mixed ──────────────────────────────────────────────────────────────
+
+  it('mixed + scanner wake + fresh scan → true', () => {
+    expect(canRouteToHybridEvaluator({
+      isHybrid: true,
+      isScannerGated: false,
+      hasTradingCapability: true,
+      hasWakeSignal: true,
+      isScannerWake: true,
+      latestTechnicalScan: freshScan,
+    })).toBe(true);
+  });
+
+  it('mixed + scanner wake + stale scan → false', () => {
+    // Use a fixed historical timestamp (1 year in the past) to guarantee staleness
+    // regardless of real vs fake timers.
+    const staleScan: TechnicalScanState = {
+      ...freshScan,
+      timestamp: new Date('2020-01-01T00:00:00.000Z').toISOString(),
+      scanIntervalMs: 60_000,
+    };
+    expect(canRouteToHybridEvaluator({
+      isHybrid: true,
+      isScannerGated: false,
+      hasTradingCapability: true,
+      hasWakeSignal: true,
+      isScannerWake: true,
+      latestTechnicalScan: staleScan,
+    })).toBe(false);
+  });
+
+  it('mixed + scanner wake + no scan → false', () => {
+    expect(canRouteToHybridEvaluator({
+      isHybrid: true,
+      isScannerGated: false,
+      hasTradingCapability: true,
+      hasWakeSignal: true,
+      isScannerWake: true,
+      latestTechnicalScan: undefined,
+    })).toBe(false);
+  });
+
+  it('mixed + non-scanner wake → false', () => {
+    expect(canRouteToHybridEvaluator({
+      isHybrid: true,
+      isScannerGated: false,
+      hasTradingCapability: true,
+      hasWakeSignal: true,
+      isScannerWake: false,
+      latestTechnicalScan: freshScan,
+    })).toBe(false);
+  });
+
+  it('mixed + no wake signal → false', () => {
+    expect(canRouteToHybridEvaluator({
+      isHybrid: true,
+      isScannerGated: false,
+      hasTradingCapability: true,
+      hasWakeSignal: false,
+      isScannerWake: true,
+      latestTechnicalScan: freshScan,
+    })).toBe(false);
   });
 });
