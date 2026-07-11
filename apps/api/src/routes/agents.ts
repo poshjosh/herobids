@@ -31,6 +31,8 @@ import type { PlansConfig } from '@herobids/domain';
 import {
   AgentRiskDefaultsSchema,
   AgentRuntimePolicyOverridesSchema,
+  CapabilityModeSchema,
+  HybridModeSchema,
   RUNTIME_POLICY_CEILINGS,
   normalizePersistedAiModelConfig,
   TechnicalConfigSchema,
@@ -128,12 +130,30 @@ const CreateAgentSchema = z.object({
   openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
   connectionIds: z.array(z.string().min(1)).max(20).optional(),
   wakePreferences: WakePreferencesSchema.optional(),
+  capabilityMode: CapabilityModeSchema.optional(),
+  hybridMode: HybridModeSchema.optional(),
 }).superRefine((data, ctx) => {
   if (!data.technical && !data.prompt) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['prompt'],
       message: 'prompt is required when no technical config is provided',
+    });
+  }
+  // 004: capabilityMode='hybrid' requires technical config
+  if (data.capabilityMode === 'hybrid' && !data.technical) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['capabilityMode'],
+      message: '"technical" config is required when capabilityMode is "hybrid"',
+    });
+  }
+  // 004: capabilityMode='intelligence' must not set hybridMode
+  if (data.capabilityMode === 'intelligence' && data.hybridMode !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['hybridMode'],
+      message: '"hybridMode" must not be set when capabilityMode is not "hybrid"',
     });
   }
 });
@@ -185,6 +205,8 @@ const UpdateAgentSchema = z.object({
   openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
   connectionIds: z.array(z.string().min(1)).max(20).optional(),
   wakePreferences: WakePreferencesSchema.nullable().optional(),
+  capabilityMode: CapabilityModeSchema.nullable().optional(),
+  hybridMode: HybridModeSchema.nullable().optional(),
 });
 
 const PauseAgentSchema = z.object({
@@ -689,7 +711,25 @@ export async function agentRoutes(
         technical: parsed.data.technical,
       };
     } else if (presetUnifiedConfig) {
-      finalUnifiedConfig = presetUnifiedConfig;
+      finalUnifiedConfig = { ...presetUnifiedConfig };
+    }
+
+    // 004: Stamp capabilityMode and hybridMode into unifiedConfig.
+    // Default hybridMode to 'mixed' when capabilityMode is 'hybrid' and hybridMode is not explicitly set.
+    const capabilityMode = parsed.data.capabilityMode ?? 'intelligence';
+    const hybridMode = parsed.data.hybridMode ?? (capabilityMode === 'hybrid' ? 'mixed' : undefined);
+
+    if (finalUnifiedConfig) {
+      finalUnifiedConfig.capabilityMode = capabilityMode;
+      if (hybridMode !== undefined) {
+        finalUnifiedConfig.hybridMode = hybridMode;
+      }
+    } else {
+      // No technical or preset — still need to persist capabilityMode/hybridMode
+      finalUnifiedConfig = {
+        capabilityMode,
+        ...(hybridMode !== undefined ? { hybridMode } : {}),
+      };
     }
 
     // Resolve final risk fields: explicit values win, then preset values, then null
@@ -1168,6 +1208,8 @@ export async function agentRoutes(
       maxDrawdownPct: rawMaxDrawdownPct,
       technical: technicalUpdate,
       strategyPreset: strategyPresetUpdate,
+      capabilityMode: capabilityModeUpdate,
+      hybridMode: hybridModeUpdate,
       ...agentUpdates
     } = parsed.data;
     void _skillIds;
@@ -1295,6 +1337,78 @@ export async function agentRoutes(
           unifiedConfigPatch = { ...current, technical: technicalUpdate };
         }
         // else: neither preset nor technical changed → undefined (don't update)
+      }
+    }
+
+    // 004: Merge capabilityMode and hybridMode into unifiedConfigPatch.
+    if (capabilityModeUpdate !== undefined || hybridModeUpdate !== undefined) {
+      const current = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
+
+      if (unifiedConfigPatch === undefined) {
+        // No other unifiedConfig changes — start from current
+        unifiedConfigPatch = { ...current };
+      } else if (unifiedConfigPatch === null) {
+        // Previous logic explicitly cleared unifiedConfig — start fresh
+        unifiedConfigPatch = {};
+      }
+
+      if (capabilityModeUpdate !== undefined) {
+        if (capabilityModeUpdate === null) {
+          delete (unifiedConfigPatch as Record<string, unknown>)['capabilityMode'];
+          // MEDIUM-4: clearing capabilityMode also removes hybridMode — hybridMode
+          // is meaningless without capabilityMode.
+          delete (unifiedConfigPatch as Record<string, unknown>)['hybridMode'];
+        } else {
+          unifiedConfigPatch['capabilityMode'] = capabilityModeUpdate;
+        }
+      }
+
+      if (hybridModeUpdate !== undefined) {
+        if (hybridModeUpdate === null) {
+          delete (unifiedConfigPatch as Record<string, unknown>)['hybridMode'];
+        } else {
+          unifiedConfigPatch['hybridMode'] = hybridModeUpdate;
+        }
+      }
+
+      // Default hybridMode to 'mixed' for hybrid agents when not explicitly set.
+      // Uses the *new* capabilityMode if provided, otherwise falls back to existing.
+      const effectiveCapability = capabilityModeUpdate !== undefined
+        ? capabilityModeUpdate
+        : current['capabilityMode'] as string | undefined;
+      const explicitHybridMode =
+        hybridModeUpdate !== undefined
+          ? hybridModeUpdate
+          : current['hybridMode'];
+
+      if (effectiveCapability === 'hybrid' && explicitHybridMode === undefined) {
+        unifiedConfigPatch['hybridMode'] = 'mixed';
+      }
+
+      // HIGH-1: Strip hybridMode whenever the effective capability is not 'hybrid'.
+      // This prevents orphaned hybridMode when patching capabilityMode from
+      // 'hybrid' → 'intelligence' without also explicitly clearing hybridMode.
+      if (effectiveCapability !== 'hybrid') {
+        delete (unifiedConfigPatch as Record<string, unknown>)['hybridMode'];
+      }
+    }
+
+    // 004: Validate cross-field constraints for capabilityMode/hybridMode.
+    // Setting hybridMode on an intelligence agent is invalid.
+    if (hybridModeUpdate !== undefined && hybridModeUpdate !== null) {
+      const existingConfig = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
+      const effectiveCapability = capabilityModeUpdate !== undefined && capabilityModeUpdate !== null
+        ? capabilityModeUpdate
+        : existingConfig['capabilityMode'] as string | undefined;
+      if (effectiveCapability !== 'hybrid') {
+        return reply.status(400).send({
+          error: 'validation_error',
+          details: [{
+            code: 'custom',
+            path: ['hybridMode'],
+            message: '"hybridMode" must not be set when capabilityMode is not "hybrid"',
+          }],
+        });
       }
     }
 

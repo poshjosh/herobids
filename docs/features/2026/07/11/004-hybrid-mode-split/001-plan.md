@@ -99,7 +99,7 @@ trading turns.
 - Existing agents migrate with correct defaults (see Migration section above)
 - Repository round-trip preserves both fields
 
-## Part C — API (Phase 3) [PENDING]
+## Part C — API (Phase 3) [DONE]
 
 ### Changes
 
@@ -212,3 +212,13 @@ invalid in the E2E race-condition bug fix.
 **LOW:**
 3. **Domain package dist requires rebuild after Part A changes.** `tsc --noEmit` in dependent packages fails until domain is rebuilt. CI should run `pnpm build` before `pnpm lint`.
 4. **`as UnifiedAgentConfig` cast on helper result is type-unsafe.** Follows pre-existing codebase pattern for JSONB access. Consider `safeParse` guard in future hardening pass.
+
+### [Part C] API
+
+**MEDIUM:**
+1. **No test for POST default `capabilityMode: 'intelligence'` when field omitted.** Verify that omitting `capabilityMode` defaults to `'intelligence'` in inserted values.
+2. **No test for PATCH clearing `capabilityMode` (setting to `null`).** Verify that setting `capabilityMode: null` on a hybrid agent also clears `hybridMode`.
+
+**LOW:**
+3. **Repeated `as Record<string, unknown>` casts in PATCH handler.** Extract a local typed variable to reduce verbosity.
+4. **PATCH validation occurs after merge mutations.** Cross-field validation could run before mutations for defense-in-depth (benign since DB tx not yet started).

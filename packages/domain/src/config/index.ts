@@ -85,6 +85,8 @@ export {
   TechnicalConfigSchema,
   UnifiedAgentConfigSchema,
   IntelligenceConfigSchema,
+  CapabilityModeSchema,
+  HybridModeSchema,
   VwapParamsSchema,
   PriceActionParamsSchema,
   SentimentConfigSchema,
@@ -154,6 +156,8 @@ export type {
   PriceActionParams,
   SentimentConfig,
   EvaluationThresholds,
+  CapabilityMode,
+  HybridMode,
 } from './schema.js';
 
 export type { ProvidersYaml, ProviderConfig } from '../models/llm-models.js';

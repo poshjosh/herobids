@@ -2856,3 +2856,269 @@ describe('agent routes — wakePreferences Redis sync (C3.4)', () => {
     expect(res.statusCode).toBe(200);
   });
 });
+
+describe('agent routes — capabilityMode and hybridMode (004)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // --- POST validation ---
+
+  it('POST rejects capabilityMode=hybrid without technical config', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'hybrid-no-tech',
+        prompt: 'test',
+        capabilityMode: 'hybrid',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json<{ error: string; details: Array<{ path: string[]; message: string }> }>();
+    expect(body.error).toBe('validation_error');
+    const issue = body.details.find((d) => d.path.includes('capabilityMode'));
+    expect(issue).toBeDefined();
+    expect(issue!.message).toContain('technical');
+  });
+
+  it('POST defaults hybridMode to "mixed" for capabilityMode=hybrid without explicit hybridMode', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      modelPolicy: null,
+      unifiedConfig: null,
+    };
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      activeLinkRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'hybrid-default',
+        technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
+        capabilityMode: 'hybrid',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const uniConfig = insertedValues[0]?.['unifiedConfig'] as Record<string, unknown> | undefined;
+    expect(uniConfig).toBeDefined();
+    expect(uniConfig!['capabilityMode']).toBe('hybrid');
+    expect(uniConfig!['hybridMode']).toBe('mixed');
+  });
+
+  it('POST accepts capabilityMode=hybrid with technical config', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      modelPolicy: null,
+      unifiedConfig: null,
+    };
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      activeLinkRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'hybrid-ok',
+        technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
+        capabilityMode: 'hybrid',
+        hybridMode: 'scanner_gated',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = res.json<Record<string, unknown>>();
+    expect(body['technical']).toBeDefined();
+    // MEDIUM-5: verify hybridMode was persisted as 'scanner_gated'
+    const uniConfig = insertedValues[0]?.['unifiedConfig'] as Record<string, unknown> | undefined;
+    expect(uniConfig).toBeDefined();
+    expect(uniConfig!['hybridMode']).toBe('scanner_gated');
+  });
+
+  it('POST rejects capabilityMode=intelligence with hybridMode set', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'intel-with-hybrid',
+        prompt: 'test',
+        capabilityMode: 'intelligence',
+        hybridMode: 'mixed',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json<{ error: string; details: Array<{ path: string[]; message: string }> }>();
+    expect(body.error).toBe('validation_error');
+    const issue = body.details.find((d) => d.path.includes('hybridMode'));
+    expect(issue).toBeDefined();
+    expect(issue!.message).toContain('not "hybrid"');
+  });
+
+  // --- PATCH validation ---
+
+  it('PATCH rejects hybridMode on an intelligence agent', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        unifiedConfig: { capabilityMode: 'intelligence' },
+      }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { hybridMode: 'scanner_gated' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json<{ error: string; details: Array<{ path: string[]; message: string }> }>();
+    expect(body.error).toBe('validation_error');
+  });
+
+  it('PATCH accepts hybridMode on a hybrid agent', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        unifiedConfig: {
+          capabilityMode: 'hybrid',
+          hybridMode: 'mixed',
+          technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
+        },
+      }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { hybridMode: 'scanner_gated' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Verify unifiedConfig was updated with the new hybridMode
+    const unifiedUpdate = updateSets.find((s) => 'unifiedConfig' in s);
+    expect(unifiedUpdate).toBeDefined();
+    const uc = (unifiedUpdate as Record<string, unknown>)['unifiedConfig'] as Record<string, unknown>;
+    expect(uc['hybridMode']).toBe('scanner_gated');
+  });
+
+  // HIGH-2: PATCH capabilityMode transitions
+  it('PATCH capabilityMode=intelligence on hybrid agent clears hybridMode', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        unifiedConfig: {
+          capabilityMode: 'hybrid',
+          hybridMode: 'scanner_gated',
+          technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
+        },
+      }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { capabilityMode: 'intelligence' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Verify unifiedConfig has capabilityMode=intelligence and hybridMode cleared
+    const unifiedUpdate = updateSets.find((s) => 'unifiedConfig' in s);
+    expect(unifiedUpdate).toBeDefined();
+    const uc = (unifiedUpdate as Record<string, unknown>)['unifiedConfig'] as Record<string, unknown>;
+    expect(uc['capabilityMode']).toBe('intelligence');
+    expect(uc['hybridMode']).toBeUndefined();
+  });
+
+  it('PATCH capabilityMode=hybrid on intelligence agent defaults hybridMode to mixed', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        unifiedConfig: { capabilityMode: 'intelligence' },
+      }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { capabilityMode: 'hybrid' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Verify unifiedConfig has capabilityMode=hybrid and hybridMode defaults to mixed
+    const unifiedUpdate = updateSets.find((s) => 'unifiedConfig' in s);
+    expect(unifiedUpdate).toBeDefined();
+    const uc = (unifiedUpdate as Record<string, unknown>)['unifiedConfig'] as Record<string, unknown>;
+    expect(uc['capabilityMode']).toBe('hybrid');
+    expect(uc['hybridMode']).toBe('mixed');
+  });
+});
