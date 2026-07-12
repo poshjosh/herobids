@@ -2260,6 +2260,10 @@ async function runTick(): Promise<void> {
           instrumentId: p.instrumentId ?? undefined,
           symbol: p.symbol,
           side: p.side,
+          nativeExitLevels: {
+            stopLoss: p.stopLoss != null,
+            takeProfit: p.takeProfit != null,
+          },
         }));
         setDependencyAvailability('database', true);
       } catch (err) {
@@ -2822,6 +2826,7 @@ async function runTick(): Promise<void> {
       openPositionEscalationToJudgePolicy: agentConfig.openPositionEscalationToJudgePolicy,
       hasTriggeredWatch,
       hasUncoveredPosition,
+      hasUnprotectedPosition: coverageResult.hasUnprotectedPosition,
       hasStaleCoverage: coverageResult.hasStaleProtectiveWatch,
     });
 

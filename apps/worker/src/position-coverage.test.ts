@@ -385,4 +385,111 @@ describe('evaluatePositionCoverage', () => {
   it('PROTECTIVE_WATCH_PURPOSES includes stop_loss, take_profit, exit', () => {
     expect(PROTECTIVE_WATCH_PURPOSES).toEqual(['stop_loss', 'take_profit', 'exit']);
   });
+
+  // ── Native exit-level protection ───────────────────────────────────
+
+  it('position with native stopLoss → hasNativeProtection = true, hasUnprotectedPosition = false', () => {
+    const result = evaluatePositionCoverage({
+      positions: [makePosition({ nativeExitLevels: { stopLoss: true } })],
+      watches: [],
+    });
+
+    expect(result.positions[0]!.hasNativeProtection).toBe(true);
+    expect(result.positions[0]!.hasProtectiveCoverage).toBe(false);
+    // hasUncoveredPosition = true (no watch coverage), but hasUnprotectedPosition = false (has native)
+    expect(result.hasUncoveredPosition).toBe(true);
+    expect(result.hasUnprotectedPosition).toBe(false);
+  });
+
+  it('position with native takeProfit → hasNativeProtection = true', () => {
+    const result = evaluatePositionCoverage({
+      positions: [makePosition({ nativeExitLevels: { takeProfit: true } })],
+      watches: [],
+    });
+
+    expect(result.positions[0]!.hasNativeProtection).toBe(true);
+    expect(result.hasUnprotectedPosition).toBe(false);
+  });
+
+  it('position with both native stopLoss and takeProfit → hasNativeProtection = true', () => {
+    const result = evaluatePositionCoverage({
+      positions: [makePosition({ nativeExitLevels: { stopLoss: true, takeProfit: true } })],
+      watches: [],
+    });
+
+    expect(result.positions[0]!.hasNativeProtection).toBe(true);
+    expect(result.hasUnprotectedPosition).toBe(false);
+  });
+
+  it('position with neither native protection nor watch → truly unprotected', () => {
+    const result = evaluatePositionCoverage({
+      positions: [makePosition({ nativeExitLevels: undefined })],
+      watches: [],
+    });
+
+    expect(result.positions[0]!.hasNativeProtection).toBe(false);
+    expect(result.positions[0]!.hasProtectiveCoverage).toBe(false);
+    expect(result.hasUncoveredPosition).toBe(true);
+    expect(result.hasUnprotectedPosition).toBe(true);
+  });
+
+  it('position with watch coverage and native protection → fully covered', () => {
+    const result = evaluatePositionCoverage({
+      positions: [makePosition({ nativeExitLevels: { stopLoss: true } })],
+      watches: [makeWatch({ purpose: 'stop_loss', lastConditionMet: false })],
+    });
+
+    expect(result.positions[0]!.hasNativeProtection).toBe(true);
+    expect(result.positions[0]!.hasProtectiveCoverage).toBe(true);
+    expect(result.hasUncoveredPosition).toBe(false);
+    expect(result.hasUnprotectedPosition).toBe(false);
+  });
+
+  it('position with native protection but no watch → uncovered but not unprotected', () => {
+    const result = evaluatePositionCoverage({
+      positions: [makePosition({ nativeExitLevels: { takeProfit: true } })],
+      watches: [makeWatch({ purpose: 'monitor' })], // monitor is not protective
+    });
+
+    expect(result.positions[0]!.hasNativeProtection).toBe(true);
+    expect(result.positions[0]!.hasProtectiveCoverage).toBe(false);
+    expect(result.hasUncoveredPosition).toBe(true);
+    // Native protection exists, so position is NOT truly unprotected
+    expect(result.hasUnprotectedPosition).toBe(false);
+  });
+
+  it('nativeExitLevels with both entries false → no native protection', () => {
+    const result = evaluatePositionCoverage({
+      positions: [makePosition({ nativeExitLevels: { stopLoss: false, takeProfit: false } })],
+      watches: [],
+    });
+
+    expect(result.positions[0]!.hasNativeProtection).toBe(false);
+    expect(result.hasUnprotectedPosition).toBe(true);
+  });
+
+  it('hasUnprotectedPosition aggregate — one native-protected, one truly bare', () => {
+    const result = evaluatePositionCoverage({
+      positions: [
+        makePosition({ instrumentId: 'BTC-USD', symbol: 'BTC-USD', side: 'long', nativeExitLevels: { stopLoss: true } }),
+        makePosition({ instrumentId: 'ETH-USD', symbol: 'ETH-USD', side: 'long', nativeExitLevels: undefined }),
+      ],
+      watches: [],
+    });
+
+    // BTC has native protection → not unprotected
+    expect(result.positions[0]!.hasNativeProtection).toBe(true);
+    // ETH has nothing → unprotected
+    expect(result.positions[1]!.hasNativeProtection).toBe(false);
+    expect(result.hasUnprotectedPosition).toBe(true);
+  });
+
+  it('empty positions → hasUnprotectedPosition = false', () => {
+    const result = evaluatePositionCoverage({
+      positions: [],
+      watches: [],
+    });
+
+    expect(result.hasUnprotectedPosition).toBe(false);
+  });
 });

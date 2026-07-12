@@ -57,6 +57,13 @@ export function resolvePreScoutDecision(params: {
   hasUncoveredPosition?: boolean;
   /** True when at least one protective watch is stale (lastCheckedAt exceeds threshold). */
   hasStaleCoverage?: boolean;
+  /**
+   * True when at least one open position has NEITHER watch-based coverage NOR native
+   * exit-level protection (in-process stopLoss/takeProfit). When false (all positions
+   * have SOME protection), suppresses open_position_uncovered escalation under
+   * uncovered_or_triggered policy. When undefined, falls back to hasUncoveredPosition behavior.
+   */
+  hasUnprotectedPosition?: boolean;
 }): PreScoutResolution {
   if (params.tickCount === 1) {
     return {
@@ -106,7 +113,13 @@ export function resolvePreScoutDecision(params: {
           source: 'forced_open_positions',
         };
       }
-      if (params.hasUncoveredPosition) {
+      // When hasUnprotectedPosition is provided, use it as the definitive signal.
+      // If false, all positions have SOME protection (native or watch) → suppress escalation.
+      // If undefined, fall back to hasUncoveredPosition for backward compatibility.
+      const shouldEscalateUncovered = params.hasUnprotectedPosition !== undefined
+        ? params.hasUnprotectedPosition
+        : params.hasUncoveredPosition;
+      if (shouldEscalateUncovered) {
         return {
           decision: { disposition: 'escalate', reason: 'open_position_uncovered' },
           source: 'forced_open_positions',

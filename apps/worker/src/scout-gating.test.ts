@@ -114,6 +114,109 @@ describe('resolvePreScoutDecision', () => {
     });
   });
 
+  describe('hasUnprotectedPosition (native protection alignment)', () => {
+    it('suppresses open_position_uncovered when hasUnprotectedPosition is false (all positions have some protection)', () => {
+      // Position has native stopLoss but no watch → hasUncoveredPosition=true but hasUnprotectedPosition=false
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
+        hasUncoveredPosition: true,
+        hasUnprotectedPosition: false,
+      })).toEqual({
+        decision: null,
+        source: 'scout',
+      });
+    });
+
+    it('escalates when hasUnprotectedPosition is true (truly bare position)', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
+        hasUncoveredPosition: true,
+        hasUnprotectedPosition: true,
+      })).toEqual({
+        decision: { disposition: 'escalate', reason: 'open_position_uncovered' },
+        source: 'forced_open_positions',
+      });
+    });
+
+    it('falls back to hasUncoveredPosition when hasUnprotectedPosition is undefined', () => {
+      // Backward compatibility: no hasUnprotectedPosition → use hasUncoveredPosition
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
+        hasUncoveredPosition: true,
+        hasUnprotectedPosition: undefined,
+      })).toEqual({
+        decision: { disposition: 'escalate', reason: 'open_position_uncovered' },
+        source: 'forced_open_positions',
+      });
+    });
+
+    it('falls back to hasUncoveredPosition=false when hasUnprotectedPosition is undefined', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
+        hasUncoveredPosition: false,
+        hasUnprotectedPosition: undefined,
+      })).toEqual({
+        decision: null,
+        source: 'scout',
+      });
+    });
+
+    it('triggered watch still escalates regardless of hasUnprotectedPosition', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
+        hasTriggeredWatch: true,
+        hasUncoveredPosition: true,
+        hasUnprotectedPosition: false,
+      })).toEqual({
+        decision: { disposition: 'escalate', reason: 'watch_triggered' },
+        source: 'forced_open_positions',
+      });
+    });
+
+    it('hasUnprotectedPosition does not affect never policy', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        openPositionEscalationToJudgePolicy: 'never',
+        hasUncoveredPosition: true,
+        hasUnprotectedPosition: true,
+      })).toEqual({
+        decision: null,
+        source: 'scout',
+      });
+    });
+
+    it('hasUnprotectedPosition does not affect always policy', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        openPositionEscalationToJudgePolicy: 'always',
+        hasUncoveredPosition: false,
+        hasUnprotectedPosition: false,
+      })).toEqual({
+        decision: { disposition: 'escalate', reason: 'open_positions_require_active_management' },
+        source: 'forced_open_positions',
+      });
+    });
+  });
+
   describe('stale protective coverage', () => {
     it('forces escalation when protective coverage is stale with open positions', () => {
       expect(resolvePreScoutDecision({

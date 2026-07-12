@@ -1160,15 +1160,32 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
         }
       }
 
-      // Uncovered positions
+      // Uncovered positions — those without watch-based protective coverage.
+      // Distinguish between truly unprotected (no watch + no native) vs
+      // native-protected (has in-process stopLoss/takeProfit but no watch).
       const uncovered = coverage.positions.filter((p) => !p.hasProtectiveCoverage);
       if (uncovered.length > 0) {
         for (const p of uncovered) {
-          lines.push(`[UNCOVERED] ${p.positionKey} — no protective watch`);
+          if (p.hasNativeProtection) {
+            lines.push(`[NATIVE_PROTECTED] ${p.positionKey} — in-process exit levels armed (no protective watch)`);
+          } else {
+            lines.push(`[UNCOVERED] ${p.positionKey} — no protective watch or native exit levels`);
+          }
         }
       }
 
-      // All-covered summary when neither triggered nor uncovered
+      // Positions protected by both a watch AND native exit levels —
+      // the strongest protection state.
+      const dualProtected = coverage.positions.filter(
+        (p) => p.hasProtectiveCoverage && p.hasNativeProtection,
+      );
+      if (dualProtected.length > 0) {
+        for (const p of dualProtected) {
+          lines.push(`[PROTECTED] ${p.positionKey} — watch + in-process exit levels`);
+        }
+      }
+
+      // All-covered summary when no lines were generated above
       if (lines.length === 0) {
         const staleFlag = coverage.hasStaleProtectiveWatch ? ' (some stale)' : '';
         lines.push(`All positions covered${staleFlag} (no protective watches triggered)`);

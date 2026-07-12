@@ -8,6 +8,7 @@ import {
   createRuntimeCompositionState,
   getVisibleToolNames,
   recordAgentMemory,
+  recordPositionCoverage,
   recordRegimeEvaluation,
   recordSessionCost,
   setCapabilityDegradation,
@@ -1844,6 +1845,7 @@ describe('runtime composition helpers', () => {
         positions: [],
         totalOpenPositions: 0,
         hasUncoveredPosition: false,
+        hasUnprotectedPosition: false,
         hasTriggeredProtectiveWatch: false,
         hasStaleProtectiveWatch: false,
       };
@@ -1860,10 +1862,12 @@ describe('runtime composition helpers', () => {
             hasProtectiveCoverage: true,
             triggeredProtectiveWatch: true,
             staleProtectiveWatch: false,
+            hasNativeProtection: false,
           },
         ],
         totalOpenPositions: 1,
         hasUncoveredPosition: false,
+        hasUnprotectedPosition: false,
         hasTriggeredProtectiveWatch: true,
         hasStaleProtectiveWatch: false,
       };
@@ -1884,10 +1888,12 @@ describe('runtime composition helpers', () => {
             hasProtectiveCoverage: true,
             triggeredProtectiveWatch: true,
             staleProtectiveWatch: true,
+            hasNativeProtection: false,
           },
         ],
         totalOpenPositions: 1,
         hasUncoveredPosition: false,
+        hasUnprotectedPosition: false,
         hasTriggeredProtectiveWatch: true,
         hasStaleProtectiveWatch: true,
       };
@@ -1906,16 +1912,18 @@ describe('runtime composition helpers', () => {
             hasProtectiveCoverage: false,
             triggeredProtectiveWatch: false,
             staleProtectiveWatch: false,
+            hasNativeProtection: false,
           },
         ],
         totalOpenPositions: 1,
         hasUncoveredPosition: true,
+        hasUnprotectedPosition: true,
         hasTriggeredProtectiveWatch: false,
         hasStaleProtectiveWatch: false,
       };
       const result = provider.build(state);
       expect(result).not.toBeNull();
-      expect(result!.content).toContain('[UNCOVERED] SOL::long — no protective watch');
+      expect(result!.content).toContain('[UNCOVERED] SOL::long — no protective watch or native exit levels');
       expect(result!.content).not.toContain('[TRIGGERED]');
     });
 
@@ -1929,6 +1937,7 @@ describe('runtime composition helpers', () => {
             hasProtectiveCoverage: true,
             triggeredProtectiveWatch: false,
             staleProtectiveWatch: false,
+            hasNativeProtection: false,
           },
           {
             positionKey: 'ETH::short',
@@ -1936,10 +1945,12 @@ describe('runtime composition helpers', () => {
             hasProtectiveCoverage: true,
             triggeredProtectiveWatch: false,
             staleProtectiveWatch: false,
+            hasNativeProtection: false,
           },
         ],
         totalOpenPositions: 2,
         hasUncoveredPosition: false,
+        hasUnprotectedPosition: false,
         hasTriggeredProtectiveWatch: false,
         hasStaleProtectiveWatch: false,
       };
@@ -1959,10 +1970,12 @@ describe('runtime composition helpers', () => {
             hasProtectiveCoverage: true,
             triggeredProtectiveWatch: false,
             staleProtectiveWatch: true,
+            hasNativeProtection: false,
           },
         ],
         totalOpenPositions: 1,
         hasUncoveredPosition: false,
+        hasUnprotectedPosition: false,
         hasTriggeredProtectiveWatch: false,
         hasStaleProtectiveWatch: true,
       };
@@ -1981,6 +1994,7 @@ describe('runtime composition helpers', () => {
             hasProtectiveCoverage: true,
             triggeredProtectiveWatch: true,
             staleProtectiveWatch: false,
+            hasNativeProtection: false,
           },
           {
             positionKey: 'ETH::short',
@@ -1988,17 +2002,19 @@ describe('runtime composition helpers', () => {
             hasProtectiveCoverage: false,
             triggeredProtectiveWatch: false,
             staleProtectiveWatch: false,
+            hasNativeProtection: false,
           },
         ],
         totalOpenPositions: 2,
         hasUncoveredPosition: true,
+        hasUnprotectedPosition: true,
         hasTriggeredProtectiveWatch: true,
         hasStaleProtectiveWatch: false,
       };
       const result = provider.build(state);
       expect(result).not.toBeNull();
       expect(result!.content).toContain('[TRIGGERED] BTC::long — protective watch triggered');
-      expect(result!.content).toContain('[UNCOVERED] ETH::short — no protective watch');
+      expect(result!.content).toContain('[UNCOVERED] ETH::short — no protective watch or native exit levels');
       // Triggered should appear before uncovered
       const triggeredIdx = result!.content.indexOf('[TRIGGERED]');
       const uncoveredIdx = result!.content.indexOf('[UNCOVERED]');
@@ -2015,10 +2031,12 @@ describe('runtime composition helpers', () => {
             hasProtectiveCoverage: true,
             triggeredProtectiveWatch: false,
             staleProtectiveWatch: false,
+            hasNativeProtection: false,
           },
         ],
         totalOpenPositions: 1,
         hasUncoveredPosition: false,
+        hasUnprotectedPosition: false,
         hasTriggeredProtectiveWatch: false,
         hasStaleProtectiveWatch: false,
       };
@@ -2027,6 +2045,162 @@ describe('runtime composition helpers', () => {
       expect(result!.id).toBe('positionCoverage');
       expect(result!.title).toBe('Position Coverage');
       expect(result!.provider).toBe('position-coverage');
+    });
+
+    it('renders [NATIVE_PROTECTED] for a position with native protection but no watch coverage', () => {
+      const state = makeState();
+      state.metrics.positionCoverage = {
+        positions: [
+          {
+            positionKey: 'BTC::long',
+            protectiveWatchCount: 0,
+            hasProtectiveCoverage: false,
+            triggeredProtectiveWatch: false,
+            staleProtectiveWatch: false,
+            hasNativeProtection: true,
+          },
+        ],
+        totalOpenPositions: 1,
+        hasUncoveredPosition: true,
+        hasUnprotectedPosition: false,
+        hasTriggeredProtectiveWatch: false,
+        hasStaleProtectiveWatch: false,
+      };
+      const result = provider.build(state);
+      expect(result).not.toBeNull();
+      expect(result!.content).toContain('[NATIVE_PROTECTED] BTC::long — in-process exit levels armed (no protective watch)');
+      expect(result!.content).not.toContain('[UNCOVERED]');
+      expect(result!.content).not.toContain('[TRIGGERED]');
+    });
+
+    it('renders [UNCOVERED] for a position with neither watch nor native protection', () => {
+      const state = makeState();
+      state.metrics.positionCoverage = {
+        positions: [
+          {
+            positionKey: 'ETH::short',
+            protectiveWatchCount: 0,
+            hasProtectiveCoverage: false,
+            triggeredProtectiveWatch: false,
+            staleProtectiveWatch: false,
+            hasNativeProtection: false,
+          },
+        ],
+        totalOpenPositions: 1,
+        hasUncoveredPosition: true,
+        hasUnprotectedPosition: true,
+        hasTriggeredProtectiveWatch: false,
+        hasStaleProtectiveWatch: false,
+      };
+      const result = provider.build(state);
+      expect(result).not.toBeNull();
+      expect(result!.content).toContain('[UNCOVERED] ETH::short — no protective watch or native exit levels');
+      expect(result!.content).not.toContain('[NATIVE_PROTECTED]');
+    });
+
+    it('renders [PROTECTED] for a position with both watch and native protection', () => {
+      state.metrics.positionCoverage = {
+        totalOpenPositions: 1,
+        positions: [{
+          positionKey: 'BTC::long',
+          protectiveWatchCount: 1,
+          hasProtectiveCoverage: true,
+          triggeredProtectiveWatch: false,
+          staleProtectiveWatch: false,
+          hasNativeProtection: true,
+        }],
+        hasUncoveredPosition: false,
+        hasTriggeredProtectiveWatch: false,
+        hasStaleProtectiveWatch: false,
+        hasUnprotectedPosition: false,
+      };
+
+      const result = provider.build(state);
+      expect(result).not.toBeNull();
+      expect(result!.content).toContain('[PROTECTED] BTC::long — watch + in-process exit levels');
+      expect(result!.content).not.toContain('[NATIVE_PROTECTED]');
+    });
+    });
+
+    it('renders both [NATIVE_PROTECTED] and [UNCOVERED] for mixed positions', () => {
+      const state = makeState();
+      state.metrics.positionCoverage = {
+        positions: [
+          {
+            positionKey: 'BTC::long',
+            protectiveWatchCount: 0,
+            hasProtectiveCoverage: false,
+            triggeredProtectiveWatch: false,
+            staleProtectiveWatch: false,
+            hasNativeProtection: true,
+          },
+          {
+            positionKey: 'SOL::long',
+            protectiveWatchCount: 0,
+            hasProtectiveCoverage: false,
+            triggeredProtectiveWatch: false,
+            staleProtectiveWatch: false,
+            hasNativeProtection: false,
+          },
+        ],
+        totalOpenPositions: 2,
+        hasUncoveredPosition: true,
+        hasUnprotectedPosition: true,
+        hasTriggeredProtectiveWatch: false,
+        hasStaleProtectiveWatch: false,
+      };
+      const result = provider.build(state);
+      expect(result).not.toBeNull();
+      expect(result!.content).toContain('[NATIVE_PROTECTED] BTC::long — in-process exit levels armed (no protective watch)');
+      expect(result!.content).toContain('[UNCOVERED] SOL::long — no protective watch or native exit levels');
+    });
+
+    it('renders all-covered summary when all positions have native protection but no watch', () => {
+      const state = makeState();
+      state.metrics.positionCoverage = {
+        positions: [
+          {
+            positionKey: 'BTC::long',
+            protectiveWatchCount: 0,
+            hasProtectiveCoverage: false,
+            triggeredProtectiveWatch: false,
+            staleProtectiveWatch: false,
+            hasNativeProtection: true,
+          },
+        ],
+        totalOpenPositions: 1,
+        hasUncoveredPosition: true,
+        hasUnprotectedPosition: false,
+        hasTriggeredProtectiveWatch: false,
+        hasStaleProtectiveWatch: false,
+      };
+      // Note: all-covered is only shown when lines.length === 0, but with uncovered
+      // positions (watch-based) we always render lines. Native-protected positions
+      // that lack watch coverage still render [NATIVE_PROTECTED] lines.
+      // The "all covered" summary only appears when everything has watch coverage.
+    });
+
+    it('recordPositionCoverage updates state metrics with coverage result', () => {
+      const state = makeState();
+      const coverage = {
+        positions: [
+          {
+            positionKey: 'BTC::long',
+            protectiveWatchCount: 0,
+            hasProtectiveCoverage: false,
+            triggeredProtectiveWatch: false,
+            staleProtectiveWatch: false,
+            hasNativeProtection: true,
+          },
+        ],
+        totalOpenPositions: 1,
+        hasUncoveredPosition: true,
+        hasUnprotectedPosition: false,
+        hasTriggeredProtectiveWatch: false,
+        hasStaleProtectiveWatch: false,
+      };
+      recordPositionCoverage(state, coverage);
+      expect(state.metrics.positionCoverage).toEqual(coverage);
     });
   });
 

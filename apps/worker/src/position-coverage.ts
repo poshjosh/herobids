@@ -39,13 +39,17 @@ export interface PositionCoverageStatus {
   triggeredProtectiveWatch: boolean;
   /** True when at least one matched protective watch has a stale lastCheckedAt. */
   staleProtectiveWatch: boolean;
+  /** True when the position has native exit-level protection (stopLoss / takeProfit armed in-process). */
+  hasNativeProtection: boolean;
 }
 
 export interface CoverageEvaluationResult {
   /** Per-position coverage status (same order as input positions). */
   positions: PositionCoverageStatus[];
-  /** True when any position lacks protective coverage. */
+  /** True when any position lacks watch-based protective coverage. */
   hasUncoveredPosition: boolean;
+  /** True when any position has neither native protection NOR watch-based coverage. */
+  hasUnprotectedPosition: boolean;
   /** True when any position has a triggered protective watch. */
   hasTriggeredProtectiveWatch: boolean;
   /** True when any position has a stale protective watch. */
@@ -65,6 +69,11 @@ export interface PositionInput {
   instrumentId?: string;
   symbol: string;
   side: string;
+  /** Native exit-level state from open positions — indicates in-process per-trade protection. */
+  nativeExitLevels?: {
+    stopLoss?: boolean;
+    takeProfit?: boolean;
+  };
 }
 
 export interface WatchInput {
@@ -187,6 +196,7 @@ export function evaluatePositionCoverage(params: {
   const staleThresholdMs = params.staleThresholdMs ?? DEFAULT_STALE_THRESHOLD_MS;
   const positions: PositionCoverageStatus[] = [];
   let hasUncoveredPosition = false;
+  let hasUnprotectedPosition = false;
   let hasTriggeredProtectiveWatch = false;
   let hasStaleProtectiveWatch = false;
 
@@ -222,8 +232,18 @@ export function evaluatePositionCoverage(params: {
       }
     }
 
+    // Native protection: position has in-process exit levels (stopLoss / takeProfit)
+    const hasNativeProtection = position.nativeExitLevels
+      ? (position.nativeExitLevels.stopLoss === true || position.nativeExitLevels.takeProfit === true)
+      : false;
+
     if (!hasProtectiveCoverage) {
       hasUncoveredPosition = true;
+    }
+
+    // A position is truly unprotected when it has NEITHER watch-based NOR native protection
+    if (!hasProtectiveCoverage && !hasNativeProtection) {
+      hasUnprotectedPosition = true;
     }
 
     const status: PositionCoverageStatus = {
@@ -232,6 +252,7 @@ export function evaluatePositionCoverage(params: {
       hasProtectiveCoverage,
       triggeredProtectiveWatch,
       staleProtectiveWatch,
+      hasNativeProtection,
     };
 
     positions.push(status);
@@ -243,6 +264,7 @@ export function evaluatePositionCoverage(params: {
   return {
     positions,
     hasUncoveredPosition,
+    hasUnprotectedPosition,
     hasTriggeredProtectiveWatch,
     hasStaleProtectiveWatch,
     totalOpenPositions: params.positions.length,
