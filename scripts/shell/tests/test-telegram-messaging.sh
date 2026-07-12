@@ -42,9 +42,22 @@ NC='\033[0m'
 
 log()         { echo -e "${GREEN}[✓]${NC} $*"; }
 warn()        { echo -e "${YELLOW}[!]${NC} $*"; }
-fail()        { echo -e "${RED}[✗]${NC} $*"; exit 1; }
+fail()        { echo -e "${RED}[✗]${NC} $*" >&2; exit 1; }
 info()        { echo -e "${BLUE}[→]${NC} $*"; }
 prereq_fail() { echo -e "${RED}[✗]${NC} $*"; exit 2; }
+
+run_curl_into() {
+  local target_var="$1"
+  local label="$2"
+  shift 2
+
+  local output
+  if ! output=$(curl "$@" 2>&1); then
+    fail "${label} transport error: ${output}"
+  fi
+
+  printf -v "$target_var" '%s' "$output"
+}
 
 # ─── Argument parsing ────────────────────────────────────────────────────────
 
@@ -106,7 +119,7 @@ TG_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
 echo ""
 info "Step 1/5: HeroBids API health check"
 
-HTTP=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${API_BASE_URL}/health")
+run_curl_into HTTP "API health check" -sS -o /dev/null -w '%{http_code}' --max-time 10 "${API_BASE_URL}/health"
 [[ "$HTTP" == "200" ]] || fail "API health check failed (HTTP ${HTTP} at ${API_BASE_URL}/health)"
 log "API healthy (${API_BASE_URL}/health)"
 
@@ -115,7 +128,7 @@ log "API healthy (${API_BASE_URL}/health)"
 echo ""
 info "Step 2/5: Bot token validity (Telegram getMe)"
 
-ME_RESPONSE=$(curl -s --max-time 10 "${TG_API}/getMe")
+run_curl_into ME_RESPONSE "Telegram getMe" -sS --max-time 10 "${TG_API}/getMe"
 ME_OK=$(echo "$ME_RESPONSE" | jq -r '.ok // false')
 
 if [[ "$ME_OK" != "true" ]]; then
@@ -131,7 +144,7 @@ log "Bot is alive: @${BOT_USERNAME}"
 echo ""
 info "Step 3/5: Webhook registration (Telegram getWebhookInfo)"
 
-WH_RESPONSE=$(curl -s --max-time 10 "${TG_API}/getWebhookInfo")
+run_curl_into WH_RESPONSE "Telegram getWebhookInfo" -sS --max-time 10 "${TG_API}/getWebhookInfo"
 WH_OK=$(echo "$WH_RESPONSE" | jq -r '.ok // false')
 
 if [[ "$WH_OK" != "true" ]]; then
@@ -183,7 +196,7 @@ fi
 echo ""
 info "Step 4/5: Pending updates content"
 
-UPDATES_RESPONSE=$(curl -s --max-time 10 "${TG_API}/getUpdates")
+run_curl_into UPDATES_RESPONSE "Telegram getUpdates" -sS --max-time 10 "${TG_API}/getUpdates"
 UPDATES_OK=$(echo "$UPDATES_RESPONSE" | jq -r '.ok // false')
 
 if [[ "$UPDATES_OK" == "true" ]]; then
@@ -210,9 +223,9 @@ for chatId in "${CHAT_IDS[@]}"; do
 
   printf "  %-20s → " "$chatId"
 
-  TG_RESPONSE=$(curl -s --max-time 15 -X POST "${TG_API}/sendMessage" \
+  run_curl_into TG_RESPONSE "Telegram sendMessage for chat ${chatId}" -sS --max-time 15 -X POST "${TG_API}/sendMessage" \
     -H "Content-Type: application/json" \
-    -d "{\"chat_id\":\"${chatId}\",\"text\":\"HeroBids diagnostic ping ✅\"}")
+    -d "{\"chat_id\":\"${chatId}\",\"text\":\"HeroBids diagnostic ping ✅\"}"
 
   TG_OK=$(echo "$TG_RESPONSE" | jq -r '.ok // false')
   TG_DESC=$(echo "$TG_RESPONSE" | jq -r '.description // "unknown error"')
