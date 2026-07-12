@@ -354,6 +354,13 @@ describe('parseWatch', () => {
     expect(parseWatch(JSON.stringify(validV2Record({ purpose: '' })))).toBeNull();
   });
 
+  it('returns null when purpose field is missing', () => {
+    const { purpose: _, ...withoutPurpose } = validV2Record();
+    const raw = JSON.stringify(withoutPurpose);
+    const result = parseWatch(raw);
+    expect(result).toBeNull();
+  });
+
   // -------------------------------------------------------------------
   // Coverage
   // -------------------------------------------------------------------
@@ -386,7 +393,7 @@ describe('parseWatch', () => {
     expect(result!.coverage).toEqual({ positionKey: 'SOL-USD-short' });
   });
 
-  it('parses a record without coverage field (backward compat)', () => {
+  it('parses a record without coverage field', () => {
     const raw = JSON.stringify(validV2Record());
     const result = parseWatch(raw);
     expect(result).not.toBeNull();

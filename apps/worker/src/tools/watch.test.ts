@@ -702,6 +702,7 @@ describe('check_watches — pinned identity repair', () => {
       chain: 'solana',
       thresholdPrice: 0.001,
       condition: 'above',
+      purpose: 'alert',
       createdAt: new Date().toISOString(),
       lastConditionMet: null,
       schemaVersion: 2,
@@ -744,6 +745,7 @@ describe('check_watches — pinned identity repair', () => {
       chain: 'any',
       thresholdPrice: 0.001,
       condition: 'above',
+      purpose: 'alert',
       createdAt: new Date().toISOString(),
       lastConditionMet: null,
       schemaVersion: 2,
@@ -781,6 +783,7 @@ describe('check_watches — pinned identity repair', () => {
       chain: 'solana',
       thresholdPrice: 1,
       condition: 'above' as const,
+      purpose: 'alert' as const,
       createdAt: new Date().toISOString(),
       lastConditionMet: null,
       schemaVersion: 2,
@@ -1124,6 +1127,13 @@ describe('watch_token — purpose', () => {
     );
     const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
     expect(storedWatch.purpose).toBe('alert');
+    expect(storedWatch.schemaVersion).toBe(2);
+
+    // Verify the persisted record round-trips through parseWatch cleanly.
+    const { parseWatch } = await import('../watch-types.js');
+    const reparsed = parseWatch(JSON.stringify(storedWatch));
+    expect(reparsed).not.toBeNull();
+    expect(reparsed!.purpose).toBe('alert');
   });
 
   it.each([
@@ -1247,7 +1257,7 @@ describe('watch_token — coverage', () => {
     expect(storedWatch.coverage?.positionKey).toBeUndefined();
   });
 
-  it('creates a watch without coverage (backward compat)', async () => {
+  it('creates a watch without coverage', async () => {
     const resolvePriceTarget = vi.fn().mockResolvedValue(
       okResolve('SOL', 'solana', 150),
     );
@@ -1365,7 +1375,51 @@ describe('watch_token — coverage', () => {
     expect(storedWatch.coverage.positionKey).toBe('hyperliquid::BTC-USD-PERP::long');
   });
 
-  it('falls back to symbol matching when instrumentId match fails', async () => {
+  it('exact canonical instrumentId auto-link succeeds for stop_loss', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('BTC-USD', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const getOpenPositions = vi.fn().mockResolvedValue([
+      {
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        venue: 'hyperliquid',
+        instrumentId: 'BTC-USD',
+        symbol: 'BTC',
+        side: 'long',
+        size: '0.008',
+        entryPrice: '62825',
+        openedAt: new Date(),
+      },
+    ]);
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: {
+        search: vi.fn().mockResolvedValue([
+          makeInstrumentRow({ id: 'BTC-USD', symbol: 'BTC-USD', venue: 'hyperliquid' }),
+        ]),
+      },
+      botRepo: { getOpenPositionsByCreator: getOpenPositions } as unknown as ToolContext['botRepo'],
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'BTC-USD', chain: 'hyperliquid', thresholdPrice: 70_000, condition: 'above', purpose: 'stop_loss' },
+      ctx,
+    );
+
+    // Exact canonical instrumentId match — auto-links successfully.
+    expect(result.success).toBe(true);
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.coverage.positionKey).toBe('hyperliquid::BTC-USD::long');
+  });
+
+  it('rejects protective watch when instrumentId mismatch cannot be resolved (no symbol fallback)', async () => {
     const resolvePriceTarget = vi.fn().mockResolvedValue(
       okResolve('BTC-USD', 'hyperliquid', 60_000),
     );
@@ -1394,19 +1448,13 @@ describe('watch_token — coverage', () => {
     });
 
     const result = await watchTokenTool.execute(
-      { symbol: 'BTC-USD', chain: 'hyperliquid', thresholdPrice: 70_000, condition: 'above', purpose: 'take_profit' },
+      { symbol: 'BTC-USD', chain: 'hyperliquid', thresholdPrice: 70_000, condition: 'above', purpose: 'stop_loss' },
       ctx,
     );
 
-    // Falls back to symbol match, auto-links successfully.
-    expect(result.success).toBe(true);
-    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
-    const watchCall = hsetCalls.find(
-      (c: unknown[]) =>
-        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
-    );
-    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
-    expect(storedWatch.coverage.positionKey).toBe('hyperliquid::BTC-DIFFERENT-ID::long');
+    // No symbol fallback — canonical instrumentId mismatch must be rejected.
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('instrumentId');
   });
 
   it('rejects protective watch when no open position matches (zero matches)', async () => {
@@ -1482,7 +1530,7 @@ describe('watch_token — coverage', () => {
     expect(result.error).toContain('Ambiguous target');
   });
 
-  it('skips auto-link for non-protective purposes (backward compat)', async () => {
+  it('skips auto-link for non-protective purposes', async () => {
     const resolvePriceTarget = vi.fn().mockResolvedValue(
       okResolve('BTC-USD', 'hyperliquid', 60_000),
     );
