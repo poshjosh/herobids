@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.21 - 2026-07-13
+
 ### Added
 - Agent-direct protection alignment: native per-trade exit levels now count as active-session coverage, preventing repeated `open_position_uncovered` judge escalations.
 - Canonical `instrumentId` preservation across agent-direct private-stream updates, restart rehydration, and decision intake.
