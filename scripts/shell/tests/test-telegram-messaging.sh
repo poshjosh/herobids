@@ -12,6 +12,7 @@
 #
 # Usage:
 #   scripts/shell/tests/test-telegram-messaging.sh --env-file .env.ops.dev
+#   scripts/shell/tests/test-telegram-messaging.sh --env-file .env.ops.staging
 #
 #   # Override individual vars:
 #   TEST_CHAT_IDS=6846862012 ./test-telegram-messaging.sh --env-file .env.ops.dev
