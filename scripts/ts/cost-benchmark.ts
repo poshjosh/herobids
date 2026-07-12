@@ -5,7 +5,11 @@
  * ────────────
  *  Creates multiple agents with different capabilityMode / hybridMode / reasoning
  *  level configs, runs them simultaneously for a fixed duration, then aggregates
- *  per-agent token usage from the activity feed and outputs a comparison table.
+ *  per-agent token usage from billing_usage_events (DB) and outputs a comparison table.
+ *
+ *  Token data is read directly from the billing_usage_events table because the
+ *  activity feed's LLM_COMPLETED events do not store tokensUsed — they only carry
+ *  phase, model, turnsUsed, and finishReason.
  *
  * Required env vars
  * ─────────────────
@@ -31,11 +35,15 @@
  *  BENCHMARK_DURATION_MS=600000 TICK_INTERVAL_MS=15000 tsx scripts/ts/cost-benchmark.ts
  */
 
+import { createDatabase, closeDatabase, billingUsageEvents } from '@herobids/db';
+import { eq, inArray, and, sql } from 'drizzle-orm';
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
 const API_BASE_URL = process.env['API_BASE_URL'] ?? 'http://localhost:3000';
+const DATABASE_URL = process.env['DATABASE_URL'] ?? 'postgres://herobids:herobids@localhost:5432/herobids';
 const TEST_EMAIL = process.env['TEST_EMAIL'] ?? 'trade-test@local.test';
 const TEST_PASSWORD = process.env['TEST_PASSWORD'] ?? 'TradeTest123!';
 const LLM_PROVIDER = process.env['LLM_PROVIDER'] ?? 'ollama';
@@ -299,33 +307,8 @@ async function deleteAgent(token: string, agentId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Token aggregation from activity feed
+// Token aggregation from billing_usage_events (DB)
 // ---------------------------------------------------------------------------
-
-/**
- * Extract token counts from an activity entry's detail payload.
- * LLM call events carry tokensUsed, inputTokens, outputTokens, thinkingTokens.
- */
-function extractTokens(entry: AgentActivityEntry): {
-  input: number; output: number; thinking: number; total: number;
-} | null {
-  const payload = entry.detail?.['payload'] as Record<string, unknown> | undefined;
-  if (!payload) return null;
-
-  const tokensUsed = typeof payload['tokensUsed'] === 'number' ? payload['tokensUsed'] : 0;
-  const inputTokens = typeof payload['inputTokens'] === 'number' ? payload['inputTokens'] : 0;
-  const outputTokens = typeof payload['outputTokens'] === 'number' ? payload['outputTokens'] : 0;
-  const thinkingTokens = typeof payload['thinkingTokens'] === 'number' ? payload['thinkingTokens'] : 0;
-
-  if (tokensUsed === 0 && inputTokens === 0 && outputTokens === 0) return null;
-
-  return {
-    input: inputTokens,
-    output: outputTokens,
-    thinking: thinkingTokens,
-    total: tokensUsed || (inputTokens + outputTokens),
-  };
-}
 
 async function fetchActivityFeed(
   token: string, agentId: string, limit = 200,
@@ -333,43 +316,67 @@ async function fetchActivityFeed(
   const res = await apiRequest<AgentActivityFeedResponse>(
     'GET', `/agents/${agentId}/activity-feed?limit=${limit}`, { token },
   );
-  if (res.status !== 200) {
-    console.warn(`  ⚠️  Activity feed returned ${res.status} for agent ${agentId}`);
-    return [];
-  }
+  if (res.status !== 200) return [];
   return res.body.entries ?? [];
 }
 
-async function aggregateAgentTokens(
-  token: string, agentId: string,
+/**
+ * Aggregate token usage for an agent directly from billing_usage_events.
+ * The activity feed's LLM_COMPLETED events don't include tokensUsed —
+ * only the billing table has real token counts.
+ */
+async function aggregateAgentTokensFromDb(
+  db: ReturnType<typeof createDatabase>,
+  agentId: string,
+  token: string,
 ): Promise<{ totalInput: number; totalOutput: number; totalThinking: number; totalTokens: number; llmCallCount: number; tickCount: number }> {
-  const entries = await fetchActivityFeed(token, agentId);
+  // Token counts from billing events
+  const meterRows = await db
+    .select({
+      meterKey: billingUsageEvents.meterKey,
+      total: sql<number>`cast(sum(${billingUsageEvents.quantity}) as int)`,
+    })
+    .from(billingUsageEvents)
+    .where(
+      and(
+        eq(billingUsageEvents.agentId, agentId),
+        inArray(billingUsageEvents.meterKey, ['llm.input_tokens', 'llm.output_tokens', 'llm.reasoning_tokens']),
+      ),
+    )
+    .groupBy(billingUsageEvents.meterKey);
 
   let totalInput = 0;
   let totalOutput = 0;
   let totalThinking = 0;
-  let totalTokens = 0;
-  let llmCallCount = 0;
-  let tickCount = 0;
-
-  for (const entry of entries) {
-    // Check tick counting uses correct eventType values from the activity mapper
-  // (mapper uses 'tick.started'/'tick.skipped', not uppercase constants)
-  if (entry.eventType === 'tick.started' || entry.eventType === 'tick.skipped' || entry.eventType === 'tick.completed') {
-      tickCount++;
-    }
-
-    const tokens = extractTokens(entry);
-    if (tokens) {
-      totalInput += tokens.input;
-      totalOutput += tokens.output;
-      totalThinking += tokens.thinking;
-      totalTokens += tokens.total;
-      llmCallCount++;
-    }
+  for (const row of meterRows) {
+    if (row.meterKey === 'llm.input_tokens') totalInput = row.total ?? 0;
+    if (row.meterKey === 'llm.output_tokens') totalOutput = row.total ?? 0;
+    if (row.meterKey === 'llm.reasoning_tokens') totalThinking = row.total ?? 0;
   }
 
-  return { totalInput, totalOutput, totalThinking, totalTokens, llmCallCount, tickCount };
+  // LLM call count: distinct idempotency keys with sourceType = 'llm_call'
+  const [callRow] = await db
+    .select({ count: sql<number>`cast(count(distinct ${billingUsageEvents.idempotencyKey}) as int)` })
+    .from(billingUsageEvents)
+    .where(and(
+      eq(billingUsageEvents.agentId, agentId),
+      eq(billingUsageEvents.sourceType, 'llm_call'),
+    ));
+
+  // Tick count from activity feed (tick.started / tick.skipped)
+  const entries = await fetchActivityFeed(token, agentId);
+  const tickCount = entries.filter(
+    (e) => e.eventType === 'tick.started' || e.eventType === 'tick.skipped',
+  ).length;
+
+  return {
+    totalInput,
+    totalOutput,
+    totalThinking,
+    totalTokens: totalInput + totalOutput + totalThinking,
+    llmCallCount: callRow?.count ?? 0,
+    tickCount,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -449,10 +456,14 @@ function sprintf(fmt: string, ...args: (string | number)[]): string {
 async function main(): Promise<void> {
   console.log('🚀 Cost Benchmark');
   console.log(`   API:       ${API_BASE_URL}`);
+  console.log(`   DB:        ${DATABASE_URL.replace(/\/\/[^@]+@/, '//***@')}`);
   console.log(`   Provider:  ${LLM_PROVIDER} / ${LLM_LIGHT_MODEL} / ${LLM_HEAVY_MODEL}`);
   console.log(`   Tick:      ${TICK_INTERVAL_MS}ms`);
   console.log(`   Duration:  ${(BENCHMARK_DURATION_MS / 60_000).toFixed(1)} min (first tick ~60-90s due to Forex Factory timeout; multiple ticks per agent needed)`);
   console.log(`   Cases:     ${BENCHMARK_CASES.length}`);
+
+  // ── Open DB connection ──
+  const db = createDatabase(DATABASE_URL);
 
   // ── Auth ──
   section('Authentication');
@@ -515,7 +526,7 @@ async function main(): Promise<void> {
   for (const { bc, agentId } of created) {
     info(`Querying ${bc.id}...`);
     try {
-      const tokens = await aggregateAgentTokens(token, agentId);
+      const tokens = await aggregateAgentTokensFromDb(db, agentId, token);
       results.push({
         caseId: bc.id,
         label: bc.label,
@@ -566,6 +577,7 @@ async function main(): Promise<void> {
   }
 
   console.log('\n✅ Benchmark complete.\n');
+  await closeDatabase(db);
 }
 
 main().catch((err) => {
