@@ -10,6 +10,7 @@ import type {
   ManageBotPayload,
   BotQueryPayload,
   AgentRiskDefaultsConfig,
+  ToolPositionRecord,
 } from '@herobids/domain';
 import {
   Decimal,
@@ -1119,15 +1120,7 @@ export class AgentMessageBroker {
     }
 
     if (payload.action === 'list_positions') {
-      let positions: Array<{
-        actorType: string;
-        actorId: string | null;
-        symbol: string;
-        side: string;
-        size: string;
-        entryPrice: string;
-        openedAt: Date;
-      }>;
+      let positions: ToolPositionRecord[];
       try {
         positions = await this.botRepo.getOpenPositionsByCreator('agent', agent.id, payload.botId);
       } catch (err) {

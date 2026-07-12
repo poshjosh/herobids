@@ -74,7 +74,7 @@ export interface ToolBotRecord {
 /** Position row shape returned by repository queries. */
 export interface ToolPositionRecord {
   actorType: string;
-  actorId: string;
+  actorId: string | null;
   venue: string;
   /** Canonical instrument ID from the venue's instrument repository. Nullable for legacy positions. */
   instrumentId?: string | null;
@@ -82,6 +82,10 @@ export interface ToolPositionRecord {
   side: string;
   size: string;
   entryPrice: string;
+  /** Per-trade stop-loss price level set at entry. Nullable — not all trades carry levels. */
+  stopLoss?: string | null;
+  /** Per-trade take-profit price level set at entry. Nullable — not all trades carry levels. */
+  takeProfit?: string | null;
   openedAt: Date;
 }
 

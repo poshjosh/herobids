@@ -2099,6 +2099,7 @@ describe('runtime composition helpers', () => {
     });
 
     it('renders [PROTECTED] for a position with both watch and native protection', () => {
+      const state = makeState();
       state.metrics.positionCoverage = {
         totalOpenPositions: 1,
         positions: [{
@@ -2119,7 +2120,6 @@ describe('runtime composition helpers', () => {
       expect(result).not.toBeNull();
       expect(result!.content).toContain('[PROTECTED] BTC::long — watch + in-process exit levels');
       expect(result!.content).not.toContain('[NATIVE_PROTECTED]');
-    });
     });
 
     it('renders both [NATIVE_PROTECTED] and [UNCOVERED] for mixed positions', () => {
@@ -2203,8 +2203,9 @@ describe('runtime composition helpers', () => {
       expect(state.metrics.positionCoverage).toEqual(coverage);
     });
   });
+});
 
-  // ── B2: Pending Market Context (context-only events) ─────────────────────
+// ── B2: Pending Market Context (context-only events) ─────────────────────
 
   describe('pending market context (context-only events)', () => {
     it('stores context-only market events as structured pending context', () => {
@@ -2856,4 +2857,3 @@ describe('runtime composition helpers', () => {
       expect(result).toHaveLength(0);
     });
   });
-});
