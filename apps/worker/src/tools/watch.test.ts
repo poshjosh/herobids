@@ -1138,7 +1138,16 @@ describe('watch_token — purpose', () => {
       okResolve('SOL', 'solana', 150),
     );
     const getPrice = vi.fn().mockResolvedValue(okPrice(150));
-    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+    // Protective purposes need either instrument identity or coverage linkage.
+    // Provide instrument identity via instrumentRepo so the fail-closed check passes.
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: {
+        search: vi.fn().mockResolvedValue([
+          makeInstrumentRow({ id: 'SOL-USDC', symbol: 'SOL', venue: 'jupiter' }),
+        ]),
+      },
+    });
 
     const result = await watchTokenTool.execute(
       { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above', purpose },
@@ -1515,5 +1524,125 @@ describe('watch_token — coverage', () => {
     const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
     // Non-protective → no auto-link, no positionKey
     expect(storedWatch.coverage?.positionKey).toBeUndefined();
+  });
+
+  // ── Fail-closed: reject unmatchable protective watches ─────────────
+
+  it('rejects protective stop_loss watch when instrument and coverage are both absent', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('RANDOM-COIN', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    // No instrument repo — so instrument resolution fails.
+    // No botRepo — so coverage resolution cannot resolve a position.
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: {
+        search: vi.fn().mockResolvedValue([]),
+      },
+      botRepo: { getOpenPositionsByCreator: vi.fn().mockResolvedValue([]) } as unknown as ToolContext['botRepo'],
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'RANDOM-COIN', chain: 'hyperliquid', thresholdPrice: 10, condition: 'below', purpose: 'stop_loss' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Protective watch');
+    expect(result.error).toContain('stop_loss');
+  });
+
+  it('rejects protective take_profit watch when instrument and coverage are both absent', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('RANDOM-COIN', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: {
+        search: vi.fn().mockResolvedValue([]),
+      },
+      botRepo: { getOpenPositionsByCreator: vi.fn().mockResolvedValue([]) } as unknown as ToolContext['botRepo'],
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'RANDOM-COIN', chain: 'hyperliquid', thresholdPrice: 100, condition: 'above', purpose: 'take_profit' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Protective watch');
+    expect(result.error).toContain('take_profit');
+  });
+
+  it('rejects protective exit watch when instrument and coverage are both absent', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('RANDOM-COIN', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: {
+        search: vi.fn().mockResolvedValue([]),
+      },
+      botRepo: { getOpenPositionsByCreator: vi.fn().mockResolvedValue([]) } as unknown as ToolContext['botRepo'],
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'RANDOM-COIN', chain: 'hyperliquid', thresholdPrice: 10, condition: 'below', purpose: 'exit' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Protective watch');
+    expect(result.error).toContain('exit');
+  });
+
+  it('allows protective watch when instrument identity is resolved (even without coverage)', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('BTC-USD', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: {
+        search: vi.fn().mockResolvedValue([
+          makeInstrumentRow({ id: 'BTC-USD', symbol: 'BTC-USD', venue: 'hyperliquid' }),
+        ]),
+      },
+      // No botRepo — coverage resolution fails, but instrument identity is present
+      botRepo: null,
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'BTC-USD', chain: 'hyperliquid', thresholdPrice: 70_000, condition: 'above', purpose: 'stop_loss' },
+      ctx,
+    );
+
+    // Instrument identity resolved → allowed
+    expect(result.success).toBe(true);
+  });
+
+  it('allows non-protective monitor watch even when instrument and coverage are absent', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('RANDOM-COIN', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: {
+        search: vi.fn().mockResolvedValue([]),
+      },
+      botRepo: null,
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'RANDOM-COIN', chain: 'hyperliquid', thresholdPrice: 10, condition: 'below', purpose: 'monitor' },
+      ctx,
+    );
+
+    // Non-protective → allowed even without linkage
+    expect(result.success).toBe(true);
   });
 });

@@ -204,6 +204,7 @@ const watchTokenTool: AgentTool = {
   description:
     'Register a price watch for a token. When chain is "any", the tool discovers the best-matching token and pins the watch to that concrete asset — future checks will always use the pinned identity. ' +
     'The watch fires when the token\'s price crosses the given threshold in the specified direction. ' +
+    'Protective watches (stop_loss, take_profit, exit) require either a matching instrument identity or a resolvable target position — create the position first before creating a protective watch. ' +
     'Use check_watches to evaluate all registered watches. Use list_watches to see active watches. Use remove_watch to cancel one.',
   parametersSchema: WatchTokenParamsSchema,
   parameters: convertZodToJsonSchema(WatchTokenParamsSchema),
@@ -497,6 +498,26 @@ const watchTokenTool: AgentTool = {
           positionKey: derivedKey,
         };
       }
+    }
+
+    // --- Fail closed: reject protective watches that cannot be linked ---
+    // Protective watches (stop_loss, take_profit, exit) must be provably
+    // linkable to a concrete position. If neither instrument identity nor
+    // a resolved coverage positionKey is available, the watch can never
+    // count as protective coverage — reject it rather than persisting a
+    // false-success record.
+    if (
+      purpose &&
+      (PROTECTIVE_WATCH_PURPOSES as readonly string[]).includes(purpose) &&
+      !instrument &&
+      !resolvedCoverage?.positionKey
+    ) {
+      return {
+        success: false,
+        error: `Protective watch (purpose=${purpose}) requires either a matching instrument identity or a resolvable target position. Create the position first, or use a non-protective purpose (e.g. "monitor", "alert") for manual tracking.`,
+        retryable: false,
+        fault: false,
+      };
     }
 
     // Every watch MUST carry machine-readable intent. If the caller did not
