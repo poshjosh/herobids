@@ -343,9 +343,11 @@ const watchTokenTool: AgentTool = {
     // without the coverage linkage, causing every subsequent tick to escalate to
     // the judge for "open_position_uncovered".
     //
-    // Matching strategy (best-effort, strongest identity first):
-    // 1. instrument.venue + instrument.instrumentId (canonical, avoids alias issues)
-    // 2. instrument.venue + effectiveSymbol (fallback when no instrumentId available)
+    // Matching strategy: canonical identity only — venue + instrumentId.
+    // Symbol-only matching is too coarse — the same symbol can map to
+    // different instruments (e.g. perp vs spot). When canonical identity
+    // does not line up between the instrument repo and the open position,
+    // the caller must use coverage.targetPosition for explicit disambiguation.
     //
     // Protective watches that cannot be auto-linked are REJECTED — this matches
     // the existing contract for explicit coverage.targetPosition: a stop_loss or
@@ -355,31 +357,16 @@ const watchTokenTool: AgentTool = {
       purpose &&
       (PROTECTIVE_WATCH_PURPOSES as readonly string[]).includes(purpose) &&
       instrument?.venue &&
+      instrument?.instrumentId &&
       ctx.botRepo
     ) {
       try {
         const openPositions = await ctx.botRepo.getOpenPositionsByCreator('agent', ctx.agentId);
 
-        // Prefer instrumentId-based matching (canonical, alias-safe), fall back to symbol.
-        let venueMatches = instrument.instrumentId
-          ? openPositions.filter(
-              (p) => p.venue === instrument.venue &&
-                p.instrumentId === instrument.instrumentId,
-            )
-          : openPositions.filter(
-              (p) => p.venue === instrument.venue &&
-                p.symbol.toUpperCase() === effectiveSymbol.toUpperCase(),
-            );
-
-        // If instrumentId matching returned zero, retry with symbol as a fallback.
-        // This handles cases where the instrument repo resolved a different
-        // instrumentId than what the position carries (e.g., a perp alias).
-        if (venueMatches.length === 0 && instrument.instrumentId) {
-          venueMatches = openPositions.filter(
-            (p) => p.venue === instrument.venue &&
-              p.symbol.toUpperCase() === effectiveSymbol.toUpperCase(),
-          );
-        }
+        const venueMatches = openPositions.filter(
+          (p) => p.venue === instrument.venue &&
+            p.instrumentId === instrument.instrumentId,
+        );
 
         if (venueMatches.length === 1) {
           const match = venueMatches[0]!;
@@ -400,15 +387,16 @@ const watchTokenTool: AgentTool = {
         } else if (venueMatches.length > 1) {
           return {
             success: false,
-            error: `Ambiguous target: ${venueMatches.length} open positions match venue=${instrument.venue} symbol=${effectiveSymbol}. Cannot safely auto-link a protective watch — use coverage.targetPosition with instrumentId for disambiguation.`,
+            error: `Ambiguous target: ${venueMatches.length} open positions match venue=${instrument.venue} instrumentId=${instrument.instrumentId}. Cannot safely auto-link a protective watch — use coverage.targetPosition (venue, symbol, side) for disambiguation.`,
             retryable: false,
             fault: false,
           };
         } else {
-          // Zero matches: protective watches MUST target an existing open position.
+          // Zero matches: canonical identity mismatch — the instrument repo
+          // resolved a different identity than what the positions carry.
           return {
             success: false,
-            error: `No open position found matching venue=${instrument.venue} symbol=${effectiveSymbol}. Protective watches must target an existing open position. Create the position first, or use a non-protective purpose.`,
+            error: `No open position found matching venue=${instrument.venue} instrumentId=${instrument.instrumentId}. The instrument repo resolved a different identity than what the positions carry. Use coverage.targetPosition (venue, symbol, side) to identify the position explicitly.`,
             retryable: false,
             fault: false,
           };
@@ -509,7 +497,7 @@ const watchTokenTool: AgentTool = {
     if (
       purpose &&
       (PROTECTIVE_WATCH_PURPOSES as readonly string[]).includes(purpose) &&
-      !instrument &&
+      !instrument?.instrumentId &&
       !resolvedCoverage?.positionKey
     ) {
       return {
