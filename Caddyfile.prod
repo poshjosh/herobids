@@ -18,6 +18,9 @@ herobids.com, www.herobids.com, app.herobids.com {
     handle_path /api/* {
         reverse_proxy api:3000
     }
+    handle /auth/callback {
+        reverse_proxy web:80
+    }
     handle /auth/* {
         reverse_proxy api:3000
     }

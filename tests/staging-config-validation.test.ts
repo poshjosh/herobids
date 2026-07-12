@@ -212,6 +212,13 @@ describe('staging/production environment invariants', () => {
   // Bug 2026-07-12/001: missing handle /auth/* caused Google login to silently
   // fail — requests fell through to the SPA catch-all instead of reaching the
   // API's OAuth endpoints.
+  //
+  // The fix routes /auth/* to the API, but with a critical exception:
+  // /auth/callback MUST go to the web container (SPA) because the OAuth
+  // callback flow redirects the browser there with an exchange code.  The
+  // SPA's AuthCallbackPage reads the code, calls POST /auth/exchange, and
+  // completes sign-in.  Without this exception, /auth/callback hits the API
+  // (which has no handler for it) and returns 404 — "nothing happens."
 
   describe('Caddyfile auth routing', () => {
     it('Caddyfile.staging routes /auth/* to the API', () => {
@@ -224,6 +231,32 @@ describe('staging/production environment invariants', () => {
       expect(prodCaddy).toMatch(
         /handle\s+\/auth\/\*\s*\{\s*\n\s*reverse_proxy\s+api:3000/,
       );
+    });
+
+    it('Caddyfile.staging routes /auth/callback to the web container (SPA)', () => {
+      expect(stagingCaddy).toMatch(
+        /handle\s+\/auth\/callback\s*\{\s*\n\s*reverse_proxy\s+web:80/,
+      );
+    });
+
+    it('Caddyfile.prod routes /auth/callback to the web container (SPA)', () => {
+      expect(prodCaddy).toMatch(
+        /handle\s+\/auth\/callback\s*\{\s*\n\s*reverse_proxy\s+web:80/,
+      );
+    });
+
+    it('/auth/callback appears before /auth/* in staging (order matters)', () => {
+      const callbackIdx = stagingCaddy.search(/handle\s+\/auth\/callback/);
+      const wildcardIdx = stagingCaddy.search(/handle\s+\/auth\/\*/);
+      expect(callbackIdx).toBeGreaterThan(0);
+      expect(callbackIdx).toBeLessThan(wildcardIdx);
+    });
+
+    it('/auth/callback appears before /auth/* in production (order matters)', () => {
+      const callbackIdx = prodCaddy.search(/handle\s+\/auth\/callback/);
+      const wildcardIdx = prodCaddy.search(/handle\s+\/auth\/\*/);
+      expect(callbackIdx).toBeGreaterThan(0);
+      expect(callbackIdx).toBeLessThan(wildcardIdx);
     });
 
     it('Caddyfile.staging auth route appears before the catch-all handle', () => {
