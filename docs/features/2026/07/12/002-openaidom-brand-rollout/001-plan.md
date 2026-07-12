@@ -1,6 +1,6 @@
 # Plan: OpenAIDom Brand Rollout Across Web, Email, and Public Docs
 
-**Status:** Proposed  
+**Status:** Ready for implementation  
 **Created:** 2026-07-12  
 **Goal:** Introduce OpenAIDom as the customer-facing brand across the web app, platform-authored email, and public documentation, while keeping internal repository, package, Docker, and database names unchanged unless a later migration explicitly changes them.
 
@@ -25,9 +25,9 @@ Recommended sequence:
 3. wire browser metadata, favicon, and install assets
 4. ship a shared branded email shell for platform-authored email
 5. update customer-facing docs, public copy, and legal/contact references
-6. rehearse the final domain-facing presentation alongside the separate `openaidom.com` cutover plan
+6. align the final domain-facing presentation with the separate OpenAIDom domain rollout plan
 
-This plan complements, but does not replace, the deployment-focused domain move in `docs/features/pending/005-openaidom-domain-rollout/001-plan.md`.
+This plan complements, but does not replace, the deployment-focused domain move in `docs/features/2026/07/12/001-openaidom-domain-rollout/001-plan.md`.
 
 ---
 
@@ -113,11 +113,11 @@ These decisions should be settled before implementation starts to avoid churn:
 4. the product should support both image-based and typographic fallback brand headers
 5. existing dark surfaces can stay dark if the new token palette is adjusted to match the OpenAIDom mark rather than forcing a full visual redesign
 
-Open questions:
+Implementation defaults locked for this rollout:
 
-1. Should public-facing body copy fully replace every mention of HeroBids, or should some trust/legal surfaces use a dual-label transition period?
-2. Should email launch with the image wordmark, or should it ship first with a typographic header and add the image only after client rendering is validated?
-3. Is the canonical product URL `openaidom.com`, `app.openaidom.com`, or both, once the domain cutover plan executes?
+1. Customer-facing body copy should switch to `OpenAIDom`; use a dual-label such as `OpenAIDom, operated by HeroBids` only where legal or operator disclosure requires it.
+2. Email may ship first with a typographic `OpenAIDom` header; image-based email branding is optional polish after client rendering is validated.
+3. The canonical production URL is `https://openaidom.com`; `https://www.openaidom.com` and `https://app.openaidom.com` are supported aliases, and staging uses `https://staging.openaidom.com`.
 
 ---
 
@@ -162,7 +162,9 @@ Recommended implementation rule:
 | Worker alerting | `apps/worker/src/agents/agent-message-broker.ts`, `apps/worker/src/alerting/platform-alert-service.ts` |
 | Public docs and content | `apps/web/src/features/public-pages/content/**` |
 | Brand source material | `docs/product/brand/brand-palette.md`, `docs/product/brand/images/` |
-| Brand/domain documentation | `docs/features/pending/005-openaidom-domain-rollout/001-plan.md`, runbooks, contact/legal copy |
+| Brand/domain documentation | `docs/features/2026/07/12/001-openaidom-domain-rollout/001-plan.md`, runbooks, contact/legal copy |
+
+The canonical domain/implementation source for this work is `docs/features/2026/07/12/001-openaidom-domain-rollout/001-plan.md`.
 
 ---
 
@@ -340,7 +342,7 @@ Recommended delivery order:
 5. token alignment
 6. shared email shell and email sender migrations
 7. public docs and legal/support copy pass
-8. staging verification on the OpenAIDom hostname from the domain rollout plan
+8. staging verification on `staging.openaidom.com`, followed by first production launch on `openaidom.com` from the domain rollout plan
 
 This order produces visible value early while preserving the ability to defer riskier domain-facing changes until staging is ready.
 
@@ -383,7 +385,7 @@ This order produces visible value early while preserving the ability to defer ri
 2. favicon or manifest wiring may look correct locally but fail in production if asset paths are not served from a stable location
 3. email clients may render remote image headers inconsistently, so the typographic fallback must be treated as first-class
 4. legal/support copy may require a dual-label transition period even if the UI fully switches to OpenAIDom
-5. the separate domain cutover plan introduces timing dependencies for canonical URLs used in email, docs, and metadata
+5. the separate domain rollout plan introduces timing dependencies for canonical URLs used in email, docs, and metadata
 
 ---
 
@@ -391,8 +393,8 @@ This order produces visible value early while preserving the ability to defer ri
 
 This plan depends on or should be coordinated with:
 
-1. `docs/features/pending/005-openaidom-domain-rollout/001-plan.md` for hostname cutover and canonical origin changes
-2. `docs/features/pending/platform-email-redesign/001-plan.md` for deeper email implementation details already identified
+1. `docs/features/2026/07/12/001-openaidom-domain-rollout/001-plan.md` for hostname cutover and canonical origin changes
+2. `docs/features/2026/07/12/003-platform-email-redesign/001-plan.md` for deeper email implementation details already identified
 3. `docs/product/brand/brand-palette.md` for authoritative palette values used by web and email branding
 4. the accepted web i18n contract in `docs/tech/adrs/2026/06/002-web-i18n-contract-and-key-strategy.md`
 
@@ -406,4 +408,4 @@ This feature is successful when:
 2. platform-authored email clearly belongs to the same product
 3. public docs and customer-facing copy no longer feel split between HeroBids and OpenAIDom
 4. internal engineering names remain stable and do not create avoidable migration risk
-5. the final hostname cutover can happen as a separate controlled deploy step rather than being entangled with UI or email refactors
+5. the staging cutover and first production launch can happen as separate controlled deploy steps rather than being entangled with UI or email refactors

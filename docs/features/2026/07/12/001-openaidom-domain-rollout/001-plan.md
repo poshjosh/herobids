@@ -1,8 +1,8 @@
-# Plan: Lowest-Risk Rollout for `openaidom.com`
+# Plan: OpenAIDom Domain Rollout
 
-**Status:** Proposed  
+**Status:** Ready for implementation  
 **Created:** 2026-07-11  
-**Goal:** Move the public Herobids deployment from `herobids.com` to `openaidom.com` with the lowest practical risk, using the existing Hetzner infrastructure and a staging-first rehearsal.
+**Goal:** Make OpenAIDom the only public hostname set for staging and the first production launch, using the existing Hetzner infrastructure without preserving the old `herobids.com` domain.
 
 ---
 
@@ -12,13 +12,14 @@ This plan assumes:
 - The app, API, worker, database, Redis, and Hetzner servers remain the same.
 - We are changing the public domain only.
 - Internal names such as `herobids`, Docker image names, package names, database names, and systemd units are **not** being renamed in this rollout.
+- There is no existing production deployment to preserve.
+- `staging.herobids.com` and all other `herobids.com` public hostnames can be retired rather than supported in parallel.
 
-The safest rollout is:
-1. Rehearse the full move on staging with `staging.openaidom.com`.
-2. Prepare production DNS and third-party dashboards ahead of time.
-3. Perform a narrow production cutover window where the canonical app origin changes from `herobids.com` to `openaidom.com`.
-4. Verify OAuth, billing, and webhooks immediately after deploy.
-5. Keep the old domain only as a redirect or temporary fallback, not as a fully supported second app origin.
+The implementation sequence is:
+1. Finish the staging hostname cutover to `staging.openaidom.com`.
+2. Remove old-domain references from infra, env defaults, dashboards, and public docs.
+3. Prepare production to launch for the first time on `openaidom.com`, with `www.openaidom.com` and `app.openaidom.com` as supported aliases.
+4. Verify OAuth, billing, and webhooks on the OpenAIDom hostnames only.
 
 ---
 
@@ -32,17 +33,22 @@ The current production setup has a few important constraints that shape the roll
 4. Billing success/cancel URLs are derived from the configured frontend origin.
 5. Telegram and payment-provider webhooks are bound to specific public URLs.
 
-Because of this, the lowest-risk plan is **not** to run `herobids.com` and `openaidom.com` as two equal first-class app origins at the same time. With the current code, one domain should be canonical during the cutover.
+Because of this, each environment should have exactly one canonical origin during rollout:
+
+1. staging canonical origin: `https://staging.openaidom.com`
+2. production canonical origin: `https://openaidom.com`
+
+Alias hostnames may terminate TLS and route traffic, but auth, billing, webhooks, and docs should all treat the canonical hostname above as the source of truth.
 
 ---
 
 ## Rollout Principles
 
-1. Rehearse the exact cutover pattern on staging before touching production.
-2. Change DNS with low TTLs so rollback is fast.
-3. Update OAuth and billing dashboards before flipping canonical production URLs.
-4. Change production deploy config and webhook endpoints in one controlled window.
-5. Keep rollback simple: restore old env values, reverse-proxy hostnames, and provider callback targets.
+1. Complete the staging cutover before the first production launch.
+2. Keep DNS TTLs low while changing hostnames.
+3. Update OAuth and billing dashboards before activating new canonical URLs.
+4. Remove `herobids.com` public-hostname references instead of preserving a parallel old-domain path.
+5. Keep rollback simple: revert to the last known-good OpenAIDom staging or production config rather than reintroducing the retired domain.
 
 ---
 
@@ -62,42 +68,34 @@ These changes should be prepared and reviewed before the production cutover wind
 
 ---
 
-## Phase 0: Preconditions and Freeze
+## Phase 0: Resolved Preconditions
 
-Complete these before any hostname changes:
+These decisions are already resolved and should be treated as locked inputs for implementation:
 
-1. Confirm ownership and DNS control of `openaidom.com`.
-2. Decide final production hostnames:
-   - Minimum: `openaidom.com`
-   - Optional aliases: `www.openaidom.com`, `app.openaidom.com`
-   - Staging: `staging.openaidom.com`
-3. Decide old-domain policy:
-   - Recommended: keep `herobids.com` temporarily as an HTTP redirect only.
-   - Avoid keeping it as a fully functional second app origin during the cutover.
-4. Set DNS TTLs to a low value, ideally `300`, at least 24 hours before production cutover.
-5. Freeze unrelated production config changes during the cutover window.
-6. Take backups of:
-   - current production `.env.prod`
-   - current staging `.env.staging`
-   - current OAuth redirect/origin settings
-   - current billing webhook settings
-   - current Telegram webhook configuration
+1. Ownership and DNS control of `openaidom.com` are confirmed.
+2. Final production hostnames are locked to:
+   - canonical: `openaidom.com`
+   - aliases: `www.openaidom.com`, `app.openaidom.com`
+   - staging: `staging.openaidom.com`
+3. Old-domain policy is locked: remove `herobids.com` public-hostname usage completely. No redirect or fallback is required.
+4. DNS TTL is already set to `300` seconds.
+5. Production freeze is not a gating concern because production has not launched yet.
+6. Staging backup has already been taken. There is no production deployment snapshot requirement yet.
 
----
 
-## Phase 1: Staging Rehearsal on `staging.openaidom.com`
+## Phase 1: Staging Cutover on `staging.openaidom.com`
 
-This is the most important risk-reduction step. Do not cut production before this is green.
+This is the current live environment and the first implementation target.
 
 ### 1. DNS
 
-1. Create `staging.openaidom.com` `A` record pointing to the current staging server IP.
-2. Add `AAAA` only if staging is already serving IPv6 correctly.
-3. Keep staging TTL low during validation.
+1. `staging.openaidom.com` `A` record already points to the current staging server IP.
+2. `staging.openaidom.com` `AAAA` record is already created and should remain part of the rollout.
+3. Staging TTL is already `300` and should stay low during validation.
 
 ### 2. Staging Deploy Config
 
-Update staging config to make `staging.openaidom.com` the canonical staging origin:
+Update staging config to make `staging.openaidom.com` the only supported staging origin:
 
 1. Set `app_domain = "staging.openaidom.com"` in staging Terraform vars.
 2. Update staging Caddy hostnames to `staging.openaidom.com`.
@@ -106,13 +104,15 @@ Update staging config to make `staging.openaidom.com` the canonical staging orig
    - `AUTH_FRONTEND_ORIGIN=https://staging.openaidom.com`
    - `VITE_API_ORIGIN=https://staging.openaidom.com`
    - `TELEGRAM_WEBHOOK_URL=https://staging.openaidom.com/api/telegram/webhook`
+4. Remove `staging.herobids.com` host handling from staging configs and docs instead of leaving it as a secondary hostname.
 
 ### 3. OAuth Staging Update
 
-Before testing login, add the staging domain to the OAuth provider configuration:
+Before testing login, ensure the staging domain is the configured OAuth staging origin:
 
 1. Authorized JavaScript origin: `https://staging.openaidom.com`
 2. Redirect URI: `https://staging.openaidom.com/auth/google/callback`
+3. Remove `staging.herobids.com` staging callback/origin entries once the new staging flow is verified.
 
 ### 4. Billing Staging Update
 
@@ -121,11 +121,13 @@ If staging uses real or test billing providers:
 1. Add or switch webhook endpoints to `https://staging.openaidom.com/api/billing/webhook` or provider-specific equivalents.
 2. Verify checkout returns land back on `https://staging.openaidom.com/billing`.
 3. Use test mode only.
+4. Remove any staging billing callback or return URLs that still point to `staging.herobids.com`.
 
 ### 5. Webhook Staging Update
 
 1. Re-register Telegram webhook to `https://staging.openaidom.com/api/telegram/webhook`.
 2. If any other public webhooks exist, repoint them in staging too.
+3. Remove old staging-domain webhook targets after the new endpoint is confirmed healthy.
 
 ### 6. Staging Smoke Test
 
@@ -139,28 +141,28 @@ All of these must pass:
 6. Billing webhooks are accepted and processed
 7. Telegram webhook receives and processes a test message
 
-If staging fails on any of these, stop and fix staging before touching production.
+If staging fails on any of these, stop and fix staging before preparing production.
 
 ---
 
-## Phase 2: Production Preparation Before Cutover Day
+## Phase 2: Production Preparation Before First Launch
 
-Do this before the actual production flip.
+Do this before the first public production deployment.
 
 ### 1. DNS Preparation
 
-Create production DNS records in advance:
+Create or verify production DNS records in advance:
 
 1. `openaidom.com` → production server IPv4
 2. `www.openaidom.com` → production server IPv4, if used
 3. `app.openaidom.com` → production server IPv4, if used
 4. `AAAA` records only if production already serves IPv6 correctly
 
-Creating these records early is low risk because they do not affect the old domain.
+Creating these records early is low risk because there is no production traffic to disrupt.
 
 ### 2. Production Config Preparation
 
-Prepare but do not yet activate the production config changes in the repo:
+Prepare the production config changes in the repo so the first launch is OpenAIDom-native:
 
 1. `app_domain = "openaidom.com"`
 2. Production Caddy hostnames changed to `openaidom.com` and chosen aliases
@@ -169,15 +171,16 @@ Prepare but do not yet activate the production config changes in the repo:
 5. `VITE_API_ORIGIN=https://openaidom.com`
 6. `TELEGRAM_WEBHOOK_URL=https://openaidom.com/api/telegram/webhook`
 7. Public-facing email/contact text updated where needed
+8. No production config should continue to reference `herobids.com` hostnames.
 
 ### 3. OAuth Production Preparation
 
-Before the production deploy window:
+Before the production launch window:
 
 1. Add `https://openaidom.com` as an authorized origin.
 2. Add `https://openaidom.com/auth/google/callback` as an authorized redirect URI.
 3. If using `www` or `app`, add only the exact hostnames that will actually be used.
-4. Do **not** remove `herobids.com` entries until production verification is complete.
+4. Remove `herobids.com` production OAuth entries before launch unless some external dependency still requires them during validation.
 
 ### 4. Billing Production Preparation
 
@@ -190,39 +193,33 @@ Prepare the provider dashboards before deploy:
    - create or prepare webhook endpoint for `https://openaidom.com/api/billing/webhook/creem`
    - confirm return flows allow `https://openaidom.com`
 3. Confirm customer portal return URL policy allows the new domain.
-4. Leave the old webhook endpoint in place until the production cutover succeeds, if the provider supports this.
+4. Remove obsolete `herobids.com` webhook targets once the OpenAIDom targets are configured.
 
 ### 5. Webhook Production Preparation
 
 1. Prepare Telegram webhook change command or operator runbook.
-2. List every public webhook that references `herobids.com` and prepare its new target.
+2. List every public webhook that references `herobids.com` and replace it with the corresponding OpenAIDom target.
 
 ---
 
-## Phase 3: Production Cutover Window
+## Phase 3: First Production Launch on `openaidom.com`
 
-This should be a short, operator-driven window after staging is proven green.
+This should happen only after staging is green on `staging.openaidom.com`.
 
 ### Ordered Steps
 
 1. Confirm no unrelated deploy is in progress.
 2. Confirm low DNS TTLs are active.
-3. Verify `openaidom.com` DNS resolves to the current production server IP.
-4. Snapshot current production state:
-   - current compose overlays
-   - current `Caddyfile.prod`
-   - current `.env.prod`
-   - current OAuth and billing dashboard values
+3. Verify `openaidom.com`, `www.openaidom.com`, and `app.openaidom.com` resolve to the production server IPs.
+4. Snapshot the initial production config values that will be deployed for `.env.prod`, `Caddyfile.prod`, and provider dashboards.
 5. Deploy the production config that makes `openaidom.com` canonical.
 6. Let Caddy obtain TLS certificates for `openaidom.com` and chosen aliases.
 7. Run immediate smoke tests on the new domain.
-8. Switch Telegram webhook to the new domain.
-9. Switch or enable billing webhooks on the new domain if not already dual-registered.
-10. Verify a real OAuth login from the new domain.
-11. Verify a real billing flow from the new domain.
-12. Verify the old domain behavior:
-   - recommended: redirect to `https://openaidom.com`
-   - acceptable temporary fallback: leave old domain reachable for a short window, but do not treat it as canonical for login or billing
+8. Register Telegram and billing webhooks on the new domain.
+9. Verify a real OAuth login from the new domain.
+10. Verify a real billing flow from the new domain.
+11. Verify `www.openaidom.com` and `app.openaidom.com` behave as intended by the production Caddy routing.
+12. Verify `herobids.com` public hostnames are no longer referenced by deploy config, dashboards, or public docs.
 
 ### Immediate Production Verification
 
@@ -237,29 +234,29 @@ Run these checks in order:
 7. Provider webhook delivery is successful
 8. Telegram webhook is registered and receives a test message
 
-If any of items 3 through 8 fail, treat the cutover as incomplete and either fix immediately or roll back.
+If any of items 3 through 8 fail, treat the launch as incomplete and either fix immediately or roll back the production launch without reviving the old domain.
 
 ---
 
 ## Phase 4: Post-Cutover Cleanup
 
-Only do this after production has been stable on `openaidom.com` for at least one monitoring window.
+Only do this after staging and production have both been stable on the OpenAIDom hostnames for at least one monitoring window.
 
-1. Remove `herobids.com` from OAuth origins and redirect URIs if no longer needed.
-2. Remove old billing webhook endpoints if the provider had both old and new active.
+1. Remove `herobids.com` from OAuth origins and redirect URIs.
+2. Remove old billing webhook endpoints and return URLs.
 3. Remove old Telegram webhook references from docs and scripts.
 4. Update remaining public/legal/email references from `herobids.com` to `openaidom.com`.
-5. Decide whether `herobids.com` remains a redirect indefinitely or is retired.
+5. Remove any remaining `herobids.com` DNS, Caddy, compose, or operator runbook references that were kept temporarily during implementation.
 
 ---
 
 ## Rollback Plan
 
-Rollback must be possible without rebuilding infrastructure.
+Rollback must be possible without rebuilding infrastructure or reintroducing `herobids.com`.
 
 ### Trigger Conditions
 
-Roll back if any of the following remain broken after a short repair attempt:
+Roll back the production launch if any of the following remain broken after a short repair attempt:
 
 1. Google login fails on production
 2. Billing checkout cannot complete
@@ -269,19 +266,12 @@ Roll back if any of the following remain broken after a short repair attempt:
 
 ### Rollback Order
 
-1. Restore production env values:
-   - `AUTH_PUBLIC_BASE_URL=https://herobids.com`
-   - `AUTH_FRONTEND_ORIGIN=https://herobids.com`
-   - `VITE_API_ORIGIN=https://herobids.com`
-   - `TELEGRAM_WEBHOOK_URL=https://herobids.com/api/telegram/webhook`
-2. Restore `Caddyfile.prod` hostnames to `herobids.com` and current aliases.
-3. Redeploy production.
-4. Restore OAuth origins and redirect URIs to `herobids.com`.
-5. Restore billing webhook endpoints to `https://herobids.com/...`.
-6. Re-register Telegram webhook on `https://herobids.com/api/telegram/webhook`.
-7. Re-run production smoke tests on the old domain.
+1. Revert production env values, Caddy hostnames, and provider settings to the last known-good OpenAIDom launch candidate or disable the incomplete production exposure.
+2. Redeploy production.
+3. Restore Telegram and billing webhooks to the last known-good OpenAIDom configuration.
+4. Re-run smoke tests against `openaidom.com` or, if production is withdrawn, keep validation limited to `staging.openaidom.com` until fixes land.
 
-Because the servers and application stack do not change, rollback should be fast if the old config snapshots are preserved.
+Because the servers and application stack do not change, rollback should be fast without restoring the retired domain.
 
 ---
 
@@ -294,7 +284,7 @@ The rollout is complete when:
 3. OAuth works end-to-end on the new production domain.
 4. Billing checkout, customer portal return, and webhook processing work on the new domain.
 5. Telegram webhook works on the new domain.
-6. Old-domain handling is deliberate and documented: redirect, temporary fallback, or retirement.
+6. Old-domain handling is deliberate and documented as full retirement.
 7. Repo docs and deploy defaults no longer point operators at `herobids.com` as the canonical domain.
 
 ---

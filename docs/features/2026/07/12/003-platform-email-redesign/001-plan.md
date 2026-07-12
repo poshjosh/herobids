@@ -1,6 +1,6 @@
-# Platform Email Redesign
+# Platform Email Redesign for OpenAIDom
 
-**Status:** Proposed  
+**Status:** Ready for implementation  
 **Created:** 2026-07-11
 
 ## Goal
@@ -33,6 +33,14 @@ The desired outcome is a single branded email system for platform-authored mail:
 4. no behavior change to agent-authored email fanout
 
 The visual direction should take inspiration from Lipdubber's email shell: dark outer background, centered card, strong heading hierarchy, obvious CTA, muted footer, and reliable plain-text fallback.
+
+This rollout should assume:
+
+1. customer-facing email branding uses `OpenAIDom`
+2. staging links and callbacks use `https://staging.openaidom.com`
+3. first-launch production links and callbacks use `https://openaidom.com`
+4. `https://www.openaidom.com` and `https://app.openaidom.com` are supported aliases, but email should point users at the canonical host unless a specific flow requires otherwise
+5. old `herobids.com` links should be removed instead of preserved in parallel
 
 ---
 
@@ -69,7 +77,7 @@ After this feature:
 2. auth login-link email looks intentional and trustworthy rather than like a raw system message
 3. billing emails clearly differentiate soft-cap warning vs hard-cap stop states
 4. platform safety alerts can be delivered by email in addition to Telegram
-5. the implementation can launch without a finished logo asset by falling back to a typographic HeroBids header
+5. the implementation can launch without a finished logo asset by falling back to a typographic OpenAIDom header
 6. agent-authored emails remain unchanged and out of scope for this feature
 
 ---
@@ -96,7 +104,7 @@ Out of scope:
 
 ---
 
-## Product Decisions and Open Questions
+## Product Decisions and Implementation Defaults
 
 ### Decisions encoded by this plan
 
@@ -106,17 +114,11 @@ Out of scope:
 4. platform safety alert email should be authored by the platform, not by agents
 5. agent-authored email fanout must remain excluded from this redesign
 
-### Open questions to confirm before implementation starts
+### Implementation defaults confirmed before implementation starts
 
-1. Should platform safety alert emails be mandatory like Telegram safety alerts, or should email respect a future preference layer?
-2. Is there an approved HeroBids wordmark/logo asset ready for email, or should the first version use a typographic header only?
-3. Should the initial slice keep all platform email copy English-only, or is auth locale support required immediately?
-
-This plan assumes none of these block the first implementation slice because the renderer can ship with:
-
-1. a mandatory platform-alert email path matching current Telegram semantics
-2. a typographic header fallback if no asset exists
-3. English copy first, with renderer structure designed so localization can be layered in later
+1. Platform safety alert emails should be mandatory like current Telegram safety alerts.
+2. The first version may use a typographic `OpenAIDom` header if no approved email asset is ready.
+3. The initial slice may remain English-only, with renderer structure designed so localization can be layered in later.
 
 ---
 
@@ -138,7 +140,7 @@ Recommended shell:
 Recommended brand behavior:
 
 1. if an approved image asset exists, use it in the header
-2. otherwise render a clean text-based `HeroBids` header with stable spacing and typography
+2. otherwise render a clean text-based `OpenAIDom` header with stable spacing and typography
 3. do not block the redesign on a separate logo-design task
 
 Recommended technical contract:
@@ -147,6 +149,7 @@ Recommended technical contract:
 2. API and worker both consume that same shape
 3. HTML generation remains pure string rendering with escaped dynamic values
 4. transport adapters stay provider-neutral and only map the rendered payload into SES
+5. renderer inputs that include URLs should use the canonical OpenAIDom hostname for the target environment
 
 ---
 
@@ -288,9 +291,10 @@ The redesign is ready to ship with acceptable branding quality even if final ass
 1. This feature should be implemented without changing user-facing notification preferences for agent-authored email.
 2. Release notes should call out that platform safety alerts gain an email path if email infrastructure is configured.
 3. If auth locale support is deferred, note that only visual quality improved in this slice; localization remains a follow-up.
+4. Email links and user-visible domain references should align with `docs/features/2026/07/12/001-openaidom-domain-rollout/001-plan.md` and must not retain `herobids.com` hostnames.
 
 ---
 
 ## Non-Blocking Assumption
 
-This plan assumes the first implementation can ship without a finalized logo asset, provided the shared shell includes a strong typographic HeroBids header and stable HTML fallback behavior.
+This plan assumes the first implementation can ship without a finalized logo asset, provided the shared shell includes a strong typographic OpenAIDom header and stable HTML fallback behavior.
