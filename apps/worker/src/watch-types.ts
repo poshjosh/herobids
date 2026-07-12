@@ -100,7 +100,7 @@ export const WatchEntrySchema = z.object({
     chain: z.string().optional(),
     address: z.string().optional(),
   }).optional(),
-  purpose: WatchPurposeEnum.optional(),
+  purpose: WatchPurposeEnum,
   coverage: z.object({
     actorType: z.enum(['agent', 'bot', 'user', 'system']).optional(),
     actorId: z.string().optional(),
@@ -133,13 +133,7 @@ export function parseWatch(raw: string): WatchEntry | null {
       logger.warn({ watchId, raw: raw.length > 200 ? raw.slice(0, 200) + '...' : raw, errors: parsed.error.issues }, 'Malformed watch record — discarding');
       return null;
     }
-    // Repair: default missing purpose to 'alert' for backward compatibility
-    // with watches persisted before purpose became mandatory at write time.
-    const entry = parsed.data;
-    if (!entry.purpose) {
-      entry.purpose = 'alert';
-    }
-    return entry;
+    return parsed.data;
   } catch {
     return null;
   }

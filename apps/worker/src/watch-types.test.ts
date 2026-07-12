@@ -14,6 +14,7 @@ function validV2Record(overrides: Partial<Record<string, unknown>> = {}): Record
     chain: 'ethereum',
     thresholdPrice: 50_000,
     condition: 'above',
+    purpose: 'alert',
     createdAt: '2026-07-01T00:00:00.000Z',
     lastConditionMet: null,
     schemaVersion: 2,
@@ -339,13 +340,6 @@ describe('parseWatch', () => {
     const result = parseWatch(raw);
     expect(result).not.toBeNull();
     expect(result!.purpose).toBe(purpose);
-  });
-
-  it('defaults missing purpose to "alert" on parse (repair step)', () => {
-    const raw = JSON.stringify(validV2Record());
-    const result = parseWatch(raw);
-    expect(result).not.toBeNull();
-    expect(result!.purpose).toBe('alert');
   });
 
   it('returns null when purpose is an invalid value', () => {

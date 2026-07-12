@@ -156,12 +156,12 @@ function makeWatch(overrides: Partial<{
     condition: overrides.condition ?? 'above',
     createdAt: '2026-06-10T00:00:00.000Z',
     lastConditionMet: overrides.lastConditionMet ?? null,
+    purpose: overrides.purpose ?? 'alert',
     schemaVersion: overrides.schemaVersion ?? 2,
   };
   if (overrides.resolvedChain) base.resolvedChain = overrides.resolvedChain;
   if (overrides.resolvedSymbol) base.resolvedSymbol = overrides.resolvedSymbol;
   if (overrides.resolvedAddress) base.resolvedAddress = overrides.resolvedAddress;
-  if (overrides.purpose) base.purpose = overrides.purpose;
   if (overrides.instrumentVenue || overrides.instrumentId) {
     base.instrument = {
       venue: overrides.instrumentVenue ?? 'hyperliquid',
@@ -484,22 +484,6 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.instrumentVenue).toBe('hyperliquid');
     expect(payload.instrumentId).toBe('SOL-USD');
     expect(payload.positionKey).toBe('pos-sol-stop-1');
-    expect(payload.schemaVersion).toBe(2);
-  });
-
-  it('populates purpose="alert" (repair default) and schemaVersion=2, but no instrument/positionKey when watch lacks them', async () => {
-    seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false }));
-    seedDiscoveryPrice('SOL', 'solana', 204);
-
-    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
-    await monitor.evaluate();
-
-    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
-    const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
-    expect(payload.purpose).toBe('alert');
-    expect(payload.instrumentVenue).toBeUndefined();
-    expect(payload.instrumentId).toBeUndefined();
-    expect(payload.positionKey).toBeUndefined();
     expect(payload.schemaVersion).toBe(2);
   });
 
