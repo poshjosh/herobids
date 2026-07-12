@@ -116,6 +116,13 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
+# Reload Caddy so it picks up any Caddyfile changes (e.g. new routes).
+# Caddy uses a bind-mounted config file; docker compose up -d does NOT
+# restart containers whose service definitions haven't changed, so a
+# config-only change would otherwise go unnoticed.
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Reloading Caddy config..."
+docker compose ${COMPOSE_FILES} restart caddy
+
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pruning dangling images..."
 docker image prune -f
 DEPLOY

@@ -207,4 +207,60 @@ describe('staging/production environment invariants', () => {
       expect(prodCompose).toMatch(/Caddyfile\.prod/);
     });
   });
+
+  // ── 10. Caddyfile auth routing completeness ────────────────────────────
+  // Bug 2026-07-12/001: missing handle /auth/* caused Google login to silently
+  // fail — requests fell through to the SPA catch-all instead of reaching the
+  // API's OAuth endpoints.
+
+  describe('Caddyfile auth routing', () => {
+    it('Caddyfile.staging routes /auth/* to the API', () => {
+      expect(stagingCaddy).toMatch(
+        /handle\s+\/auth\/\*\s*\{\s*\n\s*reverse_proxy\s+api:3000/,
+      );
+    });
+
+    it('Caddyfile.prod routes /auth/* to the API', () => {
+      expect(prodCaddy).toMatch(
+        /handle\s+\/auth\/\*\s*\{\s*\n\s*reverse_proxy\s+api:3000/,
+      );
+    });
+
+    it('Caddyfile.staging auth route appears before the catch-all handle', () => {
+      const authIdx = stagingCaddy.search(/handle\s+\/auth\/\*/);
+      const catchAllIdx = stagingCaddy.search(/handle\s*\{/);
+      expect(authIdx).toBeGreaterThan(0);
+      expect(catchAllIdx).toBeGreaterThan(authIdx);
+    });
+
+    it('Caddyfile.prod auth route appears before the catch-all handle', () => {
+      const authIdx = prodCaddy.search(/handle\s+\/auth\/\*/);
+      const catchAllIdx = prodCaddy.search(/handle\s*\{/);
+      expect(authIdx).toBeGreaterThan(0);
+      expect(catchAllIdx).toBeGreaterThan(authIdx);
+    });
+  });
+
+  // ── 11. Deploy script reloads Caddy ────────────────────────────────────
+  // Bug 2026-07-12/001: Caddy bind-mounts its config file; docker compose
+  // up -d does NOT restart containers whose service definitions haven't
+  // changed, so Caddyfile-only changes are silently ignored unless the
+  // deploy script explicitly reloads/restarts Caddy.
+
+  describe('deploy script restarts Caddy after deployment', () => {
+    const pushScript = readText('infra/hetzner/scripts/push.sh');
+
+    it('push.sh restarts the caddy service after docker compose up -d', () => {
+      // The restart must come after the up -d and health-check loop
+      expect(pushScript).toMatch(/restart\s+caddy/);
+    });
+
+    it('push.sh Caddy restart uses the correct compose files', () => {
+      // Must use COMPOSE_FILES (or equivalent) so it targets the right env
+      const caddyLine = pushScript.match(/^docker compose.*restart caddy/m);
+      expect(caddyLine).toBeTruthy();
+      // The line must reference the compose file variables, not hard-coded paths
+      expect(caddyLine![0]).toMatch(/\$\{?COMPOSE_FILES\}?/);
+    });
+  });
 });
