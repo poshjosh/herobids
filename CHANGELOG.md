@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.20 - 2026-07-12
+
+### Fixed
+
+- google login
+- cost benchmark
+
 ## v0.0.19 - 2026-07-11
 
 ### Added
