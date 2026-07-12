@@ -13,10 +13,13 @@ export interface PositionState {
   size: Quantity;
   entryPrice: Price;
   realizedPnl: Price;
+  /** Canonical instrument ID from the venue's instrument repository (e.g. "BTC-USD" on Hyperliquid).
+   *  Optional — populated when the venue adapter provides it. Falls back to symbol when absent. */
+  instrumentId?: string;
 }
 
 /** Create a flat (empty) position */
-export function flatPosition(venue: string, symbol: string): PositionState {
+export function flatPosition(venue: string, symbol: string, instrumentId?: string): PositionState {
   return {
     venue,
     symbol,
@@ -24,6 +27,7 @@ export function flatPosition(venue: string, symbol: string): PositionState {
     size: new Decimal(0),
     entryPrice: new Decimal(0),
     realizedPnl: new Decimal(0),
+    instrumentId,
   };
 }
 

@@ -1752,6 +1752,144 @@ describe('AgentTradingActor', () => {
     });
   });
 
+  describe('instrumentId preservation', () => {
+    it('persistPosition includes instrumentId from in-memory position when available', async () => {
+      const positionRepo = {
+        ...makeRepo(),
+        upsert: vi.fn().mockResolvedValue(undefined),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            venue: 'hyperliquid',
+            symbol: 'BTC/USD:USD',
+            instrumentId: 'BTC-USD',
+            side: 'long',
+            size: '1.0',
+            entryPrice: '90000',
+            realizedPnl: '0',
+            openedAt: new Date('2026-01-02T00:00:00Z'),
+          },
+        ]),
+      };
+
+      const actor = new AgentTradingActor(
+        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any }),
+      );
+
+      await actor.start();
+
+      const persistence = (actor as any).buildPersistence('BTC/USD:USD');
+
+      await persistence.persistPosition({
+        venueAccountId: 'va-1',
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        venue: 'hyperliquid',
+        symbol: 'BTC/USD:USD',
+        side: 'long',
+        size: '1',
+        entryPrice: '90000',
+        realizedPnl: '0',
+      });
+
+      expect(positionRepo.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ instrumentId: 'BTC-USD' }),
+      );
+
+      await actor.stop();
+    });
+
+    it('persistPosition does NOT inject instrumentId when in-memory position has none', async () => {
+      const positionRepo = {
+        ...makeRepo(),
+        upsert: vi.fn().mockResolvedValue(undefined),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([]),
+      };
+
+      const actor = new AgentTradingActor(
+        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any }),
+      );
+
+      await actor.start();
+
+      const persistence = (actor as any).buildPersistence('BTC/USD:USD');
+
+      await persistence.persistPosition({
+        venueAccountId: 'va-1',
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        venue: 'hyperliquid',
+        symbol: 'BTC/USD:USD',
+        side: 'long',
+        size: '1',
+        entryPrice: '90000',
+        realizedPnl: '0',
+      });
+
+      const callArg = positionRepo.upsert.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArg?.instrumentId).toBeUndefined();
+
+      await actor.stop();
+    });
+
+    it('rehydrates instrumentId from persisted position rows on startup', async () => {
+      const positionRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            venue: 'hyperliquid',
+            symbol: 'BTC/USD:USD',
+            instrumentId: 'BTC-USD',
+            side: 'long',
+            size: '1.0',
+            entryPrice: '90000',
+            realizedPnl: '0',
+            openedAt: new Date('2026-01-02T00:00:00Z'),
+          },
+        ]),
+      };
+
+      const actor = new AgentTradingActor(
+        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any }),
+      );
+
+      await actor.start();
+
+      const positions = (actor as any).positions as Map<string, { instrumentId?: string }>;
+      expect(positions.get('BTC/USD:USD')?.instrumentId).toBe('BTC-USD');
+
+      await actor.stop();
+    });
+
+    it('rehydrates position without instrumentId as undefined (backward-compatible)', async () => {
+      const positionRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            venue: 'hyperliquid',
+            symbol: 'ETH/USD:USD',
+            instrumentId: null,
+            side: 'long',
+            size: '2.0',
+            entryPrice: '2000',
+            realizedPnl: '0',
+            openedAt: new Date('2026-01-02T00:00:00Z'),
+          },
+        ]),
+      };
+
+      const actor = new AgentTradingActor(
+        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any }),
+      );
+
+      await actor.start();
+
+      const positions = (actor as any).positions as Map<string, { instrumentId?: string }>;
+      expect(positions.get('ETH/USD:USD')?.instrumentId).toBeUndefined();
+
+      await actor.stop();
+    });
+  });
+
   describe('credential audit event', () => {
     it('emits credential-used event when credentialId is returned by factory', async () => {
       const journal = { append: vi.fn().mockResolvedValue(undefined) };

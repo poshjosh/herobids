@@ -2038,7 +2038,7 @@ export class AgentTradingActor implements ExecutionActor {
   }): Promise<void> {
     const existing = this.positions.get(pos.symbol);
     const nextPosition = pos.side === 'flat'
-      ? flatPosition(this.deps.venue, pos.symbol)
+      ? flatPosition(this.deps.venue, pos.symbol, existing?.instrumentId)
       : {
           venue: this.deps.venue,
           symbol: pos.symbol,
@@ -2046,6 +2046,7 @@ export class AgentTradingActor implements ExecutionActor {
           size: new Decimal(pos.size),
           entryPrice: new Decimal(pos.entryPrice),
           realizedPnl: existing?.realizedPnl ?? new Decimal(0),
+          instrumentId: existing?.instrumentId,
         };
 
     await this.persistPrivateStreamPositionState(nextPosition);
@@ -2104,6 +2105,7 @@ export class AgentTradingActor implements ExecutionActor {
       actorId: this.agentId,
       venue: position.venue,
       symbol: position.symbol,
+      instrumentId: position.instrumentId ?? undefined,
       side: position.side,
       size: position.size.toString(),
       entryPrice: position.entryPrice.toString(),
@@ -2652,6 +2654,7 @@ export class AgentTradingActor implements ExecutionActor {
             size: new Decimal(pos.size ?? '0'),
             entryPrice: new Decimal(pos.entryPrice ?? '0'),
             realizedPnl: new Decimal(pos.realizedPnl ?? '0'),
+            instrumentId: pos.instrumentId ?? undefined,
           });
           // Read exit levels directly from the position row (persisted at fill time).
           if (pos.stopLoss || pos.takeProfit) {
@@ -3027,10 +3030,14 @@ export class AgentTradingActor implements ExecutionActor {
         });
       },
       persistPosition: async (pos) => {
+        // Preserve the existing instrumentId from the in-memory position if the engine
+        // didn't carry one (e.g. decision-based fills where the engine is symbol-only).
+        const existingInstrumentId = pos.instrumentId ?? this.positions.get(pos.symbol)?.instrumentId;
         await this.deps.positionRepo.upsert({
           ...pos,
           actorType: pos.actorType ?? 'agent',
           actorId: pos.actorId ?? this.agentId,
+          instrumentId: existingInstrumentId ?? undefined,
           ...(pendingExitLevels != null ? {
             ...(pendingExitLevels.stopLoss !== undefined ? { stopLoss: pendingExitLevels.stopLoss.toString() } : {}),
             ...(pendingExitLevels.takeProfit !== undefined ? { takeProfit: pendingExitLevels.takeProfit.toString() } : {}),
@@ -3049,6 +3056,7 @@ export class AgentTradingActor implements ExecutionActor {
             size: new Decimal(pos.size),
             entryPrice: new Decimal(pos.entryPrice),
             realizedPnl: new Decimal(pos.realizedPnl),
+            instrumentId: existingInstrumentId ?? undefined,
           });
           // Upsert per-trade exit levels from the accepted decision (if any).
           // When a new decision with levels comes in for an already-open position,

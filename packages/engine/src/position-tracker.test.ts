@@ -28,6 +28,16 @@ describe('Position Tracker', () => {
       expect(pos.entryPrice.isZero()).toBe(true);
       expect(pos.realizedPnl.isZero()).toBe(true);
     });
+
+    it('accepts optional instrumentId', () => {
+      const pos = flatPosition('hyperliquid', 'BTC/USD:USD', 'BTC-USD');
+      expect(pos.instrumentId).toBe('BTC-USD');
+    });
+
+    it('is backward-compatible without instrumentId', () => {
+      const pos = flatPosition('hyperliquid', 'BTC/USD:USD');
+      expect(pos.instrumentId).toBeUndefined();
+    });
   });
 
   describe('applyFill', () => {
@@ -92,6 +102,34 @@ describe('Position Tracker', () => {
       expect(result.size.eq(new Decimal(2))).toBe(true);
       // Short PnL: (30000-28000)*2 = 4000
       expect(result.realizedPnl.eq(new Decimal(4000))).toBe(true);
+    });
+
+    it('preserves instrumentId through applyFill operations', () => {
+      // Open with instrumentId
+      const pos = flatPosition('hyperliquid', 'BTC/USD:USD', 'BTC-USD');
+      const opened = applyFill(pos, makeFill({ side: 'buy', quantity: quantity('2'), price: price('30000') }));
+      expect(opened.instrumentId).toBe('BTC-USD');
+
+      // Increase
+      const increased = applyFill(opened, makeFill({ side: 'buy', quantity: quantity('1'), price: price('31000') }));
+      expect(increased.instrumentId).toBe('BTC-USD');
+
+      // Partial close
+      const reduced = applyFill(increased, makeFill({ side: 'sell', quantity: quantity('1'), price: price('32000') }));
+      expect(reduced.instrumentId).toBe('BTC-USD');
+
+      // Full close
+      const closed = applyFill(reduced, makeFill({ side: 'sell', quantity: quantity('2'), price: price('33000') }));
+      expect(closed.instrumentId).toBe('BTC-USD');
+    });
+
+    it('preserves instrumentId through reversal', () => {
+      const pos = flatPosition('hyperliquid', 'BTC/USD:USD', 'BTC-USD');
+      const opened = applyFill(pos, makeFill({ side: 'buy', quantity: quantity('2'), price: price('30000') }));
+      // Reverse from long to short
+      const reversed = applyFill(opened, makeFill({ side: 'sell', quantity: quantity('5'), price: price('31000') }));
+      expect(reversed.side).toBe('short');
+      expect(reversed.instrumentId).toBe('BTC-USD');
     });
   });
 

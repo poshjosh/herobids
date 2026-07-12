@@ -166,6 +166,7 @@ export class AgentIntakeResolver {
       size: quantity(match.size),
       entryPrice: price(match.entryPrice),
       realizedPnl: price(match.realizedPnl ?? '0'),
+      instrumentId: match.instrumentId ?? undefined,
     };
   }
 
