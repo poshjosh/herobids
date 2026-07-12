@@ -15,6 +15,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - `watch_token` now rejects protective-purpose watches that cannot be linked to a canonical instrument or live position.
+- Protective auto-link now succeeds only on exact canonical `venue + instrumentId` matching; symbol-based retry fallback removed.
+- `parseWatch()` no longer repairs malformed structured watches by defaulting missing `purpose` to `'alert'` — `purpose` is now required in persisted structured watches.
 - `list_positions` returns canonical `instrumentId` (nullable) instead of mislabeling `symbol` as `instrumentId`.
 - `submit_decision` `stopLoss`/`takeProfit` descriptions updated to accurately reflect active-session-only protection scope.
 
