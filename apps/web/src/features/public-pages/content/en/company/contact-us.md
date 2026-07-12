@@ -4,7 +4,7 @@ We are here to help.
 
 ## Email
 
-Reach us at **[admin@herobids.com](mailto:admin@herobids.com)** for:
+Reach us at **[admin@openaidom.com](mailto:admin@openaidom.com)** for:
 
 - Account and billing questions
 - Technical support

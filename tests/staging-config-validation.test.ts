@@ -115,25 +115,25 @@ describe('staging/production environment invariants', () => {
 
   describe('Caddyfile domain isolation', () => {
     it('Caddyfile.staging does NOT reference bare production domains', () => {
-      // Strip the email line (admin@herobids.com) which legitimately
+      // Strip the email line (admin@openaidom.com) which legitimately
       // references the bare domain — we only care about site blocks.
       const siteBlocks = stagingCaddy.replace(/^\{[^}]*\}/m, '');
-      // herobids.com NOT preceded by "staging."
-      expect(siteBlocks).not.toMatch(/(?<!staging\.)herobids\.com/);
-      expect(siteBlocks).not.toMatch(/www\.herobids\.com/);
-      expect(siteBlocks).not.toMatch(/app\.herobids\.com/);
+      // openaidom.com NOT preceded by "staging."
+      expect(siteBlocks).not.toMatch(/(?<!staging\.)openaidom\.com/);
+      expect(siteBlocks).not.toMatch(/www\.openaidom\.com/);
+      expect(siteBlocks).not.toMatch(/app\.openaidom\.com/);
     });
 
     it('Caddyfile.prod does NOT reference staging domain', () => {
-      expect(prodCaddy).not.toMatch(/staging\.herobids\.com/);
+      expect(prodCaddy).not.toMatch(/staging\.openaidom\.com/);
     });
 
-    it('Caddyfile.staging handles staging.herobids.com', () => {
-      expect(stagingCaddy).toMatch(/staging\.herobids\.com/);
+    it('Caddyfile.staging handles staging.openaidom.com', () => {
+      expect(stagingCaddy).toMatch(/staging\.openaidom\.com/);
     });
 
     it('Caddyfile.prod handles production domain(s)', () => {
-      expect(prodCaddy).toMatch(/herobids\.com/);
+      expect(prodCaddy).toMatch(/openaidom\.com/);
     });
   });
 
@@ -142,19 +142,19 @@ describe('staging/production environment invariants', () => {
   describe('auth origin consistency in compose overlays', () => {
     it('staging auth origins point to staging domain', () => {
       expect(stagingCompose).toMatch(
-        /AUTH_PUBLIC_BASE_URL:\s*https:\/\/staging\.herobids\.com/,
+        /AUTH_PUBLIC_BASE_URL:\s*https:\/\/staging\.openaidom\.com/,
       );
       expect(stagingCompose).toMatch(
-        /AUTH_FRONTEND_ORIGIN:\s*https:\/\/staging\.herobids\.com/,
+        /AUTH_FRONTEND_ORIGIN:\s*https:\/\/staging\.openaidom\.com/,
       );
     });
 
     it('production auth origins point to production domain', () => {
       expect(prodCompose).toMatch(
-        /AUTH_PUBLIC_BASE_URL:\s*https:\/\/herobids\.com/,
+        /AUTH_PUBLIC_BASE_URL:\s*https:\/\/openaidom\.com/,
       );
       expect(prodCompose).toMatch(
-        /AUTH_FRONTEND_ORIGIN:\s*https:\/\/herobids\.com/,
+        /AUTH_FRONTEND_ORIGIN:\s*https:\/\/openaidom\.com/,
       );
     });
   });
@@ -164,13 +164,13 @@ describe('staging/production environment invariants', () => {
   describe('VITE_API_ORIGIN consistency', () => {
     it('staging VITE_API_ORIGIN matches staging domain', () => {
       expect(stagingCompose).toMatch(
-        /VITE_API_ORIGIN:\s*https:\/\/staging\.herobids\.com/,
+        /VITE_API_ORIGIN:\s*https:\/\/staging\.openaidom\.com/,
       );
     });
 
     it('production VITE_API_ORIGIN matches production domain', () => {
       expect(prodCompose).toMatch(
-        /VITE_API_ORIGIN:\s*https:\/\/herobids\.com/,
+        /VITE_API_ORIGIN:\s*https:\/\/openaidom\.com/,
       );
     });
   });
@@ -179,7 +179,7 @@ describe('staging/production environment invariants', () => {
 
   describe('cross-file domain consistency', () => {
     it('staging Caddyfile domain matches staging compose auth origin', () => {
-      const caddyMatch = stagingCaddy.match(/(staging\.herobids\.com)/);
+      const caddyMatch = stagingCaddy.match(/(staging\.openaidom\.com)/);
       const authMatch = stagingCompose.match(
         /AUTH_PUBLIC_BASE_URL:\s*https:\/\/([\w.-]+)/,
       );
@@ -188,7 +188,7 @@ describe('staging/production environment invariants', () => {
     });
 
     it('production Caddyfile domain matches production compose auth origin', () => {
-      const caddyDomains = prodCaddy.match(/[\w.-]*herobids\.com/g) ?? [];
+      const caddyDomains = prodCaddy.match(/[\w.-]*openaidom\.com/g) ?? [];
       const authMatch = prodCompose.match(
         /AUTH_PUBLIC_BASE_URL:\s*https:\/\/([\w.-]+)/,
       );

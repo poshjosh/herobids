@@ -185,7 +185,7 @@ ssh root@${AGENT_IP} "nc -zv \$(awk '/nameserver/{print \$2; exit}' /etc/resolv.
 Use the staging web UI or API to create a new agent. If using the API:
 
 ```bash
-STAGING_API="https://staging.herobids.com/api"
+STAGING_API="https://staging.openaidom.com/api"
 
 # Create a test agent (requires auth token)
 curl -s -X POST "${STAGING_API}/agents" \

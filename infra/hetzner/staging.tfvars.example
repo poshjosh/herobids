@@ -42,7 +42,7 @@ EOT
 
 git_repo_url = "git@github.com:your-org/herobids.git"  # required
 # git_branch = "main"
-app_domain = "staging.herobids.com"
+app_domain = "staging.openaidom.com"
 
 # ── Nomad Orchestration ───────────────────────────────────
 

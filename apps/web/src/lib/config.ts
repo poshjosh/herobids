@@ -4,7 +4,7 @@
 
 export const config = {
   // API base URL — in dev the Vite proxy rewrites /api/* to the local API server.
-  // In production this should be the absolute API origin (e.g. https://api.herobids.com).
+  // In production this should be the absolute API origin (e.g. https://api.openaidom.com).
   apiBaseUrl: import.meta.env['VITE_API_BASE_URL'] as string | undefined ?? '/api',
 
   // Google OAuth initiation endpoint (absolute, served by the API)

@@ -106,8 +106,8 @@ The worker reads these from `.env` and forwards them to each spawned agent conta
 HeroBids supports two deployment environments: **staging** and **production**.
 Each runs on its own Hetzner Cloud server with independent data, secrets, and DNS.
 
-- **Staging** (`staging.herobids.com`) — pre-production validation, smoke tests, deploy rehearsals. Safe defaults: mock billing, paper trading only.
-- **Production** (`herobids.com`) — live trading, real users. Enforces non-mock billing, production guards.
+- **Staging** (`staging.openaidom.com`) — pre-production validation, smoke tests, deploy rehearsals. Safe defaults: mock billing, paper trading only.
+- **Production** (`openaidom.com`) — live trading, real users. Enforces non-mock billing, production guards.
 
 Full deployment docs: [infra/hetzner/README.md](infra/hetzner/README.md)
 

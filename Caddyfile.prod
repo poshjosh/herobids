@@ -1,8 +1,8 @@
 {
-    email admin@herobids.com
+    email support@openaidom.com
 }
 
-herobids.com, www.herobids.com, app.herobids.com {
+openaidom.com, www.openaidom.com, app.openaidom.com {
     encode zstd gzip
 
     header {

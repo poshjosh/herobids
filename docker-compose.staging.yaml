@@ -3,8 +3,8 @@
 #
 # Key differences from the production overlay:
 #   - NODE_ENV=staging for API and worker
-#   - Staging domain (staging.herobids.com) for auth origins
-#   - Staging Caddyfile with staging.herobids.com TLS
+#   - Staging domain (staging.openaidom.com) for auth origins
+#   - Staging Caddyfile with staging.openaidom.com TLS
 #   - VITE_API_ORIGIN set to the staging API origin for OAuth redirects
 #
 # Shares the same base compose infrastructure (postgres, redis, etc.)
@@ -20,8 +20,8 @@ services:
   api:
     environment:
       NODE_ENV: staging
-      AUTH_PUBLIC_BASE_URL: https://staging.herobids.com
-      AUTH_FRONTEND_ORIGIN: https://staging.herobids.com
+      AUTH_PUBLIC_BASE_URL: https://staging.openaidom.com
+      AUTH_FRONTEND_ORIGIN: https://staging.openaidom.com
 
   worker:
     environment:
@@ -31,7 +31,7 @@ services:
     restart: unless-stopped
     build:
       args:
-        VITE_API_ORIGIN: https://staging.herobids.com
+        VITE_API_ORIGIN: https://staging.openaidom.com
     depends_on:
       api:
         condition: service_healthy

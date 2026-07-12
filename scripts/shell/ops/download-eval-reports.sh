@@ -53,8 +53,8 @@ fi
 # Map environment to default URL (overridable via API_BASE_URL)
 case "$HEROBIDS_ENV" in
   dev)   DEFAULT_API_URL="http://localhost:3000" ;;
-  staging) DEFAULT_API_URL="https://staging.herobids.com" ;;
-  prod)    DEFAULT_API_URL="https://api.herobids.com" ;;
+  staging) DEFAULT_API_URL="https://staging.openaidom.com" ;;
+  prod)    DEFAULT_API_URL="https://openaidom.com" ;;
   *)
     echo "Error: HEROBIDS_ENV must be 'dev', 'staging', or 'prod'. Got '$HEROBIDS_ENV'" >&2
     exit 1

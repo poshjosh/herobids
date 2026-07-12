@@ -22,8 +22,8 @@
 
 # environment = "production"   # staging | production (default: production)
 #                              # Controls naming conventions, labels, and compose overlay selection.
-#                              #   production → server_name=herobids, app_domain=herobids.com
-#                              #   staging    → server_name=herobids-staging, app_domain=staging.herobids.com
+#                              #   production → server_name=herobids, app_domain=openaidom.com
+#                              #   staging    → server_name=herobids-staging, app_domain=staging.openaidom.com
 
 # ── Provider ──────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ EOT
 git_repo_url = "git@github.com:your-org/herobids.git"  # required
 
 # git_branch = "main"
-# app_domain = "herobids.com"
+# app_domain = "openaidom.com"
 
 # ── Nomad Orchestration (Feature 004 — Agent Orchestration) ──
 

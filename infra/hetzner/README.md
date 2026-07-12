@@ -9,7 +9,7 @@ Deployment of Herobids on Hetzner Cloud VPS (CPX22, Ubuntu 24.04). Supports two 
 | **Purpose** | Pre-production validation, smoke tests, deploy rehearsals | Live trading, real users |
 | **Terraform `environment` var** | `staging` | `production` |
 | **Server name** | `herobids-staging` | `herobids` |
-| **App domain** | `staging.herobids.com` | `herobids.com` |
+| **App domain** | `staging.openaidom.com` | `openaidom.com` |
 | **Env file** | `.env.staging` | `.env.prod` |
 | **Compose overlay** | `docker-compose.staging.yaml` | `docker-compose.prod.yaml` |
 | **NODE_ENV** | `staging` | `production` |
@@ -18,7 +18,7 @@ Deployment of Herobids on Hetzner Cloud VPS (CPX22, Ubuntu 24.04). Supports two 
 ### Naming conventions
 
 - **Server name**: `herobids` for production, `herobids-staging` for staging. Override via `server_name` in `terraform.tfvars` if the convention doesn't fit.
-- **App domain**: `herobids.com` for production, `staging.herobids.com` for staging. Override via `app_domain` in `terraform.tfvars`.
+- **App domain**: `openaidom.com` for production, `staging.openaidom.com` for staging. Override via `app_domain` in `terraform.tfvars`.
 - **Env file**: `.env.staging` and `.env.prod` in `infra/hetzner/` (gitignored). The `--file` flag on `setup-env.sh` accepts any path.
 - **Compose overlay**: `docker-compose.{staging,prod}.yaml`. Scripts auto-select the correct overlay from `HEROBIDS_ENV`.
 - **Terraform state**: Managed via workspaces. `provision.sh --env <name>` automatically selects the correct workspace. For manual terraform commands, switch first: `terraform workspace select staging` or `terraform workspace select production`.
@@ -85,7 +85,7 @@ Each environment enforces a specific runtime policy through config defaults and 
 | **Secrets** | Separate `.env.staging` with test-only credentials, OAuth clients, Telegram tokens, and LLM keys. | Separate `.env.prod` with production secrets. Never share secrets between environments. |
 | **Data isolation** | Independent server, volumes, DB, Redis. No shared state with production. | Independent server, volumes, DB, Redis. |
 | **Server lifecycle** | No `prevent_destroy` — can be torn down and recreated freely. | `prevent_destroy = true` in Terraform — accidental destroy is blocked. |
-| **Auth origins** | `staging.herobids.com` | `herobids.com` / `www.herobids.com` / `app.herobids.com` |
+| **Auth origins** | `staging.openaidom.com` | `openaidom.com` / `www.openaidom.com` / `app.openaidom.com` |
 | **LLM provider** | Same provider as production (OpenRouter). Use separate API keys to isolate costs. | OpenRouter with production API key. |
 
 #### Startup Guards
@@ -141,7 +141,7 @@ infra/hetzner/
 ## Architecture
 
 ```
-Internet (herobids.com / staging.herobids.com)
+Internet (openaidom.com / staging.openaidom.com)
   │
   └─ Caddy (TLS termination, port 80/443, Let's Encrypt auto-renewal)
        ├─ /health          → api:3000
@@ -804,7 +804,7 @@ cp terraform.tfvars.example terraform.tfvars
 # edit terraform.tfvars:
 #   environment = "staging"
 #   server_name = "herobids-staging"   # optional — follows convention
-#   app_domain  = "staging.herobids.com"
+#   app_domain  = "staging.openaidom.com"
 
 # Option B: Use per-environment tfvars (recommended)
 cp staging.tfvars.example staging.tfvars
@@ -928,12 +928,12 @@ You must create DNS A records before the deploy will work over HTTPS.
 
 | Environment | Hostname | Type | Points To |
 |---|---|---|---|
-| **Production** | `herobids.com` | A | Production server IP |
-| | `www.herobids.com` | A (or CNAME → `herobids.com`) | Production server IP |
-| | `app.herobids.com` | A (or CNAME → `herobids.com`) | Production server IP |
-| **Staging** | `staging.herobids.com` | A | Staging server IP |
+| **Production** | `openaidom.com` | A | Production server IP |
+| | `www.openaidom.com` | A (or CNAME → `openaidom.com`) | Production server IP |
+| | `app.openaidom.com` | A (or CNAME → `openaidom.com`) | Production server IP |
+| **Staging** | `staging.openaidom.com` | A | Staging server IP |
 
-> The production Caddyfile also handles `www.herobids.com` and `app.herobids.com` as
+> The production Caddyfile also handles `www.openaidom.com` and `app.openaidom.com` as
 > alternative names on the same certificate. Staging uses a single domain.
 
 ### How TLS Works
@@ -958,11 +958,11 @@ You must create DNS A records before the deploy will work over HTTPS.
 ./scripts/logs.sh --env staging -- caddy | grep -i "certificate\|acme"
 
 # Verify the certificate from your machine
-curl -svI https://staging.herobids.com 2>&1 | grep -i "subject\|issuer\|expire"
+curl -svI https://staging.openaidom.com 2>&1 | grep -i "subject\|issuer\|expire"
 ```
 
 If the certificate doesn't issue within a few minutes of the first HTTPS request:
-- Verify DNS propagation: `dig staging.herobids.com` should return the server IP.
+- Verify DNS propagation: `dig staging.openaidom.com` should return the server IP.
 - Check the Hetzner firewall rules in the cloud console.
 - See the troubleshooting table at the bottom of this document.
 
@@ -1082,7 +1082,7 @@ ssh root@<IP> 'cd /opt/herobids && docker compose -f docker-compose.yaml -f dock
 ./scripts/logs.sh --env staging -- worker | head -30
 
 # Verify the API serves without startup guard failures
-curl -sf https://staging.herobids.com/health
+curl -sf https://staging.openaidom.com/health
 ```
 
 ## Smoke-Test Checklist
@@ -1096,8 +1096,8 @@ Quick reference:
 
 | # | Check | Expected |
 |---|-------|----------|
-| 1 | `curl -sf https://staging.herobids.com/health` | HTTP 200 |
-| 2 | Open `https://staging.herobids.com` in browser | Page loads, no cert errors |
+| 1 | `curl -sf https://staging.openaidom.com/health` | HTTP 200 |
+| 2 | Open `https://staging.openaidom.com` in browser | Page loads, no cert errors |
 | 3 | OAuth login flow | Redirects use staging domain |
 | 4 | Billing page | Renders without errors |
 | 5 | `./scripts/logs.sh --env staging -- worker` | No startup guard failures |

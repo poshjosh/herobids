@@ -25,8 +25,8 @@ services:
   api:
     environment:
       NODE_ENV: production
-      AUTH_PUBLIC_BASE_URL: https://herobids.com
-      AUTH_FRONTEND_ORIGIN: https://herobids.com
+      AUTH_PUBLIC_BASE_URL: https://openaidom.com
+      AUTH_FRONTEND_ORIGIN: https://openaidom.com
 
   worker:
     environment:
@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
     build:
       args:
-        VITE_API_ORIGIN: https://herobids.com
+        VITE_API_ORIGIN: https://openaidom.com
     depends_on:
       api:
         condition: service_healthy

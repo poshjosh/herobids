@@ -17,7 +17,7 @@
 #   TEST_CHAT_IDS=6846862012 ./test-telegram-messaging.sh --env-file .env.ops.dev
 #
 # Required env vars (in env file or environment):
-#   API_BASE_URL           — e.g. https://herobids.com or http://localhost:3000
+#   API_BASE_URL           — e.g. https://openaidom.com or http://localhost:3000
 #   TELEGRAM_BOT_TOKEN     — the bot token
 #   TEST_CHAT_IDS          — comma-separated chat IDs to verify
 #

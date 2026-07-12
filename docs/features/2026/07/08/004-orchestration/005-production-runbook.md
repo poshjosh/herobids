@@ -159,7 +159,7 @@ ssh root@${CONTROL_IP} 'systemctl is-enabled nomad-scale-in.timer || echo "scale
 Run the same validation checks as staging (Steps 4–7 of `004-staging-runbook.md`), substituting production endpoints:
 
 ```bash
-PROD_API="https://herobids.com/api"
+PROD_API="https://openaidom.com/api"
 CONTROL_IP=$(terraform output -var-file=production.tfvars -raw server_ipv4)
 
 # 1. Launch agent → verify Nomad allocation

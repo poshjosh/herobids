@@ -7,17 +7,17 @@
 #
 # Usage:
 #   scripts/shell/tests/caddy-routing-smoke-test.sh [BASE_URL]
-#   scripts/shell/tests/caddy-routing-smoke-test.sh https://staging.herobids.com
+#   scripts/shell/tests/caddy-routing-smoke-test.sh https://staging.openaidom.com
 #
 # Environment:
-#   BASE_URL   Base URL of the stack (default: https://staging.herobids.com). Must be the
+#   BASE_URL   Base URL of the stack (default: https://staging.openaidom.com). Must be the
 #              Caddy entry point (port 80/443), not the API port directly.
 #
 # Exit code: 0 if all checks pass, 1 if any check fails.
 
 set -euo pipefail
 
-BASE_URL="${1:-${BASE_URL:-https://staging.herobids.com}}"
+BASE_URL="${1:-${BASE_URL:-https://staging.openaidom.com}}"
 
 # ── Colour helpers ──────────────────────────────────────────────────────────
 

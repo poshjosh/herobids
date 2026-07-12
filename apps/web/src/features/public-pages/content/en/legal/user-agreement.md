@@ -69,4 +69,4 @@ We may update these terms from time to time. Material changes will be communicat
 
 ## Contact
 
-For questions about these terms, contact us at **[admin@herobids.com](mailto:admin@herobids.com)**.
+For questions about these terms, contact us at **[admin@openaidom.com](mailto:admin@openaidom.com)**.

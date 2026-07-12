@@ -92,8 +92,8 @@ variable "git_branch" {
 
 variable "app_domain" {
   type        = string
-  description = "Application domain name. Convention: herobids.com (production), staging.herobids.com (staging)."
-  default     = "herobids.com"
+  description = "Application domain name. Convention: openaidom.com (production), staging.openaidom.com (staging)."
+  default     = "openaidom.com"
 }
 
 # ── Nomad Orchestration ───────────────────────────────────

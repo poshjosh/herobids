@@ -21,20 +21,20 @@ These require a browser or interactive access — run them after the automated t
 
 ### Web App
 
-Open `https://staging.herobids.com` in a browser.
+Open `https://staging.openaidom.com` in a browser.
 
 **Expected:** Page loads without certificate errors, login UI renders, no CORS errors.
 
-**If it fails:** Check DNS (`dig staging.herobids.com`), Caddy logs (`./scripts/logs.sh --env staging -- caddy`), or verify `VITE_API_ORIGIN` in `docker-compose.staging.yaml`.
+**If it fails:** Check DNS (`dig staging.openaidom.com`), Caddy logs (`./scripts/logs.sh --env staging -- caddy`), or verify `VITE_API_ORIGIN` in `docker-compose.staging.yaml`.
 
 ### OAuth Redirect Flow (if OAuth is configured)
 
-1. Navigate to `https://staging.herobids.com` and log in via OAuth.
-2. Verify the `redirect_uri` points to `staging.herobids.com`, NOT `herobids.com`.
+1. Navigate to `https://staging.openaidom.com` and log in via OAuth.
+2. Verify the `redirect_uri` points to `staging.openaidom.com`, NOT `openaidom.com`.
 
 **Expected:** Full OAuth round-trip succeeds.
 
-**If it fails:** Verify the OAuth provider has `https://staging.herobids.com/api/auth/callback/...` registered as an authorized redirect URI, and `AUTH_PUBLIC_BASE_URL` matches.
+**If it fails:** Verify the OAuth provider has `https://staging.openaidom.com/api/auth/callback/...` registered as an authorized redirect URI, and `AUTH_PUBLIC_BASE_URL` matches.
 
 ### Billing Page
 
@@ -46,13 +46,13 @@ Log in and navigate to the billing page.
 
 Send a test message to the staging bot and confirm the worker responds.
 
-**Expected:** Bot responds. Webhook URL uses `staging.herobids.com`.
+**Expected:** Bot responds. Webhook URL uses `staging.openaidom.com`.
 
 ### Telegram Webhook (if configured)
 
 Send a test message to the staging bot and confirm the worker responds.
 
-**Expected:** Bot responds. Webhook URL uses `staging.herobids.com`.
+**Expected:** Bot responds. Webhook URL uses `staging.openaidom.com`.
 
 ---
 
