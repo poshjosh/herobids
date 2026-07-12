@@ -152,7 +152,7 @@ Out of scope:
 
 ## Implementation Plan
 
-### Slice 1 — Define protection semantics for active sessions **[PENDING]**
+### Slice 1 — Define protection semantics for active sessions **[DONE]**
 
 Goal: stop the runtime from treating an actively monitored, per-trade-protected position as fully uncovered.
 
@@ -172,7 +172,7 @@ Expected result:
 
 The judge is no longer forced in a loop for positions that already have active per-trade levels armed in the live runtime, while the outage caveat remains visible and accurate.
 
-### Slice 2 — Preserve canonical identity in the agent-direct runtime path **[PENDING]**
+### Slice 2 — Preserve canonical identity in the agent-direct runtime path **[DONE]**
 
 Goal: ensure open positions keep their canonical `instrumentId` after fills, private-stream refreshes, increases, decreases, and restart rehydration.
 
@@ -190,7 +190,7 @@ Expected result:
 
 The canonical `instrumentId` that existed at entry time remains attached to the open position row and is available to downstream watch linking and agent tools.
 
-### Slice 3 — Correct the `list_positions` contract **[PENDING]**
+### Slice 3 — Correct the `list_positions` contract **[DONE]**
 
 Goal: make the agent-facing position payload truthful and actionable.
 
@@ -210,7 +210,7 @@ Expected result:
 
 Agents can accurately target positions for watch linkage and can see whether a position already has native exit levels armed.
 
-### Slice 4 — Fail closed on unmatchable protective watches **[PENDING]**
+### Slice 4 — Fail closed on unmatchable protective watches **[DONE]**
 
 Goal: eliminate the false-success mode where a watch is accepted as `stop_loss` or `take_profit` but can never count as protective coverage.
 
@@ -228,7 +228,7 @@ Expected result:
 
 Every persisted protective watch is matchable by design; threshold alerts that are not protective remain possible but are no longer misrepresented.
 
-### Slice 5 — Align wording, context, and tests with the real contract **[PENDING]**
+### Slice 5 — Align wording, context, and tests with the real contract **[DONE]**
 
 Goal: remove the remaining semantic drift between docs, tool wording, and runtime behavior.
 

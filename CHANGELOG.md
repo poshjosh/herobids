@@ -6,6 +6,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Agent-direct protection alignment: native per-trade exit levels now count as active-session coverage, preventing repeated `open_position_uncovered` judge escalations.
+- Canonical `instrumentId` preservation across agent-direct private-stream updates, restart rehydration, and decision intake.
+- Truthful `list_positions` payload with separate `symbol`, `instrumentId`, `venue`, `stopLoss`, and `takeProfit` fields.
+- Fail-closed rejection of unmatchable protective watches (`stop_loss`/`take_profit`/`exit` without instrument or position linkage).
+- New `[NATIVE_PROTECTED]` and `[PROTECTED]` coverage labels in runtime context.
+
+### Changed
+- `watch_token` now rejects protective-purpose watches that cannot be linked to a canonical instrument or live position.
+- `list_positions` returns canonical `instrumentId` (nullable) instead of mislabeling `symbol` as `instrumentId`.
+- `submit_decision` `stopLoss`/`takeProfit` descriptions updated to accurately reflect active-session-only protection scope.
+
+### Fixed
+- Agent-direct positions no longer lose canonical `instrumentId` through private-stream persistence, restart rehydration, or intake resolver rehydration.
+
 ## v0.0.20 - 2026-07-12
 
 ### Fixed
