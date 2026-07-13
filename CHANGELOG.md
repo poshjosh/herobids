@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.23 - 2026-07-13
+
+### Fixed
+
+- maintenance restart script
+
 ## v0.0.22 - 2026-07-13
 
 ### Added
