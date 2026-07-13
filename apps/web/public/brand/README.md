@@ -18,8 +18,8 @@ Always use the copies in this directory (or their `/brand/...` URL paths).
 |------|---------|---------|
 | `wordmark-light.png` | Transparent light wordmark | Dark surfaces (sidebar, auth header) |
 | `wordmark-dark.png` | Transparent dark wordmark | Light surfaces (email, docs) |
-| `compact-mark-light.png` | Light square mark (icon+bg) | Compact UI, app icon fallback |
-| `compact-mark-dark.png` | Dark square mark (icon+bg) | Compact UI, app icon fallback |
+| `compact-mark-light.png` | Transparent light square mark | Compact UI, app icon fallback |
+| `compact-mark-dark.png` | Transparent dark square mark | Compact UI, app icon fallback |
 | `banner.png` | Horizontal banner artwork | Login hero, public landing |
 | `favicon-dark/` | Favicon set for dark themes | Browser tabs, PWA (app default) |
 | `favicon-light/` | Favicon set for light themes | External embeds, docs |
@@ -33,8 +33,8 @@ use this table to determine the correct destination filename.
 |---------------------------------------|-------------------------------------|-------|
 | `openaidom-logo.png` | `wordmark-light.png` | Transparent light wordmark |
 | `openaidom-logo.png` (color-inverted) | `wordmark-dark.png` | Transparent dark wordmark (derived) |
-| `openaidom-icon-dark.png` | `compact-mark-dark.png` | Chose variant **with** background over `openaidom-icon-dark-no-bg.png` |
-| `openaidom-icon-light.png` | `compact-mark-light.png` | Chose variant **with** background over `openaidom-icon-light-no-bg.png` |
+| `openaidom-icon-dark.png` (no-bg) | `compact-mark-dark.png` | Chose **no-background** variant (`openaidom-icon-dark-no-bg.png`) for transparent dark mark on light surfaces |
+| `openaidom-icon-light.png` (no-bg) | `compact-mark-light.png` | Chose **no-background** variant (`openaidom-icon-light-no-bg.png`) for transparent light mark on dark surfaces |
 | `openaidom-banner.png` | `banner.png` | Horizontal banner artwork |
 | `favicon-dark/` (entire directory) | `favicon-dark/` | Filenames preserved; `site.webmanifest` differs (see below) |
 | `favicon-light/` (entire directory) | `favicon-light/` | Filenames preserved; `site.webmanifest` differs (see below) |

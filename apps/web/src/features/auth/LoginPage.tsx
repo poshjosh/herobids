@@ -396,7 +396,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
       <div className="auth-card">
         <div style={{ textAlign: 'center' }}>
           <div style={{ marginBottom: '8px' }}>
-            <BrandLogo display="mark" variant="dark" size="lg" />
+            <BrandLogo display="full" variant="dark" size="lg" />
           </div>
           <div style={{ color: 'var(--color-text-secondary)', fontSize: '15px', marginBottom: '20px' }}>
             {intl.formatMessage({ id: 'auth.tagline' })}
