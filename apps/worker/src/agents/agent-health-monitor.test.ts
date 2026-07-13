@@ -117,6 +117,10 @@ describe('AgentHealthMonitor', () => {
           { sessionId: 'sess-stopped', agentId: 'agent-1' },
         ]),
         stop: runtimeStop,
+        cleanupSessionDocuments: vi.fn().mockImplementation(() => {
+          callOrder.push('doc-cleanup');
+          return Promise.resolve();
+        }),
       };
 
       const sessionManager = {
@@ -152,9 +156,10 @@ describe('AgentHealthMonitor', () => {
 
       expect(onTerminalSessionCleanup).toHaveBeenCalledWith('agent-1', 'sess-stopped', 'stopped');
       expect(runtimeStop).toHaveBeenCalledWith('sess-stopped');
-      // Cleanup must fire before stop
+      // Cleanup must fire before stop, and doc cleanup after callback
       expect(callOrder[0]).toBe('cleanup');
-      expect(callOrder[1]).toBe('stop');
+      expect(callOrder[1]).toBe('doc-cleanup');
+      expect(callOrder[2]).toBe('stop');
     });
 
     it('continues to stop the runtime even when the cleanup callback throws', async () => {
@@ -166,6 +171,7 @@ describe('AgentHealthMonitor', () => {
           { sessionId: 'sess-fail', agentId: 'agent-2' },
         ]),
         stop: runtimeStop,
+        cleanupSessionDocuments: vi.fn().mockResolvedValue(undefined),
       };
 
       const sessionManager = {
@@ -203,6 +209,8 @@ describe('AgentHealthMonitor', () => {
       expect(onTerminalSessionCleanup).toHaveBeenCalledWith('agent-2', 'sess-fail', 'crashed');
       // runtimeLauncher.stop must still be called even though cleanup threw
       expect(runtimeStop).toHaveBeenCalledWith('sess-fail');
+      // Document cleanup should also proceed even though callback threw
+      expect(runtimeLauncher.cleanupSessionDocuments).toHaveBeenCalledWith('agent-2', 'sess-fail');
     });
   });
 });

@@ -123,6 +123,10 @@ export class AgentHealthMonitor {
               logger.error({ err, sessionId: session.id, agentId: session.agentId }, 'Terminal session cleanup callback failed');
             }
 
+            // Reset materialized documents to staged so they can be
+            // re-materialized when the agent restarts. Best-effort.
+            await this.runtimeLauncher.cleanupSessionDocuments(session.agentId, session.id);
+
             // Call stop() so that if the container is still running (e.g. Docker
             // daemon hasn't reported the die event yet, or the in-memory handle
             // was already dropped), it gets killed now. stop() handles the case

@@ -522,6 +522,10 @@ export class AgentSessionManager {
 
     await this.runtimeLauncher.stop(sessionId);
 
+    // Reset materialized documents to staged so they can be re-materialized
+    // on next agent launch. Best-effort — failures are logged internally.
+    await this.runtimeLauncher.cleanupSessionDocuments(session.agentId, sessionId);
+
     const stopped = await this.agentRepo.markSessionStopped(sessionId, new Date());
     if (!stopped) {
       return;
@@ -592,6 +596,10 @@ export class AgentSessionManager {
         logger.warn({ err, agentId }, 'Failed to clean up wake preferences from Redis on runtime session end');
       }
     }
+
+    // Reset materialized documents to staged so they can be re-materialized
+    // on next agent launch. Best-effort — failures are logged internally.
+    await this.runtimeLauncher.cleanupSessionDocuments(agentId, sessionId);
 
     // Trigger in-memory actor cleanup (same path as stopSession)
     if (this.config.onSessionStopped) {

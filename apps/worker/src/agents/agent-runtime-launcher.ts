@@ -521,18 +521,59 @@ export class AgentRuntimeLauncher {
       return; // not configured — nothing to refresh
     }
 
+    let totalMaterialized = 0;
     for (const [sessionId, handle] of this.runtimes) {
       try {
+        const stagedCount = (await this.documentsRepo.listByAgent(handle.agentId, { lifecycleState: 'staged' })).length;
+        if (stagedCount === 0) continue;
+
         const result = await this.materializeStagedDocuments(handle.agentId, sessionId);
         if (!result.ok) {
           logger.warn({ err: result.error, agentId: handle.agentId, sessionId },
             'Failed to refresh live documents');
+        } else {
+          totalMaterialized += stagedCount;
         }
       } catch (err) {
         logger.warn({ err, agentId: handle.agentId, sessionId },
           'Error refreshing live documents for session');
       }
     }
+    if (totalMaterialized > 0) {
+      logger.info({ totalMaterialized, sessionCount: this.runtimes.size }, 'Live document refresh completed');
+    }
+  }
+
+  /**
+   * Clean up materialized documents when an agent runtime session terminates.
+   *
+   * Resets documents that were materialized for the given session back to
+   * `staged` so they can be re-materialized when the agent restarts.
+   * Best-effort: per-document error isolation; failures are logged but
+   * never crash the caller.
+   *
+   * No-op when document dependencies are not configured.
+   */
+  async cleanupSessionDocuments(agentId: string, sessionId: string): Promise<void> {
+    if (!this.documentsRepo) return;
+
+    const docs = await this.documentsRepo.listByAgent(agentId, {
+      lifecycleState: 'materialized',
+    });
+
+    const sessionDocs = docs.filter((d) => d.materializedSessionId === sessionId);
+    if (sessionDocs.length === 0) return;
+
+    for (const doc of sessionDocs) {
+      await this.documentsRepo.update(doc.id, {
+        lifecycleState: 'staged',
+        materializedSessionId: null,
+      }).catch((err: unknown) => {
+        logger.warn({ err, docId: doc.id }, 'Failed to reset document lifecycle state on session cleanup');
+      });
+    }
+
+    logger.info({ agentId, sessionId, docCount: sessionDocs.length }, 'Reset materialized documents to staged for terminated session');
   }
 
   /**
