@@ -113,6 +113,10 @@ export interface AgentFormBodyProps {
   tradingSetupSlot?: React.ReactNode;
   computeBudgetSlot?: React.ReactNode;
   nameAutoHint?: React.ReactNode;
+  /** Cancel/Review (or Save) buttons rendered at the top of Advanced Settings. */
+  advancedActionsSlot?: React.ReactNode;
+  /** Called when the Advanced Settings section is expanded or collapsed. */
+  onAdvancedToggle?: (open: boolean) => void;
 
   /** Account email shown read-only next to the email delivery control. */
   accountEmail?: string | null;
@@ -130,6 +134,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
   const intl = useIntl();
   const [advancedExpandSeq, setAdvancedExpandSeq] = useState(0);
   const [advancedErrorTabIdx, setAdvancedErrorTabIdx] = useState(1);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const hasBotManagementSkill = props.value.skillIds.includes('bot-management');
 
@@ -297,14 +302,14 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         {props.nameAutoHint}
       </div>
 
-      {/* Divider — visually separates basic fields from Advanced Settings */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '24px 0 12px' }}>
-        <div style={{ flex: 1, height: '2px', background: 'var(--color-text-muted)', opacity: 0.4 }} />
-        <span style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-          {intl.formatMessage({ id: 'agents.create.advancedSettings' })}
-        </span>
-        <div style={{ flex: 1, height: '2px', background: 'var(--color-text-muted)', opacity: 0.4 }} />
-      </div>
+      {/* Actions at top of Advanced Settings.
+           Always visible — when collapsed these are the only buttons; when expanded
+           the bottom duplicates are also shown. */}
+      {props.advancedActionsSlot && (
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', margin: '24px 0 16px' }}>
+          {props.advancedActionsSlot}
+        </div>
+      )}
 
       {/* Advanced Settings (tabs) */}
       <AdvancedSettingsSection
@@ -312,6 +317,10 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         errorTabIdx={advancedErrorTabIdx}
         formErrors={props.formErrors}
         fieldTabMap={ADVANCED_FIELD_TAB}
+        onToggle={(open) => {
+          setAdvancedOpen(open);
+          props.onAdvancedToggle?.(open);
+        }}
         aiConfig={
           <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
             {props.modelSlot}
@@ -377,30 +386,78 @@ export function AgentFormBody(props: AgentFormBodyProps) {
           props.requiresTradingSetup ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
               {props.tradingSetupSlot}
-              {/* Wake sources: hidden in scanner_gated mode (scanner is the implicit/only trading wake source) */}
-              {props.value.hybridMode === 'scanner_gated' ? (
-                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-                  Scanner-gated mode: trading LLM turns are triggered only by scanner entry/exit signals.
-                  Other wake sources are disabled.
+            </div>
+          ) : props.tradingSetupSlot
+        }
+        strategy={
+          props.requiresTradingSetup ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
+              {/* Filter Trades — 3-way selector replacing pre-filter toggle + hybrid mode */}
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px', color: 'var(--color-text-primary)' }}>
+                  Filter Trades
                 </div>
-              ) : (
+                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', lineHeight: '1.4' }}>
+                  Reduce cost by filtering trade candidates before AI agent sees them
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {([
+                    { value: 'off' as const, label: 'Off', description: 'No pre-filtering. Wake sources trigger the agent directly.' },
+                    { value: 'mixed' as const, label: 'Mixed', description: 'Scanner + wake sources. Both may trigger the agent.' },
+                    { value: 'scanner_gated' as const, label: 'Scanner only', description: 'Only scanner signals trigger the agent.' },
+                  ]).map((option) => {
+                    const filterMode: 'off' | 'mixed' | 'scanner_gated' =
+                      !props.value.technicalPreFilterEnabled ? 'off'
+                      : props.value.hybridMode === 'mixed' ? 'mixed'
+                      : 'scanner_gated';
+                    const active = filterMode === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => {
+                          if (option.value === 'off') {
+                            props.onChange({ capabilityMode: 'intelligence', hybridMode: undefined, technicalPreFilterEnabled: false });
+                            props.onSubscribedSourcesChange(props.subscribedSources.filter(s => s !== 'scanner'));
+                          } else if (option.value === 'mixed') {
+                            props.onChange({ capabilityMode: 'hybrid', hybridMode: 'mixed', technicalPreFilterEnabled: true });
+                            if (!props.subscribedSources.includes('scanner')) {
+                              props.onSubscribedSourcesChange([...props.subscribedSources, 'scanner']);
+                            }
+                          } else {
+                            props.onChange({ capabilityMode: 'hybrid', hybridMode: 'scanner_gated', technicalPreFilterEnabled: true });
+                          }
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: `1.5px solid ${active ? 'var(--color-brand)' : 'var(--color-border)'}`,
+                          background: active ? 'var(--color-brand-subtle, rgba(99,102,241,0.06))' : 'var(--color-surface-1)',
+                          cursor: 'pointer',
+                          textAlign: 'left' as const,
+                          transition: 'border-color 0.12s',
+                        }}
+                      >
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '4px' }}>
+                          {option.label}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                          {option.description}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Wake sources — hidden only when scanner_gated (scanner is the sole trading wake source) */}
+              {(props.value.capabilityMode !== 'hybrid' || props.value.hybridMode !== 'scanner_gated') && (
                 <WakeSourceSection
                   sources={TRADING_WAKE_SOURCES}
                   selected={props.subscribedSources}
                   onChange={(sources) => {
                   // DESIGN DECISION: Reminders are always-on for ALL agents.
-                  //
-                  // Rationale:
-                  // - Non-trading agents (personal assistants): only wake source that matters.
-                  //   Always on, no UI toggle needed — the agent needs to be reachable for
-                  //   user-scheduled reminders.
-                  // - Trading agents: reminders are forced into every non-empty wake-source
-                  //   selection so they are always included in the backend request. The four
-                  //   trading-specific sources (watch thresholds, discovery deltas, regime
-                  //   changes, scanner) are optional and surfaced in the Trading Setup tab.
-                  //
-                  // An empty selection (sources.length === 0) means "all sources" and is
-                  // passed through unchanged — the backend treats empty as the full set.
                   if (sources.length > 0 && !sources.includes('reminder')) {
                     props.onSubscribedSourcesChange([...sources, 'reminder']);
                   } else {
@@ -409,95 +466,8 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                 }}
               />
               )}
-            </div>
-          ) : props.tradingSetupSlot
-        }
-        strategy={
-          props.requiresTradingSetup ? (
-            <div>
-              {/* Pre-Filter Toggle — inside Strategy tab */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                <div
-                  role="switch"
-                  aria-checked={props.value.technicalPreFilterEnabled}
-                  tabIndex={0}
-                  onClick={() => props.onChange({ technicalPreFilterEnabled: !props.value.technicalPreFilterEnabled })}
-                  onKeyDown={(e) => {
-                    if (e.key === ' ' || e.key === 'Enter') {
-                      e.preventDefault();
-                      props.onChange({ technicalPreFilterEnabled: !props.value.technicalPreFilterEnabled });
-                    }
-                  }}
-                  style={{
-                    position: 'relative',
-                    width: '40px',
-                    height: '22px',
-                    flexShrink: 0,
-                    borderRadius: '11px',
-                    background: props.value.technicalPreFilterEnabled ? 'var(--color-brand)' : 'var(--color-border)',
-                    cursor: 'pointer',
-                    transition: 'background 0.15s',
-                  }}
-                >
-                  <div style={{
-                    position: 'absolute',
-                    top: '2px',
-                    left: props.value.technicalPreFilterEnabled ? '20px' : '2px',
-                    width: '18px',
-                    height: '18px',
-                    borderRadius: '50%',
-                    background: '#fff',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                    transition: 'left 0.15s',
-                  }} />
-                </div>
-                <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-primary)' }}>
-                  {intl.formatMessage({ id: 'agents.create.technicalPreFilter.help' })}
-                </span>
-              </div>
 
-              {/* Hybrid Mode Selector — only visible when hybrid capability is active */}
-              {props.value.capabilityMode === 'hybrid' && (
-                <div style={{ marginBottom: '16px' }}>
-                  <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '8px', color: 'var(--color-text-primary)' }}>
-                    Hybrid Wake Mode
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    {([
-                      { value: 'mixed' as const, label: 'Hybrid (Mixed Wake)', description: 'Scanner + LLM. Scanner AND other wake sources may trigger LLM turns.' },
-                      { value: 'scanner_gated' as const, label: 'Hybrid (Scanner-Gated)', description: 'Scanner + LLM. ONLY scanner events trigger trading LLM turns.' },
-                    ]).map((option) => {
-                      const active = props.value.hybridMode === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => props.onChange({ hybridMode: option.value })}
-                          style={{
-                            flex: 1,
-                            padding: '10px 12px',
-                            borderRadius: '8px',
-                            border: `1.5px solid ${active ? 'var(--color-brand)' : 'var(--color-border)'}`,
-                            background: active ? 'var(--color-brand-subtle, rgba(99,102,241,0.06))' : 'var(--color-surface-1)',
-                            cursor: 'pointer',
-                            textAlign: 'left' as const,
-                            transition: 'border-color 0.12s',
-                          }}
-                        >
-                          <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '4px' }}>
-                            {option.label}
-                          </div>
-                          <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
-                            {option.description}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Technical Config — hidden with CSS (not unmounted) to avoid layout jump on toggle */}
+              {/* Technical Config — hidden when filter mode is off */}
               <div style={{ display: props.value.technicalPreFilterEnabled ? 'block' : 'none' }}>
                 <StrategyPresetSelector
                   value={props.value.strategyPreset}
@@ -516,7 +486,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                         fontSize: '13px',
                         fontWeight: '600',
                         marginBottom: '12px',
-                        marginTop: '16px',
+                        marginTop: '48px',
                       }}
                     >
                       {intl.formatMessage({ id: 'agents.technical.title' })}

@@ -37,9 +37,9 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
       {/* Discovery filters */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '12px', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
           {intl.formatMessage({ id: 'agents.technical.filters.title' })}
         </div>

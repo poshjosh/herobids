@@ -5,6 +5,8 @@ export interface AdvancedSettingsSectionProps {
   aiConfig: ReactNode;
   tradingSetup: ReactNode;
   strategy: ReactNode;
+  /** Called when the section is expanded or collapsed. */
+  onToggle?: (open: boolean) => void;
   /**
    * Increment to force-expand the section and switch to the error tab.
    * Using a counter (not a boolean) ensures the effect fires even when the
@@ -73,6 +75,7 @@ export function AdvancedSettingsSection({
   aiConfig,
   tradingSetup,
   strategy,
+  onToggle,
   expandSeq,
   errorTabIdx,
   formErrors,
@@ -108,11 +111,12 @@ export function AdvancedSettingsSection({
     if (seq > 0 && seq !== lastSeq.current) {
       lastSeq.current = seq;
       setUserOpen(true);
+      onToggle?.(true);
       if (errorTabIdx !== undefined) {
         setActiveIdx(errorTabIdx);
       }
     }
-  }, [expandSeq, errorTabIdx]);
+  }, [expandSeq, errorTabIdx, onToggle]);
 
   // If active tab is no longer visible, fall back to first visible
   const resolvedIdx = visibleTabs.some(({ idx }) => idx === activeIdx)
@@ -122,7 +126,11 @@ export function AdvancedSettingsSection({
   if (visibleTabs.length === 0) return null;
 
   return (
-    <details style={wrapperStyle} open={userOpen} onToggle={(e) => setUserOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      <details style={wrapperStyle} open={userOpen} onToggle={(e) => {
+        const open = (e.currentTarget as HTMLDetailsElement).open;
+        setUserOpen(open);
+        onToggle?.(open);
+      }}>
       <summary style={summaryStyle}>
         {intl.formatMessage({ id: 'agents.create.advancedSettings' })}
       </summary>

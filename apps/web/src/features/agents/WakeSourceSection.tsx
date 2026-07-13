@@ -25,7 +25,6 @@ interface WakeSourceSectionProps {
 
 export function WakeSourceSection({ selected, onChange, disabled, sources }: WakeSourceSectionProps) {
   const visibleSources = sources ?? WAKE_SOURCES;
-  const totalSources = visibleSources.length;
 
   const toggle = (source: string) => {
     if (selected.includes(source)) {
@@ -35,25 +34,11 @@ export function WakeSourceSection({ selected, onChange, disabled, sources }: Wak
     }
   };
 
-  const isAllSources = selected.length === 0;
-
-  // When only a subset of sources is visible (e.g. trading-only), count and
-  // report only the visible ones — hidden forced sources (like reminders) are
-  // excluded from the UX count.
-  const visibleSelected = selected.filter(s => visibleSources.some(vs => vs.value === s));
-  const hasExplicitVisibleSelection = visibleSelected.length > 0;
-
   return (
     <div>
-      {visibleSources.length > 0 && (
-        <p style={{ fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
-          {isAllSources
-            ? 'No sources selected. Watch Thresholds will be used by default.'
-            : hasExplicitVisibleSelection
-              ? `Receiving ${visibleSelected.length} of ${totalSources} wake sources.`
-              : 'No sources selected. Watch Thresholds will be used by default.'}
-        </p>
-      )}
+      <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: 'var(--color-text-primary)' }}>
+        Which notices should the agent receive?
+      </div>
       {visibleSources.map(source => (
         <label
           key={source.value}
@@ -72,11 +57,8 @@ export function WakeSourceSection({ selected, onChange, disabled, sources }: Wak
             onChange={() => toggle(source.value)}
             disabled={disabled}
           />
-          <span style={{ fontSize: '12px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
-            {source.label}
-            <span style={{ color: 'var(--color-text-secondary)', marginLeft: '0.5rem', fontSize: '0.8rem' }}>
-              — {source.description}
-            </span>
+          <span style={{ fontSize: '13px', color: 'var(--color-text-primary)' }}>
+            {source.description}
           </span>
         </label>
       ))}

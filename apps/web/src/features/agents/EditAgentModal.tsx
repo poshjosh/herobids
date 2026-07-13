@@ -85,6 +85,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   );
   const [tickIntervalTouched, setTickIntervalTouched] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [modelOverrideEnabled, setModelOverrideEnabled] = useState(hasExplicitModelOverride);
   const [modelForm, setModelForm] = useState({
     provider: initialData.provider ?? '',
@@ -307,7 +308,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         name: form.name,
         prompt: form.goal,
         capabilityMode: form.capabilityMode,
-        hybridMode: form.hybridMode,
+        hybridMode: form.hybridMode ?? 'scanner_gated',
         technicalPreFilterEnabled: form.technicalPreFilterEnabled,
         technical: technicalPayload,
         strategyPreset: hasStrategyPreset
@@ -373,7 +374,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   return (
     <Modal title={intl.formatMessage({ id: 'agents.edit.title' })} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <form id="edit-agent-form" onSubmit={handleSubmit}>
+        <form id="edit-agent-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Skill Preset — same label as create agent form */}
           <div style={{ marginBottom: '20px' }}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.create.skillPreset' })}</FieldLabel>
@@ -516,15 +517,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             value={form}
             onChange={(patch) => {
               const nextForm = { ...form, ...patch };
-              // When pre-filter is toggled on/off, auto-add/remove scanner from wake sources.
-              if ('technicalPreFilterEnabled' in patch) {
-                const hasScanner = nextForm.subscribedSources.includes('scanner');
-                if (patch.technicalPreFilterEnabled && !hasScanner) {
-                  nextForm.subscribedSources = [...nextForm.subscribedSources, 'scanner'];
-                } else if (!patch.technicalPreFilterEnabled && hasScanner) {
-                  nextForm.subscribedSources = nextForm.subscribedSources.filter(s => s !== 'scanner');
-                }
-              }
               if (patch.tickIntervalMins !== undefined) {
                 setTickIntervalTouched(true);
                 const newTickMs = resolveEditedTickIntervalMs(nextForm.tickIntervalMins, true);
@@ -796,9 +788,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             }
             tradingSetupSlot={
               showTradingControls ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
+                <div>
                   {(requiresTradingSetup || hasTradingCapability) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '48px' }}>
                       <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
                       <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.executionMode} onChange={(e) => setForm((prev) => ({ ...prev, executionMode: e.target.value }))}>
                         <option value="">{intl.formatMessage({ id: 'agents.edit.executionModeUnset' })}</option>
@@ -812,7 +804,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                     </div>
                   )}
 
-                  <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                  <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>
                     {intl.formatMessage({ id: 'agents.create.tradingControls.title' })}
                   </div>
                   <TradingGuardrailsFields
@@ -840,12 +832,30 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 </div>
               ) : null
             }
+            advancedActionsSlot={
+              <>
+                <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
+                <Button
+                  variant="primary"
+                  type="submit"
+                  disabled={mutation.isPending
+                    || !form.name.trim()
+                    || (showIntelligence && !form.goal.trim())
+                    || tickIntervalError != null
+                    || (modelOverrideEnabled && (!modelForm.provider || !modelForm.lightModel || !modelForm.heavyModel))}
+                >
+                  {mutation.isPending ? intl.formatMessage({ id: 'agents.edit.saving' }) : intl.formatMessage({ id: 'common.saveChanges' })}
+                </Button>
+              </>
+            }
+            onAdvancedToggle={setAdvancedOpen}
           />
         </form>
 
         {mutation.isError && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}
 
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        {advancedOpen && (
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
           <Button
             variant="primary"
@@ -860,6 +870,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             {mutation.isPending ? intl.formatMessage({ id: 'agents.edit.saving' }) : intl.formatMessage({ id: 'common.saveChanges' })}
           </Button>
         </div>
+        )}
       </div>
     </Modal>
   );

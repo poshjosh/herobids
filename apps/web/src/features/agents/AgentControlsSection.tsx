@@ -303,7 +303,7 @@ export function TradingGuardrailsFields({ value, onChange, defaults = null, fiel
         <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.stopLossCooldown.help' })}</div>
       </div>
 
-      <div data-field="openPositionEscalationToJudgePolicy" style={{ gridColumn: '1 / -1' }}>
+      <div data-field="openPositionEscalationToJudgePolicy" style={{ gridColumn: '1 / -1', marginTop: '32px' }}>
         <FieldLabel>{intl.formatMessage({ id: 'agents.controls.openPositionEscalationPolicy' })}</FieldLabel>
         <select
           value={value.openPositionEscalationToJudgePolicy}

@@ -81,7 +81,7 @@ export function agentToFormState(agent: Agent): AgentFormState {
   const hybridMode: HybridMode | undefined = (
     agent.hybridMode === 'mixed' || agent.hybridMode === 'scanner_gated'
   ) ? agent.hybridMode
-    : capabilityMode === 'hybrid' ? 'mixed' : undefined;
+    : capabilityMode === 'hybrid' ? 'scanner_gated' : undefined;
 
   // Runtime-validate union literal fields
   const VALID_EXECUTION_MODES = ['paper', 'shadow', 'live', ''] as const;
@@ -164,7 +164,7 @@ export function intentToFormState(intent: {
   name: string;
   goal: string;
   capabilityMode: CapabilityMode;
-  hybridMode: HybridMode;
+  hybridMode?: HybridMode;
   technicalPreFilterEnabled: boolean;
   technicalConfig: TechnicalConfigFormState;
   skillIds: string[];
