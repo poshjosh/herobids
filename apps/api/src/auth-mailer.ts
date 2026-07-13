@@ -37,16 +37,14 @@ export function createAuthMailer(config: AlertsConfig): AuthMailer | undefined {
     try {
       const ttlMinutes = ttlSecs ? Math.round(ttlSecs / 60) : 10;
       const rendered = renderEmail({
-        subject: 'Sign in to HeroBids',
+        subject: 'Sign in to OpenAIdom',
         preheader: 'Your sign-in link is ready',
-        title: 'Sign in to HeroBids',
+        title: 'Sign in to OpenAIdom',
         body: [
-          `Click the button below to sign in. This link expires in ${ttlMinutes} minutes.`,
-          '',
-          `If you prefer, copy and paste this URL into your browser:`,
-          link,
+          `<p>Click the button below to sign in. This link expires in ${ttlMinutes} minutes.</p>`,
+          '<p>If you did not request this link, you can safely ignore this email.</p>',
         ].join('\n'),
-        footerNote: 'If you did not request this link, you can safely ignore this email.',
+        cta: { text: 'Sign In', url: link },
       });
 
       const command = new SendEmailCommand({

@@ -81,6 +81,35 @@ describe('sendLoginLink — email body rendering', () => {
     expect(body).toContain('https://link.example/auth?token=abc');
   });
 
+  it('renders HTML body with sign-in link and CTA', async () => {
+    mockSend.mockResolvedValue({ MessageId: 'msg-1' });
+    const mailer = createAuthMailer(makeAlertsConfig())!;
+
+    await mailer.sendLoginLink('user@example.com', 'https://link.example/auth?token=abc', 300);
+
+    const params = vi.mocked(SendEmailCommand).mock.calls[0]![0] as Record<string, unknown>;
+    const content = (params['Content'] as Record<string, unknown>)['Simple'];
+    const htmlBody = content['Body']['Html']['Data'] as string;
+    const textBody = content['Body']['Text']['Data'] as string;
+
+    // HTML assertions
+    expect(htmlBody).toContain('<!DOCTYPE html>');
+    expect(htmlBody).toContain('Sign in to OpenAIdom');
+    expect(htmlBody).toContain('This link expires in 5 minutes.');
+    expect(htmlBody).toContain('https://link.example/auth?token=abc');
+    // CTA button should be rendered with brand colors
+    expect(htmlBody).toContain('background-color:#635BFF');
+    expect(htmlBody).toContain('>Sign In<');
+    // Fallback link below CTA
+    expect(htmlBody).toContain("If the button doesn't work");
+    // OpenAIdom branding
+    expect(htmlBody).toContain('>OpenAIdom<');
+
+    // Plain-text assertions
+    expect(textBody).toContain('This link expires in 5 minutes.');
+    expect(textBody).toContain('→ Sign In: https://link.example/auth?token=abc');
+  });
+
   it('renders multiple minutes correctly (1800s → 30 min)', async () => {
     mockSend.mockResolvedValue({ MessageId: 'msg-1' });
     const mailer = createAuthMailer(makeAlertsConfig())!;
@@ -117,7 +146,7 @@ describe('sendLoginLink — email body rendering', () => {
     expect(params['Destination']).toEqual({ ToAddresses: ['recipient@example.com'] });
     expect(params['ReplyToAddresses']).toEqual(['support@herobids.ai']);
     expect(params['ConfigurationSetName']).toBe('auth-config-set');
-    expect((params['Content'] as Record<string, unknown>)['Simple']['Subject']['Data']).toBe('Sign in to HeroBids');
+    expect((params['Content'] as Record<string, unknown>)['Simple']['Subject']['Data']).toBe('Sign in to OpenAIdom');
   });
 });
 

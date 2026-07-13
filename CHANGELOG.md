@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Platform Email Redesign (003):** Refined platform-authored email branding and structure.
+  - Auth login-link email: "HeroBids" → "OpenAIdom" branding, added CTA button for sign-in, improved body copy with raw-link fallback.
+  - Platform safety alerts: Telegram messages now say "OpenAIdom Safety Alert" instead of "HeroBids Safety Alert".
+  - Added comprehensive test suite for `PlatformAlertService` (31 tests covering persistence, Telegram delivery, email delivery, dual-channel, event subject mapping, and edge cases).
+  - Auth mailer tests now assert HTML content structure, CTA presence, and brand colors.
+
 ## v0.0.23 - 2026-07-13
 
 ### Fixed
