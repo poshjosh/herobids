@@ -1,6 +1,6 @@
 # Agent Billing Limits
 
-OpenAIDom lets you set spending limits on your agent's LLM usage so you never get a surprise bill. There are two kinds of limits, and they behave very differently.
+OpenAIdom lets you set spending limits on your agent's LLM usage so you never get a surprise bill. There are two kinds of limits, and they behave very differently.
 
 ## Soft cap vs hard cap
 
@@ -51,7 +51,7 @@ If you do not set any caps, no spending limits are enforced. Your agent will run
 
 ## Notifications
 
-When a cap is reached, OpenAIDom notifies you through your configured channels (Telegram, email, or both). The notification includes:
+When a cap is reached, OpenAIdom notifies you through your configured channels (Telegram, email, or both). The notification includes:
 
 - Which cap was reached (soft or hard)
 - Current spending vs the cap

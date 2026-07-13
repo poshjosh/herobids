@@ -1,6 +1,6 @@
 # Brand Assets — Runtime Destination
 
-This directory is the **single runtime source** for all OpenAIDom brand assets
+This directory is the **single runtime source** for all OpenAIdom brand assets
 consumed by the web app, email renderer, and any other production surface.
 
 ## Source of Truth

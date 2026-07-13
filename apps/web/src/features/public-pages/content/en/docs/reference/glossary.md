@@ -1,6 +1,6 @@
 # Glossary
 
-An alphabetic reference of terms used across the OpenAIDom platform.
+An alphabetic reference of terms used across the OpenAIdom platform.
 
 ## Actor
 

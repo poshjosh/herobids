@@ -1,6 +1,6 @@
 # Pricing
 
-OpenAIDom pricing is transparent. You pay for what your agents use — no hidden fees, no surprises.
+OpenAIdom pricing is transparent. You pay for what your agents use — no hidden fees, no surprises.
 
 ## Agent runtime
 

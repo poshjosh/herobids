@@ -1,8 +1,8 @@
-# Plan: OpenAIDom Domain Rollout
+# Plan: OpenAIdom Domain Rollout
 
 **Status:** Ready for implementation  
 **Created:** 2026-07-11  
-**Goal:** Make OpenAIDom the only public hostname set for staging and the first production launch, using the existing Hetzner infrastructure without preserving the old `herobids.com` domain.
+**Goal:** Make OpenAIdom the only public hostname set for staging and the first production launch, using the existing Hetzner infrastructure without preserving the old `herobids.com` domain.
 
 ---
 
@@ -10,7 +10,7 @@
 
 ### Sequencing with Brand Rollout
 
-The visual branding rollout (`docs/features/2026/07/12/002-openaidom-brand-rollout/001-plan.md`) was completed **before** the domain cutover. All 9 slices — asset pipeline, BrandLogo component, app shell, browser metadata, theme tokens, branded email renderer, email migration, and public-docs copy — are already shipped. The web UI, emails, and public docs already read as OpenAIDom. The domain cutover in this plan is the subsequent step: it changes the hostname that serves the already-branded product.
+The visual branding rollout (`docs/features/2026/07/12/002-openaidom-brand-rollout/001-plan.md`) was completed **before** the domain cutover. All 9 slices — asset pipeline, BrandLogo component, app shell, browser metadata, theme tokens, branded email renderer, email migration, and public-docs copy — are already shipped. The web UI, emails, and public docs already read as OpenAIdom. The domain cutover in this plan is the subsequent step: it changes the hostname that serves the already-branded product.
 
 This plan assumes:
 - The app, API, worker, database, Redis, and Hetzner servers remain the same.
@@ -23,7 +23,7 @@ The implementation sequence is:
 1. Finish the staging hostname cutover to `staging.openaidom.com`.
 2. Remove old-domain references from infra, env defaults, dashboards, and public docs.
 3. Prepare production to launch for the first time on `openaidom.com`, with `www.openaidom.com` and `app.openaidom.com` as supported aliases.
-4. Verify OAuth, billing, and webhooks on the OpenAIDom hostnames only.
+4. Verify OAuth, billing, and webhooks on the OpenAIdom hostnames only.
 
 ---
 
@@ -52,7 +52,7 @@ Alias hostnames may terminate TLS and route traffic, but auth, billing, webhooks
 2. Keep DNS TTLs low while changing hostnames.
 3. Update OAuth and billing dashboards before activating new canonical URLs.
 4. Remove `herobids.com` public-hostname references instead of preserving a parallel old-domain path.
-5. Keep rollback simple: revert to the last known-good OpenAIDom staging or production config rather than reintroducing the retired domain.
+5. Keep rollback simple: revert to the last known-good OpenAIdom staging or production config rather than reintroducing the retired domain.
 
 ---
 
@@ -166,7 +166,7 @@ Creating these records early is low risk because there is no production traffic 
 
 ### 2. Production Config Preparation
 
-Prepare the production config changes in the repo so the first launch is OpenAIDom-native:
+Prepare the production config changes in the repo so the first launch is OpenAIdom-native:
 
 1. `app_domain = "openaidom.com"`
 2. Production Caddy hostnames changed to `openaidom.com` and chosen aliases
@@ -197,12 +197,12 @@ Prepare the provider dashboards before deploy:
    - create or prepare webhook endpoint for `https://openaidom.com/api/billing/webhook/creem`
    - confirm return flows allow `https://openaidom.com`
 3. Confirm customer portal return URL policy allows the new domain.
-4. Remove obsolete `herobids.com` webhook targets once the OpenAIDom targets are configured.
+4. Remove obsolete `herobids.com` webhook targets once the OpenAIdom targets are configured.
 
 ### 5. Webhook Production Preparation
 
 1. Prepare Telegram webhook change command or operator runbook.
-2. List every public webhook that references `herobids.com` and replace it with the corresponding OpenAIDom target.
+2. List every public webhook that references `herobids.com` and replace it with the corresponding OpenAIdom target.
 
 ---
 
@@ -244,7 +244,7 @@ If any of items 3 through 8 fail, treat the launch as incomplete and either fix 
 
 ## Phase 4: Post-Cutover Cleanup
 
-Only do this after staging and production have both been stable on the OpenAIDom hostnames for at least one monitoring window.
+Only do this after staging and production have both been stable on the OpenAIdom hostnames for at least one monitoring window.
 
 1. Remove `herobids.com` from OAuth origins and redirect URIs.
 2. Remove old billing webhook endpoints and return URLs.
@@ -270,9 +270,9 @@ Roll back the production launch if any of the following remain broken after a sh
 
 ### Rollback Order
 
-1. Revert production env values, Caddy hostnames, and provider settings to the last known-good OpenAIDom launch candidate or disable the incomplete production exposure.
+1. Revert production env values, Caddy hostnames, and provider settings to the last known-good OpenAIdom launch candidate or disable the incomplete production exposure.
 2. Redeploy production.
-3. Restore Telegram and billing webhooks to the last known-good OpenAIDom configuration.
+3. Restore Telegram and billing webhooks to the last known-good OpenAIdom configuration.
 4. Re-run smoke tests against `openaidom.com` or, if production is withdrawn, keep validation limited to `staging.openaidom.com` until fixes land.
 
 Because the servers and application stack do not change, rollback should be fast without restoring the retired domain.

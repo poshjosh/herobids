@@ -5,7 +5,7 @@ import { renderEmail, type EmailContent } from './renderer.js';
 
 function makeContent(overrides?: Partial<EmailContent>): EmailContent {
   return {
-    subject: 'Welcome to OpenAIDom',
+    subject: 'Welcome to OpenAIdom',
     title: 'Get Started',
     body: '<p>Thanks for signing up. We are glad to have you.</p>',
     ...overrides,
@@ -19,7 +19,7 @@ describe('renderEmail', () => {
 
   it('returns subject, text, and html', () => {
     const result = renderEmail(makeContent());
-    expect(result.subject).toBe('Welcome to OpenAIDom');
+    expect(result.subject).toBe('Welcome to OpenAIdom');
     expect(typeof result.text).toBe('string');
     expect(typeof result.html).toBe('string');
   });
@@ -34,7 +34,7 @@ describe('renderEmail', () => {
   describe('text output', () => {
     it('includes subject, title, and body', () => {
       const result = renderEmail(makeContent());
-      expect(result.text).toContain('Welcome to OpenAIDom');
+      expect(result.text).toContain('Welcome to OpenAIdom');
       expect(result.text).toContain('Get Started');
       expect(result.text).toContain('Thanks for signing up');
     });
@@ -53,9 +53,9 @@ describe('renderEmail', () => {
       expect(result.text).toContain('If you did not request this, ignore it.');
     });
 
-    it('always ends with — OpenAIDom', () => {
+    it('always ends with — OpenAIdom', () => {
       const result = renderEmail(makeContent());
-      expect(result.text).toMatch(/— OpenAIDom$/m);
+      expect(result.text).toMatch(/— OpenAIdom$/m);
     });
 
     it('has no CTA block when cta is absent', () => {
@@ -87,9 +87,9 @@ describe('renderEmail', () => {
       expect(result.html).toContain('#101828');
     });
 
-    it('renders the typographic OpenAIDom header', () => {
+    it('renders the typographic OpenAIdom header', () => {
       const result = renderEmail(makeContent());
-      expect(result.html).toContain('>OpenAIDom<');
+      expect(result.html).toContain('>OpenAIdom<');
     });
 
     it('renders title as an h1', () => {
@@ -127,9 +127,9 @@ describe('renderEmail', () => {
       expect(result.html).toContain('This is an automated message.');
     });
 
-    it('always includes — OpenAIDom in footer', () => {
+    it('always includes — OpenAIdom in footer', () => {
       const result = renderEmail(makeContent());
-      expect(result.html).toContain('— OpenAIDom');
+      expect(result.html).toContain('— OpenAIdom');
     });
 
     it('does not include CTA markup when cta is absent', () => {
@@ -170,7 +170,7 @@ describe('renderEmail', () => {
         makeContent({ brandImageUrl: 'https://cdn.example.com/logo.png' }),
       );
       const imgIdx = result.html.indexOf('<img');
-      const headerIdx = result.html.indexOf('>OpenAIDom<');
+      const headerIdx = result.html.indexOf('>OpenAIdom<');
       expect(imgIdx).toBeLessThan(headerIdx);
     });
 
@@ -221,7 +221,7 @@ describe('renderEmail', () => {
   describe('edge cases', () => {
     it('handles empty body', () => {
       const result = renderEmail(makeContent({ body: '' }));
-      expect(result.subject).toBe('Welcome to OpenAIDom');
+      expect(result.subject).toBe('Welcome to OpenAIdom');
       expect(result.text).toContain('Get Started');
     });
 

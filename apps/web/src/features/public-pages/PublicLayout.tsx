@@ -278,7 +278,7 @@ export function PublicFooter({ locale }: { locale: SupportedLocale }) {
           fontSize: '12px',
         }}
       >
-        © {new Date().getFullYear()} OpenAIDom. All rights reserved.
+        © {new Date().getFullYear()} OpenAIdom. All rights reserved.
       </div>
     </footer>
   );

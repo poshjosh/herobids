@@ -1,4 +1,4 @@
-# About OpenAIDom
+# About OpenAIdom
 
 ## Vision
 
@@ -22,7 +22,7 @@ We offer AI agents as a service. AI agents:
 
 ## AI-first, not AI-wrapped
 
-OpenAIDom, operated by HeroBids, was built from the ground up around AI agents. The agent is the product. The dashboard, tools and trading bots e.t.c exist to support the agent, not the other way around.
+OpenAIdom,, was built from the ground up around AI agents. The agent is the product. The dashboard, tools and trading bots e.t.c exist to support the agent, not the other way around.
 
 ## How it works
 

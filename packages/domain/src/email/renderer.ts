@@ -38,7 +38,7 @@ export interface RenderedEmail {
   html: string;
 }
 
-// ── Brand palette (from OpenAIDom brand spec) ──────────────────────────────
+// ── Brand palette (from OpenAIdom brand spec) ──────────────────────────────
 
 const BRAND = {
   background: '#0B1220',
@@ -95,7 +95,7 @@ function renderText(content: EmailContent): string {
   }
 
   lines.push('');
-  lines.push('— OpenAIDom');
+  lines.push('— OpenAIdom');
 
   return lines.join('\n');
 }
@@ -108,7 +108,7 @@ function renderHtml(content: EmailContent): string {
     : '';
 
   const brandImage = content.brandImageUrl
-    ? `\n              <img src="${htmlEscape(content.brandImageUrl)}" alt="OpenAIDom" width="180" style="display:block;max-width:180px;height:auto;margin:0 auto 16px auto;border:0;outline:none;">`
+    ? `\n              <img src="${htmlEscape(content.brandImageUrl)}" alt="OpenAIdom" width="180" style="display:block;max-width:180px;height:auto;margin:0 auto 16px auto;border:0;outline:none;">`
     : '';
 
   const ctaBlock = content.cta
@@ -158,7 +158,7 @@ function renderHtml(content: EmailContent): string {
           <!-- Header -->
           <tr>
             <td align="center" style="padding:32px 40px 0 40px;">${brandImage}
-              <span style="font-family:${FONT_STACK};font-size:24px;font-weight:700;color:${BRAND.headerText};letter-spacing:-0.5px;">OpenAIDom</span>
+              <span style="font-family:${FONT_STACK};font-size:24px;font-weight:700;color:${BRAND.headerText};letter-spacing:-0.5px;">OpenAIdom</span>
             </td>
           </tr>
           <!-- Title -->
@@ -176,7 +176,7 @@ function renderHtml(content: EmailContent): string {
           <!-- Footer -->
           <tr>
             <td style="padding:24px 40px 32px 40px;border-top:1px solid ${BRAND.border};">${footerNoteBlock}
-              <p style="font-family:${FONT_STACK};font-size:13px;color:${BRAND.footerText};margin:0;">— OpenAIDom</p>
+              <p style="font-family:${FONT_STACK};font-size:13px;color:${BRAND.footerText};margin:0;">— OpenAIdom</p>
             </td>
           </tr>
         </table>

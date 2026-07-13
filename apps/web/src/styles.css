@@ -2,7 +2,7 @@
 @plugin "@tailwindcss/typography";
 
 @theme {
-  /* ─── OpenAIDom Brand Palette ────────────────────────────────────────────
+  /* ─── OpenAIdom Brand Palette ────────────────────────────────────────────
    * Derived from docs/product/brand/brand-palette.md.
    * These are the authoritative brand hex tokens. --color-* tokens alias
    * these where applicable to keep brand and color namespaces in sync.
@@ -15,7 +15,7 @@
   --brand-light-gray: #F5F7FA;
   --brand-dark-bg: #0B1220;
 
-  /* ─── Brand Accent (OpenAIDom) ───────────────────────────────────────────
+  /* ─── Brand Accent (OpenAIdom) ───────────────────────────────────────────
    * Migrated from legacy teal to the Accent Indigo palette (Slice 5).
    * Aliased to --brand-* hex tokens to avoid oklch→sRGB rounding errors.
    * --color-brand:        CTAs, links, active states, toggle backgrounds

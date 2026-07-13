@@ -1,5 +1,5 @@
 /**
- * OpenAIDom Brand Contract — Slice 1
+ * OpenAIdom Brand Contract — Slice 1
  *
  * Single source of truth for brand asset paths and design tokens consumed
  * by the web app, email renderer, and any other runtime surface.
@@ -91,7 +91,7 @@ export const BRAND_PALETTE = {
 //   color: var(--brand-accent) on dark backgrounds;
 //   color: var(--brand-primary) on light backgrounds;
 //
-// The fallback text is always "OpenAIDom" — never "HeroBids" in customer-
+// The fallback text is always "OpenAIdom" — never "HeroBids" in customer-
 // facing surfaces.
 
 // ─── Image vs. Text Fallback Policy ─────────────────────────────────────────

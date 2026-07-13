@@ -1,4 +1,4 @@
-# Platform Email Redesign for OpenAIDom
+# Platform Email Redesign for OpenAIdom
 
 **Status:** Ready for implementation  
 **Created:** 2026-07-11
@@ -36,7 +36,7 @@ The visual direction should take inspiration from Lipdubber's email shell: dark 
 
 This rollout should assume:
 
-1. customer-facing email branding uses `OpenAIDom`
+1. customer-facing email branding uses `OpenAIdom`
 2. staging links and callbacks use `https://staging.openaidom.com`
 3. first-launch production links and callbacks use `https://openaidom.com`
 4. `https://www.openaidom.com` and `https://app.openaidom.com` are supported aliases, but email should point users at the canonical host unless a specific flow requires otherwise
@@ -77,7 +77,7 @@ After this feature:
 2. auth login-link email looks intentional and trustworthy rather than like a raw system message
 3. billing emails clearly differentiate soft-cap warning vs hard-cap stop states
 4. platform safety alerts can be delivered by email in addition to Telegram
-5. the implementation can launch without a finished logo asset by falling back to a typographic OpenAIDom header
+5. the implementation can launch without a finished logo asset by falling back to a typographic OpenAIdom header
 6. agent-authored emails remain unchanged and out of scope for this feature
 
 ---
@@ -117,7 +117,7 @@ Out of scope:
 ### Implementation defaults confirmed before implementation starts
 
 1. Platform safety alert emails should be mandatory like current Telegram safety alerts.
-2. The first version may use a typographic `OpenAIDom` header if no approved email asset is ready.
+2. The first version may use a typographic `OpenAIdom` header if no approved email asset is ready.
 3. The initial slice may remain English-only, with renderer structure designed so localization can be layered in later.
 
 ---
@@ -140,7 +140,7 @@ Recommended shell:
 Recommended brand behavior:
 
 1. if an approved image asset exists, use it in the header
-2. otherwise render a clean text-based `OpenAIDom` header with stable spacing and typography
+2. otherwise render a clean text-based `OpenAIdom` header with stable spacing and typography
 3. do not block the redesign on a separate logo-design task
 
 Recommended technical contract:
@@ -149,7 +149,7 @@ Recommended technical contract:
 2. API and worker both consume that same shape
 3. HTML generation remains pure string rendering with escaped dynamic values
 4. transport adapters stay provider-neutral and only map the rendered payload into SES
-5. renderer inputs that include URLs should use the canonical OpenAIDom hostname for the target environment
+5. renderer inputs that include URLs should use the canonical OpenAIdom hostname for the target environment
 
 ---
 
@@ -297,4 +297,4 @@ The redesign is ready to ship with acceptable branding quality even if final ass
 
 ## Non-Blocking Assumption
 
-This plan assumes the first implementation can ship without a finalized logo asset, provided the shared shell includes a strong typographic OpenAIDom header and stable HTML fallback behavior.
+This plan assumes the first implementation can ship without a finalized logo asset, provided the shared shell includes a strong typographic OpenAIdom header and stable HTML fallback behavior.

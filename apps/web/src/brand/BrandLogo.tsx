@@ -95,7 +95,7 @@ export function BrandLogo({
         href={linkTo}
         className={className}
         style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
-        aria-label="OpenAIDom"
+        aria-label="OpenAIdom"
       >
         {logoContent}
       </a>
@@ -127,7 +127,7 @@ function BrandMark({ variant, size }: { variant: BrandVariant; size: BrandSize }
   const img = (
     <img
       src={src}
-      alt="OpenAIDom"
+      alt="OpenAIdom"
       style={{ width: dims.mark, height: dims.mark, display: 'block' }}
       onError={() => setFailed(true)}
     />
@@ -177,7 +177,7 @@ function BrandWordmark({
   const img = (
     <img
       src={src}
-      alt="OpenAIDom"
+      alt="OpenAIdom"
       style={{ height: dims.wordmarkHeight, width: 'auto', display: 'block' }}
       onError={() => setFailed(true)}
     />
@@ -225,7 +225,7 @@ function TypographicMark({ size, variant }: { size: BrandSize; variant: BrandVar
         height: SIZE_MAP[size].mark,
         flexShrink: 0,
       }}
-      aria-label="OpenAIDom"
+      aria-label="OpenAIdom"
     >
       <span aria-hidden="true">OD</span>
     </span>
@@ -254,7 +254,7 @@ function TypographicWordmark({
         color,
       }}
     >
-      OpenAIDom
+      OpenAIdom
     </span>
   );
 }

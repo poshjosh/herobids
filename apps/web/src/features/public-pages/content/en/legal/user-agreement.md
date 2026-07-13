@@ -2,11 +2,11 @@
 
 *Last updated: 2026-07-06*
 
-By using OpenAIDom, operated by HeroBids ("the platform"), you agree to these terms. If you do not agree, do not use the platform.
+By using OpenAIdom, ("the platform"), you agree to these terms. If you do not agree, do not use the platform.
 
 ## Service description
 
-OpenAIDom offers AI agents as a service. You create and run agents that act on your instructions.
+OpenAIdom offers AI agents as a service. You create and run agents that act on your instructions.
 
 ## Your responsibilities
 
@@ -45,7 +45,7 @@ You are responsible for complying with all applicable laws and regulations in yo
 
 ### Trading
 
-- **No investment advice** — OpenAIDom is a technology platform, not a financial advisor. Nothing on the platform constitutes investment advice.
+- **No investment advice** — OpenAIdom is a technology platform, not a financial advisor. Nothing on the platform constitutes investment advice.
 - **No guarantees** — We do not guarantee the availability, reliability, accuracy, completeness, or performance of the platform, market data, external services, or venue connectivity.
 - **Agent behavior** — AI agents may generate incorrect, incomplete, inconsistent, or unexpected outputs and may take unintended actions based on ambiguous or incorrect instructions. You should monitor your agents and configure appropriate risk limits and spending caps.
 
