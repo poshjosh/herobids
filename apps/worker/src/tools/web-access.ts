@@ -5,12 +5,15 @@ import { parseHTML } from 'linkedom';
 import { createLogger } from '../logger.js';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
+import { PdfTextExtractor } from '@herobids/documents/document-text-extractors';
 
 // @mozilla/readability is CJS-only — use createRequire to load from ESM.
 const _require = createRequire(import.meta.url);
 const { Readability } = _require('@mozilla/readability') as { Readability: new (doc: Document) => { parse(): { title: string; textContent: string } | null } };
 
 const logger = createLogger('tools:web-access');
+
+const pdfExtractor = new PdfTextExtractor();
 
 function nonFaultError(error: string, retryable = false): ToolResult {
   return { success: false, error, retryable, fault: false };
@@ -637,14 +640,51 @@ const readDocumentTool: AgentTool = {
       }
       reader.cancel().catch(() => undefined);
 
-      // Extract text from the PDF bytes using a lightweight approach.
-      // We extract readable ASCII/UTF-8 strings from the binary content
-      // without requiring a full PDF library dependency.
       const pdfBuffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
-      const text = extractPdfText(pdfBuffer);
+
+      // Delegate to the shared PdfTextExtractor. It returns a Result — on
+      // failure we still report success (document was fetched) but with empty text.
+      let text = '';
+      let extractionTruncated = false;
+      try {
+        const extractionResult = await pdfExtractor.extract({
+          body: pdfBuffer,
+          mimeType: 'application/pdf',
+          filename: url,
+        });
+        if (extractionResult.ok) {
+          text = extractionResult.data.extractedText;
+          extractionTruncated = extractionResult.data.truncated;
+        } else {
+          logger.warn(
+            { agentId: ctx.agentId, extractionError: extractionResult.error.code },
+            'read_document PDF text extraction failed, returning empty text',
+          );
+        }
+      } catch (extractionErr) {
+        // Defensive: PdfTextExtractor.extract() should never throw (it returns
+        // Result), but guard against unexpected failures (e.g. dynamic import
+        // of pdf-parse failing in constrained runtimes).
+        logger.warn(
+          {
+            agentId: ctx.agentId,
+            extractionError: extractionErr instanceof Error ? extractionErr.message : String(extractionErr),
+          },
+          'read_document PDF text extraction threw, returning empty text',
+        );
+      }
 
       docSuccess = true;
-      return { success: true, data: { url, contentType: 'application/pdf', text, truncated, sizeBytes: totalBytes } };
+      return {
+        success: true,
+        data: {
+          url,
+          contentType: 'application/pdf',
+          text,
+          truncated: truncated || extractionTruncated,
+          sizeBytes: totalBytes,
+        },
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const isTimeout = msg.includes('abort') || msg.includes('timeout');
@@ -667,57 +707,6 @@ const readDocumentTool: AgentTool = {
   },
 };
 
-/**
- * Lightweight PDF text extraction without a library.
- * Scans the binary content for readable text streams between stream markers.
- * Suitable for simple text-heavy PDFs. Complex layout or encrypted PDFs
- * will return partial or garbled text — the agent should handle this gracefully.
- */
-function extractPdfText(buffer: Buffer): string {
-  const content = buffer.toString('binary');
-  const lines: string[] = [];
 
-  // Match content between BT (begin text) and ET (end text) markers
-  const btEtRegex = /BT([\s\S]*?)ET/g;
-  let match: RegExpExecArray | null;
-
-  while ((match = btEtRegex.exec(content)) !== null) {
-    const block = match[1] ?? '';
-    // Extract text from Tj and TJ operators
-    // Tj: (text) Tj
-    // TJ: [(text1)(text2)...] TJ
-    const tjRegex = /\(([^)]*)\)\s*Tj/g;
-    let tjMatch: RegExpExecArray | null;
-    while ((tjMatch = tjRegex.exec(block)) !== null) {
-      const raw = tjMatch[1] ?? '';
-      // Decode basic PDF string escapes
-      const decoded = raw.replace(/\\([0-7]{3})/g, (_m, oct) => String.fromCharCode(parseInt(oct, 8)))
-        .replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t')
-        .replace(/\\\\/g, '\\').replace(/\\\(/g, '(').replace(/\\\)/g, ')');
-      const printable = decoded.replace(/[^\x20-\x7E\n\r\t]/g, '');
-      if (printable.trim()) lines.push(printable);
-    }
-
-    const tjArrayRegex = /\[([^\]]*)\]\s*TJ/g;
-    let tjArrMatch: RegExpExecArray | null;
-    while ((tjArrMatch = tjArrayRegex.exec(block)) !== null) {
-      const inner = tjArrMatch[1] ?? '';
-      const strRegex = /\(([^)]*)\)/g;
-      let strMatch: RegExpExecArray | null;
-      const parts: string[] = [];
-      while ((strMatch = strRegex.exec(inner)) !== null) {
-        const raw = strMatch[1] ?? '';
-        const decoded = raw.replace(/\\([0-7]{3})/g, (_m, oct) => String.fromCharCode(parseInt(oct, 8)))
-          .replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t')
-          .replace(/\\\\/g, '\\').replace(/\\\(/g, '(').replace(/\\\)/g, ')');
-        const printable = decoded.replace(/[^\x20-\x7E\n\r\t]/g, '');
-        if (printable.trim()) parts.push(printable);
-      }
-      if (parts.length > 0) lines.push(parts.join(''));
-    }
-  }
-
-  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-}
 
 export const webAccessTools: AgentTool[] = [webSearchTool, browseUrlTool, readDocumentTool];
