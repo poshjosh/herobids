@@ -8,6 +8,8 @@ export interface EmailMessage {
   to: string;
   subject: string;
   text: string;
+  /** Optional HTML body for rich email clients. When provided, SES sends multipart. */
+  html?: string;
 }
 
 /**

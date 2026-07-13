@@ -1,5 +1,7 @@
 import type { AgentRepository } from '@herobids/db';
+import { renderEmail } from '@herobids/domain';
 import type { TelegramClient } from './telegram-client.js';
+import type { EmailClient } from './email-client.js';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('platform-alert-service');
@@ -47,6 +49,7 @@ export class PlatformAlertService {
     private readonly agentRepo: AgentRepository,
     private readonly telegram: TelegramClient | undefined,
     _botToken: string | undefined,
+    private readonly emailClient?: EmailClient,
   ) {}
 
   /**
@@ -69,42 +72,80 @@ export class PlatformAlertService {
       return null;
     });
 
-    if (!this.telegram) {
-      logger.debug({ event, agentId: ctx.agentId }, 'Platform alert persisted — Telegram not configured, skipping delivery');
-      if (msgId) {
-        await this.agentRepo.markOutboundMessageFailed(msgId, 'telegram_not_configured').catch(() => undefined);
+    let anyDelivered = false;
+
+    // Deliver via Telegram
+    if (this.telegram) {
+      const telegramChatId = await this.agentRepo.getEffectiveTelegramChatId(ctx.agentId).catch((err: unknown) => {
+        logger.warn({ err, agentId: ctx.agentId }, 'Failed to look up effective Telegram chat ID');
+        return null;
+      });
+
+      if (telegramChatId) {
+        const text = formatPlatformAlert(event, ctx);
+        const result = await this.telegram.sendText(telegramChatId, text);
+        if (result.ok) {
+          anyDelivered = true;
+          if (msgId) {
+            await this.agentRepo.markOutboundMessageSent(msgId, String(result.data.messageId), telegramChatId).catch(() => undefined);
+          }
+        } else {
+          logger.warn({ event, agentId: ctx.agentId, error: result.error }, 'Platform alert Telegram delivery failed');
+          if (msgId) {
+            await this.agentRepo.markOutboundMessageFailed(msgId, result.error.message).catch(() => undefined);
+          }
+        }
+      } else {
+        logger.info({ event, agentId: ctx.agentId }, 'Platform alert — no Telegram chat ID available, skipping Telegram delivery');
       }
-      return;
+    } else {
+      logger.debug({ event, agentId: ctx.agentId }, 'Platform alert — Telegram not configured, skipping Telegram delivery');
     }
 
-    const telegramChatId = await this.agentRepo.getEffectiveTelegramChatId(ctx.agentId).catch((err: unknown) => {
-      logger.warn({ err, agentId: ctx.agentId }, 'Failed to look up effective Telegram chat ID');
-      return null;
-    });
+    // Deliver via Email
+    if (this.emailClient) {
+      const recipientEmail = await this.agentRepo.getUserEmailByAgentId(ctx.agentId).catch((err: unknown) => {
+        logger.warn({ err, agentId: ctx.agentId }, 'Failed to look up user email for platform alert');
+        return null;
+      });
 
-    if (!telegramChatId) {
-      logger.info({ event, agentId: ctx.agentId }, 'Platform alert persisted — no Telegram chat ID available, skipping delivery');
-      if (msgId) {
-        await this.agentRepo.markOutboundMessageFailed(msgId, 'no_telegram_chat_id').catch(() => undefined);
+      if (recipientEmail) {
+        const rendered = renderEmail({
+          subject: `[Safety Alert] ${eventSubject(event)}`,
+          preheader: ctx.message.slice(0, 100),
+          title: eventSubject(event),
+          body: [
+            ctx.message,
+            ctx.detail ? `\nDetails: ${ctx.detail.slice(0, 500)}` : '',
+          ].filter(Boolean).join('\n'),
+          footerNote: ctx.agentName
+            ? `Agent: ${ctx.agentName} (${ctx.agentId.slice(0, 8)})`
+            : `Agent ID: ${ctx.agentId.slice(0, 8)}`,
+        });
+
+        const emailResult = await this.emailClient.send({
+          to: recipientEmail,
+          subject: rendered.subject,
+          text: rendered.text,
+          html: rendered.html,
+        });
+
+        if (emailResult.ok) {
+          anyDelivered = true;
+          logger.info({ event, agentId: ctx.agentId, email: recipientEmail }, 'Platform safety alert sent via email');
+        } else {
+          logger.warn({ event, agentId: ctx.agentId, error: emailResult.error }, 'Platform safety alert email delivery failed');
+        }
+      } else {
+        logger.info({ event, agentId: ctx.agentId }, 'Platform alert — no user email available, skipping email delivery');
       }
-      return;
     }
 
-    const text = formatPlatformAlert(event, ctx);
-    const result = await this.telegram.sendText(telegramChatId, text);
-    if (!result.ok) {
-      logger.warn({ event, agentId: ctx.agentId, error: result.error }, 'Platform alert Telegram delivery failed');
-      if (msgId) {
-        await this.agentRepo.markOutboundMessageFailed(msgId, result.error.message).catch(() => undefined);
-      }
-      return;
+    if (anyDelivered) {
+      logger.info({ event, agentId: ctx.agentId }, 'Platform safety alert sent');
+    } else {
+      logger.warn({ event, agentId: ctx.agentId }, 'Platform safety alert could not be delivered via any channel');
     }
-
-    if (msgId) {
-      await this.agentRepo.markOutboundMessageSent(msgId, String(result.data.messageId), telegramChatId).catch(() => undefined);
-    }
-
-    logger.info({ event, agentId: ctx.agentId }, 'Platform safety alert sent');
   }
 }
 

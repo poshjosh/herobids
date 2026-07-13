@@ -47,7 +47,10 @@ export class SesEmailClient implements EmailClient {
         Content: {
           Simple: {
             Subject: { Data: message.subject },
-            Body: { Text: { Data: message.text } },
+            Body: {
+              Text: { Data: message.text },
+              ...(message.html ? { Html: { Data: message.html } } : {}),
+            },
           },
         },
         ReplyToAddresses: this.replyToEmail ? [this.replyToEmail] : undefined,

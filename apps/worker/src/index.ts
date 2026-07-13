@@ -601,7 +601,7 @@ if (workerTelegram && appConfig.alerts.telegram.webhookUrl) {
     }
   }
 }
-const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined);
+const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined, workerEmail);
 
 // Email client for agent send_message email fanout — disabled by default.
 // Provider selection happens inside the factory; index.ts maps operator

@@ -1,5 +1,6 @@
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import type { AlertsConfig } from '@herobids/domain';
+import { renderEmail } from '@herobids/domain';
 
 // ---------------------------------------------------------------------------
 // Auth mailer — lightweight SES wrapper for login-link email delivery.
@@ -34,26 +35,29 @@ export function createAuthMailer(config: AlertsConfig): AuthMailer | undefined {
 
   async function sendLoginLink(to: string, link: string, ttlSecs?: number): Promise<{ code: string; message: string } | undefined> {
     try {
+      const ttlMinutes = ttlSecs ? Math.round(ttlSecs / 60) : 10;
+      const rendered = renderEmail({
+        subject: 'Sign in to HeroBids',
+        preheader: 'Your sign-in link is ready',
+        title: 'Sign in to HeroBids',
+        body: [
+          `Click the button below to sign in. This link expires in ${ttlMinutes} minutes.`,
+          '',
+          `If you prefer, copy and paste this URL into your browser:`,
+          link,
+        ].join('\n'),
+        footerNote: 'If you did not request this link, you can safely ignore this email.',
+      });
+
       const command = new SendEmailCommand({
         FromEmailAddress: email.fromEmail,
         Destination: { ToAddresses: [to] },
         Content: {
           Simple: {
-            Subject: { Data: 'Sign in to HeroBids' },
+            Subject: { Data: rendered.subject },
             Body: {
-              Text: {
-                Data: [
-                  'Sign in to HeroBids',
-                  '',
-                  `Click the link below to sign in. This link expires in ${ttlSecs ? Math.round(ttlSecs / 60) : 10} minutes.`,
-                  '',
-                  link,
-                  '',
-                  'If you did not request this link, you can safely ignore this email.',
-                  '',
-                  '— HeroBids',
-                ].join('\n'),
-              },
+              Text: { Data: rendered.text },
+              Html: { Data: rendered.html },
             },
           },
         },

@@ -24,6 +24,7 @@ import {
   extractStrategyFromConfig,
   checkModeEscalation,
   resolveEffectiveLlmSelection,
+  renderEmail,
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository } from '@herobids/db';
 import { forceReply, type TelegramClient } from '../alerting/telegram-client.js';
@@ -1218,10 +1219,16 @@ export class AgentMessageBroker {
     if (this.emailClient) {
       const recipientEmail = await this.agentRepo.getUserEmailByAgentId(agentId);
       if (recipientEmail) {
-        const subject = isHard
-          ? `⚠️ ${agent.name} stopped — spending cap reached`
-          : `ℹ️ ${agent.name} approaching spending cap`;
-        const result = await this.emailClient.send({ to: recipientEmail, subject, text: message });
+        const emailContent = isHard
+          ? this.buildHardLimitEmailContent(agent.name, openPositions)
+          : this.buildSoftLimitEmailContent(agent.name);
+        const rendered = renderEmail(emailContent);
+        const result = await this.emailClient.send({
+          to: recipientEmail,
+          subject: rendered.subject,
+          text: rendered.text,
+          html: rendered.html,
+        });
         if (result.ok) {
           logger.info({ agentId, reason, email: recipientEmail }, 'Billing notification sent via email');
           anyDelivered = true;
@@ -1278,6 +1285,57 @@ export class AgentMessageBroker {
 
     lines.push('Visit Billing → Spend Controls to top up or raise the cap.');
     return lines.join('\n');
+  }
+
+  /** Build branded email content for soft-cap notification. */
+  private buildSoftLimitEmailContent(agentName: string) {
+    return {
+      subject: `ℹ️ ${agentName} approaching spending cap`,
+      preheader: 'Your agent is approaching its spending cap',
+      title: 'Spending Cap Notice',
+      body: [
+        `Agent <strong>${escapeHtml(agentName)}</strong> has reached its soft spending cap.`,
+        '',
+        'Your agent is still running and trading normally. No behavior has changed.',
+        '',
+        'To raise or remove the cap, visit <strong>Billing → Spend Controls</strong>.',
+      ].join('\n'),
+      footerNote: 'This is an automated notification from your agent platform.',
+    };
+  }
+
+  /** Build branded email content for hard-cap notification. */
+  private buildHardLimitEmailContent(agentName: string, openPositions?: string[]) {
+    const bodyLines: string[] = [
+      `Agent <strong>${escapeHtml(agentName)}</strong> has stopped because it reached its hard spending cap.`,
+    ];
+
+    if (openPositions && openPositions.length > 0) {
+      bodyLines.push(
+        '',
+        `<strong>Open positions are no longer monitored:</strong> ${openPositions.map((p) => escapeHtml(p)).join(', ')}`,
+        '',
+        'These positions will remain unmanaged until you take action. The agent will not close them automatically.',
+      );
+    } else {
+      bodyLines.push(
+        '',
+        'No further LLM calls will be made until you top up or raise the cap.',
+      );
+    }
+
+    bodyLines.push(
+      '',
+      'Visit <strong>Billing → Spend Controls</strong> to top up or raise the cap.',
+    );
+
+    return {
+      subject: `⚠️ ${agentName} stopped — spending cap reached`,
+      preheader: 'Your agent has reached its hard spending cap',
+      title: 'Agent Stopped',
+      body: bodyLines.join('\n'),
+      footerNote: 'This is an automated notification from your agent platform.',
+    };
   }
 }
 
