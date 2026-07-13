@@ -85,7 +85,7 @@ ok()   { echo "[$(ts)] OK   $*"; }
 warn() { echo "[$(ts)] WARN $*" >&2; }
 die()  { echo "[$(ts)] FAIL $*" >&2; exit 1; }
 
-PG() { docker exec -T herobids-postgres-1 psql -U herobids -d herobids -t -q "$@"; }
+PG() { docker exec herobids-postgres-1 psql -U herobids -d herobids -t -q "$@"; }
 
 # ─── Rollback ────────────────────────────────────────────────────────────────
 # Called when a post-deploy health check fails. Agents are still in 'stopped'
