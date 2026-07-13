@@ -10,6 +10,8 @@ export type ExtractionStatus = 'not_needed' | 'ready' | 'failed';
 export type DocumentLifecycleState = 'staged' | 'materialized' | 'deleted' | 'failed';
 
 export interface InsertAgentDocument {
+  /** Optional pre-generated ID. When provided, the repository uses it instead of generating a new one. */
+  id?: string;
   agentId: string;
   userId: string;
   source: DocumentSource;
@@ -39,7 +41,7 @@ export class AgentDocumentsRepository {
   constructor(private readonly db: Database) {}
 
   async create(input: InsertAgentDocument): Promise<string> {
-    const id = crypto.randomUUID();
+    const id = input.id ?? crypto.randomUUID();
     const now = new Date();
     await this.db.insert(agentDocuments).values({
       id,
