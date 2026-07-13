@@ -16,13 +16,15 @@ Always use the copies in this directory (or their `/brand/...` URL paths).
 
 | File | Purpose | Surface |
 |------|---------|---------|
-| `wordmark-light.png` | Transparent light wordmark | Dark surfaces (sidebar, auth header) |
-| `wordmark-dark.png` | Transparent dark wordmark | Light surfaces (email, docs) |
-| `compact-mark-light.png` | Transparent light square mark | Compact UI, app icon fallback |
-| `compact-mark-dark.png` | Transparent dark square mark | Compact UI, app icon fallback |
+| `compact-mark.png` | Square mark (silhouette-only — CSS filter handles dark/light) | Sidebar, login, app icon |
 | `banner.png` | Horizontal banner artwork | Login hero, public landing |
-| `favicon-dark/` | Favicon set for dark themes | Browser tabs, PWA (app default) |
-| `favicon-light/` | Favicon set for light themes | External embeds, docs |
+| `favicon.ico` | Multi-size ICO (legacy) | Browser tabs (root of public/) |
+| `favicon-96x96.png` | PNG favicon | Browser tabs |
+| `favicon.svg` | SVG favicon | Browser tabs |
+| `apple-touch-icon.png` | iOS home screen icon | Mobile |
+| `site.webmanifest` | PWA manifest | Mobile install |
+
+Favicon files live at the root of `apps/web/public/` (not inside `brand/`) — they were generated via [RealFaviconGenerator](https://realfavicongenerator.net) using a solid navy-background 512×512 source.
 
 ## Source → Runtime Filename Mapping
 
@@ -31,15 +33,10 @@ use this table to determine the correct destination filename.
 
 | Source (`docs/product/brand/images/`) | Runtime (`apps/web/public/brand/`) | Notes |
 |---------------------------------------|-------------------------------------|-------|
-| `openaidom-logo.png` | `wordmark-light.png` | Transparent light wordmark |
-| `openaidom-logo.png` (color-inverted) | `wordmark-dark.png` | Transparent dark wordmark (derived) |
-| `openaidom-icon-dark.png` (no-bg) | `compact-mark-dark.png` | Chose **no-background** variant (`openaidom-icon-dark-no-bg.png`) for transparent dark mark on light surfaces |
-| `openaidom-icon-light.png` (no-bg) | `compact-mark-light.png` | Chose **no-background** variant (`openaidom-icon-light-no-bg.png`) for transparent light mark on dark surfaces |
+| `openaidom-icon-light-no-bg.png` | `compact-mark.png` | Silhouette-only; CSS filter in BrandLogo handles dark/light rendering |
 | `openaidom-banner.png` | `banner.png` | Horizontal banner artwork |
-| `favicon-dark/` (entire directory) | `favicon-dark/` | Filenames preserved; `site.webmanifest` differs (see below) |
-| `favicon-light/` (entire directory) | `favicon-light/` | Filenames preserved; `site.webmanifest` differs (see below) |
 
-**Webmanifest differences:** The runtime `site.webmanifest` files set `name` and `short_name` to `OpenAIdom`, and use per-variant `theme_color` / `background_color` (`#0B1220` for dark, `#ffffff` for light). The design-authority copies under `docs/product/brand/images/` may carry placeholder values — always use the runtime versions as the source of truth for manifest fields.
+Favicon files are generated separately — see `apps/web/public/` for `favicon.ico`, `favicon-96x96.png`, `favicon.svg`, `apple-touch-icon.png`, and `site.webmanifest`.
 
 ## Updating Assets
 
@@ -50,8 +47,9 @@ use this table to determine the correct destination filename.
 ## Code-Level Contract
 
 The canonical brand contract is at `apps/web/src/brand/tokens.ts`. It exports:
-- Asset path constants (`WORDMARK_LIGHT`, `FAVICON_DARK`, etc.)
+- Asset path constants (`COMPACT_MARK`, `FAVICON`, `BANNER`)
 - Palette hex values (`BRAND_PALETTE`)
+- Favicon paths (`FAVICON`)
 - Image-vs-text fallback policy (doc comments)
 
 All components that render brand marks should import from that module rather

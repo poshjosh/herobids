@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Brand asset consolidation:** Removed duplicate light/dark wordmarks and compact marks. `BrandLogo` now uses a single `compact-mark.png` (dark-background icon) with CSS filter (`brightness(0)` / `brightness(0) invert(1)`) for dark/light surface visibility, and typographic text for the wordmark — eliminating the "logo + logo" duplication.
+- **Favicon overhaul:** Replaced PNG favicon sets (which had poor contrast on light browser chrome) with a single set generated via RealFaviconGenerator from a solid navy-background 512px icon. Works on both light and dark browsers.
 - **Platform Email Redesign (003):** Refined platform-authored email branding and structure.
   - Auth login-link email: "HeroBids" → "OpenAIdom" branding, added CTA button for sign-in, improved body copy with raw-link fallback.
   - Platform safety alerts: Telegram messages now say "OpenAIdom Safety Alert" instead of "HeroBids Safety Alert".

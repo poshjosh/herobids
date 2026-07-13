@@ -14,39 +14,19 @@
 // ─── Asset Paths ────────────────────────────────────────────────────────────
 // All paths are relative to the web app's public directory (served at /).
 
-/** Transparent wordmark for dark surfaces (sidebar, auth header, top bar). */
-export const WORDMARK_LIGHT = '/brand/wordmark-light.png';
-
-/** Transparent wordmark for light surfaces (email, docs, light-mode UI). */
-export const WORDMARK_DARK = '/brand/wordmark-dark.png';
-
-/** Square mark with background — compact UI contexts (favicon fallback, app icon). */
-export const COMPACT_MARK_LIGHT = '/brand/compact-mark-light.png';
-export const COMPACT_MARK_DARK = '/brand/compact-mark-dark.png';
+/** Compact square mark — single asset. Dark/light visibility handled by CSS filter in BrandLogo. */
+export const COMPACT_MARK = '/brand/compact-mark.png';
 
 /** Banner artwork for login hero, public landing, and wide treatments. */
 export const BANNER = '/brand/banner.png';
 
-/** Favicon set for dark-themed surfaces (the app default). */
-export const FAVICON_DARK = {
-  ico: '/brand/favicon-dark/favicon.ico',
-  png16: '/brand/favicon-dark/favicon-16x16.png',
-  png32: '/brand/favicon-dark/favicon-32x32.png',
-  appleTouch: '/brand/favicon-dark/apple-touch-icon.png',
-  android192: '/brand/favicon-dark/android-chrome-192x192.png',
-  android512: '/brand/favicon-dark/android-chrome-512x512.png',
-  manifest: '/brand/favicon-dark/site.webmanifest',
-} as const;
-
-/** Favicon set for light-themed surfaces (docs, emails, external embeds). */
-export const FAVICON_LIGHT = {
-  ico: '/brand/favicon-light/favicon.ico',
-  png16: '/brand/favicon-light/favicon-16x16.png',
-  png32: '/brand/favicon-light/favicon-32x32.png',
-  appleTouch: '/brand/favicon-light/apple-touch-icon.png',
-  android192: '/brand/favicon-light/android-chrome-192x192.png',
-  android512: '/brand/favicon-light/android-chrome-512x512.png',
-  manifest: '/brand/favicon-light/site.webmanifest',
+/** Favicon set — single set with solid navy background, visible on light and dark browser chrome. */
+export const FAVICON = {
+  ico: '/favicon.ico',
+  png: '/favicon-96x96.png',
+  svg: '/favicon.svg',
+  appleTouch: '/apple-touch-icon.png',
+  manifest: '/site.webmanifest',
 } as const;
 
 // ─── Palette → CSS Custom Property Mapping ──────────────────────────────────

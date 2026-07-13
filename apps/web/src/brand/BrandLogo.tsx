@@ -1,8 +1,5 @@
 import { useState, type CSSProperties } from 'react';
-import {
-  COMPACT_MARK_LIGHT,
-  COMPACT_MARK_DARK,
-} from './tokens.js';
+import { COMPACT_MARK } from './tokens.js';
 
 // ─── Public Types ────────────────────────────────────────────────────────────
 
@@ -117,45 +114,28 @@ function BrandMark({ variant, size }: { variant: BrandVariant; size: BrandSize }
     return <TypographicMark size={size} variant={variant} />;
   }
 
-  const darkAsset = COMPACT_MARK_LIGHT;
-  const lightAsset = COMPACT_MARK_DARK;
-
-  const src = variant === 'dark' ? darkAsset : lightAsset;
-  // On dark surfaces the icon's native colours (navy/indigo) have poor contrast.
-  // Force pure white via CSS filter so the mark is always visible on dark UIs.
-  // Applies to both 'dark' and 'auto' — only 'light' surfaces skip the filter.
+  // Single mark asset — CSS filter handles dark/light visibility.
+  // brightness(0) = pure black silhouette on light surfaces.
+  // brightness(0) invert(1) = pure white silhouette on dark surfaces.
   const needsWhiteFilter = variant !== 'light';
 
   const img = (
     <img
-      src={src}
+      src={COMPACT_MARK}
       alt="OpenAIdom"
       style={{
         width: dims.mark,
         height: dims.mark,
         display: 'block',
-        ...(needsWhiteFilter ? { filter: 'brightness(0) invert(1)' } : {}),
+        filter: needsWhiteFilter ? 'brightness(0) invert(1)' : 'brightness(0)',
       }}
       onError={() => setFailed(true)}
     />
   );
 
-  if (variant !== 'auto') {
-    return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
-        {img}
-      </span>
-    );
-  }
-
-  // auto: use <picture> with prefers-color-scheme
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
-      <picture>
-        <source srcSet={lightAsset} media="(prefers-color-scheme: light)" />
-        <source srcSet={darkAsset} media="(prefers-color-scheme: dark)" />
-        {img}
-      </picture>
+      {img}
     </span>
   );
 }
