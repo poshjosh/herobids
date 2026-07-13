@@ -43,13 +43,16 @@ export function Card({
   children,
   style,
   onClick,
+  className,
 }: {
   children: ReactNode;
   style?: CSSProperties;
   onClick?: () => void;
+  className?: string;
 }) {
   return (
     <div
+      className={className}
       onClick={onClick}
       style={{
         background: 'var(--color-surface-1)',
@@ -66,9 +69,9 @@ export function Card({
   );
 }
 
-export function MetricCard({ label, value, total, color }: { label: string; value: string | number; total?: number; color?: string }) {
+export function MetricCard({ label, value, total, color, className }: { label: string; value: string | number; total?: number; color?: string; className?: string }) {
   return (
-    <Card style={{ padding: '16px 20px' }}>
+    <Card className={className} style={{ padding: '16px 20px' }}>
       <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
         {label}
       </div>

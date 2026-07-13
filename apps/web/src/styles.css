@@ -264,3 +264,52 @@ body {
     border-radius: 8px;
   }
 }
+
+/* ─── Agents page: responsive metric cards ────────────────────────────────── */
+
+.metrics-summary-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+/* On smaller screens switch to a horizontally scrollable row */
+@media (max-width: 768px) {
+  .metrics-summary-row {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;          /* Firefox */
+    -ms-overflow-style: none;       /* IE/Edge */
+  }
+  .metrics-summary-row::-webkit-scrollbar {
+    display: none;                  /* Chrome/Safari */
+  }
+
+  .metrics-summary-card {
+    min-width: 150px;
+    flex-shrink: 0;
+  }
+}
+
+/* ─── Agents page: responsive two-column layout ─────────────────────────── */
+
+.agents-content-grid {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 24px;
+  align-items: start;
+}
+
+/* Hide the recent-activity sidebar and stack to single column on narrow screens */
+@media (max-width: 900px) {
+  .agents-content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .recent-activity-panel {
+    display: none;
+  }
+}

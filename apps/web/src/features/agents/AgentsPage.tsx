@@ -184,17 +184,13 @@ export function AgentsPage() {
 
       {/* ── Summary metrics ─────────────────────────────────────── */}
       {query.isSuccess && items.length > 0 && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(5, 1fr)',
-          gap: '12px',
-          marginBottom: '24px',
-        }}>
-          <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.active' })} value={counts.active} total={items.length} />
-          <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.paused' })} value={counts.paused} />
-          <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.unhealthy' })} value={counts.unhealthy} />
-          <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.stopped' })} value={counts.stopped} />
+        <div className="metrics-summary-row">
+          <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.active' })} value={counts.active} total={items.length} />
+          <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.paused' })} value={counts.paused} />
+          <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.unhealthy' })} value={counts.unhealthy} />
+          <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.stopped' })} value={counts.stopped} />
           <MetricCard
+            className="metrics-summary-card"
             label={intl.formatMessage({ id: 'missionControl.metric.totalPnl' })}
             value={overviewQuery.isLoading ? '—' : formatPnl(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
             color={overviewQuery.isLoading ? undefined : pnlColor(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
@@ -242,7 +238,7 @@ export function AgentsPage() {
       )}
 
       {query.isSuccess && items.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '24px', alignItems: 'start' }}>
+        <div className="agents-content-grid">
           {/* Left: Agent list */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {items.map((agent) => (
@@ -251,7 +247,7 @@ export function AgentsPage() {
           </div>
 
           {/* Right: Recent activity */}
-          <section aria-label={intl.formatMessage({ id: 'missionControl.section.recentActivity' })}>
+          <section className="recent-activity-panel" aria-label={intl.formatMessage({ id: 'missionControl.section.recentActivity' })}>
             <SectionLabel>{intl.formatMessage({ id: 'missionControl.section.recentActivity' })}</SectionLabel>
             <Card style={{ padding: '0' }}>
               {(activityQuery.isLoading || agentActivityQuery.isLoading) && (
