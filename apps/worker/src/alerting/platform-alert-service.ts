@@ -6,6 +6,14 @@ import { createLogger } from '../logger.js';
 
 const logger = createLogger('platform-alert-service');
 
+/** Truncate text at the last word boundary before maxLen, appending nothing. */
+function truncateAtWord(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  const sliced = text.slice(0, maxLen);
+  const lastSpace = sliced.lastIndexOf(' ');
+  return lastSpace > 0 ? sliced.slice(0, lastSpace) : sliced;
+}
+
 /**
  * Mandatory safety-alert event types.
  * These are platform-authored, always fired regardless of user preferences.
@@ -110,13 +118,14 @@ export class PlatformAlertService {
       });
 
       if (recipientEmail) {
+        const subject = eventSubject(event);
         const rendered = renderEmail({
-          subject: `[Safety Alert] ${eventSubject(event)}`,
+          subject: `[Safety Alert] ${subject}`,
           preheader: ctx.message.slice(0, 100),
-          title: eventSubject(event),
+          title: subject,
           body: [
             ctx.message,
-            ctx.detail ? `\nDetails: ${ctx.detail.slice(0, 500)}` : '',
+            ctx.detail ? `\nDetails: ${truncateAtWord(ctx.detail, 500)}` : '',
           ].filter(Boolean).join('\n'),
           footerNote: ctx.agentName
             ? `Agent: ${ctx.agentName} (${ctx.agentId.slice(0, 8)})`

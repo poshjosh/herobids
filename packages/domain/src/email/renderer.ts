@@ -62,10 +62,13 @@ function htmlEscape(s: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
-/** Wrap a URL with a tracking-safe redirect (noop for now — hook point). */
+/** Wrap a URL with a tracking-safe redirect.
+ *  TODO(002-openaidom-brand-rollout): implement redirect wrapping / URL signing
+ *  before production email delivery goes live. */
 function safeUrl(url: string): string {
   return url;
 }

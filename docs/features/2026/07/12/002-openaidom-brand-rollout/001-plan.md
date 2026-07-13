@@ -450,6 +450,7 @@ The following are kept as-is. They are internal engineering identifiers, not cus
 | localStorage key | `herobids_locale` (in `apps/web/src/app/i18n/resolveLocale.ts`) | Changing the key would reset every user's locale preference |
 | Repo directory name | `herobids/` | Git remote identity; rename requires full re-clone for every contributor |
 | Internal code identifiers | TypeScript types, function names, table names, migration files | Internal-only; no customer ever sees them |
+| Infrastructure names | Compose service names (`herobids-api-dev`), Docker networks (`herobids_default`), systemd units (`herobids.service`), infra paths (`/opt/herobids/`), PostgreSQL user (`herobids`) | Deployment-critical; renaming breaks provisioning, compose orchestration, and cron jobs |
 
 **Rule of thumb:** If a string never appears in a browser tab, email subject line, login page, or public doc, it was left alone.
 

@@ -17,7 +17,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Slice 6: Branded platform email shell (`packages/domain/src/email/renderer.ts`) with HTML + plain-text fallback
   - Slice 7: Auth login-link mail, billing notifications, and safety alerts migrated to branded renderer
   - Slice 8: Public docs and customer-facing copy — 13 markdown files updated; dual-label "OpenAIdom," for company/legal pages
-  - Slice 9: Internal documentation — post-implementation asset map, cross-linked domain rollout plan, intentionally-preserved-names catalog, runbook verification, CHANGELOG entry
+  - Slice 9: Internal documentation — post-implementation asset map, cross-linked domain rollout plan, intentionally-preserved-names catalog, runbook verification, CHANGELOG entry (see [preserved-names catalog](./docs/features/2026/07/12/002-openaidom-brand-rollout/001-plan.md#intentionally-preserved-internal-herobids-names))
 
 ### Changed
 

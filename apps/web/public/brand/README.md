@@ -39,6 +39,8 @@ use this table to determine the correct destination filename.
 | `favicon-dark/` (entire directory) | `favicon-dark/` | Filenames preserved; `site.webmanifest` differs (see below) |
 | `favicon-light/` (entire directory) | `favicon-light/` | Filenames preserved; `site.webmanifest` differs (see below) |
 
+**Webmanifest differences:** The runtime `site.webmanifest` files set `name` and `short_name` to `OpenAIdom`, and use per-variant `theme_color` / `background_color` (`#0B1220` for dark, `#ffffff` for light). The design-authority copies under `docs/product/brand/images/` may carry placeholder values — always use the runtime versions as the source of truth for manifest fields.
+
 ## Updating Assets
 
 1. Replace the file in `docs/product/brand/images/` (design authority).

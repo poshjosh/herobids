@@ -122,7 +122,7 @@ function BrandMark({ variant, size }: { variant: BrandVariant; size: BrandSize }
   const darkAsset = COMPACT_MARK_LIGHT; // light mark = for dark surfaces
   const lightAsset = COMPACT_MARK_DARK; // dark mark = for light surfaces
 
-  const src = variant === 'dark' ? darkAsset : variant === 'light' ? lightAsset : lightAsset;
+  const src = variant === 'dark' ? darkAsset : lightAsset;
 
   const img = (
     <img
@@ -172,7 +172,7 @@ function BrandWordmark({
   const darkAsset = WORDMARK_LIGHT; // light wordmark = for dark surfaces
   const lightAsset = WORDMARK_DARK; // dark wordmark = for light surfaces
 
-  const src = variant === 'dark' ? darkAsset : variant === 'light' ? lightAsset : lightAsset;
+  const src = variant === 'dark' ? darkAsset : lightAsset;
 
   const img = (
     <img
