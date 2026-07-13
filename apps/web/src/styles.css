@@ -4,25 +4,30 @@
 @theme {
   /* ─── OpenAIDom Brand Palette ────────────────────────────────────────────
    * Derived from docs/product/brand/brand-palette.md.
-   * These are the authoritative brand tokens for the OpenAIDom identity.
+   * These are the authoritative brand hex tokens. --color-* tokens alias
+   * these where applicable to keep brand and color namespaces in sync.
    * See apps/web/src/brand/tokens.ts for the full contract.
    * ──────────────────────────────────────────────────────────────────────── */
   --brand-primary: #101828;
   --brand-accent: #635BFF;
+  --brand-accent-dim: #4338CA;
   --brand-white: #FFFFFF;
   --brand-light-gray: #F5F7FA;
   --brand-dark-bg: #0B1220;
 
-  /* ─── Legacy Teal Brand (pre-OpenAIDom) ──────────────────────────────────
-   * Retained for backward compatibility during the phased rollout.
-   * Slice 2+ will migrate consumers to the OpenAIDom tokens above.
+  /* ─── Brand Accent (OpenAIDom) ───────────────────────────────────────────
+   * Migrated from legacy teal to the Accent Indigo palette (Slice 5).
+   * Aliased to --brand-* hex tokens to avoid oklch→sRGB rounding errors.
+   * --color-brand:        CTAs, links, active states, toggle backgrounds
+   * --color-brand-dim:    hover / pressed states (darker indigo)
+   * --color-brand-subtle: selected-item backgrounds, status badges
    * ──────────────────────────────────────────────────────────────────────── */
-  --color-brand: oklch(62% 0.19 170);
-  --color-brand-dim: oklch(52% 0.16 170);
-  --color-brand-subtle: oklch(30% 0.08 170);
+  --color-brand: var(--brand-accent);
+  --color-brand-dim: var(--brand-accent-dim);
+  --color-brand-subtle: oklch(25.7% 0.086 281);
 
   --color-surface-0: oklch(11% 0.015 260);
-  --color-surface-1: oklch(15% 0.015 260);
+  --color-surface-1: var(--brand-primary);
   --color-surface-2: oklch(20% 0.015 260);
   --color-surface-3: oklch(26% 0.015 260);
   --color-surface-4: oklch(32% 0.015 260);
