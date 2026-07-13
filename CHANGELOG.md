@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Evaluation narrative prompt now surfaces agent memory, watch state, and tool failure patterns from Redis snapshot without truncation, and asks targeted coverage/instrumentId questions.
+
 ## v0.0.21 - 2026-07-13
 
 ### Added

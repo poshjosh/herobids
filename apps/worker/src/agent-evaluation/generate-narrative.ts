@@ -128,27 +128,59 @@ function summarizeContainerLogs(raw: string | null): string {
 
 function summarizeRedisSnapshot(snapshot: unknown): string {
   if (!snapshot || typeof snapshot !== 'object') return 'Redis snapshot not available.';
-  const keys = Object.keys(snapshot as Record<string, unknown>);
-  if (keys.length === 0) return 'Redis snapshot empty.';
+  const allKeys = Object.keys(snapshot as Record<string, unknown>);
+  if (allKeys.length === 0) return 'Redis snapshot empty.';
 
-  // Extract relevant key prefixes for a concise summary
-  const relevantPrefixes = ['rate-limit:', 'reminder:', 'session:', 'agent:', 'stream:'];
-  const relevant = keys.filter((k) => relevantPrefixes.some((p) => k.startsWith(p)));
-  const other = keys.length - relevant.length;
+  // High-signal keys shown in full: agent memory (retry loops, error patterns),
+  // watches (coverage gaps, stale checks), and prompts (capability surface).
+  // Stream keys are noted but not expanded — their values are opaque channel refs.
+  const HIGH_SIGNAL = ['agent:memory:', 'agent:watches:', 'agent:prompt:'];
+  const MEDIUM_SIGNAL = ['agent:wake:prefs:', 'agent:watches:summary:', 'rate-limit:', 'reminder:', 'session:'];
+  const STREAM = ['agent:inbound:', 'agent:outbound:'];
 
-  return [
-    `Total keys: ${keys.length}`,
-    `Relevant keys (rate-limit, reminder, session, agent, stream): ${relevant.length}`,
-    other > 0 ? `Other keys: ${other}` : '',
-    '',
-    'Relevant key summary:',
-    ...relevant.slice(0, 30).map((k) => {
-      const val = (snapshot as Record<string, unknown>)[k];
-      const valStr = typeof val === 'string' ? val.slice(0, 100) : JSON.stringify(val).slice(0, 100);
-      return `  ${k}: ${valStr}`;
-    }),
-    relevant.length > 30 ? `  ... and ${relevant.length - 30} more` : '',
-  ].filter(Boolean).join('\n');
+  const snapshotObj = snapshot as Record<string, unknown>;
+
+  const highSignal = allKeys.filter((k) => HIGH_SIGNAL.some((p) => k.startsWith(p)));
+  const mediumSignal = allKeys.filter((k) => MEDIUM_SIGNAL.some((p) => k.startsWith(p)));
+  const streamKeys = allKeys.filter((k) => STREAM.some((p) => k.startsWith(p)));
+  const other = allKeys.length - highSignal.length - mediumSignal.length - streamKeys.length;
+
+  const formatValue = (k: string, maxChars: number): string => {
+    const val = snapshotObj[k];
+    if (typeof val === 'string') {
+      return val.length <= maxChars ? val : val.slice(0, maxChars) + '...';
+    }
+    const json = JSON.stringify(val);
+    return json.length <= maxChars ? json : json.slice(0, maxChars) + '...';
+  };
+
+  const lines: string[] = [];
+
+  if (highSignal.length > 0) {
+    lines.push('### Agent State (high signal)');
+    for (const k of highSignal) {
+      lines.push(`  ${k}:`);
+      lines.push(`    ${formatValue(k, k.startsWith('agent:memory:') ? 2000 : 500)}`);
+    }
+    lines.push('');
+  }
+
+  if (streamKeys.length > 0) {
+    lines.push(`### Stream channels: ${streamKeys.length} key(s) — connection state omitted (opaque channel refs)`);
+    lines.push('');
+  }
+
+  if (mediumSignal.length > 0) {
+    lines.push('### Operational state');
+    for (const k of mediumSignal) {
+      lines.push(`  ${k}: ${formatValue(k, 200)}`);
+    }
+    lines.push('');
+  }
+
+  lines.unshift(`Total keys: ${allKeys.length} (high-signal: ${highSignal.length}, operational: ${mediumSignal.length}, streams: ${streamKeys.length}${other > 0 ? `, other: ${other}` : ''})`);
+
+  return lines.filter((l) => l !== '' || lines.indexOf(l) === lines.length - 1 || lines[lines.indexOf(l) + 1] !== '').join('\n');
 }
 
 function truncateIfNeeded(text: string): string {
@@ -238,8 +270,11 @@ Consider:
 - How often did the scout hold vs escalate to the judge?
 - Are there anomalies? For example: stuck trades, missing lifecycle events, rate-limit hits, restrictions being bypassed?
 - Is market data flowing? Any fetch failures or degraded providers?
-- Are there unexpected errors in the journal or container logs?
-- What single improvement would have the biggest impact?`;
+- Are there unexpected errors for example in container, redis, fills etc.?
+- Does agent memory record repeated tool failures, error messages, or retry loops?
+- Are protective watches (stop_loss/take_profit) properly linked to their target position, or is the agent struggling with coverage attachment?
+- Is there evidence of a platform-side bug preventing the agent from completing a task?
+- What improvement/improvements could have the biggest impact?`;
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
