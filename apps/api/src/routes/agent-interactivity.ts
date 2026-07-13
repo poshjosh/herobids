@@ -4,7 +4,11 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, or, inArray, notInArray, sql, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { AgentRepository, agents, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
+import { AgentRepository, AgentDocumentsRepository, agents, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
+import { AgentDocumentService, sanitizeFilename } from '@herobids/documents';
+import { LocalDocumentStore } from '@herobids/documents/local-document-store';
+import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
+import { resolve } from 'node:path';
 import type { AgentRiskDefaultsConfig, AlertsConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
 import { AgentRuntimePolicyOverridesSchema, AgentRiskDefaultsSchema } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
@@ -39,6 +43,13 @@ const TelegramWebhookUpdateSchema = z.object({
       id: z.union([z.string(), z.number().int()]).transform((value) => String(value)),
     }),
     text: z.string().optional(),
+    caption: z.string().optional(),
+    document: z.object({
+      file_id: z.string(),
+      file_name: z.string().optional(),
+      mime_type: z.string().optional(),
+      file_size: z.number().int().optional(),
+    }).optional(),
     reply_to_message: z.object({
       message_id: z.number().int(),
     }).optional(),
@@ -750,6 +761,158 @@ export async function telegramWebhookHandler(
     await sendTelegramText(chatId, 'Multiple running agents found. Use /to <agent name> <message> to choose a target.');
   }
 
+  // ── Document helpers ────────────────────────────────────────────────────
+
+  /** Download a file from Telegram's servers via the Bot API. */
+  async function downloadTelegramFile(fileId: string): Promise<{ buffer: Buffer; filename: string; mimeType: string } | null> {
+    try {
+      const getFileUrl = `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`;
+      const fileRes = await fetch(getFileUrl);
+      const fileData = await fileRes.json() as { ok: boolean; result?: { file_path?: string } };
+      if (!fileData.ok || !fileData.result?.file_path) return null;
+
+      const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`;
+      const downloadRes = await fetch(downloadUrl);
+      if (!downloadRes.ok) return null;
+
+      const buffer = Buffer.from(await downloadRes.arrayBuffer());
+      return { buffer, filename: '', mimeType: '' };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Lazily-initialised {@link AgentDocumentService} singleton scoped to this webhook handler. */
+  let _documentService: AgentDocumentService | null = null;
+  function getDocumentService(): AgentDocumentService {
+    if (!_documentService) {
+      const store = new LocalDocumentStore(resolve(process.cwd(), 'data/agent-documents'));
+      const extractor = createDocumentTextExtractor();
+      const repo = new AgentDocumentsRepository(db);
+      _documentService = new AgentDocumentService(store, extractor, repo);
+    }
+    return _documentService;
+  }
+
+  /**
+   * Handle a Telegram document message:
+   * 1. Resolve target agent(s) from chat binding and optional caption {@code /to} command.
+   * 2. Download the file from Telegram.
+   * 3. Ingest through {@link AgentDocumentService}.
+   * 4. Publish a text notification to each target agent.
+   *
+   * Targets only running agents in v1 — stopped/crashed agents are rejected.
+   */
+  async function processWebhookDocument(
+    chatId: string,
+    message: NonNullable<z.infer<typeof TelegramWebhookUpdateSchema>['message']>,
+  ): Promise<void> {
+    const document = message.document!; // guaranteed present by caller
+
+    // ── 1. Resolve user ──────────────────────────────────────────────────
+
+    const userRows = await db.select({ userId: users.id })
+      .from(users)
+      .where(eq(users.telegramChatId, chatId))
+      .limit(1);
+
+    const userId = userRows[0]?.userId;
+    if (!userId) return; // no chat binding — silent drop
+
+    // ── 2. Find running agents for this user ─────────────────────────────
+
+    const userAgents = await db.select({
+      agentId: agents.id,
+      agentName: agents.name,
+      status: agents.status,
+    })
+      .from(agents)
+      .where(eq(agents.userId, userId));
+
+    const runningAgents = userAgents.filter((row) => agentCanReceiveTelegram(row.status));
+
+    // ── 3. Resolve target agent(s) from caption /to command ──────────────
+
+    const caption = message.caption?.trim();
+    const parsedCommand = caption ? parseTelegramCommand(caption) : null;
+
+    let targetAgents: typeof runningAgents;
+
+    if (parsedCommand?.targets.length) {
+      targetAgents = [];
+      for (const target of parsedCommand.targets) {
+        const isBroadcast = target === '*' || target.toLowerCase() === 'all';
+        const matches = isBroadcast
+          ? runningAgents
+          : runningAgents.filter((row) => row.agentName.toLowerCase() === target.toLowerCase());
+        for (const match of matches) {
+          if (!targetAgents.some((a) => a.agentId === match.agentId)) {
+            targetAgents.push(match);
+          }
+        }
+      }
+      if (targetAgents.length === 0) {
+        await sendTelegramText(chatId, 'No running agents found matching the target. Start an agent first to send documents.');
+        return;
+      }
+    } else if (runningAgents.length === 1) {
+      targetAgents = [runningAgents[0]!];
+    } else if (runningAgents.length === 0) {
+      await sendTelegramText(chatId, 'No running agents found. Start an agent first to send documents.');
+      return;
+    } else {
+      await sendTelegramText(chatId, 'Multiple running agents found. Use /to <agent name> in the caption to choose a target.');
+      return;
+    }
+
+    // ── 4. Download the file from Telegram ───────────────────────────────
+
+    const fileData = await downloadTelegramFile(document.file_id);
+    if (!fileData) {
+      await sendTelegramText(chatId, 'Failed to download the document from Telegram. Please try again.');
+      return;
+    }
+
+    // ── 5. Ingest through AgentDocumentService for each target agent ─────
+
+    const filename = document.file_name ?? 'document';
+    const mimeType = document.mime_type ?? 'application/octet-stream';
+    const docService = getDocumentService();
+
+    for (const targetAgent of targetAgents) {
+      const result = await docService.uploadDocument({
+        agentId: targetAgent.agentId,
+        userId,
+        source: 'telegram',
+        originalFilename: filename,
+        mimeType,
+        body: fileData.buffer,
+        sourceRef: document.file_id,
+        captionOrPrompt: caption ?? null,
+      });
+
+      if (!result.ok) {
+        await sendTelegramText(chatId, `Document upload failed for ${targetAgent.agentName}: ${result.error.message}`);
+        continue;
+      }
+
+      // ── 6. Publish text notification to the agent ─────────────────────
+
+      const docResult = result.data;
+      const safeName = sanitizeFilename(filename);
+      const extracted = docResult.extractionStatus === 'ready';
+      const notificationText = [
+        `User sent document \`${filename}\`.`,
+        `Original saved at \`docs/original/${docResult.id}-${safeName}\`.`,
+        extracted ? `Extracted text saved at \`docs/extracted/${docResult.id}.txt\`.` : '',
+        caption ? `Caption: "${caption}"` : '',
+      ].filter(Boolean).join('\n');
+
+      await deliverTelegramMessage(targetAgent.agentId, userId, notificationText);
+      await sendTelegramText(chatId, `Document delivered to ${targetAgent.agentName}.`);
+    }
+  }
+
   app.post<{ Body: unknown }>('/api/telegram/webhook', async (request, reply) => {
     if (!botToken || !webhookSecret) {
       return reply.status(501).send({ error: 'not_configured' });
@@ -767,6 +930,17 @@ export async function telegramWebhookHandler(
     }
 
     const message = parsed.data.message;
+
+    // Handle document messages — download, ingest, and notify the agent
+    if (message.document) {
+      reply.status(200).send({ ok: true });
+      void processWebhookDocument(message.chat.id, message).catch((err) => {
+        app.log.warn({ err }, 'Telegram webhook document processing failed');
+      });
+      return;
+    }
+
+    // Drop other non-text messages
     if (!message.text || message.text.trim().length === 0) {
       return reply.status(200).send({ ok: true });
     }

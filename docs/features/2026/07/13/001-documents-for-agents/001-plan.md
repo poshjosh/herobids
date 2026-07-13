@@ -632,10 +632,10 @@ Suggested copy:
 2. [DONE] Add `DocumentStore`, `DocumentTextExtractor`, `AgentDocumentService`
 3. [DONE] Refactor PDF extraction into a shared implementation also usable by `read_document` (PdfTextExtractor created as shared module in Item 2; read_document wiring deferred to Item 10)
 4. [DONE] Add `RuntimeDocumentMaterializer` abstractions
-5. [PENDING] Implement web upload endpoints
+5. [DONE] Implement web upload endpoints
 6. [PENDING] Wire create/edit UI
-7. [PENDING] Materialize staged docs on runtime start
-8. [PENDING] Add live-runtime materialization path
+7. [DONE] Materialize staged docs on runtime start
+8. [DONE] Add live-runtime materialization path
 9. [PENDING] Extend Telegram webhook for documents
 10. [PENDING] Switch `read_document` to the shared extractor path
 11. [PENDING] Add cleanup and observability
