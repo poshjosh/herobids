@@ -8,6 +8,10 @@
 
 ## Summary
 
+### Sequencing with Brand Rollout
+
+The visual branding rollout (`docs/features/2026/07/12/002-openaidom-brand-rollout/001-plan.md`) was completed **before** the domain cutover. All 9 slices — asset pipeline, BrandLogo component, app shell, browser metadata, theme tokens, branded email renderer, email migration, and public-docs copy — are already shipped. The web UI, emails, and public docs already read as OpenAIDom. The domain cutover in this plan is the subsequent step: it changes the hostname that serves the already-branded product.
+
 This plan assumes:
 - The app, API, worker, database, Redis, and Hetzner servers remain the same.
 - We are changing the public domain only.

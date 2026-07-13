@@ -400,6 +400,61 @@ This plan depends on or should be coordinated with:
 
 ---
 
+## Post-Implementation — Asset Mapping and Runtime Locations
+
+### Runtime Asset Locations
+
+| Asset | Location | Notes |
+|-------|----------|-------|
+| Brand images (favicon, wordmark, mark, banner) | `apps/web/public/brand/` | Served at runtime from the web app; copied from `docs/product/brand/images/` |
+| Brand contract (tokens, asset paths, fallback rules) | `apps/web/src/brand/tokens.ts` | Single source of truth for code references; never reference `docs/product/brand/` directly from app code |
+| BrandLogo component | `apps/web/src/brand/BrandLogo.tsx` | Reusable React component; supports mark-only, wordmark-only, mark+wordmark, and typographic fallback; light/dark variants |
+| Branded email renderer | `packages/domain/src/email/renderer.ts` | Pure `(params) => { subject, text, html }`; shared by API (auth mail) and worker (billing/safety alerts) |
+| CSS tokens | `apps/web/src/styles.css` | `--brand-*` hex tokens → `--color-*` semantic aliases; palette aligned to navy `#101828`, indigo `#635BFF`, white `#FFFFFF`, light gray `#F5F7FA`, dark bg `#0B1220` |
+
+### Surfaces Updated (Slices 1–8)
+
+| Surface | What changed |
+|---------|-------------|
+| Browser metadata | Favicon, manifest, document title, social/share metadata |
+| App shell | Sidebar wordmark, mobile top-bar mark |
+| Auth/login page | Branded header with wordmark/banner |
+| Public pages | PublicLayout header, nav labels, page titles |
+| Theme tokens | `--color-brand-*` family realigned to navy/indigo palette |
+| Platform email | Auth login-link mail, billing notifications, safety alerts now use shared branded HTML shell with plain-text fallback |
+| Public docs | 13 markdown files (help, docs, company, legal) — customer-facing copy switched to OpenAIDom |
+
+### Surfaces Intentionally Unchanged
+
+| Surface | Reason |
+|---------|--------|
+| Agent-authored email fanout | Out of scope — agents control their own message content |
+| Navigation model / IA | Not a branding concern |
+| Core interaction patterns | Not a branding concern |
+| i18n keys referencing `herobids` as an internal token | These are internal identifiers, not user-visible strings; changing them would risk key-mismatch regressions with no user-facing benefit |
+
+---
+
+## Intentionally Preserved Internal `HeroBids` Names
+
+The following are kept as-is. They are internal engineering identifiers, not customer-facing brand surfaces. Changing them would create migration risk with no user-visible benefit.
+
+| Category | Examples | Rationale |
+|----------|----------|-----------|
+| Package names | `@herobids/domain`, `@herobids/engine`, `@herobids/db`, etc. | pnpm workspace identity; rename would touch every import in the repo |
+| Database names | `herobids_dev`, `herobids_staging`, `herobids_prod` | Schema-qualified; rename requires dump/restore migration |
+| Docker image names | `herobids/api`, `herobids/worker`, `herobids/agent` | Image registry identity; rename requires coordinated CI + deploy changes |
+| Internal env vars | `HEROBIDS_ENV`, `HEROBIDS_DATABASE_URL`, `HEROBIDS_REDIS_URL` | Used across deploy scripts, compose files, and worker config loading |
+| Config keys | `config/default.yaml` heritage; `agentRiskDefaults.*` namespace | Operator-facing config; changing keys breaks existing deploy configs |
+| Legal entity name | "HeroBids" in legal liability clauses (e.g. Terms of Service) | Names the legal entity, not the brand; disclosed as "OpenAIDom, operated by HeroBids" |
+| localStorage key | `herobids_locale` (in `apps/web/src/app/i18n/resolveLocale.ts`) | Changing the key would reset every user's locale preference |
+| Repo directory name | `herobids/` | Git remote identity; rename requires full re-clone for every contributor |
+| Internal code identifiers | TypeScript types, function names, table names, migration files | Internal-only; no customer ever sees them |
+
+**Rule of thumb:** If a string never appears in a browser tab, email subject line, login page, or public doc, it was left alone.
+
+---
+
 ## Success Criteria
 
 This feature is successful when:

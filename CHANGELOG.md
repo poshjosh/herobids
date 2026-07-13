@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **OpenAIDom Brand Rollout (9 slices):** Introduced OpenAIDom as the customer-facing brand across the web app, platform-authored email, and public documentation while keeping internal engineering names unchanged.
+  - Slice 1: Asset intake and brand contract (`apps/web/public/brand/`, `apps/web/src/brand/tokens.ts`)
+  - Slice 2: Shared `BrandLogo` component (`apps/web/src/brand/BrandLogo.tsx`) — mark, wordmark, mark+wordmark, typographic fallback, light/dark variants
+  - Slice 3: App shell (sidebar, mobile top-bar) and auth/public surfaces (login page, PublicLayout) switched to branded component
+  - Slice 4: Browser metadata — favicon, `site.webmanifest`, document title, social/share meta tags
+  - Slice 5: Theme token alignment — `--brand-*` hex tokens → `--color-*` aliases in `apps/web/src/styles.css`, teal-forward palette replaced with navy/indigo
+  - Slice 6: Branded platform email shell (`packages/domain/src/email/renderer.ts`) with HTML + plain-text fallback
+  - Slice 7: Auth login-link mail, billing notifications, and safety alerts migrated to branded renderer
+  - Slice 8: Public docs and customer-facing copy — 13 markdown files updated; dual-label "OpenAIDom, operated by HeroBids" for company/legal pages
+  - Slice 9: Internal documentation — post-implementation asset map, cross-linked domain rollout plan, intentionally-preserved-names catalog, runbook verification, CHANGELOG entry
+
 ### Changed
 
 - Evaluation narrative prompt now surfaces agent memory, watch state, and tool failure patterns from Redis snapshot without truncation, and asks targeted coverage/instrumentId questions.
