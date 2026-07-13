@@ -23,11 +23,11 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 
 function makeInstrument(overrides: Record<string, string> = {}) {
   return {
-    id: 'BTC-USD',
-    symbol: 'BTC-USD',
+    id: 'uuid-btc-001',
+    symbol: 'BTC/USDC:USDC',
     base: 'BTC',
-    quote: 'USD',
-    type: 'perpetual',
+    quote: 'USDC',
+    type: 'perp',
     venue: 'hyperliquid',
     tickSize: '0.1',
     lotSize: '0.001',
@@ -69,10 +69,12 @@ describe('find_instrument', () => {
     expect(data.count).toBe(1);
     const instruments = data.instruments as Array<Record<string, unknown>>;
     expect(instruments[0]).toMatchObject({
-      instrumentId: 'BTC-USD',
-      symbol: 'BTC-USD',
+      instrumentId: 'BTC',        // perp → base ticker
+      id: 'uuid-btc-001',         // DB internal ID
+      symbol: 'BTC/USDC:USDC',
       base: 'BTC',
-      quote: 'USD',
+      quote: 'USDC',
+      type: 'perp',
       venue: 'hyperliquid',
     });
   });
@@ -130,5 +132,80 @@ describe('find_instrument', () => {
     expect(result.success).toBe(false);
     expect(result.errorCode).toBe('instrument.lookup_failed');
     expect(result.error).toContain('DB connection lost');
+  });
+
+  // -------------------------------------------------------------------------
+  // instrumentId mapping — perp → base ticker
+  // -------------------------------------------------------------------------
+
+  it('maps instrumentId to base ticker for perp instruments', async () => {
+    const ctx = makeCtx({
+      instrumentRepo: {
+        search: vi.fn(async () => [
+          makeInstrument({ id: 'uuid-zec', symbol: 'ZEC/USDC:USDC', base: 'ZEC', type: 'perp', venue: 'hyperliquid' }),
+        ]),
+      },
+    });
+
+    const result = await findInstrument.execute({ query: 'ZEC' }, ctx);
+
+    expect(result.success).toBe(true);
+    const instruments = (result.data as Record<string, unknown>).instruments as Array<Record<string, unknown>>;
+    expect(instruments[0]).toMatchObject({
+      instrumentId: 'ZEC',        // perp → base ticker
+      id: 'uuid-zec',             // DB internal ID preserved
+      symbol: 'ZEC/USDC:USDC',
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // instrumentId mapping — spot/swap → pair symbol
+  // -------------------------------------------------------------------------
+
+  it('maps instrumentId to pair symbol for spot (swap) instruments', async () => {
+    const ctx = makeCtx({
+      instrumentRepo: {
+        search: vi.fn(async () => [
+          makeInstrument({ id: 'uuid-sol', symbol: 'SOL/USDC', base: 'SOL', type: 'spot', venue: 'jupiter' }),
+        ]),
+      },
+    });
+
+    const result = await findInstrument.execute({ query: 'SOL', venue: 'jupiter' }, ctx);
+
+    expect(result.success).toBe(true);
+    const instruments = (result.data as Record<string, unknown>).instruments as Array<Record<string, unknown>>;
+    expect(instruments[0]).toMatchObject({
+      instrumentId: 'SOL/USDC',   // spot/swap → pair symbol
+      id: 'uuid-sol',             // DB internal ID preserved
+      symbol: 'SOL/USDC',
+      base: 'SOL',
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // instrumentId mapping — mixed perp + spot results
+  // -------------------------------------------------------------------------
+
+  it('maps instrumentId correctly for mixed perp and spot results', async () => {
+    const ctx = makeCtx({
+      instrumentRepo: {
+        search: vi.fn(async () => [
+          makeInstrument({ id: 'uuid-eth', symbol: 'ETH/USDC:USDC', base: 'ETH', type: 'perp', venue: 'hyperliquid' }),
+          makeInstrument({ id: 'uuid-weth', symbol: 'WETH/USDC', base: 'WETH', type: 'spot', venue: 'jupiter' }),
+        ]),
+      },
+    });
+
+    const result = await findInstrument.execute({ query: 'ETH' }, ctx);
+
+    expect(result.success).toBe(true);
+    const instruments = (result.data as Record<string, unknown>).instruments as Array<Record<string, unknown>>;
+    // perp → base ticker
+    expect(instruments[0]!.instrumentId).toBe('ETH');
+    expect(instruments[0]!.id).toBe('uuid-eth');
+    // spot → pair symbol
+    expect(instruments[1]!.instrumentId).toBe('WETH/USDC');
+    expect(instruments[1]!.id).toBe('uuid-weth');
   });
 });
