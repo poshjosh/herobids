@@ -295,6 +295,26 @@ The redesign is ready to ship with acceptable branding quality even if final ass
 
 ---
 
-## Non-Blocking Assumption
+## Outstanding Issues
 
-This plan assumes the first implementation can ship without a finalized logo asset, provided the shared shell includes a strong typographic OpenAIdom header and stable HTML fallback behavior.
+1. **Channel-status ambiguity for safety alerts (Slice 4 task 5).** The code implements independent channels (Telegram and email don't block each other; `anyDelivered` tracks partial success). Tests cover dual-channel, Telegram-fails/email-succeeds, and email-fails/Telegram-succeeds cases. This decision should be documented in a standalone note explaining that alert delivery status is per-channel, not transactional across channels.
+
+2. **Email client rendering validation (Slice 5 tasks 3–4).** Automated HTML structure tests pass in CI (DOCTYPE, table layout, brand colors, CTA markup, raw-link fallback, OpenAIdom header). Manual rendering QA in actual email clients (desktop + mobile) should happen in staging before production rollout. Litmus or real test sends recommended.
+
+3. **Platform email surface documentation (Slice 5 task 5).** No standalone surface doc exists. This plan and the CHANGELOG entry serve as the canonical reference for now.
+
+4. **Manual validation checklist** (5 items from the Validation Plan above). All require a running non-dev environment:
+   - Send a login link and verify CTA, fallback link, expiry copy, sender formatting
+   - Trigger billing soft-cap and verify warning-state presentation
+   - Trigger billing hard-cap with/without open positions and verify copy differences
+   - Trigger each platform safety alert type and verify both Telegram + email
+   - Inspect messages in at least one mobile and one desktop/webmail client
+
+Items 1–3 are documentation/verification tasks. Item 4 requires staging access.
+
+---
+
+## Resolved
+
+- **Brand asset delay (Risk 3).** Moot — `wordmark-dark.png` is wired via `alerts.email.brandImageUrl` config across all environments. The typographic header remains as fallback when the config is unset.
+- **Non-blocking assumption (logo).** Moot — same as above.
