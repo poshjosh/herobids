@@ -22,7 +22,7 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
-    ...(init?.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    ...(init?.body !== undefined && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
     ...(init?.headers as Record<string, string> | undefined),
   };
   if (token) {
@@ -1035,6 +1035,19 @@ export interface AgentOutcomes {
   };
 }
 
+export interface AgentDocument {
+  id: string;
+  agentId: string;
+  originalFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  extractionStatus: 'not_needed' | 'ready' | 'failed';
+  lifecycleState: 'staged' | 'materialized' | 'deleted' | 'failed';
+  source: 'control_plane' | 'telegram';
+  captionOrPrompt: string | null;
+  createdAt: string;
+}
+
 export const agents = {
   list: () => request<Agent[]>('/agents'),
   get: (id: string) => request<Agent>(`/agents/${id}`),
@@ -1100,6 +1113,18 @@ export const agents = {
   }) =>
     request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),
+  listDocuments: (agentId: string) =>
+    request<AgentDocument[]>(`/agents/${agentId}/documents`),
+  uploadDocument: (agentId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<AgentDocument>(
+      `/agents/${agentId}/documents`,
+      { method: 'POST', body: formData },
+    );
+  },
+  deleteDocument: (agentId: string, documentId: string) =>
+    request<void>(`/agents/${agentId}/documents/${documentId}`, { method: 'DELETE' }),
   start: (id: string) =>
     request<{ status: string; sessionId: string }>(`/agents/${id}/start`, { method: 'POST' }),
   stop: (id: string) =>

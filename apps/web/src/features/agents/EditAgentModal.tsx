@@ -138,6 +138,10 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     queryKey: ['agents', agentId, 'capabilities', 'trading', 'connections'],
     queryFn: () => agentsApi.tradingConnections(agentId),
   });
+  const docsQuery = useQuery({
+    queryKey: ['agent-documents', agentId],
+    queryFn: () => agentsApi.listDocuments(agentId),
+  });
   const availableConnectionsQuery = useQuery({
     queryKey: ['capabilities', 'trading', 'connections'],
     queryFn: () => capabilitiesApi.tradingConnections(),
@@ -538,6 +542,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               }
               setForm(nextForm);
             }}
+            showDocumentUpload={false}
             showIntelligence={showIntelligence}
             showTradingControls={showTradingControls}
             requiresTradingSetup={requiresTradingSetup}
@@ -850,6 +855,59 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             }
             onAdvancedToggle={setAdvancedOpen}
           />
+
+          {/* Existing documents */}
+          {docsQuery.data && docsQuery.data.length > 0 && (
+            <div style={{ marginTop: '16px', borderTop: '1px solid var(--color-border)', paddingTop: '16px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 500, marginBottom: '8px' }}>Documents ({docsQuery.data.length})</h3>
+              <ul style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {docsQuery.data.map((doc) => (
+                  <li key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{doc.originalFilename}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', flexShrink: 0 }}>
+                      {doc.extractionStatus === 'ready' ? '✓ extracted' : doc.extractionStatus}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await agentsApi.deleteDocument(agentId, doc.id);
+                          docsQuery.refetch();
+                        } catch (err) {
+                          console.warn('Document delete failed:', err);
+                        }
+                      }}
+                      style={{ color: 'var(--color-danger)', fontSize: '12px', flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer' }}
+                    >
+                      Delete
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Upload new documents */}
+          <div style={{ marginTop: '8px' }}>
+            <input
+              type="file"
+              multiple
+              accept=".txt,.md,.csv,.html,.xml,.json,.pdf,.docx"
+              onChange={async (e) => {
+                const files = Array.from(e.target.files ?? []);
+                for (const file of files) {
+                  try {
+                    await agentsApi.uploadDocument(agentId, file);
+                  } catch (err) {
+                    console.warn('Document upload failed:', file.name, err);
+                  }
+                }
+                docsQuery.refetch();
+                (e.target as HTMLInputElement).value = '';
+              }}
+              style={inputStyle}
+            />
+          </div>
         </form>
 
         {mutation.isError && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}

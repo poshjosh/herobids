@@ -75,6 +75,7 @@ interface IntentState {
   runtimePolicyOverrides: RuntimePolicyOverrides | null;
   strategyPreset: string;
   subscribedSources: string[];
+  pendingFiles: File[];
 }
 
 export function AgentsPage() {
@@ -385,6 +386,7 @@ function CreateAgentFlow({
     runtimePolicyOverrides: null,
     strategyPreset: '',
     subscribedSources: ['watch_threshold', 'discovery_delta', 'regime_change'],
+    pendingFiles: [],
     };
   });
   const [modelTouched, setModelTouched] = useState(false);
@@ -626,6 +628,17 @@ function CreateAgentFlow({
         runtimePolicyOverrides: intent.runtimePolicyOverrides ?? undefined,
         subscribedSources: intent.subscribedSources,
       }));
+
+      // Upload any documents selected during creation
+      if (intent.pendingFiles && intent.pendingFiles.length > 0) {
+        for (const file of intent.pendingFiles) {
+          try {
+            await agentsApi.uploadDocument(agent.id, file);
+          } catch (err) {
+            console.warn('Document upload failed:', file.name, err);
+          }
+        }
+      }
 
       return agent;
     },

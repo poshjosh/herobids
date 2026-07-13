@@ -56,6 +56,9 @@ export interface AgentFormState {
 
   // Wake source subscriptions (empty = all sources)
   subscribedSources: string[];
+
+  /** Files selected in the document picker, pending upload after agent creation. */
+  pendingFiles: File[];
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +151,7 @@ export function agentToFormState(agent: Agent): AgentFormState {
     // neither fall back to '' (no selection yet).
     strategyPreset: agent.strategyPreset ?? (agent.technical != null ? 'custom' : ''),
     subscribedSources: agent.wakePreferences?.subscribedSources ?? [],
+    pendingFiles: [],
   };
 }
 
@@ -186,6 +190,7 @@ export function intentToFormState(intent: {
   openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
   strategyPreset: string;
   subscribedSources: string[];
+  pendingFiles: File[];
 }): AgentFormState {
   const {
     name,
@@ -213,6 +218,7 @@ export function intentToFormState(intent: {
     openPositionEscalationToJudgePolicy,
     strategyPreset,
     subscribedSources,
+    pendingFiles,
   } = intent;
   return {
     name,
@@ -240,5 +246,6 @@ export function intentToFormState(intent: {
     openPositionEscalationToJudgePolicy,
     strategyPreset,
     subscribedSources,
+    pendingFiles,
   };
 }
