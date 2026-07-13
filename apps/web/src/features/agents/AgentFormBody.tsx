@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { FieldLabel, SectionLabel, inputStyle } from '../../lib/ui.js';
+import { FieldLabel, inputStyle } from '../../lib/ui.js';
 import { bots as botsApi, type Skill } from '../../lib/api-client.js';
 import type { AgentFormState } from './agent-form-state.js';
 import { TechnicalConfigSection } from './TechnicalConfigSection.js';
@@ -120,9 +120,6 @@ export interface AgentFormBodyProps {
 
   /** Account email shown read-only next to the email delivery control. */
   accountEmail?: string | null;
-
-  /** Whether to show the document upload section. Default true. */
-  showDocumentUpload?: boolean;
 
   // Wake source subscriptions
   subscribedSources: string[];
@@ -512,46 +509,6 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         }
       />
 
-      {/* Document upload */}
-      {(props.showDocumentUpload !== false) && (
-        <div style={{ marginTop: '24px' }}>
-          <SectionLabel>Documents (optional)</SectionLabel>
-          <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
-            Upload PDFs, Word docs, or text files for the agent to reference.
-            Documents are available while the agent is running.
-          </p>
-          <input
-            type="file"
-            multiple
-            accept=".txt,.md,.csv,.html,.xml,.json,.pdf,.docx"
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? []);
-              props.onChange({ pendingFiles: files });
-            }}
-            style={inputStyle}
-          />
-          {props.value.pendingFiles.length > 0 && (
-            <ul style={{ marginTop: '8px' }}>
-              {props.value.pendingFiles.map((f, i) => (
-                <li key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-                  <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', flexShrink: 0 }}>({(f.size / 1024).toFixed(0)} KB)</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = props.value.pendingFiles.filter((_, j) => j !== i);
-                      props.onChange({ pendingFiles: next });
-                    }}
-                    style={{ color: 'var(--color-danger)', fontSize: '12px', marginLeft: 'auto', flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer' }}
-                  >
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
     </>
   );
 }

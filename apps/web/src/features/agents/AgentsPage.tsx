@@ -25,6 +25,7 @@ import { type CapabilityMode, type HybridMode } from './CapabilitySelector.js';
 import { StyleSelector } from './StyleSelector.js';
 import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
 import { generateAgentName } from './agent-name.js';
+import { AgentDocumentPicker } from './AgentDocumentPicker.js';
 import { AgentFormBody } from './AgentFormBody.js';
 import { intentToFormState } from './agent-form-state.js';
 import { defaultTechnicalConfigFormState, technicalFormStateToPayload, type TechnicalConfigFormState } from './technical-config-helpers.js';
@@ -802,6 +803,11 @@ function CreateAgentFlow({
             {formErrors.goal && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.goal}</div>}
           </div>
 
+          <AgentDocumentPicker
+            files={intent.pendingFiles}
+            onChange={(pendingFiles) => setIntent((state) => ({ ...state, pendingFiles }))}
+          />
+
           {/* 3. Style Selector */}
           <div style={{ marginBottom: '20px' }}>
             <StyleSelector
@@ -1408,6 +1414,12 @@ function CreateAgentFlow({
             })()}
             {showIntelligence && <ReviewRow label={intl.formatMessage({ id: 'agents.create.skills' })} value={formatSkillSelection(selectedSkills, intl)} />}
             {requiresTradingSetup && intent.venue && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.filters.venue' })} value={intent.venue} />}
+            {intent.pendingFiles.length > 0 && (
+              <ReviewRow
+                label="Documents"
+                value={intent.pendingFiles.map((file) => `${file.name} (${(file.size / 1024).toFixed(0)} KB)`).join(', ')}
+              />
+            )}
             {intent.strategyPreset && intent.strategyPreset !== 'custom' && (
               <ReviewRow label="Strategy preset" value={intent.strategyPreset} />
             )}

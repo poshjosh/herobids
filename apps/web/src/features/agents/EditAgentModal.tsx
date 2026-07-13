@@ -17,6 +17,7 @@ import { StyleSelector } from './StyleSelector.js';
 import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
 import { technicalFormStateToPayload } from './technical-config-helpers.js';
 import { VENUE_TYPE_MAP, buildVenueTypeMap } from './venue-mapping.js';
+import { AgentDocumentPicker } from './AgentDocumentPicker.js';
 import { AgentFormBody } from './AgentFormBody.js';
 import { type AgentFormState, agentToFormState } from './agent-form-state.js';
 import { RuntimePolicySection } from './RuntimePolicySection.js';
@@ -298,7 +299,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   }
 
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const skillIds = Array.from(new Set([...preservedSkillIds, ...form.skillIds.filter((skillId) => selectableSkillIds.has(skillId))]));
       const activeConnection = agentConnectionsQuery.data?.connections
         ?.find(c => c.grantStatus === 'active' && c.connectionStatus === 'active');
@@ -308,7 +309,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       const technicalPayload = (!hasStrategyPreset && form.technicalPreFilterEnabled)
         ? technicalFormStateToPayload(form.technicalConfig, connectionVenue || undefined, connectionVenueType || undefined)
         : null;
-      return agentsApi.update(agentId, buildUpdateAgentPayload({
+      const agent = await agentsApi.update(agentId, buildUpdateAgentPayload({
         name: form.name,
         prompt: form.goal,
         capabilityMode: form.capabilityMode,
@@ -345,10 +346,23 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         runtimePolicyOverrides: runtimePolicyOverrides ?? undefined,
         subscribedSources: form.subscribedSources,
       }));
+
+      if (form.pendingFiles.length > 0) {
+        for (const file of form.pendingFiles) {
+          try {
+            await agentsApi.uploadDocument(agentId, file);
+          } catch (err) {
+            console.warn('Document upload failed:', file.name, err);
+          }
+        }
+      }
+
+      return agent;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['agents', agentId] });
       void qc.invalidateQueries({ queryKey: ['agents'] });
+      void qc.invalidateQueries({ queryKey: ['agent-documents', agentId] });
       onClose();
     },
   });
@@ -460,6 +474,44 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             {formErrors.goal && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.goal}</div>}
           </div>
 
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+            {docsQuery.data && docsQuery.data.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <SectionLabel>Attached documents</SectionLabel>
+                <ul style={{ display: 'flex', flexDirection: 'column', gap: '4px', margin: 0, padding: 0, listStyle: 'none' }}>
+                  {docsQuery.data.map((doc) => (
+                    <li key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{doc.originalFilename}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', flexShrink: 0 }}>
+                        {doc.extractionStatus === 'ready' ? '✓ extracted' : doc.extractionStatus}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await agentsApi.deleteDocument(agentId, doc.id);
+                            await docsQuery.refetch();
+                          } catch (err) {
+                            console.warn('Document delete failed:', err);
+                          }
+                        }}
+                        style={{ color: 'var(--color-danger)', fontSize: '12px', flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer' }}
+                      >
+                        Delete
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <AgentDocumentPicker
+              files={form.pendingFiles}
+              onChange={(pendingFiles) => setForm((prev) => ({ ...prev, pendingFiles }))}
+              title={docsQuery.data && docsQuery.data.length > 0 ? 'Add More Documents' : 'Documents (Optional)'}
+            />
+          </div>
+
           {/* Agent Style */}
           <div style={{ marginBottom: '20px' }}>
             <StyleSelector
@@ -542,7 +594,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               }
               setForm(nextForm);
             }}
-            showDocumentUpload={false}
             showIntelligence={showIntelligence}
             showTradingControls={showTradingControls}
             requiresTradingSetup={requiresTradingSetup}
@@ -856,58 +907,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             onAdvancedToggle={setAdvancedOpen}
           />
 
-          {/* Existing documents */}
-          {docsQuery.data && docsQuery.data.length > 0 && (
-            <div style={{ marginTop: '16px', borderTop: '1px solid var(--color-border)', paddingTop: '16px' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 500, marginBottom: '8px' }}>Documents ({docsQuery.data.length})</h3>
-              <ul style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {docsQuery.data.map((doc) => (
-                  <li key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{doc.originalFilename}</span>
-                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', flexShrink: 0 }}>
-                      {doc.extractionStatus === 'ready' ? '✓ extracted' : doc.extractionStatus}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await agentsApi.deleteDocument(agentId, doc.id);
-                          docsQuery.refetch();
-                        } catch (err) {
-                          console.warn('Document delete failed:', err);
-                        }
-                      }}
-                      style={{ color: 'var(--color-danger)', fontSize: '12px', flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer' }}
-                    >
-                      Delete
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Upload new documents */}
-          <div style={{ marginTop: '8px' }}>
-            <input
-              type="file"
-              multiple
-              accept=".txt,.md,.csv,.html,.xml,.json,.pdf,.docx"
-              onChange={async (e) => {
-                const files = Array.from(e.target.files ?? []);
-                for (const file of files) {
-                  try {
-                    await agentsApi.uploadDocument(agentId, file);
-                  } catch (err) {
-                    console.warn('Document upload failed:', file.name, err);
-                  }
-                }
-                docsQuery.refetch();
-                (e.target as HTMLInputElement).value = '';
-              }}
-              style={inputStyle}
-            />
-          </div>
         </form>
 
         {mutation.isError && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}

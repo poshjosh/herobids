@@ -735,18 +735,6 @@ export class DockerAgentManager {
     await this.dockerRequest('DELETE', `/containers/${name}`);
   }
 
-/**
- * Thrown when a Docker putArchive operation times out (30s).
- * Used by callers to distinguish timeouts from other putArchive failures
- * without fragile string matching on error messages.
- */
-export class DockerPutArchiveTimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'DockerPutArchiveTimeoutError';
-  }
-}
-
   /**
    * Upload a tar archive to a path inside an agent container.
    *
@@ -770,7 +758,7 @@ export class DockerPutArchiveTimeoutError extends Error {
       const res = await fetch(url.toString(), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/x-tar' },
-        body: tarBuffer,
+        body: new Uint8Array(tarBuffer),
         signal: AbortSignal.timeout(30_000),
       });
 
@@ -813,5 +801,17 @@ export class DockerPutArchiveTimeoutError extends Error {
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     };
     return fetch(url, init);
+  }
+}
+
+/**
+ * Thrown when a Docker putArchive operation times out (30s).
+ * Used by callers to distinguish timeouts from other putArchive failures
+ * without fragile string matching on error messages.
+ */
+export class DockerPutArchiveTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DockerPutArchiveTimeoutError';
   }
 }

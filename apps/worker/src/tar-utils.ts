@@ -20,15 +20,11 @@ const UID_LENGTH = 8;
 const GID_LENGTH = 8;
 const SIZE_LENGTH = 12;
 const MTIME_LENGTH = 12;
-const CHKSUM_LENGTH = 8;
 const TYPEFLAG_OFFSET = 156;
 const MAGIC_OFFSET = 257;
 const VERSION_OFFSET = 263;
-const UNAME_LENGTH = 32;
-const GNAME_LENGTH = 32;
 const DEVMAJOR_LENGTH = 8;
 const DEVMINOR_LENGTH = 8;
-const PREFIX_LENGTH = 155;
 
 /**
  * Zero-padded octal string of the given length.

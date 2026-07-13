@@ -332,13 +332,13 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
 // Section divider label
 // ---------------------------------------------------------------------------
 
-export function SectionLabel({ children }: { children: ReactNode }) {
+export function SectionLabel({ children, uppercase = true }: { children: ReactNode; uppercase?: boolean }) {
   return (
     <div
       style={{
         fontSize: '11px',
         fontWeight: '600',
-        textTransform: 'uppercase',
+        textTransform: uppercase ? 'uppercase' : 'none',
         letterSpacing: '0.06em',
         color: 'var(--color-text-muted)',
         marginBottom: '12px',
