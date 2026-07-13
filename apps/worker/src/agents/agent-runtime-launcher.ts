@@ -482,7 +482,17 @@ export class AgentRuntimeLauncher {
       }
     }
 
-    if (files.length === 0) return ok(undefined);
+    if (files.length === 0) {
+      // Mark docs whose blobs couldn't be read as failed so they don't retry forever.
+      for (const doc of stagedDocs) {
+        if (!materializedIds.has(doc.id)) {
+          await repo.update(doc.id, { lifecycleState: 'failed' }).catch((err: unknown) => {
+            logger.warn({ err, docId: doc.id }, 'Failed to mark doc lifecycle as failed');
+          });
+        }
+      }
+      return ok(undefined);
+    }
 
     // 3. Materialize into workspace
     const matResult = await mat.materialize({ agentId, sessionId, files });

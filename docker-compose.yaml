@@ -68,6 +68,7 @@ services:
       DATABASE_URL: postgres://herobids:herobids@postgres:5432/herobids
       REDIS_URL: redis://redis:6379
       EVALUATION_STORAGE_ROOT: /app/app-data/evaluation-output
+      AGENT_DOCUMENTS_DIR: /app/app-data/agent-documents
       # Route Docker API calls through the restricted TCP proxy instead of raw Unix socket.
       DOCKER_HOST: tcp://docker-proxy:2375
       # PORT must stay in sync with the healthcheck below and app.port in config/default.yaml.
@@ -132,6 +133,7 @@ services:
       DATABASE_URL: postgres://herobids:herobids@postgres:5432/herobids
       REDIS_URL: redis://redis:6379
       EVALUATION_STORAGE_ROOT: /app/app-data/evaluation-output
+      AGENT_DOCUMENTS_DIR: /app/app-data/agent-documents
       DOCKER_HOST: tcp://docker-proxy:2375
       DOCKER_NETWORK: herobids_default
       AGENT_IMAGE: herobids-agent:latest
