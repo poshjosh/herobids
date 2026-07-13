@@ -335,7 +335,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   get_bot_status:      { category: 'read-database',       description: 'Get detailed status for a specific bot: config, runtime state, timestamps.' },
   get_account_summary: { category: 'read-database',       description: "Agent's trading account summary: capital, equity, open positions, P&L, risk limits." },
   get_risk_limits:     { category: 'read-database',       description: 'Get effective risk limits: which are mutable vs locked, plus runtime state.' },
-  find_instrument:     { category: 'read-database',       description: 'Find a tradable instrument by symbol/name. Returns instrumentId, symbol, decimals, venue.' },
+  find_instrument:     { category: 'read-database',       description: 'Find a tradable instrument by symbol/name. Returns instrumentId (venue-submittable), id (DB internal), symbol, base, quote, type, venue.' },
   resolve_bot:         { category: 'read-database',       description: 'Resolve a bot name/symbol to its bot ID for stop/start/config operations.' },
 
   // write-database

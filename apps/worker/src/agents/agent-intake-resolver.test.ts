@@ -296,6 +296,55 @@ describe('AgentIntakeResolver', () => {
       expect(result).toHaveProperty('retryable', false);
     });
 
+    it('accepts base ticker format for perp venues (find_instrument → submit_decision contract)', async () => {
+      // After the find_instrument fix (Option A), perp instruments return
+      // instrumentId = base ticker (e.g. "ZEC"), not a DB UUID.
+      // This test validates that the intake resolver accepts that format.
+      const { deps } = makeDeps({
+        instrumentCache: {
+          isReady: () => true,
+          hasSymbol: (venue: string, symbol: string) => {
+            // Simulate VenueInstrumentCache normalisation:
+            // Hyperliquid strips -PERP and /QUOTE:QUOTE suffixes → base ticker
+            if (venue === 'hyperliquid' && ['BTC', 'ETH', 'ZEC'].includes(symbol)) return true;
+            return false;
+          },
+        },
+      });
+      const resolver = new AgentIntakeResolver(deps);
+
+      // Base ticker (what find_instrument now returns for perps) should be accepted
+      const perpResult = await resolver.getIntakeDeps('agent-1', 'ZEC');
+      expect(perpResult).toBeDefined();
+      expect(perpResult).toHaveProperty('actorType', 'agent');
+      expect(perpResult).not.toHaveProperty('rejected');
+
+      // A base ticker not in the cache should still be rejected
+      const unknownResult = await resolver.getIntakeDeps('agent-1', 'DOGE');
+      expect(unknownResult).toBeDefined();
+      expect(unknownResult).toHaveProperty('rejected', true);
+      expect(unknownResult).toHaveProperty('code', 'instrument_unknown');
+    });
+
+    it('rejects DB UUID format — confirms the old bug path is closed', async () => {
+      // Before the fix, find_instrument returned DB UUIDs as instrumentId.
+      // This test proves that UUIDs are now rejected (they should never
+      // reach the intake resolver after the fix, but if they do, they fail).
+      const { deps } = makeDeps({
+        instrumentCache: {
+          isReady: () => true,
+          hasSymbol: () => false, // UUID will never match a venue symbol
+        },
+      });
+      const resolver = new AgentIntakeResolver(deps);
+
+      const result = await resolver.getIntakeDeps('agent-1', '63982074-a987-44a7-b943-6de1bb54ff6f');
+
+      expect(result).toBeDefined();
+      expect(result).toHaveProperty('rejected', true);
+      expect(result).toHaveProperty('code', 'instrument_unknown');
+    });
+
     it('allows known symbols through when cache is ready', async () => {
       const { deps } = makeDeps({
         instrumentCache: {

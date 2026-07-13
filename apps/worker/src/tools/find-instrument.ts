@@ -12,11 +12,11 @@ const FindInstrumentParamsSchema = z.object({
 
 const findInstrumentTool: AgentTool = {
   name: 'find_instrument',
-  description: 'Find a tradable instrument by symbol or name. Returns instrumentId, symbol, decimals, and venue. Use this to resolve an instrumentId before calling submit_decision, get_price, watch_token, or create_bot. To narrow by chain, use the venue filter (e.g. venue="jupiter" for Solana, venue="hyperliquid" for Arbitrum perps). Prefer this over guessing instrument IDs.',
+  description: 'Find a tradable instrument by symbol or name. Returns instrumentId (venue-submittable — base ticker for perps, pair symbol for swaps), id (internal DB identifier), symbol, base, quote, type, and venue. Use this to resolve the correct instrumentId before calling submit_decision. Also useful before get_price and watch_token (use the symbol or base field) and create_bot (use the symbol field). To narrow by chain, use the venue filter (e.g. venue="jupiter" for Solana, venue="hyperliquid" for Arbitrum perps). Prefer this over guessing instrument IDs.',
   parametersSchema: FindInstrumentParamsSchema,
   parameters: convertZodToJsonSchema(FindInstrumentParamsSchema),
   category: 'read-database',
-  promptGuidance: 'Call find_instrument before submit_decision to resolve the correct instrumentId. For swap venues, instrument IDs use pair format (e.g. "WETH/USDC"), not bare symbols. Tokens must be native to the venue\'s chain. Search by base token symbol, pair, or full symbol. Use venue="jupiter" for Solana tokens or venue="hyperliquid" for perpetuals.',  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  promptGuidance: 'Call find_instrument before submit_decision to resolve the correct instrumentId. The returned instrumentId is already venue-correct: use it directly in submit_decision. For perp venues the instrumentId is the base ticker (e.g. "ZEC"); for swap venues it is the pair symbol (e.g. "SOL/USDC"). Tokens must be native to the venue\'s chain. Search by base token symbol, pair, or full symbol. Use venue="jupiter" for Solana tokens or venue="hyperliquid" for perpetuals.',  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { query, venue, limit = 5 } = params as z.infer<typeof FindInstrumentParamsSchema>;
 
     if (!ctx.instrumentRepo) {
@@ -52,7 +52,11 @@ const findInstrumentTool: AgentTool = {
           query,
           count: results.length,
           instruments: results.map((r) => ({
-            instrumentId: r.id,
+            // instrumentId holds the value that submit_decision expects:
+            //   perp venues → base ticker (e.g. "ZEC")
+            //   swap/spot venues → pair symbol (e.g. "SOL/USDC")
+            instrumentId: r.type === 'perp' ? r.base : r.symbol,
+            id: r.id,
             symbol: r.symbol,
             base: r.base,
             quote: r.quote,
