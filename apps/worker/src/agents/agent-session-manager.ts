@@ -84,6 +84,7 @@ export interface AgentSessionManagerConfig {
 export class AgentSessionManager {
   private reconcileTimer?: ReturnType<typeof setInterval>;
   private containerReconcileTimer?: ReturnType<typeof setInterval>;
+  private liveDocRefreshTimer?: ReturnType<typeof setInterval>;
   private stopping = false;
   private readonly config: AgentSessionManagerConfig;
   /** Sessions whose trading actor has been bootstrapped on this worker. Prevents
@@ -130,6 +131,13 @@ export class AgentSessionManager {
         logger.error({ err }, 'Docker container reconciliation failed'),
       );
     }, this.config.containerReconcileIntervalMs ?? 60_000);
+    // Live document refresh — materialize documents that were uploaded while
+    // agents are running. No-op when the launcher has no document deps.
+    this.liveDocRefreshTimer = setInterval(() => {
+      this.runtimeLauncher.refreshLiveDocuments().catch((err: unknown) =>
+        logger.error({ err }, 'Live document refresh failed'),
+      );
+    }, 30_000);
   }
 
   /**
@@ -245,6 +253,10 @@ export class AgentSessionManager {
     if (this.containerReconcileTimer) {
       clearInterval(this.containerReconcileTimer);
       this.containerReconcileTimer = undefined;
+    }
+    if (this.liveDocRefreshTimer) {
+      clearInterval(this.liveDocRefreshTimer);
+      this.liveDocRefreshTimer = undefined;
     }
     // Deliberately NOT calling runtimeLauncher.stopAll() — containers outlive the worker.
   }

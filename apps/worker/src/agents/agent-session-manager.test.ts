@@ -75,6 +75,7 @@ describe('AgentSessionManager', () => {
       hasRuntime: vi.fn().mockReturnValue(false),
       registerRecoveredRuntime: vi.fn(),
       reconcile: vi.fn().mockResolvedValue(undefined),
+      refreshLiveDocuments: vi.fn().mockResolvedValue(undefined),
     };
 
     const reconnectHandler = {

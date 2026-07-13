@@ -507,6 +507,35 @@ export class AgentRuntimeLauncher {
   }
 
   /**
+   * Refresh documents for all live (running) sessions.
+   *
+   * Queries staged documents for each tracked runtime and materializes them
+   * into the agent's workspace. This allows documents uploaded while an agent
+   * is running to become available without a restart.
+   *
+   * Per-session error isolation: one session's failure does not block others.
+   * No-op when document dependencies are not configured.
+   */
+  async refreshLiveDocuments(): Promise<void> {
+    if (!this.documentsRepo || !this.documentStore || !this.documentMaterializer) {
+      return; // not configured — nothing to refresh
+    }
+
+    for (const [sessionId, handle] of this.runtimes) {
+      try {
+        const result = await this.materializeStagedDocuments(handle.agentId, sessionId);
+        if (!result.ok) {
+          logger.warn({ err: result.error, agentId: handle.agentId, sessionId },
+            'Failed to refresh live documents');
+        }
+      } catch (err) {
+        logger.warn({ err, agentId: handle.agentId, sessionId },
+          'Error refreshing live documents for session');
+      }
+    }
+  }
+
+  /**
    * Stop a runtime gracefully (SIGTERM, wait for exit).
    */
   async stop(sessionId: string): Promise<void> {
