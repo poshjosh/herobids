@@ -54,3 +54,4 @@ export { tokenSafetyOverrides } from './token-safety-overrides.js';
 export { decisionFailures } from './decision-failures.js';
 export { llmPricingSnapshots } from './llm-pricing-snapshots.js';
 export { agentEvaluations } from './agent-evaluations.js';
+export { agentDocuments } from './agent-documents.js';

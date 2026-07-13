@@ -288,6 +288,13 @@
       "when": 1783977600000,
       "tag": "0040_stamp_capability_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1783964673945,
+      "tag": "0041_hot_storm",
+      "breakpoints": true
     }
   ]
 }
