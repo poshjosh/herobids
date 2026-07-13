@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import fastifyMultipart from '@fastify/multipart';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import { createDatabase, EVALUATION_QUEUE_NAME } from '@herobids/db';
@@ -21,6 +22,7 @@ import { analyticsRoutes } from './routes/analytics.js';
 import { aiRoutes } from './routes/ai.js';
 import { skillsRoutes } from './routes/skills.js';
 import { datasetRoutes } from './routes/datasets.js';
+import { agentDocumentRoutes } from './routes/agent-documents.js';
 import { exportRoutes } from './routes/exports.js';
 import { agentEvaluationRoutes } from './routes/agent-evaluations.js';
 import { actorHealthRoutes } from './routes/actor-health.js';
@@ -166,6 +168,9 @@ const evaluationQueue = new Queue<EvaluationJobData>(EVALUATION_QUEUE_NAME, {
 // Register auth plugin (JWT verification on all non-public routes)
 await authPlugin(app, { config: appConfig.auth, db });
 
+// Multipart file upload support (10 MiB limit)
+await app.register(fastifyMultipart, { limits: { fileSize: 10 * 1024 * 1024 } });
+
 // CORS — allow the configured frontend origin to make credentialed requests
 await app.register(cors, {
   origin: [appConfig.auth.frontendOrigin],
@@ -219,6 +224,7 @@ await analyticsRoutes(app, db);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 await skillsRoutes(app, db, appConfig.plans);
 await datasetRoutes(app, db, redisClient);
+await agentDocumentRoutes(app, db);
 await exportRoutes(app, db);
 await agentEvaluationRoutes(app, evaluationQueue, db, {
   storageRoot: appConfig.evaluation.storageRoot,

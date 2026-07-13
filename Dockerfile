@@ -19,6 +19,7 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 RUN pnpm --filter @herobids/domain run build && \
     pnpm --filter @herobids/db run build && \
+    pnpm --filter @herobids/documents run build && \
     pnpm --filter @herobids/engine run build && \
     pnpm --filter @herobids/llm run build && \
     pnpm --filter @herobids/strategy run build && \

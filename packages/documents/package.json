@@ -1,0 +1,26 @@
+{
+  "name": "@herobids/documents",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" },
+    "./local-document-store": { "import": "./dist/local-document-store.js", "types": "./dist/local-document-store.d.ts" },
+    "./document-text-extractors": { "import": "./dist/document-text-extractors.js", "types": "./dist/document-text-extractors.d.ts" },
+    "./agent-document-service": { "import": "./dist/agent-document-service.js", "types": "./dist/agent-document-service.d.ts" }
+  },
+  "dependencies": {
+    "@herobids/db": "workspace:*",
+    "@herobids/domain": "workspace:*",
+    "pdf-parse": "^2.4.5",
+    "mammoth": "^1.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^5.5.0"
+  }
+}
