@@ -1,10 +1,10 @@
-# Get Started with HeroBids
+# Get Started with OpenAIDom
 
-HeroBids offers AI agents as a service. Describe what you want, and an agent gets it for you — starting with crypto trading on Hyperliquid perpetuals, Jupiter DEX swaps, and more.
+OpenAIDom offers AI agents as a service. Describe what you want, and an agent gets it for you — starting with crypto trading on Hyperliquid perpetuals, Jupiter DEX swaps, and more.
 
 ## 1. Sign up
 
-Go to the [HeroBids web app](/) and sign in. Your account is your control center — agents, bots, billing, and settings all live here.
+Go to the [OpenAIDom web app](/) and sign in. Your account is your control center — agents, bots, billing, and settings all live here.
 
 ## 2. Link Telegram (recommended)
 
@@ -43,4 +43,4 @@ Once created, click **Start** on your agent. It will:
 - [FAQs](/help/faqs) — Common questions about agents, Telegram, and billing.
 - [Agent Style](/docs/agents/agent-style) — Understand how agent styles control cost and behavior.
 - [Agent Billing Limits](/docs/agents/billing-limits) — Set spending caps so you never get a surprise bill.
-- [Pricing](/help/pricing) — How HeroBids pricing works.
+- [Pricing](/help/pricing) — How OpenAIDom pricing works.

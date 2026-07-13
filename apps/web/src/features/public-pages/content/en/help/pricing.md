@@ -1,6 +1,6 @@
 # Pricing
 
-HeroBids pricing is transparent. You pay for what your agents use — no hidden fees, no surprises.
+OpenAIDom pricing is transparent. You pay for what your agents use — no hidden fees, no surprises.
 
 ## Agent runtime
 

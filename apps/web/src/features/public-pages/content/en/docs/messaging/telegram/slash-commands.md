@@ -1,6 +1,6 @@
 # Telegram Slash Commands
 
-HeroBids supports Telegram slash-command routing for agent instructions when you are not replying to a specific agent message.
+OpenAIDom supports Telegram slash-command routing for agent instructions when you are not replying to a specific agent message.
 
 ## Command Format
 
@@ -25,13 +25,13 @@ Examples:
 
 If you send a plain Telegram message without `/to`:
 
-- When exactly one of your agents is available, HeroBids delivers the message to that agent automatically.
-- When multiple agents are available, HeroBids asks you to use `/to <agent name> <message>`.
-- When no agents are available, HeroBids tells you that no running agents were found.
+- When exactly one of your agents is available, OpenAIDom delivers the message to that agent automatically.
+- When multiple agents are available, OpenAIDom asks you to use `/to <agent name> <message>`.
+- When no agents are available, OpenAIDom tells you that no running agents were found.
 
 ## Delivery Responses
 
-HeroBids confirms delivery back in Telegram.
+OpenAIDom confirms delivery back in Telegram.
 
 Possible responses include:
 
@@ -42,4 +42,4 @@ Possible responses include:
 
 ## Interaction With Reply Threading
 
-Reply-threading still takes priority. If you reply directly to a HeroBids Telegram message, HeroBids routes that reply using the original message anchor instead of slash-command parsing.
+Reply-threading still takes priority. If you reply directly to an OpenAIDom Telegram message, OpenAIDom routes that reply using the original message anchor instead of slash-command parsing.

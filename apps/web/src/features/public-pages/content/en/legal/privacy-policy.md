@@ -2,7 +2,7 @@
 
 *Last updated: 2026-07-06*
 
-HeroBids ("we", "our", or "us") operates the HeroBids platform. This policy explains how we collect, use, and protect your data.
+OpenAIDom, operated by HeroBids ("we", "our", or "us"), is an AI agent platform. This policy explains how we collect, use, and protect your data.
 
 ## Data we collect
 

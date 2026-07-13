@@ -14,7 +14,7 @@ Once set up, you have three options:
 
 ## What is the scout-judge model, and how does escalation work?
 
-HeroBids uses a two-stage LLM routing system to balance cost and decision quality:
+OpenAIDom uses a two-stage LLM routing system to balance cost and decision quality:
 
 - **Scout** — A cheaper, faster model that runs every tick. It does triage: scanning positions, checking market conditions, and deciding whether the situation is routine or needs deeper analysis.
 - **Judge** — A more capable (and more expensive) model called in when the scout escalates. The judge has access to the full tool set and makes the actual trading decisions.
@@ -34,7 +34,7 @@ Your [agent style](/docs/agents/agent-style) sets the default policy (Careful �
 
 ## What are billing limits, and what happens when I hit them?
 
-HeroBids lets you set spending limits so you never get a surprise bill. There are two kinds:
+OpenAIDom lets you set spending limits so you never get a surprise bill. There are two kinds:
 
 - **Soft cap** — A warning threshold. When reached, you receive a notification (Telegram, email, or both) but your agent **keeps running normally**. No trading behavior changes.
 - **Hard cap** — A spending stop. When reached, your agent halts on the next tick. No further LLM calls are made. You receive a notification explaining the stop, and if you have open positions, the notification lists them so you can act.

@@ -19,4 +19,4 @@ Once your account is linked, your agents communicate with you directly on Telegr
 
 ## Status
 
-Check the HeroBids status page (coming soon) for service uptime and incident reports.
+Check the OpenAIDom status page (coming soon) for service uptime and incident reports.
