@@ -114,21 +114,11 @@ function BrandMark({ variant, size }: { variant: BrandVariant; size: BrandSize }
     return <TypographicMark size={size} variant={variant} />;
   }
 
-  // Single mark asset — CSS filter handles dark/light visibility.
-  // brightness(0) = pure black silhouette on light surfaces.
-  // brightness(0) invert(1) = pure white silhouette on dark surfaces.
-  const needsWhiteFilter = variant !== 'light';
-
   const img = (
     <img
       src={COMPACT_MARK}
       alt="OpenAIdom"
-      style={{
-        width: dims.mark,
-        height: dims.mark,
-        display: 'block',
-        filter: needsWhiteFilter ? 'brightness(0) invert(1)' : 'brightness(0)',
-      }}
+      style={{ width: dims.mark, height: dims.mark, display: 'block' }}
       onError={() => setFailed(true)}
     />
   );
@@ -191,20 +181,20 @@ function TypographicWordmark({
   variant: BrandVariant;
   responsive: boolean;
 }) {
-  const color = resolveTypographicColor(variant);
+  const white = '#FFFFFF';
+  const accent = '#635BFF';
   const fontSize = size === 'sm' ? '14px' : size === 'md' ? '18px' : '24px';
   const className = ['brand-wordmark', responsive && 'brand-wordmark-responsive'].filter(Boolean).join(' ');
 
   return (
     <span
       className={className}
-      style={{
-        ...TYPOGRAPHIC_STYLE,
-        fontSize,
-        color,
-      }}
+      style={{ ...TYPOGRAPHIC_STYLE, fontSize }}
+      aria-label="OpenAIdom"
     >
-      OpenAIdom
+      <span style={{ color: white }}>Open</span>
+      <span style={{ color: accent }}>AI</span>
+      <span style={{ color: white }}>dom</span>
     </span>
   );
 }
