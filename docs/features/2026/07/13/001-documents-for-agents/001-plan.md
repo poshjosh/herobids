@@ -636,9 +636,9 @@ Suggested copy:
 6. [PENDING] Wire create/edit UI
 7. [DONE] Materialize staged docs on runtime start
 8. [DONE] Add live-runtime materialization path
-9. [PENDING] Extend Telegram webhook for documents
-10. [PENDING] Switch `read_document` to the shared extractor path
-11. [PENDING] Add cleanup and observability
+9. [DONE] Extend Telegram webhook for documents
+10. [DONE] Switch `read_document` to the shared extractor path
+11. [DONE] Add cleanup and observability
 
 ## Risks
 

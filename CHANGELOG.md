@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Documents for Agents (v1):** Text-first document support for agents — upload documents via web UI or Telegram, automatically extracted and materialized into agent workspace. New `@herobids/documents` shared package, `agent_documents` DB schema, API endpoints, runtime materialization, Telegram document ingest, and shared PDF extraction. (10 of 11 rollout items complete; UI wiring pending.)
+
 ### Changed
 
 - **Brand asset consolidation:** Removed duplicate light/dark wordmarks and compact marks. `BrandLogo` now uses a single `compact-mark.png` (dark-background icon) with CSS filter (`brightness(0)` / `brightness(0) invert(1)`) for dark/light surface visibility, and typographic text for the wordmark — eliminating the "logo + logo" duplication.
