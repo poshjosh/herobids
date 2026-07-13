@@ -58,22 +58,23 @@ The current shape creates three implementation constraints:
 1. `/help`
    Returns the supported command list with short usage examples.
 2. `/agents`
-   Returns the caller's agents with current status, one per line.
+   Returns all caller-owned agents with current status, one per line.
 3. `/status`
-   Returns a compact summary of all caller-owned agents.
+   Returns a compact summary of all caller-owned agents, including lightweight details such as last session state and pause reason when available.
 4. `/status <agent name>`
    Returns status for the matching agent name, using case-insensitive exact matching and quoted-name support for spaces.
 
 ### Lifecycle commands
 
 1. `/start <agent name>`
-   Starts a stopped agent using the same validation and state transition rules as `POST /agents/:id/start`.
+   Starts the matching agent(s) using the same validation and state transition rules as `POST /agents/:id/start`.
+   If multiple caller-owned agents share the same case-insensitive exact name, all matching agents are started.
 2. `/pause <agent name>`
    Pauses an active or starting agent using the same rules as `POST /agents/:id/pause`.
 3. `/resume <agent name>`
    Resumes a paused agent using the same rules as `POST /agents/:id/resume`.
 4. `/stop <agent name>`
-   Stops a non-stopped agent using the same rules as `POST /agents/:id/stop`.
+   Stops a non-stopped agent immediately using the same rules as `POST /agents/:id/stop`.
 
 ### `/start` compatibility rule
 
@@ -315,11 +316,14 @@ Lock behavior down with focused coverage and publish the operator/user contract.
 
 ## Open Questions
 
-1. Should exact bare `/start` always remain onboarding/help, with lifecycle start only available as `/start <agent>`, or would you prefer a different lifecycle verb such as `/run`?
-2. Should `/status` return only status labels, or also include lightweight details such as last session state or pause reason?
-3. Should `/stop` execute immediately, or require a second explicit confirmation mechanism?
-4. Should Telegram lifecycle control remain agent-only in this slice, or do you want bot lifecycle commands planned at the same time?
-5. Should `/agents` include only active-ish agents by default, or all agents including stopped ones?
+All open questions are resolved:
+
+1. Exact bare `/start` remains onboarding/help; lifecycle start is only `/start <agent>`.
+2. `/start <agent>` starts every matching caller-owned agent if duplicate names exist.
+3. `/status` includes lightweight details such as last session state and pause reason when available.
+4. `/stop` executes immediately.
+5. Telegram lifecycle control remains agent-only in this slice.
+6. `/agents` includes all caller-owned agents, including stopped ones.
 
 ## Recommended First Implementation Order
 
