@@ -735,6 +735,76 @@ export class DockerAgentManager {
     await this.dockerRequest('DELETE', `/containers/${name}`);
   }
 
+/**
+ * Thrown when a Docker putArchive operation times out (30s).
+ * Used by callers to distinguish timeouts from other putArchive failures
+ * without fragile string matching on error messages.
+ */
+export class DockerPutArchiveTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DockerPutArchiveTimeoutError';
+  }
+}
+
+  /**
+   * Upload a tar archive to a path inside an agent container.
+   *
+   * Uses Docker's `PUT /containers/{name}/archive?path={containerPath}` API.
+   * The body must be a raw tar archive (`application/x-tar`), not JSON.
+   *
+   * @param agentId - Agent identifier (container name derived from it).
+   * @param containerPath - Absolute path inside the container to extract into.
+   * @param tarBuffer - Raw tar archive bytes.
+   */
+  async putArchive(
+    agentId: string,
+    containerPath: string,
+    tarBuffer: Buffer,
+  ): Promise<void> {
+    const name = `herobids-agent-${agentId}`;
+    const url = new URL(`/containers/${encodeURIComponent(name)}/archive`, this.dockerApiBase);
+    url.searchParams.set('path', containerPath);
+
+    try {
+      const res = await fetch(url.toString(), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/x-tar' },
+        body: tarBuffer,
+        signal: AbortSignal.timeout(30_000),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        const message = `Docker putArchive failed for ${name}: HTTP ${res.status} ${text.slice(0, 300)}`;
+        logger.error({ agentId, containerPath, status: res.status, body: text.slice(0, 200) }, 'putArchive failed');
+        throw new Error(message);
+      }
+
+      // Consume the response body to release the connection back to the pool
+      await res.body?.cancel();
+
+      logger.debug({ agentId, containerPath, tarSize: tarBuffer.length }, 'putArchive succeeded');
+    } catch (cause) {
+      // Re-throw HTTP errors we already threw above
+      if (cause instanceof Error && cause.message.startsWith('Docker putArchive failed')) {
+        throw cause;
+      }
+
+      // AbortSignal.timeout() produces a DOMException with name 'TimeoutError';
+      // also check 'AbortError' for environments where the spec differs.
+      if (cause instanceof DOMException && (cause.name === 'AbortError' || cause.name === 'TimeoutError')) {
+        const message = `Docker putArchive timed out for ${name} after 30s`;
+        logger.error({ err: cause, agentId, containerPath }, 'putArchive timed out');
+        throw new DockerPutArchiveTimeoutError(message);
+      }
+
+      const message = cause instanceof Error ? cause.message : String(cause);
+      logger.error({ err: cause, agentId, containerPath }, 'putArchive network error');
+      throw new Error(`Docker putArchive network error for ${name}: ${message}`);
+    }
+  }
+
   private dockerRequest(method: string, path: string, body?: unknown, suffix = ''): Promise<Response> {
     const url = `${this.dockerApiBase}${path}${suffix}`;
     const init: RequestInit = {

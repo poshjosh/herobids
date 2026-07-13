@@ -10,3 +10,4 @@ export * from './runtime.js';
 export * from './economic-calendar.js';
 export * from './document-store.js';
 export * from './document-text-extractor.js';
+export * from './runtime-document-materializer.js';
