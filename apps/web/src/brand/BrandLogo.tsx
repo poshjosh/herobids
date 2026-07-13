@@ -1,7 +1,5 @@
 import { useState, type CSSProperties } from 'react';
 import {
-  WORDMARK_LIGHT,
-  WORDMARK_DARK,
   COMPACT_MARK_LIGHT,
   COMPACT_MARK_DARK,
 } from './tokens.js';
@@ -119,16 +117,25 @@ function BrandMark({ variant, size }: { variant: BrandVariant; size: BrandSize }
     return <TypographicMark size={size} variant={variant} />;
   }
 
-  const darkAsset = COMPACT_MARK_LIGHT; // light mark = for dark surfaces
-  const lightAsset = COMPACT_MARK_DARK; // dark mark = for light surfaces
+  const darkAsset = COMPACT_MARK_LIGHT;
+  const lightAsset = COMPACT_MARK_DARK;
 
   const src = variant === 'dark' ? darkAsset : lightAsset;
+  // On dark surfaces the icon's native colours (navy/indigo) have poor contrast.
+  // Force pure white via CSS filter so the mark is always visible on dark UIs.
+  // Applies to both 'dark' and 'auto' — only 'light' surfaces skip the filter.
+  const needsWhiteFilter = variant !== 'light';
 
   const img = (
     <img
       src={src}
       alt="OpenAIdom"
-      style={{ width: dims.mark, height: dims.mark, display: 'block' }}
+      style={{
+        width: dims.mark,
+        height: dims.mark,
+        display: 'block',
+        ...(needsWhiteFilter ? { filter: 'brightness(0) invert(1)' } : {}),
+      }}
       onError={() => setFailed(true)}
     />
   );
@@ -162,47 +169,10 @@ function BrandWordmark({
   size: BrandSize;
   responsive: boolean;
 }) {
-  const [failed, setFailed] = useState(false);
-  const dims = SIZE_MAP[size];
-
-  if (failed) {
-    return <TypographicWordmark size={size} variant={variant} responsive={responsive} />;
-  }
-
-  const darkAsset = WORDMARK_LIGHT; // light wordmark = for dark surfaces
-  const lightAsset = WORDMARK_DARK; // dark wordmark = for light surfaces
-
-  const src = variant === 'dark' ? darkAsset : lightAsset;
-
-  const img = (
-    <img
-      src={src}
-      alt="OpenAIdom"
-      style={{ height: dims.wordmarkHeight, width: 'auto', display: 'block' }}
-      onError={() => setFailed(true)}
-    />
-  );
-
-  const className = ['brand-wordmark', responsive && 'brand-wordmark-responsive'].filter(Boolean).join(' ');
-
-  if (variant !== 'auto') {
-    return (
-      <span className={className}>
-        {img}
-      </span>
-    );
-  }
-
-  // auto: use <picture> with prefers-color-scheme
-  return (
-    <span className={className}>
-      <picture>
-        <source srcSet={lightAsset} media="(prefers-color-scheme: light)" />
-        <source srcSet={darkAsset} media="(prefers-color-scheme: dark)" />
-        {img}
-      </picture>
-    </span>
-  );
+  // Use typographic wordmark always — the source logo PNG is a combined
+  // icon+text image, not a text-only wordmark, so rendering it alongside
+  // the compact mark produces "logo + logo" instead of "logo + text".
+  return <TypographicWordmark size={size} variant={variant} responsive={responsive} />;
 }
 
 // ─── Typographic Fallback Components ─────────────────────────────────────────

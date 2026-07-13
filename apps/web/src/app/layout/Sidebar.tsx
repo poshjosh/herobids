@@ -56,7 +56,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
           justifyContent: 'space-between',
         }}
       >
-        <BrandLogo display="full" variant="light" size="md" linkTo="/" />
+        <BrandLogo display="full" variant="auto" size="md" linkTo="/" />
         {onClose && (
           // Only meaningful on mobile where the sidebar is an overlay.
           // Hidden on desktop via .sidebar-close-btn (display:none at ≥769px).
