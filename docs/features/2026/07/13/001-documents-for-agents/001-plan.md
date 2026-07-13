@@ -628,17 +628,17 @@ Suggested copy:
 
 ## Rollout Order
 
-1. Add `agent_documents` schema and repository methods
-2. Add `DocumentStore`, `DocumentTextExtractor`, `AgentDocumentService`
-3. Refactor PDF extraction into a shared implementation also usable by `read_document`
-4. Add `RuntimeDocumentMaterializer` abstractions
-5. Implement web upload endpoints
-6. Wire create/edit UI
-7. Materialize staged docs on runtime start
-8. Add live-runtime materialization path
-9. Extend Telegram webhook for documents
-10. Switch `read_document` to the shared extractor path
-11. Add cleanup and observability
+1. [DONE] Add `agent_documents` schema and repository methods
+2. [DONE] Add `DocumentStore`, `DocumentTextExtractor`, `AgentDocumentService`
+3. [DONE] Refactor PDF extraction into a shared implementation also usable by `read_document` (PdfTextExtractor created as shared module in Item 2; read_document wiring deferred to Item 10)
+4. [PENDING] Add `RuntimeDocumentMaterializer` abstractions
+5. [PENDING] Implement web upload endpoints
+6. [PENDING] Wire create/edit UI
+7. [PENDING] Materialize staged docs on runtime start
+8. [PENDING] Add live-runtime materialization path
+9. [PENDING] Extend Telegram webhook for documents
+10. [PENDING] Switch `read_document` to the shared extractor path
+11. [PENDING] Add cleanup and observability
 
 ## Risks
 
