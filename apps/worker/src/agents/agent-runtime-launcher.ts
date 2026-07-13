@@ -1,11 +1,15 @@
 import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
-import type { AgentRepository } from '@herobids/db';
+import type { AgentRepository, AgentDocumentsRepository } from '@herobids/db';
 import type {
   RuntimeDescriptor,
   RuntimePort,
   RuntimeResourceProfile,
+  DocumentStore,
+  RuntimeDocumentMaterializer,
 } from '@herobids/domain';
+import { ok } from '@herobids/domain';
+import { sanitizeFilename } from '@herobids/documents';
 import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
 import { DockerRuntimeAdapter } from './docker-runtime-adapter.js';
 import { DockerAgentManager } from './docker-agent-manager.js';
@@ -125,6 +129,22 @@ export interface AgentRuntimeLauncherConfig {
   dockerConfig?: DockerAgentManagerConfig;
   agentRepo?: AgentRepository;
   platformAlerts?: PlatformAlertService;
+  /**
+   * Repository for querying staged agent documents and marking them
+   * as materialized after they are copied into the runtime workspace.
+   * When absent, document materialization is skipped.
+   */
+  documentsRepo?: AgentDocumentsRepository;
+  /**
+   * Document blob store used to load staged document bodies for
+   * materialization. When absent, document materialization is skipped.
+   */
+  documentStore?: DocumentStore;
+  /**
+   * Materializer that copies documents into the agent's runtime workspace.
+   * When absent, document materialization is skipped.
+   */
+  documentMaterializer?: RuntimeDocumentMaterializer;
 }
 
 // ── Launcher ────────────────────────────────────────────────────────────────
@@ -160,6 +180,9 @@ export class AgentRuntimeLauncher {
   private readonly defaultResources: RuntimeResourceProfile;
   private readonly resourceProfiles: Record<string, RuntimeResourceProfile>;
   private readonly defaultTier?: string;
+  private readonly documentsRepo?: AgentDocumentsRepository;
+  private readonly documentStore?: DocumentStore;
+  private readonly documentMaterializer?: RuntimeDocumentMaterializer;
 
   constructor(config?: AgentRuntimeLauncherConfig) {
     this.redis = config?.redis;
@@ -175,6 +198,9 @@ export class AgentRuntimeLauncher {
       maxProcesses: 0,
       tempStorageMb: 0,
     };
+    this.documentsRepo = config?.documentsRepo;
+    this.documentStore = config?.documentStore;
+    this.documentMaterializer = config?.documentMaterializer;
 
     // Resolve the runtime port: explicit port > legacy mode path
     if (config?.port) {
@@ -356,6 +382,15 @@ export class AgentRuntimeLauncher {
     };
     this.runtimes.set(config.sessionId, handle);
 
+    // Materialize staged documents into the agent workspace.
+    // Non-fatal: the agent still runs without documents on failure.
+    if (this.documentsRepo && this.documentStore && this.documentMaterializer) {
+      const materializeResult = await this.materializeStagedDocuments(config.agentId, config.sessionId);
+      if (!materializeResult.ok) {
+        logger.warn({ err: materializeResult.error, agentId: config.agentId, sessionId: config.sessionId }, 'Failed to materialize staged documents — agent will run without them');
+      }
+    }
+
     // Stub heartbeat publishing — only fires when the port is a stub
     // (no real runtime to send heartbeats). The Redis check gates this.
     if (this.redis && !this.dockerManager) {
@@ -391,6 +426,84 @@ export class AgentRuntimeLauncher {
     const timer = setInterval(() => void publish(), this.heartbeatIntervalMs);
     this.heartbeatTimers.set(handle.sessionId, timer);
     logger.debug({ sessionId: handle.sessionId, agentId: handle.agentId, intervalMs: this.heartbeatIntervalMs }, 'Stub heartbeat publisher started');
+  }
+
+  /**
+   * Materialize staged documents into the agent's runtime workspace.
+   *
+   * Queries staged documents for the agent, loads blobs from the document store,
+   * writes them into the workspace via the materializer, and marks them as
+   * `materialized` in the database.
+   *
+   * Non-fatal: returns an error result on failure so the caller can log a
+   * warning and proceed with the launch.
+   */
+  private async materializeStagedDocuments(
+    agentId: string,
+    sessionId: string,
+  ): Promise<{ ok: true; data: void } | { ok: false; error: unknown }> {
+    const repo = this.documentsRepo!;
+    const store = this.documentStore!;
+    const mat = this.documentMaterializer!;
+
+    // 1. Query staged documents
+    const stagedDocs = await repo.listByAgent(agentId, { lifecycleState: 'staged' });
+    if (stagedDocs.length === 0) return ok(undefined);
+
+    // 2. Load blobs and build file list
+    const files: Array<{ relativePath: string; body: Buffer }> = [];
+    const materializedIds = new Set<string>();
+    for (const doc of stagedDocs) {
+      // Original file
+      const originalResult = await store.read(doc.originalStoreKey);
+      if (!originalResult.ok) {
+        logger.warn({ docId: doc.id, storeKey: doc.originalStoreKey, error: originalResult.error }, 'Skipping staged doc — original blob not found');
+        continue;
+      }
+      const safeName = sanitizeFilename(doc.originalFilename);
+      files.push({
+        relativePath: `original/${doc.id}-${safeName}`,
+        body: originalResult.data,
+      });
+      materializedIds.add(doc.id);
+
+      // Extracted text (if available)
+      if (doc.extractedTextStoreKey && doc.extractionStatus === 'ready') {
+        const extractedResult = await store.read(doc.extractedTextStoreKey);
+        if (extractedResult.ok) {
+          files.push({
+            relativePath: `extracted/${doc.id}.txt`,
+            body: extractedResult.data,
+          });
+        } else {
+          logger.warn({ docId: doc.id, storeKey: doc.extractedTextStoreKey, error: extractedResult.error },
+            'Skipping extracted text for staged doc — blob not found');
+        }
+      }
+    }
+
+    if (files.length === 0) return ok(undefined);
+
+    // 3. Materialize into workspace
+    const matResult = await mat.materialize({ agentId, sessionId, files });
+    if (!matResult.ok) return matResult;
+
+    // 4. Mark docs as materialized or failed
+    for (const doc of stagedDocs) {
+      if (materializedIds.has(doc.id)) {
+        await repo.update(doc.id, {
+          lifecycleState: 'materialized',
+          materializedSessionId: sessionId,
+        });
+      } else {
+        await repo.update(doc.id, {
+          lifecycleState: 'failed',
+        });
+      }
+    }
+
+    logger.info({ agentId, sessionId, docCount: stagedDocs.length, fileCount: files.length }, 'Staged documents materialized into workspace');
+    return ok(undefined);
   }
 
   /**

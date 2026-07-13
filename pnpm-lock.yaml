@@ -181,6 +181,9 @@ importers:
       '@herobids/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@herobids/documents':
+        specifier: workspace:*
+        version: link:../../packages/documents
       '@herobids/domain':
         specifier: workspace:*
         version: link:../../packages/domain

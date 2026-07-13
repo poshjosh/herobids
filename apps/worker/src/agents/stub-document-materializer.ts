@@ -27,6 +27,17 @@ export class StubRuntimeDocumentMaterializer implements RuntimeDocumentMateriali
 
     const paths = getWorkspacePaths(params.agentId);
 
+    // Reject path traversal attempts and absolute paths
+    for (const file of params.files) {
+      if (file.relativePath.includes('..') || file.relativePath.startsWith('/')) {
+        return err({
+          code: 'runtime_document_materializer.invalid_path',
+          message: `Invalid relativePath: "${file.relativePath}"`,
+          context: { agentId: params.agentId, sessionId: params.sessionId },
+        });
+      }
+    }
+
     try {
       // Ensure docs subdirs exist
       await mkdir(`${paths.root}/docs/original`, { recursive: true });

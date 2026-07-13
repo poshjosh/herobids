@@ -13,6 +13,7 @@
     "@aws-sdk/client-sesv2": "^3.1084.0",
     "@herobids/backtesting": "workspace:*",
     "@herobids/db": "workspace:*",
+    "@herobids/documents": "workspace:*",
     "@herobids/domain": "workspace:*",
     "@herobids/engine": "workspace:*",
     "@herobids/llm": "workspace:*",

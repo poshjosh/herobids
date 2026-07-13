@@ -16,7 +16,7 @@ import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { LlmStrategy, MechanicalStrategy, HybridStrategy, DcaStrategy } from '@herobids/strategy';
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, bots, users, agents } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, AgentDocumentsRepository, bots, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter } from '@herobids/venues';
 import { createFillFirstMarkSource } from '@herobids/engine';
@@ -50,6 +50,9 @@ import {
 } from './agents/index.js';
 import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/index.js';
 import { DockerAgentManager } from './agents/docker-agent-manager.js';
+import { DockerRuntimeDocumentMaterializer } from './agents/docker-document-materializer.js';
+import { StubRuntimeDocumentMaterializer } from './agents/stub-document-materializer.js';
+import { LocalDocumentStore } from '@herobids/documents';
 import { UserEventPublisher } from './user-event-publisher.js';
 import { ActorHealthPublisher } from './actor-health-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
@@ -171,6 +174,12 @@ const alertDeliveryRepo = new AlertDeliveryRepository(db);
 const tokenSafetyOverrideRepo = new TokenSafetyOverrideRepository(db);
 const decisionFailureRepo = new DecisionFailureRepository(db);
 const instrumentRepo = new InstrumentRepository(db);
+
+// Document store shared by API and worker — must use the same root directory.
+// Default matches the API's AGENT_DOCUMENTS_DIR default.
+const agentDocumentsRootDir = process.env['AGENT_DOCUMENTS_DIR'] ?? resolve(process.cwd(), 'data/agent-documents');
+const documentsRepo = new AgentDocumentsRepository(db);
+const documentStore = new LocalDocumentStore(agentDocumentsRootDir);
 
 const sharedMarketDataRegistry = appConfig.marketData
   ? createProviderRegistry(appConfig.marketData, { redisClient: redisClient as unknown as RedisEvalClient, discoverySeenClient: redisClient })
@@ -372,6 +381,7 @@ const agentRuntimeLauncher = (() => {
       undefined,
     );
     const dockerAdapter = new DockerRuntimeAdapter(dockerManager, agentRepo);
+    const dockerDocMaterializer = new DockerRuntimeDocumentMaterializer(dockerManager);
     return new AgentRuntimeLauncher({
       port: dockerAdapter,
       agentRepo,
@@ -379,6 +389,9 @@ const agentRuntimeLauncher = (() => {
       resourceProfiles,
       defaultTier,
       envConfig,
+      documentsRepo,
+      documentStore,
+      documentMaterializer: dockerDocMaterializer,
     });
   }
 
@@ -407,11 +420,23 @@ const agentRuntimeLauncher = (() => {
       resourceProfiles,
       defaultTier,
       envConfig,
+      documentsRepo,
+      documentStore,
+      // Document materialization is skipped for Nomad — remote nodes
+      // don't expose a Docker putArchive API from the worker.
     });
   }
 
   // 'stub' — in-memory fake for local dev without containers
-  return new AgentRuntimeLauncher({ redis: redisClient, defaultResources, resourceProfiles, defaultTier });
+  return new AgentRuntimeLauncher({
+    redis: redisClient,
+    defaultResources,
+    resourceProfiles,
+    defaultTier,
+    documentsRepo,
+    documentStore,
+    documentMaterializer: new StubRuntimeDocumentMaterializer(),
+  });
 })();
 
 // Worker-scoped oracle mark source (stateless, safe to share)

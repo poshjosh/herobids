@@ -245,7 +245,7 @@ export class AgentDocumentService {
  * Sanitize a filename so it is safe for use as a filesystem path segment.
  * Replaces path separators and control characters with underscores.
  */
-function sanitizeFilename(name: string): string {
+export function sanitizeFilename(name: string): string {
   return name
     .replace(/[/\\:*?"<>|]/g, '_')
     .replace(/[\x00-\x1f\x7f]/g, '')
