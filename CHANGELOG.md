@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.22 - 2026-07-13
+
 ### Added
 
 - **OpenAIdom Brand Rollout (9 slices):** Introduced OpenAIdom as the customer-facing brand across the web app, platform-authored email, and public documentation while keeping internal engineering names unchanged.
