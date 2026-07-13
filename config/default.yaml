@@ -743,7 +743,7 @@ billing:
 usageBilling:
   defaultCurrency: USD
   runtimeChargeWindowMs: 60000             # coarse agent runtime metering window in ms
-  warningThresholdsPct: [50, 80, 100]      # % of hard cap at which to emit spend warnings
+  warningThresholdsPct: [80, 100]          # % of hard cap at which to emit spend warnings
   defaultRateCardName: default             # rate card to use when opening new billing periods
   creditTopUpsEnabled: true                # whether users can purchase credit top-ups
   topUpProductsByProvider:                 # provider → [{packId, externalId, cents}]
@@ -762,7 +762,7 @@ usageBilling:
   defaultRateCardItems:                    # seed items for how much each type of agent activity costs
     - meterKey: "agent.runtime_ms"
       priceMicrousd: 100
-      perUnit: 60000
+      perUnit: 60000 
 
 # ---------------------------------------------------------------------------
 # Env-only overrides — read directly from process.env, not part of AppConfigSchema

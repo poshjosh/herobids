@@ -14,16 +14,31 @@ This is billed continuously while your agent is running. If your agent is stoppe
 
 ## LLM usage
 
-Your agents use large language models to reason about markets and make trading decisions. LLM costs depend on your agent's **style**:
+Your agents use large language models (LLMs) to reason about their tasks. LLM costs depend on the LLM you select and your agent's **style**:
 
-| Style | Daily budget (default) | Tick interval | What it means |
+| LLM | Est. cost/run | Est. cost/day **Economy** | Est. cost/day **Standard** | 
 |---|---|---|---|
-| **Careful** | $3/day | 90 min | Lowest cost. All cost-saving gates active. For long-horizon agents. |
-| **Balanced** | $10/day | 30 min | Moderate cost. Good for general-purpose trading. |
-| **Bold** | $30/day | 10 min | Highest cost. Fastest cadence, deepest reasoning. For time-sensitive strategies. |
+| Deepseek v4 flash | $0.015 | $0.25 | $0.74 |
+| Deepseek v4 pro | $0.054 | $0.87 | $2.59 |
+| Claude Sonnet 5 | $0.2 | $3.2 | $9.6 |
+| GPT 5.5 | $0.55 | $8.8 | $26.4 |
+| Claude Fable 5 | $1.00 | 16 | $48 |
+
+Notes:
+
+- _We estimated a run would cost 50k output and 10k input tokens. This is usually for heavy users. Most runs will cost less._
+- _Updated 15 July 2026_
+
+LLM cost limits also depend on your agent's **style**:
+
+| Style | Default daily limit | Tick interval | What it means |
+|---|---|---|---|
+| **Economy** | $3 | 90 min | Lowest cost. lower reasoning |
+| **Standard** | $10 | 30 min | Moderate cost. Moderate speed and reasoning |
+| **Premium** | $30 | 10 min | Highest cost. Fastest, deepest reasoning.  |
 | **Custom** | You set it | Derived from budget | Full control over your daily spend. |
 
-Your agent will never exceed its daily LLM budget. See [Agent Style](/docs/agents/agent-style) for the full breakdown of what each style controls.
+Your agent will typically use less than its daily limit/budget and will never exceed it. See [Agent Style](/docs/agents/agent-style) for the full breakdown of what each style controls.
 
 ## Billing caps (safety net)
 
@@ -35,23 +50,3 @@ Set optional spending limits so you never get a surprise bill:
 If you do not set any caps, no spending limits are enforced. Your agent will run until you stop it manually.
 
 See [Agent Billing Limits](/docs/agents/billing-limits) for details.
-
-## Estimating your monthly cost
-
-A **Balanced** agent running 24/7:
-
-| Component | Calculation | Monthly |
-|---|---|---|
-| Runtime | 43,200 min × $0.0001 | $4.32 |
-| LLM (Balanced) | 30 days × $10 | $300.00 |
-| **Total** | | **~$304.32** |
-
-A **Careful** agent running 24/7:
-
-| Component | Calculation | Monthly |
-|---|---|---|
-| Runtime | 43,200 min × $0.0001 | $4.32 |
-| LLM (Careful) | 30 days × $3 | $90.00 |
-| **Total** | | **~$94.32** |
-
-You only pay for runtime when your agent is actively running. Pause it anytime to stop runtime charges.

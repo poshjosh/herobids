@@ -375,7 +375,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <form id="edit-agent-form" onSubmit={handleSubmit}>
           {/* Skill Preset — same label as create agent form */}
-          <div style={{ marginBottom: '14px' }}>
+          <div style={{ marginBottom: '20px' }}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.create.skillPreset' })}</FieldLabel>
             <select
               value={skillPreset}
@@ -425,7 +425,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
 
           {/* Custom skill picker — shown inline when custom preset is selected */}
           {skillPreset === 'custom' && (
-            <div style={{ marginBottom: '14px' }}>
+            <div style={{ marginBottom: '20px' }}>
               <SkillPicker
                 skills={selectableSkills}
                 selectedSkillIds={form.skillIds}
@@ -437,7 +437,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
           )}
 
           {/* Goal */}
-          <div data-field="goal" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '14px' }}>
+          <div data-field="goal" style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '20px' }}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.edit.objective' })}</FieldLabel>
             <textarea
               style={{ ...inputStyle, minHeight: '72px', resize: 'vertical' }}
@@ -456,7 +456,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
           </div>
 
           {/* Agent Style */}
-          <div style={{ marginBottom: '14px' }}>
+          <div style={{ marginBottom: '20px' }}>
             <StyleSelector
               value={style}
               onChange={(nextStyle) => {

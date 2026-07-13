@@ -209,18 +209,18 @@ export function AgentFormBody(props: AgentFormBodyProps) {
   const fieldGap: React.CSSProperties = {
     display: 'flex',
     flexDirection: 'column',
-    gap: '4px',
-    marginBottom: '14px',
+    gap: '6px',
+    marginBottom: '20px',
   };
 
   const errorStyle: React.CSSProperties = {
     color: 'var(--color-danger)',
     fontSize: '12px',
-    marginTop: '4px',
+    marginTop: '2px',
   };
 
   const helperStyle: React.CSSProperties = {
-    marginTop: '4px',
+    marginTop: '2px',
     fontSize: '12px',
     color: 'var(--color-text-muted)',
     lineHeight: '1.5',

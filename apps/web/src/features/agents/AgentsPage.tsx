@@ -725,7 +725,7 @@ function CreateAgentFlow({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
           {/* 1. Skill Preset — first, sets context for everything else */}
-          <div>
+          <div style={{ marginBottom: '20px' }}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.create.skillPreset' })}</FieldLabel>
             <select
               value={intent.skillPreset}
@@ -761,7 +761,7 @@ function CreateAgentFlow({
 
           {/* Custom skill picker — shown inline when custom preset is selected */}
           {intent.skillPreset === 'custom' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
               <div style={{ fontSize: '14px', fontWeight: '600' }}>
                 {intl.formatMessage({ id: 'agents.create.skills' })}
               </div>
@@ -776,7 +776,7 @@ function CreateAgentFlow({
           )}
 
           {/* 2. Goal */}
-          <div data-field="goal" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div data-field="goal" style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '20px' }}>
             <FieldLabel>{intl.formatMessage({ id: intent.capabilityMode === 'hybrid' ? 'agents.create.goalBoth' : 'agents.create.goal' })}</FieldLabel>
             <textarea
               style={{ ...inputStyle, minHeight: '72px', resize: 'vertical' }}
@@ -793,7 +793,7 @@ function CreateAgentFlow({
           </div>
 
           {/* 3. Style Selector */}
-          <div>
+          <div style={{ marginBottom: '20px' }}>
             <StyleSelector
               value={intent.style}
               onChange={(style) => {
