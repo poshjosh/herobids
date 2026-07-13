@@ -517,7 +517,29 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
           margin: 'auto 0',
         }}
       >
-        <div style={{ fontWeight: '600', fontSize: '17px', marginBottom: '24px' }}>{title}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <div style={{ fontWeight: '600', fontSize: '17px' }}>{title}</div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px',
+              borderRadius: '4px',
+              color: 'var(--color-text-muted)',
+              fontSize: '18px',
+              lineHeight: '1',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            ✕
+          </button>
+        </div>
         {children}
       </div>
     </div>
