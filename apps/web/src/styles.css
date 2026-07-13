@@ -2,6 +2,21 @@
 @plugin "@tailwindcss/typography";
 
 @theme {
+  /* ─── OpenAIDom Brand Palette ────────────────────────────────────────────
+   * Derived from docs/product/brand/brand-palette.md.
+   * These are the authoritative brand tokens for the OpenAIDom identity.
+   * See apps/web/src/brand/tokens.ts for the full contract.
+   * ──────────────────────────────────────────────────────────────────────── */
+  --brand-primary: #101828;
+  --brand-accent: #635BFF;
+  --brand-white: #FFFFFF;
+  --brand-light-gray: #F5F7FA;
+  --brand-dark-bg: #0B1220;
+
+  /* ─── Legacy Teal Brand (pre-OpenAIDom) ──────────────────────────────────
+   * Retained for backward compatibility during the phased rollout.
+   * Slice 2+ will migrate consumers to the OpenAIDom tokens above.
+   * ──────────────────────────────────────────────────────────────────────── */
   --color-brand: oklch(62% 0.19 170);
   --color-brand-dim: oklch(52% 0.16 170);
   --color-brand-subtle: oklch(30% 0.08 170);
