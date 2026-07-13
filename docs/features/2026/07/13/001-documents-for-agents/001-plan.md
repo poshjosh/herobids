@@ -633,7 +633,7 @@ Suggested copy:
 3. [DONE] Refactor PDF extraction into a shared implementation also usable by `read_document` (PdfTextExtractor created as shared module in Item 2; read_document wiring deferred to Item 10)
 4. [DONE] Add `RuntimeDocumentMaterializer` abstractions
 5. [DONE] Implement web upload endpoints
-6. [PENDING] Wire create/edit UI
+6. [PENDING] Wire create/edit UI → see [002-ui-plan.md](./002-ui-plan.md)
 7. [DONE] Materialize staged docs on runtime start
 8. [DONE] Add live-runtime materialization path
 9. [DONE] Extend Telegram webhook for documents
@@ -648,6 +648,59 @@ Suggested copy:
 4. **Large extracted text can exceed current file-tool limits.** Truncation rules must be explicit.
 5. **Partial create success is possible.** Agent may be created even if document upload fails.
 6. **Divergent parser behavior is a product risk.** If upload extraction and `read_document` use different PDF parsers, the same file may yield different results depending on entry path.
+
+## Outstanding Issues
+
+### Item 1: `agent_documents` schema and repository
+
+**MEDIUM**
+- Missing unit tests for `AgentDocumentsRepository`: create, getById (soft-delete filtering), listByAgent (lifecycle filtering, soft-delete filtering), update (mutable-only), delete (lifecycleState transition, idempotency), hardDelete.
+
+**LOW**
+- `update()` can modify soft-deleted records without clearing `deletedAt`. Service layer should enforce lifecycle state-machine.
+- No pagination on `listByAgent`. Acceptable for v1.
+- No index on `lifecycle_state`. Could add `(agent_id, lifecycle_state)`.
+- `listByAgent` single-value `inArray` usage — style nit.
+
+### Item 2: DocumentStore, DocumentTextExtractor, AgentDocumentService
+
+**MEDIUM**
+- (`document-text-extractors.ts`): `as unknown as PdfParseV2` bypasses TypeScript strict checks. Should validate with Zod or define full interface.
+- (`agent-document-service.ts`): `UploadDocumentResult.extractionStatus` and `.lifecycleState` typed as `string` instead of literal union types from `@herobids/db`.
+- (`local-document-store.ts`): Dead `catch` block in `delete()` — `Promise.allSettled` never rejects.
+
+**LOW**
+- Hardcoded limits (`MAX_UPLOAD_BYTES`, `ALLOWED_UPLOAD_MIME_TYPES`) should move to operator config. TODO comments added.
+
+### Item 4: RuntimeDocumentMaterializer
+
+**LOW**
+- Stub materializer missing path-traversal guard (Docker impl has it). Stub mode is dev-only, low risk.
+- Missing unit tests for `tar-utils`, stub-materializer, docker-materializer.
+
+### Item 5: Web upload endpoints + `packages/documents/`
+
+**MEDIUM**
+- `getDocuments` and `deleteDocument` in `AgentDocumentService` lack try/catch for DB errors — violate "Public APIs never throw" rule.
+- Hardcoded constants (`MAX_UPLOAD_BYTES`, `ALLOWED_UPLOAD_MIME_TYPES`, etc.) with deferred config migration.
+- Truncation metadata (`truncated`, `truncatedAtBytes`) not persisted to DB row. Schema needs new columns.
+- Worker doesn't list `@herobids/documents` as dependency yet.
+
+### Items 7–8: Materialization paths
+
+**MEDIUM**
+- `materializeStagedDocuments` return type claims `Result<void, unknown>` but has no try/catch — if `repo.listByAgent` throws, exception propagates.
+- Theoretical race: handle added to `this.runtimes` before `materializeStagedDocuments`, creating a narrow window where the 30s refresh could concurrently materialize the same staged docs.
+- Extracted text blob read failure silently swallowed (no warning log) in upload path.
+
+**LOW**
+- `materializeStagedDocuments` uses `repo.update()` in a loop without a transaction — partial state on crash is benign (re-materialization is idempotent).
+
+### Cross-cutting
+
+**MEDIUM**
+- Missing unit and integration tests across all new modules (repositories, services, extractors, materializers, API routes).
+- `AgentDocumentService.getDocuments()` returns bare array instead of `Result` — inconsistent with `uploadDocument`/`deleteDocument`.
 
 ## Recommendation
 
