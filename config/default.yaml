@@ -634,6 +634,7 @@ alerts:
     fromEmail: ""                   # sender address (must be verified in SES) — override: EMAIL_FROM_EMAIL
     replyToEmail: ""                # optional reply-to address — override: EMAIL_REPLY_TO_EMAIL
     timeoutMs: 10000                # request timeout in ms — override: EMAIL_TIMEOUT_MS
+    # brandImageUrl: ""            # absolute URL to brand wordmark for email header — override: EMAIL_BRAND_IMAGE_URL (defaults to typographic header)
     ses:
       region: us-east-1             # AWS region — override: AWS_REGION
       # configurationSetName: ""    # optional config set — override: SES_CONFIGURATION_SET_NAME

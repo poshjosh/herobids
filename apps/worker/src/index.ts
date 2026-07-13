@@ -618,7 +618,7 @@ const workerEmailConfig: EmailClientConfig = {
 };
 const workerEmail = createEmailClient(workerEmailConfig);
 
-const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined, workerEmail);
+const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined, workerEmail, appConfig.alerts.email.brandImageUrl);
 
 async function sendSessionStartedTelegramAnchor(agentId: string, sessionId: string): Promise<void> {
   if (!workerTelegram) {
@@ -925,6 +925,7 @@ const agentBroker = new AgentMessageBroker(
     }
   },
   appConfig.agentRiskDefaults,
+  appConfig.alerts.email.brandImageUrl,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);

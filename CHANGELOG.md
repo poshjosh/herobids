@@ -13,6 +13,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Platform safety alerts: Telegram messages now say "OpenAIdom Safety Alert" instead of "HeroBids Safety Alert".
   - Added comprehensive test suite for `PlatformAlertService` (31 tests covering persistence, Telegram delivery, email delivery, dual-channel, event subject mapping, and edge cases).
   - Auth mailer tests now assert HTML content structure, CTA presence, and brand colors.
+  - Wired `wordmark-dark.png` brand asset into email renderer via new `alerts.email.brandImageUrl` config field, falling back to typographic header when unset.
+  - `PlatformAlertService`, `AgentMessageBroker` (billing), and `createAuthMailer` all pass `brandImageUrl` through to `renderEmail()`.
+  - Default configs: staging → `staging.openaidom.com`, production → `openaidom.com`.
 
 ## v0.0.23 - 2026-07-13
 

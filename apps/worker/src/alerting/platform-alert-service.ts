@@ -58,6 +58,7 @@ export class PlatformAlertService {
     private readonly telegram: TelegramClient | undefined,
     _botToken: string | undefined,
     private readonly emailClient?: EmailClient,
+    private readonly brandImageUrl?: string,
   ) {}
 
   /**
@@ -130,6 +131,7 @@ export class PlatformAlertService {
           footerNote: ctx.agentName
             ? `Agent: ${ctx.agentName} (${ctx.agentId.slice(0, 8)})`
             : `Agent ID: ${ctx.agentId.slice(0, 8)}`,
+          ...(this.brandImageUrl ? { brandImageUrl: this.brandImageUrl } : {}),
         });
 
         const emailResult = await this.emailClient.send({

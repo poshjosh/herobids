@@ -180,7 +180,7 @@ app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOStrin
 await telegramWebhookHandler(app, db, redisClient, appConfig.alerts);
 
 // Auth routes (public — Google OAuth flow + exchange endpoint)
-const authMailer = createAuthMailer(appConfig.alerts);
+const authMailer = createAuthMailer(appConfig.alerts, appConfig.auth.frontendOrigin ? `${appConfig.auth.frontendOrigin}/brand/wordmark-dark.png` : undefined);
 await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId, appConfig.plans, authMailer);
 
 // ── Capability routes (primary public surface) ────────────────────────────

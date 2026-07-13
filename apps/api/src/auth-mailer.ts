@@ -17,8 +17,9 @@ export interface AuthMailer {
  * Create an AuthMailer from the operator alerts config.
  * Returns undefined when email is not configured (auth emails are disabled).
  */
-export function createAuthMailer(config: AlertsConfig): AuthMailer | undefined {
+export function createAuthMailer(config: AlertsConfig, brandImageUrl?: string): AuthMailer | undefined {
   const email = config.email;
+  const effectiveBrandImageUrl = brandImageUrl ?? email.brandImageUrl;
   if (!email.fromEmail || email.provider !== 'ses') {
     return undefined;
   }
@@ -45,6 +46,7 @@ export function createAuthMailer(config: AlertsConfig): AuthMailer | undefined {
           '<p>If you did not request this link, you can safely ignore this email.</p>',
         ].join('\n'),
         cta: { text: 'Sign In', url: link },
+        ...(effectiveBrandImageUrl ? { brandImageUrl: effectiveBrandImageUrl } : {}),
       });
 
       const command = new SendEmailCommand({

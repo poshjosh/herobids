@@ -39,3 +39,5 @@ liveRollout:
 # Enable explicitly for webhook/debugging smoke tests via ALERTS_ENABLED=true.
 alerts:
   enabled: false
+  email:
+    brandImageUrl: https://staging.openaidom.com/brand/wordmark-dark.png

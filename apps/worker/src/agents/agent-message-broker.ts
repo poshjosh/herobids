@@ -107,6 +107,7 @@ export class AgentMessageBroker {
     private readonly emailClient?: EmailClient,
     readonly onAgentConfigUpdate?: (agentId: string, config: Record<string, unknown> | null) => void,
     private readonly agentRiskDefaults?: AgentRiskDefaultsConfig,
+    private readonly brandImageUrl?: string,
   ) {}
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
@@ -1222,7 +1223,10 @@ export class AgentMessageBroker {
         const emailContent = isHard
           ? this.buildHardLimitEmailContent(agent.name, openPositions)
           : this.buildSoftLimitEmailContent(agent.name);
-        const rendered = renderEmail(emailContent);
+        const rendered = renderEmail({
+          ...emailContent,
+          ...(this.brandImageUrl ? { brandImageUrl: this.brandImageUrl } : {}),
+        });
         const result = await this.emailClient.send({
           to: recipientEmail,
           subject: rendered.subject,

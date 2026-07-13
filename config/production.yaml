@@ -35,3 +35,7 @@ agentRuntime:
 # Alerting — no default here. Operators opt in explicitly via
 # ALERTS_ENABLED=true and the Telegram/email env vars in .env.prod.
 
+alerts:
+  email:
+    brandImageUrl: https://openaidom.com/brand/wordmark-dark.png
+

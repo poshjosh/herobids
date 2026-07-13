@@ -558,6 +558,11 @@ export const AlertsConfigSchema = z.object({
     replyToEmail: z.string().optional(),
     /** Request timeout in ms. Override: EMAIL_TIMEOUT_MS */
     timeoutMs: z.number().int().min(1000).default(10_000),
+    /** Absolute URL to the brand wordmark/logo image used in email headers.
+     *  When set, the renderer includes an <img> above the typographic header.
+     *  When omitted, only the typographic 'OpenAIdom' header is shown.
+     *  Override: EMAIL_BRAND_IMAGE_URL */
+    brandImageUrl: z.string().url().optional(),
     /** SES-specific configuration. Credentials are sourced from the standard
      *  AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars. */
     ses: z.object({
