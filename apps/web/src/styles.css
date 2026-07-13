@@ -198,6 +198,20 @@ body {
   .page-shell-responsive {
     padding: 16px;
   }
+
+  /* ─── Brand Logo Responsive ──────────────────────────────────────────────────
+   * Collapses the full brand logo to mark-only on small viewports.
+   * Applied automatically by BrandLogo when display="full".
+   * ──────────────────────────────────────────────────────────────────────────── */
+  .brand-wordmark.brand-wordmark-responsive {
+    display: none;
+  }
+}
+
+/* ─── Brand Logo ────────────────────────────────────────────────────────────── */
+.brand-wordmark {
+  display: inline-flex;
+  align-items: center;
 }
 
 /* ─── Responsive card grid ─────────────────────────────────────────────────── */
