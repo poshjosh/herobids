@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.24 - 2026-07-13
+
 ### Added
 
 - **Documents for Agents (v1):** Text-first document support for agents — upload documents via web UI or Telegram, automatically extracted and materialized into agent workspace. New `@herobids/documents` shared package, `agent_documents` DB schema, API endpoints, runtime materialization, Telegram document ingest, and shared PDF extraction. (10 of 11 rollout items complete; UI wiring pending.)
