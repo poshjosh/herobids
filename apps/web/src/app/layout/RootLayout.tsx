@@ -5,6 +5,7 @@ import { useSession } from '../providers/SessionProvider.js';
 import { useLocale } from '../i18n/I18nProvider.js';
 import { Sidebar } from './Sidebar.js';
 import { PublicFooter } from '../../features/public-pages/PublicLayout.js';
+import { BrandLogo } from '../../brand/BrandLogo.js';
 
 export function RootLayout() {
   const { authenticated, loading } = useSession();
@@ -52,9 +53,7 @@ export function RootLayout() {
           >
             ☰
           </button>
-          <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--color-brand)' }}>
-            HeroBids
-          </span>
+          <BrandLogo display="mark" variant="dark" size="sm" />
         </div>
 
         <div style={{ flex: 1 }}>

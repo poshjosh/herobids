@@ -93,9 +93,9 @@ export function MarkdownPage({ section, page, locale, fallbackTitle }: MarkdownP
 
   // Set document title
   useEffect(() => {
-    document.title = `${title} — HeroBids`;
+    document.title = `${title} — OpenAIDom`;
     return () => {
-      document.title = 'HeroBids';
+      document.title = 'OpenAIDom';
     };
   }, [title]);
 

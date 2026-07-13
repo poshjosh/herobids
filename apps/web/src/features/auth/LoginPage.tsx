@@ -5,6 +5,7 @@ import { config } from '../../lib/config.js';
 import { auth } from '../../lib/api-client.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
+import { BrandLogo } from '../../brand/BrandLogo.js';
 
 type PageState = 'passwordCollapsed' | 'passwordExpanded' | 'sendingLoginLink' | 'signingInWithPassword' | 'loginLinkSent' | 'resendingLoginLink';
 
@@ -394,16 +395,8 @@ function PageShell({ children }: { children: React.ReactNode }) {
     >
       <div className="auth-card">
         <div style={{ textAlign: 'center' }}>
-          <div
-            style={{
-              fontSize: '28px',
-              fontWeight: '700',
-              color: 'var(--color-brand)',
-              letterSpacing: '-0.5px',
-              marginBottom: '8px',
-            }}
-          >
-            HeroBids
+          <div style={{ marginBottom: '8px' }}>
+            <BrandLogo display="full" variant="dark" size="lg" />
           </div>
           <div style={{ color: 'var(--color-text-secondary)', fontSize: '15px', marginBottom: '20px' }}>
             {intl.formatMessage({ id: 'auth.tagline' })}

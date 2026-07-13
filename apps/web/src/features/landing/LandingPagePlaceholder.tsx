@@ -1,5 +1,6 @@
 import { Link, Navigate } from 'react-router';
 import { useSession } from '../../app/providers/SessionProvider.js';
+import { BrandLogo } from '../../brand/BrandLogo.js';
 
 export function LandingPagePlaceholder() {
   const { user, loading } = useSession();
@@ -30,8 +31,8 @@ export function LandingPagePlaceholder() {
       padding: '24px',
       textAlign: 'center',
     }}>
-      <div style={{ fontSize: '32px', fontWeight: '700', color: 'var(--color-brand)', marginBottom: '16px' }}>
-        HeroBids
+      <div style={{ marginBottom: '16px' }}>
+        <BrandLogo display="full" variant="auto" size="lg" />
       </div>
       <div style={{ fontSize: '18px', color: 'var(--color-text-secondary)', marginBottom: '8px', maxWidth: '480px' }}>
         AI agents as a service. Describe what you want, and an agent gets it for you.

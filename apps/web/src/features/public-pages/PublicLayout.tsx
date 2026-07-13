@@ -4,6 +4,7 @@ import { useIntl } from 'react-intl';
 import { useLocale } from '../../app/i18n/I18nProvider.js';
 import type { SupportedLocale } from '../../app/i18n/resolveLocale.js';
 import { PUBLIC_PAGE_REGISTRY, getSectionPages } from './contentRegistry.js';
+import { BrandLogo } from '../../brand/BrandLogo.js';
 
 interface PublicLayoutProps {
   children: ReactNode;
@@ -59,17 +60,7 @@ export function PublicLayout({ children, translated = false, section, page, loca
           background: 'var(--color-surface-1)',
         }}
       >
-        <a
-          href="/"
-          style={{
-            fontSize: '18px',
-            fontWeight: '700',
-            color: 'var(--color-text-primary)',
-            textDecoration: 'none',
-          }}
-        >
-          HeroBids
-        </a>
+        <BrandLogo display="full" variant="auto" size="lg" linkTo="/" />
 
         <nav style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <a href={publicUrl('help', 'get-started', effectiveLocale)} style={navLinkStyle}>
@@ -287,7 +278,7 @@ export function PublicFooter({ locale }: { locale: SupportedLocale }) {
           fontSize: '12px',
         }}
       >
-        © {new Date().getFullYear()} HeroBids. All rights reserved.
+        © {new Date().getFullYear()} OpenAIDom. All rights reserved.
       </div>
     </footer>
   );

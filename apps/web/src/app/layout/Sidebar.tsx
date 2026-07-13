@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { useIntl } from 'react-intl';
 import { useSession } from '../providers/SessionProvider.js';
+import { BrandLogo } from '../../brand/BrandLogo.js';
 
 export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => void }) {
   const location = useLocation();
@@ -55,9 +56,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
           justifyContent: 'space-between',
         }}
       >
-        <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--color-brand)', letterSpacing: '-0.3px' }}>
-          HeroBids
-        </div>
+        <BrandLogo display="full" variant="dark" size="md" linkTo="/" />
         {onClose && (
           // Only meaningful on mobile where the sidebar is an overlay.
           // Hidden on desktop via .sidebar-close-btn (display:none at ≥769px).
