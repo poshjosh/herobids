@@ -1,6 +1,6 @@
 # Plan: Documents For Agents — UI Wiring
 
-**Status:** draft  
+**Status:** done  
 **Created:** 2026-07-13  
 **Parent:** [001-plan.md](./001-plan.md) — Item 6: Wire create/edit UI
 
