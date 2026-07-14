@@ -67,7 +67,7 @@ The current shape creates three implementation constraints:
 ### Configuration (agent must be stopped)
 
 14. `/mode <agent name> [paper|shadow|live]` — show or set execution mode (shadow is admin-only)
-15. `/connect <agent name> [connection-id|label]` — grant a connection by ID or label; if no ID/label given, generates a one-time setup link to create a connection in the browser
+15. `/connect <agent name> [connection-id|label]` — grant a connection by ID or label; if no ID/label is given, generate a one-time setup link to create a connection in the browser
 16. `/disconnect <agent name> <connection-id|label>` — revoke a connection from an agent by ID or label
 
 ### Messaging (existing)
@@ -134,9 +134,10 @@ The current shape creates three implementation constraints:
 19. `/mode <agent name> <paper|shadow|live>`
     Sets the execution mode. Validates that the agent has trading skills, enforces shadow-is-admin-only, and rejects if the agent is not stopped.
 20. `/connect <agent name>` (no third argument)
-    If the user has no active connections, or as a convenience, generates a one-time auto-expiring
-    link that opens the "Connect AI agent to external platform" form in the browser. Same flow as
-    the former `/setup` — see [Appendix A](#appendix-a-setup-link-flow--full-design).
+   Requires the agent to be stopped. If the user has no active connections, or as a convenience,
+   generates a one-time auto-expiring link that opens the "Connect AI agent to external platform"
+   form in the browser. Same flow as the former `/setup` — see
+   [Appendix A](#appendix-a-setup-link-flow--full-design).
     If the user already has active connections, lists them with truncated IDs and labels so they
     can copy a specific one for the `/connect <agent> <id>` form.
 21. `/connect <agent name> <connection-id|label>`
@@ -379,9 +380,9 @@ pre-configured for trading providers only.
 4. User-visible responses should be short, deterministic, and safe to retry.
 5. Unknown commands should reply with help rather than failing silently.
 6. `/to` reply-threading and plain-message routing must keep working unchanged.
-7. `/connect`, `/disconnect`, and `/mode` (set) require the target agent to be in `stopped` status, consistent with the HTTP API's PUT/PATCH constraint. The read-only forms (`/mode <agent>` without a mode, `/connections <agent>`, `/connect <agent>` without an id) work regardless of agent status.
+7. `/connect`, `/disconnect`, and `/mode` (set) require the target agent to be in `stopped` status, consistent with the HTTP API's PUT/PATCH constraint. The read-only forms (`/mode <agent>` without a mode and `/connections <agent>`) work regardless of agent status.
 8. `/restart` is a convenience only — it must not introduce new state transitions or bypass existing lifecycle validation. If stop hasn't settled, the command surfaces the current status and instructs the user to retry.
-9. `/connect <agent>` (no id) on a running agent lists the user's connections but notes that the agent must be stopped before granting. The setup link (if no connections exist) can be generated regardless of agent status — the user creates the connection first, then stops the agent and grants it.
+9. `/connect <agent>` (with or without an id) rejects running agents and instructs the user to stop the agent before changing its connections. The setup link is part of the stopped-agent `/connect` flow, not a running-agent exception.
 
 ## Implementation Approach
 
@@ -506,20 +507,21 @@ In `processWebhookUpdate` in `apps/api/src/routes/agent-interactivity.ts`:
 1. Detect `/connect <agent>` with no third argument.
 2. Verify the chat is bound to a user (`chatId → userId` lookup).
 3. Resolve the agent by name (case-insensitive, quoted-name support).
-4. Query the user's active connections. Two paths:
-   - **No active connections:** Generate the setup link (steps 5–7 below).
+4. Confirm the target agent is stopped before proceeding.
+5. Query the user's active connections. Two paths:
+   - **No active connections:** Generate the setup link (steps 6–8 below).
    - **Has active connections:** List them with truncated IDs and labels so the user can pick one for the `/connect <agent> <id>` form.
-5. Generate a 32-byte random token (`crypto.randomBytes(32).toString('base64url')`).
-6. Store in Redis:
+6. Generate a 32-byte random token (`crypto.randomBytes(32).toString('base64url')`).
+7. Store in Redis:
    ```
    SET auth:setup-link:token:{token} = JSON.stringify({ userId })
    EX 600  (10-minute TTL, configurable via auth config)
    ```
-7. Build the callback URL:
+8. Build the callback URL:
    ```
    {publicBaseUrl}/auth/setup-link/callback?token={token}
    ```
-8. Respond with a short Telegram message containing the link, expiry warning, a "do not share" note, and a reminder to use `/connect <agent> <id>` after creating the connection.
+9. Respond with a short Telegram message containing the link, expiry warning, a "do not share" note, and a reminder to use `/connect <agent> <id>` after creating the connection.
 
 **B. API: `GET /auth/setup-link/callback?token=xxx` (public, no auth)**
 
@@ -577,7 +579,7 @@ In `apps/api/src/plugins/auth.ts`, add `'/auth/setup-link/callback'` to `isPubli
 
 #### Exit criteria
 
-1. `/connect <agent>` (no id) returns a valid one-time link when the user has no active connections, or lists their connections when they do.
+1. `/connect <agent>` (no id) returns a valid one-time link when the user has no active connections, or lists their connections when they do, but only when the target agent is stopped.
 2. Opening the link auto-authenticates the user and shows the connection form.
 3. The form successfully creates a credential + connection + venue account.
 4. Reusing an expired or already-consumed link shows a clear error.
@@ -692,12 +694,13 @@ Lock behavior down with focused coverage and publish the operator/user contract.
    - exact `/start` onboarding behavior
 3. Add route-level tests to prove the refactor into a shared lifecycle service does not change HTTP behavior.
 4. Add user-facing documentation for Telegram commands.
+5. Update the public-site documentation records under `apps/web/src/features/public-pages/`, especially the existing Telegram slash-commands page and any linked getting-started or messaging pages that reference the command set.
 
 #### Exit criteria
 
 1. Existing `/to` tests still pass.
 2. New command coverage exists for both happy paths and state-conflict paths.
-3. The user documentation matches the implemented command set.
+3. The user documentation matches the implemented command set across both the app docs and the public-site records.
 4. Connection and mode config tests cover the stopped-agent constraint.
 
 ## Files Expected To Change
@@ -734,6 +737,8 @@ Lock behavior down with focused coverage and publish the operator/user contract.
 ### Documentation
 
 1. `docs/public/documentation/telegram/slash-commands.md` or the current public Telegram documentation location
+2. `apps/web/src/features/public-pages/content/en/docs/messaging/telegram/slash-commands.md`
+3. Any linked public records in `apps/web/src/features/public-pages/content/en/` that summarize Telegram setup or command behavior, such as getting-started or messaging index pages
 
 ## Risks
 
@@ -754,7 +759,7 @@ All open questions are resolved:
 4. `/stop` executes immediately.
 5. Telegram lifecycle control remains agent-only in this slice.
 6. `/agents` includes all caller-owned agents, including stopped ones.
-7. `/connect`, `/disconnect`, and `/mode` (set) require the agent to be stopped. Read-only forms work regardless of status.
+7. `/connect`, `/disconnect`, and `/mode` (set) require the agent to be stopped. This includes `/connect <agent>` with no id or label; read-only forms still work regardless of status.
 8. `/help <command>` accepts both `/help start` and `/help /start`.
 9. `/info <agent>` shows capital only for trading agents (those with `executionMode` set).
 10. `/restart` polls briefly for `stopped` status (3 attempts, 2s intervals) before issuing start; if unsettled, surfaces status and tells user to retry.
