@@ -287,7 +287,6 @@ export function AgentDetailPage() {
         {lifecycleError && <ErrorBanner message={localizeApiError(intl, lifecycleError, 'common.errorTitle')} />}
 
         <Card>
-          <SectionLabel>{intl.formatMessage({ id: 'agents.detail.agentStatus' })}</SectionLabel>
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
             <KV label={intl.formatMessage({ id: 'common.status' })} value={<StatusBadge status={agent.status} />} />
             {hasTradingCapability && <KV label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(agent.executionMode, intl)} />}
@@ -298,129 +297,6 @@ export function AgentDetailPage() {
             <KV label={intl.formatMessage({ id: 'common.updated' })} value={<RelativeTime timestamp={agent.updatedAt} />} />
           </div>
         </Card>
-
-        {agent.activeSession && (
-          <Card>
-            <SectionLabel>{intl.formatMessage({ id: 'agents.detail.runtimeHealth' })}</SectionLabel>
-            <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-              <KV label={intl.formatMessage({ id: 'agents.detail.session' })} value={agent.activeSession.id.slice(0, 8)} />
-              <KV label={intl.formatMessage({ id: 'common.status' })} value={<StatusBadge status={agent.activeSession.status} />} />
-              <KV label={intl.formatMessage({ id: 'agents.detail.lastHeartbeat' })} value={<RelativeTime timestamp={agent.activeSession.lastHeartbeatAt} />} />
-            </div>
-          </Card>
-        )}
-
-        <Card>
-          <details>
-            <summary
-              style={{
-                fontSize: '11px',
-                fontWeight: '600',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                color: 'var(--color-text-muted)',
-                cursor: 'pointer',
-                userSelect: 'none',
-              }}
-            >
-              {intl.formatMessage({ id: 'agents.detail.objective' })}
-            </summary>
-            <div style={{ marginTop: '12px' }}>
-          <p style={{ margin: '0 0 12px', fontSize: '13px', lineHeight: '1.5' }}>{objective}</p>
-          {operatorContextItems.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-              {operatorContextItems.map((item) => (
-                <span
-                  key={item}
-                  style={{
-                    padding: '3px 8px',
-                    borderRadius: '20px',
-                    background: 'var(--color-surface-2)',
-                    fontSize: '12px',
-                    color: 'var(--color-text-secondary)',
-                  }}
-                >
-                  {item}
-                </span>
-              ))}
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-            {agent.activeSession?.startedAt && (
-              <KV label={intl.formatMessage({ id: 'agents.detail.activeSince' })} value={<RelativeTime timestamp={agent.activeSession.startedAt} />} />
-            )}
-            {sessionsQuery.isSuccess && (
-              <KV label={intl.formatMessage({ id: 'agents.detail.sessionsRun' })} value={String((sessionsQuery.data as unknown[]).length)} />
-            )}
-          </div>
-            </div>
-          </details>
-        </Card>
-
-        <section aria-label={intl.formatMessage({ id: 'agents.detail.capabilities' })}>
-          <Card>
-            <details>
-              <summary
-                style={{
-                  fontSize: '11px',
-                  fontWeight: '600',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                  color: 'var(--color-text-muted)',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                }}
-              >
-                {intl.formatMessage({ id: 'agents.detail.capabilities' })}
-              </summary>
-              <div style={{ marginTop: '12px' }}>
-            {skillsQuery.isLoading && <LoadingRows count={2} />}
-            {skillsQuery.isError && <ErrorState message={localizeApiError(intl, skillsQuery.error, 'common.errorTitle')} />}
-            {!skillsQuery.isLoading && !skillsQuery.isError && capabilityQuery.isLoading && <LoadingRows count={2} />}
-            {capabilityQuery.isError && <ErrorState message={localizeApiError(intl, capabilityQuery.error, 'common.errorTitle')} />}
-            {!skillsQuery.isLoading && !skillsQuery.isError && !hasTradingCapability && (
-              <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.summary.noCapabilitySetup' })}</div>
-            )}
-            {!skillsQuery.isLoading && !skillsQuery.isError && hasTradingCapability && tradingCapability && (
-              <section
-                aria-label={intl.formatMessage({ id: 'agents.summary.capabilityReadinessAria' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })}
-                style={{ padding: '14px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
-                  <div>
-                    <div style={{ fontSize: '14px', fontWeight: '600' }}>{formatCapabilityFamily(tradingCapability.family, intl)}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{formatCapabilityState(tradingCapability.state, intl)}</div>
-                    {tradingCapability.state === 'unconfigured' && (
-                      <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: '1.4' }}>
-                        {intl.formatMessage({ id: 'agents.capabilityState.unconfigured.tradingNote' })}
-                      </div>
-                    )}
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => navigate(`/agents/${agent.id}/capabilities/${tradingCapability.family}`)}
-                  >
-                    {tradingCapability.effectiveReady
-                      ? intl.formatMessage({ id: 'agents.summary.openCapability' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })
-                      : intl.formatMessage({ id: 'agents.summary.configureCapability' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })}
-                  </Button>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                  <div>{intl.formatMessage({ id: 'agents.detail.connectionReadiness' })}: {formatCapabilityState(tradingCapability.connectionReadiness, intl)}</div>
-                  <div>{intl.formatMessage({ id: 'agents.detail.agentEligibility' })}: {intl.formatMessage({ id: `agents.eligibility.${tradingCapability.agentEligibility}` })}</div>
-                  <div>{intl.formatMessage({ id: 'agents.detail.effectiveReady' })}: {tradingCapability.effectiveReady ? intl.formatMessage({ id: 'common.yes' }) : intl.formatMessage({ id: 'common.no' })}</div>
-                  <div>{intl.formatMessage({ id: 'common.connection' })}: {tradingCapability.connectionId ?? intl.formatMessage({ id: 'agents.detail.notAssigned' })}</div>
-                  {tradingCapability.reasons.length > 0 && (
-                    <div>{intl.formatMessage({ id: 'agents.detail.reasons' })}: {tradingCapability.reasons.join('; ')}</div>
-                  )}
-                </div>
-              </section>
-            )}
-              </div>
-            </details>
-          </Card>
-        </section>
 
         <Card>
           <details>
@@ -536,6 +412,145 @@ export function AgentDetailPage() {
             </details>
           </Card>
         )}
+
+        {agent.activeSession && (
+          <Card>
+            <details>
+              <summary
+                style={{
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--color-text-muted)',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+              >
+                {intl.formatMessage({ id: 'agents.detail.runtimeHealth' })}
+              </summary>
+              <div style={{ marginTop: '12px' }}>
+                <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                  <KV label={intl.formatMessage({ id: 'agents.detail.session' })} value={agent.activeSession.id.slice(0, 8)} />
+                  <KV label={intl.formatMessage({ id: 'common.status' })} value={<StatusBadge status={agent.activeSession.status} />} />
+                  <KV label={intl.formatMessage({ id: 'agents.detail.lastHeartbeat' })} value={<RelativeTime timestamp={agent.activeSession.lastHeartbeatAt} />} />
+                </div>
+              </div>
+            </details>
+          </Card>
+        )}
+
+        <Card>
+          <details>
+            <summary
+              style={{
+                fontSize: '11px',
+                fontWeight: '600',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--color-text-muted)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              {intl.formatMessage({ id: 'agents.detail.objective' })}
+            </summary>
+            <div style={{ marginTop: '12px' }}>
+          <p style={{ margin: '0 0 12px', fontSize: '13px', lineHeight: '1.5' }}>{objective}</p>
+          {operatorContextItems.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+              {operatorContextItems.map((item) => (
+                <span
+                  key={item}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: '20px',
+                    background: 'var(--color-surface-2)',
+                    fontSize: '12px',
+                    color: 'var(--color-text-secondary)',
+                  }}
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+            {agent.activeSession?.startedAt && (
+              <KV label={intl.formatMessage({ id: 'agents.detail.activeSince' })} value={<RelativeTime timestamp={agent.activeSession.startedAt} />} />
+            )}
+            {sessionsQuery.isSuccess && (
+              <KV label={intl.formatMessage({ id: 'agents.detail.sessionsRun' })} value={String((sessionsQuery.data as unknown[]).length)} />
+            )}
+          </div>
+            </div>
+          </details>
+        </Card>
+
+        <section aria-label={intl.formatMessage({ id: 'agents.detail.capabilities' })}>
+          <Card>
+            <details>
+              <summary
+                style={{
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--color-text-muted)',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+              >
+                {intl.formatMessage({ id: 'agents.detail.capabilities' })}
+              </summary>
+              <div style={{ marginTop: '12px' }}>
+            {skillsQuery.isLoading && <LoadingRows count={2} />}
+            {skillsQuery.isError && <ErrorState message={localizeApiError(intl, skillsQuery.error, 'common.errorTitle')} />}
+            {!skillsQuery.isLoading && !skillsQuery.isError && capabilityQuery.isLoading && <LoadingRows count={2} />}
+            {capabilityQuery.isError && <ErrorState message={localizeApiError(intl, capabilityQuery.error, 'common.errorTitle')} />}
+            {!skillsQuery.isLoading && !skillsQuery.isError && !hasTradingCapability && (
+              <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.summary.noCapabilitySetup' })}</div>
+            )}
+            {!skillsQuery.isLoading && !skillsQuery.isError && hasTradingCapability && tradingCapability && (
+              <section
+                aria-label={intl.formatMessage({ id: 'agents.summary.capabilityReadinessAria' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })}
+                style={{ padding: '14px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '600' }}>{formatCapabilityFamily(tradingCapability.family, intl)}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{formatCapabilityState(tradingCapability.state, intl)}</div>
+                    {tradingCapability.state === 'unconfigured' && (
+                      <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: '1.4' }}>
+                        {intl.formatMessage({ id: 'agents.capabilityState.unconfigured.tradingNote' })}
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => navigate(`/agents/${agent.id}/capabilities/${tradingCapability.family}`)}
+                  >
+                    {tradingCapability.effectiveReady
+                      ? intl.formatMessage({ id: 'agents.summary.openCapability' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })
+                      : intl.formatMessage({ id: 'agents.summary.configureCapability' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })}
+                  </Button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                  <div>{intl.formatMessage({ id: 'agents.detail.connectionReadiness' })}: {formatCapabilityState(tradingCapability.connectionReadiness, intl)}</div>
+                  <div>{intl.formatMessage({ id: 'agents.detail.agentEligibility' })}: {intl.formatMessage({ id: `agents.eligibility.${tradingCapability.agentEligibility}` })}</div>
+                  <div>{intl.formatMessage({ id: 'agents.detail.effectiveReady' })}: {tradingCapability.effectiveReady ? intl.formatMessage({ id: 'common.yes' }) : intl.formatMessage({ id: 'common.no' })}</div>
+                  <div>{intl.formatMessage({ id: 'common.connection' })}: {tradingCapability.connectionId ?? intl.formatMessage({ id: 'agents.detail.notAssigned' })}</div>
+                  {tradingCapability.reasons.length > 0 && (
+                    <div>{intl.formatMessage({ id: 'agents.detail.reasons' })}: {tradingCapability.reasons.join('; ')}</div>
+                  )}
+                </div>
+              </section>
+            )}
+              </div>
+            </details>
+          </Card>
+        </section>
 
         <Card>
           <SectionLabel>{intl.formatMessage({ id: 'agents.detail.activityTimeline', defaultMessage: 'Activity Timeline' })}</SectionLabel>

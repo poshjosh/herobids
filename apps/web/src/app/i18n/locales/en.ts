@@ -572,7 +572,6 @@ export const messages: Record<string, string> = {
   'agents.detail.stop': 'Stop',
   'agents.detail.deleteConfirm': 'Delete this AI agent? This cannot be undone. Any running session will be stopped.',
   'agents.detail.deleting': 'Deleting…',
-  'agents.detail.agentStatus': 'AI agent status',
   'agents.detail.objective': 'Objective',
   'agents.detail.activeSince': 'Active since',
   'agents.detail.sessionsRun': 'Sessions run',

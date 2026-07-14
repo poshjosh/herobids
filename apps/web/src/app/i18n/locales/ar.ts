@@ -569,7 +569,6 @@ export const messages: Record<string, string> = {
   'agents.detail.stop': 'إيقاف',
   'agents.detail.deleteConfirm': 'حذف وكيل الذكاء الاصطناعي هذا؟ لا يمكن التراجع عن ذلك. سيتم إيقاف أي جلسة جارية.',
   'agents.detail.deleting': 'جارٍ الحذف…',
-  'agents.detail.agentStatus': 'حالة وكيل الذكاء الاصطناعي',
   'agents.detail.objective': 'الهدف',
   'agents.detail.activeSince': 'نشط منذ',
   'agents.detail.sessionsRun': 'عدد الجلسات',

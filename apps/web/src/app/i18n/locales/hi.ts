@@ -571,7 +571,6 @@ export const messages: Record<string, string> = {
   'agents.detail.stop': 'रोकें',
   'agents.detail.deleteConfirm': 'क्या इस AI एजेंट को हटाना है? इसे वापस नहीं लिया जा सकता। कोई भी चल रहा सत्र रोक दिया जाएगा।',
   'agents.detail.deleting': 'हटाया जा रहा है…',
-  'agents.detail.agentStatus': 'AI एजेंट स्थिति',
   'agents.detail.objective': 'उद्देश्य',
   'agents.detail.activeSince': 'तब से सक्रिय',
   'agents.detail.sessionsRun': 'चलाए गए सत्र',
