@@ -20,6 +20,14 @@ import {
   formatUnknownCommandResponse,
 } from './telegram-slash-commands.js';
 import {
+  handleAgents,
+  handleStatus,
+  handleInfo,
+  handleSkills,
+  handleLog,
+  handleConnections,
+} from './telegram-command-handlers.js';
+import {
   CostPresetSchema,
   decorateAgentResponse,
   hasModelFieldsWithoutProvider,
@@ -699,7 +707,47 @@ export async function telegramWebhookHandler(
           await sendTelegramText(chatId, formatCommandHelp());
           return;
         }
-        // Other commands — for Slice 1, reply with a placeholder.
+        // Require user binding for all other commands
+        if (!userId) {
+          await sendTelegramText(chatId, 'Please bind your Telegram account first. Use /start to begin.');
+          return;
+        }
+
+        // ── Read commands (Slice 3) ────────────────────────────────
+        if (slashCmd.command === 'agents') {
+          const response = await handleAgents(db, userId);
+          await sendTelegramText(chatId, response);
+          return;
+        }
+        if (slashCmd.command === 'status') {
+          const response = await handleStatus(db, userId, slashCmd.args);
+          await sendTelegramText(chatId, response);
+          return;
+        }
+        if (slashCmd.command === 'info') {
+          const response = await handleInfo(db, userId, slashCmd.args);
+          await sendTelegramText(chatId, response);
+          return;
+        }
+        if (slashCmd.command === 'skills') {
+          const response = await handleSkills(db, userId, slashCmd.args);
+          await sendTelegramText(chatId, response);
+          return;
+        }
+        if (slashCmd.command === 'log') {
+          const response = await handleLog(db, userId, slashCmd.args);
+          await sendTelegramText(chatId, response);
+          return;
+        }
+        if (slashCmd.command === 'connections') {
+          const response = await handleConnections(db, userId, slashCmd.args);
+          await sendTelegramText(chatId, response);
+          return;
+        }
+
+        // Placeholder for lifecycle commands (Slice 4)
+        // Placeholder for config commands (Slice 5)
+
         await sendTelegramText(chatId, `Command /${slashCmd.command} will be available soon.`);
         return;
       }
