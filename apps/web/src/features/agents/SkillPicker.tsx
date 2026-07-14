@@ -97,7 +97,7 @@ export function SkillPicker({ skills, selectedSkillIds, onChange, loading = fals
                   style={{ marginTop: '3px', flexShrink: 0 }}
                 />
                 <div>
-                  <div style={{ fontWeight: '500', fontSize: '14px' }}>{skill.name}</div>
+                  <div style={{ fontWeight: '400', fontSize: '14px', color: 'var(--color-text-secondary)' }}>{skill.name}</div>
                   <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px', lineHeight: '1.45' }}>
                     {skill.description.length > 50 ? `${skill.description.slice(0, 50)}…` : skill.description}
                   </div>

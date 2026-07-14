@@ -278,20 +278,15 @@ const STYLE_ESCALATION_RATES: Record<AgentStyleValue, number> = {
  *
  * When `pricing` is omitted or incomplete, falls back to the hardcoded
  * dailySpendBudgetUsd from the style config (the user's budget target, not a cost estimate).
- *
- * Both paths produce a consistent format: cost · cadence.
  */
 export function formatStyleSummary(
   style: AgentStyleValue,
+  styleName: string,
   pricing?: ModelPricingInfo,
   tickIntervalMsOverride?: number | null,
 ): string {
   const d = resolveStyleDefaults(style);
   const effectiveTickIntervalMs = resolveStyleTickIntervalMs(style, tickIntervalMsOverride);
-  const effectiveTickIntervalMins = effectiveTickIntervalMs / MS_PER_MINUTE;
-  const cadence = Number.isInteger(effectiveTickIntervalMins)
-    ? `every ${effectiveTickIntervalMins} min`
-    : `every ${effectiveTickIntervalMins.toFixed(1)} min`;
 
   // Compute estimated daily cost if we have full model pricing (input + output for both models)
   if (pricing
@@ -301,12 +296,10 @@ export function formatStyleSummary(
     const ticksPerDay = 86_400_000 / effectiveTickIntervalMs;
     const escalationRate = STYLE_ESCALATION_RATES[style];
 
-    // Scout runs every tick
     const scoutCost =
       (SCOUT_OUTPUT_TOKENS_PER_TICK * pricing.economyOutputUsdPer1M +
        SCOUT_INPUT_TOKENS_PER_TICK * pricing.economyInputUsdPer1M) / 1_000_000;
 
-    // Judge runs only on escalated ticks
     const judgeCost =
       (JUDGE_OUTPUT_TOKENS_PER_TICK * pricing.premiumOutputUsdPer1M +
        JUDGE_INPUT_TOKENS_PER_TICK * pricing.premiumInputUsdPer1M) / 1_000_000 * escalationRate;
@@ -314,9 +307,9 @@ export function formatStyleSummary(
     const costPerTick = scoutCost + judgeCost;
     const dailyCost = costPerTick * ticksPerDay;
 
-    return `~$${dailyCost.toFixed(2)}/day · ${cadence}`;
+    return `${styleName}, enforces a limit of $${dailyCost.toFixed(2)}/day`;
   }
 
   // Fallback: show budget target
-  return `~$${d.dailySpendBudgetUsd}/day target · ${cadence}`;
+  return `${styleName}, enforces a limit of $${d.dailySpendBudgetUsd}/day`;
 }

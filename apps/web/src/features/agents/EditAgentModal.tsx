@@ -13,11 +13,16 @@ import { validateCreateAgentForm, validateEditAgentConnections, type ValidationC
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval, parseTickIntervalMinutesInput } from './tick-interval.js';
 import { type CapabilityMode, type HybridMode } from './CapabilitySelector.js';
-import { StyleSelector } from './StyleSelector.js';
 import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
+
+const STYLE_LABEL_KEYS: Record<AgentStyleValue, string> = {
+  careful: 'agents.style.careful.label',
+  balanced: 'agents.style.balanced.label',
+  bold: 'agents.style.bold.label',
+};
 import { technicalFormStateToPayload } from './technical-config-helpers.js';
 import { VENUE_TYPE_MAP, buildVenueTypeMap } from './venue-mapping.js';
-import { AgentDocumentPicker } from './AgentDocumentPicker.js';
+import { PromptInputBlock } from './PromptInputBlock.js';
 import { AgentFormBody } from './AgentFormBody.js';
 import { type AgentFormState, agentToFormState } from './agent-form-state.js';
 import { RuntimePolicySection } from './RuntimePolicySection.js';
@@ -473,118 +478,88 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             </div>
           )}
 
-          {/* Goal */}
-          <div data-field="goal" style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '20px' }}>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.edit.objective' })}</FieldLabel>
-            <textarea
-              style={{ ...inputStyle, minHeight: '72px', resize: 'vertical' }}
-              value={form.goal}
-              onChange={(e) => {
-                clearFieldError('goal');
-                setForm((prev) => ({ ...prev, goal: e.target.value }));
-              }}
-              onBlur={() => validateFieldOnBlur('goal')}
-              placeholder={skillsQuery.data
-                ? (resolveGoalPlaceholder(form.skillIds, skillsQuery.data.skills) ?? intl.formatMessage({ id: 'agents.create.goalPlaceholder' }))
-                : intl.formatMessage({ id: 'agents.create.goalPlaceholder' })}
-              required
-            />
-            {formErrors.goal && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.goal}</div>}
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-            {docsQuery.data && docsQuery.data.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <SectionLabel>Attached documents</SectionLabel>
-                <ul style={{ display: 'flex', flexDirection: 'column', gap: '4px', margin: 0, padding: 0, listStyle: 'none' }}>
-                  {docsQuery.data.map((doc) => (
-                    <li key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{doc.originalFilename}</span>
-                      <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', flexShrink: 0 }}>
-                        {doc.extractionStatus === 'ready' ? '✓ extracted' : doc.extractionStatus}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            await agentsApi.deleteDocument(agentId, doc.id);
-                            await docsQuery.refetch();
-                          } catch (err) {
-                            console.warn('Document delete failed:', err);
-                          }
-                        }}
-                        style={{ color: 'var(--color-danger)', fontSize: '12px', flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer' }}
-                      >
-                        Delete
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <AgentDocumentPicker
-              files={form.pendingFiles}
-              onChange={(pendingFiles) => setForm((prev) => ({ ...prev, pendingFiles }))}
-              title={docsQuery.data && docsQuery.data.length > 0 ? 'Add More Documents' : 'Documents (Optional)'}
-            />
-          </div>
-
-          {/* Agent Style */}
-          <div style={{ marginBottom: '20px' }}>
-            <StyleSelector
-              value={style}
-              onChange={(nextStyle) => {
-                const defaults = resolveStyleDefaults(nextStyle);
-                setTickIntervalTouched(true);
-                setStyle(nextStyle);
-                const tradingSources = ['watch_threshold', 'discovery_delta', 'regime_change'];
-                setForm((prev) => {
-                  const styleSources = prev.technicalPreFilterEnabled
-                    ? [...tradingSources, 'scanner']
-                    : tradingSources;
-                  return {
-                    ...prev,
-                    costPreset: defaults.costPreset,
-                    tickIntervalMins: defaults.tickIntervalMins,
-                    dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
-                    subscribedSources: styleSources,
-                    ...(policyManuallySetRef.current
-                      ? {}
-                      : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
-                  };
+          {/* Prompt + files + style — unified block */}
+          <div style={{ marginBottom: '8px' }}>
+          <PromptInputBlock
+            dataField="goal"
+            goal={form.goal}
+            onGoalChange={(goal) => {
+              clearFieldError('goal');
+              setForm((prev) => ({ ...prev, goal }));
+            }}
+            onGoalBlur={() => validateFieldOnBlur('goal')}
+            goalPlaceholder={skillsQuery.data
+              ? (resolveGoalPlaceholder(form.skillIds, skillsQuery.data.skills) ?? intl.formatMessage({ id: 'agents.create.goalPlaceholder' }))
+              : intl.formatMessage({ id: 'agents.create.goalPlaceholder' })}
+            goalLabel={intl.formatMessage({ id: 'agents.edit.objective' })}
+            goalError={formErrors.goal}
+            required
+            pendingFiles={form.pendingFiles}
+            onPendingFilesChange={(pendingFiles) => setForm((prev) => ({ ...prev, pendingFiles }))}
+            existingDocs={docsQuery.data?.documents}
+            onDeleteExistingDoc={async (docId) => {
+              try {
+                await agentsApi.deleteDocument(agentId, docId);
+                await docsQuery.refetch();
+              } catch (err) {
+                console.warn('Document delete failed:', err);
+              }
+            }}
+            style={style}
+            onStyleChange={(nextStyle) => {
+              const defaults = resolveStyleDefaults(nextStyle);
+              setTickIntervalTouched(true);
+              setStyle(nextStyle);
+              const tradingSources = ['watch_threshold', 'discovery_delta', 'regime_change'];
+              setForm((prev) => {
+                const styleSources = prev.technicalPreFilterEnabled
+                  ? [...tradingSources, 'scanner']
+                  : tradingSources;
+                return {
+                  ...prev,
+                  costPreset: defaults.costPreset,
+                  tickIntervalMins: defaults.tickIntervalMins,
+                  dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
+                  subscribedSources: styleSources,
+                  ...(policyManuallySetRef.current
+                    ? {}
+                    : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
+                };
+              });
+              if (!maxHoldDurationManuallySetRef.current) {
+                setRuntimePolicyOverrides((current) => applyAutoMaxHoldOverride(
+                  nextStyle,
+                  current,
+                  Number(defaults.tickIntervalMins) * 60_000,
+                ));
+              } else {
+                const newTickMs = Number(defaults.tickIntervalMins) * 60_000;
+                setRuntimePolicyOverrides((current) => {
+                  const effectiveMaxHold = current?.maxHoldDurationMs
+                    ?? resolveStyleDefaults(nextStyle).maxHoldDurationMs;
+                  return effectiveMaxHold !== 0 && effectiveMaxHold < newTickMs
+                    ? applyAutoMaxHoldOverride(nextStyle, current, newTickMs)
+                    : current;
                 });
-                if (!maxHoldDurationManuallySetRef.current) {
-                  setRuntimePolicyOverrides((current) => applyAutoMaxHoldOverride(
-                    nextStyle,
-                    current,
-                    Number(defaults.tickIntervalMins) * 60_000,
-                  ));
-                } else {
-                  const newTickMs = Number(defaults.tickIntervalMins) * 60_000;
-                  setRuntimePolicyOverrides((current) => {
-                    const effectiveMaxHold = current?.maxHoldDurationMs
-                      ?? resolveStyleDefaults(nextStyle).maxHoldDurationMs;
-                    return effectiveMaxHold !== 0 && effectiveMaxHold < newTickMs
-                      ? applyAutoMaxHoldOverride(nextStyle, current, newTickMs)
-                      : current;
-                  });
-                }
-              }}
-            />
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-              {intl.formatMessage({ id: 'agents.style.summaryPrefix' })}{' '}
-              {formatStyleSummary(
-                style,
-                resolveModelPricing(
-                  availableModelsQuery.data?.providers ?? [],
-                  modelOverrideEnabled ? modelForm.provider : (inheritedModelSettings?.provider ?? ''),
-                  modelOverrideEnabled ? modelForm.lightModel : (inheritedModelSettings?.lightModel ?? ''),
-                  modelOverrideEnabled ? modelForm.heavyModel : (inheritedModelSettings?.heavyModel ?? ''),
-                ),
-                resolveEditedTickIntervalMs(form.tickIntervalMins),
-              )}
-            </div>
+              }
+            }}
+          />
+
+          {/* Style summary */}
+          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '0' }}>
+            {formatStyleSummary(
+              style,
+              intl.formatMessage({ id: STYLE_LABEL_KEYS[style] }),
+              resolveModelPricing(
+                availableModelsQuery.data?.providers ?? [],
+                modelOverrideEnabled ? modelForm.provider : (inheritedModelSettings?.provider ?? ''),
+                modelOverrideEnabled ? modelForm.lightModel : (inheritedModelSettings?.lightModel ?? ''),
+                modelOverrideEnabled ? modelForm.heavyModel : (inheritedModelSettings?.heavyModel ?? ''),
+              ),
+              resolveEditedTickIntervalMs(form.tickIntervalMins),
+            )}
+          </div>
+
           </div>
 
           <AgentFormBody

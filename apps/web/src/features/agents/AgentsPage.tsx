@@ -22,10 +22,15 @@ import { buildCreateAgentPayload, resolveCreateAgentConnectionIds } from './agen
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, parseTickIntervalMinutesInput } from './tick-interval.js';
 import { type CapabilityMode, type HybridMode } from './CapabilitySelector.js';
-import { StyleSelector } from './StyleSelector.js';
 import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
+
+const STYLE_LABEL_KEYS: Record<AgentStyleValue, string> = {
+  careful: 'agents.style.careful.label',
+  balanced: 'agents.style.balanced.label',
+  bold: 'agents.style.bold.label',
+};
 import { generateAgentName } from './agent-name.js';
-import { AgentDocumentPicker } from './AgentDocumentPicker.js';
+import { PromptInputBlock } from './PromptInputBlock.js';
 import { AgentFormBody } from './AgentFormBody.js';
 import { intentToFormState } from './agent-form-state.js';
 import { defaultTechnicalConfigFormState, technicalFormStateToPayload, type TechnicalConfigFormState } from './technical-config-helpers.js';
@@ -790,74 +795,67 @@ function CreateAgentFlow({
             </div>
           )}
 
-          {/* 2. Goal */}
-          <div data-field="goal" style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '20px' }}>
-            <FieldLabel>{intl.formatMessage({ id: intent.capabilityMode === 'hybrid' ? 'agents.create.goalBoth' : 'agents.create.goal' })}</FieldLabel>
-            <textarea
-              style={{ ...inputStyle, minHeight: '72px', resize: 'vertical' }}
-              value={intent.goal}
-              onChange={(e) => {
-                clearFieldError('goal');
-                setIntent((state) => ({ ...state, goal: e.target.value }));
-              }}
-              onBlur={() => validateFieldOnBlur('goal')}
-              placeholder={resolveGoalPlaceholder(intent.skillIds, skills) ?? intl.formatMessage({ id: 'agents.create.goalPlaceholder' })}
-              required
-            />
-            {formErrors.goal && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.goal}</div>}
-          </div>
-
-          <AgentDocumentPicker
-            files={intent.pendingFiles}
-            onChange={(pendingFiles) => setIntent((state) => ({ ...state, pendingFiles }))}
+          {/* 2. Prompt + files + style — unified block */}
+          <div style={{ marginBottom: '8px' }}>
+          <PromptInputBlock
+            dataField="goal"
+            goal={intent.goal}
+            onGoalChange={(goal) => {
+              clearFieldError('goal');
+              setIntent((state) => ({ ...state, goal }));
+            }}
+            onGoalBlur={() => validateFieldOnBlur('goal')}
+            goalPlaceholder={resolveGoalPlaceholder(intent.skillIds, skills) ?? intl.formatMessage({ id: 'agents.create.goalPlaceholder' })}
+            goalLabel={intl.formatMessage({ id: intent.capabilityMode === 'hybrid' ? 'agents.create.goalBoth' : 'agents.create.goal' })}
+            goalError={formErrors.goal}
+            required
+            pendingFiles={intent.pendingFiles}
+            onPendingFilesChange={(pendingFiles) => setIntent((state) => ({ ...state, pendingFiles }))}
+            style={intent.style}
+            onStyleChange={(style) => {
+              const defaults = resolveStyleDefaults(style);
+              setIntent((state) => {
+                const tradingSources = ['watch_threshold', 'discovery_delta', 'regime_change'];
+                const styleSources = state.technicalPreFilterEnabled
+                  ? [...tradingSources, 'scanner']
+                  : tradingSources;
+                const next: IntentState = {
+                  ...state,
+                  style,
+                  costPreset: defaults.costPreset,
+                  tickIntervalMins: defaults.tickIntervalMins,
+                  dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
+                  subscribedSources: styleSources,
+                  ...(policyManuallySetRef.current ? {} : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
+                };
+                const newTickMs = resolveTickIntervalMsFromMinutesInput(next.tickIntervalMins);
+                const effectiveMaxHold = next.runtimePolicyOverrides?.maxHoldDurationMs
+                  ?? resolveStyleDefaults(style).maxHoldDurationMs;
+                const constraintViolated = newTickMs != null && effectiveMaxHold !== 0 && effectiveMaxHold < newTickMs;
+                return maxHoldDurationManuallySetRef.current && !constraintViolated
+                  ? next
+                  : {
+                      ...next,
+                      runtimePolicyOverrides: applyAutoMaxHoldOverride(
+                        style,
+                        next.runtimePolicyOverrides,
+                        newTickMs,
+                      ),
+                    };
+              });
+            }}
           />
 
-          {/* 3. Style Selector */}
-          <div style={{ marginBottom: '20px' }}>
-            <StyleSelector
-              value={intent.style}
-              onChange={(style) => {
-                const defaults = resolveStyleDefaults(style);
-                setIntent((state) => {
-                  const tradingSources = ['watch_threshold', 'discovery_delta', 'regime_change'];
-                  const styleSources = state.technicalPreFilterEnabled
-                    ? [...tradingSources, 'scanner']
-                    : tradingSources;
-                  const next: IntentState = {
-                    ...state,
-                    style,
-                    costPreset: defaults.costPreset,
-                    tickIntervalMins: defaults.tickIntervalMins,
-                    dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
-                    subscribedSources: styleSources,
-                    ...(policyManuallySetRef.current ? {} : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
-                  };
-                  const newTickMs = resolveTickIntervalMsFromMinutesInput(next.tickIntervalMins);
-                  const effectiveMaxHold = next.runtimePolicyOverrides?.maxHoldDurationMs
-                    ?? resolveStyleDefaults(style).maxHoldDurationMs;
-                  const constraintViolated = newTickMs != null && effectiveMaxHold !== 0 && effectiveMaxHold < newTickMs;
-                  return maxHoldDurationManuallySetRef.current && !constraintViolated
-                    ? next
-                    : {
-                        ...next,
-                        runtimePolicyOverrides: applyAutoMaxHoldOverride(
-                          style,
-                          next.runtimePolicyOverrides,
-                          newTickMs,
-                        ),
-                      };
-                });
-              }}
-            />
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-              {intl.formatMessage({ id: 'agents.style.summaryPrefix' })}{' '}
-              {formatStyleSummary(intent.style, resolveModelPricing(
-                availableModelsQuery.data?.providers ?? [],
-                intent.provider,
-                intent.lightModel,
-                intent.heavyModel,
-              ), resolveTickIntervalMsFromMinutesInput(intent.tickIntervalMins))}
-            </div>
+          {/* Style summary */}
+          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '0' }}>
+            {formatStyleSummary(intent.style, intl.formatMessage({ id: STYLE_LABEL_KEYS[intent.style] }), resolveModelPricing(
+              availableModelsQuery.data?.providers ?? [],
+              intent.provider,
+              intent.lightModel,
+              intent.heavyModel,
+            ), resolveTickIntervalMsFromMinutesInput(intent.tickIntervalMins))}
+          </div>
+
           </div>
 
           {/* 3. Agent Form Body */}
