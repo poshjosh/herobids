@@ -182,7 +182,7 @@ describe('resolveExecutionModeForSkills', () => {
       expect(result.value).toBe('paper');
     });
 
-    it('resolves test mode to shadow when a venue is selected', () => {
+    it('resolves test mode to paper when a venue is selected but no connections exist', () => {
       const result = resolveExecutionModeForSkills({
         skillIds: [TRADING_SKILL],
         submittedExecutionMode: 'test',
@@ -190,7 +190,7 @@ describe('resolveExecutionModeForSkills', () => {
         hasConnections: false,
         hasVenue: true,
       });
-      expect(result.value).toBe('shadow');
+      expect(result.value).toBe('paper');
     });
 
     it('returns an issue when an invalid mode string is submitted', () => {
@@ -242,6 +242,50 @@ describe('resolveExecutionModeForSkills', () => {
         submittedExecutionMode: undefined,
         executionModeProvided: false,
         currentExecutionMode: 'invalid-mode',
+      });
+      expect(result.value).toBe('paper');
+    });
+
+    it('upgrades paper to shadow when connections become available', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: undefined,
+        executionModeProvided: false,
+        currentExecutionMode: 'paper',
+        hasConnections: true,
+      });
+      expect(result.value).toBe('shadow');
+    });
+
+    it('downgrades shadow to paper when connections are removed', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: undefined,
+        executionModeProvided: false,
+        currentExecutionMode: 'shadow',
+        hasConnections: false,
+      });
+      expect(result.value).toBe('paper');
+    });
+
+    it('keeps shadow when connections are still present', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: undefined,
+        executionModeProvided: false,
+        currentExecutionMode: 'shadow',
+        hasConnections: true,
+      });
+      expect(result.value).toBe('shadow');
+    });
+
+    it('keeps paper when no connections are present', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: undefined,
+        executionModeProvided: false,
+        currentExecutionMode: 'paper',
+        hasConnections: false,
       });
       expect(result.value).toBe('paper');
     });

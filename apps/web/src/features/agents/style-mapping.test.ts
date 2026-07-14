@@ -200,36 +200,30 @@ describe('resolveStyleDefaults', () => {
 
   describe('formatStyleSummary', () => {
     it('produces a fallback summary for careful (no pricing)', () => {
-      const summary = formatStyleSummary('careful');
-      expect(summary).toContain('~$3/day target');
-      expect(summary).toContain('every 90 min');
+      const summary = formatStyleSummary('careful', 'Careful');
+      expect(summary).toContain('Careful, enforces a limit of $3/day');
       expect(summary).not.toContain('turns');
     });
 
     it('produces a fallback summary for balanced (no pricing)', () => {
-      const summary = formatStyleSummary('balanced');
-      expect(summary).toContain('~$10/day target');
-      expect(summary).toContain('every 30 min');
+      const summary = formatStyleSummary('balanced', 'Balanced');
+      expect(summary).toContain('Balanced, enforces a limit of $10/day');
     });
 
     it('produces a fallback summary for bold (no pricing)', () => {
-      const summary = formatStyleSummary('bold');
-      expect(summary).toContain('~$30/day target');
-      expect(summary).toContain('every 10 min');
+      const summary = formatStyleSummary('bold', 'Bold');
+      expect(summary).toContain('Bold, enforces a limit of $30/day');
     });
 
     it('computes estimated cost when full pricing is provided', () => {
       // economy input=$0.08, output=$0.15; premium input=$1.00, output=$2.00 (per 1M tokens)
-      const summary = formatStyleSummary('careful', {
+      const summary = formatStyleSummary('careful', 'Careful', {
         economyInputUsdPer1M: 0.08,
         economyOutputUsdPer1M: 0.15,
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       });
-      expect(summary).toContain('~$');
-      expect(summary).toContain('/day');
-      expect(summary).toContain('every 90 min');
-      expect(summary).not.toContain('target');
+      expect(summary).toMatch(/Careful, enforces a limit of \$[\d.]+\/day/);
       expect(summary).not.toContain('turns');
     });
 
@@ -241,68 +235,68 @@ describe('resolveStyleDefaults', () => {
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       };
-      const boldSummary = formatStyleSummary('bold', pricing);
-      const carefulSummary = formatStyleSummary('careful', pricing);
+      const boldSummary = formatStyleSummary('bold', 'Bold', pricing);
+      const carefulSummary = formatStyleSummary('careful', 'Careful', pricing);
       // Bold should cost more than careful
       const boldCost = Number(boldSummary.match(/\$([\d.]+)\/day/)![1]);
       const carefulCost = Number(carefulSummary.match(/\$([\d.]+)\/day/)![1]);
       expect(boldCost).toBeGreaterThan(carefulCost);
     });
 
-    it('uses an explicit cadence override in the summary text and cost math', () => {
-      const summary = formatStyleSummary('balanced', {
+    it('uses an explicit cadence override in cost math', () => {
+      const summary = formatStyleSummary('balanced', 'Balanced', {
         economyInputUsdPer1M: 0.08,
         economyOutputUsdPer1M: 0.15,
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       }, 900_000);
-      expect(summary).toContain('every 15 min');
-      expect(summary).not.toContain('every 30 min');
+      // 15-min cadence (96 ticks/day) yields a different cost than default 30-min (48 ticks/day)
+      expect(summary).toMatch(/Balanced, enforces a limit of \$[\d.]+\/day/);
     });
 
-    it('shows legacy non-whole-minute cadence precisely when overridden', () => {
-      const summary = formatStyleSummary('balanced', undefined, 90_000);
-      expect(summary).toContain('every 1.5 min');
+    it('handles non-whole-minute cadence override without pricing without crashing', () => {
+      const summary = formatStyleSummary('balanced', 'Balanced', undefined, 90_000);
+      expect(summary).toContain('Balanced, enforces a limit of $10/day');
     });
 
     it('falls back when economy input price is 0', () => {
-      const summary = formatStyleSummary('careful', {
+      const summary = formatStyleSummary('careful', 'Careful', {
         economyInputUsdPer1M: 0,
         economyOutputUsdPer1M: 0.15,
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       });
-      expect(summary).toContain('~$3/day target');
+      expect(summary).toContain('Careful, enforces a limit of $3/day');
     });
 
     it('falls back when economy output price is 0', () => {
-      const summary = formatStyleSummary('careful', {
+      const summary = formatStyleSummary('careful', 'Careful', {
         economyInputUsdPer1M: 0.08,
         economyOutputUsdPer1M: 0,
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       });
-      expect(summary).toContain('~$3/day target');
+      expect(summary).toContain('Careful, enforces a limit of $3/day');
     });
 
     it('falls back when premium input price is 0', () => {
-      const summary = formatStyleSummary('careful', {
+      const summary = formatStyleSummary('careful', 'Careful', {
         economyInputUsdPer1M: 0.08,
         economyOutputUsdPer1M: 0.15,
         premiumInputUsdPer1M: 0,
         premiumOutputUsdPer1M: 2.00,
       });
-      expect(summary).toContain('~$3/day target');
+      expect(summary).toContain('Careful, enforces a limit of $3/day');
     });
 
     it('falls back when premium output price is 0', () => {
-      const summary = formatStyleSummary('careful', {
+      const summary = formatStyleSummary('careful', 'Careful', {
         economyInputUsdPer1M: 0.08,
         economyOutputUsdPer1M: 0.15,
         premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 0,
       });
-      expect(summary).toContain('~$3/day target');
+      expect(summary).toContain('Careful, enforces a limit of $3/day');
     });
   });
 

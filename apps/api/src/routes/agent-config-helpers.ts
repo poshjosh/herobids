@@ -12,8 +12,8 @@ type NullableAgentExecutionMode = AgentExecutionMode | 'test' | null | undefined
 
 /**
  * Map the user-facing input alias `test` to a concrete simulation mode.
- * - test with no venue/connection → paper (pure simulation, no venue needed)
- * - test with a venue/connection → shadow (venue-backed simulation)
+ * - test with no connections → paper (pure simulation, no venue needed)
+ * - test with connections → shadow (venue-backed simulation)
  * - All other modes pass through unchanged.
  *
  * `test` is an input alias only — audits, logs, and downstream consumers
@@ -23,7 +23,7 @@ export function canonicalizeExecutionMode(
   mode: string | null | undefined,
   opts?: { hasConnections?: boolean; hasVenue?: boolean },
 ): string | null | undefined {
-  if (mode === 'test') return opts?.hasConnections || opts?.hasVenue ? 'shadow' : 'paper';
+  if (mode === 'test') return opts?.hasConnections ? 'shadow' : 'paper';
   return mode;
 }
 
@@ -161,9 +161,18 @@ export function resolveExecutionModeForSkills(input: {
     return { value: resolved };
   }
 
-  // Carry forward existing mode when not provided in the update
+  // Carry forward existing mode when not provided in the update.
+  // Re-evaluate paper/shadow based on connection availability so that agents
+  // created with the `test` alias dynamically upgrade/downgrade as connections
+  // are granted or revoked.
   const existing = normalizeExecutionMode(input.currentExecutionMode, connectionOpts);
   if (existing != null) {
+    if (existing === 'paper' && input.hasConnections) {
+      return { value: 'shadow' };
+    }
+    if (existing === 'shadow' && !input.hasConnections) {
+      return { value: 'paper' };
+    }
     return { value: existing };
   }
 

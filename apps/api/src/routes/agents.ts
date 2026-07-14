@@ -213,8 +213,8 @@ const UpdateAgentSchema = z.object({
 });
 
 const PauseAgentSchema = z.object({
-  reason: z.string().min(1).max(500),
-});
+  reason: z.string().min(1).max(500).optional(),
+}).optional();
 
 /** Extract preset fields from unifiedConfig.metadata, if present. */
 function extractPresetMeta(unifiedConfig: unknown): { strategyPreset: string | null; strategyPresetName: string | null } {
@@ -1719,7 +1719,7 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const result = await pauseAgent(db, id, request.userId, parsed.data.reason);
+    const result = await pauseAgent(db, id, request.userId, parsed.data?.reason);
     if (!result.ok) {
       if (result.error.code === 'agent.not_found') {
         return reply.status(404).send({ error: 'not_found' });
