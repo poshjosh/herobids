@@ -47,6 +47,7 @@ import {
 import { getPreset } from '@herobids/domain/config/presets-loader';
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
+import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import {
   CostPresetSchema,
@@ -1469,7 +1470,10 @@ export async function agentRoutes(
           updatedAt: new Date(),
         } as never).where(eq(agents.id, id));
 
-        // Declarative sync of agent_connections when connectionIds is explicitly provided
+        // Declarative sync of agent_connections when connectionIds is explicitly provided.
+        // This is a batch diff (add/revoke) performed inside the PATCH transaction —
+        // intentionally separate from agent-config-service's grantConnection/revokeConnection
+        // which are single-operation functions used by Telegram slash commands.
         if (parsed.data.connectionIds !== undefined) {
           const patchConnectionIds = parsed.data.connectionIds;
 
@@ -1715,127 +1719,57 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const [agent] = await db.select().from(agents)
-      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-    if (!agent) {
-      return reply.status(404).send({ error: 'not_found' });
+    const result = await pauseAgent(db, id, request.userId, parsed.data.reason);
+    if (!result.ok) {
+      if (result.error.code === 'agent.not_found') {
+        return reply.status(404).send({ error: 'not_found' });
+      }
+      return reply.status(500).send({ error: result.error.code, message: result.error.message });
     }
 
-    // Idempotent
-    if (agent.status === 'paused') {
-      return reply.send({ status: 'paused' });
-    }
-
-    await db.update(agents).set({
-      status: 'paused',
-      pauseState: { reason: parsed.data.reason, requestedBy: 'user', pausedAt: new Date().toISOString() },
-      updatedAt: new Date(),
-    }).where(eq(agents.id, id));
-
-    return reply.send({ status: 'paused' });
+    return reply.send({ status: result.data.status });
   });
 
   // Resume agent
   app.post<{ Params: { id: string } }>('/agents/:id/resume', async (request, reply) => {
     const { id } = request.params;
-    const [agent] = await db.select().from(agents)
-      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-    if (!agent) {
-      return reply.status(404).send({ error: 'not_found' });
+
+    const result = await resumeAgent(db, id, request.userId);
+    if (!result.ok) {
+      if (result.error.code === 'agent.not_found') {
+        return reply.status(404).send({ error: 'not_found' });
+      }
+      if (result.error.code === 'agent.invalid_status') {
+        return reply.status(409).send(errorPayload('not_paused', 'Agent is not paused', { status: result.error.currentStatus }));
+      }
+      return reply.status(500).send({ error: result.error.code, message: result.error.message });
     }
 
-    if (agent.status !== 'paused') {
-      return reply.status(409).send(errorPayload('not_paused', 'Agent is not paused', { status: agent.status }));
-    }
-
-    await db.update(agents).set({
-      status: 'active',
-      pauseState: null,
-      updatedAt: new Date(),
-    }).where(eq(agents.id, id));
-
-    return reply.send({ status: 'active' });
+    return reply.send({ status: result.data.status });
   });
 
   // Start agent (stopped → starting) — records the request durably.
   app.post<{ Params: { id: string } }>('/agents/:id/start', async (request, reply) => {
     const { id } = request.params;
-    const sessionId = crypto.randomUUID();
-    const now = new Date();
-    const result = await db.transaction(async (tx) => {
-      const [agent] = await tx.select({ status: agents.status, modelPolicy: agents.modelPolicy }).from(agents)
-        .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-      if (!agent) {
-        return { kind: 'not_found' as const };
-      }
 
-      if (agent.status !== 'stopped') {
-        return { kind: 'not_stopped' as const, status: agent.status };
+    const result = await startAgent(db, id, request.userId);
+    if (!result.ok) {
+      if (result.error.code === 'agent.not_found') {
+        return reply.status(404).send({ error: 'not_found' });
       }
-
-      // Validate effective model selection before accepting the start request.
-      // Fail fast here rather than letting the container launch and immediately crash.
-      const agentModelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
-      const agentProvider = typeof agentModelPolicy?.['provider'] === 'string' ? agentModelPolicy['provider'] : undefined;
-      const agentLightModel = typeof agentModelPolicy?.['lightModel'] === 'string' ? agentModelPolicy['lightModel'] : undefined;
-      const agentHeavyModel = typeof agentModelPolicy?.['heavyModel'] === 'string' ? agentModelPolicy['heavyModel'] : undefined;
-      const [userRow] = await tx.select({ aiModelConfig: users.aiModelConfig })
-        .from(users)
-        .where(eq(users.id, request.userId))
-        .limit(1);
-      const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
-      const effectiveProvider = agentProvider ?? userAiConfig?.provider ?? null;
-      const effectiveLightModel = agentLightModel ?? userAiConfig?.lightModel ?? null;
-      const effectiveHeavyModel = agentHeavyModel ?? userAiConfig?.heavyModel ?? null;
-      if (!effectiveProvider || !effectiveLightModel || !effectiveHeavyModel) {
-        return { kind: 'model_selection_incomplete' as const };
+      if (result.error.code === 'agent.invalid_status') {
+        return reply.status(409).send(errorPayload('not_stopped', 'Agent is not stopped', { status: result.error.currentStatus }));
       }
-
-      const [claimedAgent] = await tx.update(agents).set({
-        status: 'starting',
-        pauseState: null,
-        updatedAt: now,
-      }).where(and(
-        eq(agents.id, id),
-        eq(agents.userId, request.userId),
-        eq(agents.status, 'stopped'),
-      )).returning({ id: agents.id });
-      if (!claimedAgent) {
-        return { kind: 'not_stopped' as const, status: 'starting' };
-      }
-
-      await tx.update(agentRuntimeSessions)
-        .set({ status: 'stopped', stoppedAt: now })
-        .where(and(
-          eq(agentRuntimeSessions.agentId, id),
-          inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
+      if (result.error.code === 'agent.model_selection_incomplete') {
+        return reply.status(422).send(errorPayload(
+          'config.model_selection_incomplete',
+          'Agent cannot start — set provider, lightModel, and heavyModel in agent config or user AI settings',
         ));
-
-      await tx.insert(agentRuntimeSessions).values({
-        id: sessionId,
-        agentId: id,
-        status: 'starting',
-      });
-
-      return { kind: 'started' as const };
-    });
-
-    if (result.kind === 'not_found') {
-      return reply.status(404).send({ error: 'not_found' });
+      }
+      return reply.status(500).send({ error: result.error.code, message: result.error.message });
     }
 
-    if (result.kind === 'not_stopped') {
-      return reply.status(409).send(errorPayload('not_stopped', 'Agent is not stopped', { status: result.status }));
-    }
-
-    if (result.kind === 'model_selection_incomplete') {
-      return reply.status(422).send(errorPayload(
-        'config.model_selection_incomplete',
-        'Agent cannot start — set provider, lightModel, and heavyModel in agent config or user AI settings',
-      ));
-    }
-
-    return reply.status(202).send({ status: 'starting', sessionId });
+    return reply.status(202).send({ status: result.data.status, sessionId: result.data.sessionId });
   });
 
   // --- Views ---
@@ -2012,29 +1946,16 @@ export async function agentRoutes(
   // cleans up any in-memory runtime handles on the next check cycle.
   app.post<{ Params: { id: string } }>('/agents/:id/stop', async (request, reply) => {
     const { id } = request.params;
-    const now = new Date();
-    const result = await db.transaction(async (tx) => {
-      const [agent] = await tx.select({ status: agents.status })
-        .from(agents)
-        .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-      if (!agent) return { kind: 'not_found' as const };
-      if (agent.status === 'stopped') return { kind: 'already_stopped' as const };
 
-      await tx.update(agents).set({ status: 'stopped', pauseState: null, updatedAt: now })
-        .where(eq(agents.id, id));
+    const result = await stopAgent(db, id, request.userId);
+    if (!result.ok) {
+      if (result.error.code === 'agent.not_found') {
+        return reply.status(404).send({ error: 'not_found' });
+      }
+      return reply.status(500).send({ error: result.error.code, message: result.error.message });
+    }
 
-      await tx.update(agentRuntimeSessions)
-        .set({ status: 'stopped', stoppedAt: now })
-        .where(and(
-          eq(agentRuntimeSessions.agentId, id),
-          inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
-        ));
-
-      return { kind: 'stopped' as const };
-    });
-
-    if (result.kind === 'not_found') return reply.status(404).send({ error: 'not_found' });
-    return reply.send({ status: 'stopped' });
+    return reply.send({ status: result.data.status });
   });
 
   // Get agent outbound messages (agent-authored + platform safety alerts).

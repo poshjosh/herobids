@@ -333,13 +333,13 @@ const CATEGORY_LABELS: Record<CommandHelpEntry['category'], string> = {
  * Build the general help listing grouped by category.
  */
 function buildGeneralHelp(): string {
-  const lines: string[] = ['*Available commands:*', ''];
+  const lines: string[] = ['Available commands:', ''];
 
   for (const category of CATEGORY_ORDER) {
     const entries = COMMAND_HELP.filter((e) => e.category === category);
     if (entries.length === 0) continue;
 
-    lines.push(`*${CATEGORY_LABELS[category]}*`);
+    lines.push(`${CATEGORY_LABELS[category]}:`);
     for (const entry of entries) {
       lines.push(`${entry.syntax} — ${entry.description}`);
     }

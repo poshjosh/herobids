@@ -684,19 +684,21 @@ export async function telegramWebhookHandler(
     // to the existing /to parser and plain-text routing.
     const slashCmd = parseSlashCommand(trimmedText);
     if (slashCmd) {
-      if (slashCmd.command === 'to') {
-        // Delegated to existing parseTelegramCommand logic below.
-      } else if (slashCmd.command === 'unknown') {
-        await sendTelegramText(chatId, formatUnknownCommandResponse(slashCmd.args[0] ?? ''));
-        return;
-      } else if (slashCmd.command === 'help') {
-        await sendTelegramText(chatId, formatCommandHelp(slashCmd.args[0]));
-        return;
-      } else if (slashCmd.command === 'start' && slashCmd.args.length === 0) {
-        // Exact bare /start → onboarding/help, not lifecycle.
-        await sendTelegramText(chatId, formatCommandHelp());
-        return;
-      } else {
+      // /to is handled by the existing parseTelegramCommand logic below.
+      if (slashCmd.command !== 'to') {
+        if (slashCmd.command === 'unknown') {
+          await sendTelegramText(chatId, formatUnknownCommandResponse(slashCmd.args[0] ?? ''));
+          return;
+        }
+        if (slashCmd.command === 'help') {
+          await sendTelegramText(chatId, formatCommandHelp(slashCmd.args[0]));
+          return;
+        }
+        if (slashCmd.command === 'start' && slashCmd.args.length === 0) {
+          // Exact bare /start → onboarding/help, not lifecycle.
+          await sendTelegramText(chatId, formatCommandHelp());
+          return;
+        }
         // Other commands — for Slice 1, reply with a placeholder.
         await sendTelegramText(chatId, `Command /${slashCmd.command} will be available soon.`);
         return;
