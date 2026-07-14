@@ -430,7 +430,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     await flushPromises();
 
     const text = sentText(fetchSpy);
-    expect(text).toContain('Cannot start');
+    expect(text).toContain('cannot start');
     expect(text).toContain('active');
   });
 
