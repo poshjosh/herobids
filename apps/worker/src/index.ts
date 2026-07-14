@@ -127,6 +127,26 @@ async function enrichTokenWithDiscovery(
   }
 }
 
+/** Slash commands registered with the Telegram Bot API so they appear in the client command picker. */
+const TELEGRAM_AGENT_COMMANDS: Array<{ command: string; description: string }> = [
+  { command: 'help', description: 'Show all commands or detailed help for one' },
+  { command: 'agents', description: 'List your agents' },
+  { command: 'status', description: 'Agent status overview or detail' },
+  { command: 'info', description: 'Full agent details' },
+  { command: 'skills', description: 'List available or assigned skills' },
+  { command: 'log', description: 'Recent activity for an agent' },
+  { command: 'connections', description: 'List your connections' },
+  { command: 'start', description: 'Start a stopped agent' },
+  { command: 'pause', description: 'Pause a running agent' },
+  { command: 'resume', description: 'Resume a paused agent' },
+  { command: 'stop', description: 'Stop an agent' },
+  { command: 'restart', description: 'Stop then start an agent' },
+  { command: 'mode', description: 'Show or set execution mode' },
+  { command: 'connect', description: 'Grant or set up a connection' },
+  { command: 'disconnect', description: 'Revoke a connection' },
+  { command: 'to', description: 'Send a message to an agent' },
+];
+
 class CredentialResolutionError extends Error {
   constructor(message: string) {
     super(message);
@@ -626,6 +646,22 @@ if (workerTelegram && appConfig.alerts.telegram.webhookUrl) {
     }
   }
 }
+
+// Register supported slash commands so they appear in the Telegram client command picker.
+// Non-fatal: if registration fails the commands still work, they just won't show in the picker.
+if (workerTelegram) {
+  try {
+    const commandsResult = await workerTelegram.setMyCommands(TELEGRAM_AGENT_COMMANDS);
+    if (!commandsResult.ok) {
+      logger.warn({ error: commandsResult.error }, 'Failed to register Telegram bot commands');
+    } else {
+      logger.info({ count: TELEGRAM_AGENT_COMMANDS.length }, 'Registered Telegram bot commands');
+    }
+  } catch (error) {
+    logger.warn({ error }, 'Unexpected error registering Telegram bot commands');
+  }
+}
+
 // Email client for agent send_message email fanout — disabled by default.
 // Provider selection happens inside the factory; index.ts maps operator
 // config to the provider-neutral EmailClientConfig.

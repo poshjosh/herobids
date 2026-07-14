@@ -92,6 +92,32 @@ export class TelegramClient {
       return err({ code: 'telegram.network_error', message });
     }
   }
+
+  /** Register supported bot commands so they appear in the Telegram client command picker. */
+  async setMyCommands(commands: Array<{ command: string; description: string }>): Promise<Result<undefined, { code: string; message: string }>> {
+    try {
+      const response = await fetch(`${this.baseUrl}/setMyCommands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commands }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        return err({ code: 'telegram.http_error', message: `HTTP ${response.status}: ${body}` });
+      }
+
+      const data = await response.json() as { ok: boolean; description?: string };
+      if (!data.ok) {
+        return err({ code: 'telegram.api_error', message: data.description ?? 'Unknown Telegram API error' });
+      }
+
+      return ok(undefined);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return err({ code: 'telegram.network_error', message });
+    }
+  }
 }
 
 /** Format a journal event into an HTML Telegram message */
