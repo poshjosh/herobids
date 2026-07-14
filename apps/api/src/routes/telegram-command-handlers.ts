@@ -467,6 +467,7 @@ export async function handleLog(
     const logRows = await db.execute(sql`
       SELECT 'msg' AS source, type AS raw_type, NULL::text AS subject, NULL::text AS body_text, NULL::text AS failure_msg, created_at
       FROM agent_messages WHERE agent_id = ${agent.id}
+        AND type NOT IN ('agent.runtime.heartbeat', 'agent.heartbeat')
       UNION ALL
       SELECT 'outbound', authored_by, subject, body, NULL, created_at
       FROM agent_outbound_messages WHERE agent_id = ${agent.id}
