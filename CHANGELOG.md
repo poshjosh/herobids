@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Telegram Agent Slash Commands:** Full command surface for agent discovery, status, and lifecycle control via Telegram. 16 commands across 5 categories: Help (`/help`), Discovery (`/agents`, `/status`, `/info`, `/skills`, `/log`, `/connections`), Lifecycle (`/start`, `/pause`, `/resume`, `/stop`, `/restart`), Config (`/mode`, `/connect`, `/disconnect`), and Messaging (`/to`). Includes one-time setup link flow for secure connection creation without secrets in chat. Commands register via Bot API `setMyCommands` at startup. 54 new tests.
+
 ### Changed
 
 - **Agent shadow mode:** Removed the admin-only restriction for selecting `shadow` execution mode in agent create/edit flows and agent API validation.
