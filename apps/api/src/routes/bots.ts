@@ -12,6 +12,7 @@ import {
 } from '../schemas.js';
 import { checkBotLimit, checkLiveEnabled } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
+import { canonicalizeExecutionMode } from './agent-config-helpers.js';
 import { BotConfigSchema, INSTANCE_MESSAGE_TYPES, validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
 import type { LifecycleJob } from '../types.js';
 
@@ -76,6 +77,18 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
 
     resolvedConfig = normalizeBotConfig(resolvedConfig, parsed.data.venue, parsed.data.symbol);
 
+    // Canonicalize the user-facing input alias `test` to a concrete backend mode
+    // before schema validation. Bots always require a venue, so `test` → `shadow`.
+    const rawExecutionMode = (resolvedConfig['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
+    if (rawExecutionMode) {
+      const canonical = canonicalizeExecutionMode(rawExecutionMode, { hasConnections: true });
+      if (canonical !== rawExecutionMode && typeof canonical === 'string') {
+        const exec = (resolvedConfig['execution'] ?? {}) as Record<string, unknown>;
+        exec['mode'] = canonical;
+        resolvedConfig['execution'] = exec;
+      }
+    }
+
     const configCheck = BotConfigSchema.safeParse(resolvedConfig);
     if (!configCheck.success) {
       return reply.status(400).send({ error: 'validation_error', details: configCheck.error.issues });
@@ -84,9 +97,10 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     const id = crypto.randomUUID();
     const now = new Date();
 
+    const botExecutionMode = (resolvedConfig['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
+
     // Validate execution capability for the bot's venue + mode combination
     const botVenueType = venueTypeFromProvider(parsed.data.venue);
-    const botExecutionMode = (resolvedConfig['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
     if (botVenueType && botExecutionMode) {
       const capCheck = validateExecutionCapability({
         actorType: 'bot',
@@ -220,8 +234,21 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       return reply.status(404).send({ error: 'not_found' });
     }
 
+    // Canonicalize the user-facing input alias `test` to a concrete backend mode.
+    // Bots always require a venue, so `test` always resolves to `shadow`.
+    let newExecutionMode = (parsed.data.config['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
+    if (newExecutionMode) {
+      const canonical = canonicalizeExecutionMode(newExecutionMode, { hasConnections: true });
+      if (canonical !== newExecutionMode && typeof canonical === 'string') {
+        newExecutionMode = canonical;
+        // Write the canonical value back so the DB stores the concrete mode
+        const exec = (parsed.data.config['execution'] ?? {}) as Record<string, unknown>;
+        exec['mode'] = canonical;
+        parsed.data.config['execution'] = exec;
+      }
+    }
+
     // Validate execution capability for the updated config against the bot's venue type
-    const newExecutionMode = (parsed.data.config['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
     if (newExecutionMode) {
       const [conn] = await db.select({ provider: connections.provider }).from(connections)
         .where(eq(connections.id, existing.connectionId));

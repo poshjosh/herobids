@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, or, inArray, notInArray, sql, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { AgentRepository, AgentDocumentsRepository, agents, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
+import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
 import { AgentDocumentService, sanitizeFilename } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
@@ -24,6 +24,7 @@ import {
   resolveExecutionModeForSkills,
   validateAgentModelPolicy,
   validateAgentRiskBounds,
+  validateConnectionRequirement,
   validateDailyLossRequiresCapital,
 } from './agent-config-helpers.js';
 
@@ -69,7 +70,7 @@ const UpdateAgentSchema = z.object({
   dailySpendBudgetUsd: z.number().positive().nullable().optional(),
   dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).nullable().optional(),
   telegramChatId: z.string().nullable().optional(),
-  executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
+  executionMode: z.enum(['paper', 'shadow', 'live', 'test']).nullable().optional(),
   dailyLossLimit: nullablePositiveDecimalStringSchema,
   maxDrawdownPct: z.number().min(0).max(100).nullable().optional(),
   maxBots: nullablePositiveIntegerSchema(),
@@ -353,14 +354,28 @@ export async function agentInteractivityRoutes(
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
     }
 
+    // Determine whether the agent has trading connections — used to resolve
+    // the `test` input alias to the correct concrete simulation mode.
+    const [existingActiveConn] = await db.select({ id: agentConnections.id })
+      .from(agentConnections)
+      .where(and(eq(agentConnections.agentId, id), eq(agentConnections.status, 'active')))
+      .limit(1);
+    const hasAgentConnections = !!existingActiveConn;
+
     const executionMode = resolveExecutionModeForSkills({
       skillIds: mergedSkillIds,
       submittedExecutionMode: parsed.data.executionMode,
       executionModeProvided: parsed.data.executionMode !== undefined,
       currentExecutionMode: agent.executionMode,
+      hasConnections: hasAgentConnections,
     });
     if (executionMode.issue) {
       return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
+    }
+
+    const connectionRequirementIssue = validateConnectionRequirement(executionMode.value, hasAgentConnections);
+    if (connectionRequirementIssue) {
+      return reply.status(400).send({ error: 'validation_error', details: [connectionRequirementIssue] });
     }
 
     const assignmentResolution = parsed.data.skillIds !== undefined

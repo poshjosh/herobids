@@ -66,8 +66,7 @@ A proposal to change your exposure on an asset. Decisions are sent from agents o
 
 How your trades reach the market:
 
-- **Paper** — Simulated trading with realistic fees and slippage. No real money at risk.
-- **Shadow** — Tracks a real account but simulates fills. Good for validating before going live.
+- **Test** — Simulated trading. Tracks real market data but does not place real orders. No real money at risk.
 - **Live** — Real orders on real exchanges. Real capital at risk.
 
 ---
@@ -92,10 +91,6 @@ The maximum number of positions your agent can hold at once. Agents can lower th
 
 ---
 
-## Paper
-
-See [Execution Mode](#execution-mode).
-
 ## Platform Safety Alert
 
 A critical notification from the platform itself — not from your agent. Delivered for events like crashes, forced stops, or position mismatches with the exchange. Always on; you can't opt out.
@@ -108,17 +103,13 @@ The process of comparing what the platform thinks your positions are against wha
 
 ---
 
-## Shadow
-
-See [Execution Mode](#execution-mode).
-
 ## Skill Preset
 
 A bundled set of capabilities for an agent. Determines which tools your agent can use. Chosen when you create the agent. Examples: `trading`, `personal-assistant`.
 
 ## Slippage
 
-The difference between the price you expected and the price you got. The platform simulates realistic slippage in paper and shadow modes.
+The difference between the price you expected and the price you got. The platform simulates realistic slippage in test mode.
 
 ## stopLossCooldownMs
 

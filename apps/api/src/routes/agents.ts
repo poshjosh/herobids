@@ -59,6 +59,7 @@ import {
   optionalPositiveDecimalStringSchema,
   optionalPositiveIntegerSchema,
   resolveExecutionModeForSkills,
+  validateConnectionRequirement,
   resolveNotificationPolicy,
   resolveAgentRiskContractForResponse,
   validateAgentModelPolicy,
@@ -106,7 +107,8 @@ const CreateAgentSchema = z.object({
       }).optional(),
     }).optional(),
   }).nullable().optional(),
-  executionMode: z.enum(['paper', 'shadow', 'live']).optional(),
+  executionMode: z.enum(['paper', 'shadow', 'live', 'test']).optional(),
+  executionVenue: z.string().min(1).optional(),
   dailyLossLimit: optionalPositiveDecimalStringSchema,
   maxDrawdownPct: z.number().min(0).max(100).optional(),
   maxBots: optionalPositiveIntegerSchema(),
@@ -181,7 +183,7 @@ const UpdateAgentSchema = z.object({
     }).optional(),
   }).nullable().optional(),
   // nullable allows clearing a previously set value; undefined (omitted) leaves the field unchanged
-  executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
+  executionMode: z.enum(['paper', 'shadow', 'live', 'test']).nullable().optional(),
   dailyLossLimit: nullablePositiveDecimalStringSchema,
   maxDrawdownPct: z.number().min(0).max(100).nullable().optional(),
   maxBots: nullablePositiveIntegerSchema(),
@@ -653,14 +655,23 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: holdInvariantIssues });
     }
 
+    const connectionIds = parsed.data.connectionIds ?? [];
+
     const executionMode = resolveExecutionModeForSkills({
       skillIds: parsed.data.skillIds ?? [],
       submittedExecutionMode: parsed.data.executionMode,
       executionModeProvided: parsed.data.executionMode !== undefined,
       currentExecutionMode: null,
+      hasConnections: connectionIds.length > 0,
+      hasVenue: parsed.data.executionVenue !== undefined,
     });
     if (executionMode.issue) {
       return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
+    }
+
+    const connectionRequirementIssue = validateConnectionRequirement(executionMode.value, connectionIds.length > 0);
+    if (connectionRequirementIssue) {
+      return reply.status(400).send({ error: 'validation_error', details: [connectionRequirementIssue] });
     }
 
     const skillPlanPolicy = resolveSkillPlanPolicy(request.userPlanId || 'free', request.isAdmin);
@@ -674,8 +685,6 @@ export async function agentRoutes(
     if (assignmentResolution.error) {
       return reply.status(400).send({ error: assignmentResolution.error.code, details: assignmentResolution.error.details ?? [], message: assignmentResolution.error.message });
     }
-
-    const connectionIds = parsed.data.connectionIds ?? [];
 
     // Resolve style-based strategy preset into agent config
     let presetUnifiedConfig: Record<string, unknown> | null = null;
@@ -1117,6 +1126,19 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
     }
 
+    // Determine whether the agent has trading connections — used to resolve
+    // the `test` input alias to the correct concrete simulation mode.
+    let hasAgentConnections: boolean;
+    if (parsed.data.connectionIds !== undefined) {
+      hasAgentConnections = parsed.data.connectionIds.length > 0;
+    } else {
+      const [existingActiveConn] = await db.select({ id: agentConnections.id })
+        .from(agentConnections)
+        .where(and(eq(agentConnections.agentId, id), eq(agentConnections.status, 'active')))
+        .limit(1);
+      hasAgentConnections = !!existingActiveConn;
+    }
+
     // Validate maxHoldDurationMs >= tickIntervalMs invariant (effective after PATCH merge).
     // PATCH semantics: use new value if explicitly provided, otherwise keep the existing one.
     const holdInvariantIssues = validateMaxHoldDurationInvariant({
@@ -1139,9 +1161,15 @@ export async function agentRoutes(
       submittedExecutionMode: parsed.data.executionMode,
       executionModeProvided: parsed.data.executionMode !== undefined,
       currentExecutionMode: agent.executionMode,
+      hasConnections: hasAgentConnections,
     });
     if (executionMode.issue) {
       return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
+    }
+
+    const connectionRequirementIssue = validateConnectionRequirement(executionMode.value, hasAgentConnections);
+    if (connectionRequirementIssue) {
+      return reply.status(400).send({ error: 'validation_error', details: [connectionRequirementIssue] });
     }
 
     // Validate execution capability against the agent's active trading connection (if any)

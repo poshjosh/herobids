@@ -470,4 +470,134 @@ describe.skipIf(SKIP)('Agents functional', () => {
       expect(agent.notificationPolicy?.sendMessage?.email?.enabledAt).toBeUndefined();
     });
   });
+
+  describe('execution mode lifecycle', () => {
+    it('resolves test mode to paper with no connections, then to shadow after granting a connection', async () => {
+      // 1. Create agent with test mode + venue hint, no connections
+      const createRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: {
+          name: 'Test Mode Agent',
+          prompt: 'Trade BTC.',
+          skillIds: ['trading'],
+          executionMode: 'test',
+          executionVenue: 'hyperliquid',
+        },
+      });
+      expect(createRes.statusCode).toBe(201);
+      const agent = createRes.json<{ id: string; executionMode: string }>();
+      expect(agent.executionMode).toBe('paper');
+
+      const agentId = agent.id;
+
+      // 2. Create a Hyperliquid connection
+      const linkRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/setup/provider-link',
+        headers: authHeader(),
+        payload: {
+          provider: 'hyperliquid',
+          label: 'hl-functional-test',
+          secrets: {
+            apiKey: 'test-key',
+            secret: 'test-secret',
+            walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          },
+          capability: 'trading',
+        },
+      });
+      expect(linkRes.statusCode).toBe(201);
+      const connectionId = linkRes.json<{ connection: { id: string } }>().connection.id;
+
+      // 3. Grant the connection to the agent
+      const patchRes = await ctx.app.inject({
+        method: 'PATCH',
+        url: `/agents/${agentId}`,
+        headers: authHeader(),
+        payload: { connectionIds: [connectionId] },
+      });
+      expect(patchRes.statusCode).toBe(200);
+
+      // 4. Verify the stored mode is now shadow (venue-backed simulation)
+      const getRes = await ctx.app.inject({
+        method: 'GET',
+        url: `/agents/${agentId}`,
+        headers: authHeader(),
+      });
+      expect(getRes.statusCode).toBe(200);
+      const updated = getRes.json<{ executionMode: string }>();
+      expect(updated.executionMode).toBe('shadow');
+    });
+
+    it('transitions from paper to live without mode leak', async () => {
+      // 1. Create agent in paper mode (no venue)
+      const createRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: {
+          name: 'Paper To Live Agent',
+          prompt: 'Trade SOL.',
+          skillIds: ['trading'],
+          executionMode: 'paper',
+        },
+      });
+      expect(createRes.statusCode).toBe(201);
+      const agent = createRes.json<{ id: string; executionMode: string }>();
+      expect(agent.executionMode).toBe('paper');
+      const agentId = agent.id;
+
+      // 2. Create a Hyperliquid connection
+      const linkRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/setup/provider-link',
+        headers: authHeader(),
+        payload: {
+          provider: 'hyperliquid',
+          label: 'hl-live-test',
+          secrets: {
+            apiKey: 'test-key',
+            secret: 'test-secret',
+            walletAddress: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          },
+          capability: 'trading',
+        },
+      });
+      expect(linkRes.statusCode).toBe(201);
+      const connectionId = linkRes.json<{ connection: { id: string } }>().connection.id;
+
+      // 3. Switch to live mode with the connection
+      const patchRes = await ctx.app.inject({
+        method: 'PATCH',
+        url: `/agents/${agentId}`,
+        headers: authHeader(),
+        payload: {
+          executionMode: 'live',
+          connectionIds: [connectionId],
+        },
+      });
+      expect(patchRes.statusCode).toBe(200);
+
+      // 4. Verify the stored mode is live (no paper/shadow leak)
+      const getRes = await ctx.app.inject({
+        method: 'GET',
+        url: `/agents/${agentId}`,
+        headers: authHeader(),
+      });
+      expect(getRes.statusCode).toBe(200);
+      const updated = getRes.json<{ executionMode: string }>();
+      expect(updated.executionMode).toBe('live');
+
+      // 5. Start the agent — live mode with a connection must be allowed
+      const startRes = await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${agentId}/start`,
+        headers: authHeader(),
+      });
+      expect(startRes.statusCode).toBe(202);
+      expect(startRes.json<{ status: string }>().status).toBe('starting');
+    });
+  });
 });

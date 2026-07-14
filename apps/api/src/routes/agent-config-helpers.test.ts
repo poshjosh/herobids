@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { resolveNotificationPolicy, resolveExecutionModeForSkills } from './agent-config-helpers.js';
+import { resolveNotificationPolicy, resolveExecutionModeForSkills, validateConnectionRequirement } from './agent-config-helpers.js';
 
 describe('resolveNotificationPolicy', () => {
   beforeEach(() => {
@@ -171,6 +171,28 @@ describe('resolveExecutionModeForSkills', () => {
       expect(result.value).toBe('live');
     });
 
+    it('resolves test mode to paper when no venue context exists', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'test',
+        executionModeProvided: true,
+        hasConnections: false,
+        hasVenue: false,
+      });
+      expect(result.value).toBe('paper');
+    });
+
+    it('resolves test mode to shadow when a venue is selected', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'test',
+        executionModeProvided: true,
+        hasConnections: false,
+        hasVenue: true,
+      });
+      expect(result.value).toBe('shadow');
+    });
+
     it('returns an issue when an invalid mode string is submitted', () => {
       const result = resolveExecutionModeForSkills({
         skillIds: [TRADING_SKILL],
@@ -223,5 +245,38 @@ describe('resolveExecutionModeForSkills', () => {
       });
       expect(result.value).toBe('paper');
     });
+  });
+});
+
+describe('validateConnectionRequirement', () => {
+  it('returns an issue when live mode has no granted connection', () => {
+    const issue = validateConnectionRequirement('live', false);
+    expect(issue).toEqual({
+      code: 'custom',
+      path: ['connectionIds'],
+      message: 'At least one connection is required for live or shadow execution.',
+    });
+  });
+
+  it('returns an issue when shadow mode has no granted connection', () => {
+    const issue = validateConnectionRequirement('shadow', false);
+    expect(issue).not.toBeNull();
+    expect(issue?.path).toEqual(['connectionIds']);
+  });
+
+  it('returns null when live mode has a granted connection', () => {
+    expect(validateConnectionRequirement('live', true)).toBeNull();
+  });
+
+  it('returns null when shadow mode has a granted connection', () => {
+    expect(validateConnectionRequirement('shadow', true)).toBeNull();
+  });
+
+  it('returns null for paper mode regardless of connections', () => {
+    expect(validateConnectionRequirement('paper', false)).toBeNull();
+  });
+
+  it('returns null when execution mode is null', () => {
+    expect(validateConnectionRequirement(null, false)).toBeNull();
   });
 });

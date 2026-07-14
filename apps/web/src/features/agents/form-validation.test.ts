@@ -19,8 +19,9 @@ function validIntent(overrides: Partial<Parameters<typeof validateCreateAgentFor
     stopLossPct: '',
     venue: 'hyperliquid',
     venueType: 'orderbook',
-    executionMode: 'paper',
+    executionMode: 'test',
     requiresTradingSetup: true,
+    hasConnection: true,
     ...overrides,
   };
 }
@@ -155,36 +156,27 @@ describe('validateCreateAgentForm', () => {
     expect(result.errors.venue).toBeDefined();
   });
 
-  it('returns error for missing venue in shadow mode', () => {
+  it('does not require venue in test mode', () => {
     const result = validateCreateAgentForm(
-      validIntent({ venue: '', executionMode: 'shadow' }),
-      DEFAULT_CONSTRAINTS,
-    );
-    expect(result.valid).toBe(false);
-    expect(result.errors.venue).toBeDefined();
-  });
-
-  it('does not require venue in paper mode', () => {
-    const result = validateCreateAgentForm(
-      validIntent({ venue: '', venueType: '', executionMode: 'paper' }),
+      validIntent({ venue: '', executionMode: 'test' }),
       DEFAULT_CONSTRAINTS,
     );
     expect(result.valid).toBe(true);
     expect(result.errors.venue).toBeUndefined();
   });
 
-  it('returns error for paper mode with swap venue', () => {
+  it('does not require venue in test mode without venue type', () => {
     const result = validateCreateAgentForm(
-      validIntent({ executionMode: 'paper', venueType: 'swap' }),
+      validIntent({ venue: '', venueType: '', executionMode: 'test' }),
       DEFAULT_CONSTRAINTS,
     );
-    expect(result.valid).toBe(false);
-    expect(result.errors.executionMode).toBeDefined();
+    expect(result.valid).toBe(true);
+    expect(result.errors.venue).toBeUndefined();
   });
 
-  it('allows shadow mode with swap venue', () => {
+  it('allows test mode with swap venue (backend resolves to shadow)', () => {
     const result = validateCreateAgentForm(
-      validIntent({ executionMode: 'shadow', venue: 'jupiter', venueType: 'swap' }),
+      validIntent({ executionMode: 'test', venue: 'jupiter', venueType: 'swap' }),
       DEFAULT_CONSTRAINTS,
     );
     expect(result.errors.executionMode).toBeUndefined();
@@ -196,6 +188,32 @@ describe('validateCreateAgentForm', () => {
       DEFAULT_CONSTRAINTS,
     );
     expect(result.errors.executionMode).toBeUndefined();
+  });
+
+  it('requires a granted connection when a venue is selected', () => {
+    const result = validateCreateAgentForm(
+      validIntent({ hasConnection: false }),
+      DEFAULT_CONSTRAINTS,
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors.connectionIds).toBeDefined();
+  });
+
+  it('does not require a connection when no venue is selected', () => {
+    const result = validateCreateAgentForm(
+      validIntent({ venue: '', venueType: '', executionMode: 'test', hasConnection: false }),
+      DEFAULT_CONSTRAINTS,
+    );
+    expect(result.valid).toBe(true);
+    expect(result.errors.connectionIds).toBeUndefined();
+  });
+
+  it('does not require a connection for non-trading agents even with a venue set', () => {
+    const result = validateCreateAgentForm(
+      validIntent({ requiresTradingSetup: false, hasConnection: false }),
+      DEFAULT_CONSTRAINTS,
+    );
+    expect(result.errors.connectionIds).toBeUndefined();
   });
 
   it('returns multiple errors when multiple fields are invalid', () => {

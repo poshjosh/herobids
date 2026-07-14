@@ -59,6 +59,10 @@ describe('agent routes skill preservation', () => {
           return makeChain([{ skillId: 'paid-skill' }]);
         }
         if (selectCount === 3) {
+          // hasAgentConnections lookup (agent_connections) — no active connections.
+          return makeChain([]);
+        }
+        if (selectCount === 4) {
           return makeChain([{
             id: 'paid-skill',
             authorId: 'other-user',
@@ -67,20 +71,20 @@ describe('agent routes skill preservation', () => {
             currentRevisionId: 'paid-skill:v2',
           }]);
         }
-        if (selectCount === 4) {
-          return makeChain([]);
-        }
         if (selectCount === 5) {
           return makeChain([]);
         }
         if (selectCount === 6) {
-          return makeChain([{ skillId: 'paid-skill', skillRevisionId: 'paid-skill:v2' }]);
+          return makeChain([]);
         }
         if (selectCount === 7) {
+          return makeChain([{ skillId: 'paid-skill', skillRevisionId: 'paid-skill:v2' }]);
+        }
+        if (selectCount === 8) {
           // User aiModelConfig query (adaptive reasoning stamping)
           return makeChain([{ aiModelConfig: null }]);
         }
-        if (selectCount === 8) {
+        if (selectCount === 9) {
           return makeChain([updatedAgent]);
         }
         return makeChain([{ skillId: 'paid-skill' }]);

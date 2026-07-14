@@ -50,7 +50,7 @@ You are responsible for complying with all applicable laws and regulations in yo
 - **Agent behavior** — AI agents may generate incorrect, incomplete, inconsistent, or unexpected outputs and may take unintended actions based on ambiguous or incorrect instructions. You should monitor your agents and configure appropriate risk limits and spending caps.
 
 - **Execution modes** - The platform supports the following execution modes:
-  - **Paper** — Simulated trading. No real orders are placed.
+  - **Test** — Simulated trading. No real orders are placed.
   - **Live** — Real orders are placed on supported trading venues using real funds.
 
 You are responsible for verifying which execution mode your agents are operating in before starting them.

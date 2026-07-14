@@ -910,6 +910,37 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
         { id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-trading' },
         { id: 'bot-management', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-bot-management' },
       ],
+      // Shadow execution requires a granted connection — see validateConnectionRequirement.
+      connectionRows: [{ id: 'conn-1', userId: TEST_USER_ID, status: 'active' }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'shadow agent',
+        prompt: 'test',
+        skillIds: ['trading'],
+        executionMode: 'shadow',
+        connectionIds: ['conn-1'],
+      },
+    });
+
+    // Non-admin users must be able to create agents with shadow execution mode.
+    // The removed admin-only guard would have returned 403.
+    expect(res.statusCode).not.toBe(403);
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('rejects creating an agent with shadow or live execution mode and no granted connection', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: ['trading'], modelPolicy: null, executionMode: 'shadow' }],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
 
     const app = Fastify();
@@ -927,10 +958,11 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       },
     });
 
-    // Non-admin users must be able to create agents with shadow execution mode.
-    // The removed admin-only guard would have returned 403.
-    expect(res.statusCode).not.toBe(403);
-    expect(res.statusCode).toBe(201);
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      error: 'validation_error',
+      details: [expect.objectContaining({ path: ['connectionIds'] })],
+    });
   });
 
   it('allows non-admin users to update agents to shadow execution mode', async () => {
@@ -939,6 +971,8 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
       activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'shadow' }],
       agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
+      // Shadow execution requires a granted connection — see validateConnectionRequirement.
+      agentConnectionRows: [{ id: 'grant-1', agentId: 'agent-1', connectionId: 'conn-1', status: 'active' }],
     });
 
     const app = Fastify();
@@ -956,6 +990,111 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     });
 
     expect(res.statusCode).toBe(200);
+  });
+
+  it('rejects updating an agent to shadow execution mode with no granted connection', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        name: 'shadow agent updated',
+        prompt: 'test updated',
+        executionMode: 'shadow',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      error: 'validation_error',
+      details: [expect.objectContaining({ path: ['connectionIds'] })],
+    });
+  });
+
+  it('allows explicitly clearing connectionIds from a paper-mode agent', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
+      agentConnectionRows: [{ id: 'grant-1', agentId: 'agent-1', connectionId: 'conn-1', status: 'active' }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        connectionIds: [],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('resolves test mode to shadow on PATCH when the agent has active connections', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'shadow' }],
+      agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
+      agentConnectionRows: [{ id: 'grant-1', agentId: 'agent-1', connectionId: 'conn-1', status: 'active' }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        executionMode: 'test',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const agentUpdate = updateSets.find((s: Record<string, unknown>) => 'executionMode' in s);
+    expect(agentUpdate).toBeDefined();
+    expect((agentUpdate as Record<string, unknown>)['executionMode']).toBe('shadow');
+  });
+
+  it('resolves test mode to paper on PATCH when the agent has no connections', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        executionMode: 'test',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const agentUpdate = updateSets.find((s: Record<string, unknown>) => 'executionMode' in s);
+    expect(agentUpdate).toBeDefined();
+    expect((agentUpdate as Record<string, unknown>)['executionMode']).toBe('paper');
   });
 
   it('rejects explicit execution mode for non-trading agents on create', async () => {

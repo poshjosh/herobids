@@ -72,9 +72,9 @@ A proposal to change exposure on one instrument, submitted through the platform 
 ## E
 
 ### Execution Mode
-How a trading decision is routed to a venue. Three modes:
-- **Paper** — Simulated fills using configurable slippage and fees. No real orders are placed.
-- **Shadow** — Tracks a real venue account's state but executes simulated fills. Used for validation before going live.
+How a trading decision is routed to a venue. The API accepts `live`, `paper`, and `shadow`. For simplicity, the UI shows only `live` and `test`, in which case `test` is mapped to a concrete simulation mode internally: `paper` when no venue is selected, `shadow` when a venue is selected.
+
+- **Test** — Simulated. No real orders placed.
 - **Live** — Real orders sent to the venue. Real capital at risk.
 
 ### Explicit Safety Invariant
@@ -115,7 +115,7 @@ See [Execution Mode](#execution-mode).
 ## P
 
 ### Paper
-See [Execution Mode](#execution-mode).
+Legacy execution mode. See [Execution Mode](#execution-mode).
 
 ### Platform Safety Alert
 A system-authored notification delivered to a user for a critical trust or safety event. Non-configurable; always delivered regardless of agent or user preferences. Examples: runtime crash, agent paused by guardrail, critical reconciliation failure.
@@ -132,13 +132,13 @@ The process of comparing the platform's internal state (positions, balances) aga
 ## S
 
 ### Shadow
-See [Execution Mode](#execution-mode).
+Legacy execution mode. See [Execution Mode](#execution-mode).
 
 ### Skill Preset
 A bundled capability profile for an agent. Determines which tools and capabilities are available. Chosen at agent creation. Examples: `trading`, `personal-assistant`, `custom`.
 
 ### Slippage
-The difference between the expected price of a trade and the price at which it actually executes. Configured in BPS (basis points). Paper and shadow modes simulate realistic slippage.
+The difference between the expected price of a trade and the price at which it actually executes. Configured in BPS (basis points). Test mode simulates realistic slippage via its concrete paper or shadow execution path.
 
 ### stopLossCooldownMs
 **Operator config / agent-adjustable setting.** Cooldown period (in milliseconds) after a stop-loss exit before the agent may re-enter a position. Default: 300,000 ms (5 minutes).
@@ -155,6 +155,9 @@ A bundled configuration profile for a bot blueprint. Selects default strategy pa
 ---
 
 ## T
+
+### Test
+User-facing execution mode. See [Execution Mode](#execution-mode).
 
 ### targetSize
 The desired final absolute position size for an instrument after the engine applies planning against current state. It is the desired end-state exposure, not the size of the next individual order.

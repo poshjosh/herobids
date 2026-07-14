@@ -9,6 +9,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - **Agent shadow mode:** Removed the admin-only restriction for selecting `shadow` execution mode in agent create/edit flows and agent API validation.
+- **Execution mode UX:** Simplified agent execution mode of `live`, `paper`, and `shadow`. The frontend and public docs only show `Live` and `Test`. The API accepts `test` (maps it to either `shadow` or `paper`). `paper` and `shadow` remain available via the API. Updated i18n strings, public-facing glossary, user agreement, and internal tech glossary accordingly.
+- **Connection requirement for live/shadow execution:** Creating or updating an agent into `live` or `shadow` execution mode now requires at least one granted connection, on both the API (create, PATCH, PUT) and the create-agent UI. Closes a gap where a venue-only selection with no granted connection could produce an agent with a venue-backed execution mode but no execution context to resolve at runtime. The create flow now sends the selected venue to the API so `test` can resolve to `shadow` even before a connection is granted, and the edit modal no longer risks clearing existing connections while they are still loading.
 
 ## v0.0.24 - 2026-07-13
 

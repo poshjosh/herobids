@@ -309,6 +309,10 @@ describe('PUT /agents/:id', () => {
           return makeChain([{ skillId: 'trading' }]);
         }
         if (selectCount === 3) {
+          // hasAgentConnections lookup (agent_connections) — no active connections.
+          return makeChain([]);
+        }
+        if (selectCount === 4) {
           return makeChain([{
             id: 'task-management',
             authorId: TEST_USER_ID,
@@ -317,16 +321,16 @@ describe('PUT /agents/:id', () => {
             currentRevisionId: 'task-management:v1',
           }]);
         }
-        if (selectCount === 4) {
-          return makeChain([]);
-        }
         if (selectCount === 5) {
           return makeChain([]);
         }
         if (selectCount === 6) {
-          return makeChain([{ skillId: 'trading', skillRevisionId: 'trading:v1' }]);
+          return makeChain([]);
         }
         if (selectCount === 7) {
+          return makeChain([{ skillId: 'trading', skillRevisionId: 'trading:v1' }]);
+        }
+        if (selectCount === 8) {
           return makeChain([updatedAgent]);
         }
         return makeChain([{ skillId: 'task-management' }]);
@@ -435,6 +439,10 @@ describe('PUT /agents/:id', () => {
           return makeChain([{ skillId: 'paid-skill' }]);
         }
         if (selectCount === 3) {
+          // hasAgentConnections lookup (agent_connections) — no active connections.
+          return makeChain([]);
+        }
+        if (selectCount === 4) {
           return makeChain([{
             id: 'paid-skill',
             authorId: 'other-user',
@@ -443,16 +451,16 @@ describe('PUT /agents/:id', () => {
             currentRevisionId: 'paid-skill:v2',
           }]);
         }
-        if (selectCount === 4) {
-          return makeChain([]);
-        }
         if (selectCount === 5) {
           return makeChain([]);
         }
         if (selectCount === 6) {
-          return makeChain([{ skillId: 'paid-skill', skillRevisionId: 'paid-skill:v2' }]);
+          return makeChain([]);
         }
         if (selectCount === 7) {
+          return makeChain([{ skillId: 'paid-skill', skillRevisionId: 'paid-skill:v2' }]);
+        }
+        if (selectCount === 8) {
           return makeChain([updatedAgent]);
         }
         return makeChain([{ skillId: 'paid-skill' }]);

@@ -28,7 +28,7 @@ export interface AgentFormState {
   connectionIds?: string[];
 
   // Trading setup
-  executionMode: 'paper' | 'shadow' | 'live' | '';
+  executionMode: 'test' | 'live' | '';
   capital: string;
 
   // Notifications
@@ -86,14 +86,15 @@ export function agentToFormState(agent: Agent): AgentFormState {
   ) ? agent.hybridMode
     : capabilityMode === 'hybrid' ? 'scanner_gated' : undefined;
 
-  // Runtime-validate union literal fields
-  const VALID_EXECUTION_MODES = ['paper', 'shadow', 'live', ''] as const;
+  // Map stored concrete modes back to the user-facing abstraction.
+  // The DB stores paper, shadow, or live; the form state only knows test and live.
   const rawExecutionMode = agent.executionMode;
   const executionMode: AgentFormState['executionMode'] =
-    typeof rawExecutionMode === 'string' &&
-    (VALID_EXECUTION_MODES as readonly string[]).includes(rawExecutionMode)
-      ? (rawExecutionMode as AgentFormState['executionMode'])
-      : '';
+    rawExecutionMode === 'paper' || rawExecutionMode === 'shadow'
+      ? 'test'
+      : rawExecutionMode === 'live'
+        ? 'live'
+        : '';
 
   const VALID_COST_PRESETS = ['', 'minimal', 'standard', 'premium', 'custom'] as const;
   const rawCostPreset = agent.costPreset;
@@ -173,7 +174,7 @@ export function intentToFormState(intent: {
   technicalConfig: TechnicalConfigFormState;
   skillIds: string[];
   connectionIds?: string[];
-  executionMode: 'paper' | 'shadow' | 'live' | '';
+  executionMode: 'test' | 'live' | '';
   capital: string;
   telegramChatId: string;
   emailDelivery: 'inherit' | 'allow' | 'disable';

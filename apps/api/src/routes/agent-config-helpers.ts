@@ -10,6 +10,23 @@ const AGENT_EXECUTION_MODES = new Set(['paper', 'shadow', 'live'] as const);
 type AgentExecutionMode = 'paper' | 'shadow' | 'live';
 type NullableAgentExecutionMode = AgentExecutionMode | null | undefined;
 
+/**
+ * Map the user-facing input alias `test` to a concrete simulation mode.
+ * - test with no venue/connection → paper (pure simulation, no venue needed)
+ * - test with a venue/connection → shadow (venue-backed simulation)
+ * - All other modes pass through unchanged.
+ *
+ * `test` is an input alias only — audits, logs, and downstream consumers
+ * always see the concrete mode.
+ */
+export function canonicalizeExecutionMode(
+  mode: string | null | undefined,
+  opts?: { hasConnections?: boolean; hasVenue?: boolean },
+): string | null | undefined {
+  if (mode === 'test') return opts?.hasConnections || opts?.hasVenue ? 'shadow' : 'paper';
+  return mode;
+}
+
 export const CostPresetSchema = z.enum(['minimal', 'standard', 'premium', 'custom']);
 
 export type CostPreset = z.infer<typeof CostPresetSchema>;
@@ -85,12 +102,17 @@ export function hasSkillCapabilityFamily(skillIds: string[] | null | undefined, 
   return (skillIds ?? []).some((skillId) => CAPABILITY_FAMILIES_BY_SKILL_ID.get(skillId)?.includes(capabilityFamily));
 }
 
-function normalizeExecutionMode(value: string | null | undefined): NullableAgentExecutionMode {
+function normalizeExecutionMode(
+  value: string | null | undefined,
+  opts?: { hasConnections?: boolean; hasVenue?: boolean },
+): NullableAgentExecutionMode {
   if (value == null) {
     return value;
   }
 
-  return AGENT_EXECUTION_MODES.has(value as AgentExecutionMode) ? value as AgentExecutionMode : null;
+  // Canonicalize user-facing input alias (test) to concrete backend mode
+  const canonical = canonicalizeExecutionMode(value, opts);
+  return AGENT_EXECUTION_MODES.has(canonical as AgentExecutionMode) ? canonical as AgentExecutionMode : null;
 }
 
 export function resolveExecutionModeForSkills(input: {
@@ -98,6 +120,10 @@ export function resolveExecutionModeForSkills(input: {
   submittedExecutionMode: NullableAgentExecutionMode;
   executionModeProvided: boolean;
   currentExecutionMode?: string | null;
+  /** Whether the agent has trading connections (venue accounts). Used to resolve `test` → paper or shadow. */
+  hasConnections?: boolean;
+  /** Whether the agent has an explicit venue selection. Used to resolve `test` → shadow before any connection is granted. */
+  hasVenue?: boolean;
 }): {
   value: Exclude<NullableAgentExecutionMode, undefined>;
   issue?: { code: 'custom'; path: string[]; message: string };
@@ -118,15 +144,17 @@ export function resolveExecutionModeForSkills(input: {
     return { value: null };
   }
 
+  const connectionOpts = { hasConnections: input.hasConnections, hasVenue: input.hasVenue };
+
   if (input.executionModeProvided) {
-    const resolved = normalizeExecutionMode(input.submittedExecutionMode);
+    const resolved = normalizeExecutionMode(input.submittedExecutionMode, connectionOpts);
     if (resolved == null) {
       return {
         value: null,
         issue: {
           code: 'custom',
           path: ['executionMode'],
-          message: 'executionMode must be explicitly set for agents with trading skills (paper, shadow, or live)',
+          message: 'executionMode must be explicitly set for agents with trading skills (test or live)',
         },
       };
     }
@@ -134,13 +162,33 @@ export function resolveExecutionModeForSkills(input: {
   }
 
   // Carry forward existing mode when not provided in the update
-  const existing = normalizeExecutionMode(input.currentExecutionMode);
+  const existing = normalizeExecutionMode(input.currentExecutionMode, connectionOpts);
   if (existing != null) {
     return { value: existing };
   }
 
   // No existing mode and none provided — default to paper for backward compat during creation
   return { value: 'paper' };
+}
+
+/**
+ * Live and shadow execution both resolve a trading decision against a real venue
+ * account (see AGENTS.md: agent → agent_connections → connections → venue_accounts).
+ * Without a granted connection there is no execution context to resolve at runtime,
+ * so creating or updating an agent into either mode requires at least one connection.
+ */
+export function validateConnectionRequirement(
+  executionModeValue: string | null | undefined,
+  hasConnections: boolean,
+): { code: 'custom'; path: string[]; message: string } | null {
+  if ((executionModeValue === 'live' || executionModeValue === 'shadow') && !hasConnections) {
+    return {
+      code: 'custom',
+      path: ['connectionIds'],
+      message: 'At least one connection is required for live or shadow execution.',
+    };
+  }
+  return null;
 }
 
 export function mergeModelPolicy(

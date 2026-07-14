@@ -289,7 +289,8 @@ describe('agent payload builders', () => {
       skillIds: ['trading'],
       hasBotManagementSkill: false,
       requiresTradingSetup: true,
-      executionMode: 'paper',
+      executionMode: 'test',
+      executionVenue: 'hyperliquid',
       connectionIds: ['conn-1', 'conn-2'],
       modelPayload: { inherits: true },
       costPreset: '',
@@ -307,7 +308,8 @@ describe('agent payload builders', () => {
       name: 'agent',
       prompt: 'trade',
       skillIds: ['trading'],
-      executionMode: 'paper',
+      executionMode: 'test',
+      executionVenue: 'hyperliquid',
       connectionIds: ['conn-1', 'conn-2'],
     });
   });
@@ -322,7 +324,7 @@ describe('agent payload builders', () => {
       skillIds: ['trading'],
       hasBotManagementSkill: false,
       requiresTradingSetup: true,
-      executionMode: 'paper',
+      executionMode: 'test',
       connectionIds: [],
       modelPayload: { inherits: true },
       costPreset: '',
@@ -350,7 +352,7 @@ describe('agent payload builders', () => {
       skillIds: ['trading'],
       hasBotManagementSkill: false,
       requiresTradingSetup: true,
-      executionMode: 'paper',
+      executionMode: 'test',
       modelPayload: { inherits: true },
       costPreset: '',
       dailySpendBudgetUsd: '',
@@ -376,7 +378,7 @@ describe('agent payload builders', () => {
       technical: null,
       skillIds: ['trading'],
       hasBotManagementSkill: false,
-      executionMode: 'paper',
+      executionMode: 'test',
       hasTradingCapability: true,
       connectionIds: ['conn-1', 'conn-2'],
       telegramChatId: '',
@@ -401,7 +403,7 @@ describe('agent payload builders', () => {
     });
   });
 
-  it('buildUpdateAgentPayload omits connectionIds when empty', () => {
+  it('buildUpdateAgentPayload preserves explicit empty connectionIds for clears', () => {
     const payload = buildUpdateAgentPayload({
       name: 'agent',
       prompt: 'trade',
@@ -410,7 +412,7 @@ describe('agent payload builders', () => {
       technical: null,
       skillIds: ['trading'],
       hasBotManagementSkill: false,
-      executionMode: 'paper',
+      executionMode: 'test',
       hasTradingCapability: true,
       connectionIds: [],
       telegramChatId: '',
@@ -428,7 +430,7 @@ describe('agent payload builders', () => {
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
       emailDelivery: 'inherit',
     });
-    expect(payload).not.toHaveProperty('connectionIds');
+    expect(payload.connectionIds).toEqual([]);
   });
 
   it('buildUpdateAgentPayload omits connectionIds when undefined', () => {
@@ -440,7 +442,7 @@ describe('agent payload builders', () => {
       technical: null,
       skillIds: ['trading'],
       hasBotManagementSkill: false,
-      executionMode: 'paper',
+      executionMode: 'test',
       hasTradingCapability: true,
       telegramChatId: '',
       costPreset: '',

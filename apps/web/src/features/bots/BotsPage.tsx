@@ -18,8 +18,7 @@ const STYLE_OPTIONS = [
 ] as const;
 
 const EXECUTION_MODES = [
-  { value: 'paper', label: 'Paper', description: 'Simulated trading — no real money' },
-  { value: 'shadow', label: 'Shadow', description: 'Tracks real prices but does not place orders' },
+  { value: 'test', label: 'Test', description: 'Simulated trading — no real money' },
   { value: 'live', label: 'Live', description: 'Real order placement' },
 ] as const;
 
@@ -186,7 +185,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [form, setForm] = useState<CreateBotForm>({
     connectionId: '',
     strategyPreset: 'momentum',
-    executionMode: 'paper',
+    executionMode: 'test',
     symbol: '',
     customConfig: defaultBotCustomConfig,
   });

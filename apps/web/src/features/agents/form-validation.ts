@@ -24,6 +24,8 @@ export interface CreateAgentFormIntent {
   venueType: string;
   executionMode: string;
   requiresTradingSetup: boolean;
+  /** Whether at least one connection is granted for the selected venue. */
+  hasConnection?: boolean;
   style?: string;
   runtimePolicyOverrides?: { maxHoldDurationMs?: number | null } | null;
 }
@@ -102,16 +104,56 @@ export function validateCreateAgentForm(
     }
   }
 
-  // venue: required only for live/shadow execution modes (not paper)
-  const isLiveOrShadow = intent.executionMode === 'live' || intent.executionMode === 'shadow';
-  if (isLiveOrShadow && !intent.venue.trim()) {
-    errors.venue = 'Venue is required for live or shadow trading.';
+  // venue: required only for live execution mode (test uses simulated execution —
+  // the backend resolves it to paper or shadow based on venue/connection presence)
+  const requiresVenue = intent.executionMode === 'live';
+  if (requiresVenue && !intent.venue.trim()) {
+    errors.venue = 'Venue is required for live trading.';
   }
 
-  // paper mode is not supported for swap venues (e.g. Jupiter)
-  if (intent.executionMode === 'paper' && intent.venueType === 'swap') {
-    errors.executionMode = 'Paper mode is not supported for swap venues — use live mode.';
+  // A selected venue (live mode, or test mode opted into venue-backed shadow
+  // execution) always resolves to live or shadow, both of which require a
+  // granted connection so the runtime has an execution context to resolve.
+  if (intent.requiresTradingSetup && intent.venue.trim() && !intent.hasConnection) {
+    errors.connectionIds = 'Select a connection for the chosen venue.';
   }
 
   return { valid: Object.keys(errors).length === 0, errors };
+}
+
+/**
+ * Check whether an agent edit form can be saved given the connection state.
+ * Returns an error string for the `connectionIds` field, or null if OK.
+ *
+ * Rules:
+ * - Live mode always requires ≥1 connection.
+ * - Removing the last connection from a live or shadow agent is blocked
+ *   unless the user has explicitly touched the execution mode dropdown
+ *   (signalling intent to downgrade to pure paper/test).
+ */
+export function validateEditAgentConnections(params: {
+  storedExecutionMode: string | null;
+  formExecutionMode: string;
+  connectionIds: string[];
+  hasExistingActiveConnections: boolean;
+  executionModeWasTouched: boolean;
+}): string | null {
+  // Live without connections is always invalid
+  if (params.formExecutionMode === 'live' && params.connectionIds.length === 0) {
+    return 'Live trading requires at least one connection. Switch to Test mode or add a connection.';
+  }
+
+  const storedModeNeedsConnection =
+    params.storedExecutionMode === 'live' || params.storedExecutionMode === 'shadow';
+
+  const isRemovingAllConnections =
+    params.hasExistingActiveConnections && params.connectionIds.length === 0;
+
+  // User removed all connections without explicitly touching the mode dropdown —
+  // they haven't signalled intent to downgrade.
+  if (isRemovingAllConnections && storedModeNeedsConnection && !params.executionModeWasTouched) {
+    return 'Removing the final connection requires either selecting another connection or switching execution mode to Test.';
+  }
+
+  return null;
 }

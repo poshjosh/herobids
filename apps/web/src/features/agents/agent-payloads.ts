@@ -66,7 +66,8 @@ export interface CreateAgentIntentPayloadInput {
   skillIds: string[];
   hasBotManagementSkill: boolean;
   requiresTradingSetup: boolean;
-  executionMode: 'paper' | 'shadow' | 'live';
+  executionMode: 'test' | 'live';
+  executionVenue?: string;
   connectionIds?: string[];
   modelPayload: {
     inherits: boolean;
@@ -139,6 +140,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   prompt: string;
   skillIds: string[];
   connectionIds?: string[];
+  executionVenue?: string;
   provider?: string | null;
   lightModel?: string | null;
   heavyModel?: string | null;
@@ -179,6 +181,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     prompt: includeIntelligence ? input.goal.trim() : '',
     skillIds: includeIntelligence ? [...input.skillIds] : [],
     ...((input.connectionIds ?? []).length > 0 ? { connectionIds: input.connectionIds } : {}),
+    ...(input.executionVenue?.trim() ? { executionVenue: input.executionVenue.trim() } : {}),
     ...(input.requiresTradingSetup ? { executionMode: input.executionMode } : {}),
     ...(includeIntelligence && !input.modelPayload.inherits && input.modelPayload.provider ? {
       provider: input.modelPayload.provider,
@@ -267,7 +270,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     name: input.name.trim(),
     ...(includeIntelligence ? { prompt: input.prompt.trim() } : { prompt: '' }),
     skillIds: includeIntelligence ? [...input.skillIds] : [],
-    ...((input.connectionIds ?? []).length > 0 ? { connectionIds: input.connectionIds } : {}),
+    ...(input.connectionIds !== undefined ? { connectionIds: input.connectionIds } : {}),
     executionMode: includeIntelligence && input.hasTradingCapability ? (input.executionMode || null) : null,
     telegramChatId: input.telegramChatId.trim() || null,
     costPreset: input.costPreset || null,

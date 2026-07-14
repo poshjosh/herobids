@@ -66,7 +66,7 @@ The current shape creates three implementation constraints:
 
 ### Configuration (agent must be stopped)
 
-14. `/mode <agent name> [paper|shadow|live]` — show or set execution mode
+14. `/mode <agent name> [test|live]` — show or set execution mode (test = simulated, no real money; also accepts `paper`/`shadow` as aliases for test)
 15. `/connect <agent name> [connection-id|label]` — grant a connection by ID or label; if no ID/label is given, generate a one-time setup link to create a connection in the browser
 16. `/disconnect <agent name> <connection-id|label>` — revoke a connection from an agent by ID or label
 
@@ -131,7 +131,7 @@ The current shape creates three implementation constraints:
 
 18. `/mode <agent name>`
     Shows the current execution mode for an agent. For non-trading agents, reports "not applicable".
-19. `/mode <agent name> <paper|shadow|live>`
+19. `/mode <agent name> <test|live|paper|shadow>`
    Sets the execution mode. Validates that the agent has trading skills and rejects if the agent is not stopped.
 20. `/connect <agent name>` (no third argument)
    Requires the agent to be stopped. If the user has no active connections, or as a convenience,
@@ -250,7 +250,7 @@ Cannot resume Momentum because it is not paused. Current status: active.
 
 Momentum
 Status: active
-Mode: paper (paper trading — no real funds)
+Mode: test (simulated trading — no real funds)
 Capital: $5,000.00
 Daily loss limit: $250.00
 Max drawdown: 15%
@@ -288,7 +288,7 @@ sentiment-v2
 
 ```text
 /mode Momentum
-Momentum execution mode: paper
+Momentum execution mode: test
 ```
 
 ```text
@@ -405,7 +405,7 @@ Separate slash-command detection from the current `/to` parser so the webhook ca
    - `/start <agent>`
    - `/pause <agent>`, `/resume <agent>`, `/stop <agent>`
    - `/restart <agent>`
-   - `/mode <agent>`, `/mode <agent> <paper|shadow|live>`
+   - `/mode <agent>`, `/mode <agent> <test|live>` (also accepts `paper`/`shadow` as aliases for test)
    - `/connect <agent>`, `/connect <agent> <connection-id|label>`, `/disconnect <agent> <connection-id|label>`
    - `/to` (delegated to existing parser)
 2. Keep `/to` delegated to the existing parser and routing logic.
@@ -625,7 +625,7 @@ Allow users to view and modify agent execution mode and connection grants from T
 #### Tasks
 
 1. Implement `/mode <agent>` — read-only: show current execution mode (or "not applicable" for non-trading agents).
-2. Implement `/mode <agent> <paper|shadow|live>` — mutate: update execution mode.
+2. Implement `/mode <agent> <test|live>` — mutate: update execution mode (accepts `paper`/`shadow` as aliases for `test`).
    - Validate the agent has trading skills (reuse `resolveExecutionModeForSkills`).
    - Reject if agent is not `stopped` with a clear message.
 3. Implement `/connect <agent> <connection-id|label>` — grant a connection.

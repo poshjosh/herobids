@@ -176,9 +176,9 @@ export function AgentFormBody(props: AgentFormBodyProps) {
   }, [props.formErrors]);
 
   function handleFieldBlur(fieldName: string) {
-    // Derive venue for validation: live/shadow need a non-empty venue
+    // Derive venue for validation: only live mode needs a non-empty venue
     const venue =
-      props.value.executionMode === 'live' || props.value.executionMode === 'shadow'
+      props.value.executionMode === 'live'
         ? 'connected'
         : '';
 
@@ -196,6 +196,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         venueType: '',
         executionMode: props.value.executionMode,
         requiresTradingSetup: props.requiresTradingSetup,
+        hasConnection: (props.value.connectionIds ?? []).length > 0,
       },
       props.validationConstraints,
     );

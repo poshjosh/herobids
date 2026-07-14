@@ -83,6 +83,38 @@ describe('agentToFormState — strategyPreset hydration', () => {
   });
 });
 
+describe('agentToFormState — executionMode canonicalization', () => {
+  it('maps stored paper to test', () => {
+    const agent = makeAgent({ executionMode: 'paper' });
+    const form = agentToFormState(agent);
+    expect(form.executionMode).toBe('test');
+  });
+
+  it('maps stored shadow to test', () => {
+    const agent = makeAgent({ executionMode: 'shadow' });
+    const form = agentToFormState(agent);
+    expect(form.executionMode).toBe('test');
+  });
+
+  it('maps stored live to live', () => {
+    const agent = makeAgent({ executionMode: 'live' });
+    const form = agentToFormState(agent);
+    expect(form.executionMode).toBe('live');
+  });
+
+  it('maps null executionMode to empty string', () => {
+    const agent = makeAgent({ executionMode: null });
+    const form = agentToFormState(agent);
+    expect(form.executionMode).toBe('');
+  });
+
+  it('maps undefined executionMode to empty string', () => {
+    const agent = makeAgent({ executionMode: undefined });
+    const form = agentToFormState(agent);
+    expect(form.executionMode).toBe('');
+  });
+});
+
 describe('agentToFormState — emailDelivery hydration', () => {
   it('defaults to "inherit" when notificationPolicy is null', () => {
     const agent = makeAgent({ notificationPolicy: null });

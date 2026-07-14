@@ -9,7 +9,7 @@ import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
 import { buildUpdateAgentPayload, normalizeEscalationPolicy } from './agent-payloads.js';
-import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
+import { validateCreateAgentForm, validateEditAgentConnections, type ValidationConstraints } from './form-validation.js';
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval, parseTickIntervalMinutesInput } from './tick-interval.js';
 import { type CapabilityMode, type HybridMode } from './CapabilitySelector.js';
@@ -84,6 +84,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const [skillPreset, setSkillPreset] = useState<SkillPresetId>(() =>
     resolvePresetFromSkillIds(initialData.skillIds ?? []),
   );
+  const executionModeTouchedRef = useRef(false);
   const [tickIntervalTouched, setTickIntervalTouched] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -323,7 +324,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         hasBotManagementSkill,
         executionMode: form.executionMode,
         hasTradingCapability,
-        connectionIds: (form.connectionIds ?? []).length > 0 ? form.connectionIds : undefined,
+        connectionIds: form.connectionIds,
         telegramChatId: form.telegramChatId,
         emailDelivery: form.emailDelivery,
         costPreset: form.costPreset,
@@ -386,6 +387,23 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       setFormErrors(result.errors);
       return;
     }
+
+    // Block save when removing the last connection from a live or venue-backed
+    // (shadow) agent without explicitly switching execution mode.
+    const hasExistingActiveConnections = (agentConnectionsQuery.data?.connections ?? [])
+      .some((c) => c.grantStatus === 'active');
+    const connectionError = validateEditAgentConnections({
+      storedExecutionMode: initialData.executionMode,
+      formExecutionMode: form.executionMode,
+      connectionIds: form.connectionIds ?? [],
+      hasExistingActiveConnections,
+      executionModeWasTouched: executionModeTouchedRef.current,
+    });
+    if (connectionError) {
+      setFormErrors({ ...result.errors, connectionIds: connectionError });
+      return;
+    }
+
     mutation.mutate();
   };
 
@@ -848,10 +866,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   {(requiresTradingSetup || hasTradingCapability) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '48px' }}>
                       <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
-                      <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.executionMode} onChange={(e) => setForm((prev) => ({ ...prev, executionMode: e.target.value }))}>
+                      <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.executionMode} onChange={(e) => { executionModeTouchedRef.current = true; setForm((prev) => ({ ...prev, executionMode: e.target.value })); }}>
                         <option value="">{intl.formatMessage({ id: 'agents.edit.executionModeUnset' })}</option>
-                        <option value="paper">{intl.formatMessage({ id: 'agents.create.executionMode.paper' })}</option>
-                        <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
+                        <option value="test">{intl.formatMessage({ id: 'agents.create.executionMode.test' })}</option>
                         <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
                       </select>
                       <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
@@ -895,6 +912,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   variant="primary"
                   type="submit"
                   disabled={mutation.isPending
+                    || agentConnectionsQuery.isLoading
                     || !form.name.trim()
                     || (showIntelligence && !form.goal.trim())
                     || tickIntervalError != null
@@ -919,6 +937,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             type="submit"
             form="edit-agent-form"
             disabled={mutation.isPending
+              || agentConnectionsQuery.isLoading
               || !form.name.trim()
               || (showIntelligence && !form.goal.trim())
               || tickIntervalError != null

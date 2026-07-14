@@ -47,7 +47,7 @@ interface IntentState {
   technicalConfig: TechnicalConfigFormState;
   skillPreset: SkillPresetId;
   skillIds: string[];
-  executionMode: 'paper' | 'shadow' | 'live';
+  executionMode: 'test' | 'live';
   provider: string;
   lightModel: string;
   heavyModel: string;
@@ -55,7 +55,7 @@ interface IntentState {
   connectionIds: string[];
   /** Per-agent email delivery override. */
   emailDelivery: 'inherit' | 'allow' | 'disable';
-  /** Derived from selected connection's provider, or user-picked for paper mode. */
+  /** Derived from selected connection's provider, or user-picked in test mode. */
   venue: string;
   /** Derived from venue: hyperliquid→orderbook, jupiter→swap, etc. */
   venueType: '' | 'orderbook' | 'swap';
@@ -362,7 +362,7 @@ function CreateAgentFlow({
     technicalConfig: defaultTechnicalConfigFormState(),
     skillPreset: 'trading',
     skillIds: resolveSkillPresetSkillIds('trading'),
-    executionMode: 'paper',
+    executionMode: 'test',
     provider: '',
     lightModel: '',
     heavyModel: '',
@@ -569,9 +569,10 @@ function CreateAgentFlow({
   const connectionsForVenue = intent.venue
     ? availableConnections.filter((c) => c.provider === intent.venue)
     : [];
-  // In non-paper modes only show venues that have at least one active connection;
-  // in paper mode show all venues (no real execution needed).
-  const venuesForMode = intent.executionMode === 'paper'
+  // In test mode show all venues (the user may optionally pick one to enable
+  // venue-backed shadow execution, but none is required). In live mode only
+  // show venues that have at least one active connection.
+  const venuesForMode = intent.executionMode === 'test'
     ? Object.keys(venueTypeMap).sort()
     : Object.keys(venueTypeMap).filter((v) => availableConnections.some((c) => c.provider === v)).sort();
 
@@ -608,6 +609,7 @@ function CreateAgentFlow({
         hasBotManagementSkill,
         requiresTradingSetup,
         executionMode: intent.executionMode,
+        executionVenue: intent.venue,
         connectionIds: intent.connectionIds,
         modelPayload,
         costPreset: intent.costPreset,
@@ -678,6 +680,7 @@ function CreateAgentFlow({
       venueType: intent.venueType,
       executionMode: intent.executionMode,
       requiresTradingSetup,
+      hasConnection: intent.connectionIds.length > 0,
       style: intent.style,
       runtimePolicyOverrides: intent.runtimePolicyOverrides,
     }, validationConstraints);
@@ -709,7 +712,8 @@ function CreateAgentFlow({
   const createDisabled = mutation.isPending
     || !intent.name.trim()
     || (showIntelligence && !intent.goal.trim())
-    || ((intent.executionMode === 'live' || intent.executionMode === 'shadow') && (!intent.venue || !intent.venueType))
+    || (intent.executionMode === 'live' && (!intent.venue || !intent.venueType))
+    || (requiresTradingSetup && intent.venue.trim() !== '' && intent.connectionIds.length === 0)
     || tickIntervalError != null
     || maxHoldViolation;
 
@@ -1031,7 +1035,7 @@ function CreateAgentFlow({
               ) : null
             }
             connectionSlot={
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div data-field="connectionIds" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <FieldLabel>{intl.formatMessage({ id: 'agents.create.whereToTrade' })}</FieldLabel>
                 {tradingConnectionsQuery.isLoading ? (
                   <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
@@ -1151,6 +1155,9 @@ function CreateAgentFlow({
                   </button>
                 )}
 
+                {formErrors.connectionIds && (
+                  <div style={{ color: 'var(--color-danger)', fontSize: '12px' }}>{formErrors.connectionIds}</div>
+                )}
               </div>
             }
             tradingSetupSlot={
@@ -1164,9 +1171,9 @@ function CreateAgentFlow({
                         const newMode = e.target.value as IntentState['executionMode'];
                         clearFieldError('executionMode');
                         setIntent((state) => {
-                          // In non-paper modes, venue must have an active connection;
-                          // if the current venue has none, clear it.
-                          const venueStillValid = newMode === 'paper' ||
+                          // In live mode, venue must have an active connection;
+                          // in test mode, keep any venue selection.
+                          const venueStillValid = newMode === 'test' ||
                             !state.venue ||
                             availableConnections.some((c) => c.provider === state.venue);
                           return {
@@ -1178,8 +1185,7 @@ function CreateAgentFlow({
                       }}
                       style={{ ...inputStyle, cursor: 'pointer' }}
                     >
-                      <option value="paper">{intl.formatMessage({ id: 'agents.create.executionMode.paper' })}</option>
-                      <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
+                      <option value="test">{intl.formatMessage({ id: 'agents.create.executionMode.test' })}</option>
                       <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
                     </select>
                     {formErrors.executionMode && (
@@ -1219,11 +1225,6 @@ function CreateAgentFlow({
                       ))}
                     </select>
                     {formErrors.venue && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.venue}</div>}
-                    {intent.venueType === 'swap' && intent.executionMode === 'paper' && (
-                      <div style={{ marginTop: '6px', padding: '8px 10px', borderRadius: '6px', background: 'var(--color-warning-subtle, rgba(234,179,8,0.1))', border: '1px solid var(--color-warning, #ca8a04)', fontSize: '12px', color: 'var(--color-warning-text, #92400e)', lineHeight: '1.5' }}>
-                        Paper mode is not supported for swap venues. Switch to Live mode.
-                      </div>
-                    )}
                   </div>
 
                   <div>
@@ -1286,6 +1287,7 @@ function CreateAgentFlow({
                       venueType: intent.venueType,
                       executionMode: intent.executionMode,
                       requiresTradingSetup,
+                      hasConnection: intent.connectionIds.length > 0,
                     }, validationConstraints);
 
                     if (!result.valid) {
@@ -1330,6 +1332,7 @@ function CreateAgentFlow({
                   venueType: intent.venueType,
                   executionMode: intent.executionMode,
                   requiresTradingSetup,
+                  hasConnection: intent.connectionIds.length > 0,
                 }, validationConstraints);
 
                 if (!result.valid) {

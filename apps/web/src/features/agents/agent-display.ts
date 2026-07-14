@@ -7,8 +7,9 @@ const LEGACY_PROMPT_CONTEXT = /\sExecution mode: (paper|shadow|live)\.(?:\sTradi
 const GENERATED_OPERATOR_CONTEXT_LINE = /^- (Selected skills:|Trading capability selected\.|Selected trading (?:binding|connection):|Risk tolerance:)/;
 
 export const EXECUTION_MODE_LABELS: Record<string, string> = {
-  paper: 'Paper',
-  shadow: 'Shadow',
+  paper: 'Test',
+  shadow: 'Test',
+  test: 'Test',
   live: 'Live',
 };
 
