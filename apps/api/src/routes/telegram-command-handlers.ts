@@ -19,11 +19,7 @@ import {
   agentSkills,
   skills,
   skillEntitlements,
-  agentMessages,
-  agentOutboundMessages,
-  decisionFailures,
   agentRuntimeSessions,
-  decisions,
 } from '@herobids/db';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import {
@@ -536,11 +532,11 @@ export async function handleConnections(
         return `Failed to list connections: ${result.error.message}`;
       }
 
-      if (result.value.length === 0) {
+      if (result.data.length === 0) {
         return `${agent.name} has no connections assigned.`;
       }
 
-      return result.value.map((c) =>
+      return result.data.map((c) =>
         `${c.provider}: ${c.label} (${c.connectionId.slice(0, 8)}...)`,
       ).join('\n');
     }

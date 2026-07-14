@@ -59,7 +59,6 @@ function tokenize(input: string): Token[] {
 
     if (index >= input.length) break;
 
-    const start = index;
     const quote = input[index];
 
     // Quoted string (single or double)

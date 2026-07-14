@@ -13,8 +13,6 @@ import { resolvePlanEntitlements } from '../plan-guards.js';
 import { resolveNotificationPreferences } from './user-config-helpers.js';
 import type { AuthMailer } from '../auth-mailer.js';
 import {
-  makeSetupLinkUrl as makeSetupLinkUrlImpl,
-  createAndStoreSetupLinkToken as createAndStoreSetupLinkTokenImpl,
   consumeSetupLinkToken as consumeSetupLinkTokenImpl,
 } from '../services/setup-link-token-service.js';
 
@@ -457,17 +455,6 @@ export async function authRoutes(
     callbackUrl.searchParams.set('code', exchangeCode);
     return reply.redirect(callbackUrl.toString());
   });
-
-  // ── Setup-link helpers ─────────────────────────────────────────────────
-  // Delegates to shared service so telegram-command-handlers can reuse them.
-
-  function makeSetupLinkUrl(token: string): string {
-    return makeSetupLinkUrlImpl(token, config.publicBaseUrl);
-  }
-
-  function createAndStoreSetupLinkToken(userId: string): Promise<string> {
-    return createAndStoreSetupLinkTokenImpl(redis, userId, config.loginLinkTtlSecs);
-  }
 
   function consumeSetupLinkToken(token: string): Promise<string | null> {
     return consumeSetupLinkTokenImpl(redis, token);

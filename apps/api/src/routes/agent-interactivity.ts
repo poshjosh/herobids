@@ -118,7 +118,6 @@ export async function agentInteractivityRoutes(
   llmCatalogDeps?: LlmCatalogDeps,
   plansConfig?: PlansConfig,
   agentRiskDefaults?: AgentRiskDefaultsConfig,
-  authConfig?: AuthConfig,
 ): Promise<void> {
   function resolveAgentPlanPolicy(planId: string, isAdmin: boolean): PlanAgentsEntitlements {
     if (!plansConfig) {

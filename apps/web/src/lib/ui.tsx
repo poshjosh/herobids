@@ -225,7 +225,7 @@ export function Button({
         justifyContent: 'center',
         gap: '6px',
         padding: size === 'sm' ? '5px 12px' : '8px 16px',
-        fontSize: size === 'sm' ? '12px' : '14px',
+        fontSize: size === 'sm' ? '13px' : '15px',
         fontWeight: '500',
         borderRadius: '7px',
         cursor: disabled ? 'not-allowed' : 'pointer',
@@ -427,7 +427,7 @@ export function RelativeTime({ timestamp }: { timestamp: string | null }) {
 
 export function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ fontSize: '12px', fontWeight: '500', color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
+    <div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
       {children}
     </div>
   );
@@ -480,7 +480,7 @@ export const inputStyle: React.CSSProperties = {
   border: '1px solid var(--color-border)',
   borderRadius: '7px',
   color: 'var(--color-text-primary)',
-  fontSize: '14px',
+  fontSize: '16px',
   outline: 'none',
   boxSizing: 'border-box',
 };

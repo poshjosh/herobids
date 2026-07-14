@@ -8,7 +8,7 @@ const CAPABILITY_FAMILIES_BY_SKILL_ID = new Map(SYSTEM_SKILLS.map((skill) => [sk
 const AGENT_EXECUTION_MODES = new Set(['paper', 'shadow', 'live'] as const);
 
 type AgentExecutionMode = 'paper' | 'shadow' | 'live';
-type NullableAgentExecutionMode = AgentExecutionMode | null | undefined;
+type NullableAgentExecutionMode = AgentExecutionMode | 'test' | null | undefined;
 
 /**
  * Map the user-facing input alias `test` to a concrete simulation mode.

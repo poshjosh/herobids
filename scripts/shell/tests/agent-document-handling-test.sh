@@ -54,7 +54,7 @@ prereq_fail() { echo -e "${RED}[✗]${NC} $*"; exit 2; }
 
 # ─── Argument parsing ────────────────────────────────────────────────────────
 
-ENV_FILE=""
+ENV_FILE="${REPO_ROOT}/.env.ops.dev"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --env-file)
@@ -212,10 +212,9 @@ CREATE_PAYLOAD=$(cat <<'AGENTJSON'
 {
   "name": "Doc Test Agent",
   "prompt": "You are a document reader. On your first tick, do exactly this:\n1. Use list_files with path '' (empty string) to see your workspace root.\n2. Use list_files with path 'docs/extracted' to find the extracted text file.\n3. Use read_file to read the content of the .txt file you find (use the relative path like docs/extracted/xxxx.txt).\n4. Find the first line of text in that file — this is the heading.\n5. Call publish_artifact with artifactType='text', summary=the exact heading text, body=the full text you read.\n6. Do nothing else. Do not trade. Do not call any other tools.\nAfter publishing, you may stop.",
-  "executionMode": "paper",
   "provider": "ollama",
   "lightModel": "qwen3:8b",
-  "heavyModel": "qwen3:8b",
+  "heavyModel": "qwen3.6:35b-a3b-q4_K_M",
   "tickIntervalMs": 15000
 }
 AGENTJSON
