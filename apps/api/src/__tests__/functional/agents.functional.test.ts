@@ -600,4 +600,206 @@ describe.skipIf(SKIP)('Agents functional', () => {
       expect(startRes.json<{ status: string }>().status).toBe('starting');
     });
   });
+
+  // ─── Lifecycle service refactor: route-level regression tests ───────────
+
+  describe('POST /agents/:id/stop', () => {
+    it('transitions an active agent to stopped', async () => {
+      const createRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: { name: 'Stop Me Agent', prompt: 'Do work.' },
+      });
+      const { id } = createRes.json<{ id: string }>();
+
+      // Start first so it's not stopped
+      await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/start`,
+        headers: authHeader(),
+      });
+
+      const stopRes = await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/stop`,
+        headers: authHeader(),
+      });
+      expect(stopRes.statusCode).toBe(200);
+      expect(stopRes.json<{ status: string }>().status).toBe('stopped');
+
+      // Verify DB state
+      const agentRes = await ctx.app.inject({
+        method: 'GET',
+        url: `/agents/${id}`,
+        headers: authHeader(),
+      });
+      expect(agentRes.json<{ status: string }>().status).toBe('stopped');
+    });
+
+    it('is idempotent — stopping an already-stopped agent returns 200', async () => {
+      const createRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: { name: 'Already Stopped', prompt: 'Idle.' },
+      });
+      const { id } = createRes.json<{ id: string }>();
+
+      // Agent is created stopped — stop again
+      const stopRes = await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/stop`,
+        headers: authHeader(),
+      });
+      expect(stopRes.statusCode).toBe(200);
+      expect(stopRes.json<{ status: string }>().status).toBe('stopped');
+    });
+
+    it('transitions a paused agent to stopped', async () => {
+      const { agents } = await import('@herobids/db');
+      const { eq } = await import('drizzle-orm');
+
+      const createRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: { name: 'Paused Stop', prompt: 'Do work.' },
+      });
+      const { id } = createRes.json<{ id: string }>();
+
+      // Set to active then pause
+      await ctx.db.update(agents).set({ status: 'active' }).where(eq(agents.id, id));
+      await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/pause`,
+        headers: authHeader(),
+      });
+
+      const stopRes = await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/stop`,
+        headers: authHeader(),
+      });
+      expect(stopRes.statusCode).toBe(200);
+      expect(stopRes.json<{ status: string }>().status).toBe('stopped');
+    });
+
+    it('transitions a starting agent to stopped', async () => {
+      const createRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: { name: 'Starting Stop', prompt: 'Do work.' },
+      });
+      const { id } = createRes.json<{ id: string }>();
+
+      // Start the agent
+      await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/start`,
+        headers: authHeader(),
+      });
+
+      const stopRes = await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/stop`,
+        headers: authHeader(),
+      });
+      expect(stopRes.statusCode).toBe(200);
+      expect(stopRes.json<{ status: string }>().status).toBe('stopped');
+    });
+  });
+
+  describe('ownership enforcement', () => {
+    it('cannot start another user\'s agent', async () => {
+      // Create agent as primary user
+      const createRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: { name: 'My Agent', prompt: 'Mine.' },
+      });
+      const { id } = createRes.json<{ id: string }>();
+
+      // Register a second user
+      const otherToken = await registerUser(ctx.app, ctx.db, 'other@test.com');
+
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/start`,
+        headers: { Authorization: `Bearer ${otherToken}` },
+      });
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('cannot pause another user\'s agent', async () => {
+      const { agents } = await import('@herobids/db');
+      const { eq } = await import('drizzle-orm');
+
+      const createRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: { name: 'My Paused Agent', prompt: 'Mine.' },
+      });
+      const { id } = createRes.json<{ id: string }>();
+
+      await ctx.db.update(agents).set({ status: 'active' }).where(eq(agents.id, id));
+
+      const otherToken = await registerUser(ctx.app, ctx.db, 'other2@test.com');
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/pause`,
+        headers: { Authorization: `Bearer ${otherToken}` },
+      });
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('cannot resume another user\'s agent', async () => {
+      const { agents } = await import('@herobids/db');
+      const { eq } = await import('drizzle-orm');
+
+      const createRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: { name: 'My Resume Agent', prompt: 'Mine.' },
+      });
+      const { id } = createRes.json<{ id: string }>();
+
+      await ctx.db.update(agents).set({ status: 'paused' }).where(eq(agents.id, id));
+
+      const otherToken = await registerUser(ctx.app, ctx.db, 'other3@test.com');
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/resume`,
+        headers: { Authorization: `Bearer ${otherToken}` },
+      });
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('cannot stop another user\'s agent', async () => {
+      const { agents } = await import('@herobids/db');
+      const { eq } = await import('drizzle-orm');
+
+      const createRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: { name: 'My Stop Agent', prompt: 'Mine.' },
+      });
+      const { id } = createRes.json<{ id: string }>();
+
+      await ctx.db.update(agents).set({ status: 'active' }).where(eq(agents.id, id));
+
+      const otherToken = await registerUser(ctx.app, ctx.db, 'other4@test.com');
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${id}/stop`,
+        headers: { Authorization: `Bearer ${otherToken}` },
+      });
+      expect(res.statusCode).toBe(404);
+    });
+  });
 });

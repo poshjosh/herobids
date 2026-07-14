@@ -8,7 +8,13 @@ Once set up, you have three options:
 
 1. **Reply to an agent message** — When your agent sends you a message on Telegram, just reply to it. Your reply is automatically routed back to that agent. No special syntax needed.
 
-2. **Use `/to` commands** — Send `/to <agent name> <your message>`. For example: `/to Momentum what's my P&L?`. Use quotes if the agent name has spaces: `/to "DCA Bot" pause trading`. Use `/to all` or `/to *` to broadcast to every running agent at once.
+2. **Use slash commands** — OpenAIdom supports a full set of Telegram commands for controlling your agents:
+   - Messaging: `/to <agent> <message>` to talk to an agent
+   - Discovery: `/agents`, `/status`, `/info`, `/skills`, `/log`, `/connections`
+   - Lifecycle: `/start`, `/pause`, `/resume`, `/stop`, `/restart`
+   - Configuration: `/mode`, `/connect`, `/disconnect`
+   
+   Use `/help` in Telegram to see the full list. Use quotes if the agent name has spaces: `/to "DCA Bot" pause trading`. Use `/to all` or `/to *` to broadcast to every running agent at once.
 
 3. **Plain message (single agent)** — If only one of your agents is running, just type your message normally. It will be delivered to that agent automatically.
 

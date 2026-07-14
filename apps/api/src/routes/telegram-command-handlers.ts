@@ -85,7 +85,7 @@ function extractStrategyPreset(unifiedConfig: unknown): string | null {
  * Truncates at the last newline before maxChars and appends a count
  * of omitted items.
  */
-function truncateForTelegram(text: string, maxChars = 3800): string {
+export function truncateForTelegram(text: string, maxChars = 3800): string {
   if (text.length <= maxChars) return text;
 
   const truncated = text.slice(0, maxChars);
@@ -105,7 +105,7 @@ function truncateForTelegram(text: string, maxChars = 3800): string {
 /**
  * Map agent message types to human-readable labels for /log output.
  */
-function formatActivityLabel(type: string): string {
+export function formatActivityLabel(type: string): string {
   if (type.startsWith('agent.decision')) return 'DECISION';
   if (type.startsWith('user')) return 'USER';
   if (type.startsWith('system')) return 'SYSTEM';

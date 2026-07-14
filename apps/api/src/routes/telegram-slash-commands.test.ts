@@ -164,6 +164,51 @@ describe('parseSlashCommand', () => {
       args: [],
     });
   });
+
+  it('returns null for only a slash character', () => {
+    // A single "/" is not a valid slash command prefix
+    expect(parseSlashCommand('/')).toBeNull();
+  });
+
+  it('returns null for slash followed by only whitespace', () => {
+    expect(parseSlashCommand('/   ')).toBeNull();
+  });
+
+  it('handles input with leading/trailing newlines', () => {
+    expect(parseSlashCommand('\n/agents\n')).toEqual({
+      command: 'agents',
+      rawCommand: '/agents',
+      args: [],
+    });
+    expect(parseSlashCommand('\r\n/status Momentum\r\n')).toEqual({
+      command: 'status',
+      rawCommand: '/status',
+      args: ['Momentum'],
+    });
+  });
+
+  it('handles very long command names', () => {
+    const longCmd = '/verylongcommandname12345678901234567890 arg1';
+    const result = parseSlashCommand(longCmd);
+    expect(result).not.toBeNull();
+    expect(result!.command).toBe('unknown');
+    expect(result!.args).toEqual(['verylongcommandname12345678901234567890']);
+  });
+
+  it('handles command names with underscores and digits', () => {
+    // Underscores and digits in bot names are stripped as part of the suffix
+    const result = parseSlashCommand('/help@my_bot_123');
+    expect(result).toEqual({
+      command: 'help',
+      rawCommand: '/help@my_bot_123',
+      args: [],
+    });
+  });
+
+  it('returns null for text containing a slash but not at start', () => {
+    expect(parseSlashCommand('hello /agents')).toBeNull();
+    expect(parseSlashCommand('check /status Momentum')).toBeNull();
+  });
 });
 
 // ─── formatCommandHelp ────────────────────────────────────────────────────
@@ -224,6 +269,24 @@ describe('formatCommandHelp', () => {
   it('returns general help with note for unknown command', () => {
     const help = formatCommandHelp('nonexistent');
     expect(help).toContain('Unknown command');
+    expect(help).toContain('Available commands');
+  });
+
+  it('handles /help with a command prefixed by slash', () => {
+    // /help /start should give the same as /help start
+    const help = formatCommandHelp('/start');
+    expect(help).toContain('/start <agent>');
+    expect(help).toContain('Starts a stopped agent');
+  });
+
+  it('is case-insensitive for help targets', () => {
+    const help = formatCommandHelp('START');
+    expect(help).toContain('/start <agent>');
+    expect(help).toContain('Starts a stopped agent');
+  });
+
+  it('handles empty string as no-arg general help', () => {
+    const help = formatCommandHelp('');
     expect(help).toContain('Available commands');
   });
 });
