@@ -398,13 +398,13 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                   Filter Trades
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', lineHeight: '1.4' }}>
-                  Reduce cost by filtering trade candidates before AI agent sees them
+                  Reduce cost by filtering trade options before AI agent sees them.
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {([
-                    { value: 'off' as const, label: 'Off', description: 'No pre-filtering. Wake sources trigger the agent directly.' },
-                    { value: 'mixed' as const, label: 'Mixed', description: 'Scanner + wake sources. Both may trigger the agent.' },
-                    { value: 'scanner_gated' as const, label: 'Scanner only', description: 'Only scanner signals trigger the agent.' },
+                    { value: 'off' as const, label: 'Off', description: 'No filtering.' },
+                    { value: 'mixed' as const, label: 'Mixed', description: 'Filter, but let agent also make own trade decisions.' },
+                    { value: 'scanner_gated' as const, label: 'Filter', description: 'Filter trade options before AI agent sees them.' },
                   ]).map((option) => {
                     const filterMode: 'off' | 'mixed' | 'scanner_gated' =
                       !props.value.technicalPreFilterEnabled ? 'off'

@@ -70,14 +70,14 @@ test.describe('Journey 16: Strategy preset propagation', () => {
     // Find the Capital input by its data-field wrapper (FieldLabel is a <div>, not <label>)
     await page.locator('[data-field="capital"] input').fill('1000');
 
-    // ── Switch to Strategy tab, toggle pre-filter, select preset ──────────
+    // ── Switch to Strategy tab, set Filter Trades, select preset ──────────
     const strategyTab = page.getByRole('tab', { name: 'Strategy' });
     if ((await strategyTab.count()) > 0) {
       await strategyTab.first().click();
       await page.waitForTimeout(300);
     }
 
-    // ── Toggle pre-filter ON ──────────────────────────────────────────────
+    // ── Set Filter Trades to Mixed ────────────────────────────────────────
     const preFilterSwitch = page.getByRole('switch');
     if ((await preFilterSwitch.count()) > 0) {
       const checked =
