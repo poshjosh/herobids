@@ -127,6 +127,9 @@ function isPublicRoute(url: string, method: string): boolean {
   if (path === '/auth/send-login-link') return true;
   if (path === '/auth/login-link/callback') return true;
 
+  // Setup-link (connection form auto-login) — public
+  if (path === '/auth/setup-link/callback') return true;
+
   // /auth/me and /auth/logout require a valid session
 
   // Billing webhooks — signature-verified by providers, not by JWT

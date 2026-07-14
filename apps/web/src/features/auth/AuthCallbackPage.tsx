@@ -29,9 +29,12 @@ export function AuthCallbackPage() {
       return;
     }
 
+    const next = url.searchParams.get('next');
+    const safeNext = next && next.startsWith('/') ? next : '/agents';
+
     auth.exchange(code)
       .then(({ token }) => login(token))
-      .then(() => navigate('/agents', { replace: true }))
+      .then(() => navigate(safeNext, { replace: true }))
       .catch((err: unknown) => {
         setState('error');
         setErrorMessage(localizeApiError(intl, err, 'auth.error.default'));

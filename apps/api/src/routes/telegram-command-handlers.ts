@@ -10,6 +10,8 @@
  */
 
 import type { Database } from '@herobids/db';
+import type { Redis } from 'ioredis';
+import type { AuthConfig } from '@herobids/domain';
 import {
   agents,
   connections,
@@ -25,6 +27,10 @@ import {
 } from '@herobids/db';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { listAgentConnections } from '../services/agent-config-service.js';
+import {
+  makeSetupLinkUrl,
+  createAndStoreSetupLinkToken,
+} from '../services/setup-link-token-service.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -549,5 +555,114 @@ export async function handleConnections(
   } catch (error) {
     console.error('handleConnections failed:', error);
     return 'Failed to list connections. Please try again later.';
+  }
+}
+
+// ── handleConnectSetup ────────────────────────────────────────────────────
+
+/**
+ * Handle `/connect <agent>` with no connection ID argument.
+ *
+ * If the user has no active connections, generates a one-time auto-login setup
+ * link and returns it. If the user already has active connections, lists them.
+ * The target agent must be stopped.
+ */
+export async function handleConnectSetup(
+  db: Database,
+  redis: Redis,
+  authConfig: AuthConfig,
+  userId: string,
+  args: string[],
+): Promise<string> {
+  try {
+    if (args.length === 0) {
+      return 'Usage: /connect <agent name>';
+    }
+
+    const resolved = await resolveAgentByName(db, userId, args[0]!);
+    if (resolved.type === 'not_found') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (resolved.type === 'ambiguous') {
+      const names = resolved.agents.map((a) => `${a.name} (${a.id.slice(0, 8)}...)`).join(', ');
+      return `Multiple agents named "${args[0]}". Use a unique name or check the web app.\nMatches: ${names}`;
+    }
+    const agent = resolved.agent;
+
+    // Target agent must be stopped
+    if (agent.status !== 'stopped') {
+      return `Cannot change connections: ${agent.name} is ${agent.status}. Stop the agent first.`;
+    }
+
+    // Query user's active connections
+    const userConnections = await db.select({
+      id: connections.id,
+      label: connections.label,
+      provider: connections.provider,
+      status: connections.status,
+    }).from(connections)
+      .where(and(
+        eq(connections.userId, userId),
+        eq(connections.status, 'active'),
+      ))
+      .orderBy(connections.provider, connections.label);
+
+    // If user has active connections, list them
+    if (userConnections.length > 0) {
+      const lines = [
+        `You have these active connections:`,
+        ...userConnections.map((c) => `  ${c.id.slice(0, 8)}... — ${c.provider}: ${c.label}`),
+        '',
+        `Use /connect ${agent.name} <id> or /connect ${agent.name} "label" to pick one.`,
+        'To create a new connection, use /connections to see the full list or open the web app.',
+      ];
+      return lines.join('\n');
+    }
+
+    // Check whether the user has any connections at all (inactive)
+    const [anyConnection] = await db.select({ id: connections.id }).from(connections)
+      .where(eq(connections.userId, userId))
+      .limit(1);
+    const hasInactiveNote = anyConnection
+      ? '\nYou have connections but none are active. Visit the web app to manage them, or create a new one below.'
+      : '';
+
+    // Rate-limit setup link generation — per-user cooldown
+    const cooldownSecs = authConfig.loginLinkResendCooldownSecs ?? 60;
+    const cooldownKey = `auth:setup-link:cooldown:${userId}`;
+    const cooldownTtl = await redis.ttl(cooldownKey);
+    if (cooldownTtl > 0) {
+      return `Please wait ${cooldownTtl}s before requesting another link.`;
+    }
+
+    // No active connections — generate a one-time setup link
+    const token = await createAndStoreSetupLinkToken(
+      redis,
+      userId,
+      authConfig.loginLinkTtlSecs,
+    );
+
+    // Apply cooldown after successful token creation
+    await redis.set(cooldownKey, '1', 'EX', cooldownSecs);
+
+    const setupUrl = makeSetupLinkUrl(token, authConfig.publicBaseUrl);
+    const ttlMinutes = Math.round(authConfig.loginLinkTtlSecs / 60);
+
+    const lines = [
+      `🔗 Open this link to connect a platform for ${agent.name}:`,
+      setupUrl.toString(),
+      '',
+      `This link logs you in automatically and opens the connection form.`,
+      `Expires in ${ttlMinutes} minutes — do not share this link.`,
+    ];
+    if (hasInactiveNote) lines.push(hasInactiveNote);
+    lines.push(
+      '',
+      `After creating the connection, use the web app to assign this connection for now. /connect <agent> <id> will be available soon.`,
+    );
+    return lines.join('\n');
+  } catch (error) {
+    console.error('handleConnectSetup failed:', error);
+    return 'Failed to generate setup link. Please try again later.';
   }
 }

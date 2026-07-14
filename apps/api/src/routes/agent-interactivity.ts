@@ -9,7 +9,7 @@ import { AgentDocumentService, sanitizeFilename } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
-import type { AgentRiskDefaultsConfig, AlertsConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
+import type { AgentRiskDefaultsConfig, AlertsConfig, AuthConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
 import { AgentRuntimePolicyOverridesSchema, AgentRiskDefaultsSchema } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
@@ -26,6 +26,7 @@ import {
   handleSkills,
   handleLog,
   handleConnections,
+  handleConnectSetup,
 } from './telegram-command-handlers.js';
 import {
   CostPresetSchema,
@@ -109,6 +110,7 @@ export async function agentInteractivityRoutes(
   llmCatalogDeps?: LlmCatalogDeps,
   plansConfig?: PlansConfig,
   agentRiskDefaults?: AgentRiskDefaultsConfig,
+  authConfig?: AuthConfig,
 ): Promise<void> {
   function resolveAgentPlanPolicy(planId: string, isAdmin: boolean): PlanAgentsEntitlements {
     if (!plansConfig) {
@@ -634,6 +636,7 @@ export async function telegramWebhookHandler(
   db: Database,
   redisClient: Redis,
   alertsConfig?: AlertsConfig,
+  authConfig?: AuthConfig,
 ): Promise<void> {
   const botToken = alertsConfig?.telegram?.botToken ?? '';
   const webhookSecret = alertsConfig?.telegram?.webhookSecret ?? '';
@@ -745,8 +748,19 @@ export async function telegramWebhookHandler(
           return;
         }
 
+        // ── /connect <agent> (no connection id) — setup link flow ──────
+        if (slashCmd.command === 'connect' && slashCmd.args.length === 1) {
+          if (!authConfig) {
+            await sendTelegramText(chatId, 'Setup links are not available on this platform.');
+            return;
+          }
+          const response = await handleConnectSetup(db, redisClient, authConfig, userId, slashCmd.args);
+          await sendTelegramText(chatId, response);
+          return;
+        }
+
         // Placeholder for lifecycle commands (Slice 4)
-        // Placeholder for config commands (Slice 5)
+        // Placeholder for /connect <agent> <id> (Slice 5)
 
         await sendTelegramText(chatId, `Command /${slashCmd.command} will be available soon.`);
         return;

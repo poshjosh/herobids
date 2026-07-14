@@ -3,6 +3,7 @@ import { RootLayout } from './layout/RootLayout.js';
 import { NotFoundPage } from './NotFoundPage.js';
 import { LoginPage } from '../features/auth/LoginPage.js';
 import { AuthCallbackPage } from '../features/auth/AuthCallbackPage.js';
+import { SetupProviderLinkPage } from '../features/setup/SetupProviderLinkPage.js';
 import { LandingPagePlaceholder } from '../features/landing/LandingPagePlaceholder.js';
 import { ActivityFeedPage } from '../features/activity/ActivityFeedPage.js';
 import { OutcomeBoardPage } from '../features/outcomes/OutcomeBoardPage.js';
@@ -35,6 +36,10 @@ export const router = createBrowserRouter([
   {
     path: '/auth/callback',
     element: <AuthCallbackPage />,
+  },
+  {
+    path: '/setup/provider-link',
+    element: <SetupProviderLinkPage />,
   },
   // ── Authenticated routes (RootLayout enforces auth) ───────────
   {

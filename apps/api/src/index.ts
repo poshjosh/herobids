@@ -182,7 +182,7 @@ await app.register(cors, {
 app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
 // Telegram webhook — public (unauthenticated), token-validated
-await telegramWebhookHandler(app, db, redisClient, appConfig.alerts);
+await telegramWebhookHandler(app, db, redisClient, appConfig.alerts, appConfig.auth);
 
 // Auth routes (public — Google OAuth flow + exchange endpoint)
 const authMailer = createAuthMailer(appConfig.alerts, appConfig.auth.frontendOrigin ? `${appConfig.auth.frontendOrigin}/brand/wordmark-dark.png` : undefined);
@@ -219,7 +219,7 @@ await dashboardRoutes(app, db, appConfig.plans);
 await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.auth.frontendOrigin, appConfig.usageBilling, providersYaml);
 await sessionRoutes(app, db);
 await blueprintRoutes(app, db);
-await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults);
+await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults, appConfig.auth);
 await analyticsRoutes(app, db);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 await skillsRoutes(app, db, appConfig.plans);

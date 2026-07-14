@@ -12,6 +12,11 @@ import { errorPayload } from '../error-payload.js';
 import { resolvePlanEntitlements } from '../plan-guards.js';
 import { resolveNotificationPreferences } from './user-config-helpers.js';
 import type { AuthMailer } from '../auth-mailer.js';
+import {
+  makeSetupLinkUrl as makeSetupLinkUrlImpl,
+  createAndStoreSetupLinkToken as createAndStoreSetupLinkTokenImpl,
+  consumeSetupLinkToken as consumeSetupLinkTokenImpl,
+} from '../services/setup-link-token-service.js';
 
 const scrypt = promisify<crypto.BinaryLike, crypto.BinaryLike, number, Buffer>(crypto.scrypt);
 // Supported locales mirror apps/web/src/app/i18n/resolveLocale.ts — keep in sync.
@@ -449,6 +454,54 @@ export async function authRoutes(
     await redis.set(`auth:code:${exchangeCode}`, sessionToken, 'EX', config.exchangeCodeTtlSecs);
 
     const callbackUrl = new URL('/auth/callback', config.frontendOrigin);
+    callbackUrl.searchParams.set('code', exchangeCode);
+    return reply.redirect(callbackUrl.toString());
+  });
+
+  // ── Setup-link helpers ─────────────────────────────────────────────────
+  // Delegates to shared service so telegram-command-handlers can reuse them.
+
+  function makeSetupLinkUrl(token: string): string {
+    return makeSetupLinkUrlImpl(token, config.publicBaseUrl);
+  }
+
+  function createAndStoreSetupLinkToken(userId: string): Promise<string> {
+    return createAndStoreSetupLinkTokenImpl(redis, userId, config.loginLinkTtlSecs);
+  }
+
+  function consumeSetupLinkToken(token: string): Promise<string | null> {
+    return consumeSetupLinkTokenImpl(redis, token);
+  }
+
+  /**
+   * GET /auth/setup-link/callback — Consumes a one-time setup-link token,
+   * issues a session for the user, stores an exchange code, and redirects
+   * to the frontend setup form.
+   */
+  app.get('/auth/setup-link/callback', async (request, reply) => {
+    const { token } = request.query as { token?: string };
+    if (!token) {
+      return reply.status(400).send(
+        errorPayload('auth.setup_link_callback.missing_token', 'Missing setup token'),
+      );
+    }
+
+    const userId = await consumeSetupLinkToken(token);
+    if (!userId) {
+      return reply.status(400).send(
+        errorPayload(
+          'auth.setup_link_callback.invalid_token',
+          'This link has expired. Use /connect in Telegram to get a new one.',
+        ),
+      );
+    }
+
+    // Issue session and store behind a one-time exchange code
+    const sessionToken = await issueSession(config, db, userId);
+    const exchangeCode = crypto.randomUUID();
+    await redis.set(`auth:code:${exchangeCode}`, sessionToken, 'EX', config.exchangeCodeTtlSecs);
+
+    const callbackUrl = new URL('/setup/provider-link', config.frontendOrigin);
     callbackUrl.searchParams.set('code', exchangeCode);
     return reply.redirect(callbackUrl.toString());
   });

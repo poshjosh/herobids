@@ -59,9 +59,11 @@ interface Props {
   onClose: () => void;
   onSuccess: (result: ProviderSetupResult) => void;
   defaultCapability?: 'trading';
+  /** When true, render as a standalone page card instead of inside a Modal. */
+  standalone?: boolean;
 }
 
-export function ProviderSetupForm({ onClose, onSuccess, defaultCapability }: Props) {
+export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, standalone }: Props) {
   const intl = useIntl();
   const [providerChoice, setProviderChoice] = useState(defaultCapability === 'trading' ? '' : CUSTOM_PROVIDER_OPTION);
   const [customProviderId, setCustomProviderId] = useState('');
@@ -134,122 +136,151 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability }: Pro
     ? secretEntries.some((e) => e.key.trim() && e.value.trim())
     : Object.values(fieldValues).some((value) => value.trim().length > 0);
 
-  return (
-    <Modal title={intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingTitle' : 'setup.form.title' })} onClose={onClose}>
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '16px' }}>
-          <FieldLabel>{intl.formatMessage({ id: 'setup.form.provider' })}</FieldLabel>
-          <select value={providerChoice} onChange={(e) => setProviderChoice(e.target.value)} style={inputStyle}>
-            {!isTradingSetup ? <option value={CUSTOM_PROVIDER_OPTION}>Custom</option> : null}
-            {providerSuggestions.map((provider) => (
-              <option key={provider.id} value={provider.id}>{provider.displayName}</option>
-            ))}
-          </select>
-          {isCustomProvider ? (
-            <div style={{ marginTop: '8px' }}>
-              <input
-                value={customProviderId}
-                onChange={(e) => setCustomProviderId(e.target.value)}
-                placeholder={intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingProviderPlaceholder' : 'setup.form.providerPlaceholder' })}
-                style={inputStyle}
-              />
-            </div>
-          ) : null}
-          {catalogQuery.isLoading ? <div style={{ marginTop: '8px', fontSize: '12px' }}>Loading provider catalog...</div> : null}
-        </div>
+  const title = intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingTitle' : 'setup.form.title' });
 
-        <div style={{ marginBottom: '16px' }}>
-          <FieldLabel>{intl.formatMessage({ id: 'setup.form.label' })}</FieldLabel>
-          <input
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder={intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingLabelPlaceholder' : 'setup.form.labelPlaceholder' })}
-            style={inputStyle}
-          />
-        </div>
+  const formContent = (
+    <form onSubmit={handleSubmit}>
+      <div style={{ marginBottom: '16px' }}>
+        <FieldLabel>{intl.formatMessage({ id: 'setup.form.provider' })}</FieldLabel>
+        <select value={providerChoice} onChange={(e) => setProviderChoice(e.target.value)} style={inputStyle}>
+          {!isTradingSetup ? <option value={CUSTOM_PROVIDER_OPTION}>Custom</option> : null}
+          {providerSuggestions.map((provider) => (
+            <option key={provider.id} value={provider.id}>{provider.displayName}</option>
+          ))}
+        </select>
+        {isCustomProvider ? (
+          <div style={{ marginTop: '8px' }}>
+            <input
+              value={customProviderId}
+              onChange={(e) => setCustomProviderId(e.target.value)}
+              placeholder={intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingProviderPlaceholder' : 'setup.form.providerPlaceholder' })}
+              style={inputStyle}
+            />
+          </div>
+        ) : null}
+        {catalogQuery.isLoading ? <div style={{ marginTop: '8px', fontSize: '12px' }}>Loading provider catalog...</div> : null}
+      </div>
 
-        <div style={{ marginBottom: '12px' }}>
-          <FieldLabel>{intl.formatMessage({ id: 'setup.form.secrets' })}</FieldLabel>
-          {isCustomProvider ? (
-            <>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {secretEntries.map((entry, index) => (
-                  <div
-                    key={entry.id}
-                    style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr auto', gap: '8px', alignItems: 'center' }}
-                  >
-                    <input
-                      value={entry.key}
-                      onChange={(e) => updateEntry(index, 'key', e.target.value)}
-                      placeholder={intl.formatMessage({ id: 'setup.form.secretNamePlaceholder' })}
-                      style={inputStyle}
-                    />
-                    <input
-                      type="password"
-                      value={entry.value}
-                      onChange={(e) => updateEntry(index, 'value', e.target.value)}
-                      placeholder={intl.formatMessage({ id: 'setup.form.secretValuePlaceholder' })}
-                      style={inputStyle}
-                      autoComplete="new-password"
-                    />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeEntry(index)}
-                      disabled={secretEntries.length === 1}
-                    >
-                      {intl.formatMessage({ id: 'common.remove' })}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-              <div style={{ marginTop: '8px' }}>
-                <Button variant="secondary" size="sm" onClick={addEntry}>
-                  {intl.formatMessage({ id: 'setup.form.addSecret' })}
-                </Button>
-              </div>
-            </>
-          ) : (
+      <div style={{ marginBottom: '16px' }}>
+        <FieldLabel>{intl.formatMessage({ id: 'setup.form.label' })}</FieldLabel>
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder={intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingLabelPlaceholder' : 'setup.form.labelPlaceholder' })}
+          style={inputStyle}
+        />
+      </div>
+
+      <div style={{ marginBottom: '12px' }}>
+        <FieldLabel>{intl.formatMessage({ id: 'setup.form.secrets' })}</FieldLabel>
+        {isCustomProvider ? (
+          <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {(selectedProvider?.credentials?.fields ?? []).map((field) => (
-                <div key={field.key}>
-                  <FieldLabel>{field.label}</FieldLabel>
+              {secretEntries.map((entry, index) => (
+                <div
+                  key={entry.id}
+                  style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr auto', gap: '8px', alignItems: 'center' }}
+                >
                   <input
-                    type={field.secret || field.inputKind === 'password' ? 'password' : 'text'}
-                    value={fieldValues[field.key] ?? ''}
-                    onChange={(e) => setFieldValues((current) => ({ ...current, [field.key]: e.target.value }))}
-                    placeholder={field.placeholder ?? field.key}
+                    value={entry.key}
+                    onChange={(e) => updateEntry(index, 'key', e.target.value)}
+                    placeholder={intl.formatMessage({ id: 'setup.form.secretNamePlaceholder' })}
+                    style={inputStyle}
+                  />
+                  <input
+                    type="password"
+                    value={entry.value}
+                    onChange={(e) => updateEntry(index, 'value', e.target.value)}
+                    placeholder={intl.formatMessage({ id: 'setup.form.secretValuePlaceholder' })}
                     style={inputStyle}
                     autoComplete="new-password"
                   />
-                  {field.description ? (
-                    <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)' }}>{field.description}</div>
-                  ) : null}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeEntry(index)}
+                    disabled={secretEntries.length === 1}
+                  >
+                    {intl.formatMessage({ id: 'common.remove' })}
+                  </Button>
                 </div>
               ))}
             </div>
-          )}
-        </div>
-
-        {mutation.isError && (
-          <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />
+            <div style={{ marginTop: '8px' }}>
+              <Button variant="secondary" size="sm" onClick={addEntry}>
+                {intl.formatMessage({ id: 'setup.form.addSecret' })}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {(selectedProvider?.credentials?.fields ?? []).map((field) => (
+              <div key={field.key}>
+                <FieldLabel>{field.label}</FieldLabel>
+                <input
+                  type={field.secret || field.inputKind === 'password' ? 'password' : 'text'}
+                  value={fieldValues[field.key] ?? ''}
+                  onChange={(e) => setFieldValues((current) => ({ ...current, [field.key]: e.target.value }))}
+                  placeholder={field.placeholder ?? field.key}
+                  style={inputStyle}
+                  autoComplete="new-password"
+                />
+                {field.description ? (
+                  <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)' }}>{field.description}</div>
+                ) : null}
+              </div>
+            ))}
+          </div>
         )}
+      </div>
 
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+      {mutation.isError && (
+        <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />
+      )}
+
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        {!standalone && (
           <Button variant="ghost" onClick={onClose} type="button">
             {intl.formatMessage({ id: 'common.cancel' })}
           </Button>
-          <Button
-            variant="primary"
-            type="submit"
-            disabled={mutation.isPending || !effectiveProvider || !label.trim() || !hasCompleteSecret}
-          >
-            {mutation.isPending
-              ? intl.formatMessage({ id: 'setup.form.saving' })
-              : intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingSubmit' : 'setup.form.submit' })}
-          </Button>
+        )}
+        <Button
+          variant="primary"
+          type="submit"
+          disabled={mutation.isPending || !effectiveProvider || !label.trim() || !hasCompleteSecret}
+        >
+          {mutation.isPending
+            ? intl.formatMessage({ id: 'setup.form.saving' })
+            : intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingSubmit' : 'setup.form.submit' })}
+        </Button>
+      </div>
+    </form>
+  );
+
+  if (standalone) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+        <div style={{
+          maxWidth: '480px',
+          width: '100%',
+          background: 'var(--color-surface-1)',
+          borderRadius: '12px',
+          padding: '32px',
+          boxShadow: '0 2px 16px rgba(0, 0, 0, 0.08)',
+        }}>
+          <h1 style={{ fontSize: '22px', fontWeight: '600', margin: '0 0 8px 0' }}>Connect a Trading Platform</h1>
+          <p style={{ color: 'var(--color-text-secondary)', margin: '0 0 24px 0', fontSize: '14px' }}>
+            Configure your exchange or trading platform credentials. Secrets are encrypted and never stored in plain text.
+          </p>
+          {formContent}
         </div>
-      </form>
+      </div>
+    );
+  }
+
+  return (
+    <Modal title={title} onClose={onClose}>
+      {formContent}
     </Modal>
   );
 }
