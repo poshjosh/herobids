@@ -121,7 +121,6 @@ cleanup() {
     # Stop first (ignore errors — agent may already be stopped)
     curl -sS -X POST "$API_BASE_URL/agents/$AGENT_ID/stop" \
       -H "Authorization: Bearer $TOKEN" \
-      -H "Content-Type: application/json" \
       > /dev/null 2>&1 || true
 
     # Wait briefly for the worker to process the stop
@@ -211,11 +210,12 @@ info "Step 3/8: Create agent"
 CREATE_PAYLOAD=$(cat <<'AGENTJSON'
 {
   "name": "Doc Test Agent",
-  "prompt": "You are a document reader. On your first tick, do exactly this:\n1. Use list_files with path '' (empty string) to see your workspace root.\n2. Use list_files with path 'docs/extracted' to find the extracted text file.\n3. Use read_file to read the content of the .txt file you find (use the relative path like docs/extracted/xxxx.txt).\n4. Find the first line of text in that file — this is the heading.\n5. Call publish_artifact with artifactType='text', summary=the exact heading text, body=the full text you read.\n6. Do nothing else. Do not trade. Do not call any other tools.\nAfter publishing, you may stop.",
+  "prompt": "You are a document reader. On your first tick, do exactly this:\n1. Use list_files with path '' (empty string) to see your workspace root.\n2. Use list_files with path 'docs/extracted' to find an extracted text file which we sent to you.\n3. Use read_file to read the content of the .txt file you find (use the relative path like docs/extracted/<file-name>.txt).\n4. Find the first non-empty line of text in that file — this is the heading.\n5. Call publish_artifact with artifactType='text', summary=the exact heading text, body=the full text you read.\n6. Do nothing else. Do not call any other tools.\nAfter publishing - STOP.",
   "provider": "ollama",
   "lightModel": "qwen3:8b",
   "heavyModel": "qwen3.6:35b-a3b-q4_K_M",
-  "tickIntervalMs": 15000
+  "tickIntervalMs": 15000,
+  "skillIds": ["file-management"]
 }
 AGENTJSON
 )
@@ -253,7 +253,7 @@ info "Step 5/8: Upload DOCX document"
 
 DOCX_UPLOAD=$(curl -sS -X POST "$API_BASE_URL/agents/$AGENT_ID/documents" \
   -H "Authorization: Bearer $TOKEN" \
-  -F "file=@$DOCX_FILE" 2>&1)
+  -F "file=@$DOCX_FILE;type=application/vnd.openxmlformats-officedocument.wordprocessingml.document" 2>&1)
 
 DOCX_DOC_ID=$(echo "$DOCX_UPLOAD" | jq -r '.id // empty')
 DOCX_STATUS=$(echo "$DOCX_UPLOAD" | jq -r '.extractionStatus // empty')
@@ -269,8 +269,7 @@ echo ""
 info "Step 6/8: Start agent"
 
 START_RESP=$(curl -sS -X POST "$API_BASE_URL/agents/$AGENT_ID/start" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" 2>&1)
+  -H "Authorization: Bearer $TOKEN" 2>&1)
 
 START_STATUS=$(echo "$START_RESP" | jq -r '.status // empty')
 SESSION_ID=$(echo "$START_RESP" | jq -r '.sessionId // empty')
@@ -287,8 +286,8 @@ for i in $(seq 1 30); do
     -H "Authorization: Bearer $TOKEN" 2>&1)
   AGENT_STATUS=$(echo "$AGENT_STATE" | jq -r '.status // empty')
 
-  if [[ "$AGENT_STATUS" == "running" ]]; then
-    log "Agent is running"
+  if [[ "$AGENT_STATUS" == "active" ]]; then
+    log "Agent is active"
     break
   elif [[ "$AGENT_STATUS" == "crashed" || "$AGENT_STATUS" == "stopped" ]]; then
     fail "Agent entered terminal state '$AGENT_STATUS' before producing an artifact"
@@ -297,8 +296,8 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
-if [[ "$AGENT_STATUS" != "running" ]]; then
-  fail "Agent did not reach 'running' state within 60s (current: $AGENT_STATUS)"
+if [[ "$AGENT_STATUS" != "active" ]]; then
+  fail "Agent did not reach 'active' state within 60s (current: $AGENT_STATUS)"
 fi
 
 # ─── Step 7 — Poll for artifact ──────────────────────────────────────────────
