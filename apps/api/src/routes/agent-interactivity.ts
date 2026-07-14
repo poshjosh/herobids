@@ -15,6 +15,11 @@ import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { parseTelegramCommand } from './telegram-command-parser.js';
 import {
+  parseSlashCommand,
+  formatCommandHelp,
+  formatUnknownCommandResponse,
+} from './telegram-slash-commands.js';
+import {
   CostPresetSchema,
   decorateAgentResponse,
   hasModelFieldsWithoutProvider,
@@ -673,6 +678,30 @@ export async function telegramWebhookHandler(
     let userId = userRows[0]?.userId;
 
     const trimmedText = message.text!.trim();
+
+    // ── Slash-command routing ──────────────────────────────────────────
+    // Detect and dispatch explicit slash commands before falling through
+    // to the existing /to parser and plain-text routing.
+    const slashCmd = parseSlashCommand(trimmedText);
+    if (slashCmd) {
+      if (slashCmd.command === 'to') {
+        // Delegated to existing parseTelegramCommand logic below.
+      } else if (slashCmd.command === 'unknown') {
+        await sendTelegramText(chatId, formatUnknownCommandResponse(slashCmd.args[0] ?? ''));
+        return;
+      } else if (slashCmd.command === 'help') {
+        await sendTelegramText(chatId, formatCommandHelp(slashCmd.args[0]));
+        return;
+      } else if (slashCmd.command === 'start' && slashCmd.args.length === 0) {
+        // Exact bare /start → onboarding/help, not lifecycle.
+        await sendTelegramText(chatId, formatCommandHelp());
+        return;
+      } else {
+        // Other commands — for Slice 1, reply with a placeholder.
+        await sendTelegramText(chatId, `Command /${slashCmd.command} will be available soon.`);
+        return;
+      }
+    }
 
     if (message.reply_to_message) {
       // Resolve the reply target directly from the outbound message record.
