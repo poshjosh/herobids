@@ -233,7 +233,7 @@ while IFS='|' read -r aid aname; do
   trigger_resp=$(curl -s -w '\n%{http_code}' -X POST "${API}/agents/${aid}/evaluations" \
     -H 'Content-Type: application/json' \
     -H "Authorization: Bearer $TOKEN" \
-    -d '{"scope":{"type":"latestSession"}}' 2>/dev/null)
+    -d '{"scope":{"type":"latestSession"},"includeNarrative":true}' 2>/dev/null)
 
   trigger_code=$(echo "$trigger_resp" | tail -1)
   trigger_body=$(echo "$trigger_resp" | sed '$d')
