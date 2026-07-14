@@ -893,6 +893,71 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     expect(res.json().error).toBe('not_found');
   });
 
+  it('allows non-admin users to create agents with shadow execution mode', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: ['trading'],
+      modelPolicy: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+      executionMode: 'shadow',
+    };
+    const { db } = buildDb({
+      agentRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+      skillRows: [
+        { id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-trading' },
+        { id: 'bot-management', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-bot-management' },
+      ],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'shadow agent',
+        prompt: 'test',
+        skillIds: ['trading'],
+        executionMode: 'shadow',
+      },
+    });
+
+    // Non-admin users must be able to create agents with shadow execution mode.
+    // The removed admin-only guard would have returned 403.
+    expect(res.statusCode).not.toBe(403);
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('allows non-admin users to update agents to shadow execution mode', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'shadow' }],
+      agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        name: 'shadow agent updated',
+        prompt: 'test updated',
+        executionMode: 'shadow',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+  });
+
   it('rejects explicit execution mode for non-trading agents on create', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db } = buildDb({

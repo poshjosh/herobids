@@ -851,7 +851,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                       <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.executionMode} onChange={(e) => setForm((prev) => ({ ...prev, executionMode: e.target.value }))}>
                         <option value="">{intl.formatMessage({ id: 'agents.edit.executionModeUnset' })}</option>
                         <option value="paper">{intl.formatMessage({ id: 'agents.create.executionMode.paper' })}</option>
-                        {isAdmin && <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>}
+                        <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
                         <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
                       </select>
                       <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>

@@ -1179,7 +1179,7 @@ function CreateAgentFlow({
                       style={{ ...inputStyle, cursor: 'pointer' }}
                     >
                       <option value="paper">{intl.formatMessage({ id: 'agents.create.executionMode.paper' })}</option>
-                      {meQuery.data?.isAdmin && <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>}
+                      <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
                       <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
                     </select>
                     {formErrors.executionMode && (

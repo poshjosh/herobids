@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent shadow mode:** Removed the admin-only restriction for selecting `shadow` execution mode in agent create/edit flows and agent API validation.
+
 ## v0.0.24 - 2026-07-13
 
 ### Added

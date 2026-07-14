@@ -653,11 +653,6 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: holdInvariantIssues });
     }
 
-    // Shadow mode is admin-only
-    if (parsed.data.executionMode === 'shadow' && !request.isAdmin) {
-      return reply.status(403).send(errorPayload('execution_mode.admin_only', 'Shadow execution mode is restricted to admin users.'));
-    }
-
     const executionMode = resolveExecutionModeForSkills({
       skillIds: parsed.data.skillIds ?? [],
       submittedExecutionMode: parsed.data.executionMode,
@@ -1137,11 +1132,6 @@ export async function agentRoutes(
     });
     if (holdInvariantIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: holdInvariantIssues });
-    }
-
-    // Shadow mode is admin-only
-    if (parsed.data.executionMode === 'shadow' && !request.isAdmin) {
-      return reply.status(403).send(errorPayload('execution_mode.admin_only', 'Shadow execution mode is restricted to admin users.'));
     }
 
     const executionMode = resolveExecutionModeForSkills({

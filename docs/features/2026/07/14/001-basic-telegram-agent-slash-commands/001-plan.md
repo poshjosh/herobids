@@ -66,7 +66,7 @@ The current shape creates three implementation constraints:
 
 ### Configuration (agent must be stopped)
 
-14. `/mode <agent name> [paper|shadow|live]` — show or set execution mode (shadow is admin-only)
+14. `/mode <agent name> [paper|shadow|live]` — show or set execution mode
 15. `/connect <agent name> [connection-id|label]` — grant a connection by ID or label; if no ID/label is given, generate a one-time setup link to create a connection in the browser
 16. `/disconnect <agent name> <connection-id|label>` — revoke a connection from an agent by ID or label
 
@@ -132,7 +132,7 @@ The current shape creates three implementation constraints:
 18. `/mode <agent name>`
     Shows the current execution mode for an agent. For non-trading agents, reports "not applicable".
 19. `/mode <agent name> <paper|shadow|live>`
-    Sets the execution mode. Validates that the agent has trading skills, enforces shadow-is-admin-only, and rejects if the agent is not stopped.
+   Sets the execution mode. Validates that the agent has trading skills and rejects if the agent is not stopped.
 20. `/connect <agent name>` (no third argument)
    Requires the agent to be stopped. If the user has no active connections, or as a convenience,
    generates a one-time auto-expiring link that opens the "Connect AI agent to external platform"
@@ -628,7 +628,6 @@ Allow users to view and modify agent execution mode and connection grants from T
 2. Implement `/mode <agent> <paper|shadow|live>` — mutate: update execution mode.
    - Validate the agent has trading skills (reuse `resolveExecutionModeForSkills`).
    - Reject if agent is not `stopped` with a clear message.
-   - Reject shadow mode for non-admin users.
 3. Implement `/connect <agent> <connection-id|label>` — grant a connection.
    - Resolve the connection: try exact ID match first, then case-insensitive label match.
      Labels support exact match and unique prefix match. If ambiguous, list matches.
@@ -646,9 +645,8 @@ Allow users to view and modify agent execution mode and connection grants from T
 1. `/mode` correctly shows and sets execution mode.
 2. `/connect` and `/disconnect` correctly grant and revoke connection assignments.
 3. All config commands reject non-stopped agents with a clear message.
-4. Shadow mode is rejected for non-admin users.
-5. Connection ownership and status validation matches the HTTP API exactly.
-6. `/connect` and `/disconnect` resolve connections by both ID and label.
+4. Connection ownership and status validation matches the HTTP API exactly.
+5. `/connect` and `/disconnect` resolve connections by both ID and label.
 
 ### Slice 6 — Register Telegram bot commands
 
@@ -688,7 +686,7 @@ Lock behavior down with focused coverage and publish the operator/user contract.
    - `/start <agent>`
    - `/pause <agent>`, `/resume <agent>`, `/stop <agent>`
    - `/restart <agent>` (happy path and slow-stop path)
-   - `/mode <agent>` and `/mode <agent> <mode>` (read, set, stopped-only rejection, admin-only shadow)
+   - `/mode <agent>` and `/mode <agent> <mode>` (read, set, stopped-only rejection)
    - `/connect <agent> <id>` and `/disconnect <agent> <id>` (happy path, stopped-only rejection, ownership, idempotency)
    - unknown command handling
    - exact `/start` onboarding behavior
