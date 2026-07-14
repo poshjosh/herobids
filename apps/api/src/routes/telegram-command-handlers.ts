@@ -31,6 +31,12 @@ import {
   makeSetupLinkUrl,
   createAndStoreSetupLinkToken,
 } from '../services/setup-link-token-service.js';
+import {
+  startAgent,
+  pauseAgent,
+  resumeAgent,
+  stopAgent,
+} from '../services/agent-lifecycle-service.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -664,5 +670,235 @@ export async function handleConnectSetup(
   } catch (error) {
     console.error('handleConnectSetup failed:', error);
     return 'Failed to generate setup link. Please try again later.';
+  }
+}
+
+// ── handleStart ───────────────────────────────────────────────────────────
+
+export async function handleStart(
+  db: Database,
+  userId: string,
+  args: string[],
+): Promise<string> {
+  try {
+    if (!userId) return 'Please bind your Telegram account first.';
+    if (args.length === 0) return 'Usage: /start <agent name>';
+
+    const resolved = await resolveAgentByName(db, userId, args[0]!);
+    if (resolved.type === 'not_found') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (resolved.type === 'ambiguous') {
+      const names = resolved.agents.map((a) => `${a.name} (${a.id.slice(0, 8)}...)`).join(', ');
+      return `Multiple agents named "${args[0]}". Use a unique name or check the web app.\nMatches: ${names}`;
+    }
+
+    const result = await startAgent(db, resolved.agent.id, userId);
+
+    if (result.ok) {
+      return `Started ${resolved.agent.name}.`;
+    }
+
+    const err_ = result.error;
+    if (err_.code === 'agent.not_found' || err_.code === 'agent.not_owned') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (err_.code === 'agent.invalid_status') {
+      return `Cannot start ${resolved.agent.name} because it is ${err_.currentStatus}.`;
+    }
+    if (err_.code === 'agent.model_selection_incomplete') {
+      return `Cannot start ${resolved.agent.name}: model selection is incomplete. Complete setup in the web app.`;
+    }
+    return `Failed to start ${resolved.agent.name}. Please try again.`;
+  } catch (error) {
+    console.error('handleStart failed:', error);
+    return 'Failed to start agent. Please try again later.';
+  }
+}
+
+// ── handlePause ───────────────────────────────────────────────────────────
+
+export async function handlePause(
+  db: Database,
+  userId: string,
+  args: string[],
+): Promise<string> {
+  try {
+    if (!userId) return 'Please bind your Telegram account first.';
+    if (args.length === 0) return 'Usage: /pause <agent name>';
+
+    const resolved = await resolveAgentByName(db, userId, args[0]!);
+    if (resolved.type === 'not_found') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (resolved.type === 'ambiguous') {
+      const names = resolved.agents.map((a) => `${a.name} (${a.id.slice(0, 8)}...)`).join(', ');
+      return `Multiple agents named "${args[0]}". Use a unique name or check the web app.\nMatches: ${names}`;
+    }
+
+    const result = await pauseAgent(db, resolved.agent.id, userId);
+
+    if (result.ok) {
+      return `Paused ${resolved.agent.name}.`;
+    }
+
+    const err_ = result.error;
+    if (err_.code === 'agent.not_found' || err_.code === 'agent.not_owned') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (err_.code === 'agent.invalid_status') {
+      return `Cannot pause ${resolved.agent.name} because it is ${err_.currentStatus}.`;
+    }
+    return `Failed to pause ${resolved.agent.name}. Please try again.`;
+  } catch (error) {
+    console.error('handlePause failed:', error);
+    return 'Failed to pause agent. Please try again later.';
+  }
+}
+
+// ── handleResume ──────────────────────────────────────────────────────────
+
+export async function handleResume(
+  db: Database,
+  userId: string,
+  args: string[],
+): Promise<string> {
+  try {
+    if (!userId) return 'Please bind your Telegram account first.';
+    if (args.length === 0) return 'Usage: /resume <agent name>';
+
+    const resolved = await resolveAgentByName(db, userId, args[0]!);
+    if (resolved.type === 'not_found') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (resolved.type === 'ambiguous') {
+      const names = resolved.agents.map((a) => `${a.name} (${a.id.slice(0, 8)}...)`).join(', ');
+      return `Multiple agents named "${args[0]}". Use a unique name or check the web app.\nMatches: ${names}`;
+    }
+
+    const result = await resumeAgent(db, resolved.agent.id, userId);
+
+    if (result.ok) {
+      return `Resumed ${resolved.agent.name}.`;
+    }
+
+    const err_ = result.error;
+    if (err_.code === 'agent.not_found' || err_.code === 'agent.not_owned') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (err_.code === 'agent.invalid_status') {
+      return `Cannot resume ${resolved.agent.name} because it is not paused. Current status: ${err_.currentStatus}.`;
+    }
+    return `Failed to resume ${resolved.agent.name}. Please try again.`;
+  } catch (error) {
+    console.error('handleResume failed:', error);
+    return 'Failed to resume agent. Please try again later.';
+  }
+}
+
+// ── handleStop ────────────────────────────────────────────────────────────
+
+export async function handleStop(
+  db: Database,
+  userId: string,
+  args: string[],
+): Promise<string> {
+  try {
+    if (!userId) return 'Please bind your Telegram account first.';
+    if (args.length === 0) return 'Usage: /stop <agent name>';
+
+    const resolved = await resolveAgentByName(db, userId, args[0]!);
+    if (resolved.type === 'not_found') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (resolved.type === 'ambiguous') {
+      const names = resolved.agents.map((a) => `${a.name} (${a.id.slice(0, 8)}...)`).join(', ');
+      return `Multiple agents named "${args[0]}". Use a unique name or check the web app.\nMatches: ${names}`;
+    }
+
+    const result = await stopAgent(db, resolved.agent.id, userId);
+
+    if (result.ok) {
+      return `Stopped ${resolved.agent.name}.`;
+    }
+
+    const err_ = result.error;
+    if (err_.code === 'agent.not_found' || err_.code === 'agent.not_owned') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    return `Failed to stop ${resolved.agent.name}. Please try again.`;
+  } catch (error) {
+    console.error('handleStop failed:', error);
+    return 'Failed to stop agent. Please try again later.';
+  }
+}
+
+// ── handleRestart ─────────────────────────────────────────────────────────
+
+export async function handleRestart(
+  db: Database,
+  userId: string,
+  args: string[],
+): Promise<string> {
+  try {
+    if (!userId) return 'Please bind your Telegram account first.';
+    if (args.length === 0) return 'Usage: /restart <agent name>';
+
+    const resolved = await resolveAgentByName(db, userId, args[0]!);
+    if (resolved.type === 'not_found') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (resolved.type === 'ambiguous') {
+      const names = resolved.agents.map((a) => `${a.name} (${a.id.slice(0, 8)}...)`).join(', ');
+      return `Multiple agents named "${args[0]}". Use a unique name or check the web app.\nMatches: ${names}`;
+    }
+
+    const agent = resolved.agent;
+
+    // Step 1: Stop
+    const stopResult = await stopAgent(db, agent.id, userId);
+    if (!stopResult.ok) {
+      const err_ = stopResult.error;
+      if (err_.code === 'agent.not_found' || err_.code === 'agent.not_owned') {
+        return `Agent "${args[0]}" not found.`;
+      }
+      return `Failed to stop ${agent.name}. Please try again.`;
+    }
+
+    // Step 2: Poll for stopped status
+    let settled = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const [row] = await db
+        .select({ status: agents.status })
+        .from(agents)
+        .where(eq(agents.id, agent.id));
+      if (row?.status === 'stopped') {
+        settled = true;
+        break;
+      }
+    }
+
+    if (!settled) {
+      return `Stopping ${agent.name}... still stopping. Check /status and try /start when ready.`;
+    }
+
+    // Step 3: Start
+    const startResult = await startAgent(db, agent.id, userId);
+    if (startResult.ok) {
+      return `Started ${agent.name}.`;
+    }
+
+    const startErr = startResult.error;
+    if (startErr.code === 'agent.model_selection_incomplete') {
+      return `Cannot start ${agent.name}: model selection is incomplete. Complete setup in the web app.`;
+    }
+    if (startErr.code === 'agent.invalid_status') {
+      return `Cannot start ${agent.name} because it is ${startErr.currentStatus}.`;
+    }
+    return `Failed to start ${agent.name}. Please try again.`;
+  } catch (error) {
+    console.error('handleRestart failed:', error);
+    return 'Failed to restart agent. Please try again later.';
   }
 }
