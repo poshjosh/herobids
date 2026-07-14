@@ -26,7 +26,12 @@ import {
   decisions,
 } from '@herobids/db';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
-import { listAgentConnections } from '../services/agent-config-service.js';
+import {
+  listAgentConnections,
+  grantConnection,
+  revokeConnection,
+  setExecutionMode,
+} from '../services/agent-config-service.js';
 import {
   makeSetupLinkUrl,
   createAndStoreSetupLinkToken,
@@ -37,6 +42,7 @@ import {
   resumeAgent,
   stopAgent,
 } from '../services/agent-lifecycle-service.js';
+import { hasSkillCapabilityFamily } from '../routes/agent-config-helpers.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -664,7 +670,7 @@ export async function handleConnectSetup(
     if (hasInactiveNote) lines.push(hasInactiveNote);
     lines.push(
       '',
-      `After creating the connection, use the web app to assign this connection for now. /connect <agent> <id> will be available soon.`,
+      `After creating the connection, use /connect ${agent.name} <id> to assign it to ${agent.name}.`,
     );
     return lines.join('\n');
   } catch (error) {
@@ -900,5 +906,319 @@ export async function handleRestart(
   } catch (error) {
     console.error('handleRestart failed:', error);
     return 'Failed to restart agent. Please try again later.';
+  }
+}
+
+// ── Connection resolution utility ────────────────────────────────────────
+
+/**
+ * Resolve a connection by ID or label for a given user.
+ *
+ * Resolution order:
+ * 1. Exact UUID match on connections.id
+ * 2. Case-insensitive exact match on connections.label
+ * 3. Unique case-insensitive prefix match on connections.label (only if idOrLabel is >= 3 chars)
+ */
+
+type ConnectionRow = typeof connections.$inferSelect;
+
+export async function resolveConnectionByIdOrLabel(
+  db: Database,
+  userId: string,
+  idOrLabel: string,
+): Promise<
+  | { type: 'found'; connection: ConnectionRow }
+  | { type: 'not_found' }
+  | { type: 'ambiguous'; matches: ConnectionRow[] }
+> {
+  // 1. Try exact ID match
+  const [byId] = await db
+    .select()
+    .from(connections)
+    .where(and(eq(connections.id, idOrLabel), eq(connections.userId, userId)))
+    .limit(1);
+
+  if (byId) {
+    return { type: 'found', connection: byId };
+  }
+
+  // 2. Try case-insensitive label match
+  const byLabel = await db
+    .select()
+    .from(connections)
+    .where(
+      and(
+        eq(connections.userId, userId),
+        sql`LOWER(${connections.label}) = LOWER(${idOrLabel})`,
+      ),
+    )
+    .orderBy(connections.label);
+
+  if (byLabel.length === 1) {
+    return { type: 'found', connection: byLabel[0]! };
+  }
+
+  if (byLabel.length > 1) {
+    return { type: 'ambiguous', matches: byLabel };
+  }
+
+  // 3. Try unique prefix match (only if idOrLabel >= 3 chars to avoid false positives)
+  if (idOrLabel.length >= 3) {
+    const escapedInput = idOrLabel.replace(/%/g, '\\%').replace(/_/g, '\\_');
+    const byPrefix = await db
+      .select()
+      .from(connections)
+      .where(
+        and(
+          eq(connections.userId, userId),
+          sql`LOWER(${connections.label}) LIKE LOWER(${`${escapedInput}%`})`,
+        ),
+      )
+      .orderBy(connections.label);
+
+    if (byPrefix.length === 1) {
+      return { type: 'found', connection: byPrefix[0]! };
+    }
+
+    if (byPrefix.length > 1) {
+      return { type: 'ambiguous', matches: byPrefix };
+    }
+  }
+
+  return { type: 'not_found' };
+}
+
+// ── handleMode ────────────────────────────────────────────────────────────
+
+export async function handleMode(
+  db: Database,
+  userId: string,
+  args: string[],
+): Promise<string> {
+  try {
+    if (args.length === 0) {
+      return 'Usage: /mode <agent name> [test|live|paper|shadow]';
+    }
+
+    const resolved = await resolveAgentByName(db, userId, args[0]!);
+    if (resolved.type === 'not_found') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (resolved.type === 'ambiguous') {
+      const names = resolved.agents
+        .map((a) => `${a.name} (${a.id.slice(0, 8)}...)`)
+        .join(', ');
+      return `Multiple agents named "${args[0]}". Use a unique name or check the web app.\nMatches: ${names}`;
+    }
+    const agent = resolved.agent;
+
+    // Read-only: show current execution mode
+    if (args.length === 1) {
+      const mode = agent.executionMode;
+      if (mode === 'shadow') {
+        return `${agent.name} execution mode: live (shadow)`;
+      }
+      // Map internal modes to display values
+      const displayMode = mode === 'paper' ? 'test' : mode;
+      if (displayMode && displayMode !== 'test') {
+        return `${agent.name} execution mode: ${displayMode}`;
+      }
+      if (displayMode === 'test') {
+        return `${agent.name} execution mode: test (simulated)`;
+      }
+      return `${agent.name} execution mode: not applicable`;
+    }
+
+    // Set mode
+    const rawMode = args[1]!.toLowerCase();
+    const validModes = ['test', 'live', 'paper', 'shadow'];
+    if (!validModes.includes(rawMode)) {
+      return `Invalid mode "${args[1]}". Use test, live, paper, or shadow.`;
+    }
+
+    // Normalize: paper/shadow → test, live → live
+    const normalizedMode = rawMode === 'paper' || rawMode === 'shadow' ? 'test' : 'live';
+
+    // Validate agent is stopped
+    if (agent.status !== 'stopped') {
+      return `Cannot change execution mode: ${agent.name} is ${agent.status}. Stop the agent first.`;
+    }
+
+    // Validate the agent has trading skills
+    const skillRows = await db
+      .select({ skillId: agentSkills.skillId })
+      .from(agentSkills)
+      .where(eq(agentSkills.agentId, agent.id));
+    const skillIds = skillRows.map((r) => r.skillId);
+    if (!hasSkillCapabilityFamily(skillIds, 'trading')) {
+      return `Cannot set execution mode: ${agent.name} does not have trading skills.`;
+    }
+
+    const result = await setExecutionMode(db, agent.id, userId, normalizedMode);
+
+    if (result.ok) {
+      const displayMode = normalizedMode === 'test' ? 'test (simulated)' : 'live';
+      return `${agent.name} execution mode set to ${displayMode}.`;
+    }
+
+    const err_ = result.error;
+    if (err_.code === 'agent.not_found') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    return `Failed to set execution mode for ${agent.name}. Please try again.`;
+  } catch (error) {
+    console.error('handleMode failed:', error);
+    return 'Failed to set execution mode. Please try again later.';
+  }
+}
+
+// ── handleConnect (with ID/label) ─────────────────────────────────────────
+
+export async function handleConnect(
+  db: Database,
+  userId: string,
+  args: string[],
+): Promise<string> {
+  try {
+    if (args.length < 2) {
+      return 'Usage: /connect <agent name> <connection ID or label>';
+    }
+
+    const resolved = await resolveAgentByName(db, userId, args[0]!);
+    if (resolved.type === 'not_found') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (resolved.type === 'ambiguous') {
+      const names = resolved.agents
+        .map((a) => `${a.name} (${a.id.slice(0, 8)}...)`)
+        .join(', ');
+      return `Multiple agents named "${args[0]}". Use a unique name or check the web app.\nMatches: ${names}`;
+    }
+    const agent = resolved.agent;
+
+    // Agent must be stopped before modifying connections
+    if (agent.status !== 'stopped') {
+      return `Cannot change connections: ${agent.name} is ${agent.status}. Stop the agent first.`;
+    }
+
+    const idOrLabel = args[1]!;
+
+    const connResolved = await resolveConnectionByIdOrLabel(db, userId, idOrLabel);
+
+    if (connResolved.type === 'not_found') {
+      return `Connection "${idOrLabel}" not found.`;
+    }
+
+    if (connResolved.type === 'ambiguous') {
+      const lines = [
+        `Multiple connections match "${idOrLabel}":`,
+        ...connResolved.matches.map(
+          (c) => `  ${c.id.slice(0, 8)}... — ${c.label}`,
+        ),
+        `Use the connection ID instead: /connect ${agent.name} ${connResolved.matches[0]!.id}`,
+      ];
+      return lines.join('\n');
+    }
+
+    const result = await grantConnection(db, agent.id, connResolved.connection.id, userId);
+
+    if (result.ok) {
+      return `Connection granted to ${agent.name}.`;
+    }
+
+    const err_ = result.error;
+    if (err_.code === 'agent.not_found' || err_.code === 'agent.not_owned') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (err_.code === 'agent.not_stopped') {
+      return `Cannot change connections: ${agent.name} is ${err_.currentStatus}. Stop the agent first.`;
+    }
+    if (err_.code === 'connection.not_found') {
+      return `Connection "${idOrLabel}" not found.`;
+    }
+    if (err_.code === 'connection.not_owned') {
+      return `Connection "${idOrLabel}" does not belong to you.`;
+    }
+    if (err_.code === 'connection.not_active') {
+      return `Connection "${idOrLabel}" is not active. Activate it first in the web app.`;
+    }
+    return `Failed to grant connection to ${agent.name}. Please try again.`;
+  } catch (error) {
+    console.error('handleConnect failed:', error);
+    return 'Failed to grant connection. Please try again later.';
+  }
+}
+
+// ── handleDisconnect ──────────────────────────────────────────────────────
+
+export async function handleDisconnect(
+  db: Database,
+  userId: string,
+  args: string[],
+): Promise<string> {
+  try {
+    if (args.length < 2) {
+      return 'Usage: /disconnect <agent name> <connection ID or label>';
+    }
+
+    const resolved = await resolveAgentByName(db, userId, args[0]!);
+    if (resolved.type === 'not_found') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (resolved.type === 'ambiguous') {
+      const names = resolved.agents
+        .map((a) => `${a.name} (${a.id.slice(0, 8)}...)`)
+        .join(', ');
+      return `Multiple agents named "${args[0]}". Use a unique name or check the web app.\nMatches: ${names}`;
+    }
+    const agent = resolved.agent;
+
+    // Agent must be stopped before modifying connections
+    if (agent.status !== 'stopped') {
+      return `Cannot change connections: ${agent.name} is ${agent.status}. Stop the agent first.`;
+    }
+
+    const idOrLabel = args[1]!;
+
+    const connResolved = await resolveConnectionByIdOrLabel(db, userId, idOrLabel);
+
+    if (connResolved.type === 'not_found') {
+      return `Connection "${idOrLabel}" not found.`;
+    }
+
+    if (connResolved.type === 'ambiguous') {
+      const lines = [
+        `Multiple connections match "${idOrLabel}":`,
+        ...connResolved.matches.map(
+          (c) => `  ${c.id.slice(0, 8)}... — ${c.label}`,
+        ),
+        `Use the connection ID instead: /disconnect ${agent.name} ${connResolved.matches[0]!.id}`,
+      ];
+      return lines.join('\n');
+    }
+
+    const result = await revokeConnection(db, agent.id, connResolved.connection.id, userId);
+
+    if (result.ok) {
+      return `Connection revoked from ${agent.name}.`;
+    }
+
+    const err_ = result.error;
+    if (err_.code === 'agent.not_found' || err_.code === 'agent.not_owned') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (err_.code === 'agent.not_stopped') {
+      return `Cannot change connections: ${agent.name} is ${err_.currentStatus}. Stop the agent first.`;
+    }
+    if (err_.code === 'connection.not_found') {
+      return `Connection "${idOrLabel}" not found.`;
+    }
+    if (err_.code === 'connection.not_owned') {
+      return `Connection "${idOrLabel}" does not belong to you.`;
+    }
+    return `Failed to revoke connection from ${agent.name}. Please try again.`;
+  } catch (error) {
+    console.error('handleDisconnect failed:', error);
+    return 'Failed to revoke connection. Please try again later.';
   }
 }

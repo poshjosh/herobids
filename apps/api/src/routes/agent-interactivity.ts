@@ -32,6 +32,9 @@ import {
   handleResume,
   handleStop,
   handleRestart,
+  handleMode,
+  handleConnect,
+  handleDisconnect,
 } from './telegram-command-handlers.js';
 import {
   CostPresetSchema,
@@ -791,7 +794,29 @@ export async function telegramWebhookHandler(
           return;
         }
 
-        // Placeholder for /connect <agent> <id> (Slice 5)
+        // Config commands (Slice 5)
+        if (slashCmd.command === 'mode') {
+          const response = await handleMode(db, userId, slashCmd.args);
+          await sendTelegramText(chatId, response);
+          return;
+        }
+        // /connect <agent> <id> (with-id form — Slice 5)
+        // /connect <agent> (no-id form) is handled above by handleConnectSetup
+        // /connect (zero args) — show usage
+        if (slashCmd.command === 'connect' && slashCmd.args.length === 0) {
+          await sendTelegramText(chatId, 'Usage: /connect <agent> [connection-id|label]');
+          return;
+        }
+        if (slashCmd.command === 'connect' && slashCmd.args.length >= 2) {
+          const response = await handleConnect(db, userId, slashCmd.args);
+          await sendTelegramText(chatId, response);
+          return;
+        }
+        if (slashCmd.command === 'disconnect') {
+          const response = await handleDisconnect(db, userId, slashCmd.args);
+          await sendTelegramText(chatId, response);
+          return;
+        }
 
         await sendTelegramText(chatId, `Command /${slashCmd.command} will be available soon.`);
         return;

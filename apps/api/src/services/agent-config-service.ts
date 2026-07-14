@@ -327,7 +327,7 @@ export async function listAgentConnections(
 
 // ── Set execution mode ────────────────────────────────────────────────────
 
-// TODO(Slice 5): Add trading-skill validation, stopped-agent guard, paper/shadow alias handling.
+// TODO(Slice 5): Add paper/shadow alias handling.
 export async function setExecutionMode(
   db: Database,
   agentId: string,
@@ -342,6 +342,15 @@ export async function setExecutionMode(
 
     if (!agent) {
       return err({ code: 'agent.not_found', message: 'Agent not found' });
+    }
+
+    // Agent must be stopped before modifying execution mode
+    if (agent.status !== 'stopped') {
+      return err({
+        code: 'agent.not_stopped' as const,
+        message: 'Agent must be stopped before modifying execution mode',
+        currentStatus: agent.status,
+      });
     }
 
     // Map 'test' and 'live' to internal execution modes
