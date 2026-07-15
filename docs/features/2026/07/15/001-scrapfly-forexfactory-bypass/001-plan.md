@@ -352,8 +352,8 @@ SCRAPFLY_API_KEY=
 ## Implementation Steps
 
 1. **[DONE] Schema:** add the non-secret `scrapfly` sub-schema (`baseUrl`, `asp`, `requestTimeoutMs` — no `apiKey`, no `enabled`) to `MarketDataConfigSchema` in [packages/domain/src/config/schema.ts](../../../../packages/domain/src/config/schema.ts).
-2. **[PENDING] Default config:** add `marketData.scrapfly` block to [config/default.yaml](../../../../config/default.yaml); bump `economicCalendar.forexFactory.requestTimeoutMs` to `60000`.
-3. **[PENDING] New module:** create `packages/market-data/src/scrapfly.ts` (`ScrapflyConfig`, `createScrapflyFetch`) + unit tests in `scrapfly.test.ts`; export from `packages/market-data/src/index.ts`.
+2. **[DONE] Default config:** add `marketData.scrapfly` block to [config/default.yaml](../../../../config/default.yaml); bump `economicCalendar.forexFactory.requestTimeoutMs` to `60000`.
+3. **[DONE] New module:** create `packages/market-data/src/scrapfly.ts` (`ScrapflyConfig`, `createScrapflyFetch`) + unit tests in `scrapfly.test.ts`; export from `packages/market-data/src/index.ts`.
 4. **[PENDING] Agent wiring:** update `apps/worker/src/agent.ts` to read `process.env['SCRAPFLY_API_KEY']` directly and select `createScrapflyFetch(...)` vs `fetchHttp1` for the Forex Factory `fetchFn`.
 5. **[PENDING] Container env forwarding:** add `SCRAPFLY_API_KEY` passthrough to both `apps/worker/src/agents/docker-agent-manager.ts` and `apps/worker/src/agents/runtime-lifecycle.ts`'s `buildAgentEnv()`, next to the existing `TAVILY_API_KEY` lines; add matching tests in `apps/worker/src/agents/runtime-lifecycle.test.ts` (mirror the existing Tavily forwarding test cases).
 6. **[PENDING] `.env.example`:** refine the `SCRAPFLY_API_KEY` comment (see above).
@@ -371,6 +371,11 @@ SCRAPFLY_API_KEY=
 - **MEDIUM — `requestTimeoutMs` dead field in `createScrapflyFetch`:** The `ScrapflyConfig.requestTimeoutMs` field is accepted but never consumed by `createScrapflyFetch`. The actual timeout is enforced by `fetchText()` via `economicCalendar.forexFactory.requestTimeoutMs`. Consider either using it to create a backstop `AbortController` composed with the caller's signal, or removing it from the interface with a JSDoc note that timeout is the caller's responsibility. (Decision: the plan intentionally delegates timeout to the caller's `AbortSignal`; `scrapfly.requestTimeoutMs` is a config knob available for future use or alternate call sites that don't go through `fetchText`.)
 - **LOW — `method` passthrough fragility:** `createScrapflyFetch` passes `init?.method ?? 'GET'` through to Scrapfly's `/scrape` endpoint, which only accepts GET. If a future caller passes POST, the error would be opaque. Consider hardcoding `'GET'` with a comment explaining Scrapfly's GET-only constraint.
 - **LOW — Missing explicit test for `undefined` init:** The code handles omitted `init` correctly via optional chaining, but no test explicitly validates behavior when `init` is not passed at all. Add a test case for completeness.
+
+### [Item 4: Agent wiring — agent.ts]
+- **MEDIUM — Plan code snippet has a typo:** The plan's wiring snippet writes `ecConfig.scrapfly.baseUrl` but the design section correctly states config lives at `marketData.scrapfly`. The implementation correctly uses `marketDataConfig.scrapfly.*`. Plan snippet should be corrected for future reference.
+- **LOW — Pre-existing `JSON.parse(...) as MarketDataConfig` fragility:** `marketDataConfig` is parsed with a bare type assertion, not Zod validation. If the producing side omits the `scrapfly` key, accessing `marketDataConfig.scrapfly.baseUrl` would throw at runtime. Pre-existing pattern affecting all `marketDataConfig` fields — not introduced by this change.
+- **LOW — Local const naming convention:** `SCRAPFLY_API_KEY` (SCREAMING_SNAKE_CASE) vs surrounding `camelCase` locals like `forexFactoryFetchFn`. Cosmetic; the current form is instantly grep-able against the env var name.
 
 ## Testing Plan
 

@@ -26,6 +26,7 @@ import {
   TokenBucketRateLimiter,
   createProviderRegistry,
   createPriceService,
+  createScrapflyFetch,
   type CompositeEconomicCalendarConfig,
   type ForexFactoryAdapterConfig,
   type MarketDataConfig,
@@ -1001,6 +1002,26 @@ if (marketDataConfig?.economicCalendar?.enabled) {
   // Use Redis-backed cache shared across agent runtimes
   const redisCache = new RedisProviderResponseCache(redis, 'market-data:cache:');
 
+  // Select fetch implementation based on whether Scrapfly API key is available.
+  // Scrapfly proxies through rotating IPs + Anti-Scraping Protection (ASP) to
+  // bypass Cloudflare blocks on cloud/datacenter IPs (e.g. Hetzner → ForexFactory).
+  const SCRAPFLY_API_KEY = process.env['SCRAPFLY_API_KEY'];
+
+  const forexFactoryFetchFn = SCRAPFLY_API_KEY
+    ? createScrapflyFetch({
+        apiKey: SCRAPFLY_API_KEY,
+        baseUrl: marketDataConfig.scrapfly.baseUrl,
+        asp: marketDataConfig.scrapfly.asp,
+        requestTimeoutMs: marketDataConfig.scrapfly.requestTimeoutMs,
+      })
+    : fetchHttp1;
+
+  if (!SCRAPFLY_API_KEY) {
+    logger.warn(
+      'SCRAPFLY_API_KEY not set — Forex Factory fetch will use direct HTTP/1.1 and may be blocked by Cloudflare on cloud IPs',
+    );
+  }
+
   const forexFactoryConfig: ForexFactoryAdapterConfig = {
     baseUrl: ecConfig.forexFactory.baseUrl,
     requestTimeoutMs: ecConfig.forexFactory.requestTimeoutMs,
@@ -1009,7 +1030,7 @@ if (marketDataConfig?.economicCalendar?.enabled) {
     rateLimiter: new TokenBucketRateLimiter({
       requestsPerMinute: ecConfig.forexFactory.requestsPerMinute,
     }),
-    fetchFn: fetchHttp1,  // HTTP/1.1 required — Cloudflare blocks HTTP/2
+    fetchFn: forexFactoryFetchFn,
     parseHtmlFn: createLlmCalendarParser(),  // LLM-based parser survives HTML changes
   };
 
