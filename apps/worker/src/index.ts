@@ -275,6 +275,24 @@ const discoverCandidates = async (filters: FilterConfig) => {
   return results;
 };
 
+// ── Technical scanner candle fetcher ──────────────────────────────────────────
+// Wraps VenueCandleFetcher (Binance spot candles via shared market data config)
+// — same infra used by bots. For Hyperliquid orderbook agents, swap routing is
+// not needed, so GeckoTerminal config is null.
+const agentCandleFetcher = sharedMarketDataRegistry
+  ? new VenueCandleFetcher(
+      sharedMarketDataRegistry.configs.binance,
+      null,
+      'orderbook',
+    )
+  : undefined;
+
+const fetchCandles = agentCandleFetcher
+  ? async (symbol: string, interval: string, limit: number) => {
+      return agentCandleFetcher.fetchCandles(symbol, interval, limit);
+    }
+  : undefined;
+
 // Agent subsystem — registry + protocol stack. Created before WorkerRuntime so the
 // actor factory can subscribe streams and register actors on creation.
 const actorRegistry = new Map<string, ExecutionActor>();
