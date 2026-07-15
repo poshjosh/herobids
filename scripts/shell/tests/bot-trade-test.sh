@@ -21,7 +21,7 @@
 # ─────────────────────────────────────────────────────────────────
 #
 # Required
-#   API_BASE_URL          Base URL of the HeroBids API
+#   API_BASE_URL          Base URL of the OpenAIdom API
 #                         Default: http://localhost:3000
 #
 #   TEST_EMAIL            Test user email

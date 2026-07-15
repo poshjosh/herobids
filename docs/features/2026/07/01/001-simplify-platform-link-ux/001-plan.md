@@ -2,7 +2,7 @@
 
 ## Vision Alignment
 
-HeroBids exists to bring AI agents to the masses. Users are not developers. They should never need to understand API keys, credential storage, connection tables, venue accounts, or binding chains. They have one goal: *connect my Hyperliquid account so my agent can trade.*
+OpenAIdom exists to bring AI agents to the masses. Users are not developers. They should never need to understand API keys, credential storage, connection tables, venue accounts, or binding chains. They have one goal: *connect my Hyperliquid account so my agent can trade.*
 
 This plan collapses the current fragmented UI into a single concept:
 

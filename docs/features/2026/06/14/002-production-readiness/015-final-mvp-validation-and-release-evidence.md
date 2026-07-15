@@ -11,7 +11,7 @@
 
 ## Purpose
 
-Define the final validation sequence and evidence bundle required before HeroBids can be called MVP production-ready.
+Define the final validation sequence and evidence bundle required before OpenAIdom can be called MVP production-ready.
 
 This document is intentionally cross-cutting. The earlier plan documents describe what must be built or fixed. This document describes how to prove, at the end, that the remaining launch blockers are actually closed.
 
@@ -253,7 +253,7 @@ The release summary should be short and decision-oriented, not a raw transcript.
 
 ## Exit Rule
 
-HeroBids is MVP production-ready only when all of the following are true:
+OpenAIdom is MVP production-ready only when all of the following are true:
 
 1. every launch-gate row in [production-core-cut-checklist.md](../../15/production-core-cut-checklist.md) is `complete`
 2. repo-level validation is green enough to support a release claim

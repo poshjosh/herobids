@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright configuration for HeroBids E2E tests.
+ * Playwright configuration for OpenAIdom E2E tests.
  *
  * Tests run against the full stack.  Set BASE_URL to override the default.
  * Individual tests call `test.skip` when API setup fails (e.g. token not

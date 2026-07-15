@@ -103,7 +103,7 @@ The worker reads these from `.env` and forwards them to each spawned agent conta
 
 ## � Deployment
 
-HeroBids supports two deployment environments: **staging** and **production**.
+OpenAIdom supports two deployment environments: **staging** and **production**.
 Each runs on its own Hetzner Cloud server with independent data, secrets, and DNS.
 
 - **Staging** (`staging.openaidom.com`) — pre-production validation, smoke tests, deploy rehearsals. Safe defaults: mock billing, paper trading only.

@@ -11,7 +11,7 @@
 
 ## Goal
 
-Define the target API and runtime architecture for HeroBids as an agent-first platform whose capabilities are extended by skills.
+Define the target API and runtime architecture for OpenAIdom as an agent-first platform whose capabilities are extended by skills.
 
 The architecture must make it easy to:
 
@@ -28,7 +28,7 @@ This project is not yet live. The redesign may be a hard cut.
 
 ## Product Position
 
-HeroBids is first an agentic platform. Skills give agents capability. Trading is the first deep capability family, not the permanent shape of the entire product.
+OpenAIdom is first an agentic platform. Skills give agents capability. Trading is the first deep capability family, not the permanent shape of the entire product.
 
 This architecture therefore separates:
 

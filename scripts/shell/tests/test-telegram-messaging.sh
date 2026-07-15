@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # test-telegram-messaging.sh — End-to-end Telegram messaging diagnostic.
-# Calls Telegram's API directly — no HeroBids auth token required.
+# Calls Telegram's API directly — no OpenAIdom auth token required.
 # Fails fast at each step.
 #
 # What this script validates:
-#   1. HeroBids API is healthy
+#   1. OpenAIdom API is healthy
 #   2. Bot token is valid (Telegram getMe)
 #   3. Webhook is registered and matches EXPECTED_WEBHOOK_URL
 #   4. Pending updates check — warns if messages are stuck in the queue
@@ -117,7 +117,7 @@ TG_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
 # ─── Step 1 — API health check ───────────────────────────────────────────────
 
 echo ""
-info "Step 1/5: HeroBids API health check"
+info "Step 1/5: OpenAIdom API health check"
 
 run_curl_into HTTP "API health check" -sS -o /dev/null -w '%{http_code}' --max-time 10 "${API_BASE_URL}/health"
 [[ "$HTTP" == "200" ]] || fail "API health check failed (HTTP ${HTTP} at ${API_BASE_URL}/health)"
@@ -225,7 +225,7 @@ for chatId in "${CHAT_IDS[@]}"; do
 
   run_curl_into TG_RESPONSE "Telegram sendMessage for chat ${chatId}" -sS --max-time 15 -X POST "${TG_API}/sendMessage" \
     -H "Content-Type: application/json" \
-    -d "{\"chat_id\":\"${chatId}\",\"text\":\"HeroBids diagnostic ping ✅\"}"
+    -d "{\"chat_id\":\"${chatId}\",\"text\":\"OpenAIdom diagnostic ping ✅\"}"
 
   TG_OK=$(echo "$TG_RESPONSE" | jq -r '.ok // false')
   TG_DESC=$(echo "$TG_RESPONSE" | jq -r '.description // "unknown error"')

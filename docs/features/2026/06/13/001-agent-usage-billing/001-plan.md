@@ -2,11 +2,11 @@
 
 ## Objective
 
-Add usage-aware billing to HeroBids without replacing the current subscription and entitlement system.
+Add usage-aware billing to OpenAIdom without replacing the current subscription and entitlement system.
 
 The architectural rule for this feature is:
 
-- HeroBids is the source of truth for usage metering, rating, spend-state enforcement, and credit balances.
+- OpenAIdom is the source of truth for usage metering, rating, spend-state enforcement, and credit balances.
 - Stripe and Creem remain payment rails for subscriptions, checkout, portal access, and top-up collection.
 - `plans.*` remains the packaging and coarse entitlement model for feature access, agent counts, and enterprise gating.
 - The trading engine, strategy packages, and venue adapters remain billing-agnostic.
@@ -31,7 +31,7 @@ These choices should be treated as the default implementation bias unless produc
    - `agent.runtime_ms`
 3. Billing remains user-owned in the product, but the new schema should introduce an internal `accountId` now so team or workspace billing can be added later without another data-model rewrite.
 4. Worker processes should write metering data directly through `packages/db` repositories in v1. Do not add an internal HTTP ingestion API unless this becomes necessary later.
-5. Usage charges must be computed from HeroBids-side rate cards, not reconstructed from provider invoices.
+5. Usage charges must be computed from OpenAIdom-side rate cards, not reconstructed from provider invoices.
 6. Current worker guardrails such as `dailySpendBudgetUsd` and `dailyTokenBudget` are advisory runtime settings, not authoritative billing controls. Hard billing enforcement must be separate.
 7. The existing `GET /billing/ledger` route is already used for trading fill history. Do not overload that route for commercial usage billing.
 

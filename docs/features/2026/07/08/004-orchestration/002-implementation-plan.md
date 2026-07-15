@@ -22,11 +22,11 @@
 
 This feature starts only after `docs/features/2026/07/08/003-staging-environment-setup/001-plan.md` is implemented.
 
-Feature docs/features/2026/07/08/003-staging-environment-setup/001-plan.md gives HeroBids two explicit environments with separate control-plane servers, domains, secrets, and deploy flows. Feature 020 builds on that split and adds independent agent-orchestration clusters for staging and production.
+Feature docs/features/2026/07/08/003-staging-environment-setup/001-plan.md gives OpenAIdom two explicit environments with separate control-plane servers, domains, secrets, and deploy flows. Feature 020 builds on that split and adds independent agent-orchestration clusters for staging and production.
 
 ## Problem
 
-HeroBids currently launches agent runtimes as local Docker containers from the worker through `docker-proxy`. That model works on a single host, but it does not scale to the intended agent-as-a-service workload where each user-created agent is an isolated container.
+OpenAIdom currently launches agent runtimes as local Docker containers from the worker through `docker-proxy`. That model works on a single host, but it does not scale to the intended agent-as-a-service workload where each user-created agent is an isolated container.
 
 After feature docs/features/2026/07/08/003-staging-environment-setup/001-plan.md, staging and production will each have their own dedicated control-plane server running Docker Compose. That is necessary, but not sufficient. The remaining gaps are:
 
@@ -36,7 +36,7 @@ After feature docs/features/2026/07/08/003-staging-environment-setup/001-plan.md
 4. there is no automatic node provisioning when agent capacity fills up
 5. the current agent runtime implementation is too Docker-transport-specific for a clean Nomad/ECS/Kubernetes migration path
 
-Without orchestration, HeroBids cannot support hundreds to low-thousands of concurrent agent containers at low operating cost.
+Without orchestration, OpenAIdom cannot support hundreds to low-thousands of concurrent agent containers at low operating cost.
 
 ## Goals
 
@@ -66,7 +66,7 @@ Without orchestration, HeroBids cannot support hundreds to low-thousands of conc
 
 1. **orchestrator**: Nomad
 2. **runtime model**: Model C
-   - keep HeroBids lifecycle logic in the worker
+   - keep OpenAIdom lifecycle logic in the worker
    - replace local Docker placement with a scheduler-specific adapter
 3. **control plane**: dedicated Compose-based server per environment
 4. **agent plane**: Nomad-only disposable worker nodes per environment
@@ -159,7 +159,7 @@ Operationally:
 
 #### Goal
 
-Introduce the architectural boundary that separates HeroBids agent lifecycle logic from the underlying scheduler.
+Introduce the architectural boundary that separates OpenAIdom agent lifecycle logic from the underlying scheduler.
 
 #### Files
 
@@ -177,7 +177,7 @@ Introduce the architectural boundary that separates HeroBids agent lifecycle log
    - reconcile desired vs actual runtimes
    - subscribe or poll for runtime termination
 2. move Docker-specific transport logic behind the port so the current local-Docker path becomes one adapter instead of the only implementation
-3. preserve existing HeroBids lifecycle responsibilities in shared logic:
+3. preserve existing OpenAIdom lifecycle responsibilities in shared logic:
    - env var and config injection
    - session and status bookkeeping
    - crash classification
@@ -313,7 +313,7 @@ Make the worker submit and manage agent containers through Nomad instead of the 
 
 #### Expected Result
 
-The worker can launch, stop, reconcile, and classify agent runtimes through Nomad while preserving existing HeroBids behavior.
+The worker can launch, stop, reconcile, and classify agent runtimes through Nomad while preserving existing OpenAIdom behavior.
 
 #### Validation
 

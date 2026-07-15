@@ -2,7 +2,7 @@
 
 ## Overview
 
-HeroBids offers AI agents as a service: users describe what they want, agents run continuously, and the platform handles execution, infrastructure, and persistence.
+OpenAIdom offers AI agents as a service: users describe what they want, agents run continuously, and the platform handles execution, infrastructure, and persistence.
 
 ```mermaid
 graph TB

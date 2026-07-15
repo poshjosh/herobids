@@ -2,18 +2,18 @@
 
 ## Summary
 
-HeroBids needs two distinct AI product surfaces:
+OpenAIdom needs two distinct AI product surfaces:
 
 - **AI Employees** for ongoing, autonomous work that runs continuously and costs money while active
 - **Chat With AI** for interactive, user-driven conversations with saved history
 
 This document defines the product and UX for `Chat With AI`.
 
-The goal is to give users a low-friction way to talk to AI inside HeroBids without forcing them to create a continuously running AI Employee first. Chat must feel immediate, cheap, and conversational. AI Employees must remain the persistent, higher-commitment surface for work that continues after the user leaves.
+The goal is to give users a low-friction way to talk to AI inside OpenAIdom without forcing them to create a continuously running AI Employee first. Chat must feel immediate, cheap, and conversational. AI Employees must remain the persistent, higher-commitment surface for work that continues after the user leaves.
 
 ## Terminology
 
-HeroBids should use layered terminology:
+OpenAIdom should use layered terminology:
 
 - **AI Employee** is the preferred user-facing product term in navigation, onboarding, empty states, and marketing copy
 - **agent** remains the internal and technical term in code, APIs, runtime docs, and data models
@@ -31,7 +31,7 @@ If we only offer AI Employees, we force users into the most expensive and operat
 
 If we only offer chat, we fail the core product promise that AI should do work continuously and independently.
 
-HeroBids should therefore support both surfaces and make the difference explicit.
+OpenAIdom should therefore support both surfaces and make the difference explicit.
 
 ## Product Positioning
 
@@ -78,7 +78,7 @@ That means:
 
 ### Primary Goals
 
-- give users an obvious place to talk to AI directly inside HeroBids
+- give users an obvious place to talk to AI directly inside OpenAIdom
 - preserve conversation history so users can return to prior threads
 - make the difference between chat and continuous AI Employees clear
 - reduce friction for new users who are not ready to create an AI Employee yet
@@ -88,7 +88,7 @@ That means:
 
 - provide a cheaper AI entry point than a continuously running AI Employee
 - support personal assistant and trading-adjacent conversations
-- create a unified user expectation that HeroBids offers both real-time assistance and autonomous execution
+- create a unified user expectation that OpenAIdom offers both real-time assistance and autonomous execution
 
 ## Non-Goals
 
@@ -102,7 +102,7 @@ That means:
 
 ### New Users
 
-Users who want to try HeroBids without learning the agent model first.
+Users who want to try OpenAIdom without learning the agent model first.
 
 ### Existing AI Employee Users
 

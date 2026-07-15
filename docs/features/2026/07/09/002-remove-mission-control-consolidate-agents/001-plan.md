@@ -186,7 +186,7 @@ The event stream subscription (`useEventStream`) for live invalidation also move
 ### Phase 7: Landing Page Placeholder
 
 - [ ] **7.1** Create `apps/web/src/features/landing/LandingPagePlaceholder.tsx`
-  - Minimal component: HeroBids logo, tagline, "Sign In" and "Learn More" buttons.
+  - Minimal component: OpenAIdom logo, tagline, "Sign In" and "Learn More" buttons.
   - The real landing page replaces this file later — keep it deliberately bare-bones.
 
 - [ ] **7.2** Wire into router as the public `/` route (see Phase 1.1).

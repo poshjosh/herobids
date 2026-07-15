@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-HeroBids has a functioning trading pipeline that works end-to-end in paper mode for orderbook venues. However, a systematic audit reveals **32 gaps** preventing production deployment:
+OpenAIdom has a functioning trading pipeline that works end-to-end in paper mode for orderbook venues. However, a systematic audit reveals **32 gaps** preventing production deployment:
 
 1. **Risk enforcement is theatre.** The risk gate exists and is wired into the decision pipeline, but the inputs that make it useful — drawdown, daily loss, equity, stop-loss state — are never computed. The system will happily let an agent lose its entire allocation with no circuit breaker.
 
@@ -16,7 +16,7 @@ HeroBids has a functioning trading pipeline that works end-to-end in paper mode 
 
 ## Goal
 
-Make HeroBids safe to deploy with real capital on all supported venues (Hyperliquid, Bybit, Jupiter, 1inch) in all execution modes (paper, shadow, live) for both actor types (agent, bot).
+Make OpenAIdom safe to deploy with real capital on all supported venues (Hyperliquid, Bybit, Jupiter, 1inch) in all execution modes (paper, shadow, live) for both actor types (agent, bot).
 
 **Specifically:**
 

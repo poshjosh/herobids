@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add the first internal admin dashboard for HeroBids.
+Add the first internal admin dashboard for OpenAIdom.
 
 This feature is standalone. It is not a child of the usage-billing feature.
 Billing and usage are only one section of the dashboard, alongside platform

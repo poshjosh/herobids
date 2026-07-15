@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# quick-setup-remote.sh — Bootstrap a HeroBids user account on remote servers.
+# quick-setup-remote.sh — Bootstrap a OpenAIdom user account on remote servers.
 #
 # Production variant of quick-setup.sh with hardened defaults:
 #   - HTTPS-first (TLS validation on by default)

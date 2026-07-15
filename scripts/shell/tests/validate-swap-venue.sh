@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # validate-swap-venue.sh — Operator-run platform health + upstream quote reachability check.
 #
-# This script is NOT part of CI. It validates that the HeroBids API health
+# This script is NOT part of CI. It validates that the OpenAIdom API health
 # endpoint responds and that upstream venue quote APIs are reachable from the
 # host environment running this script. It does NOT check worker process health
 # or actual trade-path readiness.
 #
-# It does NOT validate HeroBids adapter wiring, signer execution, confirmation
+# It does NOT validate OpenAIdom adapter wiring, signer execution, confirmation
 # polling, or evidence capture. Those require a dedicated end-to-end swap trade
 # test harness (not yet automated).
 #
@@ -22,7 +22,7 @@
 #     - ONEINCH_API_KEY: 1inch developer portal API key
 #
 # Both venues:
-#     - API_BASE_URL: HeroBids API (default: http://localhost:3000)
+#     - API_BASE_URL: OpenAIdom API (default: http://localhost:3000)
 #     - Stack must be running (Docker + API healthy)
 #
 # What this script validates:

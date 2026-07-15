@@ -11,7 +11,7 @@ Date: 2026-06-16
 
 ## Context
 
-HeroBids needs to support three distinct trading behaviors:
+OpenAIdom needs to support three distinct trading behaviors:
 1. Rule-based automation (zero LLM cost) — for cost-sensitive markets
 2. Full LLM reasoning (current AI Agents) — for users who want AI intelligence
 3. Rules pre-filter + LLM final judgment — cost-optimized AI trading

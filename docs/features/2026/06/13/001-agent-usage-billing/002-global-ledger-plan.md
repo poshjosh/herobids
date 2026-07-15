@@ -2,7 +2,7 @@
 
 ## Objective
 
-Draft the HeroBids equivalent of the aitradingbot global-ledger plan, adapted to HeroBids' current billing surfaces and route boundaries.
+Draft the OpenAIdom equivalent of the aitradingbot global-ledger plan, adapted to OpenAIdom' current billing surfaces and route boundaries.
 
 This plan is a child plan of [001-plan.md](./001-plan.md). It covers the user-visible commercial usage ledger slice only:
 
@@ -15,12 +15,12 @@ It does not replace the parent plan's schema, metering, rating, enforcement, or 
 
 ## Current-State Findings
 
-1. HeroBids already has a top-level billing page at `/billing`, but it is subscription management only.
-2. HeroBids already uses `GET /billing/ledger`, but that route currently returns trading fill history, not commercial usage charges.
-3. HeroBids already has `agent_runtime_sessions` plus `/sessions` and `/sessions/:id`, so the commercial ledger can attach to existing session IDs instead of inventing a second session model for v1.
+1. OpenAIdom already has a top-level billing page at `/billing`, but it is subscription management only.
+2. OpenAIdom already uses `GET /billing/ledger`, but that route currently returns trading fill history, not commercial usage charges.
+3. OpenAIdom already has `agent_runtime_sessions` plus `/sessions` and `/sessions/:id`, so the commercial ledger can attach to existing session IDs instead of inventing a second session model for v1.
 4. Worker runtime code already tracks in-memory token and estimated cost telemetry, but there is no durable commercial usage-event store yet.
 
-These findings change the HeroBids implementation shape materially versus aitradingbot:
+These findings change the OpenAIdom implementation shape materially versus aitradingbot:
 
 - do not create a brand-new Billing page route
 - do not overload the existing `/billing/ledger` route
@@ -39,7 +39,7 @@ Recommended answer:
 
 Reason:
 
-- HeroBids already has a billing page and navigation entry.
+- OpenAIdom already has a billing page and navigation entry.
 - A second billing route would fragment account management and spend visibility.
 - The parent usage-billing plan already assumes usage surfaces live inside the existing billing experience.
 
@@ -344,7 +344,7 @@ Recommended answer:
 
 Reason:
 
-- HeroBids already centralizes billing API methods here
+- OpenAIdom already centralizes billing API methods here
 - the current billing page already imports from this module
 
 ### 2. Extend the existing Billing page

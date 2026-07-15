@@ -2,7 +2,7 @@
 
 ### Architectural Gap Summary
 
-| Capability | Old Repo | HeroBids Status |
+| Capability | Old Repo | OpenAIdom Status |
 |---|---|---|
 | EMA, ADX, VWAP, Market Structure | indicators.ts | ✅ Already in indicators.ts |
 | Regime evaluation | regime.ts | ✅ Already in regime.ts |
@@ -25,9 +25,9 @@
 
 **Old repo:** `StrategyEngine.analyze(context: StrategyContext)` takes a full context with **multiple candidates** and returns **multiple decisions**.
 
-**HeroBids:** `Strategy.evaluate(snapshot: MarketSnapshot, config)` takes a single snapshot for ONE symbol, returns ONE decision.
+**OpenAIdom:** `Strategy.evaluate(snapshot: MarketSnapshot, config)` takes a single snapshot for ONE symbol, returns ONE decision.
 
-**Resolution:** Keep the existing port unchanged. In HeroBids, multi-candidate scanning is the **agent's** job (it uses tools to discover tokens, then creates bots or submits decisions). A bot is already scoped to one instrument. The mechanical/hybrid strategies evaluate ONE instrument deeply — they don't need to scan across candidates.
+**Resolution:** Keep the existing port unchanged. In OpenAIdom, multi-candidate scanning is the **agent's** job (it uses tools to discover tokens, then creates bots or submits decisions). A bot is already scoped to one instrument. The mechanical/hybrid strategies evaluate ONE instrument deeply — they don't need to scan across candidates.
 
 This simplifies the design significantly vs the old repo.
 
@@ -75,7 +75,7 @@ Inject at construction alongside the candle fetcher.
 
 Old repo's playbook validates: min liquidity, max positions/day, avoid parabolic entries.
 
-**Resolution:** These are safety/risk rules, not strategy logic. HeroBids already has:
+**Resolution:** These are safety/risk rules, not strategy logic. OpenAIdom already has:
 - `minSwapTokenLiquidityUsd` in `RiskConfigSchema` → ✅ covers min liquidity
 - `maxOpenPositions` → ✅ partially covers position limits
 
@@ -85,7 +85,7 @@ Old repo's playbook validates: min liquidity, max positions/day, avoid parabolic
 
 ### Decision 6: Regime Gate for Bots
 
-HeroBids already evaluates regime for agents (runtime-composition.ts provides regime data in agent context). But bots currently skip regime checks.
+OpenAIdom already evaluates regime for agents (runtime-composition.ts provides regime data in agent context). But bots currently skip regime checks.
 
 **Resolution:** Defer. The regime gate is already available infrastructure. Adding it to the bot trading cycle is a one-line check in `TradingActor.tick()` — can be done later as a follow-up. Not part of core strategy parity.
 
@@ -95,7 +95,7 @@ HeroBids already evaluates regime for agents (runtime-composition.ts provides re
 
 Old repo: `HybridEngine` runs momentum pre-filter on candidates, then passes survivors to `LlmEngine`.
 
-In HeroBids (single-instrument context): the hybrid strategy would:
+In OpenAIdom (single-instrument context): the hybrid strategy would:
 1. Run technical checks (RSI, MACD, volume, etc.) on the single instrument
 2. If technicals PASS → invoke LLM for final conviction + reasoning
 3. If technicals FAIL → return null (hold) — no LLM cost
@@ -166,9 +166,9 @@ z.object({
 
 1. **Candle source for bots** — The TradingActor currently has `fetchPrice()` for snapshots. Does it also have a candle-fetching capability? If not, we need to wire one in. *(Likely answer: the market-data package has `fetchBinanceCandles`, `fetchGeckoTerminalCandles` — we need to expose a unified candle fetcher and inject it into TradingActor.)*
 
-2. **Instrument vs Token** — The old repo operated on token addresses (DeFi swaps). HeroBids has both orderbook instruments (ETH-PERP on Hyperliquid) and swap tokens. How do mechanical indicators apply to perps vs swaps? *(Likely answer: identically — candles are candles regardless of venue. The candle source differs but the indicator math is the same.)*
+2. **Instrument vs Token** — The old repo operated on token addresses (DeFi swaps). OpenAIdom has both orderbook instruments (ETH-PERP on Hyperliquid) and swap tokens. How do mechanical indicators apply to perps vs swaps? *(Likely answer: identically — candles are candles regardless of venue. The candle source differs but the indicator math is the same.)*
 
-3. **Position size for mechanical strategy** — The old repo didn't determine position size (it returned conviction and the risk layer sized it). HeroBids' Decision requires `targetSize`. *(Likely answer: mechanical strategy config includes `positionSize` like the existing momentum strategy, or we add percentage-of-portfolio sizing later.)*
+3. **Position size for mechanical strategy** — The old repo didn't determine position size (it returned conviction and the risk layer sized it). OpenAIdom' Decision requires `targetSize`. *(Likely answer: mechanical strategy config includes `positionSize` like the existing momentum strategy, or we add percentage-of-portfolio sizing later.)*
 
 4. **Sentiment data source** — Is Twitter/X API still viable, or should we consider alternative sentiment sources (LunarCrush, Santiment, on-chain social)? *(Likely answer: make it pluggable via the port. Start with a simple implementation or even a no-op. The old repo's Twitter integration is a reference implementation.)*
 

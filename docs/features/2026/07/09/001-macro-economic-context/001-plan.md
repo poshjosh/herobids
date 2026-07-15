@@ -149,7 +149,7 @@ economicCalendar: z.object({
     baseUrl: z.string().url().default('https://www.forexfactory.com'),
     requestTimeoutMs: z.number().int().min(1_000).default(10_000),
     requestsPerMinute: z.number().int().min(1).default(2),
-    userAgent: z.string().min(1).default('Mozilla/5.0 HeroBids/1.0'),
+    userAgent: z.string().min(1).default('Mozilla/5.0 OpenAIdom/1.0'),
   }).default({}),
   ohlcDev: z.object({
     baseUrl: z.string().url().default('https://api.ohlc.dev'),

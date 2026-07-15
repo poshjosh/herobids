@@ -135,7 +135,7 @@ content/
 
 - **File**: `apps/web/src/features/public-pages/content/help/en/get-started.md` (new)
 - **Action**: Write a getting-started guide covering:
-  - What HeroBids is (1-2 sentences)
+  - What OpenAIdom is (1-2 sentences)
   - Sign-up flow (link account, configure first trading instance)
   - Linking Telegram
   - Running your first agent
@@ -159,7 +159,7 @@ content/
 
 - **File**: `apps/web/src/features/public-pages/content/company/en/about-us.md` (new)
 - **Action**: Write an about page covering:
-  - Mission / what HeroBids does
+  - Mission / what OpenAIdom does
   - AI-first approach to trading
   - Team / company background (keep high-level)
 - **Content scope**: ~200-300 words

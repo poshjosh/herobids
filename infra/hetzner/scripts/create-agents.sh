@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# create-agents.sh — Create agents on a HeroBids instance.
+# create-agents.sh — Create agents on a OpenAIdom instance.
 #
 # Creates:
 #   - security-auditor   (system security audit, 24h tick)

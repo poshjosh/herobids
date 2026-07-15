@@ -1,6 +1,6 @@
 # Web UI — User Acceptance Tests
 
-Manual test checklist for the HeroBids frontend dashboard.
+Manual test checklist for the OpenAIdom frontend dashboard.
 
 **Status legend**
 

@@ -34,7 +34,7 @@ Three changes in `scripts/shell/run/create-agents.sh`:
 
 ## Verification
 
-Run `create-agents.sh` against a running HeroBids instance with pre-seeded Hyperliquid + 1inch connections. The script should:
+Run `create-agents.sh` against a running OpenAIdom instance with pre-seeded Hyperliquid + 1inch connections. The script should:
 - Look up connections via `GET /capabilities/trading/connections` ✅
 - Create agents with `connectionIds` in the payload ✅
 - Grant trading capability for existing agents via `PATCH /agents/:id` ✅

@@ -2,7 +2,7 @@ import { pgTable, text, timestamp, index, unique } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 /**
- * Billing customers — links HeroBids users to external provider customer IDs.
+ * Billing customers — links OpenAIdom users to external provider customer IDs.
  * One row per user per provider; created lazily on first billing interaction.
  */
 export const billingCustomers = pgTable(

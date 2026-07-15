@@ -4,7 +4,7 @@ Add a small, internal price service abstraction first, then build watch/monitor 
 
 ## Background
 
-HeroBids already has three relevant pricing surfaces:
+OpenAIdom already has three relevant pricing surfaces:
 
 - venue-native mark and oracle data used in runtime context for trading decisions
 - CoinGecko-backed oracle mark fallback in `OracleMarkSource`

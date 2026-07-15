@@ -53,4 +53,4 @@ billing:
         - creemProductId: "prod_2muSl3xna4UWLN6O9nJcjR"    
           interval: month
           displayLabel: "Starter (Monthly)"
-          amountCents: 2000                          
+          amountCents: 2000   

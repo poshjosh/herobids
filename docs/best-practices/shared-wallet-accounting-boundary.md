@@ -1,17 +1,17 @@
 # Shared-Wallet Accounting Boundary
 
-HeroBids is an AI agent platform. It records what its actors decided, submitted, and confirmed. It does not claim full-wallet accounting truth for shared user wallets.
+OpenAIdom is an AI agent platform. It records what its actors decided, submitted, and confirmed. It does not claim full-wallet accounting truth for shared user wallets.
 
 ## Authoritative Records
 
 These are authoritative:
 
-- decisions persisted by HeroBids
-- execution plans and order submissions persisted by HeroBids
-- fills and chain-confirmed swap execution events persisted by HeroBids
+- decisions persisted by OpenAIdom
+- execution plans and order submissions persisted by OpenAIdom
+- fills and chain-confirmed swap execution events persisted by OpenAIdom
 - infrastructure and LLM usage records used for billing
 
-If these records are missing or contradictory, that is a HeroBids correctness problem.
+If these records are missing or contradictory, that is a OpenAIdom correctness problem.
 
 ## Observational Records
 
@@ -22,7 +22,7 @@ These are observational telemetry in shared-wallet mode:
 - recent wallet transactions fetched from the venue or chain
 - any comparison between fill-derived asset movement and current wallet balances
 
-These observations are useful for operator awareness, but they are not proof that HeroBids owns the full wallet ledger or can explain every balance change.
+These observations are useful for operator awareness, but they are not proof that OpenAIdom owns the full wallet ledger or can explain every balance change.
 
 ## Capital Semantics
 
@@ -30,11 +30,11 @@ These observations are useful for operator awareness, but they are not proof tha
 
 ## Shared Wallet Rule
 
-In shared-wallet mode, HeroBids must not present fill-derived asset projections as authoritative wallet holdings. External deposits, withdrawals, fee movements, manual trades, and unrelated activity in the same wallet can all change balances without implying a HeroBids execution or reconciliation defect.
+In shared-wallet mode, OpenAIdom must not present fill-derived asset projections as authoritative wallet holdings. External deposits, withdrawals, fee movements, manual trades, and unrelated activity in the same wallet can all change balances without implying a OpenAIdom execution or reconciliation defect.
 
 ## Dedicated Wallet Rule
 
-Strict holdings reconciliation is only valid for a future dedicated or managed wallet mode where HeroBids has an explicit basis to treat the wallet as execution-scoped.
+Strict holdings reconciliation is only valid for a future dedicated or managed wallet mode where OpenAIdom has an explicit basis to treat the wallet as execution-scoped.
 
 Until that mode exists, shared-wallet swap balance checks must be framed as observational variance, not authoritative reconciliation failure.
 

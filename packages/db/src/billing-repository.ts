@@ -61,7 +61,7 @@ export class BillingRepository {
 
   // --- Customer ---
 
-  /** Look up a billing customer by HeroBids user ID (first match). */
+  /** Look up a billing customer by OpenAIdom user ID (first match). */
   async findCustomerByUserId(userId: string): Promise<BillingCustomerRow | null> {
     const [row] = await this.db
       .select()
@@ -71,7 +71,7 @@ export class BillingRepository {
     return row ?? null;
   }
 
-  /** Look up a billing customer by HeroBids user ID and provider. */
+  /** Look up a billing customer by OpenAIdom user ID and provider. */
   async findCustomerByUserIdAndProvider(userId: string, provider: string): Promise<BillingCustomerRow | null> {
     const [row] = await this.db
       .select()

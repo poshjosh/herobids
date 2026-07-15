@@ -11,7 +11,7 @@ least one must be configured. The combination determines behavior and cost.
 
 ## Background
 
-HeroBids currently supports:
+OpenAIdom currently supports:
 - **Bots** — single-instrument executors configured with explicit venue + symbol
 - **AI Agents** — LLM-driven actors that reason via tools and prompts
 

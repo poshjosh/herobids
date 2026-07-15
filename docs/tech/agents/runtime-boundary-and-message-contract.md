@@ -1,6 +1,6 @@
 # Agent Runtime Boundary And Message Contract
 
-This document is the canonical technical reference for the HeroBids agent runtime boundary.
+This document is the canonical technical reference for the OpenAIdom agent runtime boundary.
 
 Use this document for decisions about ownership, invariants, isolation, identity semantics, and the meaning of agent-to-instance communication. Companion references live alongside it:
 
@@ -11,7 +11,7 @@ Use this document for decisions about ownership, invariants, isolation, identity
 
 ## Purpose
 
-HeroBids treats the agent runtime as an isolated reasoning actor, not as a privileged trading process.
+OpenAIdom treats the agent runtime as an isolated reasoning actor, not as a privileged trading process.
 
 The boundary exists to preserve four properties:
 
@@ -97,7 +97,7 @@ The trading instance remains authoritative for every market-affecting step after
 
 ## Purity Rule
 
-HeroBids preserves agent purity with a narrow interpretation:
+OpenAIdom preserves agent purity with a narrow interpretation:
 
 1. The initiator owns strategic intent.
 2. The platform must not silently inject hidden strategy constraints or rewrite a valid target because of unspoken preferences.

@@ -6,7 +6,7 @@
 
 ## Context
 
-HeroBids already has the beginnings of an evaluation workflow, but it is still operator-driven and fragmented.
+OpenAIdom already has the beginnings of an evaluation workflow, but it is still operator-driven and fragmented.
 
 Current building blocks:
 

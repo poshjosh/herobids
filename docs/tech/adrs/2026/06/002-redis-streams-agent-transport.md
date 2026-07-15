@@ -16,7 +16,7 @@ The canonical agent docs already assume:
 
 Bare Redis pub/sub does not satisfy those requirements because it does not provide durable replay or consumer recovery semantics.
 
-HeroBids already uses Redis as part of the operational stack, and the project docs already treat Redis Streams as the simple next step before heavier transport choices.
+OpenAIdom already uses Redis as part of the operational stack, and the project docs already treat Redis Streams as the simple next step before heavier transport choices.
 
 ## Decision
 

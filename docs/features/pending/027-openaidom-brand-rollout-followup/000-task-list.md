@@ -16,7 +16,7 @@ These are all ~5-minute fixes — doc updates, one-liners, typos:
 | 8 | S6-LOW#1 | `htmlEscape` doesn't escape single-quote `'` — add `&#39;` | 30 sec |
 | 9 | S7-LOW#1 | `eventSubject(event)` called twice — extract to variable | 1 min |
 | 10 | S7-LOW#2 | `slice(0,500)` mid-word truncation — find last space before 500 | 2 min |
-| 11 | S8-MEDIUM | `contact-us.md` missing operator disclosure — add "operated by HeroBids" line | 1 min |
+| 11 | S8-MEDIUM | `contact-us.md` missing operator disclosure — add "operated by OpenAIdom" line | 1 min |
 | 12 | S8-LOW#1-3 | `about-us.md` typos: `e.t.c`→`etc.`, `assistantance`→`assistance`, numbered list fix | 2 min |
 | 13 | S9-MEDIUM | Infrastructure names missing from preserved-names catalog | 3 min |
 | 14 | S9-LOW#1-2 | Cross-reference "9 slices" phrasing + CHANGELOG pointer | 2 min |

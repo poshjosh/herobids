@@ -2,7 +2,7 @@
  * Jupiter (Solana) on-chain confirmation poller.
  *
  * Checks transaction status via Solana RPC's getSignatureStatuses endpoint.
- * Used to confirm HeroBids-submitted swap fills after broadcast.
+ * Used to confirm OpenAIdom-submitted swap fills after broadcast.
  *
  * This confirms execution outcome, not complete wallet-accounting truth.
  */

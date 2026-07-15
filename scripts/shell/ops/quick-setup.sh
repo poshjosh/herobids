@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# quick-setup.sh — Bootstrap a HeroBids user account via the REST API.
+# quick-setup.sh — Bootstrap a OpenAIdom user account via the REST API.
 #
 # Reads configuration from .env.ops.dev (or a custom path via --env),
 # then runs one of two setup flows:
@@ -39,7 +39,7 @@
 # ─────────────────────────────────────────────────────────────────
 #
 # API
-#   API_BASE_URL          Base URL of the HeroBids API
+#   API_BASE_URL          Base URL of the OpenAIdom API
 #                         e.g. http://localhost:3000
 #
 # Auth

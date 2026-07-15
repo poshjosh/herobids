@@ -47,7 +47,7 @@ export interface SwapReceipt {
  * Balance snapshot for a swap venue.
  *
  * In shared-wallet mode this is observational telemetry, not an authoritative
- * claim that HeroBids can explain the entire wallet ledger.
+ * claim that OpenAIdom can explain the entire wallet ledger.
  */
 export interface SwapBalanceSnapshot {
   /** Per-asset balances. Crypto: token mint → amount. FX: currency code → amount. */
@@ -70,7 +70,7 @@ export interface TokenBalance {
  * A transaction as reported by the swap venue.
  *
  * In shared-wallet mode this is observational wallet activity, not proof that
- * HeroBids owns or can classify every transaction affecting the wallet.
+ * OpenAIdom owns or can classify every transaction affecting the wallet.
  */
 export interface SwapTransaction {
   /** Venue-specific reference (tx hash, deal ticket ID) */
@@ -88,7 +88,7 @@ export interface SwapTransaction {
  * TradFi: instant-execution FX/CFD brokers, OTC desks.
  * Lifecycle: quote → execute.
  *
- * Execution methods (`quote`, `executeSwap`) are authoritative for HeroBids'
+ * Execution methods (`quote`, `executeSwap`) are authoritative for OpenAIdom'
  * own execution pipeline. Balance and transaction fetches are telemetry
  * surfaces that may observe unrelated wallet activity in shared-wallet mode.
  */

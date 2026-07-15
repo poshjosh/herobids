@@ -4,7 +4,7 @@ import type { RuntimeResourceProfile, RuntimeLaunchConfig, SharedServicesConfig 
 
 /**
  * Configuration needed to build agent runtime environment variables.
- * This is HeroBids lifecycle logic — the same set of env vars is injected
+ * This is OpenAIdom lifecycle logic — the same set of env vars is injected
  * regardless of whether the runtime runs via Docker, Nomad, or ECS.
  */
 export interface AgentEnvConfig {
@@ -41,7 +41,7 @@ export interface AgentEnvConfig {
 // ── Env Building ────────────────────────────────────────────────────────────
 
 /**
- * Build agent runtime environment variables from HeroBids config.
+ * Build agent runtime environment variables from OpenAIdom config.
  *
  * This is shared lifecycle logic — env var injection is the same regardless
  * of the scheduler backend. Each adapter transforms the returned key-value
@@ -144,7 +144,7 @@ export function buildAgentLabels(agentId: string, sessionId: string): Record<str
 // ── Launch Config Builder ───────────────────────────────────────────────────
 
 /**
- * Assemble a complete, scheduler-neutral launch config from HeroBids agent data.
+ * Assemble a complete, scheduler-neutral launch config from OpenAIdom agent data.
  * Returns a `RuntimeLaunchConfig` that any `RuntimePort` adapter can consume.
  */
 export function buildRuntimeLaunchConfig(params: {

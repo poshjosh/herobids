@@ -5,7 +5,7 @@ Status: release-ready
 
 ## Purpose
 
-Define the MVP production-readiness boundary for HeroBids using verified repo evidence.
+Define the MVP production-readiness boundary for OpenAIdom using verified repo evidence.
 
 This document replaces the earlier binary in-cut/out-of-cut checklist with a release matrix. Each row separates:
 
@@ -32,7 +32,7 @@ If a row does not yet have enough verified evidence, it must remain `unknown` or
   - `deferred`: intentionally outside the MVP production boundary.
   - `unknown`: this pass did not verify enough evidence to classify safely.
 - `Launch Gate`
-  - `yes`: this must be complete before HeroBids can be called MVP production-ready.
+  - `yes`: this must be complete before OpenAIdom can be called MVP production-ready.
   - `no`: useful or already implemented, but not required for the MVP production-readiness claim.
 - `Impact`
   - Effect on MVP production readiness if the row is wrong or unfinished.
@@ -61,6 +61,6 @@ Completed rows have been removed from this table so it only tracks remaining ope
 
 ## Exit Rule
 
-Do not call HeroBids MVP production-ready until every row with `Launch Gate = yes` is `complete`.
+Do not call OpenAIdom MVP production-ready until every row with `Launch Gate = yes` is `complete`.
 
 Rows with `Launch Gate = no` may still ship, remain partially complete, or be deferred, but they must not be misrepresented as launch blockers or as absent when verified code already exists.

@@ -41,7 +41,7 @@ The current codebase has these relevant constraints:
 
 ## Goal
 
-Provide a robust live limit-order management layer that lets HeroBids place, monitor, amend, replace, cancel, and recover live limit orders across supported orderbook venues without hiding venue differences or weakening the core safety model.
+Provide a robust live limit-order management layer that lets OpenAIdom place, monitor, amend, replace, cancel, and recover live limit orders across supported orderbook venues without hiding venue differences or weakening the core safety model.
 
 ## Scope
 
@@ -82,7 +82,7 @@ In scope:
 
 After this feature lands:
 
-1. HeroBids can submit live limit orders on supported orderbook venues.
+1. OpenAIdom can submit live limit orders on supported orderbook venues.
 2. Each venue adapter exposes a clear capability descriptor for advanced order semantics.
 3. The engine can decide whether to amend, cancel-and-replace, or reject a requested update based on venue support.
 4. Open and partially filled limit orders survive worker restart and reconcile back into a correct local lifecycle state.
@@ -223,7 +223,7 @@ Support stale-order handling and the broader management actions that minimal Pha
 
 #### Expected Result
 
-HeroBids can actively manage resting orders instead of only placing them and waiting.
+OpenAIdom can actively manage resting orders instead of only placing them and waiting.
 
 ---
 

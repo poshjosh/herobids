@@ -6,11 +6,11 @@
 
 ## Goal
 
-Bring HeroBids agent programming capability to feature parity with aitradingbot.
+Bring OpenAIdom agent programming capability to feature parity with aitradingbot.
 
 Parity means:
 
-1. HeroBids exposes the same effective capability surface as aitradingbot for code execution plus workspace file management.
+1. OpenAIdom exposes the same effective capability surface as aitradingbot for code execution plus workspace file management.
 2. The `programming` skill stays narrowly scoped to code execution expertise.
 3. A separate `file-management` skill owns workspace file manipulation.
 4. `execute_code` supports both JavaScript and Python.
@@ -18,7 +18,7 @@ Parity means:
 6. Agents can persist files across ticks within the same runtime via workspace tools.
 7. Code can use the public internet, while runtime filtering continues to block internal and private network access when the sandbox is available.
 
-Backward compatibility is not a goal for this slice. The existing HeroBids programming contract can be replaced directly.
+Backward compatibility is not a goal for this slice. The existing OpenAIdom programming contract can be replaced directly.
 
 ## Product Decision
 
@@ -39,7 +39,7 @@ Where hardening would remove parity, parity wins. Examples:
 
 ## Current Baseline
 
-### HeroBids today
+### OpenAIdom today
 
 - `packages/domain/src/skills.ts` defines `programming` as a JavaScript-only skill with `requiredTools = ['execute_code', 'send_message', 'publish_artifact']`
 - there is no built-in file-management skill for workspace access
@@ -67,9 +67,9 @@ Where hardening would remove parity, parity wins. Examples:
 - public internet access is allowed from executed code
 - internal or private network access should remain filtered when sandboxing is active
 
-### HeroBids parity shape
+### OpenAIdom parity shape
 
-HeroBids should preserve the same effective capabilities while following the skill authoring rule that skills stay narrow in scope.
+OpenAIdom should preserve the same effective capabilities while following the skill authoring rule that skills stay narrow in scope.
 
 That means parity is delivered as a skill bundle:
 
@@ -87,7 +87,7 @@ Any agent that should have aitradingbot-equivalent programming power receives bo
 
 ### In scope
 
-1. Replace the HeroBids `programming` skill definition with a narrow execution skill.
+1. Replace the OpenAIdom `programming` skill definition with a narrow execution skill.
 2. Add a separate built-in `file-management` skill.
 3. Add filesystem agent tools in the worker and shared tool catalog.
 4. Expand `execute_code` to support JavaScript, Python, dependencies, and richer results.
@@ -102,7 +102,7 @@ Any agent that should have aitradingbot-equivalent programming power receives bo
 2. A web UI for editing workspace files.
 3. New language runtimes beyond JavaScript and Python.
 4. Separate code-execution sidecars or services.
-5. A compatibility layer preserving the old HeroBids `programming` skill surface.
+5. A compatibility layer preserving the old OpenAIdom `programming` skill surface.
 6. Preset naming alignment between `personal-assistant` and `reminder`; that is tracked separately.
 
 ## Target Behavior
@@ -224,7 +224,7 @@ Workspace rules:
 ### Notes
 
 - Do not list `send_message` and `publish_artifact` in these skills.
-- Those already come from `BASE_SKILL`, which is auto-injected in HeroBids.
+- Those already come from `BASE_SKILL`, which is auto-injected in OpenAIdom.
 - This keeps both skills incremental and consistent with the skill authoring rule that skills stay narrowly scoped.
 - Any agent that should match aitradingbot's combined programming capability gets both `programming` and `file-management`.
 
@@ -573,7 +573,7 @@ export function resolveWorkspacePath(root: string, relativePath: string):
 
 ### Stub-mode parity
 
-HeroBids dev mode still supports `stub` launcher mode in `apps/worker/src/agents/agent-runtime-launcher.ts`.
+OpenAIdom dev mode still supports `stub` launcher mode in `apps/worker/src/agents/agent-runtime-launcher.ts`.
 
 To preserve parity in local development:
 
@@ -587,7 +587,7 @@ This is an implementation requirement, not a nice-to-have, because parity includ
 
 ### Why this is needed
 
-HeroBids stores system skills in the `skills` table as well as in code. Changing `packages/domain/src/skills.ts` alone is not enough if DB system rows remain stale.
+OpenAIdom stores system skills in the `skills` table as well as in code. Changing `packages/domain/src/skills.ts` alone is not enough if DB system rows remain stale.
 
 ### Required implementation
 

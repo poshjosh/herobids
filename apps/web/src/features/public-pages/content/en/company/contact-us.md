@@ -20,5 +20,3 @@ Once your account is linked, your agents communicate with you directly on Telegr
 ## Status
 
 Check the OpenAIdom status page (coming soon) for service uptime and incident reports.
-
-*OpenAIdom is operated by HeroBids.*

@@ -14,8 +14,8 @@ The problem is that the current swap tracker mostly builds its expectation from 
 
 Example:
 
-- Wallet already has `10 SOL` before HeroBids ever starts.
-- HeroBids then executes one swap: spend `1 SOL`, receive `150 USDC`.
+- Wallet already has `10 SOL` before OpenAIdom ever starts.
+- OpenAIdom then executes one swap: spend `1 SOL`, receive `150 USDC`.
 - Fill-based tracking alone says:
   - expected SOL change = `-1`
   - expected USDC change = `+150`

@@ -2,7 +2,7 @@
  * EVM on-chain confirmation poller.
  *
  * Checks transaction receipt status via JSON-RPC's eth_getTransactionReceipt.
- * Used to confirm HeroBids-submitted swap fills after broadcast on EVM chains (1inch, etc.).
+ * Used to confirm OpenAIdom-submitted swap fills after broadcast on EVM chains (1inch, etc.).
  *
  * This confirms execution outcome, not complete wallet-accounting truth.
  */

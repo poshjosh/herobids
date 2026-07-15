@@ -19,7 +19,7 @@ This plan does **not** cover agent-authored `send_message` emails.
 
 ## Summary
 
-HeroBids currently sends plain-text platform email from separate surfaces with no shared visual system:
+OpenAIdom currently sends plain-text platform email from separate surfaces with no shared visual system:
 
 1. auth sends the login-link email from [apps/api/src/auth-mailer.ts](../../../../apps/api/src/auth-mailer.ts)
 2. worker sends billing emails through the shared SES client in [apps/worker/src/alerting/ses-email-client.ts](../../../../apps/worker/src/alerting/ses-email-client.ts)

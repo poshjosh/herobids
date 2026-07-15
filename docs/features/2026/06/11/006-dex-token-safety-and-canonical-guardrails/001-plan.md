@@ -1,9 +1,9 @@
 # 006 - DEX Token Safety and Canonical Asset Guardrails
 
-Rebuild the old repo's token-safety behavior in HeroBids without collapsing
+Rebuild the old repo's token-safety behavior in OpenAIdom without collapsing
 search, discovery, and execution policy into one thin helper. The result should
 be one shared token-policy surface for discovery and agent context, plus one
-hard pre-execution guard for swap venues, both wired through HeroBids' existing
+hard pre-execution guard for swap venues, both wired through OpenAIdom' existing
 ports-and-adapters architecture.
 
 **Depends on:** 023 token search and market regime.
@@ -21,7 +21,7 @@ The old repo had four behaviors that materially reduced bad DEX selections:
 - age, liquidity, and volume checks
 - a one-time force-override flow
 
-HeroBids currently has the primitives for most of this, but not the policy
+OpenAIdom currently has the primitives for most of this, but not the policy
 layer:
 
 - raw DexScreener search in `packages/market-data/src/dexscreener.ts`
@@ -472,7 +472,7 @@ This preserves one shared path for:
 
 ### Estimated notional rule
 
-Use the old dynamic liquidity-floor idea in HeroBids-compatible form:
+Use the old dynamic liquidity-floor idea in OpenAIdom-compatible form:
 
 - start with configured `minLiquidityUsd`
 - when `tradeGuard.liquidityMultiplier` is set and an order notional estimate is
@@ -849,13 +849,13 @@ required completion gate per repo policy.
 - DEX discovery metadata is joined by `network:address`, not `network:symbol`.
 - Focused tests and `pnpm lint` pass.# 006 - DEX Token Safety and Canonical Asset Guardrails
 
-Rebuild the old repo's DEX token-safety behavior in HeroBids without collapsing
+Rebuild the old repo's DEX token-safety behavior in OpenAIdom without collapsing
 read-only search, market-data enrichment, and execution-time guardrails into one
 ad hoc module.
 
 This plan introduces a shared token policy layer, canonical-token promotion,
 age/liquidity/volume/dead-pool gates, and a persisted one-time override flow.
-It keeps HeroBids' current architecture intact by routing execution-time checks
+It keeps OpenAIdom' current architecture intact by routing execution-time checks
 through a domain port injected into the shared decision intake path.
 
 **Depends on:** existing `marketData`, `search_tokens`, swap venue support, and
@@ -868,7 +868,7 @@ the shared `submitDecisionForExecution()` pipeline.
 
 ## Background
 
-The old repo had two distinct behaviors that HeroBids currently lacks:
+The old repo had two distinct behaviors that OpenAIdom currently lacks:
 
 1. Search-time token hygiene.
    It promoted canonical tokens for well-known symbols and filtered out obvious
@@ -879,7 +879,7 @@ The old repo had two distinct behaviors that HeroBids currently lacks:
    too-new / dead-pool assets, and issued a short-lived force override when the
    caller explicitly wanted to bypass the rejection.
 
-HeroBids currently has stronger market-data primitives than the old repo,
+OpenAIdom currently has stronger market-data primitives than the old repo,
 including aggregated discovery, pool age, and CMC enrichment, but the search
 policy is still thin:
 
@@ -890,7 +890,7 @@ policy is still thin:
 - DEX discovery enrichment is attached by `network:symbol`, which is too weak for
   same-symbol fakes on the same chain.
 
-HeroBids also differs from the old repo operationally:
+OpenAIdom also differs from the old repo operationally:
 
 - Decisions are brokered through `submit_decision`, not a direct `buy_token`
   tool.
@@ -903,7 +903,7 @@ HeroBids also differs from the old repo operationally:
 
 ## Goal
 
-Add a HeroBids-native token safety system with three layers:
+Add a OpenAIdom-native token safety system with three layers:
 
 1. A single shared search/discovery policy used by all read-only token lookup
    paths.
@@ -950,7 +950,7 @@ safety must be injected through a domain port owned by `@herobids/domain`.
 
 ### Overrides are explicit and auditable
 
-The old repo's in-memory force code is not sufficient for HeroBids. Override
+The old repo's in-memory force code is not sufficient for OpenAIdom. Override
 tokens must be persisted with TTL, status transitions, and actor/bot/token
 scope.
 

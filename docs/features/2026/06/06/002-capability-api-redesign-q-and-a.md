@@ -10,7 +10,7 @@ It continues through the immediate last response in that thread. The format belo
 
 **Assistant question**
 
-Do you want HeroBids to expose one unified public API with domain namespaces, or multiple separately presented APIs such as "agent API", "trading API", and later "automation API"?
+Do you want OpenAIdom to expose one unified public API with domain namespaces, or multiple separately presented APIs such as "agent API", "trading API", and later "automation API"?
 
 **Recommended answer**
 

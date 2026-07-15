@@ -6,7 +6,7 @@
 
 ## Problem
 
-HeroBids does not currently have a real staging environment.
+OpenAIdom does not currently have a real staging environment.
 
 The current deploy path uses a single Hetzner stack and a single production-oriented compose overlay, but that overlay still runs the API and worker with `NODE_ENV=staging`. As a result:
 
@@ -56,7 +56,7 @@ The current codebase and deploy setup have these staging blockers:
 
 After this feature lands:
 
-1. HeroBids has separate staging and production deploy targets.
+1. OpenAIdom has separate staging and production deploy targets.
 2. Staging has its own domain, server name, Terraform state, and env file.
 3. Production runs with `NODE_ENV=production`.
 4. Auth origins, webhook URLs, and public hostnames are environment-driven.

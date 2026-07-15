@@ -4,7 +4,7 @@
  * For v1, on-chain fill confirmation uses polling rather than WebSocket subscriptions.
  * Each venue has its own confirmation implementation.
  *
- * Confirmation is authoritative for execution outcome: whether HeroBids'
+ * Confirmation is authoritative for execution outcome: whether OpenAIdom'
  * submitted transaction landed on-chain. It is not, by itself, a claim about
  * full-wallet accounting truth in shared-wallet mode.
  */
@@ -31,6 +31,6 @@ export interface SwapConfirmationError {
  * Port interface for checking on-chain swap transaction confirmation.
  */
 export interface SwapConfirmationPoller {
-  /** Check whether HeroBids' submitted transaction has been confirmed on-chain. */
+  /** Check whether OpenAIdom' submitted transaction has been confirmed on-chain. */
   checkConfirmation(txRef: string): Promise<Result<SwapConfirmationStatus, SwapConfirmationError>>;
 }

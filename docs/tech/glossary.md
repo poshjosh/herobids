@@ -1,6 +1,6 @@
 # Glossary
 
-Alphabetic list of canonical terms used in HeroBids — code, configuration, documentation, and user interfaces.
+Alphabetic list of canonical terms used in OpenAIdom — code, configuration, documentation, and user interfaces.
 
 When a term appears in a schema, API, UI, config file, or document, it must match the definition here. If a term needs to change, update this document first.
 

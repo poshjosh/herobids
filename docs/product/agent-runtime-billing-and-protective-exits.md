@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-HeroBids agent runtime costs money. We cannot allow users to continue consuming full agent runtime after they stop paying or hit a hard billing limit.
+OpenAIdom agent runtime costs money. We cannot allow users to continue consuming full agent runtime after they stop paying or hit a hard billing limit.
 
 At the same time, a hard stop creates a trading-risk problem when an agent still has open positions.
 
@@ -80,7 +80,7 @@ A protective order already placed on the venue while the user was in good standi
 - reduce-only limit exit orders
 - other venue-native resting exits, if the venue truly supports them
 
-The important distinction is that the venue executes the previously submitted user instruction. HeroBids is not making a new decision after billing suspension.
+The important distinction is that the venue executes the previously submitted user instruction. OpenAIdom is not making a new decision after billing suspension.
 
 ### Protection-Ready Exposure
 
@@ -251,7 +251,7 @@ The following stop at hard limit:
 
 ### Rule 2: No New Protective Action After Suspension Without Prior User Consent
 
-After the user becomes unpaid, HeroBids must not:
+After the user becomes unpaid, OpenAIdom must not:
 
 - invent a stop-loss
 - infer a take-profit
@@ -259,7 +259,7 @@ After the user becomes unpaid, HeroBids must not:
 
 ### Rule 3: Already-Placed Venue Orders May Continue
 
-If the user explicitly authorized a protective venue order earlier and HeroBids already placed it, that order may remain live after suspension.
+If the user explicitly authorized a protective venue order earlier and OpenAIdom already placed it, that order may remain live after suspension.
 
 This is not post-suspension agent service. It is the continued effect of a prior user instruction.
 
@@ -349,7 +349,7 @@ Treat swap exposure as incompatible with unattended unpaid suspension unless a l
 
 ## Final Recommendation
 
-HeroBids should adopt this principle:
+OpenAIdom should adopt this principle:
 
 > Unpaid users do not get agent runtime. Open exposure may survive only when the user explicitly armed protection that can continue without fresh platform discretion.
 

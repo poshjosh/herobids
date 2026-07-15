@@ -35,7 +35,7 @@ export interface JupiterSwapConfig {
  * Used for Solana token swaps. In shadow mode, only `quote()` is called
  * (no execution) to obtain real quoted prices for fill simulation.
  *
- * Execution calls are authoritative for HeroBids' own swap pipeline.
+ * Execution calls are authoritative for OpenAIdom' own swap pipeline.
  * Balance and transaction fetches are observational wallet telemetry in
  * shared-wallet mode and may include unrelated wallet activity.
  *
@@ -294,7 +294,7 @@ export class JupiterSwapAdapter implements SwapVenuePort {
     try {
       // This exposes observed wallet activity for operator visibility. In
       // shared-wallet mode it must not be treated as a complete or authoritative
-      // classification of HeroBids-controlled transactions.
+      // classification of OpenAIdom-controlled transactions.
       const response = await fetch(this.rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

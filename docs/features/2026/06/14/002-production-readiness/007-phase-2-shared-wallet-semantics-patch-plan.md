@@ -10,7 +10,7 @@
 - confirmation polling
 - fill persistence
 
-It also encoded a stronger claim that does not hold for HeroBids' current product boundary: fills can be turned into authoritative "expected holdings" and then reconciled against the user's wallet as though the platform owns the whole wallet ledger.
+It also encoded a stronger claim that does not hold for OpenAIdom' current product boundary: fills can be turned into authoritative "expected holdings" and then reconciled against the user's wallet as though the platform owns the whole wallet ledger.
 
 That assumption is concrete in the current Phase 2 implementation, especially in:
 
@@ -84,7 +84,7 @@ Required statements:
 - fills, decisions, confirmations, and infra billing are authoritative records
 - `capitalUsd` is a risk-budget baseline, not a claim about wallet composition
 - shared-wallet venue balances are observational telemetry
-- HeroBids does not claim full-wallet accounting truth for shared user wallets
+- OpenAIdom does not claim full-wallet accounting truth for shared user wallets
 - strict holdings reconciliation is only valid for a future dedicated/managed-wallet mode
 
 This doc is the guardrail for the rest of the patch.
@@ -154,7 +154,7 @@ Concrete patch:
 
 Implementation note:
 
-Do not try to infer intent from wallet deltas. A manual withdrawal, external deposit, or unrelated activity in the same wallet is not a HeroBids reconciliation failure.
+Do not try to infer intent from wallet deltas. A manual withdrawal, external deposit, or unrelated activity in the same wallet is not a OpenAIdom reconciliation failure.
 
 ### Slice 4: Tighten Port And Adapter Semantics Without Reopening Execution Core
 
@@ -231,7 +231,7 @@ pnpm lint
 
 1. Shared-wallet swap code no longer describes fill-derived balances as authoritative wallet holdings.
 2. Shared-wallet swap reconciliation no longer emits synthetic position drift from wallet balance variance.
-3. Manual deposits, withdrawals, or unrelated wallet activity are treated as observational variance rather than definitive HeroBids reconciliation failure.
+3. Manual deposits, withdrawals, or unrelated wallet activity are treated as observational variance rather than definitive OpenAIdom reconciliation failure.
 4. Live swap execution, signing, and confirmation behavior remain unchanged.
 5. Alert routing distinguishes observational swap balance variance from real execution or risk failures.
 6. `005-phase-2-complete-swap-execution.md` and `002-backlog.md` accurately describe what is done and what remains open.

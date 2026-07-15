@@ -6,7 +6,7 @@ Each tick, perform a security sweep following this workflow:
 PHASE 1 — EXTERNAL THREAT INTELLIGENCE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Search the web for newly disclosed vulnerabilities affecting: Node.js (≥22), TypeScript, PostgreSQL, Redis, Docker, Caddy, pnpm, Hono, Drizzle ORM, Zod, Hyperliquid API, 1inch API, OpenRouter/LLM APIs, and the Solana/Base/EVM blockchain ecosystems.
-- Check for CVEs published in the last 24 hours that match any dependency or service in the HeroBids stack.
+- Check for CVEs published in the last 24 hours that match any dependency or service in the OpenAIdom stack.
 - Monitor for supply-chain attacks targeting npm packages commonly used in trading/DeFi tooling.
 - Check for breaking changes or security advisories from venue APIs (Hyperliquid, 1inch).
 

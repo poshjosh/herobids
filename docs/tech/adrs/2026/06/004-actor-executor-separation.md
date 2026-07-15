@@ -5,7 +5,7 @@ Date: 2026-06-16
 
 ## Context
 
-HeroBids defines four actor types (`agent`, `bot`, `user`, `system`) and treats
+OpenAIdom defines four actor types (`agent`, `bot`, `user`, `system`) and treats
 bots as first-class actors that submit decisions. However, a bot does not choose
 **what** to trade — it is configured with an explicit instrument and mechanically
 evaluates a strategy on that single pair. The entity that decides what to trade is
@@ -41,7 +41,7 @@ An actor is an entity that autonomously decides **what** to trade. It has:
 - Portfolio-level reasoning (manages multiple positions holistically)
 - Lifecycle authority (starts/stops its own execution)
 
-In HeroBids, the only actor is the **Agent** — configured with `technical`
+In OpenAIdom, the only actor is the **Agent** — configured with `technical`
 capabilities (rule-based discovery + indicators), `intelligence` capabilities
 (LLM reasoning), or both. The capability mix determines behavior, not actor type.
 

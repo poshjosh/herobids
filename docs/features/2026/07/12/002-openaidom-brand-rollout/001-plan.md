@@ -8,9 +8,9 @@
 
 ## Summary
 
-HeroBids currently behaves like one product operationally but presents itself inconsistently across surfaces:
+OpenAIdom currently behaves like one product operationally but presents itself inconsistently across surfaces:
 
-1. the web app chrome still uses text-only `HeroBids` labels
+1. the web app chrome still uses text-only `OpenAIdom` labels
 2. the web shell has no favicon or brand asset pipeline wired into runtime assets
 3. platform-authored email is either plain text or visually inconsistent
 4. public docs and support content still speak in the old brand voice and domain
@@ -36,7 +36,7 @@ This plan complements, but does not replace, the deployment-focused domain move 
 This plan assumes the following brand posture:
 
 1. **OpenAIdom** is the intended customer-facing product identity
-2. **HeroBids** remains an internal engineering and operational name for now
+2. **OpenAIdom** remains an internal engineering and operational name for now
 3. public surfaces should feel intentionally branded even before a deeper design-system overhaul
 4. branding should be introduced in layers, starting with the highest-visibility surfaces
 5. the rollout must not break auth, billing, email delivery, or localization contracts
@@ -49,7 +49,7 @@ This is the lowest-risk approach because it avoids coupling visual rebranding to
 
 ### Web UI
 
-1. the authenticated shell uses plain `HeroBids` text in the sidebar and mobile top bar
+1. the authenticated shell uses plain `OpenAIdom` text in the sidebar and mobile top bar
 2. public pages also use a plain text label instead of a wordmark or brand mark
 3. login and auth flows use the existing dark UI but are not visually tied to a formal brand system
 4. `apps/web/index.html` currently sets only a basic document title and no favicon or manifest assets
@@ -66,7 +66,7 @@ This is the lowest-risk approach because it avoids coupling visual rebranding to
 
 1. public help/company/legal/docs pages are served from the web app, but the copy still reflects the older brand identity
 2. product-facing docs, contact information, and legal references are not yet reviewed as a coordinated brand pass
-3. there is no single checklist for finding and replacing customer-facing `HeroBids` references while intentionally leaving internal engineering names alone
+3. there is no single checklist for finding and replacing customer-facing `OpenAIdom` references while intentionally leaving internal engineering names alone
 
 ### Assets
 
@@ -108,7 +108,7 @@ This plan does not include:
 These decisions should be settled before implementation starts to avoid churn:
 
 1. the authoritative customer-facing name is `OpenAIdom`
-2. the legal or operator identity may still reference HeroBids where required, for example `OpenAIdom,`
+2. the legal or operator identity may still reference OpenAIdom where required, for example `OpenAIdom,`
 3. the current brand source of truth is `docs/product/brand/`, with images in `docs/product/brand/images/` and palette values in `docs/product/brand/brand-palette.md`
 4. the product should support both image-based and typographic fallback brand headers
 5. existing dark surfaces can stay dark if the new token palette is adjusted to match the OpenAIdom mark rather than forcing a full visual redesign
@@ -211,7 +211,7 @@ Tasks:
 
 Expected result:
 
-Brand rendering becomes a single surface-owned abstraction instead of multiple ad hoc `HeroBids` text labels.
+Brand rendering becomes a single surface-owned abstraction instead of multiple ad hoc `OpenAIdom` text labels.
 
 ### Slice 3 — App Shell and Auth/Public Surface Rollout
 
@@ -304,7 +304,7 @@ Goal: align customer-facing documentation and support content with the new brand
 
 Tasks:
 
-1. audit public page content under `apps/web/src/features/public-pages/content/**` for customer-facing references to HeroBids, links, and contact details
+1. audit public page content under `apps/web/src/features/public-pages/content/**` for customer-facing references to OpenAIdom, links, and contact details
 2. update help/company/legal/docs page copy where the customer-facing name or canonical domain changes
 3. confirm whether legal pages should use a dual-label format such as `OpenAIdom,`
 4. update public nav labels, page titles, and CTA copy where needed to reflect the new product identity
@@ -323,7 +323,7 @@ Tasks:
 1. update or cross-link the domain rollout plan so visual branding rollout and hostname cutover are sequenced correctly
 2. document the approved brand asset mapping and runtime source locations
 3. update any operator-facing runbooks that mention public URLs, login flows, or email screenshots if branding changes affect them
-4. note any intentionally preserved internal `HeroBids` names so later cleanup work is explicit rather than accidental
+4. note any intentionally preserved internal `OpenAIdom` names so later cleanup work is explicit rather than accidental
 
 Expected result:
 
@@ -373,7 +373,7 @@ This order produces visible value early while preserving the ability to defer ri
 
 ### Copy and Docs Checks
 
-1. grep customer-facing content for stale `HeroBids` references that should now be `OpenAIdom`
+1. grep customer-facing content for stale `OpenAIdom` references that should now be `OpenAIdom`
 2. verify legal and contact pages use the approved dual-label or single-label policy consistently
 3. verify public URLs, email CTAs, and support addresses point at the intended canonical domain
 
@@ -435,7 +435,7 @@ This plan depends on or should be coordinated with:
 
 ---
 
-## Intentionally Preserved Internal `HeroBids` Names
+## Intentionally Preserved Internal `OpenAIdom` Names
 
 The following are kept as-is. They are internal engineering identifiers, not customer-facing brand surfaces. Changing them would create migration risk with no user-visible benefit.
 
@@ -446,7 +446,7 @@ The following are kept as-is. They are internal engineering identifiers, not cus
 | Docker image names | `herobids/api`, `herobids/worker`, `herobids/agent` | Image registry identity; rename requires coordinated CI + deploy changes |
 | Internal env vars | `HEROBIDS_ENV`, `HEROBIDS_DATABASE_URL`, `HEROBIDS_REDIS_URL` | Used across deploy scripts, compose files, and worker config loading |
 | Config keys | `config/default.yaml` heritage; `agentRiskDefaults.*` namespace | Operator-facing config; changing keys breaks existing deploy configs |
-| Legal entity name | "HeroBids" in legal liability clauses (e.g. Terms of Service) | Names the legal entity, not the brand; disclosed as "OpenAIdom," |
+| Legal entity name | "OpenAIdom" in legal liability clauses (e.g. Terms of Service) | Names the legal entity, not the brand; disclosed as "OpenAIdom," |
 | localStorage key | `herobids_locale` (in `apps/web/src/app/i18n/resolveLocale.ts`) | Changing the key would reset every user's locale preference |
 | Repo directory name | `herobids/` | Git remote identity; rename requires full re-clone for every contributor |
 | Internal code identifiers | TypeScript types, function names, table names, migration files | Internal-only; no customer ever sees them |
@@ -462,6 +462,6 @@ This feature is successful when:
 
 1. a first-time user sees OpenAIdom in browser chrome, app chrome, login, and public pages
 2. platform-authored email clearly belongs to the same product
-3. public docs and customer-facing copy no longer feel split between HeroBids and OpenAIdom
+3. public docs and customer-facing copy no longer feel split between OpenAIdom and OpenAIdom
 4. internal engineering names remain stable and do not create avoidable migration risk
 5. the staging cutover and first production launch can happen as separate controlled deploy steps rather than being entangled with UI or email refactors

@@ -126,7 +126,7 @@ infra/hetzner/
     ├── logs.sh                     # Stream container logs from the server
     ├── reset.sh                    # Wipe DB, Redis, Caddy; fresh start
     ├── reset-and-run.sh            # Nuclear reset + full provision
-    ├── create-agents.sh            # Create agents on a HeroBids instance
+    ├── create-agents.sh            # Create agents on a OpenAIdom instance
     ├── maintenance-restart.sh              # Server-side agent container restart
     ├── maintenance-restart-from-local.sh   # Run maintenance restart from local machine
     ├── scale-common.sh             # Autoscale shared functions (Nomad API, cooldown, flock, logging)

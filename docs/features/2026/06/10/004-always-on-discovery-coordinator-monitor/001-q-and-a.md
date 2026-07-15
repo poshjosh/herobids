@@ -13,7 +13,7 @@ The right shape is not “misc logic in the worker main file.” It should be wo
 2. Is this still a top priority with the newer agent-tick architecture?
 Recommended answer: important, but not absolute top priority.
 
-HeroBids already has richer autonomous ticks than the old repo. The agent runtime pulls discovery and regime context during ticks in agent.ts, and provider coordination/caching already exists in provider-registry.ts. So this is no longer a “missing foundation” problem.
+OpenAIdom already has richer autonomous ticks than the old repo. The agent runtime pulls discovery and regime context during ticks in agent.ts, and provider coordination/caching already exists in provider-registry.ts. So this is no longer a “missing foundation” problem.
 
 It is now a latency, eventing, and platform-state problem. That still matters, especially for DEX discovery and token watches, but it is more of a P2 systems epic than a P0 unblocker. I would prioritize it after high-leverage strategy-quality and DEX-safety work, but ahead of heavier orchestration work.
 

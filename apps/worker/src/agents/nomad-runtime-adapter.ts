@@ -245,7 +245,7 @@ function buildNomadJobSpec(
             },
           ],
           RestartPolicy: {
-            Attempts: 0, // HeroBids manages restarts, not Nomad
+            Attempts: 0, // OpenAIdom manages restarts, not Nomad
             Mode: 'fail',
           },
         },
@@ -852,7 +852,7 @@ export class NomadRuntimeAdapter implements RuntimePort {
       }
 
       // Remove stale tracking entries for jobs that no longer exist in Nomad
-      // (e.g. manually purged outside of HeroBids).
+      // (e.g. manually purged outside of OpenAIdom).
       for (const trackedId of this.knownAllocations.keys()) {
         if (!seenJobIds.has(trackedId)) {
           this.knownAllocations.delete(trackedId);

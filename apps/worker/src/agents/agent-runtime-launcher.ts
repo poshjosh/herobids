@@ -29,7 +29,7 @@ const logger = createLogger('agent-runtime-launcher');
 /**
  * Configuration passed to {@link AgentRuntimeLauncher.launch}.
  *
- * This is the HeroBids-level launch config — it contains agent-specific
+ * This is the OpenAIdom-level launch config — it contains agent-specific
  * payloads (config, tool policy, runtime descriptor) that the launcher
  * translates into a scheduler-neutral {@link RuntimeLaunchConfig} for
  * the port.
@@ -153,7 +153,7 @@ export interface AgentRuntimeLauncherConfig {
  * AgentRuntimeLauncher — launches, stops, and kills sandboxed agent runtimes.
  *
  * Delegates transport operations to a {@link RuntimePort} adapter. Owns
- * HeroBids lifecycle logic: handle tracking, stub heartbeat publishing,
+ * OpenAIdom lifecycle logic: handle tracking, stub heartbeat publishing,
  * session recovery, and crash reconciliation.
  *
  * ## Architecture

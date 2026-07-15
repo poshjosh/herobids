@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================================================
-# HeroBids Build Script
+# OpenAIdom Build Script
 # =============================================================================
 
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
@@ -56,7 +56,7 @@ should_preload_ollama() {
     esac
 }
 
-log "Starting HeroBids build process..."
+log "Starting OpenAIdom build process..."
 
 # 1. Run pnpm build
 log "Step 1: Running pnpm build..."

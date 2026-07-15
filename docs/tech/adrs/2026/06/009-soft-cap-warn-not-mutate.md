@@ -5,7 +5,7 @@
 
 ## Context
 
-HeroBids usage billing supports two spending thresholds: a soft cap and a hard cap. The original implementation degraded agent behavior at the soft cap (suppressing judge escalation, and in some paths skipping the scout entirely). This created two problems:
+OpenAIdom usage billing supports two spending thresholds: a soft cap and a hard cap. The original implementation degraded agent behavior at the soft cap (suppressing judge escalation, and in some paths skipping the scout entirely). This created two problems:
 
 1. It violated [Agent Mode Purity](../agents/runtime-boundary-and-message-contract.md#agent-mode-purity) — the platform was silently changing how a user's agent trades without the user's explicit permission.
 2. The behavior was inconsistent across code paths: forced pre-scout cases turned into a hold, while the normal scout path still ran. Logs and comments described "scout only" mode, but the actual behavior varied.

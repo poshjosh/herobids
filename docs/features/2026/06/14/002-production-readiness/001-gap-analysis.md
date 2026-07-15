@@ -1,4 +1,4 @@
-## Production-Readiness Gap Matrix — HeroBids Trading System
+## Production-Readiness Gap Matrix — OpenAIdom Trading System
 
 ### Key
 

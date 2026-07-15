@@ -136,7 +136,7 @@ import type { Result } from '../result.js';
  * RuntimePort — scheduler-neutral contract for agent runtime placement.
  *
  * Each adapter (Docker, Nomad, stub) implements this interface to provide
- * transport-level operations. HeroBids lifecycle logic (env var injection,
+ * transport-level operations. OpenAIdom lifecycle logic (env var injection,
  * crash classification, reconciliation semantics) lives in shared code
  * that consumes this port.
  *

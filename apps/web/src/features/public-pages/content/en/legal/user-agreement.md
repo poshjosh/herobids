@@ -57,7 +57,7 @@ You are responsible for verifying which execution mode your agents are operating
 
 ## Limitation of liability
 
-To the fullest extent permitted by law, HeroBids shall not be liable for any direct, indirect, incidental, or consequential damages arising from your use of the platform, including but not limited to trading losses, or data loss.
+To the fullest extent permitted by law, OpenAIdom shall not be liable for any direct, indirect, incidental, or consequential damages arising from your use of the platform, including but not limited to trading losses, or data loss.
 
 ## Termination
 
