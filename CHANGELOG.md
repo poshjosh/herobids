@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Scrapfly Proxy for Forex Factory (Cloudflare Bypass):** Route the Forex Factory economic-calendar scrape through Scrapfly's Scrape API with Anti-Scraping Protection (ASP) to bypass Cloudflare blocks on cloud/datacenter IPs. Generic `createScrapflyFetch()` helper in `@herobids/market-data` for future scrapers. Config at `marketData.scrapfly` (non-secret knobs only; API key follows `TAVILY_API_KEY` pattern — raw env passthrough). Graceful fallback to direct HTTP/1.1 fetch when `SCRAPFLY_API_KEY` is not set. Bumped `forexFactory.requestTimeoutMs` from 15s to 60s to accommodate ASP latency.
+
 ## v0.0.25 - 2026-07-14
 
 ### Added
