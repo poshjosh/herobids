@@ -114,6 +114,9 @@ export function buildAgentEnv(
   // Tavily API key for web search tool — optional.
   if (resolvedEnv['TAVILY_API_KEY']) envOut['TAVILY_API_KEY'] = resolvedEnv['TAVILY_API_KEY']!;
 
+  // Scrapfly API key for Forex Factory Cloudflare bypass — optional.
+  if (resolvedEnv['SCRAPFLY_API_KEY']) envOut['SCRAPFLY_API_KEY'] = resolvedEnv['SCRAPFLY_API_KEY']!;
+
   // Usage billing — forwarded to agent containers for LLM event recording.
   if (resolvedEnv['USAGE_BILLING_RATE_CARD']) envOut['USAGE_BILLING_RATE_CARD'] = resolvedEnv['USAGE_BILLING_RATE_CARD']!;
   if (resolvedEnv['USAGE_BILLING_RUNTIME_WINDOW_MS']) envOut['USAGE_BILLING_RUNTIME_WINDOW_MS'] = resolvedEnv['USAGE_BILLING_RUNTIME_WINDOW_MS']!;

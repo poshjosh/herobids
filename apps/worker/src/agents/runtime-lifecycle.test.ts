@@ -42,6 +42,7 @@ describe('buildAgentEnv', () => {
     process.env = { ...OLD_ENV };
     delete process.env['LLM_API_KEY'];
     delete process.env['TAVILY_API_KEY'];
+    delete process.env['SCRAPFLY_API_KEY'];
   });
 
   afterEach(() => {
@@ -136,6 +137,18 @@ describe('buildAgentEnv', () => {
   it('omits Tavily API key when not in env', () => {
     const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', BASE_ENV_CONFIG);
     expect(env['TAVILY_API_KEY']).toBeUndefined();
+  });
+
+  it('forwards Scrapfly API key from process.env when present', () => {
+    process.env['SCRAPFLY_API_KEY'] = 'scrapfly-test-key';
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', BASE_ENV_CONFIG);
+    expect(env['SCRAPFLY_API_KEY']).toBe('scrapfly-test-key');
+  });
+
+  it('omits Scrapfly API key when not in env', () => {
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', BASE_ENV_CONFIG);
+    expect(env['SCRAPFLY_API_KEY']).toBeUndefined();
   });
 
   it('sets MARKET_DATA_CONFIGURED when both DexScreener and Binance are present', () => {

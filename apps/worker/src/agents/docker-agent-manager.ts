@@ -253,6 +253,7 @@ export class DockerAgentManager {
         ...(process.env['LLM_API_KEY_ANTHROPIC'] ? [`LLM_API_KEY_ANTHROPIC=${process.env['LLM_API_KEY_ANTHROPIC']}`] : []),
         ...(process.env['LLM_API_KEY_OPENAI'] ? [`LLM_API_KEY_OPENAI=${process.env['LLM_API_KEY_OPENAI']}`] : []),
         ...(process.env['TAVILY_API_KEY'] ? [`TAVILY_API_KEY=${process.env['TAVILY_API_KEY']}`] : []),
+        ...(process.env['SCRAPFLY_API_KEY'] ? [`SCRAPFLY_API_KEY=${process.env['SCRAPFLY_API_KEY']}`] : []),
         ...(process.env['USAGE_BILLING_RATE_CARD'] ? [`USAGE_BILLING_RATE_CARD=${process.env['USAGE_BILLING_RATE_CARD']}`] : []),
         ...(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ? [`USAGE_BILLING_RUNTIME_WINDOW_MS=${process.env['USAGE_BILLING_RUNTIME_WINDOW_MS']}`] : []),
       ];
