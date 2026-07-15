@@ -8,7 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Scrapfly Proxy for Forex Factory (Cloudflare Bypass):** Route the Forex Factory economic-calendar scrape through Scrapfly's Scrape API with Anti-Scraping Protection (ASP) to bypass Cloudflare blocks on cloud/datacenter IPs. Generic `createScrapflyFetch()` helper in `@herobids/market-data` for future scrapers. Config at `marketData.scrapfly` (non-secret knobs only; API key follows `TAVILY_API_KEY` pattern — raw env passthrough). Graceful fallback to direct HTTP/1.1 fetch when `SCRAPFLY_API_KEY` is not set. Bumped `forexFactory.requestTimeoutMs` from 15s to 60s to accommodate ASP latency.
+- **Scrapfly Proxy for Forex Factory (Cloudflare Bypass):** Route the Forex Factory economic-calendar scrape through Scrapfly's Scrape API with Anti-Scraping Protection (ASP) to bypass Cloudflare blocks on cloud/datacenter IPs. Generic `createScrapflyFetch()` helper in `@herobids/market-data` for future scrapers. Config at `marketData.scrapfly` (non-secret knobs only; API key follows `TAVILY_API_KEY` pattern — raw env passthrough). Bumped `forexFactory.requestTimeoutMs` from 15s to 60s to accommodate ASP latency.
+- **Background Economic Calendar Refresh:** Decouple the economic calendar fetch from the agent tick loop. The worker process now runs a background interval (`refreshIntervalMs`, default 6h) that fetches via Scrapfly and writes to a shared Redis cache. Agent ticks read exclusively from cache (`cacheOnly` mode, sub-millisecond) — they never block on a network call for economic calendar data. Extracted `createLlmCalendarParser()` to `@herobids/market-data`. Removed `fetchHttp1` and Scrapfly wiring from the agent container.
 
 ## v0.0.25 - 2026-07-14
 

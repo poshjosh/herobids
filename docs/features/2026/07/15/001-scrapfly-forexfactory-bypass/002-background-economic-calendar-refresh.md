@@ -1,6 +1,6 @@
 # Plan: Background Economic Calendar Refresh (Decouple from Agent Tick Loop)
 
-**Status:** Proposed — not yet implemented
+**Status:** Implemented — pending local verification (Step 9)
 **Date:** 2026-07-15
 **Depends on:** `001-plan.md` (Scrapfly proxy for Forex Factory)
 
@@ -191,15 +191,15 @@ too. This is the right home for a market-data parsing function.
 
 ## Implementation Steps
 
-1. **[PENDING] Config schema:** add `refreshIntervalMs` to `economicCalendar` in `packages/domain/src/config/schema.ts`.
-2. **[PENDING] Default config:** add `refreshIntervalMs: 21600000` (6h) to `config/default.yaml`.
-3. **[PENDING] Extract LLM parser:** move `createLlmCalendarParser()` from `apps/worker/src/agent.ts` to `packages/market-data/src/economic-calendar.ts`; export it; update `agent.ts` import.
-4. **[PENDING] `cacheOnly` option:** add `cacheOnly?: boolean` to `CompositeEconomicCalendarProvider.getUpcomingEvents()` options; implement skip-source-on-miss logic; add unit tests.
-5. **[PENDING] Worker background refresh:** add `setInterval` block in `apps/worker/src/index.ts` for economic calendar refresh; add initial fetch on startup; add `clearInterval` in shutdown handler.
-6. **[PENDING] Agent tick switch:** change `apps/worker/src/agent.ts` to call `getUpcomingEvents({ cacheOnly: true })`.
-7. **[PENDING] Agent container cleanup:** remove the rate limiter and fetch function from the agent's `forexFactoryConfig` since they're no longer used (the agent only reads cache). Keep the adapter instantiation minimal.
-8. **[PENDING] Tests:** run `pnpm --filter @herobids/market-data run test`, `pnpm --filter @herobids/worker run test`, `pnpm lint`, `pnpm build`.
-9. **[PENDING] Local verification:** start an agent via local dev docker compose, confirm "Economic calendar cache warmed" in worker logs and "Economic calendar fetched" in agent logs with sub-second elapsed time.
+1. **[DONE] Config schema:** add `refreshIntervalMs` to `economicCalendar` in `packages/domain/src/config/schema.ts`.
+2. **[DONE] Default config:** add `refreshIntervalMs: 21600000` (6h) to `config/default.yaml`.
+3. **[DONE] Extract LLM parser:** move `createLlmCalendarParser()` from `apps/worker/src/agent.ts` to `packages/market-data/src/economic-calendar.ts`; export it; update `agent.ts` import.
+4. **[DONE] `cacheOnly` option:** add `cacheOnly?: boolean` to `CompositeEconomicCalendarProvider.getUpcomingEvents()` options; implement skip-source-on-miss logic; add unit tests.
+5. **[DONE] Worker background refresh:** add `setInterval` block in `apps/worker/src/index.ts` for economic calendar refresh; add initial fetch on startup; add `clearInterval` in shutdown handler.
+6. **[DONE] Agent tick switch:** change `apps/worker/src/agent.ts` to call `getUpcomingEvents({ cacheOnly: true })`.
+7. **[DONE] Agent container cleanup:** remove the rate limiter and fetch function from the agent's `forexFactoryConfig` since they're no longer used (the agent only reads cache). Keep the adapter instantiation minimal.
+8. **[DONE] Tests:** `pnpm --filter @herobids/market-data run test` (315 passed), `pnpm --filter @herobids/worker run test` (1986 passed), `pnpm lint` (clean), `pnpm build` (clean).
+9. **[PENDING - Manual] Local verification:** start an agent via local dev docker compose, confirm "Economic calendar cache warmed" in worker logs and "Economic calendar fetched" in agent logs with sub-second elapsed time.
 10. **[PENDING] Changelog:** add entry.
 
 ## Non-Goals
