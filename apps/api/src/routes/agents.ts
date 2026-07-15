@@ -742,6 +742,24 @@ export async function agentRoutes(
       };
     }
 
+    // Populate technical.filters from the agent's selected connections.
+    // The strategy preset defines HOW to trade (indicators, sizing) but not
+    // WHERE to trade — venue/venueType come from the connection's provider.
+    if (finalUnifiedConfig?.technical && connectionIds.length > 0) {
+      const providerRows = await db
+        .select({ provider: connections.provider })
+        .from(connections)
+        .where(and(inArray(connections.id, connectionIds), eq(connections.status, 'active')))
+        .limit(1);
+      if (providerRows.length > 0) {
+        const venueType = venueTypeFromProvider(providerRows[0]!.provider) ?? 'orderbook';
+        (finalUnifiedConfig.technical as Record<string, unknown>).filters = {
+          venue: providerRows[0]!.provider,
+          venueType,
+        };
+      }
+    }
+
     // Resolve final risk fields: explicit values win, then preset values, then null
     const finalStopLossPct: string | null =
       parsed.data.stopLossPct != null
@@ -1414,6 +1432,45 @@ export async function agentRoutes(
       // 'hybrid' → 'intelligence' without also explicitly clearing hybridMode.
       if (effectiveCapability !== 'hybrid') {
         delete (unifiedConfigPatch as Record<string, unknown>)['hybridMode'];
+      }
+    }
+
+    // Populate technical.filters from the agent's connections during PATCH.
+    // Three sources for the effective connection IDs, in priority order:
+    //   1. connectionIds explicitly provided in the request
+    //   2. existing active agent_connections for this agent (when connectionIds omitted)
+    //   3. None — leave filters alone (worker's Fix 2 guard handles gracefully)
+    if (unifiedConfigPatch?.technical) {
+      let effectiveConnectionIds: string[];
+
+      if (parsed.data.connectionIds !== undefined) {
+        // Explicitly provided — use those (even if empty, which clears filters)
+        effectiveConnectionIds = parsed.data.connectionIds;
+      } else {
+        // Omitted — fall back to existing active connections
+        const existingRows = await db
+          .select({ connectionId: agentConnections.connectionId })
+          .from(agentConnections)
+          .where(and(
+            eq(agentConnections.agentId, id),
+            eq(agentConnections.status, 'active'),
+          ));
+        effectiveConnectionIds = existingRows.map((r) => r.connectionId);
+      }
+
+      if (effectiveConnectionIds.length > 0) {
+        const providerRows = await db
+          .select({ provider: connections.provider })
+          .from(connections)
+          .where(and(inArray(connections.id, effectiveConnectionIds), eq(connections.status, 'active')))
+          .limit(1);
+        if (providerRows.length > 0) {
+          const venueType = venueTypeFromProvider(providerRows[0]!.provider) ?? 'orderbook';
+          (unifiedConfigPatch.technical as Record<string, unknown>).filters = {
+            venue: providerRows[0]!.provider,
+            venueType,
+          };
+        }
       }
     }
 

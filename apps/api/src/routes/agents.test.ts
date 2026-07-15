@@ -1501,6 +1501,84 @@ describe('agent routes strategy preset resolution', () => {
     });
   });
 
+  it('populates technical.filters from connection provider when creating a hybrid agent with strategyPreset', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = { id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null };
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      connectionRows: [
+        { id: 'conn-1', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid' },
+      ],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'hybrid-filter-agent',
+        prompt: 'trade momentum',
+        style: 'balanced',
+        strategyPreset: 'momentum',
+        capabilityMode: 'hybrid',
+        hybridMode: 'scanner_gated',
+        connectionIds: ['conn-1'],
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const insertedAgent = insertedValues.find((v) => v['name'] === 'hybrid-filter-agent');
+    expect(insertedAgent).toBeDefined();
+    const unifiedConfig = insertedAgent!['unifiedConfig'] as Record<string, unknown>;
+    const technical = unifiedConfig['technical'] as Record<string, unknown>;
+    expect(technical).toBeDefined();
+    expect(technical['filters']).toEqual({
+      venue: 'hyperliquid',
+      venueType: 'orderbook',
+    });
+  });
+
+  it('does NOT populate technical.filters when creating agent without connections', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = { id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null };
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      connectionRows: [],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'no-conn-agent',
+        prompt: 'trade momentum',
+        style: 'balanced',
+        strategyPreset: 'momentum',
+        capabilityMode: 'hybrid',
+        hybridMode: 'scanner_gated',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const insertedAgent = insertedValues.find((v) => v['name'] === 'no-conn-agent');
+    expect(insertedAgent).toBeDefined();
+    const unifiedConfig = insertedAgent!['unifiedConfig'] as Record<string, unknown>;
+    const technical = unifiedConfig['technical'] as Record<string, unknown>;
+    expect(technical).toBeDefined();
+    // Filters should NOT be populated when no connections are provided
+    // (the worker's Fix 2 guard handles this gracefully)
+    expect(technical['filters']).toBeUndefined();
+  });
+
   it('lets an explicit stopLossPct override the preset default on create', async () => {
     const { agentRoutes } = await import('./agents.js');
     const createdAgent = { id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null };
@@ -1560,6 +1638,120 @@ describe('agent routes strategy preset resolution', () => {
     expect(patched).toMatchObject({ technical: { signalBias: 'trend-following' } });
     expect(patched).not.toHaveProperty('metadata');
     expect(patched).not.toHaveProperty('execution');
+  });
+
+  it('PATCH with strategyPreset and connectionIds populates technical.filters from connection provider', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const existingUnifiedConfig = {
+      technical: { signalBias: 'trend-following', indicators: {}, candles: { interval: '15m', limit: 48 } },
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        modelPolicy: null,
+        unifiedConfig: existingUnifiedConfig,
+        style: 'balanced',
+      }],
+      activeLinkRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        modelPolicy: null,
+      }],
+      connectionRows: [
+        { id: 'conn-hl', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid' },
+      ],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        strategyPreset: 'momentum',
+        connectionIds: ['conn-hl'],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const configUpdate = updateSets.find((s) => 'unifiedConfig' in s);
+    expect(configUpdate).toBeDefined();
+    const patched = configUpdate!['unifiedConfig'] as Record<string, unknown> | null;
+    expect(patched).toBeDefined();
+    const technical = patched!['technical'] as Record<string, unknown>;
+    expect(technical).toBeDefined();
+    expect(technical['filters']).toEqual({
+      venue: 'hyperliquid',
+      venueType: 'orderbook',
+    });
+  });
+
+  it('PATCH populates technical.filters from existing connections when connectionIds are omitted', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const existingUnifiedConfig = {
+      technical: { signalBias: 'trend-following', indicators: {}, candles: { interval: '15m', limit: 48 } },
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+      // filters intentionally absent — the bug this test guards against
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        modelPolicy: null,
+        unifiedConfig: existingUnifiedConfig,
+        style: 'balanced',
+      }],
+      activeLinkRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        modelPolicy: null,
+      }],
+      connectionRows: [
+        { id: 'conn-existing', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid' },
+      ],
+      agentConnectionRows: [
+        { agentId: 'agent-1', connectionId: 'conn-existing', status: 'active' },
+      ],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      // connectionIds deliberately omitted — should use existing connections
+      payload: {
+        strategyPreset: 'momentum',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const configUpdate = updateSets.find((s) => 'unifiedConfig' in s);
+    expect(configUpdate).toBeDefined();
+    const patched = configUpdate!['unifiedConfig'] as Record<string, unknown> | null;
+    expect(patched).toBeDefined();
+    const technical = patched!['technical'] as Record<string, unknown>;
+    expect(technical).toBeDefined();
+    expect(technical['filters']).toEqual({
+      venue: 'hyperliquid',
+      venueType: 'orderbook',
+    });
   });
 
   it('exposes strategyPreset from unifiedConfig.metadata on GET', async () => {

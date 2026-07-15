@@ -245,8 +245,9 @@ const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
 // ── Technical scanner candidate discovery ────────────────────────────────────
 // Wraps the shared market data registry's Hyperliquid asset contexts to provide
 // a filtered list of tradable instruments for hybrid/scanner_gated agents.
-const discoverCandidates = async (filters: FilterConfig) => {
+const discoverCandidates = async (filters: FilterConfig | undefined) => {
   if (!sharedMarketDataRegistry) return [];
+  if (!filters) return [];
 
   const contexts = await sharedMarketDataRegistry.hyperliquid.assetContexts();
 

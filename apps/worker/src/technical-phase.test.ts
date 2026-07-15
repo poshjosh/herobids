@@ -428,4 +428,34 @@ describe('runTechnicalPhase', () => {
     expect(maxConcurrent).toBeLessThanOrEqual(3);
     expect(fetchCandles).toHaveBeenCalledTimes(10);
   });
+
+  it('discovers no candidates and returns cleanly when discovery rejects (guard against undefined filters)', async () => {
+    const deps = makeBaseDeps({
+      discoverCandidates: vi.fn().mockRejectedValue(new Error('network error')),
+    });
+
+    const result = await runTechnicalPhase(deps);
+
+    expect(result.candidatesDiscovered).toBe(0);
+    expect(result.signalsGenerated).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('discovery_failed');
+  });
+
+  it('passes config.filters to discoverCandidates even when filters is undefined', async () => {
+    const discoverCandidates = vi.fn().mockResolvedValue([]);
+    const baseline = makeBaseDeps();
+    const deps = makeBaseDeps({
+      config: { ...baseline.config, filters: undefined as unknown as { venue: string; venueType: 'orderbook' } },
+      discoverCandidates,
+    });
+
+    const result = await runTechnicalPhase(deps);
+
+    // discoverCandidates receives config.filters (which is undefined)
+    expect(discoverCandidates).toHaveBeenCalledWith(undefined);
+    // Phase completes without error — the guard in discoverCandidates returns []
+    expect(result.candidatesDiscovered).toBe(0);
+    expect(result.errors).toHaveLength(0);
+  });
 });

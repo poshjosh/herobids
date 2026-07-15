@@ -9,6 +9,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Fixed telegram messaging by dropping `/api` from url prefix.
+- **Hybrid agent `technical.filters` never populated:** All hybrid agents crashed on every scanner tick because `unifiedConfig.technical.filters` was never written during agent create/update. The API now derives `venue` and `venueType` from the agent's Hyperliquid connection provider and populates `filters` in both POST and PATCH handlers. PATCH also falls back to existing active connections when `connectionIds` are omitted. Added defensive `undefined` guard in `discoverCandidates` as belt-and-suspenders. (5 tests added)
 
 ### Added
 
