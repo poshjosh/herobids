@@ -34,7 +34,7 @@ Allow users to send messages to specific running agents via Telegram using `/to`
 
 ## Problem Statement
 
-The Telegram webhook handler at `POST /api/telegram/webhook` currently acknowledges every incoming update and discards it silently. Users have no way to send instructions to a running agent from Telegram.
+The Telegram webhook handler at `POST /telegram/webhook` currently acknowledges every incoming update and discards it silently. Users have no way to send instructions to a running agent from Telegram.
 
 Additionally:
 - The webhook secret validation incorrectly compares against the bot token rather than a separate webhook secret.
@@ -89,7 +89,7 @@ Examples:
 
 ```
 User sends "/to AgentName do something"
-  → Telegram sends POST /api/telegram/webhook
+  → Telegram sends POST /telegram/webhook
   → Validate X-Telegram-Bot-Api-Secret-Token against TELEGRAM_WEBHOOK_SECRET
   → Parse update: message.text, message.chat.id
   → Verify message.chat.id matches users.telegram_chat_id → get userId

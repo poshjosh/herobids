@@ -33,7 +33,7 @@ When an agent sends a message via Telegram, attach `ForceReply` markup so the us
 
 ## Problem Statement
 
-The Telegram webhook handler at `POST /api/telegram/webhook` currently acknowledges every incoming update and immediately discards it:
+The Telegram webhook handler at `POST /telegram/webhook` currently acknowledges every incoming update and immediately discards it:
 
 ```ts
 // Acknowledge immediately — Telegram expects a fast response
@@ -66,7 +66,7 @@ Additionally:
 
 ```
 User replies to agent Telegram message
-  → Telegram sends POST /api/telegram/webhook
+  → Telegram sends POST /telegram/webhook
   → Validate X-Telegram-Bot-Api-Secret-Token against TELEGRAM_WEBHOOK_SECRET
   → Parse update body: message.reply_to_message.message_id, message.chat.id, message.text
   → Verify message.chat.id matches a known users.telegram_chat_id → get userId

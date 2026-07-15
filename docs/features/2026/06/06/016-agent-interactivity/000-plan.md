@@ -19,7 +19,7 @@ Let users and operators interact with running agents: send messages, inspect mem
 | `PUT` | `/agents/:id` | Full update (agent must be stopped). Body: same fields as POST |
 | `POST` | `/agents/verify-telegram` | Verify a Telegram chat ID is reachable. Body: `{ chatId }` |
 | `GET` | `/agents/telegram-bot` | Get the platform Telegram bot `@username` |
-| `POST` | `/api/telegram/webhook` | Telegram Bot API webhook receiver (unauthenticated, token-validated) |
+| `POST` | `/telegram/webhook` | Telegram Bot API webhook receiver (unauthenticated, token-validated) |
 
 ### Agent export endpoints
 

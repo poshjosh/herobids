@@ -107,7 +107,7 @@ Update staging config to make `staging.openaidom.com` the only supported staging
    - `AUTH_PUBLIC_BASE_URL=https://staging.openaidom.com`
    - `AUTH_FRONTEND_ORIGIN=https://staging.openaidom.com`
    - `VITE_API_ORIGIN=https://staging.openaidom.com`
-   - `TELEGRAM_WEBHOOK_URL=https://staging.openaidom.com/api/telegram/webhook`
+   - `TELEGRAM_WEBHOOK_URL=https://staging.openaidom.com/telegram/webhook`
 4. Remove `staging.herobids.com` host handling from staging configs and docs instead of leaving it as a secondary hostname.
 
 ### 3. OAuth Staging Update
@@ -129,7 +129,7 @@ If staging uses real or test billing providers:
 
 ### 5. Webhook Staging Update
 
-1. Re-register Telegram webhook to `https://staging.openaidom.com/api/telegram/webhook`.
+1. Re-register Telegram webhook to `https://staging.openaidom.com/telegram/webhook`.
 2. If any other public webhooks exist, repoint them in staging too.
 3. Remove old staging-domain webhook targets after the new endpoint is confirmed healthy.
 
@@ -173,7 +173,7 @@ Prepare the production config changes in the repo so the first launch is OpenAId
 3. `AUTH_PUBLIC_BASE_URL=https://openaidom.com`
 4. `AUTH_FRONTEND_ORIGIN=https://openaidom.com`
 5. `VITE_API_ORIGIN=https://openaidom.com`
-6. `TELEGRAM_WEBHOOK_URL=https://openaidom.com/api/telegram/webhook`
+6. `TELEGRAM_WEBHOOK_URL=https://openaidom.com/telegram/webhook`
 7. Public-facing email/contact text updated where needed
 8. No production config should continue to reference `herobids.com` hostnames.
 

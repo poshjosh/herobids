@@ -102,13 +102,13 @@ describe('TelegramClient', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const client = new TelegramClient('test-token');
-    const result = await client.setWebhook('https://example.com/api/telegram/webhook', 'secret-123');
+    const result = await client.setWebhook('https://example.com/telegram/webhook', 'secret-123');
     const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.body as string);
 
     expect(result.ok).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith('https://api.telegram.org/bottest-token/setWebhook', expect.objectContaining({ method: 'POST' }));
     expect(body).toEqual({
-      url: 'https://example.com/api/telegram/webhook',
+      url: 'https://example.com/telegram/webhook',
       secret_token: 'secret-123',
     });
     vi.unstubAllGlobals();
