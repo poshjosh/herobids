@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.26 - 2026-07-16
+
 ### Fixed
 
 - Fixed telegram messaging by dropping `/api` from url prefix.
