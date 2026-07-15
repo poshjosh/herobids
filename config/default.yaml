@@ -226,11 +226,13 @@ marketData:
     daysForward: 1
     minImpact: medium
     currencies: []
+    # fetch interval is cacheTtlMs / 2
     cacheTtlMs: 43200000   # 12 hours — shared across all agents via Redis
     maxEventsInContext: 5
+    refreshIntervalMs: 21600000  # 6 hours — background cache refresh cadence
     forexFactory:
       baseUrl: "https://www.forexfactory.com"
-      requestTimeoutMs: 60000
+      requestTimeoutMs: 120000
       requestsPerMinute: 1
       userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
   tokenSafety:

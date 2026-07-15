@@ -56,7 +56,7 @@ import { LocalDocumentStore } from '@herobids/documents';
 import { UserEventPublisher } from './user-event-publisher.js';
 import { ActorHealthPublisher } from './actor-health-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
-import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, type RedisEvalClient, type TokenInfo } from '@herobids/market-data';
+import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createLlmCalendarParser, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
 import { resolveSwapTokenData, type DexScreenerProvider, type CanonicalResolver } from './swap-token-resolver.js';
@@ -1714,6 +1714,75 @@ const marketIntelCoordinator = appConfig.marketData
 
 marketIntelCoordinator?.start();
 
+// ── Economic calendar background refresh ─────────────────────────────────
+// The worker periodically fetches Forex Factory economic calendar data via
+// Scrapfly and writes it to a shared Redis cache. Agent tick loops read
+// exclusively from cache (cacheOnly mode), so they never block on a network
+// call for economic calendar data.
+let economicCalendarRefreshInterval: ReturnType<typeof setInterval> | undefined;
+const ecConfig = appConfig.marketData?.economicCalendar;
+const SCRAPFLY_API_KEY = process.env['SCRAPFLY_API_KEY'];
+
+if (ecConfig?.enabled && SCRAPFLY_API_KEY) {
+  const ecProvider = new CompositeEconomicCalendarProvider({
+    daysForward: ecConfig.daysForward,
+    minImpact: ecConfig.minImpact,
+    currencies: ecConfig.currencies,
+    maxEvents: ecConfig.maxEventsInContext,
+    forexFactory: {
+      baseUrl: ecConfig.forexFactory.baseUrl,
+      requestTimeoutMs: ecConfig.forexFactory.requestTimeoutMs,
+      requestsPerMinute: ecConfig.forexFactory.requestsPerMinute,
+      userAgent: ecConfig.forexFactory.userAgent,
+      rateLimiter: new TokenBucketRateLimiter({
+        requestsPerMinute: ecConfig.forexFactory.requestsPerMinute,
+      }),
+      fetchFn: createScrapflyFetch({
+        apiKey: SCRAPFLY_API_KEY,
+        baseUrl: appConfig.marketData!.scrapfly.baseUrl,
+        asp: appConfig.marketData!.scrapfly.asp,
+        requestTimeoutMs: appConfig.marketData!.scrapfly.requestTimeoutMs,
+      }),
+      parseHtmlFn: createLlmCalendarParser({
+        apiKey: process.env['LLM_API_KEY'],
+        baseUrl: process.env['LLM_BASE_URL'],
+        model: appConfig.llm.model,
+        timeoutMs: appConfig.llm.timeoutMs,
+      }),
+    } satisfies ForexFactoryAdapterConfig,
+    cache: new RedisProviderResponseCache(redisClient, 'market-data:cache:'),
+    cacheTtlMs: ecConfig.cacheTtlMs,
+  } satisfies CompositeEconomicCalendarConfig);
+
+  // Initial fetch on startup — warm the cache before any agent starts.
+  ecProvider.getUpcomingEvents().then((result) => {
+    if (result.ok) {
+      logger.info({ eventCount: result.data.events.length }, 'Economic calendar initial cache warmed');
+    } else {
+      logger.warn({ error: result.error }, 'Economic calendar initial fetch failed');
+    }
+  }).catch((err) => {
+    logger.error({ err }, 'Economic calendar initial fetch threw');
+  });
+
+  // Periodic refresh.
+  economicCalendarRefreshInterval = setInterval(() => {
+    ecProvider.getUpcomingEvents().then((result) => {
+      if (result.ok) {
+        logger.info({ eventCount: result.data.events.length }, 'Economic calendar cache refreshed');
+      } else {
+        logger.warn({ error: result.error }, 'Economic calendar refresh failed');
+      }
+    }).catch((err) => {
+      logger.error({ err }, 'Economic calendar refresh threw');
+    });
+  }, ecConfig.refreshIntervalMs);
+
+  logger.info({ refreshIntervalMs: ecConfig.refreshIntervalMs }, 'Economic calendar background refresh started');
+} else if (ecConfig?.enabled && !SCRAPFLY_API_KEY) {
+  logger.warn('Economic calendar enabled but SCRAPFLY_API_KEY not set — background refresh disabled');
+}
+
 // ── LLM Pricing Refresh ─────────────────────────────────────────────────────
 
 /** Resolve the API key for a given LLM provider from environment variables. */
@@ -1826,6 +1895,7 @@ process.on('SIGTERM', async () => {
   clearInterval(healthRefreshInterval);
   clearInterval(pricingRefreshInterval);
   clearInterval(botOrphanSweepInterval);
+  clearInterval(economicCalendarRefreshInterval);
   instrumentCache.stop();
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
@@ -1852,6 +1922,7 @@ process.on('SIGINT', async () => {
   clearInterval(healthRefreshInterval);
   clearInterval(pricingRefreshInterval);
   clearInterval(botOrphanSweepInterval);
+  clearInterval(economicCalendarRefreshInterval);
   instrumentCache.stop();
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();

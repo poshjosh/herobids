@@ -199,6 +199,7 @@ export interface MarketDataConfig {
     currencies: string[];
     cacheTtlMs: number;
     maxEventsInContext: number;
+    refreshIntervalMs: number;
     forexFactory: {
       baseUrl: string;
       requestTimeoutMs: number;

@@ -50,6 +50,99 @@ const IMPACT_RANK: Record<string, number> = {
 const SOURCE_FOREX_FACTORY = 'forex-factory';
 
 // ============================================================================
+// LLM-based HTML parser factory
+// ============================================================================
+
+export interface LlmCalendarParserConfig {
+  /** LLM API key (Bearer token). */
+  apiKey?: string;
+  /** LLM API base URL. Defaults to OpenAI-compatible /v1/chat/completions. */
+  baseUrl?: string;
+  /** Model identifier (e.g. 'gpt-4o-mini', 'qwen3:8b'). */
+  model: string;
+  /** Request timeout in milliseconds. */
+  timeoutMs: number;
+}
+
+/**
+ * Create an LLM-based HTML parser for economic calendar pages.
+ *
+ * Extracts the calendar `<table>` from raw HTML, sends it to an LLM for
+ * structured extraction, and returns typed `EconomicEvent[]`.
+ *
+ * The returned function is suitable for use as `ForexFactoryAdapterConfig.parseHtmlFn`.
+ */
+export function createLlmCalendarParser(
+  config: LlmCalendarParserConfig,
+): (html: string) => Promise<EconomicEvent[]> {
+  const baseUrl = config.baseUrl ?? 'https://api.openai.com/v1';
+  const apiUrl = baseUrl.endsWith('/v1') ? `${baseUrl}/chat/completions` : `${baseUrl}/chat/completions`;
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (config.apiKey) {
+    headers['Authorization'] = `Bearer ${config.apiKey}`;
+  }
+
+  return async (html: string): Promise<EconomicEvent[]> => {
+    // Extract calendar table only (reduce token usage from ~100K to ~20K chars)
+    const tableMatch = html.match(
+      /<table[^>]*class\s*=\s*["'][^"']*calendar[^"']*["'][^>]*>([\s\S]*?)<\/\s*table\s*>/i,
+    );
+    const tableHtml = tableMatch?.[1] ?? html.slice(0, 50_000);
+
+    const systemPrompt = `Extract economic calendar events from this HTML table.
+Return a JSON array. Each event: { time: "ISO-8601 UTC", currency: "3-char code uppercase", event: "title", impact: "high|medium|low", forecast: string|null, previous: string|null }.
+Omit day-breaker rows (colspan headers). Omit rows with no event data.
+Only return JSON, no other text.`;
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: config.model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: tableHtml },
+        ],
+        temperature: 0,
+        max_tokens: 4096,
+      }),
+      signal: AbortSignal.timeout(config.timeoutMs),
+    });
+
+    if (!response.ok) {
+      throw new Error(`LLM API returned ${response.status}`);
+    }
+
+    const body = await response.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = body.choices?.[0]?.message?.content;
+    if (!content) throw new Error('Empty LLM response');
+
+    // Extract JSON from response (may be wrapped in markdown code fences)
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error('No JSON array found in LLM response');
+
+    const parsed = JSON.parse(jsonMatch[0]) as unknown[];
+    if (!Array.isArray(parsed)) throw new Error('LLM response is not an array');
+
+    return parsed.map((item: unknown) => {
+      const e = item as Record<string, unknown>;
+      return {
+        time: String(e.time ?? new Date().toISOString()),
+        currency: String(e.currency ?? '').toUpperCase(),
+        event: String(e.event ?? ''),
+        impact: (['high', 'medium', 'low'].includes(String(e.impact)) ? String(e.impact) : 'medium') as 'high' | 'medium' | 'low',
+        forecast: e.forecast ? String(e.forecast) : null,
+        previous: e.previous ? String(e.previous) : null,
+        sources: ['forex-factory'],
+      };
+    });
+  };
+}
+
+// ============================================================================
 // Shared helpers
 // ============================================================================
 
@@ -165,12 +258,15 @@ export class CompositeEconomicCalendarProvider implements EconomicCalendarProvid
       currencies?: string[];
       minImpact?: 'high' | 'medium' | 'low';
       maxEvents?: number;
+      /** When true, never fetch from source — only serve cached data or empty events. */
+      cacheOnly?: boolean;
     },
   ): Promise<Result<EconomicCalendarResult, EconomicCalendarError>> {
     const effectiveDaysForward = options?.daysForward ?? this.config.daysForward;
     const effectiveMinImpact = options?.minImpact ?? this.config.minImpact;
     const effectiveCurrencies = options?.currencies ?? this.config.currencies;
     const effectiveMaxEvents = options?.maxEvents ?? this.config.maxEvents;
+    const cacheOnly = options?.cacheOnly ?? false;
 
     const cache = this.config.cache;
     const cacheTtlMs = this.config.cacheTtlMs ?? 10_800_000;
@@ -184,6 +280,10 @@ export class CompositeEconomicCalendarProvider implements EconomicCalendarProvid
           return ok(cached.value);
         }
         if (cached && cached.isStale) {
+          // Stale cache: if cacheOnly, serve stale (no fetch allowed).
+          if (cacheOnly) {
+            return ok(cached.value);
+          }
           const result = await this.fetchFromSource(effectiveDaysForward, effectiveMinImpact, effectiveCurrencies, effectiveMaxEvents);
           if (result.ok) {
             await cache.set(cacheKey, result.data, { ttlMs: cacheTtlMs });
@@ -192,9 +292,31 @@ export class CompositeEconomicCalendarProvider implements EconomicCalendarProvid
           console.warn('Economic calendar refresh failed, serving stale cache');
           return ok(cached.value);
         }
+        // Cache miss: if cacheOnly, return empty events (no fetch allowed).
+        if (cacheOnly) {
+          return ok({
+            events: [],
+            fetchedAt: '',
+            sources: [],
+          });
+        }
       } catch {
-        // Cache error — proceed with direct fetch
+        // Cache error — if cacheOnly, return empty; otherwise proceed with direct fetch.
+        if (cacheOnly) {
+          return ok({
+            events: [],
+            fetchedAt: '',
+            sources: [],
+          });
+        }
       }
+    } else if (cacheOnly) {
+      // No cache configured + cacheOnly — return empty.
+      return ok({
+        events: [],
+        fetchedAt: '',
+        sources: [],
+      });
     }
 
     const result = await this.fetchFromSource(effectiveDaysForward, effectiveMinImpact, effectiveCurrencies, effectiveMaxEvents);

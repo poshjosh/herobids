@@ -12,6 +12,6 @@ alerts:
       
 marketData:
   economicCalendar:
-    enabled: false
+    enabled: true
                   
 

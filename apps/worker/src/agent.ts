@@ -9,8 +9,6 @@
  */
 
 import fs from 'node:fs';
-import https from 'node:https';
-import http from 'node:http';
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
@@ -18,7 +16,7 @@ import { scannerGatedKey } from './redis-keys.js';
 import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal } from '@herobids/db';
 import { createUsageBillingService } from './usage-billing-service.js';
-import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml, EconomicEvent } from '@herobids/domain';
+import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml } from '@herobids/domain';
 import { type LlmToolDefinition, resolveReasoningParams } from '@herobids/llm';
 import {
   CompositeEconomicCalendarProvider,
@@ -26,7 +24,6 @@ import {
   TokenBucketRateLimiter,
   createProviderRegistry,
   createPriceService,
-  createScrapflyFetch,
   type CompositeEconomicCalendarConfig,
   type ForexFactoryAdapterConfig,
   type MarketDataConfig,
@@ -113,48 +110,6 @@ const SERVER_COST_USD_PER_HOUR = Number(process.env['LLM_SERVER_COST_USD_PER_HOU
 const TRADING_HOURS_RAW = process.env['TRADING_HOURS_JSON'];
 
 // ── HTTP/1.1 fetch for sites that block HTTP/2 (e.g. Forex Factory) ─────
-
-/**
- * Fetch implementation using Node's http/https module (HTTP/1.1 only).
- *
- * Node's built-in fetch() (undici) negotiates HTTP/2 by default, which
- * triggers Cloudflare 403 blocks on some sites. This wrapper forces HTTP/1.1.
- */
-function fetchHttp1(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  return new Promise<Response>((resolve, reject) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    const parsed = new URL(url);
-    const mod = parsed.protocol === 'https:' ? https : http;
-
-    const req = mod.request(
-      url,
-      {
-        method: init?.method ?? 'GET',
-        headers: init?.headers as Record<string, string> | undefined,
-        signal: init?.signal ?? undefined,
-        family: 4,  // force IPv4 — Docker containers may not have IPv6 connectivity
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk: Buffer) => chunks.push(chunk));
-        res.on('end', () => {
-          const body = Buffer.concat(chunks);
-          resolve(new Response(body, {
-            status: res.statusCode ?? 200,
-            statusText: res.statusMessage ?? '',
-            headers: new Headers(
-              Object.entries(res.headers).filter(([, v]) => v != null) as [string, string][],
-            ),
-          }));
-        });
-      },
-    );
-
-    req.on('error', reject);
-    if (init?.body) req.write(init.body as string);
-    req.end();
-  });
-}
 
 // ── Crash telemetry ──────────────────────────────────────────────────────
 
@@ -920,79 +875,7 @@ const priceService: PriceService | null = marketDataRegistry
   : null;
 
 // ── LLM-based HTML parser for economic calendar ──────────────────────────
-
-function createLlmCalendarParser(): (html: string) => Promise<EconomicEvent[]> {
-  // Resolve API endpoint
-  const baseUrl = LLM_BASE_URL
-    || (LLM_PROVIDER === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
-  const apiUrl = baseUrl.endsWith('/v1') ? `${baseUrl}/chat/completions` : `${baseUrl}/chat/completions`;
-
-  // Use light model (cheaper/faster) for simple HTML parsing
-  const model = lightModel;
-
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (LLM_API_KEY_RESOLVED) {
-    headers['Authorization'] = `Bearer ${LLM_API_KEY_RESOLVED}`;
-  }
-
-  return async (html: string): Promise<EconomicEvent[]> => {
-    // Extract calendar table only (reduce token usage from ~100K to ~20K chars)
-    const tableMatch = html.match(
-      /<table[^>]*class\s*=\s*["'][^"']*calendar[^"']*["'][^>]*>([\s\S]*?)<\/\s*table\s*>/i,
-    );
-    const tableHtml = tableMatch?.[1] ?? html.slice(0, 50_000);
-
-    const systemPrompt = `Extract economic calendar events from this HTML table.
-Return a JSON array. Each event: { time: "ISO-8601 UTC", currency: "3-char code uppercase", event: "title", impact: "high|medium|low", forecast: string|null, previous: string|null }.
-Omit day-breaker rows (colspan headers). Omit rows with no event data.
-Only return JSON, no other text.`;
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: tableHtml },
-        ],
-        temperature: 0,
-        max_tokens: 4096,
-      }),
-      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-    });
-
-    if (!response.ok) {
-      throw new Error(`LLM API returned ${response.status}`);
-    }
-
-    const body = await response.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = body.choices?.[0]?.message?.content;
-    if (!content) throw new Error('Empty LLM response');
-
-    // Extract JSON from response (may be wrapped in markdown code fences)
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) throw new Error('No JSON array found in LLM response');
-
-    const parsed = JSON.parse(jsonMatch[0]) as unknown[];
-    if (!Array.isArray(parsed)) throw new Error('LLM response is not an array');
-
-    return parsed.map((item: unknown) => {
-      const e = item as Record<string, unknown>;
-      return {
-        time: String(e.time ?? new Date().toISOString()),
-        currency: String(e.currency ?? '').toUpperCase(),
-        event: String(e.event ?? ''),
-        impact: (['high', 'medium', 'low'].includes(String(e.impact)) ? String(e.impact) : 'medium') as 'high' | 'medium' | 'low',
-        forecast: e.forecast ? String(e.forecast) : null,
-        previous: e.previous ? String(e.previous) : null,
-        sources: ['forex-factory'],
-      };
-    });
-  };
-}
+// createLlmCalendarParser is imported from @herobids/market-data.
 
 // ── Economic calendar provider (optional) ──────────────────────────────────
 let economicCalendarProvider: CompositeEconomicCalendarProvider | null = null;
@@ -1002,26 +885,9 @@ if (marketDataConfig?.economicCalendar?.enabled) {
   // Use Redis-backed cache shared across agent runtimes
   const redisCache = new RedisProviderResponseCache(redis, 'market-data:cache:');
 
-  // Select fetch implementation based on whether Scrapfly API key is available.
-  // Scrapfly proxies through rotating IPs + Anti-Scraping Protection (ASP) to
-  // bypass Cloudflare blocks on cloud/datacenter IPs (e.g. Hetzner → ForexFactory).
-  const SCRAPFLY_API_KEY = process.env['SCRAPFLY_API_KEY'];
-
-  const forexFactoryFetchFn = SCRAPFLY_API_KEY
-    ? createScrapflyFetch({
-        apiKey: SCRAPFLY_API_KEY,
-        baseUrl: marketDataConfig.scrapfly.baseUrl,
-        asp: marketDataConfig.scrapfly.asp,
-        requestTimeoutMs: marketDataConfig.scrapfly.requestTimeoutMs,
-      })
-    : fetchHttp1;
-
-  if (!SCRAPFLY_API_KEY) {
-    logger.warn(
-      'SCRAPFLY_API_KEY not set — Forex Factory fetch will use direct HTTP/1.1 and may be blocked by Cloudflare on cloud IPs',
-    );
-  }
-
+  // Agent reads economic calendar exclusively from the shared Redis cache
+  // (cacheOnly mode). The actual scraping via Scrapfly is done by the worker
+  // process's background refresh interval — the agent never fetches from source.
   const forexFactoryConfig: ForexFactoryAdapterConfig = {
     baseUrl: ecConfig.forexFactory.baseUrl,
     requestTimeoutMs: ecConfig.forexFactory.requestTimeoutMs,
@@ -1030,8 +896,6 @@ if (marketDataConfig?.economicCalendar?.enabled) {
     rateLimiter: new TokenBucketRateLimiter({
       requestsPerMinute: ecConfig.forexFactory.requestsPerMinute,
     }),
-    fetchFn: forexFactoryFetchFn,
-    parseHtmlFn: createLlmCalendarParser(),  // LLM-based parser survives HTML changes
   };
 
   const compositeConfig: CompositeEconomicCalendarConfig = {
@@ -2677,7 +2541,7 @@ async function runTick(): Promise<void> {
     if (economicCalendarProvider) {
       try {
         const startMs = Date.now();
-        const result = await economicCalendarProvider.getUpcomingEvents();
+        const result = await economicCalendarProvider.getUpcomingEvents({ cacheOnly: true });
         if (result.ok) {
           runtimeState.metrics.macroEvents = result.data.events;
           const elapsedMs = Date.now() - startMs;

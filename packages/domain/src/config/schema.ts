@@ -973,6 +973,7 @@ export const MarketDataConfigSchema = z.object({
     currencies: z.array(z.string()).default([]),
     cacheTtlMs: z.number().int().min(0).default(10_800_000),
     maxEventsInContext: z.number().int().min(1).max(50).default(20),
+    refreshIntervalMs: z.number().int().min(60_000).default(21_600_000),
     forexFactory: z.object({
       baseUrl: z.string().url().default('https://www.forexfactory.com'),
       requestTimeoutMs: z.number().int().min(1_000).default(10_000),
