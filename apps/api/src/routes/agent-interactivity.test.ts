@@ -799,14 +799,14 @@ describe('POST /agents/verify-telegram', () => {
   });
 });
 
-describe('POST /api/telegram/webhook', () => {
+describe('POST /telegram/webhook', () => {
   it('returns 501 when Telegram webhook auth is not fully configured', async () => {
     const app = Fastify();
     await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildAlertsConfig({ webhookSecret: '' }));
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/telegram/webhook',
+      url: '/telegram/webhook',
       payload: {},
     });
 
@@ -820,12 +820,12 @@ describe('POST /api/telegram/webhook', () => {
 
     const missing = await app.inject({
       method: 'POST',
-      url: '/api/telegram/webhook',
+      url: '/telegram/webhook',
       payload: {},
     });
     const wrong = await app.inject({
       method: 'POST',
-      url: '/api/telegram/webhook',
+      url: '/telegram/webhook',
       headers: { 'x-telegram-bot-api-secret-token': 'wrong-secret' },
       payload: {},
     });
@@ -840,7 +840,7 @@ describe('POST /api/telegram/webhook', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/telegram/webhook',
+      url: '/telegram/webhook',
       headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
       payload: {},
     });
@@ -866,7 +866,7 @@ describe('POST /api/telegram/webhook', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/telegram/webhook',
+      url: '/telegram/webhook',
       headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
       payload: {
         message: {
@@ -922,7 +922,7 @@ describe('POST /api/telegram/webhook', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/telegram/webhook',
+      url: '/telegram/webhook',
       headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
       payload: {
         message: {
@@ -970,7 +970,7 @@ describe('POST /api/telegram/webhook', () => {
 
       const res = await app.inject({
         method: 'POST',
-        url: '/api/telegram/webhook',
+        url: '/telegram/webhook',
         headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
         payload: {
           message: {
@@ -1003,7 +1003,7 @@ describe('POST /api/telegram/webhook', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/telegram/webhook',
+      url: '/telegram/webhook',
       headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
       payload: {
         message: {
@@ -1038,7 +1038,7 @@ describe('POST /api/telegram/webhook', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/telegram/webhook',
+      url: '/telegram/webhook',
       headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
       payload: {
         message: {
@@ -1080,7 +1080,7 @@ describe('POST /api/telegram/webhook', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/telegram/webhook',
+      url: '/telegram/webhook',
       headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
       payload: {
         message: {
@@ -1117,7 +1117,7 @@ describe('POST /api/telegram/webhook', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/telegram/webhook',
+      url: '/telegram/webhook',
       headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
       payload: {
         message: {
@@ -1155,7 +1155,7 @@ describe('POST /api/telegram/webhook', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/telegram/webhook',
+      url: '/telegram/webhook',
       headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
       payload: {
         message: {
@@ -1191,7 +1191,7 @@ describe('POST /api/telegram/webhook', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/telegram/webhook',
+      url: '/telegram/webhook',
       headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
       payload: {
         message: {

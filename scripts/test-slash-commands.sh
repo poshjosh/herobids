@@ -30,7 +30,7 @@ webhook() {
 
   local http_code
   http_code=$(curl -s -o /dev/null -w "%{http_code}" \
-    -X POST "${API_BASE}/api/telegram/webhook" \
+    -X POST "${API_BASE}/telegram/webhook" \
     -H "Content-Type: application/json" \
     -H "X-Telegram-Bot-Api-Secret-Token: ${WEBHOOK_SECRET}" \
     -d "{
@@ -48,7 +48,7 @@ webhook() {
   else
     echo "  ✗ HTTP ${http_code}"
     # Show error body for non-200
-    curl -s -X POST "${API_BASE}/api/telegram/webhook" \
+    curl -s -X POST "${API_BASE}/telegram/webhook" \
       -H "Content-Type: application/json" \
       -H "X-Telegram-Bot-Api-Secret-Token: ${WEBHOOK_SECRET}" \
       -d "{\"update_id\":${UPDATE_ID},\"message\":{\"message_id\":${msg_id},\"chat\":{\"id\":${CHAT_ID},\"type\":\"private\"},\"date\":$(date +%s),\"text\":\"/${text}\"}}" 2>&1
@@ -109,7 +109,7 @@ echo "── Edge Cases ──"
 echo ""
 echo "▶  Wrong webhook secret"
 http_code=$(curl -s -o /dev/null -w "%{http_code}" \
-  -X POST "${API_BASE}/api/telegram/webhook" \
+  -X POST "${API_BASE}/telegram/webhook" \
   -H "Content-Type: application/json" \
   -H "X-Telegram-Bot-Api-Secret-Token: wrong-secret" \
   -d '{"update_id":999,"message":{"message_id":999,"chat":{"id":'"${CHAT_ID}"',"type":"private"},"date":1700000000,"text":"/help"}}')
@@ -123,7 +123,7 @@ fi
 echo ""
 echo "▶  Unbound chat /agents"
 http_code=$(curl -s -o /dev/null -w "%{http_code}" \
-  -X POST "${API_BASE}/api/telegram/webhook" \
+  -X POST "${API_BASE}/telegram/webhook" \
   -H "Content-Type: application/json" \
   -H "X-Telegram-Bot-Api-Secret-Token: ${WEBHOOK_SECRET}" \
   -d '{"update_id":998,"message":{"message_id":998,"chat":{"id":99999,"type":"private"},"date":1700000000,"text":"/agents"}}')

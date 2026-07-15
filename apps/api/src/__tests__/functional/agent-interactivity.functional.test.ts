@@ -480,13 +480,13 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
     });
   });
 
-  // ─── POST /api/telegram/webhook ──────────────────────────────────────────
+  // ─── POST /telegram/webhook ──────────────────────────────────────────
 
-  describe('POST /api/telegram/webhook', () => {
+  describe('POST /telegram/webhook', () => {
     it('returns 501 because Telegram is not configured in the test app', async () => {
       const res = await ctx.app.inject({
         method: 'POST',
-        url: '/api/telegram/webhook',
+        url: '/telegram/webhook',
         payload: { update_id: 1, message: { text: 'hi' } },
       });
 

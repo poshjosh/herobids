@@ -101,7 +101,7 @@ async function sendWebhook(
 ) {
   return app.inject({
     method: 'POST',
-    url: '/api/telegram/webhook',
+    url: '/telegram/webhook',
     headers: WEBHOOK_HEADERS,
     payload: {
       message: {

@@ -635,7 +635,7 @@ alerts:
   telegram:
     botToken: ""                    # override: TELEGRAM_BOT_TOKEN
     webhookSecret: ""               # override: TELEGRAM_WEBHOOK_SECRET
-    # webhookUrl: "https://your-public-host/api/telegram/webhook"  # override: TELEGRAM_WEBHOOK_URL
+    # webhookUrl: "https://your-public-host/telegram/webhook"  # override: TELEGRAM_WEBHOOK_URL
     channels: []                    # configured via env-specific yaml
   email:
     provider: ses                   # outbound provider — override: EMAIL_PROVIDER

@@ -152,7 +152,7 @@ async function seedConnection(userId: string, extra: Partial<typeof connections.
 
 async function send(chatId: string, text: string): Promise<{ status: number }> {
   const res = await ctx.app.inject({
-    method: 'POST', url: '/api/telegram/webhook',
+    method: 'POST', url: '/telegram/webhook',
     headers: { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': mockWebhookSecret },
     payload: { update_id: Date.now(), message: { message_id: Date.now(), chat: { id: +chatId, type: 'private' }, text } },
   });
@@ -176,7 +176,7 @@ describe.skipIf(SKIP)('Telegram Slash Commands — Functional E2E', () => {
     const a2 = Fastify({ logger: false });
     await telegramWebhookHandler(a2, db2, r2);
     await a2.ready();
-    const res = await a2.inject({ method: 'POST', url: '/api/telegram/webhook',
+    const res = await a2.inject({ method: 'POST', url: '/telegram/webhook',
       headers: { 'content-type': 'application/json' },
       payload: { update_id: 1, message: { message_id: 1, chat: { id: 1, type: 'private' }, text: '/help' } } });
     expect(res.statusCode).toBe(501);
@@ -184,7 +184,7 @@ describe.skipIf(SKIP)('Telegram Slash Commands — Functional E2E', () => {
   });
 
   it('returns 401 with wrong webhook secret', async () => {
-    const res = await ctx.app.inject({ method: 'POST', url: '/api/telegram/webhook',
+    const res = await ctx.app.inject({ method: 'POST', url: '/telegram/webhook',
       headers: { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': 'wrong' },
       payload: { update_id: 1, message: { message_id: 1, chat: { id: 1, type: 'private' }, text: '/help' } } });
     expect(res.statusCode).toBe(401);

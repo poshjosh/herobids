@@ -45,6 +45,7 @@ const stagingCompose = readText('docker-compose.staging.yaml');
 const prodCompose = readText('docker-compose.prod.yaml');
 const stagingYaml = readText('config/staging.yaml');
 const prodYaml = readText('config/production.yaml');
+const defaultYaml = readText('config/default.yaml');
 const stagingCaddy = readText('Caddyfile.staging');
 const prodCaddy = readText('Caddyfile.prod');
 
@@ -77,9 +78,9 @@ describe('staging/production environment invariants', () => {
   // ── 2. Billing safety ──────────────────────────────────────────────────
 
   describe('billing safety defaults', () => {
-    it('staging config explicitly sets billing.primaryProvider to mock', () => {
+    it('staging config uses a real billing provider (creem test API), not mock', () => {
       const billingBlock = findYamlBlock(stagingYaml, 'billing');
-      expect(blockScalar(billingBlock, 'primaryProvider')).toBe('mock');
+      expect(blockScalar(billingBlock, 'primaryProvider')).not.toBe('mock');
     });
 
     it('production config does NOT default billing.primaryProvider to mock', () => {
@@ -105,9 +106,18 @@ describe('staging/production environment invariants', () => {
   // ── 4. Alerting safety ─────────────────────────────────────────────────
 
   describe('alerting safety', () => {
-    it('staging config has alerts disabled by default', () => {
-      const alertsBlock = findYamlBlock(stagingYaml, 'alerts');
-      expect(blockScalar(alertsBlock, 'enabled')).toBe('false');
+    it('staging config has alerts disabled (inherited from default.yaml via deep merge)', () => {
+      // default.yaml sets alerts.enabled: false. staging.yaml may have an
+      // alerts block but must not override enabled to true. The runtime
+      // deepMerge preserves default keys not present in the overlay.
+      const defaultAlerts = findYamlBlock(defaultYaml, 'alerts');
+      expect(blockScalar(defaultAlerts, 'enabled')).toBe('false');
+
+      const stagingAlerts = findYamlBlock(stagingYaml, 'alerts');
+      // If staging declares an alerts block, it must not set enabled: true
+      if (stagingAlerts) {
+        expect(blockScalar(stagingAlerts, 'enabled')).not.toBe('true');
+      }
     });
   });
 
