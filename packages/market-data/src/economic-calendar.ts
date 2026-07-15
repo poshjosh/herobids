@@ -88,7 +88,7 @@ export function createLlmCalendarParser(
     const tableMatch = html.match(
       /<table[^>]*class\s*=\s*["'][^"']*calendar[^"']*["'][^>]*>([\s\S]*?)<\/\s*table\s*>/i,
     );
-    const tableHtml = tableMatch?.[1] ?? html.slice(0, 50_000);
+    const tableHtml = tableMatch?.[1] ?? html;
 
     const systemPrompt = `Extract economic calendar events from this HTML table.
 Return a JSON array. Each event: { time: "ISO-8601 UTC", currency: "3-char code uppercase", event: "title", impact: "high|medium|low", forecast: string|null, previous: string|null }.

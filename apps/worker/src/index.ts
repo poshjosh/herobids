@@ -1745,7 +1745,7 @@ if (ecConfig?.enabled && SCRAPFLY_API_KEY) {
       }),
       parseHtmlFn: createLlmCalendarParser({
         baseUrl: appConfig.llm.baseUrl,
-        model: appConfig.agentRuntime.llm.modelDefaults.lightModel,
+        model: appConfig.llm.model,
         timeoutMs: appConfig.llm.timeoutMs,
       }),
     } satisfies ForexFactoryAdapterConfig,

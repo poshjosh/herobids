@@ -134,7 +134,7 @@ async function main() {
     // LLM parser function
     adapterConfig['parseHtmlFn'] = async (rawHtml: string): Promise<EconomicEvent[]> => {
       const tableMatch = rawHtml.match(/<table[^>]*class\s*=\s*["'][^"']*calendar[^"']*["'][^>]*>([\s\S]*?)<\/\s*table\s*>/i);
-      const tableHtml = tableMatch?.[1] ?? rawHtml.slice(0, 50_000);
+      const tableHtml = tableMatch?.[1] ?? rawHtml;
       const apiUrl = baseUrl.endsWith('/v1') ? `${baseUrl}/chat/completions` : `${baseUrl}/chat/completions`;
 
       const res = await fetch(apiUrl, {

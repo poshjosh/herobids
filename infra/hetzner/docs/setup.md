@@ -1,7 +1,7 @@
-- Follow instructions here: infra/hetzner/docs/setup-domain.md
+- Create production.tfvars - see infra/hetzner/docs/setup-tfvars.md
 
-- `./scripts/provision.sh --env production --var-file production.tfvars`
+- Create the server: `./scripts/provision.sh --env production --var-file production.tfvars`
 
-- `terraform output -var-file=production.tfvars -raw server_ipv4`
+- Read the production ip: `terraform output -var-file=production.tfvars -raw server_ipv4`
 
-- Follow instructions here: infra/hetzner/docs/setup-tfvars.md
+- Use the IP in infra/hetzner/docs/setup-domain.md
