@@ -1336,7 +1336,21 @@ export async function agentRoutes(
       presetUnifiedConfigUpdate = null;
     }
 
-    // Merge technical into unifiedConfig — only touch the 'technical' key, preserve other keys
+    // Merge technical into unifiedConfig — only touch the 'technical' key, preserve other keys.
+    //
+    // technicalUpdate semantics by agent type (documentation guard — do not remove):
+    // ┌─────────────────────────┬──────────────────────────┬────────────────────────────────────┐
+    // │ Agent type              │ technical sent by client │ Backend handling                   │
+    // ├─────────────────────────┼──────────────────────────┼────────────────────────────────────┤
+    // │ intelligence (create)   │ omitted                  │ no preset → no technical, correct  │
+    // │ intelligence (update)   │ null                     │ deletes any existing technical     │
+    // │ hybrid (create)         │ omitted                  │ preset fills technical ✅          │
+    // │ hybrid (update)         │ null (no manual config)  │ preset fills → null must NOT delete│
+    // │ hybrid (update)         │ {…} (manual config)     │ explicit object overrides preset   │
+    // └─────────────────────────┴──────────────────────────┴────────────────────────────────────┘
+    // Key invariant: when a strategy preset is active and client sends technical:null,
+    // the null means "I didn't set a manual technical config" — NOT "delete it".
+    // Preserve the preset's technical and let the filters-population code below run.
     let unifiedConfigPatch: Record<string, unknown> | null | undefined = undefined;
     if (technicalUpdate !== undefined || presetUnifiedConfigUpdate !== undefined) {
       const current = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
@@ -1349,7 +1363,7 @@ export async function agentRoutes(
         void _meta;
         void _exec;
         if (technicalUpdate === null) {
-          // Also clear technical when explicitly nulled.
+          // Also clear technical when explicitly nulled (no preset active).
           const { technical: _t, ...withoutTechnical } = rest;
           void _t;
           unifiedConfigPatch = Object.keys(withoutTechnical).length > 0 ? withoutTechnical : null;
@@ -1359,18 +1373,17 @@ export async function agentRoutes(
           unifiedConfigPatch = Object.keys(rest).length > 0 ? rest : null;
         }
       } else if (presetUnifiedConfigUpdate) {
-        // Preset provided — merge with current, explicit technical wins
+        // Preset provided — merge with current, explicit technical wins.
+        // technical:null from the client means "no manual config" — do NOT delete
+        // the preset's technical. Only an explicit {…} object overrides the preset.
         const merged = { ...current, ...presetUnifiedConfigUpdate };
-        if (technicalUpdate !== undefined) {
-          if (technicalUpdate === null) {
-            delete merged['technical'];
-          } else {
-            merged['technical'] = technicalUpdate;
-          }
+        if (technicalUpdate !== undefined && technicalUpdate !== null) {
+          merged['technical'] = technicalUpdate;
         }
         unifiedConfigPatch = Object.keys(merged).length > 0 ? merged : null;
       } else {
-        // No preset change — handle technical update as before
+        // No preset change — handle technical update as before.
+        // In this branch technical:null IS honored because there is no preset to fill.
         if (technicalUpdate === null) {
           const { technical: _t, ...rest } = current;
           void _t;

@@ -1754,6 +1754,70 @@ describe('agent routes strategy preset resolution', () => {
     });
   });
 
+  it('PATCH preserves preset technical when client sends technical:null (frontend default)', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const existingUnifiedConfig = {
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        modelPolicy: null,
+        unifiedConfig: existingUnifiedConfig,
+        style: 'balanced',
+      }],
+      activeLinkRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        modelPolicy: null,
+      }],
+      connectionRows: [
+        { id: 'conn-hl', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid' },
+      ],
+      agentConnectionRows: [
+        { agentId: 'agent-1', connectionId: 'conn-hl', status: 'active' },
+      ],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      // Reproduces the bug: frontend sends technical:null (no manual config)
+      // alongside strategyPreset. The preset's technical must NOT be deleted.
+      payload: {
+        strategyPreset: 'momentum',
+        technical: null,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const configUpdate = updateSets.find((s) => 'unifiedConfig' in s);
+    expect(configUpdate).toBeDefined();
+    const patched = configUpdate!['unifiedConfig'] as Record<string, unknown> | null;
+    expect(patched).toBeDefined();
+    const technical = patched!['technical'] as Record<string, unknown>;
+    expect(technical).toBeDefined();
+    // The preset's technical was preserved (not deleted by the null)
+    expect(technical['indicators']).toBeDefined();
+    expect(technical['candles']).toBeDefined();
+    expect(technical['signalBias']).toBe('trend-following');
+    // Filters populated from existing connection
+    expect(technical['filters']).toEqual({
+      venue: 'hyperliquid',
+      venueType: 'orderbook',
+    });
+  });
+
   it('exposes strategyPreset from unifiedConfig.metadata on GET', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db } = buildDb({
