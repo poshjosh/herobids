@@ -123,31 +123,3 @@ billing:
     webhookSecret: ""                        # override: CREEM_WEBHOOK_SECRET
     apiBaseUrl: https://api.creem.io/v1      # auto-switches to test-api if key starts with creem_test_
     planProducts: {}                          # map of planId → [{creemProductId, interval, displayLabel, amountCents}]
-
-# Commercial usage billing — metering, rate cards, spend-state enforcement, and credit ledger.
-usageBilling:
-  defaultCurrency: USD
-  runtimeChargeWindowMs: 60000             # coarse agent runtime metering window in ms
-  warningThresholdsPct: [80, 100]          # % of hard cap at which to emit spend warnings
-  defaultRateCardName: default             # rate card to use when opening new billing periods
-  creditTopUpsEnabled: true                # whether users can purchase credit top-ups
-  topUpProductsByProvider:                 # provider → [{packId, externalId, cents}]
-    creem:
-      - packId: topup5
-        externalId: topup5
-        cents: 500        
-      - packId: topup20
-        externalId: topup20
-        cents: 2000        
-      - packId: topup50
-        externalId: topup50
-        cents: 5000        
-      - packId: topup100
-        externalId: topup100
-        cents: 10000
-  fallbackCacheReadPct: 75                 # % of input rate to use as cache-read rate when provider has no explicit cache price
-  failedRequestOutputPct: 75               # % of maxTokens to bill as estimated output on failed (timeout/server-error) LLM calls
-  defaultRateCardItems:                    # seed items for how much each type of agent activity costs
-    - meterKey: "agent.runtime_ms"
-      priceMicrousd: 100
-      perUnit: 60000 

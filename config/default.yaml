@@ -700,10 +700,11 @@ plans:
       usage: # required
         includedCreditCents: 0
         topUpPackIds: 
-          - mock_topup_500
-          - mock_topup_2000
-          - mock_topup_10000
-    pro:
+          - topup5
+          - topup20
+          - topup50
+          - topup100
+    starter:
       entitlements: # required
         skills:
           canCreatePrivateSkills: true
@@ -726,9 +727,10 @@ plans:
       usage: # required
         includedCreditCents: 2000
         topUpPackIds: 
-          - mock_topup_500
-          - mock_topup_2000
-          - mock_topup_10000
+          - topup5
+          - topup20
+          - topup50
+          - topup100
           
 # Billing — multi-provider subscription billing.
 # Use 'mock' for local dev/CI (no credentials needed — checkout auto-fulfills instantly).
@@ -742,9 +744,9 @@ billing:
     customerPortalConfigurationId: ""         # optional Stripe portal config ID
     planPrices: {}                            # map of planId → [{stripePriceId, interval, displayLabel, amountCents}]
   creem:
-    apiKey: ""                               # override: CREEM_API_KEY
-    webhookSecret: ""                        # override: CREEM_WEBHOOK_SECRET
-    apiBaseUrl: https://api.creem.io/v1      # auto-switches to test-api if key starts with creem_test_
+    apiKey: ""                                # override: CREEM_API_KEY
+    webhookSecret: ""                         # override: CREEM_WEBHOOK_SECRET
+    apiBaseUrl: https://api.creem.io/v1       # auto-switches to test-api if key starts with creem_test_
     planProducts: {}                          # map of planId → [{creemProductId, interval, displayLabel, amountCents}]
 
 # Commercial usage billing — metering, rate cards, spend-state enforcement, and credit ledger.
@@ -756,15 +758,44 @@ usageBilling:
   creditTopUpsEnabled: true                # whether users can purchase credit top-ups
   topUpProductsByProvider:                 # provider → [{packId, externalId, cents}]
     mock:
-      - packId: mock_topup_500
-        externalId: mock_topup_500
+      - packId: topup5
+        externalId: topup5
         cents: 500        
-      - packId: mock_topup_2000
-        externalId: mock_topup_2000
+      - packId: topup20
+        externalId: topup20
         cents: 2000        
-      - packId: mock_topup_10000
-        externalId: mock_topup_10000
-        cents: 10000        
+      - packId: topup50
+        externalId: topup50
+        cents: 5000        
+      - packId: topup100
+        externalId: topup100
+        cents: 10000
+    creem:
+      - packId: topup5
+        externalId: topup5
+        cents: 500        
+      - packId: topup20
+        externalId: topup20
+        cents: 2000        
+      - packId: topup50
+        externalId: topup50
+        cents: 5000        
+      - packId: topup100
+        externalId: topup100
+        cents: 10000
+    stripe:
+      - packId: topup5
+        externalId: topup5
+        cents: 500        
+      - packId: topup20
+        externalId: topup20
+        cents: 2000        
+      - packId: topup50
+        externalId: topup50
+        cents: 5000        
+      - packId: topup100
+        externalId: topup100
+        cents: 10000
   fallbackCacheReadPct: 75                 # % of input rate to use as cache-read rate when provider has no explicit cache price
   failedRequestOutputPct: 75               # % of maxTokens to bill as estimated output on failed (timeout/server-error) LLM calls
   defaultRateCardItems:                    # seed items for how much each type of agent activity costs
