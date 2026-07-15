@@ -700,10 +700,13 @@ plans:
       usage: # required
         includedCreditCents: 0
         topUpPackIds: 
-          - topup5
-          - topup20
-          - topup50
-          - topup100
+          - Topup5
+          - Topup20
+          - Topup50
+          - Topup100
+          - Topup200
+          - Topup500
+          - Topup1000
     starter:
       entitlements: # required
         skills:
@@ -727,10 +730,13 @@ plans:
       usage: # required
         includedCreditCents: 2000
         topUpPackIds: 
-          - topup5
-          - topup20
-          - topup50
-          - topup100
+          - Topup5
+          - Topup20
+          - Topup50
+          - Topup100
+          - Topup200
+          - Topup500
+          - Topup1000
           
 # Billing — multi-provider subscription billing.
 # Use 'mock' for local dev/CI (no credentials needed — checkout auto-fulfills instantly).
@@ -758,44 +764,31 @@ usageBilling:
   creditTopUpsEnabled: true                # whether users can purchase credit top-ups
   topUpProductsByProvider:                 # provider → [{packId, externalId, cents}]
     mock:
-      - packId: topup5
-        externalId: topup5
+      - packId: Topup5
+        externalId: Topup5
         cents: 500        
-      - packId: topup20
-        externalId: topup20
+      - packId: Topup20
+        externalId: Topup20
         cents: 2000        
-      - packId: topup50
-        externalId: topup50
+      - packId: Topup50
+        externalId: Topup50
         cents: 5000        
-      - packId: topup100
-        externalId: topup100
+      - packId: Topup100
+        externalId: Topup100
         cents: 10000
+      - packId: Topup200
+        externalId: Topup200
+        cents: 20000        
+      - packId: Topup500
+        externalId: Topup500
+        cents: 50000        
+      - packId: Topup1000
+        externalId: Topup1000
+        cents: 100000
     creem:
-      - packId: topup5
-        externalId: topup5
+      - packId: Topup5
+        externalId: prod_13TZZ9AsdyFtGoY2BqVYAy
         cents: 500        
-      - packId: topup20
-        externalId: topup20
-        cents: 2000        
-      - packId: topup50
-        externalId: topup50
-        cents: 5000        
-      - packId: topup100
-        externalId: topup100
-        cents: 10000
-    stripe:
-      - packId: topup5
-        externalId: topup5
-        cents: 500        
-      - packId: topup20
-        externalId: topup20
-        cents: 2000        
-      - packId: topup50
-        externalId: topup50
-        cents: 5000        
-      - packId: topup100
-        externalId: topup100
-        cents: 10000
   fallbackCacheReadPct: 75                 # % of input rate to use as cache-read rate when provider has no explicit cache price
   failedRequestOutputPct: 75               # % of maxTokens to bill as estimated output on failed (timeout/server-error) LLM calls
   defaultRateCardItems:                    # seed items for how much each type of agent activity costs

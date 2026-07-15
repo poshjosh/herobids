@@ -38,15 +38,7 @@ alerts:
 # Switch to 'creem' or 'stripe' in production once provider credentials are set.
 billing:
   primaryProvider: creem                      # 'mock' | 'creem' | 'stripe'
-  #fallbackProvider: stripe                    # optional — uncomment to enable failover
-  stripe:
-    secretKey: ""                             # override: STRIPE_SECRET_KEY
-    webhookSecret: ""                         # override: STRIPE_WEBHOOK_SECRET
-    customerPortalConfigurationId: ""         # optional Stripe portal config ID
-    planPrices: {}                            # map of planId → [{stripePriceId, interval, displayLabel, amountCents}]
   creem:
-    apiKey: ""                               # override: CREEM_API_KEY
-    webhookSecret: ""                        # override: CREEM_WEBHOOK_SECRET
     apiBaseUrl: https://api.creem.io/v1      # auto-switches to test-api if key starts with creem_test_
     planProducts:
       starter:
