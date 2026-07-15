@@ -62,6 +62,7 @@ import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
 import { resolveSwapTokenData, type DexScreenerProvider, type CanonicalResolver } from './swap-token-resolver.js';
 import { buildAgentRiskLimits } from './agent-risk-limits.js';
 import { VenueInstrumentCache, normalizeHyperliquidSymbol, normalizeBybitSymbol, identityNormalize, type VenueSymbolProvider } from './venue-instrument-cache.js';
+import type { FilterConfig } from './technical-phase.js';
 import { populateInstrumentsFromVenues } from './instrument-population.js';
 
 async function enrichTokenWithDiscovery(
@@ -240,6 +241,39 @@ const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
       },
     })
   : undefined;
+
+// ── Technical scanner candidate discovery ────────────────────────────────────
+// Wraps the shared market data registry's Hyperliquid asset contexts to provide
+// a filtered list of tradable instruments for hybrid/scanner_gated agents.
+const discoverCandidates = async (filters: FilterConfig) => {
+  if (!sharedMarketDataRegistry) return [];
+
+  const contexts = await sharedMarketDataRegistry.hyperliquid.assetContexts();
+
+  let results = contexts.data.map((ctx) => ({
+    symbol: ctx.asset,
+    instrumentId: `${ctx.asset}-PERP`,
+    volume24hUsd: ctx.volume24hUsd ?? undefined,
+    priceChange24hPct: ctx.priceChange24hPct ?? undefined,
+  }));
+
+  // Apply filters — extract after guard to narrow TypeScript types without
+  // non-null assertions.
+  if (filters.minVolume24hUsd != null) {
+    const minVolume24hUsd = filters.minVolume24hUsd;
+    results = results.filter((r) => (r.volume24hUsd ?? 0) >= minVolume24hUsd);
+  }
+  if (filters.symbols?.length) {
+    const symbols = filters.symbols;
+    results = results.filter((r) => symbols.includes(r.symbol));
+  }
+  if (filters.excludeSymbols?.length) {
+    const excludeSymbols = filters.excludeSymbols;
+    results = results.filter((r) => !excludeSymbols.includes(r.symbol));
+  }
+
+  return results;
+};
 
 // Agent subsystem — registry + protocol stack. Created before WorkerRuntime so the
 // actor factory can subscribe streams and register actors on creation.
