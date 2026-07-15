@@ -1076,7 +1076,7 @@ export async function telegramWebhookHandler(
     }
   }
 
-  app.post<{ Body: unknown }>('/api/telegram/webhook', async (request, reply) => {
+  app.post<{ Body: unknown }>('/telegram/webhook', async (request, reply) => {
     if (!botToken || !webhookSecret) {
       return reply.status(501).send({ error: 'not_configured' });
     }
