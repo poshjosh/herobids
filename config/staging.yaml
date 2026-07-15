@@ -26,10 +26,6 @@ agentRuntime:
       lightModel: deepseek/deepseek-v4-flash  # suggested economy (scout) model
       heavyModel: deepseek/deepseek-v4-pro    # suggested premium (judge) model
 
-# Billing — mock by default in staging. No real charges.
-billing:
-  primaryProvider: mock                       # 'mock' | 'creem' | 'stripe'
-
 # Live trading — explicitly disabled for staging safety.
 # Override with LIVE_ROLLOUT_ENABLED=true only for targeted smoke tests.
 liveRollout:
@@ -41,3 +37,117 @@ alerts:
   enabled: false
   email:
     brandImageUrl: https://staging.openaidom.com/brand/wordmark-dark.png
+
+# Plan enforcement — coarse resource limits per user plan.
+#
+# - plans...includedCreditCents is for usage.
+# - billling...amountCents is for access to our services i.e. subscription.
+# Example:
+# plans.<planId>.usage.includedCreditCents = 1000 (USD 10)
+# billing.<provider>.plan<Product|Pricing>.interval = monthly
+# billing.<provider>.plan<Product|Pricing>.amountCents = 1000 (USD 10)
+# For the above example: 
+# - user pays amountCents per month for access to our services
+# - usage is deducted from includedCreditCents
+plans:
+  defaultPlanId: free # required
+  plans:
+    free:
+      entitlements: # required
+        skills:
+          canCreatePrivateSkills: false
+          canViewMarketplaceSkills: true
+          canPublishToMarketplace: true
+          autoPublishNonDraftSkills: true
+          canPriceSkills: false
+          canLikeMarketplaceSkills: true
+        agents:
+          canViewOwnPrompts: false
+        limits:
+          maxAgents: 1
+          maxBots: 2
+          maxConnections: 2
+          maxCredentials: 2
+          maxBindings: 2
+          maxVenueAccounts: 2
+          maxConcurrentBacktests: 0
+          liveEnabled: true
+      usage: # required
+        includedCreditCents: 0
+        topUpPackIds: 
+          - topup5
+          - topup20
+          - topup50
+          - topup100
+    starter:
+      entitlements: # required
+        skills:
+          canCreatePrivateSkills: true
+          canViewMarketplaceSkills: true
+          canPublishToMarketplace: true
+          autoPublishNonDraftSkills: false
+          canPriceSkills: true
+          canLikeMarketplaceSkills: true
+        agents:
+          canViewOwnPrompts: false
+        limits:
+          maxAgents: 3
+          maxBots: 5
+          maxConnections: 5
+          maxCredentials: 5
+          maxBindings: 5
+          maxVenueAccounts: 5
+          maxConcurrentBacktests: 3
+          liveEnabled: true
+      usage: # required
+        includedCreditCents: 2000
+        topUpPackIds: 
+          - topup5
+          - topup20
+          - topup50
+          - topup100
+          
+# Billing — multi-provider subscription billing.
+# Use 'mock' for local dev/CI (no credentials needed — checkout auto-fulfills instantly).
+# Switch to 'creem' or 'stripe' in production once provider credentials are set.
+billing:
+  primaryProvider: creem                      # 'mock' | 'creem' | 'stripe'
+  fallbackProvider: mock                      # optional — uncomment to enable failover
+  stripe:
+    secretKey: ""                             # override: STRIPE_SECRET_KEY
+    webhookSecret: ""                         # override: STRIPE_WEBHOOK_SECRET
+    customerPortalConfigurationId: ""         # optional Stripe portal config ID
+    planPrices: {}                            # map of planId → [{stripePriceId, interval, displayLabel, amountCents}]
+  creem:
+    apiKey: ""                               # override: CREEM_API_KEY
+    webhookSecret: ""                        # override: CREEM_WEBHOOK_SECRET
+    apiBaseUrl: https://api.creem.io/v1      # auto-switches to test-api if key starts with creem_test_
+    planProducts: {}                          # map of planId → [{creemProductId, interval, displayLabel, amountCents}]
+
+# Commercial usage billing — metering, rate cards, spend-state enforcement, and credit ledger.
+usageBilling:
+  defaultCurrency: USD
+  runtimeChargeWindowMs: 60000             # coarse agent runtime metering window in ms
+  warningThresholdsPct: [80, 100]          # % of hard cap at which to emit spend warnings
+  defaultRateCardName: default             # rate card to use when opening new billing periods
+  creditTopUpsEnabled: true                # whether users can purchase credit top-ups
+  topUpProductsByProvider:                 # provider → [{packId, externalId, cents}]
+    creem:
+      - packId: topup5
+        externalId: topup5
+        cents: 500        
+      - packId: topup20
+        externalId: topup20
+        cents: 2000        
+      - packId: topup50
+        externalId: topup50
+        cents: 5000        
+      - packId: topup100
+        externalId: topup100
+        cents: 10000
+  fallbackCacheReadPct: 75                 # % of input rate to use as cache-read rate when provider has no explicit cache price
+  failedRequestOutputPct: 75               # % of maxTokens to bill as estimated output on failed (timeout/server-error) LLM calls
+  defaultRateCardItems:                    # seed items for how much each type of agent activity costs
+    - meterKey: "agent.runtime_ms"
+      priceMicrousd: 100
+      perUnit: 60000 

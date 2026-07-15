@@ -560,6 +560,8 @@ liveRollout:
   allowedVenues:                          # venues permitted to execute live orders
     - hyperliquid
     - 1inch
+    - bybit
+    - jupiter
   requireDbCredentials: true              # reject env-var credential fallback for live mode
   maxInitialOrderNotionalUsd: "10000"     # hard cap on single-order notional (USD) during rollout
   maxConsecutiveVenueErrors: 3            # circuit-breaker: halt after N consecutive venue errors
