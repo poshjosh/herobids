@@ -151,7 +151,7 @@ const COMMAND_HELP: CommandHelpEntry[] = [
   { command: 'restart', syntax: '/restart <agent>', description: 'Stop then start an agent', category: 'lifecycle' },
 
   { command: 'mode', syntax: '/mode <agent> [mode]', description: 'Show or set execution mode', category: 'config' },
-  { command: 'connect', syntax: '/connect <agent> [id|label]', description: 'Grant or setup a connection', category: 'config' },
+  { command: 'connect', syntax: '/connect <agent> [id|label]', description: 'Start or assign a connection', category: 'config' },
   { command: 'disconnect', syntax: '/disconnect <agent> <id|label>', description: 'Revoke a connection', category: 'config' },
 
   { command: 'to', syntax: '/to <agent> <message>', description: 'Send a message to an agent', category: 'messaging' },
@@ -286,12 +286,12 @@ const DETAILED_HELP: Record<string, string> = {
   connect: [
     '/connect <agent> [id|label]',
     '',
-    'Grants a connection to an agent. The agent must be stopped.',
-    'Without an id/label: if you have active connections, lists them.',
-    '  If you have none, generates a one-time setup link.',
+    'Starts the connection flow for an agent. The agent must be stopped.',
+    'Without an id/label: shows assignable active connections and, when available,',
+    '  a one-time setup link for creating a new one.',
     'With an id or label: grants the matching connection to the agent.',
     'Examples:',
-    '  /connect Momentum                  — list connections or get setup link',
+    '  /connect Momentum                  — choose a connection or get a setup link',
     '  /connect Momentum conn_abc123      — grant by ID',
     '  /connect Momentum "Hyperliquid Main" — grant by label',
   ].join('\n'),

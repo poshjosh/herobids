@@ -755,12 +755,8 @@ export async function telegramWebhookHandler(
           return;
         }
 
-        // ── /connect <agent> (no connection id) — setup link flow ──────
+        // ── /connect <agent> (no connection id) — connect entrypoint flow ──
         if (slashCmd.command === 'connect' && slashCmd.args.length === 1) {
-          if (!authConfig) {
-            await sendTelegramText(chatId, 'Setup links are not available on this platform.');
-            return;
-          }
           const response = await handleConnectSetup(db, redisClient, authConfig, userId, slashCmd.args);
           await sendTelegramText(chatId, response);
           return;

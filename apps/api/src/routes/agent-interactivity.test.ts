@@ -1207,4 +1207,45 @@ describe('POST /telegram/webhook', () => {
     expect(String((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? '')).toContain('No agent named GhostAgent found.');
     fetchSpy.mockRestore();
   });
+
+  it('handles /connect with existing connections even when setup links are unavailable', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount += 1;
+        if (selectCount === 1) {
+          return makeChain([{ userId: TEST_USER_ID }]);
+        }
+        if (selectCount === 2) {
+          return makeChain([{ ...stubAgent, name: 'Momentum', status: 'stopped' }]);
+        }
+        return makeChain([
+          { id: 'a2b32d6c-1111', label: '1inch', provider: '1inch', status: 'active' },
+        ]);
+      }),
+    } as unknown as Database;
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig(), undefined);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: {
+        message: {
+          chat: { id: '12345' },
+          text: '/connect Momentum',
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(res.statusCode).toBe(200);
+    const body = String((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? '');
+    expect(body).toContain('Choose a connection for Momentum:');
+    expect(body).toContain('Open the web app to create one.');
+    fetchSpy.mockRestore();
+  });
 });

@@ -619,6 +619,46 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     expect(text).toContain(AGENT_NAME);
   });
 
+  it('/connect <agent> with active connections lists them and still offers setup for a new one', async () => {
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount += 1;
+        if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
+        if (selectCount === 2) return makeChain([stubAgent({ status: 'stopped' })]);
+        return makeChain([
+          { id: 'a2b32d6c-1111', label: '1inch', provider: '1inch', status: 'active' },
+          { id: '2fec1431-2222', label: 'Hyperliquid', provider: 'hyperliquid', status: 'active' },
+        ]);
+      }),
+    } as unknown as Database;
+    const redis = {
+      ...buildMockRedis(),
+      ttl: vi.fn().mockResolvedValue(-1),
+      set: vi.fn().mockResolvedValue('OK'),
+    };
+    const app = Fastify();
+    const authConfig = {
+      jwtSecret: 'test-secret-at-least-32-chars-long!!',
+      loginLinkTtlSecs: 600,
+      loginLinkResendCooldownSecs: 60,
+      publicBaseUrl: 'https://herobids.com',
+    };
+    await telegramWebhookHandler(app, db, redis as unknown as Redis, buildAlertsConfig(), authConfig);
+
+    const res = await sendWebhook(app, `/connect ${AGENT_NAME}`);
+    expect(res.statusCode).toBe(200);
+    await flushPromises();
+
+    const text = sentText(fetchSpy);
+    expect(text).toContain(`Choose a connection for ${AGENT_NAME}:`);
+    expect(text).toContain('a2b32d6c... — 1inch: 1inch');
+    expect(text).toContain('2fec1431... — hyperliquid: Hyperliquid');
+    expect(text).toContain(`Use /connect ${AGENT_NAME} <id> or /connect ${AGENT_NAME} "label" to pick one.`);
+    expect(text).toContain('Need a new connection instead? Open this setup link:');
+    expect(text).toMatch(/https:\/\/herobids\.com\/auth\/setup-link\/callback\?token=/);
+  });
+
   // ── H1: /mode read-only (no second arg) ──────────────────────────────
 
   it('/mode <agent> (read-only) shows current execution mode', async () => {

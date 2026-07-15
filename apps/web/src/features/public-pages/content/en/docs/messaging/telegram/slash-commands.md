@@ -43,7 +43,7 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., `"DCA 
 |---|---|
 | `/mode <agent>` | Show current execution mode |
 | `/mode <agent> <test\|live>` | Set execution mode (agent must be stopped) |
-| `/connect <agent>` | List connections or create a new connection for the agent, if there is no connection |
+| `/connect <agent>` | Start the connection flow: choose one of your active connections or create a new one |
 | `/connect <agent> <connection id or name>` | Grant a connection to an agent |
 | `/disconnect <agent> <connection id or name>` | Revoke a connection from an agent |
 

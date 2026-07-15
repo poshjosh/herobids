@@ -572,14 +572,15 @@ export async function handleConnections(
 /**
  * Handle `/connect <agent>` with no connection ID argument.
  *
- * If the user has no active connections, generates a one-time auto-login setup
- * link and returns it. If the user already has active connections, lists them.
- * The target agent must be stopped.
+ * This is the action entrypoint for the connection flow. It always helps the
+ * user take a next step: list assignable active connections, and when setup
+ * links are available, include a one-time auto-login link for creating a new
+ * one. The target agent must be stopped.
  */
 export async function handleConnectSetup(
   db: Database,
   redis: Redis,
-  authConfig: AuthConfig,
+  authConfig: AuthConfig | undefined,
   userId: string,
   args: string[],
 ): Promise<string> {
@@ -603,6 +604,45 @@ export async function handleConnectSetup(
       return `Cannot change connections: ${agent.name} is ${agent.status}. Stop the agent first.`;
     }
 
+    const cooldownSecs = authConfig?.loginLinkResendCooldownSecs ?? 60;
+    const cooldownKey = `auth:setup-link:cooldown:${userId}`;
+
+    async function getSetupLinkLines(agentName: string, intro: string): Promise<string[]> {
+      if (!authConfig) {
+        return [
+          'Need a new connection instead? Open the web app to create one.',
+        ];
+      }
+
+      const cooldownTtl = await redis.ttl(cooldownKey);
+      if (cooldownTtl > 0) {
+        return [
+          `Need a new connection instead? Please wait ${cooldownTtl}s before requesting another setup link, or open the web app.`,
+        ];
+      }
+
+      const token = await createAndStoreSetupLinkToken(
+        redis,
+        userId,
+        authConfig.loginLinkTtlSecs,
+      );
+
+      await redis.set(cooldownKey, '1', 'EX', cooldownSecs);
+
+      const setupUrl = makeSetupLinkUrl(token, authConfig.publicBaseUrl);
+      const ttlMinutes = Math.round(authConfig.loginLinkTtlSecs / 60);
+
+      return [
+        intro,
+        setupUrl.toString(),
+        '',
+        'This link logs you in automatically and opens the connection form.',
+        `Expires in ${ttlMinutes} minutes — do not share this link.`,
+        '',
+        `After creating the connection, use /connect ${agentName} <id> to assign it to ${agentName}.`,
+      ];
+    }
+
     // Query user's active connections
     const userConnections = await db.select({
       id: connections.id,
@@ -616,14 +656,16 @@ export async function handleConnectSetup(
       ))
       .orderBy(connections.provider, connections.label);
 
-    // If user has active connections, list them
+    // If user has active connections, list them and offer setup for a new one.
     if (userConnections.length > 0) {
+      const setupLinkLines = await getSetupLinkLines(agent.name, 'Need a new connection instead? Open this setup link:');
       const lines = [
-        `You have these active connections:`,
+        `Choose a connection for ${agent.name}:`,
         ...userConnections.map((c) => `  ${c.id.slice(0, 8)}... — ${c.provider}: ${c.label}`),
         '',
         `Use /connect ${agent.name} <id> or /connect ${agent.name} "label" to pick one.`,
-        'To create a new connection, use /connections to see the full list or open the web app.',
+        '',
+        ...setupLinkLines,
       ];
       return lines.join('\n');
     }
@@ -632,43 +674,11 @@ export async function handleConnectSetup(
     const [anyConnection] = await db.select({ id: connections.id }).from(connections)
       .where(eq(connections.userId, userId))
       .limit(1);
-    const hasInactiveNote = anyConnection
-      ? '\nYou have connections but none are active. Visit the web app to manage them, or create a new one below.'
-      : '';
+    const setupLinkLines = await getSetupLinkLines(agent.name, `🔗 Open this link to connect a platform for ${agent.name}:`);
 
-    // Rate-limit setup link generation — per-user cooldown
-    const cooldownSecs = authConfig.loginLinkResendCooldownSecs ?? 60;
-    const cooldownKey = `auth:setup-link:cooldown:${userId}`;
-    const cooldownTtl = await redis.ttl(cooldownKey);
-    if (cooldownTtl > 0) {
-      return `Please wait ${cooldownTtl}s before requesting another link.`;
-    }
-
-    // No active connections — generate a one-time setup link
-    const token = await createAndStoreSetupLinkToken(
-      redis,
-      userId,
-      authConfig.loginLinkTtlSecs,
-    );
-
-    // Apply cooldown after successful token creation
-    await redis.set(cooldownKey, '1', 'EX', cooldownSecs);
-
-    const setupUrl = makeSetupLinkUrl(token, authConfig.publicBaseUrl);
-    const ttlMinutes = Math.round(authConfig.loginLinkTtlSecs / 60);
-
-    const lines = [
-      `🔗 Open this link to connect a platform for ${agent.name}:`,
-      setupUrl.toString(),
-      '',
-      `This link logs you in automatically and opens the connection form.`,
-      `Expires in ${ttlMinutes} minutes — do not share this link.`,
-    ];
-    if (hasInactiveNote) lines.push(hasInactiveNote);
-    lines.push(
-      '',
-      `After creating the connection, use /connect ${agent.name} <id> to assign it to ${agent.name}.`,
-    );
+    const lines = anyConnection
+      ? ['You have connections but none are active. Visit the web app to manage them, or create a new one below.', '', ...setupLinkLines]
+      : setupLinkLines;
     return lines.join('\n');
   } catch (error) {
     console.error('handleConnectSetup failed:', error);
