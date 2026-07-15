@@ -187,6 +187,11 @@ export interface MarketDataConfig {
     apiKey: string;
     cacheTtlMs: number;
   };
+  scrapfly: {
+    baseUrl: string;
+    asp: boolean;
+    requestTimeoutMs: number;
+  };
   economicCalendar: {
     enabled: boolean;
     daysForward: number;
