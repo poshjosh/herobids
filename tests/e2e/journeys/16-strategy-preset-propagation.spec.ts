@@ -93,8 +93,8 @@ test.describe('Journey 16: Strategy preset propagation', () => {
 
     await page.getByRole('button', { name: /Momentum.*Day/i }).click();
 
-    // ── Review → Create ──────────────────────────────────────────────────
-    await page.getByRole('button', { name: /review/i }).click();
+    // ── Review → Create (may appear twice — top and bottom of Advanced Settings) ──
+    await page.getByRole('button', { name: /review/i }).first().click();
     await page
       .getByRole('button', { name: /^Create AI agent$/i })
       .last()
