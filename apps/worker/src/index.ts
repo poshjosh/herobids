@@ -1744,9 +1744,8 @@ if (ecConfig?.enabled && SCRAPFLY_API_KEY) {
         requestTimeoutMs: appConfig.marketData!.scrapfly.requestTimeoutMs,
       }),
       parseHtmlFn: createLlmCalendarParser({
-        apiKey: process.env[`LLM_API_KEY_${appConfig.llm.provider.toUpperCase()}`] || process.env['LLM_API_KEY'],
-        baseUrl: process.env['LLM_BASE_URL'],
-        model: appConfig.llm.model,
+        baseUrl: appConfig.llm.baseUrl,
+        model: appConfig.agentRuntime.llm.modelDefaults.lightModel,
         timeoutMs: appConfig.llm.timeoutMs,
       }),
     } satisfies ForexFactoryAdapterConfig,
