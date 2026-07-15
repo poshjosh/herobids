@@ -6,9 +6,16 @@ import type {
   Result,
 } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
+import { parse as parseHtml, type HTMLElement } from 'node-html-parser';
 import type { RequestGate } from './types.js';
 import { fetchText } from './http.js';
 import type { ProviderResponseCache } from './cache.js';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export type EconomicCalendarParserFn = (html: string) => Promise<EconomicEvent[]>;
 
 // ============================================================================
 // Config interfaces
@@ -21,8 +28,8 @@ export interface ForexFactoryAdapterConfig {
   userAgent: string;
   rateLimiter: RequestGate;
   fetchFn?: typeof fetch;
-  /** Optional LLM-based HTML parser. When provided, replaces the built-in regex parser. */
-  parseHtmlFn?: (html: string) => Promise<EconomicEvent[]>;
+  /** Optional HTML parser. When provided, replaces the built-in regex parser. */
+  parseHtmlFn?: EconomicCalendarParserFn;
 }
 
 export interface CompositeEconomicCalendarConfig {
@@ -48,6 +55,107 @@ const IMPACT_RANK: Record<string, number> = {
 };
 
 const SOURCE_FOREX_FACTORY = 'forex-factory';
+
+// ============================================================================
+// DOM-based HTML parser
+// ============================================================================
+
+/**
+ * Resolve impact level from a calendar row element.
+ *
+ * Forex Factory uses two impact indicator systems:
+ * 1. Universal impact classes on an icon element:
+ *    `universal-impact__impact-high`, `universal-impact__impact-medium`,
+ *    `universal-impact__impact-low`
+ * 2. Legacy color-based icon classes:
+ *    `icon--ff-impact-red` (high), `icon--ff-impact-ora` (medium),
+ *    `icon--ff-impact-yel` (low), `icon--ff-impact-gra` (none)
+ *
+ * Preference is given to the universal classes.
+ */
+function resolveImpact(row: HTMLElement): 'high' | 'medium' | 'low' {
+  const iconEl = row.querySelector('.icon');
+  if (iconEl) {
+    const cls = iconEl.getAttribute('class') ?? '';
+    if (/universal-impact__impact-high/.test(cls)) return 'high';
+    if (/universal-impact__impact-medium/.test(cls)) return 'medium';
+    if (/universal-impact__impact-low/.test(cls)) return 'low';
+    // Legacy color-based fallback
+    if (/icon--ff-impact-red/.test(cls)) return 'high';
+    if (/icon--ff-impact-ora/.test(cls)) return 'medium';
+    if (/icon--ff-impact-yel/.test(cls)) return 'low';
+  }
+  return 'medium';
+}
+
+/**
+ * Create a DOM-based calendar parser using `node-html-parser`.
+ *
+ * Returns a function that parses Forex Factory calendar HTML and extracts
+ * structured `EconomicEvent[]`. No LLM, no network — pure DOM extraction.
+ */
+export function createDomCalendarParser(): EconomicCalendarParserFn {
+  return async (html: string): Promise<EconomicEvent[]> => {
+    const root = parseHtml(html);
+    const table = root.querySelector('table.calendar__table');
+    if (!table) throw new Error('Calendar table not found');
+
+    const events: EconomicEvent[] = [];
+    const rows = table.querySelectorAll('tr.calendar__row');
+
+    for (const row of rows) {
+      // Skip day-breaker rows
+      if (row.classList.contains('calendar__row--day-breaker')) continue;
+
+      const time = row.querySelector('.calendar__time')?.textContent?.trim() ?? '';
+      const currency = row.querySelector('.calendar__currency')?.textContent?.trim() ?? '';
+      const event = row.querySelector('.calendar__event')?.textContent?.trim() ?? '';
+      const forecast = row.querySelector('.calendar__forecast')?.textContent?.trim() || null;
+      const previous = row.querySelector('.calendar__previous')?.textContent?.trim() || null;
+
+      if (!event || !time) continue;
+
+      events.push({
+        time: normalizeTime(time),
+        currency: currency.toUpperCase().slice(0, 3),
+        event,
+        impact: resolveImpact(row),
+        forecast: forecast || null,
+        previous: previous || null,
+        sources: ['forex-factory'],
+      });
+    }
+
+    return events;
+  };
+}
+
+/**
+ * Normalize time strings from Forex Factory format to ISO-8601 UTC.
+ * Forex Factory displays times like "9:30am", "2:00pm", "All Day", "Tentative".
+ * Returns the best-effort ISO string.
+ */
+function normalizeTime(raw: string): string {
+  const trimmed = raw.trim();
+  // Already ISO
+  if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) return trimmed;
+
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})(am|pm)/i);
+  if (match) {
+    let hour = parseInt(match[1]!, 10);
+    const min = match[2]!;
+    const ampm = match[3]!.toLowerCase();
+    if (ampm === 'pm' && hour < 12) hour += 12;
+    if (ampm === 'am' && hour === 12) hour = 0;
+    return `${today}T${String(hour).padStart(2, '0')}:${min}:00Z`;
+  }
+
+  // "All Day", "Tentative", etc. — use noon UTC as a placeholder
+  return `${today}T12:00:00Z`;
+}
 
 // ============================================================================
 // LLM-based HTML parser factory
@@ -84,11 +192,11 @@ export function createLlmCalendarParser(
   }
 
   return async (html: string): Promise<EconomicEvent[]> => {
-    // Extract calendar table only (reduce token usage from ~100K to ~20K chars)
-    const tableMatch = html.match(
-      /<table[^>]*class\s*=\s*["'][^"']*calendar[^"']*["'][^>]*>([\s\S]*?)<\/\s*table\s*>/i,
-    );
-    const tableHtml = tableMatch?.[1] ?? html;
+    // Use node-html-parser for reliable table extraction (handles nested
+    // tables, malformed markup, and class variants better than regex).
+    const root = parseHtml(html);
+    const table = root.querySelector('table.calendar__table');
+    const tableHtml = table?.outerHTML ?? html;
 
     const systemPrompt = `Extract economic calendar events from this HTML table.
 Return a JSON array. Each event: { time: "ISO-8601 UTC", currency: "3-char code uppercase", event: "title", impact: "high|medium|low", forecast: string|null, previous: string|null }.
@@ -139,6 +247,39 @@ Only return JSON, no other text.`;
         sources: ['forex-factory'],
       };
     });
+  };
+}
+
+// ============================================================================
+// Fallback parser — DOM first, LLM on failure
+// ============================================================================
+
+/**
+ * Create a fallback calendar parser that tries DOM extraction first, then
+ * falls back to LLM-based extraction if the DOM parser fails (e.g. Forex
+ * Factory changed its markup).
+ *
+ * In the common case (DOM succeeds), the LLM is never called — zero cost,
+ * sub-10ms. The LLM parser only activates when the DOM parser throws.
+ */
+export function createFallbackCalendarParser(
+  llmConfig: LlmCalendarParserConfig,
+): EconomicCalendarParserFn {
+  const domParser = createDomCalendarParser();
+  const llmParser = createLlmCalendarParser(llmConfig);
+
+  return async (html: string): Promise<EconomicEvent[]> => {
+    try {
+      return await domParser(html);
+    } catch (domError) {
+      try {
+        return await llmParser(html);
+      } catch (llmError) {
+        throw new Error(
+          `Calendar parse failed: DOM (${(domError as Error).message}), LLM (${(llmError as Error).message})`,
+        );
+      }
+    }
   };
 }
 

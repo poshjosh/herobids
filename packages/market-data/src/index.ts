@@ -117,9 +117,12 @@ export {
   ForexFactoryCalendarAdapter,
   CompositeEconomicCalendarProvider,
   createLlmCalendarParser,
+  createDomCalendarParser,
+  createFallbackCalendarParser,
   type ForexFactoryAdapterConfig,
   type CompositeEconomicCalendarConfig,
   type LlmCalendarParserConfig,
+  type EconomicCalendarParserFn,
 } from './economic-calendar.js';
 export { fetchText } from './http.js';
 export { createScrapflyFetch, type ScrapflyConfig } from './scrapfly.js';
