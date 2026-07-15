@@ -946,6 +946,11 @@ export const MarketDataConfigSchema = z.object({
     apiKey: z.string().default(''),
     cacheTtlMs: z.number().int().min(0).default(3_600_000),
   }).default({}),
+  scrapfly: z.object({
+    baseUrl: z.string().url().default('https://api.scrapfly.io/scrape'),
+    asp: z.boolean().default(true),
+    requestTimeoutMs: z.number().int().min(1_000).default(60_000),
+  }).default({}),
   discovery: z.object({
     maxResults: z.number().int().min(1).max(100).default(50),
     geckoTerminalExtraPages: z.number().int().min(0).max(10).default(0),

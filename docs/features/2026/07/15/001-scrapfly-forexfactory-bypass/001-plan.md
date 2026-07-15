@@ -1,6 +1,6 @@
 # Plan: Scrapfly Proxy for Forex Factory (Cloudflare Bypass)
 
-**Status:** Proposed — not yet implemented
+**Status:** In Progress — implementing
 **Date:** 2026-07-15
 **Depends on:** `docs/features/2026/07/09/001-macro-economic-context/001-plan.md` (ships `ForexFactoryCalendarAdapter`)
 
@@ -351,19 +351,19 @@ SCRAPFLY_API_KEY=
 
 ## Implementation Steps
 
-1. **Schema:** add the non-secret `scrapfly` sub-schema (`baseUrl`, `asp`, `requestTimeoutMs` — no `apiKey`, no `enabled`) to `MarketDataConfigSchema` in [packages/domain/src/config/schema.ts](../../../../packages/domain/src/config/schema.ts).
-2. **Default config:** add `marketData.scrapfly` block to [config/default.yaml](../../../../config/default.yaml); bump `economicCalendar.forexFactory.requestTimeoutMs` to `60000`.
-3. **New module:** create `packages/market-data/src/scrapfly.ts` (`ScrapflyConfig`, `createScrapflyFetch`) + unit tests in `scrapfly.test.ts`; export from `packages/market-data/src/index.ts`.
-4. **Agent wiring:** update `apps/worker/src/agent.ts` to read `process.env['SCRAPFLY_API_KEY']` directly and select `createScrapflyFetch(...)` vs `fetchHttp1` for the Forex Factory `fetchFn`.
-5. **Container env forwarding:** add `SCRAPFLY_API_KEY` passthrough to both `apps/worker/src/agents/docker-agent-manager.ts` and `apps/worker/src/agents/runtime-lifecycle.ts`'s `buildAgentEnv()`, next to the existing `TAVILY_API_KEY` lines; add matching tests in `apps/worker/src/agents/runtime-lifecycle.test.ts` (mirror the existing Tavily forwarding test cases).
-6. **`.env.example`:** refine the `SCRAPFLY_API_KEY` comment (see above).
-7. **Deployment secrets:** add `SCRAPFLY_API_KEY` to `infra/hetzner/.env.staging` (and `.env.prod` when it exists) — confirm with whoever holds staging server access whether a redeploy or just a container restart is needed to pick it up.
-8. **Documentation:** add `SCRAPFLY_API_KEY` to the "Agent-Safe" table in `docs/features/2026/07/08/004-orchestration/003-cluster-safe-connectivity.md`, next to `TAVILY_API_KEY`.
-9. **Manual verification script:** check `scripts/ts/test-forexfactory-parser.ts` — update or extend it to optionally exercise the Scrapfly path locally (behind the same `SCRAPFLY_API_KEY` env var) so it can be used to sanity-check the integration before deploying to staging.
-10. **Local verification:** run the updated script locally with `SCRAPFLY_API_KEY` set, confirm HTML comes back and the LLM parser extracts events.
-11. **Staging verification (manual, post-deploy):** after deploying to the Hetzner staging box, confirm `marketData.economicCalendar.enabled` agents log `'Economic calendar fetched'` (not `'... fetch failed'` / `'... provider threw'`) in worker/agent logs. This is the actual bug repro — cannot be verified locally.
-12. **Tests:** `pnpm --filter @herobids/market-data run test`, `pnpm --filter @herobids/worker run test`, then `pnpm lint` and `pnpm build` at the repo root.
-13. **Changelog:** add an entry to `CHANGELOG.md` once implemented and verified on staging.
+1. **[PENDING] Schema:** add the non-secret `scrapfly` sub-schema (`baseUrl`, `asp`, `requestTimeoutMs` — no `apiKey`, no `enabled`) to `MarketDataConfigSchema` in [packages/domain/src/config/schema.ts](../../../../packages/domain/src/config/schema.ts).
+2. **[PENDING] Default config:** add `marketData.scrapfly` block to [config/default.yaml](../../../../config/default.yaml); bump `economicCalendar.forexFactory.requestTimeoutMs` to `60000`.
+3. **[PENDING] New module:** create `packages/market-data/src/scrapfly.ts` (`ScrapflyConfig`, `createScrapflyFetch`) + unit tests in `scrapfly.test.ts`; export from `packages/market-data/src/index.ts`.
+4. **[PENDING] Agent wiring:** update `apps/worker/src/agent.ts` to read `process.env['SCRAPFLY_API_KEY']` directly and select `createScrapflyFetch(...)` vs `fetchHttp1` for the Forex Factory `fetchFn`.
+5. **[PENDING] Container env forwarding:** add `SCRAPFLY_API_KEY` passthrough to both `apps/worker/src/agents/docker-agent-manager.ts` and `apps/worker/src/agents/runtime-lifecycle.ts`'s `buildAgentEnv()`, next to the existing `TAVILY_API_KEY` lines; add matching tests in `apps/worker/src/agents/runtime-lifecycle.test.ts` (mirror the existing Tavily forwarding test cases).
+6. **[PENDING] `.env.example`:** refine the `SCRAPFLY_API_KEY` comment (see above).
+7. **[PENDING] Deployment secrets:** add `SCRAPFLY_API_KEY` to `infra/hetzner/.env.staging` (and `.env.prod` when it exists) — confirm with whoever holds staging server access whether a redeploy or just a container restart is needed to pick it up.
+8. **[PENDING] Documentation:** add `SCRAPFLY_API_KEY` to the "Agent-Safe" table in `docs/features/2026/07/08/004-orchestration/003-cluster-safe-connectivity.md`, next to `TAVILY_API_KEY`.
+9. **[PENDING] Manual verification script:** check `scripts/ts/test-forexfactory-parser.ts` — update or extend it to optionally exercise the Scrapfly path locally (behind the same `SCRAPFLY_API_KEY` env var) so it can be used to sanity-check the integration before deploying to staging.
+10. **[PENDING] Local verification:** run the updated script locally with `SCRAPFLY_API_KEY` set, confirm HTML comes back and the LLM parser extracts events.
+11. **[PENDING] Staging verification (manual, post-deploy):** after deploying to the Hetzner staging box, confirm `marketData.economicCalendar.enabled` agents log `'Economic calendar fetched'` (not `'... fetch failed'` / `'... provider threw'`) in worker/agent logs. This is the actual bug repro — cannot be verified locally.
+12. **[PENDING] Tests:** `pnpm --filter @herobids/market-data run test`, `pnpm --filter @herobids/worker run test`, then `pnpm lint` and `pnpm build` at the repo root.
+13. **[PENDING] Changelog:** add an entry to `CHANGELOG.md` once implemented and verified on staging.
 
 ## Testing Plan
 
