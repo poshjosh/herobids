@@ -205,12 +205,8 @@ body {
   }
 
   /* ─── Brand Logo Responsive ──────────────────────────────────────────────────
-   * Collapses the full brand logo to mark-only on small viewports.
-   * Applied automatically by BrandLogo when display="full".
+   * The wordmark now stays visible on all viewports.
    * ──────────────────────────────────────────────────────────────────────────── */
-  .brand-wordmark.brand-wordmark-responsive {
-    display: none;
-  }
 }
 
 /* ─── Brand Logo ────────────────────────────────────────────────────────────── */

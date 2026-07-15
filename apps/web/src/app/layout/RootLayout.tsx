@@ -53,7 +53,7 @@ export function RootLayout() {
           >
             ☰
           </button>
-          <BrandLogo display="mark" variant="dark" size="sm" />
+          <BrandLogo display="full" variant="dark" size="sm" />
         </div>
 
         <div style={{ flex: 1 }}>
