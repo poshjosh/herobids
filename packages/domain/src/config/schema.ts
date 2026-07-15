@@ -734,12 +734,13 @@ export const UsageBillingConfigSchema = z.object({
     })),
   ).default({}),
 }).superRefine((data, ctx) => {
-  const packIdOwners = new Map<string, string>();
-
+  // Only enforce uniqueness within each provider — the same packId may
+  // appear across providers because it represents the same logical product
+  // (e.g. "$5 top-up"), just with different payment processing.
   for (const [provider, packs] of Object.entries(data.topUpProductsByProvider)) {
-    const providerPackIds = new Set<string>();
+    const seen = new Set<string>();
     packs.forEach((pack, index) => {
-      if (providerPackIds.has(pack.packId)) {
+      if (seen.has(pack.packId)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: `topUpProductsByProvider packId '${pack.packId}' must be unique within provider '${provider}'`,
@@ -747,18 +748,7 @@ export const UsageBillingConfigSchema = z.object({
         });
         return;
       }
-      providerPackIds.add(pack.packId);
-
-      const existingProvider = packIdOwners.get(pack.packId);
-      if (existingProvider && existingProvider !== provider) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `topUpProductsByProvider packId '${pack.packId}' must be unique across providers (already used by '${existingProvider}')`,
-          path: ['topUpProductsByProvider', provider, index, 'packId'],
-        });
-        return;
-      }
-      packIdOwners.set(pack.packId, provider);
+      seen.add(pack.packId);
     });
   }
 });

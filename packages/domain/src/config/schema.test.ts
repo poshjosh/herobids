@@ -38,7 +38,7 @@ describe('UsageBillingConfigSchema', () => {
     })).toThrow();
   });
 
-  it('rejects duplicate pack IDs across providers', () => {
+  it('allows duplicate pack IDs across providers (same logical product, different payment processing)', () => {
     expect(() => UsageBillingConfigSchema.parse({
       topUpProductsByProvider: {
         stripe: [
@@ -48,7 +48,7 @@ describe('UsageBillingConfigSchema', () => {
           { packId: 'starter_500', externalId: 'product_1', cents: 500 },
         ],
       },
-    })).toThrow();
+    })).not.toThrow();
   });
 
   it('rejects duplicate pack IDs within a single provider', () => {
