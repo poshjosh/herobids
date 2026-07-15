@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed telegram messaging by dropping `/api` from url prefix.
+
 ### Added
 
 - **Technical Scanner Data Inputs for Agents:** Wired market data sources (Hyperliquid asset contexts via `discoverCandidates`, Binance candles via `fetchCandles`) and per-agent `TechnicalConfig` into `AgentTradingActor`. Hybrid/scanner_gated agents now receive pre-scored signals from the technical scanner loop. Zero new files, zero schema changes — pure integration wiring in `apps/worker/src/index.ts`.
