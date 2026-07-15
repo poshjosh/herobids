@@ -741,7 +741,7 @@ function CreateAgentFlow({
 
   if (step === 'intent') {
     return (
-      <Modal title={intl.formatMessage({ id: 'agents.create.title' })} onClose={onClose}>
+      <Modal title={intl.formatMessage({ id: 'agents.create.title' })} onClose={onClose} closeOnBackdropClick={false}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
           {/* 1. Skill Preset — first, sets context for everything else */}
@@ -1357,7 +1357,7 @@ function CreateAgentFlow({
   }
 
   return (
-    <Modal title={intl.formatMessage({ id: 'agents.review.title' })} onClose={onClose}>
+    <Modal title={intl.formatMessage({ id: 'agents.review.title' })} onClose={onClose} closeOnBackdropClick={false}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
           <tbody>

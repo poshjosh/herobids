@@ -413,7 +413,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   };
 
   return (
-    <Modal title={intl.formatMessage({ id: 'agents.edit.title' })} onClose={onClose}>
+    <Modal title={intl.formatMessage({ id: 'agents.edit.title' })} onClose={onClose} closeOnBackdropClick={false}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <form id="edit-agent-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Skill Preset — same label as create agent form */}

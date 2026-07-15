@@ -485,10 +485,10 @@ export const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box',
 };
 
-export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+export function Modal({ title, onClose, closeOnBackdropClick = true, children }: { title: string; onClose: () => void; closeOnBackdropClick?: boolean; children: React.ReactNode }) {
   return (
     <div
-      onClick={onClose}
+      onClick={closeOnBackdropClick ? onClose : undefined}
       style={{
         position: 'fixed',
         inset: 0,
