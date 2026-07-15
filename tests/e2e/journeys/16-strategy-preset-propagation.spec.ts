@@ -77,15 +77,11 @@ test.describe('Journey 16: Strategy preset propagation', () => {
       await page.waitForTimeout(300);
     }
 
-    // ── Set Filter Trades to Mixed ────────────────────────────────────────
-    const preFilterSwitch = page.getByRole('switch');
-    if ((await preFilterSwitch.count()) > 0) {
-      const checked =
-        (await preFilterSwitch.getAttribute('aria-checked')) === 'true';
-      if (!checked) {
-        await preFilterSwitch.click();
-        await page.waitForTimeout(800); // wait for preset API call
-      }
+    // ── Set Filter Trades to Mixed (3-way button selector: Off / Mixed / Filter) ──
+    const mixedButton = page.getByRole('button', { name: /mixed/i });
+    if ((await mixedButton.count()) > 0) {
+      await mixedButton.first().click();
+      await page.waitForTimeout(800); // wait for preset API call
     }
 
     // ── Wait for presets to load, then select "Momentum — Day" ────────────
