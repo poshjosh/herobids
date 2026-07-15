@@ -120,3 +120,4 @@ export {
   type CompositeEconomicCalendarConfig,
 } from './economic-calendar.js';
 export { fetchText } from './http.js';
+export { createScrapflyFetch, type ScrapflyConfig } from './scrapfly.js';

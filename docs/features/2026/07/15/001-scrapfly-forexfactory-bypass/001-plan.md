@@ -351,7 +351,7 @@ SCRAPFLY_API_KEY=
 
 ## Implementation Steps
 
-1. **[PENDING] Schema:** add the non-secret `scrapfly` sub-schema (`baseUrl`, `asp`, `requestTimeoutMs` — no `apiKey`, no `enabled`) to `MarketDataConfigSchema` in [packages/domain/src/config/schema.ts](../../../../packages/domain/src/config/schema.ts).
+1. **[DONE] Schema:** add the non-secret `scrapfly` sub-schema (`baseUrl`, `asp`, `requestTimeoutMs` — no `apiKey`, no `enabled`) to `MarketDataConfigSchema` in [packages/domain/src/config/schema.ts](../../../../packages/domain/src/config/schema.ts).
 2. **[PENDING] Default config:** add `marketData.scrapfly` block to [config/default.yaml](../../../../config/default.yaml); bump `economicCalendar.forexFactory.requestTimeoutMs` to `60000`.
 3. **[PENDING] New module:** create `packages/market-data/src/scrapfly.ts` (`ScrapflyConfig`, `createScrapflyFetch`) + unit tests in `scrapfly.test.ts`; export from `packages/market-data/src/index.ts`.
 4. **[PENDING] Agent wiring:** update `apps/worker/src/agent.ts` to read `process.env['SCRAPFLY_API_KEY']` directly and select `createScrapflyFetch(...)` vs `fetchHttp1` for the Forex Factory `fetchFn`.
@@ -364,6 +364,13 @@ SCRAPFLY_API_KEY=
 11. **[PENDING] Staging verification (manual, post-deploy):** after deploying to the Hetzner staging box, confirm `marketData.economicCalendar.enabled` agents log `'Economic calendar fetched'` (not `'... fetch failed'` / `'... provider threw'`) in worker/agent logs. This is the actual bug repro — cannot be verified locally.
 12. **[PENDING] Tests:** `pnpm --filter @herobids/market-data run test`, `pnpm --filter @herobids/worker run test`, then `pnpm lint` and `pnpm build` at the repo root.
 13. **[PENDING] Changelog:** add an entry to `CHANGELOG.md` once implemented and verified on staging.
+
+## Outstanding Issues
+
+### [Item 3: New module — scrapfly.ts]
+- **MEDIUM — `requestTimeoutMs` dead field in `createScrapflyFetch`:** The `ScrapflyConfig.requestTimeoutMs` field is accepted but never consumed by `createScrapflyFetch`. The actual timeout is enforced by `fetchText()` via `economicCalendar.forexFactory.requestTimeoutMs`. Consider either using it to create a backstop `AbortController` composed with the caller's signal, or removing it from the interface with a JSDoc note that timeout is the caller's responsibility. (Decision: the plan intentionally delegates timeout to the caller's `AbortSignal`; `scrapfly.requestTimeoutMs` is a config knob available for future use or alternate call sites that don't go through `fetchText`.)
+- **LOW — `method` passthrough fragility:** `createScrapflyFetch` passes `init?.method ?? 'GET'` through to Scrapfly's `/scrape` endpoint, which only accepts GET. If a future caller passes POST, the error would be opaque. Consider hardcoding `'GET'` with a comment explaining Scrapfly's GET-only constraint.
+- **LOW — Missing explicit test for `undefined` init:** The code handles omitted `init` correctly via optional chaining, but no test explicitly validates behavior when `init` is not passed at all. Add a test case for completeness.
 
 ## Testing Plan
 
