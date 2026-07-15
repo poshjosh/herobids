@@ -106,6 +106,7 @@ These are passed to agent containers via `buildAgentEnv()`:
 | `MARKET_DATA_CONFIGURED` | Boolean flag |
 | `LLM_API_KEY` (and provider variants) | LLM API keys — required for agent to call LLMs |
 | `TAVILY_API_KEY` | Web search tool |
+| `SCRAPFLY_API_KEY` | Forex Factory Cloudflare bypass (Scrapfly proxy) |
 | `USAGE_BILLING_RATE_CARD` | Billing rate card |
 | `USAGE_BILLING_RUNTIME_WINDOW_MS` | Billing window |
 | `PROVIDERS_YAML` | Provider rate-card seeding |

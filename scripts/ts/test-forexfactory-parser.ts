@@ -4,12 +4,14 @@
  * Usage:
  *   npx tsx scripts/ts/test-forexfactory-parser.ts file.html        # regex parser
  *   npx tsx scripts/ts/test-forexfactory-parser.ts file.html --llm  # LLM parser
+ *   npx tsx scripts/ts/test-forexfactory-parser.ts --scrapfly       # live fetch via Scrapfly (requires SCRAPFLY_API_KEY)
  *   (--llm requires: LLM_API_KEY, LLM_BASE_URL, LLM_MODEL env vars)
  */
 
 import fs from 'node:fs';
 import https from 'node:https';
 import { ForexFactoryCalendarAdapter } from '../../packages/market-data/src/economic-calendar.js';
+import { createScrapflyFetch } from '../../packages/market-data/src/scrapfly.js';
 import type { EconomicEvent } from '../../packages/domain/src/ports/economic-calendar.js';
 import type { RequestGate } from '../../packages/market-data/src/types.js';
 import { HttpError } from '../../packages/market-data/src/http.js';
@@ -65,10 +67,38 @@ interface ParsedResult {
 async function main() {
   const args = process.argv.slice(2);
   const useLlm = args.includes('--llm');
+  const useScrapfly = args.includes('--scrapfly');
   const filePath = args.find(a => !a.startsWith('--'));
   let html: string;
 
-  if (filePath) {
+  if (useScrapfly && filePath) {
+    console.error('❌ --scrapfly cannot be combined with a file path — Scrapfly fetches live HTML.');
+    process.exit(1);
+  }
+
+  if (useScrapfly) {
+    const apiKey = process.env['SCRAPFLY_API_KEY'];
+    if (!apiKey) {
+      console.error('❌ --scrapfly requires SCRAPFLY_API_KEY env var');
+      process.exit(1);
+    }
+    console.log('🛡️  Scrapfly mode (Cloudflare bypass via proxy)');
+    const scrapflyFetch = createScrapflyFetch({
+      apiKey,
+      baseUrl: 'https://api.scrapfly.io/scrape',
+      asp: true,
+      requestTimeoutMs: 60_000,
+    });
+
+    process.stdout.write('Fetching Forex Factory /calendar via Scrapfly... ');
+    const response = await scrapflyFetch('https://www.forexfactory.com/calendar');
+    if (!response.ok) {
+      console.error(`❌ Scrapfly returned HTTP ${response.status}`);
+      process.exit(1);
+    }
+    html = await response.text();
+    console.log(`${(html.length / 1024).toFixed(0)} KB`);
+  } else if (filePath) {
     console.log(`Reading ${filePath}...`);
     html = fs.readFileSync(filePath, 'utf-8');
     console.log(`${(html.length / 1024).toFixed(0)} KB`);
