@@ -1,6 +1,6 @@
 # Plan: Structured Economic Calendar Parsers (DOM + LLM + Fallback)
 
-**Status:** Proposed — not yet implemented
+**Status:** Implemented ✅ — verified locally (worker log: "Economic calendar initial cache warmed", eventCount: 2, DOM parser path)
 **Date:** 2026-07-15
 **Depends on:** `002-background-economic-calendar-refresh.md`
 
@@ -217,16 +217,16 @@ export {
 
 ## Implementation Steps
 
-1. **[PENDING] Add dependency:** `pnpm --filter @herobids/market-data add node-html-parser`.
-2. **[PENDING] Add type alias:** `EconomicCalendarParserFn` in `economic-calendar.ts`; update `ForexFactoryAdapterConfig.parseHtmlFn` to use it.
-3. **[PENDING] Implement `createDomCalendarParser()`** with `node-html-parser` table extraction, row iteration, impact resolution.
-4. **[PENDING] Refactor `createLlmCalendarParser()`** — replace regex table extraction with `node-html-parser` selector.
-5. **[PENDING] Implement `createFallbackCalendarParser(config)`** — DOM → LLM fallback.
-6. **[PENDING] Update worker background refresh** in `apps/worker/src/index.ts` to use `createFallbackCalendarParser` instead of `createLlmCalendarParser`.
-7. **[PENDING] Export** new factories and type from `packages/market-data/src/index.ts`.
-8. **[PENDING] Tests:** unit tests for `createDomCalendarParser` (valid HTML, missing table, day-breakers, impact detection, edge cases), update existing `createLlmCalendarParser` tests, add fallback parser tests (DOM success → LLM not called, DOM failure → LLM called, both fail → error).
-9. **[PENDING] Tests + build:** `pnpm --filter @herobids/market-data run test`, `pnpm lint`, `pnpm build`.
-10. **[PENDING] Changelog:** add entry.
+1. **[DONE] Add dependency:** `pnpm --filter @herobids/market-data add node-html-parser`.
+2. **[DONE] Add type alias:** `EconomicCalendarParserFn` in `economic-calendar.ts`; update `ForexFactoryAdapterConfig.parseHtmlFn` to use it.
+3. **[DONE] Implement `createDomCalendarParser()`** with `node-html-parser` table extraction, row iteration, impact resolution.
+4. **[DONE] Refactor `createLlmCalendarParser()`** — replace regex table extraction with `node-html-parser` selector.
+5. **[DONE] Implement `createFallbackCalendarParser(config)`** — DOM → LLM fallback.
+6. **[DONE] Update worker background refresh** in `apps/worker/src/index.ts` to use `createFallbackCalendarParser` instead of `createLlmCalendarParser`.
+7. **[DONE] Export** new factories and type from `packages/market-data/src/index.ts`.
+8. **[DONE] Tests:** market-data 315 passed, worker 1986 passed, lint clean, build clean.
+9. **[DONE] Local verification:** worker log confirms "Economic calendar initial cache warmed" with eventCount: 2, DOM parser path (no LLM call).
+10. **[DONE] Changelog:** add entry.
 
 ## Testing Plan
 
