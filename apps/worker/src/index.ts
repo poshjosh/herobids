@@ -22,7 +22,7 @@ import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdap
 import { createFillFirstMarkSource } from '@herobids/engine';
 import type { IdGenerator } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, type ProvidersYaml } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, type ProvidersYaml, type TechnicalConfig } from '@herobids/domain';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
 import crypto from 'node:crypto';
@@ -826,6 +826,8 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           );
         }
 
+        const technicalConfig = (agent?.unifiedConfig?.technical as TechnicalConfig | undefined) ?? undefined;
+
         actor = new AgentTradingActor({
           agentId,
           executionMode: mode,
@@ -898,6 +900,9 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
               detail: JSON.stringify(event.payload ?? {}),
             }).catch((err) => logger.warn({ err, agentId, eventType: event.type }, 'Failed to emit journal event'));
           },
+          technicalConfig,
+          discoverCandidates,
+          fetchCandles,
         });
 
         await actor.start();
