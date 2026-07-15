@@ -222,7 +222,7 @@ marketData:
     daysForward: 1
     minImpact: medium
     currencies: []
-    cacheTtlMs: 10800000   # 3 hours — shared across all agents via Redis
+    cacheTtlMs: 43200000   # 12 hours — shared across all agents via Redis
     maxEventsInContext: 5
     forexFactory:
       baseUrl: "https://www.forexfactory.com"
