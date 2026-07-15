@@ -215,6 +215,10 @@ marketData:
     requestsPerMinute: 30
     apiKey: ""                # override: COINMARKETCAP_API_KEY — required when coinMarketCap.enabled is true
     cacheTtlMs: 3600000
+  scrapfly:
+    baseUrl: "https://api.scrapfly.io/scrape"
+    asp: true
+    requestTimeoutMs: 60000
   # Economic calendar for trading agents — disabled by default.
   # Source: Forex Factory (HTML scraping via HTTP/1.1, Redis-cached across all agents).
   economicCalendar:
@@ -226,7 +230,7 @@ marketData:
     maxEventsInContext: 5
     forexFactory:
       baseUrl: "https://www.forexfactory.com"
-      requestTimeoutMs: 15000
+      requestTimeoutMs: 60000
       requestsPerMinute: 1
       userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
   tokenSafety:
