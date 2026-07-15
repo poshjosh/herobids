@@ -6,7 +6,6 @@ llm:
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
-  enabled: true                 # master switch — override: ALERTS_ENABLED  
   email:
     brandImageUrl: http://localhost:5173/brand/wordmark-dark.png                  
 
