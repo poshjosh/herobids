@@ -5,6 +5,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agentConnections, bots, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, userCredentials, agents } from '@herobids/db';
 import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
+import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
 import { checkConnectionLimit } from '../plan-guards.js';
@@ -86,6 +87,9 @@ export async function connectionRoutes(
 
     await redisClient.xadd(
       `agent:outbound:${agentId}`,
+      'MAXLEN',
+      '~',
+      AGENT_STREAM_MAXLEN,
       '*',
       'envelope',
       JSON.stringify({

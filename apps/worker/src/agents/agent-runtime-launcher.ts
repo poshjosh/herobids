@@ -8,7 +8,7 @@ import type {
   DocumentStore,
   RuntimeDocumentMaterializer,
 } from '@herobids/domain';
-import { ok } from '@herobids/domain';
+import { ok, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import { sanitizeFilename } from '@herobids/documents';
 import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
 import { DockerRuntimeAdapter } from './docker-runtime-adapter.js';
@@ -416,7 +416,7 @@ export class AgentRuntimeLauncher {
         payload: { sessionId: handle.sessionId, status: 'ready' },
       };
       try {
-        await this.redis!.xadd(streamKey, '*', 'envelope', JSON.stringify(envelope));
+        await this.redis!.xadd(streamKey, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', JSON.stringify(envelope));
       } catch (err) {
         logger.warn({ err, sessionId: handle.sessionId }, 'Stub heartbeat publish failed');
       }

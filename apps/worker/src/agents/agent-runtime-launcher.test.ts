@@ -12,6 +12,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AgentRuntimeLauncher } from './agent-runtime-launcher.js';
+import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
 
 function makeRedis() {
   return { xadd: vi.fn().mockResolvedValue('1234-0') } as any;
@@ -41,8 +42,11 @@ describe('AgentRuntimeLauncher — stub mode heartbeats (bug-012 regression)', (
     // xadd is called synchronously inside startStubHeartbeats before the first await
     expect(redis.xadd).toHaveBeenCalledOnce();
 
-    const [streamKey, idArg, fieldName, rawEnvelope] = redis.xadd.mock.calls[0]!;
+    const [streamKey, maxlenFlag, approxFlag, maxlenValue, idArg, fieldName, rawEnvelope] = redis.xadd.mock.calls[0]!;
     expect(streamKey).toBe('agent:inbound:agent-1');
+    expect(maxlenFlag).toBe('MAXLEN');
+    expect(approxFlag).toBe('~');
+    expect(maxlenValue).toBe(AGENT_STREAM_MAXLEN);
     expect(idArg).toBe('*');
     expect(fieldName).toBe('envelope');
 

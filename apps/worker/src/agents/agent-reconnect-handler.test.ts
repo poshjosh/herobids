@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AgentReconnectHandler } from './agent-reconnect-handler.js';
+import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
 
 describe('AgentReconnectHandler', () => {
   function makeDeps() {
@@ -74,13 +75,14 @@ describe('AgentReconnectHandler', () => {
     await handler.handleReconnect('agent-1', 'sess-1');
 
     expect(redis.xadd).toHaveBeenCalledTimes(1);
-    const replayEnvelope = JSON.parse((redis.xadd.mock.calls[0] as string[])[3]) as { messageId: string; type: string };
+    const replayEnvelope = JSON.parse((redis.xadd.mock.calls[0] as string[])[6]) as { messageId: string; type: string };
     expect(replayEnvelope).toMatchObject({
       messageId: 'msg-1',
       type: 'instance.plan.status',
     });
     expect(redis.xadd).toHaveBeenCalledWith(
       'agent:outbound:agent-1',
+      'MAXLEN', '~', AGENT_STREAM_MAXLEN,
       '*',
       'envelope', expect.any(String),
       'is_replay', '1',

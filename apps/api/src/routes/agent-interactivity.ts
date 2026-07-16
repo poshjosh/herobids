@@ -10,7 +10,7 @@ import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
 import type { AgentRiskDefaultsConfig, AlertsConfig, AuthConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
-import { AgentRuntimePolicyOverridesSchema, AgentRiskDefaultsSchema } from '@herobids/domain';
+import { AgentRuntimePolicyOverridesSchema, AgentRiskDefaultsSchema, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { parseTelegramCommand } from './telegram-command-parser.js';
@@ -483,7 +483,7 @@ export async function agentInteractivityRoutes(
       createdAt: new Date().toISOString(),
       payload: { message: parsed.data.message },
     };
-    await redisClient.xadd(`agent:outbound:${id}`, '*', 'envelope', JSON.stringify(envelope));
+    await redisClient.xadd(`agent:outbound:${id}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', JSON.stringify(envelope));
 
     return reply.status(202).send({ delivered: true });
   });
@@ -679,7 +679,7 @@ export async function telegramWebhookHandler(
 
   async function deliverTelegramMessage(agentId: string, userId: string, messageText: string): Promise<void> {
     const envelope = buildEnvelope(agentId, userId, messageText);
-    await redisClient.xadd(`agent:outbound:${agentId}`, '*', 'envelope', JSON.stringify(envelope));
+    await redisClient.xadd(`agent:outbound:${agentId}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', JSON.stringify(envelope));
   }
 
   const agentRepo = new AgentRepository(db);

@@ -2,6 +2,7 @@ import type { Redis } from 'ioredis';
 import type { AgentRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import type { ContextSnapshotPayload } from '@herobids/domain';
+import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('agent-reconnect-handler');
@@ -156,6 +157,7 @@ export class AgentReconnectHandler {
             // with the protocol's duplicate-safe delivery contract.
             await this.redis.xadd(
               `agent:outbound:${agentId}`,
+              'MAXLEN', '~', AGENT_STREAM_MAXLEN,
               '*',
               'envelope', JSON.stringify(envelope),
               'is_replay', '1',

@@ -16,7 +16,7 @@ function makeRedisMock() {
 
 // Helpers to parse what was published
 function parsePublished(xaddCall: unknown[]): { streamKey: string; type: string; payload: Record<string, unknown> } {
-  const [streamKey, , , envelopeJson] = xaddCall as [string, string, string, string];
+  const [streamKey, , , , , , envelopeJson] = xaddCall as [string, string, string, number, string, string, string];
   const envelope = JSON.parse(envelopeJson) as { type: string; payload: Record<string, unknown> };
   return { streamKey, type: envelope.type, payload: envelope.payload };
 }
@@ -71,14 +71,14 @@ describe('InstanceEventPublisher — market monitor helpers', () => {
 
     it('sets initiatorType to system', async () => {
       await publisher.emitMarketWatchTriggered('agent-abc', payload);
-      const [, , , envelopeJson] = redis.xadd.mock.calls[0] as [string, string, string, string];
+      const [, , , , , , envelopeJson] = redis.xadd.mock.calls[0] as [string, string, string, number, string, string, string];
       const envelope = JSON.parse(envelopeJson) as { initiatorType: string };
       expect(envelope.initiatorType).toBe('system');
     });
 
     it('sets agentId on the envelope', async () => {
       await publisher.emitMarketWatchTriggered('agent-abc', payload);
-      const [, , , envelopeJson] = redis.xadd.mock.calls[0] as [string, string, string, string];
+      const [, , , , , , envelopeJson] = redis.xadd.mock.calls[0] as [string, string, string, number, string, string, string];
       const envelope = JSON.parse(envelopeJson) as { agentId: string };
       expect(envelope.agentId).toBe('agent-abc');
     });
@@ -200,8 +200,8 @@ describe('InstanceEventPublisher — market monitor helpers', () => {
       await publisher.emitAgentWake('agent-1', payload);
       await publisher.emitAgentWake('agent-1', payload);
 
-      const envelope1 = JSON.parse((redis.xadd.mock.calls[0] as [string, string, string, string])[3]) as { messageId: string };
-      const envelope2 = JSON.parse((redis.xadd.mock.calls[1] as [string, string, string, string])[3]) as { messageId: string };
+      const envelope1 = JSON.parse((redis.xadd.mock.calls[0] as [string, string, string, number, string, string, string])[6]) as { messageId: string };
+      const envelope2 = JSON.parse((redis.xadd.mock.calls[1] as [string, string, string, number, string, string, string])[6]) as { messageId: string };
       expect(envelope1.messageId).not.toBe(envelope2.messageId);
     });
 

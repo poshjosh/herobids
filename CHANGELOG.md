@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Redis agent stream unbounded memory growth:** `XADD` calls on `agent:inbound:*`/`agent:outbound:*` streams never capped stream length, so streams grew indefinitely (hundreds of thousands of entries/agent within days), repeatedly exhausting staging server memory (90%+, one OOM-killed `redis-server`). Added a shared `AGENT_STREAM_MAXLEN` constant and applied `MAXLEN ~` to all 8 `XADD` call sites across `apps/api` and `apps/worker`. Also persisted `redis --maxmemory 512mb --maxmemory-policy allkeys-lru` in `docker-compose.yaml` as defense-in-depth (previously only applied ad hoc via `redis-cli` on the live server, so it did not survive container recreation). See [docs/bug-reports/2026/07/15/001-redis-agent-outbound-streams-unbounded-memory-exhaustion.md](docs/bug-reports/2026/07/15/001-redis-agent-outbound-streams-unbounded-memory-exhaustion.md).
+
 ## v0.0.26 - 2026-07-16
 
 ### Fixed

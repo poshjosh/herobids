@@ -14,7 +14,7 @@ import type {
   MarketRegimeChangedPayload,
   AgentWakePayload,
 } from '@herobids/domain';
-import { INSTANCE_MESSAGE_TYPES, MARKET_MONITOR_MESSAGE_TYPES } from '@herobids/domain';
+import { INSTANCE_MESSAGE_TYPES, MARKET_MONITOR_MESSAGE_TYPES, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { TechnicalScanState } from '../runtime-composition.js';
 import crypto from 'node:crypto';
 import { createLogger } from '../logger.js';
@@ -154,6 +154,7 @@ export class InstanceEventPublisher {
     try {
       await this.redis.xadd(
         streamKey,
+        'MAXLEN', '~', AGENT_STREAM_MAXLEN,
         '*',
         'envelope',
         JSON.stringify(envelope),

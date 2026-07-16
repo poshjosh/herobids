@@ -7,6 +7,13 @@ import { z } from 'zod';
 
 // --- Envelope ---
 
+/**
+ * Approximate cap applied via `MAXLEN ~` on every `XADD` to an `agent:inbound:*`
+ * or `agent:outbound:*` Redis stream. Without this, streams grow unbounded and
+ * exhaust host memory (see docs/bug-reports/2026/07/15/001-redis-agent-outbound-streams-unbounded-memory-exhaustion.md).
+ */
+export const AGENT_STREAM_MAXLEN = 1000;
+
 export const ActorTypeSchema = z.enum(['agent', 'bot', 'user', 'system']);
 
 export const MessageEnvelopeSchema = z.object({

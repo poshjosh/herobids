@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import { agentInteractivityRoutes, telegramWebhookHandler } from './agent-interactivity.js';
 import type { Database } from '@herobids/db';
 import type { AlertsConfig } from '@herobids/domain';
+import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { Redis } from 'ioredis';
 
 const TEST_USER_ID = 'user-1';
@@ -509,7 +510,7 @@ describe('POST /agents/:id/message', () => {
     expect(res.statusCode).toBe(202);
     expect(res.json().delivered).toBe(true);
     expect(redis.xadd).toHaveBeenCalledWith(
-      `agent:outbound:${AGENT_ID}`, '*', 'envelope', expect.any(String),
+      `agent:outbound:${AGENT_ID}`, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', expect.any(String),
     );
   });
 
@@ -881,11 +882,12 @@ describe('POST /telegram/webhook', () => {
     expect(res.statusCode).toBe(200);
     expect(redis.xadd).toHaveBeenCalledWith(
       `agent:outbound:${AGENT_ID}`,
+      'MAXLEN', '~', AGENT_STREAM_MAXLEN,
       '*',
       'envelope',
       expect.any(String),
     );
-    expect(JSON.parse((redis.xadd as ReturnType<typeof vi.fn>).mock.calls[0][3] as string)).toEqual(expect.objectContaining({
+    expect(JSON.parse((redis.xadd as ReturnType<typeof vi.fn>).mock.calls[0][6] as string)).toEqual(expect.objectContaining({
       initiatorId: TEST_USER_ID,
       agentId: AGENT_ID,
       type: 'user.message',
@@ -936,7 +938,7 @@ describe('POST /telegram/webhook', () => {
 
     expect(res.statusCode).toBe(200);
     expect(redis.xadd).toHaveBeenCalledTimes(1);
-    expect(JSON.parse((redis.xadd as ReturnType<typeof vi.fn>).mock.calls[0][3] as string)).toEqual(expect.objectContaining({
+    expect(JSON.parse((redis.xadd as ReturnType<typeof vi.fn>).mock.calls[0][6] as string)).toEqual(expect.objectContaining({
       initiatorId: TEST_USER_ID,
       agentId: AGENT_ID,
       payload: { message: 'Use the override route' },
@@ -1051,7 +1053,7 @@ describe('POST /telegram/webhook', () => {
 
     expect(res.statusCode).toBe(200);
     expect(redis.xadd).toHaveBeenCalledTimes(1);
-    expect(JSON.parse((redis.xadd as ReturnType<typeof vi.fn>).mock.calls[0][3] as string)).toEqual(expect.objectContaining({
+    expect(JSON.parse((redis.xadd as ReturnType<typeof vi.fn>).mock.calls[0][6] as string)).toEqual(expect.objectContaining({
       agentId: AGENT_ID,
       payload: { message: 'check BTC price' },
     }));

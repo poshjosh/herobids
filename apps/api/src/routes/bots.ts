@@ -13,7 +13,7 @@ import {
 import { checkBotLimit, checkLiveEnabled } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import { canonicalizeExecutionMode } from './agent-config-helpers.js';
-import { BotConfigSchema, INSTANCE_MESSAGE_TYPES, validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
+import { BotConfigSchema, INSTANCE_MESSAGE_TYPES, validateExecutionCapability, venueTypeFromProvider, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { LifecycleJob } from '../types.js';
 
 function normalizeBotConfig(config: Record<string, unknown>, venue: string, symbol: string): Record<string, unknown> {
@@ -305,7 +305,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
             changedAt: new Date().toISOString(),
           },
         };
-        redis.xadd(streamKey, '*', 'envelope', JSON.stringify(envelope)).catch(() => {
+        redis.xadd(streamKey, 'MAXLEN', '~', AGENT_STREAM_MAXLEN, '*', 'envelope', JSON.stringify(envelope)).catch(() => {
           // Fire-and-forget — don't block the API response on notification delivery.
         });
       }

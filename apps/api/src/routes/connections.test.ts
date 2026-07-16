@@ -591,7 +591,7 @@ describe('DELETE /connections/:id', () => {
     expect(res.statusCode).toBe(204);
     expect(redisClient.xadd).toHaveBeenCalled();
 
-    const envelope = JSON.parse((redisClient.xadd as ReturnType<typeof vi.fn>).mock.calls[0][3] as string) as {
+    const envelope = JSON.parse((redisClient.xadd as ReturnType<typeof vi.fn>).mock.calls[0][6] as string) as {
       payload: { runtimeDescriptor: { budgets: { maxVisibleToolSchemas: number } } };
     };
     expect(envelope.payload.runtimeDescriptor.budgets.maxVisibleToolSchemas).toBe(37);

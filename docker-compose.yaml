@@ -24,6 +24,11 @@ services:
     image: redis:7-alpine
     ports:
       - '6379:6379'
+    # maxmemory/maxmemory-policy is a defense-in-depth safety net, not the primary
+    # fix — agent stream growth is bounded at the application layer via MAXLEN
+    # (see AGENT_STREAM_MAXLEN in packages/domain/src/agent-protocol.ts).
+    # See docs/bug-reports/2026/07/15/001-redis-agent-outbound-streams-unbounded-memory-exhaustion.md.
+    command: ['redis-server', '--maxmemory', '512mb', '--maxmemory-policy', 'allkeys-lru']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
