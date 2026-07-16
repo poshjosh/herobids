@@ -17,7 +17,7 @@ We have also used the following scripts to test the feature:
 - scripts/shell/tests/agent-config-matrix-test.sh
 - scripts/shell/tests/agent-config-defaults-smoke-test.sh
 
-The second script is still buggy (only 5 of 9 tests pass as at last check)
+The second script is still buggy (only 5 of 9 tests pass, see: docs/features/2026/07/16/003-scanner_gated-must-be-working/001-agent-config-defaults-smoke-test.log)
 
 We have now received this report docs/features/2026/07/16/003-scanner_gated-must-be-working/001-investigation-of-current-deployment.md which shows that scanner gated agents do not receive the expected signals
 
@@ -33,7 +33,7 @@ Investigate what yet to be uncovered problem may potentially prevent scanner_gat
 
 Outline how we can fix the above problems
 
-Outline how we can accurately verify the fix end - to -end before releasing to staging
+Outline how we can accurately verify the fix end-to-end before releasing to staging. Remember our script scripts/shell/tests/agent-config-defaults-smoke-test.sh? Consider if we should upgrade it or add more scripts or something else.
 
 Do not jump into coding, implementing or fixing yet
 
