@@ -2663,7 +2663,6 @@ async function runTick(): Promise<void> {
     const judgeUserContextPromptKey = `agent:prompt:judge-user-context:${AGENT_ID}`;
     const scoutSystemPromptKey = `agent:prompt:scout:${AGENT_ID}`;
     const scoutUserContextPromptKey = `agent:prompt:user-context:${AGENT_ID}`;
-    const hybridSystemPromptKey = `agent:prompt:hybrid:${AGENT_ID}`;
     // Persist the compiled prompt so the API can serve GET /agents/:id/prompt
     redis.set(judgeSystemPromptKey, systemPrompt, 'EX', 3600).catch((err: unknown) => {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');

@@ -20,7 +20,7 @@ import {
   skills,
   agentRuntimeSessions,
 } from '@herobids/db';
-import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import {
   listAgentConnections,
   grantConnection,
