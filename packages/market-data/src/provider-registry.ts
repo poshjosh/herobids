@@ -147,7 +147,7 @@ export function createProviderRegistry(
   const binanceBudget: SharedBudgetConfig = {
     requestsPerMinute: config.binance.requestsPerMinute,
     burstCapacity: config.binance.requestsPerMinute,
-    maxWaitMs: config.timeoutMs,
+    maxWaitMs: config.binance.maxWaitMs,
   };
 
   const dexscreenerSearchConfig: DexScreenerConfig = {

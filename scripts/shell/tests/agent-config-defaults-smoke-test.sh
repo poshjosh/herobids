@@ -19,6 +19,12 @@
 #   - tsx or pnpm available
 #   - API and DB reachable (uses docker compose exec for DB queries)
 #
+# Stack lifecycle:
+#   - Start:  scripts/shell/run/build-and-run.sh  (pnpm build, lint, agent image,
+#             docker compose up with dev overlay, seed admin, Ollama warmup)
+#   - Stop:   scripts/shell/run/shutdown.sh        (graceful worker stop, agent
+#             container cleanup, compose down -v)
+#
 # Setup:
 #   cp .env.ops.dev.example .env.ops.dev
 #   # fill in TEST_EMAIL and TEST_PASSWORD, then:
@@ -34,9 +40,17 @@
 #   TEST_EMAIL            default trade-test@local.test
 #   TEST_PASSWORD         default TradeTest123!
 #
+# Required (if no active Hyperliquid connection exists)
+#   HL_API_KEY            Hyperliquid API key
+#   HL_SECRET             Hyperliquid secret
+#   HL_WALLET_ADDRESS     EVM wallet address (0x + 40 hex chars)
+#   Set up a connection first: scripts/shell/ops/quick-setup.sh
+#
 # Optional
-#   DOCKER_COMPOSE_UP     1 to auto-start Docker stack when API is unreachable
-#   DOCKER_COMPOSE_DOWN   1 to stop the Docker stack on exit (only if started here)
+#   DOCKER_COMPOSE_UP     1 to auto-start the stack via build-and-run.sh when API
+#                         is unreachable (default: 1)
+#   DOCKER_COMPOSE_DOWN   1 to stop the stack via shutdown.sh on exit (only if
+#                         started by this script; default: 1)
 #   LLM_PROVIDER          default ollama
 #   LLM_LIGHT_MODEL       default qwen3:8b
 #   LLM_HEAVY_MODEL       default qwen3.6:35b-a3b-q4_K_M
@@ -103,8 +117,8 @@ fi
 : "${API_BASE_URL:=http://localhost:3000}"
 : "${TEST_EMAIL:=trade-test@local.test}"
 : "${TEST_PASSWORD:=TradeTest123!}"
-: "${DOCKER_COMPOSE_UP:=0}"
-: "${DOCKER_COMPOSE_DOWN:=0}"
+: "${DOCKER_COMPOSE_UP:=1}"
+: "${DOCKER_COMPOSE_DOWN:=1}"
 
 # ---------------------------------------------------------------------------
 # Check prerequisites
@@ -128,11 +142,12 @@ if ! check_api_health; then
   if [[ "$DOCKER_COMPOSE_UP" != "1" ]]; then
     die "API at ${API_BASE_URL} is not reachable. Start the stack or re-run with DOCKER_COMPOSE_UP=1."
   fi
-  log "API not reachable — starting Docker stack..."
-  docker compose up -d
+  log "API not reachable — starting stack via build-and-run.sh..."
+  bash "$SCRIPT_DIR/../run/build-and-run.sh" || die "build-and-run.sh failed"
   stackStartedByUs=1
 
-  # Wait up to 60 s
+  # build-and-run.sh starts services but the API may still be booting.
+  # Wait up to 60 s for it to become healthy.
   deadline=$(($(date +%s) + 60))
   while [[ $(date +%s) -lt $deadline ]]; do
     sleep 3
@@ -176,9 +191,9 @@ EXIT_CODE=$?
 # ---------------------------------------------------------------------------
 
 if [[ "$DOCKER_COMPOSE_DOWN" == "1" && "$stackStartedByUs" == "1" ]]; then
-  log "Stopping Docker stack (started by this script)..."
-  docker compose down
-  ok "Docker stack stopped"
+  log "Stopping stack via shutdown.sh..."
+  bash "$SCRIPT_DIR/../run/shutdown.sh" || warn "shutdown.sh completed with warnings"
+  ok "Stack stopped"
 fi
 
 exit $EXIT_CODE

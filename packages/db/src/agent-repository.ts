@@ -68,12 +68,25 @@ function applyCapabilityModeMigrationDefaults(raw: Record<string, unknown>): Rec
  */
 function applyConfigDefaults(raw: Record<string, unknown>): Record<string, unknown> {
   const result = { ...raw };
+  const capabilityMode = result['capabilityMode'] as string | undefined;
 
   if (result['technical'] && typeof result['technical'] === 'object') {
     try {
       result['technical'] = TechnicalConfigSchema.parse(result['technical']);
     } catch {
       // Leave as-is on parse failure.
+    }
+  } else if (capabilityMode === 'hybrid' && !result['technical']) {
+    // Hybrid agents need a technical block to operate. If it's missing
+    // (e.g. from a pre-fix agent created before defaults were applied at
+    // write time), inject an empty object through the schema so the worker
+    // gets all Zod defaults (scanBatchSize, autonomousExit, etc.).
+    // Filters will be populated separately by the worker from connections.
+    try {
+      result['technical'] = TechnicalConfigSchema.parse({});
+    } catch {
+      // TechnicalConfigSchema requires filters.venue/venueType — if missing,
+      // the worker's Fix 2 guard handles it gracefully.
     }
   }
 

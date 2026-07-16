@@ -921,6 +921,11 @@ export const MarketDataConfigSchema = z.object({
   binance: z.object({
     baseUrl: z.string().url().default('https://api.binance.com'),
     requestsPerMinute: z.number().min(1).default(200),
+    /** Max ms to wait for the shared rate-limit token bucket to refill before giving up.
+     *  Separate from marketData.timeoutMs (HTTP timeout). Binance has a high RPM
+     *  (200) but a correspondingly large burst; after the burst drains the bucket,
+     *  subsequent requests need ~300 ms each. A 30 s window gives adequate headroom. */
+    maxWaitMs: z.number().int().min(1_000).default(30_000),
   }).default({}),
   birdeye: z.object({
     enabled: z.boolean().default(false),

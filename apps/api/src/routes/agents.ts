@@ -760,6 +760,19 @@ export async function agentRoutes(
       }
     }
 
+    // Apply TechnicalConfigSchema defaults so the stored JSONB is self-describing.
+    // Presets and explicit input may omit fields that have Zod defaults
+    // (scanBatchSize, autonomousExit, etc.). Parsing through the schema fills them in
+    // so that direct DB reads (e.g. smoke tests) see the complete config.
+    if (finalUnifiedConfig?.technical) {
+      try {
+        finalUnifiedConfig.technical = TechnicalConfigSchema.parse(finalUnifiedConfig.technical);
+      } catch {
+        // If parse fails, leave as-is — UnifiedAgentConfigSchema superRefine
+        // catches validation issues downstream.
+      }
+    }
+
     // Resolve final risk fields: explicit values win, then preset values, then null
     const finalStopLossPct: string | null =
       parsed.data.stopLossPct != null
@@ -1484,6 +1497,16 @@ export async function agentRoutes(
             venueType,
           };
         }
+      }
+    }
+
+    // Apply TechnicalConfigSchema defaults to the merged technical block so the
+    // stored JSONB is self-describing (scanBatchSize, autonomousExit, etc.).
+    if (unifiedConfigPatch?.technical) {
+      try {
+        unifiedConfigPatch.technical = TechnicalConfigSchema.parse(unifiedConfigPatch.technical);
+      } catch {
+        // If parse fails, leave as-is — downstream validation catches issues.
       }
     }
 

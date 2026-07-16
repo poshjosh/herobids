@@ -203,6 +203,12 @@ marketData:
   binance:
     baseUrl: "https://api.binance.com"
     requestsPerMinute: 200
+    # Max ms to wait for the shared rate-limit token bucket to refill.
+    # Separate from marketData.timeoutMs (HTTP timeout). After the initial
+    # 200-request burst drains the bucket, refill runs at ~3.3 tokens/s,
+    # so subsequent requests must wait ~300 ms each. 30 s gives enough
+    # headroom for agent technical-phase batches to complete.
+    maxWaitMs: 30000
   birdeye:
     enabled: true
     baseUrl: "https://public-api.birdeye.so"

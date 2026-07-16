@@ -172,6 +172,7 @@ export interface MarketDataConfig {
   binance: {
     baseUrl: string;
     requestsPerMinute: number;
+    maxWaitMs: number;
   };
   birdeye: {
     enabled: boolean;

@@ -141,8 +141,11 @@ function workerLogsSince(since: string, maxLines = 1000): string {
 
 function workerLogsSinceAgent(since: string, agentId: string): string {
   try {
+    // -A 20 includes trailing context lines because pino-pretty renders
+    // structured log fields (candidatesScored, candidatesDiscovered, etc.)
+    // on indented continuation lines that do NOT repeat the agent ID.
     return execSync(
-      `docker compose logs --since "${since}" worker 2>&1 | grep "${agentId}" | head -200 || true`,
+      `docker compose logs --since "${since}" worker 2>&1 | grep -A 20 "${agentId}" | head -200 || true`,
       { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 },
     );
   } catch { return ''; }
@@ -158,13 +161,27 @@ async function getActiveConnectionId(token: string): Promise<string> {
   const active = items.find(c => c.status === 'active');
   if (active) return active.id;
 
-  // Create a Hyperliquid provider link if none exists or none active
+  // No active connection — create one using real credentials from env vars
+  // (same approach as scripts/shell/ops/quick-setup.sh)
+  const apiKey = process.env['HL_API_KEY'];
+  const secret = process.env['HL_SECRET'];
+  const walletAddress = process.env['HL_WALLET_ADDRESS'];
+
+  if (!apiKey || !secret || !walletAddress) {
+    throw new Error(
+      'No active Hyperliquid connection found and HL_API_KEY/HL_SECRET/HL_WALLET_ADDRESS not set.\n' +
+      '  Set up a connection first:\n' +
+      '    scripts/shell/ops/quick-setup.sh\n' +
+      '  Or set the env vars in .env.ops.dev and re-run.'
+    );
+  }
+
   const linkRes = await apiRequest<{ connection?: { id: string } }>('POST', '/setup/provider-link', {
     token,
     body: {
       provider: 'hyperliquid',
       label: `smoke-defaults-${Date.now()}`,
-      secrets: { apiKey: 'test', secret: 'test', walletAddress: '0x0000000000000000000000000000000000000000' },
+      secrets: { apiKey, secret, walletAddress },
       capability: 'trading',
     },
   });
@@ -318,15 +335,15 @@ async function scenario1_minimalConfigProducesSignals(token: string): Promise<vo
     await deleteAgent(token, agentId);
     return;
   }
-  log('Agent started, waiting for running status...');
+  log('Agent started, waiting for active status...');
 
-  const started = await pollAgentStatus(token, agentId, 'running', 30_000);
+  const started = await pollAgentStatus(token, agentId, 'active', 30_000);
   if (!started) {
-    record('s1-running', false, 'agent did not reach running status within 30s');
+    record('s1-running', false, 'agent did not reach active status within 30s');
     await deleteAgent(token, agentId);
     return;
   }
-  ok('Agent is running');
+  ok('Agent is active');
 
   // 3. Assert DB: scanBatchSize is exactly 5 (the Zod default)
   const scanBatchSize = agentTechnicalField(agentId, 'scanBatchSize');
@@ -393,13 +410,13 @@ async function scenario2_explicitValuesPreserved(token: string): Promise<void> {
     await deleteAgent(token, agentId);
     return;
   }
-  const started = await pollAgentStatus(token, agentId, 'running', 30_000);
+  const started = await pollAgentStatus(token, agentId, 'active', 30_000);
   if (!started) {
-    record('s2-running', false, 'agent did not reach running status within 30s');
+    record('s2-running', false, 'agent did not reach active status within 30s');
     await deleteAgent(token, agentId);
     return;
   }
-  ok('Agent is running');
+  ok('Agent is active');
 
   // 3. Assert DB: stored values are exactly what we set
   const dbScanBatchSize = agentTechnicalField(agentId, 'scanBatchSize');
@@ -466,13 +483,13 @@ async function scenario3_intelligenceAgentUnaffected(token: string): Promise<voi
     await deleteAgent(token, agentId);
     return;
   }
-  const started = await pollAgentStatus(token, agentId, 'running', 30_000);
+  const started = await pollAgentStatus(token, agentId, 'active', 30_000);
   if (!started) {
-    record('s3-running', false, 'agent did not reach running status within 30s');
+    record('s3-running', false, 'agent did not reach active status within 30s');
     await deleteAgent(token, agentId);
     return;
   }
-  ok('Intelligence agent is running');
+  ok('Intelligence agent is active');
 
   // 3. Assert DB: unified_config->'technical' IS NULL
   const techNull = agentTechnicalIsNull(agentId);
@@ -489,11 +506,11 @@ async function scenario3_intelligenceAgentUnaffected(token: string): Promise<voi
       ? 'intelligence agent should NOT have Technical phase complete in logs'
       : 'no Technical phase complete found — correct');
 
-  // 5. Assert agent health — must be "running"
+  // 5. Assert agent health — must be "active"
   const healthRes = await apiRequest<{ status?: string }>('GET', `/agents/${agentId}`, { token });
-  const isHealthy = healthRes.body.status === 'running';
+  const isHealthy = healthRes.body.status === 'active';
   record('s3-healthy', isHealthy,
-    isHealthy ? `agent status is 'running' — healthy` : `agent status is '${healthRes.body.status}' — expected 'running'`);
+    isHealthy ? `agent status is 'active' — healthy` : `agent status is '${healthRes.body.status}' — expected 'active'`);
 
   // 6. Stop and delete
   await deleteAgent(token, agentId);
@@ -537,13 +554,13 @@ async function scenario4_patchPreservesDefaults(token: string): Promise<void> {
     await deleteAgent(token, agentId);
     return;
   }
-  const started = await pollAgentStatus(token, agentId, 'running', 30_000);
+  const started = await pollAgentStatus(token, agentId, 'active', 30_000);
   if (!started) {
-    record('s4-running', false, 'agent did not reach running status within 30s');
+    record('s4-running', false, 'agent did not reach active status within 30s');
     await deleteAgent(token, agentId);
     return;
   }
-  ok('Agent is running');
+  ok('Agent is active');
 
   const since1 = new Date().toISOString();
   const scoredBefore = await pollForCandidatesScored(agentId, since1, 120_000, 5000);
@@ -591,9 +608,9 @@ async function scenario4_patchPreservesDefaults(token: string): Promise<void> {
     reactivateConnections();
     return;
   }
-  const restarted = await pollAgentStatus(token, agentId, 'running', 30_000);
+  const restarted = await pollAgentStatus(token, agentId, 'active', 30_000);
   if (!restarted) {
-    record('s4-restart-running', false, 'agent did not reach running after PATCH restart');
+    record('s4-restart-running', false, 'agent did not reach active after PATCH restart');
     await deleteAgent(token, agentId);
     reactivateConnections();
     return;
