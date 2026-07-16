@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **TechnicalConfig Zod defaults not applied at DB read boundary:** `scanBatchSize` and `scanIntervalMs` were `undefined` at runtime for all hybrid agents because `getUnifiedConfig()` returned raw JSONB without parsing through `TechnicalConfigSchema`. This caused the candle-fetching loop to never execute (`i += undefined` → `NaN`) while the scan timer ran at maximum speed (~1ms intervals from `setInterval(fn, undefined)`). Added `applyConfigDefaults()` helper that parses `technical` through `TechnicalConfigSchema` and `intelligence` through `IntelligenceConfigSchema` at the DB read boundary. (8 tests + 4-scenario smoke test added). See [docs/bug-reports/2026/07/16/003-technical-config-scan-defaults-not-applied-at-load.md](docs/bug-reports/2026/07/16/003-technical-config-scan-defaults-not-applied-at-load.md).
+
 ## v0.0.27 - 2026-07-16
 
 ### Fixed

@@ -11,11 +11,24 @@
 | # | Item | Status |
 |---|------|--------|
 | 1 | Phase 1 — Test 1: `TechnicalConfigSchema` defaults (`schema.test.ts`) | DONE |
-| 2 | Phase 1 — Test 2: `getUnifiedConfig` technical defaults (`agent-repository.test.ts`) | PENDING |
-| 3 | Phase 1 — Test 3: `getUnifiedConfig` intelligence defaults (`agent-repository.test.ts`) | PENDING |
-| 4 | Phase 2 — Create `applyConfigDefaults()` helper (`agent-repository.ts`) | PENDING |
-| 5 | Phase 2 — Call from `getUnifiedConfig()`, verify all tests pass | PENDING |
-| 6 | Phase 4 — Shell smoke test (`agent-config-defaults-smoke-test.ts` + `.sh`) | PENDING |
+| 2 | Phase 1 — Test 2: `getUnifiedConfig` technical defaults (`agent-repository.test.ts`) | DONE |
+| 3 | Phase 1 — Test 3: `getUnifiedConfig` intelligence defaults (`agent-repository.test.ts`) | DONE |
+| 4 | Phase 2 — Create `applyConfigDefaults()` helper (`agent-repository.ts`) | DONE |
+| 5 | Phase 2 — Call from `getUnifiedConfig()`, verify all tests pass | DONE |
+| 6 | Phase 4 — Shell smoke test (`agent-config-defaults-smoke-test.ts` + `.sh`) | DONE |
+
+## Outstanding Issues
+
+### [Item 4] Phase 2 — applyConfigDefaults()
+
+- **MEDIUM**: Zod `.strip()` silently drops unknown keys in `technical` block. Consistent with write path but no log when keys are dropped. Consider `.passthrough()` or adding a diff log.
+- **MEDIUM**: `IntelligenceConfigSchema.parse()` is currently a no-op (all fields `.optional()`). Tests will break if `.default()` values are added later — consider making tests schema-driven.
+- **MEDIUM**: `typeof result['technical'] === 'object'` doesn't guard against arrays. The `catch` handles this gracefully, but for consistency with `getAiModelConfig()`, consider adding `!Array.isArray()`.
+
+### [Item 6] Phase 4 — Shell Smoke Test
+
+- **LOW**: `reactivateConnections()` not called in all error paths — could cause test flakiness if connections run out across scenarios. Consider moving to `main()` between scenarios (like matrix test).
+- **LOW**: `dbValue` helper relies on psql tabular output format (`lines[2]`). Consider `-t --no-align` flags for robustness.
 
 ---
 
