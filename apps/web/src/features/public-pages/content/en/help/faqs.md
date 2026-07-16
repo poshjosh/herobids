@@ -10,7 +10,7 @@ Once set up, you have three options:
 
 2. **Use slash commands** — OpenAIdom supports a full set of Telegram commands for controlling your agents:
    - Messaging: `/to <agent> <message>` to talk to an agent
-   - Discovery: `/agents`, `/status`, `/info`, `/skills`, `/log`, `/connections`
+   - Discovery: `/agents`, `/info`, `/log`, `/connections`
    - Lifecycle: `/start`, `/pause`, `/resume`, `/stop`, `/restart`
    - Configuration: `/mode`, `/connect`, `/disconnect`
    

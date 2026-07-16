@@ -305,54 +305,6 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     expect(text).toContain("don't have any agents");
   });
 
-  // ── H1: /status ──────────────────────────────────────────────────────
-
-  it('/status returns summary with agent statuses', async () => {
-    let selectCount = 0;
-    const db = {
-      select: vi.fn().mockImplementation(() => {
-        selectCount += 1;
-        if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
-        return makeChain([{ id: AGENT_ID, name: 'Agent1', status: 'active', pauseState: null }]);
-      }),
-    } as unknown as Database;
-    const redis = buildMockRedis();
-    const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
-
-    const res = await sendWebhook(app, '/status');
-    expect(res.statusCode).toBe(200);
-    await flushPromises();
-
-    const text = sentText(fetchSpy);
-    expect(text).toContain('Agent1');
-    expect(text).toContain('active');
-  });
-
-  it('/status <agent> returns detailed status', async () => {
-    let selectCount = 0;
-    const db = {
-      select: vi.fn().mockImplementation(() => {
-        selectCount += 1;
-        if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
-        return makeChain([stubAgent({ status: 'active' })]);
-      }),
-      execute: vi.fn().mockResolvedValue([{ count: 3 }]),
-    } as unknown as Database;
-    const redis = buildMockRedis();
-    const app = Fastify();
-    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
-
-    const res = await sendWebhook(app, `/status ${AGENT_NAME}`);
-    expect(res.statusCode).toBe(200);
-    await flushPromises();
-
-    const text = sentText(fetchSpy);
-    expect(text).toContain(AGENT_NAME);
-    expect(text).toContain('active');
-    expect(text).toContain('Last session');
-  });
-
   // ── H1: /info ────────────────────────────────────────────────────────
 
   it('/info <agent> returns detail block', async () => {

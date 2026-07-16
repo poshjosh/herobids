@@ -18,7 +18,6 @@ import {
   agentConnections,
   agentSkills,
   skills,
-  skillEntitlements,
   agentRuntimeSessions,
 } from '@herobids/db';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
@@ -166,120 +165,6 @@ export async function handleAgents(db: Database, userId: string): Promise<string
   }
 }
 
-// ── handleStatus ─────────────────────────────────────────────────────────
-
-export async function handleStatus(
-  db: Database,
-  userId: string,
-  args: string[],
-): Promise<string> {
-  try {
-    // No args → summarize all caller-owned agents
-    if (args.length === 0) {
-      const rows = await db.select({
-        id: agents.id,
-        name: agents.name,
-        status: agents.status,
-        pauseState: agents.pauseState,
-      }).from(agents)
-        .where(eq(agents.userId, userId))
-        .orderBy(agents.createdAt);
-
-      if (rows.length === 0) {
-        return 'No agents found.';
-      }
-
-      // Get last session for all agents in one query
-      const agentIds = rows.map((r) => r.id);
-      const sessionRows = await db.select({
-        agentId: agentRuntimeSessions.agentId,
-        status: agentRuntimeSessions.status,
-        startedAt: agentRuntimeSessions.startedAt,
-        stoppedAt: agentRuntimeSessions.stoppedAt,
-      }).from(agentRuntimeSessions)
-        .where(inArray(agentRuntimeSessions.agentId, agentIds))
-        .orderBy(desc(agentRuntimeSessions.startedAt));
-
-      // Build map: agentId → most recent session
-      const latestSessionByAgent = new Map<string, typeof sessionRows[number]>();
-      for (const s of sessionRows) {
-        if (!latestSessionByAgent.has(s.agentId)) {
-          latestSessionByAgent.set(s.agentId, s);
-        }
-      }
-
-      const lines: string[] = ['Your agents:', ''];
-      for (const agent of rows) {
-        const session = latestSessionByAgent.get(agent.id);
-        const extras: string[] = [];
-
-        if (agent.status === 'paused' && agent.pauseState?.reason) {
-          extras.push(`paused: ${agent.pauseState.reason}`);
-        }
-        if (session && session.status !== 'stopped' && session.status !== 'crashed') {
-          extras.push(`session: ${session.status}`);
-        }
-
-        const detail = extras.length > 0 ? ` (${extras.join(', ')})` : '';
-        lines.push(`${agent.name}: ${agent.status}${detail}`);
-      }
-
-      return truncateForTelegram(lines.join('\n'));
-    }
-
-    // One arg → detailed status for matching agent
-    const resolved = await resolveAgentByName(db, userId, args[0]!);
-    if (resolved.type === 'not_found') {
-      return `Agent "${args[0]}" not found.`;
-    }
-    if (resolved.type === 'ambiguous') {
-      const names = resolved.agents.map((a) => `${a.name} (${a.id.slice(0, 8)}...)`).join(', ');
-      return `Multiple agents named "${args[0]}". Use a unique name or check the web app.\nMatches: ${names}`;
-    }
-    const agent = resolved.agent;
-
-    // Get last session
-    const [session] = await db.select({
-      status: agentRuntimeSessions.status,
-      startedAt: agentRuntimeSessions.startedAt,
-    }).from(agentRuntimeSessions)
-      .where(eq(agentRuntimeSessions.agentId, agent.id))
-      .orderBy(desc(agentRuntimeSessions.startedAt))
-      .limit(1);
-
-    // Count decisions in current session timeframe (or last 24h if no session).
-    // Includes decisions submitted by the agent directly AND decisions from
-    // bots that this agent created.
-    const decisionSince = session?.startedAt ?? new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const [countRow] = await db.execute(sql`
-      SELECT COUNT(*)::int AS count
-      FROM decisions
-      WHERE created_at >= ${decisionSince}
-        AND (
-          (actor_type = 'agent' AND actor_id = ${agent.id})
-          OR
-          (actor_type = 'bot' AND actor_id IN (
-            SELECT id FROM bots WHERE creator_type = 'agent' AND creator_id = ${agent.id}
-          ))
-        )
-    `);
-    const decisionCount = (countRow as { count: number } | undefined)?.count ?? 0;
-
-    const lines: string[] = [
-      `${agent.name}:`,
-      `Status: ${agent.status}`,
-      `Last session: ${session?.startedAt ? session.startedAt.toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : '-'}`,
-      `Decisions this session: ${decisionCount}`,
-      `Pause reason: ${agent.pauseState?.reason ?? '-'}`,
-    ];
-
-    return lines.join('\n');
-  } catch (error) {
-    console.error('handleStatus failed:', error);
-    return 'Failed to get status. Please try again later.';
-  }
-}
-
 // ── handleInfo ────────────────────────────────────────────────────────────
 
 export async function handleInfo(
@@ -355,79 +240,6 @@ export async function handleInfo(
   } catch (error) {
     console.error('handleInfo failed:', error);
     return 'Failed to get agent info. Please try again later.';
-  }
-}
-
-// ── handleSkills ──────────────────────────────────────────────────────────
-
-export async function handleSkills(
-  db: Database,
-  userId: string,
-  args: string[],
-): Promise<string> {
-  try {
-    // With agent name → list skills assigned to that agent
-    if (args.length > 0) {
-      const resolved = await resolveAgentByName(db, userId, args[0]!);
-      if (resolved.type === 'not_found') {
-        return `Agent "${args[0]}" not found.`;
-      }
-      if (resolved.type === 'ambiguous') {
-        const names = resolved.agents.map((a) => `${a.name} (${a.id.slice(0, 8)}...)`).join(', ');
-        return `Multiple agents named "${args[0]}". Use a unique name or check the web app.\nMatches: ${names}`;
-      }
-      const agent = resolved.agent;
-
-      const rows = await db.select({
-        name: skills.name,
-        id: skills.id,
-      }).from(agentSkills)
-        .innerJoin(skills, eq(agentSkills.skillId, skills.id))
-        .where(eq(agentSkills.agentId, agent.id))
-        .orderBy(agentSkills.orderIndex);
-
-      if (rows.length === 0) {
-        return `${agent.name} has no skills assigned.`;
-      }
-
-      return rows.map((r) => `${r.name} (${r.id})`).join('\n');
-    }
-
-    // No args → list all skills available to the user
-    const [skillRows, entitlementRows] = await Promise.all([
-      db.select({
-        id: skills.id,
-        name: skills.name,
-        authorId: skills.authorId,
-        publicationStatus: skills.publicationStatus,
-        priceCents: skills.priceCents,
-      }).from(skills).orderBy(skills.name),
-
-      db.select({ skillId: skillEntitlements.skillId })
-        .from(skillEntitlements)
-        .where(and(
-          eq(skillEntitlements.userId, userId),
-          sql`${skillEntitlements.revokedAt} IS NULL`,
-        )),
-    ]);
-
-    const entitledIds = new Set(entitlementRows.map((r) => r.skillId));
-
-    const availableSkills = skillRows.filter((skill) => {
-      if (skill.authorId === null) return true;        // system skill
-      if (skill.authorId === userId) return true;      // user's own
-      if (entitledIds.has(skill.id)) return true;      // entitled
-      return skill.publicationStatus === 'published' && skill.priceCents === 0; // free published
-    });
-
-    if (availableSkills.length === 0) {
-      return 'No skills available.';
-    }
-
-    return truncateForTelegram(availableSkills.map((s) => `${s.name} (${s.id})`).join('\n'));
-  } catch (error) {
-    console.error('handleSkills failed:', error);
-    return 'Failed to list skills. Please try again later.';
   }
 }
 

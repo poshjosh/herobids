@@ -18,11 +18,7 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., `"DCA 
 | Command | Description |
 |---|---|
 | `/agents` | List all your agents with their current status |
-| `/status` | Compact summary of all your agents |
-| `/status <agent>` | Detailed status for a specific agent |
 | `/info <agent>` | Full agent details: status, mode, capital, risk limits, skills, session |
-| `/skills` | List all skills available to you |
-| `/skills <agent>` | List skills assigned to an agent |
 | `/log <agent>` | Last 5 activity entries (decisions, messages, errors) |
 | `/connections` | List your active connections |
 | `/connections <agent>` | List connections assigned to an agent |
@@ -59,11 +55,7 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., `"DCA 
 /help
 /help start
 /agents
-/status
-/status "DCA Bot"
 /info Momentum
-/skills
-/skills Momentum
 /log Momentum
 /connections
 /connections Momentum

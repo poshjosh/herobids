@@ -199,11 +199,6 @@ describe.skipIf(SKIP)('Telegram Slash Commands — Functional E2E', () => {
     expect(lastSentText()).toContain('bind your Telegram account');
   });
 
-  it('unbound chat returns "bind first" for /status', async () => {
-    await send('99998', '/status');
-    expect(lastSentText()).toContain('bind your Telegram account');
-  });
-
   // ═══════════════════════════════════════════════════════════════════════
   // /help works for unbound users
   // ═══════════════════════════════════════════════════════════════════════
@@ -245,23 +240,6 @@ describe.skipIf(SKIP)('Telegram Slash Commands — Functional E2E', () => {
       expect(lastSentText().toLowerCase()).toContain('have any agent');
     });
 
-    it('/status shows agent summaries', async () => {
-      await seedAgent(uid, { name: 'Momentum', status: 'active' });
-      await send(CHAT, '/status');
-      const text = lastSentText();
-      expect(text).toContain('Momentum');
-      expect(text).toContain('active');
-    });
-
-    it('/status <agent> finds agent by name', async () => {
-      await seedAgent(uid, { name: 'Momentum', status: 'active' });
-      await send(CHAT, '/status Momentum');
-      // Should not return generic error — agent was seeded above
-      const text = lastSentText();
-      // Single-agent detail query hits decisions table which is complex to seed. Just verify response.
-      expect(text).toBeTruthy();
-    });
-
     it('/info shows capital for paper (test) mode agents', async () => {
       await seedAgent(uid, { name: 'Momentum', status: 'active', executionMode: 'paper', capital: '5000' });
       await send(CHAT, '/info Momentum');
@@ -280,22 +258,6 @@ describe.skipIf(SKIP)('Telegram Slash Commands — Functional E2E', () => {
       await seedAgent(other, { name: 'SecretAgent' });
       await send(CHAT, '/info SecretAgent');
       expect(lastSentText()).toContain('not found');
-    });
-
-    it('/skills (no args) lists available skills', async () => {
-      await ctx.db.insert(skills).values({
-        id: crypto.randomUUID(), name: 'market-overview',
-        description: 'Market overview skill', instructions: 'Do market analysis',
-        capabilityFamilies: ['trading'], publicationStatus: 'published',
-      });
-      await send(CHAT, '/skills');
-      expect(lastSentText()).toContain('market-overview');
-    });
-
-    it('/skills <agent> handles agent with no skills', async () => {
-      await seedAgent(uid, { name: 'Momentum' });
-      await send(CHAT, '/skills Momentum');
-      expect(lastSentText()).toBeTruthy();
     });
 
     it('/log does not crash when agent has no activity', async () => {

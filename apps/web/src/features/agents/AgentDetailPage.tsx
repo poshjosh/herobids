@@ -23,7 +23,7 @@ export function AgentDetailPage() {
   const { user } = useSession();
 
   const [isEditing, setIsEditing] = useState(false);
-  const [activePromptTab, setActivePromptTab] = useState<'judgeSystem' | 'scoutSystem' | 'userContext' | 'judgeUserContext'>('judgeSystem');
+  const [activePromptTab, setActivePromptTab] = useState<'judgeSystem' | 'scoutSystem' | 'userContext' | 'judgeUserContext' | 'hybridSystem'>('judgeSystem');
   const [expandedArtifactId, setExpandedArtifactId] = useState<string | null>(null);
 
   const handleEvent = useCallback((event: UserEvent) => {
@@ -611,6 +611,7 @@ export function AgentDetailPage() {
               { key: 'scoutSystem', label: intl.formatMessage({ id: 'agents.detail.promptTab.scoutSystem' }) },
               { key: 'userContext', label: intl.formatMessage({ id: 'agents.detail.promptTab.userContext' }) },
               { key: 'judgeUserContext', label: intl.formatMessage({ id: 'agents.detail.promptTab.judgeUserContext' }) },
+              { key: 'hybridSystem', label: intl.formatMessage({ id: 'agents.detail.promptTab.hybridSystem' }) },
             ];
             const activeContent = data[activePromptTab];
             return (

@@ -84,6 +84,7 @@ import { runStructuredToolLoop } from './structured-tool-loop.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults } from './llm-selection.js';
 import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
 import { canRouteToHybridEvaluator, runHybridEvaluator } from './hybrid-agent-evaluator.js';
+import { buildHybridPrompt, type HybridPromptInput } from './hybrid-agent-prompt.js';
 
 const logger = createLogger('agent-runtime');
 
@@ -2422,6 +2423,28 @@ async function runTick(): Promise<void> {
         ?? agentConfig.agentRiskDefaults?.maxOpenPositions
         ?? 5;
 
+      // Persist the hybrid prompt to Redis so it's visible in the frontend
+      // Prompt surfaces alongside judge/scout prompts.
+      const hybridPromptInput: HybridPromptInput = {
+        scan: latestTechnicalScan!,
+        portfolio: runtimeState.metrics.portfolio,
+        openPositions: runtimeState.metrics.openPositions,
+        maxPositions,
+        agentMemory: agentRuntimePolicy.promptStyle === 'enriched'
+          ? runtimeState.metrics.agentMemory
+          : null,
+        maxInlineMemoryKeys: agentRuntimePolicy.promptStyle === 'enriched'
+          ? agentRuntimePolicy.promptEnrichment.memory.maxInlineKeys
+          : undefined,
+        recentJudgeResponses: agentRuntimePolicy.promptStyle === 'enriched'
+          ? judgeResponseHistory.slice(-agentRuntimePolicy.promptEnrichment.judgeHistory.hybridMaxResponses)
+          : undefined,
+      };
+      const hybridSystemPromptKey = `agent:prompt:hybrid:${AGENT_ID}`;
+      redis.set(hybridSystemPromptKey, buildHybridPrompt(hybridPromptInput), 'EX', 3600).catch((err: unknown) => {
+        logger.warn({ err }, 'Failed to persist hybrid system prompt to Redis');
+      });
+
       let hybridFailed = false;
       try {
         const evalResult = await runHybridEvaluator({
@@ -2640,6 +2663,7 @@ async function runTick(): Promise<void> {
     const judgeUserContextPromptKey = `agent:prompt:judge-user-context:${AGENT_ID}`;
     const scoutSystemPromptKey = `agent:prompt:scout:${AGENT_ID}`;
     const scoutUserContextPromptKey = `agent:prompt:user-context:${AGENT_ID}`;
+    const hybridSystemPromptKey = `agent:prompt:hybrid:${AGENT_ID}`;
     // Persist the compiled prompt so the API can serve GET /agents/:id/prompt
     redis.set(judgeSystemPromptKey, systemPrompt, 'EX', 3600).catch((err: unknown) => {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');

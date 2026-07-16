@@ -129,7 +129,7 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| AG-01 | Agents list renders | Navigate to `/agents` | Page titled "Agents"; subtitle "Goal-driven agents with explicit skills and execution modes" | ✅ | Title "AI Agents"; subtitle "Goal-driven AI agents with explicit skills and execution modes" |
+| AG-01 | Agents list renders | Navigate to `/agents` | Page titled "AI Agents"; subtitle "Low cost AI agents that trade, assist, research and more" | ✅ | Title "AI Agents"; subtitle "Low cost AI agents that trade, assist, research and more" |
 | AG-02 | Empty state | Open with no agents | "No agents yet" empty state; "Create agent" CTA | ✅ | "No AI agents yet" with "Create AI agent" CTA |
 | AG-03 | Create agent — happy path | Click "New agent"; fill goal, preset, and execution mode; submit | Agent detail page opens for the new agent | ✅ | Created test-agent-01; navigated to /agents/:id |
 | AG-04 | Create agent — validation | Submit with missing required fields | Error banner shown; form not dismissed | ✅ | "Review →" button disabled when goal is empty; no submission possible |

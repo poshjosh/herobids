@@ -631,7 +631,8 @@ describe('GET /agents/:id/prompt', () => {
         .mockResolvedValueOnce('Judge system prompt')
         .mockResolvedValueOnce('Scout system prompt')
         .mockResolvedValueOnce('User context text')
-        .mockResolvedValueOnce('Judge user context text'),
+        .mockResolvedValueOnce('Judge user context text')
+        .mockResolvedValueOnce('Hybrid system prompt'),
     });
     const app = Fastify();
     decorateWithAuth(app);
@@ -645,6 +646,7 @@ describe('GET /agents/:id/prompt', () => {
     expect(body.scoutSystem).toBe('Scout system prompt');
     expect(body.userContext).toBe('User context text');
     expect(body.judgeUserContext).toBe('Judge user context text');
+    expect(body.hybridSystem).toBe('Hybrid system prompt');
   });
 
   it('returns 404 when no prompt in Redis (agent not running)', async () => {
@@ -666,6 +668,7 @@ describe('GET /agents/:id/prompt', () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce('Scout system prompt')
         .mockResolvedValueOnce('Scout user context')
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null),
     });
     const app = Fastify();
@@ -679,6 +682,7 @@ describe('GET /agents/:id/prompt', () => {
     expect(body.scoutSystem).toBe('Scout system prompt');
     expect(body.userContext).toBe('Scout user context');
     expect(body.judgeUserContext).toBeNull();
+    expect(body.hybridSystem).toBeNull();
   });
 
   it('returns 404 when agent not owned by user', async () => {

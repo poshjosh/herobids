@@ -23,9 +23,9 @@ describe('parseSlashCommand', () => {
   });
 
   it('parses a command with a single arg', () => {
-    expect(parseSlashCommand('/status Momentum')).toEqual({
-      command: 'status',
-      rawCommand: '/status',
+    expect(parseSlashCommand('/info Momentum')).toEqual({
+      command: 'info',
+      rawCommand: '/info',
       args: ['Momentum'],
     });
   });
@@ -150,9 +150,9 @@ describe('parseSlashCommand', () => {
   });
 
   it('handles extra whitespace gracefully', () => {
-    expect(parseSlashCommand('  /status   Momentum  ')).toEqual({
-      command: 'status',
-      rawCommand: '/status',
+    expect(parseSlashCommand('  /info   Momentum  ')).toEqual({
+      command: 'info',
+      rawCommand: '/info',
       args: ['Momentum'],
     });
   });
@@ -180,9 +180,9 @@ describe('parseSlashCommand', () => {
       rawCommand: '/agents',
       args: [],
     });
-    expect(parseSlashCommand('\r\n/status Momentum\r\n')).toEqual({
-      command: 'status',
-      rawCommand: '/status',
+    expect(parseSlashCommand('\r\n/info Momentum\r\n')).toEqual({
+      command: 'info',
+      rawCommand: '/info',
       args: ['Momentum'],
     });
   });
@@ -207,7 +207,7 @@ describe('parseSlashCommand', () => {
 
   it('returns null for text containing a slash but not at start', () => {
     expect(parseSlashCommand('hello /agents')).toBeNull();
-    expect(parseSlashCommand('check /status Momentum')).toBeNull();
+    expect(parseSlashCommand('check /info Momentum')).toBeNull();
   });
 });
 
@@ -255,7 +255,7 @@ describe('formatCommandHelp', () => {
 
   it('returns detailed help for all known commands', () => {
     const knownCommands = [
-      'help', 'agents', 'status', 'info', 'skills', 'log',
+      'help', 'agents', 'info', 'log',
       'connections', 'start', 'pause', 'resume', 'stop',
       'restart', 'mode', 'connect', 'disconnect', 'to',
     ];

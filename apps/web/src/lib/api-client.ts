@@ -1004,6 +1004,7 @@ export interface AgentCompiledPrompt {
   scoutSystem: string | null;
   userContext: string | null;
   judgeUserContext: string | null;
+  hybridSystem: string | null;
 }
 
 export interface AgentPosition {

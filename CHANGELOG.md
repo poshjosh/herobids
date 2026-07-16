@@ -8,7 +8,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Hybrid system prompt in Prompt Surfaces:** The scanner-gated hybrid evaluator prompt is now persisted to Redis (`agent:prompt:hybrid:{id}`) and displayed as a "Hybrid System" tab alongside Judge/Scout prompts on the agent detail page.
 - **Scanner-gated runtime hardening:** Strict persisted-config validation prevents malformed hybrid agents from starting scan loops. `StrictTechnicalConfigSchema` rejects missing `scanBatchSize`/`scanIntervalMs` at worker startup. Bounded candidate selection (volume-sorted, capped), 4-way provider eligibility classification, single-flight scan guard, global concurrency gate, and structured scan health matrix. Deterministic integration coverage proves the scanner-gated event chain (scan-completed → wake → evaluator → decision intake). 4909 tests pass. See [docs/features/2026/07/16/003-scanner_gated-must-be-working/005-scanner-gated-hardening-plan.md](docs/features/2026/07/16/003-scanner_gated-must-be-working/005-scanner-gated-hardening-plan.md).
+
+### Changed
+
+- **Updated tagline** from "AI crypto trader, personal assistant and more" to "Low cost AI agents that trade, assist, research and more" across `auth.tagline` and `agents.subtitle`.
+- **Removed `/status` and `/skills` slash commands** — both are fully covered by `/agents` (multi-agent summary) and `/info` (per-agent details including skills).
 
 ## v0.0.28 - 2026-07-16
 

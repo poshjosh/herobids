@@ -21,9 +21,7 @@ import {
 } from './telegram-slash-commands.js';
 import {
   handleAgents,
-  handleStatus,
   handleInfo,
-  handleSkills,
   handleLog,
   handleConnections,
   handleConnectSetup,
@@ -537,14 +535,15 @@ export async function agentInteractivityRoutes(
       });
     }
 
-    const [judgeSystem, scoutSystem, userContext, judgeUserContext] = await Promise.all([
+    const [judgeSystem, scoutSystem, userContext, judgeUserContext, hybridSystem] = await Promise.all([
       redisClient.get(`agent:prompt:${id}`),
       redisClient.get(`agent:prompt:scout:${id}`),
       redisClient.get(`agent:prompt:user-context:${id}`),
       redisClient.get(`agent:prompt:judge-user-context:${id}`),
+      redisClient.get(`agent:prompt:hybrid:${id}`),
     ]);
 
-    if (!judgeSystem && !scoutSystem && !userContext && !judgeUserContext) {
+    if (!judgeSystem && !scoutSystem && !userContext && !judgeUserContext && !hybridSystem) {
       return reply.status(404).send({ error: 'prompt_not_available', message: 'No compiled prompt available. Agent may not be running.' });
     }
 
@@ -554,6 +553,7 @@ export async function agentInteractivityRoutes(
       scoutSystem,
       userContext,
       judgeUserContext,
+      hybridSystem,
     });
   });
 
@@ -729,18 +729,8 @@ export async function telegramWebhookHandler(
           await sendTelegramText(chatId, response);
           return;
         }
-        if (slashCmd.command === 'status') {
-          const response = await handleStatus(db, userId, slashCmd.args);
-          await sendTelegramText(chatId, response);
-          return;
-        }
         if (slashCmd.command === 'info') {
           const response = await handleInfo(db, userId, slashCmd.args);
-          await sendTelegramText(chatId, response);
-          return;
-        }
-        if (slashCmd.command === 'skills') {
-          const response = await handleSkills(db, userId, slashCmd.args);
           await sendTelegramText(chatId, response);
           return;
         }

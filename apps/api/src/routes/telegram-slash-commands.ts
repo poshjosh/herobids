@@ -11,9 +11,7 @@
 export const SLASH_COMMANDS = [
   'help',
   'agents',
-  'status',
   'info',
-  'skills',
   'log',
   'connections',
   'start',
@@ -138,9 +136,7 @@ const COMMAND_HELP: CommandHelpEntry[] = [
   { command: 'help', syntax: '/help [command]', description: 'Show all commands or detailed help for one', category: 'help' },
 
   { command: 'agents', syntax: '/agents', description: 'List your agents with status', category: 'discovery' },
-  { command: 'status', syntax: '/status [agent]', description: 'Agent status overview', category: 'discovery' },
   { command: 'info', syntax: '/info <agent>', description: 'Full agent details', category: 'discovery' },
-  { command: 'skills', syntax: '/skills [agent]', description: 'List available or assigned skills', category: 'discovery' },
   { command: 'log', syntax: '/log <agent>', description: 'Recent activity (last 5 entries)', category: 'discovery' },
   { command: 'connections', syntax: '/connections [agent]', description: 'List connections', category: 'discovery' },
 
@@ -179,17 +175,6 @@ const DETAILED_HELP: Record<string, string> = {
     '  Swing Trader: stopped',
   ].join('\n'),
 
-  status: [
-    '/status [agent]',
-    '',
-    'Shows a compact summary of all your agents, or detailed status for one.',
-    'Agent names with spaces must be quoted.',
-    'Examples:',
-    '  /status             — summary of all agents',
-    '  /status Momentum    — status for "Momentum"',
-    '  /status "DCA Bot"   — status for "DCA Bot"',
-  ].join('\n'),
-
   info: [
     '/info <agent>',
     '',
@@ -198,16 +183,6 @@ const DETAILED_HELP: Record<string, string> = {
     'Examples:',
     '  /info Momentum',
     '  /info "Swing Trader"',
-  ].join('\n'),
-
-  skills: [
-    '/skills [agent]',
-    '',
-    'Without an agent: lists all skills available to you.',
-    'With an agent: lists skills currently assigned to that agent.',
-    'Examples:',
-    '  /skills            — all available skills',
-    '  /skills Momentum   — skills assigned to Momentum',
   ].join('\n'),
 
   log: [

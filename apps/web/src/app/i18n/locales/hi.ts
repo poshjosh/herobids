@@ -44,7 +44,7 @@ export const messages: Record<string, string> = {
   'common.pleaseWait': 'कृपया प्रतीक्षा करें…',
 
   // Auth
-  'auth.tagline': 'AI क्रिप्टो ट्रेडर, निजी सहायक और बहुत कुछ',
+  'auth.tagline': 'कम लागत वाले AI एजेंट जो ट्रेड करते हैं, सहायता करते हैं, शोध करते हैं और बहुत कुछ',
   'auth.continueWithGoogle': 'Google से जारी रखें',
   'auth.divider.or': 'या',
   'auth.email.name.label': 'नाम',
@@ -404,7 +404,7 @@ export const messages: Record<string, string> = {
 
   // Agents
   'agents.title': 'AI एजेंट',
-  'agents.subtitle': 'स्पष्ट कौशल और निष्पादन मोड वाले लक्ष्य-चालित AI एजेंट',
+  'agents.subtitle': 'कम लागत वाले AI एजेंट जो ट्रेड करते हैं, सहायता करते हैं, शोध करते हैं और बहुत कुछ',
   'agents.newAgent': 'नया AI एजेंट',
   'agents.createAgent': 'AI एजेंट बनाएं',
   'agents.empty.title': 'अभी तक कोई AI एजेंट नहीं',
@@ -582,6 +582,7 @@ export const messages: Record<string, string> = {
   'agents.detail.promptTab.scoutSystem': 'स्काउट सिस्टम',
   'agents.detail.promptTab.userContext': 'यूज़र कॉन्टेक्स्ट',
   'agents.detail.promptTab.judgeUserContext': 'जज यूज़र कॉन्टेक्स्ट',
+  'agents.detail.promptTab.hybridSystem': 'हाइब्रिड सिस्टम',
   'agents.detail.capabilities': 'क्षमताएँ',
   'agents.detail.connectionReadiness': 'कनेक्शन तैयारी',
   'agents.detail.agentEligibility': 'AI एजेंट पात्रता',

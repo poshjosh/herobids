@@ -113,7 +113,7 @@ export const messages: Record<string, string> = {
   'common.pleaseWait': 'Please wait…',
 
   // Auth
-  'auth.tagline': 'AI crypto trader, personal assistant and more',
+  'auth.tagline': 'Low cost AI agents that trade, assist, research and more',
   'auth.continueWithGoogle': 'Continue with Google',
   'auth.divider.or': 'or',
   'auth.email.name.label': 'Name',
@@ -404,7 +404,7 @@ export const messages: Record<string, string> = {
 
   // Agents
   'agents.title': 'AI Agents',
-  'agents.subtitle': 'Goal-driven AI agents with explicit skills and execution modes',
+  'agents.subtitle': 'Low cost AI agents that trade, assist, research and more',
   'agents.newAgent': 'New AI agent',
   'agents.createAgent': 'Create AI agent',
   'agents.empty.title': 'No AI agents yet',
@@ -583,6 +583,7 @@ export const messages: Record<string, string> = {
   'agents.detail.promptTab.scoutSystem': 'Scout System',
   'agents.detail.promptTab.userContext': 'User Context',
   'agents.detail.promptTab.judgeUserContext': 'Judge User Context',
+  'agents.detail.promptTab.hybridSystem': 'Hybrid System',
   'agents.detail.capabilities': 'Capabilities',
   'agents.detail.connectionReadiness': 'Connection readiness',
   'agents.detail.agentEligibility': 'AI agent eligibility',

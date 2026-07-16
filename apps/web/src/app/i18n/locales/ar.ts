@@ -44,7 +44,7 @@ export const messages: Record<string, string> = {
   'common.pleaseWait': 'يرجى الانتظار…',
 
   // Auth
-  'auth.tagline': 'متداول AI للعملات الرقمية ومساعدك الشخصي والمزيد',
+  'auth.tagline': 'وكلاء ذكاء اصطناعي منخفضة التكلفة تتداول وتساعد وتبحث والمزيد',
   'auth.continueWithGoogle': 'المتابعة مع Google',
   'auth.divider.or': 'أو',
   'auth.email.name.label': 'الاسم',
@@ -404,7 +404,7 @@ export const messages: Record<string, string> = {
 
   // Agents
   'agents.title': 'وكلاء الذكاء الاصطناعي',
-  'agents.subtitle': 'وكلاء ذكاء اصطناعي موجّهون بالأهداف مع مهارات وأوضاع تنفيذ واضحة',
+  'agents.subtitle': 'وكلاء ذكاء اصطناعي منخفضة التكلفة تتداول وتساعد وتبحث والمزيد',
   'agents.newAgent': 'وكيل ذكاء اصطناعي جديد',
   'agents.createAgent': 'إنشاء وكيل ذكاء اصطناعي',
   'agents.empty.title': 'لا يوجد وكلاء ذكاء اصطناعي بعد',
@@ -580,6 +580,7 @@ export const messages: Record<string, string> = {
   'agents.detail.promptTab.scoutSystem': 'موجّه الاستكشاف النظامي',
   'agents.detail.promptTab.userContext': 'سياق المستخدم',
   'agents.detail.promptTab.judgeUserContext': 'سياق مستخدم الحكم',
+  'agents.detail.promptTab.hybridSystem': 'النظام الهجين',
   'agents.detail.capabilities': 'القدرات',
   'agents.detail.connectionReadiness': 'جاهزية الاتصال',
   'agents.detail.agentEligibility': 'أهلية وكيل الذكاء الاصطناعي',
