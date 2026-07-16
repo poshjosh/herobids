@@ -398,10 +398,15 @@ This is the only section the `Coordinator` agent should treat as the implementat
    - Ran `pnpm lint` (tsc --noEmit): clean, no errors.
    - Evidence recorded in [008-phase1-validation-evidence.md](008-phase1-validation-evidence.md).
 
-5. **PENDING — Record Phase 0 Decisions 2–4**
-   - Decide the capacity-control boundary, provider eligibility source/classification, and provider-counter/dashboard treatment.
-   - Use the Phase 0 Decision Template for each decision.
-   - Complete the Capacity Calculation Template before Phase 2 implementation starts.
+5. **DONE — Record Phase 0 Decisions 2–4** ✅
+   - Decision 2 (capacity-control boundary): [009-phase0-decision-2-capacity-boundary.md](009-phase0-decision-2-capacity-boundary.md)
+   - Decision 3 (provider eligibility source/classification): [010-phase0-decision-3-provider-eligibility.md](010-phase0-decision-3-provider-eligibility.md)
+   - Decision 4 (provider-counter/dashboard treatment): [011-phase0-decision-4-dashboard-treatment.md](011-phase0-decision-4-dashboard-treatment.md)
+   - Capacity Calculation Template completed and appended to Decision 2.
+   - Key outcomes:
+     - Capacity: operator YAML `binance.scanner.maxRequestsPerMinute` (default 50) + `maxConcurrentScans` (default 4), per-worker `TokenBucketRateLimiter`, per-actor `scanInProgress` flag. Worst-case 36 RPM ≤ 50 RPM reserved budget.
+     - Eligibility: HTTP response classification (400/-1121 → unsupported, 5xx/timeout → transient, [] → empty). No static catalogue.
+     - Dashboard: Scanner traffic already flows through `binance:regime` Redis counters → Admin Dashboard. No new dashboard panel needed. Per-scan `symbolOutcomes` in `TechnicalScanState` for release evidence.
 
 6. **PENDING — Implement Phase 2 bounded eligible single-flight scanner**
    - Implement candidate bounding, provider eligibility classification, global/per-actor concurrency, and structured scan health.
