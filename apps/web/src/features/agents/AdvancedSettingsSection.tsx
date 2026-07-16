@@ -21,14 +21,10 @@ export interface AdvancedSettingsSectionProps {
   fieldTabMap?: Record<string, number>;
 }
 
-const wrapperStyle: React.CSSProperties = {
-  border: '1px solid var(--color-border)',
-  borderRadius: '8px',
-  background: 'var(--color-surface-1)',
-};
+const wrapperStyle: React.CSSProperties = {};
 
 const summaryStyle: React.CSSProperties = {
-  padding: '12px 16px',
+  padding: '12px 0',
   cursor: 'pointer',
   fontSize: '14px',
   fontWeight: '600',
@@ -40,17 +36,16 @@ const tabBarStyle: React.CSSProperties = {
   display: 'flex',
   gap: '0',
   borderBottom: '1px solid var(--color-border)',
-  padding: '0 16px',
   overflowX: 'auto',
   whiteSpace: 'nowrap',
   WebkitOverflowScrolling: 'touch',
 };
 
 const tabStyle = (active: boolean): React.CSSProperties => ({
-  padding: '8px 16px',
-  fontSize: '13px',
-  fontWeight: active ? '600' : '400',
-  color: active ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+  padding: '10px 16px',
+  fontSize: '14px',
+  fontWeight: active ? '600' : '500',
+  color: 'var(--color-text-primary)',
   background: 'none',
   border: 'none',
   borderBottom: active ? '2px solid var(--color-brand)' : '2px solid transparent',
@@ -62,7 +57,7 @@ const panelStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: '16px',
-  padding: '16px',
+  padding: '16px 0',
 };
 
 const sectionLabels = [
