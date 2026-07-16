@@ -690,11 +690,11 @@ plans:
           canViewOwnPrompts: false
         limits:
           maxAgents: 1
-          maxBots: 2
-          maxConnections: 2
-          maxCredentials: 2
-          maxBindings: 2
-          maxVenueAccounts: 2
+          maxBots: 3
+          maxConnections: 5
+          maxCredentials: 5
+          maxBindings: 5
+          maxVenueAccounts: 5
           maxConcurrentBacktests: 0
           liveEnabled: true
       usage: # required
@@ -720,11 +720,11 @@ plans:
           canViewOwnPrompts: false
         limits:
           maxAgents: 3
-          maxBots: 5
-          maxConnections: 5
-          maxCredentials: 5
-          maxBindings: 5
-          maxVenueAccounts: 5
+          maxBots: 9
+          maxConnections: 15
+          maxCredentials: 15
+          maxBindings: 15
+          maxVenueAccounts: 15
           maxConcurrentBacktests: 3
           liveEnabled: true
       usage: # required
