@@ -17,6 +17,17 @@ export interface DiscoveredInstrument {
 
 export type FilterConfig = TechnicalConfig['filters'];
 
+/** Classification of a single candle-fetch attempt in the technical scan. */
+export type CandleFetchStatus = 'eligible_fetched' | 'eligible_empty' | 'unsupported' | 'transient_failure';
+
+export interface SymbolFetchOutcome {
+  symbol: string;
+  resolvedProviderSymbol?: string;
+  status: CandleFetchStatus;
+  candleCount?: number;
+  errorDetail?: string;
+}
+
 export interface PositionIndicatorUpdate {
   symbol: string;
   side: 'long' | 'flat';
@@ -54,6 +65,9 @@ export interface TechnicalPhaseDeps {
 
 export interface TechnicalPhaseResult {
   candidatesDiscovered: number;
+  /** Count of symbols selected for candle fetch. Includes both entry candidates AND
+   *  open-position symbols (for exit evaluation). Not limited to new-entry candidates. */
+  symbolsSelected: number;
   candidatesScored: number;
   signalsGenerated: number;
   entriesSubmitted: number;
@@ -64,6 +78,62 @@ export interface TechnicalPhaseResult {
   regimeResult: RegimeResult | null;
   positionIndicators: PositionIndicatorUpdate[];
   summary: { scanned: number; rejected: number; passed: number };
+  /** Per-symbol fetch outcomes for scanner health observability. */
+  symbolOutcomes: SymbolFetchOutcome[];
+  /** Count of symbols classified as unsupported by the provider. */
+  unsupportedCount: number;
+  /** Count of symbols that encountered transient fetch failures. */
+  fetchFailures: number;
+  /** Count of symbols that returned eligible data (eligible_fetched + eligible_empty). */
+  eligibleCount: number;
+  /** Count of symbols that returned non-empty candles (eligible_fetched only). */
+  fetchedCount: number;
+  /** Whether this scan was skipped due to an overlapping scan in progress. */
+  overlapSkipped?: boolean;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Classify a candle-fetch error into one of four outcome statuses.
+ * Uses error message patterns since HttpError (from @herobids/market-data/http)
+ * is not re-exported through the market-data barrel.
+ */
+function classifyCandleError(err: unknown): { status: CandleFetchStatus; detail: string } {
+  const msg = err instanceof Error ? err.message : String(err);
+
+  // HTTP 400 → unsupported symbol (Binance code -1121 "Invalid symbol")
+  if (msg.includes('HTTP error: 400') || msg.includes('Invalid symbol')) {
+    return { status: 'unsupported', detail: msg };
+  }
+
+  // Rate-limit exhaustion (local TokenBucketRateLimiter or coordinated limiter)
+  if (msg.includes('Rate limit exceeded')) {
+    return { status: 'transient_failure', detail: msg };
+  }
+
+  // HTTP 429 → upstream rate limit (shouldn't happen if limiter works, but defensive)
+  if (msg.includes('HTTP error: 429')) {
+    return { status: 'transient_failure', detail: msg };
+  }
+
+  // HTTP 5xx → transient Binance server error
+  if (msg.includes('HTTP error: 5')) {
+    return { status: 'transient_failure', detail: msg };
+  }
+
+  // Timeout / abort
+  if (
+    msg.includes('abort') ||
+    msg.includes('timeout') ||
+    msg.includes('Timeout') ||
+    msg.includes('AbortError')
+  ) {
+    return { status: 'transient_failure', detail: msg };
+  }
+
+  // Unknown error — treat as transient to avoid permanent blacklisting
+  return { status: 'transient_failure', detail: msg };
 }
 
 // ─── Implementation ───────────────────────────────────────────────────────────
@@ -72,6 +142,7 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
   const { config, riskConfig, agentId, venueAccountId, logger } = deps;
   const result: TechnicalPhaseResult = {
     candidatesDiscovered: 0,
+    symbolsSelected: 0,
     candidatesScored: 0,
     signalsGenerated: 0,
     entriesSubmitted: 0,
@@ -82,6 +153,11 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
     regimeResult: null,
     positionIndicators: [],
     summary: { scanned: 0, rejected: 0, passed: 0 },
+    symbolOutcomes: [],
+    unsupportedCount: 0,
+    fetchFailures: 0,
+    eligibleCount: 0,
+    fetchedCount: 0,
   };
 
   // 1. Discover candidates
@@ -124,23 +200,49 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
     ...candidates.map((c) => c.symbol),
     ...openSymbols,
   ];
+  result.symbolsSelected = allSymbols.length; // includes both entry candidates + open-position symbols
 
-  // 5. Fetch candles in batches
+  // 5. Fetch candles in batches — classify per-symbol outcomes for health matrix
   const candlesBySymbol = new Map<string, PriceCandle[]>();
+  const unsupportedSymbols = new Set<string>(); // per-scan cache: skip unsupported in subsequent batches
   for (let i = 0; i < allSymbols.length; i += config.scanBatchSize) {
-    const batch = allSymbols.slice(i, i + config.scanBatchSize);
+    const batch = allSymbols.slice(i, i + config.scanBatchSize)
+      .filter((sym) => !unsupportedSymbols.has(sym)); // skip already-classified-unsupported
+    if (batch.length === 0) continue;
+
     await Promise.all(
       batch.map(async (symbol) => {
         try {
           const candles = await deps.fetchCandles(symbol, config.candles.interval, config.candles.limit);
           candlesBySymbol.set(symbol, candles);
+          const candleCount = candles.length;
+          const status: CandleFetchStatus = candleCount > 0 ? 'eligible_fetched' : 'eligible_empty';
+          result.symbolOutcomes.push({ symbol, status, candleCount });
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          result.errors.push(`candle_fetch_failed(${symbol}): ${msg}`);
-          logger.warn({ err, symbol }, 'Technical phase: candle fetch failed — skipping symbol');
+          const { status, detail } = classifyCandleError(err);
+          result.symbolOutcomes.push({ symbol, status, errorDetail: detail });
+          if (status === 'unsupported') {
+            unsupportedSymbols.add(symbol);
+            result.unsupportedCount++;
+          } else {
+            result.fetchFailures++;
+          }
+          const outcomeMsg = `candle_fetch_${status}(${symbol}): ${detail}`;
+          result.errors.push(outcomeMsg);
+          logger.warn({ err, symbol, status }, `Technical phase: candle fetch ${status} — skipping symbol`);
         }
       }),
     );
+  }
+
+  // Compute eligible/fetched counts once to avoid re-filtering symbolOutcomes downstream.
+  for (const outcome of result.symbolOutcomes) {
+    if (outcome.status === 'eligible_fetched') {
+      result.fetchedCount++;
+      result.eligibleCount++;
+    } else if (outcome.status === 'eligible_empty') {
+      result.eligibleCount++;
+    }
   }
 
   // 6. Build CandidateContext[] for successfully-fetched candidates

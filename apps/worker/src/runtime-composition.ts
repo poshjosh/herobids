@@ -5,7 +5,7 @@ import type { RegimeResult } from '@herobids/market-data';
 import type { ScoredSignal } from '@herobids/strategy';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines } from './prompt-timing-context.js';
-import type { PositionIndicatorUpdate } from './technical-phase.js';
+import type { PositionIndicatorUpdate, SymbolFetchOutcome } from './technical-phase.js';
 import type { WatchInstrumentIdentity, WatchPurpose, WatchCoverageLink } from './watch-types.js';
 import type { CoverageEvaluationResult } from './position-coverage.js';
 import { fmtUsd } from './fmt.js';
@@ -114,6 +114,24 @@ export interface TechnicalScanState {
   signals: ScoredSignal[];
   positionIndicators: PositionIndicatorUpdate[];
   summary: { scanned: number; rejected: number; passed: number };
+  /** Structured per-symbol fetch outcomes for scanner health observability. */
+  symbolOutcomes: SymbolFetchOutcome[];
+  /** Count of discovered candidates (before bounding/selection). */
+  discovered: number;
+  /** Count of symbols selected for candle fetch (after bounding, includes open-position exits). */
+  symbolsSelected: number;
+  /** Count of symbols with eligible candle data (fetched + empty). */
+  eligible: number;
+  /** Count of symbols that returned non-empty candles. */
+  fetched: number;
+  /** Count of symbols classified as unsupported by the provider. */
+  unsupported: number;
+  /** Count of symbols that encountered transient fetch failures. */
+  fetchFailures: number;
+  /** Count of signals generated. */
+  signalsGenerated: number;
+  /** Whether this scan was skipped due to an overlapping scan already in progress. */
+  overlapSkipped?: boolean;
 }
 
 export interface RuntimeSessionCosts {

@@ -121,6 +121,18 @@ function makeScan(overrides?: Partial<TechnicalScanState>): TechnicalScanState {
       },
     ],
     summary: { scanned: 15, rejected: 12, passed: 3 },
+    symbolOutcomes: [
+      { symbol: 'ETH-PERP', status: 'eligible_fetched', candleCount: 100 },
+      { symbol: 'SOL-PERP', status: 'eligible_fetched', candleCount: 100 },
+      { symbol: 'ARB-PERP', status: 'eligible_fetched', candleCount: 100 },
+    ],
+    discovered: 15,
+    symbolsSelected: 3,
+    eligible: 3,
+    fetched: 3,
+    unsupported: 0,
+    fetchFailures: 0,
+    signalsGenerated: 2,
     ...overrides,
   };
 }

@@ -217,6 +217,13 @@ marketData:
     # so subsequent requests must wait ~300 ms each. 30 s gives enough
     # headroom for agent technical-phase batches to complete.
     maxWaitMs: 30000
+    # Scanner capacity controls — operator-owned bounds for scan-agent candle traffic.
+    # Derivation: 200 RPM binance budget, 150 reserved for regime checks → 50 for scanner.
+    # See docs/features/2026/07/16/003-scanner_gated-must-be-working/009-phase0-decision-2-capacity-boundary.md
+    scanner:
+      maxRequestsPerMinute: 50     # per-worker ceiling for scanner candle requests
+      maxConcurrentScans: 4        # per-worker max concurrent scanner agents
+      maxCandidates: 20            # max entry candidates per scan (open-position exits always preserved)
   birdeye:
     enabled: true
     baseUrl: "https://public-api.birdeye.so"

@@ -245,6 +245,14 @@ const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
 // ── Technical scanner candidate discovery ────────────────────────────────────
 // Wraps the shared market data registry's Hyperliquid asset contexts to provide
 // a filtered list of tradable instruments for hybrid/scanner_gated agents.
+
+/** Capacity policy values sourced from operator config. */
+const scannerCapacity = appConfig.marketData?.binance?.scanner ?? {
+  maxRequestsPerMinute: 50,
+  maxConcurrentScans: 4,
+  maxCandidates: 20,
+};
+
 const discoverCandidates = async (filters: FilterConfig | undefined) => {
   if (!sharedMarketDataRegistry) return [];
   if (!filters) return [];
@@ -273,6 +281,18 @@ const discoverCandidates = async (filters: FilterConfig | undefined) => {
     results = results.filter((r) => !excludeSymbols.includes(r.symbol));
   }
 
+  // Phase 2: deterministic ordering by volume24hUsd descending before bounding.
+  // This ensures reproducible candidate selection when capacity limits apply.
+  results.sort((a, b) => (b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0));
+
+  // Phase 2: bound entry candidates to operator-configured max per scan.
+  // Open-position exit-evaluation symbols are added downstream in technical-phase.ts,
+  // so they are always preserved above this cap.
+  const maxCandidates = scannerCapacity.maxCandidates;
+  if (results.length > maxCandidates) {
+    results = results.slice(0, maxCandidates);
+  }
+
   return results;
 };
 
@@ -288,8 +308,19 @@ const agentCandleFetcher = sharedMarketDataRegistry
     )
   : undefined;
 
+// Phase 2: per-worker scanner rate limiter to prevent scanner candle traffic
+// from exhausting the shared Binance budget (200 RPM). Operator-config owned.
+const scannerRateLimiter = new TokenBucketRateLimiter({
+  requestsPerMinute: scannerCapacity.maxRequestsPerMinute,
+  burstCapacity: scannerCapacity.maxRequestsPerMinute,
+  maxWaitMs: 5_000, // short wait — scanner batches are time-sensitive
+});
+
 const fetchCandles = agentCandleFetcher
   ? async (symbol: string, interval: string, limit: number) => {
+      // Phase 2: scanner capacity gate before delegating to shared binance limiter.
+      // Rejections here are transient_failure — not unsupported.
+      await scannerRateLimiter.acquire();
       return agentCandleFetcher.fetchCandles(symbol, interval, limit);
     }
   : undefined;
@@ -927,6 +958,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           technicalConfig,
           discoverCandidates,
           fetchCandles,
+          maxConcurrentScans: scannerCapacity.maxConcurrentScans,
         });
 
         await actor.start();

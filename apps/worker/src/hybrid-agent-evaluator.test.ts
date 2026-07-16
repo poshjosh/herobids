@@ -68,6 +68,14 @@ function makeScan(): TechnicalScanState {
     ],
     positionIndicators: [],
     summary: { scanned: 1, rejected: 0, passed: 1 },
+    symbolOutcomes: [{ symbol: 'BTC', status: 'eligible_fetched', candleCount: 100 }],
+    discovered: 1,
+    symbolsSelected: 1,
+    eligible: 1,
+    fetched: 1,
+    unsupported: 0,
+    fetchFailures: 0,
+    signalsGenerated: 1,
   };
 }
 

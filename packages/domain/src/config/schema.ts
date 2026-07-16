@@ -932,6 +932,21 @@ export const MarketDataConfigSchema = z.object({
      *  (200) but a correspondingly large burst; after the burst drains the bucket,
      *  subsequent requests need ~300 ms each. A 30 s window gives adequate headroom. */
     maxWaitMs: z.number().int().min(1_000).default(30_000),
+    /** Scanner capacity controls — prevent scanner candle traffic from exhausting
+     *  the shared Binance rate-limit budget. Operator-config owned per config-layer rules. */
+    scanner: z.object({
+      /** Per-worker max scanner candle requests per minute.
+       *  Default 50 RPM — derived from operator capacity calc (200 RPM binance budget,
+       *  150 reserved for regime checks). */
+      maxRequestsPerMinute: z.number().int().min(1).default(50),
+      /** Max concurrent scanner agents across all workers. Used as a per-worker
+       *  in-memory gate until a cross-worker Redis semaphore is added. */
+      maxConcurrentScans: z.number().int().min(1).default(4),
+      /** Max entry candidates selected per scan. Bounds Hyperliquid discovery
+       *  results before they become candle requests. Open-position exit evaluation
+       *  symbols are always preserved above this cap. */
+      maxCandidates: z.number().int().min(1).default(20),
+    }).default({}),
   }).default({}),
   birdeye: z.object({
     enabled: z.boolean().default(false),

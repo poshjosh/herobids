@@ -408,9 +408,11 @@ This is the only section the `Coordinator` agent should treat as the implementat
      - Eligibility: HTTP response classification (400/-1121 → unsupported, 5xx/timeout → transient, [] → empty). No static catalogue.
      - Dashboard: Scanner traffic already flows through `binance:regime` Redis counters → Admin Dashboard. No new dashboard panel needed. Per-scan `symbolOutcomes` in `TechnicalScanState` for release evidence.
 
-6. **PENDING — Implement Phase 2 bounded eligible single-flight scanner**
-   - Implement candidate bounding, provider eligibility classification, global/per-actor concurrency, and structured scan health.
-   - Implement the scanner outcome health matrix.
+6. **DONE — Implement Phase 2 bounded eligible single-flight scanner** ✅
+   - Candidate bounding (volume-sorted, capped), 4-way eligibility classification, single-flight guard, global concurrency gate.
+   - Structured scan health with symbol outcomes, health matrix implemented.
+   - 22 new tests, 2026 worker tests pass, lint clean.
+   - See Outstanding Issues for 1 MEDIUM and 5 LOW findings from code review.
 
 7. **PENDING — Validate Phase 2**
    - Run focused worker, market-data, venue-adapter, and runtime-composition tests for Phase 2.
@@ -477,3 +479,15 @@ Recorded during implementation code reviews. Grouped by checklist item.
 - **L2:** `StrictTechnicalConfigSchema.parse()` throws `ZodError` with verbose default messages on failure; may benefit from a custom error message mapping the missing field to a clear operator-facing reason.
 - **L3:** `StrictTechnicalConfigSchema` duplicates most of `TechnicalConfigSchema`; a future refactor could derive one from the other via `.omit()` / `.extend()` but this is acceptable for now.
 - **L4:** Edge case: if `StrictTechnicalConfigSchema` passes but `TechnicalConfigSchema.parse()` fails on inner defaults, the error propagates as a startup failure rather than a distinct "strict OK but lenient failed" state. This is unlikely given the current schema shapes but worth noting.
+
+### [Item 6 — Implement Phase 2] (2026-07-16)
+
+**MEDIUM:**
+- **M3:** Pre-computed `eligibleCount` and `fetchedCount` are not asserted in scanner-gated-phase2 tests. Tests independently recompute counts by filtering `symbolOutcomes` instead of asserting against `result.eligibleCount` / `result.fetchedCount`. A pre-computation bug would not be caught.
+
+**LOW:**
+- **L5:** Naming inconsistency between `TechnicalPhaseResult` (uses `XxxCount` suffix: `unsupportedCount`, `eligibleCount`, `fetchedCount`) and `TechnicalScanState` (drops suffix: `unsupported`, `eligible`, `fetched`). Align to one convention.
+- **L6:** `globalMaxConcurrentScans` uses first-actor-wins seeding from constructor. Mitigated because all actors receive the same operator config value.
+- **L7:** Overlap-skipped path silently swallows `onTechnicalScanComplete` errors while normal path propagates. Consider logging at warn level for consistency.
+- **L8:** `overlapSkipped` is `undefined` (not `false`) for successful scans. Truthiness checks work but explicit `=== false` would fail.
+- **L9:** Candidate bounding/sorting tests mock `discoverCandidates` and don't test the actual bounding logic in `index.ts`. Consider integration-level test.

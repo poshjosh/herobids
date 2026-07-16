@@ -74,6 +74,14 @@ import type {
   BacktestingRepository,
 } from '@herobids/db';
 
+// ── Concurrency gate ─────────────────────────────────────────────────────────
+// Per-worker in-memory counter guarding max concurrent technical scans across
+// all agents. The cap is set once from operator config (marketData.binance.scanner.maxConcurrentScans)
+// and checked before each scan. A Redis-backed cross-worker semaphore is the
+// long-term plan but deferred to follow-on.
+let activeConcurrentScans = 0;
+let globalMaxConcurrentScans = 0;
+
 export interface AgentTradingActorDeps {
   agentId: string;
   executionMode: 'paper' | 'shadow' | 'live';
@@ -155,6 +163,8 @@ export interface AgentTradingActorDeps {
   /** Callback invoked alongside journal.append for events the agent's circuit breaker should track.
    *  Caller (worker index.ts) wires this to publish to the agent's outbound stream. */
   onJournalEvent?: (event: { type: string; payload?: Record<string, unknown> }) => void;
+  /** Operator-level max concurrent technical scans across all agents (per-worker in-memory gate). */
+  maxConcurrentScans?: number;
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -246,6 +256,8 @@ export class AgentTradingActor implements ExecutionActor {
   private technicalScanTimer?: ReturnType<typeof setInterval>;
   /** Latest technical scan results — forwarded to agent container for LLM context enrichment */
   private lastTechnicalScan?: TechnicalScanState;
+  /** Phase 2: single-flight guard — prevents overlapping scans for the same actor. */
+  private scanInProgress = false;
   /** Last reconciliation status for drift-only reconnect suppression. */
   private lastReconciliationStatus?: string;
   /** Whether the last reconciliation detected position changes (as opposed to balance-only drift). */
@@ -255,6 +267,10 @@ export class AgentTradingActor implements ExecutionActor {
     this.agentId = deps.agentId;
     this.logger = createLogger(`agent-actor-${deps.agentId.slice(0, 8)}`);
     this.streamPool = deps.streamPool;
+    // Seed the global concurrency limit from operator config (first actor to start wins).
+    if (deps.maxConcurrentScans !== undefined && globalMaxConcurrentScans === 0) {
+      globalMaxConcurrentScans = deps.maxConcurrentScans;
+    }
   }
 
   /**
@@ -1457,6 +1473,68 @@ export class AgentTradingActor implements ExecutionActor {
     if (!technicalConfig || !discoverCandidates || !fetchCandles) return;
     if (!this.running) return;
 
+    // Phase 2: global concurrency gate — skip if the per-worker active scan
+    // count has reached the operator-configured maxConcurrentScans ceiling.
+    if (globalMaxConcurrentScans > 0 && activeConcurrentScans >= globalMaxConcurrentScans) {
+      this.logger.info(
+        { activeConcurrentScans, max: globalMaxConcurrentScans },
+        'Technical scan skipped — worker concurrency limit reached (capacity_unavailable)',
+      );
+      const capacityScan: TechnicalScanState = {
+        timestamp: new Date().toISOString(),
+        scanIntervalMs: technicalConfig.scanIntervalMs,
+        regimeResult: null,
+        signals: [],
+        positionIndicators: [],
+        summary: { scanned: 0, rejected: 0, passed: 0 },
+        symbolOutcomes: [],
+        discovered: 0,
+        symbolsSelected: 0,
+        eligible: 0,
+        fetched: 0,
+        unsupported: 0,
+        fetchFailures: 0,
+        signalsGenerated: 0,
+        overlapSkipped: true,
+      };
+      this.lastTechnicalScan = capacityScan;
+      if (this.deps.onTechnicalScanComplete) {
+        await Promise.resolve(this.deps.onTechnicalScanComplete(agentId, capacityScan)).catch(() => {});
+      }
+      return;
+    }
+
+    // Phase 2: single-flight guard — skip if a scan is already in progress.
+    if (this.scanInProgress) {
+      this.logger.info('Technical scan skipped — previous scan still in progress (overlap_skipped)');
+      // Emit an overlap-skipped scan state so operators can distinguish scheduler
+      // outcomes from healthy no-signal scans.
+      const overlapScan: TechnicalScanState = {
+        timestamp: new Date().toISOString(),
+        scanIntervalMs: technicalConfig.scanIntervalMs,
+        regimeResult: null,
+        signals: [],
+        positionIndicators: [],
+        summary: { scanned: 0, rejected: 0, passed: 0 },
+        symbolOutcomes: [],
+        discovered: 0,
+        symbolsSelected: 0,
+        eligible: 0,
+        fetched: 0,
+        unsupported: 0,
+        fetchFailures: 0,
+        signalsGenerated: 0,
+        overlapSkipped: true,
+      };
+      this.lastTechnicalScan = overlapScan;
+      if (this.deps.onTechnicalScanComplete) {
+        await Promise.resolve(this.deps.onTechnicalScanComplete(agentId, overlapScan)).catch(() => {});
+      }
+      return;
+    }
+
+    this.scanInProgress = true;
+    activeConcurrentScans++;
     try {
       const phaseResult = await runTechnicalPhase({
         config: technicalConfig,
@@ -1484,8 +1562,38 @@ export class AgentTradingActor implements ExecutionActor {
         signals: phaseResult.signals,
         positionIndicators: phaseResult.positionIndicators,
         summary: phaseResult.summary,
+        symbolOutcomes: phaseResult.symbolOutcomes,
+        discovered: phaseResult.candidatesDiscovered,
+        symbolsSelected: phaseResult.symbolsSelected,
+        eligible: phaseResult.eligibleCount,
+        fetched: phaseResult.fetchedCount,
+        unsupported: phaseResult.unsupportedCount,
+        fetchFailures: phaseResult.fetchFailures,
+        signalsGenerated: phaseResult.signalsGenerated,
+        overlapSkipped: phaseResult.overlapSkipped,
       };
       this.lastTechnicalScan = scan;
+
+      // Phase 2: emit a journal event when scanner-data is unhealthy
+      // (fetched === 0 but eligible > 0 means the provider returned data but
+      // candles were empty or unusable — not a healthy no-signal scan).
+      const eligibleCount = phaseResult.eligibleCount;
+      const fetchedCount = phaseResult.fetchedCount;
+      if (fetchedCount === 0 && eligibleCount > 0 && this.deps.onJournalEvent) {
+        this.deps.onJournalEvent({
+          type: 'scanner.data_unhealthy',
+          payload: {
+            agentId,
+            discovered: scan.discovered,
+            symbolsSelected: scan.symbolsSelected,
+            eligible: eligibleCount,
+            fetched: fetchedCount,
+            unsupported: scan.unsupported,
+            fetchFailures: scan.fetchFailures,
+            timestamp: scan.timestamp,
+          },
+        });
+      }
 
       // Forward the completed scan before emitting a wake so the agent runtime
       // can ingest fresh scan state before it routes into the hybrid evaluator.
@@ -1526,6 +1634,9 @@ export class AgentTradingActor implements ExecutionActor {
       }
     } catch (err) {
       this.logger.error({ err }, 'Technical scan loop error — will retry on next tick');
+    } finally {
+      activeConcurrentScans = Math.max(0, activeConcurrentScans - 1);
+      this.scanInProgress = false;
     }
   }
 
