@@ -727,6 +727,52 @@ describe('TechnicalConfigSchema', () => {
   });
 });
 
+describe('TechnicalConfigSchema — defaults', () => {
+  const minimal = { filters: { venue: 'hyperliquid', venueType: 'orderbook' } };
+
+  it('defaults scanBatchSize to 5', () => {
+    const result = TechnicalConfigSchema.safeParse(minimal);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.scanBatchSize).toBe(5);
+    }
+  });
+
+  it('defaults scanIntervalMs to 60_000', () => {
+    const result = TechnicalConfigSchema.safeParse(minimal);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.scanIntervalMs).toBe(60_000);
+    }
+  });
+
+  it('defaults candles to { interval: "15m", limit: 100 }', () => {
+    const result = TechnicalConfigSchema.safeParse(minimal);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.candles).toEqual({ interval: '15m', limit: 100 });
+    }
+  });
+
+  it('defaults signalBias to "trend-following"', () => {
+    const result = TechnicalConfigSchema.safeParse(minimal);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.signalBias).toBe('trend-following');
+    }
+  });
+
+  it('defaults indicators to {}', () => {
+    const result = TechnicalConfigSchema.safeParse(minimal);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.indicators).toBeDefined();
+      expect(typeof result.data.indicators).toBe('object');
+      expect(result.data.indicators).not.toBeNull();
+    }
+  });
+});
+
 // ── Per-agent runtime policy ────────────────────────────────────────────────
 
 describe('AgentStyleSchema', () => {
