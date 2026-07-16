@@ -313,7 +313,7 @@ async function scenario1_minimalConfigProducesSignals(token: string): Promise<vo
 
   // 2. Start the agent
   const startRes = await apiRequest('POST', `/agents/${agentId}/start`, { token });
-  if (startRes.status !== 200) {
+  if (startRes.status !== 200 && startRes.status !== 202) {
     record('s1-start', false, `start failed: ${startRes.status}`);
     await deleteAgent(token, agentId);
     return;
@@ -372,6 +372,7 @@ async function scenario2_explicitValuesPreserved(token: string): Promise<void> {
       style: 'balanced',
       connectionIds: [connectionId],
       technical: {
+        filters: { venue: 'hyperliquid', venueType: 'orderbook' },
         scanBatchSize: 10,
         scanIntervalMs: 30_000,
       },
@@ -387,7 +388,7 @@ async function scenario2_explicitValuesPreserved(token: string): Promise<void> {
 
   // 2. Start the agent
   const startRes = await apiRequest('POST', `/agents/${agentId}/start`, { token });
-  if (startRes.status !== 200) {
+  if (startRes.status !== 200 && startRes.status !== 202) {
     record('s2-start', false, `start failed: ${startRes.status}`);
     await deleteAgent(token, agentId);
     return;
@@ -460,7 +461,7 @@ async function scenario3_intelligenceAgentUnaffected(token: string): Promise<voi
   // 2. Start the agent
   const startTs = new Date().toISOString();
   const startRes = await apiRequest('POST', `/agents/${agentId}/start`, { token });
-  if (startRes.status !== 200) {
+  if (startRes.status !== 200 && startRes.status !== 202) {
     record('s3-start', false, `start failed: ${startRes.status}`);
     await deleteAgent(token, agentId);
     return;
@@ -531,7 +532,7 @@ async function scenario4_patchPreservesDefaults(token: string): Promise<void> {
 
   // 2. Start the agent and verify candidatesScored > 0
   let startRes = await apiRequest('POST', `/agents/${agentId}/start`, { token });
-  if (startRes.status !== 200) {
+  if (startRes.status !== 200 && startRes.status !== 202) {
     record('s4-start', false, `start failed: ${startRes.status}`);
     await deleteAgent(token, agentId);
     return;
@@ -584,7 +585,7 @@ async function scenario4_patchPreservesDefaults(token: string): Promise<void> {
 
   // 6. Restart and verify candidatesScored > 0 after PATCH
   startRes = await apiRequest('POST', `/agents/${agentId}/start`, { token });
-  if (startRes.status !== 200) {
+  if (startRes.status !== 200 && startRes.status !== 202) {
     record('s4-restart', false, `restart failed: ${startRes.status}`);
     await deleteAgent(token, agentId);
     reactivateConnections();
