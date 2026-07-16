@@ -383,9 +383,11 @@ This is the only section the `Coordinator` agent should treat as the implementat
    - Evidence collected in [006-staging-prerequisite-evidence.md](006-staging-prerequisite-evidence.md).
    - Worker restarted. Re-verified 2026-07-16 ~17:30 UTC: DB shows 0 storming agents, 0 scanner log lines in last 10s, worker CPU at 0.85%. Prerequisite met.
 
-2. **PENDING — Record Phase 0 Decision 1**
-   - Decide the strict persisted-config validation mechanism and actor startup rejection contract.
-   - Use the Phase 0 Decision Template.
+2. **DONE — Record Phase 0 Decision 1** ✅
+   - Decision recorded in [007-phase0-decision-1-config-validation.md](007-phase0-decision-1-config-validation.md).
+   - Decided: `StrictTechnicalConfigSchema` (separate no-defaults variant) + validate in `onSessionActive` before `new AgentTradingActor()`.
+   - Strict gate applies to `scanner_gated` agents only; `mixed` agents get repaired defaults; `intelligence` agents unaffected.
+   - Failure contract: reuse existing `handleActivationFailure` path (guardrail `trading_actor.start_failed`, session/agent → `crashed`).
 
 3. **PENDING — Implement Phase 1 strict config persistence and actor startup validation**
    - Implement only the Phase 1 code and tests.
