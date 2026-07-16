@@ -428,9 +428,15 @@ This is the only section the `Coordinator` agent should treat as the implementat
    - No live market — fixture candles (uptrend → known signals, overbought → exit advisories, flat → no signals).
    - No real LLM — `callLlmProvider` already mocked in evaluator tests.
 
-9. **PENDING — Implement deterministic integration coverage**
+9. **DONE — Implement deterministic integration coverage** (2026-07-16)
    - Add deterministic tests for the complete scanner-gated event chain.
    - Use fixture candles and a controlled evaluator/LLM decision source; do not rely on live market conditions.
+   - **Implemented:**
+     - **Layer A:** Extracted scan-completion logic from `AgentTradingActor.runTechnicalScan()` into standalone `completeTechnicalScan()` function in `apps/worker/src/complete-technical-scan.ts`. 9 tests in `apps/worker/src/complete-technical-scan.test.ts` covering: actionable signals, exit advisories with high priority, healthy no-signal scan, data unhealthy journaling, overlap skipped, non-hybrid mode, capacity skip, and edge cases (missing callbacks).
+     - **Layer B:** Added 2 tests to `apps/worker/src/runtime-composition-technical.test.ts` verifying `recordTechnicalScan` → health matrix fields and scan replacement. Added 1 test to `apps/worker/src/hybrid-agent-evaluator.test.ts` verifying scanner wake → `canRouteToHybridEvaluator` → `runHybridEvaluator` → `submitDecision` with correct instrumentId from scan.
+     - All tests use fixture candles, mocked callbacks, no Redis, no live market.
+     - AgentTradingActor refactored to call `completeTechnicalScan()` instead of inline logic.
+     - Full worker test suite: 2038 passed, 0 failed.
 
 10. **PENDING — Record Phase 0 Decision 6**
     - Decide the deployed staging connection and bounded symbols for live-provider smoke.
@@ -496,3 +502,12 @@ Recorded during implementation code reviews. Grouped by checklist item.
 - **L7:** Overlap-skipped path silently swallows `onTechnicalScanComplete` errors while normal path propagates. Consider logging at warn level for consistency.
 - **L8:** `overlapSkipped` is `undefined` (not `false`) for successful scans. Truthiness checks work but explicit `=== false` would fail.
 - **L9:** Candidate bounding/sorting tests mock `discoverCandidates` and don't test the actual bounding logic in `index.ts`. Consider integration-level test.
+
+### [Item 9 — Implement deterministic integration coverage] (2026-07-16)
+
+**MEDIUM:**
+- **M4:** `lastTechnicalScan` update timing changed — now assigned after `completeTechnicalScan()` returns instead of before async forward/wake operations. If forwarding fails, scan is not stored (considered intentional improvement, but behavioral diff from original).
+
+**LOW:**
+- **L10:** Two overlap-skip tests (5 and 7) are nearly identical; could be consolidated.
+- **L11:** `makeParams()` defaults inject `vi.fn()` mocks for callbacks; new tests must explicitly override to get `undefined`.

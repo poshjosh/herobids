@@ -12,6 +12,7 @@ import type { PriceCandle, RegimeParams } from '@herobids/market-data';
 import { evaluateRegime } from '@herobids/market-data';
 import { runTechnicalPhase } from './technical-phase.js';
 import type { DiscoveredInstrument, FilterConfig } from './technical-phase.js';
+import { completeTechnicalScan } from './complete-technical-scan.js';
 import type { TechnicalScanState } from './runtime-composition.js';
 import { cleanupOrphanedPositions } from './reconciliation-orphaned-cleanup.js';
 import {
@@ -1555,83 +1556,16 @@ export class AgentTradingActor implements ExecutionActor {
         logger: this.logger,
       });
 
-      const scan: TechnicalScanState = {
-        timestamp: new Date().toISOString(),
-        scanIntervalMs: technicalConfig.scanIntervalMs,
-        regimeResult: phaseResult.regimeResult,
-        signals: phaseResult.signals,
-        positionIndicators: phaseResult.positionIndicators,
-        summary: phaseResult.summary,
-        symbolOutcomes: phaseResult.symbolOutcomes,
-        discovered: phaseResult.candidatesDiscovered,
-        symbolsSelected: phaseResult.symbolsSelected,
-        eligible: phaseResult.eligibleCount,
-        fetched: phaseResult.fetchedCount,
-        unsupported: phaseResult.unsupportedCount,
-        fetchFailures: phaseResult.fetchFailures,
-        signalsGenerated: phaseResult.signalsGenerated,
-        overlapSkipped: phaseResult.overlapSkipped,
-      };
+      const scan = await completeTechnicalScan({
+        phaseResult,
+        technicalConfig,
+        agentId,
+        isHybridMode: !!this.deps.isHybridMode,
+        onTechnicalScanComplete: this.deps.onTechnicalScanComplete,
+        emitAgentWake: this.deps.emitAgentWake,
+        onJournalEvent: this.deps.onJournalEvent,
+      });
       this.lastTechnicalScan = scan;
-
-      // Phase 2: emit a journal event when scanner-data is unhealthy
-      // (fetched === 0 but eligible > 0 means the provider returned data but
-      // candles were empty or unusable — not a healthy no-signal scan).
-      const eligibleCount = phaseResult.eligibleCount;
-      const fetchedCount = phaseResult.fetchedCount;
-      if (fetchedCount === 0 && eligibleCount > 0 && this.deps.onJournalEvent) {
-        this.deps.onJournalEvent({
-          type: 'scanner.data_unhealthy',
-          payload: {
-            agentId,
-            discovered: scan.discovered,
-            symbolsSelected: scan.symbolsSelected,
-            eligible: eligibleCount,
-            fetched: fetchedCount,
-            unsupported: scan.unsupported,
-            fetchFailures: scan.fetchFailures,
-            timestamp: scan.timestamp,
-          },
-        });
-      }
-
-      // Forward the completed scan before emitting a wake so the agent runtime
-      // can ingest fresh scan state before it routes into the hybrid evaluator.
-      if (this.deps.onTechnicalScanComplete) {
-        await this.deps.onTechnicalScanComplete(agentId, scan);
-      }
-
-      // If agent has intelligence config and scanner found signals or exit advisories, emit a wake
-      const hasExitAdvisories = phaseResult.positionIndicators.some((ind) => ind.exitAdvisory === true);
-      const emitAgentWake = this.deps.emitAgentWake;
-      const shouldWake = (phaseResult.signals.length > 0 || hasExitAdvisories)
-        && this.deps.isHybridMode
-        && emitAgentWake;
-
-      if (shouldWake && emitAgentWake) {
-        const topSignal = phaseResult.signals[0];
-        const exitAdvisorySymbols = phaseResult.positionIndicators
-          .filter((ind) => ind.exitAdvisory === true)
-          .map((ind) => ind.symbol);
-
-        await emitAgentWake(agentId, {
-          wakeId: crypto.randomUUID(),
-          source: 'scanner',
-          reason: [
-            phaseResult.signals.length > 0 ? `${phaseResult.signals.length} signal(s)` : '',
-            exitAdvisorySymbols.length > 0 ? `${exitAdvisorySymbols.length} exit advisory/ies (${exitAdvisorySymbols.join(', ')})` : '',
-          ].filter(Boolean).join(', ') || 'Scanner completed',
-          priority: hasExitAdvisories ? 'high' : 'normal',
-          eventIds: [],
-          requestedAt: new Date().toISOString(),
-          context: {
-            signalCount: phaseResult.signals.length,
-            topSymbol: topSignal?.symbol,
-            topConfidence: topSignal?.confidence,
-            regimePass: phaseResult.regimeResult?.pass ?? null,
-          },
-        });
-      }
     } catch (err) {
       this.logger.error({ err }, 'Technical scan loop error — will retry on next tick');
     } finally {

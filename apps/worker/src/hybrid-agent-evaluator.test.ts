@@ -571,3 +571,74 @@ describe('canRouteToHybridEvaluator', () => {
     })).toBe(false);
   });
 });
+
+// ── Scanner wake → hybrid evaluator end-to-end chain ─────────────────────────
+
+describe('scanner wake routes to single-shot hybrid evaluator', () => {
+  beforeEach(() => {
+    mockedCallLlmProvider.mockReset();
+    logger.info.mockReset();
+    logger.warn.mockReset();
+    logger.error.mockReset();
+  });
+
+  it('ingests a scanner wake, routes via canRouteToHybridEvaluator, and submits decision with correct symbol', async () => {
+    // Simulate: scanner produced a signal for BTC, runtime ingested it,
+    // now a scanner wake arrives → hybrid evaluator runs single-shot.
+    const state = createRuntimeCompositionState(baseDescriptor);
+    state.metrics.portfolio.availableCapitalUsd = 10_000;
+    state.metrics.lastTechnicalScan = {
+      ...makeScan(),
+      signals: [
+        {
+          symbol: 'BTC',
+          instrumentId: 'BTC-PERP',
+          confidence: 0.92,
+          reasons: ['RSI healthy', 'volume strong'],
+          intent: 'go_long',
+          indicators: { rsi: 58, macdHistogram: 1.2, volumeRatio: 1.8 },
+        },
+      ],
+      signalsGenerated: 1,
+    };
+
+    // Verify routing: scanner_gated + scanner wake → true
+    const routingResult = canRouteToHybridEvaluator({
+      isHybrid: true,
+      isScannerGated: true,
+      hasTradingCapability: true,
+      hasWakeSignal: true,
+      isScannerWake: true,
+    });
+    expect(routingResult).toBe(true);
+
+    // Mock LLM response: LLM decides to go_long BTC
+    mockedCallLlmProvider.mockResolvedValue({
+      ok: true,
+      data: {
+        content: '```json\n[{"symbol":"BTC","intent":"go_long","sizeUsd":500}]\n```',
+        toolCalls: [],
+        model: 'test-model',
+        provider: 'test-provider',
+        tokensUsed: 42,
+        latencyMs: 12,
+        cached: false,
+      },
+    } as Awaited<ReturnType<typeof callLlmProvider>>);
+
+    const submitDecision = vi.fn().mockResolvedValue(undefined);
+
+    const result = await runHybridEvaluator({
+      state,
+      llmConfig: { provider: 'test-provider', model: 'test-model', maxTokens: 500, timeoutMs: 1000 },
+      maxPositions: 5,
+      submitDecision,
+      logger,
+    });
+
+    // The LLM responded with symbol "BTC" → should resolve to "BTC-PERP" from the scan
+    expect(submitDecision).toHaveBeenCalledWith('BTC-PERP', 'go_long', 500);
+    expect(result.decisionsSubmitted).toBe(1);
+    expect(result.errors).toEqual([]);
+  });
+});

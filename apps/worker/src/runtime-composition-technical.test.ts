@@ -304,3 +304,44 @@ describe('technical scan in runtimeState context', () => {
     expect(state.metrics.lastTechnicalScan).toBeUndefined();
   });
 });
+
+// ── recordTechnicalScan → runtime state handoff ──────────────────────────────
+
+describe('recordTechnicalScan → runtime state handoff', () => {
+  it('recordTechnicalScan sets lastTechnicalScan with complete health matrix fields', () => {
+    const state = createRuntimeCompositionState(baseDescriptor as Parameters<typeof createRuntimeCompositionState>[0]);
+    const scan = makeScan({
+      discovered: 30,
+      symbolsSelected: 12,
+      eligible: 10,
+      fetched: 8,
+      unsupported: 2,
+      fetchFailures: 1,
+      signalsGenerated: 3,
+    });
+
+    recordTechnicalScan(state, scan);
+
+    expect(state.metrics.lastTechnicalScan).toBeDefined();
+    const stored = state.metrics.lastTechnicalScan!;
+    expect(stored.discovered).toBe(30);
+    expect(stored.symbolsSelected).toBe(12);
+    expect(stored.eligible).toBe(10);
+    expect(stored.fetched).toBe(8);
+    expect(stored.unsupported).toBe(2);
+    expect(stored.fetchFailures).toBe(1);
+    expect(stored.signalsGenerated).toBe(3);
+  });
+
+  it('recordTechnicalScan replaces a prior scan on update', () => {
+    const state = createRuntimeCompositionState(baseDescriptor as Parameters<typeof createRuntimeCompositionState>[0]);
+
+    const scan1 = makeScan({ signalsGenerated: 1, timestamp: new Date('2026-07-01T10:00:00Z').toISOString() });
+    recordTechnicalScan(state, scan1);
+    expect(state.metrics.lastTechnicalScan?.signalsGenerated).toBe(1);
+
+    const scan2 = makeScan({ signalsGenerated: 5, timestamp: new Date('2026-07-01T10:01:00Z').toISOString() });
+    recordTechnicalScan(state, scan2);
+    expect(state.metrics.lastTechnicalScan?.signalsGenerated).toBe(5);
+  });
+});
