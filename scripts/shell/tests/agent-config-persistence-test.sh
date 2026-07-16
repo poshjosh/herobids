@@ -1,35 +1,38 @@
 #!/usr/bin/env bash
-# agent-config-defaults-smoke-test.sh — Shell wrapper for scripts/ts/agent-config-defaults-smoke-test.ts
+# agent-config-persistence-test.sh — Shell wrapper for scripts/ts/agent-config-persistence-test.ts
 #
-# Smoke test verifying the full API → DB → worker → logs pipeline for
-# TechnicalConfigSchema defaults (scanBatchSize, scanIntervalMs, etc.)
-# after the applyConfigDefaults() fix.
+# Verifies that API create and PATCH endpoints correctly persist technical
+# configuration to the database, and that strict invalid configurations are
+# rejected at write time.
 #
 # Scenarios:
-#   1. Minimal config produces signals (defaults applied at DB read boundary)
-#   2. Explicit values preserved in DB
-#   3. Intelligence-mode agent unaffected (no technical block)
-#   4. PATCH preserves defaults (partial update doesn't strip schema defaults)
+#   1. Complete technical config persisted for scanner_gated agent
+#   2. Incomplete config rejected by API
+#   3. Mixed-mode hybrid defaults applied
+#   4. PATCH preserves existing technical fields
+#   5. Intelligence-mode agent unaffected (no technical block)
+#   6. Invalid PATCH rejected
+#
+# This test requires only the API and DB. No worker, connection, candles,
+# signals, or live market data are needed.
 #
 # Usage:
-#   scripts/shell/tests/agent-config-defaults-smoke-test.sh
-#   scripts/shell/tests/agent-config-defaults-smoke-test.sh --env /path/to/custom.env
+#   scripts/shell/tests/agent-config-persistence-test.sh
+#   scripts/shell/tests/agent-config-persistence-test.sh --env /path/to/custom.env
 #
 # Requires:
 #   - tsx or pnpm available
-#   - API and DB reachable (uses docker compose exec for DB queries)
+#   - API and DB reachable
 #
 # Stack lifecycle:
-#   - Start:  scripts/shell/run/build-and-run.sh  (pnpm build, lint, agent image,
-#             docker compose up with dev overlay, seed admin, Ollama warmup)
-#   - Stop:   scripts/shell/run/shutdown.sh        (graceful worker stop, agent
-#             container cleanup, compose down -v)
+#   - Start:  scripts/shell/run/build-and-run.sh
+#   - Stop:   scripts/shell/run/shutdown.sh
 #
 # Setup:
 #   cp .env.ops.dev.example .env.ops.dev
 #   # fill in TEST_EMAIL and TEST_PASSWORD, then:
-#   chmod +x scripts/shell/tests/agent-config-defaults-smoke-test.sh
-#   scripts/shell/tests/agent-config-defaults-smoke-test.sh
+#   chmod +x scripts/shell/tests/agent-config-persistence-test.sh
+#   scripts/shell/tests/agent-config-persistence-test.sh
 #
 # ─────────────────────────────────────────────────────────────────
 # Variables in .env.ops.dev
@@ -40,20 +43,11 @@
 #   TEST_EMAIL            default trade-test@local.test
 #   TEST_PASSWORD         default TradeTest123!
 #
-# Required (if no active Hyperliquid connection exists)
-#   HL_API_KEY            Hyperliquid API key
-#   HL_SECRET             Hyperliquid secret
-#   HL_WALLET_ADDRESS     EVM wallet address (0x + 40 hex chars)
-#   Set up a connection first: scripts/shell/ops/quick-setup.sh
-#
 # Optional
 #   DOCKER_COMPOSE_UP     1 to auto-start the stack via build-and-run.sh when API
 #                         is unreachable (default: 1)
 #   DOCKER_COMPOSE_DOWN   1 to stop the stack via shutdown.sh on exit (only if
 #                         started by this script; default: 1)
-#   LLM_PROVIDER          default ollama
-#   LLM_LIGHT_MODEL       default qwen3:8b
-#   LLM_HEAVY_MODEL       default qwen3.6:35b-a3b-q4_K_M
 # ─────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -146,8 +140,7 @@ if ! check_api_health; then
   bash "$SCRIPT_DIR/../run/build-and-run.sh" || die "build-and-run.sh failed"
   stackStartedByUs=1
 
-  # build-and-run.sh starts services but the API may still be booting.
-  # Wait up to 60 s for it to become healthy.
+  # Wait up to 60 s for the API to become healthy.
   deadline=$(($(date +%s) + 60))
   while [[ $(date +%s) -lt $deadline ]]; do
     sleep 3
@@ -165,18 +158,18 @@ fi
 ok "API reachable at ${API_BASE_URL}"
 
 # ---------------------------------------------------------------------------
-# Run the smoke test
+# Run the persistence test
 # ---------------------------------------------------------------------------
 
 log ""
-log "=== Agent Config Defaults Smoke Test ==="
+log "=== Agent Config Persistence Test ==="
 log "  API: $API_BASE_URL"
 log "  Email: $TEST_EMAIL"
 log ""
 
 export API_BASE_URL TEST_EMAIL TEST_PASSWORD
 
-TS_SCRIPT="$REPO_ROOT/scripts/ts/agent-config-defaults-smoke-test.ts"
+TS_SCRIPT="$REPO_ROOT/scripts/ts/agent-config-persistence-test.ts"
 
 if command -v tsx &>/dev/null; then
   tsx "$TS_SCRIPT"

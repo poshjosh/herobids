@@ -438,15 +438,19 @@ This is the only section the `Coordinator` agent should treat as the implementat
      - AgentTradingActor refactored to call `completeTechnicalScan()` instead of inline logic.
      - Full worker test suite: 2038 passed, 0 failed.
 
-10. **PENDING — Record Phase 0 Decision 6**
-    - Decide the deployed staging connection and bounded symbols for live-provider smoke.
-    - Use the Phase 0 Decision Template.
-    - Do not create, start, stop, delete, restart, deploy, or otherwise mutate staging in this item.
+10. **DONE — Record Phase 0 Decision 6** ✅
+    - Decision recorded in [014-phase0-decision-6-staging-smoke-inputs.md](014-phase0-decision-6-staging-smoke-inputs.md).
+    - Staging connection: existing shared Hyperliquid connection (preserved from stopped storming agents).
+    - Bounded symbols: BTC and ETH (both in SYMBOL_MAP, top-volume, confirmed Binance spot pairs).
+    - Confirmation: `resolveBinanceSymbol("BTC")` → `BTCUSDT`, `resolveBinanceSymbol("ETH")` → `ETHUSDT` — universally reachable.
+    - No staging mutation performed.
 
-11. **PENDING — Split or replace smoke scripts**
-    - Separate configuration-persistence verification from scanner-provider verification.
-    - Ensure live-provider smoke treats `signalsGenerated === 0` as success when data is healthy.
-    - Ensure provider smoke reports per-symbol eligibility, resolved provider symbol, fetch result, safe failure/status detail, and candle count.
+11. **DONE — Split or replace smoke scripts** ✅
+    - Created `scripts/ts/agent-config-persistence-test.ts` — 6 scenarios: complete config persisted, incomplete config rejected, mixed-mode defaults applied, PATCH preserves fields, intelligence agent unaffected, invalid PATCH rejected. API-only, no worker/connection/candles needed.
+    - Created `scripts/shell/tests/agent-config-persistence-test.sh` — shell wrapper for persistence test.
+    - Created `scripts/ts/scanner-provider-smoke-test.ts` — bounded BTC/ETH provider verification with per-symbol outcome reporting. Treats `signalsGenerated === 0` as success. Cleans up temporary agent only, preserves shared connection.
+    - Renamed `scripts/shell/tests/agent-config-defaults-smoke-test.sh` → `scripts/shell/tests/scanner-provider-smoke-test.sh` — updated to reference new TS script.
+    - Both shell scripts made executable (`chmod +x`).
 
 12. **PENDING — Run full local validation**
     - Run every command listed in Validation Commands.
