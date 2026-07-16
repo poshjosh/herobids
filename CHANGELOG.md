@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.29 - 2026-07-16
+
 ### Added
 
 - **Hybrid system prompt in Prompt Surfaces:** The scanner-gated hybrid evaluator prompt is now persisted to Redis (`agent:prompt:hybrid:{id}`) and displayed as a "Hybrid System" tab alongside Judge/Scout prompts on the agent detail page.
