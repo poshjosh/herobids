@@ -631,6 +631,9 @@ marketIntelligence:
   #              events. Use for: low-volume signals that are informative but not actionable 
   #              (e.g. regime changes).
   wakePolicy:
+    scanner:
+      mode: wake                   # wake the agent immediately for every scanner event
+      cooldownMs: 120000           # 2 min between successive scanner wakes per agent
     # triggered when a user-configured price watch crosses its threshold (e.g. "BTC drops below $61,000").
     watch_threshold:
       mode: wake                   
