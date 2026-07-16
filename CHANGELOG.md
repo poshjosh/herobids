@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Scanner-gated runtime hardening:** Strict persisted-config validation prevents malformed hybrid agents from starting scan loops. `StrictTechnicalConfigSchema` rejects missing `scanBatchSize`/`scanIntervalMs` at worker startup. Bounded candidate selection (volume-sorted, capped), 4-way provider eligibility classification, single-flight scan guard, global concurrency gate, and structured scan health matrix. Deterministic integration coverage proves the scanner-gated event chain (scan-completed → wake → evaluator → decision intake). 4909 tests pass. See [docs/features/2026/07/16/003-scanner_gated-must-be-working/005-scanner-gated-hardening-plan.md](docs/features/2026/07/16/003-scanner_gated-must-be-working/005-scanner-gated-hardening-plan.md).
+
 ## v0.0.28 - 2026-07-16
 
 ### Fixed
