@@ -101,30 +101,46 @@ While this technically works (first match wins), it means a user whose subscript
 
 2. **The frontend dropdown should not display the provider name.** The label should simply be the pack amount and price (e.g. "$5.00", "$20.00", "$50.00").
 
-3. **The top-up checkout endpoint should route through the primary provider first**, and fall back transparently (just like subscription checkout) if the primary is unavailable. It should not iterate all providers to find a pack.
+3. **The top-up checkout endpoint should route through the subscription-owning provider first**, and fall back transparently (just like subscription checkout) if that provider is unavailable. It should not iterate all providers to find a pack. Using the subscription's provider keeps the billing relationship on a single provider — avoiding a split-provider scenario where subscription is on Stripe but top-up credit is on Creem.
 
 4. **`UsageBillingConfig.topUpProductsByProvider` should still exist** (it's needed so each provider can map `packId` → provider-specific `externalId`), but the resolution logic should pick one provider — not merge all.
 
-## Files That Need Changes
+5. **The `provider` field should be dropped from the API response entirely.** If the frontend no longer displays it, the API should stop sending it. This simplifies the contract and prevents future leakage.
 
-- `apps/api/src/routes/billing.ts`:
-  - `resolveTopUpPacks()` (line 31–54): scope to a single provider instead of flat-mapping all providers.
-  - `GET /billing/usage-summary` (line 575): pass the scoped provider to `resolveTopUpPacks`.
-  - `POST /billing/top-up-checkout-session` (line 975): route through primary provider with failover, rather than iterating all providers.
+## Concrete Fix Plan
 
-- `apps/web/src/features/billing/BillingPage.tsx`:
-  - Top-up dropdown (line ~548): remove `· {pack.provider}` from the option label. Display only `packId` + formatted cents.
+### Implementation Notes
 
-- `apps/api/src/billing/provider-manager.ts` (optional enhancement):
-  - Consider adding a `createTopUpCheckoutUrl` method that wraps `createCheckoutUrl` with the same primary→fallback failover, so the route handler doesn't need to know about providers at all.
+**Provider selection for display:** `resolveTopUpPacks` must use the user's subscription-owning provider when available, falling back to `billingConfig.primaryProvider`. The `GET /billing/usage-summary` endpoint currently does not query the subscription — it must be plumbed in so the correct provider can be passed.
 
-- `apps/web/src/lib/api-client.ts`:
-  - `BillingTopUpPack` type (if any) should no longer include a `provider` field visible to the frontend.
+**Provider selection for checkout:** The `POST /billing/top-up-checkout-session` handler must follow the same rule: resolve the owning provider from the subscription, not just the global primary. This prevents split-provider billing relationships where a user's subscription migrated to the fallback at signup but top-ups route through the (unavailable) primary.
+
+**Top-up checkout failover is NOT a drop-in call to `createCheckoutUrl`.** The subscription checkout path (`createCheckoutUrl`) resolves provider-specific product/price IDs from `billingConfig` plan mappings. Top-up packs use `externalId` directly from `usageBillingConfig.topUpProductsByProvider` — a different ID resolution path. The failover must be implemented inline in the route handler (try owning provider, catch `ProviderUnavailableError`, resolve fallback's `externalId`, retry) or via a new dedicated method on `PaymentProviderManager`.
+
+**Frontend `key` prop fix:** The dropdown currently uses `key={`${pack.provider}_${pack.packId}`}`. After removing `provider` from the response, use just `pack.packId` as the key (packs are now unique per the scoped provider).
+
+**Test compatibility:** The existing test `"top-up checkout routes through the matched provider-specific checkout path"` (billing.test.ts line ~439) asserts the old "iterate all providers" behavior and must be updated. The `usage-summary` tests also assert on a `provider` field in the response that will be removed.
+
+**Edge case — no pack for the owning provider:** If the user's subscription provider has no `topUpProductsByProvider` entry (e.g. operator only configured top-up packs for Creem but the user is on Stripe), `resolveTopUpPacks` returns an empty array. The frontend already handles an empty pack list gracefully. For checkout, the handler should fall back to searching the other provider's config before returning an error.
+
+| # | File | Change |
+|---|---|---|
+| 1 | `apps/api/src/routes/billing.ts` | Add optional `targetProvider?: BillingProvider` param to `resolveTopUpPacks()`; scope to that single provider's packs; drop `provider` from returned objects |
+| 2 | `apps/api/src/routes/billing.ts` | In `GET /billing/usage-summary`, query `billingRepo.findSubscriptionByUserId()` to determine `topUpProvider`; pass to both `resolveTopUpPacks()` calls |
+| 3 | `apps/api/src/routes/billing.ts` | Import `ProviderUnavailableError` from `../billing/provider-port.js` |
+| 4 | `apps/api/src/routes/billing.ts` | In `POST /billing/top-up-checkout-session`, resolve owning provider from subscription (or primary); look up pack `externalId` in that provider's config; try checkout via that provider; on `ProviderUnavailableError` fail over to fallback provider's `externalId`; drop `provider` from response |
+| 5 | `apps/web/src/features/billing/BillingPage.tsx` | Remove `· {pack.provider}` from option label; change `key` from `` `${pack.provider}_${pack.packId}` `` to `pack.packId` |
+| 6 | `apps/web/src/lib/api-client.ts` | Remove `provider` from `UsageSummaryResponse.topUpPacks` type |
+| 7 | `apps/api/src/routes/billing.test.ts` | Update `usage-summary` tests to not assert on `provider` field; update top-up checkout test to reflect single-provider + failover logic |
+| 8 | *(Optional)* `apps/api/src/billing/provider-manager.ts` | Add `createTopUpCheckoutUrl` with primary→fallback failover to centralize the logic (cleaner but not strictly required — the inline approach works) |
 
 ## Verification
 
 - [ ] Staging/dev: billing page top-up dropdown shows only one set of packs (no duplicates, no provider label).
-- [ ] Staging/dev: selecting a top-up pack and completing checkout routes through the correct (primary) provider.
-- [ ] Staging/dev: if the primary provider is unavailable, top-up checkout silently falls back to the fallback provider.
+- [ ] Staging/dev: selecting a top-up pack and completing checkout routes through the subscription-owning provider (not a hardcoded "primary").
+- [ ] Staging/dev: if the owning provider is unavailable, top-up checkout silently falls back to the fallback provider.
+- [ ] Staging/dev: user whose subscription is on the fallback provider (e.g. Creem, because Stripe was down at signup) sees only Creem top-up packs and their top-up routes through Creem — no split-provider billing relationship.
+- [ ] Staging/dev: user with no subscription sees top-up packs from the configured primary provider.
+- [ ] Staging/dev: if the owning provider has no `topUpProductsByProvider` entry, the dropdown shows an empty list (no crash), and checkout returns a clear error.
 - [ ] `pnpm lint` passes.
-- [ ] Existing billing tests (`apps/api/src/routes/billing.test.ts`) pass.
+- [ ] Existing billing tests (`apps/api/src/routes/billing.test.ts`) pass after updating for the new behavior.
