@@ -1,0 +1,19 @@
+=== BINANCE KLINES REACHABILITY ===
+Test: SOLUSDT 15m klines, limit=3
+Result: HTTP 200
+Body prefix: [[1784217600000,"76.63000000","76.63000000","76.23000000",...
+Valid kline array returned — Binance API is reachable and responsive.
+No auth required, no rate-limit response.
+
+=== OPS PRESSURE ===
+NAME                CPU %     MEM USAGE / LIMIT    MEM %
+herobids-worker-1   62.53%    528.4MiB / 3.73GiB   13.83%
+herobids-redis-1    12.03%    182.8MiB / 3.73GiB   4.79%
+
+Worker CPU at 62% — consistent with 7 agents scanning at sub-second intervals.
+No memory pressure.
+
+=== SCAN LOG VOLUME ===
+220,789 log lines in 90 minutes (~41 lines/sec).
+All lines are "Technical phase complete" / "advisory mode" repetition.
+No errors, no warnings, no anomalies — pure repetitive scan output.

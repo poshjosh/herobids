@@ -1,0 +1,31 @@
+=== REDIS SCANNER_GATED KEYS ===
+7 keys present — one per active hybrid agent:
+  agent:scanner_gated:93552994...
+  agent:scanner_gated:70b3d865...
+  agent:scanner_gated:3fa538e3...
+  agent:scanner_gated:51403f2e...
+  agent:scanner_gated:15bfaf97...
+  agent:scanner_gated:b4f67404...
+  agent:scanner_gated:64afd699...
+
+=== AGENT OUTBOUND STREAMS ===
+ALL 7 agents have XLEN = 0:
+  agent:outbound:70b3d865 → 0
+  agent:outbound:51403f2e → 0
+  agent:outbound:93552994 → 0
+  agent:outbound:64afd699 → 0
+  agent:outbound:3fa538e3 → 0
+  agent:outbound:b4f67404 → 0
+  agent:outbound:15bfaf97 → 0
+
+XREVRANGE returns empty for all agents — no agent.technical.scan_completed
+events, no agent.wake events with source:scanner.
+
+=== HYBRID EVALUATOR ===
+Agent container logs not accessible (agent containers run in Docker-in-Docker
+or Nomad — not directly via docker compose). No hybrid evaluator events found
+in Redis streams.
+
+CONCLUSION: The wake chain is completely broken.
+  scanner → 0 signals → no wake emitted → hybrid evaluator never triggered
+  → agent outbound streams empty → no trades ever placed

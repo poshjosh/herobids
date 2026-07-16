@@ -1,0 +1,40 @@
+=== SCANNER LOG EVIDENCE (last 90 min) ===
+
+Scan loop started: NOT FOUND in log buffer (rotated out — worker up 3h)
+Scan loop errors: NONE
+Candle fetch failures: NONE
+Failed to emit technical scan: NONE
+Failed to publish to Redis Stream: NONE
+
+=== TYPICAL SCAN OUTPUT (all 7 agents, every cycle) ===
+
+[16:32:46] INFO (agent-actor-70b3d865): Technical phase: advisory mode — skipping entry submissions
+    signalCount: 0
+[16:32:46] INFO (agent-actor-70b3d865): Technical phase complete
+    candidatesDiscovered: 232
+    candidatesScored: 0       <-- ZERO (loop never executes)
+    signalsGenerated: 0        <-- ZERO (nothing to score)
+    entriesSubmitted: 0
+    exitsSubmitted: 0
+    regimeBlocked: false
+    errorCount: 0              <-- no errors (loop body skipped, not failed)
+
+=== PER-AGENT SUMMARY ===
+
+Agent        Scans     Discovered  Scored  Signals  Errors  Scan Gap
+tcontrarian  10+/sec   232         0       0        0       <1s (all same second)
+tmomentum-d  10+/sec   232         0       0        0       <1s
+tmomentum-p  10+/sec   232         0       0        0       <1s
+trange       10+/sec   232         0       0        0       <1s
+tscalper     10+/sec   232         0       0       0       <1s
+tswing       10+/sec   232         0       0        0       <1s
+tswing-pb    10+/sec   232         0       0        0       <1s
+
+=== SCAN INTERVAL EVIDENCE ===
+
+Consecutive scans for tcontrarian (agent-actor-70b3d865) all show [16:32:46]:
+10 scans within the SAME second = sub-second intervals.
+This confirms setInterval(fn, undefined) → ~1ms loop.
+
+Scan log volume (90 min): 220,789 lines
+Rate: ~41 lines/sec (7 agents × 6 log lines/scan × rapid loop)

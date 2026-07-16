@@ -1,0 +1,14 @@
+=== ACTIVE HYBRID AGENT CONFIG (all 7 agents) ===
+
+short_id | name            | status | capability_mode | hybrid_mode    | has_technical | has_filters | scan_batch_size | scan_interval_ms | has_candles | has_indicators
+70b3d865 | tcontrarian     | active | hybrid          | scanner_gated  | true          | true        | NULL            | NULL             | true        | true
+51403f2e | tmomentum-d     | active | hybrid          | scanner_gated  | true          | true        | NULL            | NULL             | true        | true
+93552994 | tmomentum-p     | active | hybrid          | scanner_gated  | true          | true        | NULL            | NULL             | true        | true
+64afd699 | trange          | active | hybrid          | scanner_gated  | true          | true        | NULL            | NULL             | true        | true
+3fa538e3 | tscalper        | active | hybrid          | scanner_gated  | true          | true        | NULL            | NULL             | true        | true
+b4f67404 | tswing          | active | hybrid          | scanner_gated  | true          | true        | NULL            | NULL             | true        | true
+15bfaf97 | tswing-playbook | active | hybrid          | scanner_gated  | true          | true        | NULL            | NULL             | true        | true
+
+OBSERVATION: All 7 agents have scan_batch_size=NULL and scan_interval_ms=NULL.
+The applyConfigDefaults() fix (commit 094b7da2) has NOT been deployed to this staging server.
+filters, candles, and indicators are all present — the missing defaults are the ONLY gap.

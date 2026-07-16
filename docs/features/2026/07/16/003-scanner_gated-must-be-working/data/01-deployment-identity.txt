@@ -1,0 +1,19 @@
+=== GIT ===
+HEAD: 913f4ae053850330bb8623a67dc5727131b16d45
+Untracked: Caddyfile.active
+Note: Our fix commits (094b7da2, b5353e06, 4e53031e) are NOT on this HEAD.
+
+=== DOCKER ===
+Worker Image: herobids-worker
+Worker Created: 2026-07-16T13:45:52Z (~3h ago)
+Worker Status: running
+
+=== SERVICES ===
+NAME                      STATUS                  IMAGE
+herobids-api-1            Up 3 hours (healthy)    herobids-api
+herobids-caddy-1          Up 15 hours             caddy:2-alpine
+herobids-docker-proxy-1   Up 21 hours             tecnativa/docker-socket-proxy
+herobids-postgres-1       Up 21 hours (healthy)   postgres:17-alpine
+herobids-redis-1          Up 15 hours (healthy)   redis:7-alpine
+herobids-web-1            Up 3 hours              herobids-web
+herobids-worker-1         Up 3 hours              herobids-worker
