@@ -389,9 +389,9 @@ This is the only section the `Coordinator` agent should treat as the implementat
    - Strict gate applies to `scanner_gated` agents only; `mixed` agents get repaired defaults; `intelligence` agents unaffected.
    - Failure contract: reuse existing `handleActivationFailure` path (guardrail `trading_actor.start_failed`, session/agent → `crashed`).
 
-3. **PENDING — Implement Phase 1 strict config persistence and actor startup validation**
-   - Implement only the Phase 1 code and tests.
-   - Do not modify scanner execution, provider eligibility, or capacity behavior in this item.
+3. **DONE — Implement Phase 1 strict config persistence and actor startup validation** ✅
+   - Implemented `StrictTechnicalConfigSchema` in domain, worker validation in `onSessionActive`, 26 new tests (12 schema + 14 worker). 4875 tests pass, lint clean.
+   - See Outstanding Issues for 2 MEDIUM and 4 LOW findings from code review.
 
 4. **PENDING — Validate Phase 1**
    - Run the focused schema, repository, API, and worker startup tests added or changed for Phase 1.
@@ -456,3 +456,19 @@ This is the only section the `Coordinator` agent should treat as the implementat
 - Replacing the current Binance orderbook candle source with a Hyperliquid-native candle provider.
 - A staging deployment/restart plan, replacement-agent creation plan, and progressive rollout plan.
 - A new scanner-specific dashboard or separate monitoring surface. The existing Admin Dashboard remains the aggregate operational view.
+
+## Outstanding Issues
+
+Recorded during implementation code reviews. Grouped by checklist item.
+
+### [Item 3 — Implement Phase 1] (2026-07-16)
+
+**MEDIUM:**
+- **M1:** `StrictTechnicalConfig` type is not exported from the domain barrel (`packages/domain/src/config/index.ts`). The worker imports the schema but not the inferred type. Plan expects both schema and type available.
+- **M2:** Mixed-mode hybrid agents silently receive repaired defaults via `TechnicalConfigSchema.parse()` with no warning log. Operators cannot distinguish a properly persisted config from one that was silently repaired at startup.
+
+**LOW:**
+- **L1:** No test for `unifiedConfig.technical` being `null` (explicitly cleared) on a scanner_gated agent — the guard `if (!rawTechnical)` covers this but is untested.
+- **L2:** `StrictTechnicalConfigSchema.parse()` throws `ZodError` with verbose default messages on failure; may benefit from a custom error message mapping the missing field to a clear operator-facing reason.
+- **L3:** `StrictTechnicalConfigSchema` duplicates most of `TechnicalConfigSchema`; a future refactor could derive one from the other via `.omit()` / `.extend()` but this is acceptable for now.
+- **L4:** Edge case: if `StrictTechnicalConfigSchema` passes but `TechnicalConfigSchema.parse()` fails on inner defaults, the error propagates as a startup failure rather than a distinct "strict OK but lenient failed" state. This is unlikely given the current schema shapes but worth noting.

@@ -83,6 +83,7 @@ export {
   ConfidenceWeightsSchema,
   IndicatorConfigSchema,
   TechnicalConfigSchema,
+  StrictTechnicalConfigSchema,
   UnifiedAgentConfigSchema,
   IntelligenceConfigSchema,
   CapabilityModeSchema,

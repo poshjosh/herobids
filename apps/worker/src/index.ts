@@ -22,7 +22,7 @@ import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdap
 import { createFillFirstMarkSource } from '@herobids/engine';
 import type { IdGenerator } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, type ProvidersYaml, type TechnicalConfig } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig } from '@herobids/domain';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
 import crypto from 'node:crypto';
@@ -827,7 +827,30 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           );
         }
 
-        const technicalConfig = (agent?.unifiedConfig?.technical as TechnicalConfig | undefined) ?? undefined;
+        // Phase 1 (scanner-gated hardening): validate persisted technical config
+        // at actor startup. The raw DB JSONB arrives without Zod defaults applied,
+        // so we gate on the agent's hybrid sub-mode:
+        //   - scanner_gated: strict validation — missing required fields → startup rejected
+        //   - mixed:         lenient validation — defaults applied as repair
+        //   - intelligence:  no technical block needed
+        const rawTechnical = agent?.unifiedConfig?.technical;
+        const capabilityMode = agent?.unifiedConfig?.capabilityMode;
+        const hybridMode = agent?.unifiedConfig?.hybridMode;
+        let technicalConfig: TechnicalConfig | undefined;
+        if (capabilityMode === 'hybrid' && hybridMode === 'scanner_gated') {
+          // Strict: reject incomplete scanner-gated configs entirely.
+          // The strict parse throws on missing required fields; the full parse
+          // then applies inner defaults (candles.interval, indicator sub-fields).
+          const strictParsed = StrictTechnicalConfigSchema.parse(rawTechnical);
+          technicalConfig = TechnicalConfigSchema.parse(strictParsed);
+        } else if (capabilityMode === 'hybrid' && hybridMode === 'mixed') {
+          // Lenient: apply defaults as a repair step for mixed-mode agents.
+          // Missing fields are filled from Zod defaults rather than crashing startup.
+          technicalConfig = rawTechnical
+            ? TechnicalConfigSchema.parse(rawTechnical)
+            : undefined;
+        }
+        // else: intelligence agent — no technical config, stays undefined
 
         actor = new AgentTradingActor({
           agentId,

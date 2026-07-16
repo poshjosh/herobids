@@ -8,6 +8,7 @@ import {
   StrategySchema,
   LlmParamsSchema,
   TechnicalConfigSchema,
+  StrictTechnicalConfigSchema,
   AgentRuntimePolicyOverridesSchema,
   AgentStyleSchema,
   ReasoningLevelSchema,
@@ -770,6 +771,121 @@ describe('TechnicalConfigSchema — defaults', () => {
       expect(typeof result.data.indicators).toBe('object');
       expect(result.data.indicators).not.toBeNull();
     }
+  });
+});
+
+describe('StrictTechnicalConfigSchema', () => {
+  const minimalValid = {
+    filters: { venue: 'hyperliquid', venueType: 'orderbook' as const },
+    indicators: {},
+    candles: {},
+    signalBias: 'trend-following' as const,
+    scanIntervalMs: 60_000,
+    scanBatchSize: 5,
+    autonomousExit: false,
+  };
+
+  it('accepts a fully-specified scanner-gated config', () => {
+    const result = StrictTechnicalConfigSchema.safeParse(minimalValid);
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects config missing scanBatchSize', () => {
+    const missing = { ...minimalValid };
+    delete (missing as Record<string, unknown>).scanBatchSize;
+    const result = StrictTechnicalConfigSchema.safeParse(missing);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects config missing scanIntervalMs', () => {
+    const missing = { ...minimalValid };
+    delete (missing as Record<string, unknown>).scanIntervalMs;
+    const result = StrictTechnicalConfigSchema.safeParse(missing);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects config missing signalBias', () => {
+    const missing = { ...minimalValid };
+    delete (missing as Record<string, unknown>).signalBias;
+    const result = StrictTechnicalConfigSchema.safeParse(missing);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects config missing autonomousExit', () => {
+    const missing = { ...minimalValid };
+    delete (missing as Record<string, unknown>).autonomousExit;
+    const result = StrictTechnicalConfigSchema.safeParse(missing);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects config missing indicators object', () => {
+    const missing = { ...minimalValid };
+    delete (missing as Record<string, unknown>).indicators;
+    const result = StrictTechnicalConfigSchema.safeParse(missing);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects config missing candles object', () => {
+    const missing = { ...minimalValid };
+    delete (missing as Record<string, unknown>).candles;
+    const result = StrictTechnicalConfigSchema.safeParse(missing);
+    expect(result.success).toBe(false);
+  });
+
+  it('allows inner candles fields (interval, limit) to be absent — they default within the object', () => {
+    const result = StrictTechnicalConfigSchema.safeParse({
+      ...minimalValid,
+      candles: {}, // no interval, no limit provided
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.candles.interval).toBe('15m');
+      expect(result.data.candles.limit).toBe(100);
+    }
+  });
+
+  it('accepts a realistic scanner-gated config with all fields populated', () => {
+    const result = StrictTechnicalConfigSchema.safeParse({
+      filters: {
+        venue: 'hyperliquid',
+        venueType: 'orderbook',
+        minVolume24hUsd: 1_000_000,
+        symbols: ['BTC', 'ETH'],
+        excludeSymbols: ['DOGE'],
+      },
+      indicators: {
+        rsi: { period: 14, overbought: 70, oversold: 30, enabled: true },
+        macd: { fast: 12, slow: 26, signal: 9, enabled: true },
+        volume: { enabled: true, threshold: 1.5 },
+        choch: { enabled: true, lookback: 20 },
+        supportResistance: { enabled: true, lookback: 50 },
+        vwap: { enabled: false },
+        priceAction: { enabled: true },
+        confidence: {},
+      },
+      candles: { interval: '1H', limit: 100 },
+      signalBias: 'trend-following',
+      scanIntervalMs: 120_000,
+      scanBatchSize: 10,
+      autonomousExit: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects scanBatchSize of 0 (below min of 1)', () => {
+    const result = StrictTechnicalConfigSchema.safeParse({
+      ...minimalValid,
+      scanBatchSize: 0,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects scanIntervalMs below 10_000', () => {
+    const result = StrictTechnicalConfigSchema.safeParse({
+      ...minimalValid,
+      scanIntervalMs: 5_000,
+    });
+    expect(result.success).toBe(false);
   });
 });
 

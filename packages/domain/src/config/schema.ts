@@ -1880,6 +1880,39 @@ export const TechnicalConfigSchema = z.object({
   autonomousExit: z.boolean().default(false),
 });
 
+/**
+ * Strict variant of TechnicalConfigSchema used for worker startup validation
+ * of persisted scanner-gated agent configuration. Removes ALL .default() calls
+ * so that missing required fields are rejected rather than silently repaired.
+ *
+ * Inner defaults (candles.interval, candles.limit, indicator sub-fields) are
+ * retained — the strict check only requires the parent objects to be present.
+ *
+ * Phase 1 (scanner-gated hardening): applied at worker startup for
+ * scanner_gated hybrid agents before the scan loop is created.
+ */
+export const StrictTechnicalConfigSchema = z.object({
+  filters: z.object({
+    venue: z.string(),
+    venueType: z.enum(['orderbook', 'swap']),
+    minVolume24hUsd: z.number().min(0).optional(),
+    minLiquidityUsd: z.number().min(0).optional(),
+    networks: z.array(z.string()).optional(),
+    symbols: z.array(z.string()).optional(),
+    excludeSymbols: z.array(z.string()).optional(),
+  }),
+  regime: RegimeParamsSchema.optional(),
+  indicators: IndicatorConfigSchema,
+  candles: z.object({
+    interval: z.enum(['5m', '15m', '1H', '4H', '1D']).default('15m'),
+    limit: z.number().int().min(20).max(500).default(100),
+  }),
+  signalBias: z.enum(['trend-following', 'mean-reverting']),
+  scanIntervalMs: z.number().int().min(10_000),
+  scanBatchSize: z.number().int().min(1).max(50),
+  autonomousExit: z.boolean(),
+});
+
 export const IntelligenceConfigSchema = z.object({
   provider: z.string().optional(),
   lightModel: z.string().optional(),
