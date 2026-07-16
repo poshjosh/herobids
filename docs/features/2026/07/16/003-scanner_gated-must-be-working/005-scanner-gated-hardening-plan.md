@@ -421,9 +421,12 @@ This is the only section the `Coordinator` agent should treat as the implementat
    - 22 Phase 2 tests cover: overlap prevention, unsupported classification, provider failure classification, healthy no-signal, actionable signal, and exit-advisory-only outcomes.
    - Outstanding: 1 MEDIUM (M3), 5 LOW (L5-L9) from code review.
 
-8. **PENDING — Record Phase 0 Decision 5**
-   - Decide the smallest deterministic integration harness for scanner event publication, wake routing, runtime ingestion, evaluator selection, and decision intake.
-   - Use the Phase 0 Decision Template.
+8. **DONE — Record Phase 0 Decision 5** ✅
+   - Decision recorded in [013-phase0-decision-5-integration-harness.md](013-phase0-decision-5-integration-harness.md).
+   - Two-layer harness: (A) extract scan-completion logic from `AgentTradingActor.runTechnicalScan()` into standalone `completeTechnicalScan()` function, test callbacks with mocked deps and fixture candles; (B) extend `runtime-composition-technical.test.ts` + `hybrid-agent-evaluator.test.ts` for ingestion→routing handoff.
+   - No Redis needed — `onTechnicalScanComplete` and `emitAgentWake` are injected callbacks, tested at callback level.
+   - No live market — fixture candles (uptrend → known signals, overbought → exit advisories, flat → no signals).
+   - No real LLM — `callLlmProvider` already mocked in evaluator tests.
 
 9. **PENDING — Implement deterministic integration coverage**
    - Add deterministic tests for the complete scanner-gated event chain.
