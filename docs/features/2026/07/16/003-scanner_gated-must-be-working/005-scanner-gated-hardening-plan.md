@@ -393,10 +393,10 @@ This is the only section the `Coordinator` agent should treat as the implementat
    - Implemented `StrictTechnicalConfigSchema` in domain, worker validation in `onSessionActive`, 26 new tests (12 schema + 14 worker). 4875 tests pass, lint clean.
    - See Outstanding Issues for 2 MEDIUM and 4 LOW findings from code review.
 
-4. **PENDING — Validate Phase 1**
-   - Run the focused schema, repository, API, and worker startup tests added or changed for Phase 1.
-   - Run the relevant package tests from Validation Commands.
-   - Record evidence for the commands and results.
+4. **DONE — Validate Phase 1** ✅
+   - Ran full test suite (`pnpm test`): 4875 passed, 0 failed, 219 skipped (integration tests).
+   - Ran `pnpm lint` (tsc --noEmit): clean, no errors.
+   - Evidence recorded in [008-phase1-validation-evidence.md](008-phase1-validation-evidence.md).
 
 5. **PENDING — Record Phase 0 Decisions 2–4**
    - Decide the capacity-control boundary, provider eligibility source/classification, and provider-counter/dashboard treatment.
