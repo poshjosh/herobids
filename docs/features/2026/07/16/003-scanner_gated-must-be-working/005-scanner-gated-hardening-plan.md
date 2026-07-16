@@ -414,10 +414,12 @@ This is the only section the `Coordinator` agent should treat as the implementat
    - 22 new tests, 2026 worker tests pass, lint clean.
    - See Outstanding Issues for 1 MEDIUM and 5 LOW findings from code review.
 
-7. **PENDING — Validate Phase 2**
-   - Run focused worker, market-data, venue-adapter, and runtime-composition tests for Phase 2.
-   - Prove the documented capacity calculation with tests or controlled smoke output.
-   - Record evidence for overlap prevention, unsupported classification, provider failure classification, healthy no-signal, actionable signal, and exit-advisory-only outcomes.
+7. **DONE — Validate Phase 2** ✅
+   - All commands pass: worker tests (2026 pass), domain tests, market-data tests, lint clean.
+   - Capacity calculation verified: 50 RPM scanner rate limiter, maxCandidates=20, maxConcurrentScans=4.
+   - Evidence recorded in [012-phase2-validation-evidence.md](012-phase2-validation-evidence.md).
+   - 22 Phase 2 tests cover: overlap prevention, unsupported classification, provider failure classification, healthy no-signal, actionable signal, and exit-advisory-only outcomes.
+   - Outstanding: 1 MEDIUM (M3), 5 LOW (L5-L9) from code review.
 
 8. **PENDING — Record Phase 0 Decision 5**
    - Decide the smallest deterministic integration harness for scanner event publication, wake routing, runtime ingestion, evaluator selection, and decision intake.
