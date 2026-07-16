@@ -375,6 +375,87 @@ describe('AgentRepository.getUnifiedConfig (capabilityMode/hybridMode defaults)'
 });
 
 // ---------------------------------------------------------------------------
+// getUnifiedConfig — technical config defaults (001)
+// ---------------------------------------------------------------------------
+
+describe('AgentRepository.getUnifiedConfig — technical config defaults', () => {
+  it('returns scanBatchSize=5 when technical config omits it', async () => {
+    const db = buildUnifiedConfigDb({
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+      technical: {
+        filters: { venue: 'hyperliquid', venueType: 'orderbook' },
+      },
+    });
+    const repo = new AgentRepository(db as never);
+    const config = await repo.getUnifiedConfig('agent-1');
+    expect(config).not.toBeNull();
+    expect(config!.technical).toBeDefined();
+    expect(config!.technical!.scanBatchSize).toBe(5);
+    expect(config!.technical!.scanIntervalMs).toBe(60_000);
+    expect(config!.technical!.candles).toEqual({ interval: '15m', limit: 100 });
+    expect(config!.technical!.signalBias).toBe('trend-following');
+    expect(config!.technical!.autonomousExit).toBe(false);
+  });
+
+  it('does not override explicitly-set values', async () => {
+    const db = buildUnifiedConfigDb({
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+      technical: {
+        filters: { venue: 'hyperliquid', venueType: 'orderbook' },
+        scanBatchSize: 10,
+        scanIntervalMs: 30_000,
+      },
+    });
+    const repo = new AgentRepository(db as never);
+    const config = await repo.getUnifiedConfig('agent-1');
+    expect(config!.technical!.scanBatchSize).toBe(10);
+    expect(config!.technical!.scanIntervalMs).toBe(30_000);
+  });
+
+  it('returns undefined technical when technical is absent from stored config', async () => {
+    const db = buildUnifiedConfigDb({
+      capabilityMode: 'intelligence',
+    });
+    const repo = new AgentRepository(db as never);
+    const config = await repo.getUnifiedConfig('agent-1');
+    expect(config!.technical).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getUnifiedConfig — intelligence config defaults (001)
+// ---------------------------------------------------------------------------
+
+describe('AgentRepository.getUnifiedConfig — intelligence config defaults', () => {
+  it('preserves intelligence config object when present but all fields are optional', async () => {
+    const db = buildUnifiedConfigDb({
+      capabilityMode: 'intelligence',
+      intelligence: {},
+    });
+    const repo = new AgentRepository(db as never);
+    const config = await repo.getUnifiedConfig('agent-1');
+    expect(config!.intelligence).toBeDefined();
+    // Fields with .optional() (no .default()) remain undefined — correct behavior
+    expect(config!.intelligence!.wakeIntervalMs).toBeUndefined();
+    expect(config!.intelligence!.maxTokens).toBeUndefined();
+    expect(config!.intelligence!.provider).toBeUndefined();
+    expect(config!.intelligence!.lightModel).toBeUndefined();
+    expect(config!.intelligence!.heavyModel).toBeUndefined();
+  });
+
+  it('returns undefined when intelligence is absent', async () => {
+    const db = buildUnifiedConfigDb({
+      capabilityMode: 'intelligence',
+    });
+    const repo = new AgentRepository(db as never);
+    const config = await repo.getUnifiedConfig('agent-1');
+    expect(config!.intelligence).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // updateUnifiedConfig — hybridMode default stamping on write (004, B-M1)
 // ---------------------------------------------------------------------------
 
