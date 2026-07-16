@@ -101,6 +101,12 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
   const isCustomProvider = providerChoice === CUSTOM_PROVIDER_OPTION;
   const effectiveProvider = isCustomProvider ? customProviderId.trim() : providerChoice.trim();
 
+  useEffect(() => {
+    if (!canGenerateWallet && credentialMode === 'generated') {
+      setCredentialMode('manual');
+    }
+  }, [canGenerateWallet, credentialMode]);
+
   const mutation = useMutation({
     mutationFn: () =>
       setupApi.providerLink({
@@ -164,25 +170,33 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
         {catalogQuery.isLoading ? <div style={{ marginTop: '8px', fontSize: '12px' }}>Loading provider catalog...</div> : null}
       </div>
 
-      {isTradingSetup && !isCustomProvider && (
+      {canGenerateWallet && (
         <div style={{ marginBottom: '16px' }}>
           <FieldLabel>Wallet</FieldLabel>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button type="button" variant={credentialMode === 'manual' ? 'primary' : 'secondary'} onClick={() => setCredentialMode('manual')}>
+          <div style={{ display: 'inline-flex', gap: '4px', padding: '3px', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setCredentialMode('manual')}
+              style={credentialMode === 'manual'
+                ? { background: 'var(--color-surface-1)', color: 'var(--color-text-primary)', border: '1px solid var(--color-brand)' }
+                : { border: '1px solid transparent' }}
+            >
               Use existing wallet
             </Button>
-            {canGenerateWallet && (
-              <Button
-                type="button"
-                variant={credentialMode === 'generated' ? 'primary' : 'secondary'}
-                onClick={() => {
-                  setFieldValues({});
-                  setCredentialMode('generated');
-                }}
-              >
-                Create wallet
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setFieldValues({});
+                setCredentialMode('generated');
+              }}
+              style={credentialMode === 'generated'
+                ? { background: 'var(--color-surface-1)', color: 'var(--color-text-primary)', border: '1px solid var(--color-brand)' }
+                : { border: '1px solid transparent' }}
+            >
+              Create wallet
+            </Button>
           </div>
         </div>
       )}
@@ -285,7 +299,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
 
   if (standalone) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '48px 24px' }}>
         <div style={{
           maxWidth: '480px',
           width: '100%',
@@ -305,7 +319,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
   }
 
   return (
-    <Modal title={title} onClose={onClose}>
+    <Modal title={title} onClose={onClose} placement="top">
       {formContent}
     </Modal>
   );

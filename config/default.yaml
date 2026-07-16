@@ -52,7 +52,7 @@ venues:
     timeoutMs: 15000
     # Override JUPITER_API_KEY when enabling platform-managed wallet creation.
     walletGeneration:
-      enabled: true
+      enabled: false
   1inch:
     baseUrl: https://api.1inch.dev/swap/v6.0/8453
     rpcUrl: https://mainnet.base.org

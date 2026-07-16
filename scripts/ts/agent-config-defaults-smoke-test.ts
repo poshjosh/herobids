@@ -141,11 +141,13 @@ function workerLogsSince(since: string, maxLines = 1000): string {
 
 function workerLogsSinceAgent(since: string, agentId: string): string {
   try {
-    // -A 20 includes trailing context lines because pino-pretty renders
-    // structured log fields (candidatesScored, candidatesDiscovered, etc.)
-    // on indented continuation lines that do NOT repeat the agent ID.
+    // The worker logger uses agent-actor-<first 8 chars> (see
+    // agent-trading-actor.ts:256). Grep for the shortened prefix,
+    // not the full UUID. -A 20 pulls continuation lines with
+    // candidatesScored etc. that don't repeat the ID.
+    const shortId = agentId.slice(0, 8);
     return execSync(
-      `docker compose logs --since "${since}" worker 2>&1 | grep -A 20 "${agentId}" | head -200 || true`,
+      `docker compose logs --since "${since}" worker 2>&1 | grep -A 20 "${shortId}" | head -200 || true`,
       { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 },
     );
   } catch { return ''; }

@@ -485,7 +485,19 @@ export const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box',
 };
 
-export function Modal({ title, onClose, closeOnBackdropClick = true, children }: { title: string; onClose: () => void; closeOnBackdropClick?: boolean; children: React.ReactNode }) {
+export function Modal({
+  title,
+  onClose,
+  closeOnBackdropClick = true,
+  placement = 'center',
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  closeOnBackdropClick?: boolean;
+  placement?: 'center' | 'top';
+  children: React.ReactNode;
+}) {
   return (
     <div
       onClick={closeOnBackdropClick ? onClose : undefined}
@@ -512,9 +524,9 @@ export function Modal({ title, onClose, closeOnBackdropClick = true, children }:
           padding: '28px',
           width: '100%',
           maxWidth: '480px',
-          maxHeight: 'calc(100vh - 48px)',
+          maxHeight: placement === 'top' ? 'calc(100vh - 96px)' : 'calc(100vh - 48px)',
           overflowY: 'auto',
-          margin: 'auto 0',
+          margin: placement === 'top' ? '24px 0' : 'auto 0',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
