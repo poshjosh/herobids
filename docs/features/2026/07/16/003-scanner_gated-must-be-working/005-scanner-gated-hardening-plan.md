@@ -1,6 +1,6 @@
 # Plan: Scanner-Gated Runtime Hardening and Verification
 
-**Status:** Revised proposal. Do not implement until explicitly authorized.
+**Status:** Implementation complete — 13/13 checklist items done. Awaiting staging deployment authorization.
 **Scope:** Required implementation sequence items 2–4 in [`004-evidence-based-decisions.md`](004-evidence-based-decisions.md).
 **Prerequisite:** Before implementation starts, verify with read-only staging evidence that the seven storming staging agents have been stopped. This plan does not perform staging mutations.
 
@@ -461,9 +461,10 @@ This is the only section the `Coordinator` agent should treat as the implementat
     - `scanner-provider-smoke-test.sh`: 0/2 passed, 2 failed — same test script enum bugs; agent creation never reached scanner path.
     - **Assessment:** Core implementation healthy. Smoke scripts need enum value fixes (item 11 quality follow-up). No code regressions detected.
 
-13. **PENDING — Record outstanding issues and stop before staging deployment**
-    - Append any remaining non-high/non-critical review findings as Outstanding Issues.
-    - Do not deploy to staging or replace staging agents. Staging rollout remains follow-on work.
+13. **DONE — Record outstanding issues and stop before staging deployment** ✅
+    - All 13 checklist items complete. Implementation finished.
+    - See Outstanding Issues for collected MEDIUM and LOW findings.
+    - Staging deployment, agent replacement, and live-provider smoke remain follow-on work per plan.
 
 ## Implementation Order and Stop Conditions
 
@@ -519,3 +520,12 @@ Recorded during implementation code reviews. Grouped by checklist item.
 **LOW:**
 - **L10:** Two overlap-skip tests (5 and 7) are nearly identical; could be consolidated.
 - **L11:** `makeParams()` defaults inject `vi.fn()` mocks for callbacks; new tests must explicitly override to get `undefined`.
+
+### [Item 12 — Run full local validation] (2026-07-16)
+
+**MEDIUM:**
+- **M5:** Smoke scripts (`agent-config-persistence-test.sh`, `scanner-provider-smoke-test.sh`) have outdated enum values in test payloads: candle interval `"1h"` should be `"1H"`, signalBias `"momentum"` should be `"trend-following"`. These are test script bugs, not code bugs — scripts need updating to match current schema enums.
+
+**LOW:**
+- **L12:** API accepted a `scanner_gated` agent without a `technical` block (201 instead of expected 400). The API relies on Phase 1 worker startup validation for this enforcement. Whether this gap should be closed at API write time is a product decision.
+- **L13:** Smoke scripts were not run locally (no local stack available). Full validation against a local stack with an active Hyperliquid connection remains deferred.
