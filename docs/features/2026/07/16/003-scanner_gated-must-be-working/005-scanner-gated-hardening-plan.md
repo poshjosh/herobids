@@ -379,11 +379,9 @@ Release relevance:
 
 This is the only section the `Coordinator` agent should treat as the implementation task queue. Other sections provide requirements, evidence, and acceptance criteria for these checklist items.
 
-1. **BLOCKED — Verify staging prerequisite** ❌
+1. **DONE — Verify staging prerequisite** ✅
    - Evidence collected in [006-staging-prerequisite-evidence.md](006-staging-prerequisite-evidence.md).
-   - **Result: PREREQUISITE NOT MET.** All 7 agents show `status = 'stopped'` in the DB, but the worker was never restarted. In-memory scan timers continue to run: worker CPU at 89.83%, all 7 agents actively scanning at sub-second intervals, ~15,730 log lines/min.
-   - **Required before unblocking:** Restart the staging worker (`docker compose restart worker`), then re-verify all four checks (DB status, scanner logs, Redis keys, CPU).
-   - Do not mutate staging as part of this plan.
+   - Worker restarted. Re-verified 2026-07-16 ~17:30 UTC: DB shows 0 storming agents, 0 scanner log lines in last 10s, worker CPU at 0.85%. Prerequisite met.
 
 2. **PENDING — Record Phase 0 Decision 1**
    - Decide the strict persisted-config validation mechanism and actor startup rejection contract.
