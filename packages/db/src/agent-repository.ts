@@ -12,7 +12,7 @@ import {
   users,
 } from './schema/index.js';
 import { resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
-import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type AgentRiskOverrides, type UnifiedAgentConfig, type ProvidersYaml } from '@herobids/domain';
+import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type AgentRiskOverrides, type UnifiedAgentConfig, type ProvidersYaml, TechnicalConfigSchema, IntelligenceConfigSchema } from '@herobids/domain';
 
 // --- Helpers ---
 
@@ -49,6 +49,43 @@ function applyCapabilityModeMigrationDefaults(raw: Record<string, unknown>): Rec
     config.capabilityMode = 'intelligence';
   }
   return config;
+}
+
+/**
+ * Apply Zod schema defaults to technical and intelligence config blocks
+ * at the DB read boundary. Without this, fields like scanBatchSize,
+ * scanIntervalMs, candles, signalBias, and autonomousExit return undefined
+ * when absent from the stored JSONB, even though they have .default()
+ * in TechnicalConfigSchema.
+ *
+ * - If the technical block exists, parse it through TechnicalConfigSchema
+ *   to inject all Zod-level defaults.
+ * - If the intelligence block exists, parse it through IntelligenceConfigSchema.
+ *   (Currently all fields are .optional(), so no defaults are injected yet,
+ *   but this future-proofs the read path.)
+ * - On parse failure, leave the block as-is — callers handle invalid config
+ *   elsewhere.
+ */
+function applyConfigDefaults(raw: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...raw };
+
+  if (result['technical'] && typeof result['technical'] === 'object') {
+    try {
+      result['technical'] = TechnicalConfigSchema.parse(result['technical']);
+    } catch {
+      // Leave as-is on parse failure.
+    }
+  }
+
+  if (result['intelligence'] && typeof result['intelligence'] === 'object') {
+    try {
+      result['intelligence'] = IntelligenceConfigSchema.parse(result['intelligence']);
+    } catch {
+      // Leave as-is on parse failure.
+    }
+  }
+
+  return result;
 }
 
 // --- Agent ---
@@ -267,7 +304,9 @@ export class AgentRepository {
     // for hybrid agents) if absent from the stored JSONB. The SQL migration
     // (0040) handles this at rest, but this guards in-flight reads before the
     // migration runs or if the migration was skipped.
-    return applyCapabilityModeMigrationDefaults(raw as Record<string, unknown>) as UnifiedAgentConfig;
+    const withCapabilityDefaults = applyCapabilityModeMigrationDefaults(raw as Record<string, unknown>);
+    const withAllDefaults = applyConfigDefaults(withCapabilityDefaults);
+    return withAllDefaults as UnifiedAgentConfig;
   }
 
   async updateUnifiedConfig(agentId: string, config: UnifiedAgentConfig | null, executionMode?: string): Promise<void> {
