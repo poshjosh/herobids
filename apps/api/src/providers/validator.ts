@@ -58,6 +58,12 @@ export function canonicalizeProviderSecrets(_venue: string, secrets: Record<stri
     canonicalSecrets[canonicalKey] = applyNormalizationRules(rawValue, field?.normalization);
   }
 
+  // 1inch developer access belongs to the operator configuration. Ignore a
+  // legacy user-supplied value so new writes do not replicate the shared key.
+  if (_venue === '1inch') {
+    delete canonicalSecrets['apiKey'];
+  }
+
   return canonicalSecrets;
 }
 

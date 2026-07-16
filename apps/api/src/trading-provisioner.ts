@@ -21,6 +21,7 @@ export async function provisionTradingTarget(
     provider: string;
     label: string;
     credentialId: string | null;
+    venueAccountRef?: string | null;
     now: Date;
   },
 ): Promise<TradingProvisionResult> {
@@ -31,7 +32,7 @@ export async function provisionTradingTarget(
     userId: opts.userId,
     venue: opts.provider,
     label: opts.label,
-    venueAccountRef: null,
+    venueAccountRef: opts.venueAccountRef ?? null,
     credentialId: opts.credentialId,
     createdAt: opts.now,
     updatedAt: opts.now,

@@ -21,7 +21,7 @@ describe('GET /providers/catalog', () => {
     const body = res.json<{
       schemaVersion: string;
       etag: string;
-      providers: Array<{ id: string; connections?: { autoCreatesTradingConnection: boolean } }>;
+      providers: Array<{ id: string; connections?: { autoCreatesTradingConnection: boolean }; walletGeneration?: { available: boolean } }>;
       customMode: { connections: { allowFreeformProvider: boolean } };
     }>();
 
@@ -29,7 +29,33 @@ describe('GET /providers/catalog', () => {
     expect(body.etag).toBeTruthy();
     expect(body.providers.map((provider) => provider.id)).toEqual(expect.arrayContaining(['hyperliquid', 'bybit', '1inch', 'jupiter']));
     expect(body.providers.find((provider) => provider.id === 'hyperliquid')?.connections?.autoCreatesTradingConnection).toBe(true);
+    expect(body.providers.find((provider) => provider.id === 'hyperliquid')?.walletGeneration).toMatchObject({ available: false });
+    expect(body.providers.find((provider) => provider.id === 'bybit')?.walletGeneration).toBeUndefined();
     expect(body.customMode.connections.allowFreeformProvider).toBe(true);
+  });
+
+  it('advertises generated wallets only for enabled supported providers', async () => {
+    const app = Fastify();
+    await providerRoutes(app, {
+      hyperliquid: { baseUrl: 'https://api.hyperliquid.xyz', walletGeneration: { enabled: true } },
+      jupiter: { baseUrl: 'https://api.jup.ag/swap/v1', walletGeneration: { enabled: false } },
+      '1inch': { baseUrl: 'https://api.1inch.dev/swap/v6.0/8453', chainId: 8453, walletGeneration: { enabled: true } },
+    } as any);
+
+    const res = await app.inject({ method: 'GET', url: '/providers/catalog' });
+    const body = res.json<{ providers: Array<{ id: string; walletGeneration?: { available: boolean; credentialModes: string[]; network: string } }> }>();
+
+    expect(body.providers.find((provider) => provider.id === 'hyperliquid')?.walletGeneration).toMatchObject({
+      available: true,
+      credentialModes: ['manual', 'generated'],
+      network: 'Hyperliquid',
+    });
+    expect(body.providers.find((provider) => provider.id === '1inch')?.walletGeneration).toMatchObject({
+      available: true,
+      network: 'Base',
+    });
+    expect(body.providers.find((provider) => provider.id === 'jupiter')?.walletGeneration?.credentialModes).toEqual(['manual']);
+    expect(body.providers.find((provider) => provider.id === 'bybit')?.walletGeneration).toBeUndefined();
   });
 
   it('returns 304 when the ETag matches', async () => {

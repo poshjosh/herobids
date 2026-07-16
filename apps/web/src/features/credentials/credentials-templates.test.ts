@@ -24,7 +24,7 @@ const CATALOG_CREDENTIAL_FIELDS: Record<string, string[]> = {
   hyperliquid: ['apiKey', 'secret', 'walletAddress'],
   jupiter: ['privateKey'],
   bybit: ['apiKey', 'apiSecret'],
-  '1inch': ['apiKey'],
+  '1inch': ['privateKey'],
 };
 
 describe('PROVIDER_TEMPLATES map (bug 007)', () => {
@@ -40,8 +40,8 @@ describe('PROVIDER_TEMPLATES map (bug 007)', () => {
     expect(PROVIDER_TEMPLATES['bybit']).toEqual(['apiKey', 'apiSecret']);
   });
 
-  it('maps "1inch" to ["apiKey"]', () => {
-    expect(PROVIDER_TEMPLATES['1inch']).toEqual(['apiKey']);
+  it('maps "1inch" to ["privateKey"]', () => {
+    expect(PROVIDER_TEMPLATES['1inch']).toEqual(['privateKey']);
   });
 
   it('returns undefined for unknown providers (no template to apply)', () => {

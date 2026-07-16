@@ -17,6 +17,14 @@ export interface ProviderDefinition {
   logoUrl?: string;
   credentials?: CredentialSchema;
   connections?: ConnectionSchema;
+  walletGeneration?: WalletGenerationCapability;
+}
+
+export interface WalletGenerationCapability {
+  available: boolean;
+  credentialModes: Array<'manual' | 'generated'>;
+  network: string;
+  fundingInstructionId: string;
 }
 
 export interface CredentialSchema {

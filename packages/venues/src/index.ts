@@ -28,6 +28,8 @@ export { JupiterConfirmationPoller } from './jupiter-confirmation.js';
 export type { JupiterConfirmationConfig } from './jupiter-confirmation.js';
 export { EvmConfirmationPoller } from './evm-confirmation.js';
 export type { EvmConfirmationConfig } from './evm-confirmation.js';
+export { generateWallet, WalletGenerationError, WALLET_GENERATION_PROVIDERS } from './wallet-generation.js';
+export type { GeneratedWalletPublic, GeneratedWalletSecrets, WalletGenerationProvider, WalletGenerationRequest, WalletGenerationResult } from './wallet-generation.js';
 export type { SwapConfirmationPoller, SwapConfirmationStatus, SwapConfirmationError } from './swap-confirmation-poller.js';
 export { VenueCandleFetcher } from './candle-fetcher.js';
 export type { GeckoCandleFetcherConfig } from './candle-fetcher.js';

@@ -3,14 +3,16 @@ import crypto from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { userCredentials, connections } from '@herobids/db';
-import type { PlansConfig } from '@herobids/domain';
+import type { AppConfig, PlansConfig } from '@herobids/domain';
+import { generateWallet } from '@herobids/venues';
+import type { WalletGenerationRequest, WalletGenerationResult } from '@herobids/venues';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { canonicalizeVenueSecrets, validateVenueSecrets } from './credentials.js';
 import { provisionTradingTarget } from '../trading-provisioner.js';
 import { checkConnectionLimit, checkCredentialLimit, checkVenueAccountLimit } from '../plan-guards.js';
 import { SetupProviderLinkSchema } from '../schemas.js';
 import { errorPayload, type ApiErrorDetail } from '../error-payload.js';
-import { providerAllowsTradingSetup } from '../providers/registry.js';
+import { getProviderWalletGenerationCapability, providerAllowsTradingSetup } from '../providers/registry.js';
 
 function credentialValidationPayload(errors: ReturnType<typeof validateVenueSecrets>) {
   const primary = errors[0]!;
@@ -19,10 +21,16 @@ function credentialValidationPayload(errors: ReturnType<typeof validateVenueSecr
   });
 }
 
+export interface SetupRouteDeps {
+  venues: AppConfig['venues'];
+  generateWallet: (request: WalletGenerationRequest) => WalletGenerationResult;
+}
+
 export async function setupRoutes(
   app: FastifyInstance,
   db: Database,
   plansConfig?: PlansConfig,
+  deps: SetupRouteDeps = { venues: {}, generateWallet },
 ): Promise<void> {
   /**
    * POST /setup/provider-link
@@ -41,7 +49,7 @@ export async function setupRoutes(
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const { provider, label, secrets, capability } = parsed.data;
+    const { provider, label, capability, credentialMode } = parsed.data;
 
     if (capability === 'trading' && !providerAllowsTradingSetup(provider)) {
       return reply.status(400).send(
@@ -53,11 +61,38 @@ export async function setupRoutes(
       );
     }
 
-    const normalizedSecrets = canonicalizeVenueSecrets(provider, secrets);
+    const walletCapability = credentialMode === 'generated'
+      ? getProviderWalletGenerationCapability(provider, deps.venues)
+      : undefined;
+    if (credentialMode === 'generated') {
+      if (!walletCapability) {
+        return reply.status(400).send(
+          errorPayload(
+            'wallet_generation.unsupported_provider',
+            `Provider ${provider} does not support generated wallets.`,
+            { provider },
+          ),
+        );
+      }
+      if (!walletCapability.available) {
+        return reply.status(400).send(
+          errorPayload(
+            'wallet_generation.disabled',
+            `Generated wallets are not currently available for provider ${provider}.`,
+            { provider },
+          ),
+        );
+      }
+    }
 
-    const venueErrors = validateVenueSecrets(provider, normalizedSecrets);
-    if (venueErrors.length > 0) {
-      return reply.status(400).send(credentialValidationPayload(venueErrors));
+    const manualSecrets = credentialMode === 'manual'
+      ? canonicalizeVenueSecrets(provider, parsed.data.secrets!)
+      : undefined;
+    if (manualSecrets) {
+      const venueErrors = validateVenueSecrets(provider, manualSecrets);
+      if (venueErrors.length > 0) {
+        return reply.status(400).send(credentialValidationPayload(venueErrors));
+      }
     }
 
     const encryptionKey = getEncryptionKey();
@@ -65,12 +100,10 @@ export async function setupRoutes(
     const connectionId = crypto.randomUUID();
     const now = new Date();
 
-    const secretsJson = JSON.stringify(normalizedSecrets);
-    const { encryptedData, encryptionMeta } = encryptCredential(secretsJson, encryptionKey);
-
     const txResult = await db.transaction(async (tx): Promise<
       | { kind: 'limit'; error: { code: string; message: string; params?: Record<string, unknown> } }
-      | { kind: 'ok'; tradingResult: { venueAccountId: string } | null }
+      | { kind: 'validation'; errors: ReturnType<typeof validateVenueSecrets> }
+      | { kind: 'ok'; tradingResult: { venueAccountId: string } | null; wallet: WalletGenerationResult['wallet'] | null }
     > => {
       if (plansConfig) {
         // Serialise setup quota checks per user to avoid over-limit races.
@@ -93,6 +126,18 @@ export async function setupRoutes(
           }
         }
       }
+
+      const generated = credentialMode === 'generated'
+        ? deps.generateWallet({ provider, enabled: walletCapability!.available, network: walletCapability!.network })
+        : undefined;
+      const normalizedSecrets = generated
+        ? canonicalizeVenueSecrets(provider, generated.secrets)
+        : manualSecrets!;
+      const venueErrors = validateVenueSecrets(provider, normalizedSecrets);
+      if (venueErrors.length > 0) {
+        return { kind: 'validation' as const, errors: venueErrors };
+      }
+      const { encryptedData, encryptionMeta } = encryptCredential(JSON.stringify(normalizedSecrets), encryptionKey);
 
       await tx.insert(userCredentials).values({
         id: credentialId,
@@ -125,17 +170,21 @@ export async function setupRoutes(
           provider,
           label,
           credentialId,
+          venueAccountRef: generated?.wallet.address ?? (provider === 'hyperliquid' ? normalizedSecrets['walletAddress'] ?? null : null),
           now,
         });
       }
 
-      return { kind: 'ok' as const, tradingResult };
+      return { kind: 'ok' as const, tradingResult, wallet: generated?.wallet ?? null };
     });
 
     if (txResult.kind === 'limit') {
       return reply.status(403).send(
         errorPayload(txResult.error.code, txResult.error.message, txResult.error.params),
       );
+    }
+    if (txResult.kind === 'validation') {
+      return reply.status(400).send(credentialValidationPayload(txResult.errors));
     }
 
     const response: Record<string, unknown> = {
@@ -162,6 +211,15 @@ export async function setupRoutes(
         venue: provider,
         label,
         createdAt: now,
+      };
+    }
+
+    if (txResult.wallet && walletCapability) {
+      response.wallet = {
+        address: txResult.wallet.address,
+        network: txResult.wallet.network,
+        fundingInstructionId: walletCapability.fundingInstructionId,
+        custodyMode: 'direct',
       };
     }
 

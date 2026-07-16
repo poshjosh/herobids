@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { AppConfig } from '@herobids/domain';
 import { getProviderCatalog } from '../providers/registry.js';
 
 function normalizeIfNoneMatch(value: string | undefined): string | null {
@@ -9,9 +10,9 @@ function normalizeIfNoneMatch(value: string | undefined): string | null {
   return value.split(',').map((part) => part.trim()).find((part) => part.length > 0) ?? null;
 }
 
-export async function providerRoutes(app: FastifyInstance): Promise<void> {
+export async function providerRoutes(app: FastifyInstance, venues?: AppConfig['venues']): Promise<void> {
   app.get('/providers/catalog', async (request, reply) => {
-    const catalog = getProviderCatalog();
+    const catalog = getProviderCatalog(venues);
     const ifNoneMatch = normalizeIfNoneMatch(request.headers['if-none-match']);
 
     reply.header('Cache-Control', 'public, max-age=3600');

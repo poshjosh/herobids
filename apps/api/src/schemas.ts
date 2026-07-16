@@ -122,10 +122,24 @@ export const SetupProviderLinkSchema = z.object({
   provider: z.string().min(1),
   /** Base label used for the credential, connection, and binding */
   label: z.string().min(1),
-  /** Secrets to encrypt (API key, secret, passphrase, etc.) */
-  secrets: z.record(z.string()),
+  /** Manual credentials remain the default for existing callers. */
+  credentialMode: z.enum(['manual', 'generated']).default('manual'),
+  /** Secrets to encrypt (API key, secret, passphrase, etc.). Generated mode prohibits this field. */
+  secrets: z.record(z.string()).optional(),
   /** Optional capability to provision alongside the connection. Currently only "trading" is supported. */
   capability: z.enum(['trading']).optional(),
+}).superRefine((value, ctx) => {
+  if (value.credentialMode === 'manual' && !value.secrets) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['secrets'], message: 'secrets are required for manual credentials' });
+  }
+  if (value.credentialMode === 'generated') {
+    if (value.secrets !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['secrets'], message: 'secrets must not be supplied when creating a wallet' });
+    }
+    if (value.capability !== 'trading') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['capability'], message: 'generated wallets require trading capability' });
+    }
+  }
 });
 
 export type CreateConnectionInput = z.infer<typeof CreateConnectionSchema>;

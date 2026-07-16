@@ -93,6 +93,32 @@ const VALID_HL_PAYLOAD = {
   },
 };
 
+const GENERATED_HL_WALLET = {
+  wallet: {
+    provider: 'hyperliquid' as const,
+    custodyMode: 'direct' as const,
+    address: '0x1111111111111111111111111111111111111111',
+    network: 'Hyperliquid',
+  },
+  secrets: {
+    apiKey: '0x1111111111111111111111111111111111111111',
+    secret: `0x${'a'.repeat(64)}`,
+    walletAddress: '0x1111111111111111111111111111111111111111',
+  },
+};
+
+function generatedWalletDeps(walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET)) {
+  return {
+    venues: {
+      hyperliquid: {
+        baseUrl: 'https://api.hyperliquid.xyz',
+        walletGeneration: { enabled: true },
+      },
+    },
+    generateWallet: walletGenerator,
+  } as any;
+}
+
 describe('POST /setup/provider-link', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -183,6 +209,7 @@ describe('POST /setup/provider-link', () => {
     expect(body['credential']).toBeDefined();
     expect(body['connection']).toBeDefined();
     expect(body['venueAccount']).toBeUndefined();
+    expect(body['wallet']).toBeUndefined();
     expect((body['connection'] as Record<string, unknown>)['resolvedVenueAccountId']).toBeNull();
   });
 
@@ -236,6 +263,125 @@ describe('POST /setup/provider-link', () => {
       venue: 'hyperliquid',
     });
     expect((body['connection'] as Record<string, unknown>)['resolvedVenueAccountId']).toBe('va-new');
+  });
+
+  it('creates an encrypted generated wallet setup and returns only public wallet data', async () => {
+    const { provisionTradingTarget } = await import('../trading-provisioner.js');
+    const walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDb(), undefined, generatedWalletDeps(walletGenerator));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      payload: {
+        provider: 'hyperliquid',
+        label: 'Generated Hyperliquid Wallet',
+        credentialMode: 'generated',
+        capability: 'trading',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(walletGenerator).toHaveBeenCalledWith({ provider: 'hyperliquid', enabled: true, network: 'Hyperliquid' });
+    expect(provisionTradingTarget).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      venueAccountRef: GENERATED_HL_WALLET.wallet.address,
+    }));
+    const body = res.json<Record<string, unknown>>();
+    expect(body['wallet']).toEqual({
+      address: GENERATED_HL_WALLET.wallet.address,
+      network: 'Hyperliquid',
+      fundingInstructionId: 'hyperliquid-mainnet',
+      custodyMode: 'direct',
+    });
+    expect(JSON.stringify(body)).not.toContain(GENERATED_HL_WALLET.secrets.secret);
+    expect(JSON.stringify(body)).not.toContain('apiKey');
+  });
+
+  it('rejects client-supplied secrets in generated mode before generation or persistence', async () => {
+    const walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDb(), undefined, generatedWalletDeps(walletGenerator));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      payload: {
+        provider: 'hyperliquid',
+        label: 'Generated Hyperliquid Wallet',
+        credentialMode: 'generated',
+        capability: 'trading',
+        secrets: { secret: 'must-not-be-used' },
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(walletGenerator).not.toHaveBeenCalled();
+    expect(insertedValues).toHaveLength(0);
+    expect(transactionCallCount).toBe(0);
+  });
+
+  it('rejects generated setup when wallet creation is disabled', async () => {
+    const walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDb(), undefined, {
+      venues: { hyperliquid: { baseUrl: 'https://api.hyperliquid.xyz', walletGeneration: { enabled: false } } },
+      generateWallet: walletGenerator,
+    } as any);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      payload: {
+        provider: 'hyperliquid',
+        label: 'Generated Hyperliquid Wallet',
+        credentialMode: 'generated',
+        capability: 'trading',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toBe('wallet_generation.disabled');
+    expect(walletGenerator).not.toHaveBeenCalled();
+    expect(transactionCallCount).toBe(0);
+  });
+
+  it('checks plan quota before generating a wallet', async () => {
+    const walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET);
+    const plansConfig = {
+      defaultPlanId: 'free',
+      plans: {
+        free: {
+          entitlements: {
+            skills: {},
+            agents: {},
+            limits: { maxCredentials: 0, maxConnections: 1, maxVenueAccounts: 1 },
+          },
+          usage: {},
+        },
+      },
+    };
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDb([{ id: 'existing-credential' }]), plansConfig as any, generatedWalletDeps(walletGenerator));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      payload: {
+        provider: 'hyperliquid',
+        label: 'Generated Hyperliquid Wallet',
+        credentialMode: 'generated',
+        capability: 'trading',
+      },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(walletGenerator).not.toHaveBeenCalled();
+    expect(insertedValues).toHaveLength(0);
   });
 
   it('propagates transaction failure and returns 500 — rollback path', async () => {

@@ -28,6 +28,8 @@ export interface JupiterSwapConfig {
   tokenDecimals?: Record<string, number>;
   /** Solana signer for live execution (signing + sending transactions). Optional for shadow/paper. */
   signer?: SolanaSignerPort;
+  /** Jupiter developer-platform API key, owned by the operator. */
+  apiKey?: string;
 }
 
 /**
@@ -50,6 +52,7 @@ export class JupiterSwapAdapter implements SwapVenuePort {
   private readonly timeoutMs: number;
   private readonly tokenDecimals: Record<string, number>;
   private readonly signer?: SolanaSignerPort;
+  private readonly apiKey?: string;
 
   constructor(config: JupiterSwapConfig) {
     this.apiUrl = config.apiUrl ?? 'https://api.jup.ag/swap/v1';
@@ -59,6 +62,11 @@ export class JupiterSwapAdapter implements SwapVenuePort {
     this.timeoutMs = config.timeoutMs ?? 10_000;
     this.tokenDecimals = config.tokenDecimals ?? {};
     this.signer = config.signer;
+    this.apiKey = config.apiKey;
+  }
+
+  private apiHeaders(): Record<string, string> {
+    return this.apiKey ? { 'x-api-key': this.apiKey } : {};
   }
 
   /** Convert human-readable amount to raw smallest-unit integer string. Fails if decimals unknown or amount invalid. */
@@ -107,6 +115,7 @@ export class JupiterSwapAdapter implements SwapVenuePort {
       url.searchParams.set('slippageBps', String(params.slippageBps));
 
       const response = await fetch(url.toString(), {
+        headers: this.apiHeaders(),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
 
@@ -159,7 +168,7 @@ export class JupiterSwapAdapter implements SwapVenuePort {
 
       const response = await fetch(url.toString(), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...this.apiHeaders() },
         body: JSON.stringify({
           quoteResponse: quote.quoteData,
           userPublicKey: this.walletAddress,

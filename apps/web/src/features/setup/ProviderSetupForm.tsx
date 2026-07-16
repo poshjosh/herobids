@@ -70,6 +70,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
   const [label, setLabel] = useState('');
   const [secretEntries, setSecretEntries] = useState<SecretEntry[]>([createEntry()]);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const [credentialMode, setCredentialMode] = useState<'manual' | 'generated'>('manual');
   const isTradingSetup = defaultCapability === 'trading';
 
   const catalogQuery = useQuery({
@@ -96,6 +97,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
   }, [isTradingSetup, providerChoice, providerSuggestions]);
 
   const selectedProvider = providerSuggestions.find((provider) => provider.id === providerChoice);
+  const canGenerateWallet = isTradingSetup && selectedProvider?.walletGeneration?.available === true;
   const isCustomProvider = providerChoice === CUSTOM_PROVIDER_OPTION;
   const effectiveProvider = isCustomProvider ? customProviderId.trim() : providerChoice.trim();
 
@@ -104,13 +106,14 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
       setupApi.providerLink({
         provider: effectiveProvider,
         label: label.trim(),
-        secrets: isCustomProvider
+        credentialMode,
+        ...(credentialMode === 'manual' ? { secrets: isCustomProvider
           ? Object.fromEntries(
               secretEntries
                 .map(({ key, value }) => [key.trim(), value.trim()] as const)
                 .filter(([key, value]) => key.length > 0 && value.length > 0),
             )
-          : buildStructuredSecrets(selectedProvider?.credentials?.fields ?? [], fieldValues),
+          : buildStructuredSecrets(selectedProvider?.credentials?.fields ?? [], fieldValues) } : {}),
         capability: defaultCapability,
       }),
     onSuccess,
@@ -132,9 +135,9 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
   const removeEntry = (index: number) =>
     setSecretEntries((entries) => entries.filter((_, i) => i !== index));
 
-  const hasCompleteSecret = isCustomProvider
+  const hasCompleteSecret = credentialMode === 'generated' || (isCustomProvider
     ? secretEntries.some((e) => e.key.trim() && e.value.trim())
-    : Object.values(fieldValues).some((value) => value.trim().length > 0);
+    : Object.values(fieldValues).some((value) => value.trim().length > 0));
 
   const title = intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingTitle' : 'setup.form.title' });
 
@@ -161,6 +164,29 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
         {catalogQuery.isLoading ? <div style={{ marginTop: '8px', fontSize: '12px' }}>Loading provider catalog...</div> : null}
       </div>
 
+      {isTradingSetup && !isCustomProvider && (
+        <div style={{ marginBottom: '16px' }}>
+          <FieldLabel>Wallet</FieldLabel>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button type="button" variant={credentialMode === 'manual' ? 'primary' : 'secondary'} onClick={() => setCredentialMode('manual')}>
+              Use existing wallet
+            </Button>
+            {canGenerateWallet && (
+              <Button
+                type="button"
+                variant={credentialMode === 'generated' ? 'primary' : 'secondary'}
+                onClick={() => {
+                  setFieldValues({});
+                  setCredentialMode('generated');
+                }}
+              >
+                Create wallet
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div style={{ marginBottom: '16px' }}>
         <FieldLabel>{intl.formatMessage({ id: 'setup.form.label' })}</FieldLabel>
         <input
@@ -171,7 +197,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
         />
       </div>
 
-      <div style={{ marginBottom: '12px' }}>
+      {credentialMode === 'manual' && <div style={{ marginBottom: '12px' }}>
         <FieldLabel>{intl.formatMessage({ id: 'setup.form.secrets' })}</FieldLabel>
         {isCustomProvider ? (
           <>
@@ -232,7 +258,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
             ))}
           </div>
         )}
-      </div>
+      </div>}
 
       {mutation.isError && (
         <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />

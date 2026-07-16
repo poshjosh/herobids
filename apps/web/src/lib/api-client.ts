@@ -1261,10 +1261,11 @@ export const capabilities = {
 export interface ProviderSetupResult {
   credential: { id: string; provider: string; label: string; createdAt: string };
   connection: { id: string; provider: string; label: string; status: string; credentialId: string; createdAt: string };
+  wallet?: { address: string; network: string; fundingInstructionId: string; custodyMode: 'direct' };
 }
 
 export const setup = {
-  providerLink: (data: { provider: string; label: string; secrets: Record<string, string>; capability?: 'trading' }) =>
+  providerLink: (data: { provider: string; label: string; credentialMode?: 'manual' | 'generated'; secrets?: Record<string, string>; capability?: 'trading' }) =>
     request<ProviderSetupResult>('/setup/provider-link', { method: 'POST', body: JSON.stringify(data) }),
 };
 

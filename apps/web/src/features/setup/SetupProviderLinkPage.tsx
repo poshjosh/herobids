@@ -3,11 +3,12 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { auth } from '../../lib/api-client.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { ProviderSetupForm, type ProviderSetupResult } from './ProviderSetupForm.js';
+import { WalletCreatedStep } from './WalletCreatedStep.js';
 import type { LocalizedApiError } from '../../lib/localize-api-error.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { useIntl } from 'react-intl';
 
-type PagePhase = 'exchange' | 'form' | 'done' | 'error';
+type PagePhase = 'exchange' | 'form' | 'wallet' | 'done' | 'error';
 
 export function SetupProviderLinkPage() {
   const navigate = useNavigate();
@@ -16,6 +17,7 @@ export function SetupProviderLinkPage() {
   const intl = useIntl();
   const [phase, setPhase] = useState<PagePhase>('exchange');
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [setupResult, setSetupResult] = useState<ProviderSetupResult | null>(null);
   const ran = useRef(false);
 
   useEffect(() => {
@@ -41,8 +43,9 @@ export function SetupProviderLinkPage() {
       });
   }, [login, intl, searchParams]);
 
-  const handleSuccess = (_result: ProviderSetupResult) => {
-    setPhase('done');
+  const handleSuccess = (result: ProviderSetupResult) => {
+    setSetupResult(result);
+    setPhase(result.wallet ? 'wallet' : 'done');
   };
 
   const handleClose = () => {
@@ -112,6 +115,10 @@ export function SetupProviderLinkPage() {
         </div>
       </div>
     );
+  }
+
+  if (phase === 'wallet' && setupResult?.wallet) {
+    return <WalletCreatedStep wallet={setupResult.wallet} onContinue={() => setPhase('done')} />;
   }
 
   return (

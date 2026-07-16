@@ -35,6 +35,8 @@ venues:
     testnetWsUrl: wss://api.hyperliquid-testnet.xyz/ws
     rateLimitPerSec: 10
     timeoutMs: 30000
+    walletGeneration:
+      enabled: true
   bybit:
     baseUrl: https://api.bybit.com
     wsUrl: wss://stream.bybit.com/v5/private     # global private-stream override (highest priority)
@@ -48,6 +50,9 @@ venues:
     baseUrl: https://api.jup.ag/swap/v1
     rpcUrl: https://api.mainnet-beta.solana.com
     timeoutMs: 15000
+    # Override JUPITER_API_KEY when enabling platform-managed wallet creation.
+    walletGeneration:
+      enabled: true
   1inch:
     baseUrl: https://api.1inch.dev/swap/v6.0/8453
     rpcUrl: https://mainnet.base.org
@@ -56,6 +61,9 @@ venues:
     timeoutMs: 60000
     confirmationTimeoutMs: 60000
     rateLimitPerSec: 1
+    # Override ONEINCH_API_KEY when enabling platform-managed wallet creation.
+    walletGeneration:
+      enabled: true
 
 execution:
   defaultSlippageBps: 50

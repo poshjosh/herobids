@@ -34,6 +34,7 @@ export interface VenueConfig {
   timeoutMs?: number;
   confirmationTimeoutMs?: number;
   routerAddress?: string;
+  apiKey?: string;
 }
 
 export interface OrderbookAdapterResult {
@@ -197,16 +198,16 @@ export class VenueAdapterFactory {
 
     if (venue === '1inch') {
       let privateKey: string | undefined;
-      let oneInchApiKey: string | undefined;
+      const oneInchConfig = venues['1inch'];
+      const oneInchApiKey = oneInchConfig?.apiKey;
       const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
       if (account?.credentialId) {
         const [cred] = await db.select().from(userCredentials).where(eq(userCredentials.id, account.credentialId)).limit(1);
         const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
         if (cred && encryptionKey) {
           try {
-            const decrypted = JSON.parse(decryptCredential(cred.encryptedData, encryptionKey)) as { privateKey: string; apiKey: string };
+            const decrypted = JSON.parse(decryptCredential(cred.encryptedData, encryptionKey)) as { privateKey: string };
             privateKey = decrypted.privateKey;
-            oneInchApiKey = decrypted.apiKey;
             journal.append(credentialDecryptedEvent({
               credentialId: account.credentialId,
               venue,
@@ -245,9 +246,8 @@ export class VenueAdapterFactory {
         throw new CredentialResolutionError(`privateKey required for 1inch venue ${actorType} ${actorId}. Store in DB credential.`);
       }
       if (!oneInchApiKey) {
-        throw new CredentialResolutionError(`apiKey required for 1inch venue ${actorType} ${actorId}. Store in DB credential.`);
+        throw new CredentialResolutionError(`Operator apiKey required for 1inch venue ${actorType} ${actorId}. Configure venues.1inch.apiKey.`);
       }
-      const oneInchConfig = venues['1inch'];
       const swapVenue = new OneInchSwapAdapter({
         apiUrl: oneInchConfig?.baseUrl ?? 'https://api.1inch.dev/swap/v6.0/8453',
         apiKey: oneInchApiKey,
@@ -263,10 +263,9 @@ export class VenueAdapterFactory {
         routerAddress: oneInchConfig?.routerAddress,
       });
 
-      // For 1inch, wallet address is derived from the private key — we don't need venueAccountRef
       const oneInchRpcUrl = oneInchConfig?.rpcUrl ?? 'https://mainnet.base.org';
       const confirmationPoller = new EvmConfirmationPoller({ rpcUrl: oneInchRpcUrl });
-      return { swapVenue, walletAddress: '', credentialId: account?.credentialId ?? undefined, signerPresent: true, confirmationPoller };
+      return { swapVenue, walletAddress: swapVenue.walletAddress, credentialId: account?.credentialId ?? undefined, signerPresent: true, confirmationPoller };
     }
 
     if (venue !== 'jupiter') {
@@ -330,6 +329,7 @@ export class VenueAdapterFactory {
       tokenDecimals,
       timeoutMs: jupiterConfig?.timeoutMs,
       signer,
+      apiKey: jupiterConfig?.apiKey,
     });
 
     const confirmationPoller = new JupiterConfirmationPoller({ rpcUrl: jupiterRpcUrl }, signer);

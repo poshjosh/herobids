@@ -402,7 +402,6 @@ describe('credential audit events', () => {
           label: 'base-wallet',
           secrets: {
             privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
-            apiKey: 'oneinch-api-key',
           },
         },
       });
@@ -424,7 +423,6 @@ describe('credential audit events', () => {
           label: 'base-wallet',
           secrets: {
             privateKey: 'not-a-private-key',
-            apiKey: 'oneinch-api-key',
           },
         },
       });
@@ -435,7 +433,7 @@ describe('credential audit events', () => {
       expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.privateKey' }));
     });
 
-    it('rejects 1inch credential with missing apiKey', async () => {
+    it('creates 1inch credential without an operator apiKey', async () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
@@ -449,15 +447,37 @@ describe('credential audit events', () => {
           label: 'base-wallet',
           secrets: {
             privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
-            apiKey: '',
           },
         },
       });
 
-      expect(res.statusCode).toBe(400);
-      const body = JSON.parse(res.body);
-      expect(body.error).toBe('credential.validation_error.required');
-      expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.apiKey' }));
+      expect(res.statusCode).toBe(201);
+    });
+
+    it('discards a legacy user-supplied 1inch apiKey before encryption', async () => {
+      const app = Fastify();
+      const db = buildMockDb();
+      decorateWithAuth(app);
+      await credentialRoutes(app, buildMockQueue(), db);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/credentials',
+        payload: {
+          venue: '1inch',
+          label: 'base-wallet',
+          secrets: {
+            privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
+            apiKey: 'legacy-user-api-key',
+          },
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(encryptCredential).toHaveBeenCalledWith(
+        JSON.stringify({ privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' }),
+        expect.any(String),
+      );
     });
   });
 

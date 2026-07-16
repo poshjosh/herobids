@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { CustomModeDefinition, ProviderCatalogResponse, ProviderDefinition } from '@herobids/domain';
+import type { AppConfig, CustomModeDefinition, ProviderCatalogResponse, ProviderDefinition, WalletGenerationCapability } from '@herobids/domain';
 import type { ProviderCatalogDefinition, RegistryEntry } from './types.js';
 
 const PROVIDER_REGISTRY: RegistryEntry[] = [
@@ -134,24 +134,8 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
     categories: ['trading', 'swap'],
     logoUrl: '/assets/providers/1inch.svg',
     credentials: {
-      description: '1inch developer and signing credentials',
+      description: 'Signing key for an existing 1inch wallet',
       fields: [
-        {
-          key: 'apiKey',
-          label: 'API Key',
-          secret: true,
-          required: true,
-          inputKind: 'password',
-          aliases: ['api-key', 'apikey', 'api_key'],
-          validation: { minLength: 1 },
-          normalization: ['trim'],
-          errors: {
-            required: {
-              code: 'credential.validation_error.required',
-              message: 'apiKey (1inch developer portal key) is required for 1inch credentials',
-            },
-          },
-        },
         {
           key: 'privateKey',
           label: 'Private Key',
@@ -189,7 +173,7 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
     categories: ['trading', 'swap'],
     logoUrl: '/assets/providers/jupiter.svg',
     credentials: {
-      description: 'Jupiter signing wallet credentials',
+      description: 'Signing key for an existing Jupiter wallet',
       fields: [
         {
           key: 'privateKey',
@@ -230,7 +214,45 @@ function deriveVenueType(categories: string[]): 'orderbook' | 'swap' | null {
   return null;
 }
 
-function toPublicProvider(entry: RegistryEntry): ProviderDefinition {
+function oneInchNetworkLabel(venue: AppConfig['venues'][string] | undefined): string {
+  if (venue?.tokenSafetyNetwork) {
+    return venue.tokenSafetyNetwork.charAt(0).toUpperCase() + venue.tokenSafetyNetwork.slice(1);
+  }
+
+  return venue?.chainId === 8453 ? 'Base' : `EVM chain ${String(venue?.chainId ?? 'configured')}`;
+}
+
+export function getProviderWalletGenerationCapability(providerId: string, venues: AppConfig['venues'] | undefined): WalletGenerationCapability | undefined {
+  const enabled = venues?.[providerId]?.walletGeneration.enabled ?? false;
+  if (providerId === 'hyperliquid') {
+    return {
+      available: enabled,
+      credentialModes: enabled ? ['manual', 'generated'] : ['manual'],
+      network: 'Hyperliquid',
+      fundingInstructionId: 'hyperliquid-mainnet',
+    };
+  }
+  if (providerId === 'jupiter') {
+    return {
+      available: enabled,
+      credentialModes: enabled ? ['manual', 'generated'] : ['manual'],
+      network: 'Solana',
+      fundingInstructionId: 'solana-mainnet',
+    };
+  }
+  if (providerId === '1inch') {
+    const venue = venues?.['1inch'];
+    return {
+      available: enabled,
+      credentialModes: enabled ? ['manual', 'generated'] : ['manual'],
+      network: oneInchNetworkLabel(venue),
+      fundingInstructionId: `1inch-${String(venue?.chainId ?? 'configured')}`,
+    };
+  }
+  return undefined;
+}
+
+function toPublicProvider(entry: RegistryEntry, venues?: AppConfig['venues']): ProviderDefinition {
   return {
     id: entry.id,
     displayName: entry.displayName,
@@ -255,15 +277,14 @@ function toPublicProvider(entry: RegistryEntry): ProviderDefinition {
         }
       : undefined,
     connections: entry.connections,
+    walletGeneration: getProviderWalletGenerationCapability(entry.id, venues),
   };
 }
 
-const PUBLIC_PROVIDERS = PROVIDER_REGISTRY.map(toPublicProvider);
-
-function buildCatalogResponse(): ProviderCatalogDefinition {
+function buildCatalogResponse(venues?: AppConfig['venues']): ProviderCatalogDefinition {
   const baseResponse: Omit<ProviderCatalogResponse, 'etag'> = {
     schemaVersion: 'v1',
-    providers: PUBLIC_PROVIDERS,
+    providers: PROVIDER_REGISTRY.map((entry) => toPublicProvider(entry, venues)),
     customMode: CUSTOM_MODE,
   };
 
@@ -278,8 +299,6 @@ function buildCatalogResponse(): ProviderCatalogDefinition {
   };
 }
 
-const CATALOG = buildCatalogResponse();
-
 export function listProviderRegistry(): readonly RegistryEntry[] {
   return PROVIDER_REGISTRY;
 }
@@ -288,8 +307,8 @@ export function findProviderRegistryEntry(providerId: string): RegistryEntry | u
   return PROVIDER_REGISTRY.find((entry) => entry.id === providerId);
 }
 
-export function getProviderCatalog(): ProviderCatalogDefinition {
-  return CATALOG;
+export function getProviderCatalog(venues?: AppConfig['venues']): ProviderCatalogDefinition {
+  return buildCatalogResponse(venues);
 }
 
 export function providerSupportsConnections(providerId: string): boolean {
@@ -306,6 +325,10 @@ export function providerAllowsCredential(providerId: string): boolean {
 
 export function providerAllowsTradingSetup(providerId: string): boolean {
   return findProviderRegistryEntry(providerId)?.connections?.autoCreatesTradingConnection ?? false;
+}
+
+export function providerAllowsWalletGeneration(providerId: string, venues: AppConfig['venues']): boolean {
+  return getProviderWalletGenerationCapability(providerId, venues)?.available ?? false;
 }
 
 export function credentialMatchesConnectionProvider(providerId: string, credentialVenue: string): boolean {

@@ -83,6 +83,10 @@ export class OneInchSwapAdapter implements SwapVenuePort {
     }
   }
 
+  get walletAddress(): string {
+    return this.signer.address;
+  }
+
   private normalizeAssetId(assetId: string): string {
     return assetId.toLowerCase();
   }

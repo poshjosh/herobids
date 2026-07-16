@@ -58,6 +58,12 @@ export const VenueConfigSchema = z.object({
   timeoutMs: z.number().min(1000).default(30_000),
   confirmationTimeoutMs: z.number().min(1000).default(60_000),
   routerAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Must be a valid EVM address (0x + 40 hex chars)').optional(),
+  /** Operator-owned developer-platform key. Never stored in user credentials. */
+  apiKey: z.string().min(1).optional(),
+  /** Enables platform-managed direct wallet creation for this venue. */
+  walletGeneration: z.object({
+    enabled: z.boolean().default(false),
+  }).default({}),
 });
 
 export const ReconciliationConfigSchema = z.object({
@@ -1383,6 +1389,17 @@ export const AppConfigSchema = z.object({
       message: `venues.1inch.chainId ${String(oneInchConfig.chainId)} requires venues.1inch.tokenSafetyNetwork when marketData.tokenSafety.enabled is true`,
       path: ['venues', '1inch', 'tokenSafetyNetwork'],
     });
+  }
+
+  for (const provider of ['jupiter', '1inch'] as const) {
+    const venue = data.venues[provider];
+    if (venue?.walletGeneration.enabled && !venue.apiKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `venues.${provider}.apiKey is required when venues.${provider}.walletGeneration.enabled is true`,
+        path: ['venues', provider, 'apiKey'],
+      });
+    }
   }
 
   if (!(data.plans.defaultPlanId in data.plans.plans)) {

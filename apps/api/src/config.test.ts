@@ -103,4 +103,30 @@ describe('loadConfig', () => {
     expect(config.marketData?.coinMarketCap?.apiKey).toBe('env-cmc-key');
     expect(config.marketData?.coinMarketCap?.enabled).toBe(true);
   });
+
+  it('applies venue developer key env overrides without enabling wallet generation', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+venues:
+  jupiter:
+    baseUrl: https://api.jup.ag/swap/v1
+`);
+    process.env['JUPITER_API_KEY'] = 'jupiter-operator-key';
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.venues.jupiter?.apiKey).toBe('jupiter-operator-key');
+    expect(config.venues.jupiter?.walletGeneration.enabled).toBe(false);
+  });
+
+  it('rejects enabled Jupiter wallet generation without an operator key', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+venues:
+  jupiter:
+    baseUrl: https://api.jup.ag/swap/v1
+    walletGeneration:
+      enabled: true
+`);
+
+    expect(() => loadConfig(tmpDir)).toThrow('venues.jupiter.apiKey is required');
+  });
 });

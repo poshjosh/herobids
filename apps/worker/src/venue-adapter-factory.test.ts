@@ -58,7 +58,7 @@ function makeFactory(dbOverride?: any, venues?: Record<string, object>) {
       hyperliquid: { baseUrl: 'https://api.hyperliquid.xyz' },
       bybit: { baseUrl: 'https://api.bybit.com' },
       jupiter: { baseUrl: 'https://quote-api.jup.ag', rpcUrl: 'https://api.mainnet-beta.solana.com' },
-      '1inch': { baseUrl: 'https://api.1inch.dev/swap/v6.0/8453', rpcUrl: 'https://mainnet.base.org', chainId: 8453 },
+      '1inch': { baseUrl: 'https://api.1inch.dev/swap/v6.0/8453', rpcUrl: 'https://mainnet.base.org', chainId: 8453, apiKey: 'operator-1inch-key' },
     },
     streamConfig: STREAM_CONFIG,
   });
@@ -431,7 +431,7 @@ describe('VenueAdapterFactory', () => {
 
     it('returns OneInchSwapAdapter with signerPresent true and confirmation poller for 1inch', async () => {
       // Valid 32-byte hex private key for EVM signer
-      const credData = JSON.stringify({ privateKey: 'ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', apiKey: 'one-inch-api-key' });
+      const credData = JSON.stringify({ privateKey: 'ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' });
       const encryptedData = encryptForTest(credData, TEST_KEY);
 
       const db: any = {};
@@ -493,7 +493,7 @@ describe('VenueAdapterFactory', () => {
     });
 
     it('throws for 1inch when privateKey is missing from decrypted credential', async () => {
-      const credData = JSON.stringify({ apiKey: 'one-inch-api-key' }); // no privateKey
+      const credData = JSON.stringify({}); // no privateKey
       const encryptedData = encryptForTest(credData, TEST_KEY);
 
       const db: any = {};
@@ -522,8 +522,8 @@ describe('VenueAdapterFactory', () => {
       })).rejects.toThrow('privateKey required');
     });
 
-    it('throws for 1inch when apiKey is missing from decrypted credential', async () => {
-      const credData = JSON.stringify({ privateKey: '0xprivkey' }); // no apiKey
+    it('throws for 1inch when the operator apiKey is unavailable', async () => {
+      const credData = JSON.stringify({ privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' });
       const encryptedData = encryptForTest(credData, TEST_KEY);
 
       const db: any = {};
@@ -542,14 +542,16 @@ describe('VenueAdapterFactory', () => {
       });
       process.env['CREDENTIAL_ENCRYPTION_KEY'] = TEST_KEY;
 
-      const factory = makeFactory(db);
+      const factory = makeFactory(db, {
+        '1inch': { baseUrl: 'https://api.1inch.dev/swap/v6.0/8453', rpcUrl: 'https://mainnet.base.org', chainId: 8453 },
+      });
       await expect(factory.buildSwapAdapter({
         venueAccountId: 'va-1inch',
         venue: '1inch',
         swapAssets: { baseAsset: 'WETH', quoteAsset: 'USDC', baseDecimals: 18, quoteDecimals: 6 },
         actorType: 'agent',
         actorId: 'agent-1',
-      })).rejects.toThrow('apiKey required');
+      })).rejects.toThrow('Operator apiKey required');
     });
   });
 

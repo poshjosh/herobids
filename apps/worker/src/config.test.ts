@@ -527,6 +527,34 @@ venues:
     });
   });
 
+  describe('generated wallet venue configuration', () => {
+    it('applies the 1inch operator API key override', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+venues:
+  1inch:
+    baseUrl: https://api.1inch.dev/swap/v6.0/8453
+`);
+      process.env['ONEINCH_API_KEY'] = 'oneinch-operator-key';
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.venues['1inch']?.apiKey).toBe('oneinch-operator-key');
+      expect(config.venues['1inch']?.walletGeneration.enabled).toBe(false);
+    });
+
+    it('rejects enabled 1inch wallet generation without an operator key', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+venues:
+  1inch:
+    baseUrl: https://api.1inch.dev/swap/v6.0/8453
+    walletGeneration:
+      enabled: true
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow('venues.1inch.apiKey is required');
+    });
+  });
+
   describe('LLM runtime env overrides', () => {
     it('applies LLM_TICK_INTERVAL_MS env override', () => {
       writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);

@@ -55,6 +55,9 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   // Market data providers
   BIRDEYE_API_KEY: { path: 'marketData.birdeye.apiKey', type: 'string' },
   COINMARKETCAP_API_KEY: { path: 'marketData.coinMarketCap.apiKey', type: 'string' },
+  // Venue developer-platform keys
+  JUPITER_API_KEY: { path: 'venues.jupiter.apiKey', type: 'string' },
+  ONEINCH_API_KEY: { path: 'venues.1inch.apiKey', type: 'string' },
 
 };
 

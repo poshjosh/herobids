@@ -5,11 +5,13 @@ import { connections as connectionsApi, type ProviderSetupResult, ApiError } fro
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { AgentAssignmentStep } from '../setup/AgentAssignmentStep.js';
+import { WalletCreatedStep } from '../setup/WalletCreatedStep.js';
 import { ErrorBanner } from '../portfolios/PortfoliosPage.js';
 
 type SetupState =
   | { step: 'idle' }
   | { step: 'setup' }
+  | { step: 'wallet'; result: ProviderSetupResult }
   | { step: 'assign'; result: ProviderSetupResult };
 
 export function ConnectionsPage() {
@@ -55,7 +57,7 @@ export function ConnectionsPage() {
   const handleSetupSuccess = (result: ProviderSetupResult) => {
     void qc.invalidateQueries({ queryKey: ['connections'] });
     void qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'connections'] });
-    setSetupState({ step: 'assign', result });
+    setSetupState(result.wallet ? { step: 'wallet', result } : { step: 'assign', result });
   };
 
   const handleAssignmentDone = () => {
@@ -159,6 +161,13 @@ export function ConnectionsPage() {
           connectionLabel={setupState.result.connection.label}
           connectionProvider={setupState.result.connection.provider}
           onDone={handleAssignmentDone}
+        />
+      )}
+
+      {setupState.step === 'wallet' && setupState.result.wallet && (
+        <WalletCreatedStep
+          wallet={setupState.result.wallet}
+          onContinue={() => setSetupState({ step: 'assign', result: setupState.result })}
         />
       )}
     </PageShell>
