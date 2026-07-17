@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import type { FieldDefinition } from '@herobids/domain';
-import { setup as setupApi, providerCatalog as providerCatalogApi, type ProviderSetupResult } from '../../lib/api-client.js';
+import { setup as setupApi, providerCatalog as providerCatalogApi, connections as connectionsApi, type ProviderSetupResult } from '../../lib/api-client.js';
 import { Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { PROVIDER_TEMPLATES } from '../credentials/CredentialsPage.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
@@ -142,18 +142,28 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
     onSuccess,
   });
 
+  const oauthMutation = useMutation({
+    mutationFn: (providerId: string) => connectionsApi.beginOAuth(providerId),
+    onSuccess: ({ authorizeUrl }) => {
+      window.location.href = authorizeUrl;
+    },
+  });
+
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (isOAuthProvider) {
-      // OAuth providers redirect to the authorize endpoint
-      window.location.href = `/connections/oauth/${effectiveProvider}/authorize`;
+      if (effectiveProvider) {
+        oauthMutation.mutate(effectiveProvider);
+      }
       return;
     }
     mutation.mutate();
   };
 
   const handleOAuthConnect = () => {
-    window.location.href = `/connections/oauth/${effectiveProvider}/authorize`;
+    if (effectiveProvider) {
+      oauthMutation.mutate(effectiveProvider);
+    }
   };
 
   const updateEntry = (index: number, field: keyof SecretEntry, value: string) => {
@@ -309,14 +319,20 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
           <div style={{ fontSize: '14px', marginBottom: '12px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
             {intl.formatMessage({ id: 'setup.form.oauthDescription' }, { provider: selectedProvider?.displayName ?? effectiveProvider })}
           </div>
-          <Button variant="primary" type="button" onClick={handleOAuthConnect}>
+          <Button variant="primary" type="button" onClick={handleOAuthConnect} disabled={oauthMutation.isPending || !effectiveProvider}>
             {intl.formatMessage({ id: 'setup.form.oauthConnect' }, { provider: selectedProvider?.displayName ?? effectiveProvider })}
           </Button>
         </div>
       )}
 
-      {mutation.isError && (
-        <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />
+      {(mutation.isError || oauthMutation.isError) && (
+        <ErrorBanner
+          message={localizeApiError(
+            intl,
+            mutation.isError ? mutation.error : oauthMutation.error,
+            'common.errorTitle',
+          )}
+        />
       )}
 
       {!isOAuthProvider && (

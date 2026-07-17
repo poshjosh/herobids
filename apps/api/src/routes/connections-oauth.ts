@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { AppConfig, PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { connections, userCredentials, users } from '@herobids/db';
@@ -29,11 +29,14 @@ interface GoogleUserInfo {
 }
 
 // ── Scopes for Gmail connection ────────────────────────────────────────────
-// Send-only for now — gmail.readonly is deferred until Google scope
-// verification is approved and inbox-read is intentionally re-enabled.
+// Send-only for Gmail actions, plus a lightweight identity scope so the
+// callback can resolve the connected account email via Google userinfo.
+// gmail.readonly remains deferred until Google scope verification is approved
+// and inbox-read is intentionally re-enabled.
 
 const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ');
 
 // ── Cookie helpers ─────────────────────────────────────────────────────────
@@ -65,22 +68,15 @@ export async function connectionsOauthRoutes(
   const jwtSecret = config.auth.jwtSecret;
   const secureCookie = config.auth.secureCookie;
   const frontendOrigin = config.auth.frontendOrigin;
+  const publicBaseUrl = config.auth.publicBaseUrl;
 
   function resolveRedirectUri(): string {
     if (gmailConfig.redirectUri) return gmailConfig.redirectUri;
-    return `${config.api.publicBaseUrl}/connections/oauth/gmail/callback`;
+    return `${publicBaseUrl}/connections/oauth/gmail/callback`;
   }
 
-  // ── 2.2 GET /connections/oauth/gmail/authorize ───────────────────────────
-
-  app.get('/connections/oauth/gmail/authorize', async (request, reply) => {
-    if (!gmailConfig.clientId) {
-      return reply.status(500).send(
-        errorPayload('gmail.not_configured', 'Gmail integration is not configured'),
-      );
-    }
-
-    const state = generateConnectionOAuthState(request.userId, jwtSecret);
+  function buildGmailAuthorizeFlow(userId: string): { state: string; authorizeUrl: string } {
+    const state = generateConnectionOAuthState(userId, jwtSecret);
     const redirectUri = resolveRedirectUri();
 
     const params = new URLSearchParams({
@@ -93,15 +89,48 @@ export async function connectionsOauthRoutes(
       state,
     });
 
+    return {
+      state,
+      authorizeUrl: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
+    };
+  }
+
+  function setConnectionOAuthStateCookie(reply: FastifyReply, state: string): void {
     const securePart = secureCookie ? '; Secure' : '';
     reply.header(
       'Set-Cookie',
       `${OAUTH_CONNECTION_STATE_COOKIE}=${state}; HttpOnly; SameSite=Lax; Path=/connections/oauth/gmail/callback; Max-Age=600${securePart}`,
     );
+  }
 
-    return reply.redirect(
-      `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
-    );
+  // ── 2.2 POST /connections/oauth/gmail/authorize ──────────────────────────
+
+  app.post('/connections/oauth/gmail/authorize', async (request, reply) => {
+    if (!gmailConfig.clientId) {
+      return reply.status(500).send(
+        errorPayload('gmail.not_configured', 'Gmail integration is not configured'),
+      );
+    }
+
+    const { state, authorizeUrl } = buildGmailAuthorizeFlow(request.userId);
+    setConnectionOAuthStateCookie(reply, state);
+
+    return { authorizeUrl };
+  });
+
+  // ── 2.2 GET /connections/oauth/gmail/authorize ───────────────────────────
+
+  app.get('/connections/oauth/gmail/authorize', async (request, reply) => {
+    if (!gmailConfig.clientId) {
+      return reply.status(500).send(
+        errorPayload('gmail.not_configured', 'Gmail integration is not configured'),
+      );
+    }
+
+    const { state, authorizeUrl } = buildGmailAuthorizeFlow(request.userId);
+    setConnectionOAuthStateCookie(reply, state);
+
+    return reply.redirect(authorizeUrl);
   });
 
   // ── 2.3 GET /connections/oauth/gmail/callback ────────────────────────────
@@ -220,6 +249,11 @@ export async function connectionsOauthRoutes(
     }
 
     if (!userInfoRes.ok) {
+      const errBody = await userInfoRes.text();
+      app.log.error(
+        { status: userInfoRes.status, body: errBody },
+        'Gmail userinfo request failed',
+      );
       return reply.status(502).send(
         errorPayload(
           'gmail.callback.userinfo_failed',

@@ -7,6 +7,7 @@ import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { AgentAssignmentStep } from '../setup/AgentAssignmentStep.js';
 import { WalletCreatedStep } from '../setup/WalletCreatedStep.js';
 import { ErrorBanner } from '../portfolios/PortfoliosPage.js';
+import { localizeApiError } from '../../lib/localize-api-error.js';
 
 type SetupState =
   | { step: 'idle' }
@@ -88,6 +89,19 @@ export function ConnectionsPage() {
       } else {
         setDeleteError(intl.formatMessage({ id: 'connections.deleteFailed' }));
       }
+    },
+  });
+
+  const reconnectMutation = useMutation({
+    mutationFn: (providerId: string) => connectionsApi.beginOAuth(providerId),
+    onSuccess: ({ authorizeUrl }) => {
+      window.location.href = authorizeUrl;
+    },
+    onError: (error) => {
+      setOauthNotification({
+        type: 'error',
+        message: localizeApiError(intl, error, 'common.errorTitle'),
+      });
     },
   });
 
@@ -216,8 +230,9 @@ export function ConnectionsPage() {
                 <Button
                   variant="secondary"
                   onClick={() => {
-                    window.location.href = `/connections/oauth/${conn.provider}/authorize`;
+                    reconnectMutation.mutate(conn.provider);
                   }}
+                  disabled={reconnectMutation.isPending}
                 >
                   {intl.formatMessage({ id: 'connections.reconnect' })}
                 </Button>

@@ -20,6 +20,10 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestAgainstBase<T>(config.apiBaseUrl, path, init);
+}
+
+async function requestAgainstBase<T>(baseUrl: string, path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
     ...(init?.body !== undefined && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
@@ -29,7 +33,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${config.apiBaseUrl}${path}`, { ...init, headers });
+  const res = await fetch(`${baseUrl}${path}`, { ...init, headers });
 
   if (res.status === 401) {
     // Don't force-redirect on auth endpoints — let the caller handle the error
@@ -1229,6 +1233,11 @@ export const connections = {
   get: (id: string) => request<Connection>(`/connections/${id}`),
   create: (data: { provider: string; label: string; credentialId?: string }) =>
     request<Connection>('/connections', { method: 'POST', body: JSON.stringify(data) }),
+  beginOAuth: (provider: string) =>
+    requestAgainstBase<{ authorizeUrl: string }>(config.apiOrigin, `/connections/oauth/${provider}/authorize`, {
+      method: 'POST',
+      credentials: 'include',
+    }),
   revoke: (id: string) => request<void>(`/connections/${id}`, { method: 'DELETE' }),
   delete: (id: string) => request<void>(`/connections/${id}?permanent=true`, { method: 'DELETE' }),
 };
