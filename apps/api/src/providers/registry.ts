@@ -201,6 +201,20 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
       autoCreatesTradingConnection: true,
     },
   },
+  {
+    id: 'gmail',
+    displayName: 'Gmail',
+    status: 'supported',
+    categories: ['messaging'],
+    logoUrl: '/assets/providers/gmail.svg',
+    connections: {
+      description: 'Gmail account for sending and reading emails',
+      requiresCredential: false,
+      allowsCredential: false,
+      credentialProviderIds: [],
+      autoCreatesTradingConnection: false,
+    },
+  },
 ];
 
 const CUSTOM_MODE: CustomModeDefinition = {

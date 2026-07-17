@@ -403,41 +403,69 @@ must map each entry signal to exactly one executable pair.
 
 Do **not** guess the quote side from whatever pool happened to rank highest.
 
-Add operator config for scanner quote-asset policy, for example under
-`marketData.scanner.swapQuoteAssets`:
+Use `marketData.tokenSafety.canonicalTokens.<network>` as the explicit allowlist
+of supported quote assets. The scanner UI and runtime config should select from
+those canonical keys, not from arbitrary token symbols.
+
+Required operator config shape:
 
 ```yaml
 marketData:
-  scanner:
-    swapQuoteAssets:
+  tokenSafety:
+    canonicalTokens:
       solana:
-        symbol: USDC
-        assetId: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+        USDC:
+          address: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+          name: USD Coin
+          aliases: []
       base:
-        symbol: USDC
-        assetId: 0x833589fCD6eDb6C08f4c7C32D4f71b54bdA02913
+        USDC:
+          address: "0x833589fCD6eDb6C08f4c7C32D4f71b54bdA02913"
+          name: USD Coin
+          aliases: []
       arbitrum:
-        symbol: USDC
-        assetId: 0xaf88d065e77c8cC2239327C5EDb3A432268e5831
+        USDC:
+          address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+          name: USD Coin
+          aliases: []
       optimism:
-        symbol: USDC
-        assetId: 0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85
+        USDC:
+          address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
+          name: USD Coin
+          aliases: []
       ethereum:
-        symbol: USDC
-        assetId: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+        USDC:
+          address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          name: USD Coin
+          aliases: []
       polygon:
-        symbol: USDC
-        assetId: 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359
+        USDC:
+          address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+          name: USD Coin
+          aliases: []
+agentRuntime:
+  scannerQuoteAssets:
+    solana: USDC
+    base: USDC
+    arbitrum: USDC
+    optimism: USDC
+    ethereum: USDC
+    polygon: USDC
 ```
 
 Scanner rule:
 
 - every DEX entry candidate is normalized to the configured canonical quote
-  asset for its network
-- if the operator has not configured a quote asset for a supported swap network,
+  asset key for its network
+- the quote asset must be one of the configured canonical tokens for that
+  network; if it is not present in `marketData.tokenSafety.canonicalTokens`,
   scanner startup for that venue must fail loudly
+- default quote asset is USDC wherever the network has a canonical USDC entry
+- the frontend should expose this as a scanner-gated preset option, so a user
+  can override the default while still staying inside the allowlist
 
-This is operator policy, not per-agent config.
+This is operator policy, not per-agent config, but it is selectable at agent
+creation/edit time for scanner-gated hybrid agents.
 
 ### 7. Change the technical scan candle contract from raw symbol strings to explicit candle targets
 
@@ -595,6 +623,8 @@ response.
 - scanner-generated swap instrument IDs can carry both base and quote asset IDs
 - the execution path can parse them without guessing
 - no raw scanner logic depends on bare `symbol: string` for swap identity
+- quote assets are selected from the canonical token allowlist, defaulting to
+  USDC when available
 
 ### Phase 2 — Venue-complete market-data providers
 
@@ -726,7 +756,7 @@ This is the minimum file set the implementation should expect to touch.
 | `packages/market-data/src/provider-registry.ts` | new provider surface |
 | `packages/market-data/src/price-service.ts` | Bybit execution-price branch |
 | `packages/market-data/src/types.ts` | provider/config types |
-| `config/default.yaml` | scanner quote-asset config + Bybit ticker config |
+| `config/default.yaml` | canonical token allowlist, scanner quote-asset config, Bybit ticker config |
 
 ## Failure policy
 
@@ -763,7 +793,7 @@ Rules:
 - [ ] Add venue-aware trade-instrument validation and replace raw symbol checks
 - [ ] Implement Bybit tickers provider
 - [ ] Extend `priceService` with Bybit execution-price resolution
-- [ ] Add operator config for scanner swap quote assets
+- [ ] Add operator config for scanner swap quote assets via canonical token allowlist
 - [ ] Extract venue-aware scanner candidate discovery
 - [ ] Extract venue-aware scanner candle routing
 - [ ] Update technical phase to use `ScannerCandleTarget`
