@@ -1515,6 +1515,7 @@ export class AgentTradingActor implements ExecutionActor {
         fetchFailures: 0,
         signalsGenerated: 0,
         overlapSkipped: true,
+        scannerHealth: { status: 'overlap_skipped', reason: 'Scan skipped — worker concurrency limit reached (capacity_unavailable)' },
       };
       this.lastTechnicalScan = capacityScan;
       if (this.deps.onTechnicalScanComplete) {
@@ -1544,6 +1545,7 @@ export class AgentTradingActor implements ExecutionActor {
         fetchFailures: 0,
         signalsGenerated: 0,
         overlapSkipped: true,
+        scannerHealth: { status: 'overlap_skipped', reason: 'Scan skipped — previous scan still in progress' },
       };
       this.lastTechnicalScan = overlapScan;
       if (this.deps.onTechnicalScanComplete) {

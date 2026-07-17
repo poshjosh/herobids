@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { completeTechnicalScan, type CompleteTechnicalScanParams } from './complete-technical-scan.js';
+import { deriveScannerHealth } from './complete-technical-scan.js';
 import { computeSignalFingerprint, bucketConfidence } from './complete-technical-scan.js';
 import type { TechnicalPhaseResult } from './technical-phase.js';
 import type { TechnicalConfig } from '@herobids/domain';
@@ -219,9 +220,9 @@ describe('completeTechnicalScan', () => {
     expect(scan.signalsGenerated).toBe(0);
   });
 
-  // ── Test 4: Data unhealthy (fetched=0, eligible>0) → journal event ─────────
+  // ── Test 4: Data-path failure (fetched=0, eligible>0) → scanner.data_path_failure
 
-  it('calls onJournalEvent with scanner.data_unhealthy when fetched=0 and eligible>0', async () => {
+  it('classifies fetched=0 eligible>0 as data_path_failure and journals scanner.data_path_failure', async () => {
     const onTechnicalScanComplete = vi.fn();
     const emitAgentWake = vi.fn().mockResolvedValue(undefined);
     const onJournalEvent = vi.fn();
@@ -229,6 +230,7 @@ describe('completeTechnicalScan', () => {
     const phaseResult = makePhaseResult({
       signals: [],
       signalsGenerated: 0,
+      candidatesScored: 0,
       symbolOutcomes: [
         { symbol: 'ETH-PERP', status: 'eligible_empty', candleCount: 0 },
         { symbol: 'SOL-PERP', status: 'eligible_empty', candleCount: 0 },
@@ -247,14 +249,21 @@ describe('completeTechnicalScan', () => {
 
     expect(onJournalEvent).toHaveBeenCalledTimes(1);
     expect(onJournalEvent).toHaveBeenCalledWith({
-      type: 'scanner.data_unhealthy',
+      type: 'scanner.data_path_failure',
       payload: expect.objectContaining({
         agentId: 'agent-test-1',
         eligible: 2,
         fetched: 0,
         unsupported: 3,
         discovered: 5,
+        signalsGenerated: 0,
+        scored: 0,
       }),
+    });
+
+    expect(scan.scannerHealth).toEqual({
+      status: 'data_path_failure',
+      reason: 'fetched=0, eligible=2 — candle data unavailable',
     });
 
     expect(onTechnicalScanComplete).toHaveBeenCalledTimes(1);
@@ -315,9 +324,9 @@ describe('completeTechnicalScan', () => {
     expect(scan.signalsGenerated).toBe(2);
   });
 
-  // ── Test 7: Capacity skip (same as overlap skip) → overlapSkipped, no wake ─
+  // ── Test 7: Capacity skip (same as overlap skip) → overlap_skipped journal + scannerHealth
 
-  it('produces overlapSkipped=true and does NOT wake when phaseResult has overlapSkipped (capacity scenario)', async () => {
+  it('produces overlapSkipped=true with scannerHealth=overlap_skipped and journals scanner.overlap_skipped', async () => {
     const onTechnicalScanComplete = vi.fn();
     const emitAgentWake = vi.fn().mockResolvedValue(undefined);
     const onJournalEvent = vi.fn();
@@ -348,13 +357,27 @@ describe('completeTechnicalScan', () => {
     // No wake for skipped scans
     expect(emitAgentWake).not.toHaveBeenCalled();
 
-    // No journal event because fetched=0 but eligible=0 (not unhealthy, just skipped)
-    expect(onJournalEvent).not.toHaveBeenCalled();
+    // overlap_skipped health classification is journaled
+    expect(onJournalEvent).toHaveBeenCalledTimes(1);
+    expect(onJournalEvent).toHaveBeenCalledWith({
+      type: 'scanner.overlap_skipped',
+      payload: expect.objectContaining({
+        agentId: 'agent-test-1',
+        eligible: 0,
+        fetched: 0,
+        discovered: 0,
+      }),
+    });
+
+    expect(scan.scannerHealth).toEqual({
+      status: 'overlap_skipped',
+      reason: 'Scan skipped — previous scan still in progress',
+    });
   });
 
   // ── Edge case: data unhealthy but no journal callback registered ────────────
 
-  it('does not throw when data unhealthy but onJournalEvent is undefined', async () => {
+  it('does not throw when data path failure but onJournalEvent is undefined', async () => {
     const phaseResult = makePhaseResult({
       signals: [],
       signalsGenerated: 0,
@@ -386,6 +409,103 @@ describe('completeTechnicalScan', () => {
 
     expect(scan.signalsGenerated).toBe(2);
     expect(scan.timestamp).toBeTruthy();
+  });
+});
+
+// ─── Scanner health classification ───────────────────────────────────────────
+
+describe('deriveScannerHealth', () => {
+  it('classifies overlap_skipped when overlapSkipped is true', () => {
+    const result = deriveScannerHealth(makePhaseResult({
+      overlapSkipped: true,
+      candidatesDiscovered: 5,
+    }));
+    expect(result).toEqual({
+      status: 'overlap_skipped',
+      reason: 'Scan skipped — previous scan still in progress',
+    });
+  });
+
+  it('classifies no_candidates when candidatesDiscovered is 0', () => {
+    const result = deriveScannerHealth(makePhaseResult({
+      candidatesDiscovered: 0,
+      symbolsSelected: 0,
+    }));
+    expect(result).toEqual({
+      status: 'no_candidates',
+      reason: 'No candidates discovered — check venue binding and filters',
+    });
+  });
+
+  it('classifies data_path_failure when fetchedCount is 0', () => {
+    const result = deriveScannerHealth(makePhaseResult({
+      candidatesDiscovered: 5,
+      fetchedCount: 0,
+      eligibleCount: 3,
+    }));
+    expect(result).toEqual({
+      status: 'data_path_failure',
+      reason: 'fetched=0, eligible=3 — candle data unavailable',
+    });
+  });
+
+  it('classifies data_path_failure when eligibleCount is 0', () => {
+    const result = deriveScannerHealth(makePhaseResult({
+      candidatesDiscovered: 5,
+      fetchedCount: 5,
+      eligibleCount: 0,
+    }));
+    expect(result).toEqual({
+      status: 'data_path_failure',
+      reason: 'fetched=5, eligible=0 — candle data unavailable',
+    });
+  });
+
+  it('classifies healthy_no_signal when data is healthy but no signals generated', () => {
+    const result = deriveScannerHealth(makePhaseResult({
+      candidatesDiscovered: 5,
+      eligibleCount: 3,
+      fetchedCount: 3,
+      candidatesScored: 3,
+      signalsGenerated: 0,
+      signals: [],
+      positionIndicators: [],
+    }));
+    expect(result).toEqual({
+      status: 'healthy_no_signal',
+      reason: 'Data available, candidates scored, no signals generated — conservative strategy',
+    });
+  });
+
+  it('classifies healthy_signals when signals are present', () => {
+    const result = deriveScannerHealth(makePhaseResult({
+      candidatesDiscovered: 5,
+      eligibleCount: 3,
+      fetchedCount: 3,
+      candidatesScored: 3,
+      signalsGenerated: 2,
+    }));
+    expect(result).toEqual({
+      status: 'healthy_signals',
+      reason: '2 signal(s) generated',
+    });
+  });
+
+  it('overlap_skipped takes precedence over other classifications', () => {
+    const result = deriveScannerHealth(makePhaseResult({
+      overlapSkipped: true,
+      candidatesDiscovered: 0, // would be no_candidates, but overlap wins
+    }));
+    expect(result.status).toBe('overlap_skipped');
+  });
+
+  it('no_candidates takes precedence over data_path_failure', () => {
+    const result = deriveScannerHealth(makePhaseResult({
+      candidatesDiscovered: 0,
+      fetchedCount: 0,
+      eligibleCount: 0,
+    }));
+    expect(result.status).toBe('no_candidates');
   });
 });
 

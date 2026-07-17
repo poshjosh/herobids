@@ -1,7 +1,7 @@
 import type { AgentWakePayload, HybridPricingIdentity, TechnicalConfig } from '@herobids/domain';
 import type { ScoredSignal } from '@herobids/strategy';
 import type { TechnicalPhaseResult } from './technical-phase.js';
-import type { TechnicalScanState } from './runtime-composition.js';
+import type { ScannerHealthResult, TechnicalScanState } from './runtime-composition.js';
 
 // ─── Fingerprint helpers ─────────────────────────────────────────────────────
 
@@ -53,6 +53,55 @@ export interface CompleteTechnicalScanParams {
   onJournalEvent?: (event: { type: string; payload?: Record<string, unknown> }) => void;
 }
 
+// ─── Scanner health classification ───────────────────────────────────────────
+
+/**
+ * Derive an operator-facing scanner health status from scan outcomes.
+ *
+ * Classification order is deliberate — each branch short-circuits:
+ * 1. Overlap skip (scheduler concurrency / single-flight guard)
+ * 2. No candidates discovered (venue binding or filter issue)
+ * 3. Data-path failure (no candles fetched or no eligible symbols)
+ * 4. Healthy no-signal (data was available and scored, strategy produced nothing)
+ * 5. Healthy with signals
+ */
+export function deriveScannerHealth(phaseResult: TechnicalPhaseResult): ScannerHealthResult {
+  const { overlapSkipped, candidatesDiscovered, eligibleCount, fetchedCount, candidatesScored, signalsGenerated } =
+    phaseResult;
+
+  if (overlapSkipped) {
+    return { status: 'overlap_skipped', reason: 'Scan skipped — previous scan still in progress' };
+  }
+
+  if (candidatesDiscovered === 0) {
+    return { status: 'no_candidates', reason: 'No candidates discovered — check venue binding and filters' };
+  }
+
+  // Data-path failure: no candles fetched or no eligible symbols
+  if (fetchedCount === 0 || eligibleCount === 0) {
+    return {
+      status: 'data_path_failure',
+      reason: `fetched=${fetchedCount}, eligible=${eligibleCount} — candle data unavailable`,
+    };
+  }
+
+  // Healthy no-signal: data was available but strategy didn't produce signals.
+  // Covers both "candidates scored but no signal" (conservative strategy) and
+  // "no candidates passed scoring" (e.g. regime blocked all entries, threshold
+  // filters excluded everything).  Both are healthy outcomes — the data path
+  // worked, the strategy just said no.
+  if (fetchedCount > 0 && signalsGenerated === 0) {
+    const reason =
+      candidatesScored > 0
+        ? 'Data available, candidates scored, no signals generated — conservative strategy'
+        : 'Data available but no candidates passed scoring filters — check regime or threshold config';
+    return { status: 'healthy_no_signal', reason };
+  }
+
+  // Healthy with signals
+  return { status: 'healthy_signals', reason: `${signalsGenerated} signal(s) generated` };
+}
+
 /**
  * Build a TechnicalScanState from a TechnicalPhaseResult, publish the scan event,
  * and emit a scanner wake when signals or exit advisories are present.
@@ -95,19 +144,27 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
     pricingIdentities,
   };
 
-  // Journal scanner-data unhealthy when there were eligible symbols but no
-  // non-empty candles were returned — not a healthy no-signal scan.
+  // Derive operator-facing scanner health classification from scan outcomes.
+  const health = deriveScannerHealth(phaseResult);
+  scan.scannerHealth = health;
+
   const eligibleCount = phaseResult.eligibleCount;
   const fetchedCount = phaseResult.fetchedCount;
-  if (fetchedCount === 0 && eligibleCount > 0 && onJournalEvent) {
+
+  // Journal the scanner health status for every scan so operators can
+  // distinguish conservative no-signal scans from broken data paths.
+  if (onJournalEvent) {
     onJournalEvent({
-      type: 'scanner.data_unhealthy',
+      type: `scanner.${health.status}`,
       payload: {
         agentId,
+        reason: health.reason,
         discovered: scan.discovered,
         symbolsSelected: scan.symbolsSelected,
         eligible: eligibleCount,
         fetched: fetchedCount,
+        scored: phaseResult.candidatesScored,
+        signalsGenerated: phaseResult.signalsGenerated,
         unsupported: scan.unsupported,
         fetchFailures: scan.fetchFailures,
         timestamp: scan.timestamp,

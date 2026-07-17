@@ -109,6 +109,16 @@ export interface RuntimeMarketSnapshot {
 
 export type { HybridPricingIdentity } from '@herobids/domain';
 
+// ─── Scanner health classification ─────────────────────────────────────────
+
+/** Operator-facing scanner health status derived from scan outcomes. */
+export type ScannerHealth = 'healthy_no_signal' | 'healthy_signals' | 'data_path_failure' | 'overlap_skipped' | 'no_candidates';
+
+export interface ScannerHealthResult {
+  status: ScannerHealth;
+  reason: string;
+}
+
 export interface TechnicalScanState {
   timestamp: string;
   scanIntervalMs: number;
@@ -141,6 +151,9 @@ export interface TechnicalScanState {
    * chain + address identity.
    */
   pricingIdentities?: Record<string, HybridPricingIdentity>;
+  /** Operator-facing scanner health classification derived from scan outcomes. */
+  /** Scanner health classification — populated by {@link completeTechnicalScan}. */
+  scannerHealth?: ScannerHealthResult;
 }
 
 export interface RuntimeSessionCosts {
