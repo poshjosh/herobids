@@ -2,8 +2,6 @@
 
 CONTEXT
 
-Read the earlier conversations in this chat session.
-
 We have a high level goal with smaller objectives.
 
 High level goal: "To make openaidom primarily an agents as a service platform fostering social interaction between users, agents and possible future actors through communication, grouping,  ranking and social behaviour like following etc"
