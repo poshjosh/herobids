@@ -3,9 +3,10 @@ import { runTechnicalPhase } from './technical-phase.js';
 import type { TechnicalPhaseDeps, DiscoveredInstrument } from './technical-phase.js';
 import type { PositionState } from '@herobids/engine';
 import type { PriceCandle, RegimeResult } from '@herobids/market-data';
+import type { ScannerCandleTarget } from '@herobids/strategy';
 import { AgentTradingActor } from './agent-trading-actor.js';
 import type { AgentTradingActorDeps } from './agent-trading-actor.js';
-import { price, quantity, ok, type TechnicalConfig } from '@herobids/domain';
+import { price, quantity, ok, type TechnicalConfig, type HybridPricingIdentity } from '@herobids/domain';
 import type { OrderId, FillId } from '@herobids/domain';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -25,6 +26,10 @@ function makeInstrument(symbol: string, volume24hUsd = 1_000_000): DiscoveredIns
   return {
     symbol,
     instrumentId: `${symbol}-PERP`,
+    venue: 'hyperliquid',
+    venueType: 'orderbook',
+    candleTarget: { venueType: 'orderbook' as const, providerSymbol: symbol },
+    pricingIdentity: { kind: 'perps' as const, symbol },
     volume24hUsd,
     priceChange24hPct: 2.5,
   };
@@ -244,8 +249,8 @@ describe('Phase 2: Candidate selection bounding', () => {
       entryPrice: { toString: () => '100' } as unknown as PositionState['entryPrice'],
       realizedPnl: { toString: () => '0' } as unknown as PositionState['realizedPnl'],
     };
-    const fetchCandles = vi.fn().mockImplementation(async (symbol: string) => {
-      if (symbol === 'SOL') return makeCandles(30, 'flat');
+    const fetchCandles = vi.fn().mockImplementation(async (target: ScannerCandleTarget) => {
+      if (target.providerSymbol === 'SOL') return makeCandles(30, 'flat');
       return makeCandles();
     });
     const deps = makeBaseDeps({
@@ -386,8 +391,8 @@ describe('Phase 2: Provider eligibility classification', () => {
     // fetchCandles called for FAKETOKEN (first occurrence in batch) and BTC = 2 calls
     // (FAKETOKEN appears only once in allSymbols because openSymbols dedup removes it)
     expect(fetchCandles).toHaveBeenCalledTimes(2);
-    expect(fetchCandles).toHaveBeenCalledWith('FAKETOKEN', '1H', 50);
-    expect(fetchCandles).toHaveBeenCalledWith('BTC', '1H', 50);
+    expect(fetchCandles).toHaveBeenCalledWith({ venueType: 'orderbook', providerSymbol: 'FAKETOKEN' }, '1H', 50);
+    expect(fetchCandles).toHaveBeenCalledWith({ venueType: 'orderbook', providerSymbol: 'BTC' }, '1H', 50);
   });
 
   it('unsupported count is distinct from transient failure count', async () => {

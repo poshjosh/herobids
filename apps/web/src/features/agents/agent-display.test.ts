@@ -3,8 +3,8 @@ import { SKILL_PRESET_MAP } from '@herobids/domain';
 import { formatObjectivePreview, resolveSkillPresetSkillIds } from './agent-display.js';
 
 describe('skill preset resolution', () => {
-  it('personal-assistant preset resolves to task-management and web-access', () => {
-    expect(resolveSkillPresetSkillIds('personal-assistant')).toEqual(['task-management', 'web-access']);
+  it('personal-assistant preset resolves to task-management, web-access, and gmail', () => {
+    expect(resolveSkillPresetSkillIds('personal-assistant')).toEqual(['task-management', 'web-access', 'gmail']);
   });
 
   it('trading preset resolves to bot-management and trading', () => {
@@ -24,8 +24,8 @@ describe('skill preset resolution', () => {
     expect('reminder' in SKILL_PRESET_MAP).toBe(false);
   });
 
-  it('domain SKILL_PRESET_MAP personal-assistant maps to task-management and web-access', () => {
-    expect(SKILL_PRESET_MAP['personal-assistant']).toEqual(['task-management', 'web-access']);
+  it('domain SKILL_PRESET_MAP personal-assistant maps to task-management, web-access, and gmail', () => {
+    expect(SKILL_PRESET_MAP['personal-assistant']).toEqual(['task-management', 'web-access', 'gmail']);
   });
 
   it('formats long objectives as a compact preview', () => {

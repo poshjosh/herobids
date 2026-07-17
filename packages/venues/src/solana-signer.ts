@@ -268,10 +268,11 @@ function base58Decode(str: string): Uint8Array {
     num = num * 58n + BigInt(idx);
   }
 
-  const hex = num.toString(16).padStart(2, '0');
+  // Convert bigint to bytes directly (avoiding hex conversion which can drop leading zeros).
   const bytes: number[] = [];
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes.push(parseInt(hex.slice(i, i + 2), 16));
+  while (num > 0n) {
+    bytes.unshift(Number(num & 0xffn));
+    num >>= 8n;
   }
 
   // Leading '1' characters represent zero bytes
