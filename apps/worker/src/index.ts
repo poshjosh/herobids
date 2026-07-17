@@ -63,7 +63,6 @@ import { resolveSwapTokenData, type DexScreenerProvider, type CanonicalResolver 
 import { buildAgentRiskLimits } from './agent-risk-limits.js';
 import { VenueInstrumentCache, normalizeHyperliquidSymbol, normalizeBybitSymbol, identityNormalize, type VenueSymbolProvider } from './venue-instrument-cache.js';
 import type { FilterConfig } from './technical-phase.js';
-import type { ScannerCandleTarget } from '@herobids/strategy';
 import { populateInstrumentsFromVenues } from './instrument-population.js';
 
 async function enrichTokenWithDiscovery(
@@ -243,9 +242,16 @@ const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
     })
   : undefined;
 
-// ── Technical scanner candidate discovery ────────────────────────────────────
-// Wraps the shared market data registry's Hyperliquid asset contexts to provide
-// a filtered list of tradable instruments for hybrid/scanner_gated agents.
+// ── Technical scanner infrastructure ──────────────────────────────────────────
+// Venue-aware candidate discovery, candle fetching, and pre-filtering for
+// hybrid/scanner_gated agents. Discovery branches by the agent's active
+// orderbook binding venue (Hyperliquid or Bybit). Candle fetching uses an
+// explicit ScannerCandleTarget — no venue-global assumptions.
+
+import { discoverScannerCandidates } from './scanner-candidate-discovery.js';
+import { createScannerCandleFetcher } from './scanner-candle-fetcher.js';
+import { normalizeOrderbookCandidates } from './scanner-pre-filter.js';
+import type { DiscoveredInstrument, FilterConfig } from './technical-phase.js';
 
 /** Capacity policy values sourced from operator config. */
 const scannerCapacity = appConfig.marketData?.binance?.scanner ?? {
@@ -253,65 +259,6 @@ const scannerCapacity = appConfig.marketData?.binance?.scanner ?? {
   maxConcurrentScans: 4,
   maxCandidates: 20,
 };
-
-const discoverCandidates = async (filters: FilterConfig | undefined) => {
-  if (!sharedMarketDataRegistry) return [];
-  if (!filters) return [];
-
-  const contexts = await sharedMarketDataRegistry.hyperliquid.assetContexts();
-
-  let results = contexts.data.map((ctx) => ({
-    symbol: ctx.asset,
-    instrumentId: `${ctx.asset}-PERP`,
-    venue: 'hyperliquid',
-    venueType: 'orderbook' as const,
-    candleTarget: { venueType: 'orderbook' as const, providerSymbol: ctx.asset },
-    pricingIdentity: { kind: 'perps' as const, symbol: ctx.asset, chain: 'hyperliquid' as const },
-    volume24hUsd: ctx.volume24hUsd ?? undefined,
-    priceChange24hPct: ctx.priceChange24hPct ?? undefined,
-  }));
-
-  // Apply filters — extract after guard to narrow TypeScript types without
-  // non-null assertions.
-  if (filters.minVolume24hUsd != null) {
-    const minVolume24hUsd = filters.minVolume24hUsd;
-    results = results.filter((r) => (r.volume24hUsd ?? 0) >= minVolume24hUsd);
-  }
-  if (filters.symbols?.length) {
-    const symbols = filters.symbols;
-    results = results.filter((r) => symbols.includes(r.symbol));
-  }
-  if (filters.excludeSymbols?.length) {
-    const excludeSymbols = filters.excludeSymbols;
-    results = results.filter((r) => !excludeSymbols.includes(r.symbol));
-  }
-
-  // Phase 2: deterministic ordering by volume24hUsd descending before bounding.
-  // This ensures reproducible candidate selection when capacity limits apply.
-  results.sort((a, b) => (b.volume24hUsd ?? 0) - (a.volume24hUsd ?? 0));
-
-  // Phase 2: bound entry candidates to operator-configured max per scan.
-  // Open-position exit-evaluation symbols are added downstream in technical-phase.ts,
-  // so they are always preserved above this cap.
-  const maxCandidates = scannerCapacity.maxCandidates;
-  if (results.length > maxCandidates) {
-    results = results.slice(0, maxCandidates);
-  }
-
-  return results;
-};
-
-// ── Technical scanner candle fetcher ──────────────────────────────────────────
-// Wraps VenueCandleFetcher (Binance spot candles via shared market data config)
-// — same infra used by bots. For Hyperliquid orderbook agents, swap routing is
-// not needed, so GeckoTerminal config is null.
-const agentCandleFetcher = sharedMarketDataRegistry
-  ? new VenueCandleFetcher(
-      sharedMarketDataRegistry.configs.binance,
-      null,
-      'orderbook',
-    )
-  : undefined;
 
 // Phase 2: per-worker scanner rate limiter to prevent scanner candle traffic
 // from exhausting the shared Binance budget (200 RPM). Operator-config owned.
@@ -321,14 +268,75 @@ const scannerRateLimiter = new TokenBucketRateLimiter({
   maxWaitMs: 5_000, // short wait — scanner batches are time-sensitive
 });
 
-const fetchCandles = agentCandleFetcher
-  ? async (target: ScannerCandleTarget, interval: string, limit: number) => {
-      // Phase 2: scanner capacity gate before delegating to shared binance limiter.
-      // Rejections here are transient_failure — not unsupported.
-      await scannerRateLimiter.acquire();
-      return agentCandleFetcher.fetchCandles(target.providerSymbol, interval, limit);
-    }
+// Phase 3: venue-agnostic scanner candle fetcher. Uses an explicit
+// ScannerCandleTarget instead of assuming Hyperliquid.
+const scannerCandleFetcher = sharedMarketDataRegistry
+  ? createScannerCandleFetcher({
+      binanceConfig: sharedMarketDataRegistry.configs.binance,
+      scannerRateLimiter,
+    })
   : undefined;
+
+/**
+ * Build a venue-aware discoverCandidates closure for the given orderbook binding.
+ *
+ * Discovery branches by venue (Hyperliquid asset contexts vs Bybit tickers),
+ * then normalizes candle-provider symbols. Swap-venue agents receive an empty
+ * candidate list (swap scanning is deferred to Part 2).
+ *
+ * Unrecognized orderbook venues are rejected with an explicit error log —
+ * the scanner does not silently fall back to a different venue.
+ */
+function buildDiscoverCandidates(params: {
+  bindingVenue: string;
+  bindingVenueType: 'orderbook' | 'swap';
+}): (filters: FilterConfig) => Promise<DiscoveredInstrument[]> {
+  const { bindingVenue, bindingVenueType } = params;
+
+  // Only orderbook venues are supported by the scanner discovery path.
+  // Swap-venue agents get an empty candidate list (swap scanning is Part 2).
+  if (bindingVenueType !== 'orderbook') {
+    return async (_filters: FilterConfig) => [];
+  }
+
+  // Validate that the orderbook venue is one we support for scanning.
+  if (bindingVenue !== 'hyperliquid' && bindingVenue !== 'bybit') {
+    logger.warn(
+      { venue: bindingVenue },
+      'Scanner discovery: unsupported orderbook venue — returning empty candidates',
+    );
+    return async (_filters: FilterConfig) => [];
+  }
+
+  const venue: 'hyperliquid' | 'bybit' = bindingVenue;
+
+  return async (filters: FilterConfig) => {
+    if (!sharedMarketDataRegistry) return [];
+    if (!filters) return [];
+
+    const discovered = await discoverScannerCandidates({
+      registry: sharedMarketDataRegistry,
+      filters,
+      bindingVenue: venue,
+      bindingVenueType: 'orderbook',
+      maxCandidates: scannerCapacity.maxCandidates,
+    });
+
+    // Normalize candle-provider symbols to canonical Binance form.
+    // Actual unsupported-instrument filtering happens at the HTTP level
+    // (tracked via classifyCandleError in technical-phase.ts).
+    const { supported, unsupportedCount } = normalizeOrderbookCandidates(discovered);
+
+    if (unsupportedCount > 0) {
+      logger.info(
+        { venue, discovered: discovered.length, supported: supported.length, unsupported: unsupportedCount },
+        'Scanner normalize dropped unresolvable orderbook candidates',
+      );
+    }
+
+    return supported;
+  };
+}
 
 // Agent subsystem — registry + protocol stack. Created before WorkerRuntime so the
 // actor factory can subscribe streams and register actors on creation.
@@ -961,8 +969,8 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
             }).catch((err) => logger.warn({ err, agentId, eventType: event.type }, 'Failed to emit journal event'));
           },
           technicalConfig,
-          discoverCandidates,
-          fetchCandles,
+          discoverCandidates: buildDiscoverCandidates({ bindingVenue: binding.venue, bindingVenueType: venueType }),
+          fetchCandles: scannerCandleFetcher,
           maxConcurrentScans: scannerCapacity.maxConcurrentScans,
           signalFingerprintStore: redisClient as unknown as SignalFingerprintStore,
           scannerSignalDedup: appConfig.agentRuntime.scannerSignalDedup,
