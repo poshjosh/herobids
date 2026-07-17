@@ -1,6 +1,6 @@
 # Bug Report: Billing Top-Up Packs Expose Both Primary and Fallback Providers to Users
 
-- **Status:** OPEN
+- **Status:** CLOSED
 - **Severity:** Medium
 - **Date:** 2026-07-16
 - **Discovered By:** Code review — billing page design discussion.

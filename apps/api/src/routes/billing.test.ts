@@ -1,8 +1,9 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import { BillingConfigSchema, PlansConfigSchema, UsageBillingConfigSchema } from '@herobids/domain';
-import { UsageBillingRepository } from '@herobids/db';
+import { UsageBillingRepository, BillingRepository } from '@herobids/db';
 import { PaymentProviderManager } from '../billing/provider-manager.js';
+import { ProviderUnavailableError } from '../billing/provider-port.js';
 import { billingRoutes } from './billing.js';
 
 describe('billing routes', () => {
@@ -173,6 +174,7 @@ describe('billing routes', () => {
 
   it('usage-summary resolves top-up packs from user plan when no billing account exists', async () => {
     const billingConfig = BillingConfigSchema.parse({
+      primaryProvider: 'stripe',
       stripe: {
         secretKey: 'sk_test_xxx',
       },
@@ -222,12 +224,13 @@ describe('billing routes', () => {
     const res = await app.inject({ method: 'GET', url: '/billing/usage-summary' });
     expect(res.statusCode).toBe(200);
     expect(res.json().topUpPacks).toEqual([
-      { provider: 'stripe', packId: 'starter_500', cents: 500 },
+      { packId: 'starter_500', cents: 500 },
     ]);
   });
 
   it('usage-summary includes plan-driven top-up packs when enabled for plan and operator config', async () => {
     const billingConfig = BillingConfigSchema.parse({
+      primaryProvider: 'stripe',
       stripe: {
         secretKey: 'sk_test_xxx',
       },
@@ -288,7 +291,6 @@ describe('billing routes', () => {
     expect(res.json().topUpPacks).toHaveLength(1);
     expect(res.json().topUpPacks).toEqual([
       {
-        provider: 'stripe',
         packId: 'starter_500',
         cents: 500,
       },
@@ -492,6 +494,7 @@ describe('billing routes', () => {
     });
 
     expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ url: 'https://checkout.example/top-up' });
     expect(createCheckoutUrlViaProviderSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'user-1',
@@ -500,5 +503,470 @@ describe('billing routes', () => {
       'creem',
     );
     expect(createCheckoutUrlSpy).not.toHaveBeenCalled();
+  });
+
+  it('top-up checkout falls back to fallback provider when owning provider throws ProviderUnavailableError', async () => {
+    const billingConfig = BillingConfigSchema.parse({
+      primaryProvider: 'stripe',
+      fallbackProvider: 'creem',
+      stripe: {
+        secretKey: 'sk_test_xxx',
+      },
+      creem: {
+        apiKey: 'creem_test_xxx',
+        webhookSecret: 'whsec_creem',
+      },
+    });
+    const usageBillingConfig = UsageBillingConfigSchema.parse({
+      enabled: true,
+      creditTopUpsEnabled: true,
+      topUpProductsByProvider: {
+        stripe: [
+          { packId: 'starter_500', externalId: 'stripe_pack_starter_500', cents: 500 },
+        ],
+        creem: [
+          { packId: 'starter_500', externalId: 'creem_pack_starter_500', cents: 500 },
+        ],
+      },
+    });
+    const plansConfig = PlansConfigSchema.parse({
+      defaultPlanId: 'pro',
+      plans: {
+        pro: {
+          usage: {
+            topUpPackIds: ['starter_500'],
+          },
+        },
+      },
+    });
+
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{ email: 'user-1@example.com', displayName: 'User One' }])),
+    };
+
+    vi.spyOn(BillingRepository.prototype, 'findSubscriptionByUserId').mockResolvedValue({
+      id: 'sub_1',
+      userId: 'user-1',
+      provider: 'stripe',
+      externalCustomerId: 'cus_stripe_1',
+      externalSubscriptionId: 'sub_stripe_1',
+      planId: 'pro',
+      externalPriceOrProductId: 'price_pro',
+      status: 'active',
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(),
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      trialEnd: null,
+      lastEventAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue({
+      ...billingAccount('user-1'),
+      activePlanId: 'pro',
+    });
+
+    const createCheckoutUrlViaProviderSpy = vi.spyOn(PaymentProviderManager.prototype, 'createCheckoutUrlViaProvider')
+      .mockRejectedValueOnce(new ProviderUnavailableError('stripe', 'Stripe is down'))
+      .mockResolvedValueOnce({ url: 'https://checkout.creem.example/top-up', provider: 'creem' });
+
+    const app = Fastify();
+    app.decorateRequest('userId', '');
+    app.addHook('onRequest', async (request) => {
+      request.userId = 'user-1';
+    });
+    await billingRoutes(
+      app,
+      billingConfig,
+      plansConfig,
+      db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
+      usageBillingConfig,
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/billing/top-up-checkout-session',
+      payload: { packId: 'starter_500' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ url: 'https://checkout.creem.example/top-up' });
+    // First call: stripe with stripe's externalId
+    expect(createCheckoutUrlViaProviderSpy).toHaveBeenNthCalledWith(1,
+      expect.objectContaining({
+        priceId: 'stripe_pack_starter_500',
+      }),
+      'stripe',
+    );
+    // Second call: creem with creem's externalId
+    expect(createCheckoutUrlViaProviderSpy).toHaveBeenNthCalledWith(2,
+      expect.objectContaining({
+        priceId: 'creem_pack_starter_500',
+      }),
+      'creem',
+    );
+    expect(createCheckoutUrlViaProviderSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('top-up checkout returns 503 when owning provider unavailable and fallback has no matching pack', async () => {
+    const billingConfig = BillingConfigSchema.parse({
+      primaryProvider: 'stripe',
+      fallbackProvider: 'creem',
+      stripe: {
+        secretKey: 'sk_test_xxx',
+      },
+      creem: {
+        apiKey: 'creem_test_xxx',
+        webhookSecret: 'whsec_creem',
+      },
+    });
+    const usageBillingConfig = UsageBillingConfigSchema.parse({
+      enabled: true,
+      creditTopUpsEnabled: true,
+      topUpProductsByProvider: {
+        stripe: [
+          { packId: 'starter_500', externalId: 'stripe_pack_starter_500', cents: 500 },
+        ],
+        // creem has no packs configured — simulating a provider that has checkout but no top-up products
+      },
+    });
+    const plansConfig = PlansConfigSchema.parse({
+      defaultPlanId: 'pro',
+      plans: {
+        pro: {
+          usage: {
+            topUpPackIds: ['starter_500'],
+          },
+        },
+      },
+    });
+
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{ email: 'user-1@example.com', displayName: 'User One' }])),
+    };
+
+    vi.spyOn(BillingRepository.prototype, 'findSubscriptionByUserId').mockResolvedValue({
+      id: 'sub_1',
+      userId: 'user-1',
+      provider: 'stripe',
+      externalCustomerId: 'cus_stripe_1',
+      externalSubscriptionId: 'sub_stripe_1',
+      planId: 'pro',
+      externalPriceOrProductId: 'price_pro',
+      status: 'active',
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(),
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      trialEnd: null,
+      lastEventAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue({
+      ...billingAccount('user-1'),
+      activePlanId: 'pro',
+    });
+
+    vi.spyOn(PaymentProviderManager.prototype, 'createCheckoutUrlViaProvider')
+      .mockRejectedValue(new ProviderUnavailableError('stripe', 'Stripe is down'));
+
+    const app = Fastify();
+    app.decorateRequest('userId', '');
+    app.addHook('onRequest', async (request) => {
+      request.userId = 'user-1';
+    });
+    await billingRoutes(
+      app,
+      billingConfig,
+      plansConfig,
+      db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
+      usageBillingConfig,
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/billing/top-up-checkout-session',
+      payload: { packId: 'starter_500' },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('billing.top_up.provider_unavailable');
+  });
+
+  it('usage-summary scopes top-up packs to subscription-owning provider, not primary', async () => {
+    // User's subscription is on Creem, but primary is Stripe.
+    // The usage-summary should return only Creem packs.
+    // Use different prices per provider so the assertion is discriminating
+    // — a regression that returns the wrong provider's pack will fail.
+    const billingConfig = BillingConfigSchema.parse({
+      primaryProvider: 'stripe',
+      fallbackProvider: 'creem',
+      stripe: {
+        secretKey: 'sk_test_xxx',
+      },
+      creem: {
+        apiKey: 'creem_test_xxx',
+        webhookSecret: 'whsec_creem',
+      },
+    });
+    const usageBillingConfig = UsageBillingConfigSchema.parse({
+      enabled: true,
+      creditTopUpsEnabled: true,
+      topUpProductsByProvider: {
+        stripe: [
+          { packId: 'starter_500', externalId: 'stripe_pack_starter_500', cents: 800 },
+        ],
+        creem: [
+          { packId: 'starter_500', externalId: 'creem_pack_starter_500', cents: 500 },
+        ],
+      },
+    });
+    const plansConfig = PlansConfigSchema.parse({
+      defaultPlanId: 'pro',
+      plans: {
+        pro: {
+          usage: {
+            includedCreditCents: 0,
+            topUpPackIds: ['starter_500'],
+          },
+        },
+      },
+    });
+
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([])),
+    };
+
+    vi.spyOn(BillingRepository.prototype, 'findSubscriptionByUserId').mockResolvedValue({
+      id: 'sub_1',
+      userId: 'user-1',
+      provider: 'creem',
+      externalCustomerId: 'cus_creem_1',
+      externalSubscriptionId: 'sub_creem_1',
+      planId: 'pro',
+      externalPriceOrProductId: 'prod_pro',
+      status: 'active',
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(),
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      trialEnd: null,
+      lastEventAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue({
+      ...billingAccount('user-1'),
+      activePlanId: 'pro',
+    });
+    vi.spyOn(UsageBillingRepository.prototype, 'getUsageSummary').mockResolvedValue(null);
+    vi.spyOn(UsageBillingRepository.prototype, 'getByMeterBreakdown').mockResolvedValue([]);
+
+    const app = Fastify();
+    app.decorateRequest('userId', '');
+    app.addHook('onRequest', async (request) => {
+      request.userId = 'user-1';
+    });
+    await billingRoutes(
+      app,
+      billingConfig,
+      plansConfig,
+      db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
+      usageBillingConfig,
+    );
+
+    const res = await app.inject({ method: 'GET', url: '/billing/usage-summary' });
+    expect(res.statusCode).toBe(200);
+    // Creem is 500, Stripe is 800 — asserting 500 proves the Creem pack was selected.
+    expect(res.json().topUpPacks).toEqual([
+      { packId: 'starter_500', cents: 500 },
+    ]);
+    expect(res.json().topUpPacks).toHaveLength(1);
+  });
+
+  it('top-up checkout resolves pack from other provider when owning provider has no pack config', async () => {
+    // User's subscription provider (stripe) has no top-up product mapping.
+    // The handler should fall back to searching other providers for the pack.
+    const billingConfig = BillingConfigSchema.parse({
+      primaryProvider: 'stripe',
+      stripe: {
+        secretKey: 'sk_test_xxx',
+      },
+      creem: {
+        apiKey: 'creem_test_xxx',
+        webhookSecret: 'whsec_creem',
+      },
+    });
+    const usageBillingConfig = UsageBillingConfigSchema.parse({
+      enabled: true,
+      creditTopUpsEnabled: true,
+      topUpProductsByProvider: {
+        // stripe intentionally absent — operator only configured creem for top-ups
+        creem: [
+          { packId: 'starter_500', externalId: 'creem_pack_starter_500', cents: 500 },
+        ],
+      },
+    });
+    const plansConfig = PlansConfigSchema.parse({
+      defaultPlanId: 'pro',
+      plans: {
+        pro: {
+          usage: {
+            topUpPackIds: ['starter_500'],
+          },
+        },
+      },
+    });
+
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{ email: 'user-1@example.com', displayName: 'User One' }])),
+    };
+
+    vi.spyOn(BillingRepository.prototype, 'findSubscriptionByUserId').mockResolvedValue({
+      id: 'sub_1',
+      userId: 'user-1',
+      provider: 'stripe',
+      externalCustomerId: 'cus_stripe_1',
+      externalSubscriptionId: 'sub_stripe_1',
+      planId: 'pro',
+      externalPriceOrProductId: 'price_pro',
+      status: 'active',
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(),
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      trialEnd: null,
+      lastEventAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue({
+      ...billingAccount('user-1'),
+      activePlanId: 'pro',
+    });
+
+    const createCheckoutUrlViaProviderSpy = vi.spyOn(PaymentProviderManager.prototype, 'createCheckoutUrlViaProvider')
+      .mockResolvedValue({ url: 'https://checkout.creem.example/top-up', provider: 'creem' });
+
+    const app = Fastify();
+    app.decorateRequest('userId', '');
+    app.addHook('onRequest', async (request) => {
+      request.userId = 'user-1';
+    });
+    await billingRoutes(
+      app,
+      billingConfig,
+      plansConfig,
+      db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
+      usageBillingConfig,
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/billing/top-up-checkout-session',
+      payload: { packId: 'starter_500' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ url: 'https://checkout.creem.example/top-up' });
+    // Should route through creem with creem's externalId
+    expect(createCheckoutUrlViaProviderSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        priceId: 'creem_pack_starter_500',
+      }),
+      'creem',
+    );
+    expect(createCheckoutUrlViaProviderSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('top-up checkout response does not include provider field', async () => {
+    // Regression: the provider name must not leak to the client.
+    const billingConfig = BillingConfigSchema.parse({
+      primaryProvider: 'stripe',
+      stripe: {
+        secretKey: 'sk_test_xxx',
+      },
+    });
+    const usageBillingConfig = UsageBillingConfigSchema.parse({
+      enabled: true,
+      creditTopUpsEnabled: true,
+      topUpProductsByProvider: {
+        stripe: [
+          { packId: 'starter_500', externalId: 'stripe_pack_starter_500', cents: 500 },
+        ],
+      },
+    });
+    const plansConfig = PlansConfigSchema.parse({
+      defaultPlanId: 'pro',
+      plans: {
+        pro: {
+          usage: {
+            topUpPackIds: ['starter_500'],
+          },
+        },
+      },
+    });
+
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{ email: 'user-1@example.com', displayName: 'User One' }])),
+    };
+
+    vi.spyOn(BillingRepository.prototype, 'findSubscriptionByUserId').mockResolvedValue({
+      id: 'sub_1',
+      userId: 'user-1',
+      provider: 'stripe',
+      externalCustomerId: 'cus_stripe_1',
+      externalSubscriptionId: 'sub_stripe_1',
+      planId: 'pro',
+      externalPriceOrProductId: 'price_pro',
+      status: 'active',
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(),
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      trialEnd: null,
+      lastEventAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue({
+      ...billingAccount('user-1'),
+      activePlanId: 'pro',
+    });
+
+    vi.spyOn(PaymentProviderManager.prototype, 'createCheckoutUrlViaProvider')
+      .mockResolvedValue({ url: 'https://checkout.stripe.example/top-up', provider: 'stripe' });
+
+    const app = Fastify();
+    app.decorateRequest('userId', '');
+    app.addHook('onRequest', async (request) => {
+      request.userId = 'user-1';
+    });
+    await billingRoutes(
+      app,
+      billingConfig,
+      plansConfig,
+      db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
+      usageBillingConfig,
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/billing/top-up-checkout-session',
+      payload: { packId: 'starter_500' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toHaveProperty('url');
+    // The response must NOT expose the provider name
+    expect(body).not.toHaveProperty('provider');
   });
 });

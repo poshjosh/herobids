@@ -548,8 +548,8 @@ export function BillingPage() {
                   >
                     {(usageSummary?.topUpPacks?.length ?? 0) === 0 && <option value="">{intl.formatMessage({ id: 'common.noPacksAvailable' })}</option>}
                     {(usageSummary?.topUpPacks ?? []).map((pack) => (
-                      <option key={`${pack.provider}_${pack.packId}`} value={pack.packId}>
-                        {pack.packId} · {formatCurrencyFromCents(intl, pack.cents)} · {pack.provider}
+                      <option key={pack.packId} value={pack.packId}>
+                        {formatCurrencyFromCents(intl, pack.cents)}
                       </option>
                     ))}
                   </select>

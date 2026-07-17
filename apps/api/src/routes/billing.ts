@@ -7,7 +7,7 @@ import { createProviderManager } from '../billing/provider-manager.js';
 import { EntitlementSync } from '../billing/entitlement-sync.js';
 import { CreemSignatureError } from '../billing/creem-provider.js';
 import { StripeSignatureError } from '../billing/stripe-client.js';
-import { UnknownWebhookEventTypeError } from '../billing/provider-port.js';
+import { UnknownWebhookEventTypeError, ProviderUnavailableError } from '../billing/provider-port.js';
 import { MockProvider } from '../billing/mock-provider.js';
 import { errorPayload } from '../error-payload.js';
 
@@ -33,18 +33,25 @@ function resolveTopUpPacks(
   plansConfig: PlansConfig,
   usageBillingConfig: UsageBillingConfig | undefined,
   providerManager: ReturnType<typeof createProviderManager>,
+  targetProvider?: BillingProvider,
 ) {
   const planUsage = plansConfig.plans[planId]?.usage;
   const allowedPackIds = new Set(planUsage?.topUpPackIds ?? []);
   const topUpsEnabled = (planUsage?.topUpPackIds?.length ?? 0) > 0 && Boolean(usageBillingConfig?.creditTopUpsEnabled);
   if (!topUpsEnabled || !usageBillingConfig) return [];
 
-  return Object.entries(usageBillingConfig.topUpProductsByProvider).flatMap(([provider, packs]) =>
+  const providerEntries: Array<[string, Array<{ packId: string; externalId: string; cents: number }>]> = targetProvider
+    ? (() => {
+        const packs = usageBillingConfig.topUpProductsByProvider[targetProvider];
+        return packs ? [[targetProvider, packs]] : [];
+      })()
+    : Object.entries(usageBillingConfig.topUpProductsByProvider);
+
+  return providerEntries.flatMap(([provider, packs]) =>
     providerManager.getProvider(provider as BillingProvider)
       ? packs
           .filter((pack) => allowedPackIds.has(pack.packId))
           .map((pack) => ({
-            provider,
             packId: pack.packId,
             cents: pack.cents,
           }))
@@ -575,13 +582,16 @@ export async function billingRoutes(
   app.get('/billing/usage-summary', async (request, reply) => {
     const userId = request.userId;
 
+    const subscription = await billingRepo.findSubscriptionByUserId(userId);
+    const topUpProvider = (subscription?.provider as BillingProvider | undefined) ?? billingConfig.primaryProvider;
+
     const account = await usageBillingRepo.getAccountByUserId(userId);
     if (!account) {
       // Resolve top-up packs from the user's plan even when no billing account
       // exists yet (e.g. fresh local deployment with no agent activity).
       const [user] = await db.select({ planId: users.planId }).from(users).where(eq(users.id, userId)).limit(1);
       const planId = user?.planId ?? plansConfig.defaultPlanId;
-      const topUpPacks = resolveTopUpPacks(planId, plansConfig, usageBillingConfig, providerManager);
+      const topUpPacks = resolveTopUpPacks(planId, plansConfig, usageBillingConfig, providerManager, topUpProvider);
       return reply.send({
         account: null,
         currentPeriod: null,
@@ -603,7 +613,7 @@ export async function billingRoutes(
     const warningThresholds = usageBillingConfig?.warningThresholdsPct ?? [50, 80, 100];
     const netOutOfPocket = period ? Math.max(0, -period.balanceMicrousd) : 0;
     const hardCap = period?.hardCapMicrousd;
-    const topUpPacks = resolveTopUpPacks(account.activePlanId, plansConfig, usageBillingConfig, providerManager);
+    const topUpPacks = resolveTopUpPacks(account.activePlanId, plansConfig, usageBillingConfig, providerManager, topUpProvider);
     const warnings = warningThresholds.map((pct) => ({
       thresholdPct: pct,
       reached: hardCap != null ? netOutOfPocket >= (hardCap * pct) / 100 : false,
@@ -993,30 +1003,49 @@ export async function billingRoutes(
         return reply.status(400).send(errorPayload('billing.top_up_required', 'Top-ups are not enabled for the current plan', { planId }));
       }
 
-      // Find the pack in operator config
-      let matchedPack: { packId: string; externalId: string; cents: number } | null = null;
-      let matchedProvider: string | null = null;
-      for (const [provider, packs] of Object.entries(usageBillingConfig.topUpProductsByProvider)) {
-        if (!providerManager.getProvider(provider as BillingProvider)) {
-          continue;
-        }
-        const pack = packs.find((p) => p.packId === packId);
-        if (pack) {
-          matchedPack = pack;
-          matchedProvider = provider;
-          break;
-        }
-      }
-
-      if (!matchedPack || !matchedProvider) {
-        return reply.status(400).send(errorPayload('billing.top_up.unknown_pack', 'Unknown top-up pack', { packId }));
-      }
-
       if (!planUsage?.topUpPackIds.includes(packId)) {
         return reply.status(400).send(errorPayload('billing.top_up.pack_not_allowed_for_plan', 'This top-up pack is not available on the current plan', {
           packId,
           planId,
         }));
+      }
+
+      const subscription = await billingRepo.findSubscriptionByUserId(userId);
+      const owningProvider: BillingProvider = (subscription?.provider as BillingProvider | undefined) ?? billingConfig.primaryProvider;
+
+      // Resolve the pack's externalId in the owning provider's config first.
+      const owningPacks = usageBillingConfig.topUpProductsByProvider[owningProvider];
+      let matchedPack = owningPacks?.find((p) => p.packId === packId) ?? null;
+      let checkoutProvider: BillingProvider = owningProvider;
+
+      // If the owning provider has no entry for this pack, search other providers,
+      // preferring the configured fallback provider first.
+      if (!matchedPack) {
+        // Try the fallback provider first (if configured and distinct from owning)
+        if (billingConfig.fallbackProvider && billingConfig.fallbackProvider !== owningProvider) {
+          const fallbackPacks = usageBillingConfig.topUpProductsByProvider[billingConfig.fallbackProvider];
+          const pack = fallbackPacks?.find((p) => p.packId === packId);
+          if (pack) {
+            matchedPack = pack;
+            checkoutProvider = billingConfig.fallbackProvider;
+          }
+        }
+        // Then try any remaining providers
+        if (!matchedPack) {
+          for (const [provider, packs] of Object.entries(usageBillingConfig.topUpProductsByProvider)) {
+            if (provider === owningProvider || provider === billingConfig.fallbackProvider) continue;
+            const pack = packs.find((p) => p.packId === packId);
+            if (pack) {
+              matchedPack = pack;
+              checkoutProvider = provider as BillingProvider;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!matchedPack) {
+        return reply.status(400).send(errorPayload('billing.top_up.unknown_pack', 'Unknown top-up pack', { packId }));
       }
 
       const [user] = await db
@@ -1029,8 +1058,7 @@ export async function billingRoutes(
         return reply.status(404).send(errorPayload('billing.user_not_found', 'User not found'));
       }
 
-      // Create a one-time checkout session for the top-up pack via the matched provider
-      const { url, provider } = await providerManager.createCheckoutUrlViaProvider({
+      const checkoutParams = {
         userId,
         email: user.email,
         planId: `top_up_${packId}`,
@@ -1043,19 +1071,76 @@ export async function billingRoutes(
           topUpCents: String(matchedPack.cents),
           checkoutKind: 'top_up',
         },
-      }, matchedProvider as BillingProvider);
+      };
 
-      if (provider === 'mock') {
+      let effectivePack = matchedPack;
+
+      let url: string;
+      let usedProvider: BillingProvider;
+
+      try {
+        // Try the owning provider first
+        const result = await providerManager.createCheckoutUrlViaProvider(checkoutParams, checkoutProvider);
+        url = result.url;
+        usedProvider = result.provider;
+      } catch (err) {
+        // If the owning provider is unavailable and a distinct fallback exists, fail over.
+        if (err instanceof ProviderUnavailableError && billingConfig.fallbackProvider && billingConfig.fallbackProvider !== checkoutProvider) {
+          const fallbackProvider = billingConfig.fallbackProvider;
+          // Ensure the fallback provider is actually registered before calling it
+          if (!providerManager.getProvider(fallbackProvider)) {
+            return reply.status(503).send(errorPayload(
+              'billing.top_up.provider_unavailable',
+              `Top-up provider ${checkoutProvider} is unavailable and fallback provider is not registered`,
+            ));
+          }
+          const fallbackPacks = usageBillingConfig.topUpProductsByProvider[fallbackProvider];
+          const fallbackPack = fallbackPacks?.find((p) => p.packId === packId);
+          if (!fallbackPack) {
+            return reply.status(503).send(errorPayload(
+              'billing.top_up.provider_unavailable',
+              `Top-up provider ${checkoutProvider} is unavailable and no fallback pack exists for '${packId}'`,
+            ));
+          }
+          effectivePack = fallbackPack;
+          try {
+            const fallbackResult = await providerManager.createCheckoutUrlViaProvider(
+              { ...checkoutParams, priceId: fallbackPack.externalId, metadata: { ...checkoutParams.metadata, topUpCents: String(fallbackPack.cents) } },
+              fallbackProvider,
+            );
+            url = fallbackResult.url;
+            usedProvider = fallbackResult.provider;
+          } catch (fallbackErr) {
+            if (fallbackErr instanceof ProviderUnavailableError) {
+              return reply.status(503).send(errorPayload(
+                'billing.top_up.provider_unavailable',
+                `Top-up provider ${checkoutProvider} is unavailable and fallback provider ${fallbackProvider} also failed`,
+              ));
+            }
+            throw fallbackErr;
+          }
+        } else if (err instanceof ProviderUnavailableError) {
+          // No distinct fallback available — surface the outage
+          return reply.status(503).send(errorPayload(
+            'billing.top_up.provider_unavailable',
+            `Top-up provider ${checkoutProvider} is unavailable`,
+          ));
+        } else {
+          throw err;
+        }
+      }
+
+      if (usedProvider === 'mock') {
         const mockProvider = providerManager.getProvider('mock') as MockProvider;
         const syntheticTopUpEvent = mockProvider.createSyntheticTopUpEvent({
           userId,
           packId,
-          cents: matchedPack.cents,
+          cents: effectivePack.cents,
         });
         await entitlementSync.processEvent(syntheticTopUpEvent);
       }
 
-      return reply.send({ url, provider });
+      return reply.send({ url });
     },
   );
 }

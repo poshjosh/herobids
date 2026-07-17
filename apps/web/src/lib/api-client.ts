@@ -775,7 +775,7 @@ export const billing = {
       body: JSON.stringify(caps),
     }),
   createTopUpCheckoutSession: (packId: string) =>
-    request<{ url: string; provider: string }>('/billing/top-up-checkout-session', {
+    request<{ url: string }>('/billing/top-up-checkout-session', {
       method: 'POST',
       body: JSON.stringify({ packId }),
     }),
@@ -809,7 +809,7 @@ export interface UsageSummaryResponse {
   account: UsageBillingAccount | null;
   currentPeriod: UsagePeriodSummary | null;
   warnings: UsageWarning[];
-  topUpPacks?: Array<{ provider: string; packId: string; cents: number }>;
+  topUpPacks?: Array<{ packId: string; cents: number }>;
   byMeter: Record<string, { quantity: number; chargeMicrousd: number }>;
 }
 
