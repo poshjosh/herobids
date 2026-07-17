@@ -758,7 +758,8 @@ if (workerTelegram) {
   }
 }
 
-// Email client for agent send_message email fanout — disabled by default.
+// Email client for platform-initiated emails (billing notifications, etc.).
+// Agent email sending is handled via the send_email tool, not through the broker.
 // Provider selection happens inside the factory; index.ts maps operator
 // config to the provider-neutral EmailClientConfig.
 const workerEmailConfig: EmailClientConfig = {
