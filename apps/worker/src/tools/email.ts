@@ -34,12 +34,14 @@ const SendEmailParamsSchema = z.object({
   body: z.string().min(1).max(10000),
   cc: z.union([z.string().email(), z.array(z.string().email()).max(10)]).optional(),
   bcc: z.union([z.string().email(), z.array(z.string().email()).max(10)]).optional(),
+  /** Optional connection ID to select which connected email account to send from. */
+  fromConnectionId: z.string().min(1).optional(),
 });
 
 export const sendEmailTool: AgentTool = {
   name: 'send_email',
   description:
-    'Send an email via a connected email account. Supports cc, bcc, HTML content, and optional fromConnectionId.',
+    'Send an email via a connected email account. Supports cc, bcc, and optional fromConnectionId.',
   parametersSchema: SendEmailParamsSchema,
   parameters: convertZodToJsonSchema(SendEmailParamsSchema),
   category: 'write-messaging',
@@ -53,7 +55,7 @@ export const sendEmailTool: AgentTool = {
       return { success: false, error: `Invalid send_email parameters: ${parsed.error.message}`, fault: false };
     }
 
-    const { to, subject, body, cc, bcc } = parsed.data;
+    const { to, subject, body, cc, bcc, fromConnectionId } = parsed.data;
 
     // Per-agent daily send rate limit
     const dailyLimit = _gmailConfig.dailySendLimit ?? 50;

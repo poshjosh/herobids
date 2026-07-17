@@ -380,8 +380,8 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   check_watches:       { category: 'write-memory',        description: 'Evaluate all active price watches against current prices. Optionally auto-remove triggered.' },
 
   // write-messaging
-  send_message:        { category: 'write-messaging',     description: 'Send a message to the user via the platform messaging system.' },
-  send_email:          { category: 'write-messaging',     description: 'Send an email via a connected email account. Supports cc, bcc, HTML content, and optional fromConnectionId.' },
+  send_message:        { category: 'write-messaging',     description: 'Send a message to the user via the platform messaging system. For user-directed communication only — use send_email for email delivery.' },
+  send_email:          { category: 'write-messaging',     description: 'Send an email via a connected email account. Supports cc, bcc, and optional fromConnectionId.' },
   publish_artifact:    { category: 'write-messaging',     description: 'Publish an artifact (analysis result, chart, report) for user review.' },
 
   // read-filesystem

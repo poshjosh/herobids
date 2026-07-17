@@ -88,7 +88,10 @@ function makeBroker(agentRepo: ReturnType<typeof makeAgentRepo>, emailClient?: E
   );
 }
 
-describe('AgentMessageBroker email policy enforcement', () => {
+// Email fanout from send_message has been removed (Item 5).
+// Agents should use the dedicated send_email tool for email delivery.
+// All tests below are skipped until email fanout is re-introduced via a different path.
+describe.skip('AgentMessageBroker email policy enforcement', () => {
   describe('emailDelivery must be if_allowed', () => {
     it('does not email when emailDelivery is never', async () => {
       const agentRepo = makeAgentRepo({ effectiveEmailEnabled: true });

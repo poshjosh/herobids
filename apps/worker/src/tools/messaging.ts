@@ -9,7 +9,6 @@ const SendMessageParamsSchema = z.object({
   body: z.string().min(1).max(2000),
   subject: z.string().max(200).optional(),
   messageClass: z.enum(['routine', 'alert', 'reminder']).optional(),
-  emailDelivery: z.enum(['if_allowed', 'never']).optional(),
   contextRef: z.string().max(200).optional(),
 });
 
@@ -20,12 +19,15 @@ const sendMessageTool: AgentTool = {
   parameters: convertZodToJsonSchema(SendMessageParamsSchema),
   category: 'write-messaging',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-    const { body, subject, messageClass, emailDelivery, contextRef } = params as z.infer<typeof SendMessageParamsSchema>;
+    const parsed = SendMessageParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      return { success: false, error: `Invalid send_message parameters: ${parsed.error.message}`, fault: false };
+    }
+    const { body, subject, messageClass, contextRef } = parsed.data;
     await ctx.publishToInbound(AGENT_MESSAGE_TYPES.SEND_MESSAGE, {
       body,
       subject,
       ...(messageClass ? { messageClass } : {}),
-      ...(emailDelivery ? { emailDelivery } : {}),
       ...(contextRef ? { contextRef } : {}),
     });
 

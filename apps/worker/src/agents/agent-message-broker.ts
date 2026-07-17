@@ -40,8 +40,6 @@ const logger = createLogger('agent-message-broker');
 
 /** Brokered send_message rate limit: max messages per agent per minute. */
 const SEND_MESSAGE_MAX_PER_MINUTE = 10;
-/** Stricter secondary rate limit for email fanout per agent per minute. */
-const EMAIL_FANOUT_MAX_PER_MINUTE = 3;
 /** Max body length enforced server-side (matches domain schema). */
 const SEND_MESSAGE_MAX_BODY_LENGTH = 2000;
 
@@ -81,8 +79,6 @@ export type BotLiveCheckCallback = (userId: string) => Promise<void>;
 export class AgentMessageBroker {
   /** Per-agent send_message rate tracking: agentId → { count, windowStart } */
   private readonly sendMessageCounters = new Map<string, { count: number; windowStart: number }>();
-  /** Per-agent email fanout rate tracking: agentId → { count, windowStart } */
-  private readonly emailFanoutCounters = new Map<string, { count: number; windowStart: number }>();
   /**
    * Per-agent capability policy cache: agentId → { engine, policySig }.
    * policySig is the JSON fingerprint of the agent's toolPolicy at build time.
@@ -490,80 +486,8 @@ export class AgentMessageBroker {
       }
     }
 
-    // --- Email fanout (secondary, policy-gated) ---
-    await this.handleEmailFanout(agent.id, msgId, payload, body, messageClass, now);
-  }
-
-  /**
-   * Evaluate email fanout eligibility and send if all rules pass.
-   * Implements the broker enforcement algorithm from 001-send-message-email-policy.md.
-   */
-  private async handleEmailFanout(
-    agentId: string,
-    msgId: string,
-    payload: SendMessagePayload,
-    body: string,
-    messageClass: string,
-    now: number,
-  ): Promise<void> {
-    // Guard: feed-only mode
-    if (payload.emailDelivery !== 'if_allowed') {
-      await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'feed_only');
-      return;
-    }
-
-    // Guard: operator email infrastructure
-    if (!this.emailClient) {
-      logger.debug({ agentId }, 'Email fanout skipped: email client not configured');
-      await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'email_skipped_not_configured');
-      return;
-    }
-
-    // Guard: policy (agent → user → system default)
-    const emailEnabled = await this.agentRepo.getEffectiveEmailEnabled(agentId);
-    if (!emailEnabled) {
-      logger.debug({ agentId }, 'Email fanout suppressed: effective email policy is disabled');
-      await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'email_skipped_policy');
-      return;
-    }
-
-    // Guard: no verified recipient
-    const recipientEmail = await this.agentRepo.getUserEmailByAgentId(agentId);
-    if (!recipientEmail) {
-      logger.warn({ agentId }, 'Email fanout skipped: no verified account email for owning user');
-      await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'email_skipped_no_verified_recipient');
-      return;
-    }
-
-    // Guard: rate limit
-    const emailCounter = this.emailFanoutCounters.get(agentId);
-    if (emailCounter && now - emailCounter.windowStart < 60_000) {
-      if (emailCounter.count >= EMAIL_FANOUT_MAX_PER_MINUTE) {
-        logger.warn({ agentId }, 'Email fanout suppressed: secondary rate limit exceeded');
-        await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'email_skipped_policy');
-        return;
-      }
-      emailCounter.count++;
-    } else {
-      this.emailFanoutCounters.set(agentId, { count: 1, windowStart: now });
-    }
-
-    // All rules passed — send email
-    const subject = payload.subject ?? (
-      messageClass === 'reminder' ? 'Reminder from your agent'
-      : messageClass === 'alert' ? 'Alert from your agent'
-      : 'Message from your agent'
-    );
-    const result = await this.emailClient.send({ to: recipientEmail, subject, text: body });
-
-    if (!result.ok) {
-      logger.warn({ agentId, error: result.error }, 'Email fanout delivery failed');
-      await this.agentRepo.markOutboundMessageEmailFailed(msgId, result.error.message);
-      return;
-    }
-
-    await this.agentRepo.markOutboundMessageEmailSent(msgId, result.data.messageId);
-    logger.info({ agentId, msgId, messageId: result.data.messageId }, 'Agent send_message email fanout sent');
+    // Email fanout from send_message has been removed (Item 5).
+    // Agents should use the dedicated send_email tool for email delivery.
   }
 
   private async handleManageBot(agentId: string, _envelope: MessageEnvelope, payload: ManageBotPayload): Promise<void> {

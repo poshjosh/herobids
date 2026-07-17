@@ -131,12 +131,6 @@ export const SendMessagePayloadSchema = z.object({
    * - reminder: time-based or scheduled reminder intended to prompt action
    */
   messageClass: z.enum(['routine', 'alert', 'reminder']).optional(),
-  /**
-   * Whether the agent is requesting email fanout in addition to inbox persistence.
-   * - never: inbox only (default)
-   * - if_allowed: agent requests email fanout; broker decides based on policy
-   */
-  emailDelivery: z.enum(['never', 'if_allowed']).optional(),
 });
 
 export type SendMessagePayload = z.infer<typeof SendMessagePayloadSchema>;
