@@ -1,155 +1,129 @@
-# 004 — Agent Scanner Multi-Venue Signal Support
+# 004 — Agent Scanner Multi-Venue Signal Support Part 1: Orderbook Venue Completion
 
 **Status:** Planned  
 **Created:** 2026-07-17  
-**Depends on:** [002-hybrid-agent-redesign](../../06/22/002-hybrid-agent-redesign/001-plan.md) (implemented), [002-hybrid-usd-to-base-size-conversion](../002-hybrid-usd-to-base-size-conversion/001-plan.md) (implemented, but currently Hyperliquid-centric in its scan identity assumptions)
+**Depends on:** [002-hybrid-agent-redesign](../../06/22/002-hybrid-agent-redesign/001-plan.md) (implemented), [002-hybrid-usd-to-base-size-conversion](../002-hybrid-usd-to-base-size-conversion/001-plan.md) (implemented)  
+**Companion follow-up:** [002-plan.md](./002-plan.md)
 
 ## Problem
 
-We want agents to receive scanner-generated trading signals for **all supported
-trading venues**, not just Hyperliquid perps.
+We want hybrid/scanner-gated agents to receive technical scanner signals for
+all supported trading venues, but the current scanner path is still effectively
+Hyperliquid-only.
 
-Today that is not true.
+For orderbook venues, the main missing piece is not swap identity complexity.
+It is venue completeness:
 
-The current agent scanner path is still effectively hard-wired to one venue
-shape:
-
-- `apps/worker/src/index.ts` `discoverCandidates()` always reads
-  `sharedMarketDataRegistry.hyperliquid.assetContexts()`
-- `apps/worker/src/index.ts` scanner candle fetches are wired as
-  orderbook/Binance-only (`VenueCandleFetcher(..., null, 'orderbook')`)
-- `apps/worker/src/technical-phase.ts` candidate and fetch contracts are
-  symbol-only (`symbol: string`, `instrumentId: string`), so exact DEX identity
-  cannot survive the scan pipeline
-- `packages/strategy/src/scan-engine.ts` `CandidateContext` / `ScoredSignal`
-  have no venue/network/address identity fields
-- `apps/worker/src/complete-technical-scan.ts` hardcodes every pricing identity
-  to `{ kind: 'perps', chain: 'hyperliquid' }`
-- `packages/market-data/src/price-service.ts` only has execution-mark logic for
-  Hyperliquid; Bybit orderbook signals would not have a venue-correct hybrid
-  USD-sizing price source
-- swap venues currently require `BASE/QUOTE`-style trade instruments at intake,
-  but scanner/discovery identity is token/pool based; there is no explicit,
-  end-to-end contract that turns a DEX discovery result into a precise,
-  executable swap instrument without guessing
+- `apps/worker/src/index.ts` scanner candidate discovery is hard-wired to
+  Hyperliquid asset contexts
+- scanner candle fetch wiring assumes the existing orderbook path without a
+  venue-complete discovery layer
+- `apps/worker/src/complete-technical-scan.ts` synthesizes Hyperliquid pricing
+  identity for every signal
+- `packages/market-data/src/price-service.ts` has execution-aware pricing only
+  for Hyperliquid, so Bybit scanner signals would not have a venue-correct
+  hybrid USD-sizing source
 
 This means the system can currently do the following:
 
-- hybrid/scanner_gated agents on Hyperliquid: yes
-- bot strategies on swap venues: yes, because bots use their own per-bot candle
-  fetch path rather than the agent scanner pipeline
-- hybrid/scanner_gated agents on Bybit/Jupiter/1inch: no, not end-to-end
+- Hyperliquid-bound hybrid agents: yes
+- Bybit-bound hybrid agents: no, not end-to-end
+- swap venue bots: yes, via the separate bot strategy path
+- swap venue hybrid agents: deferred to Part 2 because they require exact DEX
+  execution identity and swap-aware validation
 
 ## Goal
 
-Allow any hybrid agent with a valid active trading binding to receive technical
-scanner signals for the venue it is actually bound to, across the full set of
-currently supported trading venues:
+Make the agent scanner venue-complete for orderbook venues in this phase:
 
 - Hyperliquid
 - Bybit
-- Jupiter
-- 1inch
 
 That includes:
 
-- venue-correct candidate discovery
-- venue-correct candle fetching for signal generation
-- exact identity preservation for swap assets
-- venue-correct hybrid USD-to-base sizing before submission
-- venue-correct executable `instrumentId` values for scanner-generated
-  submissions
+- venue-aware candidate discovery for orderbook bindings
+- venue-correct candle routing for orderbook scanner signals
+- venue-correct hybrid USD-to-base sizing for Bybit signals
+- preservation of discovered pricing identity through scan completion
+
+## Why This Is Part 1
+
+Orderbook venue support is a bounded extension of the existing scanner model.
+Hyperliquid and Bybit both fit the same broad execution shape:
+
+- one tradable venue instrument per signal
+- existing orderbook candle policy can be reused
+- hybrid sizing should use venue-native execution pricing
+
+The DEX path is intentionally split into Part 2 because it requires:
+
+- exact address-qualified execution identity
+- quote-asset policy
+- swap-aware trade-instrument validation
+- pool-aware candle targets
+
+Those requirements are real, but they are a larger cross-cutting change than
+adding Bybit to the orderbook path.
 
 ## Non-Goals
 
-- Do not redesign bot strategy execution. Bots already use a separate path and
-  are not the problem being solved here.
-- Do not make one agent trade across multiple active bindings in a single
-  session. This plan assumes the current one-active-trading-binding model.
-- Do not redesign the public `submit_decision` tool schema for manual agent
-  turns.
-- Do not switch the entire strategy layer to venue-native OHLCV sources for
-  orderbook venues. This plan preserves the current orderbook candle policy and
-  only makes it venue-complete.
-- Do not attempt cross-venue arbitrage, pair trading, or shared multi-venue
-  portfolio reasoning.
+- Do not add Jupiter or 1inch scanner support in this part.
+- Do not redesign bot strategy execution.
+- Do not change the public `submit_decision` schema.
+- Do not redesign swap parsing or swap validation here, other than preserving
+  current behavior and avoiding regressions.
+- Do not make one agent scan multiple venues in one session.
 
 ## Supported Scope
 
-This plan defines support for the following agent scanner combinations:
+This part defines support for the following combinations:
 
-| Venue | Venue type | Scanner candidate source | Candle source | Hybrid sizing source |
+| Venue | Venue type | Candidate source | Candle source | Hybrid sizing source |
 |---|---|---|---|---|
 | Hyperliquid | `orderbook` | Hyperliquid asset contexts | existing orderbook candle path | Hyperliquid execution mark via `priceService` |
 | Bybit | `orderbook` | new Bybit tickers provider | existing orderbook candle path | new Bybit execution ticker/mark path via `priceService` |
-| Jupiter | `swap` | shared discovery pipeline (`solana`) | GeckoTerminal pools | DexScreener/price-service using exact chain + address |
-| 1inch | `swap` | shared discovery pipeline (binding/operator-resolved EVM network) | GeckoTerminal pools | DexScreener/price-service using exact chain + address |
 
 ## Key Decision
 
-### “All supported venues” means venue completeness across the platform, not one agent scanning all venues at once
+### Part 1 introduces venue-aware orderbook scanning without taking on DEX identity yet
 
-The scanner must honor the agent’s active trading binding and `technical.filters`
-instead of assuming Hyperliquid. A Jupiter-bound agent scans Jupiter-relevant
-DEX assets. A Bybit-bound agent scans Bybit-relevant perp instruments. The
-system does **not** merge multiple venue universes into one scan for a single
-agent session in this phase.
+The scanner must honor the agent's active trading binding and
+`technical.filters` instead of assuming Hyperliquid.
 
-That keeps the implementation aligned with the current execution model:
+A Hyperliquid-bound agent scans Hyperliquid perp candidates.
+A Bybit-bound agent scans Bybit perp candidates.
 
-- one active trading grant
-- one active venue account
-- one actor execution context
+This part deliberately stops there. Swap venues are handled by Part 2.
 
 ## Design
 
-### 1. Introduce an explicit scanner identity model
+### 1. Introduce explicit scanner identity for orderbook signals
 
-The current `symbol + instrumentId` model is not sufficient.
+The current scanner signal shape is too implicit. Even for orderbook venues, we
+should stop deriving pricing identity late.
 
-We need one candidate object that carries all three identities that the system
-actually uses:
-
-1. **Display identity** — what the prompt and logs show
-2. **Execution identity** — what gets submitted to decision intake
-3. **Market-data identity** — what the scanner uses for candles and what the
-   hybrid path uses for repricing
-
-Add the following explicit types.
+Add explicit orderbook-oriented identity fields.
 
 #### In `apps/worker/src/technical-phase.ts`
 
 ```ts
 export interface ScannerCandleTarget {
-  venueType: 'orderbook' | 'swap';
-  providerSymbol?: string;
-  network?: string;
-  poolAddress?: string;
-}
-
-export interface SwapExecutionIdentity {
-  network: string;
-  baseSymbol: string;
-  baseAddress: string;
-  quoteSymbol: string;
-  quoteAddress: string;
+  venueType: 'orderbook';
+  providerSymbol: string;
 }
 
 export interface DiscoveredInstrument {
   venue: string;
-  venueType: 'orderbook' | 'swap';
+  venueType: 'orderbook';
   symbol: string;
   instrumentId: string;
   candleTarget: ScannerCandleTarget;
   pricingIdentity: {
-    kind: 'perps' | 'dex';
+    kind: 'perps';
     symbol: string;
-    chain?: string;
-    address?: string;
+    chain: 'hyperliquid' | 'bybit';
   };
-  swapExecutionIdentity?: SwapExecutionIdentity;
   volume24hUsd?: number;
-  liquidityUsd?: number;
   priceChange24hPct?: number;
 }
 ```
@@ -162,13 +136,11 @@ export interface CandidateContext {
   instrumentId: string;
   candles: PriceCandle[];
   venue?: string;
-  venueType?: 'orderbook' | 'swap';
+  venueType?: 'orderbook';
   candleTarget?: ScannerCandleTarget;
   pricingIdentity?: HybridPricingIdentity;
-  swapExecutionIdentity?: SwapExecutionIdentity;
   meta?: {
     volume24hUsd?: number;
-    liquidityUsd?: number;
     priceChange24hPct?: number;
   };
 }
@@ -177,158 +149,40 @@ export interface ScoredSignal {
   symbol: string;
   instrumentId: string;
   venue?: string;
-  venueType?: 'orderbook' | 'swap';
+  venueType?: 'orderbook';
   pricingIdentity?: HybridPricingIdentity;
-  swapExecutionIdentity?: SwapExecutionIdentity;
   confidence: number;
   reasons: string[];
   intent: 'go_long' | 'go_short';
-  indicators: { ... }
+  indicators: { ... };
 }
 ```
 
-Rule:
+Rules:
 
 - `symbol` stays human-readable
-- `instrumentId` must be execution-correct
-- `pricingIdentity` must always be exact enough for hybrid sizing
-- `candleTarget` must always be exact enough to fetch the intended OHLCV series
+- `instrumentId` must be the actual tradable venue instrument
+- `pricingIdentity` must be determined during discovery, not synthesized later
+- `candleTarget` must tell the fetcher exactly which orderbook symbol to query
 
-### 2. Standardize scanner-generated swap instrument IDs as exact address-qualified pairs
+### 2. Add venue-complete orderbook candidate discovery
 
-The swap execution path cannot safely rely on bare ticker symbols when the
-scanner itself already knows exact token identity.
+Extract scanner discovery from `apps/worker/src/index.ts` into a dedicated
+module so it can branch by binding venue.
 
-Scanner-generated swap signals must therefore use an internal, exact,
-address-qualified `instrumentId` format:
-
-```text
-<BASE_SYMBOL>:<BASE_ASSET_ID>/<QUOTE_SYMBOL>:<QUOTE_ASSET_ID>
-```
-
-Examples:
-
-- Jupiter: `BONK:DezXAZ8z7PnrnRJjz3wXBoRgixCa6eZJ6B9w3vJ8X4x/USDC:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`
-- 1inch Base: `WETH:0x4200000000000000000000000000000000000006/USDC:0x833589fCD6eDb6C08f4c7C32D4f71b54bdA02913`
-
-Why this is required:
-
-- same-symbol fakes exist on the same network
-- `priceService` for DEX repricing already needs exact chain + address
-- swap execution adapters ultimately quote against exact asset IDs, not human
-  tickers
-- legacy plain `BASE/QUOTE` strings do not carry enough identity to guarantee
-  scanner correctness
-
-This is an internal scanner/runtime format. The prompt can still display
-`BONK/USDC` while carrying the exact `instrumentId` internally.
-
-### 3. Extend swap instrument parsing to support exact quote-side identity too
-
-Current swap parsing only extracts the base-side `:address` suffix.
-
-That is not sufficient for scanner-generated swap signals because the quote side
-must also be explicit.
-
-Update the parsing contract in:
-
-- `apps/worker/src/agent-trading-actor.ts`
-- `apps/worker/src/agents/agent-intake-resolver.ts`
-- `apps/worker/src/resolve-swap-assets.ts` or a new dedicated parser module
-
-Required behavior:
-
-- accept `BASE/QUOTE`
-- accept `BASE:BASE_ID/QUOTE`
-- accept `BASE:BASE_ID/QUOTE:QUOTE_ID`
-- when `:QUOTE_ID` is present, preserve it all the way through to execution
-
-Suggested helper:
-
-```ts
-export interface ParsedSwapInstrument {
-  displayBaseSymbol: string;
-  displayQuoteSymbol: string;
-  baseAssetId: string;
-  quoteAssetId: string;
-}
-
-export function parseSwapInstrumentId(
-  instrumentId: string,
-  defaultQuoteAssetId?: string,
-): ParsedSwapInstrument | null;
-```
-
-Rules:
-
-- scanner-generated decisions must always use the fully-qualified form
-- legacy manual agent tool calls may still use `BASE/QUOTE`, but that is not the
-  scanner contract
-- if the scanner lacks enough identity to produce a fully-qualified swap
-  `instrumentId`, it must skip the candidate rather than guess
-
-### 4. Replace symbol-only swap validation with venue-aware trade-instrument validation
-
-Current symbol validation is not sufficient for swap venues.
-
-Today:
-
-- Jupiter cache warmup stores token **addresses** from the token list
-- the agent execution path validates the full incoming `instrumentId` as though
-  it were a single raw symbol string
-
-That is incompatible with pair-style swap instruments and would reject valid
-scanner-generated swap signals.
-
-Add a new helper, for example in `apps/worker/src/venue-instrument-cache.ts` or
-in a new `apps/worker/src/validate-trade-instrument.ts`:
-
-```ts
-export function validateTradeInstrument(params: {
-  venue: string;
-  venueType: 'orderbook' | 'swap';
-  instrumentId: string;
-  instrumentCache?: VenueInstrumentCache;
-}): { ok: true } | { ok: false; code: string; message: string };
-```
-
-Rules:
-
-- orderbook venues: reuse existing cache validation
-- Jupiter: parse the swap pair, validate base and quote asset IDs individually
-  against the Jupiter token cache
-- 1inch: parse the swap pair and validate structural correctness plus resolved
-  network; do not hard-block on the current curated address list because that
-  list is intentionally incomplete
-
-Replace raw `instrumentCache.hasSymbol(...)` checks in:
-
-- `apps/worker/src/agent-trading-actor.ts`
-- `apps/worker/src/agents/agent-intake-resolver.ts`
-
-### 5. Add venue-complete candidate discovery
-
-The scanner currently ignores `filters.venue` and `filters.venueType` in
-practice. That must stop.
-
-Extract scanner discovery from `apps/worker/src/index.ts` into a dedicated,
-testable module:
+Suggested module:
 
 ```ts
 export async function discoverScannerCandidates(params: {
   registry: ProviderRegistry;
   filters: FilterConfig;
-  bindingVenue: string;
-  bindingVenueType: 'orderbook' | 'swap';
-  swapNetwork?: string;
-  swapQuoteAsset?: { symbol: string; assetId: string };
+  bindingVenue: 'hyperliquid' | 'bybit';
+  bindingVenueType: 'orderbook';
   maxCandidates: number;
 }): Promise<DiscoveredInstrument[]>;
 ```
 
-#### Venue-specific discovery rules
-
-##### Hyperliquid
+#### Hyperliquid
 
 Source:
 
@@ -337,199 +191,56 @@ Source:
 Mapping:
 
 - `symbol`: base ticker, e.g. `BTC`
-- `instrumentId`: existing Hyperliquid execution instrument form already used by
-  the agent path
-- `candleTarget.providerSymbol`: base ticker / existing orderbook candle symbol
+- `instrumentId`: existing Hyperliquid execution instrument form already used
+  by the agent path
+- `candleTarget.providerSymbol`: existing orderbook candle symbol
 - `pricingIdentity`: `{ kind: 'perps', symbol: <asset>, chain: 'hyperliquid' }`
 
-##### Bybit
+#### Bybit
 
 Source:
 
-- **new** `registry.bybit.tickers()` provider, backed by Bybit linear tickers
+- new `registry.bybit.tickers()` provider backed by Bybit linear tickers
 
 Mapping:
 
 - `symbol`: human-readable base ticker or pair display
-- `instrumentId`: the actual tradable venue instrument the execution path uses
-  (must match the instrument repository / adapter contract, not an invented
-  approximation)
+- `instrumentId`: the actual tradable venue instrument used by execution
 - `candleTarget.providerSymbol`: orderbook candle symbol
 - `pricingIdentity`: `{ kind: 'perps', symbol: <venue symbol or resolved base>, chain: 'bybit' }`
 
-Important:
+Hard rules:
 
-- do **not** invent a Bybit `instrumentId` string ad hoc in the scanner
-- resolve it through the same canonical venue symbol contract used elsewhere
-  (instrument table / adapter market metadata)
+- do not invent a Bybit instrument format ad hoc in the scanner
+- resolve Bybit instruments through the same canonical contract used by the
+  venue adapter and market metadata
 
-##### Jupiter
+### 3. Route orderbook scanner candles through an explicit helper
 
-Source:
-
-- `registry.discovery.discover({ networks: ['solana'], ... })`
-
-Required candidate fields:
-
-- `symbol`: `<BASE_SYMBOL>/<QUOTE_SYMBOL>` for prompt display
-- `instrumentId`: address-qualified pair format
-- `candleTarget`: `{ venueType: 'swap', network: 'solana', poolAddress: <token.poolAddress> }`
-- `pricingIdentity`: `{ kind: 'dex', symbol: <base symbol>, chain: 'solana', address: <base token address> }`
-- `swapExecutionIdentity`: `{ network: 'solana', baseSymbol, baseAddress, quoteSymbol, quoteAddress }`
-
-Hard requirement:
-
-- if discovery did not yield `poolAddress` or exact base token address, skip the
-  candidate
-
-##### 1inch
-
-Source:
-
-- `registry.discovery.discover({ networks: [resolvedSwapNetwork], ... })`
-
-Required candidate fields are the same as Jupiter, except network is the active
-  binding / operator-resolved 1inch network.
-
-Hard requirement:
-
-- if `resolveSwapNetwork(...)` returns `undefined`, the scanner for that agent
-  must fail closed at startup rather than silently downgrade to a wrong network
-
-### 6. Introduce explicit swap quote-asset policy for scanner-generated DEX signals
-
-One discovered DEX token can appear in many pools and quote pairs. The scanner
-must map each entry signal to exactly one executable pair.
-
-Do **not** guess the quote side from whatever pool happened to rank highest.
-
-Use `marketData.tokenSafety.canonicalTokens.<network>` as the explicit allowlist
-of supported quote assets. The scanner UI and runtime config should select from
-those canonical keys, not from arbitrary token symbols.
-
-Required operator config shape:
-
-```yaml
-marketData:
-  tokenSafety:
-    canonicalTokens:
-      solana:
-        USDC:
-          address: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
-          name: USD Coin
-          aliases: []
-      base:
-        USDC:
-          address: "0x833589fCD6eDb6C08f4c7C32D4f71b54bdA02913"
-          name: USD Coin
-          aliases: []
-      arbitrum:
-        USDC:
-          address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
-          name: USD Coin
-          aliases: []
-      optimism:
-        USDC:
-          address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
-          name: USD Coin
-          aliases: []
-      ethereum:
-        USDC:
-          address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
-          name: USD Coin
-          aliases: []
-      polygon:
-        USDC:
-          address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
-          name: USD Coin
-          aliases: []
-agentRuntime:
-  scannerQuoteAssets:
-    solana: USDC
-    base: USDC
-    arbitrum: USDC
-    optimism: USDC
-    ethereum: USDC
-    polygon: USDC
-```
-
-Scanner rule:
-
-- every DEX entry candidate is normalized to the configured canonical quote
-  asset key for its network
-- the quote asset must be one of the configured canonical tokens for that
-  network; if it is not present in `marketData.tokenSafety.canonicalTokens`,
-  scanner startup for that venue must fail loudly
-- default quote asset is USDC wherever the network has a canonical USDC entry
-- the frontend should expose this as a scanner-gated preset option, so a user
-  can override the default while still staying inside the allowlist
-
-This is operator policy, not per-agent config, but it is selectable at agent
-creation/edit time for scanner-gated hybrid agents.
-
-### 7. Change the technical scan candle contract from raw symbol strings to explicit candle targets
-
-Current contract:
-
-```ts
-fetchCandles(symbol: string, interval: string, limit: number)
-```
-
-This is not enough for DEX scanning because the same symbol can exist on many
-chains and many pools.
-
-Change `TechnicalPhaseDeps` in `apps/worker/src/technical-phase.ts` to:
-
-```ts
-fetchCandles(target: ScannerCandleTarget, interval: string, limit: number): Promise<PriceCandle[]>;
-```
-
-Then update `runTechnicalPhase()`:
-
-- entry candidates use `candidate.candleTarget`
-- open-position exit evaluation resolves a `ScannerCandleTarget` from the open
-  position’s instrument identity
-
-#### Exit-scan rule for swap positions
-
-For swap positions, exit scanning is only safe when the open position’s
-`instrumentId` can be parsed back into an exact address-qualified pair and the
-network is known from the actor binding.
-
-If not, skip exit scanning for that position and log a structured warning.
-
-No compatibility fallback is required here.
-
-### 8. Route scanner candles by venue type
-
-Add a dedicated scanner candle router instead of reusing the current
-Hyperliquid-only worker helper.
+Extract the scanner candle fetch helper from `apps/worker/src/index.ts` into a
+dedicated module.
 
 Suggested module:
 
 ```ts
 export function createScannerCandleFetcher(params: {
   binanceConfig: BinanceCandlesConfig;
-  geckoTerminalConfig: GeckoTerminalConfig;
   scannerRateLimiter: TokenBucketRateLimiter;
 }): (target: ScannerCandleTarget, interval: string, limit: number) => Promise<PriceCandle[]>;
 ```
 
 Rules:
 
-- orderbook targets -> existing orderbook candle path
-- swap targets -> GeckoTerminal using `network + poolAddress`
-- if a swap target lacks `network` or `poolAddress`, fail closed
+- orderbook targets use the existing orderbook candle policy
+- the target object, not a venue-global assumption, supplies the provider
+  symbol
+- no scanner code should assume Hyperliquid once the binding venue is Bybit
 
-Do not rely on string-length heuristics to infer pool-vs-symbol in the agent
-scanner path. The target object must already tell the fetcher what it is.
+### 4. Extend `priceService` to support Bybit orderbook signals
 
-### 9. Extend `priceService` to support Bybit orderbook signals
-
-The current `priceService` only has execution-mark logic for Hyperliquid.
-
+The current `priceService` only has execution-aware logic for Hyperliquid.
 That is insufficient once Bybit scanner signals are introduced because hybrid
-USD-to-base sizing must be venue-correct.
+USD-to-base sizing must stay venue-correct.
 
 #### Required changes
 
@@ -565,245 +276,158 @@ bybit: {
 Add a `resolveBybitTarget()` branch and update source selection:
 
 - `hyperliquid` -> execution mark -> oracle -> cache
-- `bybit` -> bybit ticker/mark -> cache
-- DEX networks -> DexScreener -> cache
+- `bybit` -> Bybit ticker/mark -> cache
 
 Rules:
 
 - Bybit scanner-generated `pricingIdentity.chain` must be `'bybit'`
-- hybrid sizing for Bybit must reject stale ticker results the same way the DEX
-  sizing path rejects stale prices
+- hybrid sizing for Bybit must reject stale ticker results instead of falling
+  back to DexScreener
 
-### 10. Preserve exact pricing identity through scan completion
+### 5. Preserve discovered pricing identity through scan completion
 
-Stop synthesizing pricing identity in `apps/worker/src/complete-technical-scan.ts`.
+Stop hardcoding Hyperliquid pricing identity in
+`apps/worker/src/complete-technical-scan.ts`.
 
 Instead:
 
 - read `signal.pricingIdentity` from `TechnicalPhaseResult.signals`
 - build `TechnicalScanState.pricingIdentities[instrumentId]` from the actual
   signal data
-- if a `go_long` signal lacks `pricingIdentity`, do not publish it into the
-  completed scan state
+- if an orderbook `go_long` signal lacks `pricingIdentity`, do not publish it
+  into the completed scan state
 
-This preserves the exact identity determined during candidate discovery and
-avoids re-derivation drift.
+This removes late re-derivation drift and makes Bybit hybrid sizing safe.
 
-### 11. Keep the prompt human-readable while keeping execution exact
+### 6. Keep the prompt human-readable
 
-The hybrid prompt should continue to show clean symbols, not address dumps.
+The hybrid prompt should continue to show clean symbols.
 
 Rule:
 
-- `signal.symbol` is prompt-facing and human-readable, e.g. `BONK/USDC`
-- `signal.instrumentId` is internal and exact, e.g.
-  `BONK:<mint>/USDC:<mint>`
+- `signal.symbol` is prompt-facing and readable
+- `signal.instrumentId` remains the exact execution instrument
 - `runHybridEvaluator()` may continue resolving LLM responses by `symbol`, then
-  submitting the matched signal’s exact `instrumentId`
-
-That means the LLM does not need to emit long address-qualified strings in its
-response.
+  submitting the matched signal's exact `instrumentId`
 
 ## Implementation
 
-### Phase 1 — Shared types and exact swap instrument parsing
-
-#### Files
+### Phase 1 — Shared orderbook identity and scan-state cleanup
 
 | File | Action |
 |---|---|
-| `apps/worker/src/technical-phase.ts` | Extend `DiscoveredInstrument` and `TechnicalPhaseDeps.fetchCandles` contract |
-| `packages/strategy/src/scan-engine.ts` | Extend `CandidateContext` / `ScoredSignal` with venue-aware identity fields |
-| `apps/worker/src/agent-trading-actor.ts` | Replace ad hoc swap parsing with explicit parser supporting quote-side asset IDs |
-| `apps/worker/src/agents/agent-intake-resolver.ts` | Parse exact swap instrument identity consistently |
-| `apps/worker/src/resolve-swap-assets.ts` or new parser file | Add `parseSwapInstrumentId()` |
+| `apps/worker/src/technical-phase.ts` | Extend `DiscoveredInstrument` and `TechnicalPhaseDeps.fetchCandles` for explicit orderbook targets |
+| `packages/strategy/src/scan-engine.ts` | Extend `CandidateContext` / `ScoredSignal` with venue-aware orderbook identity |
+| `apps/worker/src/complete-technical-scan.ts` | Stop hardcoding Hyperliquid pricing identity |
+| `apps/worker/src/runtime-composition.ts` | Keep scanner-resolved pricing identity as the source of truth |
 
-#### Acceptance criteria
+Acceptance criteria:
 
-- scanner-generated swap instrument IDs can carry both base and quote asset IDs
-- the execution path can parse them without guessing
-- no raw scanner logic depends on bare `symbol: string` for swap identity
-- quote assets are selected from the canonical token allowlist, defaulting to
-  USDC when available
+- orderbook scanner signals carry explicit `pricingIdentity`
+- completed technical scans preserve the discovered identity
+- Hyperliquid behavior does not regress
 
-### Phase 2 — Venue-complete market-data providers
-
-#### Files
+### Phase 2 — Bybit market-data provider and pricing path
 
 | File | Action |
 |---|---|
 | `packages/market-data/src/bybit-tickers.ts` (new) | Implement linear tickers provider |
 | `packages/market-data/src/provider-registry.ts` | Add `bybit.tickers()` and config wiring |
-| `packages/market-data/src/types.ts` | Add `BybitTicker` types / config additions as needed |
+| `packages/market-data/src/types.ts` | Add `BybitTicker` types and any config surface needed |
 | `packages/market-data/src/price-service.ts` | Add Bybit execution-price resolution |
-| `config/default.yaml` | Add Bybit ticker config and scanner swap-quote config |
-| `apps/worker/src/config.ts` / schema files as needed | Wire operator config into the resolved config object |
+| `config/default.yaml` | Add Bybit ticker config |
+| config schema / resolved config files as needed | Wire operator config into the runtime |
 
-#### Acceptance criteria
+Acceptance criteria:
 
 - provider registry can fetch Bybit tickers with rate limiting and cache policy
 - `priceService.resolvePriceTarget(..., 'bybit', ...)` works
-- operator config fully describes swap quote assets per supported network
+- Bybit hybrid sizing fails closed when execution pricing is unavailable or
+  stale
 
-### Phase 3 — Extract scanner discovery and candle routing into explicit modules
-
-#### Files
+### Phase 3 — Orderbook scanner discovery and candle routing
 
 | File | Action |
 |---|---|
-| `apps/worker/src/index.ts` | Remove inline Hyperliquid-only `discoverCandidates` / `fetchCandles` scanner helpers |
-| `apps/worker/src/scanner-candidate-discovery.ts` (new) | Implement venue-aware discovery |
-| `apps/worker/src/scanner-candle-fetcher.ts` (new) | Implement venue-aware candle routing from `ScannerCandleTarget` |
+| `apps/worker/src/index.ts` | Remove inline Hyperliquid-only scanner helpers |
+| `apps/worker/src/scanner-candidate-discovery.ts` (new) | Implement orderbook venue-aware discovery |
+| `apps/worker/src/scanner-candle-fetcher.ts` (new) | Implement explicit orderbook candle routing |
 | `apps/worker/src/agent-trading-actor.ts` | Use the new helpers via injected deps |
 
-#### Discovery behavior by venue
+Acceptance criteria:
 
-- Hyperliquid -> asset contexts
-- Bybit -> new tickers provider
-- Jupiter -> discovery pipeline on `solana`
-- 1inch -> discovery pipeline on resolved EVM network
+- scanner discovery respects the active orderbook binding venue
+- Hyperliquid and Bybit candidates both flow through the same scanner contract
+- candle fetching no longer assumes Hyperliquid
 
-#### Acceptance criteria
-
-- scanner discovery respects `filters.venue` and `filters.venueType`
-- swap candidate discovery emits exact execution/pricing/candle identity
-- orderbook and swap candle targets are fetched by the correct provider path
-
-### Phase 4 — Fix trade-instrument validation for swap venues
-
-#### Files
-
-| File | Action |
-|---|---|
-| `apps/worker/src/venue-instrument-cache.ts` or new helper | Add venue-aware `validateTradeInstrument()` |
-| `apps/worker/src/agent-trading-actor.ts` | Replace raw `instrumentCache.hasSymbol()` check |
-| `apps/worker/src/agents/agent-intake-resolver.ts` | Replace raw `instrumentCache.hasSymbol()` check |
-
-#### Acceptance criteria
-
-- Jupiter scanner-generated address-qualified pairs are accepted
-- 1inch scanner-generated address-qualified pairs are structurally validated and
-  not rejected because of the intentionally incomplete curated token list
-- orderbook validation remains unchanged
-
-### Phase 5 — Preserve exact scan identity into hybrid evaluation and sizing
-
-#### Files
-
-| File | Action |
-|---|---|
-| `apps/worker/src/complete-technical-scan.ts` | Stop hardcoding Hyperliquid pricing identity |
-| `apps/worker/src/runtime-composition.ts` | Ensure `TechnicalScanState.pricingIdentities` remains the scanner-resolved source of truth |
-| `apps/worker/src/hybrid-agent-evaluator.ts` | Continue passing exact `pricingIdentity` from the matched signal |
-| `apps/worker/src/hybrid-decision-sizing.ts` | Accept Bybit and DEX identities without Hyperliquid-only assumptions |
-
-#### Acceptance criteria
-
-- Hyperliquid, Bybit, Jupiter, and 1inch scanner signals all carry exact hybrid
-  pricing identity to submission time
-- no scanner-completed signal gets a synthetic fallback pricing identity
-
-### Phase 6 — Tests and verification
-
-#### New / updated tests
+### Phase 4 — Tests and verification
 
 | File | Coverage |
 |---|---|
 | `packages/market-data/src/bybit-tickers.test.ts` | Bybit ticker provider parsing, rate limiting, cache behavior |
-| `packages/market-data/src/price-service.test.ts` | Bybit price resolution; DEX exact-address repricing remains correct |
-| `apps/worker/src/scanner-candidate-discovery.test.ts` | venue-aware discovery across all 4 venues |
-| `apps/worker/src/scanner-candle-fetcher.test.ts` | orderbook vs swap candle routing |
-| `apps/worker/src/technical-phase.test.ts` | swap candidates with explicit `ScannerCandleTarget`; address-qualified swap `instrumentId`s |
-| `apps/worker/src/complete-technical-scan.test.ts` | DEX and Bybit pricing identities preserved into scan state |
-| `apps/worker/src/hybrid-agent-evaluator.test.ts` | symbol-based resolution still submits exact address-qualified swap `instrumentId` plus pricing identity |
-| `apps/worker/src/agent-trading-actor.test.ts` | exact swap instrument parsing, validation, and intake deps |
-| `apps/worker/src/agents/agent-intake-resolver.test.ts` | swap validation path and parsed asset IDs |
+| `packages/market-data/src/price-service.test.ts` | Bybit price resolution and stale rejection |
+| `apps/worker/src/scanner-candidate-discovery.test.ts` | Hyperliquid and Bybit discovery |
+| `apps/worker/src/scanner-candle-fetcher.test.ts` | explicit orderbook candle routing |
+| `apps/worker/src/complete-technical-scan.test.ts` | Bybit pricing identities preserved into scan state |
+| `apps/worker/src/hybrid-agent-evaluator.test.ts` | symbol-based resolution still submits exact orderbook instrument plus pricing identity |
 
-#### Required executable validation
+Required executable validation:
 
 - targeted vitest runs for the files above
 - `pnpm lint`
-- `pnpm test`
-
-### Phase 7 — Documentation
-
-#### Files
-
-| File | Action |
-|---|---|
-| `docs/tech/architecture/market-data.md` | Update scanner consumer section to describe venue-complete agent scanning |
-| `CHANGELOG.md` | Record multi-venue scanner support |
-| relevant agent runtime docs | Clarify that hybrid/scanner_gated agents now receive signals for all supported bound venues |
+- relevant worker tests
 
 ## Concrete file list
 
-This is the minimum file set the implementation should expect to touch.
-
 | File | Why |
 |---|---|
-| `apps/worker/src/index.ts` | remove inline Hyperliquid-only scanner wiring; inject new helpers/config |
-| `apps/worker/src/technical-phase.ts` | extend candidate/fetch contracts and phase logic |
+| `apps/worker/src/index.ts` | remove inline Hyperliquid-only scanner wiring; inject new helpers |
+| `apps/worker/src/technical-phase.ts` | extend candidate and candle contracts |
 | `apps/worker/src/complete-technical-scan.ts` | preserve actual pricing identity |
-| `apps/worker/src/runtime-composition.ts` | scan-state identity shape |
-| `apps/worker/src/agent-trading-actor.ts` | swap instrument parsing/validation path |
-| `apps/worker/src/agents/agent-intake-resolver.ts` | same validation/parsing in fallback intake path |
-| `apps/worker/src/resolve-swap-assets.ts` or new parser file | exact swap instrument parser |
-| `apps/worker/src/scanner-candidate-discovery.ts` (new) | venue-aware candidate discovery |
-| `apps/worker/src/scanner-candle-fetcher.ts` (new) | venue-aware candle routing |
-| `apps/worker/src/venue-instrument-cache.ts` or new validator file | venue-aware trade-instrument validation |
+| `apps/worker/src/runtime-composition.ts` | scan-state identity source of truth |
+| `apps/worker/src/scanner-candidate-discovery.ts` (new) | orderbook venue-aware candidate discovery |
+| `apps/worker/src/scanner-candle-fetcher.ts` (new) | explicit orderbook candle routing |
 | `packages/strategy/src/scan-engine.ts` | venue-aware scan signal shape |
-| `packages/market-data/src/bybit-tickers.ts` (new) | Bybit discovery + pricing support |
+| `packages/market-data/src/bybit-tickers.ts` (new) | Bybit discovery and pricing support |
 | `packages/market-data/src/provider-registry.ts` | new provider surface |
 | `packages/market-data/src/price-service.ts` | Bybit execution-price branch |
 | `packages/market-data/src/types.ts` | provider/config types |
-| `config/default.yaml` | canonical token allowlist, scanner quote-asset config, Bybit ticker config |
+| `config/default.yaml` | Bybit ticker config |
 
 ## Failure policy
 
-This implementation must fail loudly instead of silently degrading.
+This part must fail loudly instead of silently degrading.
 
 Rules:
 
-- if the agent binding venue/network cannot be resolved, do not run the scanner
-- if a swap candidate lacks exact base token address or pool address, skip it
-- if a scanner-generated swap signal lacks a fully-qualified `instrumentId`, do
-  not submit it
-- if Bybit execution-price lookup is unavailable, do not size Bybit hybrid
-  entries off a DEX oracle fallback
-- if exact identity cannot be preserved through scan completion, reject the
-  signal rather than synthesizing a best guess
+- if the active binding venue cannot be resolved, do not run the scanner
+- if Bybit execution-price lookup is unavailable or stale, do not size Bybit
+  hybrid entries from a generic oracle fallback
+- if an orderbook scanner-generated signal lacks exact pricing identity, reject
+  it instead of synthesizing a best guess
 
 ## Verification matrix
 
 | Scenario | Expected result |
 |---|---|
 | Hyperliquid-bound hybrid agent | scanner signals and hybrid submissions still work |
-| Bybit-bound hybrid agent | scanner discovers Bybit candidates, hybrid sizing resolves Bybit execution price |
-| Jupiter-bound hybrid agent | scanner emits DEX signals with exact Solana token + pool identity |
-| 1inch-bound hybrid agent on Base | scanner emits DEX signals with exact Base token + pool identity |
-| swap scanner candidate missing pool address | candidate skipped with warning |
-| swap scanner signal missing exact quote asset ID | signal rejected before submission |
-| Jupiter exact pair validation | accepted |
+| Bybit-bound hybrid agent | scanner discovers Bybit candidates and hybrid sizing resolves Bybit execution price |
+| Bybit execution price unavailable | scanner signal is not sized or submitted |
 | orderbook validation regression | none |
 
 ## Checklist
 
-- [ ] Extend scanner candidate and signal types to carry venue-aware identity
-- [ ] Add exact swap instrument parser supporting both base and quote asset IDs
-- [ ] Add venue-aware trade-instrument validation and replace raw symbol checks
+- [ ] Extend orderbook scanner candidate and signal types to carry venue-aware identity
 - [ ] Implement Bybit tickers provider
 - [ ] Extend `priceService` with Bybit execution-price resolution
-- [ ] Add operator config for scanner swap quote assets via canonical token allowlist
-- [ ] Extract venue-aware scanner candidate discovery
-- [ ] Extract venue-aware scanner candle routing
-- [ ] Update technical phase to use `ScannerCandleTarget`
+- [ ] Extract venue-aware orderbook scanner candidate discovery
+- [ ] Extract explicit orderbook scanner candle routing
 - [ ] Preserve exact pricing identity into completed technical scans
 - [ ] Add and pass focused tests
 - [ ] Update docs and changelog
 
-## Out of scope follow-up
+## Out-of-scope follow-up
 
-If we later want a single agent to scan and trade across multiple venues in one
-session, that is a separate feature. It would require a multi-binding runtime
-model, multi-venue execution resolution, and prompt/runtime changes beyond this
-plan.
+Jupiter and 1inch scanner support are intentionally deferred to
+[002-plan.md](./002-plan.md). That follow-up adds exact DEX execution identity,
+quote-asset policy, swap-aware validation, and pool-aware candle routing.

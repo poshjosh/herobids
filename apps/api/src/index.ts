@@ -36,6 +36,7 @@ import { strategySchemaRoutes } from './routes/strategy-schemas.js';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import { makeCatalogContext, type LlmCatalogDeps } from './llm-model-catalog.js';
 import { connectionRoutes } from './routes/connections.js';
+import { connectionsOauthRoutes } from './routes/connections-oauth.js';
 import { capabilityRoutes } from './routes/capabilities/index.js';
 import { setupRoutes } from './routes/setup.js';
 import { providerRoutes } from './routes/providers.js';
@@ -216,6 +217,9 @@ await providerRoutes(app, appConfig.venues);
 
 // ── Platform primitives ───────────────────────────────────────────────────
 await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient, appConfig.plans);
+
+// ── Gmail OAuth connection flow ────────────────────────────────────────────
+await connectionsOauthRoutes(app, db, appConfig, appConfig.plans);
 
 // ── Agent-first platform routes ───────────────────────────────────────────
 await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentRiskDefaults, appConfig.agentCostEstimates, redisClient);

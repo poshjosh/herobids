@@ -130,6 +130,9 @@ function isPublicRoute(url: string, method: string): boolean {
   // Setup-link (connection form auto-login) — public
   if (path === '/auth/setup-link/callback') return true;
 
+  // Gmail OAuth callback — Google redirects here without JWT
+  if (path === '/connections/oauth/gmail/callback') return true;
+
   // /auth/me and /auth/logout require a valid session
 
   // Billing webhooks — signature-verified by providers, not by JWT
