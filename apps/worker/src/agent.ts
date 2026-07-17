@@ -2522,19 +2522,13 @@ async function runTick(): Promise<void> {
               return;
             }
 
-            // Fallback: publish directly (go_long without priceService/pricingIdentity,
-            // or other intents with size).  sizeUsd is treated as base units here —
-            // this path only triggers when the evaluator did NOT provide pricing
-            // identity, which should only happen for position-indicator matches
-            // (go_flat) or legacy flows.
-            await publishToInbound(AGENT_MESSAGE_TYPES.DECISION_SUBMIT, {
-              decisionId: crypto.randomUUID(),
-              instrumentId: symbol,
-              intent,
-              targetSize: sizeUsd !== undefined ? String(sizeUsd) : '0',
-              rationaleSummary: `Hybrid evaluator: ${intent} ${symbol}`,
-              metadata: { trigger: 'hybrid_evaluator', source: 'scanner' },
-            });
+            // go_long without pricingIdentity: the evaluator should always
+            // resolve a pricing identity from the scan before submitting
+            // go_long decisions. Missing identity is a runtime bug — fail
+            // closed rather than silently forwarding raw USD as base units.
+            throw new Error(
+              `Hybrid sizing: no pricingIdentity for go_long ${symbol} — cannot convert USD size to base units`,
+            );
           },
           logger,
         });

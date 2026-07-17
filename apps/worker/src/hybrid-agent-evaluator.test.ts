@@ -76,6 +76,9 @@ function makeScan(): TechnicalScanState {
     unsupported: 0,
     fetchFailures: 0,
     signalsGenerated: 1,
+    pricingIdentities: {
+      'BTC-PERP': { kind: 'perps', symbol: 'BTC', chain: 'hyperliquid' },
+    },
   };
 }
 
@@ -131,8 +134,11 @@ describe('runHybridEvaluator', () => {
       logger,
     });
 
-    // No pricingIdentities on the scan → pricingIdentity is undefined
-    expect(submitDecision).toHaveBeenCalledWith('BTC-PERP', 'go_long', 250, undefined);
+    expect(submitDecision).toHaveBeenCalledWith('BTC-PERP', 'go_long', 250, {
+      kind: 'perps',
+      symbol: 'BTC',
+      chain: 'hyperliquid',
+    });
 
     const prompt = mockedCallLlmProvider.mock.calls[0]?.[1].messages[0]?.content;
     expect(prompt).toContain('Available capital: $10.0K');
@@ -723,7 +729,11 @@ describe('scanner wake routes to single-shot hybrid evaluator', () => {
     });
 
     // The LLM responded with symbol "BTC" → should resolve to "BTC-PERP" from the scan
-    expect(submitDecision).toHaveBeenCalledWith('BTC-PERP', 'go_long', 500, undefined);
+    expect(submitDecision).toHaveBeenCalledWith('BTC-PERP', 'go_long', 500, {
+      kind: 'perps',
+      symbol: 'BTC',
+      chain: 'hyperliquid',
+    });
     expect(result.decisionsSubmitted).toBe(1);
     expect(result.errors).toEqual([]);
   });
