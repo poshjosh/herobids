@@ -13,8 +13,10 @@ import { evaluateRegime } from '@herobids/market-data';
 import { runTechnicalPhase } from './technical-phase.js';
 import type { DiscoveredInstrument, FilterConfig } from './technical-phase.js';
 import { completeTechnicalScan } from './complete-technical-scan.js';
+import { computeSignalFingerprint } from './complete-technical-scan.js';
 import type { TechnicalScanState } from './runtime-composition.js';
 import { cleanupOrphanedPositions } from './reconciliation-orphaned-cleanup.js';
+import { scannerSignalFingerprintKey } from './redis-keys.js';
 import {
   PaperExecutor,
   ShadowExecutor,
@@ -82,6 +84,12 @@ import type {
 // long-term plan but deferred to follow-on.
 let activeConcurrentScans = 0;
 let globalMaxConcurrentScans = 0;
+
+/** Minimal Redis store interface for scanner signal dedup. */
+export interface SignalFingerprintStore {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, ...args: string[]): Promise<unknown>;
+}
 
 export interface AgentTradingActorDeps {
   agentId: string;
@@ -166,6 +174,15 @@ export interface AgentTradingActorDeps {
   onJournalEvent?: (event: { type: string; payload?: Record<string, unknown> }) => void;
   /** Operator-level max concurrent technical scans across all agents (per-worker in-memory gate). */
   maxConcurrentScans?: number;
+  /** Redis store for scanner signal fingerprint read/write (fail-open when absent). */
+  signalFingerprintStore?: SignalFingerprintStore;
+  /** Operator config for scanner signal deduplication (fail-open when absent or disabled). */
+  scannerSignalDedup?: {
+    enabled: boolean;
+    topN: number;
+    confidenceBucketSize: number;
+    ttlSeconds: number;
+  };
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -1556,13 +1573,49 @@ export class AgentTradingActor implements ExecutionActor {
         logger: this.logger,
       });
 
+      // ── Scanner signal dedup: suppress wake when fingerprint hasn't changed ──
+      let wakeEmitter = this.deps.emitAgentWake;
+
+      if (this.deps.scannerSignalDedup?.enabled && wakeEmitter) {
+        const exitAdvisorySymbols = phaseResult.positionIndicators
+          .filter((ind) => ind.exitAdvisory === true)
+          .map((ind) => ind.symbol);
+
+        const fingerprint = computeSignalFingerprint(
+          phaseResult.signals,
+          exitAdvisorySymbols,
+          phaseResult.regimeResult?.pass ?? null,
+          this.deps.scannerSignalDedup.topN,
+          this.deps.scannerSignalDedup.confidenceBucketSize,
+        );
+
+        try {
+          const key = scannerSignalFingerprintKey(agentId);
+          const previous = await this.deps.signalFingerprintStore?.get(key);
+
+          if (previous === fingerprint) {
+            this.logger.debug({ agentId, fingerprint }, 'Scanner signals unchanged — suppressing wake');
+            wakeEmitter = undefined;
+          } else {
+            await this.deps.signalFingerprintStore?.set(
+              key,
+              fingerprint,
+              'EX',
+              String(this.deps.scannerSignalDedup.ttlSeconds),
+            );
+          }
+        } catch (err) {
+          this.logger.warn({ err, agentId }, 'Scanner signal dedup failed — proceeding with wake');
+        }
+      }
+
       const scan = await completeTechnicalScan({
         phaseResult,
         technicalConfig,
         agentId,
         isHybridMode: !!this.deps.isHybridMode,
         onTechnicalScanComplete: this.deps.onTechnicalScanComplete,
-        emitAgentWake: this.deps.emitAgentWake,
+        emitAgentWake: wakeEmitter,
         onJournalEvent: this.deps.onJournalEvent,
       });
       this.lastTechnicalScan = scan;

@@ -959,6 +959,8 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           discoverCandidates,
           fetchCandles,
           maxConcurrentScans: scannerCapacity.maxConcurrentScans,
+          signalFingerprintStore: redisClient,
+          scannerSignalDedup: appConfig.agentRuntime.scannerSignalDedup,
         });
 
         await actor.start();

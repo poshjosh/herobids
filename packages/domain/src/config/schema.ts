@@ -1085,6 +1085,13 @@ export const AgentRuntimeConfigSchema = z.object({
     maxTrackedDexTargets: z.number().int().min(1).default(3),
     maxRefreshedDexTargetsPerTick: z.number().int().min(1).default(2),
   }).default({}),
+  /** Hybrid-mode scanner signal deduplication — skip LLM wakes when signal fingerprints are unchanged. */
+  scannerSignalDedup: z.object({
+    enabled: z.boolean().default(true),
+    topN: z.number().int().min(1).max(50).default(5),
+    confidenceBucketSize: z.number().min(0.01).max(1).default(0.05),
+    ttlSeconds: z.number().int().min(60).default(600),
+  }).default({}),
   promptStyle: z.enum(['classic', 'enriched']).default('enriched'),
   promptEnrichment: z.object({
     memory: z.object({

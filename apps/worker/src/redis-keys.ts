@@ -11,3 +11,10 @@ export const SCANNER_GATED_KEY = 'agent:scanner_gated' as const;
 export function scannerGatedKey(agentId: string): string {
   return `${SCANNER_GATED_KEY}:${agentId}`;
 }
+
+/** Key pattern: agent:scanner:fingerprint:{agentId} — last signal fingerprint for dedup. */
+export const SCANNER_SIGNAL_FINGERPRINT_KEY = 'agent:scanner:fingerprint' as const;
+
+export function scannerSignalFingerprintKey(agentId: string): string {
+  return `${SCANNER_SIGNAL_FINGERPRINT_KEY}:${agentId}`;
+}

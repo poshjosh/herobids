@@ -1,6 +1,45 @@
 import type { AgentWakePayload, TechnicalConfig } from '@herobids/domain';
+import type { ScoredSignal } from '@herobids/strategy';
 import type { TechnicalPhaseResult } from './technical-phase.js';
 import type { TechnicalScanState } from './runtime-composition.js';
+
+// ─── Fingerprint helpers ─────────────────────────────────────────────────────
+
+/**
+ * Bucket a confidence value into operator-configured bands so small noise
+ * (e.g. 0.40 → 0.42) does not trigger a wake.
+ */
+export function bucketConfidence(value: number, size: number): string {
+  return (Math.round(value / size) * size).toFixed(2);
+}
+
+/**
+ * Build a deterministic fingerprint from the current scanner signal set.
+ *
+ * Top N signals are canonicalized alphabetically by instrumentId (not rank),
+ * confidence is bucketed, and exit advisories are sorted. The resulting string
+ * is stable across scans with the same set of signals, regardless of internal
+ * ranking churn.
+ */
+export function computeSignalFingerprint(
+  signals: ScoredSignal[],
+  exitAdvisorySymbols: string[],
+  regimePass: boolean | null,
+  topN: number,
+  bucketSize: number,
+): string {
+  const signalParts = signals
+    .slice(0, topN)
+    .map((signal) => `${signal.instrumentId}:${bucketConfidence(signal.confidence, bucketSize)}`)
+    .sort();
+  const exitPart =
+    exitAdvisorySymbols.length > 0
+      ? `exit:${[...exitAdvisorySymbols].sort().join(',')}`
+      : 'exit:none';
+  const regimePart =
+    regimePass === null ? 'regime:unavailable' : regimePass ? 'regime:pass' : 'regime:block';
+  return [...signalParts, exitPart, regimePart].join('|');
+}
 
 // ─── Public interface ────────────────────────────────────────────────────────
 

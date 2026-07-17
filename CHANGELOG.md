@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Hybrid Signal Deduplication:** Scanner-gated hybrid agents now skip LLM wakes when scanner signal fingerprints haven't changed. A deterministic, set-based fingerprint (top N signals bucketed by confidence + exit advisories + regime) is stored in Redis. Matching fingerprints suppress the wake — zero tokens burned on redundant evaluations. Operator-configurable via `agentRuntime.scannerSignalDedup` (enabled, topN, confidenceBucketSize, ttlSeconds). Fail-open: any Redis error or missing store falls through to normal wake behavior. See [docs/features/2026/07/17/001-hybrid-signal-deduplication/001-plan.md](docs/features/2026/07/17/001-hybrid-signal-deduplication/001-plan.md).
+
 ### Fixed
 
 - **Billing top-up packs exposed primary and fallback provider names to users.** `resolveTopUpPacks` now scopes to a single provider (subscription owner or primary), the frontend dropdown strips the provider label, and top-up checkout routes through the owning provider with transparent failover. See [docs/bug-reports/2026/07/16/002-billing-topup-packs-expose-primary-and-fallback-providers-to-users.md](docs/bug-reports/2026/07/16/002-billing-topup-packs-expose-primary-and-fallback-providers-to-users.md).

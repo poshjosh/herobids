@@ -484,6 +484,11 @@ agentRuntime:
     maxTrackedPerps: 3         # number of perp symbols to enrich per tick; raise for broader awareness, lower to protect market-data budgets
     maxTrackedDexTargets: 3    # number of DEX watch targets to consider per tick before refresh fanout is applied
     maxRefreshedDexTargetsPerTick: 2  # number of tracked DEX targets to refresh each tick; keep below breadth cap to avoid hot-looping token lookups
+  scannerSignalDedup:
+    enabled: true              # disable to skip fingerprint check and always emit scanner wakes
+    topN: 5                    # top N signals included in fingerprint (rank-insensitive, canonicalized alphabetically)
+    confidenceBucketSize: 0.05 # confidence band for fingerprint bucketing (<=0.05 noise absorbed)
+    ttlSeconds: 600            # fingerprint TTL in Redis — forces eventual re-evaluation even with unchanging signals
   contextDiff:
     fullContextEveryTicks: 10  # force full context every N ticks (not a diff)
     maxDiffTokens: 200         # fall back to full context if diff exceeds this token budget

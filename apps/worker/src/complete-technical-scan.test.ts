@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { completeTechnicalScan, type CompleteTechnicalScanParams } from './complete-technical-scan.js';
+import { computeSignalFingerprint, bucketConfidence } from './complete-technical-scan.js';
 import type { TechnicalPhaseResult } from './technical-phase.js';
 import type { TechnicalConfig } from '@herobids/domain';
+import type { ScoredSignal } from '@herobids/strategy';
 
 // ─── Fixture helpers ─────────────────────────────────────────────────────────
 
@@ -384,5 +386,167 @@ describe('completeTechnicalScan', () => {
 
     expect(scan.signalsGenerated).toBe(2);
     expect(scan.timestamp).toBeTruthy();
+  });
+});
+
+// ─── Fingerprint helpers ──────────────────────────────────────────────────────
+
+describe('bucketConfidence', () => {
+  it('buckets confidence to the nearest band', () => {
+    expect(bucketConfidence(0.40, 0.05)).toBe('0.40');
+    expect(bucketConfidence(0.42, 0.05)).toBe('0.40'); // same bucket as 0.40
+    expect(bucketConfidence(0.43, 0.05)).toBe('0.45'); // rounds to 0.45
+    expect(bucketConfidence(0.48, 0.05)).toBe('0.50');
+    expect(bucketConfidence(0.90, 0.05)).toBe('0.90');
+    expect(bucketConfidence(0.94, 0.05)).toBe('0.95');
+  });
+
+  it('handles edge values correctly', () => {
+    expect(bucketConfidence(0.00, 0.05)).toBe('0.00');
+    expect(bucketConfidence(1.00, 0.05)).toBe('1.00');
+    expect(bucketConfidence(0.999, 0.05)).toBe('1.00');
+  });
+
+  it('works with different bucket sizes', () => {
+    expect(bucketConfidence(0.40, 0.10)).toBe('0.40');
+    expect(bucketConfidence(0.42, 0.10)).toBe('0.40');
+    expect(bucketConfidence(0.46, 0.10)).toBe('0.50');
+    expect(bucketConfidence(0.33, 0.02)).toBe('0.34');
+  });
+});
+
+describe('computeSignalFingerprint', () => {
+  const defaultBucketSize = 0.05;
+  const defaultTopN = 5;
+
+  function makeSignal(instrumentId: string, confidence: number): ScoredSignal {
+    return {
+      symbol: instrumentId,
+      instrumentId,
+      confidence,
+      reasons: [],
+      intent: 'go_long',
+      indicators: {},
+    };
+  }
+
+  it('produces same fingerprint for identical signals', () => {
+    const signals = [makeSignal('LIT-PERP', 0.90), makeSignal('ETH-PERP', 0.40)];
+    const fp1 = computeSignalFingerprint(signals, [], true, defaultTopN, defaultBucketSize);
+    const fp2 = computeSignalFingerprint(signals, [], true, defaultTopN, defaultBucketSize);
+    expect(fp1).toBe(fp2);
+  });
+
+  it('produces same fingerprint when confidence is within same bucket (noise absorption)', () => {
+    const signals1 = [makeSignal('ETH-PERP', 0.40)];
+    const signals2 = [makeSignal('ETH-PERP', 0.42)];
+    const fp1 = computeSignalFingerprint(signals1, [], true, defaultTopN, defaultBucketSize);
+    const fp2 = computeSignalFingerprint(signals2, [], true, defaultTopN, defaultBucketSize);
+    expect(fp1).toBe(fp2);
+  });
+
+  it('produces different fingerprint when confidence crosses bucket boundary', () => {
+    const signals1 = [makeSignal('ETH-PERP', 0.40)];
+    const signals2 = [makeSignal('ETH-PERP', 0.52)];
+    const fp1 = computeSignalFingerprint(signals1, [], true, defaultTopN, defaultBucketSize);
+    const fp2 = computeSignalFingerprint(signals2, [], true, defaultTopN, defaultBucketSize);
+    expect(fp1).not.toBe(fp2);
+  });
+
+  it('produces same fingerprint regardless of ranking order (rank-insensitive)', () => {
+    const signals1 = [makeSignal('A-PERP', 0.90), makeSignal('B-PERP', 0.50)];
+    const signals2 = [makeSignal('B-PERP', 0.50), makeSignal('A-PERP', 0.90)];
+    const fp1 = computeSignalFingerprint(signals1, [], true, defaultTopN, defaultBucketSize);
+    const fp2 = computeSignalFingerprint(signals2, [], true, defaultTopN, defaultBucketSize);
+    expect(fp1).toBe(fp2);
+  });
+
+  it('produces different fingerprint when a new instrument enters the top set', () => {
+    const signals1 = [makeSignal('A-PERP', 0.90), makeSignal('B-PERP', 0.50)];
+    const signals2 = [makeSignal('A-PERP', 0.90), makeSignal('C-PERP', 0.50)];
+    const fp1 = computeSignalFingerprint(signals1, [], true, defaultTopN, defaultBucketSize);
+    const fp2 = computeSignalFingerprint(signals2, [], true, defaultTopN, defaultBucketSize);
+    expect(fp1).not.toBe(fp2);
+  });
+
+  it('produces different fingerprint when an instrument drops out of the top set', () => {
+    const signals1 = [makeSignal('A-PERP', 0.90), makeSignal('B-PERP', 0.50), makeSignal('C-PERP', 0.40)];
+    const signals2 = [makeSignal('A-PERP', 0.90), makeSignal('B-PERP', 0.50)];
+    const fp1 = computeSignalFingerprint(signals1, [], true, defaultTopN, defaultBucketSize);
+    const fp2 = computeSignalFingerprint(signals2, [], true, defaultTopN, defaultBucketSize);
+    expect(fp1).not.toBe(fp2);
+  });
+
+  it('produces different fingerprint when exit advisory appears', () => {
+    const signals = [makeSignal('A-PERP', 0.90)];
+    const fp1 = computeSignalFingerprint(signals, [], true, defaultTopN, defaultBucketSize);
+    const fp2 = computeSignalFingerprint(signals, ['HYPE-PERP'], true, defaultTopN, defaultBucketSize);
+    expect(fp1).not.toBe(fp2);
+  });
+
+  it('produces different fingerprint when exit advisory resolves (goes back to none)', () => {
+    const signals = [makeSignal('A-PERP', 0.90)];
+    const fp1 = computeSignalFingerprint(signals, ['HYPE-PERP'], true, defaultTopN, defaultBucketSize);
+    const fp2 = computeSignalFingerprint(signals, [], true, defaultTopN, defaultBucketSize);
+    expect(fp1).not.toBe(fp2);
+  });
+
+  it('produces different fingerprint when regime flips', () => {
+    const signals = [makeSignal('A-PERP', 0.90)];
+    const fp1 = computeSignalFingerprint(signals, [], true, defaultTopN, defaultBucketSize);
+    const fp2 = computeSignalFingerprint(signals, [], false, defaultTopN, defaultBucketSize);
+    expect(fp1).not.toBe(fp2);
+  });
+
+  it('includes regime:unavailable when regimePass is null', () => {
+    const signals = [makeSignal('A-PERP', 0.90)];
+    const fp = computeSignalFingerprint(signals, [], null, defaultTopN, defaultBucketSize);
+    expect(fp).toContain('regime:unavailable');
+  });
+
+  it('includes regime:pass when regimePass is true', () => {
+    const signals = [makeSignal('A-PERP', 0.90)];
+    const fp = computeSignalFingerprint(signals, [], true, defaultTopN, defaultBucketSize);
+    expect(fp).toContain('regime:pass');
+  });
+
+  it('includes regime:block when regimePass is false', () => {
+    const signals = [makeSignal('A-PERP', 0.90)];
+    const fp = computeSignalFingerprint(signals, [], false, defaultTopN, defaultBucketSize);
+    expect(fp).toContain('regime:block');
+  });
+
+  it('produces exit:none when no exit advisories', () => {
+    const signals = [makeSignal('A-PERP', 0.90)];
+    const fp = computeSignalFingerprint(signals, [], true, defaultTopN, defaultBucketSize);
+    expect(fp).toContain('exit:none');
+  });
+
+  it('sorts exit advisory symbols alphabetically', () => {
+    const signals = [makeSignal('A-PERP', 0.90)];
+    const fp = computeSignalFingerprint(signals, ['Z-PERP', 'A-PERP'], true, defaultTopN, defaultBucketSize);
+    expect(fp).toContain('exit:A-PERP,Z-PERP');
+  });
+
+  it('only includes top N signals in the fingerprint', () => {
+    const signals = [
+      makeSignal('A-PERP', 0.90),
+      makeSignal('B-PERP', 0.80),
+      makeSignal('C-PERP', 0.70),
+      makeSignal('D-PERP', 0.60),
+      makeSignal('E-PERP', 0.50),
+    ];
+    const fp = computeSignalFingerprint(signals, [], true, 3, defaultBucketSize);
+    // D-PERP and E-PERP should not be in the fingerprint
+    expect(fp).not.toContain('D-PERP');
+    expect(fp).not.toContain('E-PERP');
+    expect(fp).toContain('A-PERP');
+    expect(fp).toContain('B-PERP');
+    expect(fp).toContain('C-PERP');
+  });
+
+  it('handles empty signals gracefully', () => {
+    const fp = computeSignalFingerprint([], [], true, defaultTopN, defaultBucketSize);
+    expect(fp).toBe('exit:none|regime:pass');
   });
 });
