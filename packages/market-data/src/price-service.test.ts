@@ -32,6 +32,16 @@ function makeDexToken(symbol: string, network: string, priceUsd: number, liquidi
   };
 }
 
+function makeBybitTicker(symbol: string, markPrice: number | null, volume24hUsd = 1_000_000) {
+  return {
+    symbol,
+    markPrice,
+    lastPrice: markPrice,
+    volume24hUsd,
+    priceChange24hPct: 1.5,
+  };
+}
+
 function buildRegistry(overrides: Partial<{
   hyperliquidData: ReturnType<typeof makeHyperliquidAsset>[];
   hyperliquidStale: boolean;
@@ -41,6 +51,10 @@ function buildRegistry(overrides: Partial<{
   dexStale: boolean;
   dexThrow: boolean;
   dexFetchedAt: string;
+  bybitTickersData: ReturnType<typeof makeBybitTicker>[];
+  bybitTickersStale: boolean;
+  bybitTickersThrow: boolean;
+  bybitTickersFetchedAt: string;
 }> = {}): ProviderRegistry {
   const defaultFetchedAt = '2026-06-09T12:00:00.000Z';
   const hyperliquidAssetContexts = overrides.hyperliquidThrow
@@ -63,6 +77,16 @@ function buildRegistry(overrides: Partial<{
         },
       });
 
+  const bybitTickers = overrides.bybitTickersThrow
+    ? vi.fn().mockRejectedValue(new Error('Bybit error'))
+    : vi.fn().mockResolvedValue({
+        data: overrides.bybitTickersData ?? [],
+        meta: {
+          freshness: { isStale: overrides.bybitTickersStale ?? false, ageMs: 0, fetchedAt: overrides.bybitTickersFetchedAt ?? defaultFetchedAt },
+          provider: 'bybit',
+        },
+      });
+
   return {
     hyperliquid: { assetContexts: hyperliquidAssetContexts },
     dexscreener: {
@@ -71,6 +95,7 @@ function buildRegistry(overrides: Partial<{
       boostsLatest: vi.fn(),
       profilesLatest: vi.fn(),
     },
+    bybit: { tickers: bybitTickers },
   } as unknown as ProviderRegistry;
 }
 
@@ -502,6 +527,150 @@ describe('createPriceService — resolvePriceTarget (identity + price)', () => {
       expect(result.data).not.toHaveProperty('symbol');
       expect(result.data).not.toHaveProperty('chain');
       expect(result.data).not.toHaveProperty('address');
+    }
+  });
+});
+
+// ─── Bybit price resolution ──────────────────────────────────────────────────
+
+describe('createPriceService — Bybit execution pricing', () => {
+  it('resolves bybit chain via ticker mark price', async () => {
+    const registry = buildRegistry({
+      bybitTickersData: [makeBybitTicker('BTCUSDT', 67_000)],
+    });
+    const svc = createPriceService(registry);
+
+    const result = await svc.getPrice('BTCUSDT', 'bybit');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.priceUsd).toBe(67_000);
+      expect(result.data.source).toBe('execution');
+      expect(result.data.stale).toBe(false);
+    }
+  });
+
+  it('returns error when Bybit ticker symbol not found', async () => {
+    const registry = buildRegistry({
+      bybitTickersData: [makeBybitTicker('ETHUSDT', 3_500)],
+    });
+    const svc = createPriceService(registry);
+
+    const result = await svc.getPrice('NONEXISTENT', 'bybit');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('price.not_found');
+      expect(result.error.message).toContain('not found on Bybit');
+    }
+  });
+
+  it('fails closed when Bybit ticker markPrice is null — no DexScreener fallback', async () => {
+    const symbol = 'BYBIT_NULLMARK_TST';
+    const registry = buildRegistry({
+      bybitTickersData: [makeBybitTicker(symbol, null)],
+      dexData: [makeDexToken('BTC', 'solana', 67_100)],
+    });
+    const svc = createPriceService(registry);
+
+    const result = await svc.getPrice(symbol, 'bybit');
+
+    // Must fail — no DexScreener fallback for Bybit
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('price.not_found');
+      expect(result.error.message).toContain('not found on Bybit');
+    }
+    // Should NOT have called DexScreener
+    expect((registry.dexscreener.search as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
+  });
+
+  it('does not fall back to DexScreener when Bybit throws', async () => {
+    const symbol = 'BYBIT_THROW_TST';
+    const registry = buildRegistry({
+      bybitTickersThrow: true,
+      dexData: [makeDexToken('BTC', 'solana', 67_100)],
+    });
+    const svc = createPriceService(registry);
+
+    const result = await svc.getPrice(symbol, 'bybit');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('price.source_failed');
+    }
+    // Should NOT have called DexScreener
+    expect((registry.dexscreener.search as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
+  });
+
+  it('marks stale when Bybit provider reports stale freshness', async () => {
+    const registry = buildRegistry({
+      bybitTickersData: [makeBybitTicker('BTCUSDT', 67_000)],
+      bybitTickersStale: true,
+    });
+    const svc = createPriceService(registry);
+
+    const result = await svc.getPrice('BTCUSDT', 'bybit');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.source).toBe('execution');
+      expect(result.data.stale).toBe(true);
+    }
+  });
+
+  it('resolvePriceTarget returns bybit chain and execution source', async () => {
+    const registry = buildRegistry({
+      bybitTickersData: [makeBybitTicker('BTCUSDT', 67_000)],
+    });
+    const svc = createPriceService(registry);
+
+    const result = await svc.resolvePriceTarget('BTCUSDT', 'bybit');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.symbol).toBe('BTCUSDT');
+      expect(result.data.chain).toBe('bybit');
+      expect(result.data.priceUsd).toBe(67_000);
+      expect(result.data.source).toBe('execution');
+      expect(result.data.address).toBeUndefined();
+    }
+  });
+
+  it('resolvePriceTarget returns error for Bybit when no ticker match', async () => {
+    const symbol = 'BYBIT_NOMATCH_TST';
+    const registry = buildRegistry({
+      bybitTickersData: [],
+    });
+    const svc = createPriceService(registry);
+
+    const result = await svc.resolvePriceTarget(symbol, 'bybit');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('price.not_found');
+    }
+  });
+
+  it('falls back to cached stale data when Bybit live lookup fails', async () => {
+    // Populate cache first
+    const registry1 = buildRegistry({
+      bybitTickersData: [makeBybitTicker('BYBIT_CACHE_TOK', 42)],
+    });
+    const svc1 = createPriceService(registry1);
+    await svc1.getPrice('BYBIT_CACHE_TOK', 'bybit');
+
+    // Failing registry — but module cache still holds the previous entry
+    const registry2 = buildRegistry({ bybitTickersThrow: true });
+    const svc2 = createPriceService(registry2);
+
+    const result = await svc2.getPrice('BYBIT_CACHE_TOK', 'bybit');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.source).toBe('cached');
+      expect(result.data.stale).toBe(true);
+      expect(result.data.priceUsd).toBe(42);
     }
   });
 });

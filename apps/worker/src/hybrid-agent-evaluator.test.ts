@@ -737,4 +737,57 @@ describe('scanner wake routes to single-shot hybrid evaluator', () => {
     expect(result.decisionsSubmitted).toBe(1);
     expect(result.errors).toEqual([]);
   });
+
+  it('symbol-based resolution preserves Bybit pricing identity (not hardcoded Hyperliquid)', async () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    state.metrics.portfolio.availableCapitalUsd = 10_000;
+    state.metrics.lastTechnicalScan = {
+      ...makeScan(),
+      signals: [
+        {
+          symbol: 'BTC',
+          instrumentId: 'BTCUSDT',
+          confidence: 0.88,
+          reasons: ['RSI healthy', 'MACD crossover'],
+          intent: 'go_long',
+          indicators: { rsi: 55, macdHistogram: 0.3, volumeRatio: 1.5 },
+        },
+      ],
+      signalsGenerated: 1,
+      pricingIdentities: {
+        'BTCUSDT': { kind: 'perps', symbol: 'BTCUSDT', chain: 'bybit' },
+      },
+    };
+
+    mockedCallLlmProvider.mockResolvedValue({
+      ok: true,
+      data: {
+        content: '```json\n[{"symbol":"BTC","intent":"go_long","sizeUsd":300}]\n```',
+        toolCalls: [],
+        model: 'test-model',
+        provider: 'test-provider',
+        tokensUsed: 42,
+        latencyMs: 12,
+        cached: false,
+      },
+    } as Awaited<ReturnType<typeof callLlmProvider>>);
+
+    const submitDecision = vi.fn().mockResolvedValue(undefined);
+
+    const result = await runHybridEvaluator({
+      state,
+      llmConfig: { provider: 'test-provider', model: 'test-model', maxTokens: 500, timeoutMs: 1000 },
+      maxPositions: 5,
+      submitDecision,
+      logger,
+    });
+
+    // Symbol "BTC" resolves to instrument "BTCUSDT" with Bybit pricing identity
+    expect(submitDecision).toHaveBeenCalledWith('BTCUSDT', 'go_long', 300, {
+      kind: 'perps',
+      symbol: 'BTCUSDT',
+      chain: 'bybit',
+    });
+    expect(result.decisionsSubmitted).toBe(1);
+  });
 });

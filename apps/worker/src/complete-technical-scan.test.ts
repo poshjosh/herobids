@@ -410,6 +410,95 @@ describe('completeTechnicalScan', () => {
     expect(scan.signalsGenerated).toBe(2);
     expect(scan.timestamp).toBeTruthy();
   });
+
+  // ── Pricing identity preservation ──────────────────────────────────────────
+
+  it('preserves Bybit pricing identities from signals into scan.pricingIdentities', async () => {
+    const bybitSignal: ScoredSignal = {
+      symbol: 'BTC',
+      instrumentId: 'BTCUSDT',
+      confidence: 0.88,
+      reasons: ['RSI healthy'],
+      intent: 'go_long',
+      indicators: { rsi: 55 },
+      pricingIdentity: { kind: 'perps', symbol: 'BTCUSDT', chain: 'bybit' },
+    };
+    const phaseResult = makePhaseResult({
+      signals: [bybitSignal],
+      signalsGenerated: 1,
+    });
+    const scan = await completeTechnicalScan(makeParams({ phaseResult }));
+    expect(scan.pricingIdentities).toEqual({
+      'BTCUSDT': { kind: 'perps', symbol: 'BTCUSDT', chain: 'bybit' },
+    });
+  });
+
+  it('preserves Hyperliquid pricing identities from signals into scan.pricingIdentities', async () => {
+    const hlSignal: ScoredSignal = {
+      symbol: 'BTC',
+      instrumentId: 'BTC-PERP',
+      confidence: 0.92,
+      reasons: ['volume strong'],
+      intent: 'go_long',
+      indicators: { rsi: 60 },
+      pricingIdentity: { kind: 'perps', symbol: 'BTC', chain: 'hyperliquid' },
+    };
+    const phaseResult = makePhaseResult({
+      signals: [hlSignal],
+      signalsGenerated: 1,
+    });
+    const scan = await completeTechnicalScan(makeParams({ phaseResult }));
+    expect(scan.pricingIdentities).toEqual({
+      'BTC-PERP': { kind: 'perps', symbol: 'BTC', chain: 'hyperliquid' },
+    });
+  });
+
+  it('excludes signals lacking pricingIdentity from scan.pricingIdentities', async () => {
+    const noIdentitySignal: ScoredSignal = {
+      symbol: 'ETH',
+      instrumentId: 'ETH-PERP',
+      confidence: 0.65,
+      reasons: ['MACD bullish'],
+      intent: 'go_long',
+      indicators: { rsi: 52 },
+      // pricingIdentity intentionally omitted — fail-closed
+    };
+    const phaseResult = makePhaseResult({
+      signals: [noIdentitySignal],
+      signalsGenerated: 1,
+    });
+    const scan = await completeTechnicalScan(makeParams({ phaseResult }));
+    expect(scan.pricingIdentities).toEqual({});
+  });
+
+  it('includes only signals with pricingIdentity when mixed', async () => {
+    const withIdentity: ScoredSignal = {
+      symbol: 'BTC',
+      instrumentId: 'BTC-PERP',
+      confidence: 0.88,
+      reasons: ['strong'],
+      intent: 'go_long',
+      indicators: { rsi: 55 },
+      pricingIdentity: { kind: 'perps', symbol: 'BTC', chain: 'hyperliquid' },
+    };
+    const withoutIdentity: ScoredSignal = {
+      symbol: 'ETH',
+      instrumentId: 'ETH-PERP',
+      confidence: 0.65,
+      reasons: ['moderate'],
+      intent: 'go_long',
+      indicators: { rsi: 52 },
+      // no pricingIdentity
+    };
+    const phaseResult = makePhaseResult({
+      signals: [withIdentity, withoutIdentity],
+      signalsGenerated: 2,
+    });
+    const scan = await completeTechnicalScan(makeParams({ phaseResult }));
+    expect(scan.pricingIdentities).toEqual({
+      'BTC-PERP': { kind: 'perps', symbol: 'BTC', chain: 'hyperliquid' },
+    });
+  });
 });
 
 // ─── Scanner health classification ───────────────────────────────────────────
