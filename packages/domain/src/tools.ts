@@ -381,7 +381,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
 
   // write-messaging
   send_message:        { category: 'write-messaging',     description: 'Send a message to the user via the platform messaging system.' },
-  send_email:          { category: 'write-messaging',     description: 'Send an email via the connected Gmail account. Supports cc, bcc, and HTML content.' },
+  send_email:          { category: 'write-messaging',     description: 'Send an email via a connected email account. Supports cc, bcc, HTML content, and optional fromConnectionId.' },
   publish_artifact:    { category: 'write-messaging',     description: 'Publish an artifact (analysis result, chart, report) for user review.' },
 
   // read-filesystem

@@ -612,15 +612,15 @@ function CreateAgentFlow({
       // Don't override existing selections
       if (state.connectionIds.length > 0) return state;
 
-      const hasGmailSkill = state.skillIds.includes('gmail');
+      const hasEmailSkill = state.skillIds.includes('email');
       const hasTradingSkill = state.skillIds.includes('trading') || state.skillIds.includes('bot-management');
-      const newlyAddedGmail = hasGmailSkill && !prevSkillIds.includes('gmail');
+      const newlyAddedEmail = hasEmailSkill && !prevSkillIds.includes('email');
       const newlyAddedTrading = hasTradingSkill && !prevSkillIds.some((id) => id === 'trading' || id === 'bot-management');
 
-      if (newlyAddedGmail) {
-        const gmailConn = allPickerConnections.find((c) => c.provider === 'gmail');
-        if (gmailConn) {
-          return { ...state, connectionIds: [gmailConn.connectionId] };
+      if (newlyAddedEmail) {
+        const emailConn = allPickerConnections.find((c) => c.provider === 'gmail');
+        if (emailConn) {
+          return { ...state, connectionIds: [emailConn.connectionId] };
         }
       }
 

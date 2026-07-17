@@ -207,15 +207,15 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       // Don't override existing selections
       if ((prev.connectionIds ?? []).length > 0) return prev;
 
-      const hasGmailSkill = prev.skillIds.includes('gmail');
+      const hasEmailSkill = prev.skillIds.includes('email');
       const hasTradingSkill = prev.skillIds.includes('trading') || prev.skillIds.includes('bot-management');
-      const newlyAddedGmail = hasGmailSkill && !prevSkillIds.includes('gmail');
+      const newlyAddedEmail = hasEmailSkill && !prevSkillIds.includes('email');
       const newlyAddedTrading = hasTradingSkill && !prevSkillIds.some((id) => id === 'trading' || id === 'bot-management');
 
-      if (newlyAddedGmail) {
-        const gmailConn = allPickerConnections.find((c) => c.provider === 'gmail');
-        if (gmailConn) {
-          return { ...prev, connectionIds: [gmailConn.connectionId] };
+      if (newlyAddedEmail) {
+        const emailConn = allPickerConnections.find((c) => c.provider === 'gmail');
+        if (emailConn) {
+          return { ...prev, connectionIds: [emailConn.connectionId] };
         }
       }
 

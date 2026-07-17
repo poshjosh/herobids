@@ -39,8 +39,7 @@ const SendEmailParamsSchema = z.object({
 export const sendEmailTool: AgentTool = {
   name: 'send_email',
   description:
-    'Send an email via your connected Gmail account. Supports plain text and HTML, cc and bcc recipients. ' +
-    'Before sending to unfamiliar recipients, confirm with the user via send_message.',
+    'Send an email via a connected email account. Supports cc, bcc, HTML content, and optional fromConnectionId.',
   parametersSchema: SendEmailParamsSchema,
   parameters: convertZodToJsonSchema(SendEmailParamsSchema),
   category: 'write-messaging',

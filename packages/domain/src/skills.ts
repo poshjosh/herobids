@@ -290,19 +290,20 @@ export const TASK_MANAGEMENT_SKILL: SkillDefinition = {
 };
 
 /**
- * `gmail` skill — send emails via Gmail on behalf of the user.
+ * `email` skill — send emails on behalf of the user.
  *
  * Send-only for now — inbox-read (`search_emails`) is deferred until the
  * `gmail.readonly` OAuth scope is reintroduced after Google review approval.
  */
-export const GMAIL_SKILL: SkillDefinition = {
-  id: 'gmail',
+export const EMAIL_SKILL: SkillDefinition = {
+  id: 'email',
   revision: 1,
-  name: 'Gmail',
-  description: 'Send emails via Gmail on behalf of the user.',
-  instructions: `You can send email on the user's behalf via Gmail.
+  name: 'Email',
+  description: 'Send emails on behalf of the user.',
+  instructions: `You can send email on the user's behalf.
 
 - Use \`send_email(to, subject, body)\` to send emails. You may include cc and bcc recipients.
+- If you have multiple email connections, use \`fromConnectionId\` to select a specific sender.
 - Before sending to unfamiliar recipients, confirm with the user via \`send_message\`.`,
   promptHint: 'e.g. "Send a weekly summary email to my team" or "Email me a heads-up whenever a position closes"',
   requiredTools: ['send_email'],
@@ -325,7 +326,7 @@ export const GMAIL_SKILL: SkillDefinition = {
 export const SKILL_PRESET_MAP: Record<string, string[]> = {
   trading: ['bot-management', 'trading'],
   'direct-trading': ['trading'],
-  'personal-assistant': ['task-management', 'web-access', 'gmail'],
+  'personal-assistant': ['task-management', 'web-access', 'email'],
   custom: [],       // user configures skills manually
 };
 
@@ -338,5 +339,5 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   FILE_MANAGEMENT_SKILL,
   WEB_ACCESS_SKILL,
   TASK_MANAGEMENT_SKILL,
-  GMAIL_SKILL,
+  EMAIL_SKILL,
 ];
