@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Gmail OAuth Connection for Agents:** Users can connect their Gmail account via OAuth and agents can send/read emails with `send_email` and `search_emails` tools. Includes OAuth endpoints, lazy token refresh, daily rate limiter, `gmail` system skill, and generic connection picker. See [docs/features/2026/07/17/003-gmail-oauth-connection/001-plan.md](docs/features/2026/07/17/003-gmail-oauth-connection/001-plan.md).
+
 - Branding by coloring the AI in OpenAIdom
 
 - **Hybrid Signal Deduplication:** Scanner-gated hybrid agents now skip LLM wakes when scanner signal fingerprints haven't changed. A deterministic, set-based fingerprint (top N signals bucketed by confidence + exit advisories + regime) is stored in Redis. Matching fingerprints suppress the wake — zero tokens burned on redundant evaluations. Operator-configurable via `agentRuntime.scannerSignalDedup` (enabled, topN, confidenceBucketSize, ttlSeconds). Fail-open: any Redis error or missing store falls through to normal wake behavior. See [docs/features/2026/07/17/001-hybrid-signal-deduplication/001-plan.md](docs/features/2026/07/17/001-hybrid-signal-deduplication/001-plan.md).
