@@ -107,6 +107,18 @@ export interface RuntimeMarketSnapshot {
   freshness: RuntimeFreshness;
 }
 
+/**
+ * Identity needed to safely reprice a signal for hybrid USD-to-base-size
+ * conversion. Perps use the Hyperliquid execution mark; DEX assets require
+ * chain + address to avoid ambiguous-ticker repricing.
+ */
+export interface HybridPricingIdentity {
+  kind: 'perps' | 'dex';
+  symbol: string;
+  chain?: string;
+  address?: string;
+}
+
 export interface TechnicalScanState {
   timestamp: string;
   scanIntervalMs: number;
@@ -132,6 +144,13 @@ export interface TechnicalScanState {
   signalsGenerated: number;
   /** Whether this scan was skipped due to an overlapping scan already in progress. */
   overlapSkipped?: boolean;
+  /**
+   * Pricing identity sidecar keyed by instrumentId.
+   * Carries enough information for the hybrid USD-to-base conversion path to
+   * safely reprice each signal — perps use chain='hyperliquid', DEX uses
+   * chain + address identity.
+   */
+  pricingIdentities?: Record<string, HybridPricingIdentity>;
 }
 
 export interface RuntimeSessionCosts {

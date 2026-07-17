@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { callLlmProvider } from '@herobids/llm';
 import { runHybridEvaluator, canRouteToHybridEvaluator } from './hybrid-agent-evaluator.js';
-import { createRuntimeCompositionState, type TechnicalScanState } from './runtime-composition.js';
+import { createRuntimeCompositionState, type HybridPricingIdentity, type TechnicalScanState } from './runtime-composition.js';
 import { buildHybridPrompt } from './hybrid-agent-prompt.js';
 
 vi.mock('@herobids/llm', async (importOriginal) => {
@@ -131,7 +131,8 @@ describe('runHybridEvaluator', () => {
       logger,
     });
 
-    expect(submitDecision).toHaveBeenCalledWith('BTC-PERP', 'go_long', 250);
+    // No pricingIdentities on the scan → pricingIdentity is undefined
+    expect(submitDecision).toHaveBeenCalledWith('BTC-PERP', 'go_long', 250, undefined);
 
     const prompt = mockedCallLlmProvider.mock.calls[0]?.[1].messages[0]?.content;
     expect(prompt).toContain('Available capital: $10.0K');
@@ -221,7 +222,8 @@ describe('runHybridEvaluator', () => {
       logger,
     });
 
-    expect(submitDecision).toHaveBeenCalledWith('BTC', 'go_flat', undefined);
+    // go_flat from a position-indicator match (no signal → no pricing identity)
+    expect(submitDecision).toHaveBeenCalledWith('BTC', 'go_flat', undefined, undefined);
     expect(result.decisionsSubmitted).toBe(1);
     expect(result.errors).toEqual([]);
 
@@ -295,6 +297,90 @@ describe('runHybridEvaluator', () => {
     });
 
     expect(mockedCallLlmProvider).toHaveBeenCalledTimes(1);
+  });
+
+  // 002-hybrid-usd-to-base: regression test proving hybrid go_long decisions
+  // carry pricing identity through to the submitDecision callback.
+  it('passes pricing identity to submitDecision when scan has pricingIdentities', async () => {
+    const state = makeState();
+    const pricingIdentity: HybridPricingIdentity = {
+      kind: 'perps',
+      symbol: 'BTC',
+      chain: 'hyperliquid',
+    };
+    state.metrics.lastTechnicalScan = {
+      ...makeScan(),
+      pricingIdentities: {
+        'BTC-PERP': pricingIdentity,
+      },
+    };
+
+    mockedCallLlmProvider.mockResolvedValue({
+      ok: true,
+      data: {
+        content: '```json\n[{"symbol":"BTC","intent":"go_long","sizeUsd":100}]\n```',
+        toolCalls: [],
+        model: 'test-model',
+        provider: 'test-provider',
+        tokensUsed: 42,
+        latencyMs: 12,
+        cached: false,
+      },
+    } as Awaited<ReturnType<typeof callLlmProvider>>);
+
+    const submitDecision = vi.fn().mockResolvedValue(undefined);
+
+    await runHybridEvaluator({
+      state,
+      llmConfig: { provider: 'test-provider', model: 'test-model', maxTokens: 500, timeoutMs: 1000 },
+      maxPositions: 5,
+      submitDecision,
+      logger,
+    });
+
+    expect(submitDecision).toHaveBeenCalledWith('BTC-PERP', 'go_long', 100, pricingIdentity);
+  });
+
+  // 002-hybrid-usd-to-base: regression test — direct instrumentId match
+  // (no symbol resolution needed) also passes pricing identity.
+  it('passes pricing identity for direct instrumentId matches', async () => {
+    const state = makeState();
+    const pricingIdentity: HybridPricingIdentity = {
+      kind: 'perps',
+      symbol: 'ETH',
+      chain: 'hyperliquid',
+    };
+    state.metrics.lastTechnicalScan = {
+      ...makeScan(),
+      pricingIdentities: {
+        'ETH-PERP': pricingIdentity,
+      },
+    };
+
+    mockedCallLlmProvider.mockResolvedValue({
+      ok: true,
+      data: {
+        content: '[{"instrumentId":"ETH-PERP","intent":"go_long","sizeUsd":300}]',
+        toolCalls: [],
+        model: 'test-model',
+        provider: 'test-provider',
+        tokensUsed: 42,
+        latencyMs: 12,
+        cached: false,
+      },
+    } as Awaited<ReturnType<typeof callLlmProvider>>);
+
+    const submitDecision = vi.fn().mockResolvedValue(undefined);
+
+    await runHybridEvaluator({
+      state,
+      llmConfig: { provider: 'test-provider', model: 'test-model', maxTokens: 500, timeoutMs: 1000 },
+      maxPositions: 5,
+      submitDecision,
+      logger,
+    });
+
+    expect(submitDecision).toHaveBeenCalledWith('ETH-PERP', 'go_long', 300, pricingIdentity);
   });
 });
 
@@ -637,7 +723,7 @@ describe('scanner wake routes to single-shot hybrid evaluator', () => {
     });
 
     // The LLM responded with symbol "BTC" → should resolve to "BTC-PERP" from the scan
-    expect(submitDecision).toHaveBeenCalledWith('BTC-PERP', 'go_long', 500);
+    expect(submitDecision).toHaveBeenCalledWith('BTC-PERP', 'go_long', 500, undefined);
     expect(result.decisionsSubmitted).toBe(1);
     expect(result.errors).toEqual([]);
   });

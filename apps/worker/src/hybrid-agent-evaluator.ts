@@ -2,7 +2,7 @@ import type { LlmProviderConfig, LlmResult } from '@herobids/llm';
 import { callLlmProvider, stripEmptyValues } from '@herobids/llm';
 import { z } from 'zod';
 import { HybridAgentDecisionSchema, type HybridAgentDecision } from '@herobids/domain';
-import type { RuntimeCompositionState, TechnicalScanState } from './runtime-composition.js';
+import type { HybridPricingIdentity, RuntimeCompositionState, TechnicalScanState } from './runtime-composition.js';
 import { buildHybridPrompt, type HybridPromptInput } from './hybrid-agent-prompt.js';
 
 // ─── Response schemas ────────────────────────────────────────────────────────
@@ -44,12 +44,19 @@ export function canRouteToHybridEvaluator(params: {
     && isTechnicalScanFresh(params.latestTechnicalScan);
 }
 
+interface ResolvedDecisionIdentity {
+  instrumentId: string;
+  pricingIdentity?: HybridPricingIdentity;
+}
+
 function resolveDecisionInstrumentId(
   decision: HybridAgentDecision,
   input: HybridEvaluatorInput,
-): string | null {
+): ResolvedDecisionIdentity | null {
   if (decision.instrumentId) {
-    return decision.instrumentId;
+    const id = decision.instrumentId;
+    const pricingIdentity = input.state.metrics.lastTechnicalScan?.pricingIdentities?.[id];
+    return { instrumentId: id, pricingIdentity };
   }
 
   if (!decision.symbol) {
@@ -60,21 +67,25 @@ function resolveDecisionInstrumentId(
   if (scan) {
     const exactSignalMatch = scan.signals.find((signal) => signal.instrumentId === decision.symbol);
     if (exactSignalMatch) {
-      return exactSignalMatch.instrumentId;
+      const id = exactSignalMatch.instrumentId;
+      const pricingIdentity = scan.pricingIdentities?.[id];
+      return { instrumentId: id, pricingIdentity };
     }
 
     const symbolSignalMatch = scan.signals.find((signal) => signal.symbol === decision.symbol);
     if (symbolSignalMatch) {
-      return symbolSignalMatch.instrumentId;
+      const id = symbolSignalMatch.instrumentId;
+      const pricingIdentity = scan.pricingIdentities?.[id];
+      return { instrumentId: id, pricingIdentity };
     }
 
     if (scan.positionIndicators.some((indicator) => indicator.symbol === decision.symbol)) {
-      return decision.symbol;
+      return { instrumentId: decision.symbol };
     }
   }
 
   const openPositionMatch = input.state.metrics.openPositions.find((position) => position.instrumentId === decision.symbol);
-  return openPositionMatch?.instrumentId ?? null;
+  return openPositionMatch ? { instrumentId: openPositionMatch.instrumentId } : null;
 }
 
 // ─── Public interface ────────────────────────────────────────────────────────
@@ -89,8 +100,16 @@ export interface HybridEvaluatorInput {
   maxInlineMemoryKeys?: number;
   /** Recent judge responses (newest last) for context in the hybrid prompt. */
   recentJudgeResponses?: string[];
-  /** Publish a decision to the inbound stream for engine processing */
-  submitDecision: (instrumentId: string, intent: string, sizeUsd?: number) => Promise<void>;
+  /** Publish a decision to the inbound stream for engine processing.
+   *  `pricingIdentity` is carried through from the scan layer so the hybrid
+   *  runtime can convert USD-denominated size to base units using a
+   *  chain/address-aware price lookup. */
+  submitDecision: (
+    instrumentId: string,
+    intent: string,
+    sizeUsd?: number,
+    pricingIdentity?: HybridPricingIdentity,
+  ) => Promise<void>;
   logger: {
     info: (obj: Record<string, unknown> | string, msg?: string) => void;
     warn: (obj: Record<string, unknown> | string, msg?: string) => void;
@@ -240,13 +259,15 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
       continue;
     }
 
-    const instrumentId = resolveDecisionInstrumentId(decision, input);
-    if (!instrumentId) {
+    const resolved = resolveDecisionInstrumentId(decision, input);
+    if (!resolved) {
       result.decisionsSkipped++;
       result.errors.push(`unresolved_instrument(${decision.symbol ?? 'missing'})`);
       logger.warn({ decision }, 'Hybrid evaluator: could not resolve decision instrumentId — skipping');
       continue;
     }
+
+    const instrumentId = resolved.instrumentId;
 
     if (decision.intent === 'go_long' && decision.sizeUsd === undefined) {
       result.decisionsSkipped++;
@@ -256,7 +277,7 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
     }
 
     try {
-      await submitDecision(instrumentId, decision.intent, decision.sizeUsd);
+      await submitDecision(instrumentId, decision.intent, decision.sizeUsd, resolved.pricingIdentity);
       result.decisionsSubmitted++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

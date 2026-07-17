@@ -84,6 +84,7 @@ import { runStructuredToolLoop } from './structured-tool-loop.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults } from './llm-selection.js';
 import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
 import { canRouteToHybridEvaluator, runHybridEvaluator } from './hybrid-agent-evaluator.js';
+import { resolveHybridTargetSize } from './hybrid-decision-sizing.js';
 import { buildHybridPrompt, type HybridPromptInput } from './hybrid-agent-prompt.js';
 
 const logger = createLogger('agent-runtime');
@@ -2467,7 +2468,65 @@ async function runTick(): Promise<void> {
           recentJudgeResponses: agentRuntimePolicy.promptStyle === 'enriched'
             ? judgeResponseHistory.slice(-agentRuntimePolicy.promptEnrichment.judgeHistory.hybridMaxResponses)
             : undefined,
-          submitDecision: async (symbol, intent, sizeUsd) => {
+          submitDecision: async (symbol, intent, sizeUsd, pricingIdentity) => {
+            // go_flat always publishes targetSize '0' — no conversion needed.
+            if (intent === 'go_flat') {
+              await publishToInbound(AGENT_MESSAGE_TYPES.DECISION_SUBMIT, {
+                decisionId: crypto.randomUUID(),
+                instrumentId: symbol,
+                intent,
+                targetSize: '0',
+                rationaleSummary: `Hybrid evaluator: ${intent} ${symbol}`,
+                metadata: { trigger: 'hybrid_evaluator', source: 'scanner' },
+              });
+              return;
+            }
+
+            // go_long with sizeUsd: convert USD to base units via PriceService.
+            if (intent === 'go_long' && sizeUsd !== undefined && pricingIdentity) {
+              if (!priceService) {
+                throw new Error(
+                  `Hybrid sizing: priceService unavailable — cannot convert USD size for ${symbol}`,
+                );
+              }
+
+              const sizingResult = await resolveHybridTargetSize({
+                instrumentId: symbol,
+                sizeUsd,
+                priceService,
+                pricingIdentity,
+              });
+
+              if (!sizingResult.ok) {
+                throw new Error(
+                  `Hybrid sizing failed for ${symbol}: [${sizingResult.code}] ${sizingResult.message}`,
+                );
+              }
+
+              await publishToInbound(AGENT_MESSAGE_TYPES.DECISION_SUBMIT, {
+                decisionId: crypto.randomUUID(),
+                instrumentId: symbol,
+                intent,
+                targetSize: sizingResult.targetSize,
+                rationaleSummary: `Hybrid evaluator: ${intent} ${symbol}`,
+                metadata: {
+                  trigger: 'hybrid_evaluator',
+                  source: 'scanner',
+                  hybridSizeUsd: sizeUsd,
+                  hybridReferencePriceUsd: sizingResult.priceUsd,
+                  hybridPriceSource: sizingResult.source,
+                  hybridResolvedChain: sizingResult.resolvedChain,
+                  hybridResolvedAddress: sizingResult.resolvedAddress,
+                },
+              });
+              return;
+            }
+
+            // Fallback: publish directly (go_long without priceService/pricingIdentity,
+            // or other intents with size).  sizeUsd is treated as base units here —
+            // this path only triggers when the evaluator did NOT provide pricing
+            // identity, which should only happen for position-indicator matches
+            // (go_flat) or legacy flows.
             await publishToInbound(AGENT_MESSAGE_TYPES.DECISION_SUBMIT, {
               decisionId: crypto.randomUUID(),
               instrumentId: symbol,

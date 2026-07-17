@@ -1,7 +1,7 @@
 import type { AgentWakePayload, TechnicalConfig } from '@herobids/domain';
 import type { ScoredSignal } from '@herobids/strategy';
 import type { TechnicalPhaseResult } from './technical-phase.js';
-import type { TechnicalScanState } from './runtime-composition.js';
+import type { HybridPricingIdentity, TechnicalScanState } from './runtime-composition.js';
 
 // ─── Fingerprint helpers ─────────────────────────────────────────────────────
 
@@ -64,6 +64,21 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
   const { phaseResult, technicalConfig, agentId, isHybridMode, onTechnicalScanComplete, emitAgentWake, onJournalEvent } =
     params;
 
+  // Build pricing-identity sidecar for hybrid USD-to-base conversion.
+  // Perp signals use Hyperliquid execution marks; DEX signals will carry
+  // chain + address identity when the scanner supports DEX discovery.
+  const pricingIdentities: Record<string, HybridPricingIdentity> = {};
+  for (const signal of phaseResult.signals) {
+    // Perp instruments are currently the only signal source — the scanner
+    // only discovers Hyperliquid perps.  DEX identity will be populated
+    // when the scanner is extended to support spot/DEX discovery.
+    pricingIdentities[signal.instrumentId] = {
+      kind: 'perps',
+      symbol: signal.symbol,
+      chain: 'hyperliquid',
+    };
+  }
+
   const scan: TechnicalScanState = {
     timestamp: new Date().toISOString(),
     scanIntervalMs: technicalConfig.scanIntervalMs,
@@ -80,6 +95,7 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
     fetchFailures: phaseResult.fetchFailures,
     signalsGenerated: phaseResult.signalsGenerated,
     overlapSkipped: phaseResult.overlapSkipped,
+    pricingIdentities,
   };
 
   // Journal scanner-data unhealthy when there were eligible symbols but no
