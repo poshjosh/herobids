@@ -34,11 +34,9 @@ export const agentOutboundMessages = pgTable('agent_outbound_messages', {
   telegramChatId: text('telegram_chat_id'),
   /** Error detail if Telegram delivery failed */
   deliveryError: text('delivery_error'),
-  /**
-   * Email delivery outcome:
-   *   feed_only | email_sent | email_skipped_policy | email_skipped_not_configured |
-   *   email_skipped_no_verified_recipient | email_failed_provider
-   */
+  // LEGACY: Email delivery metadata columns. Email fanout from send_message
+  // has been removed (2026-07-17). These columns are retained for historical
+  // audit data but are no longer written by the runtime.
   emailDeliveryStatus: text('email_delivery_status'),
   /** Resend message_id returned on successful email send */
   emailMessageId: text('email_message_id'),

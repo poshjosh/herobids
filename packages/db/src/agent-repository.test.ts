@@ -96,7 +96,9 @@ function buildUpdateDb() {
   return { db: { update: updateFn }, setFn, whereFn };
 }
 
-describe('AgentRepository email delivery metadata', () => {
+// Email fanout from send_message has been removed (2026-07-17).
+// These persistence methods are retained for historical audit but no longer written by runtime.
+describe.skip('AgentRepository email delivery metadata', () => {
   it('markOutboundMessageEmailSent writes email_sent status and messageId', async () => {
     const { db, setFn } = buildUpdateDb();
     const repo = new AgentRepository(db as never);

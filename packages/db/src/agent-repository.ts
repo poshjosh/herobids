@@ -654,6 +654,7 @@ export class AgentRepository {
     }).where(eq(agentOutboundMessages.id, id));
   }
 
+  /** @deprecated Email fanout from send_message has been removed (2026-07-17). Retained for historical audit. */
   async markOutboundMessageEmailSent(id: string, emailMessageId: string): Promise<void> {
     await this.db.update(agentOutboundMessages).set({
       emailDeliveryStatus: 'email_sent',
@@ -661,12 +662,14 @@ export class AgentRepository {
     }).where(eq(agentOutboundMessages.id, id));
   }
 
+  /** @deprecated Email fanout from send_message has been removed (2026-07-17). Retained for historical audit. */
   async markOutboundMessageEmailSkipped(id: string, reason: string): Promise<void> {
     await this.db.update(agentOutboundMessages).set({
       emailDeliveryStatus: reason,
     }).where(eq(agentOutboundMessages.id, id));
   }
 
+  /** @deprecated Email fanout from send_message has been removed (2026-07-17). Retained for historical audit. */
   async markOutboundMessageEmailFailed(id: string, error: string): Promise<void> {
     await this.db.update(agentOutboundMessages).set({
       emailDeliveryStatus: 'email_failed_provider',
@@ -724,6 +727,9 @@ export class AgentRepository {
   /**
    * Resolve whether email fanout is effectively enabled for an agent's send_message calls.
    * Precedence: agent-level explicit override → user-level explicit default → system default (true).
+   * @deprecated Email fanout from send_message has been removed (2026-07-17).
+   * Agent-initiated email is handled via the dedicated send_email tool.
+   * This method is retained for reference but is no longer called in the runtime path.
    */
   async getEffectiveEmailEnabled(agentId: string): Promise<boolean> {
     const rows = await this.db

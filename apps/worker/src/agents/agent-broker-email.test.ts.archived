@@ -1,5 +1,9 @@
 /**
  * Unit tests for AgentMessageBroker email policy enforcement (send_message fanout rules).
+ *
+ * ARCHIVED (2026-07-17): Email fanout from send_message has been permanently removed.
+ * Agents must use the dedicated send_email tool for email delivery.
+ * This file is retained for historical reference only.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { AgentMessageBroker } from './agent-message-broker.js';

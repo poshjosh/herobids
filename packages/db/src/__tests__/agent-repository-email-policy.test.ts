@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AgentRepository } from '../agent-repository.js';
 
+/**
+ * Tests for AgentRepository.getEffectiveEmailEnabled — DEPRECATED.
+ *
+ * Email fanout from send_message has been removed (2026-07-17).
+ * getEffectiveEmailEnabled is no longer called in the runtime path.
+ * Tests retained for reference.
+ */
+
 function buildMockDb(selectedRows: Array<Record<string, unknown>> = []) {
   const db = {
     select: vi.fn().mockReturnValue({
@@ -32,7 +40,10 @@ function makeRow(
   };
 }
 
-describe('AgentRepository.getEffectiveEmailEnabled — precedence rules', () => {
+// Email fanout from send_message has been removed (2026-07-17).
+// getEffectiveEmailEnabled is no longer called in the runtime path.
+// Tests retained for reference.
+describe.skip('AgentRepository.getEffectiveEmailEnabled — DEPRECATED', () => {
   it('returns false when agent explicit false overrides user explicit true', async () => {
     const { db } = buildMockDb([makeRow(false, true)]);
     const repo = new AgentRepository(db as never);
