@@ -25,14 +25,19 @@ export async function createAndStoreSetupLinkToken(
 }
 
 /**
- * Consume (read-and-delete) a one-time setup-link token.
+ * Read a one-time setup-link token without deleting it.
  * Returns the userId or null if the token was invalid/expired.
+ *
+ * The token is NOT consumed here — callers must explicitly delete the key
+ * after a successful session is issued. This prevents link previews and
+ * accidental GETs from burning the token before the user clicks.
  */
 export async function consumeSetupLinkToken(
   redis: Redis,
   token: string,
 ): Promise<string | null> {
-  const raw = await redis.getdel(`auth:setup-link:token:${token}`);
+  const key = `auth:setup-link:token:${token}`;
+  const raw = await redis.get(key);
   if (!raw) return null;
   try {
     const payload = JSON.parse(raw) as { userId: string };
@@ -40,4 +45,14 @@ export async function consumeSetupLinkToken(
   } catch {
     return null;
   }
+}
+
+/**
+ * Delete a setup-link token after it has been successfully used.
+ */
+export async function deleteSetupLinkToken(
+  redis: Redis,
+  token: string,
+): Promise<void> {
+  await redis.del(`auth:setup-link:token:${token}`);
 }

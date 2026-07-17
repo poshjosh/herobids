@@ -1695,6 +1695,217 @@ describe('auth routes', () => {
     });
   });
 
+  // --- setup-link callback regression tests ---
+  // Bug: the setup-link callback was returning "This link has expired" immediately
+  // because (1) Telegram link previews hit the URL, and (2) consumeSetupLinkToken
+  // used atomic redis.getdel() which burned the token on the first GET.
+  // Fix: consumeSetupLinkToken uses redis.get (read-only), and the callback
+  // deletes the token explicitly via deleteSetupLinkToken only after a successful
+  // session is issued. See setup-link-token-service.test.ts for unit-level coverage.
+
+  describe('GET /auth/setup-link/callback', () => {
+    function makeRedisMock(overrides: Record<string, ReturnType<typeof vi.fn>> = {}) {
+      return {
+        set: vi.fn().mockResolvedValue('OK'),
+        get: vi.fn().mockResolvedValue(null),
+        del: vi.fn().mockResolvedValue(1),
+        ...overrides,
+      };
+    }
+
+    function makeDbMock(userRows: Array<{ id: string }> = []) {
+      return {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue(userRows),
+            }),
+          }),
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+    }
+
+    it('returns 400 when token query param is missing', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), makeDbMock() as any, redis as any, 'free');
+
+      const res = await app.inject({ method: 'GET', url: '/auth/setup-link/callback' });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('auth.setup_link_callback.missing_token');
+    });
+
+    it('returns 400 when token is invalid or expired', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock({
+        get: vi.fn().mockResolvedValue(null), // token not found
+      });
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), makeDbMock() as any, redis as any, 'free');
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/auth/setup-link/callback?token=expired-token',
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('auth.setup_link_callback.invalid_token');
+    });
+
+    it('resolves user and redirects with exchange code on first GET', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const userId = 'user-setup-1';
+      const redis = makeRedisMock({
+        get: vi.fn().mockResolvedValue(JSON.stringify({ userId })),
+      });
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), makeDbMock([{ id: userId }]) as any, redis as any);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/auth/setup-link/callback?token=valid-setup-token',
+      });
+
+      // Should redirect to the frontend setup/provider-link URL with an exchange code
+      expect(res.statusCode).toBe(302);
+      const location = res.headers['location'] as string;
+      expect(location).toContain('/setup/provider-link?code=');
+
+      // Token was read (not deleted on read)
+      expect(redis.get).toHaveBeenCalledWith('auth:setup-link:token:valid-setup-token');
+
+      // Exchange code was stored
+      expect(redis.set).toHaveBeenCalledWith(
+        expect.stringContaining('auth:code:'),
+        expect.any(String),
+        'EX',
+        expect.any(Number),
+      );
+
+      // Token was deleted AFTER successful session issuance
+      expect(redis.del).toHaveBeenCalledWith('auth:setup-link:token:valid-setup-token');
+    });
+
+    // Regression: before the fix, redis.getdel burned the token on the first read,
+    // so the second GET (e.g. Telegram link preview) would get "expired".
+    // After the fix, the first GET succeeds → deletes token → second GET fails.
+    it('second GET with same token returns "expired" after first success', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const userId = 'user-setup-2';
+      // Simulate: first GET finds the token, second GET finds it gone (deleted by first)
+      const getMock = vi.fn()
+        .mockResolvedValueOnce(JSON.stringify({ userId })) // first call — token exists
+        .mockResolvedValueOnce(null); // second call — token already deleted
+      const redis = makeRedisMock({ get: getMock });
+      const db = makeDbMock([{ id: userId }]);
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any, 'free');
+
+      // First GET — succeeds
+      const res1 = await app.inject({
+        method: 'GET',
+        url: '/auth/setup-link/callback?token=same-token',
+      });
+      expect(res1.statusCode).toBe(302);
+      expect((res1.headers['location'] as string)).toContain('/setup/provider-link?code=');
+      expect(redis.del).toHaveBeenCalledWith('auth:setup-link:token:same-token');
+
+      // Second GET — token was deleted, should fail
+      const res2 = await app.inject({
+        method: 'GET',
+        url: '/auth/setup-link/callback?token=same-token',
+      });
+      expect(res2.statusCode).toBe(400);
+      expect(res2.json<{ error: string }>().error).toBe('auth.setup_link_callback.invalid_token');
+    });
+
+    // Regression: before the fix, link previews (which hit the URL before the
+    // user clicks) would burn the token atomically. After the fix, multiple GETs
+    // before the session is fully issued all succeed because the token is only
+    // read, not consumed.
+    it('survives multiple GETs — token is not consumed until session is issued', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const userId = 'user-setup-3';
+      const storedPayload = JSON.stringify({ userId });
+
+      // The token is always readable (never consumed on read)
+      const getMock = vi.fn().mockResolvedValue(storedPayload);
+      const redis = makeRedisMock({ get: getMock });
+      const db = makeDbMock([{ id: userId }]);
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any, 'free');
+
+      // Simulate a link preview (first GET) and the real user click (second GET)
+      // Both should succeed because the token is only read, not consumed.
+      const res1 = await app.inject({
+        method: 'GET',
+        url: '/auth/setup-link/callback?token=multi-get-token',
+      });
+      expect(res1.statusCode).toBe(302);
+
+      const res2 = await app.inject({
+        method: 'GET',
+        url: '/auth/setup-link/callback?token=multi-get-token',
+      });
+      expect(res2.statusCode).toBe(302);
+
+      // Both calls used redis.get (not getdel)
+      expect(getMock).toHaveBeenCalledTimes(2);
+      expect(getMock).toHaveBeenCalledWith('auth:setup-link:token:multi-get-token');
+
+      // Each successful callback deletes the token; the second del is a no-op
+      expect(redis.del).toHaveBeenCalledTimes(2);
+    });
+
+    // Regression: after the first callback deletes the token, a third GET
+    // should fail — confirming the token is truly consumed (just not prematurely).
+    it('token is consumed after first successful callback — third GET fails', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const userId = 'user-setup-4';
+      const storedPayload = JSON.stringify({ userId });
+
+      // First two reads find the token; third read returns null (deleted)
+      const getMock = vi.fn()
+        .mockResolvedValueOnce(storedPayload)
+        .mockResolvedValueOnce(storedPayload)
+        .mockResolvedValueOnce(null);
+      const redis = makeRedisMock({ get: getMock });
+      const db = makeDbMock([{ id: userId }]);
+
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any, 'free');
+
+      // First two GETs succeed (link preview + user click)
+      await app.inject({ method: 'GET', url: '/auth/setup-link/callback?token=t-three' });
+      await app.inject({ method: 'GET', url: '/auth/setup-link/callback?token=t-three' });
+
+      // After two successful sessions, token was deleted twice (second is no-op).
+      // A third GET should now fail.
+      const res3 = await app.inject({ method: 'GET', url: '/auth/setup-link/callback?token=t-three' });
+      expect(res3.statusCode).toBe(400);
+      expect(res3.json<{ error: string }>().error).toBe('auth.setup_link_callback.invalid_token');
+    });
+  });
+
   describe('POST /auth/login — password_not_available', () => {
     it('returns password_not_available for a user without local_identities', async () => {
       const { authRoutes } = await import('./auth.js');

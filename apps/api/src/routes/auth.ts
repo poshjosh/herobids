@@ -14,6 +14,7 @@ import { resolveNotificationPreferences } from './user-config-helpers.js';
 import type { AuthMailer } from '../auth-mailer.js';
 import {
   consumeSetupLinkToken as consumeSetupLinkTokenImpl,
+  deleteSetupLinkToken as deleteSetupLinkTokenImpl,
 } from '../services/setup-link-token-service.js';
 
 const scrypt = promisify<crypto.BinaryLike, crypto.BinaryLike, number, Buffer>(crypto.scrypt);
@@ -460,6 +461,10 @@ export async function authRoutes(
     return consumeSetupLinkTokenImpl(redis, token);
   }
 
+  function deleteSetupLinkToken(token: string): Promise<void> {
+    return deleteSetupLinkTokenImpl(redis, token);
+  }
+
   /**
    * GET /auth/setup-link/callback — Consumes a one-time setup-link token,
    * issues a session for the user, stores an exchange code, and redirects
@@ -487,6 +492,11 @@ export async function authRoutes(
     const sessionToken = await issueSession(config, db, userId);
     const exchangeCode = crypto.randomUUID();
     await redis.set(`auth:code:${exchangeCode}`, sessionToken, 'EX', config.exchangeCodeTtlSecs);
+
+    // Delete the token only after the session is successfully issued.
+    // This keeps the token alive through link previews and accidental GETs
+    // so the real user click still works.
+    await deleteSetupLinkToken(token);
 
     const callbackUrl = new URL('/setup/provider-link', config.frontendOrigin);
     callbackUrl.searchParams.set('code', exchangeCode);

@@ -655,6 +655,7 @@ export async function telegramWebhookHandler(
       body: JSON.stringify({
         chat_id: chatId,
         text,
+        link_preview_options: { is_disabled: true },
       }),
     }).catch(() => undefined);
   }
