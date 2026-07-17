@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Hybrid prompt data enrichment:** The hybrid evaluator prompt now includes venue intelligence, richer exit-review context, scanner rejection breakdowns, and optional decision reasons. Trading-capable scout prompts now enumerate concrete escalation triggers. See [docs/features/2026/07/17/005-hybrid-prompt-data-enrichment/001-plan.md](docs/features/2026/07/17/005-hybrid-prompt-data-enrichment/001-plan.md).
+
 ## v0.0.30 - 2026-07-17
 
 ### Added

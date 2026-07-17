@@ -23,6 +23,7 @@ export function buildScoutSystemPrompt(params: {
   timing: PromptTimingContext;
   workspaceRoot?: string;
   venueLines?: string[];
+  hasTradingCapability?: boolean;
 }): string {
   const includeWorkspaceContext = Boolean(params.workspaceRoot)
     && params.readOnlyTools.some((tool) => SCOUT_WORKSPACE_CONTEXT_TOOL_NAMES.has(tool));
@@ -49,7 +50,9 @@ export function buildScoutSystemPrompt(params: {
     '## Instructions',
     `Decide whether agent "${params.name ?? params.agentId}" needs to act this tick.`,
     'Use tools only when they help decide hold versus escalate.',
-    `Only escalate when there is good reason for agent "${params.name ?? params.agentId}" to act this tick.`,
+    params.hasTradingCapability
+      ? `Escalate when one or more of the following are present this tick:\n- Scanner signals are available (entry candidates or exit advisories)\n- A watch threshold was triggered\n- A regime change was detected\n- A discovery delta event fired\n- The reminder context requires action\n\nOtherwise respond with hold.`
+      : `Only escalate when there is good reason for agent "${params.name ?? params.agentId}" to act this tick.`,
     'Respond with JSON only. disposition must be either "hold" or "escalate". Example: {"disposition":"hold","reason":"short reason"}.',
     'Your default answer (for example if you cannot decide) should be: {"disposition":"hold","reason":"scout_hold"}.',
   ].join('\n');

@@ -2891,6 +2891,7 @@ async function runTick(): Promise<void> {
         timing: promptTiming,
         workspaceRoot: runtimeState.context.workspaceRoot ?? undefined,
         venueLines: buildVenueLines(runtimeState),
+        hasTradingCapability: tradingTickWorkPlan.hasTradingCapability,
       });
       redis.set(scoutSystemPromptKey, scoutSystemPrompt, 'EX', 3600).catch((err: unknown) => {
         logger.warn({ err }, 'Failed to persist scout system prompt to Redis');

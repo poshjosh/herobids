@@ -433,6 +433,7 @@ export const HybridAgentDecisionSchema = z.object({
   symbol: z.string().min(1).optional(),
   intent: z.enum(['go_long', 'go_flat', 'skip', 'hold']),
   sizeUsd: z.number().optional(),
+  reason: z.string().optional(),
 }).refine((value) => value.instrumentId !== undefined || value.symbol !== undefined, {
   message: 'instrumentId or symbol is required',
 });

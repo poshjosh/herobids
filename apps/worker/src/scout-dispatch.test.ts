@@ -102,3 +102,56 @@ describe('parseScoutDecision', () => {
     });
   });
 });
+
+// ── Phase 5: Scout Escalation Enumeration ────────────────────────────────────
+
+describe('buildScoutSystemPrompt escalation enumeration (Phase 5)', () => {
+  const baseParams = {
+    agentId: 'agent-1',
+    name: 'trader-bot',
+    goal: 'Trade carefully',
+    readOnlyTools: [] as string[],
+    timing: createPromptTimingContext({
+      currentTimeMs: Date.parse('2026-07-17T12:00:00.000Z'),
+      nominalTickIntervalMs: 900_000,
+      expectedNextTickAtMs: Date.parse('2026-07-17T12:15:00.000Z'),
+    }),
+  };
+
+  it('renders enumerated escalation triggers when hasTradingCapability is true', () => {
+    const prompt = buildScoutSystemPrompt({
+      ...baseParams,
+      hasTradingCapability: true,
+    });
+
+    expect(prompt).toContain('Escalate when one or more of the following are present this tick:');
+    expect(prompt).toContain('- Scanner signals are available (entry candidates or exit advisories)');
+    expect(prompt).toContain('- A watch threshold was triggered');
+    expect(prompt).toContain('- A regime change was detected');
+    expect(prompt).toContain('- A discovery delta event fired');
+    expect(prompt).toContain('- The reminder context requires action');
+    expect(prompt).toContain('Otherwise respond with hold.');
+    // Must NOT contain the vague legacy text
+    expect(prompt).not.toContain('Only escalate when there is good reason');
+  });
+
+  it('keeps existing vague escalation text when hasTradingCapability is false', () => {
+    const prompt = buildScoutSystemPrompt({
+      ...baseParams,
+      hasTradingCapability: false,
+    });
+
+    expect(prompt).toContain('Only escalate when there is good reason for agent "trader-bot" to act this tick.');
+    expect(prompt).not.toContain('Escalate when one or more of the following are present');
+  });
+
+  it('keeps existing vague escalation text when hasTradingCapability is undefined (backward-compatible)', () => {
+    const prompt = buildScoutSystemPrompt({
+      ...baseParams,
+      // hasTradingCapability not provided → undefined
+    });
+
+    expect(prompt).toContain('Only escalate when there is good reason for agent "trader-bot" to act this tick.');
+    expect(prompt).not.toContain('Escalate when one or more of the following are present');
+  });
+});

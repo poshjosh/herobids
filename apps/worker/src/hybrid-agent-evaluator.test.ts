@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { callLlmProvider } from '@herobids/llm';
 import { runHybridEvaluator, canRouteToHybridEvaluator } from './hybrid-agent-evaluator.js';
-import { createRuntimeCompositionState, type HybridPricingIdentity, type TechnicalScanState } from './runtime-composition.js';
+import { createRuntimeCompositionState, type HybridPricingIdentity, type RuntimeVenueSignal, type TechnicalScanState } from './runtime-composition.js';
 import { buildHybridPrompt } from './hybrid-agent-prompt.js';
 
 vi.mock('@herobids/llm', async (importOriginal) => {
@@ -235,7 +235,7 @@ describe('runHybridEvaluator', () => {
 
     const prompt = mockedCallLlmProvider.mock.calls[0]?.[1].messages[0]?.content;
     expect(prompt).toContain('## Positions flagged for exit review');
-    expect(prompt).toContain('| BTC | long | $60000.0000 | 84 | Overbought |');
+    expect(prompt).toContain('| BTC | long | $60000.0000 | $60125.0000 | $125 | — | 84 | Overbought |');
     expect(prompt).toContain('respond with `go_flat` to exit or `hold` to keep');
   });
 
@@ -789,5 +789,558 @@ describe('scanner wake routes to single-shot hybrid evaluator', () => {
       chain: 'bybit',
     });
     expect(result.decisionsSubmitted).toBe(1);
+  });
+});
+
+// ── Phase 1: Venue Intelligence ─────────────────────────────────────────────
+
+describe('buildHybridPrompt venue intelligence (Phase 1)', () => {
+  const scan = makeScan();
+  const portfolio = {
+    exposureUsd: 0, realizedPnlUsd: 0, unrealizedPnlUsd: 0, drawdownPct: 0,
+    availableCapitalUsd: 10_000, netDelta: 0, freshness: { state: 'fresh' as const },
+  };
+  const openPositions: Array<{
+    instrumentId: string; side: string; size: string; entryPrice: string | null;
+    unrealizedPnlUsd: number | null; openedAt: string | null;
+    holdDurationMinutes: number | null; venueType: 'perps' | 'dex' | 'unknown';
+    freshness: { state: 'fresh' };
+  }> = [];
+
+  it('renders venue intelligence table when venueSignals match via pricingIdentities', () => {
+    const venueSignals: RuntimeVenueSignal[] = [
+      {
+        kind: 'perps', instrument: 'BTC', venue: 'hyperliquid',
+        fields: [
+          { label: 'Funding', value: '0.0100%' },
+          { label: 'Open interest', value: '12345.67' },
+          { label: '24h volume', value: '$45000000' },
+          { label: '24h change', value: '+12.34%' },
+        ],
+        freshness: { state: 'fresh' },
+      },
+    ];
+
+    const prompt = buildHybridPrompt({
+      scan: {
+        ...scan,
+        pricingIdentities: {
+          'BTC-PERP': { kind: 'perps', symbol: 'BTC', chain: 'hyperliquid' },
+        },
+      },
+      portfolio, openPositions, maxPositions: 5,
+      venueSignals,
+    });
+
+    expect(prompt).toContain('## Venue Intelligence');
+    expect(prompt).toContain('| Instrument ID | Funding Rate | 24h Change | 24h Volume | Open Interest |');
+    expect(prompt).toContain('| BTC-PERP | 0.0100% | +12.34% | $45000000 | 12345.67 |');
+  });
+
+  it('uses instrumentId as the table key (not base symbol)', () => {
+    const venueSignals: RuntimeVenueSignal[] = [
+      {
+        kind: 'perps', instrument: 'BTC', venue: 'hyperliquid',
+        fields: [
+          { label: 'Funding', value: '0.0100%' },
+          { label: 'Open interest', value: '1000' },
+          { label: '24h volume', value: '$1M' },
+          { label: '24h change', value: '+5%' },
+        ],
+        freshness: { state: 'fresh' },
+      },
+    ];
+
+    const prompt = buildHybridPrompt({
+      scan: {
+        ...scan,
+        pricingIdentities: {
+          'BTC-PERP': { kind: 'perps', symbol: 'BTC', chain: 'hyperliquid' },
+        },
+      },
+      portfolio, openPositions, maxPositions: 5,
+      venueSignals,
+    });
+
+    // The table key must be BTC-PERP (instrumentId), not BTC (base symbol).
+    expect(prompt).toContain('| BTC-PERP |');
+    expect(prompt).not.toContain('| BTC | 0.0100%');
+  });
+
+  it('shows — fallback for instruments with no matching venue signal', () => {
+    const venueSignals: RuntimeVenueSignal[] = [
+      {
+        kind: 'perps', instrument: 'BTC', venue: 'hyperliquid',
+        fields: [
+          { label: 'Funding', value: '0.0100%' },
+          { label: 'Open interest', value: '1000' },
+          { label: '24h volume', value: '$1M' },
+          { label: '24h change', value: '+5%' },
+        ],
+        freshness: { state: 'fresh' },
+      },
+    ];
+
+    const prompt = buildHybridPrompt({
+      scan: {
+        ...scan,
+        // BTC-PERP has a pricing identity but ETH-PERP does not — both should appear
+        // since both are signal instruments, but ETH-PERP gets — fallbacks.
+        signals: [
+          { symbol: 'BTC', instrumentId: 'BTC-PERP', confidence: 0.92, reasons: ['RSI'], intent: 'go_long', indicators: { rsi: 58 } },
+          { symbol: 'ETH', instrumentId: 'ETH-PERP', confidence: 0.85, reasons: ['MACD'], intent: 'go_long', indicators: { rsi: 45 } },
+        ],
+        pricingIdentities: {
+          'BTC-PERP': { kind: 'perps', symbol: 'BTC', chain: 'hyperliquid' },
+        },
+      },
+      portfolio, openPositions, maxPositions: 5,
+      venueSignals,
+    });
+
+    expect(prompt).toContain('## Venue Intelligence');
+    expect(prompt).toContain('| BTC-PERP | 0.0100%');
+    // ETH-PERP should have — in all venue columns
+    expect(prompt).toContain('| ETH-PERP | — | — | — | — |');
+  });
+
+  it('renders staleness markers on stale venue signals', () => {
+    const venueSignals: RuntimeVenueSignal[] = [
+      {
+        kind: 'perps', instrument: 'BTC', venue: 'hyperliquid',
+        fields: [
+          { label: 'Funding', value: '0.0100%' },
+          { label: 'Open interest', value: '1000' },
+          { label: '24h volume', value: '$1M' },
+          { label: '24h change', value: '+5%' },
+        ],
+        freshness: { state: 'stale', ageMs: 480_000 },
+      },
+    ];
+
+    const prompt = buildHybridPrompt({
+      scan: {
+        ...scan,
+        pricingIdentities: {
+          'BTC-PERP': { kind: 'perps', symbol: 'BTC', chain: 'hyperliquid' },
+        },
+      },
+      portfolio, openPositions, maxPositions: 5,
+      venueSignals,
+    });
+
+    expect(prompt).toContain('## Venue Intelligence');
+    expect(prompt).toContain('0.0100% (stale 8m)');
+    expect(prompt).toContain('+5% (stale 8m)');
+  });
+
+  it('omits venue intelligence section when no relevant instruments match', () => {
+    const venueSignals: RuntimeVenueSignal[] = [
+      {
+        kind: 'perps', instrument: 'SOL', venue: 'hyperliquid',
+        fields: [
+          { label: 'Funding', value: '0.0050%' },
+          { label: 'Open interest', value: '500' },
+          { label: '24h volume', value: '$500K' },
+          { label: '24h change', value: '-2%' },
+        ],
+        freshness: { state: 'fresh' },
+      },
+    ];
+
+    const prompt = buildHybridPrompt({
+      scan: {
+        ...scan,
+        // BTC-PERP signal but no matching venue signal (only SOL available)
+        signals: [
+          { symbol: 'BTC', instrumentId: 'BTC-PERP', confidence: 0.92, reasons: ['RSI'], intent: 'go_long', indicators: { rsi: 58 } },
+        ],
+        pricingIdentities: {
+          'BTC-PERP': { kind: 'perps', symbol: 'BTC', chain: 'hyperliquid' },
+        },
+      },
+      portfolio, openPositions, maxPositions: 5,
+      venueSignals,
+    });
+
+    expect(prompt).not.toContain('## Venue Intelligence');
+  });
+
+  it('omits venue intelligence section when venueSignals is undefined', () => {
+    const prompt = buildHybridPrompt({
+      scan, portfolio, openPositions, maxPositions: 5,
+    });
+
+    expect(prompt).not.toContain('## Venue Intelligence');
+  });
+
+  it('omits venue intelligence section when venueSignals is empty', () => {
+    const prompt = buildHybridPrompt({
+      scan, portfolio, openPositions, maxPositions: 5,
+      venueSignals: [],
+    });
+
+    expect(prompt).not.toContain('## Venue Intelligence');
+  });
+
+  it('includes open-position instruments in venue intelligence', () => {
+    const venueSignals: RuntimeVenueSignal[] = [
+      {
+        kind: 'perps', instrument: 'ETH', venue: 'hyperliquid',
+        fields: [
+          { label: 'Funding', value: '0.0200%' },
+          { label: 'Open interest', value: '5000' },
+          { label: '24h volume', value: '$20M' },
+          { label: '24h change', value: '-3.5%' },
+        ],
+        freshness: { state: 'fresh' },
+      },
+    ];
+
+    const prompt = buildHybridPrompt({
+      scan: {
+        ...scan,
+        signals: [], // No signals — only open positions drive the table
+        pricingIdentities: {
+          'ETH-PERP': { kind: 'perps', symbol: 'ETH', chain: 'hyperliquid' },
+        },
+      },
+      portfolio,
+      openPositions: [
+        { instrumentId: 'ETH-PERP', side: 'long', size: '1', entryPrice: '3000', unrealizedPnlUsd: 50, openedAt: null, holdDurationMinutes: 120, venueType: 'perps', freshness: { state: 'fresh' } },
+      ],
+      maxPositions: 5,
+      venueSignals,
+    });
+
+    expect(prompt).toContain('## Venue Intelligence');
+    expect(prompt).toContain('| ETH-PERP | 0.0200% | -3.5% | $20M | 5000 |');
+  });
+
+  it('matches Bybit pricing identity (full ticker symbol) to base-symbol venue signal', () => {
+    const venueSignals: RuntimeVenueSignal[] = [
+      {
+        kind: 'perps', instrument: 'BTC', venue: 'hyperliquid+bybit',
+        fields: [
+          { label: 'Funding', value: '0.0050%' },
+          { label: 'Open interest', value: '9999' },
+          { label: '24h volume', value: '$80M' },
+          { label: '24h change', value: '+3.2%' },
+        ],
+        freshness: { state: 'fresh' },
+      },
+    ];
+
+    const prompt = buildHybridPrompt({
+      scan: {
+        ...scan,
+        pricingIdentities: {
+          // Bybit stores the full market ticker as the pricing-identity symbol.
+          'BTCUSDT': { kind: 'perps', symbol: 'BTCUSDT', chain: 'bybit' },
+        },
+        signals: [
+          { symbol: 'BTC', instrumentId: 'BTCUSDT', confidence: 0.88, reasons: ['MACD'], intent: 'go_long', indicators: { rsi: 55 } },
+        ],
+      },
+      portfolio, openPositions, maxPositions: 5,
+      venueSignals,
+    });
+
+    expect(prompt).toContain('## Venue Intelligence');
+    expect(prompt).toContain('| BTCUSDT | 0.0050% | +3.2% | $80M | 9999 |');
+  });
+
+  it('matches DEX venue signal ("SYMBOL (network)" format)', () => {
+    const venueSignals: RuntimeVenueSignal[] = [
+      {
+        kind: 'dex', instrument: 'BONK (solana)', venue: 'dexscreener',
+        fields: [
+          { label: 'Funding', value: 'unavailable' },
+          { label: 'Open interest', value: 'unavailable' },
+          { label: '24h volume', value: '$1.2M' },
+          { label: '24h change', value: '+8.5%' },
+        ],
+        freshness: { state: 'fresh' },
+      },
+    ];
+
+    const prompt = buildHybridPrompt({
+      scan: {
+        ...scan,
+        pricingIdentities: {
+          'BONK-DEX': { kind: 'dex', symbol: 'BONK', chain: 'solana' },
+        },
+        signals: [
+          { symbol: 'BONK', instrumentId: 'BONK-DEX', confidence: 0.78, reasons: ['volume'], intent: 'go_long', indicators: { rsi: 48 } },
+        ],
+      },
+      portfolio, openPositions, maxPositions: 5,
+      venueSignals,
+    });
+
+    expect(prompt).toContain('## Venue Intelligence');
+    // DEX instruments don't have Funding or Open Interest — those show the field value as-is.
+    expect(prompt).toContain('| BONK-DEX | unavailable');
+    expect(prompt).toContain('+8.5%');
+    expect(prompt).toContain('$1.2M');
+  });
+
+  it('matches the correct DEX network when multiple venue rows share the same symbol', () => {
+    const venueSignals: RuntimeVenueSignal[] = [
+      {
+        kind: 'dex', instrument: 'BONK (base)', venue: 'dexscreener',
+        fields: [
+          { label: 'Funding', value: 'unavailable' },
+          { label: 'Open interest', value: 'unavailable' },
+          { label: '24h volume', value: '$800K' },
+          { label: '24h change', value: '-2.0%' },
+        ],
+        freshness: { state: 'fresh' },
+      },
+      {
+        kind: 'dex', instrument: 'BONK (solana)', venue: 'dexscreener',
+        fields: [
+          { label: 'Funding', value: 'unavailable' },
+          { label: 'Open interest', value: 'unavailable' },
+          { label: '24h volume', value: '$1.2M' },
+          { label: '24h change', value: '+8.5%' },
+        ],
+        freshness: { state: 'fresh' },
+      },
+    ];
+
+    const prompt = buildHybridPrompt({
+      scan: {
+        ...scan,
+        pricingIdentities: {
+          'BONK-DEX': { kind: 'dex', symbol: 'BONK', chain: 'solana' },
+        },
+        signals: [
+          { symbol: 'BONK', instrumentId: 'BONK-DEX', confidence: 0.78, reasons: ['volume'], intent: 'go_long', indicators: { rsi: 48 } },
+        ],
+      },
+      portfolio, openPositions, maxPositions: 5,
+      venueSignals,
+    });
+
+    expect(prompt).toContain('## Venue Intelligence');
+    expect(prompt).toContain('| BONK-DEX | unavailable | +8.5% | $1.2M | unavailable |');
+    expect(prompt).not.toContain('| BONK-DEX | unavailable | -2.0% | $800K | unavailable |');
+  });
+});
+
+// ── Phase 2: Richer Exit Review ──────────────────────────────────────────────
+
+describe('buildHybridPrompt exit review enrichment (Phase 2)', () => {
+  const baseScan = makeScan();
+  const portfolio = {
+    exposureUsd: 0, realizedPnlUsd: 0, unrealizedPnlUsd: 0, drawdownPct: 0,
+    availableCapitalUsd: 10_000, netDelta: 0, freshness: { state: 'fresh' as const },
+  };
+
+  it('renders P&L, hold duration, and current price for matched open positions', () => {
+    const scan: TechnicalScanState = {
+      ...baseScan,
+      signals: [],
+      positionIndicators: [
+        { symbol: 'ETH', side: 'long', entryPrice: 3000, rsi: 72, signalNote: 'Overbought', exitAdvisory: true },
+      ],
+    };
+    const openPositions = [
+      { instrumentId: 'ETH', side: 'long', size: '2', entryPrice: '3000', unrealizedPnlUsd: 150, openedAt: '2026-07-17T00:00:00Z', holdDurationMinutes: 45, venueType: 'perps' as const, freshness: { state: 'fresh' as const } },
+    ];
+
+    const prompt = buildHybridPrompt({ scan, portfolio, openPositions, maxPositions: 5 });
+
+    expect(prompt).toContain('| Instrument ID | Side | Entry | Current | P&L | Hold | RSI | Signal Note |');
+    expect(prompt).toContain('| ETH | long | $3000.0000 |');
+    expect(prompt).toContain('$150');
+    expect(prompt).toContain('45m');
+    expect(prompt).toContain('72');
+    expect(prompt).toContain('Overbought');
+  });
+
+  it('uses currentPrice from PositionIndicatorUpdate when available', () => {
+    const scan: TechnicalScanState = {
+      ...baseScan,
+      signals: [],
+      positionIndicators: [
+        { symbol: 'ETH', side: 'long', entryPrice: 3000, currentPrice: 3075, rsi: 72, signalNote: 'Overbought', exitAdvisory: true },
+      ],
+    };
+    const openPositions = [
+      { instrumentId: 'ETH', side: 'long', size: '2', entryPrice: '3000', unrealizedPnlUsd: 150, openedAt: '2026-07-17T00:00:00Z', holdDurationMinutes: 45, venueType: 'perps' as const, freshness: { state: 'fresh' as const } },
+    ];
+
+    const prompt = buildHybridPrompt({ scan, portfolio, openPositions, maxPositions: 5 });
+
+    expect(prompt).toContain('$3075.0000');
+  });
+
+  it('shows — fallback when no matching open position is found', () => {
+    const scan: TechnicalScanState = {
+      ...baseScan,
+      signals: [],
+      positionIndicators: [
+        { symbol: 'SOL', side: 'long', entryPrice: 150, rsi: 65, signalNote: 'Taking profit', exitAdvisory: true },
+      ],
+    };
+    const openPositions: Array<{
+      instrumentId: string; side: string; size: string; entryPrice: string | null;
+      unrealizedPnlUsd: number | null; openedAt: string | null;
+      holdDurationMinutes: number | null; venueType: 'perps' | 'dex' | 'unknown';
+      freshness: { state: 'fresh' };
+    }> = [];
+
+    const prompt = buildHybridPrompt({ scan, portfolio, openPositions, maxPositions: 5 });
+
+    expect(prompt).toContain('| Instrument ID | Side | Entry | Current | P&L | Hold | RSI | Signal Note |');
+    // Current, P&L, Hold should all be —
+    expect(prompt).toMatch(/\| SOL \| long \| \$150\.0000 \| — \| — \| — \| 65 \| Taking profit \|/);
+  });
+
+  it('matches positionIndicators to openPositions by instrumentId when available', () => {
+    const scan: TechnicalScanState = {
+      ...baseScan,
+      signals: [],
+      positionIndicators: [
+        { symbol: 'ETH', instrumentId: 'ETH-PERP', side: 'long', entryPrice: 3000, rsi: 70, signalNote: 'Exit signal', exitAdvisory: true },
+      ],
+    };
+    const openPositions = [
+      { instrumentId: 'ETH-PERP', side: 'long', size: '1', entryPrice: '3000', unrealizedPnlUsd: 100, openedAt: '2026-07-17T00:00:00Z', holdDurationMinutes: 30, venueType: 'perps' as const, freshness: { state: 'fresh' as const } },
+    ];
+
+    const prompt = buildHybridPrompt({ scan, portfolio, openPositions, maxPositions: 5 });
+
+    expect(prompt).toContain('$100');
+    expect(prompt).toContain('30m');
+  });
+});
+
+// ── Phase 3: Scanner Rejection Landscape ─────────────────────────────────────
+
+describe('buildHybridPrompt rejection landscape (Phase 3)', () => {
+  const portfolio = {
+    exposureUsd: 0, realizedPnlUsd: 0, unrealizedPnlUsd: 0, drawdownPct: 0,
+    availableCapitalUsd: 10_000, netDelta: 0, freshness: { state: 'fresh' as const },
+  };
+  const openPositions: Array<{
+    instrumentId: string; side: string; size: string; entryPrice: string | null;
+    unrealizedPnlUsd: number | null; openedAt: string | null;
+    holdDurationMinutes: number | null; venueType: 'perps' | 'dex' | 'unknown';
+    freshness: { state: 'fresh' };
+  }> = [];
+
+  it('renders rejection breakdown from symbolOutcomes with various statuses', () => {
+    const scan: TechnicalScanState = {
+      ...makeScan(),
+      symbolOutcomes: [
+        { symbol: 'BTC', status: 'eligible_fetched', candleCount: 100 },
+        { symbol: 'ETH', status: 'unsupported' },
+        { symbol: 'SOL', status: 'unsupported' },
+        { symbol: 'AVAX', status: 'eligible_empty', candleCount: 0 },
+        { symbol: 'ARB', status: 'eligible_empty', candleCount: 0 },
+        { symbol: 'OP', status: 'eligible_empty', candleCount: 0 },
+        { symbol: 'MATIC', status: 'transient_failure', errorDetail: 'timeout' },
+        { symbol: 'ATOM', status: 'transient_failure', errorDetail: 'rate limit' },
+      ],
+      summary: { scanned: 8, rejected: 7, passed: 1 },
+      fetched: 1, unsupported: 2, eligible: 6, fetchFailures: 2,
+    };
+
+    const prompt = buildHybridPrompt({ scan, portfolio, openPositions, maxPositions: 5 });
+
+    expect(prompt).toContain('8 instruments scanned, 7 rejected (1 passed filters)');
+    expect(prompt).toContain('Rejection breakdown: 2 unsupported, 3 no candle data, 2 fetch failure');
+  });
+
+  it('renders only applicable rejection categories', () => {
+    const scan: TechnicalScanState = {
+      ...makeScan(),
+      symbolOutcomes: [
+        { symbol: 'BTC', status: 'eligible_fetched', candleCount: 100 },
+        { symbol: 'ETH', status: 'unsupported' },
+      ],
+      summary: { scanned: 2, rejected: 1, passed: 1 },
+      fetched: 1, unsupported: 1, eligible: 1, fetchFailures: 0,
+    };
+
+    const prompt = buildHybridPrompt({ scan, portfolio, openPositions, maxPositions: 5 });
+
+    expect(prompt).toContain('Rejection breakdown: 1 unsupported');
+    expect(prompt).not.toContain('no candle data');
+    expect(prompt).not.toContain('fetch failure');
+  });
+
+  it('falls back to bare summary when symbolOutcomes is empty', () => {
+    const scan: TechnicalScanState = {
+      ...makeScan(),
+      symbolOutcomes: [],
+      summary: { scanned: 20, rejected: 17, passed: 3 },
+    };
+
+    const prompt = buildHybridPrompt({ scan, portfolio, openPositions, maxPositions: 5 });
+
+    expect(prompt).toContain('20 instruments scanned, 17 rejected (3 passed filters)');
+    expect(prompt).not.toContain('Rejection breakdown:');
+  });
+});
+
+// ── Phase 4: Optional reason field ───────────────────────────────────────────
+
+import { HybridAgentDecisionSchema } from '@herobids/domain';
+
+describe('HybridAgentDecisionSchema reason field (Phase 4)', () => {
+  it('accepts a decision with a reason', () => {
+    const result = HybridAgentDecisionSchema.safeParse({
+      instrumentId: 'SOL-PERP',
+      intent: 'go_long',
+      sizeUsd: 50,
+      reason: 'high confidence, strong volume',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.reason).toBe('high confidence, strong volume');
+    }
+  });
+
+  it('accepts a decision without a reason (backward-compatible)', () => {
+    const result = HybridAgentDecisionSchema.safeParse({
+      instrumentId: 'SOL-PERP',
+      intent: 'go_long',
+      sizeUsd: 50,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.reason).toBeUndefined();
+    }
+  });
+
+  it('accepts a decision with an empty string reason', () => {
+    const result = HybridAgentDecisionSchema.safeParse({
+      instrumentId: 'SOL-PERP',
+      intent: 'skip',
+      reason: '',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a skip decision with reason', () => {
+    const result = HybridAgentDecisionSchema.safeParse({
+      instrumentId: 'ETH-PERP',
+      intent: 'skip',
+      reason: 'low confidence (0.40)',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a go_flat decision with reason', () => {
+    const result = HybridAgentDecisionSchema.safeParse({
+      instrumentId: 'BTC-PERP',
+      intent: 'go_flat',
+      reason: 'stop loss triggered',
+    });
+    expect(result.success).toBe(true);
   });
 });

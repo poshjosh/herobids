@@ -176,6 +176,7 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
     agentMemory: input.agentMemory,
     maxInlineMemoryKeys: input.maxInlineMemoryKeys,
     recentJudgeResponses: input.recentJudgeResponses,
+    venueSignals: state.metrics.venueSignals,
   };
   const prompt = buildHybridPrompt(promptInput);
 
