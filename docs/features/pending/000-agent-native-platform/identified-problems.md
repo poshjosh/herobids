@@ -1,0 +1,1 @@
+If trading is a capability/domain and messaging is also one, see our config/default.yaml, how we represent both. trading is assumed, gmail is under integrations. The config is at variance with our target architecture

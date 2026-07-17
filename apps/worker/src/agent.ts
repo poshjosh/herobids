@@ -926,8 +926,8 @@ const toolRegistry = createToolRegistry();
 
 // Initialize email tools if Gmail integration is configured.
 // Gmail client credentials and encryption key are forwarded from the worker
-// process via env vars. Without them, send_email / search_emails return a
-// clear initialization error rather than crashing.
+// process via env vars. Without them, send_email returns a clear
+// initialization error rather than crashing.
 if (db && process.env['GMAIL_CLIENT_ID'] && process.env['CREDENTIAL_ENCRYPTION_KEY']) {
   const dailySendLimit = process.env['GMAIL_DAILY_SEND_LIMIT']
     ? parseInt(process.env['GMAIL_DAILY_SEND_LIMIT'], 10)

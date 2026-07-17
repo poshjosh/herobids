@@ -1,10 +1,11 @@
 import { and, eq, asc } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { agentSkills, agentConnections, connections, providers, skillRevisions, skills } from './schema/index.js';
+import { agentSkills, agentConnections, connections, skillRevisions, skills } from './schema/index.js';
 import {
   BASE_SKILL,
   SYSTEM_SKILLS,
   findUnknownSkillTools,
+  getRuntimeFamiliesForProvider,
 } from '@herobids/domain';
 import type {
   CapabilityReadiness,
@@ -233,12 +234,15 @@ export async function resolveRuntimeCapabilityDescriptor(
       providerRef: connections.providerRef,
       profile: connections.profile,
       resolvedVenueAccountId: connections.resolvedVenueAccountId,
-      capabilities: providers.capabilities,
     })
     .from(agentConnections)
     .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
-    .innerJoin(providers, eq(connections.provider, providers.id))
     .where(and(eq(agentConnections.agentId, agentId), eq(agentConnections.status, 'active')));
+
+  const connectionRowsWithFamilies: Array<typeof connectionRows[number] & { capabilities: string[] }> = connectionRows.map((row) => ({
+    ...row,
+    capabilities: getRuntimeFamiliesForProvider(row.provider),
+  }));
 
   const grantedConnectionsByFamily: Record<string, RuntimeFamilyBindingDescriptor[]> = {};
   const readinessByFamily: Record<string, CapabilityReadiness> = {};
@@ -247,15 +251,15 @@ export async function resolveRuntimeCapabilityDescriptor(
   // Collect families from both skill definitions and provider capabilities.
   const familiesFromSkills = new Set(resolvedSkills.flatMap((skill) => skill.capabilityFamilies));
   const familiesFromProviders = new Set<string>();
-  for (const row of connectionRows) {
-    for (const cap of row.capabilities ?? []) {
+  for (const row of connectionRowsWithFamilies) {
+    for (const cap of row.capabilities) {
       familiesFromProviders.add(cap);
     }
   }
   const allFamilies = new Set([...familiesFromSkills, ...familiesFromProviders]);
 
   for (const family of allFamilies) {
-    const familyRows = connectionRows.filter((row) => (row.capabilities ?? []).includes(family));
+    const familyRows = connectionRowsWithFamilies.filter((row) => row.capabilities.includes(family));
     if (familyRows.length > 0) {
       const defaultConnectionId = chooseDefaultConnectionId(familyRows);
       grantedConnectionsByFamily[family] = familyRows.map((row) => ({

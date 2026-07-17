@@ -1,9 +1,9 @@
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agentConnections, connections } from '@herobids/db';
 import type { AgentRepository, PositionRepository, DecisionRepository, ExecutionPlanRepository, FillRepository, OrderRepository, BalanceSnapshotRepository, BacktestingRepository } from '@herobids/db';
 import type { AgentRiskDefaultsConfig, AgentRiskOverrides, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
-import { quantity, price } from '@herobids/domain';
+import { quantity, price, getProviderIdsForRuntimeFamily } from '@herobids/domain';
 import { PaperExecutor, realClock, flatPosition } from '@herobids/engine';
 import type { DecisionContext, PositionState } from '@herobids/engine';
 import type { IdGenerator } from '@herobids/engine';
@@ -186,13 +186,12 @@ export class AgentIntakeResolver {
       })
       .from(agentConnections)
       .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
-      .innerJoin(sql`providers`, sql`connections.provider = providers.id`)
       .where(
         and(
           eq(agentConnections.agentId, agentId),
           eq(agentConnections.status, 'active'),
           eq(connections.status, 'active'),
-          sql`providers.capabilities ? 'trading'`,
+          inArray(connections.provider, getProviderIdsForRuntimeFamily('trading')),
         ),
       )
       .orderBy(desc(agentConnections.grantedAt))

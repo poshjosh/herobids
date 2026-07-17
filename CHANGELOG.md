@@ -10,13 +10,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Hybrid prompt data enrichment:** The hybrid evaluator prompt now includes venue intelligence, richer exit-review context, scanner rejection breakdowns, and optional decision reasons. Trading-capable scout prompts now enumerate concrete escalation triggers. See [docs/features/2026/07/17/005-hybrid-prompt-data-enrichment/001-plan.md](docs/features/2026/07/17/005-hybrid-prompt-data-enrichment/001-plan.md).
 
+### Removed
+
+- **Unused `providers` DB table and Gmail `gmail.readonly` scope:** Removed the unused `providers` table (its only runtime use — deriving connection capability families — is now a shared helper in `@herobids/domain`). Reduced the Gmail OAuth scope to `gmail.send` only and removed the `search_emails` tool from active exposure (skills, tool catalog, worker registry) to avoid the Google scope-verification review burden. Inbox-read returns only when scope verification is approved and the tool is intentionally re-enabled. See [docs/features/2026/07/17/006-remove-unused-provider-table-and-gmail-readonly-scope/001-plan.md](docs/features/2026/07/17/006-remove-unused-provider-table-and-gmail-readonly-scope/001-plan.md).
+
 ## v0.0.30 - 2026-07-17
 
 ### Added
 
 - **Agent Scanner Multi-Venue Signal Support (Part 1 — Orderbook Venues):** Hybrid/scanner-gated agents can now receive technical scanner signals for Bybit in addition to Hyperliquid. Includes venue-aware candidate discovery, Bybit tickers provider with execution-price resolution (fail-closed, no oracle fallback), explicit orderbook candle routing, scanner health classification (healthy_no_signal, healthy_signals, data_path_failure, overlap_skipped, no_candidates), and pricing identity preservation through scan completion. 490+ new tests across 6 test files. See [docs/features/2026/07/17/004-agent-scanner-multi-venue-signal-support/001-plan.md](docs/features/2026/07/17/004-agent-scanner-multi-venue-signal-support/001-plan.md).
 
-- **Gmail OAuth Connection for Agents:** Users can connect their Gmail account via OAuth and agents can send/read emails with `send_email` and `search_emails` tools. Includes OAuth endpoints, lazy token refresh, daily rate limiter, `gmail` system skill, and generic connection picker. See [docs/features/2026/07/17/003-gmail-oauth-connection/001-plan.md](docs/features/2026/07/17/003-gmail-oauth-connection/001-plan.md).
+- **Gmail OAuth Connection for Agents:** Users can connect their Gmail account via OAuth and agents can send email with the `send_email` tool. Includes OAuth endpoints, lazy token refresh, daily rate limiter, `gmail` system skill, and generic connection picker. (Originally shipped with a `search_emails` tool and `gmail.readonly` scope; both were removed the same day — see Unreleased.) See [docs/features/2026/07/17/003-gmail-oauth-connection/001-plan.md](docs/features/2026/07/17/003-gmail-oauth-connection/001-plan.md).
 
 - Branding by coloring the AI in OpenAIdom
 

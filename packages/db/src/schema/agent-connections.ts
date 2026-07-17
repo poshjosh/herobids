@@ -7,8 +7,8 @@ import { connections } from './connections.js';
  * Agent connections — records that a user has granted an agent access to a
  * connection.
  *
- * Capabilities are derived from the provider record (providers.capabilities),
- * not duplicatively stored here.
+ * Capabilities are derived at runtime from shared provider metadata
+ * (@herobids/domain getRuntimeFamiliesForProvider), not stored here.
  *
  * One active row per (agent, connection). Revoked rows are retained for audit.
  */

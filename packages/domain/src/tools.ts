@@ -291,7 +291,6 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'schedule_reminder',
   'search_tokens',
   'search_web',
-  'search_emails',
   'send_email',
   'send_message',
   'set_memory',
@@ -355,7 +354,6 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   get_price:           { category: 'read-market-data',    description: 'Look up current price of a token. Hyperliquid perps use mark price; DEX tokens use oracle price.' },
 
   // read-web
-  search_emails:       { category: 'read-web',            description: 'Search the connected Gmail inbox using Gmail search syntax. Returns matching email summaries.' },
   search_web:          { category: 'read-web',            description: 'Search the internet using Tavily. Returns top results with titles, URLs, text extracts.' },
   browse_url:          { category: 'read-web',            description: 'Fetch and read contents of a web page. HTTPS only; private IPs/loopback blocked.' },
   read_document:       { category: 'read-web',            description: 'Fetch and extract text from a document URL (currently PDF). HTTPS only; SSRF protected.' },

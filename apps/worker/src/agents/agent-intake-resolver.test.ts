@@ -475,11 +475,9 @@ describe('AgentIntakeResolver', () => {
       mocks.db.select.mockReturnValue({
         from: vi.fn().mockReturnValue({
           innerJoin: vi.fn().mockReturnValue({
-            innerJoin: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockResolvedValue([]),
-                }),
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([]),
               }),
             }),
           }),
@@ -497,19 +495,17 @@ describe('AgentIntakeResolver', () => {
       mocks.db.select.mockReturnValue({
         from: vi.fn().mockReturnValue({
           innerJoin: vi.fn().mockReturnValue({
-            innerJoin: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockResolvedValue([
-                    {
-                      resolvedVenueAccountId: 'va-2',
-                      provider: 'bybit',
-                      venueAccountVenue: null,
-                      venueAccountId: null,
-                      connectionStatus: 'active',
-                    },
-                  ]),
-                }),
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([
+                  {
+                    resolvedVenueAccountId: 'va-2',
+                    provider: 'bybit',
+                    venueAccountVenue: null,
+                    venueAccountId: null,
+                    connectionStatus: 'active',
+                  },
+                ]),
               }),
             }),
           }),
@@ -529,19 +525,17 @@ describe('AgentIntakeResolver', () => {
       mocks.db.select.mockReturnValue({
         from: vi.fn().mockReturnValue({
           innerJoin: vi.fn().mockReturnValue({
-            innerJoin: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockResolvedValue([
-                    {
-                      resolvedVenueAccountId: null,
-                      provider: 'hyperliquid',
-                      venueAccountVenue: null,
-                      venueAccountId: null,
-                      connectionStatus: 'active',
-                    },
-                  ]),
-                }),
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([
+                  {
+                    resolvedVenueAccountId: null,
+                    provider: 'hyperliquid',
+                    venueAccountVenue: null,
+                    venueAccountId: null,
+                    connectionStatus: 'active',
+                  },
+                ]),
               }),
             }),
           }),

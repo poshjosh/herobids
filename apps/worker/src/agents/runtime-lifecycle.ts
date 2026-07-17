@@ -127,7 +127,7 @@ export function buildAgentEnv(
   // Credential encryption key — needed by the agent for venue account and Gmail OAuth token decryption.
   if (resolvedEnv['CREDENTIAL_ENCRYPTION_KEY']) envOut['CREDENTIAL_ENCRYPTION_KEY'] = resolvedEnv['CREDENTIAL_ENCRYPTION_KEY']!;
 
-  // Gmail OAuth integration — forwarded so agents can use send_email / search_emails tools.
+  // Gmail OAuth integration — forwarded so agents can use the send_email tool.
   if (resolvedEnv['GMAIL_CLIENT_ID']) envOut['GMAIL_CLIENT_ID'] = resolvedEnv['GMAIL_CLIENT_ID']!;
   if (resolvedEnv['GMAIL_CLIENT_SECRET']) envOut['GMAIL_CLIENT_SECRET'] = resolvedEnv['GMAIL_CLIENT_SECRET']!;
   if (resolvedEnv['GMAIL_REDIRECT_URI']) envOut['GMAIL_REDIRECT_URI'] = resolvedEnv['GMAIL_REDIRECT_URI']!;

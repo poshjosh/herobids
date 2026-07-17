@@ -290,21 +290,22 @@ export const TASK_MANAGEMENT_SKILL: SkillDefinition = {
 };
 
 /**
- * `gmail` skill — send and search emails via Gmail on behalf of the user.
+ * `gmail` skill — send emails via Gmail on behalf of the user.
+ *
+ * Send-only for now — inbox-read (`search_emails`) is deferred until the
+ * `gmail.readonly` OAuth scope is reintroduced after Google review approval.
  */
 export const GMAIL_SKILL: SkillDefinition = {
   id: 'gmail',
   revision: 1,
   name: 'Gmail',
-  description: 'Send and read emails via Gmail on behalf of the user.',
-  instructions: `You can manage the user's Gmail inbox.
+  description: 'Send emails via Gmail on behalf of the user.',
+  instructions: `You can send email on the user's behalf via Gmail.
 
 - Use \`send_email(to, subject, body)\` to send emails. You may include cc and bcc recipients.
-- Use \`search_emails(query)\` to find and read emails from the inbox using Gmail search syntax.
-- Before sending to unfamiliar recipients, confirm with the user via \`send_message\`.
-- Respect the user's privacy — only search for emails relevant to the task at hand.`,
-  promptHint: 'e.g. "Monitor my inbox for flight booking confirmations and alert me" or "Send a weekly summary email to my team"',
-  requiredTools: ['send_email', 'search_emails'],
+- Before sending to unfamiliar recipients, confirm with the user via \`send_message\`.`,
+  promptHint: 'e.g. "Send a weekly summary email to my team" or "Email me a heads-up whenever a position closes"',
+  requiredTools: ['send_email'],
   capabilityFamilies: ['email'],
   bindingRequirements: {
     email: { minBindings: 1, requireReady: true },

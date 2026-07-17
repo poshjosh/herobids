@@ -26,7 +26,6 @@ import {
   users,
   venueAccounts,
   positions,
-  providers,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import {
@@ -1085,19 +1084,14 @@ export async function agentRoutes(
       .select({
         connectionId: connections.id,
         provider: connections.provider,
-        providerName: providers.name,
-        providerType: providers.providerType,
-        capabilities: providers.capabilities,
         label: connections.label,
         status: agentConnections.status,
         credentialId: connections.credentialId,
         profile: connections.profile,
         grantedAt: agentConnections.grantedAt,
-        providerMeta: providers.meta,
       })
       .from(agentConnections)
       .innerJoin(connections, eq(connections.id, agentConnections.connectionId))
-      .innerJoin(providers, eq(providers.id, connections.provider))
       .where(and(
         eq(agentConnections.agentId, agentId),
         eq(agentConnections.status, 'active'),

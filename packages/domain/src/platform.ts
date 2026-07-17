@@ -93,8 +93,9 @@ export interface Connection {
  * AgentConnection — records that a user has granted an agent access to a
  * specific connection.
  *
- * Capabilities are derived from the provider record (providers.capabilities),
- * not duplicatively stored here. One active row per (agent, connection).
+ * Capabilities are derived at runtime from shared provider metadata
+ * (getRuntimeFamiliesForProvider), not duplicatively stored here. One active
+ * row per (agent, connection).
  */
 export interface AgentConnection {
   id: string;

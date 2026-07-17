@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { AppConfig, CustomModeDefinition, ProviderCatalogResponse, ProviderDefinition, WalletGenerationCapability } from '@herobids/domain';
+import { getProviderCategories } from '@herobids/domain';
 import type { ProviderCatalogDefinition, RegistryEntry } from './types.js';
 
 const PROVIDER_REGISTRY: RegistryEntry[] = [
@@ -7,7 +8,7 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
     id: 'hyperliquid',
     displayName: 'Hyperliquid',
     status: 'supported',
-    categories: ['trading'],
+    categories: getProviderCategories('hyperliquid'),
     logoUrl: '/assets/providers/hyperliquid.svg',
     credentials: {
       description: 'API wallet credentials for Hyperliquid trading',
@@ -80,7 +81,7 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
     id: 'bybit',
     displayName: 'Bybit',
     status: 'supported',
-    categories: ['trading'],
+    categories: getProviderCategories('bybit'),
     logoUrl: '/assets/providers/bybit.svg',
     credentials: {
       description: 'Bybit API credentials',
@@ -131,7 +132,7 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
     id: '1inch',
     displayName: '1inch',
     status: 'supported',
-    categories: ['trading', 'swap'],
+    categories: getProviderCategories('1inch'),
     logoUrl: '/assets/providers/1inch.svg',
     credentials: {
       description: 'Signing key for an existing 1inch wallet',
@@ -170,7 +171,7 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
     id: 'jupiter',
     displayName: 'Jupiter',
     status: 'supported',
-    categories: ['trading', 'swap'],
+    categories: getProviderCategories('jupiter'),
     logoUrl: '/assets/providers/jupiter.svg',
     credentials: {
       description: 'Signing key for an existing Jupiter wallet',
@@ -205,10 +206,10 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
     id: 'gmail',
     displayName: 'Gmail',
     status: 'supported',
-    categories: ['messaging'],
+    categories: getProviderCategories('gmail'),
     logoUrl: '/assets/providers/gmail.svg',
     connections: {
-      description: 'Gmail account for sending and reading emails',
+      description: 'Gmail account for sending emails',
       requiresCredential: false,
       allowsCredential: false,
       credentialProviderIds: [],

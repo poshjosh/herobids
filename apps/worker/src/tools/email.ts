@@ -127,6 +127,11 @@ export const sendEmailTool: AgentTool = {
 
 // ---------------------------------------------------------------------------
 // search_emails
+//
+// PARKED — not registered in emailTools below. gmail.readonly was removed
+// from the OAuth scope to avoid the Google review burden, so this tool has
+// no credential to run against. Re-enable only once inbox-read scope
+// verification is approved (see docs/features/2026/07/17/006-remove-unused-provider-table-and-gmail-readonly-scope/001-plan.md).
 // ---------------------------------------------------------------------------
 
 const SearchEmailsParamsSchema = z.object({
@@ -202,4 +207,4 @@ export const searchEmailsTool: AgentTool = {
   },
 };
 
-export const emailTools: AgentTool[] = [sendEmailTool, searchEmailsTool];
+export const emailTools: AgentTool[] = [sendEmailTool];

@@ -3,7 +3,7 @@ import Fastify from 'fastify';
 import { agentToolsRoutes } from './agent-tools.js';
 
 describe('GET /api/v1/agent-tools', () => {
-  it('returns 200 with all 48 tools and 12 category summaries', async () => {
+  it('returns 200 with all 47 tools and 12 category summaries', async () => {
     const app = Fastify();
     await agentToolsRoutes(app);
 
@@ -16,7 +16,7 @@ describe('GET /api/v1/agent-tools', () => {
     const body = res.json();
     expect(body.ok).toBe(true);
     expect(Array.isArray(body.tools)).toBe(true);
-    expect(body.tools).toHaveLength(48);
+    expect(body.tools).toHaveLength(47);
 
     for (const tool of body.tools) {
       expect(tool).toHaveProperty('name');
@@ -40,12 +40,12 @@ describe('GET /api/v1/agent-tools', () => {
       expect(cat.count).toBeGreaterThan(0);
     }
 
-    // Verify total counts across categories sum to 46
+    // Verify total counts across categories sum to 47
     const totalInCategories = body.categories.reduce(
       (sum: number, c: { count: number }) => sum + c.count,
       0,
     );
-    expect(totalInCategories).toBe(48);
+    expect(totalInCategories).toBe(47);
   });
 
   it('filters by ?category=execute-trade returning exactly 2 tools', async () => {

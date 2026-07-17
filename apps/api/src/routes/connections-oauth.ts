@@ -29,10 +29,11 @@ interface GoogleUserInfo {
 }
 
 // ── Scopes for Gmail connection ────────────────────────────────────────────
+// Send-only for now — gmail.readonly is deferred until Google scope
+// verification is approved and inbox-read is intentionally re-enabled.
 
 const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.send',
-  'https://www.googleapis.com/auth/gmail.readonly',
 ].join(' ');
 
 // ── Cookie helpers ─────────────────────────────────────────────────────────

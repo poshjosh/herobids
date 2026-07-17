@@ -5,6 +5,8 @@
 **Implemented:** 2026-07-17
 **Depends on:** None (self-contained feature)
 
+> **Update (2026-07-17):** Superseded in part by [006-remove-unused-provider-table-and-gmail-readonly-scope](../006-remove-unused-provider-table-and-gmail-readonly-scope/001-plan.md). Gmail is now **send-only** — the `gmail.readonly` scope and the `search_emails` tool described below have been removed to avoid the Google scope-verification review burden. Inbox-read support returns only when scope verification is approved and the tool is intentionally re-enabled. The rest of this document (OAuth flow, token storage, connection model) still reflects the current implementation.
+
 ## Summary
 
 Users can connect their Gmail account to the platform via OAuth, grant agents access, and agents can send and read emails on their behalf using `send_email` and `search_emails` tools, packaged as a system skill.

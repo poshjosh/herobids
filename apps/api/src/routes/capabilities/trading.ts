@@ -10,7 +10,6 @@ import {
   connections,
   agentConnectionAudit,
   agentConnections,
-  providers,
   bots,
   fills,
   journalEvents,
@@ -18,7 +17,7 @@ import {
   agentRuntimeSessions,
 } from '@herobids/db';
 import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
-import { validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
+import { getProviderIdsForRuntimeFamily, getRuntimeFamiliesForProvider, validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
 import { z } from 'zod';
 const SUPPORTED_ACTIONS = ['start', 'stop', 'pause', 'resume'] as const;
 type TradingAction = typeof SUPPORTED_ACTIONS[number];
@@ -75,7 +74,7 @@ function chooseLatestAssignment(rows: TradingAssignmentRow[]): TradingAssignment
 }
 
 async function selectAgentTradingAssignmentRows(db: Database, agentId: string): Promise<TradingAssignmentRow[]> {
-  return db
+  const rows = await db
     .select({
       id: agentConnections.id,
       assignmentId: agentConnections.id,
@@ -89,15 +88,18 @@ async function selectAgentTradingAssignmentRows(db: Database, agentId: string): 
       provider: connections.provider,
       label: connections.label,
       resolvedVenueAccountId: connections.resolvedVenueAccountId,
-      capabilities: providers.capabilities,
     })
     .from(agentConnections)
     .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
-    .innerJoin(providers, eq(connections.provider, providers.id))
     .where(and(
       eq(agentConnections.agentId, agentId),
-      sql`${providers.capabilities} ? 'trading'`,
+      inArray(connections.provider, getProviderIdsForRuntimeFamily('trading')),
     ));
+
+  return rows.map((row) => ({
+    ...row,
+    capabilities: getRuntimeFamiliesForProvider(row.provider),
+  }));
 }
 
 function latestAssignmentPerConnection(rows: TradingAssignmentRow[]): TradingAssignmentRow[] {

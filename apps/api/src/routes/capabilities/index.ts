@@ -2,9 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { eq, and } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
-import { agents, connections, agentConnections, providers, deriveReadiness, chooseLatest } from '@herobids/db';
+import { agents, connections, agentConnections, deriveReadiness, chooseLatest } from '@herobids/db';
 import type { RuntimeAssignmentRow } from '@herobids/db';
 import type { CapabilityReadiness, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
+import { getRuntimeFamiliesForProvider } from '@herobids/domain';
 import { tradingCapabilityRoutes } from './trading.js';
 
 export async function capabilityRoutes(
@@ -42,7 +43,7 @@ export async function capabilityRoutes(
         return reply.status(404).send({ error: 'agent.not_found' });
       }
 
-      const rows: RuntimeAssignmentRow[] = await db
+      const rows: RuntimeAssignmentRow[] = (await db
         .select({
           assignmentId: agentConnections.id,
           grantStatus: agentConnections.status,
@@ -54,12 +55,13 @@ export async function capabilityRoutes(
           providerRef: connections.providerRef,
           profile: connections.profile,
           resolvedVenueAccountId: connections.resolvedVenueAccountId,
-          capabilities: providers.capabilities,
         })
         .from(agentConnections)
         .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
-        .innerJoin(providers, eq(connections.provider, providers.id))
-        .where(eq(agentConnections.agentId, agentId));
+        .where(eq(agentConnections.agentId, agentId))).map((row) => ({
+          ...row,
+          capabilities: getRuntimeFamiliesForProvider(row.provider),
+        }));
 
       // Collect all families from provider capabilities across all rows
       const allFamilies = new Set<string>();

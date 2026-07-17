@@ -1,9 +1,11 @@
 import type { Database } from '@herobids/db';
-import { connections, userCredentials, agentConnections, providers } from '@herobids/db';
-import { eq, and, sql } from 'drizzle-orm';
+import { connections, userCredentials, agentConnections } from '@herobids/db';
+import { eq, and, sql, inArray } from 'drizzle-orm';
 import { decryptCredential, encryptCredential } from './crypto.js';
-import { ok, err, type Result } from '@herobids/domain';
+import { ok, err, getProviderIdsForRuntimeFamily, type Result } from '@herobids/domain';
 import type { AppConfig } from '@herobids/domain';
+
+const EMAIL_PROVIDER_IDS = getProviderIdsForRuntimeFamily('email');
 
 export interface GmailTokenResult {
   accessToken: string;
@@ -47,14 +49,13 @@ export async function resolveGmailTokens(
     })
     .from(agentConnections)
     .innerJoin(connections, eq(connections.id, agentConnections.connectionId))
-    .innerJoin(providers, eq(providers.id, connections.provider))
     .innerJoin(userCredentials, eq(userCredentials.id, connections.credentialId))
     .where(
       and(
         eq(agentConnections.agentId, agentId),
         eq(agentConnections.status, 'active'),
         eq(connections.status, 'active'),
-        sql`${providers.capabilities} @> '["email"]'`,
+        inArray(connections.provider, EMAIL_PROVIDER_IDS),
       ),
     )
     .orderBy(agentConnections.createdAt)
