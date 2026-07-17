@@ -1,7 +1,8 @@
 # Gmail OAuth Connection for Agents
 
-**Status:** draft
+**Status:** implemented
 **Created:** 2026-07-17
+**Implemented:** 2026-07-17
 **Depends on:** None (self-contained feature)
 
 ## Summary
@@ -657,3 +658,82 @@ handle /connections/oauth/* {
 5. **Rate limit on Gmail API:** Gmail's API has a per-user quota (~1,000,000 units/day for free Gmail, where `messages.send` costs 100 units). 10,000 emails/day is the effective ceiling. Our per-agent rate limit (default 50/day) is well within this.
 
 6. **Shared setup flow generalization:** The existing setup modal is optimized for manual-secret providers. Reusing the same UX is correct, but the component needs careful refactoring so OAuth providers do not disappear from the list or hit secret-entry validation paths.
+
+---
+
+## Outstanding Issues (from Implementation Code Reviews)
+
+### Phase 1: Config & Provider Registration
+
+#### [1.1] Add Gmail OAuth Config
+- **L1 (Low):** Missing section divider comment above `GmailIntegrationConfigSchema` in `packages/domain/src/config/schema.ts`. Other config blocks have divider comments like `// ── Nomad Runtime Backend ──`.
+- **L2 (Low):** YAML `redirectUri` comment in `config/default.yaml` is on a single long line. Consider splitting across two lines for readability.
+
+#### [1.2] Seed `gmail` Provider Migration
+- **L1 (Low):** `capabilities` uses implicit `text→jsonb` cast while `meta` uses explicit `::jsonb` in the same statement. Minor inconsistency but matches prior migration conventions.
+- **L2 (Low):** Migration filename uses descriptive snake_case (`gmail_provider`) while some prior migrations use Drizzle-generated names. Already consistent with other manually-named migrations.
+
+#### [1.3] Add `gmail` to Provider Registry
+- **L1 (Low):** Plan spec omits `credentialProviderIds` field which is required by the `ConnectionSchema` type. The implementation correctly includes `credentialProviderIds: []`. Plan document should be updated for completeness.
+
+### Phase 2: OAuth Endpoints (API)
+
+#### [2.1] OAuth CSRF State Helpers
+- **M1 (Medium):** Dot-safety constraint (userId must not contain '.') is documented in JSDoc but not enforced at runtime. Adding `if (userId.includes('.')) throw new Error(...)` would make it fail-fast. Acceptable since userIds are UUIDs.
+- **M2 (Medium):** Missing test for dot-containing userId behavior.
+- **L1 (Low):** Generic `Error` used instead of namespaced error codes (`oauth_state.user_id_required`).
+- **L2 (Low):** No guard for empty `secret` in `verifyConnectionOAuthState`.
+- **L3 (Low):** Missing test for `verifyConnectionOAuthState` with empty secret.
+- **L4 (Low):** Missing test for `OAUTH_CONNECTION_STATE_COOKIE` constant value.
+
+#### [2.2–2.4] Gmail OAuth Endpoints + Limit Enforcement
+- **M1 (Medium):** No deduplication check for duplicate Gmail connections. A user can OAuth-connect the same Gmail account multiple times, consuming plan slots. Consider a unique constraint on `(userId, provider, profile.email)`.
+- **L1 (Low):** `request.query` cast without Zod schema validation — if duplicate query params sent, Fastify may parse `code` as `string[]`. Low risk (Google rejects at token exchange).
+- **L2 (Low):** State cookie not cleared after successful callback (`Max-Age=0` cleanup). Harmless hygiene issue.
+- **L3 (Low):** `stateUserId` (UUID) exposed in Google OAuth redirect URL. Standard OAuth practice, not a secret.
+
+#### [2.5] GET /agents/:id/connections
+- **M1 (Medium):** Ownership check uses two-step pattern (fetch agent, then compare userId) instead of combined query used by all other agent endpoints. Functionally correct but inconsistent.
+- **L1 (Low):** Error code `agent.not_found` vs sibling endpoints' `not_found` — format inconsistency within the same route file.
+- **L2 (Low):** Only filters `agentConnections.status = 'active'`, not `connections.status = 'active'`. If connection is revoked while agentConnections remains active, stale data returned.
+
+### Phase 3: Gmail API Adapter (Worker)
+
+#### [3.1] Gmail Adapter
+- **M1 (Medium):** No unit tests for the adapter (`gmail-adapter.test.ts` missing).
+- **L1 (Low):** `fetchWithTimeout` throws raw `Error` (not `GmailApiError`) on network/DNS failure. Callers need `try/catch` outside the `Result` pattern for network-level failures.
+- **L2 (Low):** Individual message fetch failures silently swallowed in `searchEmails` (no warning log).
+
+#### [3.2] Credential Resolution + Lazy Refresh
+- **M1 (Medium):** No unit tests for the resolver (`gmail-credential-resolver.test.ts` missing).
+- **L1 (Low):** `GmailCredentialError` lacks optional `context` field that `DomainError` has (`context?: Record<string, unknown>`).
+- **L2 (Low):** `process.env` accessed directly instead of a helper function for encryption key resolution.
+- **L3 (Low):** Crypto test (`crypto.test.ts`) uses a local `encryptForTest` helper rather than the exported `encryptCredential` — no round-trip test.
+
+### Phase 4: Agent Tools (Worker)
+
+#### [4.1–4.3] Email Tools + Registry Wiring
+- **M1 (Medium):** No unit tests for email tools (`email.test.ts` missing). All other tool files have `.test.ts` counterparts.
+- **L1 (Low):** `GMAIL_DAILY_SEND_LIMIT` env var not listed in worker `ENV_OVERRIDES` map in `apps/worker/src/config.ts`. No functional impact since env forwarding reads directly from `process.env`.
+- **L2 (Low):** Redis hash TTL refreshed on every send — stale date-scoped fields accumulate but are negligible (~50 bytes/field).
+
+### Phase 5: System Skill Definition
+No outstanding issues — implementation cleanly aligned with plan spec.
+
+### Phase 6: Frontend
+No outstanding issues — all medium findings (auto-select heuristic, cross-provider accumulation, missing `useMemo`, i18n keys) were fixed during review iterations. Pre-existing TypeScript errors in unrelated files remain.
+
+### Phase 7: Tests
+
+#### [7.1] Unit Tests
+- **M1 (Medium):** Missing test files for: `gmail-adapter.test.ts`, `gmail-credential-resolver.test.ts`, `email.test.ts`, `connections-oauth.test.ts` (integration). 13 CSRF state tests exist (`connections-oauth-state.test.ts`).
+
+#### [7.2] Integration Tests
+- **M1 (Medium):** No integration tests written for: OAuth authorize redirect, callback with valid/invalid state, plan limit enforcement, or provider catalog presence. All deferred.
+
+#### [7.3] E2E Tests
+- **M1 (Medium):** No E2E tests written for: Gmail provider in setup modal, agent create/edit connection picker, or Gmail skill in skill picker. All deferred.
+
+### General
+- **M1 (Medium):** `GMAIL_DAILY_SEND_LIMIT` not in worker `ENV_OVERRIDES` map (consistency nit, no functional impact).
+- **L1 (Low):** `encryptCredential` return type is inline rather than referencing shared `EncryptedPayload`/`EncryptionMeta` types between API and worker.
