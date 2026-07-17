@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { HTMLAttributes } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Brandify } from '../../lib/brandify.js';
 import type { PublicSection } from './contentRegistry.js';
 import { loadContent } from './loadContent.js';
 
@@ -131,9 +132,11 @@ export function MarkdownPage({ section, page, locale, fallbackTitle }: MarkdownP
 
   return (
     <div className="prose prose-invert">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={headingComponents}>
-        {content}
-      </ReactMarkdown>
+      <Brandify>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={headingComponents}>
+          {content}
+        </ReactMarkdown>
+      </Brandify>
     </div>
   );
 }

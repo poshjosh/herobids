@@ -18,7 +18,11 @@ Users can connect their Gmail account to the platform via OAuth, grant agents ac
 | Token storage | Reuse `user_credentials` | Same AES-256-GCM encryption. `connections.credentialId` already points at it. No new table. |
 | Skill packaging | System skill (`gmail`) | Curated, always-available like `base` and trading skills. |
 | Token refresh | Lazy (on tool use) | No periodic sweep. Refresh token works for 6 months idle. Access token refreshed on-demand when near expiry. |
-| OAuth state param | Encoded `{ userId, nonce }` in `oauth_state` cookie | Same CSRF pattern as login OAuth (`apps/api/src/routes/auth.ts`). |
+| OAuth state param | Encoded `{ userId, nonce }` in `oauth_connection_state` cookie | Same HMAC/CSRF pattern as login OAuth, but callback must also verify the authenticated user matches the state payload. |
+| Connection surface | Gmail is a first-class generic connection in create/edit flows now | `connectionIds` are already generic on agents; the UI must stop treating connections as trading-only. |
+| Connection selection | Frontend may auto-select the first active Gmail connection only when the form has no selection | Pure UX convenience. Runtime uses the same assigned/default connection model as every other capability family. |
+| Setup UX | Reuse the same setup modal and flow used by other providers | Generalize the existing setup form to support OAuth redirect providers alongside manual-secret providers. |
+| Config ownership | Gmail config lives in shared `AppConfig` plus both API and worker env loaders | OAuth authorize runs in the API, but token refresh runs in the worker. |
 
 ## Design
 
@@ -29,13 +33,13 @@ User clicks "Connect Gmail"
   → GET /connections/oauth/gmail/authorize
     → Redirect to Google OAuth consent (gmail.send + gmail.readonly)
       → Google redirects to GET /connections/oauth/gmail/callback?code=...
+        → Verify authenticated user + signed state payload
         → Exchange code for access + refresh tokens
-        → Encrypt tokens → INSERT user_credentials
-        → INSERT connections (credentialId → user_credentials)
+        → In one TX: advisory lock + plan checks + INSERT user_credentials + INSERT connections
         → Redirect to frontend success page
 
 Agent calls send_email / search_emails
-  → Tool resolves connection: agent_connections → connections → user_credentials
+  → Tool resolves the agent's default/assigned email connection: agent_connections → connections → user_credentials
   → Decrypts OAuth tokens
   → Lazy-refreshes access token if expired
   → Calls Gmail API
@@ -62,14 +66,15 @@ Agent calls send_email / search_emails
      │                                  │                │
      │ 302 → /connections/oauth/gmail/callback?code=...&state=...
      │────────────────>│                                 │
-     │                 │ verify state cookie             │
+    │                 │ verify state cookie + auth user │
      │                 │ POST /token (code exchange)     │
      │                 │────────────────>│               │
      │                 │ {access_token, refresh_token,   │
      │                 │  expiry_date, scope}            │
      │                 │<────────────────│               │
      │                 │                                 │
-     │                 │ BEGIN TX                        │
+    │                 │ BEGIN TX                        │
+    │                 │ advisory lock + plan checks     │
      │                 │ INSERT user_credentials         │
      │                 │ (encrypted tokens)              │
      │                 │─────────────────────────────>  │
@@ -101,7 +106,7 @@ The `email` field is extracted from the token info or a follow-up `userinfo` cal
 
 ```ts
 async function getAccessToken(credentialId: string): Promise<Result<string, GmailError>> {
-  const cred = await db.select().from(userCredentials).where(eq(userCredentials.id, credentialId));
+  const [cred] = await db.select().from(userCredentials).where(eq(userCredentials.id, credentialId));
   const tokens = JSON.parse(decryptCredential(cred.encryptedData, key));
 
   // 5-minute expiry buffer
@@ -113,8 +118,8 @@ async function getAccessToken(credentialId: string): Promise<Result<string, Gmai
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     body: new URLSearchParams({
-      client_id: config.gmailClientId,
-      client_secret: config.gmailClientSecret,
+      client_id: config.integrations.gmail.clientId,
+      client_secret: config.integrations.gmail.clientSecret,
       refresh_token: tokens.refresh_token,
       grant_type: 'refresh_token',
     }),
@@ -126,7 +131,8 @@ async function getAccessToken(credentialId: string): Promise<Result<string, Gmai
 
   const fresh = await res.json();
   const newTokens = { ...tokens, access_token: fresh.access_token, expiry_date: Date.now() + (fresh.expires_in * 1000) };
-  await db.update(userCredentials).set({ encryptedData: encryptCredential(JSON.stringify(newTokens), key), updatedAt: new Date() }).where(eq(userCredentials.id, credentialId));
+  const { encryptedData, encryptionMeta } = encryptCredential(JSON.stringify(newTokens), key);
+  await db.update(userCredentials).set({ encryptedData, encryptionMeta, updatedAt: new Date() }).where(eq(userCredentials.id, credentialId));
 
   return ok(fresh.access_token);
 }
@@ -138,18 +144,30 @@ No background sweep. If the refresh token has been revoked (6+ months idle, or u
 
 ```ts
 // In tool execute():
-const [grant] = await db
-  .select({ connectionId: agentConnections.connectionId })
+const connectionId = await resolveDefaultFamilyConnectionId(db, ctx.agentId, 'email');
+if (!connectionId) {
+  return err({ code: 'connection.missing', message: 'No email connection is assigned to this agent.' });
+}
+
+const [connection] = await db
+  .select({
+    credentialId: connections.credentialId,
+    email: sql<string>`${connections.profile} ->> 'email'`,
+  })
   .from(agentConnections)
-  .where(and(eq(agentConnections.agentId, ctx.agentId), eq(agentConnections.status, 'active')))
   .innerJoin(connections, eq(connections.id, agentConnections.connectionId))
   .innerJoin(providers, eq(providers.id, connections.provider))
-  .where(sql`${providers.capabilities} @> '["email"]'`)
   .innerJoin(userCredentials, eq(userCredentials.id, connections.credentialId))
+  .where(and(
+    eq(agentConnections.agentId, ctx.agentId),
+    eq(agentConnections.connectionId, connectionId),
+    eq(agentConnections.status, 'active'),
+    sql`${providers.capabilities} @> '["email"]'`,
+  ))
   .limit(1);
 ```
 
-Follows the documented pattern from `004-generalize-credentials-and-agent-connection-assignment/001-plan.md`.
+This follows the documented connection-assignment model: frontend convenience may preselect a Gmail connection, but runtime does not implement any Gmail-specific "first row wins" rule.
 
 ---
 
@@ -167,7 +185,12 @@ integrations:
     redirectUri: ""                # override: GMAIL_REDIRECT_URI (auto-derived if empty: {publicBaseUrl}/connections/oauth/gmail/callback)
 ```
 
-**File:** `apps/api/src/config.ts` — Add `integrations.gmail` to the Zod config schema.
+**Files:**
+- `packages/domain/src/config/schema.ts` — Add `integrations.gmail` to the shared `AppConfig` schema.
+- `apps/api/src/config.ts` — Add env overrides for `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REDIRECT_URI`.
+- `apps/worker/src/config.ts` — Add the same env overrides so the worker can refresh tokens using the resolved config.
+
+The Gmail config is shared application config, not API-local schema.
 
 ### 1.2 — Seed `gmail` Provider
 
@@ -239,10 +262,9 @@ Dedicated cookie name: `oauth_connection_state` (distinct from login `oauth_stat
 **New file:** `apps/api/src/routes/connections-oauth.ts`
 
 1. Require authenticated user (JWT)
-2. Check plan limits (`maxConnections`, `maxCredentials`)
-3. Generate state token encoding `{ userId, nonce }`
-4. Set `oauth_connection_state` cookie (HttpOnly, SameSite=Lax, Path=/connections/oauth/gmail/callback, Max-Age=600)
-5. Redirect to `https://accounts.google.com/o/oauth2/v2/auth` with:
+2. Generate state token encoding `{ userId, nonce }`
+3. Set `oauth_connection_state` cookie (HttpOnly, SameSite=Lax, Path=/connections/oauth/gmail/callback, Max-Age=600)
+4. Redirect to `https://accounts.google.com/o/oauth2/v2/auth` with:
    - `client_id`: from `config.integrations.gmail.clientId`
    - `redirect_uri`: `{publicBaseUrl}/connections/oauth/gmail/callback`
    - `response_type`: `code`
@@ -255,21 +277,36 @@ Dedicated cookie name: `oauth_connection_state` (distinct from login `oauth_stat
 
 **File:** `apps/api/src/routes/connections-oauth.ts`
 
-1. Extract `code` and `state` from query params
-2. Verify CSRF state via `oauth_connection_state` cookie
-3. Exchange `code` for tokens (`POST https://oauth2.googleapis.com/token`)
-4. Fetch user email (`GET https://www.googleapis.com/oauth2/v3/userinfo` or from ID token)
-5. Encrypt token JSON blob with `encryptCredential()` → `user_credentials` row
-6. Create `connections` row:
-   - `credentialId` → the new credential
-   - `provider` → `gmail`
-   - `label` → `{email}` (e.g. `user@gmail.com`)
-   - `profile` → `{ email: "user@gmail.com" }`
-7. Redirect to frontend: `{frontendOrigin}/connections?setup=gmail&status=ok`
+1. Require authenticated user on the callback as well
+2. Extract `code` and `state` from query params
+3. Verify CSRF state via `oauth_connection_state` cookie
+4. Verify `request.userId === state.userId` before writing anything
+5. Exchange `code` for tokens (`POST https://oauth2.googleapis.com/token`)
+6. Fetch user email (`GET https://www.googleapis.com/oauth2/v3/userinfo` or from ID token)
+7. In one DB transaction:
+  - acquire a per-user advisory lock
+  - run `checkCredentialLimit()` and `checkConnectionLimit()`
+  - encrypt token JSON blob with `encryptCredential()` and insert the `user_credentials` row
+  - create the `connections` row:
+    - `credentialId` → the new credential
+    - `provider` → `gmail`
+    - `label` → `{email}` (e.g. `user@gmail.com`)
+    - `profile` → `{ email: "user@gmail.com" }`
+8. Redirect to frontend: `{frontendOrigin}/connections?setup=gmail&status=ok`
 
-### 2.4 — Connection Limit Check
+### 2.4 — Authoritative Limit Enforcement at Callback
 
-Reuse existing plan guards (`checkConnectionLimit`, `checkCredentialLimit`) from `apps/api/src/plan-guards.ts`. These already gate `POST /setup/provider-link` and `POST /connections`.
+Reuse existing plan guards (`checkConnectionLimit`, `checkCredentialLimit`) from `apps/api/src/plan-guards.ts`, but enforce them inside the callback transaction using the same advisory-lock pattern as `POST /setup/provider-link`.
+
+`GET /connections/oauth/gmail/authorize` may do a best-effort preflight later for UX, but the callback transaction is the only authoritative gate.
+
+### 2.5 — Generic Agent Connection Read Endpoint
+
+**File:** `apps/api/src/routes/agents.ts`
+
+Add `GET /agents/:id/connections` returning the agent's assigned connections across all providers, not just trading-capable ones.
+
+This endpoint is required for Gmail to be a first-class generic connection in the edit flow. The current trading-only capability endpoint is insufficient for non-trading providers.
 
 ---
 
@@ -337,9 +374,9 @@ The Gmail `messages.send` endpoint requires the raw email as a base64url-encoded
 export async function resolveGmailTokens(
   db: Database,
   agentId: string,
-  config: GmailConfig,
+  config: AppConfig['integrations']['gmail'],
 ): Promise<Result<{ accessToken: string; email: string; credentialId: string }, GmailError>> {
-  // 1. Find active agent_connection → connection → credential for provider=gmail
+  // 1. Resolve the assigned/default email connection for this agent
   // 2. Decrypt credential
   // 3. If access token near expiry → refresh, re-encrypt, update DB
   // 4. Return { accessToken, email, credentialId }
@@ -372,6 +409,14 @@ const SendEmailParamsSchema = z.object({
 **Rate limit:** Enforce per-agent send cap (operator-configurable, e.g. 50 emails/day per agent). Store counter in Redis with daily TTL.
 
 **Recipient guardrail:** Optionally check against an agent-level `emailRecipientAllowlist` JSONB field on `agents`. Empty/null = any recipient allowed. This gives users a knob to lock down their agent.
+
+### 4.3 — Tool Catalog & Registry Wiring
+
+**Files:** `packages/domain/src/tools.ts` + `apps/worker/src/tools/index.ts`
+
+Add `send_email` and `search_emails` to the shared tool catalog and known tool-name list, then register the concrete tool implementations in `apps/worker/src/tools/index.ts`.
+
+Do not wire these only in `apps/worker/src/index.ts`. Built-in skill validation and registry/catalog consistency checks must pass at startup.
 
 ### 4.2 — `search_emails` Tool
 
@@ -443,21 +488,27 @@ Users can also add `gmail` as a standalone skill to any agent (e.g. trading agen
 
 ### 6.1 — Gmail Provider Card in Mission Control
 
-**File:** `apps/web/src/features/setup/provider-setup-form.tsx`
+**File:** `apps/web/src/features/setup/ProviderSetupForm.tsx`
 
-The existing provider setup form already renders from the provider registry. Adding `gmail` to the registry (Phase 1.3) automatically surfaces it. Two adjustments needed:
+Reuse the existing setup modal and success/assignment flow for Gmail. Do not introduce a Gmail-only setup screen. The existing component must be generalized so the same UX works for both manual-secret providers and OAuth redirect providers.
 
-1. **OAuth providers render a "Connect" button instead of credential fields.** The form checks `provider.connections.allowsCredential` — when `false` for a provider, render an OAuth initiation button instead of manual fields.
+Required adjustments:
 
-2. **The button triggers** `window.location.href = '/api/connections/oauth/gmail/authorize'` (or uses the API client, which handles auth headers).
+1. Stop filtering setup options to providers that have credential fields. Gmail has connection support but no manual credential form.
+2. For OAuth providers, keep the same modal shell, provider selection, and post-success assignment flow, but render a "Connect" CTA instead of secret-entry fields.
+3. Trigger `/connections/oauth/gmail/authorize` from the shared setup component rather than routing the user to a dedicated Gmail page.
 
 ### 6.2 — OAuth Callback Handling
 
-The callback redirects to `{frontendOrigin}/connections?setup=gmail&status=ok`. The `ConnectionsPage` already handles query params for setup flows. Add handling for `setup=gmail` to show a success toast.
+The callback redirects to `{frontendOrigin}/connections?setup=gmail&status=ok`. `ConnectionsPage` does not currently handle query-param-driven setup success, so add explicit handling for `setup=gmail&status=ok`, show the existing success treatment, and clear the query params after consumption.
 
 ### 6.3 — Gmail Connection in Agent Create/Edit
 
-The connection picker already lists all user connections. Gmail connections (provider: `gmail`) appear alongside trading connections. The agent create/edit flow accepts `connectionIds` — a Gmail connection can be assigned like any other.
+Gmail must be a first-class generic connection in agent create/edit now. That requires switching the connection picker away from trading-only data sources:
+
+1. **Create flow:** load active connections from `GET /connections`, not only from `GET /capabilities/trading/connections`.
+2. **Edit flow:** load the agent's current assigned connections from `GET /agents/:id/connections` plus the user's active connections from `GET /connections`.
+3. Preserve trading-specific readiness UI separately; do not use trading-only endpoints as the source of truth for generic connection assignment.
 
 ### 6.4 — Auto-Select Matching Connection When Skill Is Picked
 
@@ -467,18 +518,18 @@ When the user selects a skill and no connection has been selected yet, auto-sele
 
 | Skill selected | Auto-select rule |
 |---|---|
-| `gmail` | First active Gmail connection (provider = `gmail`), even if multiple exist |
+| `gmail` | If no connection is selected yet, preselect the first active Gmail connection as a frontend convenience |
 | `trading` or `bot-management` | Auto-select only if the user has **exactly one** active trading-capable connection (provider with `capabilities` including `"trading"`) |
 
 If the user already has one or more connections selected, do nothing — don't override their explicit choice.
 
-**Implementation:** The frontend already has access to all needed data — skill definitions via `listSelectableSkills()`, provider registry via `GET /providers`, and user connections via `GET /connections`. The chain is:
+**Implementation:** The frontend already has access to all needed data once it switches to generic connection queries — skill definitions via `listSelectableSkills()`, provider registry via `GET /providers/catalog`, and user connections via `GET /connections`. The chain is:
 
 ```
 selected skill → capabilityFamilies → providers with those capabilities → user's matching connections
 ```
 
-The auto-select runs as a side effect when `selectedSkillIds` changes, before the form is submitted. It's a pure client-side convenience — the API's `POST /agents` validation is the authoritative gate.
+The auto-select runs as a side effect when `selectedSkillIds` changes, before the form is submitted. It's a pure client-side convenience — it must not create a Gmail-specific runtime selection rule.
 
 ### 6.5 — Gmail Connection Detail View
 
@@ -487,6 +538,8 @@ Show in the connection list:
 - Label = Gmail address (`user@gmail.com`)
 - Status indicator (active/revoked)
 - "Reconnect" button if token is expired/revoked (triggers re-auth flow)
+
+This stays inside the same shared Connections UI as every other provider.
 
 ---
 
@@ -514,15 +567,17 @@ Show in the connection list:
 | `POST /connections/oauth/gmail/authorize` redirects to Google with correct params | `apps/api/src/routes/connections-oauth.integration.test.ts` |
 | `GET /connections/oauth/gmail/callback` with valid code → creates credential + connection | `apps/api/src/routes/connections-oauth.integration.test.ts` |
 | `GET /connections/oauth/gmail/callback` with invalid state → 400 | `apps/api/src/routes/connections-oauth.integration.test.ts` |
-| Plan limit enforcement on OAuth connection creation | `apps/api/src/routes/connections-oauth.integration.test.ts` |
+| `GET /connections/oauth/gmail/callback` with mismatched authenticated user vs state payload → 403/400 | `apps/api/src/routes/connections-oauth.integration.test.ts` |
+| Plan limit enforcement occurs inside the callback transaction | `apps/api/src/routes/connections-oauth.integration.test.ts` |
+| `GET /agents/:id/connections` returns generic assigned connections | `apps/api/src/routes/agents.test.ts` |
 | Connection appears in provider catalog | `apps/api/src/providers/registry.test.ts` |
 
 ### 7.3 — E2E Tests
 
 | Test | File |
 |---|---|
-| Gmail provider card visible in Mission Control | `tests/e2e/journeys/` (extend setup journey) |
-| Agent create flow with Gmail connection in picker | `tests/e2e/journeys/` |
+| Gmail provider is visible in the shared setup modal and launches OAuth from the shared flow | `tests/e2e/journeys/` |
+| Agent create/edit flows show Gmail in the generic connection picker | `tests/e2e/journeys/` |
 | Gmail skill selectable in agent skill picker | `tests/e2e/journeys/` |
 
 ---
@@ -543,17 +598,20 @@ Show in the connection list:
 | File | Change |
 |---|---|
 | `config/default.yaml` | Add `integrations.gmail` block |
-| `apps/api/src/config.ts` | Add `integrations.gmail` to Zod schema |
+| `packages/domain/src/config/schema.ts` | Add `integrations.gmail` to the shared `AppConfig` schema |
+| `apps/api/src/config.ts` | Add Gmail env overrides |
+| `apps/worker/src/config.ts` | Add Gmail env overrides |
 | `apps/api/src/providers/registry.ts` | Add `gmail` entry |
-| `apps/api/src/routes/connections.ts` | No changes needed — OAuth endpoints are separate |
-| `apps/worker/src/index.ts` | Register `emailTools` in tool registry |
+| `apps/api/src/routes/agents.ts` | Add `GET /agents/:id/connections` for generic assigned-connection reads |
+| `packages/domain/src/tools.ts` | Add `send_email` and `search_emails` to the tool catalog |
+| `apps/worker/src/tools/index.ts` | Register `emailTools` in the tool registry |
 | `packages/domain/src/skills.ts` | Add `GMAIL_SKILL` to `SYSTEM_SKILLS`; add `'gmail'` to `personal-assistant` preset in `SKILL_PRESET_MAP` |
 | `apps/web/src/features/agents/agent-display.ts` | Add `'gmail'` to `SKILL_PRESET_SKILL_IDS['personal-assistant']` |
-| `apps/web/src/features/agents/EditAgentModal.tsx` | Add `'gmail'` to `ASSISTANT_SKILL_IDS`; add auto-select logic for Gmail/trading connections |
-| `apps/web/src/features/agents/AgentsPage.tsx` | Add auto-select logic for Gmail/trading connections in create flow |
+| `apps/web/src/features/agents/EditAgentModal.tsx` | Switch to generic agent/user connection queries and add frontend-only Gmail/trading auto-select logic |
+| `apps/web/src/features/agents/AgentsPage.tsx` | Switch to generic user connection queries and add frontend-only Gmail/trading auto-select logic |
 | `apps/web/src/features/connections/ConnectionsPage.tsx` | Handle `setup=gmail` success param |
-| `apps/web/src/features/setup/provider-setup-form.tsx` | OAuth button for non-credential providers |
-| `apps/web/src/lib/api-client.ts` | Add `connections.oauth` methods if needed |
+| `apps/web/src/features/setup/ProviderSetupForm.tsx` | Generalize the shared setup modal for OAuth providers |
+| `apps/web/src/lib/api-client.ts` | Add Gmail OAuth methods and generic agent-connections read method |
 
 ## Config Changes (Operator)
 
@@ -570,6 +628,7 @@ integrations:
 # .env overrides
 GMAIL_CLIENT_ID=xxx.apps.googleusercontent.com
 GMAIL_CLIENT_SECRET=GOCSPX-xxx
+GMAIL_REDIRECT_URI=https://your-api.example.com/connections/oauth/gmail/callback
 ```
 
 The Google Cloud project must have the Gmail API enabled and the OAuth consent screen configured with scopes `gmail.send` and `gmail.readonly`. The authorized redirect URI must match `{publicBaseUrl}/connections/oauth/gmail/callback`.
@@ -585,14 +644,16 @@ handle /connections/oauth/* {
 }
 ```
 
-## Risks & Open Questions
+## Risks
 
 1. **Google OAuth verification:** If the app requests sensitive scopes (`gmail.send`, `gmail.readonly`), Google may require app verification unless the user count is below the unpublished threshold (~100 users). Plan: start with test users, apply for verification before broad rollout.
 
 2. **Refresh token revocation after 6 months idle:** Covered — lazy refresh returns `gmail.token_refresh_failed`, agent prompts user to reconnect.
 
-3. **Multiple Gmail connections per agent:** The design allows it. The tool would use the first active Gmail connection found. A future enhancement could let the agent choose which connection to use.
+3. **Generic connection UI refactor:** The current create/edit flows still read trading-only connection endpoints in places. Gmail being first-class now means the picker data sources must become provider-agnostic without regressing trading readiness UX.
 
 4. **`search_emails` privacy:** Agents can read all inbox content matching the query. The prompt instructions and recipient guardrails are behavioral, not cryptographic. For high-security use cases, a `gmail.readonly` scope limiting (labels-only) could be offered as a restricted variant.
 
 5. **Rate limit on Gmail API:** Gmail's API has a per-user quota (~1,000,000 units/day for free Gmail, where `messages.send` costs 100 units). 10,000 emails/day is the effective ceiling. Our per-agent rate limit (default 50/day) is well within this.
+
+6. **Shared setup flow generalization:** The existing setup modal is optimized for manual-secret providers. Reusing the same UX is correct, but the component needs careful refactoring so OAuth providers do not disappear from the list or hit secret-entry validation paths.

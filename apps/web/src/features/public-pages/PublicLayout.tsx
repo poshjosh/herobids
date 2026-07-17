@@ -51,9 +51,9 @@ export function PublicLayout({ children, translated = false, section, page, loca
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--color-surface-0)' }}>
       {/* Slim top nav */}
       <header
+        className="public-header"
         style={{
           display: 'flex',
-          alignItems: 'center',
           justifyContent: 'space-between',
           padding: '12px 24px',
           borderBottom: '1px solid var(--color-border)',
@@ -62,7 +62,7 @@ export function PublicLayout({ children, translated = false, section, page, loca
       >
         <BrandLogo display="full" variant="auto" size="lg" linkTo="/" />
 
-        <nav style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <nav style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
           <a href={publicUrl('help', 'get-started', effectiveLocale)} style={navLinkStyle}>
             {intl.formatMessage({ id: 'public.nav.help' })}
           </a>

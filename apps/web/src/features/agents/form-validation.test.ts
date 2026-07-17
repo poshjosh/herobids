@@ -62,7 +62,7 @@ describe('validateCreateAgentForm', () => {
       validIntent({ goal: '', capabilityMode: 'hybrid', requiresTradingSetup: true }),
       DEFAULT_CONSTRAINTS,
     );
-    // hybrid mode includes intelligence, so goal is required regardless of trading setup
+    // hybrid mode includes intelligence, so objective/prompt is required regardless of trading setup
     expect(result.errors.goal).toBeDefined();
   });
 

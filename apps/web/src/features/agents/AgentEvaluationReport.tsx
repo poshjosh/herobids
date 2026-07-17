@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Brandify } from '../../lib/brandify.js';
 
 /**
  * Renders an evaluation REPORT.md inline as formatted markdown.
@@ -18,9 +19,11 @@ export function AgentEvaluationReport({ content }: { content: string }) {
       }}
     >
       <div className="prose prose-invert">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {content}
-        </ReactMarkdown>
+        <Brandify>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {content}
+          </ReactMarkdown>
+        </Brandify>
       </div>
     </div>
   );
