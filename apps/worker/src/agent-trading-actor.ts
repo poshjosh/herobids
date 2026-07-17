@@ -12,6 +12,7 @@ import type { PriceCandle, RegimeParams } from '@herobids/market-data';
 import { evaluateRegime } from '@herobids/market-data';
 import { runTechnicalPhase } from './technical-phase.js';
 import type { DiscoveredInstrument, FilterConfig } from './technical-phase.js';
+import type { ScannerCandleTarget } from '@herobids/strategy';
 import { completeTechnicalScan } from './complete-technical-scan.js';
 import { computeSignalFingerprint } from './complete-technical-scan.js';
 import type { TechnicalScanState } from './runtime-composition.js';
@@ -157,7 +158,7 @@ export interface AgentTradingActorDeps {
   /** Discover candidate instruments for the technical scan (injected for testability) */
   discoverCandidates?: (filters: FilterConfig) => Promise<DiscoveredInstrument[]>;
   /** Fetch OHLCV candles for the technical scan (injected for testability) */
-  fetchCandles?: (symbol: string, interval: string, limit: number) => Promise<PriceCandle[]>;
+  fetchCandles?: (target: ScannerCandleTarget, interval: string, limit: number) => Promise<PriceCandle[]>;
   /** Callback invoked after each technical scan completes — used to forward results to the agent container */
   onTechnicalScanComplete?: (agentId: string, scan: TechnicalScanState) => void | Promise<void>;
   /** Emit an agent wake signal (e.g. scanner results) to trigger an early LLM tick */
@@ -1564,7 +1565,7 @@ export class AgentTradingActor implements ExecutionActor {
         fetchCandles,
         evaluateRegime: (params) => {
           const candleFetcher = (symbol: string) =>
-            fetchCandles(symbol, technicalConfig.candles.interval, Math.max(200, technicalConfig.candles.limit));
+            fetchCandles({ venueType: 'orderbook', providerSymbol: symbol }, technicalConfig.candles.interval, Math.max(200, technicalConfig.candles.limit));
           return evaluateRegime(params as RegimeParams, candleFetcher);
         },
         submitDecision: (decision) => this.executeTechnicalDecision(decision),

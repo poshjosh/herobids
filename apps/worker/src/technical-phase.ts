@@ -1,15 +1,19 @@
-import type { Decision, DecisionId, InstrumentId, VenueAccountId, RiskConfig, TechnicalConfig } from '@herobids/domain';
+import type { Decision, DecisionId, HybridPricingIdentity, InstrumentId, VenueAccountId, RiskConfig, TechnicalConfig } from '@herobids/domain';
 import { quantity } from '@herobids/domain';
 import type { PositionState } from '@herobids/engine';
 import type { PriceCandle, RegimeParams, RegimeResult } from '@herobids/market-data';
 import { scanCandidates, scoreCandidate } from '@herobids/strategy';
-import type { CandidateContext, ScanConfig, ScoredSignal } from '@herobids/strategy';
+import type { CandidateContext, ScanConfig, ScannerCandleTarget, ScoredSignal } from '@herobids/strategy';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
 export interface DiscoveredInstrument {
   symbol: string;
   instrumentId: string;
+  venue: string;
+  venueType: 'orderbook';
+  candleTarget: ScannerCandleTarget;
+  pricingIdentity: HybridPricingIdentity;
   volume24hUsd?: number;
   liquidityUsd?: number;
   priceChange24hPct?: number;
@@ -51,7 +55,7 @@ export interface TechnicalPhaseDeps {
    *  Entries are always held back in advisory mode. Exits are held back unless autonomousExit is true. */
   advisoryMode?: boolean;
   discoverCandidates: (filters: FilterConfig) => Promise<DiscoveredInstrument[]>;
-  fetchCandles: (symbol: string, interval: string, limit: number) => Promise<PriceCandle[]>;
+  fetchCandles: (target: ScannerCandleTarget, interval: string, limit: number) => Promise<PriceCandle[]>;
   evaluateRegime: (params: RegimeParams) => Promise<RegimeResult>;
   submitDecision: (decision: Decision) => Promise<void>;
   getOpenPositions: () => PositionState[];
@@ -202,6 +206,18 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
   ];
   result.symbolsSelected = allSymbols.length; // includes both entry candidates + open-position symbols
 
+  // Build a symbol → ScannerCandleTarget map so fetchCandles receives venue-aware targets.
+  // Candidates carry explicit candle targets; open positions fall back to the symbol itself.
+  const candleTargetBySymbol = new Map<string, ScannerCandleTarget>();
+  for (const candidate of candidates) {
+    candleTargetBySymbol.set(candidate.symbol, candidate.candleTarget);
+  }
+  for (const sym of openSymbols) {
+    if (!candleTargetBySymbol.has(sym)) {
+      candleTargetBySymbol.set(sym, { venueType: 'orderbook', providerSymbol: sym });
+    }
+  }
+
   // 5. Fetch candles in batches — classify per-symbol outcomes for health matrix
   const candlesBySymbol = new Map<string, PriceCandle[]>();
   const unsupportedSymbols = new Set<string>(); // per-scan cache: skip unsupported in subsequent batches
@@ -212,8 +228,15 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
 
     await Promise.all(
       batch.map(async (symbol) => {
+        const target = candleTargetBySymbol.get(symbol);
+        if (!target) {
+          // Should never happen with the map construction above, but defensive.
+          result.symbolOutcomes.push({ symbol, status: 'unsupported', errorDetail: 'No candle target mapped' });
+          result.unsupportedCount++;
+          return;
+        }
         try {
-          const candles = await deps.fetchCandles(symbol, config.candles.interval, config.candles.limit);
+          const candles = await deps.fetchCandles(target, config.candles.interval, config.candles.limit);
           candlesBySymbol.set(symbol, candles);
           const candleCount = candles.length;
           const status: CandleFetchStatus = candleCount > 0 ? 'eligible_fetched' : 'eligible_empty';
@@ -254,6 +277,10 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
       symbol: candidate.symbol,
       instrumentId: candidate.instrumentId,
       candles,
+      venue: candidate.venue,
+      venueType: candidate.venueType,
+      candleTarget: candidate.candleTarget,
+      pricingIdentity: candidate.pricingIdentity,
       meta: {
         volume24hUsd: candidate.volume24hUsd,
         liquidityUsd: candidate.liquidityUsd,

@@ -63,6 +63,7 @@ import { resolveSwapTokenData, type DexScreenerProvider, type CanonicalResolver 
 import { buildAgentRiskLimits } from './agent-risk-limits.js';
 import { VenueInstrumentCache, normalizeHyperliquidSymbol, normalizeBybitSymbol, identityNormalize, type VenueSymbolProvider } from './venue-instrument-cache.js';
 import type { FilterConfig } from './technical-phase.js';
+import type { ScannerCandleTarget } from '@herobids/strategy';
 import { populateInstrumentsFromVenues } from './instrument-population.js';
 
 async function enrichTokenWithDiscovery(
@@ -262,6 +263,10 @@ const discoverCandidates = async (filters: FilterConfig | undefined) => {
   let results = contexts.data.map((ctx) => ({
     symbol: ctx.asset,
     instrumentId: `${ctx.asset}-PERP`,
+    venue: 'hyperliquid',
+    venueType: 'orderbook' as const,
+    candleTarget: { venueType: 'orderbook' as const, providerSymbol: ctx.asset },
+    pricingIdentity: { kind: 'perps' as const, symbol: ctx.asset, chain: 'hyperliquid' as const },
     volume24hUsd: ctx.volume24hUsd ?? undefined,
     priceChange24hPct: ctx.priceChange24hPct ?? undefined,
   }));
@@ -317,11 +322,11 @@ const scannerRateLimiter = new TokenBucketRateLimiter({
 });
 
 const fetchCandles = agentCandleFetcher
-  ? async (symbol: string, interval: string, limit: number) => {
+  ? async (target: ScannerCandleTarget, interval: string, limit: number) => {
       // Phase 2: scanner capacity gate before delegating to shared binance limiter.
       // Rejections here are transient_failure — not unsupported.
       await scannerRateLimiter.acquire();
-      return agentCandleFetcher.fetchCandles(symbol, interval, limit);
+      return agentCandleFetcher.fetchCandles(target.providerSymbol, interval, limit);
     }
   : undefined;
 

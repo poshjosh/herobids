@@ -22,6 +22,10 @@ function makeInstrument(symbol: string): DiscoveredInstrument {
   return {
     symbol,
     instrumentId: symbol,
+    venue: 'hyperliquid',
+    venueType: 'orderbook',
+    candleTarget: { venueType: 'orderbook', providerSymbol: symbol },
+    pricingIdentity: { kind: 'perps', symbol, chain: 'hyperliquid' },
     volume24hUsd: 1_000_000,
     liquidityUsd: 500_000,
     priceChange24hPct: 2.5,
@@ -300,9 +304,9 @@ describe('runTechnicalPhase', () => {
     let callCount = 0;
     const deps = makeBaseDeps({
       discoverCandidates: vi.fn().mockResolvedValue([makeInstrument('BTC'), makeInstrument('ETH')]),
-      fetchCandles: vi.fn().mockImplementation((symbol: string) => {
+      fetchCandles: vi.fn().mockImplementation((target: { providerSymbol: string }) => {
         callCount++;
-        if (symbol === 'ETH') throw new Error('timeout');
+        if (target.providerSymbol === 'ETH') throw new Error('timeout');
         return Promise.resolve(makeCandles(100));
       }),
     });

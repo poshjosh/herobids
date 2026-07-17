@@ -133,7 +133,7 @@ export class BacktestRuntime {
         // TODO: build a CandleFetcher backed by the HistoricalDataFeed once backtesting supports
         // candle-based replay (tracked in docs/features/pending/backlog.md — "candle-based backtest feed")
         const noopCandleFetcher: import('@herobids/domain').CandleFetcher = {
-          fetchCandles: async () => [],
+          fetchCandles: async (_symbol: string, _interval: string, _limit: number) => [],
         };
         return new MechanicalStrategy(
           noopCandleFetcher,

@@ -1,4 +1,4 @@
-import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, EconomicEvent } from '@herobids/domain';
+import type { CapabilityReadiness, HybridPricingIdentity, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, EconomicEvent } from '@herobids/domain';
 import { formatAgentGoalLiteralBlock, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
 import crypto from 'node:crypto';
 import type { RegimeResult } from '@herobids/market-data';
@@ -107,17 +107,7 @@ export interface RuntimeMarketSnapshot {
   freshness: RuntimeFreshness;
 }
 
-/**
- * Identity needed to safely reprice a signal for hybrid USD-to-base-size
- * conversion. Perps use the Hyperliquid execution mark; DEX assets require
- * chain + address to avoid ambiguous-ticker repricing.
- */
-export interface HybridPricingIdentity {
-  kind: 'perps' | 'dex';
-  symbol: string;
-  chain?: string;
-  address?: string;
-}
+export type { HybridPricingIdentity } from '@herobids/domain';
 
 export interface TechnicalScanState {
   timestamp: string;

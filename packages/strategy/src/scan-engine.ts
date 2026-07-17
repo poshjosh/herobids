@@ -1,4 +1,5 @@
 import type { PriceCandle } from '@herobids/market-data';
+import type { HybridPricingIdentity } from '@herobids/domain';
 import {
   rsi,
   macd,
@@ -14,10 +15,20 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/** Identifies an orderbook candle source for scanner candle fetching. */
+export interface ScannerCandleTarget {
+  venueType: 'orderbook';
+  providerSymbol: string;
+}
+
 export interface CandidateContext {
   symbol: string;
   instrumentId: string;
   candles: PriceCandle[];
+  venue?: string;
+  venueType?: 'orderbook';
+  candleTarget?: ScannerCandleTarget;
+  pricingIdentity?: HybridPricingIdentity;
   meta?: {
     volume24hUsd?: number;
     liquidityUsd?: number;
@@ -28,6 +39,9 @@ export interface CandidateContext {
 export interface ScoredSignal {
   symbol: string;
   instrumentId: string;
+  venue?: string;
+  venueType?: 'orderbook';
+  pricingIdentity?: HybridPricingIdentity;
   confidence: number;
   reasons: string[];
   intent: 'go_long' | 'go_short';
@@ -398,6 +412,9 @@ export function scoreCandidate(
   return {
     symbol,
     instrumentId,
+    venue: candidate.venue,
+    venueType: candidate.venueType,
+    pricingIdentity: candidate.pricingIdentity,
     confidence,
     reasons,
     intent,
