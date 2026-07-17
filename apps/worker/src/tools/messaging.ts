@@ -14,7 +14,7 @@ const SendMessageParamsSchema = z.object({
 
 const sendMessageTool: AgentTool = {
   name: 'send_message',
-  description: 'Send a message to the user via the platform messaging system. Use for important updates, alerts, or status reports. Body is limited to 2000 characters.',
+  description: 'Send a message to the user via the platform messaging system. Use for communicating with the user — important updates, alerts, reminders, or status reports. Body is limited to 2000 characters. For sending email to external recipients, use send_email instead.',
   parametersSchema: SendMessageParamsSchema,
   parameters: convertZodToJsonSchema(SendMessageParamsSchema),
   category: 'write-messaging',

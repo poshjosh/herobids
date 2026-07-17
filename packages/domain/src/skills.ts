@@ -305,7 +305,13 @@ export const EMAIL_SKILL: SkillDefinition = {
 - Use \`send_email(to, subject, body)\` to send emails. You may include cc and bcc recipients.
 - The prompt context lists your granted email connections under "Email Connections" — check it for available \`fromConnectionId\` values.
 - If you have multiple email connections, use \`fromConnectionId\` to select a specific sender. Omit \`fromConnectionId\` to use the default connection (marked [DEFAULT]).
-- Before sending to unfamiliar recipients, confirm with the user via \`send_message\`.`,
+
+Examples:
+- "Email bob@example.com the weekly summary" → send_email
+- "Message me when the position closes" → send_message
+- "ETH just dropped below $2000 — alert me" → send_message with messageClass="alert"
+
+Rule: Use send_email for any external email recipient. Use send_message for communicating with the user.`,
   promptHint: 'e.g. "Send a weekly summary email to my team" or "Email me a heads-up whenever a position closes"',
   requiredTools: ['send_email'],
   capabilityFamilies: ['email'],
