@@ -78,7 +78,8 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
     queryFn: () => providerCatalogApi.get(),
   });
 
-  const providerSuggestions = (catalogQuery.data?.providers ?? []).filter((provider) => {
+  // Providers with manual credential entry fields
+  const credentialProviders = (catalogQuery.data?.providers ?? []).filter((provider) => {
     if (provider.status === 'deprecated' || !provider.credentials) {
       return false;
     }
@@ -89,14 +90,30 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
 
     return provider.connections?.autoCreatesTradingConnection === true;
   });
-  // Auto-select the first trading provider once the catalog loads
+
+  // OAuth-only providers (no credential entry — user connects via OAuth redirect)
+  const oauthProviders = (catalogQuery.data?.providers ?? []).filter((provider) => {
+    if (provider.status !== 'supported') return false;
+    // OAuth providers have connections but don't allow manual credential entry
+    if (!provider.connections || provider.connections.allowsCredential !== false) return false;
+    // In trading-only mode, only show trading OAuth providers
+    if (isTradingSetup) return provider.connections.autoCreatesTradingConnection === true;
+    return true;
+  });
+
+  const allProviders = [...credentialProviders, ...oauthProviders];
+  const providerSuggestions = allProviders;
+
+  // Auto-select the first provider once the catalog loads
   useEffect(() => {
     if (isTradingSetup && providerChoice === '' && providerSuggestions.length > 0) {
-      setProviderChoice(providerSuggestions[0].id);
+      const first = providerSuggestions[0];
+      if (first) setProviderChoice(first.id);
     }
   }, [isTradingSetup, providerChoice, providerSuggestions]);
 
   const selectedProvider = providerSuggestions.find((provider) => provider.id === providerChoice);
+  const isOAuthProvider = oauthProviders.some((p) => p.id === providerChoice);
   const canGenerateWallet = isTradingSetup && selectedProvider?.walletGeneration?.available === true;
   const isCustomProvider = providerChoice === CUSTOM_PROVIDER_OPTION;
   const effectiveProvider = isCustomProvider ? customProviderId.trim() : providerChoice.trim();
@@ -127,7 +144,16 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
+    if (isOAuthProvider) {
+      // OAuth providers redirect to the authorize endpoint
+      window.location.href = `/connections/oauth/${effectiveProvider}/authorize`;
+      return;
+    }
     mutation.mutate();
+  };
+
+  const handleOAuthConnect = () => {
+    window.location.href = `/connections/oauth/${effectiveProvider}/authorize`;
   };
 
   const updateEntry = (index: number, field: keyof SecretEntry, value: string) => {
@@ -170,7 +196,9 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
         {catalogQuery.isLoading ? <div style={{ marginTop: '8px', fontSize: '12px' }}>Loading provider catalog...</div> : null}
       </div>
 
-      {canGenerateWallet && (
+      {!isOAuthProvider && (
+        <>
+          {canGenerateWallet && (
         <div style={{ marginBottom: '16px' }}>
           <FieldLabel>Wallet</FieldLabel>
           <div style={{ display: 'inline-flex', gap: '4px', padding: '3px', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
@@ -273,11 +301,25 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
           </div>
         )}
       </div>}
+        </>
+      )}
+
+      {isOAuthProvider && (
+        <div style={{ marginBottom: '16px', padding: '16px', background: 'var(--color-surface-2)', borderRadius: '8px', textAlign: 'center' }}>
+          <div style={{ fontSize: '14px', marginBottom: '12px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+            {intl.formatMessage({ id: 'setup.form.oauthDescription' }, { provider: selectedProvider?.displayName ?? effectiveProvider })}
+          </div>
+          <Button variant="primary" type="button" onClick={handleOAuthConnect}>
+            {intl.formatMessage({ id: 'setup.form.oauthConnect' }, { provider: selectedProvider?.displayName ?? effectiveProvider })}
+          </Button>
+        </div>
+      )}
 
       {mutation.isError && (
         <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />
       )}
 
+      {!isOAuthProvider && (
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
         {!standalone && (
           <Button variant="ghost" onClick={onClose} type="button">
@@ -294,6 +336,16 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
             : intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingSubmit' : 'setup.form.submit' })}
         </Button>
       </div>
+      )}
+      {isOAuthProvider && (
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        {!standalone && (
+          <Button variant="ghost" onClick={onClose} type="button">
+            {intl.formatMessage({ id: 'common.cancel' })}
+          </Button>
+        )}
+      </div>
+      )}
     </form>
   );
 

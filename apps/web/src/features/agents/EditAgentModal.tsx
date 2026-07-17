@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
-import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, auth as authApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, auth as authApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, type SkillPresetId } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
@@ -145,6 +145,14 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     queryKey: ['agents', agentId, 'capabilities', 'trading', 'connections'],
     queryFn: () => agentsApi.tradingConnections(agentId),
   });
+  const agentGenericConnectionsQuery = useQuery({
+    queryKey: ['agents', agentId, 'connections'],
+    queryFn: () => agentsApi.getConnections(agentId),
+  });
+  const allConnectionsQuery = useQuery({
+    queryKey: ['connections'],
+    queryFn: () => connectionsApi.list(),
+  });
   const docsQuery = useQuery({
     queryKey: ['agent-documents', agentId],
     queryFn: () => agentsApi.listDocuments(agentId),
@@ -165,22 +173,88 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const availableConnections = (availableConnectionsQuery.data?.connections ?? []).filter(
     (connection) => connection.status === 'active',
   );
+  // Generic connections (all providers including Gmail) for the picker display
+  const genericConnections = (allConnectionsQuery.data?.connections ?? []).filter(
+    (c) => c.status === 'active',
+  );
+  // Build a merged view for the connection picker
+  const allPickerConnections = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: Array<{ connectionId: string; provider: string; label: string; status: string; profile?: Record<string, unknown> | null }> = [];
+    for (const c of availableConnections) {
+      if (!seen.has(c.connectionId)) {
+        seen.add(c.connectionId);
+        merged.push({ connectionId: c.connectionId, provider: c.provider, label: c.label, status: c.connectionStatus, profile: c.profile });
+      }
+    }
+    for (const c of genericConnections) {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        merged.push({ connectionId: c.id, provider: c.provider, label: c.label, status: c.status, profile: c.profile });
+      }
+    }
+    return merged;
+  }, [availableConnections, genericConnections]);
 
-  // Initialize connectionIds from the agent's current connections
+  // Auto-select connection when skills change (6.4)
+  const prevSkillIdsRef = useRef<string[]>(form.skillIds);
   useEffect(() => {
-    if (!agentConnectionsQuery.isSuccess) return;
-    const activeIds = (agentConnectionsQuery.data?.connections ?? [])
-      .filter((c) => c.grantStatus === 'active')
-      .map((c) => c.connectionId);
+    if (!allConnectionsQuery.isSuccess && !availableConnectionsQuery.isSuccess) return;
+    const prevSkillIds = prevSkillIdsRef.current;
+    prevSkillIdsRef.current = form.skillIds;
+
     setForm((prev) => {
-      // Only update if different to avoid infinite loops
+      // Don't override existing selections
+      if ((prev.connectionIds ?? []).length > 0) return prev;
+
+      const hasGmailSkill = prev.skillIds.includes('gmail');
+      const hasTradingSkill = prev.skillIds.includes('trading') || prev.skillIds.includes('bot-management');
+      const newlyAddedGmail = hasGmailSkill && !prevSkillIds.includes('gmail');
+      const newlyAddedTrading = hasTradingSkill && !prevSkillIds.some((id) => id === 'trading' || id === 'bot-management');
+
+      if (newlyAddedGmail) {
+        const gmailConn = allPickerConnections.find((c) => c.provider === 'gmail');
+        if (gmailConn) {
+          return { ...prev, connectionIds: [gmailConn.connectionId] };
+        }
+      }
+
+      if (newlyAddedTrading) {
+        const tradingConns = allPickerConnections.filter((c) => venueTypeMap[c.provider] !== undefined);
+        if (tradingConns.length === 1) {
+          return { ...prev, connectionIds: [tradingConns[0]!.connectionId] };
+        }
+      }
+
+      return prev;
+    });
+  }, [form.skillIds, allConnectionsQuery.isSuccess, availableConnectionsQuery.isSuccess, allPickerConnections]);
+
+  // Initialize connectionIds from the agent's current connections (both trading + generic)
+  useEffect(() => {
+    const tradingReady = agentConnectionsQuery.isSuccess;
+    const genericReady = agentGenericConnectionsQuery.isSuccess;
+    if (!tradingReady && !genericReady) return;
+
+    const activeIds = new Set<string>();
+    // Trading connections
+    for (const c of (agentConnectionsQuery.data?.connections ?? [])) {
+      if (c.grantStatus === 'active') activeIds.add(c.connectionId);
+    }
+    // Generic connections (includes non-trading like Gmail)
+    for (const c of (agentGenericConnectionsQuery.data?.connections ?? [])) {
+      if (c.grantStatus === 'active' || c.status === 'active') activeIds.add(c.connectionId);
+    }
+
+    const activeIdsArr = [...activeIds];
+    setForm((prev) => {
       const prevIds = prev.connectionIds ?? [];
-      if (prevIds.length === activeIds.length && prevIds.every((id) => activeIds.includes(id))) {
+      if (prevIds.length === activeIdsArr.length && prevIds.every((id) => activeIdsArr.includes(id))) {
         return prev;
       }
-      return { ...prev, connectionIds: activeIds };
+      return { ...prev, connectionIds: activeIdsArr };
     });
-  }, [agentConnectionsQuery.isSuccess, agentConnectionsQuery.data?.connections]);
+  }, [agentConnectionsQuery.isSuccess, agentConnectionsQuery.data?.connections, agentGenericConnectionsQuery.isSuccess, agentGenericConnectionsQuery.data?.connections]);
 
   const selectedSkills = resolveSelectedSkills(form.skillIds, selectableSkills);
   const hasBotManagementSkill = form.skillIds.includes('bot-management');
@@ -324,7 +398,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         technical: technicalPayload,
         strategyPreset: hasStrategyPreset
           ? form.strategyPreset
-          : (initialData.strategyPreset ? null : undefined),
+          : undefined,
         skillIds,
         hasBotManagementSkill,
         executionMode: form.executionMode,
@@ -630,15 +704,11 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               />
             }
             connectionSlot={
-              showTradingControls ? (
+              (allPickerConnections.length > 0) ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <FieldLabel>{intl.formatMessage({ id: 'agents.create.whereToTrade' })}</FieldLabel>
-                  {availableConnectionsQuery.isLoading ? (
+                  <FieldLabel>{intl.formatMessage({ id: 'agents.create.connections' })}</FieldLabel>
+                  {(availableConnectionsQuery.isLoading || allConnectionsQuery.isLoading) ? (
                     <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
-                  ) : availableConnections.length === 0 ? (
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-                      {intl.formatMessage({ id: 'agents.create.noConnections' })}
-                    </div>
                   ) : (
                     <>
                       <select
@@ -656,16 +726,35 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                         style={{ ...inputStyle, cursor: 'pointer' }}
                       >
                         <option value="">{intl.formatMessage({ id: 'agents.create.chooseConnection' })}</option>
-                        {availableConnections.map((connection) => (
-                          <option key={connection.connectionId} value={connection.connectionId}>
-                            {connection.label} ({connection.provider})
-                          </option>
-                        ))}
+                        {/* Trading connections group */}
+                        {allPickerConnections.some((c) => venueTypeMap[c.provider] !== undefined) && (
+                          <optgroup label={intl.formatMessage({ id: 'agents.create.connections.trading' })}>
+                            {allPickerConnections
+                              .filter((c) => venueTypeMap[c.provider] !== undefined)
+                              .map((connection) => (
+                                <option key={connection.connectionId} value={connection.connectionId}>
+                                  {connection.label} ({connection.provider})
+                                </option>
+                              ))}
+                          </optgroup>
+                        )}
+                        {/* Non-trading connections group */}
+                        {allPickerConnections.some((c) => venueTypeMap[c.provider] === undefined) && (
+                          <optgroup label={intl.formatMessage({ id: 'agents.create.connections.other' })}>
+                            {allPickerConnections
+                              .filter((c) => venueTypeMap[c.provider] === undefined)
+                              .map((connection) => (
+                                <option key={connection.connectionId} value={connection.connectionId}>
+                                  {connection.label} ({connection.provider})
+                                </option>
+                              ))}
+                          </optgroup>
+                        )}
                       </select>
                       {(form.connectionIds ?? []).length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                           {(form.connectionIds ?? []).map((id) => {
-                            const conn = availableConnections.find((c) => c.connectionId === id);
+                            const conn = allPickerConnections.find((c) => c.connectionId === id);
                             return (
                               <span
                                 key={id}

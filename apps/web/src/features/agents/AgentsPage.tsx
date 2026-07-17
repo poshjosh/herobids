@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
-import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, dashboard, type AgentOutcomes, type ProviderSetupResult, type Skill } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, skills as skillsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, dashboard, type AgentOutcomes, type ProviderSetupResult, type Skill } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Card, SectionLabel, MetricCard, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, type SkillPresetId } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
@@ -428,6 +428,10 @@ function CreateAgentFlow({
     queryKey: ['capabilities', 'trading', 'connections'],
     queryFn: () => capabilitiesApi.tradingConnections(),
   });
+  const allConnectionsQuery = useQuery({
+    queryKey: ['connections'],
+    queryFn: () => connectionsApi.list(),
+  });
   const riskDefaultsQuery = useQuery({
     queryKey: ['agents', 'risk-defaults'],
     queryFn: () => agentsApi.riskDefaults(),
@@ -570,10 +574,67 @@ function CreateAgentFlow({
   const availableConnections = (tradingConnectionsQuery.data?.connections ?? []).filter(
     (connection) => connection.status === 'active',
   );
-  // Connections matching the currently selected venue (used for auto-select logic)
-  const connectionsForVenue = intent.venue
-    ? availableConnections.filter((c) => c.provider === intent.venue)
-    : [];
+  // Generic connections (all providers including Gmail) for the picker display
+  const genericConnections = (allConnectionsQuery.data?.connections ?? []).filter(
+    (c) => c.status === 'active',
+  );
+  // Build a merged view for the connection picker. Prefer trading-connection
+  // entries when available (they carry richer data), but include generic entries
+  // for non-trading providers like Gmail.
+  const allPickerConnections = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: Array<{ connectionId: string; provider: string; label: string; status: string; profile?: Record<string, unknown> | null }> = [];
+    // Add trading connections first (they have priority for trading display)
+    for (const c of availableConnections) {
+      if (!seen.has(c.connectionId)) {
+        seen.add(c.connectionId);
+        merged.push({ connectionId: c.connectionId, provider: c.provider, label: c.label, status: c.connectionStatus, profile: c.profile });
+      }
+    }
+    // Add generic connections not already covered
+    for (const c of genericConnections) {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        merged.push({ connectionId: c.id, provider: c.provider, label: c.label, status: c.status, profile: c.profile });
+      }
+    }
+    return merged;
+  }, [availableConnections, genericConnections]);
+
+  // Auto-select connection when skills change (6.4)
+  const prevSkillIdsRef = useRef<string[]>(intent.skillIds);
+  useEffect(() => {
+    if (!allConnectionsQuery.isSuccess && !tradingConnectionsQuery.isSuccess) return;
+    const prevSkillIds = prevSkillIdsRef.current;
+    prevSkillIdsRef.current = intent.skillIds;
+
+    setIntent((state) => {
+      // Don't override existing selections
+      if (state.connectionIds.length > 0) return state;
+
+      const hasGmailSkill = state.skillIds.includes('gmail');
+      const hasTradingSkill = state.skillIds.includes('trading') || state.skillIds.includes('bot-management');
+      const newlyAddedGmail = hasGmailSkill && !prevSkillIds.includes('gmail');
+      const newlyAddedTrading = hasTradingSkill && !prevSkillIds.some((id) => id === 'trading' || id === 'bot-management');
+
+      if (newlyAddedGmail) {
+        const gmailConn = allPickerConnections.find((c) => c.provider === 'gmail');
+        if (gmailConn) {
+          return { ...state, connectionIds: [gmailConn.connectionId] };
+        }
+      }
+
+      if (newlyAddedTrading) {
+        const tradingConns = allPickerConnections.filter((c) => venueTypeMap[c.provider] !== undefined);
+        if (tradingConns.length === 1) {
+          return { ...state, connectionIds: [tradingConns[0]!.connectionId] };
+        }
+      }
+
+      return state;
+    });
+  }, [intent.skillIds, allConnectionsQuery.isSuccess, tradingConnectionsQuery.isSuccess, allPickerConnections]);
+
   // In test mode show all venues (the user may optionally pick one to enable
   // venue-backed shadow execution, but none is required). In live mode only
   // show venues that have at least one active connection.
@@ -1034,10 +1095,10 @@ function CreateAgentFlow({
             }
             connectionSlot={
               <div data-field="connectionIds" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <FieldLabel>{intl.formatMessage({ id: 'agents.create.whereToTrade' })}</FieldLabel>
-                {tradingConnectionsQuery.isLoading ? (
+                <FieldLabel>{intl.formatMessage({ id: 'agents.create.connections' })}</FieldLabel>
+                {(tradingConnectionsQuery.isLoading || allConnectionsQuery.isLoading) ? (
                   <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
-                ) : availableConnections.length === 0 ? (
+                ) : allPickerConnections.length === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                       {intl.formatMessage({ id: 'agents.create.noConnections' })}
@@ -1055,39 +1116,68 @@ function CreateAgentFlow({
                       onChange={(e) => {
                         const id = e.target.value;
                         if (!id) return;
-                        const conn = availableConnections.find((c) => c.connectionId === id);
-                        const derivedVenue = conn?.provider ?? '';
-                        const derivedVenueType = derivedVenue ? (venueTypeMap[derivedVenue] ?? '') : '';
-                        clearFieldError('venue');
+                        const conn = allPickerConnections.find((c) => c.connectionId === id);
+                        const provider = conn?.provider ?? '';
+                        const isTradingProvider = venueTypeMap[provider] !== undefined;
+                        const derivedVenue = isTradingProvider ? provider : '';
+                        const derivedVenueType = isTradingProvider ? (venueTypeMap[provider] ?? '') : '';
+                        if (isTradingProvider) clearFieldError('venue');
                         setIntent((state) => {
-                          // Keep only connections of the same provider + the new one
-                          const sameProvider = derivedVenue
-                            ? state.connectionIds.filter((cid) => {
-                                const existing = availableConnections.find((c) => c.connectionId === cid);
-                                return existing?.provider === derivedVenue;
-                              })
-                            : state.connectionIds;
-                          const newIds = sameProvider.includes(id) ? sameProvider : [...sameProvider, id];
+                          let newIds: string[];
+                          if (isTradingProvider) {
+                            // For trading connections: filter to same-provider trading + keep all non-trading
+                            newIds = state.connectionIds.filter((cid) => {
+                              const pc = allPickerConnections.find((c) => c.connectionId === cid);
+                              if (!pc) return true;
+                              const isTrading = venueTypeMap[pc.provider] !== undefined;
+                              return !isTrading || pc.provider === provider;
+                            });
+                            if (!newIds.includes(id)) newIds = [...newIds, id];
+                          } else {
+                            // Non-trading connections: always allow accumulation
+                            newIds = state.connectionIds.includes(id)
+                              ? state.connectionIds
+                              : [...state.connectionIds, id];
+                          }
                           return {
                             ...state,
                             connectionIds: newIds,
-                            ...(derivedVenue ? { venue: derivedVenue, venueType: derivedVenueType } : {}),
+                            ...(isTradingProvider ? { venue: derivedVenue, venueType: derivedVenueType } : {}),
                           };
                         });
                       }}
                       style={{ ...inputStyle, cursor: 'pointer' }}
                     >
                       <option value="">{intl.formatMessage({ id: 'agents.create.chooseConnection' })}</option>
-                      {availableConnections.map((connection) => (
-                        <option key={connection.connectionId} value={connection.connectionId}>
-                          {connection.label} ({connection.provider})
-                        </option>
-                      ))}
+                      {/* Trading connections group */}
+                      {allPickerConnections.some((c) => venueTypeMap[c.provider] !== undefined) && (
+                        <optgroup label={intl.formatMessage({ id: 'agents.create.connections.trading' })}>
+                          {allPickerConnections
+                            .filter((c) => venueTypeMap[c.provider] !== undefined)
+                            .map((connection) => (
+                              <option key={connection.connectionId} value={connection.connectionId}>
+                                {connection.label} ({connection.provider})
+                              </option>
+                            ))}
+                        </optgroup>
+                      )}
+                      {/* Non-trading connections group (e.g. Gmail) */}
+                      {allPickerConnections.some((c) => venueTypeMap[c.provider] === undefined) && (
+                        <optgroup label={intl.formatMessage({ id: 'agents.create.connections.other' })}>
+                          {allPickerConnections
+                            .filter((c) => venueTypeMap[c.provider] === undefined)
+                            .map((connection) => (
+                              <option key={connection.connectionId} value={connection.connectionId}>
+                                {connection.label} ({connection.provider})
+                              </option>
+                            ))}
+                        </optgroup>
+                      )}
                     </select>
                     {intent.connectionIds.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                         {intent.connectionIds.map((id) => {
-                          const conn = availableConnections.find((c) => c.connectionId === id);
+                          const conn = allPickerConnections.find((c) => c.connectionId === id);
                           return (
                             <span
                               key={id}
@@ -1107,11 +1197,17 @@ function CreateAgentFlow({
                                 type="button"
                                 onClick={() => setIntent((state) => {
                                   const newIds = state.connectionIds.filter((cid) => cid !== id);
-                                  // Clear venue when the last connection is removed (trading agents)
+                                  const removedConn = allPickerConnections.find((c) => c.connectionId === id);
+                                  const isTradingConn = removedConn && venueTypeMap[removedConn.provider] !== undefined;
+                                  // Clear venue when the last trading connection is removed
+                                  const remainingTrading = newIds.some((cid) => {
+                                    const c = allPickerConnections.find((pc) => pc.connectionId === cid);
+                                    return c && venueTypeMap[c.provider] !== undefined;
+                                  });
                                   return {
                                     ...state,
                                     connectionIds: newIds,
-                                    ...(newIds.length === 0 && requiresTradingSetup
+                                    ...(isTradingConn && !remainingTrading && requiresTradingSetup
                                       ? { venue: '', venueType: '' }
                                       : {}),
                                   };
@@ -1135,7 +1231,7 @@ function CreateAgentFlow({
                     )}
                   </>
                 )}
-                {availableConnections.length > 0 && (
+                {allPickerConnections.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setShowSetup(true)}
@@ -1445,7 +1541,19 @@ function CreateAgentFlow({
                 label={intl.formatMessage({ id: 'agents.create.connection' })}
                 value={intent.connectionIds
                   .map((id) => {
-                    const conn = availableConnections.find((c) => c.connectionId === id);
+                    const conn = allPickerConnections.find((c) => c.connectionId === id);
+                    return conn ? `${conn.label} (${conn.provider})` : id;
+                  })
+                  .join(', ')}
+              />
+            )}
+            {/* Show non-trading connections (e.g. Gmail) even without trading setup */}
+            {!requiresTradingSetup && intent.connectionIds.length > 0 && (
+              <ReviewRow
+                label={intl.formatMessage({ id: 'agents.create.connection' })}
+                value={intent.connectionIds
+                  .map((id) => {
+                    const conn = allPickerConnections.find((c) => c.connectionId === id);
                     return conn ? `${conn.label} (${conn.provider})` : id;
                   })
                   .join(', ')}

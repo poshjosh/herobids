@@ -1161,6 +1161,8 @@ export const agents = {
       : request<{ agentId: string; capabilities: CapabilityReadiness[] }>(`/agents/${id}/capabilities/readiness`),
   tradingConnections: (id: string) =>
     request<{ agentId: string; family: 'trading'; connections: ConnectionSummary[] }>(`/agents/${id}/capabilities/trading/connections`),
+  getConnections: (id: string) =>
+    request<{ agentId: string; connections: AgentConnectionEntry[] }>(`/agents/${id}/connections`),
   tradingPositions: (id: string, params?: { limit?: number; offset?: number }) => {
     const qs = new URLSearchParams();
     if (params?.limit !== undefined) qs.set('limit', String(params.limit));
@@ -1206,10 +1208,20 @@ export interface Connection {
   label: string;
   status: 'active' | 'revoked';
   meta: Record<string, unknown> | null;
+  profile?: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
   assignedAgentCount: number;
   referencingBotCount: number;
+}
+
+export interface AgentConnectionEntry {
+  connectionId: string;
+  provider: string;
+  label: string;
+  status: string;
+  grantStatus: string;
+  profile: Record<string, unknown> | null;
 }
 
 export const connections = {

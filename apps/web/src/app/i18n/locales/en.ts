@@ -373,6 +373,10 @@ export const messages: Record<string, string> = {
   'connections.deleteBlockedByBots': 'Cannot delete this connection because it is referenced by bots: {blockingBotIds}. Delete the bots first.',
   'connections.deleteFailed': 'Failed to delete connection. Please try again.',
   'connections.assignmentSuccess': 'Connection assigned to selected agents.',
+  'connections.oauth.success': '{provider} connected successfully!',
+  'connections.oauth.error': 'Connection failed',
+  'connections.oauth.errorMessage': 'Failed to connect {provider}. {error}',
+  'connections.reconnect': 'Reconnect',
 
   // Credentials
   'credentials.title': 'Credentials',
@@ -516,6 +520,9 @@ export const messages: Record<string, string> = {
   'agents.edit.intelligenceIgnoredWarning': "Switching to Technical-only: the agent's LLM configuration (goal, skills, model) will be ignored at runtime but is not deleted. Switch back to Intelligence or Both to re-enable it.",
 
   // Agent controls (shared create/edit labels)
+  'agents.create.connections': 'Connections',
+  'agents.create.connections.trading': 'Trading',
+  'agents.create.connections.other': 'Other',
   'agents.create.controls.title': 'Controls & cadence',
   'agents.create.controls.description': 'Optional guardrails, LLM spend policy, and base cadence. Cost presets still shape runtime behavior, but an explicit tick interval overrides preset-derived cadence.',
   'agents.controls.costPreset': 'Cost preset',
@@ -748,6 +755,8 @@ export const messages: Record<string, string> = {
   'setup.form.addSecret': 'Add secret',
   'setup.form.saving': 'Setting up\u2026',
   'setup.form.submit': 'Link AI agent',
+  'setup.form.oauthDescription': 'You will be redirected to {provider} to authorize access.',
+  'setup.form.oauthConnect': 'Connect {provider}',
   'setup.form.tradingTitle': 'Connect agent to platform',
   'setup.form.tradingProviderPlaceholder': 'e.g. hyperliquid, bybit, 1inch',
   'setup.form.tradingLabelPlaceholder': 'e.g. My Hyperliquid account',
