@@ -420,6 +420,23 @@ export const GMAIL_SKILL: SkillDefinition = {
 
 Add to `SYSTEM_SKILLS` array so it's upserted on API startup.
 
+### 5.2 — Add `gmail` to the `personal-assistant` Skill Preset
+
+**File:** `packages/domain/src/skills.ts`
+
+Email is a natural companion to personal assistant work — sending reminders via email, emailing people the agent has researched, monitoring inbox for actionable items. The `gmail` skill stays a separate, independently versioned skill, but is included in the `personal-assistant` preset so any personal-assistant agent automatically gets email capability alongside task management and web access:
+
+```ts
+export const SKILL_PRESET_MAP: Record<string, string[]> = {
+  trading: ['bot-management', 'trading'],
+  'direct-trading': ['trading'],
+  'personal-assistant': ['task-management', 'web-access', 'gmail'],  // ← add gmail
+  custom: [],
+};
+```
+
+Users can also add `gmail` as a standalone skill to any agent (e.g. trading agents who want to send trade alerts via email) without being tied to the personal-assistant preset.
+
 ---
 
 ## Phase 6: Frontend
@@ -442,7 +459,28 @@ The callback redirects to `{frontendOrigin}/connections?setup=gmail&status=ok`. 
 
 The connection picker already lists all user connections. Gmail connections (provider: `gmail`) appear alongside trading connections. The agent create/edit flow accepts `connectionIds` — a Gmail connection can be assigned like any other.
 
-### 6.4 — Gmail Connection Detail View
+### 6.4 — Auto-Select Matching Connection When Skill Is Picked
+
+**Files:** `apps/web/src/features/agents/EditAgentModal.tsx` + `apps/web/src/features/agents/AgentsPage.tsx` (create flow)
+
+When the user selects a skill and no connection has been selected yet, auto-select a matching connection to reduce friction:
+
+| Skill selected | Auto-select rule |
+|---|---|
+| `gmail` | First active Gmail connection (provider = `gmail`), even if multiple exist |
+| `trading` or `bot-management` | Auto-select only if the user has **exactly one** active trading-capable connection (provider with `capabilities` including `"trading"`) |
+
+If the user already has one or more connections selected, do nothing — don't override their explicit choice.
+
+**Implementation:** The frontend already has access to all needed data — skill definitions via `listSelectableSkills()`, provider registry via `GET /providers`, and user connections via `GET /connections`. The chain is:
+
+```
+selected skill → capabilityFamilies → providers with those capabilities → user's matching connections
+```
+
+The auto-select runs as a side effect when `selectedSkillIds` changes, before the form is submitted. It's a pure client-side convenience — the API's `POST /agents` validation is the authoritative gate.
+
+### 6.5 — Gmail Connection Detail View
 
 Show in the connection list:
 - Provider icon (Gmail logo)
@@ -509,7 +547,10 @@ Show in the connection list:
 | `apps/api/src/providers/registry.ts` | Add `gmail` entry |
 | `apps/api/src/routes/connections.ts` | No changes needed — OAuth endpoints are separate |
 | `apps/worker/src/index.ts` | Register `emailTools` in tool registry |
-| `packages/domain/src/skills.ts` | Add `GMAIL_SKILL` to `SYSTEM_SKILLS` |
+| `packages/domain/src/skills.ts` | Add `GMAIL_SKILL` to `SYSTEM_SKILLS`; add `'gmail'` to `personal-assistant` preset in `SKILL_PRESET_MAP` |
+| `apps/web/src/features/agents/agent-display.ts` | Add `'gmail'` to `SKILL_PRESET_SKILL_IDS['personal-assistant']` |
+| `apps/web/src/features/agents/EditAgentModal.tsx` | Add `'gmail'` to `ASSISTANT_SKILL_IDS`; add auto-select logic for Gmail/trading connections |
+| `apps/web/src/features/agents/AgentsPage.tsx` | Add auto-select logic for Gmail/trading connections in create flow |
 | `apps/web/src/features/connections/ConnectionsPage.tsx` | Handle `setup=gmail` success param |
 | `apps/web/src/features/setup/provider-setup-form.tsx` | OAuth button for non-credential providers |
 | `apps/web/src/lib/api-client.ts` | Add `connections.oauth` methods if needed |

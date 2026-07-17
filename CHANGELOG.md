@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Billing top-up packs exposed primary and fallback provider names to users.** `resolveTopUpPacks` now scopes to a single provider (subscription owner or primary), the frontend dropdown strips the provider label, and top-up checkout routes through the owning provider with transparent failover. See [docs/bug-reports/2026/07/16/002-billing-topup-packs-expose-primary-and-fallback-providers-to-users.md](docs/bug-reports/2026/07/16/002-billing-topup-packs-expose-primary-and-fallback-providers-to-users.md).
+
 ## v0.0.29 - 2026-07-16
 
 ### Added
