@@ -1,5 +1,9 @@
 # More Tools Plan
 
+> **Superseded (2026-07-17):** Items 1 and 2 (send_message email fanout) have
+> been superseded by the email/messaging send capability split.
+> See [007-email-and-messaging-send-capability-split](../../07/17/007-email-and-messaging-send-capability-split/001-plan.md).
+
 ## Goal
 
 Implement the remaining agent-tooling additions described in

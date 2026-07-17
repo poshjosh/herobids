@@ -1,5 +1,10 @@
 # Send Message Email Policy Design
 
+> **Superseded (2026-07-17):** The send_message email fanout policy described
+> here has been removed. Email delivery is now handled exclusively by the
+> dedicated `send_email` tool. See
+> [007-email-and-messaging-send-capability-split](../../07/17/007-email-and-messaging-send-capability-split/001-plan.md).
+
 ## Summary
 
 `send_message` remains the only outbound user-messaging tool.

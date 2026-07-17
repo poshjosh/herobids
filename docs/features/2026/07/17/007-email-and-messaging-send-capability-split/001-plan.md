@@ -1,6 +1,6 @@
 # Email And Messaging Send Capability Split
 
-**Status:** draft
+**Status:** implemented
 **Created:** 2026-07-17
 **Depends on:**
 - [003-gmail-oauth-connection](../003-gmail-oauth-connection/001-plan.md)

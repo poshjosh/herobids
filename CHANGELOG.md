@@ -10,6 +10,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Hybrid prompt data enrichment:** The hybrid evaluator prompt now includes venue intelligence, richer exit-review context, scanner rejection breakdowns, and optional decision reasons. Trading-capable scout prompts now enumerate concrete escalation triggers. See [docs/features/2026/07/17/005-hybrid-prompt-data-enrichment/001-plan.md](docs/features/2026/07/17/005-hybrid-prompt-data-enrichment/001-plan.md).
 
+### Changed
+
+- **Email & Messaging Send Capability Split:** Separated email and messaging into distinct tool families and renamed the `gmail` system skill to `email`. Key changes:
+  - `send_email` is the exclusive tool for sending email; supports optional `fromConnectionId` for multi-account selection
+  - `send_message` is now user-messaging-only — email fanout has been removed from the brokered messaging path
+  - Skill renamed: `gmail` → `email` (provider-neutral, capability-shaped naming)
+  - Email connections surfaced in agent runtime prompt with DEFAULT marker
+  - Domain protocol: `emailDelivery` removed from `SendMessagePayloadSchema`
+  - Persistence: email fanout methods deprecated; legacy broker test archived
+  See [docs/features/2026/07/17/007-email-and-messaging-send-capability-split/001-plan.md](docs/features/2026/07/17/007-email-and-messaging-send-capability-split/001-plan.md).
+
 ### Removed
 
 - **Unused `providers` DB table and Gmail `gmail.readonly` scope:** Removed the unused `providers` table (its only runtime use — deriving connection capability families — is now a shared helper in `@herobids/domain`). Reduced the Gmail OAuth scope to `gmail.send` only and removed the `search_emails` tool from active exposure (skills, tool catalog, worker registry) to avoid the Google scope-verification review burden. Inbox-read returns only when scope verification is approved and the tool is intentionally re-enabled. See [docs/features/2026/07/17/006-remove-unused-provider-table-and-gmail-readonly-scope/001-plan.md](docs/features/2026/07/17/006-remove-unused-provider-table-and-gmail-readonly-scope/001-plan.md).
