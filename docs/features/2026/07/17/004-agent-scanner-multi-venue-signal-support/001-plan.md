@@ -512,3 +512,33 @@ quote-asset policy, swap-aware validation, and pool-aware candle routing.
 Per-strategy indicator preset tuning and per-agent signal-yield metrics are not
 part of this plan. They remain separate strategy-quality and observability
 follow-ups.
+
+## Outstanding Issues
+
+### Phase 1 — Scanner types extension
+
+- **Signals without `pricingIdentity` are silently skipped** in `completeTechnicalScan`. Consider adding a `logger.warn` for debugging when a signal lacks identity so operators can trace venue-discovery gaps.
+- **Open-position fallback hardcodes `venueType: 'orderbook'`** in `technical-phase.ts`. Add a TODO comment for Part 2 DEX support where this will produce wrong candle targets for DEX open positions.
+- **`DiscoveredInstrument` and `ScannerCandleTarget` hardcode `venueType: 'orderbook'`** — will need a `'swap'` variant in Part 2.
+- **`CandleFetcher` domain port** (`packages/domain/src/ports/candle-fetcher.ts`) still uses a `symbol: string` signature. The scanner path now has its own contract (`TechnicalPhaseDeps.fetchCandles` uses `ScannerCandleTarget`). Add a doc comment noting the separation.
+
+### Phase 2 — Bybit market-data provider and pricing
+
+- **Rate limiter budget isolation not independently enforced** — `bybit.longShortRatio` and `bybit.tickers` share the same coordinator key (`'bybit'`), so the 30 RPM ticker cap is not independently enforced. The effective shared pool of 120 RPM is generous enough that tickers won't cause starvation. File a follow-up issue to key the coordinator state by `provider:requestClass`.
+- **`resolveBybitTarget` uses exact symbol matching** (no suffix normalization like Hyperliquid's `-PERP`/`USDT` stripping). Add a JSDoc noting that Bybit symbols must be the full pair ticker (e.g. `BTCUSDT`, not `BTC`).
+- **`fetchBybitTicker` (singular) exported but unused.** Either add a consumer or remove it to keep the API surface minimal.
+- **Error message doesn't distinguish "symbol not in list" from "markPrice is null"** in `resolveBybitTarget`. Consider using distinct error codes (`price.not_found` vs `price.unavailable`) or include the reason in the message.
+- **Bybit API `retCode` is not validated** in `bybit-tickers.ts`. A non-zero `retCode` (e.g. rate-limit rejection code `10002`) produces an empty result set rather than a thrown error. This is consistent with the pre-existing `bybit-info.ts` pattern; worth flagging as a latent robustness gap.
+
+### Phase 3 — Scanner discovery, pre-filtering, and candle routing
+
+- **Pre-filter is currently a normalize-only pass-through.** `normalizeOrderbookCandidates` uses `resolveBinanceSymbol` which is pure string manipulation that always returns a string — it doesn't validate against a supported-instrument list. Actual unsupported-instrument detection happens at the HTTP level (`classifyCandleError` catches HTTP 400 from Binance). Consider maintaining a cache of previously-unsupported symbols for budget-saving pre-filtering.
+- **Duplicated filter-application logic** between the old inline code in `index.ts` and the new `scanner-candidate-discovery.ts`. Consider extracting into a shared utility.
+
+### Phase 4 — Scanner health classification
+
+- No outstanding issues. The 5-classification model covers all operational outcomes, and the universal per-scan journaling replaces the old `scanner.data_unhealthy` event.
+
+### Phase 5 — Tests and verification
+
+- No outstanding issues. 490+ new tests across 6 test files cover all new code paths.
