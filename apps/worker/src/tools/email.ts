@@ -74,7 +74,10 @@ export const sendEmailTool: AgentTool = {
     }
 
     // Resolve Gmail credentials (with lazy token refresh)
-    const tokenResult = await resolveGmailTokens(_db, ctx.agentId, _gmailConfig);
+    const tokenResult = await resolveGmailTokens(_db, ctx.agentId, {
+      ..._gmailConfig,
+      dailySendLimit: _gmailConfig.dailySendLimit ?? 50,
+    });
     if (!tokenResult.ok) {
       const nonRetryableCodes = new Set([
         'connection.missing',
@@ -93,7 +96,7 @@ export const sendEmailTool: AgentTool = {
     }
 
     // Send via Gmail adapter
-    const adapter = createGmailAdapter({ accessToken: tokenResult.value.accessToken });
+    const adapter = createGmailAdapter({ accessToken: tokenResult.data.accessToken });
     try {
       const result = await adapter.sendEmail({ to, subject, body, cc, bcc });
       // Increment daily counter after successful send
@@ -105,7 +108,7 @@ export const sendEmailTool: AgentTool = {
           ok: true,
           messageId: result.messageId,
           threadId: result.threadId,
-          from: tokenResult.value.email,
+          from: tokenResult.data.email,
           to: Array.isArray(to) ? to : [to],
         },
       };
@@ -152,7 +155,10 @@ export const searchEmailsTool: AgentTool = {
     const { query, maxResults } = parsed.data;
 
     // Resolve Gmail credentials (with lazy token refresh)
-    const tokenResult = await resolveGmailTokens(_db, ctx.agentId, _gmailConfig);
+    const tokenResult = await resolveGmailTokens(_db, ctx.agentId, {
+      ..._gmailConfig,
+      dailySendLimit: _gmailConfig.dailySendLimit ?? 50,
+    });
     if (!tokenResult.ok) {
       const nonRetryableCodes = new Set([
         'connection.missing',
@@ -171,7 +177,7 @@ export const searchEmailsTool: AgentTool = {
     }
 
     // Search via Gmail adapter
-    const adapter = createGmailAdapter({ accessToken: tokenResult.value.accessToken });
+    const adapter = createGmailAdapter({ accessToken: tokenResult.data.accessToken });
     try {
       const emails = await adapter.searchEmails({ query, maxResults });
       return {

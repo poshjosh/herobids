@@ -62,7 +62,7 @@ import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
 import { resolveSwapTokenData, type DexScreenerProvider, type CanonicalResolver } from './swap-token-resolver.js';
 import { buildAgentRiskLimits } from './agent-risk-limits.js';
 import { VenueInstrumentCache, normalizeHyperliquidSymbol, normalizeBybitSymbol, identityNormalize, type VenueSymbolProvider } from './venue-instrument-cache.js';
-import type { FilterConfig } from './technical-phase.js';
+import type { DiscoveredInstrument, FilterConfig } from './technical-phase.js';
 import { populateInstrumentsFromVenues } from './instrument-population.js';
 
 async function enrichTokenWithDiscovery(
@@ -251,7 +251,6 @@ const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
 import { discoverScannerCandidates } from './scanner-candidate-discovery.js';
 import { createScannerCandleFetcher } from './scanner-candle-fetcher.js';
 import { normalizeOrderbookCandidates } from './scanner-pre-filter.js';
-import type { DiscoveredInstrument, FilterConfig } from './technical-phase.js';
 
 /** Capacity policy values sourced from operator config. */
 const scannerCapacity = appConfig.marketData?.binance?.scanner ?? {
