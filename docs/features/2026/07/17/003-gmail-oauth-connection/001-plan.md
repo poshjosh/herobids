@@ -5,11 +5,15 @@
 **Implemented:** 2026-07-17
 **Depends on:** None (self-contained feature)
 
-> **Update (2026-07-17):** Superseded in part by [006-remove-unused-provider-table-and-gmail-readonly-scope](../006-remove-unused-provider-table-and-gmail-readonly-scope/001-plan.md). Gmail is now **send-only** — the `gmail.readonly` scope and the `search_emails` tool described below have been removed to avoid the Google scope-verification review burden. Inbox-read support returns only when scope verification is approved and the tool is intentionally re-enabled. The rest of this document (OAuth flow, token storage, connection model) still reflects the current implementation.
+> **Update (2026-07-17):** Superseded in part by [006-remove-unused-provider-table-and-gmail-readonly-scope](../006-remove-unused-provider-table-and-gmail-readonly-scope/001-plan.md). Gmail is now **send-only** — the `gmail.readonly` scope and the `search_emails` tool described below have been removed to avoid the Google scope-verification review burden. Inbox-read support returns only when scope verification is approved and the tool is intentionally re-enabled.
+>
+> **Update (2026-07-17):** Superseded in part by [007-email-and-messaging-send-capability-split](../007-email-and-messaging-send-capability-split/001-plan.md). The skill was renamed from `gmail` (provider-shaped) to `email` (capability-shaped). The `send_email` tool gained optional `fromConnectionId` for multi-account selection. Email delivery was removed from `send_message` — `send_email` is now the exclusive email delivery tool. The OAuth flow, token storage, and connection model described below still reflect the current implementation.
 
 ## Summary
 
-Users can connect their Gmail account to the platform via OAuth, grant agents access, and agents can send and read emails on their behalf using `send_email` and `search_emails` tools, packaged as a system skill.
+> **Note:** Per updates above, `search_emails` has been removed (send-only per 006) and the skill is now named `email`, not `gmail` (per 007).
+
+Users can connect their Gmail account to the platform via OAuth, grant agents access, and agents can send emails on their behalf using the `send_email` tool, packaged as the `email` system skill.
 
 ## Decisions
 
@@ -19,7 +23,7 @@ Users can connect their Gmail account to the platform via OAuth, grant agents ac
 | Recipient control | Agent chooses any recipient | Tool-level guardrails (rate limits, allowlist) rather than hard lock to owner. |
 | OAuth client | Separate Google Cloud project client | Different scopes, cleaner consent UX, no scope-mixing with login OAuth. |
 | Token storage | Reuse `user_credentials` | Same AES-256-GCM encryption. `connections.credentialId` already points at it. No new table. |
-| Skill packaging | System skill (`gmail`) | Curated, always-available like `base` and trading skills. |
+| Skill packaging | System skill (`email`, originally named `gmail` — renamed per 007) | Curated, always-available like `base` and trading skills. |
 | Token refresh | Lazy (on tool use) | No periodic sweep. Refresh token works for 6 months idle. Access token refreshed on-demand when near expiry. |
 | OAuth state param | Encoded `{ userId, nonce }` in `oauth_connection_state` cookie | Same HMAC/CSRF pattern as login OAuth, but callback must also verify the authenticated user matches the state payload. |
 | Connection surface | Gmail is a first-class generic connection in create/edit flows now | `connectionIds` are already generic on agents; the UI must stop treating connections as trading-only. |
