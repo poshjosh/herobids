@@ -7,6 +7,7 @@ import {
   RegimeChangeWakeContextSchema,
   ScannerWakeContextSchema,
   MarketWatchTriggeredPayloadSchema,
+  SendMessagePayloadSchema,
 } from './agent-protocol.js';
 
 // Shared base fields for all wake payloads
@@ -384,6 +385,122 @@ describe('Source-specific context schemas', () => {
 
   it('ScannerWakeContextSchema rejects without signalCount', () => {
     const result = ScannerWakeContextSchema.safeParse({});
+    expect(result.success).toBe(false);
+  });
+});
+
+// ── SendMessagePayloadSchema — email/messaging split validation ─────────────
+
+describe('SendMessagePayloadSchema', () => {
+  it('accepts body, subject, messageClass, and contextRef as valid keys', () => {
+    const result = SendMessagePayloadSchema.safeParse({
+      body: 'Hello user!',
+      subject: 'Status update',
+      messageClass: 'alert',
+      contextRef: 'ctx-123',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.body).toBe('Hello user!');
+      expect(result.data.subject).toBe('Status update');
+      expect(result.data.messageClass).toBe('alert');
+      expect(result.data.contextRef).toBe('ctx-123');
+    }
+  });
+
+  it('accepts body only (the only required field)', () => {
+    const result = SendMessagePayloadSchema.safeParse({
+      body: 'Minimal message',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.body).toBe('Minimal message');
+      expect(result.data.subject).toBeUndefined();
+      expect(result.data.messageClass).toBeUndefined();
+      expect(result.data.contextRef).toBeUndefined();
+    }
+  });
+
+  it('does NOT include emailDelivery in the schema shape', () => {
+    const shape = (SendMessagePayloadSchema as unknown as { shape: Record<string, unknown> }).shape;
+    const keys = Object.keys(shape);
+    expect(keys).toContain('body');
+    expect(keys).toContain('subject');
+    expect(keys).toContain('messageClass');
+    expect(keys).toContain('contextRef');
+    expect(keys).not.toContain('emailDelivery');
+    expect(keys).toHaveLength(4);
+  });
+
+  it('silently strips unknown keys like emailDelivery (Zod default behavior)', () => {
+    const result = SendMessagePayloadSchema.safeParse({
+      body: 'Hello',
+      emailDelivery: 'if_allowed',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // emailDelivery is stripped, not in output
+      expect((result.data as Record<string, unknown>).emailDelivery).toBeUndefined();
+      expect(result.data.body).toBe('Hello');
+    }
+  });
+
+  it('rejects body exceeding 2000 characters', () => {
+    const result = SendMessagePayloadSchema.safeParse({
+      body: 'x'.repeat(2001),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects empty body', () => {
+    const result = SendMessagePayloadSchema.safeParse({
+      body: '',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects invalid messageClass value', () => {
+    const result = SendMessagePayloadSchema.safeParse({
+      body: 'Hello',
+      messageClass: 'urgent', // not in enum
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects subject exceeding 200 characters', () => {
+    const result = SendMessagePayloadSchema.safeParse({
+      body: 'Hello',
+      subject: 'y'.repeat(201),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts all valid messageClass enum values', () => {
+    for (const cls of ['routine', 'alert', 'reminder']) {
+      const result = SendMessagePayloadSchema.safeParse({
+        body: 'Test',
+        messageClass: cls,
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('accepts contextRef at exactly 200 chars', () => {
+    const result = SendMessagePayloadSchema.safeParse({
+      body: 'Hello',
+      contextRef: 'x'.repeat(200),
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.contextRef).toHaveLength(200);
+    }
+  });
+
+  it('rejects contextRef exceeding 200 chars', () => {
+    const result = SendMessagePayloadSchema.safeParse({
+      body: 'Hello',
+      contextRef: 'x'.repeat(201),
+    });
     expect(result.success).toBe(false);
   });
 });

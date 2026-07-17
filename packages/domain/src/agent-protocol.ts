@@ -122,8 +122,8 @@ export const SendMessagePayloadSchema = z.object({
   subject: z.string().max(200).optional(),
   /** Message body — bounded at 2000 chars */
   body: z.string().min(1).max(2000),
-  /** Optional reference to a decision ID or context hash */
-  contextRef: z.string().optional(),
+  /** Optional reference to a decision ID or context hash (max 200 chars) */
+  contextRef: z.string().max(200).optional(),
   /**
    * Message urgency class.
    * - routine: general updates, commentary, progress notes (default)

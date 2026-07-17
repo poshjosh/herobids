@@ -2678,6 +2678,132 @@ describe('runtime composition helpers', () => {
     });
   });
 
+  describe('email-connection context provider', () => {
+    const emailProvider = RUNTIME_CONTEXT_PROVIDERS.find((p) => p.id === 'email-connection');
+
+    const readyEmailConnection = {
+      family: 'email',
+      connectionId: 'email-conn-1',
+      provider: 'gmail',
+      label: 'alice@gmail.com',
+      profile: { email: 'alice@gmail.com' },
+      readiness: {
+        family: 'email',
+        state: 'ready' as const,
+        connectionReadiness: 'ready' as const,
+        agentEligibility: 'eligible' as const,
+        effectiveReady: true,
+        connectionId: 'email-conn-1',
+        reasons: [],
+      },
+      isDefault: true,
+    };
+
+    const nonReadyEmailConnection = {
+      family: 'email',
+      connectionId: 'email-conn-2',
+      provider: 'gmail',
+      label: 'bob@gmail.com',
+      profile: { email: 'bob@gmail.com' },
+      readiness: {
+        family: 'email',
+        state: 'revoked' as const,
+        connectionReadiness: 'revoked' as const,
+        agentEligibility: 'ineligible' as const,
+        effectiveReady: false,
+        connectionId: 'email-conn-2',
+        reasons: ['underlying connection has been revoked'],
+      },
+      isDefault: false,
+    };
+
+    it('returns null when no email connections exist', () => {
+      const state = createRuntimeCompositionState({
+        ...baseDescriptor,
+        grantedConnectionsByFamily: {},
+      });
+
+      const block = emailProvider!.build(state);
+      expect(block).toBeNull();
+    });
+
+    it('returns null when email connections array is empty', () => {
+      const state = createRuntimeCompositionState({
+        ...baseDescriptor,
+        grantedConnectionsByFamily: { email: [] },
+      });
+
+      const block = emailProvider!.build(state);
+      expect(block).toBeNull();
+    });
+
+    it('returns proper output with email addresses, connectionIds, and [DEFAULT] marker', () => {
+      const state = createRuntimeCompositionState({
+        ...baseDescriptor,
+        grantedConnectionsByFamily: {
+          email: [readyEmailConnection],
+        },
+        defaultConnectionByFamily: { email: 'email-conn-1' },
+      });
+
+      const block = emailProvider!.build(state);
+      expect(block).not.toBeNull();
+      expect(block!.id).toBe('emailConnection');
+      expect(block!.title).toBe('Email Connections');
+      expect(block!.provider).toBe('email-connection');
+      expect(block!.content).toContain('alice@gmail.com');
+      expect(block!.content).toContain('connectionId: email-conn-1');
+      expect(block!.content).toContain('[DEFAULT]');
+      expect(block!.content).toContain('To send from a specific account, pass fromConnectionId to send_email.');
+    });
+
+    it('filters out non-ready connections', () => {
+      const state = createRuntimeCompositionState({
+        ...baseDescriptor,
+        grantedConnectionsByFamily: {
+          email: [readyEmailConnection, nonReadyEmailConnection],
+        },
+        defaultConnectionByFamily: { email: 'email-conn-1' },
+      });
+
+      const block = emailProvider!.build(state);
+      expect(block).not.toBeNull();
+      // Ready connection should appear
+      expect(block!.content).toContain('alice@gmail.com');
+      // Non-ready connection should be filtered out
+      expect(block!.content).not.toContain('bob@gmail.com');
+      expect(block!.content).not.toContain('email-conn-2');
+    });
+
+    it('marks connections as default via defaultConnectionByFamily or isDefault flag', () => {
+      const state = createRuntimeCompositionState({
+        ...baseDescriptor,
+        grantedConnectionsByFamily: {
+          email: [
+            { ...readyEmailConnection, isDefault: false },
+            {
+              ...readyEmailConnection,
+              connectionId: 'email-conn-2',
+              label: 'bob@gmail.com',
+              profile: { email: 'bob@gmail.com' },
+              isDefault: true, // isDefault flag points here
+            },
+          ],
+        },
+        // defaultConnectionByFamily points to conn-1
+        defaultConnectionByFamily: { email: 'email-conn-1' },
+      });
+
+      const block = emailProvider!.build(state);
+      expect(block).not.toBeNull();
+      // Both connections show [DEFAULT] because the logic is:
+      //   isDefault = c.connectionId === defaultId || c.isDefault
+      // conn-1 matches via defaultConnectionByFamily, conn-2 matches via isDefault flag
+      expect(block!.content).toContain('alice@gmail.com (connectionId: email-conn-1) [DEFAULT]');
+      expect(block!.content).toContain('bob@gmail.com (connectionId: email-conn-2) [DEFAULT]');
+    });
+  });
+
   describe('trimDynamicBlocks', () => {
     it('sorts blocks by trimOrder ascending', () => {
       const state = createRuntimeCompositionState(baseDescriptor);

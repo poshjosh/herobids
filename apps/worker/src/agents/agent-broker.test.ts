@@ -374,6 +374,64 @@ describe('AgentMessageBroker', () => {
     });
   });
 
+  describe('send_message email fanout regression', () => {
+    it('does NOT call emailClient.send when handleSendMessage processes a brokered send_message', async () => {
+      // Enrich agentRepo with the additional methods handleSendMessage needs
+      (agentRepo as any).insertOutboundMessage = vi.fn().mockResolvedValue('out-msg-1');
+      (agentRepo as any).getEffectiveTelegramChatId = vi.fn().mockResolvedValue(null);
+      (agentRepo as any).markOutboundMessageFailed = vi.fn().mockResolvedValue(undefined);
+      (agentRepo as any).markOutboundMessageSent = vi.fn().mockResolvedValue(undefined);
+
+      // Set up mocks so handleSendMessage can succeed without Telegram
+      agentRepo.getAgent.mockResolvedValue({
+        id: 'agent-123',
+        userId: 'user-1',
+        status: 'active',
+        name: 'Test Agent',
+        toolPolicy: null,
+      });
+      agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
+
+      // Provide a mock emailClient with a spy on send
+      const emailSendSpy = vi.fn().mockResolvedValue(undefined);
+      const emailClient = { send: emailSendSpy };
+
+      const brokerWithEmail = new AgentMessageBroker(
+        {} as any,              // redis
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,              // telegram
+        undefined,              // botRepo
+        undefined,              // botStart
+        undefined,              // botLimitCheck
+        undefined,              // botLiveCheck
+        undefined,              // botStop
+        undefined,              // botRestart
+        emailClient as any,     // emailClient
+      );
+
+      const envelope = makeEnvelope({
+        messageId: 'msg-send-message-nofanout',
+        type: 'agent.message.send',
+        payload: {
+          body: 'Hello from agent',
+          subject: 'Test',
+          messageClass: 'routine',
+        },
+      });
+
+      const result = await brokerWithEmail.processInbound(envelope);
+
+      // The message should be accepted and processed
+      expect(result.accepted).toBe(true);
+
+      // Email fanout must NOT be triggered
+      expect(emailSendSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe('message persistence', () => {
     it('persists envelope metadata before routing', async () => {
       const envelope = makeEnvelope({ messageId: 'msg-specific' });

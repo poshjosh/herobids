@@ -95,6 +95,13 @@ describe('createRuntimeToolVisibilityController', () => {
     expect(visibleTools).toContain('send_message');
   });
 
+  it('exposes send_email tool for the email skill', () => {
+    const descriptor = makeDescriptor([{ id: 'email', tools: ['send_email'] }]);
+    const controller = createRuntimeToolVisibilityController(() => descriptor, new Set());
+
+    expect(controller.allowedTools()).toContain('send_email');
+  });
+
   it('tracks degraded dependencies and excluded tools', () => {
     const descriptor = makeDescriptor([
       { id: 'trade', tools: ['list_bots', 'search_tokens', 'send_message'] },
