@@ -295,6 +295,13 @@
       "when": 1783986000000,
       "tag": "0041_hot_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1784950000000,
+      "tag": "0042_gmail_provider",
+      "breakpoints": true
     }
   ]
 }
