@@ -499,9 +499,9 @@ Rules:
 - [x] **(DONE)** Pre-filter unsupported orderbook candidates before candle fetch
 - [x] **(DONE)** Extract explicit orderbook scanner candle routing
 - [x] **(DONE)** Preserve exact pricing identity into completed technical scans
-- [ ] **(PENDING)** Add explicit scanner health differentiation for operator visibility
-- [ ] **(PENDING)** Add and pass focused tests
-- [ ] **(PENDING)** Update docs and changelog
+- [x] **(DONE)** Add explicit scanner health differentiation for operator visibility
+- [x] **(DONE)** Add and pass focused tests
+- [x] **(DONE)** Update docs and changelog
 
 ## Out-of-scope follow-up
 

@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Agent Scanner Multi-Venue Signal Support (Part 1 — Orderbook Venues):** Hybrid/scanner-gated agents can now receive technical scanner signals for Bybit in addition to Hyperliquid. Includes venue-aware candidate discovery, Bybit tickers provider with execution-price resolution (fail-closed, no oracle fallback), explicit orderbook candle routing, scanner health classification (healthy_no_signal, healthy_signals, data_path_failure, overlap_skipped, no_candidates), and pricing identity preservation through scan completion. 490+ new tests across 6 test files. See [docs/features/2026/07/17/004-agent-scanner-multi-venue-signal-support/001-plan.md](docs/features/2026/07/17/004-agent-scanner-multi-venue-signal-support/001-plan.md).
+
 - **Gmail OAuth Connection for Agents:** Users can connect their Gmail account via OAuth and agents can send/read emails with `send_email` and `search_emails` tools. Includes OAuth endpoints, lazy token refresh, daily rate limiter, `gmail` system skill, and generic connection picker. See [docs/features/2026/07/17/003-gmail-oauth-connection/001-plan.md](docs/features/2026/07/17/003-gmail-oauth-connection/001-plan.md).
 
 - Branding by coloring the AI in OpenAIdom
