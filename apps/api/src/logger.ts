@@ -42,7 +42,13 @@ export function createLogger(name: string): Logger {
 export function createFastifyLogger(
   extra?: { serializers?: { [key: string]: SerializerFn } },
 ): Logger {
-  const base = { name: 'herobids-api', redact: ['req.headers.authorization'] };
+  const base = {
+    name: 'herobids-api',
+    redact: [
+      'req.headers.authorization',
+      'req.headers["x-telegram-bot-api-secret-token"]',
+    ],
+  };
   if (!isPrettyLog) {
     return pino({ ...base, ...extra });
   }

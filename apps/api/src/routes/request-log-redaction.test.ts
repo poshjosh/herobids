@@ -26,6 +26,23 @@ function makeRedactingLogger() {
     return redacted;
   }
 
+  const SENSITIVE_HEADERS = new Set([
+    'authorization',
+    'x-telegram-bot-api-secret-token',
+    'cookie',
+    'x-api-key',
+  ]);
+
+  function redactSensitiveHeaders(headers: unknown): unknown {
+    if (headers == null || typeof headers !== 'object') return headers;
+    const h = headers as Record<string, unknown>;
+    const redacted: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(h)) {
+      redacted[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? '[Redacted]' : value;
+    }
+    return redacted;
+  }
+
   function redactReqSerializer(req: Record<string, unknown>) {
     const connection: Record<string, unknown> | undefined =
       (req['socket'] as Record<string, unknown> | undefined) ??
@@ -41,7 +58,7 @@ function makeRedactingLogger() {
           : req['url'],
       query: redactQueryToken(req['query']),
       params: req['params'],
-      headers: req['headers'],
+      headers: redactSensitiveHeaders(req['headers']),
       remoteAddress: req['ip'] ?? connection?.['remoteAddress'] ?? '',
       remotePort: connection?.['remotePort'] ?? '',
     };
@@ -50,7 +67,10 @@ function makeRedactingLogger() {
   const config = {
     level: 'info' as const,
     stream,
-    redact: ['req.headers.authorization'] as string[],
+    redact: [
+      'req.headers.authorization',
+      'req.headers["x-telegram-bot-api-secret-token"]',
+    ] as string[],
     serializers: { req: redactReqSerializer },
   };
 
@@ -189,5 +209,65 @@ describe('request log redaction', () => {
     expect(logText).toContain('page=2');
     expect(logText).toContain('sort=desc');
     expect(logText).not.toContain('[redacted]');
+  });
+
+  it('redacts x-telegram-bot-api-secret-token header via Pino redact', async () => {
+    const { config, chunks } = makeRedactingLogger();
+    const app = Fastify({ logger: config });
+
+    app.post('/api/telegram/webhook', async (_req, reply) => {
+      return reply.status(200).send('ok');
+    });
+    await app.ready();
+
+    const leakedToken = 'telegram-webhook-secret-for-redaction-test';
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/telegram/webhook',
+      headers: {
+        host: 'localhost',
+        'x-telegram-bot-api-secret-token': leakedToken,
+      },
+    });
+
+    await app.close();
+
+    const logText = chunks.join('');
+    // Raw token must not appear in logs
+    expect(logText).not.toContain(leakedToken);
+    // Pino redact replaces the value with "[Redacted]"
+    expect(logText).toContain('[Redacted]');
+  });
+
+  it('redacts cookie and x-api-key headers via serializer redact', async () => {
+    const { config, chunks } = makeRedactingLogger();
+    const app = Fastify({ logger: config });
+
+    app.get('/api-data', async (_req, reply) => {
+      return reply.status(200).send('ok');
+    });
+    await app.ready();
+
+    await app.inject({
+      method: 'GET',
+      url: '/api-data',
+      headers: {
+        host: 'localhost',
+        cookie: 'session=abc123',
+        'x-api-key': 'sk-secret-key',
+        'accept': 'application/json',
+      },
+    });
+
+    await app.close();
+
+    const logText = chunks.join('');
+    // Sensitive values must be redacted by the serializer
+    expect(logText).not.toContain('session=abc123');
+    expect(logText).not.toContain('sk-secret-key');
+    expect(logText).toContain('[Redacted]');
+    // Non-sensitive headers must survive
+    expect(logText).toContain('application/json');
   });
 });

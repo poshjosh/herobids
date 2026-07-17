@@ -109,10 +109,28 @@ function redactReqSerializer(req: any): Record<string, unknown> {
       : req['url'],
     query: redactQueryToken(req['query']),
     params: req['params'],
-    headers: req['headers'],
+    headers: redactSensitiveHeaders(req['headers']),
     remoteAddress: req['ip'] ?? connection?.['remoteAddress'] ?? '',
     remotePort: connection?.['remotePort'] ?? undefined,
   } satisfies Record<string, unknown>;
+}
+
+const SENSITIVE_HEADERS = new Set([
+  'authorization',
+  'x-telegram-bot-api-secret-token',
+  'cookie',
+  'x-api-key',
+]);
+
+/** Redact sensitive header values before they reach the logger. */
+function redactSensitiveHeaders(headers: unknown): unknown {
+  if (headers == null || typeof headers !== 'object') return headers;
+  const h = headers as Record<string, unknown>;
+  const redacted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(h)) {
+    redacted[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? '[Redacted]' : value;
+  }
+  return redacted;
 }
 
 function redactQueryToken(query: unknown): unknown {
