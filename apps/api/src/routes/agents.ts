@@ -26,6 +26,7 @@ import {
   users,
   venueAccounts,
   positions,
+  providers,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import {
@@ -1064,6 +1065,45 @@ export async function agentRoutes(
     const skillIds = await listSkillIdsForAgent(db, id);
     const riskContract = resolveAgentRiskContractForResponse(agent, agentRiskDefaults);
     return reply.send({ ...decorateAgentResponse({ ...agent, skillIds }), ...enrichAgentResponse(agent), riskContract, activeSession: session ?? null });
+  });
+
+  // GET /agents/:id/connections — returns all assigned connections across all providers
+  app.get<{ Params: { id: string } }>('/agents/:id/connections', async (request, reply) => {
+    const { id: agentId } = request.params;
+
+    // Verify agent exists and belongs to the user
+    const [agent] = await db.select({ id: agents.id, userId: agents.userId })
+      .from(agents).where(eq(agents.id, agentId)).limit(1);
+    if (!agent) {
+      return reply.status(404).send(errorPayload('agent.not_found', 'Agent not found'));
+    }
+    if (agent.userId !== request.userId) {
+      return reply.status(403).send(errorPayload('agent.forbidden', 'Agent does not belong to this user'));
+    }
+
+    const rows = await db
+      .select({
+        connectionId: connections.id,
+        provider: connections.provider,
+        providerName: providers.name,
+        providerType: providers.providerType,
+        capabilities: providers.capabilities,
+        label: connections.label,
+        status: agentConnections.status,
+        credentialId: connections.credentialId,
+        profile: connections.profile,
+        grantedAt: agentConnections.grantedAt,
+        providerMeta: providers.meta,
+      })
+      .from(agentConnections)
+      .innerJoin(connections, eq(connections.id, agentConnections.connectionId))
+      .innerJoin(providers, eq(providers.id, connections.provider))
+      .where(and(
+        eq(agentConnections.agentId, agentId),
+        eq(agentConnections.status, 'active'),
+      ));
+
+    return reply.send({ connections: rows });
   });
 
   // Update agent

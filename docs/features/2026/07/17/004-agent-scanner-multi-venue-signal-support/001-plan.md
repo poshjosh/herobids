@@ -236,7 +236,37 @@ Rules:
   symbol
 - no scanner code should assume Hyperliquid once the binding venue is Bybit
 
-### 4. Extend `priceService` to support Bybit orderbook signals
+### 4. Pre-filter unsupported orderbook candidates before candle fetch
+
+The orderbook scanner should not spend candle-fetch budget on instruments that
+the configured candle source cannot score.
+
+This matters immediately for the current Hyperliquid path because discovery can
+surface perp instruments that are not available on the current candle provider.
+Without a pre-filter, the scanner wastes rate-limit budget on guaranteed candle
+fetch misses and reduces the number of genuinely scorable candidates per scan.
+
+Required behavior:
+
+- after candidate discovery, normalize each orderbook candidate to the candle
+  provider symbol expected by the scanner candle fetcher
+- check whether that provider symbol is supported by the configured candle
+  source before attempting fetch
+- drop unsupported candidates before candle fetch and count them explicitly as
+  `unsupported`
+- log structured summary data so operators can distinguish unsupported-symbol
+  pruning from network or provider failures
+
+Rules:
+
+- implement this as a generic orderbook scanner pre-filter, not as a
+  Hyperliquid-vs-Binance special case
+- unsupported candidates are not fetch failures; they are an expected filtered
+  outcome
+- pre-filtering must improve candle-fetch efficiency without changing signal
+  semantics for supported instruments
+
+### 5. Extend `priceService` to support Bybit orderbook signals
 
 The current `priceService` only has execution-aware logic for Hyperliquid.
 That is insufficient once Bybit scanner signals are introduced because hybrid
@@ -284,7 +314,7 @@ Rules:
 - hybrid sizing for Bybit must reject stale ticker results instead of falling
   back to DexScreener
 
-### 5. Preserve discovered pricing identity through scan completion
+### 6. Preserve discovered pricing identity through scan completion
 
 Stop hardcoding Hyperliquid pricing identity in
 `apps/worker/src/complete-technical-scan.ts`.
@@ -299,7 +329,29 @@ Instead:
 
 This removes late re-derivation drift and makes Bybit hybrid sizing safe.
 
-### 6. Keep the prompt human-readable
+### 7. Differentiate healthy no-signal scans from data-path failures
+
+Scanner rollout across more venues needs explicit health classification so
+operators can tell the difference between conservative strategy behavior and a
+broken data path.
+
+Required classification:
+
+- `fetched > 0 && scored > 0 && signalsGenerated === 0` -> healthy no-signal
+- `fetched === 0 || eligible === 0` -> scanner data-path failure
+
+Required behavior:
+
+- emit an explicit per-scan health classification in completed scan state,
+  journal events, or both
+- keep the current signal and summary fields, but derive an operator-facing
+  status from them instead of forcing operators to infer it manually
+- treat unsupported-symbol pruning as a distinct contributing reason rather
+  than collapsing it into generic fetch failure
+
+This is observability and hardening, not strategy logic.
+
+### 8. Keep the prompt human-readable
 
 The hybrid prompt should continue to show clean symbols.
 
@@ -345,13 +397,14 @@ Acceptance criteria:
 - Bybit hybrid sizing fails closed when execution pricing is unavailable or
   stale
 
-### Phase 3 — Orderbook scanner discovery and candle routing
+### Phase 3 — Orderbook scanner discovery, pre-filtering, and candle routing
 
 | File | Action |
 |---|---|
 | `apps/worker/src/index.ts` | Remove inline Hyperliquid-only scanner helpers |
 | `apps/worker/src/scanner-candidate-discovery.ts` (new) | Implement orderbook venue-aware discovery |
 | `apps/worker/src/scanner-candle-fetcher.ts` (new) | Implement explicit orderbook candle routing |
+| orderbook scanner support helper(s) as needed | Pre-filter unsupported provider symbols before fetch |
 | `apps/worker/src/agent-trading-actor.ts` | Use the new helpers via injected deps |
 
 Acceptance criteria:
@@ -359,16 +412,31 @@ Acceptance criteria:
 - scanner discovery respects the active orderbook binding venue
 - Hyperliquid and Bybit candidates both flow through the same scanner contract
 - candle fetching no longer assumes Hyperliquid
+- unsupported orderbook candidates are removed before fetch and counted
+  separately from fetch failures
 
-### Phase 4 — Tests and verification
+### Phase 4 — Scanner health classification and rollout hardening
+
+| File | Action |
+|---|---|
+| `apps/worker/src/complete-technical-scan.ts` | Derive explicit scanner health classification from scan outcomes |
+| runtime scan-state / journal wiring files as needed | Surface operator-visible scanner health status |
+
+Acceptance criteria:
+
+- healthy no-signal scans are distinguishable from broken data-path scans
+- unsupported-symbol pruning is visible and not mislabeled as provider failure
+
+### Phase 5 — Tests and verification
 
 | File | Coverage |
 |---|---|
 | `packages/market-data/src/bybit-tickers.test.ts` | Bybit ticker provider parsing, rate limiting, cache behavior |
 | `packages/market-data/src/price-service.test.ts` | Bybit price resolution and stale rejection |
-| `apps/worker/src/scanner-candidate-discovery.test.ts` | Hyperliquid and Bybit discovery |
+| `apps/worker/src/scanner-candidate-discovery.test.ts` | Hyperliquid and Bybit discovery; unsupported-symbol pre-filtering |
 | `apps/worker/src/scanner-candle-fetcher.test.ts` | explicit orderbook candle routing |
 | `apps/worker/src/complete-technical-scan.test.ts` | Bybit pricing identities preserved into scan state |
+| `apps/worker/src/complete-technical-scan.test.ts` | healthy no-signal vs data-path failure classification |
 | `apps/worker/src/hybrid-agent-evaluator.test.ts` | symbol-based resolution still submits exact orderbook instrument plus pricing identity |
 
 Required executable validation:
@@ -387,6 +455,7 @@ Required executable validation:
 | `apps/worker/src/runtime-composition.ts` | scan-state identity source of truth |
 | `apps/worker/src/scanner-candidate-discovery.ts` (new) | orderbook venue-aware candidate discovery |
 | `apps/worker/src/scanner-candle-fetcher.ts` (new) | explicit orderbook candle routing |
+| orderbook scanner support helper(s) as needed | unsupported-symbol pre-filtering |
 | `packages/strategy/src/scan-engine.ts` | venue-aware scan signal shape |
 | `packages/market-data/src/bybit-tickers.ts` (new) | Bybit discovery and pricing support |
 | `packages/market-data/src/provider-registry.ts` | new provider surface |
@@ -405,6 +474,9 @@ Rules:
   hybrid entries from a generic oracle fallback
 - if an orderbook scanner-generated signal lacks exact pricing identity, reject
   it instead of synthesizing a best guess
+- if no orderbook candidates remain after unsupported-symbol pre-filtering,
+  classify the scan as a data-path issue only when the resulting `eligible`
+  path is empty for operational reasons rather than by strategy choice
 
 ## Verification matrix
 
@@ -412,7 +484,10 @@ Rules:
 |---|---|
 | Hyperliquid-bound hybrid agent | scanner signals and hybrid submissions still work |
 | Bybit-bound hybrid agent | scanner discovers Bybit candidates and hybrid sizing resolves Bybit execution price |
+| Hyperliquid candidate unsupported by candle provider | candidate is filtered before fetch and counted as unsupported |
 | Bybit execution price unavailable | scanner signal is not sized or submitted |
+| fetched > 0, scored > 0, signalsGenerated = 0 | healthy no-signal classification |
+| fetched = 0 or eligible = 0 | data-path failure classification |
 | orderbook validation regression | none |
 
 ## Checklist
@@ -421,8 +496,10 @@ Rules:
 - [ ] Implement Bybit tickers provider
 - [ ] Extend `priceService` with Bybit execution-price resolution
 - [ ] Extract venue-aware orderbook scanner candidate discovery
+- [ ] Pre-filter unsupported orderbook candidates before candle fetch
 - [ ] Extract explicit orderbook scanner candle routing
 - [ ] Preserve exact pricing identity into completed technical scans
+- [ ] Add explicit scanner health differentiation for operator visibility
 - [ ] Add and pass focused tests
 - [ ] Update docs and changelog
 
@@ -431,3 +508,7 @@ Rules:
 Jupiter and 1inch scanner support are intentionally deferred to
 [002-plan.md](./002-plan.md). That follow-up adds exact DEX execution identity,
 quote-asset policy, swap-aware validation, and pool-aware candle routing.
+
+Per-strategy indicator preset tuning and per-agent signal-yield metrics are not
+part of this plan. They remain separate strategy-quality and observability
+follow-ups.
