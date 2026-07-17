@@ -492,16 +492,16 @@ Rules:
 
 ## Checklist
 
-- [ ] Extend orderbook scanner candidate and signal types to carry venue-aware identity
-- [ ] Implement Bybit tickers provider
-- [ ] Extend `priceService` with Bybit execution-price resolution
-- [ ] Extract venue-aware orderbook scanner candidate discovery
-- [ ] Pre-filter unsupported orderbook candidates before candle fetch
-- [ ] Extract explicit orderbook scanner candle routing
-- [ ] Preserve exact pricing identity into completed technical scans
-- [ ] Add explicit scanner health differentiation for operator visibility
-- [ ] Add and pass focused tests
-- [ ] Update docs and changelog
+- [ ] **(PENDING)** Extend orderbook scanner candidate and signal types to carry venue-aware identity
+- [ ] **(PENDING)** Implement Bybit tickers provider
+- [ ] **(PENDING)** Extend `priceService` with Bybit execution-price resolution
+- [ ] **(PENDING)** Extract venue-aware orderbook scanner candidate discovery
+- [ ] **(PENDING)** Pre-filter unsupported orderbook candidates before candle fetch
+- [ ] **(PENDING)** Extract explicit orderbook scanner candle routing
+- [ ] **(PENDING)** Preserve exact pricing identity into completed technical scans
+- [ ] **(PENDING)** Add explicit scanner health differentiation for operator visibility
+- [ ] **(PENDING)** Add and pass focused tests
+- [ ] **(PENDING)** Update docs and changelog
 
 ## Out-of-scope follow-up
 
