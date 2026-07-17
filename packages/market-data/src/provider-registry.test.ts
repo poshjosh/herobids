@@ -25,6 +25,7 @@ function createConfig() {
       baseUrl: 'https://api.bybit.com',
       longShortRatioPath: '/v5/market/account-ratio',
       intelligence: { requestsPerMinute: 120, cacheTtlMs: 60_000 },
+      tickers: { requestsPerMinute: 30 },
     },
     binance: {
       baseUrl: 'https://api.binance.com',

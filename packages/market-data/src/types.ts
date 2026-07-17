@@ -85,6 +85,14 @@ export interface BybitCrowdingSignal {
   timestamp: string;
 }
 
+export interface BybitTicker {
+  symbol: string;
+  markPrice: number | null;
+  lastPrice: number | null;
+  volume24hUsd: number | null;
+  priceChange24hPct: number | null;
+}
+
 export interface DiscoveredPool {
   poolAddress: string;
   network: string;
@@ -168,6 +176,7 @@ export interface MarketDataConfig {
     baseUrl: string;
     longShortRatioPath: string;
     intelligence: MarketDataBudgetSettings;
+    tickers: MarketDataBudgetSettings;
   };
   binance: {
     baseUrl: string;

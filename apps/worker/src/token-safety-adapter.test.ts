@@ -48,6 +48,7 @@ function makeMarketDataConfig(
       baseUrl: 'https://api.bybit.com',
       longShortRatioPath: '/v5/market/account-ratio',
       intelligence: { requestsPerMinute: 100 },
+      tickers: { requestsPerMinute: 30 },
     },
     binance: { baseUrl: 'https://api.binance.com', requestsPerMinute: 100 },
     birdeye: { enabled: false, baseUrl: '', requestsPerMinute: 0, apiKey: '', cacheTtlMs: 0 },

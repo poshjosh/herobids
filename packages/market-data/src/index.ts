@@ -1,5 +1,6 @@
 export type {
 	BybitCrowdingSignal,
+	BybitTicker,
 	CanonicalTokenDefinition,
 	DiscoveredPool,
 	DiscoveredToken,
@@ -75,6 +76,7 @@ export {
 } from './geckoterminal.js';
 export { fetchHyperliquidAssetContexts, type HyperliquidInfoConfig } from './hyperliquid-info.js';
 export { fetchBybitLongShortRatio, type BybitInfoConfig } from './bybit-info.js';
+export { fetchBybitTickers, fetchBybitTicker, type BybitTickersConfig } from './bybit-tickers.js';
 export { discoverTokens, type DiscoveryConfig } from './discovery.js';
 export type { DiscoverySeenClient, DiscoverySeenTracker } from './discovery-seen-tracker.js';
 export { NoopDiscoverySeenTracker, RedisDiscoverySeenTracker } from './discovery-seen-tracker.js';

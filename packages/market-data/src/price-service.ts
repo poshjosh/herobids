@@ -231,6 +231,51 @@ async function resolveHyperliquidTarget(
   }
 }
 
+/**
+ * Resolves a token identity on Bybit by matching the symbol against
+ * available linear tickers.  Returns the resolved identity with chain fixed
+ * to `bybit` and source `execution`.
+ *
+ * Fails closed when markPrice is null — no fallback to DexScreener.
+ */
+async function resolveBybitTarget(
+  registry: ProviderRegistry,
+  symbol: string,
+): Promise<ResolvePriceTargetResult> {
+  try {
+    const result = await registry.bybit.tickers();
+    const normalized = symbol.toUpperCase();
+    const ticker = result.data.find(
+      (t) => t.symbol.toUpperCase() === normalized,
+    );
+    if (!ticker || ticker.markPrice === null) {
+      return {
+        ok: false,
+        error: { code: 'price.not_found', message: `${symbol} not found on Bybit` },
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        symbol: ticker.symbol,
+        chain: 'bybit',
+        priceUsd: ticker.markPrice,
+        source: 'execution',
+        fetchedAt: result.meta.freshness.fetchedAt,
+        stale: result.meta.freshness.isStale,
+      },
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: 'price.source_failed',
+        message: err instanceof Error ? err.message : 'Bybit fetch failed',
+      },
+    };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Composite price service — source selection + stale-cache fallback
 // ---------------------------------------------------------------------------
@@ -238,6 +283,7 @@ async function resolveHyperliquidTarget(
 /**
  * CompositePriceService selects sources by chain:
  *   - "hyperliquid": execution → oracle → cached
+ *   - "bybit":       execution → cached (fail closed, no oracle fallback)
  *   - all others:    oracle → cached
  *
  * Results are cached in memory so failed live lookups can fall back to stale data.
@@ -268,6 +314,9 @@ export function createPriceService(registry: ProviderRegistry): PriceService {
       sources.push(() => resolveHyperliquidTarget(registry, symbol));
       // DexScreener has no 'hyperliquid' network — use 'any' as the oracle fallback.
       sources.push(() => resolveDexScreenerTarget(registry, symbol, 'any', address));
+    } else if (chainLower === 'bybit') {
+      sources.push(() => resolveBybitTarget(registry, symbol));
+      // No DexScreener fallback for Bybit — fail closed.
     } else {
       sources.push(() => resolveDexScreenerTarget(registry, symbol, chain, address));
     }

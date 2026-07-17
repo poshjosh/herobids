@@ -23,6 +23,7 @@ import {
 } from './geckoterminal.js';
 import { fetchHyperliquidAssetContexts, type HyperliquidInfoConfig } from './hyperliquid-info.js';
 import { fetchBybitLongShortRatio, type BybitInfoConfig } from './bybit-info.js';
+import { fetchBybitTickers, type BybitTickersConfig } from './bybit-tickers.js';
 import { type CoinMarketCapConfig } from './coinmarketcap.js';
 import {
   fetchBirdeyeTokenOverview,
@@ -70,6 +71,7 @@ export interface ProviderRegistry {
   };
   bybit: {
     longShortRatio(symbol: string, options?: { period?: '5min' | '15min' | '30min' | '1h' | '4h' | '1d'; limit?: number }): ReturnType<typeof loadWithCache<Awaited<ReturnType<typeof fetchBybitLongShortRatio>>>>;
+    tickers(): ReturnType<typeof loadWithCache<Awaited<ReturnType<typeof fetchBybitTickers>>>>;
   };
   birdeye: {
     tokenOverview(address: string, chain: string): ReturnType<typeof loadWithCache<BirdeyeTokenOverview | null>>;
@@ -144,6 +146,11 @@ export function createProviderRegistry(
     burstCapacity: config.bybit.intelligence.burstCapacity,
     maxWaitMs: config.bybit.intelligence.maxWaitMs,
   };
+  const bybitTickersBudget: SharedBudgetConfig = {
+    requestsPerMinute: config.bybit.tickers.requestsPerMinute,
+    burstCapacity: config.bybit.tickers.burstCapacity,
+    maxWaitMs: config.bybit.tickers.maxWaitMs,
+  };
   const binanceBudget: SharedBudgetConfig = {
     requestsPerMinute: config.binance.requestsPerMinute,
     burstCapacity: config.binance.requestsPerMinute,
@@ -186,6 +193,12 @@ export function createProviderRegistry(
     longShortRatioPath: config.bybit.longShortRatioPath,
     timeoutMs: config.timeoutMs,
     rateLimiter: createLimiter(coordinator, 'bybit', 'price-support', bybitBudget),
+    fetchFn,
+  };
+  const bybitTickersConfig: BybitTickersConfig = {
+    baseUrl: config.bybit.baseUrl,
+    timeoutMs: config.timeoutMs,
+    rateLimiter: createLimiter(coordinator, 'bybit', 'price-support', bybitTickersBudget),
     fetchFn,
   };
   const binanceConfig: BinanceCandlesConfig = {
@@ -343,6 +356,15 @@ export function createProviderRegistry(
         cacheKey: `bybit:long-short:${symbol}:${ratioOptions?.period ?? '1h'}:${ratioOptions?.limit ?? 10}`,
         policy: { ttlMs: config.bybit.intelligence.cacheTtlMs ?? 0, staleWhileRevalidateMs: config.bybit.intelligence.cacheTtlMs ?? 0 },
         loader: () => fetchBybitLongShortRatio(symbol, bybitConfig, ratioOptions),
+        allowStale: true,
+      }),
+      tickers: () => loadWithCache({
+        provider: 'bybit',
+        requestClass: 'price-support',
+        cache,
+        cacheKey: 'bybit:tickers',
+        policy: { ttlMs: config.bybit.tickers.cacheTtlMs ?? 0, staleWhileRevalidateMs: config.bybit.tickers.cacheTtlMs ?? 0 },
+        loader: () => fetchBybitTickers(bybitTickersConfig),
         allowStale: true,
       }),
     },

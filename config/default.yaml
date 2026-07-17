@@ -208,6 +208,11 @@ marketData:
       burstCapacity: 20
       maxWaitMs: 2000
       cacheTtlMs: 60000
+    tickers:
+      requestsPerMinute: 30
+      burstCapacity: 10
+      maxWaitMs: 2000
+      cacheTtlMs: 30000
   binance:
     baseUrl: "https://api.binance.com"
     requestsPerMinute: 200

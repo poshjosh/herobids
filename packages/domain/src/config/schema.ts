@@ -923,6 +923,12 @@ export const MarketDataConfigSchema = z.object({
       maxWaitMs: 2_000,
       cacheTtlMs: 60_000,
     }),
+    tickers: MarketDataBudgetSchema.default({
+      requestsPerMinute: 30,
+      burstCapacity: 10,
+      maxWaitMs: 2_000,
+      cacheTtlMs: 30_000,
+    }),
   }).default({}),
   binance: z.object({
     baseUrl: z.string().url().default('https://api.binance.com'),
