@@ -10,7 +10,7 @@ import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
 import type { ExecutionActor } from './execution-actor.js';
 import { VenueAdapterFactory } from './venue-adapter-factory.js';
-import { AgentTradingActor } from './agent-trading-actor.js';
+import { AgentTradingActor, type SignalFingerprintStore } from './agent-trading-actor.js';
 import { createSwapTokenSafetyAdapter } from './token-safety-adapter.js';
 import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { LlmStrategy, MechanicalStrategy, HybridStrategy, DcaStrategy } from '@herobids/strategy';
@@ -959,7 +959,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           discoverCandidates,
           fetchCandles,
           maxConcurrentScans: scannerCapacity.maxConcurrentScans,
-          signalFingerprintStore: redisClient,
+          signalFingerprintStore: redisClient as unknown as SignalFingerprintStore,
           scannerSignalDedup: appConfig.agentRuntime.scannerSignalDedup,
         });
 

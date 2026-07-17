@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { HTMLAttributes } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Brandify } from '../../lib/brandify.js';
+import { Brandify, brandifyTag } from '../../lib/brandify.js';
 import type { PublicSection } from './contentRegistry.js';
 import { loadContent } from './loadContent.js';
 
@@ -34,15 +34,15 @@ type HeadingProps = HTMLAttributes<HTMLHeadingElement>;
 const headingComponents = {
   h1: ({ children, ...props }: HeadingProps) => {
     const text = extractText(children);
-    return <h1 id={slugify(text)} {...props}>{children}</h1>;
+    return <h1 id={slugify(text)} {...props}><Brandify>{children}</Brandify></h1>;
   },
   h2: ({ children, ...props }: HeadingProps) => {
     const text = extractText(children);
-    return <h2 id={slugify(text)} {...props}>{children}</h2>;
+    return <h2 id={slugify(text)} {...props}><Brandify>{children}</Brandify></h2>;
   },
   h3: ({ children, ...props }: HeadingProps) => {
     const text = extractText(children);
-    return <h3 id={slugify(text)} {...props}>{children}</h3>;
+    return <h3 id={slugify(text)} {...props}><Brandify>{children}</Brandify></h3>;
   },
 };
 
@@ -132,11 +132,19 @@ export function MarkdownPage({ section, page, locale, fallbackTitle }: MarkdownP
 
   return (
     <div className="prose prose-invert">
-      <Brandify>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={headingComponents}>
-          {content}
-        </ReactMarkdown>
-      </Brandify>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          ...headingComponents,
+          p: brandifyTag('p'),
+          li: brandifyTag('li'),
+          td: brandifyTag('td'),
+          th: brandifyTag('th'),
+          a: brandifyTag('a'),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }
