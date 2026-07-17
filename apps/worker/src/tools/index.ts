@@ -17,6 +17,7 @@ import { schemaTools } from './schema.js';
 import { accountTools } from './account.js';
 import { instrumentTools } from './find-instrument.js';
 import { resolverTools } from './resolvers.js';
+import { emailTools } from './email.js';
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
   const registeredTools = registry.list();
@@ -95,6 +96,7 @@ export function createToolRegistry(): ToolRegistry {
     ...accountTools,
     ...instrumentTools,
     ...resolverTools,
+    ...emailTools,
   ];
 
   for (const tool of allTools) {

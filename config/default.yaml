@@ -848,3 +848,4 @@ integrations:
     clientId: ""                   # override: GMAIL_CLIENT_ID
     clientSecret: ""               # override: GMAIL_CLIENT_SECRET
     redirectUri: ""                # override: GMAIL_REDIRECT_URI (auto-derived if empty: {publicBaseUrl}/connections/oauth/gmail/callback)
+    dailySendLimit: 50             # override: GMAIL_DAILY_SEND_LIMIT — max emails per agent per day

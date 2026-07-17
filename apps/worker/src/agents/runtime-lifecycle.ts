@@ -124,6 +124,15 @@ export function buildAgentEnv(
   // Providers YAML — forward for per-model rate-card seeding inside the container.
   if (config.providersYamlJson) envOut['PROVIDERS_YAML'] = config.providersYamlJson;
 
+  // Credential encryption key — needed by the agent for venue account and Gmail OAuth token decryption.
+  if (resolvedEnv['CREDENTIAL_ENCRYPTION_KEY']) envOut['CREDENTIAL_ENCRYPTION_KEY'] = resolvedEnv['CREDENTIAL_ENCRYPTION_KEY']!;
+
+  // Gmail OAuth integration — forwarded so agents can use send_email / search_emails tools.
+  if (resolvedEnv['GMAIL_CLIENT_ID']) envOut['GMAIL_CLIENT_ID'] = resolvedEnv['GMAIL_CLIENT_ID']!;
+  if (resolvedEnv['GMAIL_CLIENT_SECRET']) envOut['GMAIL_CLIENT_SECRET'] = resolvedEnv['GMAIL_CLIENT_SECRET']!;
+  if (resolvedEnv['GMAIL_REDIRECT_URI']) envOut['GMAIL_REDIRECT_URI'] = resolvedEnv['GMAIL_REDIRECT_URI']!;
+  if (resolvedEnv['GMAIL_DAILY_SEND_LIMIT']) envOut['GMAIL_DAILY_SEND_LIMIT'] = resolvedEnv['GMAIL_DAILY_SEND_LIMIT']!;
+
   return envOut;
 }
 

@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { TOOL_CATALOG, TOOL_CATEGORY_LABELS, getToolCatalogEntry, KNOWN_AGENT_TOOL_NAMES } from './tools.js';
 
 describe('TOOL_CATALOG', () => {
-  it('has exactly 46 entries, matching KNOWN_AGENT_TOOL_NAMES length', () => {
+  it('has exactly 48 entries, matching KNOWN_AGENT_TOOL_NAMES length', () => {
     const catalogKeys = Object.keys(TOOL_CATALOG);
-    expect(catalogKeys).toHaveLength(46);
+    expect(catalogKeys).toHaveLength(48);
     expect(catalogKeys).toHaveLength(KNOWN_AGENT_TOOL_NAMES.length);
   });
 

@@ -78,6 +78,7 @@ import { buildTickGateState } from './tick-gate-state.js';
 import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { createToolRegistry } from './tools/index.js';
+import { initEmailTools } from './tools/email.js';
 import { extractCeilings, extractCreatorInput } from './agent-risk-limits.js';
 import { getWorkspacePaths } from './tools/workspace.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
@@ -922,6 +923,22 @@ if (marketDataConfig?.economicCalendar?.enabled) {
 // ---------------------------------------------------------------------------
 
 const toolRegistry = createToolRegistry();
+
+// Initialize email tools if Gmail integration is configured.
+// Gmail client credentials and encryption key are forwarded from the worker
+// process via env vars. Without them, send_email / search_emails return a
+// clear initialization error rather than crashing.
+if (db && process.env['GMAIL_CLIENT_ID'] && process.env['CREDENTIAL_ENCRYPTION_KEY']) {
+  const dailySendLimit = process.env['GMAIL_DAILY_SEND_LIMIT']
+    ? parseInt(process.env['GMAIL_DAILY_SEND_LIMIT'], 10)
+    : undefined;
+  initEmailTools(db, {
+    clientId: process.env['GMAIL_CLIENT_ID'] ?? '',
+    clientSecret: process.env['GMAIL_CLIENT_SECRET'] ?? '',
+    redirectUri: process.env['GMAIL_REDIRECT_URI'] ?? '',
+    dailySendLimit: dailySendLimit && !isNaN(dailySendLimit) ? dailySendLimit : undefined,
+  });
+}
 
 function filterSearchResults(
   rawResults: TokenInfo[],

@@ -1337,6 +1337,7 @@ export const GmailIntegrationConfigSchema = z.object({
   clientId: z.string().default(''),
   clientSecret: z.string().default(''),
   redirectUri: z.string().default(''),
+  dailySendLimit: z.number().int().min(1).max(500).default(50),
 }).default({});
 
 export const AppConfigSchema = z.object({
