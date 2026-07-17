@@ -8,6 +8,8 @@
 
 export interface SkillDefinition {
   id: string;
+  /** Optional skill revision — incremented when the definition changes materially. */
+  revision?: number;
   name: string;
   description: string;
   instructions: string;
@@ -288,13 +290,41 @@ export const TASK_MANAGEMENT_SKILL: SkillDefinition = {
 };
 
 /**
+ * `gmail` skill — send and search emails via Gmail on behalf of the user.
+ */
+export const GMAIL_SKILL: SkillDefinition = {
+  id: 'gmail',
+  revision: 1,
+  name: 'Gmail',
+  description: 'Send and read emails via Gmail on behalf of the user.',
+  instructions: `You can manage the user's Gmail inbox.
+
+- Use \`send_email(to, subject, body)\` to send emails. You may include cc and bcc recipients.
+- Use \`search_emails(query)\` to find and read emails from the inbox using Gmail search syntax.
+- Before sending to unfamiliar recipients, confirm with the user via \`send_message\`.
+- Respect the user's privacy — only search for emails relevant to the task at hand.`,
+  promptHint: 'e.g. "Monitor my inbox for flight booking confirmations and alert me" or "Send a weekly summary email to my team"',
+  requiredTools: ['send_email', 'search_emails'],
+  capabilityFamilies: ['email'],
+  bindingRequirements: {
+    email: { minBindings: 1, requireReady: true },
+  },
+  contextRequirements: [],
+  requiredContextBlocks: ['corePlatformContext'],
+  promptRendererHints: ['core-system'],
+  requiredGuardrails: [],
+  suggestedTickIntervalMs: 300_000, // 5 min — email is not real-time
+  visibility: 'public',
+};
+
+/**
  * Preset → skill ID mapping.
  * When a user selects a preset in the UI, this is what gets stored as skillIds.
  */
 export const SKILL_PRESET_MAP: Record<string, string[]> = {
   trading: ['bot-management', 'trading'],
   'direct-trading': ['trading'],
-  'personal-assistant': ['task-management', 'web-access'],
+  'personal-assistant': ['task-management', 'web-access', 'gmail'],
   custom: [],       // user configures skills manually
 };
 
@@ -307,4 +337,5 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   FILE_MANAGEMENT_SKILL,
   WEB_ACCESS_SKILL,
   TASK_MANAGEMENT_SKILL,
+  GMAIL_SKILL,
 ];

@@ -21,7 +21,7 @@ export type SkillPresetId = 'trading' | 'personal-assistant' | 'custom';
 
 const SKILL_PRESET_SKILL_IDS: Record<Exclude<SkillPresetId, 'custom'>, string[]> = {
   trading: ['bot-management', 'trading'],
-  'personal-assistant': ['task-management', 'web-access'],
+  'personal-assistant': ['task-management', 'web-access', 'gmail'],
 };
 
 function formatMessageOrFallback(intl: IntlShape | undefined, id: string, fallback: string): string {
