@@ -58,6 +58,10 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   // Venue developer-platform keys
   JUPITER_API_KEY: { path: 'venues.jupiter.apiKey', type: 'string' },
   ONEINCH_API_KEY: { path: 'venues.1inch.apiKey', type: 'string' },
+  // Gmail OAuth integration
+  GMAIL_CLIENT_ID: { path: 'integrations.gmail.clientId', type: 'string' },
+  GMAIL_CLIENT_SECRET: { path: 'integrations.gmail.clientSecret', type: 'string' },
+  GMAIL_REDIRECT_URI: { path: 'integrations.gmail.redirectUri', type: 'string' },
 
 };
 

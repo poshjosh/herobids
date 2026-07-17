@@ -90,6 +90,10 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   GOOGLE_CLIENT_SECRET: { path: 'auth.googleClientSecret', type: 'string' },
   // Evaluation
   EVALUATION_STORAGE_ROOT: { path: 'evaluation.storageRoot', type: 'string' },
+  // Gmail OAuth integration
+  GMAIL_CLIENT_ID: { path: 'integrations.gmail.clientId', type: 'string' },
+  GMAIL_CLIENT_SECRET: { path: 'integrations.gmail.clientSecret', type: 'string' },
+  GMAIL_REDIRECT_URI: { path: 'integrations.gmail.redirectUri', type: 'string' },
   // Shared-service connectivity — override with private IPs for cluster deployments
   SHARED_REDIS_HOST: { path: 'sharedServices.redisHost', type: 'string' },
   SHARED_REDIS_PORT: { path: 'sharedServices.redisPort', type: 'number' },

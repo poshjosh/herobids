@@ -94,6 +94,7 @@ export {
   deriveStrategyPreset,
   extractStrategyFromConfig,
   WakePreferencesSchema,
+  GmailIntegrationConfigSchema,
 } from './schema.js';
 
 export type {
@@ -159,6 +160,7 @@ export type {
   EvaluationThresholds,
   CapabilityMode,
   HybridMode,
+  GmailIntegrationConfig,
 } from './schema.js';
 
 export type { ProvidersYaml, ProviderConfig } from '../models/llm-models.js';

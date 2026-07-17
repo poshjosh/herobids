@@ -1333,6 +1333,12 @@ export const NomadConfigSchema = z.object({
 
 export type NomadConfig = z.infer<typeof NomadConfigSchema>;
 
+export const GmailIntegrationConfigSchema = z.object({
+  clientId: z.string().default(''),
+  clientSecret: z.string().default(''),
+  redirectUri: z.string().default(''),
+}).default({});
+
 export const AppConfigSchema = z.object({
   app: z.object({
     port: z.number().default(3000),
@@ -1392,6 +1398,9 @@ export const AppConfigSchema = z.object({
   llm: LlmRuntimeConfigSchema.default({}),
   llmValidation: LlmValidationConfigSchema.default({}),
   liveRollout: LiveRolloutConfigSchema.default({}),
+  integrations: z.object({
+    gmail: GmailIntegrationConfigSchema,
+  }).default({}),
   alerts: AlertsConfigSchema.default({}),
   auth: AuthConfigSchema.default({}),
   plans: PlansConfigSchema.default({}),
@@ -1583,6 +1592,7 @@ export type BillingConfig = z.infer<typeof BillingConfigSchema>;
 export type StripeConfig = z.infer<typeof StripeConfigSchema>;
 export type CreemConfig = z.infer<typeof CreemConfigSchema>;
 export type TelegramChannelConfig = z.infer<typeof TelegramChannelConfigSchema>;
+export type GmailIntegrationConfig = z.infer<typeof GmailIntegrationConfigSchema>;
 export type UsageBillingConfig = z.infer<typeof UsageBillingConfigSchema>;
 export type PlanUsagePackaging = z.infer<typeof PlanUsagePackagingSchema>;
 export type PlanEntitlements = z.infer<typeof PlanEntitlementsSchema>;
