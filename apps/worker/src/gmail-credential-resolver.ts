@@ -11,6 +11,7 @@ export interface GmailTokenResult {
   accessToken: string;
   email: string;
   credentialId: string;
+  connectionId: string;
 }
 
 export interface GmailTokens {
@@ -31,16 +32,25 @@ export async function resolveGmailTokens(
   db: Database,
   agentId: string,
   gmailConfig: AppConfig['integrations']['gmail'],
+  connectionId?: string,
 ): Promise<Result<GmailTokenResult, GmailCredentialError>> {
   const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
   if (!encryptionKey) {
     return err({ code: 'gmail.no_encryption_key', message: 'CREDENTIAL_ENCRYPTION_KEY not set' });
   }
 
-  // TODO: Replace with resolveDefaultFamilyConnectionId(db, agentId, 'email') once implemented.
-  // Currently picks the oldest assigned email connection as default. No Gmail-specific
-  // "first row wins" rule — deterministic ordering via createdAt.
-  const [row] = await db
+  const baseConditions = and(
+    eq(agentConnections.agentId, agentId),
+    eq(agentConnections.status, 'active'),
+    eq(connections.status, 'active'),
+    inArray(connections.provider, EMAIL_PROVIDER_IDS),
+  );
+
+  const whereClause = connectionId
+    ? and(baseConditions, eq(connections.id, connectionId))
+    : baseConditions;
+
+  const query = db
     .select({
       credentialId: connections.credentialId,
       connectionId: connections.id,
@@ -50,19 +60,23 @@ export async function resolveGmailTokens(
     .from(agentConnections)
     .innerJoin(connections, eq(connections.id, agentConnections.connectionId))
     .innerJoin(userCredentials, eq(userCredentials.id, connections.credentialId))
-    .where(
-      and(
-        eq(agentConnections.agentId, agentId),
-        eq(agentConnections.status, 'active'),
-        eq(connections.status, 'active'),
-        inArray(connections.provider, EMAIL_PROVIDER_IDS),
-      ),
-    )
-    .orderBy(agentConnections.createdAt)
+    .where(whereClause)
     .limit(1);
 
+  // Deterministic ordering only when no specific connectionId is requested.
+  if (!connectionId) {
+    query.orderBy(agentConnections.createdAt);
+  }
+
+  const [row] = await query;
+
   if (!row || !row.credentialId || !row.encryptedData) {
-    return err({ code: 'connection.missing', message: 'No email connection is assigned to this agent.' });
+    return err({
+      code: connectionId ? 'connection.not_found' : 'connection.missing',
+      message: connectionId
+        ? `Email connection ${connectionId} is not available for this agent.`
+        : 'No email connection is assigned to this agent.',
+    });
   }
 
   // Decrypt tokens
@@ -75,7 +89,7 @@ export async function resolveGmailTokens(
 
   // Check if access token is near expiry (5 min buffer)
   if (Date.now() < tokens.expiry_date - 5 * 60 * 1000) {
-    return ok({ accessToken: tokens.access_token, email: tokens.email, credentialId: row.credentialId });
+    return ok({ accessToken: tokens.access_token, email: tokens.email, credentialId: row.credentialId, connectionId: row.connectionId });
   }
 
   // Refresh the access token
@@ -119,5 +133,5 @@ export async function resolveGmailTokens(
     .set({ encryptedData, encryptionMeta: encryptionMeta as Record<string, unknown>, updatedAt: new Date() })
     .where(eq(userCredentials.id, row.credentialId));
 
-  return ok({ accessToken: fresh.access_token, email: tokens.email, credentialId: row.credentialId });
+  return ok({ accessToken: fresh.access_token, email: tokens.email, credentialId: row.credentialId, connectionId: row.connectionId });
 }

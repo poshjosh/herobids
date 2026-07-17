@@ -684,6 +684,11 @@ function getEffectiveTradingConnections(state: RuntimeCompositionState): typeof 
   return executableConnections;
 }
 
+function getEffectiveEmailConnections(state: RuntimeCompositionState): typeof state.runtimeDescriptor.grantedConnectionsByFamily[string] {
+  const connections = state.runtimeDescriptor.grantedConnectionsByFamily['email'] ?? [];
+  return connections.filter((c) => c.readiness.effectiveReady);
+}
+
 function computePerformanceSummary(state: RuntimeCompositionState): string {
   const elapsedHours = Math.max(0, (Date.now() - state.sessionStartMs) / 3_600_000);
   const llmCost = state.metrics.sessionCosts.llmCostUsd;
@@ -774,6 +779,34 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
         id: 'tradingVenue',
         title: 'Trading Venue',
         provider: 'trading-venue',
+        content: lines.join('\n'),
+      };
+    },
+  },
+  {
+    id: 'email-connection',
+    costTier: 'free',
+    section: 'static',
+    requiredFamilies: ['email'],
+    trimOrder: 0,
+    preserveWhenTrimmed: true,
+    build: (state) => {
+      const connections = getEffectiveEmailConnections(state);
+      if (connections.length === 0) return null;
+
+      const defaultId = state.runtimeDescriptor.defaultConnectionByFamily['email'];
+      const lines = connections.map((c) => {
+        const email = (c.profile as Record<string, unknown> | null)?.email ?? c.label;
+        const isDefault = c.connectionId === defaultId || c.isDefault;
+        return `- ${email} (connectionId: ${c.connectionId})${isDefault ? ' [DEFAULT]' : ''}`;
+      });
+
+      lines.push('To send from a specific account, pass fromConnectionId to send_email.');
+
+      return {
+        id: 'emailConnection',
+        title: 'Email Connections',
+        provider: 'email-connection',
         content: lines.join('\n'),
       };
     },

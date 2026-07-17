@@ -75,13 +75,19 @@ export const sendEmailTool: AgentTool = {
     }
 
     // Resolve Gmail credentials (with lazy token refresh)
-    const tokenResult = await resolveGmailTokens(_db, ctx.agentId, {
-      ..._gmailConfig,
-      dailySendLimit: _gmailConfig.dailySendLimit ?? 50,
-    });
+    const tokenResult = await resolveGmailTokens(
+      _db,
+      ctx.agentId,
+      {
+        ..._gmailConfig,
+        dailySendLimit: _gmailConfig.dailySendLimit ?? 50,
+      },
+      fromConnectionId,
+    );
     if (!tokenResult.ok) {
       const nonRetryableCodes = new Set([
         'connection.missing',
+        'connection.not_found',
         'gmail.decrypt_failed',
         'gmail.no_encryption_key',
         'gmail.not_configured',
@@ -110,6 +116,7 @@ export const sendEmailTool: AgentTool = {
           messageId: result.messageId,
           threadId: result.threadId,
           from: tokenResult.data.email,
+          connectionId: tokenResult.data.connectionId,
           to: Array.isArray(to) ? to : [to],
         },
       };
@@ -161,13 +168,20 @@ export const searchEmailsTool: AgentTool = {
     const { query, maxResults } = parsed.data;
 
     // Resolve Gmail credentials (with lazy token refresh)
-    const tokenResult = await resolveGmailTokens(_db, ctx.agentId, {
-      ..._gmailConfig,
-      dailySendLimit: _gmailConfig.dailySendLimit ?? 50,
-    });
+    const tokenResult = await resolveGmailTokens(
+      _db,
+      ctx.agentId,
+      {
+        ..._gmailConfig,
+        dailySendLimit: _gmailConfig.dailySendLimit ?? 50,
+      },
+      // search_emails doesn't support fromConnectionId yet — use default
+      undefined,
+    );
     if (!tokenResult.ok) {
       const nonRetryableCodes = new Set([
         'connection.missing',
+        'connection.not_found',
         'gmail.decrypt_failed',
         'gmail.no_encryption_key',
         'gmail.not_configured',

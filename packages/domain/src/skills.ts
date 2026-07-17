@@ -303,7 +303,8 @@ export const EMAIL_SKILL: SkillDefinition = {
   instructions: `You can send email on the user's behalf.
 
 - Use \`send_email(to, subject, body)\` to send emails. You may include cc and bcc recipients.
-- If you have multiple email connections, use \`fromConnectionId\` to select a specific sender.
+- The prompt context lists your granted email connections under "Email Connections" — check it for available \`fromConnectionId\` values.
+- If you have multiple email connections, use \`fromConnectionId\` to select a specific sender. Omit \`fromConnectionId\` to use the default connection (marked [DEFAULT]).
 - Before sending to unfamiliar recipients, confirm with the user via \`send_message\`.`,
   promptHint: 'e.g. "Send a weekly summary email to my team" or "Email me a heads-up whenever a position closes"',
   requiredTools: ['send_email'],
