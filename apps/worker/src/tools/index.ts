@@ -18,6 +18,9 @@ import { accountTools } from './account.js';
 import { instrumentTools } from './find-instrument.js';
 import { resolverTools } from './resolvers.js';
 import { emailTools } from './email.js';
+import { getMarketPresetAssessmentTool } from './get-market-preset-assessment.js';
+import { recommendPresetTransitionTool } from './recommend-preset-transition.js';
+import { applyPresetTransitionTool } from './apply-preset-transition.js';
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
   const registeredTools = registry.list();
@@ -97,6 +100,9 @@ export function createToolRegistry(): ToolRegistry {
     ...instrumentTools,
     ...resolverTools,
     ...emailTools,
+    getMarketPresetAssessmentTool,
+    recommendPresetTransitionTool,
+    applyPresetTransitionTool,
   ];
 
   for (const tool of allTools) {

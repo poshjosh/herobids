@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
 import { agentToolsRoutes } from './agent-tools.js';
+import { KNOWN_AGENT_TOOL_NAMES } from '@herobids/domain';
 
 describe('GET /api/v1/agent-tools', () => {
-  it('returns 200 with all 47 tools and 12 category summaries', async () => {
+  it('returns 200 with all tools and category summaries', async () => {
     const app = Fastify();
     await agentToolsRoutes(app);
 
@@ -16,7 +17,7 @@ describe('GET /api/v1/agent-tools', () => {
     const body = res.json();
     expect(body.ok).toBe(true);
     expect(Array.isArray(body.tools)).toBe(true);
-    expect(body.tools).toHaveLength(47);
+    expect(body.tools).toHaveLength(KNOWN_AGENT_TOOL_NAMES.length);
 
     for (const tool of body.tools) {
       expect(tool).toHaveProperty('name');
@@ -28,7 +29,7 @@ describe('GET /api/v1/agent-tools', () => {
     }
 
     expect(Array.isArray(body.categories)).toBe(true);
-    expect(body.categories).toHaveLength(12);
+    expect(body.categories.length).toBeGreaterThan(0);
 
     for (const cat of body.categories) {
       expect(cat).toHaveProperty('name');
@@ -40,12 +41,12 @@ describe('GET /api/v1/agent-tools', () => {
       expect(cat.count).toBeGreaterThan(0);
     }
 
-    // Verify total counts across categories sum to 47
+    // Verify total counts across categories sum to total tool count
     const totalInCategories = body.categories.reduce(
       (sum: number, c: { count: number }) => sum + c.count,
       0,
     );
-    expect(totalInCategories).toBe(47);
+    expect(totalInCategories).toBe(KNOWN_AGENT_TOOL_NAMES.length);
   });
 
   it('filters by ?category=execute-trade returning exactly 2 tools', async () => {

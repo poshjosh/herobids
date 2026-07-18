@@ -3,6 +3,22 @@ import {
   StrategySchema,
 } from './config/schema.js';
 
+// ── Preset Assessment & Transition Tool Parameter Schemas ──────────────────
+
+export const GetMarketPresetAssessmentParamsSchema = z.object({});
+
+export const RecommendPresetTransitionParamsSchema = z.object({});
+
+export const ApplyPresetTransitionParamsSchema = z.object({
+  targetPreset: z.string().min(1).describe('The preset key to switch to (e.g., "momentum").'),
+  mode: z.enum(['entries_only', 'entries_and_tighten_existing']).describe('Transition mode: entries_only changes future entries; entries_and_tighten_existing also tightens stops on open positions.'),
+  reason: z.string().optional().describe('Optional reason for the transition (logged for audit).'),
+});
+
+export type GetMarketPresetAssessmentParams = z.infer<typeof GetMarketPresetAssessmentParamsSchema>;
+export type RecommendPresetTransitionParams = z.infer<typeof RecommendPresetTransitionParamsSchema>;
+export type ApplyPresetTransitionParams = z.infer<typeof ApplyPresetTransitionParamsSchema>;
+
 /**
  * Tool Schema Registry — maps dot-path schema names to JSON Schemas with
  * examples and version info. Used by GET /api/v1/tool-schemas and the
@@ -383,6 +399,29 @@ const SCHEMA_REGISTRY: Record<string, SchemaEntry> = {
     example: '0.5',
     version: '1.0.0',
     description: 'Target position size for submit_decision. Decimal string format. Call get_account_summary() to compute appropriate sizing.',
+  },
+
+  // ── Preset Assessment & Transition Tool Schemas ──────────────────────────
+
+  'get_market_preset_assessment': {
+    schema: zodToJsonSchemaSimple(GetMarketPresetAssessmentParamsSchema),
+    example: {},
+    version: '1.0.0',
+    description: 'Read the latest shared market preset assessment artifact for your trading segment. Returns ranked presets, confidence, and market summary.',
+  },
+
+  'recommend_preset_transition': {
+    schema: zodToJsonSchemaSimple(RecommendPresetTransitionParamsSchema),
+    example: {},
+    version: '1.0.0',
+    description: 'Get a preset transition recommendation combining the shared assessment with your local trading state (open positions, recent performance, risk limits).',
+  },
+
+  'apply_preset_transition': {
+    schema: zodToJsonSchemaSimple(ApplyPresetTransitionParamsSchema),
+    example: { targetPreset: 'momentum', mode: 'entries_only', reason: 'Strong momentum regime detected' },
+    version: '1.0.0',
+    description: 'Apply a preset transition. Supports entries_only (future entries use new preset) and entries_and_tighten_existing (tighten stops on open positions). Records the transition event for audit.',
   },
 };
 

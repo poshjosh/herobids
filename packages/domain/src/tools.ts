@@ -224,6 +224,14 @@ export interface ToolContext {
   operatorDefaults?: {
     maxDrawdownPct: number;
   };
+  /**
+   * Raw Drizzle database instance for direct table access.
+   * Used by tools that need to query tables without a dedicated repository
+   * (e.g., market assessment artifacts, preset transitions).
+   * Provided by the worker runtime. Typed loosely because the domain package
+   * cannot depend on @herobids/db.
+   */
+  db?: unknown;
 }
 
 export interface AgentTool {
@@ -255,6 +263,7 @@ export interface ToolDefinition {
 export const KNOWN_AGENT_TOOL_NAMES = [
   'adjust_bot_config',
   'adjust_risk_limits',
+  'apply_preset_transition',
   'browse_url',
   'check_regime',
   'check_watches',
@@ -271,6 +280,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'get_bot_status',
   'get_funding_rates',
   'get_market_overview',
+  'get_market_preset_assessment',
   'get_memory',
   'get_price',
   'get_risk_limits',
@@ -284,6 +294,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'publish_artifact',
   'read_document',
   'read_file',
+  'recommend_preset_transition',
   'remove_watch',
   'resolve_bot',
   'resolve_task',
@@ -338,12 +349,14 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   get_risk_limits:     { category: 'read-database',       description: 'Get effective risk limits: which are mutable vs locked, plus runtime state.' },
   find_instrument:     { category: 'read-database',       description: 'Find a tradable instrument by symbol/name. Returns instrumentId (venue-submittable), id (DB internal), symbol, base, quote, type, venue.' },
   resolve_bot:         { category: 'read-database',       description: 'Resolve a bot name/symbol to its bot ID for stop/start/config operations.' },
+  recommend_preset_transition: { category: 'read-database', description: 'Get the top-ranked preset recommendation from the latest shared market assessment artifact. Review your open positions and performance before applying.' },
 
   // write-database
   stop_bot:            { category: 'write-database',      description: 'Stop a running bot. Positions remain open unless manually closed.' },
   start_bot:           { category: 'write-database',      description: 'Start a stopped bot. Resumes trading per its configuration.' },
   adjust_bot_config:   { category: 'write-database',      description: 'Update configuration for a specific bot. Changes merged and take effect next tick.' },
   adjust_risk_limits:  { category: 'write-database',      description: 'Adjust mutable risk limits. Only operator-default-derived limits can be changed.' },
+  apply_preset_transition: { category: 'write-database', description: 'Apply a preset transition. Supports modes: entries_only (future entries use new preset) and entries_and_tighten_existing (tighten stops on open positions). Records the transition event for audit.' },
 
   // read-market-data
   search_tokens:       { category: 'read-market-data',    description: 'Search for tokens by name/symbol on DEX aggregators. Returns liquidity, price, safety metadata, network.' },
@@ -351,6 +364,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   check_regime:        { category: 'read-market-data',    description: 'Evaluate market regime using EMA alignment, ADX, VWAP, and structure filters.' },
   get_funding_rates:   { category: 'read-market-data',    description: 'Get current funding rates for perpetual contracts.' },
   get_market_overview: { category: 'read-market-data',    description: 'Aggregated market overview: top movers, volume leaders, market breadth metrics.' },
+  get_market_preset_assessment: { category: 'read-database', description: 'Read the latest shared market preset assessment artifact for your trading segment. Returns ranked presets, confidence, and market summary.' },
   get_price:           { category: 'read-market-data',    description: 'Look up current price of a token. Hyperliquid perps use mark price; DEX tokens use oracle price.' },
 
   // read-web

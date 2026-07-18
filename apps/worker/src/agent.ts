@@ -1723,6 +1723,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       // Every field has a .default() — these are never undefined at runtime.
       maxDrawdownPct: agentConfig.agentRiskDefaults!.maxDrawdownPct,
     },
+    db: db ?? undefined,
   };
 
   try {
