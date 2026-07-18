@@ -22,3 +22,4 @@ export * from './llm-selection.js';
 export * from './cost-profile.js';
 export * from './email/renderer.js';
 export * from './scanner-types.js';
+export * from './market-assessment.js';

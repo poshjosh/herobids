@@ -54,3 +54,8 @@ export { decisionFailures } from './decision-failures.js';
 export { llmPricingSnapshots } from './llm-pricing-snapshots.js';
 export { agentEvaluations } from './agent-evaluations.js';
 export { agentDocuments } from './agent-documents.js';
+export { marketAssessmentRuns } from './market-assessment-runs.js';
+export { marketAssessmentArtifacts } from './market-assessment-artifacts.js';
+export { marketAssessmentWakeDecisions } from './market-assessment-wake-decisions.js';
+export { agentScanMetrics } from './agent-scan-metrics.js';
+export { agentPresetTransitions } from './agent-preset-transitions.js';
