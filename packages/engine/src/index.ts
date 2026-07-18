@@ -107,3 +107,6 @@ export type {
   ReconcilerHealth,
   VenueStateLoader,
 } from './reconciliation/index.js';
+
+export { evaluateWakeGate } from './wake-gate.js';
+export type { WakeGateInput, WakeGateResult } from './wake-gate.js';

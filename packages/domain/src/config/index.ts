@@ -100,6 +100,8 @@ export {
   AllowedPresetsPolicySchema,
   PresetTransitionPolicySchema,
   PlatformAssessmentOptInSchema,
+  PlatformAssessorConfigSchema,
+  WakeGateConfigSchema,
 } from './schema.js';
 
 export type {
@@ -169,6 +171,8 @@ export type {
   AllowedPresetsPolicy,
   PresetTransitionPolicy,
   PlatformAssessmentOptIn,
+  PlatformAssessorConfig,
+  WakeGateConfig,
 } from './schema.js';
 
 export type { ProvidersYaml, ProviderConfig } from '../models/llm-models.js';
