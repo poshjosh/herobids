@@ -75,6 +75,18 @@ const TEST_PROVIDER_CATALOG = {
         autoCreatesTradingConnection: true,
       },
     },
+    {
+      id: 'gmail',
+      displayName: 'Gmail',
+      status: 'supported' as const,
+      categories: ['messaging'],
+      connections: {
+        requiresCredential: false,
+        allowsCredential: false,
+        credentialProviderIds: [],
+        autoCreatesTradingConnection: false,
+      },
+    },
   ],
   customMode: {
     credentials: { allowFreeformKeys: true },
@@ -106,14 +118,9 @@ describe('ProviderSetupForm rendering', () => {
     expect(html).toContain(messages['setup.form.title']);
   });
 
-  it('renders the trading title when a trading capability is requested', () => {
-    const html = renderForm('trading');
-    expect(html).toContain(messages['setup.form.tradingTitle']);
-  });
-
-  it('renders the trading-specific submit label when a trading capability is requested', () => {
-    const html = renderForm('trading');
-    expect(html).toContain(messages['setup.form.tradingSubmit']);
+  it('renders the same title regardless of capability prop', () => {
+    expect(renderForm()).toContain(messages['setup.form.title']);
+    expect(renderForm('trading')).toContain(messages['setup.form.title']);
   });
 
   it('renders Provider field label', () => {
@@ -121,9 +128,9 @@ describe('ProviderSetupForm rendering', () => {
     expect(html).toContain(messages['setup.form.provider']);
   });
 
-  it('renders Label field label', () => {
+  it('renders Name field label', () => {
     const html = renderForm();
-    expect(html).toContain(messages['setup.form.label']);
+    expect(html).toContain(messages['setup.form.name']);
   });
 
   it('renders Secrets section label', () => {
@@ -154,12 +161,17 @@ describe('ProviderSetupForm rendering', () => {
     expect(html).toContain('value="__custom__"');
   });
 
-  it('renders trading-only provider options in trading mode', () => {
+  it('renders all providers including email providers in trading mode', () => {
     const html = renderForm('trading');
-    for (const provider of ['hyperliquid', 'bybit', 'jupiter', '1inch']) {
+    for (const provider of ['hyperliquid', 'bybit', 'jupiter', '1inch', 'gmail']) {
       expect(html).toContain(`value="${provider}"`);
     }
-    expect(html).not.toContain('value="gmail"');
+  });
+
+  it('renders email providers grouped separately from trading providers', () => {
+    const html = renderForm();
+    expect(html).toContain(messages['setup.form.group.trading']);
+    expect(html).toContain(messages['setup.form.group.email']);
   });
 
   it('submit button is disabled on initial render because provider and label are empty', () => {

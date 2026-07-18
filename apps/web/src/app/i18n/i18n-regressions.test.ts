@@ -108,7 +108,6 @@ describe('setup flow copy changes', () => {
   it('setup.form.title is defined and names the guided setup flow', () => {
     expect(enMessages['setup.form.title']).toBeTruthy();
     expect(enMessages['setup.form.title']).toBe('Connect agent to platform');
-    expect(enMessages['setup.form.tradingTitle']).toBe('Connect agent to platform');
   });
 
   it('agents.create.setupTradingNow key exists for the inline escape-hatch button', () => {

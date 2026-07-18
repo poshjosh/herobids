@@ -7,6 +7,12 @@ import { Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui
 import { PROVIDER_TEMPLATES } from '../credentials/CredentialsPage.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 
+function providerCapabilityGroup(categories: string[]): 'trading' | 'email' | 'other' {
+  if (categories.includes('trading') || categories.includes('swap')) return 'trading';
+  if (categories.includes('messaging')) return 'email';
+  return 'other';
+}
+
 const CUSTOM_PROVIDER_OPTION = '__custom__';
 
 interface SecretEntry {
@@ -58,6 +64,7 @@ function buildStructuredSecrets(fields: readonly FieldDefinition[], fieldValues:
 interface Props {
   onClose: () => void;
   onSuccess: (result: ProviderSetupResult) => void;
+  /** Passed to the API; does not filter providers. */
   defaultCapability?: 'trading';
   /** When true, render as a standalone page card instead of inside a Modal. */
   standalone?: boolean;
@@ -65,64 +72,64 @@ interface Props {
 
 export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, standalone }: Props) {
   const intl = useIntl();
-  const [providerChoice, setProviderChoice] = useState(defaultCapability === 'trading' ? '' : CUSTOM_PROVIDER_OPTION);
-  const [customProviderId, setCustomProviderId] = useState('');
+  const [providerChoice, setProviderChoice] = useState('');  // '' = not yet initialised; populated by effect below
   const [label, setLabel] = useState('');
   const [secretEntries, setSecretEntries] = useState<SecretEntry[]>([createEntry()]);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [credentialMode, setCredentialMode] = useState<'manual' | 'generated'>('manual');
-  const isTradingSetup = defaultCapability === 'trading';
 
   const catalogQuery = useQuery({
     queryKey: ['providerCatalog'],
     queryFn: () => providerCatalogApi.get(),
   });
 
-  // Providers with manual credential entry fields
-  const credentialProviders = (catalogQuery.data?.providers ?? []).filter((provider) => {
-    if (provider.status === 'deprecated' || !provider.credentials) {
-      return false;
-    }
-
-    if (!isTradingSetup) {
-      return true;
-    }
-
-    return provider.connections?.autoCreatesTradingConnection === true;
-  });
+  // All active providers with manual credential entry fields
+  const credentialProviders = (catalogQuery.data?.providers ?? []).filter(
+    (provider) => provider.status !== 'deprecated' && Boolean(provider.credentials),
+  );
 
   // OAuth-only providers (no credential entry — user connects via OAuth redirect)
-  const oauthProviders = (catalogQuery.data?.providers ?? []).filter((provider) => {
-    if (provider.status !== 'supported') return false;
-    // OAuth providers have connections but don't allow manual credential entry
-    if (!provider.connections || provider.connections.allowsCredential !== false) return false;
-    // In trading-only mode, only show trading OAuth providers
-    if (isTradingSetup) return provider.connections.autoCreatesTradingConnection === true;
-    return true;
-  });
+  const oauthProviders = (catalogQuery.data?.providers ?? []).filter(
+    (provider) => provider.status === 'supported' && provider.connections?.allowsCredential === false,
+  );
 
   const allProviders = [...credentialProviders, ...oauthProviders];
-  const providerSuggestions = allProviders;
 
-  // Auto-select the first provider once the catalog loads
+  const tradingProviders = allProviders.filter((p) => providerCapabilityGroup(p.categories) === 'trading');
+  const emailProviders = allProviders.filter((p) => providerCapabilityGroup(p.categories) === 'email');
+  const otherProviders = allProviders.filter((p) => providerCapabilityGroup(p.categories) === 'other');
+
+  // Auto-select the first trading provider once the catalog loads.
+  // Only fires when providerChoice is still '' (uninitialised) — never overrides an explicit user selection.
   useEffect(() => {
-    if (isTradingSetup && providerChoice === '' && providerSuggestions.length > 0) {
-      const first = providerSuggestions[0];
+    if (providerChoice === '' && tradingProviders.length > 0) {
+      const first = tradingProviders[0];
       if (first) setProviderChoice(first.id);
+    } else if (providerChoice === '' && allProviders.length === 0 && !catalogQuery.isLoading) {
+      // No known providers at all — fall back to custom
+      setProviderChoice(CUSTOM_PROVIDER_OPTION);
     }
-  }, [isTradingSetup, providerChoice, providerSuggestions]);
+  }, [providerChoice, tradingProviders, allProviders.length, catalogQuery.isLoading]);
 
-  const selectedProvider = providerSuggestions.find((provider) => provider.id === providerChoice);
+  const selectedProvider = allProviders.find((provider) => provider.id === providerChoice);
   const isOAuthProvider = oauthProviders.some((p) => p.id === providerChoice);
-  const canGenerateWallet = isTradingSetup && selectedProvider?.walletGeneration?.available === true;
+  const canGenerateWallet = selectedProvider?.walletGeneration?.available === true;
   const isCustomProvider = providerChoice === CUSTOM_PROVIDER_OPTION;
-  const effectiveProvider = isCustomProvider ? customProviderId.trim() : providerChoice.trim();
+  // For custom providers use the name (lowercased) as the provider ID
+  const effectiveProvider = isCustomProvider ? label.toLowerCase().trim() : providerChoice.trim();
 
   useEffect(() => {
     if (!canGenerateWallet && credentialMode === 'generated') {
       setCredentialMode('manual');
     }
   }, [canGenerateWallet, credentialMode]);
+
+  // Derive the API capability from the selected provider's categories.
+  // For custom providers we don't know the categories, so omit capability.
+  const apiCapability: 'trading' | undefined =
+    !isCustomProvider && providerCapabilityGroup(selectedProvider?.categories ?? []) === 'trading'
+      ? 'trading'
+      : undefined;
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -137,7 +144,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
                 .filter(([key, value]) => key.length > 0 && value.length > 0),
             )
           : buildStructuredSecrets(selectedProvider?.credentials?.fields ?? [], fieldValues) } : {}),
-        capability: defaultCapability,
+        capability: apiCapability,
       }),
     onSuccess,
   });
@@ -181,28 +188,36 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
     ? secretEntries.some((e) => e.key.trim() && e.value.trim())
     : Object.values(fieldValues).some((value) => value.trim().length > 0));
 
-  const title = intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingTitle' : 'setup.form.title' });
+  const title = intl.formatMessage({ id: 'setup.form.title' });
 
   const formContent = (
     <form onSubmit={handleSubmit}>
       <div style={{ marginBottom: '16px' }}>
         <FieldLabel>{intl.formatMessage({ id: 'setup.form.provider' })}</FieldLabel>
         <select value={providerChoice} onChange={(e) => setProviderChoice(e.target.value)} style={inputStyle}>
-          {!isTradingSetup ? <option value={CUSTOM_PROVIDER_OPTION}>Custom</option> : null}
-          {providerSuggestions.map((provider) => (
-            <option key={provider.id} value={provider.id}>{provider.displayName}</option>
-          ))}
+          {tradingProviders.length > 0 && (
+            <optgroup label={intl.formatMessage({ id: 'setup.form.group.trading' })}>
+              {tradingProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>{provider.displayName}</option>
+              ))}
+            </optgroup>
+          )}
+          {emailProviders.length > 0 && (
+            <optgroup label={intl.formatMessage({ id: 'setup.form.group.email' })}>
+              {emailProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>{provider.displayName}</option>
+              ))}
+            </optgroup>
+          )}
+          {otherProviders.length > 0 && (
+            <optgroup label={intl.formatMessage({ id: 'setup.form.group.other' })}>
+              {otherProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>{provider.displayName}</option>
+              ))}
+            </optgroup>
+          )}
+          <option value={CUSTOM_PROVIDER_OPTION}>{intl.formatMessage({ id: 'setup.form.group.custom' })}</option>
         </select>
-        {isCustomProvider ? (
-          <div style={{ marginTop: '8px' }}>
-            <input
-              value={customProviderId}
-              onChange={(e) => setCustomProviderId(e.target.value)}
-              placeholder={intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingProviderPlaceholder' : 'setup.form.providerPlaceholder' })}
-              style={inputStyle}
-            />
-          </div>
-        ) : null}
         {catalogQuery.isLoading ? <div style={{ marginTop: '8px', fontSize: '12px' }}>Loading provider catalog...</div> : null}
       </div>
 
@@ -240,11 +255,11 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
       )}
 
       <div style={{ marginBottom: '16px' }}>
-        <FieldLabel>{intl.formatMessage({ id: 'setup.form.label' })}</FieldLabel>
+        <FieldLabel>{intl.formatMessage({ id: 'setup.form.name' })}</FieldLabel>
         <input
           value={label}
           onChange={(e) => setLabel(e.target.value)}
-          placeholder={intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingLabelPlaceholder' : 'setup.form.labelPlaceholder' })}
+          placeholder={intl.formatMessage({ id: 'setup.form.namePlaceholder' })}
           style={inputStyle}
         />
       </div>
@@ -349,7 +364,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
         >
           {mutation.isPending
             ? intl.formatMessage({ id: 'setup.form.saving' })
-            : intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingSubmit' : 'setup.form.submit' })}
+            : intl.formatMessage({ id: 'setup.form.submit' })}
         </Button>
       </div>
       )}
@@ -376,9 +391,9 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
           padding: '32px',
           boxShadow: '0 2px 16px rgba(0, 0, 0, 0.08)',
         }}>
-          <h1 style={{ fontSize: '22px', fontWeight: '600', margin: '0 0 8px 0' }}>Connect a Trading Platform</h1>
+          <h1 style={{ fontSize: '22px', fontWeight: '600', margin: '0 0 8px 0' }}>{intl.formatMessage({ id: 'setup.form.title' })}</h1>
           <p style={{ color: 'var(--color-text-secondary)', margin: '0 0 24px 0', fontSize: '14px' }}>
-            Configure your exchange or trading platform credentials. Secrets are encrypted and never stored in plain text.
+            {intl.formatMessage({ id: 'setup.form.standaloneSubtitle' })}
           </p>
           {formContent}
         </div>
