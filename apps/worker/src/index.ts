@@ -56,8 +56,6 @@ import { LocalDocumentStore } from '@herobids/documents';
 import { UserEventPublisher } from './user-event-publisher.js';
 import { ActorHealthPublisher } from './actor-health-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
-import { PlatformAssessor } from './market-intelligence/index.js';
-import type { PlatformAssessorDeps } from './market-intelligence/index.js';
 import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
@@ -1845,54 +1843,9 @@ const marketIntelCoordinator = appConfig.marketData
 marketIntelCoordinator?.start();
 
 // ── Platform Assessor ───────────────────────────────────────────────────────
-// On-demand platform assessor — per-identity evidence gathering,
-// per-preset scorecard generation, and LLM ranking. Phase 1 scaffolding that
-// will be enriched with real market data integration in subsequent items.
-
-const paConfig = appConfig.platformAssessor;
-const platformAssessor = new PlatformAssessor(
-  {
-    enabled: paConfig.enabled && Boolean(appConfig.marketData),
-    maxConcurrentAssessments: paConfig.maxConcurrentAssessments,
-    maxLlmCallsPerCycle: paConfig.maxLlmCallsPerCycle,
-    cacheFreshnessMs: paConfig.cacheFreshnessMs,
-  },
-  {
-    db,
-    redis: redisClient,
-    // Phase 1 stub — regime snapshot integration deferred to subsequent items
-    getRegimeSnapshot: async (_identity) => {
-      // Return a basic placeholder regime. Full integration with the market-data
-      // regime pipeline will be wired in a follow-up item.
-      return {
-        pass: true,
-        reasons: ['platform-assessor: regime pipeline not yet integrated'],
-        details: {
-          benchmarkSymbol: 'BTC',
-          currentPrice: 0,
-          emaFast: 0,
-          emaSlow: 0,
-          emaTrend: 0,
-          emaAlignment: 'bullish' as const,
-          adxValue: 0,
-          choppy: false,
-          vwap: 0,
-          priceAboveVwap: true,
-          marketStructure: 'higherHighs' as const,
-        },
-      };
-    },
-    // Phase 1 stub — preset catalog integration deferred
-    getPresetKeys: async (_styleTier: string) => {
-      // Return a placeholder list. Full preset catalog query will be wired in a follow-up item.
-      return ['momentum_v1', 'mean_reversion_v1', 'trend_following_v1'];
-    },
-    // Phase 1 stub — LLM integration deferred; rankPresets returns a basic artifact
-    callLlm: async (_prompt: string) => {
-      return '{}';
-    },
-  } satisfies PlatformAssessorDeps,
-);
+// TODO(assessment-on-demand): Wire PlatformAssessor into AssessmentRequestService
+// The on-demand assessor is constructed per-request by the request service.
+// See: 005-implementation-checklist-per-symbol-on-demand.md §7-9
 
 // ── Economic calendar background refresh ─────────────────────────────────
 // The worker periodically fetches Forex Factory economic calendar data via

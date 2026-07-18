@@ -1,4 +1,4 @@
-import { ok, err, type Result } from '../result.js';
+import { ok, type Result } from '../result.js';
 import type { PlatformAssessmentOptIn, PlatformAssessorConfig } from './schema.js';
 import { validateReviewInterval } from './schema.js';
 
@@ -27,7 +27,7 @@ export function resolveAssessmentConfig(
     agentOptIn?.reviewIntervalMs,
     operatorConfig.minReviewIntervalMs,
   );
-  if (!validated.success) return validated;
+  if (!validated.ok) return validated as Result<ResolvedAssessmentConfig>;
 
   return ok({
     enabled: agentOptIn?.enabled ?? false,

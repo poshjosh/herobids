@@ -621,8 +621,10 @@ export const AgentPresetTransitionSchema = z.object({
 
 /**
  * Check if an artifact is still fresh (not expired and not superseded).
+ * Accepts a minimal shape so callers do not need the full artifact type,
+ * avoiding dependency on deprecated segment-key fields.
  */
-export function isArtifactFresh(artifact: MarketAssessmentArtifact, now?: Date): boolean {
+export function isArtifactFresh(artifact: { status: string; expiresAt: string }, now?: Date): boolean {
   const nowDate = now ?? new Date();
   const expiresAt = new Date(artifact.expiresAt);
   return artifact.status === 'active' && nowDate < expiresAt;
@@ -631,7 +633,7 @@ export function isArtifactFresh(artifact: MarketAssessmentArtifact, now?: Date):
 /**
  * Check if an artifact is stale (expired or superseded).
  */
-export function isArtifactStale(artifact: MarketAssessmentArtifact, now?: Date): boolean {
+export function isArtifactStale(artifact: { status: string; expiresAt: string }, now?: Date): boolean {
   return !isArtifactFresh(artifact, now);
 }
 

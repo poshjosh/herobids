@@ -4,7 +4,6 @@ import type { Logger } from 'pino';
 import type { Database } from '@herobids/db';
 import {
   resolveAssessmentIdentity,
-  err,
   ok,
   type Result,
   type MarketAssessmentIdentity,
@@ -44,9 +43,11 @@ export interface AssessmentRequestParams {
  */
 function identityKey(identity: MarketAssessmentIdentity): string {
   if (identity.instrumentKind === 'swap' || identity.instrumentKind === 'dex') {
-    return `${identity.instrumentKind}|${identity.venueFamily}|${identity.styleTier}|${identity.network}|${identity.address}`;
+    const { network, address } = identity as Extract<MarketAssessmentIdentity, { instrumentKind: 'swap' | 'dex' }>;
+    return `${identity.instrumentKind}|${identity.venueFamily}|${identity.styleTier}|${network}|${address}`;
   }
-  return `${identity.instrumentKind}|${identity.venueFamily}|${identity.styleTier}|${identity.symbol}`;
+  const { symbol } = identity as Extract<MarketAssessmentIdentity, { instrumentKind: 'orderbook' | 'perp' }>;
+  return `${identity.instrumentKind}|${identity.venueFamily}|${identity.styleTier}|${symbol}`;
 }
 
 // ── Service ─────────────────────────────────────────────────────────────────
@@ -78,10 +79,11 @@ export class AssessmentRequestService {
   private readonly idempotencyCache = new Map<string, AssessmentRequestOutcome>();
 
   constructor(
-    private readonly db: Database,
-    private readonly operatorConfig: PlatformAssessorConfig,
+    _db: Database,
+    _operatorConfig: PlatformAssessorConfig,
   ) {
     this.log = createLogger('assessment-request-service');
+    void _db; void _operatorConfig;
   }
 
   // ── Public API ────────────────────────────────────────────────────────

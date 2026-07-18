@@ -2,6 +2,7 @@ import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import {
   RecommendPresetTransitionParamsSchema,
   isArtifactFresh,
+  type MarketAssessmentIdentity,
 } from '@herobids/domain';
 import { marketAssessmentArtifacts } from '@herobids/db';
 import { eq } from 'drizzle-orm';
@@ -14,7 +15,7 @@ const logger = createLogger('tool:recommend-preset-transition');
 
 type Db = PostgresJsDatabase<typeof schema>;
 
-/** Build identity where clause (mirrors get-market-preset-assessment). */
+async function executeRecommendPresetTransition(
   params: unknown,
   ctx: ToolContext,
 ): Promise<ToolResult> {

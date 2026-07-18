@@ -23,20 +23,22 @@ type Db = PostgresJsDatabase<typeof schema>;
  */
 function identityWhereClause(identity: MarketAssessmentIdentity, table: typeof marketAssessmentArtifacts) {
   if (identity.instrumentKind === 'swap' || identity.instrumentKind === 'dex') {
+    const { network, address } = identity as Extract<MarketAssessmentIdentity, { instrumentKind: 'swap' | 'dex' }>;
     return and(
       eq(table.instrumentKind, identity.instrumentKind),
       eq(table.venueFamily, identity.venueFamily),
       eq(table.styleTier, identity.styleTier),
-      eq(table.network, identity.network),
-      eq(table.address, identity.address),
+      eq(table.network, network),
+      eq(table.address, address),
     );
   }
   // orderbook | perp
+  const { symbol } = identity as Extract<MarketAssessmentIdentity, { instrumentKind: 'orderbook' | 'perp' }>;
   return and(
     eq(table.instrumentKind, identity.instrumentKind),
     eq(table.venueFamily, identity.venueFamily),
     eq(table.styleTier, identity.styleTier),
-    eq(table.symbol, identity.symbol),
+    eq(table.symbol, symbol),
   );
 }
 
