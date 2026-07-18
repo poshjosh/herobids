@@ -4,6 +4,8 @@
 **Applies to:** [001-plan.md](./001-plan.md)
 **Assumption:** Backward compatibility is not required. The database will be reset, so this feature may use a clean-slate schema and persistence model.
 
+> Update: See [004-decision-amendment-per-symbol-on-demand-assessment.md](./004-decision-amendment-per-symbol-on-demand-assessment.md). That amendment supersedes the original segment-key and scheduled-generation decisions where they conflict.
+
 ## Companion Documents
 
 - [001-plan.md](./001-plan.md) — root implementation plan and delivery phases
