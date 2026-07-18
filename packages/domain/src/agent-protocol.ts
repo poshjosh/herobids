@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MarketAssessmentIdentitySchema } from './market-assessment.js';
 
 /**
  * Agent protocol message schemas — canonical v1 Zod definitions.
@@ -413,6 +414,26 @@ export const ScannerWakeContextSchema = z.discriminatedUnion('scannerKind', [
     relativeUplift: z.number().min(0),
     /** The platform assessor's confidence in the recommendation (0-1). */
     confidence: z.number().min(0).max(1),
+  }),
+  z.object({
+    scannerKind: z.literal('assessment_review'),
+    /** Bounded advice list — at most one entry per canonical identity. */
+    advice: z.array(z.object({
+      /** Canonical per-symbol identity for the advised candidate. */
+      identity: MarketAssessmentIdentitySchema,
+      /** Position in the deterministic scanner ranking (1-based). */
+      candidateRank: z.number().int().min(1),
+      /** The agent's active preset key at check time. */
+      activePreset: z.string().min(1),
+      /** Mechanically-derived behavior version at check time. */
+      presetBehaviorVersion: z.string().min(1),
+      /** Deterministic reason(s) the candidate was advised — cheap facts only, no LLM. */
+      reasons: z.array(z.string().min(1)).min(1),
+    })).min(1),
+    /** When the deterministic pre-check ran. */
+    checkedAt: z.string().datetime(),
+    /** When the next review is eligible. */
+    nextEligibleAt: z.string().datetime(),
   }),
 ]);
 export type ScannerWakeContext = z.infer<typeof ScannerWakeContextSchema>;

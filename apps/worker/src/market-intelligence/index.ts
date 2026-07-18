@@ -3,3 +3,4 @@ export { createMarketDataCoordinator, type MarketDataCoordinator, type Coordinat
 export { createMarketMonitor, type MarketMonitor, type MonitorConfig, type MonitorDeps } from './monitor.js';
 export { PlatformAssessor, type PlatformAssessorConfig, type PlatformAssessorDeps, type EvidencePackage } from './platform-assessor.js';
 export type { BreadthEvidence, VolatilityEvidence, LiquidityQualityEvidence, ScanHealthEvidence } from './platform-assessor.js';
+export { ReviewScheduler, createReviewScheduler, type ReviewSchedulerConfig, type ReviewSchedulerDeps, type ReviewCheckOutcome } from './review-scheduler.js';
