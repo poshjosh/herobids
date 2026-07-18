@@ -1845,7 +1845,7 @@ const marketIntelCoordinator = appConfig.marketData
 marketIntelCoordinator?.start();
 
 // ── Platform Assessor ───────────────────────────────────────────────────────
-// Scheduled assessments of market segments — deterministic evidence gathering,
+// On-demand platform assessor — per-identity evidence gathering,
 // per-preset scorecard generation, and LLM ranking. Phase 1 scaffolding that
 // will be enriched with real market data integration in subsequent items.
 
@@ -1853,20 +1853,15 @@ const paConfig = appConfig.platformAssessor;
 const platformAssessor = new PlatformAssessor(
   {
     enabled: paConfig.enabled && Boolean(appConfig.marketData),
-    assessmentIntervalMs: paConfig.assessmentIntervalMs,
     maxConcurrentAssessments: paConfig.maxConcurrentAssessments,
     maxLlmCallsPerCycle: paConfig.maxLlmCallsPerCycle,
-    artifactStalenessMs: paConfig.artifactStalenessMs,
-    segmentFamilies: paConfig.segmentFamilies,
-    venueFamilies: paConfig.venueFamilies,
-    styleTiers: paConfig.styleTiers,
-    workerId,
+    cacheFreshnessMs: paConfig.cacheFreshnessMs,
   },
   {
     db,
     redis: redisClient,
     // Phase 1 stub — regime snapshot integration deferred to subsequent items
-    getRegimeSnapshot: async (_segmentKey) => {
+    getRegimeSnapshot: async (_identity) => {
       // Return a basic placeholder regime. Full integration with the market-data
       // regime pipeline will be wired in a follow-up item.
       return {
@@ -1898,8 +1893,6 @@ const platformAssessor = new PlatformAssessor(
     },
   } satisfies PlatformAssessorDeps,
 );
-
-platformAssessor.start();
 
 // ── Economic calendar background refresh ─────────────────────────────────
 // The worker periodically fetches Forex Factory economic calendar data via
@@ -2089,7 +2082,6 @@ process.on('SIGTERM', async () => {
   reminderCoordinator.stop();
   marketMonitor.stop();
   await marketIntelCoordinator?.stop();
-  await platformAssessor.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
   await backtestRuntime.stop();
@@ -2117,7 +2109,6 @@ process.on('SIGINT', async () => {
   reminderCoordinator.stop();
   marketMonitor.stop();
   await marketIntelCoordinator?.stop();
-  await platformAssessor.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
   await backtestRuntime.stop();

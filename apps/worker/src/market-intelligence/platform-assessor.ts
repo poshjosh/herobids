@@ -5,20 +5,18 @@ import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
 import type { RegimeResult } from '@herobids/market-data';
 import type {
-  MarketAssessmentSegmentKey,
-  MarketAssessmentRun,
+  MarketAssessmentIdentity,
   MarketAssessmentArtifact,
   PresetScorecardEntry,
   MarketAssessmentPresetRanking,
+  MarketAssessmentSegmentKey,
 } from '@herobids/domain';
-import { marketAssessmentRuns, marketAssessmentArtifacts, agentScanMetrics } from '@herobids/db';
-import { eq, and, sql } from 'drizzle-orm';
-import { createLeaderElection, type LeaderElection } from './leader-election.js';
+import { err, ok, type Result } from '@herobids/domain';
 
 // ── Evidence Package Types ──────────────────────────────────────────────────
 
 export interface EvidencePackage {
-  segmentKey: MarketAssessmentSegmentKey;
+  identity: MarketAssessmentIdentity;
   collectedAt: string;
   regime: RegimeResult;
   breadth: BreadthEvidence;
@@ -56,29 +54,19 @@ export interface ScanHealthEvidence {
 export interface PlatformAssessorConfig {
   /** Enable/disable platform assessor. Default: true */
   enabled?: boolean;
-  /** Assessment interval in ms. Default: 6 hours */
-  assessmentIntervalMs?: number;
   /** Maximum concurrent assessments. Default: 1 */
   maxConcurrentAssessments?: number;
   /** Budget caps: max LLM calls per assessment cycle */
   maxLlmCallsPerCycle?: number;
-  /** Staleness duration for artifacts. Default: 12 hours */
-  artifactStalenessMs?: number;
-  /** Configured segment families to assess. Empty = all. */
-  segmentFamilies?: string[];
-  /** Configured venue families to assess. Empty = all. */
-  venueFamilies?: string[];
-  /** Style tiers to run assessments for. Default: all three */
-  styleTiers?: ('economy' | 'standard' | 'premium')[];
-  /** Worker ID for leader election. Required for multi-worker deployments. */
-  workerId?: string;
+  /** How long an artifact is considered fresh (ms). Default: 6 hours */
+  cacheFreshnessMs?: number;
 }
 
 export interface PlatformAssessorDeps {
   db: Database;
   redis: Redis;
   /** Access to shared market data / regime computation */
-  getRegimeSnapshot(segmentKey: MarketAssessmentSegmentKey): Promise<RegimeResult>;
+  getRegimeSnapshot(identity: MarketAssessmentIdentity): Promise<RegimeResult>;
   /** Access to preset catalog */
   getPresetKeys(styleTier: string): Promise<string[]>;
   /** LLM provider for assessment */
@@ -92,18 +80,9 @@ export interface PlatformAssessorDeps {
 const ASSESSOR_LOGGER_NAME = 'platform-assessor';
 
 export class PlatformAssessor {
-  private readonly config: Required<Omit<PlatformAssessorConfig, 'segmentFamilies' | 'venueFamilies' | 'workerId'>> & {
-    segmentFamilies: string[];
-    venueFamilies: string[];
-  };
+  private readonly config: Required<PlatformAssessorConfig>;
   private readonly deps: PlatformAssessorDeps;
   private readonly log: Logger;
-  private readonly workerId: string | undefined;
-  private intervalId: ReturnType<typeof setInterval> | undefined;
-  private stopped = false;
-  private runningCycle: Promise<void> | undefined;
-  private leaderElection: LeaderElection | undefined;
-  private isLeader = false;
 
   // TODO(002): Implement shadow-mode evidence tracking.
   // Shadow-mode metrics (assessment runs, scan health, preset rankings) should be
@@ -114,334 +93,71 @@ export class PlatformAssessor {
   constructor(config: PlatformAssessorConfig, deps: PlatformAssessorDeps) {
     this.config = {
       enabled: config.enabled ?? true,
-      assessmentIntervalMs: config.assessmentIntervalMs ?? 21_600_000, // 6 hours
       maxConcurrentAssessments: config.maxConcurrentAssessments ?? 1,
       maxLlmCallsPerCycle: config.maxLlmCallsPerCycle ?? 20,
-      artifactStalenessMs: config.artifactStalenessMs ?? 43_200_000, // 12 hours
-      segmentFamilies: config.segmentFamilies ?? [],
-      venueFamilies: config.venueFamilies ?? [],
-      styleTiers: config.styleTiers ?? ['economy', 'standard', 'premium'],
+      cacheFreshnessMs: config.cacheFreshnessMs ?? 21_600_000, // 6 hours
     };
     this.deps = deps;
     this.log = deps.logger ?? createLogger(ASSESSOR_LOGGER_NAME);
-    this.workerId = config.workerId;
   }
 
-  // ── Lifecycle ──────────────────────────────────────────────────────────
-
-  /** Start the scheduler loop with leader election */
-  start(): void {
-    if (!this.config.enabled) {
-      this.log.info('Platform assessor disabled');
-      return;
-    }
-    if (!this.workerId) {
-      this.log.warn('Platform assessor has no workerId — leader election disabled, running standalone');
-      this.isLeader = true;
-      this.scheduleNextCycle();
-      this.intervalId = setInterval(() => {
-        if (this.stopped) return;
-        this.scheduleNextCycle();
-      }, this.config.assessmentIntervalMs);
-      return;
-    }
-    this.stopped = false;
-    this.log.info({ intervalMs: this.config.assessmentIntervalMs }, 'Platform assessor starting with leader election');
-    this.leaderElection = createLeaderElection(this.deps.redis, { workerId: this.workerId });
-    this.leaderElection.start(
-      this.onLeaderAcquired.bind(this),
-      this.onLeaderLost.bind(this),
-    );
-  }
-
-  /** Stop the scheduler loop and release leadership */
-  async stop(): Promise<void> {
-    this.stopped = true;
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = undefined;
-    }
-    await this.leaderElection?.stop();
-    this.isLeader = false;
-    // Wait for any in-flight cycle to complete
-    if (this.runningCycle) {
-      await this.runningCycle;
-      this.runningCycle = undefined;
-    }
-    this.log.info('Platform assessor stopped');
-  }
-
-  // ── Leader Election Handlers ──────────────────────────────────────────
-
-  private onLeaderAcquired(): void {
-    this.log.info('Acquired platform assessor leadership');
-    this.isLeader = true;
-    this.scheduleNextCycle();
-    this.intervalId = setInterval(() => {
-      if (this.stopped) return;
-      this.scheduleNextCycle();
-    }, this.config.assessmentIntervalMs);
-  }
-
-  private onLeaderLost(): void {
-    this.log.warn('Lost platform assessor leadership — stopping assessment cycle');
-    this.isLeader = false;
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = undefined;
-    }
-    // Note: any in-flight cycle is allowed to complete; only the interval is cancelled.
-  }
-
-  // ── Scheduling ─────────────────────────────────────────────────────────
-
-  private scheduleNextCycle(): void {
-    if (this.runningCycle) {
-      this.log.debug('Assessment cycle already running — skipping');
-      return;
-    }
-    this.runningCycle = this.runAssessmentCycle().finally(() => {
-      this.runningCycle = undefined;
-    });
-  }
-
-  // ── Assessment Cycle ───────────────────────────────────────────────────
-
-  /** Run a single assessment cycle (exposed for testing) */
-  async runAssessmentCycle(): Promise<void> {
-    if (!this.isLeader) {
-      this.log.debug('Not leader — skipping assessment cycle');
-      return;
-    }
-
-    const segments = await this.resolveSegments();
-    if (segments.length === 0) {
-      this.log.debug('No segments to assess');
-      return;
-    }
-
-    this.log.info({ segmentCount: segments.length }, 'Starting assessment cycle');
-    // Tracks number of segments processed in this cycle.
-    // Actual LLM call counting will be wired when rankPresets calls callLlm.
-    let segmentsProcessed = 0;
-
-    for (const segmentKey of segments) {
-      if (this.stopped) break;
-      if (segmentsProcessed >= this.config.maxLlmCallsPerCycle) {
-        this.log.warn(
-          { maxLlmCallsPerCycle: this.config.maxLlmCallsPerCycle, remaining: segments.length - segments.indexOf(segmentKey) },
-          'Budget exhausted — stopping assessment cycle',
-        );
-        break;
-      }
-
-      try {
-        await this.assessSegment(segmentKey);
-        segmentsProcessed++;
-      } catch (err) {
-        this.log.error({ err, segmentKey }, 'Failed to assess segment');
-      }
-    }
-
-    this.log.info({ segmentsProcessed }, 'Assessment cycle complete');
-  }
-
-  // ── Segment Resolution ─────────────────────────────────────────────────
+  // ── On-Demand Assessment ───────────────────────────────────────────────
 
   /**
-   * Resolve which segments need assessment.
-   * In phase 1, returns all configured segment combinations.
-   * Future: query DB for stale segments.
+   * Assess a single canonical identity on demand.
+   *
+   * Collects evidence, generates per-preset scorecards, ranks presets,
+   * and returns the resulting artifact (or an error).
    */
-  private async resolveSegments(): Promise<MarketAssessmentSegmentKey[]> {
-    const segments: MarketAssessmentSegmentKey[] = [];
-
-    for (const venueFamily of this.config.venueFamilies) {
-      for (const styleTier of this.config.styleTiers) {
-        segments.push({
-          venueFamily,
-          styleTier,
-          // Placeholder universeScopeHash — real implementation will derive from config
-          universeScopeHash: crypto.createHash('sha256').update(`${venueFamily}:${styleTier}`).digest('hex').slice(0, 16),
-        });
-      }
+  async assessIdentity(
+    identity: MarketAssessmentIdentity,
+  ): Promise<Result<MarketAssessmentArtifact>> {
+    if (!this.config.enabled) {
+      return err({
+        code: 'assessment.disabled',
+        message: 'Platform assessor is disabled',
+      });
     }
 
-    return segments;
-  }
-
-  // ── Single Segment Assessment ──────────────────────────────────────────
-
-  /** Assess a single segment (exposed for testing) */
-  async assessSegment(segmentKey: MarketAssessmentSegmentKey): Promise<MarketAssessmentRun> {
-    const runId = crypto.randomUUID();
-    const startedAt = new Date().toISOString();
-
-    // Create assessment run record
-    await this.deps.db.insert(marketAssessmentRuns).values({
-      id: runId,
-      segmentKey: segmentKey,
-      venueFamily: segmentKey.venueFamily,
-      styleTier: segmentKey.styleTier,
-      universeScopeHash: segmentKey.universeScopeHash,
-      startedAt: new Date(startedAt),
-      status: 'in_progress',
-      evidenceRefs: [],
-      errorMessage: null,
-      assessmentVersion: 1,
-    });
-
-    this.log.info({ runId, segmentKey }, 'Assessment run started');
+    this.log.info({ identity }, 'On-demand assessment started');
 
     try {
       // Step 1: Collect evidence
-      const evidence = await this.collectEvidence(segmentKey);
-
-      // Insert scan metrics for phase-1 per-preset signal quality measurement
-      try {
-        await this.deps.db.insert(agentScanMetrics).values({
-          id: crypto.randomUUID(),
-          agentId: 'platform', // platform-level scan
-          presetKey: 'shared',
-          presetBehaviorVersion: 'v1',
-          segmentKey: {
-            venueFamily: segmentKey.venueFamily,
-            styleTier: segmentKey.styleTier,
-            universeScopeHash: segmentKey.universeScopeHash,
-          },
-          venueFamily: segmentKey.venueFamily,
-          styleTier: segmentKey.styleTier,
-          universeScopeHash: segmentKey.universeScopeHash,
-          scannedAt: new Date(),
-          candidatesDiscovered: evidence.scanHealth.candidatesDiscovered,
-          candidatesScored: evidence.scanHealth.candidatesScored,
-          signalsGenerated: evidence.scanHealth.signalsGenerated,
-          scanHealth: evidence.scanHealth.health,
-          topConfidence: null,
-          regimeBucket: evidence.regime?.currentState ?? null,
-          createdAt: new Date(),
-        });
-      } catch (err) {
-        this.log.warn({ err, segmentKey }, 'Failed to persist scan metrics');
-      }
+      const evidence = await this.collectEvidence(identity);
 
       // Step 2: Generate per-preset scorecards
-      const presetKeys = await this.deps.getPresetKeys(segmentKey.styleTier);
-      const scorecards = await this.generateScorecards(segmentKey, evidence, presetKeys);
+      const presetKeys = await this.deps.getPresetKeys(identity.styleTier);
+      const scorecards = await this.generateScorecards(identity, evidence, presetKeys);
 
       // Step 3: Rank presets via LLM
-      const artifact = await this.rankPresets(segmentKey, evidence, scorecards);
+      const artifact = await this.rankPresets(identity, evidence, scorecards);
 
-      // Step 4: Persist artifact
-      await this.deps.db.insert(marketAssessmentArtifacts).values({
-        id: artifact.id,
-        segmentKey: artifact.segmentKey,
-        venueFamily: artifact.venueFamily,
-        styleTier: artifact.styleTier,
-        universeScopeHash: artifact.universeScopeHash,
-        assessmentRunId: runId,
-        assessedAt: new Date(artifact.assessedAt),
-        expiresAt: new Date(artifact.expiresAt),
-        maxActorUseAge: artifact.maxActorUseAge,
-        maxWakeAge: artifact.maxWakeAge,
-        assessmentVersion: artifact.assessmentVersion,
-        artifactVersion: artifact.artifactVersion,
-        rankingPolicyVersion: artifact.rankingPolicyVersion,
-        status: artifact.status,
-        allowedPresets: artifact.allowedPresets,
-        currentMarketSummary: artifact.currentMarketSummary,
-        regimeSummary: artifact.regimeSummary,
-        scanHealthSummary: artifact.scanHealthSummary,
-        presetRankings: artifact.presetRankings,
-        recommendedPreset: artifact.recommendedPreset,
-        relativeUplift: artifact.relativeUplift?.toString() ?? null,
-        confidence: artifact.confidence.toString(),
-        urgency: artifact.urgency,
-        reasoningSummary: artifact.reasoningSummary,
-        evidenceRefs: artifact.evidenceRefs,
+      this.log.info({ identity, artifactId: artifact.id }, 'On-demand assessment completed');
+
+      return ok(artifact);
+    } catch (caught) {
+      const errorMessage = caught instanceof Error ? caught.message : String(caught);
+      this.log.error({ err: caught, identity }, 'On-demand assessment failed');
+      return err({
+        code: 'assessment.failed',
+        message: errorMessage,
       });
-
-      // Mark any previous active artifacts for this segment as superseded
-      await this.deps.db
-        .update(marketAssessmentArtifacts)
-        .set({ status: 'superseded' })
-        .where(
-          and(
-            eq(marketAssessmentArtifacts.venueFamily, segmentKey.venueFamily),
-            eq(marketAssessmentArtifacts.styleTier, segmentKey.styleTier),
-            eq(marketAssessmentArtifacts.universeScopeHash, segmentKey.universeScopeHash),
-            eq(marketAssessmentArtifacts.status, 'active'),
-            sql`${marketAssessmentArtifacts.id} != ${artifact.id}`,
-          ),
-        );
-
-      // Update run to completed
-      await this.deps.db
-        .update(marketAssessmentRuns)
-        .set({
-          status: 'completed',
-          completedAt: new Date(),
-          evidenceRefs: evidence.segmentKey ? [`evidence:${runId}`] : [],
-        })
-        .where(eq(marketAssessmentRuns.id, runId));
-
-      this.log.info({ runId, segmentKey, artifactId: artifact.id }, 'Assessment run completed');
-
-      return {
-        id: runId,
-        segmentKey,
-        venueFamily: segmentKey.venueFamily,
-        styleTier: segmentKey.styleTier,
-        universeScopeHash: segmentKey.universeScopeHash,
-        startedAt,
-        completedAt: new Date().toISOString(),
-        status: 'completed',
-        evidenceRefs: [`evidence:${runId}`],
-        errorMessage: null,
-        assessmentVersion: 1,
-      };
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      this.log.error({ err, runId, segmentKey }, 'Assessment run failed');
-
-      await this.deps.db
-        .update(marketAssessmentRuns)
-        .set({
-          status: 'failed',
-          completedAt: new Date(),
-          errorMessage,
-        })
-        .where(eq(marketAssessmentRuns.id, runId));
-
-      return {
-        id: runId,
-        segmentKey,
-        venueFamily: segmentKey.venueFamily,
-        styleTier: segmentKey.styleTier,
-        universeScopeHash: segmentKey.universeScopeHash,
-        startedAt,
-        completedAt: new Date().toISOString(),
-        status: 'failed',
-        evidenceRefs: [],
-        errorMessage,
-        assessmentVersion: 1,
-      };
     }
   }
 
   // ── Evidence Collection ────────────────────────────────────────────────
 
-  /** Collect deterministic evidence for a segment */
-  async collectEvidence(segmentKey: MarketAssessmentSegmentKey): Promise<EvidencePackage> {
+  /** Collect deterministic evidence for a canonical identity */
+  async collectEvidence(identity: MarketAssessmentIdentity): Promise<EvidencePackage> {
     // Phase 1 skeleton — returns placeholder data.
     // Full implementation will integrate with shared market data infrastructure.
-    const regime = await this.deps.getRegimeSnapshot(segmentKey).catch((err) => {
-      this.log.warn({ err, segmentKey }, 'Regime snapshot failed — using placeholder');
+    const regime = await this.deps.getRegimeSnapshot(identity).catch((err) => {
+      this.log.warn({ err, identity }, 'Regime snapshot failed — using placeholder');
       return PLACEHOLDER_REGIME;
     });
 
     return {
-      segmentKey,
+      identity,
       collectedAt: new Date().toISOString(),
       regime,
       breadth: {
@@ -471,7 +187,7 @@ export class PlatformAssessor {
 
   /** Generate deterministic per-preset scorecards */
   async generateScorecards(
-    _segmentKey: MarketAssessmentSegmentKey,
+    _identity: MarketAssessmentIdentity,
     _evidence: EvidencePackage,
     presetKeys: string[],
   ): Promise<PresetScorecardEntry[]> {
@@ -492,14 +208,15 @@ export class PlatformAssessor {
 
   /** Invoke the platform LLM to rank presets */
   async rankPresets(
-    segmentKey: MarketAssessmentSegmentKey,
+    identity: MarketAssessmentIdentity,
     _evidence: EvidencePackage,
     scorecards: PresetScorecardEntry[],
   ): Promise<MarketAssessmentArtifact> {
     // Phase 1 skeleton — returns a basic artifact without LLM call.
     // Full implementation will construct a prompt and call the platform LLM.
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + this.config.artifactStalenessMs);
+    const expiresAt = new Date(now.getTime() + this.config.cacheFreshnessMs);
+    const segmentKey = identityToSegmentKey(identity);
 
     const rankings: MarketAssessmentPresetRanking[] = scorecards.map((sc, idx) => ({
       presetKey: sc.presetKey,
@@ -515,8 +232,8 @@ export class PlatformAssessor {
     return {
       id: crypto.randomUUID(),
       segmentKey,
-      venueFamily: segmentKey.venueFamily,
-      styleTier: segmentKey.styleTier,
+      venueFamily: identity.venueFamily,
+      styleTier: identity.styleTier,
       universeScopeHash: segmentKey.universeScopeHash,
       assessmentRunId: '', // filled by caller
       assessedAt: now.toISOString(),
@@ -540,6 +257,41 @@ export class PlatformAssessor {
       evidenceRefs: [],
     };
   }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Derive a pseudo segment key from a canonical identity for backward
+ * compatibility with DB schemas that still reference segment keys.
+ *
+ * This is a transitional helper — once the DB schema is migrated to use
+ * `MarketAssessmentIdentity` directly, this function and all segment-key
+ * references in the assessor will be removed.
+ */
+function identityToSegmentKey(identity: MarketAssessmentIdentity): MarketAssessmentSegmentKey {
+  if (identity.instrumentKind === 'orderbook' || identity.instrumentKind === 'perp') {
+    const universeScopeHash = crypto
+      .createHash('sha256')
+      .update(`${identity.venueFamily}:${identity.styleTier}:${identity.symbol}`)
+      .digest('hex')
+      .slice(0, 16);
+    return {
+      venueFamily: identity.venueFamily,
+      styleTier: identity.styleTier,
+      universeScopeHash,
+    };
+  }
+  const universeScopeHash = crypto
+    .createHash('sha256')
+    .update(`${identity.venueFamily}:${identity.styleTier}:${identity.network}:${identity.address}`)
+    .digest('hex')
+    .slice(0, 16);
+  return {
+    venueFamily: identity.venueFamily,
+    styleTier: identity.styleTier,
+    universeScopeHash,
+  };
 }
 
 // ── Placeholder Constants ──────────────────────────────────────────────────
