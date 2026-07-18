@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AgentWakeSourceSchema } from '../agent-protocol.js';
+import { ok, err, type Result } from '../result.js';
 
 // Supported venues for live rollout
 export const SUPPORTED_LIVE_VENUES = ['hyperliquid', 'bybit', 'jupiter', '1inch'] as const;
@@ -1287,20 +1288,18 @@ export const MarketIntelligenceConfigSchema = z.object({
 export const PlatformAssessorConfigSchema = z.object({
   /** Enable/disable the platform assessor. Default: true */
   enabled: z.boolean().default(true),
-  /** Assessment interval in ms. Default: 6 hours (21_600_000) */
-  assessmentIntervalMs: z.number().int().min(60_000).default(21_600_000),
+  /** Operator minimum floor for agent reviewIntervalMs. Default: 24 hours (86_400_000) */
+  minReviewIntervalMs: z.number().int().positive().default(86_400_000),
+  /** Optional daily cap on billed assessment requests per agent. */
+  maxReviewRequestsPerDay: z.number().int().positive().optional(),
+  /** Top N candidates the deterministic scanner pre-check considers. Default: 20 */
+  scannerCandidateLimit: z.number().int().positive().default(20),
+  /** Single resolved freshness for lookup and artifact expiry. Default: 6 hours (21_600_000) */
+  cacheFreshnessMs: z.number().int().positive().default(21_600_000),
   /** Maximum concurrent assessments. Default: 1 */
   maxConcurrentAssessments: z.number().int().min(1).default(1),
   /** Budget caps: max LLM calls per assessment cycle. Default: 20 */
   maxLlmCallsPerCycle: z.number().int().min(1).default(20),
-  /** Staleness duration for artifacts in ms. Default: 12 hours (43_200_000) */
-  artifactStalenessMs: z.number().int().min(60_000).default(43_200_000),
-  /** Configured segment families to assess. Empty = all. */
-  segmentFamilies: z.array(z.string()).default([]),
-  /** Configured venue families to assess. Empty = all. */
-  venueFamilies: z.array(z.string()).default([]),
-  /** Style tiers to run assessments for. Default: all three */
-  styleTiers: z.array(z.enum(['economy', 'standard', 'premium'])).default(['economy', 'standard', 'premium']),
 }).default({});
 
 // ── Wake Gate Config ───────────────────────────────────────────────────────
@@ -2045,6 +2044,8 @@ export const PlatformAssessmentOptInSchema = z.object({
   minConfidenceThreshold: z.number().min(0).max(1).optional(),
   /** Minimum score uplift threshold for this agent to consider a recommendation. */
   minScoreUpliftThreshold: z.number().min(0).max(100).optional(),
+  /** Review interval in ms. Must be >= operator minReviewIntervalMs. Default resolved from operator config (24h). */
+  reviewIntervalMs: z.number().int().positive().optional(),
 });
 
 // ── Hybrid mode split (004) ─────────────────────────────────────────────────
@@ -2125,3 +2126,20 @@ export type HybridMode = z.infer<typeof HybridModeSchema>;
 export type AllowedPresetsPolicy = z.infer<typeof AllowedPresetsPolicySchema>;
 export type PresetTransitionPolicy = z.infer<typeof PresetTransitionPolicySchema>;
 export type PlatformAssessmentOptIn = z.infer<typeof PlatformAssessmentOptInSchema>;
+
+/**
+ * Validates that an agent's reviewIntervalMs meets the operator's minimum floor.
+ * Returns err('config.review_interval_below_operator_floor') if violated.
+ */
+export function validateReviewInterval(
+  reviewIntervalMs: number | undefined,
+  operatorMinReviewIntervalMs: number,
+): Result<void> {
+  if (reviewIntervalMs !== undefined && reviewIntervalMs < operatorMinReviewIntervalMs) {
+    return err({
+      code: 'config.review_interval_below_operator_floor',
+      message: `reviewIntervalMs (${reviewIntervalMs}ms) is below operator minimum (${operatorMinReviewIntervalMs}ms)`,
+    });
+  }
+  return ok(undefined);
+}

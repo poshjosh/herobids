@@ -603,17 +603,18 @@ liveRollout:
   crashPolicy: alert_manual_intervention  # auto_go_flat | alert_manual_intervention
 
 # ── Platform Assessor ──────────────────────────────────────────────────────
-# Scheduled assessment of market segments — deterministic evidence gathering,
-# per-preset scorecard generation, and LLM ranking. Phase 1 scaffolding.
+# On-demand per-symbol assessment — no scheduled background generation.
+# The assessor runs only when an agent explicitly requests it via
+# get_market_preset_assessment after receiving review advice through the
+# dedicated assessment_review tick.
 platformAssessor:
   enabled: false  # disabled by default until shadow mode validated
-  assessmentIntervalMs: 21600000  # 6 hours
+  minReviewIntervalMs: 86400000  # 24h — operator floor for agent reviewIntervalMs
+  # maxReviewRequestsPerDay: 50  # optional daily cap (unset = no cap)
+  scannerCandidateLimit: 20  # top N candidates for deterministic pre-check
+  cacheFreshnessMs: 21600000  # 6h — lookup and artifact expiry
   maxConcurrentAssessments: 1
-  maxLlmCallsPerCycle: 10
-  artifactStalenessMs: 43200000  # 12 hours
-  venueFamilies:
-    - hyperliquid-orderbook
-    - bybit-orderbook
+  maxLlmCallsPerCycle: 20
 
 # ── Wake Gate ─────────────────────────────────────────────────────────────
 # Controls when the platform can wake an agent to recommend a preset transition.

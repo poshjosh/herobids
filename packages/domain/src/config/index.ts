@@ -102,7 +102,13 @@ export {
   PlatformAssessmentOptInSchema,
   PlatformAssessorConfigSchema,
   WakeGateConfigSchema,
+  validateReviewInterval,
 } from './schema.js';
+
+export {
+  resolveAssessmentConfig,
+  type ResolvedAssessmentConfig,
+} from './assessment-config.js';
 
 export type {
   WakePreferences,
