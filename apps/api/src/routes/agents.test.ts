@@ -2576,6 +2576,86 @@ describe('agent routes — technical config persistence', () => {
     );
     expect(res.json().technical).toEqual(TECHNICAL_STUB);
   });
+
+  it('PATCH /agents/:id preserves existing technical fields for a partial update', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      modelPolicy: null,
+      unifiedConfig: { technical: { ...TECHNICAL_STUB, signalBias: 'mean-reverting' } },
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        toolPolicy: null,
+        modelPolicy: null,
+        unifiedConfig: { technical: TECHNICAL_STUB },
+      }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { technical: { signalBias: 'mean-reverting' } },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(
+      expect.objectContaining({
+        unifiedConfig: expect.objectContaining({
+          technical: expect.objectContaining({
+            filters: TECHNICAL_STUB.filters,
+            signalBias: 'mean-reverting',
+            scanIntervalMs: TECHNICAL_STUB.scanIntervalMs,
+            scanBatchSize: TECHNICAL_STUB.scanBatchSize,
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('PATCH /agents/:id rejects invalid fields in a partial technical update', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        toolPolicy: null,
+        modelPolicy: null,
+        unifiedConfig: { technical: TECHNICAL_STUB },
+      }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { technical: { signalBias: 'invalid' } },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      error: 'validation_error',
+      details: [expect.objectContaining({ path: ['technical', 'signalBias'] })],
+    });
+    expect(updateSets).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------

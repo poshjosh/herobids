@@ -161,6 +161,8 @@ const CreateAgentSchema = z.object({
   }
 });
 
+const UpdateTechnicalConfigSchema = TechnicalConfigSchema.partial();
+
 const UpdateAgentSchema = z.object({
   name: AgentNameSchema.optional(),
   prompt: z.string().max(4000).optional(),
@@ -195,7 +197,7 @@ const UpdateAgentSchema = z.object({
   stopLossCooldownMs: nullablePositiveIntegerSchema(0),
   tickIntervalMs: nullablePositiveIntegerSchema(1000),
   capital: nullablePositiveDecimalStringSchema,
-  technical: TechnicalConfigSchema.nullable().optional(),
+  technical: UpdateTechnicalConfigSchema.nullable().optional(),
   strategyPreset: z.enum([
     'momentum',
     'momentum-position',
@@ -211,6 +213,16 @@ const UpdateAgentSchema = z.object({
   capabilityMode: CapabilityModeSchema.nullable().optional(),
   hybridMode: HybridModeSchema.nullable().optional(),
 });
+
+function mergeTechnicalConfig(
+  currentTechnical: unknown,
+  technicalUpdate: z.infer<typeof UpdateTechnicalConfigSchema>,
+) {
+  const current = currentTechnical !== null && typeof currentTechnical === 'object' && !Array.isArray(currentTechnical)
+    ? currentTechnical as Record<string, unknown>
+    : {};
+  return TechnicalConfigSchema.safeParse({ ...current, ...technicalUpdate });
+}
 
 const PauseAgentSchema = z.object({
   reason: z.string().min(1).max(500).optional(),
@@ -1415,7 +1427,11 @@ export async function agentRoutes(
           void _t;
           unifiedConfigPatch = Object.keys(withoutTechnical).length > 0 ? withoutTechnical : null;
         } else if (technicalUpdate !== undefined) {
-          unifiedConfigPatch = { ...rest, technical: technicalUpdate };
+          const mergedTechnical = mergeTechnicalConfig(rest['technical'], technicalUpdate);
+          if (!mergedTechnical.success) {
+            return reply.status(400).send({ error: 'validation_error', details: mergedTechnical.error.issues });
+          }
+          unifiedConfigPatch = { ...rest, technical: mergedTechnical.data };
         } else {
           unifiedConfigPatch = Object.keys(rest).length > 0 ? rest : null;
         }
@@ -1425,7 +1441,11 @@ export async function agentRoutes(
         // the preset's technical. Only an explicit {…} object overrides the preset.
         const merged = { ...current, ...presetUnifiedConfigUpdate };
         if (technicalUpdate !== undefined && technicalUpdate !== null) {
-          merged['technical'] = technicalUpdate;
+          const mergedTechnical = mergeTechnicalConfig(merged['technical'], technicalUpdate);
+          if (!mergedTechnical.success) {
+            return reply.status(400).send({ error: 'validation_error', details: mergedTechnical.error.issues });
+          }
+          merged['technical'] = mergedTechnical.data;
         }
         unifiedConfigPatch = Object.keys(merged).length > 0 ? merged : null;
       } else {
@@ -1436,7 +1456,11 @@ export async function agentRoutes(
           void _t;
           unifiedConfigPatch = Object.keys(rest).length > 0 ? rest : null;
         } else if (technicalUpdate !== undefined) {
-          unifiedConfigPatch = { ...current, technical: technicalUpdate };
+          const mergedTechnical = mergeTechnicalConfig(current['technical'], technicalUpdate);
+          if (!mergedTechnical.success) {
+            return reply.status(400).send({ error: 'validation_error', details: mergedTechnical.error.issues });
+          }
+          unifiedConfigPatch = { ...current, technical: mergedTechnical.data };
         }
         // else: neither preset nor technical changed → undefined (don't update)
       }

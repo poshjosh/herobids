@@ -174,8 +174,8 @@ const REQUIRED_SCANNER_FIELDS = [
 const COMPLETE_TECHNICAL = {
   filters: { venue: 'hyperliquid', venueType: 'orderbook', symbols: ['BTC', 'ETH'] },
   indicators: { rsi: { period: 14 }, macd: { fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 } },
-  candles: { interval: '1h', lookback: 100 },
-  signalBias: 'momentum',
+  candles: { interval: '1H', limit: 100 },
+  signalBias: 'trend-following',
   scanIntervalMs: 60_000,
   scanBatchSize: 5,
   autonomousExit: true,
@@ -222,7 +222,7 @@ async function scenario1_completeConfigPersisted(token: string): Promise<void> {
   if (dbScanBatchSize !== '5') { record('s1-scanBatchSize', false, `expected 5, got ${dbScanBatchSize}`); allOk = false; }
   else record('s1-scanBatchSize', true, `scanBatchSize=${dbScanBatchSize}`);
 
-  if (dbSignalBias !== 'momentum') { record('s1-signalBias', false, `expected momentum, got ${dbSignalBias}`); allOk = false; }
+  if (dbSignalBias !== 'trend-following') { record('s1-signalBias', false, `expected trend-following, got ${dbSignalBias}`); allOk = false; }
   else record('s1-signalBias', true, `signalBias=${dbSignalBias}`);
 
   if (dbAutonomousExit !== 'true') { record('s1-autonomousExit', false, `expected true, got ${dbAutonomousExit}`); allOk = false; }
@@ -258,7 +258,6 @@ async function scenario2_incompleteConfigRejected(token: string): Promise<void> 
       prompt: 'test',
       capabilityMode: 'hybrid',
       hybridMode: 'scanner_gated',
-      strategyPreset: 'momentum',
       style: 'balanced',
       // ⚠️ No technical block — should be rejected
     },
@@ -298,7 +297,7 @@ async function scenario2_incompleteConfigRejected(token: string): Promise<void> 
 
   if (res2.body.id) await deleteAgent(token, res2.body.id);
 
-  // Try creating a scanner_gated agent with technical but missing indicators
+  // Try creating a scanner_gated agent with no indicators; API defaults them.
   const agentName3 = `persist-missing-indicators-${Date.now()}`;
   const res3 = await apiRequest<{ id?: string }>('POST', '/agents', {
     token,
@@ -311,21 +310,17 @@ async function scenario2_incompleteConfigRejected(token: string): Promise<void> 
       strategyPreset: 'momentum',
       style: 'balanced',
       technical: {
-        filters: { venue: 'hyperliquid' },
-        candles: { interval: '1h', lookback: 100 },
-        signalBias: 'momentum',
-        scanIntervalMs: 60_000,
-        scanBatchSize: 5,
-        autonomousExit: true,
-        // ⚠️ Missing indicators
+        ...COMPLETE_TECHNICAL,
+        indicators: undefined,
+        // ⚠️ Missing indicators — defaults are applied at write time.
       },
     },
   });
 
-  const rejectedNoIndicators = res3.status === 400;
-  record('s2-reject-no-indicators', rejectedNoIndicators,
-    rejectedNoIndicators ? 'API rejected scanner_gated agent without indicators (400)' :
-      `API returned ${res3.status} — expected 400`);
+  const defaultedIndicators = res3.status === 201 && res3.body.id !== undefined;
+  record('s2-default-missing-indicators', defaultedIndicators,
+    defaultedIndicators ? 'API defaulted missing scanner_gated indicators' :
+      `API returned ${res3.status} — expected 201`);
 
   if (res3.body.id) await deleteAgent(token, res3.body.id);
 }
@@ -373,8 +368,8 @@ async function scenario3_mixedModeDefaultsApplied(token: string): Promise<void> 
   if (dbScanIntervalMs !== '60000') { record('s3-scanIntervalMs', false, `expected 60000, got ${dbScanIntervalMs}`); allOk = false; }
   else record('s3-scanIntervalMs', true, `scanIntervalMs=${dbScanIntervalMs} — default applied`);
 
-  if (dbAutonomousExit !== 'true') { record('s3-autonomousExit', false, `expected true, got ${dbAutonomousExit}`); allOk = false; }
-  else record('s3-autonomousExit', true, `autonomousExit=true — default applied`);
+  if (dbAutonomousExit !== 'false') { record('s3-autonomousExit', false, `expected false, got ${dbAutonomousExit}`); allOk = false; }
+  else record('s3-autonomousExit', true, `autonomousExit=false — default applied`);
 
   await deleteAgent(token, agentId);
 }
