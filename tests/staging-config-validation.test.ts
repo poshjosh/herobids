@@ -305,5 +305,28 @@ describe('staging/production environment invariants', () => {
       // The line must reference the compose file variables, not hard-coded paths
       expect(caddyLine![0]).toMatch(/\$\{?COMPOSE_FILES\}?/);
     });
+
+    // Bug 2026-07-18/003: maintenance-restart.sh's main deploy path (Step 3)
+    // was missing the same `restart caddy` step, letting a stale bind-mounted
+    // Caddyfile keep running on staging after a maintenance-window redeploy.
+    // The script also has a second "restart caddy" line inside
+    // rollback_on_failure() — scope the assertions to the Step 3 block only,
+    // so this test targets the main deploy path rather than any occurrence.
+    const maintenanceScript = readText('infra/hetzner/scripts/maintenance-restart.sh');
+    const maintenanceStep3Block =
+      maintenanceScript.match(/Step 3 — Deploying latest code[\s\S]*?(?=# ─── Step 4)/)?.[0] ?? '';
+
+    it('maintenance-restart.sh restarts the caddy service after docker compose up -d in the main deploy path (Step 3)', () => {
+      expect(maintenanceStep3Block).toMatch(/restart\s+caddy/);
+    });
+
+    it('maintenance-restart.sh Step 3 Caddy restart uses the correct compose files', () => {
+      // The line is indented (nested inside an `if` block), unlike push.sh's
+      // top-level invocation, so allow leading whitespace before the command.
+      const caddyLine = maintenanceStep3Block.match(/^\s*docker compose.*restart caddy/m);
+      expect(caddyLine).toBeTruthy();
+      // The line must reference the compose file variables, not hard-coded paths
+      expect(caddyLine![0]).toMatch(/\$\{?COMPOSE_FILES\}?/);
+    });
   });
 });

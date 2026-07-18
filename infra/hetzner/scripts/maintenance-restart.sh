@@ -114,6 +114,12 @@ rollback_on_failure() {
       # shellcheck disable=SC2086
       docker compose ${COMPOSE_FILES} up -d --build --remove-orphans 2>&1 | tail -6 \
         || { warn "Service rebuild on previous revision failed — manual intervention required."; rollback_ok=false; }
+      # docker compose does not recreate a container just because a bind-mounted
+      # file's contents changed on disk (e.g. Caddyfile) — restart caddy
+      # explicitly so the restored revision's config is actually served.
+      # shellcheck disable=SC2086
+      docker compose ${COMPOSE_FILES} restart caddy 2>&1 | tail -3 \
+        || warn "Caddy restart on previous revision failed — proxy config may be stale."
 
       # Verify the restored revision is actually healthy before declaring success.
       if [[ "${rollback_ok}" == "true" ]]; then
@@ -248,6 +254,16 @@ if [[ "${DO_DEPLOY}" == "true" ]]; then
   # shellcheck disable=SC2086
   docker compose ${COMPOSE_FILES} up -d --build --remove-orphans 2>&1 | tail -6
   ok "Services restarted."
+
+  # Reload Caddy so it picks up any Caddyfile changes (e.g. new routes).
+  # Caddy uses a bind-mounted config file; docker compose up -d does NOT
+  # restart containers whose service definitions haven't changed, so a
+  # config-only change would otherwise go unnoticed (same fix as push.sh).
+  log "  Reloading Caddy configuration..."
+  # shellcheck disable=SC2086
+  docker compose ${COMPOSE_FILES} restart caddy 2>&1 | tail -3
+  ok "Caddy config reloaded."
+
   DEPLOY_DONE=true
 else
   log "Step 3 — Skipping deploy (--skip-deploy flag)."
