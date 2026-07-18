@@ -8,6 +8,7 @@ import {
   canTriggerWake,
   canUseForTransition,
   getArtifactFreshnessStatus,
+  isValidTransition,
 } from './market-assessment.js';
 import type { MarketAssessmentArtifact } from './market-assessment.js';
 import type { TechnicalConfig } from './config/schema.js';
@@ -417,5 +418,46 @@ describe('getArtifactFreshnessStatus', () => {
       maxActorUseAge: farFuture.toISOString(),
     });
     expect(getArtifactFreshnessStatus(artifact)).toBe('fresh');
+  });
+});
+
+describe('isValidTransition', () => {
+  // Platform transitions
+  it('allows assessment_available → wake_emitted', () => {
+    expect(isValidTransition('assessment_available', 'wake_emitted')).toBe(true);
+  });
+  it('allows assessment_available → wake_suppressed', () => {
+    expect(isValidTransition('assessment_available', 'wake_suppressed')).toBe(true);
+  });
+  it('rejects wake_emitted → assessment_available (terminal)', () => {
+    expect(isValidTransition('wake_emitted', 'assessment_available')).toBe(false);
+  });
+  it('rejects wake_suppressed → assessment_available (terminal)', () => {
+    expect(isValidTransition('wake_suppressed', 'assessment_available')).toBe(false);
+  });
+
+  // Actor transitions
+  it('allows actor_reviewed → transition_recommended', () => {
+    expect(isValidTransition('actor_reviewed', 'transition_recommended')).toBe(true);
+  });
+  it('allows actor_reviewed → transition_deferred', () => {
+    expect(isValidTransition('actor_reviewed', 'transition_deferred')).toBe(true);
+  });
+  it('allows actor_reviewed → transition_rejected', () => {
+    expect(isValidTransition('actor_reviewed', 'transition_rejected')).toBe(true);
+  });
+  it('allows transition_recommended → transition_applied', () => {
+    expect(isValidTransition('transition_recommended', 'transition_applied')).toBe(true);
+  });
+  it('rejects transition_applied → anything (terminal)', () => {
+    expect(isValidTransition('transition_applied', 'actor_reviewed')).toBe(false);
+  });
+
+  // Cross-boundary
+  it('rejects platform → actor transition', () => {
+    expect(isValidTransition('assessment_available', 'actor_reviewed')).toBe(false);
+  });
+  it('rejects actor → platform transition', () => {
+    expect(isValidTransition('actor_reviewed', 'wake_emitted')).toBe(false);
   });
 });

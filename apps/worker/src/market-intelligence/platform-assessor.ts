@@ -11,7 +11,7 @@ import type {
   PresetScorecardEntry,
   MarketAssessmentPresetRanking,
 } from '@herobids/domain';
-import { marketAssessmentRuns, marketAssessmentArtifacts } from '@herobids/db';
+import { marketAssessmentRuns, marketAssessmentArtifacts, agentScanMetrics } from '@herobids/db';
 import { eq, and, sql } from 'drizzle-orm';
 import { createLeaderElection, type LeaderElection } from './leader-election.js';
 
@@ -104,6 +104,12 @@ export class PlatformAssessor {
   private runningCycle: Promise<void> | undefined;
   private leaderElection: LeaderElection | undefined;
   private isLeader = false;
+
+  // TODO(002): Implement shadow-mode evidence tracking.
+  // Shadow-mode metrics (assessment runs, scan health, preset rankings) should be
+  // collected and validated for a full cycle before enabling live transitions.
+  // This gives operators confidence that the platform assessor produces sensible
+  // recommendations before any agent acts on them.
 
   constructor(config: PlatformAssessorConfig, deps: PlatformAssessorDeps) {
     this.config = {
@@ -290,6 +296,34 @@ export class PlatformAssessor {
     try {
       // Step 1: Collect evidence
       const evidence = await this.collectEvidence(segmentKey);
+
+      // Insert scan metrics for phase-1 per-preset signal quality measurement
+      try {
+        await this.deps.db.insert(agentScanMetrics).values({
+          id: crypto.randomUUID(),
+          agentId: 'platform', // platform-level scan
+          presetKey: 'shared',
+          presetBehaviorVersion: 'v1',
+          segmentKey: {
+            venueFamily: segmentKey.venueFamily,
+            styleTier: segmentKey.styleTier,
+            universeScopeHash: segmentKey.universeScopeHash,
+          },
+          venueFamily: segmentKey.venueFamily,
+          styleTier: segmentKey.styleTier,
+          universeScopeHash: segmentKey.universeScopeHash,
+          scannedAt: new Date(),
+          candidatesDiscovered: evidence.scanHealth.candidatesDiscovered,
+          candidatesScored: evidence.scanHealth.candidatesScored,
+          signalsGenerated: evidence.scanHealth.signalsGenerated,
+          scanHealth: evidence.scanHealth.health,
+          topConfidence: null,
+          regimeBucket: evidence.regime?.currentState ?? null,
+          createdAt: new Date(),
+        });
+      } catch (err) {
+        this.log.warn({ err, segmentKey }, 'Failed to persist scan metrics');
+      }
 
       // Step 2: Generate per-preset scorecards
       const presetKeys = await this.deps.getPresetKeys(segmentKey.styleTier);

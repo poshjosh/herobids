@@ -228,4 +228,59 @@ describe('apply_preset_transition', () => {
     expect(result.success).toBe(false);
     expect(result.errorCode).toBe('db.unavailable');
   });
+
+  // ── Shadow mode (recommend_only) → blocked ────────────────────────────
+
+  it('blocks transition when agent is in shadow mode (recommend_only)', async () => {
+    const artifact = makeActiveArtifact();
+    const insertSpy = vi.fn().mockResolvedValue(undefined);
+    const ctx = makeCtx({
+      db: makeMockDb({ selectResult: [artifact], insertFn: insertSpy }),
+      agentConfigOps: {
+        getCurrentConfig: vi.fn().mockResolvedValue({
+          platformAssessment: { mode: 'recommend_only', enabled: true },
+        }),
+        persistConfig: vi.fn(),
+        appendJournal: vi.fn(),
+        notifyActorConfigUpdate: vi.fn(),
+        getLlmTickCount: vi.fn().mockReturnValue(0),
+      },
+    });
+
+    const result = await applyPresetTransitionTool.execute(
+      { targetPreset: 'momentum', mode: 'entries_only' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('transition.shadow_mode_blocked');
+    expect(result.error).toContain('recommend_only');
+    expect(insertSpy).not.toHaveBeenCalled();
+  });
+
+  it('allows transition when agent is in auto_apply mode', async () => {
+    const artifact = makeActiveArtifact();
+    const insertSpy = vi.fn().mockResolvedValue(undefined);
+    const ctx = makeCtx({
+      db: makeMockDb({ selectResult: [artifact], insertFn: insertSpy }),
+      agentConfigOps: {
+        getCurrentConfig: vi.fn().mockResolvedValue({
+          platformAssessment: { mode: 'auto_apply', enabled: true },
+        }),
+        persistConfig: vi.fn(),
+        appendJournal: vi.fn(),
+        notifyActorConfigUpdate: vi.fn(),
+        getLlmTickCount: vi.fn().mockReturnValue(0),
+      },
+    });
+
+    const result = await applyPresetTransitionTool.execute(
+      { targetPreset: 'momentum', mode: 'entries_only' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ applied: true, targetPreset: 'momentum' });
+    expect(insertSpy).toHaveBeenCalledOnce();
+  });
 });

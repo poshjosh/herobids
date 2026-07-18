@@ -606,9 +606,27 @@ liveRollout:
 # Scheduled assessment of market segments — deterministic evidence gathering,
 # per-preset scorecard generation, and LLM ranking. Phase 1 scaffolding.
 platformAssessor:
+  enabled: false  # disabled by default until shadow mode validated
+  assessmentIntervalMs: 21600000  # 6 hours
+  maxConcurrentAssessments: 1
+  maxLlmCallsPerCycle: 10
+  artifactStalenessMs: 43200000  # 12 hours
   venueFamilies:
     - hyperliquid-orderbook
     - bybit-orderbook
+
+# ── Wake Gate ─────────────────────────────────────────────────────────────
+# Controls when the platform can wake an agent to recommend a preset transition.
+wakeGate:
+  minIntervalBetweenWakesMs: 14400000  # 4 hours
+  maxWakesPerAgentPerDay: 6
+  minScoreUplift: 0.15
+  minConfidence: 0.6
+  openPositionUpliftMultiplier: 1.5
+  requireConsecutiveConfirmation: false
+  consecutiveConfirmationCount: 2
+  minCurrentPresetScore: 0.0
+  minScoreFloorForUpliftCalc: 0.01
 
 # Market intelligence — always-on discovery coordinator and monitor.
 # Controls the background market intelligence subsystem that wakes agents

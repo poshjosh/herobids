@@ -124,6 +124,42 @@ export const TransitionModeSchema = z.enum([
   'entries_and_full_transition',
 ]);
 
+// ── Transition State Machine ────────────────────────────────────────────────
+
+/**
+ * Valid state transitions for the platform-owned side.
+ */
+const VALID_PLATFORM_TRANSITIONS: Record<PlatformTransitionState, PlatformTransitionState[]> = {
+  assessment_available: ['wake_suppressed', 'wake_emitted'],
+  wake_suppressed: [],
+  wake_emitted: [],
+};
+
+/**
+ * Valid state transitions for the actor-owned side.
+ */
+const VALID_ACTOR_TRANSITIONS: Record<ActorTransitionState, ActorTransitionState[]> = {
+  actor_reviewed: ['transition_recommended', 'transition_deferred', 'transition_rejected'],
+  transition_recommended: ['transition_applied', 'transition_deferred', 'transition_rejected', 'transition_expired'],
+  transition_applied: [],
+  transition_deferred: [],
+  transition_rejected: [],
+  transition_expired: [],
+};
+
+/**
+ * Returns true if the transition from `from` to `to` is valid per the state machine.
+ */
+export function isValidTransition(from: TransitionState, to: TransitionState): boolean {
+  if (from in VALID_PLATFORM_TRANSITIONS) {
+    return VALID_PLATFORM_TRANSITIONS[from as PlatformTransitionState]?.includes(to as PlatformTransitionState) ?? false;
+  }
+  if (from in VALID_ACTOR_TRANSITIONS) {
+    return VALID_ACTOR_TRANSITIONS[from as ActorTransitionState]?.includes(to as ActorTransitionState) ?? false;
+  }
+  return false;
+}
+
 // ── Preset Scorecard ────────────────────────────────────────────────────────
 
 /** Per-preset dry-run result from the deterministic shared scanner. */

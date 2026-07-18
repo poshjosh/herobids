@@ -135,6 +135,9 @@ export interface DecisionIntakeResult {
  * - stamping `botId` and `contextHash`
  * - providing the decision context snapshot
  */
+// TODO(002): Attach active preset key and behavior version to decisions
+// for per-preset performance attribution. Requires reading the agent's
+// current preset from the agents table metadata or unified config.
 export async function submitDecisionForExecution(
   decision: Decision,
   context: DecisionContext,

@@ -1,5 +1,4 @@
-import { pgTable, text, timestamp, jsonb, integer, numeric, index, uniqueIndex } from 'drizzle-orm/pg-core';
-import { agents } from './agents.js';
+import { pgTable, text, timestamp, jsonb, integer, numeric, index } from 'drizzle-orm/pg-core';
 
 /**
  * Agent scan metrics — per-scan statistics recorded for an agent running a specific preset.
@@ -7,8 +6,8 @@ import { agents } from './agents.js';
  */
 export const agentScanMetrics = pgTable('agent_scan_metrics', {
   id: text('id').primaryKey(),
-  /** Agent that performed the scan */
-  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  /** Platform-level scan metrics — not constrained to agents table */
+  agentId: text('agent_id').notNull(),
   /** Logical preset family identifier */
   presetKey: text('preset_key').notNull(),
   /** Mechanically-derived behavior version hash */
@@ -38,5 +37,5 @@ export const agentScanMetrics = pgTable('agent_scan_metrics', {
   index('idx_agent_scan_metrics_scanned_at').on(t.scannedAt),
   index('idx_agent_scan_metrics_segment_key').on(t.segmentKey),
   index('idx_agent_scan_metrics_segment_components').on(t.venueFamily, t.styleTier, t.universeScopeHash),
-  uniqueIndex('uq_agent_scan_metrics_agent_preset_scan').on(t.agentId, t.presetKey, t.scannedAt),
+  index('idx_agent_scan_metrics_preset_scanned_at').on(t.presetKey, t.scannedAt),
 ]);

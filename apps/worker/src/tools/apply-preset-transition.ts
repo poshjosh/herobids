@@ -28,6 +28,18 @@ async function executeApplyPresetTransition(
   }
 
   try {
+    // Shadow mode gate: check if agent is in recommend_only mode
+    if (ctx.agentConfigOps) {
+      const currentConfig = await ctx.agentConfigOps.getCurrentConfig();
+      if (currentConfig?.platformAssessment?.mode === 'recommend_only') {
+        return {
+          success: false,
+          error: 'Platform assessment is in recommend_only (shadow) mode. Preset transitions are not yet applied automatically. Review the recommendation and switch manually if desired.',
+          errorCode: 'transition.shadow_mode_blocked',
+        };
+      }
+    }
+
     // Get the latest active artifact for the assessment reference
     const [latest] = await db
       .select()
