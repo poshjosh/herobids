@@ -1,4 +1,6 @@
+import crypto from 'node:crypto';
 import { z } from 'zod';
+import type { TechnicalConfig } from './config/schema.js';
 
 // ── Segment Key (D1 from decision record) ───────────────────────────────────
 
@@ -18,6 +20,79 @@ export const MarketAssessmentSegmentKeySchema = z.object({
   styleTier: z.enum(['economy', 'standard', 'premium']),
   universeScopeHash: z.string().min(1),
 });
+
+// ── Segment Key Construction ────────────────────────────────────────────────
+
+/**
+ * Compute a deterministic hash of the discovery-relevant filters that define
+ * the shared candidate population for a segment.
+ *
+ * Included: venue family/type, volume/liquidity filters, networks, symbol
+ * allowlists/denylists, and any other filter that changes the candidate set.
+ *
+ * Excluded: open positions, risk limits, capital, current preset, recent PnL,
+ * actor-specific transition policy.
+ */
+export function computeUniverseScopeHash(params: {
+  venueFamily: string;
+  venueType?: string;
+  minVolume24hUsd?: number;
+  minLiquidityUsd?: number;
+  networks?: string[];
+  symbols?: string[];
+  excludeSymbols?: string[];
+}): string {
+  const normalized = {
+    venueFamily: params.venueFamily,
+    venueType: params.venueType ?? null,
+    minVolume24hUsd: (params.minVolume24hUsd && params.minVolume24hUsd > 0) ? params.minVolume24hUsd : null,
+    minLiquidityUsd: (params.minLiquidityUsd && params.minLiquidityUsd > 0) ? params.minLiquidityUsd : null,
+    networks: params.networks ? [...params.networks].sort() : null,
+    symbols: params.symbols ? [...params.symbols].sort() : null,
+    excludeSymbols: params.excludeSymbols ? [...params.excludeSymbols].sort() : null,
+  };
+  const canonical = JSON.stringify(normalized);
+  return crypto.createHash('sha256').update(canonical).digest('hex').slice(0, 16);
+}
+
+/**
+ * Create a full segment key from venue family, style tier, and discovery filters.
+ */
+export function createSegmentKey(params: {
+  venueFamily: string;
+  styleTier: 'economy' | 'standard' | 'premium';
+  venueType?: string;
+  minVolume24hUsd?: number;
+  minLiquidityUsd?: number;
+  networks?: string[];
+  symbols?: string[];
+  excludeSymbols?: string[];
+}): MarketAssessmentSegmentKey {
+  return {
+    venueFamily: params.venueFamily,
+    styleTier: params.styleTier,
+    universeScopeHash: computeUniverseScopeHash(params),
+  };
+}
+
+/**
+ * Derive a segment key from an agent's technical configuration filters.
+ */
+export function segmentKeyFromTechnicalConfig(
+  config: TechnicalConfig,
+  styleTier: 'economy' | 'standard' | 'premium',
+): MarketAssessmentSegmentKey {
+  return createSegmentKey({
+    venueFamily: `${config.filters.venue}-${config.filters.venueType}`,
+    styleTier,
+    venueType: config.filters.venueType,
+    minVolume24hUsd: config.filters.minVolume24hUsd,
+    minLiquidityUsd: config.filters.minLiquidityUsd,
+    networks: config.filters.networks,
+    symbols: config.filters.symbols,
+    excludeSymbols: config.filters.excludeSymbols,
+  });
+}
 
 // ── Transition States ───────────────────────────────────────────────────────
 
