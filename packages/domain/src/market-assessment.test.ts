@@ -3,7 +3,13 @@ import {
   computeUniverseScopeHash,
   createSegmentKey,
   segmentKeyFromTechnicalConfig,
+  isArtifactFresh,
+  isArtifactStale,
+  canTriggerWake,
+  canUseForTransition,
+  getArtifactFreshnessStatus,
 } from './market-assessment.js';
+import type { MarketAssessmentArtifact } from './market-assessment.js';
 import type { TechnicalConfig } from './config/schema.js';
 
 describe('computeUniverseScopeHash', () => {
@@ -188,5 +194,228 @@ describe('segmentKeyFromTechnicalConfig', () => {
       'premium',
     );
     expect(key.universeScopeHash).not.toBe(minimalKey.universeScopeHash);
+  });
+});
+
+// ── Freshness & Staleness Helpers ───────────────────────────────────────────
+
+function makeTestArtifact(overrides?: Partial<MarketAssessmentArtifact>): MarketAssessmentArtifact {
+  const now = new Date();
+  const future = new Date(now.getTime() + 3_600_000); // +1 hour
+  return {
+    id: 'test-artifact-1',
+    segmentKey: { venueFamily: 'hyperliquid-orderbook', styleTier: 'standard', universeScopeHash: 'abc123' },
+    assessmentRunId: 'run-1',
+    assessedAt: now.toISOString(),
+    expiresAt: future.toISOString(),
+    maxActorUseAge: future.toISOString(),
+    maxWakeAge: future.toISOString(),
+    assessmentVersion: 1,
+    artifactVersion: 1,
+    rankingPolicyVersion: 1,
+    styleTier: 'standard',
+    allowedPresets: ['momentum', 'range'],
+    currentMarketSummary: 'test',
+    regimeSummary: 'test',
+    scanHealthSummary: 'test',
+    presetRankings: [],
+    recommendedPreset: null,
+    relativeUplift: null,
+    confidence: 0.5,
+    urgency: 'low',
+    reasoningSummary: 'test',
+    evidenceRefs: [],
+    status: 'active',
+    venueFamily: 'hyperliquid-orderbook',
+    universeScopeHash: 'abc123',
+    ...overrides,
+  };
+}
+
+describe('isArtifactFresh', () => {
+  it('returns true for active artifact not yet expired', () => {
+    const artifact = makeTestArtifact();
+    expect(isArtifactFresh(artifact)).toBe(true);
+  });
+
+  it('returns false for an expired artifact', () => {
+    const past = new Date(Date.now() - 3_600_000);
+    const artifact = makeTestArtifact({ expiresAt: past.toISOString() });
+    expect(isArtifactFresh(artifact)).toBe(false);
+  });
+
+  it('returns false for a superseded artifact even if not expired', () => {
+    const artifact = makeTestArtifact({ status: 'superseded' });
+    expect(isArtifactFresh(artifact)).toBe(false);
+  });
+
+  it('accepts an explicit now date', () => {
+    const now = new Date('2026-07-18T12:00:00Z');
+    const expiresAt = new Date('2026-07-18T13:00:00Z');
+    const artifact = makeTestArtifact({ expiresAt: expiresAt.toISOString() });
+
+    // Before expiry
+    expect(isArtifactFresh(artifact, new Date('2026-07-18T12:30:00Z'))).toBe(true);
+    // Exactly at expiry
+    expect(isArtifactFresh(artifact, new Date('2026-07-18T13:00:00Z'))).toBe(false);
+    // After expiry
+    expect(isArtifactFresh(artifact, new Date('2026-07-18T13:01:00Z'))).toBe(false);
+  });
+
+  it('returns false for status=expired regardless of date', () => {
+    const future = new Date(Date.now() + 86_400_000); // +1 day
+    const artifact = makeTestArtifact({ status: 'expired', expiresAt: future.toISOString() });
+    expect(isArtifactFresh(artifact)).toBe(false);
+  });
+});
+
+describe('isArtifactStale', () => {
+  it('returns false for a fresh artifact', () => {
+    const artifact = makeTestArtifact();
+    expect(isArtifactStale(artifact)).toBe(false);
+  });
+
+  it('returns true for an expired artifact', () => {
+    const past = new Date(Date.now() - 3_600_000);
+    const artifact = makeTestArtifact({ expiresAt: past.toISOString() });
+    expect(isArtifactStale(artifact)).toBe(true);
+  });
+
+  it('returns true for a superseded artifact', () => {
+    const artifact = makeTestArtifact({ status: 'superseded' });
+    expect(isArtifactStale(artifact)).toBe(true);
+  });
+});
+
+describe('canTriggerWake', () => {
+  it('returns true when fresh and within maxWakeAge', () => {
+    const artifact = makeTestArtifact();
+    expect(canTriggerWake(artifact)).toBe(true);
+  });
+
+  it('returns false when expired', () => {
+    const past = new Date(Date.now() - 7_200_000);
+    const artifact = makeTestArtifact({ expiresAt: past.toISOString() });
+    expect(canTriggerWake(artifact)).toBe(false);
+  });
+
+  it('returns false when past maxWakeAge but not yet expired', () => {
+    const now = new Date('2026-07-18T12:00:00Z');
+    const wakeDeadline = new Date('2026-07-18T12:30:00Z');
+    const expiresAt = new Date('2026-07-18T14:00:00Z'); // expiry is later
+    const artifact = makeTestArtifact({
+      maxWakeAge: wakeDeadline.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+    });
+    expect(canTriggerWake(artifact, new Date('2026-07-18T13:00:00Z'))).toBe(false);
+  });
+
+  it('returns false when superseded', () => {
+    const artifact = makeTestArtifact({ status: 'superseded' });
+    expect(canTriggerWake(artifact)).toBe(false);
+  });
+
+  it('returns false exactly at maxWakeAge deadline', () => {
+    const deadline = new Date('2026-07-18T12:30:00Z');
+    const artifact = makeTestArtifact({ maxWakeAge: deadline.toISOString() });
+    expect(canTriggerWake(artifact, new Date('2026-07-18T12:30:00Z'))).toBe(false);
+  });
+});
+
+describe('canUseForTransition', () => {
+  it('returns true when fresh and within maxActorUseAge', () => {
+    const artifact = makeTestArtifact();
+    expect(canUseForTransition(artifact)).toBe(true);
+  });
+
+  it('returns false when expired', () => {
+    const past = new Date(Date.now() - 7_200_000);
+    const artifact = makeTestArtifact({ expiresAt: past.toISOString() });
+    expect(canUseForTransition(artifact)).toBe(false);
+  });
+
+  it('returns false when past maxActorUseAge but not yet expired', () => {
+    const now = new Date('2026-07-18T12:00:00Z');
+    const useDeadline = new Date('2026-07-18T12:30:00Z');
+    const expiresAt = new Date('2026-07-18T14:00:00Z');
+    const artifact = makeTestArtifact({
+      maxActorUseAge: useDeadline.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+    });
+    expect(canUseForTransition(artifact, new Date('2026-07-18T13:00:00Z'))).toBe(false);
+  });
+
+  it('returns false when superseded', () => {
+    const artifact = makeTestArtifact({ status: 'superseded' });
+    expect(canUseForTransition(artifact)).toBe(false);
+  });
+
+  it('returns false exactly at maxActorUseAge deadline', () => {
+    const deadline = new Date('2026-07-18T12:30:00Z');
+    const artifact = makeTestArtifact({ maxActorUseAge: deadline.toISOString() });
+    expect(canUseForTransition(artifact, new Date('2026-07-18T12:30:00Z'))).toBe(false);
+  });
+});
+
+describe('getArtifactFreshnessStatus', () => {
+  it('returns fresh for a fully fresh artifact', () => {
+    const artifact = makeTestArtifact();
+    expect(getArtifactFreshnessStatus(artifact)).toBe('fresh');
+  });
+
+  it('returns stale_superseded when status is superseded', () => {
+    const artifact = makeTestArtifact({ status: 'superseded' });
+    expect(getArtifactFreshnessStatus(artifact)).toBe('stale_superseded');
+  });
+
+  it('returns stale_expired when past expiresAt', () => {
+    const past = new Date(Date.now() - 3_600_000);
+    const artifact = makeTestArtifact({ expiresAt: past.toISOString() });
+    expect(getArtifactFreshnessStatus(artifact)).toBe('stale_expired');
+  });
+
+  it('returns stale_for_wake when past maxWakeAge but still fresh overall', () => {
+    const now = new Date('2026-07-18T12:00:00Z');
+    const wakeDeadline = new Date('2026-07-18T12:30:00Z');
+    const expiresAt = new Date('2026-07-18T14:00:00Z');
+    const maxActorUseAge = new Date('2026-07-18T13:00:00Z');
+    const artifact = makeTestArtifact({
+      maxWakeAge: wakeDeadline.toISOString(),
+      maxActorUseAge: maxActorUseAge.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+    });
+    // Now is past wake deadline but before maxActorUseAge and expiry
+    expect(getArtifactFreshnessStatus(artifact, new Date('2026-07-18T12:45:00Z'))).toBe('stale_for_wake');
+  });
+
+  it('returns stale_for_transition when past maxActorUseAge but still wakeable', () => {
+    const now = new Date('2026-07-18T12:00:00Z');
+    // maxActorUseAge is stricter (earlier) than maxWakeAge in this scenario
+    const maxActorUseAge = new Date('2026-07-18T12:30:00Z');
+    const maxWakeAge = new Date('2026-07-18T13:00:00Z');
+    const expiresAt = new Date('2026-07-18T14:00:00Z');
+    const artifact = makeTestArtifact({
+      maxWakeAge: maxWakeAge.toISOString(),
+      maxActorUseAge: maxActorUseAge.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+    });
+    // Now is past maxActorUseAge but still within maxWakeAge and expiry
+    expect(getArtifactFreshnessStatus(artifact, new Date('2026-07-18T12:45:00Z'))).toBe('stale_for_transition');
+  });
+
+  it('superseded takes priority over expired in status check', () => {
+    const past = new Date(Date.now() - 86_400_000);
+    const artifact = makeTestArtifact({ status: 'superseded', expiresAt: past.toISOString() });
+    expect(getArtifactFreshnessStatus(artifact)).toBe('stale_superseded');
+  });
+
+  it('returns fresh for artifact with future dates', () => {
+    const farFuture = new Date('2027-01-01T00:00:00Z');
+    const artifact = makeTestArtifact({
+      expiresAt: farFuture.toISOString(),
+      maxWakeAge: farFuture.toISOString(),
+      maxActorUseAge: farFuture.toISOString(),
+    });
+    expect(getArtifactFreshnessStatus(artifact)).toBe('fresh');
   });
 });

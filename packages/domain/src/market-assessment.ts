@@ -389,3 +389,64 @@ export const AgentPresetTransitionSchema = z.object({
   appliedAt: z.string().datetime(),
   regimeSnapshot: z.record(z.unknown()).nullable(),
 });
+
+// ── Artifact Freshness & Staleness ──────────────────────────────────────────
+
+/**
+ * Check if an artifact is still fresh (not expired and not superseded).
+ */
+export function isArtifactFresh(artifact: MarketAssessmentArtifact, now?: Date): boolean {
+  const nowDate = now ?? new Date();
+  const expiresAt = new Date(artifact.expiresAt);
+  return artifact.status === 'active' && nowDate < expiresAt;
+}
+
+/**
+ * Check if an artifact is stale (expired or superseded).
+ */
+export function isArtifactStale(artifact: MarketAssessmentArtifact, now?: Date): boolean {
+  return !isArtifactFresh(artifact, now);
+}
+
+/**
+ * Check if an artifact is fresh enough to trigger a review wake.
+ * Stricter than general freshness — uses maxWakeAge.
+ */
+export function canTriggerWake(artifact: MarketAssessmentArtifact, now?: Date): boolean {
+  if (!isArtifactFresh(artifact, now)) return false;
+  const nowDate = now ?? new Date();
+  const wakeDeadline = new Date(artifact.maxWakeAge);
+  return nowDate < wakeDeadline;
+}
+
+/**
+ * Check if an artifact is fresh enough for an actor to use for a transition decision.
+ * Uses maxActorUseAge which may be looser than maxWakeAge.
+ */
+export function canUseForTransition(artifact: MarketAssessmentArtifact, now?: Date): boolean {
+  if (!isArtifactFresh(artifact, now)) return false;
+  const nowDate = now ?? new Date();
+  const useDeadline = new Date(artifact.maxActorUseAge);
+  return nowDate < useDeadline;
+}
+
+/**
+ * Determine the freshness reason for observability.
+ */
+export type ArtifactFreshnessStatus =
+  | 'fresh'
+  | 'stale_expired'
+  | 'stale_superseded'
+  | 'stale_for_wake'
+  | 'stale_for_transition';
+
+export function getArtifactFreshnessStatus(
+  artifact: MarketAssessmentArtifact,
+  now?: Date,
+): ArtifactFreshnessStatus {
+  if (artifact.status === 'superseded') return 'stale_superseded';
+  if (isArtifactStale(artifact, now)) return 'stale_expired';
+  if (!canTriggerWake(artifact, now)) return 'stale_for_wake';
+  if (!canUseForTransition(artifact, now)) return 'stale_for_transition';
+  return 'fresh';
+}
