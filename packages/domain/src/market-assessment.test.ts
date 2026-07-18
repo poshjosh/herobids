@@ -9,8 +9,10 @@ import {
   canUseForTransition,
   getArtifactFreshnessStatus,
   isValidTransition,
+  MarketAssessmentIdentitySchema,
+  resolveAssessmentIdentity,
 } from './market-assessment.js';
-import type { MarketAssessmentArtifact } from './market-assessment.js';
+import type { MarketAssessmentArtifact, MarketAssessmentIdentity } from './market-assessment.js';
 import type { TechnicalConfig } from './config/schema.js';
 
 describe('computeUniverseScopeHash', () => {
@@ -459,5 +461,239 @@ describe('isValidTransition', () => {
   });
   it('rejects actor → platform transition', () => {
     expect(isValidTransition('actor_reviewed', 'wake_emitted')).toBe(false);
+  });
+});
+
+// ── Canonical Assessment Identity ───────────────────────────────────────────
+
+describe('MarketAssessmentIdentitySchema', () => {
+  it('rejects mixed shapes (e.g. orderbook with network+address)', () => {
+    const result = MarketAssessmentIdentitySchema.safeParse({
+      instrumentKind: 'orderbook',
+      venueFamily: 'hyperliquid',
+      styleTier: 'standard',
+      network: 'ethereum',
+      address: '0x123',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects mixed shapes (e.g. swap with symbol)', () => {
+    const result = MarketAssessmentIdentitySchema.safeParse({
+      instrumentKind: 'swap',
+      venueFamily: 'jupiter',
+      styleTier: 'standard',
+      symbol: 'SOL',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('parses valid orderbook identity', () => {
+    const result = MarketAssessmentIdentitySchema.safeParse({
+      instrumentKind: 'orderbook',
+      venueFamily: 'hyperliquid',
+      styleTier: 'standard',
+      symbol: 'BTC',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toMatchObject({
+        instrumentKind: 'orderbook',
+        venueFamily: 'hyperliquid',
+        styleTier: 'standard',
+        symbol: 'BTC',
+      });
+    }
+  });
+
+  it('parses valid perp identity', () => {
+    const result = MarketAssessmentIdentitySchema.safeParse({
+      instrumentKind: 'perp',
+      venueFamily: 'hyperliquid',
+      styleTier: 'premium',
+      symbol: 'ETH-USD',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toMatchObject({
+        instrumentKind: 'perp',
+        symbol: 'ETH-USD',
+      });
+    }
+  });
+
+  it('parses valid swap identity', () => {
+    const result = MarketAssessmentIdentitySchema.safeParse({
+      instrumentKind: 'swap',
+      venueFamily: 'jupiter',
+      styleTier: 'economy',
+      network: 'solana',
+      address: 'So11111111111111111111111111111111111111112',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toMatchObject({
+        instrumentKind: 'swap',
+        venueFamily: 'jupiter',
+        network: 'solana',
+        address: 'So11111111111111111111111111111111111111112',
+      });
+    }
+  });
+
+  it('parses valid dex identity', () => {
+    const result = MarketAssessmentIdentitySchema.safeParse({
+      instrumentKind: 'dex',
+      venueFamily: 'uniswap',
+      styleTier: 'standard',
+      network: 'ethereum',
+      address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toMatchObject({
+        instrumentKind: 'dex',
+        network: 'ethereum',
+      });
+    }
+  });
+});
+
+// ── Identity Resolution ─────────────────────────────────────────────────────
+
+describe('resolveAssessmentIdentity', () => {
+  const baseParams = {
+    venueFamily: 'hyperliquid',
+    styleTier: 'standard' as const,
+    symbol: 'BTC',
+  };
+
+  describe('orderbook / perp path', () => {
+    it('orderbook symbol in known set → ok', () => {
+      const result = resolveAssessmentIdentity({
+        ...baseParams,
+        instrumentKind: 'orderbook',
+        knownSymbols: new Set(['BTC', 'ETH', 'SOL']),
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const identity = result.data as Extract<MarketAssessmentIdentity, { instrumentKind: 'orderbook' | 'perp' }>;
+        expect(identity.symbol).toBe('BTC');
+        expect(identity.instrumentKind).toBe('orderbook');
+      }
+    });
+
+    it('orderbook symbol NOT in known set → unknown_symbol', () => {
+      const result = resolveAssessmentIdentity({
+        ...baseParams,
+        instrumentKind: 'orderbook',
+        symbol: 'DOGE',
+        knownSymbols: new Set(['BTC', 'ETH']),
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('assessment.identity.unknown_symbol');
+      }
+    });
+
+    it('empty symbol → invalid_symbol', () => {
+      const result = resolveAssessmentIdentity({
+        ...baseParams,
+        instrumentKind: 'orderbook',
+        symbol: '   ',
+        knownSymbols: new Set(['BTC']),
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('assessment.identity.invalid_symbol');
+      }
+    });
+  });
+
+  describe('swap / dex path', () => {
+    const swapBase = {
+      venueFamily: 'jupiter',
+      styleTier: 'economy' as const,
+    };
+
+    it('swap exact match → ok with network+address', () => {
+      const result = resolveAssessmentIdentity({
+        ...swapBase,
+        instrumentKind: 'swap',
+        symbol: 'USDC',
+        tokenResolutions: new Map([
+          ['USDC', { network: 'solana', address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' }],
+        ]),
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const identity = result.data as Extract<MarketAssessmentIdentity, { instrumentKind: 'swap' | 'dex' }>;
+        expect(identity.network).toBe('solana');
+        expect(identity.address).toBe('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+      }
+    });
+
+    it('swap multiple case-insensitive matches → ambiguous_symbol', () => {
+      const result = resolveAssessmentIdentity({
+        ...swapBase,
+        instrumentKind: 'swap',
+        symbol: 'usdc',
+        tokenResolutions: new Map([
+          ['USDC', { network: 'ethereum', address: '0xA0b8...' }],
+          ['Usdc', { network: 'solana', address: 'EPjFW...' }],
+        ]),
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('assessment.identity.ambiguous_symbol');
+      }
+    });
+
+    it('swap zero matches → unknown_symbol', () => {
+      const result = resolveAssessmentIdentity({
+        ...swapBase,
+        instrumentKind: 'swap',
+        symbol: 'NOSUCHTOKEN',
+        tokenResolutions: new Map([
+          ['USDC', { network: 'solana', address: 'EPjFW...' }],
+          ['SOL', { network: 'solana', address: 'So111...' }],
+        ]),
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('assessment.identity.unknown_symbol');
+      }
+    });
+
+    it('swap empty tokenResolutions → no_token_resolutions', () => {
+      const result = resolveAssessmentIdentity({
+        ...swapBase,
+        instrumentKind: 'swap',
+        symbol: 'USDC',
+        tokenResolutions: new Map(),
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('assessment.identity.no_token_resolutions');
+      }
+    });
+
+    it('swap single case-insensitive match → resolves', () => {
+      const result = resolveAssessmentIdentity({
+        ...swapBase,
+        instrumentKind: 'swap',
+        symbol: 'usdc',
+        tokenResolutions: new Map([
+          ['USDC', { network: 'solana', address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' }],
+          ['SOL', { network: 'solana', address: 'So11111111111111111111111111111111111111112' }],
+        ]),
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const identity = result.data as Extract<MarketAssessmentIdentity, { instrumentKind: 'swap' | 'dex' }>;
+        expect(identity.network).toBe('solana');
+        expect(identity.address).toBe('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+      }
+    });
   });
 });

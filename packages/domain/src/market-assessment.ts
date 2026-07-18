@@ -1,6 +1,185 @@
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import type { TechnicalConfig } from './config/schema.js';
+import { err, ok, type Result } from './result.js';
+
+// ── Clean-Slate Cutover Note ────────────────────────────────────────────────
+//
+// Per D3 (clean-slate database), assessment tables will be reset/initialized as
+// part of deployment. There is NO in-place migration of old segment-based data.
+// The old `MarketAssessmentSegmentKey` identity model ({venueFamily, styleTier,
+// universeScopeHash}) is superseded by the per-symbol `MarketAssessmentIdentity`
+// discriminated union below. Old segment helpers (computeUniverseScopeHash,
+// createSegmentKey, segmentKeyFromTechnicalConfig) are deprecated and will be
+// fully removed once all callers migrate (see implementation checklist §11).
+//
+// The cutover strategy is:
+//   1. Freeze the new canonical identity types (this file).
+//   2. Build the new on-demand path alongside the old scheduler.
+//   3. Validate end-to-end with the new path.
+//   4. Delete the old scheduler and segment code.
+//   5. Reset assessment tables to the new schema.
+//
+// No dual-write period. No backwards-compat mapping of old segment data.
+
+// ── Canonical Assessment Identity (new — replaces segment key) ──────────────
+
+/**
+ * Per-symbol canonical assessment identity.
+ *
+ * Discriminated union: orderbook/perp instruments use `symbol`;
+ * swap/dex instruments use `network + address`.
+ *
+ * This replaces the old `MarketAssessmentSegmentKey` which used
+ * `{venueFamily, styleTier, universeScopeHash}` as its identity.
+ */
+export type MarketAssessmentIdentity =
+  | {
+      instrumentKind: 'orderbook' | 'perp';
+      venueFamily: string;
+      styleTier: 'economy' | 'standard' | 'premium';
+      symbol: string; // normalized, venue-canonical
+    }
+  | {
+      instrumentKind: 'swap' | 'dex';
+      venueFamily: string;
+      styleTier: 'economy' | 'standard' | 'premium';
+      network: string; // canonical chain id
+      address: string; // canonical token address
+    };
+
+export const MarketAssessmentIdentitySchema = z.discriminatedUnion('instrumentKind', [
+  z.object({
+    instrumentKind: z.enum(['orderbook', 'perp']),
+    venueFamily: z.string().min(1),
+    styleTier: z.enum(['economy', 'standard', 'premium']),
+    symbol: z.string().min(1),
+  }),
+  z.object({
+    instrumentKind: z.enum(['swap', 'dex']),
+    venueFamily: z.string().min(1),
+    styleTier: z.enum(['economy', 'standard', 'premium']),
+    network: z.string().min(1),
+    address: z.string().min(1),
+  }),
+]);
+
+// ── Identity Resolution ─────────────────────────────────────────────────────
+
+/**
+ * Normalize and resolve a raw user-provided symbol into a canonical
+ * `MarketAssessmentIdentity`.
+ *
+ * Orderbook/perp path:
+ *   - Trims and canonicalizes the symbol against the venue's known symbol set.
+ *   - Rejects symbols not in the known set with `unknown_symbol`.
+ *
+ * Swap/dex path:
+ *   - Resolves a user-facing symbol (e.g. "USDC") to canonical
+ *     `{network, address}` via the provided token resolution map.
+ *   - Falls back to case-insensitive matching when an exact key lookup fails:
+ *     a single case-insensitive match resolves successfully; multiple matches
+ *     produce `ambiguous_symbol`; zero matches produce `unknown_symbol`.
+ *   - Rejects ambiguous or unknown symbols with `ambiguous_symbol` or
+ *     `unknown_symbol`.
+ *
+ * This is the **single** normalization/resolution boundary — all request
+ * handling, cache lookup, persistence, billing, and logging must route
+ * through this function (or a thin infra wrapper that supplies the
+ * venue-specific lookup data).
+ */
+export function resolveAssessmentIdentity(params: {
+  instrumentKind: 'orderbook' | 'perp' | 'swap' | 'dex';
+  venueFamily: string;
+  styleTier: 'economy' | 'standard' | 'premium';
+  symbol: string;
+  /** For orderbook/perp: set of known venue symbols (already normalized). */
+  knownSymbols?: Set<string>;
+  /** For swap/dex: mapping from user-facing symbol to canonical {network, address}. */
+  tokenResolutions?: Map<string, { network: string; address: string }>;
+}): Result<MarketAssessmentIdentity> {
+  const rawSymbol = params.symbol.trim();
+  if (rawSymbol.length === 0) {
+    return err({
+      code: 'assessment.identity.invalid_symbol',
+      message: 'Symbol must not be empty',
+    });
+  }
+
+  switch (params.instrumentKind) {
+    case 'orderbook':
+    case 'perp': {
+      // For venue-specific symbols, case-sensitive matching depends on the venue.
+      // We normalise by trimming; the knownSymbols set is expected to already
+      // contain venue-canonical forms.
+      if (params.knownSymbols && !params.knownSymbols.has(rawSymbol)) {
+        return err({
+          code: 'assessment.identity.unknown_symbol',
+          message: `Symbol "${rawSymbol}" is not recognised for venue family "${params.venueFamily}"`,
+          context: { symbol: rawSymbol, venueFamily: params.venueFamily },
+        });
+      }
+      return ok({
+        instrumentKind: params.instrumentKind,
+        venueFamily: params.venueFamily,
+        styleTier: params.styleTier,
+        symbol: rawSymbol,
+      });
+    }
+    case 'swap':
+    case 'dex': {
+      if (!params.tokenResolutions || params.tokenResolutions.size === 0) {
+        return err({
+          code: 'assessment.identity.no_token_resolutions',
+          message: `No token resolution data available for venue family "${params.venueFamily}"`,
+        });
+      }
+      const resolution = params.tokenResolutions.get(rawSymbol);
+      if (!resolution) {
+        // Check for partial/ambiguous matches
+        const lowerSymbol = rawSymbol.toLowerCase();
+        const matches = [...params.tokenResolutions.entries()].filter(
+          ([key]) => key.toLowerCase() === lowerSymbol,
+        );
+        if (matches.length > 1) {
+          return err({
+            code: 'assessment.identity.ambiguous_symbol',
+            message: `Symbol "${rawSymbol}" matches multiple tokens on "${params.venueFamily}". Provide a more specific identifier.`,
+            context: { symbol: rawSymbol, venueFamily: params.venueFamily, matchCount: matches.length },
+          });
+        }
+        if (matches.length === 1 && matches[0]) {
+          return ok({
+            instrumentKind: params.instrumentKind,
+            venueFamily: params.venueFamily,
+            styleTier: params.styleTier,
+            network: matches[0][1].network,
+            address: matches[0][1].address,
+          });
+        }
+        return err({
+          code: 'assessment.identity.unknown_symbol',
+          message: `Symbol "${rawSymbol}" could not be resolved to a token on "${params.venueFamily}"`,
+          context: { symbol: rawSymbol, venueFamily: params.venueFamily },
+        });
+      }
+      return ok({
+        instrumentKind: params.instrumentKind,
+        venueFamily: params.venueFamily,
+        styleTier: params.styleTier,
+        network: resolution.network,
+        address: resolution.address,
+      });
+    }
+    default: {
+      const _exhaustive: never = params.instrumentKind;
+      return err({
+        code: 'assessment.identity.unsupported_instrument_kind',
+        message: `Unsupported instrument kind: ${String(_exhaustive)}`,
+      });
+    }
+  }
+}
 
 // ── Segment Key (D1 from decision record) ───────────────────────────────────
 
@@ -32,6 +211,10 @@ export const MarketAssessmentSegmentKeySchema = z.object({
  *
  * Excluded: open positions, risk limits, capital, current preset, recent PnL,
  * actor-specific transition policy.
+ *
+ * @deprecated Removed in the per-symbol on-demand assessment model (Step 9).
+ *   `universeScopeHash` is no longer an assessment-identity dimension.
+ *   Use `MarketAssessmentIdentity` and `resolveAssessmentIdentity()` instead.
  */
 export function computeUniverseScopeHash(params: {
   venueFamily: string;
@@ -57,6 +240,10 @@ export function computeUniverseScopeHash(params: {
 
 /**
  * Create a full segment key from venue family, style tier, and discovery filters.
+ *
+ * @deprecated Removed in the per-symbol on-demand assessment model (Step 9).
+ *   Segment keys are replaced by `MarketAssessmentIdentity`.
+ *   Use `resolveAssessmentIdentity()` instead.
  */
 export function createSegmentKey(params: {
   venueFamily: string;
@@ -77,6 +264,10 @@ export function createSegmentKey(params: {
 
 /**
  * Derive a segment key from an agent's technical configuration filters.
+ *
+ * @deprecated Removed in the per-symbol on-demand assessment model (Step 9).
+ *   Segment keys are replaced by `MarketAssessmentIdentity`.
+ *   Use `resolveAssessmentIdentity()` instead.
  */
 export function segmentKeyFromTechnicalConfig(
   config: TechnicalConfig,
