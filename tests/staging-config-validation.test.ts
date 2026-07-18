@@ -329,4 +329,36 @@ describe('staging/production environment invariants', () => {
       expect(caddyLine![0]).toMatch(/\$\{?COMPOSE_FILES\}?/);
     });
   });
+
+  // ── 12. web nginx config Cache-Control headers ─────────────────────────
+  // Bug 2026-07-18/004: docker/nginx.conf (served by the `web` container in
+  // production/staging) previously set no Cache-Control headers at all,
+  // letting browsers heuristically cache index.html (the SPA's
+  // non-content-hashed entry point) indefinitely — users kept running a
+  // stale JS bundle after a deploy.
+  // See docs/bug-reports/2026/07/18/004-gmail-oauth-stale-cached-spa-bundle.md.
+
+  describe('web nginx config sets correct Cache-Control headers', () => {
+    const nginxConf = readText('docker/nginx.conf');
+
+    const assetsBlock = nginxConf.match(/location\s+\/assets\/\s*\{[^}]*\}/)?.[0] ?? '';
+    const spaBlock = nginxConf.match(/location\s+\/\s*\{\s*\n\s*try_files\s+\$uri\s+\$uri\/\s+\/index\.html;[^}]*\}/)?.[0] ?? '';
+
+    it('the /assets/ location block exists and caches immutably with a long max-age', () => {
+      expect(assetsBlock).toBeTruthy();
+      expect(assetsBlock).toMatch(/Cache-Control/);
+      expect(assetsBlock).toMatch(/immutable/);
+      expect(assetsBlock).toMatch(/max-age=31536000/);
+    });
+
+    it('the SPA fallback location (/) block never lets index.html be cached', () => {
+      expect(spaBlock).toBeTruthy();
+      expect(spaBlock).toMatch(/Cache-Control\s+"(no-cache|no-store)"/);
+    });
+
+    it('the /assets/ and SPA fallback Cache-Control values are differentiated', () => {
+      expect(assetsBlock).not.toMatch(/Cache-Control\s+"no-cache"/);
+      expect(spaBlock).not.toMatch(/immutable/);
+    });
+  });
 });
