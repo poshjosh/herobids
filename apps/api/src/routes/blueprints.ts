@@ -162,7 +162,7 @@ export async function blueprintRoutes(app: FastifyInstance, db: Database): Promi
         message: `Preset "${parsed.data.strategy}" not found for style "${parsed.data.style}"`,
       });
     }
-    const split = applyPresetToAgent(preset, parsed.data.mode);
+    const split = applyPresetToAgent(parsed.data.strategy, preset, parsed.data.style, parsed.data.mode);
     return reply.send(split);
   });
 

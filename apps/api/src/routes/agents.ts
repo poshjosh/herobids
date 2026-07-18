@@ -282,7 +282,7 @@ function resolveAgentStrategyPreset(params: {
     return null;
   }
 
-  const split = applyPresetToAgent(preset, 'llm');
+  const split = applyPresetToAgent(strategyPreset, preset, presetStyle, 'llm');
 
   // Build unifiedConfig with technical, execution, and metadata
   const unifiedConfigPatch: Record<string, unknown> = {
@@ -297,6 +297,7 @@ function resolveAgentStrategyPreset(params: {
       strategyPresetName: preset.name,
       strategyPresetStyle: presetStyle,
       strategyPresetSource: 'agent-style',
+      presetBehaviorVersion: split.presetBehaviorVersion,
     },
   };
 

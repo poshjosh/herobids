@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
@@ -71,6 +72,14 @@ export const AGENT_TECHNICAL_STRATEGY_TYPES = [
 export type AgentTechnicalStrategyType = (typeof AGENT_TECHNICAL_STRATEGY_TYPES)[number];
 
 export interface AgentPresetMapping {
+  /** The preset key (e.g., "momentum", "scalper") from the presets YAML. */
+  presetKey: string;
+  /**
+   * Deterministic behavior version derived mechanically from behavior-affecting
+   * preset fields. Non-material changes (display name, description) are excluded.
+   * 12-character hex prefix of SHA-256.
+   */
+  presetBehaviorVersion: string;
   technical: {
     indicators: Record<string, unknown>;
     candles: { interval: string; limit: number };
@@ -89,6 +98,53 @@ export interface AgentPresetMapping {
 }
 
 /**
+ * Extract only the behavior-affecting fields from a preset entry.
+ * Excludes display name and description — those are non-material for
+ * behavior versioning.
+ */
+export function extractBehaviorFields(preset: PresetEntry): Record<string, unknown> {
+  return {
+    strategyType: preset.strategy.type,
+    decisionMode: preset.strategy.decisionMode,
+    params: preset.strategy.params,
+    risk: preset.risk ?? null,
+    execution: preset.execution ?? null,
+  };
+}
+
+/**
+ * Serialize a value to a deterministic JSON string with recursively sorted keys.
+ * Unlike JSON.stringify with an array replacer (which filters nested objects),
+ * this preserves all values while ensuring canonical key ordering at every level.
+ */
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(',')}]`;
+  }
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  const pairs = keys.map((k) => `${JSON.stringify(k)}:${stableJson(obj[k])}`);
+  return `{${pairs.join(',')}}`;
+}
+
+/**
+ * Compute a deterministic behavior version for a preset from its
+ * behavior-affecting fields only. Non-material changes (display name,
+ * description, documentation) are excluded.
+ *
+ * The version is a 12-character hex prefix of a SHA-256 hash of the
+ * canonical JSON representation (sorted keys) of the behavior fields.
+ */
+export function computePresetBehaviorVersion(preset: PresetEntry): string {
+  const behaviorFields = extractBehaviorFields(preset);
+  const canonical = stableJson(behaviorFields);
+  return crypto.createHash('sha256').update(canonical).digest('hex').slice(0, 12);
+}
+
+/**
  * Split a preset into the three sections an agent needs:
  * technical, risk, and execution.
  *
@@ -100,7 +156,9 @@ export interface AgentPresetMapping {
  * (momentum, range, swing, scalper, contrarian) are supported for agents.
  */
 export function applyPresetToAgent(
+  presetKey: string,
   preset: PresetEntry,
+  presetStyle: StyleKey,
   _mode: 'llm' | 'hybrid',
 ): AgentPresetMapping {
   const type = preset.strategy.type;
@@ -113,6 +171,9 @@ export function applyPresetToAgent(
 
   const p = preset.strategy.params as Record<string, unknown>;
   return {
+    presetKey,
+    presetStyle,
+    presetBehaviorVersion: computePresetBehaviorVersion(preset),
     technical: {
       indicators: (p['indicators'] as Record<string, unknown>) ?? {},
       candles: {

@@ -7,6 +7,8 @@ import {
 import {
   agentStyleToPresetStyle,
   applyPresetToAgent,
+  computePresetBehaviorVersion,
+  extractBehaviorFields,
   AGENT_TECHNICAL_STRATEGY_TYPES,
   type PresetEntry,
 } from './presets.js';
@@ -221,7 +223,7 @@ describe('applyPresetToAgent', () => {
 
   it('produces correct split with technical, risk, and execution sections', () => {
     const preset = makeMomentumPreset();
-    const result = applyPresetToAgent(preset, 'llm');
+    const result = applyPresetToAgent('test-momentum', preset, 'standard', 'llm');
 
     // Technical
     expect(result.technical.indicators).toEqual({
@@ -251,7 +253,7 @@ describe('applyPresetToAgent', () => {
         params: {},
       },
     };
-    const result = applyPresetToAgent(preset, 'hybrid');
+    const result = applyPresetToAgent('minimal', preset, 'standard', 'hybrid');
 
     expect(result.technical.indicators).toEqual({});
     expect(result.technical.candles).toEqual({ interval: '15m', limit: 48 });
@@ -264,7 +266,7 @@ describe('applyPresetToAgent', () => {
 
   it('omits risk fields when risk block is absent', () => {
     const preset = makeMomentumPreset({ risk: undefined });
-    const result = applyPresetToAgent(preset, 'llm');
+    const result = applyPresetToAgent('test-momentum', preset, 'standard', 'llm');
 
     expect(result.risk.maxPositionSizePct).toBeUndefined();
     expect(result.risk.stopLossPct).toBe(5); // from strategy.params
@@ -278,7 +280,7 @@ describe('applyPresetToAgent', () => {
         params: { stopLossPct: '5%' }, // string, not number
       },
     });
-    const result = applyPresetToAgent(preset, 'llm');
+    const result = applyPresetToAgent('test-momentum', preset, 'standard', 'llm');
     // stopLossPct is only included when it's a number
     expect(result.risk.stopLossPct).toBeUndefined();
   });
@@ -293,7 +295,7 @@ describe('applyPresetToAgent', () => {
         params: { intervalMs: 86_400_000, amountPerBuy: '100' },
       },
     };
-    expect(() => applyPresetToAgent(dcaPreset, 'llm')).toThrow(/dca.*not supported/i);
+    expect(() => applyPresetToAgent('dca', dcaPreset, 'standard', 'llm')).toThrow(/dca.*not supported/i);
   });
 
   it('accepts all supported agent technical strategy types', () => {
@@ -307,9 +309,186 @@ describe('applyPresetToAgent', () => {
           params: { candleInterval: '1H', candleLimit: 24, positionSize: '5' },
         },
       };
-      const result = applyPresetToAgent(preset, 'llm');
+      const result = applyPresetToAgent(type, preset, 'standard', 'llm');
       expect(result.execution.fixedPositionSize).toBe('5');
     }
+  });
+
+  it('populates presetKey and presetBehaviorVersion in the mapping', () => {
+    const preset = makeMomentumPreset();
+    const result = applyPresetToAgent('momentum', preset, 'standard', 'llm');
+
+    expect(result.presetKey).toBe('momentum');
+    expect(result.presetBehaviorVersion).toBeDefined();
+    expect(result.presetBehaviorVersion).toHaveLength(12);
+    expect(/^[0-9a-f]{12}$/.test(result.presetBehaviorVersion)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computePresetBehaviorVersion
+// ---------------------------------------------------------------------------
+
+describe('computePresetBehaviorVersion', () => {
+  const BASE_STRATEGY = {
+    type: 'momentum' as const,
+    decisionMode: 'mechanical' as const,
+    params: {
+      candleInterval: '1H',
+      candleLimit: 24,
+      stopLossPct: 5,
+      takeProfitPct: 10,
+      signalBias: 'trend-following',
+      positionSize: '3',
+      positionSizeMode: 'percent_equity',
+      indicators: {
+        rsi: { enabled: true, period: 14 },
+        macd: { enabled: false },
+      },
+    },
+  };
+
+  function basePreset(overrides?: Partial<PresetEntry>): PresetEntry {
+    return {
+      name: 'Base Preset',
+      description: 'Base preset for hash testing',
+      strategy: { ...BASE_STRATEGY, params: { ...BASE_STRATEGY.params } },
+      risk: { maxPositionSizePct: 15 },
+      execution: { mode: 'paper' as const },
+      ...overrides,
+    };
+  }
+
+  it('produces same hash for identical behavior fields', () => {
+    const a = basePreset();
+    const b = basePreset();
+    expect(computePresetBehaviorVersion(a)).toBe(computePresetBehaviorVersion(b));
+  });
+
+  it('produces different hash for different indicator params', () => {
+    const a = basePreset();
+    const b = basePreset({
+      strategy: {
+        type: 'momentum',
+        decisionMode: 'mechanical',
+        params: {
+          ...BASE_STRATEGY.params,
+          indicators: {
+            rsi: { enabled: true, period: 21 },
+            macd: { enabled: false },
+          },
+        },
+      },
+    });
+    expect(computePresetBehaviorVersion(a)).not.toBe(computePresetBehaviorVersion(b));
+  });
+
+  it('produces different hash for different candle interval', () => {
+    const a = basePreset();
+    const b = basePreset({
+      strategy: {
+        type: 'momentum',
+        decisionMode: 'mechanical',
+        params: {
+          ...BASE_STRATEGY.params,
+          candleInterval: '4H',
+        },
+      },
+    });
+    expect(computePresetBehaviorVersion(a)).not.toBe(computePresetBehaviorVersion(b));
+  });
+
+  it('produces different hash for different signal bias', () => {
+    const a = basePreset();
+    const b = basePreset({
+      strategy: {
+        type: 'momentum',
+        decisionMode: 'mechanical',
+        params: {
+          ...BASE_STRATEGY.params,
+          signalBias: 'contrarian',
+        },
+      },
+    });
+    expect(computePresetBehaviorVersion(a)).not.toBe(computePresetBehaviorVersion(b));
+  });
+
+  it('produces different hash for different risk config', () => {
+    const a = basePreset();
+    const b = basePreset({
+      risk: { maxPositionSizePct: 50 },
+    });
+    expect(computePresetBehaviorVersion(a)).not.toBe(computePresetBehaviorVersion(b));
+  });
+
+  it('display name change does NOT affect hash', () => {
+    const a = basePreset({ name: 'Alpha Preset' });
+    const b = basePreset({ name: 'Beta Preset' });
+    expect(computePresetBehaviorVersion(a)).toBe(computePresetBehaviorVersion(b));
+  });
+
+  it('description change does NOT affect hash', () => {
+    const a = basePreset({ description: 'Foo' });
+    const b = basePreset({ description: 'Bar' });
+    expect(computePresetBehaviorVersion(a)).toBe(computePresetBehaviorVersion(b));
+  });
+
+  it('hash is a 12-character hex string', () => {
+    const preset = basePreset();
+    const hash = computePresetBehaviorVersion(preset);
+    expect(hash).toHaveLength(12);
+    expect(/^[0-9a-f]{12}$/.test(hash)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractBehaviorFields
+// ---------------------------------------------------------------------------
+
+describe('extractBehaviorFields', () => {
+  it('extracts strategyType, decisionMode, params, risk, execution', () => {
+    const preset: PresetEntry = {
+      name: 'Test',
+      description: 'Test description',
+      strategy: {
+        type: 'swing',
+        decisionMode: 'hybrid',
+        params: { candleInterval: '4H', signalBias: 'contrarian' },
+      },
+      risk: { maxPositionSizePct: 10 },
+      execution: { mode: 'shadow' },
+    };
+
+    const fields = extractBehaviorFields(preset);
+    expect(fields.strategyType).toBe('swing');
+    expect(fields.decisionMode).toBe('hybrid');
+    expect(fields.params).toEqual({ candleInterval: '4H', signalBias: 'contrarian' });
+    expect(fields.risk).toEqual({ maxPositionSizePct: 10 });
+    expect(fields.execution).toEqual({ mode: 'shadow' });
+  });
+
+  it('excludes display name and description', () => {
+    const preset: PresetEntry = {
+      name: 'Visible Name',
+      description: 'Visible Description',
+      strategy: { type: 'momentum', decisionMode: 'mechanical', params: {} },
+    };
+
+    const fields = extractBehaviorFields(preset);
+    expect(fields).not.toHaveProperty('name');
+    expect(fields).not.toHaveProperty('description');
+  });
+
+  it('sets risk and execution to null when absent', () => {
+    const preset: PresetEntry = {
+      name: 'No Risk/Exec',
+      description: 'Minimal',
+      strategy: { type: 'momentum', decisionMode: 'mechanical', params: {} },
+    };
+
+    const fields = extractBehaviorFields(preset);
+    expect(fields.risk).toBeNull();
+    expect(fields.execution).toBeNull();
   });
 });
 

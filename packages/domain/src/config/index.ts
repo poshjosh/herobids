@@ -1,6 +1,8 @@
 export {
   agentStyleToPresetStyle,
   applyPresetToAgent,
+  computePresetBehaviorVersion,
+  extractBehaviorFields,
   PresetEntrySchema,
   PresetFileSchema,
   AGENT_TECHNICAL_STRATEGY_TYPES,
