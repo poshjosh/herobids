@@ -9,7 +9,7 @@ ADR 002 established the product taxonomy:
 
 `capability -> family -> provider`
 
-The first product capabilities are `trading` and `messaging`.
+The first product capabilities are `crypto-trading` and `messaging`.
 
 That solves the naming problem, but it does not yet define the implementation
 boundary between:
@@ -21,7 +21,7 @@ The current platform already contains both kinds of logic:
 
 1. shared runtime concerns such as agent isolation, LLM turns, tool-call
    orchestration, memory, protocol envelopes, and runtime scheduling
-2. trading-specific concerns such as venue readiness, market data, decision
+2. crypto-trading-specific concerns such as venue readiness, market data, decision
    submission, risk enforcement, reconciliation, and execution
 3. messaging-specific concerns such as brokered user messaging, email sending,
    Telegram routing, and delivery tracking
@@ -35,10 +35,10 @@ The stable runtime boundary is already clear in
 
 The chat-session design direction also shows the need for a reusable core. A
 chat session should reuse the agent runtime, tool loop, and model pipeline
-without inheriting trading-centric behavior.
+without inheriting crypto-trading-centric behavior.
 
 Without an explicit boundary, the system drifts toward a trading-shaped core,
-where new capabilities are forced to fit trading assumptions or duplicate
+where new capabilities are forced to fit crypto-trading assumptions or duplicate
 runtime machinery.
 
 ## Decision
@@ -50,8 +50,16 @@ The platform is split conceptually into two layers:
 1. **Agent Core**
 2. **Capability Services**
 
-This is a logical architecture boundary. It does **not** require separate
-deployables, separate repositories, or a network hop for every capability.
+This is both a logical and deployment boundary for isolated capabilities.
+
+For major product capabilities such as `crypto-trading` and `messaging`, the
+platform requires true isolation from the start:
+
+1. each capability runs as a separate deployable service
+2. each capability may run as its own Docker service or equivalent isolated
+   deployment unit
+3. Agent Core does not host capability-specific implementation in-process
+4. direct in-process imports across capability boundaries are not allowed
 
 ### 2. Agent Core is capability-agnostic
 
@@ -71,7 +79,7 @@ Agent Core owns:
 
 Agent Core must be able to run:
 
-1. a trading agent
+1. a crypto-trading agent
 2. a chat-backed session
 3. a messaging-focused agent
 4. a future non-trading capability
@@ -96,11 +104,66 @@ Capability Services own:
 Capability Services may expose tools to Agent Core, but Agent Core does not own
 their business meaning.
 
-### 4. Trading is a capability service, not part of Agent Core
+### 3A. Capability boundaries require separate configuration and private implementation
 
-Trading-specific behavior must stay outside Agent Core.
+Each isolated capability must own a separate configuration surface for its
+domain-specific behavior.
 
-The trading capability service owns:
+That means:
+
+1. capability-specific configuration is defined within the capability boundary
+2. capability-specific defaults and validation are owned within the capability
+   boundary
+3. one capability must not embed its configuration model inside another
+   capability, Agent Core, or another service
+
+Public contracts at capability boundaries must use explicit request-response
+interfaces.
+
+That means:
+
+1. Agent Core may interact with a capability only through published boundary
+   contracts that accept a defined request and return a defined response
+2. one capability may interact with another capability only through published
+   boundary contracts that accept a defined request and return a defined
+   response
+3. code outside the capability boundary must not access that capability's
+   internal modules, internal state, internal configuration, or internal data
+   model directly
+
+Multiple capabilities must not share capability-specific implementation code.
+Capability-specific implementation code must also not be shared with Agent Core
+or other services.
+
+If code genuinely needs to be shared, it must be moved into an explicitly
+designated shared package or boundary module approved for cross-capability use.
+
+That shared code must:
+
+1. expose published contracts, DTOs, ports, protocol envelopes, or generic
+   runtime utilities intended for reuse
+2. not import capability-owned implementation modules
+3. not import Agent Core internals
+4. not require a dependency on one capability in order to be used by another
+
+Whether shared code is truly generic may still require review judgment, but the
+enforceable rule is structural: cross-capability reuse must happen only through
+approved shared modules with allowed dependency directions.
+
+For isolated capabilities, the deployment rule is equally strict:
+
+1. each capability owns its own runtime process or service
+2. each capability owns its own deploy-time configuration
+3. each capability owns its own persistence boundary where durable state is
+   required
+4. Agent Core and peer capabilities communicate through boundary contracts over
+   service boundaries, not direct implementation reuse
+
+### 4. Crypto-trading is a capability service, not part of Agent Core
+
+Crypto-trading-specific behavior must stay outside Agent Core.
+
+The crypto-trading capability service owns:
 
 1. market data interpretation and trading context assembly
 2. provider and family mapping for trading providers
@@ -111,7 +174,7 @@ The trading capability service owns:
 6. trading-specific persistence, journaling, reconciliation, and execution
    state
 
-Agent Core may call trading tools and render trading context, but it must not
+Agent Core may call crypto-trading tools and render trading context, but it must not
 contain market execution logic.
 
 ### 5. Messaging is a capability service, not part of Agent Core
@@ -178,19 +241,23 @@ This means:
 3. the capability boundary must hold for both long-running agents and chat
    sessions
 
-### 9. Capability Services are logical services first, deployable services later
+### 9. Capability Services are deployable isolation boundaries
 
-In this ADR, the word **service** means an ownership boundary, not a deployment
-topology.
+In this ADR, the word **service** means both an ownership boundary and a
+deployment boundary for isolated capabilities.
 
-For now, a capability service may live:
+For `crypto-trading` and `messaging`, this means:
 
-1. in the same process as other platform code
-2. in shared packages
-3. behind internal function calls
+1. each capability is deployed separately from Agent Core
+2. each capability is deployed separately from other isolated capabilities
+3. interaction happens through published service contracts
+4. Docker service separation is an acceptable reference implementation of this
+   rule
 
-If a future capability requires process or deployment isolation, that is an
-implementation choice made later. This ADR does not require microservices.
+This ADR therefore does require separate deployable boundaries for isolated
+capabilities. It does not require that every minor feature become its own
+service, but any domain promoted to an isolated capability must meet this
+deployment standard.
 
 ## Boundary Table
 
@@ -217,7 +284,8 @@ implementation choice made later. This ADR does not require microservices.
 1. Trading stops being the accidental shape of the entire platform.
 2. Chat sessions and future capabilities can reuse the runtime without inheriting
    trading assumptions.
-3. Capability-specific logic becomes easier to isolate, test, and evolve.
+3. Capability-specific logic becomes easier to isolate, test, deploy, and
+   evolve.
 4. The platform gets a cleaner path for messaging, documents, and future
    capability growth.
 5. Boundary violations become easier to spot during review.
@@ -226,10 +294,12 @@ implementation choice made later. This ADR does not require microservices.
 
 1. Some current modules will remain mixed until follow-up refactors separate
    shared runtime concerns from capability-specific concerns.
-2. The phrase `service` may be misread as a deployment mandate unless kept
-   explicit in docs.
+2. The platform must absorb the operational cost of multiple deployable
+   services earlier.
 3. The current package structure will not line up perfectly with this boundary
    on day one.
+4. Cross-capability integration requires explicit service contracts and
+   deployment plumbing from the start.
 
 ## Follow-Up Rules
 
@@ -242,6 +312,17 @@ implementation choice made later. This ADR does not require microservices.
    - what remains with another authoritative owner such as the trading instance
 4. When a new tool is added, its business meaning belongs to the capability
    service even if the runtime loop that executes it belongs to Agent Core.
+5. Each capability must own its own domain-specific configuration surface,
+   including its validation and defaults.
+6. Direct interactions across capability boundaries must use published
+   request-response contracts.
+7. Capability-specific implementation code must not be imported directly across
+   capability boundaries or into Agent Core.
+8. If multiple capabilities appear to need the same implementation code, that
+   code must either move into a neutral shared abstraction or remain private to
+   one capability. Shared capability-specific implementation is not allowed.
+9. Any domain declared to be an isolated capability must be deployed as a
+   separate service from Agent Core and from other isolated capabilities.
 
 ## Explicit Non-Goals
 
@@ -249,18 +330,20 @@ This ADR does not:
 
 1. define the full capability registry shape
 2. force a package-by-package refactor immediately
-3. require microservice deployment boundaries
+3. require every platform feature to become its own separate service
 4. redefine the trading instance boundary
 5. finalize the messaging runtime architecture
 
 ## Notes For The Next Steps
 
 This ADR is the architectural gate before implementation work that extracts
-trading as the first explicit capability.
+crypto-trading as the first explicit capability.
 
 The next implementation-oriented work should:
 
 1. register product capabilities in shared domain code
-2. expose trading through that registry first
+2. expose crypto-trading through that registry first
 3. keep trading-instance authority intact
-4. let messaging grow under the same boundary without inheriting trading logic
+4. let messaging grow under the same boundary without inheriting crypto-trading logic
+5. establish separate deployable service boundaries for `crypto-trading` and
+   `messaging`

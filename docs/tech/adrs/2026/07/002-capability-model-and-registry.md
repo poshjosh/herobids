@@ -7,7 +7,7 @@
 
 OpenAIdom is no longer only a trading product. The platform direction is an
 agents-as-a-service model where multiple isolated capabilities can coexist,
-starting with trading and messaging.
+starting with crypto-trading and messaging.
 
 The current codebase uses the word `capability` for several different things:
 
@@ -49,14 +49,14 @@ Definitions:
 - **Provider**: the concrete integration behind that family
 
 The word **family** is intentionally capability-agnostic. It works for
-messaging and trading without introducing separate naming schemes such as
+messaging and crypto-trading without introducing separate naming schemes such as
 "delivery family" for one capability and something else for another.
 
 ### 2. First product capabilities
 
 The first product capabilities are:
 
-1. `trading`
+1. `crypto-trading`
 2. `messaging`
 
 ### 3. Messaging capability model
@@ -83,12 +83,12 @@ Interpretation:
 
 This is the product model even when implementation details are transitional.
 
-### 4. Trading uses the same model
+### 4. Crypto-trading uses the same model
 
-Trading follows the same structure:
+Crypto-trading follows the same structure:
 
 ```text
-trading
+crypto-trading
   swap
     jupiter
     1inch
@@ -122,6 +122,9 @@ This means:
    connection-backed runtime binding families
 3. the registry may describe future providers without pretending that every
    provider already has the same runtime binding semantics
+4. `crypto-trading` may exist as the product capability while the current
+   runtime binding family remains `trading` for compatibility with the existing
+   implementation
 
 ### 6. Current implementation asymmetry is real and should stay explicit
 
@@ -174,10 +177,11 @@ avoids schema churn.
 
 ### Positive
 
-1. The platform gets one simple product taxonomy that can grow beyond trading.
+1. The platform gets one simple product taxonomy that can grow beyond the
+   current crypto-trading implementation.
 2. Messaging no longer has to choose between `email` and `telegram` as the
    top-level concept; both sit under `messaging`.
-3. The same model works for trading and messaging.
+3. The same model works for crypto-trading and messaging.
 4. Future providers can be added without redefining the product hierarchy.
 5. Product language becomes easier to align across docs, UI, API, and planning.
 
@@ -215,7 +219,7 @@ This ADR establishes the vocabulary needed for subsequent work:
 
 1. agent-core vs capability-services boundary
 2. capability registry structure and exposure model
-3. trading extraction as the first implemented capability
+3. crypto-trading extraction as the first implemented capability
 4. messaging architecture and document handling
 
 The next design steps should build on this taxonomy rather than reopening it.

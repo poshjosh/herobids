@@ -18,7 +18,7 @@ Establish a shared capability registry in domain code that separates four concep
 3. product capabilities for agent-facing platform domains
 4. tool sandbox grants for per-tool runtime policy
 
-The first product capabilities should be `trading` and `messaging`.
+The first product capabilities should be `crypto-trading` and `messaging`.
 
 This plan keeps the current provider taxonomy and runtime binding family machinery intact, layers a shared product-capability registry on top, and cleans up the highest-risk naming collisions without forcing a flag-day DB rewrite.
 
@@ -41,7 +41,7 @@ Current code and docs show:
 | Decision | Plan choice | Consequence |
 |---|---|---|
 | Product capability meaning | A capability is an isolated product or service domain with its own ownership, policy, state, and API or tool surface | Stop using runtime-family or preset language as the product definition |
-| First capabilities | `trading` and `messaging` | No first-class `email`, `documents`, `web-access`, or `task-management` capability in this slice |
+| First capabilities | `crypto-trading` and `messaging` | No first-class `email`, `documents`, `web-access`, or `task-management` capability in this slice |
 | Email position | `email` remains a runtime binding family and current messaging channel | Do not expose `email` as the long-term top-level product capability |
 | Documents position | Attachments and documents belong under messaging v1 | Avoid a third top-level capability for documents |
 | Presets vs capabilities | `personal-assistant` stays a preset or archetype | Move preset metadata out of capability language |
@@ -56,7 +56,7 @@ Current code and docs show:
 |---|---|---|---|
 | Provider category | `ProviderDefinition.categories` | Catalog and setup taxonomy such as `trading`, `swap`, `messaging` | Keep as-is |
 | Runtime binding family | `RuntimeBindingFamily` in provider catalog | Connection family used for readiness, defaults, and binding requirements | Keep as-is |
-| Product capability | New shared registry | Agent-facing platform domain such as `trading` or `messaging` | Add |
+| Product capability | New shared registry | Agent-facing platform domain such as `crypto-trading` or `messaging` | Add |
 | Preset or archetype | `SKILL_PRESET_MAP`, `personal-assistant` | User-facing bundle of skills | Extract and rename in UI or shared metadata |
 | Tool grant key | `capability` field in worker tool policy | Per-tool sandbox permission such as `execute_code` | Rename internally to tool-grant terminology |
 | Runtime composition mode | `capabilityMode` in unified agent config | `intelligence` vs `hybrid` runtime behavior | Keep wire field for now, stop treating it as product capability language |
@@ -70,7 +70,7 @@ Goal: create one shared source of truth for product capabilities without changin
 Deliverables:
 
 1. Add a new domain module, preferably `packages/domain/src/capability-registry.ts`, with:
-   - `ProductCapabilityId = 'trading' | 'messaging'`
+   - `ProductCapabilityId = 'crypto-trading' | 'messaging'`
    - capability definitions with display metadata, owned runtime binding families, channel metadata, and setup semantics
    - helpers such as `listProductCapabilities()`, `getProductCapability()`, and `getProductCapabilityForRuntimeFamily()`
 2. Model messaging explicitly as:
@@ -109,12 +109,12 @@ Deliverables:
    - default connections by runtime family
 2. Keep `packages/db/src/agent-runtime-descriptor.ts` family-centric for now, but stop duplicating interpretation logic elsewhere. The API should call a shared resolver rather than owning another ad hoc capability model.
 3. Define product-capability aggregation rules:
-   - `trading` capability maps directly to runtime family `trading`
+   - `crypto-trading` capability maps directly to runtime family `trading`
    - `messaging` capability is present whenever the base messaging surface is available, with `email` exposed as a channel or binding detail rather than as the capability id
 4. Fail loudly when a runtime family exists with no registry mapping or when a capability route is registered without a shared definition.
 5. Extend the API capability surface:
    - [apps/api/src/routes/capabilities/index.ts](../../../../../apps/api/src/routes/capabilities/index.ts) should return shared product-capability metadata from domain
-   - keep trading detail routes in [apps/api/src/routes/capabilities/trading.ts](../../../../../apps/api/src/routes/capabilities/trading.ts)
+   - keep crypto-trading detail routes in [apps/api/src/routes/capabilities/trading.ts](../../../../../apps/api/src/routes/capabilities/trading.ts)
    - add a new `messaging.ts` route for capability metadata and connection surfaces backed by the `email` runtime family
 6. Keep the current deep trading routes intact in this slice. The registry sits above them; it does not redesign every trading route.
 
@@ -130,7 +130,7 @@ Primary touchpoints:
 
 Compatibility notes:
 
-1. Keep runtime-family keys `trading` and `email` stable internally.
+1. Keep runtime-family keys `trading` and `email` stable internally. The product capability name becomes `crypto-trading`, but the existing runtime family stays `trading` in this slice.
 2. Prefer additive API response changes where a clean cut would force unnecessary parallel refactors. A temporary `families` plus `capabilities` overlap is acceptable if it keeps the rollout narrow.
 3. Do not force a DB migration for custom skill metadata in this phase.
 
@@ -200,7 +200,7 @@ API tests:
 1. Extend [apps/api/src/routes/capabilities/trading.test.ts](../../../../../apps/api/src/routes/capabilities/trading.test.ts) for shared capability-registry responses.
 2. Add focused tests for the new messaging capability route.
 3. Add readiness tests that prove:
-   - trading still uses the `trading` runtime family
+   - crypto-trading still uses the `trading` runtime family
    - messaging capability reflects the brokered surface plus email-channel detail
    - missing registry mappings fail loudly
 
@@ -242,4 +242,4 @@ Full-repo validation:
 
 ## Expected Outcome
 
-After these phases, the repo should have one shared definition for product capabilities, consistent terminology across runtime, API, and web, and a clean path for future messaging work such as attachments and documents without reusing `email` as the platform’s long-term top-level capability.
+After these phases, the repo should have one shared definition for product capabilities, consistent terminology across runtime, API, and web, and a clean path for future messaging work such as attachments and documents without reusing `email` as the platform’s long-term top-level capability. The current implementation-facing runtime family `trading` remains as the compatibility layer beneath the product capability `crypto-trading`.
