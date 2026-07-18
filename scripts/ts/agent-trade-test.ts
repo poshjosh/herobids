@@ -410,7 +410,7 @@ interface AgentBody {
   error?: string;
 }
 
-async function createAgent(token: string): Promise<string> {
+async function createAgent(token: string, connectionId: string): Promise<string> {
   const res = await apiRequest<AgentBody>(
     'POST', '/agents',
     {
@@ -426,6 +426,8 @@ async function createAgent(token: string): Promise<string> {
         provider: LLM_PROVIDER,
         lightModel: LLM_LIGHT_MODEL,
         heavyModel: LLM_HEAVY_MODEL,
+        // Required for live/shadow execution — see validateConnectionRequirement in agent-config-helpers.ts
+        connectionIds: [connectionId],
       },
     },
   );
@@ -436,20 +438,6 @@ async function createAgent(token: string): Promise<string> {
   }
 
   fatal(`Agent creation failed: ${res.status} ${JSON.stringify(res.body)}`);
-}
-
-async function grantTradingCapability(token: string, agentId: string, connectionId: string): Promise<void> {
-  const res = await apiRequest<{ error?: string }>(
-    'PATCH', `/agents/${agentId}`,
-    { token, body: { connectionIds: [connectionId] } },
-  );
-
-  if (res.status === 200) {
-    ok(`Trading capability granted — connectionId=${connectionId}`);
-    return;
-  }
-
-  fatal(`Grant failed: ${res.status} ${JSON.stringify(res.body)}`);
 }
 
 async function startAgent(token: string, agentId: string): Promise<void> {
@@ -1064,9 +1052,8 @@ async function main(): Promise<void> {
 
   const token = await authenticate();
   const connectionId = await createProviderLink(token);
-  const agentId = await createAgent(token);
+  const agentId = await createAgent(token, connectionId);
   await verifyAgentProvisioned(token, agentId);
-  await grantTradingCapability(token, agentId, connectionId);
   await startAgent(token, agentId);
   ok(`Agent ${agentId} is starting`);
 
