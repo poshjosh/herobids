@@ -498,6 +498,41 @@ This state model should drive persistence, retries, and metrics.
    - transition rejected
 - expiry may be owned by whichever side owns the pending item being expired, but ownership must be explicit in the implementation
 
+## Outstanding Issues (post-implementation review)
+
+Issues identified during code review of the implementation that remain open. Grouped by category — none are blocking for current feature scope.
+
+### Data Model & Persistence
+
+- **MEDIUM — `PresetScorecardEntry` not consumed by any DB table.** The domain type is defined but raw per-preset dry-run scorecards from the scanner have no persistence home. They are currently in-memory only. A separate table or `evidenceRefs` column on `marketAssessmentRuns` should store them for audit replay.
+- **MEDIUM — `TransitionState` types not mapped to a DB column.** `PlatformTransitionState` and `ActorTransitionState` are defined in the domain layer but not persisted as a column on `agentPresetTransitions`. The `outcome` column captures the final result but not the intermediate state-machine steps.
+- **MEDIUM — `maxLlmCallsPerCycle` mismatch between config schema and `default.yaml`.** The schema and YAML both define this field but may drift — verify they stay in sync as defaults evolve.
+- **LOW — `scanHealth` on `agentScanMetrics` has no DB-level default.** The application always sets it, but a DB default would be defensive.
+
+### Platform Assessor
+
+- **MEDIUM — `segmentFamilies` config is dead code.** Present in both `PlatformAssessorConfigSchema` and the TS interface but never read by `resolveSegments()`. Either implement filtering or remove the field.
+- **MEDIUM — `evidenceRefs` ternary is dead code.** `evidence.segmentKey ? [...] : []` always takes the truthy branch. Simplify to direct array construction.
+- **MEDIUM — `rankPresets` returns `assessmentRunId: ''`.** The caller overwrites it on DB insert, but the returned object is inconsistent with what's actually stored.
+- **MEDIUM — No test for graceful shutdown with in-flight cycle.** The `stop()` method correctly awaits `runningCycle`, but there's no test validating this behavior.
+- **MEDIUM — `evidence.regime?.currentState` probably always `undefined`.** The `RegimeResult` type has `pass`, `reasons`, and `details` fields — no `currentState`. The optional chain makes this safe but the field is dead code.
+
+### Transition Tools
+
+- **MEDIUM — `recommend_preset_transition` is not personalized.** The catalog description was narrowed to match the current implementation (shared assessment only), but the tool should eventually combine the shared artifact with agent-local state (open positions, recent performance, risk limits). Requires wiring additional repos into `ToolContext`.
+- **MEDIUM — `oldPresetKey` hardcoded as `'unknown'` in `apply_preset_transition`.** The current preset lives in the `agents` table metadata (not the unified config). A `getActivePreset()` method on `agentConfigOps` is needed for proper attribution.
+
+### Decision Attribution
+
+- **MEDIUM — No `Decision` type field to carry preset context.** A TODO comment exists in `decision-intake.ts`, but the `Decision` interface has no `presetKey` / `presetBehaviorVersion` fields. The scaffolding to carry preset context through the decision pipeline is missing — needed for per-preset performance measurement (Item 14 / D5).
+
+### Tests
+
+- **LOW — `db.insert` mock uses fragile table-name detection** in `platform-assessor.test.ts`. The mock checks `_table.config?.name?.includes('assessment_runs')` which is coupled to Drizzle internals.
+- **LOW — Budget enforcement test is weak.** Asserts "should not throw" but doesn't verify that exactly `maxLlmCallsPerCycle` segments were processed.
+- **LOW — `as TechnicalConfig` casts in segment key tests** use incomplete objects. These are safe for the function under test but could mask type errors if `TechnicalConfig` evolves.
+
+
 This is not a single distributed mutable state row. It is a coordinated event model across platform and actor processes.
 
 ## Open Positions and Transition Safety
