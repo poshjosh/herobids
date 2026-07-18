@@ -1874,7 +1874,7 @@ export function applyRuntimeMessage(
     state.metrics.currentReminder = null;
 
     if (wake.source === 'watch_threshold' || wake.source === 'discovery_delta' || wake.source === 'regime_change' || wake.source === 'scanner') {
-      state.metrics.currentMarketWake = { wakeId, source: wake.source, reason, requestedAt, context: wake.context as WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext };
+      state.metrics.currentMarketWake = { wakeId, source: wake.source, reason, requestedAt, context: wake.context as WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext | ScannerWakeContext };
 
       // Remove pending context-only market events that this wake will render.
       // Prevents duplicate rendering when context-only events arrive before agent.wake.

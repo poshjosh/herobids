@@ -393,12 +393,28 @@ export const RegimeChangeWakeContextSchema = z.object({
 });
 export type RegimeChangeWakeContext = z.infer<typeof RegimeChangeWakeContextSchema>;
 
-export const ScannerWakeContextSchema = z.object({
-  signalCount: z.number().int().min(0),
-  topSymbol: z.string().optional(),
-  topConfidence: z.number().min(0).max(1).optional(),
-  regimePass: z.boolean().nullable().optional(),
-});
+export const ScannerWakeContextSchema = z.discriminatedUnion('scannerKind', [
+  z.object({
+    scannerKind: z.literal('signal_scoring'),
+    signalCount: z.number().int().min(0),
+    topSymbol: z.string().optional(),
+    topConfidence: z.number().min(0).max(1).optional(),
+    regimePass: z.boolean().nullable().optional(),
+  }),
+  z.object({
+    scannerKind: z.literal('preset_review'),
+    /** Reference to the market assessment artifact that triggered this review. */
+    assessmentRef: z.string().min(1),
+    /** The preset key recommended by the platform assessor. */
+    recommendedPreset: z.string().min(1),
+    /** The agent's current preset key at the time of the assessment. */
+    currentPreset: z.string().min(1),
+    /** The relative score uplift of the recommended preset over the current one. Must be non-negative. */
+    relativeUplift: z.number().min(0),
+    /** The platform assessor's confidence in the recommendation (0-1). */
+    confidence: z.number().min(0).max(1),
+  }),
+]);
 export type ScannerWakeContext = z.infer<typeof ScannerWakeContextSchema>;
 
 const AgentWakePayloadBaseSchema = z.object({

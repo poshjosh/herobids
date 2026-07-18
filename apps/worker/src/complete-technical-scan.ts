@@ -205,6 +205,7 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
       eventIds: [],
       requestedAt: new Date().toISOString(),
       context: {
+        scannerKind: 'signal_scoring' as const,
         signalCount: phaseResult.signals.length,
         topSymbol: topSignal?.symbol,
         topConfidence: topSignal?.confidence,

@@ -172,6 +172,7 @@ describe('AgentWakePayloadSchema', () => {
         ...BASE,
         source: 'scanner',
         context: {
+          scannerKind: 'signal_scoring',
           signalCount: 3,
           topSymbol: 'SOL',
           topConfidence: 0.85,
@@ -181,6 +182,7 @@ describe('AgentWakePayloadSchema', () => {
       expect(result.success).toBe(true);
       if (!result.success) return;
       if (result.data.source === 'scanner') {
+        expect(result.data.context.scannerKind).toBe('signal_scoring');
         expect(result.data.context.signalCount).toBe(3);
         expect(result.data.context.topSymbol).toBe('SOL');
       }
@@ -190,7 +192,7 @@ describe('AgentWakePayloadSchema', () => {
       const result = AgentWakePayloadSchema.safeParse({
         ...BASE,
         source: 'scanner',
-        context: { signalCount: 0 },
+        context: { scannerKind: 'signal_scoring', signalCount: 0 },
       });
       expect(result.success).toBe(true);
     });
@@ -373,8 +375,9 @@ describe('Source-specific context schemas', () => {
     expect(result.success).toBe(false);
   });
 
-  it('ScannerWakeContextSchema accepts valid scanner context', () => {
+  it('ScannerWakeContextSchema accepts valid signal_scoring variant', () => {
     const result = ScannerWakeContextSchema.safeParse({
+      scannerKind: 'signal_scoring',
       signalCount: 3,
       topSymbol: 'SOL',
       topConfidence: 0.85,
@@ -383,8 +386,34 @@ describe('Source-specific context schemas', () => {
     expect(result.success).toBe(true);
   });
 
-  it('ScannerWakeContextSchema rejects without signalCount', () => {
+  it('ScannerWakeContextSchema rejects signal_scoring without signalCount', () => {
+    const result = ScannerWakeContextSchema.safeParse({
+      scannerKind: 'signal_scoring',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('ScannerWakeContextSchema rejects without scannerKind discriminator', () => {
     const result = ScannerWakeContextSchema.safeParse({});
+    expect(result.success).toBe(false);
+  });
+
+  it('ScannerWakeContextSchema accepts valid preset_review variant', () => {
+    const result = ScannerWakeContextSchema.safeParse({
+      scannerKind: 'preset_review',
+      assessmentRef: 'ma_20260718_001',
+      recommendedPreset: 'premium',
+      currentPreset: 'standard',
+      relativeUplift: 0.15,
+      confidence: 0.82,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('ScannerWakeContextSchema rejects preset_review without required fields', () => {
+    const result = ScannerWakeContextSchema.safeParse({
+      scannerKind: 'preset_review',
+    });
     expect(result.success).toBe(false);
   });
 });

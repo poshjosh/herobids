@@ -125,6 +125,7 @@ describe('completeTechnicalScan', () => {
       source: 'scanner',
       priority: 'normal',
       context: expect.objectContaining({
+        scannerKind: 'signal_scoring',
         signalCount: 2,
         topSymbol: 'ETH-PERP',
         topConfidence: 0.72,

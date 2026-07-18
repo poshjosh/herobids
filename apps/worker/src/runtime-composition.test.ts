@@ -1030,6 +1030,7 @@ describe('runtime composition helpers', () => {
         requestedAt: '2026-06-11T00:00:00.000Z',
         source: 'scanner',
         context: {
+          scannerKind: 'signal_scoring',
           signalCount: 2,
           topSymbol: 'BTC',
           topConfidence: 0.91,
@@ -1040,7 +1041,7 @@ describe('runtime composition helpers', () => {
 
     expect(summary).toBe('2 ranked scanner signals ready');
     expect(state.metrics.currentMarketWake?.source).toBe('scanner');
-    expect(state.metrics.currentMarketWake?.context).toMatchObject({ signalCount: 2, topSymbol: 'BTC' });
+    expect(state.metrics.currentMarketWake?.context).toMatchObject({ scannerKind: 'signal_scoring', signalCount: 2, topSymbol: 'BTC' });
   });
 
   it('renders ## Watch Trigger Context block for watch_threshold source wake', () => {

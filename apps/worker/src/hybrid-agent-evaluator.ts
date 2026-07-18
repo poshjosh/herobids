@@ -1,7 +1,7 @@
 import type { LlmProviderConfig, LlmResult } from '@herobids/llm';
 import { callLlmProvider, stripEmptyValues } from '@herobids/llm';
 import { z } from 'zod';
-import { HybridAgentDecisionSchema, type HybridAgentDecision } from '@herobids/domain';
+import { HybridAgentDecisionSchema, type HybridAgentDecision, type ScannerWakeContext } from '@herobids/domain';
 import type { HybridPricingIdentity, RuntimeCompositionState, TechnicalScanState } from './runtime-composition.js';
 import { buildHybridPrompt, type HybridPromptInput } from './hybrid-agent-prompt.js';
 
@@ -30,8 +30,15 @@ export function canRouteToHybridEvaluator(params: {
   hasWakeSignal?: boolean;
   isScannerWake: boolean;
   latestTechnicalScan?: TechnicalScanState;
+  latestScannerContext?: ScannerWakeContext;
 }): boolean {
   if (!params.isHybrid || !params.hasTradingCapability || !params.hasWakeSignal) {
+    return false;
+  }
+
+  // preset_review scanner wakes must NOT route into the single-shot hybrid entry evaluator.
+  // These wakes carry platform assessment recommendations, not trading signals.
+  if (params.isScannerWake && params.latestScannerContext?.scannerKind === 'preset_review') {
     return false;
   }
 

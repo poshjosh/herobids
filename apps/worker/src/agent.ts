@@ -13,7 +13,7 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal } from '@herobids/db';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml } from '@herobids/domain';
@@ -2349,7 +2349,12 @@ async function runTick(): Promise<void> {
     //
     // 004: scanner_gated agents suppress ALL non-scanner market wakes and
     // route every trading turn through the hybrid evaluator (single-shot).
+    // 002: Extract scanner context discriminator to gate preset_review wakes
+    // out of the hybrid evaluator (D2: scannerKind === 'preset_review').
     const isScannerWake = runtimeState.metrics.currentMarketWake?.source === 'scanner';
+    const latestScannerContext = isScannerWake
+      ? runtimeState.metrics.currentMarketWake?.context as ScannerWakeContext | undefined
+      : undefined;
     const latestTechnicalScan = runtimeState.metrics.lastTechnicalScan;
 
     // ── Scanner-gated: suppress non-scanner market wakes ──────────────────
@@ -2382,6 +2387,7 @@ async function runTick(): Promise<void> {
       hasWakeSignal: tickGateState.hasWakeSignal,
       isScannerWake,
       latestTechnicalScan,
+      latestScannerContext,
     });
 
     if (!IS_SCANNER_GATED && isScannerWake && tradingTickWorkPlan.hasTradingCapability && !canUseHybridEvaluator) {
