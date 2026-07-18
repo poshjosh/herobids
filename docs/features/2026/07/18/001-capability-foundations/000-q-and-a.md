@@ -1,3 +1,7 @@
+# Q and A
+
+THESE ARE NON AUTHORITATIVE NOTES/IDEAS WHICH INFORMED VARIOUS DECISIONS/DIRECTIONS. THE EFFECTIVE DECISIONS/DIRECTIONS HAVE BEEN DOCUMENTED ELSEWHERE IN THIS FOLDER
+
 ## Prompt 1
 
 CONTEXT
@@ -66,38 +70,6 @@ INSTRUCTIONS
 - List the order we should tackle things (a simple list is enough) - the list could change with time, I just want an idea.
 
 ## Response 1
-
-I’m pulling the referenced design notes now so I can align the terminology and direction against the existing plans rather than answer from memory.
-
-Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/docs/features/pending/010-agent-blueprint-marketplace/notes/duplicated-config-loading-by-api-and-worker.md)
-
-Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/docs/features/pending/010-agent-blueprint-marketplace/notes/unified-agent-config.md)
-
-Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/docs/features/pending/025-agent-message-document-handling/000-notes.md)
-
-Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/docs/features/pending/010-agent-blueprint-marketplace/000-vision-and-current-state.md)
-
-Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/docs/features/pending/003-agent-chat-sessions/000-notes.md#1-1), lines 1 to 260
-
-I’ve aligned against the existing marketplace, chat, and document notes; next I’m checking the current code terms around skills and capabilities so the naming recommendations match what already exists.
-
-Searched for regex `capabilityFamilies|SKILL_PRESET_MAP|personal-assistant|trading|web-access|task-management` (`**/apps/web/src/**`), 173 results
-
-Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/packages/domain/src/skills.ts#1-1), lines 1 to 220
-
-Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/apps/api/src/routes/capabilities/index.ts)
-
-Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/apps/api/src/routes/capabilities/trading.ts#1-1), lines 1 to 240
-
-I have enough of the direction docs; I’m taking one last narrow read on the current skill taxonomy so the recommendations map cleanly onto the code terms we already use.
-
-Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/packages/domain/src/skills.ts#220-220), lines 220 to 311
-
-Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/apps/web/src/features/public-pages/content/en/help/get-started.md#1-1), lines 1 to 40
-
-Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/apps/web/src/features/public-pages/content/en/company/about-us.md)
-
-My direct view:
 
 You should make the split **hard and explicit**:
 
