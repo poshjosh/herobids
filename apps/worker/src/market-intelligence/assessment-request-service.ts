@@ -43,10 +43,10 @@ export interface AssessmentRequestParams {
  * string key for lease tracking and idempotency scoping.
  */
 function identityKey(identity: MarketAssessmentIdentity): string {
-  if (identity.instrumentKind === 'orderbook' || identity.instrumentKind === 'perp') {
-    return `${identity.instrumentKind}|${identity.venueFamily}|${identity.styleTier}|${identity.symbol}`;
+  if (identity.instrumentKind === 'swap' || identity.instrumentKind === 'dex') {
+    return `${identity.instrumentKind}|${identity.venueFamily}|${identity.styleTier}|${identity.network}|${identity.address}`;
   }
-  return `${identity.instrumentKind}|${identity.venueFamily}|${identity.styleTier}|${identity.network}|${identity.address}`;
+  return `${identity.instrumentKind}|${identity.venueFamily}|${identity.styleTier}|${identity.symbol}`;
 }
 
 // ── Service ─────────────────────────────────────────────────────────────────

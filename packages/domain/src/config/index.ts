@@ -101,7 +101,6 @@ export {
   PresetTransitionPolicySchema,
   PlatformAssessmentOptInSchema,
   PlatformAssessorConfigSchema,
-  WakeGateConfigSchema,
   validateReviewInterval,
 } from './schema.js';
 

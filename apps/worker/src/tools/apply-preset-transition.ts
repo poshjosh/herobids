@@ -1,7 +1,10 @@
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
-import { ApplyPresetTransitionParamsSchema } from '@herobids/domain';
+import {
+  ApplyPresetTransitionParamsSchema,
+  isArtifactFresh,
+} from '@herobids/domain';
 import { agentPresetTransitions, marketAssessmentArtifacts } from '@herobids/db';
-import { eq, desc } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '@herobids/db/schema';
 import { convertZodToJsonSchema } from './registry.js';
@@ -20,7 +23,7 @@ async function executeApplyPresetTransition(
   if (!parsed.success) {
     return { success: false, error: 'Invalid parameters', errorCode: 'validation.invalid_params' };
   }
-  const { targetPreset, mode, reason } = parsed.data;
+  const { assessmentArtifactId, targetPreset, mode, reason } = parsed.data;
 
   const db = ctx.db as Db | undefined;
   if (!db) {
@@ -28,7 +31,7 @@ async function executeApplyPresetTransition(
   }
 
   try {
-    // Shadow mode gate: check if agent is in recommend_only mode
+    // ── Gate 1: recommend_only (shadow) mode blocks live apply (D8) ──────
     if (ctx.agentConfigOps) {
       const currentConfig = await ctx.agentConfigOps.getCurrentConfig();
       if (currentConfig?.platformAssessment?.mode === 'recommend_only') {
@@ -40,27 +43,55 @@ async function executeApplyPresetTransition(
       }
     }
 
-    // Get the latest active artifact for the assessment reference
-    const [latest] = await db
+    // ── Gate 2: Fetch and validate the exact assessment artifact ─────────
+    const [artifactRow] = await db
       .select()
       .from(marketAssessmentArtifacts)
-      .where(eq(marketAssessmentArtifacts.status, 'active'))
-      .orderBy(desc(marketAssessmentArtifacts.assessedAt))
+      .where(eq(marketAssessmentArtifacts.id, assessmentArtifactId))
       .limit(1);
 
-    // Validate targetPreset against assessment's allowedPresets
-    if (latest) {
-      const allowedPresets = latest.allowedPresets as string[] ?? [];
-      if (allowedPresets.length > 0 && !allowedPresets.includes(targetPreset)) {
-        return {
-          success: false,
-          error: `Preset "${targetPreset}" is not in the allowed presets for this assessment. Allowed: ${allowedPresets.join(', ')}`,
-          errorCode: 'transition.preset_not_allowed',
-        };
-      }
+    if (!artifactRow) {
+      return {
+        success: false,
+        error: `Assessment artifact "${assessmentArtifactId}" not found.`,
+        errorCode: 'assessment.artifact_not_found',
+      };
     }
 
-    // Determine old preset before transition (best-effort).
+    // ── Gate 3: Validate target preset is in the allowed set ─────────────
+    const allowedPresets = artifactRow.allowedPresets as string[] ?? [];
+    if (allowedPresets.length > 0 && !allowedPresets.includes(targetPreset)) {
+      return {
+        success: false,
+        error: `Preset "${targetPreset}" is not in the allowed presets for this assessment. Allowed: ${allowedPresets.join(', ')}`,
+        errorCode: 'transition.preset_not_allowed',
+      };
+    }
+
+    // ── Gate 4: Validate artifact freshness ──────────────────────────────
+    const now = new Date();
+    if (!isArtifactFresh(
+      { status: artifactRow.status, expiresAt: artifactRow.expiresAt.toISOString() },
+      now,
+    )) {
+      return {
+        success: false,
+        error: 'The assessment artifact has expired. Request a fresh assessment via get_market_preset_assessment before applying a transition.',
+        errorCode: 'assessment.artifact_expired',
+      };
+    }
+
+    // ── Build immutable identity snapshot ────────────────────────────────
+    const identitySnapshot: Record<string, unknown> = {
+      instrumentKind: artifactRow.instrumentKind,
+      venueFamily: artifactRow.venueFamily,
+      styleTier: artifactRow.styleTier,
+    };
+    if (artifactRow.symbol) identitySnapshot['symbol'] = artifactRow.symbol;
+    if (artifactRow.network) identitySnapshot['network'] = artifactRow.network;
+    if (artifactRow.address) identitySnapshot['address'] = artifactRow.address;
+
+    // ── Resolve old preset (best-effort) ─────────────────────────────────
     // TODO: resolve current preset from agent metadata (agents table metadata.strategyPreset).
     // The unified config does not store the current preset key — it lives in the agents table.
     // Once agentConfigOps exposes getActivePreset() or similar, use it here.
@@ -69,8 +100,7 @@ async function executeApplyPresetTransition(
     // Resolve open position count — stub until position repo is wired into ToolContext
     const openPositionCount = 0;
 
-    // Record the transition event
-    const now = new Date();
+    // ── Persist immutable transition record ──────────────────────────────
     await db.insert(agentPresetTransitions).values({
       id: randomUUID(),
       agentId: ctx.agentId,
@@ -78,11 +108,13 @@ async function executeApplyPresetTransition(
       oldPresetBehaviorVersion: 'unknown',
       newPresetKey: targetPreset,
       newPresetBehaviorVersion: 'v1',
-      assessmentArtifactId: latest?.id ?? null,
-      segmentKey: latest?.segmentKey ?? { venueFamily: 'unknown', styleTier: 'standard', universeScopeHash: 'unknown' },
-      venueFamily: latest?.venueFamily ?? 'unknown',
-      styleTier: latest?.styleTier ?? 'standard',
-      universeScopeHash: latest?.universeScopeHash ?? 'unknown',
+      assessmentArtifactId: artifactRow.id,
+      // Identity snapshot (replaces old segmentKey/universeScopeHash)
+      identitySnapshot,
+      instrumentKind: artifactRow.instrumentKind,
+      symbol: artifactRow.symbol ?? null,
+      network: artifactRow.network ?? null,
+      address: artifactRow.address ?? null,
       transitionMode: mode,
       openPositionCount,
       outcome: 'accepted',
@@ -93,20 +125,25 @@ async function executeApplyPresetTransition(
       createdAt: now,
     });
 
-    // Journal the transition for audit — the preset config application
-    // (resolving preset-derived values into the unified config) happens
-    // separately via the strategy preset system.
+    // ── Journal for audit ────────────────────────────────────────────────
     if (ctx.agentConfigOps) {
       await ctx.agentConfigOps.appendJournal('preset_transition', {
         targetPreset,
         mode,
         reason: reason ?? 'Agent-initiated preset transition',
         oldPresetKey,
+        assessmentArtifactId: artifactRow.id,
+        identitySnapshot,
         appliedAt: now.toISOString(),
       });
     }
 
-    logger.info({ agentId: ctx.agentId, targetPreset, mode, oldPresetKey }, 'Preset transition applied');
+    // TODO(analytics): record transition metrics for later attribution analysis.
+    // Capture: agentId, oldPresetKey, newPresetKey, assessmentArtifactId,
+    // transitionMode, openPositionCount, appliedAt. Feed into analytics pipeline
+    // once attribution quality is validated (see checklist §13).
+
+    logger.info({ agentId: ctx.agentId, targetPreset, mode, oldPresetKey, assessmentArtifactId }, 'Preset transition applied');
 
     return {
       success: true,
@@ -114,6 +151,8 @@ async function executeApplyPresetTransition(
         applied: true,
         targetPreset,
         mode,
+        assessmentArtifactId,
+        identitySnapshot,
         message: `Preset transition applied: switched to "${targetPreset}" in "${mode}" mode. Future entries will use the new preset configuration.`,
         openPositionCount,
         appliedAt: now.toISOString(),
@@ -127,7 +166,12 @@ async function executeApplyPresetTransition(
 
 export const applyPresetTransitionTool: AgentTool = {
   name: 'apply_preset_transition',
-  description: 'Apply a preset transition. Supports modes: entries_only (future entries use new preset) and entries_and_tighten_existing (tighten stops on open positions). Records the transition event for audit.',
+  description:
+    'Apply a preset transition using an exact assessment artifact reference. ' +
+    'Requires the assessmentArtifactId returned by recommend_preset_transition. ' +
+    'Supports modes: entries_only (future entries use new preset) and entries_and_tighten_existing (tighten stops on open positions). ' +
+    'Validates artifact identity, freshness, and allowed presets before applying. ' +
+    'Records an immutable transition event with identity snapshot for audit.',
   parametersSchema: ApplyPresetTransitionParamsSchema,
   parameters: convertZodToJsonSchema(ApplyPresetTransitionParamsSchema),
   category: 'write-database',

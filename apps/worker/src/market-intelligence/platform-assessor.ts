@@ -9,7 +9,6 @@ import type {
   MarketAssessmentArtifact,
   PresetScorecardEntry,
   MarketAssessmentPresetRanking,
-  MarketAssessmentSegmentKey,
 } from '@herobids/domain';
 import { err, ok, type Result } from '@herobids/domain';
 
@@ -216,7 +215,6 @@ export class PlatformAssessor {
     // Full implementation will construct a prompt and call the platform LLM.
     const now = new Date();
     const expiresAt = new Date(now.getTime() + this.config.cacheFreshnessMs);
-    const segmentKey = identityToSegmentKey(identity);
 
     const rankings: MarketAssessmentPresetRanking[] = scorecards.map((sc, idx) => ({
       presetKey: sc.presetKey,
@@ -229,12 +227,14 @@ export class PlatformAssessor {
       fitNotes: null,
     }));
 
+    // TODO: remove segmentKey/universeScopeHash fields when MarketAssessmentArtifact domain type is updated
+    // to use canonical identity (instrumentKind, venueFamily, styleTier, symbol/network+address).
     return {
       id: crypto.randomUUID(),
-      segmentKey,
+      segmentKey: { venueFamily: identity.venueFamily, styleTier: identity.styleTier, universeScopeHash: '' },
       venueFamily: identity.venueFamily,
       styleTier: identity.styleTier,
-      universeScopeHash: segmentKey.universeScopeHash,
+      universeScopeHash: '',
       assessmentRunId: '', // filled by caller
       assessedAt: now.toISOString(),
       expiresAt: expiresAt.toISOString(),
@@ -257,41 +257,6 @@ export class PlatformAssessor {
       evidenceRefs: [],
     };
   }
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Derive a pseudo segment key from a canonical identity for backward
- * compatibility with DB schemas that still reference segment keys.
- *
- * This is a transitional helper — once the DB schema is migrated to use
- * `MarketAssessmentIdentity` directly, this function and all segment-key
- * references in the assessor will be removed.
- */
-function identityToSegmentKey(identity: MarketAssessmentIdentity): MarketAssessmentSegmentKey {
-  if (identity.instrumentKind === 'orderbook' || identity.instrumentKind === 'perp') {
-    const universeScopeHash = crypto
-      .createHash('sha256')
-      .update(`${identity.venueFamily}:${identity.styleTier}:${identity.symbol}`)
-      .digest('hex')
-      .slice(0, 16);
-    return {
-      venueFamily: identity.venueFamily,
-      styleTier: identity.styleTier,
-      universeScopeHash,
-    };
-  }
-  const universeScopeHash = crypto
-    .createHash('sha256')
-    .update(`${identity.venueFamily}:${identity.styleTier}:${identity.network}:${identity.address}`)
-    .digest('hex')
-    .slice(0, 16);
-  return {
-    venueFamily: identity.venueFamily,
-    styleTier: identity.styleTier,
-    universeScopeHash,
-  };
 }
 
 // ── Placeholder Constants ──────────────────────────────────────────────────

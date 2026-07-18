@@ -1302,31 +1302,6 @@ export const PlatformAssessorConfigSchema = z.object({
   maxLlmCallsPerCycle: z.number().int().min(1).default(20),
 }).default({});
 
-// ── Wake Gate Config ───────────────────────────────────────────────────────
-
-export const WakeGateConfigSchema = z.object({
-  /** Minimum interval between preset-review wakes per agent (ms). Default: 4 hours */
-  minIntervalBetweenWakesMs: z.number().int().min(0).default(14_400_000),
-  /** Maximum review wakes per agent per day. Default: 6 */
-  maxWakesPerAgentPerDay: z.number().int().min(1).max(50).default(6),
-  /** Minimum score uplift for a recommendation to be considered "materially better." */
-  minScoreUplift: z.number().min(0).default(0.15),
-  /** Minimum assessor confidence for a wake to be emitted. */
-  minConfidence: z.number().min(0).max(1).default(0.6),
-  /** When open positions exist, multiply minScoreUplift by this factor (stricter). */
-  openPositionUpliftMultiplier: z.number().min(1).default(1.5),
-  /** When true, require consecutive assessments to agree before waking (noisy market guard). */
-  requireConsecutiveConfirmation: z.boolean().default(false),
-  /** Number of consecutive confirmations required when requireConsecutiveConfirmation is true. */
-  consecutiveConfirmationCount: z.number().int().min(2).max(5).default(2),
-  /** Minimum score for the current preset below which a wake is emitted regardless of alternatives. */
-  minCurrentPresetScore: z.number().min(0).max(1).default(0.0),
-  /** Floor value for the current preset score when calculating uplift (avoid division by near-zero). */
-  minScoreFloorForUpliftCalc: z.number().min(0.001).default(0.01),
-});
-
-export type WakeGateConfig = z.infer<typeof WakeGateConfigSchema>;
-
 export const SharedServicesConfigSchema = z.object({
   /** Redis hostname or IP reachable from agent runtimes. Default: 'redis' (Compose service name for local dev). */
   redisHost: z.string().default('redis'),
@@ -1446,7 +1421,6 @@ export const AppConfigSchema = z.object({
   marketData: MarketDataConfigSchema.optional(),
   marketIntelligence: MarketIntelligenceConfigSchema.default({}),
   platformAssessor: PlatformAssessorConfigSchema.default({}),
-  wakeGate: WakeGateConfigSchema.default({}),
   worker: WorkerConfigSchema.default({}),
   agentRuntime: AgentRuntimeConfigSchema,
   llm: LlmRuntimeConfigSchema.default({}),
@@ -2126,6 +2100,28 @@ export type HybridMode = z.infer<typeof HybridModeSchema>;
 export type AllowedPresetsPolicy = z.infer<typeof AllowedPresetsPolicySchema>;
 export type PresetTransitionPolicy = z.infer<typeof PresetTransitionPolicySchema>;
 export type PlatformAssessmentOptIn = z.infer<typeof PlatformAssessmentOptInSchema>;
+
+// ── Wake Gate Config (deferred infra — type only) ──────────────────────────
+
+/**
+ * Configuration for the wake gate that decides whether a market assessment
+ * should trigger a preset-review wake for an agent.
+ *
+ * NOTE: The full Zod schema (`WakeGateConfigSchema`) is deferred until the
+ * scheduled wake path is implemented. Only the type is defined here so that
+ * the engine's `wake-gate.ts` can compile.
+ */
+export interface WakeGateConfig {
+  minIntervalBetweenWakesMs: number;
+  maxWakesPerAgentPerDay: number;
+  minScoreUplift: number;
+  minConfidence: number;
+  openPositionUpliftMultiplier: number;
+  requireConsecutiveConfirmation: boolean;
+  consecutiveConfirmationCount: number;
+  minCurrentPresetScore: number;
+  minScoreFloorForUpliftCalc: number;
+}
 
 /**
  * Validates that an agent's reviewIntervalMs meets the operator's minimum floor.
