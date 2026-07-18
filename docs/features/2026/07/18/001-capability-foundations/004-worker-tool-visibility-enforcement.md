@@ -4,6 +4,7 @@
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)  
 **Depends on:** [Capability Resolution And Route Migration](./003-capability-resolution-and-route-migration.md)
+**Normative inputs:** [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md), [Capability Activation Model](./010-capability-activation-model.md)
 
 ## Purpose
 
@@ -49,6 +50,11 @@ platform path makes messaging implicitly active.
 Resolved skills remain inputs, not the final authority. A skill requesting a
 tool is necessary but not sufficient for final visibility.
 
+Implement the complete visibility predicate in document 010. In particular,
+the worker must consume an activation snapshot; it must not infer product
+capability activation from `capabilityMode`, `capabilityFamilies`, a connection,
+or an old per-tool sandbox grant.
+
 ## Acceptance Criteria
 
 This phase is complete only when:
@@ -60,6 +66,7 @@ This phase is complete only when:
 3. `send_message` still works through the intended implicit messaging rule
 4. `send_email` stays correctly gated by readiness
 5. ownership CI checks fail on missing, duplicate, or unknown ownership entries
+6. all current tools use the exact ownership classifications in document 009
 
 ## Validation And Verification
 

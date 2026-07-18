@@ -4,6 +4,7 @@
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)  
 **Depends on:** [Worker Tool Visibility Enforcement](./004-worker-tool-visibility-enforcement.md)
+**Normative inputs:** [Cross-Service Capability Execution Design](./008-cross-service-capability-execution-design.md), [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md)
 
 ## Purpose
 
@@ -30,10 +31,9 @@ This phase does not include:
 
 1. a deployable `crypto-trading` capability service
 2. an Agent Core abstraction for capability-owned trading tool invocation
-3. service-backed implementations for the first tool slice, starting with:
-   - `submit_decision`
-   - `find_instrument`
-   - trading inspection tools only if required for the slice
+3. service-backed implementations for every tool owned by `crypto-trading` in
+   document 009, including decision execution, bots, account and risk
+   inspection, market data, and price-watch lifecycle
 4. service authentication and authorization at the boundary
 5. idempotency, deadlines, and typed failures enforced through the contract
 
@@ -41,7 +41,7 @@ This phase does not include:
 
 ### Extraction pattern
 
-Use branch-by-abstraction:
+Use branch-by-abstraction and the HTTP invocation contract in document 008:
 
 1. define a capability-tool invocation abstraction in Agent Core
 2. keep the current in-process implementation behind that abstraction first
@@ -69,14 +69,16 @@ This phase is complete only when:
 5. typed failures, deadlines, and authentication are enforced at the boundary
 6. trading-instance authority remains unchanged from a business-ownership
    perspective
+7. every tool owned by `crypto-trading` in document 009 executes through the
+   service; a partial first-tool slice is not complete extraction
 
 ## Validation And Verification
 
-1. add integration tests for authenticated cross-service trading tool
-   invocation
-2. add retry and idempotency tests for `submit_decision`
-3. add failure-mode tests for timeout, authorization, validation, and
-   precondition cases
+1. add integration tests for authenticated cross-service invocation of every
+   crypto-trading-owned tool category
+2. add retry and idempotency tests for every side-effecting trading tool,
+   including `submit_decision` and bot/watch lifecycle tools
+3. add failure-mode tests required by document 008
 4. run targeted trading, API, worker, and domain tests
 5. run `pnpm lint`
 6. validate local or staging compose wiring for the new service

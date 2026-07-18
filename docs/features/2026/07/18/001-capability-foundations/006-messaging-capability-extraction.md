@@ -4,6 +4,7 @@
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)  
 **Depends on:** [Crypto-Trading Capability Extraction](./005-crypto-trading-capability-extraction.md)
+**Normative inputs:** [Cross-Service Capability Execution Design](./008-cross-service-capability-execution-design.md), [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md), [Capability Activation Model](./010-capability-activation-model.md)
 
 ## Purpose
 
@@ -43,7 +44,8 @@ This phase does not include:
 
 ### Extraction pattern
 
-Reuse branch-by-abstraction from the crypto-trading extraction.
+Reuse branch-by-abstraction and the complete invocation, durable-intent,
+health, and no-fallback requirements in document 008.
 
 ### Messaging nuance
 
@@ -64,10 +66,13 @@ This phase is complete only when:
 4. preset or role UI no longer mislabels `personal-assistant` as a capability
 5. email remains a messaging family or runtime family, not the top-level
    product capability
+6. `publish_artifact`, `send_message`, and `send_email` execute in messaging
+   according to their ownership in document 009
 
 ## Validation And Verification
 
-1. add integration tests for authenticated and idempotent messaging tool calls
+1. add integration tests for authenticated and idempotent messaging tool calls,
+   including `publish_artifact`
 2. add UI tests for planned providers being non-actionable
 3. add UI and API tests for lifecycle, health, and readiness separation
 4. run targeted web, API, worker, and domain tests

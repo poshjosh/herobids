@@ -4,6 +4,7 @@
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)  
 **Depends on:** [Capability Foundations](./002-capability-foundations.md)
+**Normative inputs:** [Capability Activation Model](./010-capability-activation-model.md), [Capability Route And Response Migration Manifest](./011-capability-route-and-response-migration-manifest.md)
 
 ## Purpose
 
@@ -15,9 +16,10 @@ changing worker tool-visibility behavior or extracting services yet.
 This phase includes:
 
 1. shared capability resolution on top of runtime-family resolution
-2. canonical public capability route IDs
-3. explicit legacy route aliases
-4. provider lifecycle enrichment rules
+2. durable product capability activation resolution
+3. canonical public capability route IDs
+4. explicit legacy route aliases
+5. provider lifecycle enrichment rules
 
 This phase does not include:
 
@@ -48,14 +50,17 @@ This phase does not include:
 
 Initial activation rules must be explicit:
 
-1. `crypto-trading` is explicitly activated
-2. `messaging` is implicitly active for the platform inbox or brokered
-   user-messaging path
-3. `send_email` still requires relevant provider or readiness state
+1. `crypto-trading` activation follows the durable row and resolver predicate
+   defined in document 010
+2. `messaging` is implicitly active only for the documented platform-inbox or
+   brokered user-messaging path
+3. `send_email` requires explicit messaging activation plus relevant provider
+   readiness state
 
 ### Route migration strategy
 
-Use a strangler-fig approach at the route boundary:
+Use the complete strangler-fig route matrix and response compatibility policy in
+document 011:
 
 1. add canonical product routes first
 2. keep `/capabilities/trading` only as a declared legacy alias
@@ -74,6 +79,8 @@ This phase is complete only when:
 4. provider lifecycle support is distinguishable from service health and tenant
    readiness in API responses
 5. no worker tool-visibility behavior has changed yet
+6. activation state is sourced only from the model in document 010; it is not
+   inferred from `capabilityMode`, connections, or skill membership
 
 ## Validation And Verification
 

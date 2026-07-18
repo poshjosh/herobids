@@ -3,6 +3,7 @@
 **Status:** proposed  
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)
+**Normative inputs:** [Cross-Service Capability Execution Design](./008-cross-service-capability-execution-design.md), [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md)
 
 ## Purpose
 
@@ -40,7 +41,8 @@ This phase does not include:
 
 ### Registry
 
-The registry must include at least:
+The registry must implement the initial entries, aliases, provider lifecycle,
+transport modes, and runtime-binding mappings in document 009. It must include:
 
 1. `ProductCapabilityId`
 2. canonical `publicRouteId`
@@ -52,7 +54,8 @@ The registry must include at least:
 
 ### Ownership
 
-Ownership must be exhaustive over `AgentToolName` with exactly one of:
+Ownership must encode every row in document 009 exhaustively over
+`AgentToolName` with exactly one of:
 
 1. `core`
 2. `general`
@@ -60,7 +63,8 @@ Ownership must be exhaustive over `AgentToolName` with exactly one of:
 
 ### Contract types
 
-The shared contract types must cover:
+The shared contract types and Zod schemas must implement document 008,
+including:
 
 1. versioning
 2. request, correlation, and idempotency identifiers
@@ -80,6 +84,8 @@ This phase is complete only when:
 4. the shared capability-tool contract types compile and are usable by both
    Agent Core and future capability services
 5. no runtime behavior has changed yet
+6. the manifest key set equals `KNOWN_AGENT_TOOL_NAMES` and each capability
+   derived view matches document 009
 
 ## Validation And Verification
 

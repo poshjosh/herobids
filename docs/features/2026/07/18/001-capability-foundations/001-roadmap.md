@@ -26,6 +26,10 @@ The guiding rule is: do not combine service extraction with naming cleanup.
 4. [Crypto-Trading Capability Extraction](./005-crypto-trading-capability-extraction.md)
 5. [Messaging Capability Extraction](./006-messaging-capability-extraction.md)
 6. [Capability Naming Cleanup](./007-capability-naming-cleanup.md)
+7. [Cross-Service Capability Execution Design](./008-cross-service-capability-execution-design.md)
+8. [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md)
+9. [Capability Activation Model](./010-capability-activation-model.md)
+10. [Capability Route And Response Migration Manifest](./011-capability-route-and-response-migration-manifest.md)
 
 ## Sequence
 
@@ -40,6 +44,10 @@ The intended order is strict:
 
 Later phases must not start until the acceptance criteria of earlier phases are
 met.
+
+Documents 008 through 011 are normative design inputs, not separately
+implemented phases. They close the execution, ownership, activation, and route
+migration decisions required by phases 002 through 007.
 
 ## Extraction Strategy
 
@@ -80,6 +88,7 @@ Required before route migration or worker gating changes:
 2. exhaustive ownership manifest exists
 3. cross-service capability-tool contract types exist
 4. preset or role metadata is separated conceptually from capabilities
+5. the registry and ownership data match the normative manifest in document 009
 
 ### Gate 2: Capability resolution complete
 
@@ -89,6 +98,7 @@ Required before worker gating changes:
 2. canonical capability route IDs exist
 3. route alias policy is explicit
 4. provider lifecycle enrichment model is explicit
+5. activation state follows document 010 and route coverage follows document 011
 
 ### Gate 3: Worker gating complete
 
@@ -97,6 +107,7 @@ Required before service extraction:
 1. visibility uses ownership plus activation
 2. `send_message` remains available only through explicit messaging rules
 3. CI validates ownership exhaustiveness
+4. activation is resolved from the durable source in document 010
 
 ### Gate 4: Crypto-trading extraction complete
 
@@ -106,6 +117,8 @@ Required before messaging extraction:
    abstraction
 2. service authentication, idempotency, deadlines, and typed failures are real
 3. trading-instance authority is preserved
+4. every tool owned by `crypto-trading` in document 009 executes through the
+   capability service; no partial tool slice qualifies for this gate
 
 ### Gate 5: Messaging extraction complete
 
@@ -114,6 +127,7 @@ Required before naming cleanup:
 1. `send_message` and `send_email` run through the messaging capability service
 2. provider lifecycle and health appear correctly in capability APIs and UI
 3. preset handling is aligned in UI surfaces
+4. service boundary behavior follows document 008 without an in-process fallback
 
 ## Anti-Scope-Creep Rules
 

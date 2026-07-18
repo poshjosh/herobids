@@ -4,6 +4,7 @@
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)  
 **Depends on:** [Messaging Capability Extraction](./006-messaging-capability-extraction.md)
+**Normative inputs:** [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md), [Capability Activation Model](./010-capability-activation-model.md), [Capability Route And Response Migration Manifest](./011-capability-route-and-response-migration-manifest.md)
 
 ## Purpose
 
@@ -32,6 +33,8 @@ This phase does not include:
 3. updated stable docs for capability, runtime family, preset, tool grant,
    ownership, and route-ID terminology
 4. conflicting draft capability plans marked superseded where necessary
+5. a before-and-after terminology inventory listing allowed compatibility terms,
+   prohibited new usages, and intentional grep residuals
 
 ## Implementation Notes
 
@@ -50,6 +53,7 @@ This phase is complete only when:
 2. stable docs align with the extracted architecture
 3. no behavior changes are introduced by the cleanup itself
 4. any remaining legacy terms are explicitly documented as compatibility terms
+5. grep residuals match the approved terminology inventory exactly
 
 ## Validation And Verification
 
