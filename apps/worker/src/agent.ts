@@ -2042,6 +2042,39 @@ async function shutdown(reason: string): Promise<void> {
   process.exit(0);
 }
 
+/**
+ * Build a user-facing message that presents the preset-review assessment
+ * to the agent's LLM. The agent can then use transition tools
+ * (get_market_preset_assessment, recommend_preset_transition,
+ * apply_preset_transition) to evaluate and act.
+ */
+function buildPresetReviewMessage(
+  ctx: ScannerWakeContext & { scannerKind: 'preset_review' },
+): string {
+  const lines: string[] = [
+    '🔔 **Preset Review Assessment Available**',
+    '',
+    'A shared market assessment has been completed for your trading segment.',
+    'The platform assessor has ranked the available strategy presets for the current market conditions.',
+    '',
+    '**Assessment Summary:**',
+    `- Recommended Preset: **${ctx.recommendedPreset}**`,
+    `- Your Current Preset: **${ctx.currentPreset}**`,
+    `- Relative Score Uplift: **${(ctx.relativeUplift * 100).toFixed(1)}%**`,
+    `- Assessor Confidence: **${(ctx.confidence * 100).toFixed(0)}%**`,
+    `- Assessment Reference: \`${ctx.assessmentRef}\``,
+    '',
+    'You can use the following tools to evaluate this assessment:',
+    '- `get_market_preset_assessment` — read the full assessment artifact',
+    '- `recommend_preset_transition` — get a transition recommendation combining the assessment with your local state',
+    '- `apply_preset_transition` — apply a preset switch (entries-only or with existing position adjustments)',
+    '',
+    '**Reminder:** You are the final decision-maker for your account. The platform recommendation is advisory.',
+    'Consider your open positions, recent performance, and creator-locked risk before switching.',
+  ];
+  return lines.join('\n');
+}
+
 async function runTick(): Promise<void> {
   tickCount++;
   refreshToolCircuits();
@@ -2049,6 +2082,10 @@ async function runTick(): Promise<void> {
 
   const tickId = crypto.randomUUID();
   currentTickId = tickId;
+
+  // ── 002: Preset-review wake state — set by the detection block below,
+  // injected into the user context after buildTickUserContext consumes the wake.
+  let presetReviewMessage: string | null = null;
 
   // Check session wall-clock expiry before each tick.
   if (sandboxEnforcer.isExpired(SESSION_ID!)) {
@@ -2375,6 +2412,38 @@ async function runTick(): Promise<void> {
       handleTickSuccess();
       await sendHeartbeat('ready');
       return;
+    }
+
+    // ── 002: Preset-review wake routing ─────────────────────────────────────
+    // When a scanner wake carries scannerKind === 'preset_review', route to the
+    // transition-review flow instead of the hybrid single-shot evaluator or the
+    // standard scout/judge loop. The agent is presented with the assessment
+    // artifact and can use transition tools to evaluate and apply preset changes.
+    const isPresetReviewWake = isScannerWake && latestScannerContext?.scannerKind === 'preset_review';
+
+    if (isPresetReviewWake && tradingTickWorkPlan.hasTradingCapability) {
+      logger.info({ tickCount, assessmentRef: latestScannerContext.assessmentRef },
+        'Preset-review wake detected — routing to transition-review flow');
+
+      // Build a transition-review user message from the wake context.
+      presetReviewMessage = buildPresetReviewMessage(latestScannerContext);
+
+      // Consume the wake so subsequent timer ticks do not re-trigger.
+      runtimeState.metrics.currentMarketWake = null;
+
+      // Fall through to the scout/judge loop below — the review message will
+      // be injected into the user context after buildTickUserContext runs.
+      // The scout/judge loop handles tool routing normally.
+      //
+      // NOTE: Transition tools (get_market_preset_assessment,
+      // recommend_preset_transition, apply_preset_transition) are not yet
+      // implemented. The agent will see the review message but cannot act on
+      // it until Items 10-11 are complete. This routing is correct and the
+      // tools will slot in seamlessly.
+      //
+      // No unit-test file exists for the agent runtime tick routing logic.
+      // Integration testing of the preset_review wake path will be covered
+      // by Item 17 (end-to-end validation).
     }
 
     // Determine whether to use the single-shot hybrid evaluator.
@@ -2724,6 +2793,12 @@ async function runTick(): Promise<void> {
     refreshCapabilityPolicy();
     if (tickCount === 1) {
       userContext += '\n\nThis is your first tick. Start working towards your goal.';
+    }
+
+    // ── 002: Inject preset-review message if a preset_review wake was detected ──
+    if (presetReviewMessage) {
+      userContext = presetReviewMessage + '\n\n' + userContext;
+      presetReviewMessage = null; // consumed
     }
 
     // Build the prompt
