@@ -25,6 +25,9 @@ Added explicit `Cache-Control` headers to `docker/nginx.conf`:
 
 ## Verification
 
-- Rebuilt the `web` image on the staging server and redeployed.
-- Confirmed via `curl -I` against staging that `/assets/*.js` now returns `Cache-Control: public, max-age=31536000, immutable` and `/` (and other non-asset paths) return `Cache-Control: no-cache`.
-- Asked the user to hard-refresh / clear cache once to pick up the corrected headers going forward; subsequent deploys will self-correct automatically since `index.html` will no longer be cached.
+- Rebuilt the `web` image on the staging server (`docker compose build web`, targeted single-service build to avoid the known parallel-bake OOM/CPU-starvation risk on the Hetzner box) and recreated the `web` container.
+- `docker exec herobids-web-1 nginx -t` — config syntax OK.
+- `curl -I https://staging.openaidom.com/assets/<hashed>.js` → `cache-control: public, max-age=31536000, immutable`.
+- `curl -I https://staging.openaidom.com/connections` → `cache-control: no-cache`.
+- `/health` still returns `200` after the redeploy.
+- The affected user still needs one hard-refresh (or a browser restart) to evict their already-cached stale `index.html`; all subsequent deploys will self-correct automatically since `index.html` will no longer be cached going forward.
