@@ -56,6 +56,8 @@ import { LocalDocumentStore } from '@herobids/documents';
 import { UserEventPublisher } from './user-event-publisher.js';
 import { ActorHealthPublisher } from './actor-health-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
+import { PlatformAssessor } from './market-intelligence/index.js';
+import type { PlatformAssessorDeps } from './market-intelligence/index.js';
 import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
@@ -1842,6 +1844,63 @@ const marketIntelCoordinator = appConfig.marketData
 
 marketIntelCoordinator?.start();
 
+// ── Platform Assessor ───────────────────────────────────────────────────────
+// Scheduled assessments of market segments — deterministic evidence gathering,
+// per-preset scorecard generation, and LLM ranking. Phase 1 scaffolding that
+// will be enriched with real market data integration in subsequent items.
+
+const paConfig = appConfig.platformAssessor;
+const platformAssessor = new PlatformAssessor(
+  {
+    enabled: paConfig.enabled && Boolean(appConfig.marketData),
+    assessmentIntervalMs: paConfig.assessmentIntervalMs,
+    maxConcurrentAssessments: paConfig.maxConcurrentAssessments,
+    maxLlmCallsPerCycle: paConfig.maxLlmCallsPerCycle,
+    artifactStalenessMs: paConfig.artifactStalenessMs,
+    segmentFamilies: paConfig.segmentFamilies,
+    venueFamilies: paConfig.venueFamilies,
+    styleTiers: paConfig.styleTiers,
+    workerId,
+  },
+  {
+    db,
+    redis: redisClient,
+    // Phase 1 stub — regime snapshot integration deferred to subsequent items
+    getRegimeSnapshot: async (_segmentKey) => {
+      // Return a basic placeholder regime. Full integration with the market-data
+      // regime pipeline will be wired in a follow-up item.
+      return {
+        pass: true,
+        reasons: ['platform-assessor: regime pipeline not yet integrated'],
+        details: {
+          benchmarkSymbol: 'BTC',
+          currentPrice: 0,
+          emaFast: 0,
+          emaSlow: 0,
+          emaTrend: 0,
+          emaAlignment: 'bullish' as const,
+          adxValue: 0,
+          choppy: false,
+          vwap: 0,
+          priceAboveVwap: true,
+          marketStructure: 'higherHighs' as const,
+        },
+      };
+    },
+    // Phase 1 stub — preset catalog integration deferred
+    getPresetKeys: async (_styleTier: string) => {
+      // Return a placeholder list. Full preset catalog query will be wired in a follow-up item.
+      return ['momentum_v1', 'mean_reversion_v1', 'trend_following_v1'];
+    },
+    // Phase 1 stub — LLM integration deferred; rankPresets returns a basic artifact
+    callLlm: async (_prompt: string) => {
+      return '{}';
+    },
+  } satisfies PlatformAssessorDeps,
+);
+
+platformAssessor.start();
+
 // ── Economic calendar background refresh ─────────────────────────────────
 // The worker periodically fetches Forex Factory economic calendar data via
 // Scrapfly and writes it to a shared Redis cache. Agent tick loops read
@@ -2030,6 +2089,7 @@ process.on('SIGTERM', async () => {
   reminderCoordinator.stop();
   marketMonitor.stop();
   await marketIntelCoordinator?.stop();
+  await platformAssessor.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
   await backtestRuntime.stop();
@@ -2057,6 +2117,7 @@ process.on('SIGINT', async () => {
   reminderCoordinator.stop();
   marketMonitor.stop();
   await marketIntelCoordinator?.stop();
+  await platformAssessor.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
   await backtestRuntime.stop();

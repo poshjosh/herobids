@@ -602,6 +602,14 @@ liveRollout:
   timeoutCheckIntervalMs: 10000           # frequency of live timeout scans
   crashPolicy: alert_manual_intervention  # auto_go_flat | alert_manual_intervention
 
+# ── Platform Assessor ──────────────────────────────────────────────────────
+# Scheduled assessment of market segments — deterministic evidence gathering,
+# per-preset scorecard generation, and LLM ranking. Phase 1 scaffolding.
+platformAssessor:
+  venueFamilies:
+    - hyperliquid-orderbook
+    - bybit-orderbook
+
 # Market intelligence — always-on discovery coordinator and monitor.
 # Controls the background market intelligence subsystem that wakes agents
 # when market conditions match their registered watches.

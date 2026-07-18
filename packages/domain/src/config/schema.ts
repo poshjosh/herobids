@@ -1282,6 +1282,27 @@ export const MarketIntelligenceConfigSchema = z.object({
   ).optional().default({}),
 });
 
+// ── Platform Assessor Config ───────────────────────────────────────────────
+
+export const PlatformAssessorConfigSchema = z.object({
+  /** Enable/disable the platform assessor. Default: true */
+  enabled: z.boolean().default(true),
+  /** Assessment interval in ms. Default: 6 hours (21_600_000) */
+  assessmentIntervalMs: z.number().int().min(60_000).default(21_600_000),
+  /** Maximum concurrent assessments. Default: 1 */
+  maxConcurrentAssessments: z.number().int().min(1).default(1),
+  /** Budget caps: max LLM calls per assessment cycle. Default: 20 */
+  maxLlmCallsPerCycle: z.number().int().min(1).default(20),
+  /** Staleness duration for artifacts in ms. Default: 12 hours (43_200_000) */
+  artifactStalenessMs: z.number().int().min(60_000).default(43_200_000),
+  /** Configured segment families to assess. Empty = all. */
+  segmentFamilies: z.array(z.string()).default([]),
+  /** Configured venue families to assess. Empty = all. */
+  venueFamilies: z.array(z.string()).default([]),
+  /** Style tiers to run assessments for. Default: all three */
+  styleTiers: z.array(z.enum(['economy', 'standard', 'premium'])).default(['economy', 'standard', 'premium']),
+}).default({});
+
 export const SharedServicesConfigSchema = z.object({
   /** Redis hostname or IP reachable from agent runtimes. Default: 'redis' (Compose service name for local dev). */
   redisHost: z.string().default('redis'),
@@ -1400,6 +1421,7 @@ export const AppConfigSchema = z.object({
   marketDataRecording: MarketDataRecordingConfigSchema.default({}),
   marketData: MarketDataConfigSchema.optional(),
   marketIntelligence: MarketIntelligenceConfigSchema.default({}),
+  platformAssessor: PlatformAssessorConfigSchema.default({}),
   worker: WorkerConfigSchema.default({}),
   agentRuntime: AgentRuntimeConfigSchema,
   llm: LlmRuntimeConfigSchema.default({}),
@@ -1592,6 +1614,7 @@ export type AgentCostEstimatesConfig = AppConfig['agentCostEstimates'];
 export type MarketDataConfig = z.infer<typeof MarketDataConfigSchema>;
 export type TokenSafetyConfig = z.infer<typeof TokenSafetyConfigSchema>;
 export type MarketIntelligenceConfig = z.infer<typeof MarketIntelligenceConfigSchema>;
+export type PlatformAssessorConfig = z.infer<typeof PlatformAssessorConfigSchema>;
 export type AlertsConfig = z.infer<typeof AlertsConfigSchema>;
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type PlansConfig = z.infer<typeof PlansConfigSchema>;
