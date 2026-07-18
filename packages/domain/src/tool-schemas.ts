@@ -2,17 +2,30 @@ import { z } from 'zod';
 import {
   StrategySchema,
 } from './config/schema.js';
+import { TransitionModeSchema } from './market-assessment.js';
 
 // ── Preset Assessment & Transition Tool Parameter Schemas ──────────────────
 
-export const GetMarketPresetAssessmentParamsSchema = z.object({});
+export const GetMarketPresetAssessmentParamsSchema = z.object({
+  symbol: z.string().min(1).describe('Trading symbol to assess (e.g. "BTC", "ETH"). For swaps, the user-facing token symbol.'),
+  venueFamily: z.string().optional().describe('Venue family to scope the assessment. Inferred from agent binding if omitted.'),
+  instrumentKind: z.enum(['orderbook', 'perp', 'swap', 'dex']).optional().describe('Instrument kind. Inferred from venue family if omitted.'),
+  idempotencyKey: z.string().optional().describe('Client-provided idempotency key. Reuses a cached result without a new charge.'),
+});
 
-export const RecommendPresetTransitionParamsSchema = z.object({});
+export const RecommendPresetTransitionParamsSchema = z.object({
+  assessmentArtifactId: z.string().optional().describe('Exact assessment artifact ID from get_market_preset_assessment. If omitted, resolves from the latest fresh artifact for the agent.'),
+  symbol: z.string().optional().describe('Trading symbol to scope recommendation. Required if assessmentArtifactId is not provided.'),
+}).refine(
+  (data) => data.assessmentArtifactId != null || data.symbol != null,
+  { message: 'At least one of assessmentArtifactId or symbol must be provided.' },
+);
 
 export const ApplyPresetTransitionParamsSchema = z.object({
-  targetPreset: z.string().min(1).describe('The preset key to switch to (e.g., "momentum").'),
-  mode: z.enum(['entries_only', 'entries_and_tighten_existing']).describe('Transition mode: entries_only changes future entries; entries_and_tighten_existing also tightens stops on open positions.'),
-  reason: z.string().optional().describe('Optional reason for the transition (logged for audit).'),
+  assessmentArtifactId: z.string().min(1).describe('Exact assessment artifact ID used for the recommendation. Required for audit trail.'),
+  targetPreset: z.string().min(1),
+  mode: TransitionModeSchema,
+  reason: z.string().optional(),
 });
 
 export type GetMarketPresetAssessmentParams = z.infer<typeof GetMarketPresetAssessmentParamsSchema>;
@@ -405,23 +418,23 @@ const SCHEMA_REGISTRY: Record<string, SchemaEntry> = {
 
   'get_market_preset_assessment': {
     schema: zodToJsonSchemaSimple(GetMarketPresetAssessmentParamsSchema),
-    example: {},
-    version: '1.0.0',
-    description: 'Read the latest shared market preset assessment artifact for your trading segment. Returns ranked presets, confidence, and market summary.',
+    example: { symbol: 'BTC' },
+    version: '2.0.0',
+    description: 'Run an on-demand per-symbol market assessment. Returns ranked presets, confidence, and market summary for the given symbol. Results may be served from cache if within freshness window.',
   },
 
   'recommend_preset_transition': {
     schema: zodToJsonSchemaSimple(RecommendPresetTransitionParamsSchema),
-    example: {},
-    version: '1.0.0',
-    description: 'Get a preset transition recommendation combining the shared assessment with your local trading state (open positions, recent performance, risk limits).',
+    example: { assessmentArtifactId: 'artifact-abc123' },
+    version: '2.0.0',
+    description: 'Get a preset transition recommendation from a specific assessment artifact (or latest fresh artifact for the agent). Combines the shared assessment with your local trading state.',
   },
 
   'apply_preset_transition': {
     schema: zodToJsonSchemaSimple(ApplyPresetTransitionParamsSchema),
-    example: { targetPreset: 'momentum', mode: 'entries_only', reason: 'Strong momentum regime detected' },
-    version: '1.0.0',
-    description: 'Apply a preset transition. Supports entries_only (future entries use new preset) and entries_and_tighten_existing (tighten stops on open positions). Records the transition event for audit.',
+    example: { assessmentArtifactId: 'artifact-abc123', targetPreset: 'momentum', mode: 'entries_only', reason: 'Strong momentum regime detected' },
+    version: '2.0.0',
+    description: 'Apply a preset transition linked to a specific assessment artifact. Supports entries_only, entries_and_tighten_existing, and entries_and_full_transition modes. Records the transition event for audit.',
   },
 };
 
