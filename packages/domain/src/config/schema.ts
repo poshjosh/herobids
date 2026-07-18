@@ -1960,6 +1960,44 @@ export const IntelligenceConfigSchema = z.object({
   wakeIntervalMs: z.number().int().min(10_000).optional(),
 });
 
+// ── Platform Preset Assessment (002) ────────────────────────────────────────
+
+export const AllowedPresetsPolicySchema = z.object({
+  /** Preset keys the agent is allowed to use. Empty or absent = all presets in style tier. */
+  allowed: z.array(z.string()).optional(),
+  /** Style tier this agent is locked to. Defaults to the agent's style tier. */
+  styleTier: z.enum(['economy', 'standard', 'premium']).optional(),
+  /** When true, the agent can only use presets from its own style tier. */
+  restrictToStyleTier: z.boolean().default(true),
+});
+
+export const PresetTransitionPolicySchema = z.object({
+  /** Maximum preset switches per day. */
+  maxSwitchesPerDay: z.number().int().min(1).max(50).default(5),
+  /** Minimum time between switches in milliseconds. */
+  minDwellTimeMs: z.number().int().min(600_000).default(3_600_000), // 1 hour, 10 min floor to prevent preset thrashing
+  /** When true, switches with open positions require explicit transition action. */
+  requireExplicitTransitionWithOpenPositions: z.boolean().default(true),
+  /** Allowed transition modes for this agent.
+   * `entries_and_full_transition` is gated for later rollout per D12. */
+  allowedTransitionModes: z.array(
+    z.enum(['entries_only', 'entries_and_tighten_existing'])
+  ).default(['entries_only', 'entries_and_tighten_existing']),
+  /** When true, the agent may defer or reject platform recommendations. */
+  allowRejectPlatformRecommendations: z.boolean().default(true),
+});
+
+export const PlatformAssessmentOptInSchema = z.object({
+  /** When true, this agent participates in shared platform assessment. */
+  enabled: z.boolean().default(false),
+  /** Assessment mode: 'recommend_only' (shadow) or 'auto_apply' (live). */
+  mode: z.enum(['recommend_only', 'auto_apply']).default('recommend_only'),
+  /** Minimum confidence threshold for this agent to consider a recommendation. */
+  minConfidenceThreshold: z.number().min(0).max(1).optional(),
+  /** Minimum score uplift threshold for this agent to consider a recommendation. */
+  minScoreUpliftThreshold: z.number().min(0).max(100).optional(),
+});
+
 // ── Hybrid mode split (004) ─────────────────────────────────────────────────
 
 export const CapabilityModeSchema = z.enum(['intelligence', 'hybrid']);
@@ -1988,6 +2026,10 @@ export const UnifiedAgentConfigSchema = z.object({
     stopLossPct: z.number().min(0).optional(),
     takeProfitPct: z.number().min(0).optional(),
   }).optional(),
+  // 002: Platform Preset Assessment
+  allowedPresets: AllowedPresetsPolicySchema.optional(),
+  presetTransition: PresetTransitionPolicySchema.optional(),
+  platformAssessment: PlatformAssessmentOptInSchema.optional(),
 }).superRefine((data, ctx) => {
   if (!data.technical && !data.intelligence) {
     ctx.addIssue({
@@ -2031,3 +2073,6 @@ export type TechnicalConfig = z.infer<typeof TechnicalConfigSchema>;
 export type UnifiedAgentConfig = z.infer<typeof UnifiedAgentConfigSchema>;
 export type CapabilityMode = z.infer<typeof CapabilityModeSchema>;
 export type HybridMode = z.infer<typeof HybridModeSchema>;
+export type AllowedPresetsPolicy = z.infer<typeof AllowedPresetsPolicySchema>;
+export type PresetTransitionPolicy = z.infer<typeof PresetTransitionPolicySchema>;
+export type PlatformAssessmentOptIn = z.infer<typeof PlatformAssessmentOptInSchema>;
