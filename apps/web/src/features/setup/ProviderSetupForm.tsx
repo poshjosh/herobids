@@ -72,7 +72,7 @@ interface Props {
 
 export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, standalone }: Props) {
   const intl = useIntl();
-  const [providerChoice, setProviderChoice] = useState('');  // '' = not yet initialised; populated by effect below
+  const [providerChoice, setProviderChoice] = useState('');  // '' = not yet initialised; see defaultProviderChoice below
   const [label, setLabel] = useState('');
   const [secretEntries, setSecretEntries] = useState<SecretEntry[]>([createEntry()]);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
@@ -99,24 +99,31 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
   const emailProviders = allProviders.filter((p) => providerCapabilityGroup(p.categories) === 'email');
   const otherProviders = allProviders.filter((p) => providerCapabilityGroup(p.categories) === 'other');
 
-  // Auto-select the first trading provider once the catalog loads.
-  // Only fires when providerChoice is still '' (uninitialised) — never overrides an explicit user selection.
-  useEffect(() => {
-    if (providerChoice === '' && tradingProviders.length > 0) {
-      const first = tradingProviders[0];
-      if (first) setProviderChoice(first.id);
-    } else if (providerChoice === '' && allProviders.length === 0 && !catalogQuery.isLoading) {
-      // No known providers at all — fall back to custom
-      setProviderChoice(CUSTOM_PROVIDER_OPTION);
-    }
-  }, [providerChoice, tradingProviders, allProviders.length, catalogQuery.isLoading]);
+  // Default provider selection:
+  //  - Trading setups (Create AI Agent) default to the first trading provider once the catalog loads.
+  //  - General setups (Mission Control) default to the custom provider entry form.
+  // Derived synchronously so the very first render (including server-side/static rendering,
+  // before any effect can run) already reflects the default — never overrides an explicit
+  // user selection once providerChoice has been set.
+  const defaultProviderChoice = defaultCapability === 'trading'
+    ? (tradingProviders[0]?.id ?? (!catalogQuery.isLoading && allProviders.length === 0 ? CUSTOM_PROVIDER_OPTION : ''))
+    : CUSTOM_PROVIDER_OPTION;
+  const effectiveProviderChoice = providerChoice === '' ? defaultProviderChoice : providerChoice;
 
-  const selectedProvider = allProviders.find((provider) => provider.id === providerChoice);
-  const isOAuthProvider = oauthProviders.some((p) => p.id === providerChoice);
+  // Commit the derived default into state once known, so the <select> becomes a normal
+  // controlled input for subsequent explicit user changes.
+  useEffect(() => {
+    if (providerChoice === '' && defaultProviderChoice !== '') {
+      setProviderChoice(defaultProviderChoice);
+    }
+  }, [providerChoice, defaultProviderChoice]);
+
+  const selectedProvider = allProviders.find((provider) => provider.id === effectiveProviderChoice);
+  const isOAuthProvider = oauthProviders.some((p) => p.id === effectiveProviderChoice);
   const canGenerateWallet = selectedProvider?.walletGeneration?.available === true;
-  const isCustomProvider = providerChoice === CUSTOM_PROVIDER_OPTION;
+  const isCustomProvider = effectiveProviderChoice === CUSTOM_PROVIDER_OPTION;
   // For custom providers use the name (lowercased) as the provider ID
-  const effectiveProvider = isCustomProvider ? label.toLowerCase().trim() : providerChoice.trim();
+  const effectiveProvider = isCustomProvider ? label.toLowerCase().trim() : effectiveProviderChoice.trim();
 
   useEffect(() => {
     if (!canGenerateWallet && credentialMode === 'generated') {
@@ -194,7 +201,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
     <form onSubmit={handleSubmit}>
       <div style={{ marginBottom: '16px' }}>
         <FieldLabel>{intl.formatMessage({ id: 'setup.form.provider' })}</FieldLabel>
-        <select value={providerChoice} onChange={(e) => setProviderChoice(e.target.value)} style={inputStyle}>
+        <select value={effectiveProviderChoice} onChange={(e) => setProviderChoice(e.target.value)} style={inputStyle}>
           {tradingProviders.length > 0 && (
             <optgroup label={intl.formatMessage({ id: 'setup.form.group.trading' })}>
               {tradingProviders.map((provider) => (
