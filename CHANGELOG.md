@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Platform Preset Assessment & Agent Strategy Transition:** Shared market assessment pipeline that ranks strategy presets per market segment, enabling agents to switch presets based on market conditions. Key components:
+  - **Data model:** 5 new DB tables (`market_assessment_runs`, `market_assessment_artifacts`, `market_assessment_wake_decisions`, `agent_scan_metrics`, `agent_preset_transitions`) with foreign keys, unique constraints, and denormalized segment keys
+  - **Domain types:** `MarketAssessmentSegmentKey`, `MarketAssessmentArtifact`, `PresetScorecardEntry`, transition state machine, freshness/staleness validation
+  - **UnifiedAgentConfig:** `allowedPresets`, `presetTransition`, `platformAssessment` typed sections for agent-level preset policy
+  - **Preset versioning:** Mechanical behavior version from normalized SHA-256 hash of behavior-affecting fields
+  - **Scanner wake:** `ScannerWakeContext` refactored to discriminated union (`signal_scoring` | `preset_review`) with assessment routing
+  - **Platform Assessor:** Worker-hosted scheduled coordinator with leader election, evidence collection, and budget enforcement
+  - **Wake Gate:** 7-rule evaluation with materially-better threshold model, consecutive confirmation, and operator-configurable defaults
+  - **Transition tools:** `get_market_preset_assessment`, `recommend_preset_transition`, `apply_preset_transition` (v1: `entries_only`, `entries_and_tighten_existing`)
+  - **Shadow mode:** `recommend_only` gate blocks live transitions until validated; `config/default.yaml` fully wired
+  See [docs/features/2026/07/18/002-platform-preset-assessment-and-transition/001-plan.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/001-plan.md).
+
 ## v0.0.31 - 2026-07-18
 
 ### Added
