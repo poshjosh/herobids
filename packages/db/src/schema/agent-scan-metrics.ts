@@ -3,6 +3,9 @@ import { pgTable, text, timestamp, jsonb, integer, numeric, index } from 'drizzl
 /**
  * Agent scan metrics — per-scan statistics recorded for an agent running a specific preset.
  * These metrics are the phase-1 mandatory primitives for measuring preset signal quality.
+ *
+ * Scan-scope context (venueFamily, styleTier) describes the agent's candidate universe.
+ * Per-symbol assessment identity is NOT attached to these aggregate counters.
  */
 export const agentScanMetrics = pgTable('agent_scan_metrics', {
   id: text('id').primaryKey(),
@@ -12,16 +15,12 @@ export const agentScanMetrics = pgTable('agent_scan_metrics', {
   presetKey: text('preset_key').notNull(),
   /** Mechanically-derived behavior version hash */
   presetBehaviorVersion: text('preset_behavior_version').notNull(),
-  /** Segment key as JSON: { venueFamily, styleTier, universeScopeHash } */
-  segmentKey: jsonb('segment_key').notNull().$type<{
-    venueFamily: string;
-    styleTier: string;
-    universeScopeHash: string;
-  }>(),
-  /** Denormalized segment key components for efficient querying */
+  /** Scan-scope context: venue family (e.g. hyperliquid, jupiter) */
   venueFamily: text('venue_family').notNull(),
+  /** Scan-scope context: style tier (economy | standard | premium) */
   styleTier: text('style_tier').notNull(),
-  universeScopeHash: text('universe_scope_hash').notNull(),
+  /** Additional scan-scope metadata (e.g. filters, universe constraints) */
+  scanScope: jsonb('scan_scope').$type<Record<string, unknown>>(),
   scannedAt: timestamp('scanned_at', { withTimezone: true }).notNull(),
   candidatesDiscovered: integer('candidates_discovered').notNull().default(0),
   candidatesScored: integer('candidates_scored').notNull().default(0),
@@ -35,7 +34,6 @@ export const agentScanMetrics = pgTable('agent_scan_metrics', {
   index('idx_agent_scan_metrics_agent_id').on(t.agentId),
   index('idx_agent_scan_metrics_preset_key').on(t.presetKey),
   index('idx_agent_scan_metrics_scanned_at').on(t.scannedAt),
-  index('idx_agent_scan_metrics_segment_key').on(t.segmentKey),
-  index('idx_agent_scan_metrics_segment_components').on(t.venueFamily, t.styleTier, t.universeScopeHash),
+  index('idx_agent_scan_metrics_scan_scope').on(t.venueFamily, t.styleTier),
   index('idx_agent_scan_metrics_preset_scanned_at').on(t.presetKey, t.scannedAt),
 ]);

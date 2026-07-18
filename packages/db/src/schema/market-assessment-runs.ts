@@ -1,21 +1,36 @@
-import { pgTable, text, timestamp, jsonb, integer, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, integer, index, check } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 /**
- * Market assessment runs — platform-owned assessment executions for a market segment.
- * Each row tracks a single assessment run: config, status, and collected evidence.
+ * Market assessment runs — platform-owned assessment executions for a
+ * canonical per-symbol identity. Each row tracks a single assessment run:
+ * config, status, and collected evidence.
  */
 export const marketAssessmentRuns = pgTable('market_assessment_runs', {
   id: text('id').primaryKey(),
-  /** Segment key as JSON: { venueFamily, styleTier, universeScopeHash } */
-  segmentKey: jsonb('segment_key').notNull().$type<{
-    venueFamily: string;
-    styleTier: string;
-    universeScopeHash: string;
-  }>(),
-  /** Denormalized segment key components for efficient querying */
+
+  // ── Canonical identity columns ──────────────────────────────────────────
+
+  /** Instrument kind: orderbook | perp | swap | dex */
+  instrumentKind: text('instrument_kind').notNull(),
+  /** Venue family (e.g. hyperliquid, jupiter) */
   venueFamily: text('venue_family').notNull(),
+  /** Style tier: economy | standard | premium */
   styleTier: text('style_tier').notNull(),
-  universeScopeHash: text('universe_scope_hash').notNull(),
+  /** Symbol — required for orderbook/perp, null for swap/dex */
+  symbol: text('symbol'),
+  /** Network (canonical chain id) — required for swap/dex, null for orderbook/perp */
+  network: text('network'),
+  /** Address (canonical token address) — required for swap/dex, null for orderbook/perp */
+  address: text('address'),
+
+  // ── Identity snapshot for audit replay ──────────────────────────────────
+
+  /** Immutable canonical identity snapshot as JSON. */
+  identitySnapshot: jsonb('identity_snapshot').notNull().default(sql`'{}'::jsonb`).$type<Record<string, unknown>>(),
+
+  // ── Run lifecycle ───────────────────────────────────────────────────────
+
   startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   status: text('status').notNull().default('pending'), // pending | in_progress | completed | failed | budget_exhausted
@@ -25,7 +40,16 @@ export const marketAssessmentRuns = pgTable('market_assessment_runs', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('idx_market_assessment_runs_status').on(t.status),
-  index('idx_market_assessment_runs_segment_key').on(t.segmentKey),
   index('idx_market_assessment_runs_started_at').on(t.startedAt),
-  index('idx_market_assessment_runs_segment_components').on(t.venueFamily, t.styleTier, t.universeScopeHash),
+  index('idx_market_assessment_runs_identity_lookup').on(t.instrumentKind, t.venueFamily, t.styleTier, t.symbol, t.network, t.address),
+  // orderbook/perp → symbol NOT NULL, network IS NULL, address IS NULL
+  check('chk_market_assessment_runs_orderbook_perp', sql`
+    (${t.instrumentKind} IN ('orderbook', 'perp') AND ${t.symbol} IS NOT NULL AND ${t.network} IS NULL AND ${t.address} IS NULL)
+    OR ${t.instrumentKind} NOT IN ('orderbook', 'perp')
+  `),
+  // swap/dex → network NOT NULL, address NOT NULL, symbol IS NULL
+  check('chk_market_assessment_runs_swap_dex', sql`
+    (${t.instrumentKind} IN ('swap', 'dex') AND ${t.network} IS NOT NULL AND ${t.address} IS NOT NULL AND ${t.symbol} IS NULL)
+    OR ${t.instrumentKind} NOT IN ('swap', 'dex')
+  `),
 ]);

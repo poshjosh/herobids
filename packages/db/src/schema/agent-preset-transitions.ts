@@ -6,6 +6,10 @@ import { marketAssessmentArtifacts } from './market-assessment-artifacts.js';
  * Agent preset transitions — recorded preset-switch events for an agent.
  * Each row captures a complete transition: old preset, new preset, mode,
  * open-position context, and outcome.
+ *
+ * Identity is stored as an immutable snapshot (identitySnapshot) plus
+ * denormalized identity columns — not a live segment key — so later artifact
+ * replacement cannot make a recorded transition ambiguous.
  */
 export const agentPresetTransitions = pgTable('agent_preset_transitions', {
   id: text('id').primaryKey(),
@@ -21,16 +25,22 @@ export const agentPresetTransitions = pgTable('agent_preset_transitions', {
   newPresetBehaviorVersion: text('new_preset_behavior_version').notNull(),
   /** Assessment artifact that informed this transition (null if agent-initiated) */
   assessmentArtifactId: text('assessment_artifact_id').references(() => marketAssessmentArtifacts.id, { onDelete: 'set null' }),
-  /** Segment key as JSON: { venueFamily, styleTier, universeScopeHash } */
-  segmentKey: jsonb('segment_key').notNull().$type<{
-    venueFamily: string;
-    styleTier: string;
-    universeScopeHash: string;
-  }>(),
-  /** Denormalized segment key components for efficient querying */
-  venueFamily: text('venue_family').notNull(),
-  styleTier: text('style_tier').notNull(),
-  universeScopeHash: text('universe_scope_hash').notNull(),
+
+  // ── Immutable identity (no live segment key) ────────────────────────────
+
+  /** Immutable canonical identity snapshot at transition time. */
+  identitySnapshot: jsonb('identity_snapshot').notNull().$type<Record<string, unknown>>(),
+  /** Instrument kind: orderbook | perp | swap | dex */
+  instrumentKind: text('instrument_kind').notNull(),
+  /** Symbol — set for orderbook/perp, null for swap/dex */
+  symbol: text('symbol'),
+  /** Network (canonical chain id) — set for swap/dex, null for orderbook/perp */
+  network: text('network'),
+  /** Address (canonical token address) — set for swap/dex, null for orderbook/perp */
+  address: text('address'),
+
+  // ── Transition details ──────────────────────────────────────────────────
+
   /** Execution mode: shadow | live */
   mode: text('mode').notNull().default('live'),
   /** How existing positions were handled */
@@ -50,6 +60,6 @@ export const agentPresetTransitions = pgTable('agent_preset_transitions', {
   index('idx_agent_preset_transitions_agent_id').on(t.agentId),
   index('idx_agent_preset_transitions_applied_at').on(t.appliedAt),
   index('idx_agent_preset_transitions_outcome').on(t.outcome),
-  index('idx_agent_preset_transitions_segment_key').on(t.segmentKey),
-  index('idx_agent_preset_transitions_segment_components').on(t.venueFamily, t.styleTier, t.universeScopeHash),
+  index('idx_agent_preset_transitions_artifact_id').on(t.assessmentArtifactId),
+  index('idx_agent_preset_transitions_identity_lookup').on(t.instrumentKind, t.symbol, t.network, t.address),
 ]);

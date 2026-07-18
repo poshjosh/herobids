@@ -1,4 +1,5 @@
-import { pgTable, text, timestamp, jsonb, integer, index, check, sql } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, integer, index, check } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { agents } from './agents.js';
 
 /**
