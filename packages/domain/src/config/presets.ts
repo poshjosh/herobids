@@ -74,6 +74,8 @@ export type AgentTechnicalStrategyType = (typeof AGENT_TECHNICAL_STRATEGY_TYPES)
 export interface AgentPresetMapping {
   /** The preset key (e.g., "momentum", "scalper") from the presets YAML. */
   presetKey: string;
+  /** The style tier this preset belongs to (economy, standard, premium). */
+  presetStyle: string;
   /**
    * Deterministic behavior version derived mechanically from behavior-affecting
    * preset fields. Non-material changes (display name, description) are excluded.
