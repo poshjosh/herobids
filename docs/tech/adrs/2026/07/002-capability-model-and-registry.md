@@ -6,8 +6,8 @@
 ## Context
 
 OpenAIdom is no longer only a trading product. The platform direction is an
-agents-as-a-service model where multiple isolated capabilities can coexist,
-starting with crypto-trading and messaging.
+agents-as-a-service model where multiple isolated capabilities can coexist as
+separate deployable services, starting with crypto-trading and messaging.
 
 The current codebase uses the word `capability` for several different things:
 
@@ -43,10 +43,16 @@ The canonical product taxonomy is:
 
 Definitions:
 
-- **Capability**: an isolated product or service domain
+- **Capability**: a separately deployable isolated product or service domain
+   boundary
 - **Family**: a capability-specific grouping of providers that share a common
   interaction shape or contract
 - **Provider**: the concrete integration behind that family
+
+In this model, a capability is not just a logical product grouping. A declared
+product capability is expected to own its own deployable service boundary, even
+when product metadata for that capability is described centrally in the shared
+registry.
 
 The word **family** is intentionally capability-agnostic. It works for
 messaging and crypto-trading without introducing separate naming schemes such as
@@ -58,6 +64,10 @@ The first product capabilities are:
 
 1. `crypto-trading`
 2. `messaging`
+
+Both are first-class isolated capabilities and therefore must be implemented as
+separate deployable services rather than as in-process feature slices inside
+Agent Core.
 
 ### 3. Messaging capability model
 
@@ -170,7 +180,8 @@ The capability registry should live in shared domain code, not in a database
 table.
 
 The registry is static product metadata and should be defined close to shared
-provider metadata. A code-first registry is sufficient for the current stage and
+provider metadata in a shared domain package consumed across service
+boundaries. A code-first registry is sufficient for the current stage and
 avoids schema churn.
 
 ## Consequences
@@ -196,12 +207,16 @@ avoids schema churn.
 ## Follow-Up Rules
 
 1. New product docs must use `capability -> family -> provider` language.
-2. New design work must not use `email` as the long-term top-level capability.
-3. Runtime binding families must be documented as an implementation layer,
+2. Product capability language must treat a capability as a separately
+   deployable isolated service boundary, not just a conceptual grouping.
+3. New design work must not use `email` as the long-term top-level capability.
+4. Runtime binding families must be documented as an implementation layer,
    separate from product capability taxonomy.
-4. Telegram must not be forced into the same connection model as Gmail until a
+5. Telegram must not be forced into the same connection model as Gmail until a
    real user-owned chat provider model exists.
-5. Presets and roles must not be described as capabilities.
+6. Presets and roles must not be described as capabilities.
+7. Canonical public capability route IDs must use product capability IDs.
+   Runtime binding-family names may appear only as explicit legacy aliases.
 
 ## Explicit Non-Goals
 

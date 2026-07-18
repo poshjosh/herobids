@@ -45,6 +45,9 @@ One-hundredth of a percentage point (0.01%). 100 BPS = 1%. Used throughout the s
 
 ## C
 
+### Capability
+A separately deployable isolated product or service domain boundary. A capability owns its own public contracts, domain-specific configuration, runtime service boundary, and persistence boundary where durable state is required. `crypto-trading` and `messaging` are product capabilities.
+
 ### Connection
 A user-owned platform link to an external provider or system. Carries a user-facing label and may reference one Credential. Connections are capability-agnostic — they represent that something external has been linked, not what a specific agent is allowed to do with it.
 
@@ -79,6 +82,13 @@ How a trading decision is routed to a venue. The API accepts `live`, `paper`, an
 
 ### Explicit Safety Invariant
 A platform rule that may block or constrain trading because proceeding would be unsafe, unauthorized, unreconciled, or malformed. Examples: invalid schema, unauthorized instance access, unresolved state drift, hard exposure limits, venue mode mismatches.
+
+---
+
+## F
+
+### Family
+A capability-specific grouping of providers that share a common interaction shape or contract. Families are the middle level in the product taxonomy: `capability -> family -> provider`.
 
 ---
 
@@ -120,9 +130,15 @@ Legacy execution mode. See [Execution Mode](#execution-mode).
 ### Platform Safety Alert
 A system-authored notification delivered to a user for a critical trust or safety event. Non-configurable; always delivered regardless of agent or user preferences. Examples: runtime crash, agent paused by guardrail, critical reconciliation failure.
 
+### Provider
+The concrete integration behind a capability family. Examples include `gmail`, `telegram`, `hyperliquid`, and `bybit`.
+
 ---
 
 ## R
+
+### Role
+A user-facing archetype composed from one or more skills. Examples include `personal-assistant`, `researcher`, or `trader`. A role is not a capability.
 
 ### Reconciliation
 The process of comparing the platform's internal state (positions, balances) against the venue's actual state. Drift beyond configured thresholds may trigger alerts or block trading. Runs on a configurable interval (`reconciliation.intervalMs`).
@@ -134,8 +150,11 @@ The process of comparing the platform's internal state (positions, balances) aga
 ### Shadow
 Legacy execution mode. See [Execution Mode](#execution-mode).
 
+### Skill
+A reusable expertise package for an actor. A skill bundles instructions, approved tool access, and behavior guidance, and may depend on one or more capabilities.
+
 ### Skill Preset
-A bundled capability profile for an agent. Determines which tools and capabilities are available. Chosen at agent creation. Examples: `trading`, `personal-assistant`, `custom`.
+A current implementation term for a bundled role or skill selection for an agent. Determines which skills, tools, and capability access patterns are available. Chosen at agent creation. Examples: `trading`, `personal-assistant`, `custom`.
 
 ### Slippage
 The difference between the expected price of a trade and the price at which it actually executes. Configured in BPS (basis points). Test mode simulates realistic slippage via its concrete paper or shadow execution path.

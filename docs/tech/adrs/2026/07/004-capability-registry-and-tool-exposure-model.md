@@ -71,23 +71,30 @@ The registry is **not**:
 Each capability entry must describe:
 
 1. capability identity and display metadata
-2. families under that capability
-3. providers under each family
-4. which runtime binding families, if any, are relevant beneath that provider
-5. which tools are owned by that capability
-6. setup and routing semantics needed by higher layers
+2. canonical public route identity and any declared legacy aliases
+3. capability activation semantics
+4. families under that capability
+5. providers under each family
+6. which runtime binding families, if any, are relevant beneath that provider
+7. setup and routing semantics needed by higher layers
 
 Illustrative shape:
 
 ```ts
 type ProductCapabilityId = 'crypto-trading' | 'messaging';
+type CapabilityActivationMode = 'implicit' | 'explicit';
 
 interface CapabilityRegistryEntry {
   id: ProductCapabilityId;
+   publicRouteId: ProductCapabilityId;
+   legacyRouteAliases?: string[];
   displayName: string;
   description: string;
+   activation: {
+      mode: CapabilityActivationMode;
+      implicitFamilies?: string[];
+   };
   families: CapabilityFamilyEntry[];
-  ownedTools: string[];
 }
 
 interface CapabilityFamilyEntry {
@@ -99,6 +106,7 @@ interface CapabilityFamilyEntry {
 interface CapabilityProviderEntry {
   id: string;
   displayName: string;
+   lifecycle: 'available' | 'planned' | 'deprecated';
   runtimeBindingFamilies?: string[];
   transportMode?: 'connection-backed' | 'brokered' | 'internal';
 }
@@ -106,6 +114,18 @@ interface CapabilityProviderEntry {
 
 The exact TypeScript shape may differ, but the contract must preserve those
 meanings.
+
+Provider lifecycle in the registry is static product metadata.
+
+Runtime availability is a separate enrichment contract and must distinguish at
+least:
+
+1. provider lifecycle support from the registry
+2. capability-service health or reachability
+3. provider or binding readiness for this tenant or agent
+
+API and UI consumers must not offer setup, linking, or tool actions for a
+provider whose lifecycle is `planned`, even if the registry already lists it.
 
 ### 3. Initial capability entries
 
@@ -139,6 +159,16 @@ messaging
 The product registry may describe future providers before all of them are fully
 implemented, but implemented and non-implemented states must be explicit in
 consumer layers.
+
+For canonical route identity, product capability IDs win.
+
+Examples:
+
+1. `/capabilities/crypto-trading` is the canonical public route identity
+2. `/capabilities/trading` may exist only as a declared legacy alias during
+   migration
+3. canonical public APIs must not use runtime binding-family names as the
+   durable product identifier
 
 ### 4. Runtime binding families remain a lower implementation layer
 
@@ -178,7 +208,25 @@ Examples under the current design:
    - task-management tools
    - `execute_code`
 
-The registry must explicitly describe capability-owned tools.
+The authoritative ownership model must be machine-readable and exhaustive over
+`AgentToolName`.
+
+Illustrative shape:
+
+```ts
+type ToolOwnershipEntry =
+   | { kind: 'core' }
+   | { kind: 'general' }
+   | { kind: 'capability'; capability: ProductCapabilityId };
+
+type ToolOwnershipManifest = Record<AgentToolName, ToolOwnershipEntry>;
+```
+
+This ownership manifest is authoritative for exactly-one ownership.
+
+The capability registry may expose a derived per-capability view of owned tools,
+but CI must validate ownership from the exhaustive manifest rather than from an
+optional `ownedTools` array alone.
 
 It does not need to absorb every skill-scoped tool immediately.
 
@@ -198,6 +246,7 @@ In short:
 
 1. the tool catalog answers: "what is this tool?"
 2. the capability registry answers: "which capability owns this tool?"
+3. the ownership manifest answers: "who owns every known tool, exhaustively?"
 
 ### 7. Tool exposure is a composition model, not a direct registry lookup
 
@@ -207,9 +256,10 @@ Final tool visibility is composed from multiple layers:
 
 1. Agent Core baseline tools
 2. resolved skills and their `requiredTools`
-3. capability-owned tool metadata from the registry
-4. runtime readiness and degraded-dependency exclusions
-5. per-runtime or per-agent tool policy enforcement
+3. capability activation state
+4. capability-owned tool metadata from the registry and ownership manifest
+5. runtime readiness and degraded-dependency exclusions
+6. per-runtime or per-agent tool policy enforcement
 
 Illustrative flow:
 
@@ -230,6 +280,38 @@ visible tools for this agent session
 This preserves the current strength of the skill system while introducing
 capability ownership as a first-class concept.
 
+The visibility predicate must be explicit.
+
+A tool is visible only if all of the following are true:
+
+1. the tool exists in the global tool catalog
+2. the tool is requested by Agent Core baseline behavior or by a resolved skill
+3. the tool has exactly one owner in the ownership manifest
+4. if the tool is capability-owned, its owning capability is active for this
+   agent session
+5. any tool-specific provider, binding, or readiness requirement is satisfied
+6. the tool is not excluded by degradation, policy, or runtime safety controls
+
+Capability activation is separate from ownership.
+
+A capability is active for a session only when one of these is true:
+
+1. the registry marks it as implicitly active
+2. the agent explicitly enables it through its resolved capability set
+3. the session or runtime mode activates it by an explicit platform rule
+
+Initial rule:
+
+1. `messaging` is implicitly active for the platform inbox or brokered user
+   messaging path, so `send_message` may remain available through the base skill
+2. provider-linked messaging actions such as `send_email` still require
+   messaging activation plus the relevant provider or readiness state
+3. `crypto-trading` is explicitly activated, not implicit
+
+This prevents a capability-owned tool from appearing solely because a skill
+listed it, while still allowing platform-brokered user messaging to remain a
+first-class capability.
+
 ### 8. API and UI surfaces must consume the shared registry
 
 User-facing capability metadata must be read from the shared registry rather
@@ -249,6 +331,16 @@ For isolated capabilities, the registry is shared metadata across service
 boundaries. It is not a justification for collapsing capability
 implementations back into one process.
 
+API and UI enrichment must combine:
+
+1. static registry metadata
+2. ownership and activation metadata
+3. capability-service health or reachability
+4. tenant or agent-specific readiness data
+
+These are separate states and must not be collapsed into one generic
+"available" flag.
+
 ### 9. The registry must fail loudly on ambiguous ownership
 
 The registry is a boundary mechanism, not optional documentation.
@@ -260,10 +352,16 @@ Convention alone is insufficient.
 
 At minimum, the system should fail loudly when:
 
-1. a capability-owned tool has no registry owner
-2. a registry references an unknown tool
-3. a capability route is added without a matching registry entry
-4. a runtime binding family is mapped in code but not represented in the
+1. a known tool has no ownership manifest entry
+2. a tool has multiple owners
+3. a registry or ownership manifest references an unknown tool
+4. a capability-owned tool is missing from the owning capability view where
+   required
+5. a canonical capability route is added without a matching registry entry
+6. a legacy capability route alias is used without being declared in the
+   registry
+7. a planned provider is exposed as setup-ready or actionable
+8. a runtime binding family is mapped in code but not represented in the
    capability-resolution layer where required
 
 ## Consequences
@@ -280,6 +378,8 @@ At minimum, the system should fail loudly when:
    scattering hardcoded conditionals.
 6. Separately deployed capability services can still present one coherent
    product model.
+7. Tool ownership, capability activation, and provider lifecycle become
+   enforceable in CI rather than advisory.
 
 ### Negative
 
@@ -291,17 +391,27 @@ At minimum, the system should fail loudly when:
    later cleanup reduces terminology overlap.
 4. Shared metadata must be versioned carefully because multiple deployable
    services consume it.
+5. Public capability routes need an explicit migration plan away from existing
+   family-named endpoints such as `/capabilities/trading`.
 
 ## Follow-Up Rules
 
 1. Every new product capability must add a registry entry.
-2. Every capability-owned tool must declare exactly one capability owner.
-3. New user-facing capability routes and UI trees must read from the shared
+2. Every known tool must have exactly one ownership entry in the exhaustive
+   ownership manifest.
+3. Every capability-owned tool must declare exactly one owning capability.
+4. New user-facing capability routes and UI trees must read from the shared
    registry.
-4. Runtime binding families may remain implementation-facing, but product
+5. Canonical public capability route IDs must use product capability IDs.
+   Legacy aliases must be explicitly declared and deprecated.
+6. Runtime binding families may remain implementation-facing, but product
    capability logic must not bypass the registry.
-5. Skill-scoped general tools may remain outside the registry until they become
+7. Skill-scoped general tools may remain outside the registry until they become
    part of a product capability, but that status must be explicit.
+8. Capability-owned tool visibility must require both ownership and capability
+   activation; skill membership alone is insufficient.
+9. Provider lifecycle support, capability-service health, and binding readiness
+   must be modeled as separate states.
 
 ## Explicit Non-Goals
 
@@ -318,7 +428,10 @@ This ADR does not:
 This ADR is the design gate before implementation work that:
 
 1. adds `packages/domain/src/capability-registry.ts`
-2. exposes `crypto-trading` and `messaging` from shared domain metadata
-3. maps `crypto-trading` to the existing runtime binding family `trading`
-4. keeps messaging expressive even where runtime binding families do not exist
+2. adds an exhaustive tool-ownership manifest typed against `AgentToolName`
+3. exposes `crypto-trading` and `messaging` from shared domain metadata
+4. maps `crypto-trading` to the existing runtime binding family `trading`
+5. keeps messaging expressive even where runtime binding families do not exist
    yet for every provider
+6. defines canonical public capability route IDs and temporary legacy aliases
+7. defines capability activation and provider lifecycle enrichment rules

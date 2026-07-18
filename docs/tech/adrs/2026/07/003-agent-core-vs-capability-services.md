@@ -218,12 +218,63 @@ not ad hoc imports scattered across the runtime.
 At minimum, a capability service should be able to provide:
 
 1. capability metadata from the shared registry
-2. tool definitions and tool handlers
+2. tool definitions and capability-side invocation handlers
 3. context providers for prompt composition
 4. readiness and binding-family interpretation where applicable
 5. capability-specific API surfaces above the runtime
 
 This keeps Agent Core generic while still allowing capabilities to grow.
+
+### 7A. Cross-service tool invocation uses one versioned boundary contract
+
+Capability-owned tool execution must cross the service boundary through one
+versioned invocation contract.
+
+The transport may be synchronous RPC or a command-reply protocol, but both must
+carry the same logical envelope and result contract.
+
+At minimum, every capability-tool request must include:
+
+1. `contractVersion`
+2. `requestId`
+3. `idempotencyKey`
+4. `correlationId`
+5. `issuedAt` and `deadlineAt`
+6. caller service identity and service-to-service authentication material
+7. `tenantId`, `agentId`, and `sessionId`
+8. actor identity and provenance fields
+9. `capabilityId` and `toolName`
+10. validated request payload
+
+At minimum, every capability-tool result must include:
+
+1. `contractVersion`
+2. `requestId`
+3. `correlationId`
+4. terminal outcome: success or failure
+5. typed success payload or typed failure payload
+
+Typed failures must distinguish at least:
+
+1. validation failures
+2. authentication or authorization failures
+3. not-found failures
+4. precondition or readiness failures
+5. rate-limit or resource-exhaustion failures
+6. timeout or deadline-expired failures
+7. transient upstream failures
+8. internal non-retryable failures
+
+The contract must also define these semantics:
+
+1. caller deadlines are mandatory
+2. retries are allowed only with the same `idempotencyKey`
+3. side-effecting tools such as `submit_decision` and `send_message` must be
+   idempotent under at-least-once delivery, or must reject duplicate requests
+   deterministically
+4. capability services must authenticate the caller service and authorize the
+   tenant, actor, and capability context before execution
+5. no transport-specific shortcut may bypass this contract
 
 ### 8. Chat sessions use Agent Core and capabilities, not a separate runtime stack
 
@@ -323,6 +374,11 @@ deployment standard.
    one capability. Shared capability-specific implementation is not allowed.
 9. Any domain declared to be an isolated capability must be deployed as a
    separate service from Agent Core and from other isolated capabilities.
+10. Every cross-service capability-tool call must use the versioned invocation
+   contract with service authentication, tenant and actor identity,
+   correlation and idempotency keys, deadlines, and typed failures.
+11. Side-effecting capability tools must define idempotency behavior that is
+   safe under retry and at-least-once delivery.
 
 ## Explicit Non-Goals
 

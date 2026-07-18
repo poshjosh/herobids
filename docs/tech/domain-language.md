@@ -67,18 +67,96 @@ A bot run is transient. A blueprint is durable.
 
 ---
 
+## Capability
+
+A separately deployable isolated product or service domain boundary.
+
+A capability owns its own:
+- public boundary contracts
+- domain-specific configuration
+- runtime process or service
+- persistence boundary where durable state is required
+- provider and routing logic
+
+Examples of product capabilities include `crypto-trading` and `messaging`.
+
+Capabilities are not the same thing as skills, roles, presets, tools, runtime
+binding families, or providers.
+
+---
+
+## Family
+
+A capability-specific grouping of providers that share a common interaction
+shape or contract.
+
+Examples:
+- under `messaging`: `email`, `chat`, `inbox`
+- under `crypto-trading`: `swap`, `orderbook`
+
+Families are the middle level in the product taxonomy:
+
+`capability -> family -> provider`
+
+---
+
+## Provider
+
+The concrete integration behind a capability family.
+
+Examples:
+- under `messaging/email`: `gmail`, `yahoo`
+- under `messaging/chat`: `telegram`, `whatsapp`
+- under `crypto-trading/orderbook`: `hyperliquid`, `bybit`
+
+Providers may map to different runtime binding models. That implementation
+detail does not change the product taxonomy.
+
+---
+
+## Skill
+
+A reusable expertise package for an actor.
+
+A skill bundles instructions, approved tool access, and behavior guidance. A
+skill may depend on one or more capabilities, but it is not itself a
+capability.
+
+---
+
+## Role
+
+A user-facing archetype composed from one or more skills.
+
+Examples include `personal-assistant`, `researcher`, or `trader`.
+
+A role is a product packaging concept. It is not an isolated capability.
+
+---
+
 ## Skill Preset
 
-A bundled capability profile for an agent.
+A current implementation term for a bundled role or skill selection for an
+agent.
 
-A skill preset determines which tools and capabilities are available to the agent. It is chosen at agent creation and is not changed at runtime in the MVP.
+A skill preset determines which skills, tools, and capability access patterns
+are available to the agent. It is chosen at agent creation and is not changed
+at runtime in the MVP.
 
 Examples:
 - `trading` — decision submission, market data reads, send_message
 - `personal-assistant` — task management, web research, send_message
 - `custom` — user-defined capability bundle
 
-Skill presets belong on agents. Strategy presets (e.g. `momentum`) belong on bot blueprints.
+Skill preset is a legacy-heavy term in current code. Conceptually, the platform
+should distinguish:
+
+- **capability**: isolated deployable service boundary
+- **skill**: reusable expertise package
+- **role**: user-facing archetype composed from skills
+
+Skill presets belong on agents in the current implementation. Strategy presets
+(e.g. `momentum`) belong on bot blueprints.
 
 ---
 
