@@ -2046,8 +2046,7 @@ async function shutdown(reason: string): Promise<void> {
 /**
  * Build a user-facing message that presents the preset-review assessment
  * to the agent's LLM. The agent can then use transition tools
- * (get_market_preset_assessment, recommend_preset_transition,
- * apply_preset_transition) to evaluate and act.
+ * (`assess_strategy_preset`, `change_strategy_preset`) to evaluate and act.
  */
 function buildPresetReviewMessage(
   ctx: ScannerWakeContext & { scannerKind: 'preset_review' },
@@ -2065,12 +2064,11 @@ function buildPresetReviewMessage(
     `- Assessor Confidence: **${(ctx.confidence * 100).toFixed(0)}%**`,
     `- Assessment Reference: \`${ctx.assessmentRef}\``,
     '',
-    'You can use the following tools to evaluate this assessment:',
-    '- `get_market_preset_assessment` — read the full assessment artifact',
-    '- `recommend_preset_transition` — get a transition recommendation based on the assessment and your local state',
-    '- `apply_preset_transition` — apply a preset switch',
+    'You can use the following tools to evaluate and act on this assessment:',
+    '- `assess_strategy_preset` — request a new or read a cached assessment for one or more symbols',
+    '- `change_strategy_preset` — apply a preset switch for an assessed symbol',
     '',
-    '**Reminder:** The platform recommendation is advisory. To actually switch presets, you must use the `apply_preset_transition` tool.',
+    '**Reminder:** The platform recommendation is advisory. To actually switch presets, you must use the `change_strategy_preset` tool.',
   ];
   return lines.join('\n');
 }
@@ -2080,7 +2078,7 @@ function buildPresetReviewMessage(
  *
  * Presents the deterministic scanner pre-check results to the agent so it can
  * decide whether to request a full market assessment via
- * get_market_preset_assessment. The advice is purely informational — no
+ * `assess_strategy_preset`. The advice is purely informational — no
  * billing, no assessor invocation, no artifact creation occurs from the wake
  * alone.
  */
@@ -2446,11 +2444,9 @@ async function runTick(): Promise<void> {
       // be injected into the user context after buildTickUserContext runs.
       // The scout/judge loop handles tool routing normally.
       //
-      // NOTE: Transition tools (get_market_preset_assessment,
-      // recommend_preset_transition, apply_preset_transition) are not yet
-      // implemented. The agent will see the review message but cannot act on
-      // it until Items 10-11 are complete. This routing is correct and the
-      // tools will slot in seamlessly.
+      // NOTE: Transition tools (assess_strategy_preset,
+      // change_strategy_preset) are now implemented and registered.
+      // The agent can act on assessment review messages using these tools.
       //
       // No unit-test file exists for the agent runtime tick routing logic.
       // Integration testing of the preset_review wake path will be covered

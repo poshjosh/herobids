@@ -101,6 +101,9 @@ export type GetMarketPresetAssessmentParams = z.infer<typeof GetMarketPresetAsse
 export type RecommendPresetTransitionParams = z.infer<typeof RecommendPresetTransitionParamsSchema>;
 export type ApplyPresetTransitionParams = z.infer<typeof ApplyPresetTransitionParamsSchema>;
 
+export const ChangeStrategyPresetParamsSchema = ApplyPresetTransitionParamsSchema;
+export type ChangeStrategyPresetParams = ApplyPresetTransitionParams;
+
 /**
  * Tool Schema Registry — maps dot-path schema names to JSON Schemas with
  * examples and version info. Used by GET /api/v1/tool-schemas and the
@@ -499,11 +502,11 @@ const SCHEMA_REGISTRY: Record<string, SchemaEntry> = {
     description: 'Get a preset transition recommendation from a specific assessment artifact (or latest fresh artifact for the agent). Combines the shared assessment with your local trading state.',
   },
 
-  'apply_preset_transition': {
+  'change_strategy_preset': {
     schema: zodToJsonSchemaSimple(ApplyPresetTransitionParamsSchema),
     example: { assessmentArtifactId: 'artifact-abc123', targetPreset: 'momentum', mode: 'entries_only', reason: 'Strong momentum regime detected' },
     version: '2.0.0',
-    description: 'Apply a preset transition linked to a specific assessment artifact. Supports entries_only, entries_and_tighten_existing, and entries_and_full_transition modes. Records the transition event for audit.',
+    description: 'Apply a strategy preset change using an exact assessment artifact reference from assess_strategy_preset. Supports entries_only, entries_and_tighten_existing, and entries_and_full_transition modes. Records the transition event for audit.',
   },
 };
 

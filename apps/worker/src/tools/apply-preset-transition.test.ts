@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ToolContext } from '@herobids/domain';
-import { applyPresetTransitionTool } from './apply-preset-transition.js';
+import { changeStrategyPresetTool } from './apply-preset-transition.js';
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -35,9 +35,11 @@ function makeMockDb(overrides?: {
   const insertFn = overrides?.insertFn ?? (async () => undefined);
 
   // Build a mock that supports the drizzle query chain:
+  // db.select().from(table).where(...).limit(1) and
   // db.select().from(table).where(...).orderBy(...).limit(1)
   const queryBuilder: Record<string, unknown> = {
     where: vi.fn().mockReturnValue({
+      limit: vi.fn().mockResolvedValue(selectResult),
       orderBy: vi.fn().mockReturnValue({
         limit: vi.fn().mockResolvedValue(selectResult),
       }),
@@ -78,7 +80,7 @@ function makeActiveArtifact(overrides?: Record<string, unknown>) {
   };
 }
 
-describe('apply_preset_transition', () => {
+describe('change_strategy_preset', () => {
   // ── Valid params → success ─────────────────────────────────────────────
 
   it('records transition and returns success for valid params', async () => {
@@ -88,8 +90,8 @@ describe('apply_preset_transition', () => {
       db: makeMockDb({ selectResult: [artifact], insertFn: insertSpy }),
     });
 
-    const result = await applyPresetTransitionTool.execute(
-      { targetPreset: 'momentum', mode: 'entries_only', reason: 'Market shifted bullish' },
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'entries_only', reason: 'Market shifted bullish' },
       ctx,
     );
 
@@ -108,19 +110,19 @@ describe('apply_preset_transition', () => {
     expect(insertCall.agentId).toBe('agent-1');
   });
 
-  it('works without an active artifact (no allowed presets constraint)', async () => {
+  it('returns artifact_not_found for non-existent assessment artifact', async () => {
     const insertSpy = vi.fn().mockResolvedValue(undefined);
     const ctx = makeCtx({
       db: makeMockDb({ selectResult: [], insertFn: insertSpy }),
     });
 
-    const result = await applyPresetTransitionTool.execute(
-      { targetPreset: 'custom_preset', mode: 'entries_only' },
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'non_existent', targetPreset: 'custom_preset', mode: 'entries_only' },
       ctx,
     );
 
-    expect(result.success).toBe(true);
-    expect(result.data).toMatchObject({ applied: true, targetPreset: 'custom_preset' });
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('assessment.artifact_not_found');
   });
 
   it('journals the transition via agentConfigOps', async () => {
@@ -137,8 +139,8 @@ describe('apply_preset_transition', () => {
       },
     });
 
-    await applyPresetTransitionTool.execute(
-      { targetPreset: 'momentum', mode: 'entries_and_tighten_existing', reason: 'Better momentum signal' },
+    await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'entries_and_tighten_existing', reason: 'Better momentum signal' },
       ctx,
     );
 
@@ -157,8 +159,8 @@ describe('apply_preset_transition', () => {
   it('rejects invalid mode', async () => {
     const ctx = makeCtx();
 
-    const result = await applyPresetTransitionTool.execute(
-      { targetPreset: 'momentum', mode: 'invalid_mode' },
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'invalid_mode' },
       ctx,
     );
 
@@ -171,8 +173,8 @@ describe('apply_preset_transition', () => {
   it('rejects missing targetPreset', async () => {
     const ctx = makeCtx();
 
-    const result = await applyPresetTransitionTool.execute(
-      { mode: 'entries_only' },
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', mode: 'entries_only' },
       ctx,
     );
 
@@ -188,8 +190,8 @@ describe('apply_preset_transition', () => {
       db: makeMockDb({ selectResult: [artifact] }),
     });
 
-    const result = await applyPresetTransitionTool.execute(
-      { targetPreset: 'mean_reversion', mode: 'entries_only' },
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'mean_reversion', mode: 'entries_only' },
       ctx,
     );
 
@@ -207,8 +209,8 @@ describe('apply_preset_transition', () => {
       db: makeMockDb({ selectResult: [artifact], insertFn: insertSpy }),
     });
 
-    const result = await applyPresetTransitionTool.execute(
-      { targetPreset: 'any_preset', mode: 'entries_only' },
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'any_preset', mode: 'entries_only' },
       ctx,
     );
 
@@ -220,8 +222,8 @@ describe('apply_preset_transition', () => {
   it('returns error when db is unavailable', async () => {
     const ctx = makeCtx({ db: undefined });
 
-    const result = await applyPresetTransitionTool.execute(
-      { targetPreset: 'momentum', mode: 'entries_only' },
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'entries_only' },
       ctx,
     );
 
@@ -229,16 +231,16 @@ describe('apply_preset_transition', () => {
     expect(result.errorCode).toBe('db.unavailable');
   });
 
-  // ── Shadow mode (recommend_only) → blocked ────────────────────────────
+  // ── No shadow-mode gate when platformAssessment enabled ───────────────
 
-  it('blocks transition when agent is in shadow mode (recommend_only)', async () => {
+  it('succeeds without shadow-mode gate when platformAssessment is enabled', async () => {
     const artifact = makeActiveArtifact();
     const insertSpy = vi.fn().mockResolvedValue(undefined);
     const ctx = makeCtx({
       db: makeMockDb({ selectResult: [artifact], insertFn: insertSpy }),
       agentConfigOps: {
         getCurrentConfig: vi.fn().mockResolvedValue({
-          platformAssessment: { mode: 'recommend_only', enabled: true },
+          platformAssessment: { enabled: true },
         }),
         persistConfig: vi.fn(),
         appendJournal: vi.fn(),
@@ -247,15 +249,14 @@ describe('apply_preset_transition', () => {
       },
     });
 
-    const result = await applyPresetTransitionTool.execute(
-      { targetPreset: 'momentum', mode: 'entries_only' },
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'entries_only' },
       ctx,
     );
 
-    expect(result.success).toBe(false);
-    expect(result.errorCode).toBe('transition.shadow_mode_blocked');
-    expect(result.error).toContain('recommend_only');
-    expect(insertSpy).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ applied: true, targetPreset: 'momentum' });
+    expect(insertSpy).toHaveBeenCalledOnce();
   });
 
   it('allows transition when agent is in auto_apply mode', async () => {
@@ -274,8 +275,8 @@ describe('apply_preset_transition', () => {
       },
     });
 
-    const result = await applyPresetTransitionTool.execute(
-      { targetPreset: 'momentum', mode: 'entries_only' },
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'entries_only' },
       ctx,
     );
 

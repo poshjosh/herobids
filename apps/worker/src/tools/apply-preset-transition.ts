@@ -11,7 +11,7 @@ import { convertZodToJsonSchema } from './registry.js';
 import { createLogger } from '../logger.js';
 import { randomUUID } from 'node:crypto';
 
-const logger = createLogger('tool:apply-preset-transition');
+const logger = createLogger('tool:change-strategy-preset');
 
 type Db = PostgresJsDatabase<typeof schema>;
 
@@ -76,7 +76,7 @@ async function executeApplyPresetTransition(
     )) {
       return {
         success: false,
-        error: 'The assessment artifact has expired. Request a fresh assessment via get_market_preset_assessment before applying a transition.',
+        error: 'The assessment artifact has expired. Request a fresh assessment via assess_strategy_preset before applying a transition.',
         errorCode: 'assessment.artifact_expired',
       };
     }
@@ -164,12 +164,10 @@ async function executeApplyPresetTransition(
   }
 }
 
-export const applyPresetTransitionTool: AgentTool = {
-  name: 'apply_preset_transition',
+export const changeStrategyPresetTool: AgentTool = {
+  name: 'change_strategy_preset',
   description:
-    'Apply a preset transition using an exact assessment artifact reference. ' +
-    'Requires the assessmentArtifactId returned by recommend_preset_transition. ' +
-    'Supports modes: entries_only (future entries use new preset) and entries_and_tighten_existing (tighten stops on open positions). ' +
+    'Apply a strategy preset change using an exact assessment artifact reference from assess_strategy_preset. ' +
     'Validates artifact identity, freshness, and allowed presets before applying. ' +
     'Records an immutable transition event with identity snapshot for audit.',
   parametersSchema: ApplyPresetTransitionParamsSchema,

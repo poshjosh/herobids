@@ -143,14 +143,14 @@ describe('buildAssessmentReviewMessage', () => {
     expect(msg).toContain('v1112223334');
   });
 
-  it('guides the agent to use get_market_preset_assessment', () => {
+  it('guides the agent to use assess_strategy_preset', () => {
     const msg = buildAssessmentReviewMessage(makeScannerWakeContext());
-    expect(msg).toContain('get_market_preset_assessment');
+    expect(msg).toContain('assess_strategy_preset');
   });
 
-  it('warns that assessment is a billable action', () => {
+  it('warns that each assessed symbol incurs a charge', () => {
     const msg = buildAssessmentReviewMessage(makeScannerWakeContext());
-    expect(msg).toContain('billable action');
+    expect(msg).toContain('each assessed symbol incurs a charge');
   });
 
   it('states that no billing has occurred from the wake alone', () => {

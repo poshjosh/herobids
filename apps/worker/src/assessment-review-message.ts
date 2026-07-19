@@ -5,7 +5,7 @@ import type { ScannerWakeContext } from '@herobids/domain';
  *
  * Presents the deterministic scanner pre-check results to the agent so it can
  * decide whether to request a full market assessment via
- * get_market_preset_assessment. The advice is purely informational — no
+ * `assess_strategy_preset`. The advice is purely informational — no
  * billing, no assessor invocation, no artifact creation occurs from the wake
  * alone.
  */
@@ -30,10 +30,10 @@ export function buildAssessmentReviewMessage(
     ...adviceLines,
     '',
     '**What to do:**',
-    '- Use `get_market_preset_assessment` to request a full assessment for any candidate symbol.',
-    '  This is a **billable action** — each assessment request incurs a charge.',
-    '- If the assessment returns a strong recommendation, use `recommend_preset_transition` to evaluate a preset switch.',
-    '- Use `apply_preset_transition` to apply the change (if you agree with the recommendation).',
+    '- Use `assess_strategy_preset` to request a full assessment for one or more candidate symbols.',
+    '  Pass multiple symbols in one call (e.g. `["BTC", "ETH"]`) — each assessed symbol incurs a charge.',
+    '  The tool returns ranked presets, confidence scores, and the exact reference needed for `change_strategy_preset`.',
+    '- Use `change_strategy_preset` to apply the recommended preset switch for any assessed symbol.',
     '',
     `Next review eligible after: \`${ctx.nextEligibleAt}\``,
     '',

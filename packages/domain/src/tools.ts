@@ -263,7 +263,7 @@ export interface ToolDefinition {
 export const KNOWN_AGENT_TOOL_NAMES = [
   'adjust_bot_config',
   'adjust_risk_limits',
-  'apply_preset_transition',
+  'change_strategy_preset',
   'assess_strategy_preset',
   'browse_url',
   'check_regime',
@@ -357,7 +357,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   start_bot:           { category: 'write-database',      description: 'Start a stopped bot. Resumes trading per its configuration.' },
   adjust_bot_config:   { category: 'write-database',      description: 'Update configuration for a specific bot. Changes merged and take effect next tick.' },
   adjust_risk_limits:  { category: 'write-database',      description: 'Adjust mutable risk limits. Only operator-default-derived limits can be changed.' },
-  apply_preset_transition: { category: 'write-database', description: 'Apply a preset transition using an assessment artifact ID (from get_market_preset_assessment) and a mode. Supports: entries_only (future entries only) and entries_and_tighten_existing (tighten stops on open positions). Records the transition event for audit. Requires recommend_preset_transition to be called first when recommend_only mode is active.' },
+  change_strategy_preset: { category: 'write-database', description: 'Apply a strategy preset change using an exact assessment artifact reference from assess_strategy_preset. Supports: entries_only (future entries only) and entries_and_tighten_existing (tighten stops on open positions). Records the transition event for audit.' },
 
   // read-market-data
   search_tokens:       { category: 'read-market-data',    description: 'Search for tokens by name/symbol on DEX aggregators. Returns liquidity, price, safety metadata, network.' },
