@@ -14,7 +14,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **LLM ranker module** (`llm-ranker.ts`) — bounded evidence projection excluding all agent/account data; system/user prompt construction; JSON response parsing with code-fence stripping; deterministic artifact assembly (score bands, relativeUplift, recommendedPreset guarded by confidence/score policy, allowedPresets filtered by minAllowedScore)
   - **Assessor factory** (`assessor-factory.ts`) — `createPlatformAssessor()` builds a platform-owned LLM adapter using the `@herobids/llm` boundary; never falls back to agent LLM config
   - **41 unit tests** covering projection, response parsing, semantic validation, deterministic assembly, and edge cases
-  - All 208 market-intelligence tests pass; `pnpm lint` clean
+  - **Wired into worker composition root:** `createPlatformAssessor()` constructs at startup with provider validation (loud failure on misconfiguration); `AssessmentRequestService` created and wired into `assess_strategy_preset` tool via `setAssessmentRequestService`; evidence ports stubbed pending Plan 008
+  - Removed obsolete `maxLlmCallsPerCycle` from config schema, interface, YAML, factory, and tests
+  - Evidence-projection size caps: max 20 candidates, name ≤100 chars, description ≤500 chars
+  - Snapshot test for exact LLM prompt projection with regression detection
+  - All 210 market-intelligence tests pass; `pnpm lint` clean
   See [docs/features/2026/07/18/002-platform-preset-assessment-and-transition/009-llm-preset-ranking.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/009-llm-preset-ranking.md).
 
 - **Real Evidence & Deterministic Scorecards (008):** Replaced all placeholder evidence in `PlatformAssessor` with auditable market evidence and deterministic dry-run scorecards:
