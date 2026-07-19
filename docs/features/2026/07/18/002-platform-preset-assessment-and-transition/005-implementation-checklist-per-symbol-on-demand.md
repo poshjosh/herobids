@@ -3,6 +3,7 @@
 **Status:** Draft — authoritative implementation checklist
 **Clarifies:** [003-plan-amendment-per-symbol-on-demand-assessment.md](./003-plan-amendment-per-symbol-on-demand-assessment.md) and [004-decision-amendment-per-symbol-on-demand-assessment.md](./004-decision-amendment-per-symbol-on-demand-assessment.md)
 **Retains:** [001-plan.md](./001-plan.md) and [002-decision-record.md](./002-decision-record.md), except where the amendments or this checklist explicitly replace them
+**Follow-up Enforcement Plan:** [006-followup-plan.md](./006-followup-plan.md) — gap register, coverage gate, and end-to-end acceptance scenario for closing the remaining implementation gaps
 
 ---
 
@@ -574,6 +575,8 @@ When the schema change is added, verify a clean database applies the generated m
 ---
 
 ## 19. Outstanding Issues (from implementation session 2026-07-18)
+
+These issues are operationalized in [006-followup-plan.md](./006-followup-plan.md). Treat that follow-up plan as the mandatory closure checklist before declaring the end-to-end `assessment_review` flow complete.
 
 ### [Step 1] Identity & Billing Contracts
 - MEDIUM: Missing tests for `knownSymbols`-omitted, `perp`/`dex` resolution paths via `resolveAssessmentIdentity`
