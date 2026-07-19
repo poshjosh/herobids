@@ -1,7 +1,9 @@
 import crypto from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import { createLogger } from '../logger.js';
 import type { Logger } from 'pino';
 import type { Database } from '@herobids/db';
+import { marketAssessmentRuns, marketAssessmentArtifacts } from '@herobids/db';
 import {
   resolveAssessmentIdentity,
   ok,
@@ -9,6 +11,7 @@ import {
   type MarketAssessmentIdentity,
   type PlatformAssessorConfig,
 } from '@herobids/domain';
+import { PlatformAssessor } from './platform-assessor.js';
 
 // ── Outcome Types ───────────────────────────────────────────────────────────
 
@@ -78,12 +81,17 @@ export class AssessmentRequestService {
    */
   private readonly idempotencyCache = new Map<string, AssessmentRequestOutcome>();
 
+  // NOTE: This uses the domain PlatformAssessorConfig (@herobids/domain)
+  // which includes scheduling fields (minReviewIntervalMs, etc.) not present
+  // in the local PlatformAssessorConfig (platform-assessor.ts).
+  // When billing is wired (Step 7), use the domain type.
   constructor(
-    _db: Database,
+    private readonly db: Database,
     _operatorConfig: PlatformAssessorConfig,
+    private readonly assessor: PlatformAssessor,
   ) {
     this.log = createLogger('assessment-request-service');
-    void _db; void _operatorConfig;
+    void _operatorConfig;
   }
 
   // ── Public API ────────────────────────────────────────────────────────
@@ -163,7 +171,7 @@ export class AssessmentRequestService {
       return ok(await existingLease);
     }
 
-    const leasePromise = this.runAssessorStub(identity, params.agentId);
+    const leasePromise = this.runAssessor(identity, params.agentId);
     this.inFlightLeases.set(key, leasePromise);
 
     try {
@@ -175,33 +183,153 @@ export class AssessmentRequestService {
     }
   }
 
-  // ── Assessor Stub ────────────────────────────────────────────────────
+  // ── Assessor ─────────────────────────────────────────────────────────
 
   /**
-   * Placeholder assessor that returns a synthetic completed artifact.
-   *
-   * In Step 7 this is replaced by the real PlatformAssessor on-demand
-   * execution path: collect evidence → call LLM → persist run + artifact.
+   * Run the real platform assessor: persist a run record, call the assessor,
+   * persist the resulting artifact, and update run lifecycle.
    */
-  private async runAssessorStub(
+  private async runAssessor(
     identity: MarketAssessmentIdentity,
     _agentId: string,
   ): Promise<AssessmentRequestOutcome> {
-    const artifactId = crypto.randomUUID();
+    const runId = crypto.randomUUID();
+    const now = new Date();
+
+    // Create run record.
+    // NOTE: The run insert + assessor call + artifact insert are
+    // eventually-consistent — the assessor call is long-lived and cannot be
+    // wrapped in a DB transaction.  A stale-run reconciliation mechanism
+    // (e.g. periodic sweep of in_progress runs older than a threshold)
+    // should be added to clean up orphaned runs.
+    try {
+      await this.db.insert(marketAssessmentRuns).values({
+        id: runId,
+        instrumentKind: identity.instrumentKind,
+        venueFamily: identity.venueFamily,
+        styleTier: identity.styleTier,
+        symbol: this.identitySymbol(identity),
+        network: this.identityNetwork(identity),
+        address: this.identityAddress(identity),
+        identitySnapshot: this.serializeIdentity(identity),
+        startedAt: now,
+        status: 'in_progress',
+        evidenceRefs: [],
+      });
+    } catch (err) {
+      this.log.error({ err, runId }, 'Failed to create assessment run record');
+      return { kind: 'provider_failed', error: 'Failed to persist run intent' };
+    }
+
+    // Call the real assessor
+    const result = await this.assessor.assessIdentity(identity);
+
+    if (!result.ok) {
+      // Update run to failed
+      try {
+        await this.db.update(marketAssessmentRuns)
+          .set({ status: 'failed', errorMessage: result.error.message, completedAt: new Date() })
+          .where(eq(marketAssessmentRuns.id, runId));
+      } catch (err) {
+        this.log.error({ err, runId }, 'Failed to update run status to failed');
+      }
+      return { kind: 'provider_failed', error: result.error.message };
+    }
+
+    const artifact = result.data;
+
+    // Persist artifact
+    try {
+      await this.db.insert(marketAssessmentArtifacts).values({
+        id: artifact.id,
+        instrumentKind: identity.instrumentKind,
+        venueFamily: identity.venueFamily,
+        styleTier: identity.styleTier,
+        symbol: this.identitySymbol(identity),
+        network: this.identityNetwork(identity),
+        address: this.identityAddress(identity),
+        identitySnapshot: this.serializeIdentity(identity),
+        assessmentRunId: runId,
+        assessedAt: new Date(artifact.assessedAt),
+        expiresAt: new Date(artifact.expiresAt),
+        maxActorUseAge: artifact.maxActorUseAge,
+        maxWakeAge: artifact.maxWakeAge,
+        assessmentVersion: artifact.assessmentVersion,
+        artifactVersion: artifact.artifactVersion,
+        rankingPolicyVersion: artifact.rankingPolicyVersion,
+        status: artifact.status,
+        allowedPresets: artifact.allowedPresets,
+        currentMarketSummary: artifact.currentMarketSummary,
+        regimeSummary: artifact.regimeSummary,
+        scanHealthSummary: artifact.scanHealthSummary,
+        presetRankings: artifact.presetRankings,
+        recommendedPreset: artifact.recommendedPreset,
+        relativeUplift: artifact.relativeUplift != null ? String(artifact.relativeUplift) : null,
+        confidence: String(artifact.confidence),
+        urgency: artifact.urgency,
+        reasoningSummary: artifact.reasoningSummary,
+        evidenceRefs: artifact.evidenceRefs,
+      });
+    } catch (err) {
+      this.log.error({ err, artifactId: artifact.id }, 'Failed to persist assessment artifact');
+      // Update run to failed
+      try {
+        await this.db.update(marketAssessmentRuns)
+          .set({ status: 'failed', errorMessage: 'Failed to persist artifact', completedAt: new Date() })
+          .where(eq(marketAssessmentRuns.id, runId));
+      } catch (err2) {
+        this.log.error({ err: err2, runId }, 'Failed to update run status after artifact persistence failure');
+      }
+      return { kind: 'provider_failed', error: 'Failed to persist assessment artifact' };
+    }
+
+    // Update run to completed
+    try {
+      await this.db.update(marketAssessmentRuns)
+        .set({ status: 'completed', completedAt: new Date() })
+        .where(eq(marketAssessmentRuns.id, runId));
+    } catch (err) {
+      this.log.warn({ err, runId }, 'Artifact persisted but run completion update failed — run may need manual reconciliation');
+    }
 
     this.log.info(
-      { identityKey: identityKey(identity), artifactId },
-      'Assessor stub completed (placeholder)',
+      { identityKey: identityKey(identity), artifactId: artifact.id, runId },
+      'Assessment completed and persisted',
     );
 
     return {
       kind: 'assessment_completed',
-      assessmentArtifactId: artifactId,
+      assessmentArtifactId: artifact.id,
       billed: true,
     };
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────
+
+  private identitySymbol(identity: MarketAssessmentIdentity): string | null {
+    if (identity.instrumentKind === 'orderbook' || identity.instrumentKind === 'perp') {
+      return (identity as Extract<MarketAssessmentIdentity, { instrumentKind: 'orderbook' | 'perp' }>).symbol;
+    }
+    return null;
+  }
+
+  private identityNetwork(identity: MarketAssessmentIdentity): string | null {
+    if (identity.instrumentKind === 'swap' || identity.instrumentKind === 'dex') {
+      return (identity as Extract<MarketAssessmentIdentity, { instrumentKind: 'swap' | 'dex' }>).network;
+    }
+    return null;
+  }
+
+  private identityAddress(identity: MarketAssessmentIdentity): string | null {
+    if (identity.instrumentKind === 'swap' || identity.instrumentKind === 'dex') {
+      return (identity as Extract<MarketAssessmentIdentity, { instrumentKind: 'swap' | 'dex' }>).address;
+    }
+    return null;
+  }
+
+  private serializeIdentity(identity: MarketAssessmentIdentity): Record<string, unknown> {
+    return { ...identity };
+  }
 
   /**
    * Store an outcome in the idempotency cache so repeat requests with
