@@ -7,3 +7,4 @@ export { createPlatformAssessor, type AssessorFactoryResult } from './assessor-f
 export { ReviewScheduler, createReviewScheduler, type ReviewSchedulerConfig, type ReviewSchedulerDeps, type ReviewCheckOutcome } from './review-scheduler.js';
 export { AssessmentRequestService, type AssessmentRequestOutcome, type AssessmentRequestParams, type BatchInstrumentResult, type BatchAssessmentResult } from './assessment-request-service.js';
 export { AssessmentIdentityResolverImpl, type AssessmentIdentityResolverDeps } from './assessment-identity-resolver.js';
+export { PresetTransitionService, type PresetTransitionServiceDeps } from './preset-transition-service.js';
