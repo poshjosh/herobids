@@ -1,3 +1,4 @@
+import { useIntl } from 'react-intl';
 import { FieldLabel } from './ui.js';
 import type { PresetFromApi } from './api-client.js';
 
@@ -31,6 +32,7 @@ export function StrategyPresetSelector({
   loading,
   showCustom = true,
 }: StrategyPresetSelectorProps) {
+  const intl = useIntl();
   const cardStyle = (active: boolean): React.CSSProperties => ({
     padding: '10px 12px',
     borderRadius: '8px',
@@ -45,7 +47,7 @@ export function StrategyPresetSelector({
 
   return (
     <div>
-      <FieldLabel>Strategy preset</FieldLabel>
+      <FieldLabel>{intl.formatMessage({ id: 'agents.technical.preset.label' })}</FieldLabel>
       {loading ? (
         <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', padding: '8px 0' }}>
           Loading presets…

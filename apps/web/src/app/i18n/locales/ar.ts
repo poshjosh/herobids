@@ -761,6 +761,14 @@ export const messages: Record<string, string> = {
   'agents.technical.preset.custom.label': 'مخصص',
   'agents.technical.preset.custom.description': 'اضبط المؤشرات يدوياً',
 
+  // Filter Trades
+  'agents.technical.filterTrades.label': 'تصفية الصفقات',
+
+  // Platform Assessment (Periodic Strategy Assessment)
+  'agents.technical.platformAssessment.label': 'تقييم دوري للاستراتيجية',
+  'agents.technical.platformAssessment.description': 'تقييم الاستراتيجية بشكل دوري والتكيف مع السوق',
+  'agents.technical.platformAssessment.enable': 'تفعيل التقييم الدوري للاستراتيجية',
+
   // Discovery filters
   'agents.technical.filters.title': 'مرشحات الاكتشاف',
   'agents.technical.filters.venue': 'المنصة',

@@ -763,6 +763,14 @@ export const messages: Record<string, string> = {
   'agents.technical.preset.custom.label': 'कस्टम',
   'agents.technical.preset.custom.description': 'इंडिकेटर मैन्युअल रूप से कॉन्फ़िगर करें',
 
+  // Filter Trades
+  'agents.technical.filterTrades.label': 'ट्रेड फ़िल्टर करें',
+
+  // Platform Assessment (Periodic Strategy Assessment)
+  'agents.technical.platformAssessment.label': 'आवधिक रणनीति मूल्यांकन',
+  'agents.technical.platformAssessment.description': 'समय-समय पर रणनीति का आकलन करें और बाज़ार के अनुसार अनुकूलित करें',
+  'agents.technical.platformAssessment.enable': 'आवधिक रणनीति मूल्यांकन सक्षम करें',
+
   // Discovery filters
   'agents.technical.filters.title': 'डिस्कवरी फ़िल्टर',
   'agents.technical.filters.venue': 'वेन्यू',

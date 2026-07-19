@@ -395,9 +395,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
               {/* Filter Trades — 3-way selector replacing pre-filter toggle + hybrid mode */}
               <div>
-                <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px', color: 'var(--color-text-primary)' }}>
-                  Filter Trades
-                </div>
+                <FieldLabel>{intl.formatMessage({ id: 'agents.technical.filterTrades.label' })}</FieldLabel>
                 <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', lineHeight: '1.4' }}>
                   Reduce cost by filtering trade options before AI agent sees them.
                 </div>
@@ -452,14 +450,12 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                 </div>
               </div>
 
-              {/* Platform Preset Assessment — only when scanner_gated */}
+              {/* Periodic Strategy Assessment — only when scanner_gated */}
               {props.value.capabilityMode === 'hybrid' && props.value.hybridMode === 'scanner_gated' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-                  <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
-                    Platform Assessment
-                  </div>
+                  <FieldLabel>{intl.formatMessage({ id: 'agents.technical.platformAssessment.label' })}</FieldLabel>
                   <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
-                    Let the platform periodically assess preset fitness and suggest strategy changes.
+                    {intl.formatMessage({ id: 'agents.technical.platformAssessment.description' })}
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
                     <input
@@ -472,7 +468,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                         });
                       }}
                     />
-                    Enable platform preset assessment
+                    {intl.formatMessage({ id: 'agents.technical.platformAssessment.enable' })}
                   </label>
                   {props.value.platformAssessmentEnabled && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

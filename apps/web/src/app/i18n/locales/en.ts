@@ -803,6 +803,14 @@ export const messages: Record<string, string> = {
   'agents.technical.preset.custom.label': 'Custom',
   'agents.technical.preset.custom.description': 'Configure indicators manually',
 
+  // Filter Trades
+  'agents.technical.filterTrades.label': 'Filter Trades',
+
+  // Platform Assessment (Periodic Strategy Assessment)
+  'agents.technical.platformAssessment.label': 'Periodic Strategy Assessment',
+  'agents.technical.platformAssessment.description': 'Periodically assess strategy and adapt to fit market',
+  'agents.technical.platformAssessment.enable': 'Enable periodic strategy assessment',
+
   // Discovery filters
   'agents.technical.filters.title': 'Discovery Filters',
   'agents.technical.filters.venue': 'Venue',
