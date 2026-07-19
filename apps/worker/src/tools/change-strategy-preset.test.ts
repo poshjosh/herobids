@@ -108,6 +108,9 @@ describe('change_strategy_preset', () => {
     expect(insertCall.newPresetKey).toBe('momentum');
     expect(insertCall.transitionMode).toBe('entries_only');
     expect(insertCall.outcome).toBe('accepted');
+    expect(insertCall.state).toBe('prepared');
+    expect(insertCall.positionActionResults).toBeNull();
+    expect(insertCall.transitionScope).toBe('default');
     expect(insertCall.agentId).toBe('agent-1');
   });
 

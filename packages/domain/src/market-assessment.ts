@@ -286,7 +286,50 @@ export function segmentKeyFromTechnicalConfig(
   });
 }
 
-// ── Transition States ───────────────────────────────────────────────────────
+// ── Transition Lifecycle State Machine ──────────────────────────────────────
+
+/**
+ * Durable lifecycle state for a preset transition record.
+ * prepared → applying → applied | deferred | rejected | failed | partially_applied
+ *
+ * This is the canonical state tracked on the agent_preset_transitions row
+ * and replaces the simple `outcome` column for workflow reasoning.
+ */
+export type TransitionLifecycleState =
+  | 'prepared'
+  | 'applying'
+  | 'applied'
+  | 'deferred'
+  | 'rejected'
+  | 'failed'
+  | 'partially_applied';
+
+export const TransitionLifecycleStateSchema = z.enum([
+  'prepared',
+  'applying',
+  'applied',
+  'deferred',
+  'rejected',
+  'failed',
+  'partially_applied',
+]);
+
+/** Result of a single position action during entries_and_tighten_existing transitions. */
+export interface PositionActionResult {
+  positionId: string;
+  action: string;
+  result: 'applied' | 'failed' | 'skipped';
+  error?: string;
+}
+
+export const PositionActionResultSchema = z.object({
+  positionId: z.string().min(1),
+  action: z.string().min(1),
+  result: z.enum(['applied', 'failed', 'skipped']),
+  error: z.string().optional(),
+});
+
+// ── Transition States (legacy platform/actor model) ─────────────────────────
 
 /** Platform-owned state: has an assessment artifact been created for this segment, and has a wake been emitted? */
 export type PlatformTransitionState =
@@ -603,7 +646,14 @@ export interface AgentPresetTransition {
   mode: 'shadow' | 'live';
   transitionMode: TransitionMode;
   openPositionCount: number;
+  /** Legacy outcome — kept for backward compatibility. Prefer `state` for workflow reasoning. */
   outcome: 'accepted' | 'deferred' | 'rejected';
+  /** Durable lifecycle state: prepared → applying → applied | deferred | rejected | failed | partially_applied */
+  state: TransitionLifecycleState;
+  /** Results of position actions for entries_and_tighten_existing mode. Null when no position actions were taken. */
+  positionActionResults: PositionActionResult[] | null;
+  /** The scope of the binding being changed: 'default' or a serialized canonical identity. */
+  transitionScope: string;
   reason: string | null;
   appliedAt: string;
   regimeSnapshot: Record<string, unknown> | null;
@@ -625,6 +675,9 @@ export const AgentPresetTransitionSchema = z.object({
   transitionMode: TransitionModeSchema,
   openPositionCount: z.number().int().nonnegative(),
   outcome: z.enum(['accepted', 'deferred', 'rejected']),
+  state: TransitionLifecycleStateSchema,
+  positionActionResults: z.array(PositionActionResultSchema).nullable(),
+  transitionScope: z.string().min(1),
   reason: z.string().nullable(),
   appliedAt: z.string().datetime(),
   regimeSnapshot: z.record(z.unknown()).nullable(),

@@ -47,8 +47,18 @@ export const agentPresetTransitions = pgTable('agent_preset_transitions', {
   transitionMode: text('transition_mode').notNull(), // entries_only | entries_and_tighten_existing | entries_and_full_transition
   /** Number of open positions at transition time */
   openPositionCount: integer('open_position_count').notNull().default(0),
-  /** Transition outcome */
+  /** Transition outcome (legacy, kept for backward compatibility) */
   outcome: text('outcome').notNull(), // accepted | deferred | rejected
+
+  // ── Durable state machine (replaces simple outcome) ───────────────────
+
+  /** Transition lifecycle state: prepared → applying → applied | deferred | rejected | failed | partially_applied */
+  state: text('state').notNull().default('prepared'),
+  /** Results of position actions for entries_and_tighten_existing mode. Null when no position actions were taken. Array of { positionId, action, result, error? }. */
+  positionActionResults: jsonb('position_action_results').$type<Array<{ positionId: string; action: string; result: 'applied' | 'failed' | 'skipped'; error?: string }> | null>(),
+  /** The scope of the binding being changed: 'default' or a serialized canonical identity. */
+  transitionScope: text('transition_scope').notNull().default('default'),
+
   /** Reason for deferral or rejection (null if accepted) */
   reason: text('reason'),
   /** When the transition was applied */
@@ -60,6 +70,7 @@ export const agentPresetTransitions = pgTable('agent_preset_transitions', {
   index('idx_agent_preset_transitions_agent_id').on(t.agentId),
   index('idx_agent_preset_transitions_applied_at').on(t.appliedAt),
   index('idx_agent_preset_transitions_outcome').on(t.outcome),
+  index('idx_agent_preset_transitions_state').on(t.state),
   index('idx_agent_preset_transitions_artifact_id').on(t.assessmentArtifactId),
   index('idx_agent_preset_transitions_identity_lookup').on(t.instrumentKind, t.symbol, t.network, t.address),
 ]);
