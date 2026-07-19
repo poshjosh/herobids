@@ -725,7 +725,7 @@ export class AssessmentRequestService {
     }).catch((e) => this.log.warn({ err: e, requestId }, 'Failed to link request to run'));
 
     // ── Call the assessor ─────────────────────────────────────────────
-    const result = await this.assessor.assessIdentity(identity);
+    const result = await this.assessor.assessIdentity(identity, runId);
 
     if (!result.ok) {
       // ── Assessor failed — release reservation ───────────────────────

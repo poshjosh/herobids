@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { createLogger } from '../logger.js';
 import type { Logger } from 'pino';
 import type { Database } from '@herobids/db';
+import { marketAssessmentRuns } from '@herobids/db';
 import type { Redis } from 'ioredis';
 import type { PriceCandle, RegimeResult } from '@herobids/market-data';
 import type {
@@ -24,6 +25,7 @@ import { err, ok, type Result } from '@herobids/domain';
 import type { AssessmentEvidencePorts } from './assessment-ports.js';
 import { createPresetScorecardRunner } from './preset-scorecard-runner.js';
 import { rankPresetsViaLlm, type LlmRankerConfig } from './llm-ranker.js';
+import { eq } from 'drizzle-orm';
 
 // ── LLM Usage Types ────────────────────────────────────────────────────────
 
@@ -108,6 +110,7 @@ export class PlatformAssessor {
    */
   async assessIdentity(
     identity: MarketAssessmentIdentity,
+    runId?: string,
   ): Promise<Result<{ artifact: MarketAssessmentArtifact; llmUsage: AggregatedLlmUsage }>> {
     if (!this.config.enabled) {
       return err({
@@ -144,8 +147,9 @@ export class PlatformAssessor {
       const scorecards = scorecardsResult.data;
 
       // Step 6: Persist immutable evidence before LLM work
-      // TODO(008): persist evidence snapshot and scorecards to DB
-      // await this.persistEvidence(evidence, scorecards);
+      if (runId) {
+        await this.persistEvidence(runId, evidence, scorecards);
+      }
 
       // Step 7: Rank presets via LLM
       const rankingResult = await this.rankPresets(identity, evidence, scorecards, presets);
@@ -456,6 +460,38 @@ export class PlatformAssessor {
       estimatedCostMicrousd: 0,
     };
   }
+
+  /**
+   * Persist evidence snapshot and scorecards into market_assessment_runs.
+   * Best-effort: logs a warning on failure but does not throw.
+   */
+  private async persistEvidence(
+    runId: string,
+    evidence: AssessmentEvidenceSnapshot,
+    scorecards: PresetScorecardEntry[],
+  ): Promise<void> {
+    try {
+      const evidenceRefs = buildEvidenceRefs(evidence);
+      const calculationVersions: Record<string, unknown> = {
+        assessmentVersion: 1,
+        scorecardVersion: '1.0',
+        evidenceSchemaVersion: evidence.schemaVersion,
+      };
+
+      await this.deps.db
+        .update(marketAssessmentRuns)
+        .set({
+          evidenceSnapshot: evidence as unknown as Record<string, unknown>,
+          scorecardSnapshots: scorecards as unknown as Record<string, unknown>[],
+          calculationVersions,
+          evidenceRefs,
+        })
+        .where(eq(marketAssessmentRuns.id, runId));
+    } catch (caught) {
+      const errorMessage = caught instanceof Error ? caught.message : String(caught);
+      this.log.warn({ err: caught, runId }, `Failed to persist evidence: ${errorMessage}`);
+    }
+  }
 }
 
 // ── Evidence Value Helpers ──────────────────────────────────────────────────
@@ -603,4 +639,39 @@ function extractCandlesFromSnapshot(
     return [...snapshot.symbolCandles.value];
   }
   return [];
+}
+
+/** Build an array of source references from the evidence snapshot for audit tracing. */
+function buildEvidenceRefs(evidence: AssessmentEvidenceSnapshot): string[] {
+  const refs: string[] = [];
+
+  if (evidence.regime.state === 'available') {
+    refs.push(`regime:${evidence.regime.source}`);
+  } else {
+    refs.push(`regime:unavailable:${evidence.regime.reasonCode}`);
+  }
+
+  if (evidence.symbolCandles.state === 'available') {
+    refs.push(`candles:${evidence.symbolCandles.source}`);
+  } else {
+    refs.push(`candles:unavailable:${evidence.symbolCandles.reasonCode}`);
+  }
+
+  refs.push(`volatility:${evidence.volatility.state}`);
+
+  if (evidence.liquidity.state === 'available') {
+    refs.push(`liquidity:${evidence.liquidity.source}`);
+  } else {
+    refs.push(`liquidity:unavailable:${evidence.liquidity.reasonCode}`);
+  }
+
+  if (evidence.breadth.state === 'available') {
+    refs.push(`breadth:${evidence.breadth.source}`);
+  } else {
+    refs.push(`breadth:unavailable:${evidence.breadth.reasonCode}`);
+  }
+
+  refs.push(`scorecardInput:${evidence.scorecardInput.state}`);
+
+  return refs;
 }
