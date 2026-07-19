@@ -63,6 +63,37 @@ The current implementation shape makes this addition straightforward and low ris
 4. There are no existing evaluation loaders or reducers for those tables.
 5. The current markdown renderer is deterministic and additive, so a non-scored appendix can be appended without changing section scoring.
 
+## Locked Assumptions From Current Feature State
+
+Implementers should treat the following as fixed for this plan unless a later owner plan changes them explicitly.
+
+1. **Active tool surface**
+  The active preset-assessment tool surface is:
+  - `assess_strategy_preset`
+  - `change_strategy_preset`
+
+2. **Shadow mode is not a live source concept**
+  `recommend_only` is not part of the live source model for this feature slice. Remaining references are stale docs and at least one stale generated artifact. Cleanup of those remaining references is owned by [006b-followup-plan-2.md](./006b-followup-plan-2.md), including the requirement to cover generated outputs and packaging/runtime consumers.
+
+3. **Transition capability must not be collapsed to one scalar field**
+  The appendix must use:
+  - `allowedTransitionModes`
+  - `supportedApplyTransitionModes`
+
+  It must not revive a single scalar `transitionMode` field for capability reporting.
+
+4. **Reuse semantics are version-locked**
+  For schema version 1 of the evaluation appendix artifacts, reuse means `cache_hit` only.
+
+5. **Evidence collection is best-effort**
+  Preset-assessment evidence collection is best-effort and should degrade via `auditCaveats`, not by failing the whole evaluation run.
+
+6. **Session-scoped config/history mismatch is an accepted caveat**
+  For session-scoped evaluations, config-derived fields come from the current unified-config snapshot while activity is filtered historically to the evaluation scope.
+
+7. **Practical caution when touching shadow-mode cleanup**
+  If implementation work overlaps remaining `recommend_only` cleanup, first audit whether checked-in `dist` output is consumed operationally before assuming it is safe to ignore. That caution is defined in [006b-followup-plan-2.md](./006b-followup-plan-2.md) and should not be bypassed from this plan.
+
 ## Fixed Decisions
 
 The following decisions are locked for this plan.
@@ -86,6 +117,12 @@ The following decisions are locked for this plan.
 
 6. **Raw artifact normalization over raw table dumps.**
    The companion JSON files should be normalized evaluation artifacts, not direct DB-row dumps. They must be stable enough for debugging, audit review, and future UI use.
+
+7. **Best-effort collector, explicit caveats.**
+  Preset-assessment evidence collection is best-effort. Missing review-advice, request, transition, or binding evidence must not fail the evaluation run; instead the summary adds `auditCaveats` and only renders the appendix when there is still a trustworthy basis to say something useful.
+
+8. **Session-scope config/history limitation is accepted.**
+  For session-scoped evaluations, enablement and policy fields come from the current unified-config snapshot, while advice/request/transition activity is filtered historically to the evaluation scope. The appendix must state this limitation explicitly rather than pretending config history is versioned.
 
 ## Meaningfulness Rules
 
@@ -122,7 +159,7 @@ Use the current `unified-agent-config.json` snapshot.
 - `no`: `platformAssessment.enabled === false`
 - `unknown`: unified config missing, malformed, or the field is absent
 
-The appendix must state that this is the current config snapshot at evaluation time, not a time-traveled historical policy view.
+The appendix must state that this is the current config snapshot at evaluation time, not a time-traveled historical policy view. For session-scoped evaluations this is an accepted limitation and must appear again as an audit caveat when needed.
 
 ### Q2. Did the agent receive review advice?
 
@@ -139,7 +176,7 @@ The appendix should also show suppression outcomes such as `blocked_by_cooldown`
 
 Use in-scope `market_assessment_requests` rows.
 
-- `yes`: at least one successful request exists and at least one reuse-style success exists (`cache_hit` or other explicit reused-artifact success path)
+- `yes`: at least one successful request exists and at least one `cache_hit` success exists
 - `partial`: at least one successful request exists, but no reuse was observed, or successes are mixed with blocked or failed outcomes
 - `no`: request attempts exist but none succeeded
 - `not_applicable`: no in-scope request rows exist
@@ -147,9 +184,11 @@ Use in-scope `market_assessment_requests` rows.
 The summary must separate:
 
 - successful fresh runs;
-- successful cache hits or fresh artifact reuse;
+- successful cache hits;
 - blocked outcomes such as billing and cooldown;
 - provider failures.
+
+For this schema version, **reuse is defined narrowly as `cache_hit` only**. Do not infer broader reuse classes until the request service persists a distinct additional success outcome for them.
 
 ### Q4. Did it change presets, and was that change clean and auditable?
 
@@ -179,7 +218,8 @@ The appendix is markdown, but its structure must be concrete enough to render de
 - Current opt-in flag: true | false | unknown
 - Style tier: economy | standard | premium | unknown
 - Allowed presets: comma-separated preset keys, or "not configured"
-- Transition mode: recommend_only | entries_only | entries_and_tighten_existing | entries_and_full_transition | unknown
+- Allowed transition modes: comma-separated modes, or "not configured"
+- Supported apply transition modes in this release: comma-separated modes, or "unknown"
 - Note: current config snapshot only; historical enablement is not versioned here
 
 ### 2. Review Advice
@@ -194,10 +234,11 @@ The appendix is markdown, but its structure must be concrete enough to render de
 - Answer: yes | partial | no | not_applicable
 - Requests in scope: <number>
 - Successful fresh runs: <number>
-- Successful cache hits or reuse: <number>
+- Successful cache hits: <number>
 - Billing blocked: <number>
 - Cooldown blocked: <number>
 - Provider failed: <number>
+- Reuse definition: cache_hit only
 - Last successful artifact: <artifact id or none>
 
 ### 4. Preset Changes
@@ -211,7 +252,8 @@ The appendix is markdown, but its structure must be concrete enough to render de
 - Last applied transition: <old preset> -> <new preset> via <mode>, or "none"
 
 ### Evidence Notes
-- Current active preset binding: <preset key and behavior version, or unknown>
+- Current active default preset binding: <preset key and behavior version, or unknown>
+- Identity-scoped transitions observed in scope: yes | no
 - Audit caveats: free-text bullet list, only when needed
 ```
 
@@ -248,7 +290,8 @@ This is the canonical machine-readable version of the markdown appendix.
     "platformAssessmentEnabled": true,
     "styleTier": "standard",
     "allowedPresets": ["momentum_v1", "mean_reversion_v1"],
-    "transitionMode": "recommend_only",
+    "allowedTransitionModes": ["entries_only", "entries_and_tighten_existing"],
+    "supportedApplyTransitionModes": ["entries_only"],
     "source": "current_unified_config"
   },
   "answers": {
@@ -262,7 +305,7 @@ This is the canonical machine-readable version of the markdown appendix.
     },
     "assessmentRequestsAndReuse": {
       "status": "yes",
-      "detail": "The agent completed successful requests and reused a fresh artifact at least once."
+      "detail": "The agent completed successful requests and hit the request cache at least once."
     },
     "presetChangesCleanAndAuditable": {
       "status": "not_applicable",
@@ -289,7 +332,8 @@ This is the canonical machine-readable version of the markdown appendix.
   "assessmentRequests": {
     "totalRows": 4,
     "successfulFreshRuns": 1,
-    "successfulReuse": 2,
+    "successfulCacheHits": 2,
+    "reuseDefinition": "cache_hit_only",
     "requestInFlight": 0,
     "billingBlocked": 0,
     "cooldownBlocked": 1,
@@ -314,13 +358,14 @@ This is the canonical machine-readable version of the markdown appendix.
       "appliedAt": "2026-07-19T12:05:00.000Z"
     }
   },
-  "currentBinding": {
+  "currentDefaultBinding": {
     "activePresetKey": "momentum_v1",
     "behaviorVersion": "hash_abc",
     "styleTier": "standard",
     "sourceArtifactId": "artifact_123",
     "sourceTransitionId": "transition_123"
   },
+  "identityScopedTransitionsObserved": true,
   "auditCaveats": [
     "Enablement is derived from the current unified config snapshot, not historical config versioning."
   ]
@@ -331,7 +376,8 @@ This is the canonical machine-readable version of the markdown appendix.
 
 1. `answers.*.status` uses `yes | partial | no | not_applicable | unknown`.
 2. `configSnapshot` is present even when activity exists but config is unavailable; in that case fields become `null` or `unknown` and an audit caveat is added.
-3. This artifact is the stable input if the frontend later wants to render a richer dedicated preset-assessment panel.
+3. `allowedTransitionModes` reports current agent policy, while `supportedApplyTransitionModes` reports what this release can actually apply.
+4. This artifact is the stable input if the frontend later wants to render a richer dedicated preset-assessment panel.
 
 ## Artifact 2: `preset-assessment-events.json`
 
@@ -430,6 +476,7 @@ Extend the evaluation evidence assembly path with best-effort collection for the
    - `market_assessment_requests.requestedAt`
    - `agent_preset_transitions.appliedAt`
 5. Persist one or more intermediate evidence artifacts only if they simplify reducer testing; otherwise, reduce directly into the final companion artifacts.
+6. If any preset-assessment collector fails, record a summary-level audit caveat rather than failing the evaluation run.
 
 ### File surfaces
 
@@ -463,6 +510,7 @@ Build one deterministic reducer that produces the appendix summary and the optio
    - `preset-assessment-summary.json` when the appendix is included;
    - `preset-assessment-events.json` when there are in-scope events.
 5. Keep summary derivation pure and deterministic so it can be tested without running the whole evaluation pipeline.
+6. Derive `identityScopedTransitionsObserved` from in-scope transition rows whose scope is not the default binding scope.
 
 ### File surfaces
 
@@ -535,6 +583,7 @@ Add focused tests for:
    - transition cleanliness `yes`, `partial`, `no`, `not_applicable`.
 3. config fallback behavior when unified config is null or malformed.
 4. markdown rendering shape and ordering.
+5. reuse semantics remain `cache_hit`-only in schema version 1.
 
 ### Integration tests
 
@@ -544,7 +593,8 @@ Add focused integration coverage for:
 2. evaluation run writes `preset-assessment-events.json` when in-scope events exist;
 3. `REPORT.md` contains the appendix and places it before `## Commentary` when narrative is enabled;
 4. bundle artifact manifest includes the new files when written;
-5. scope filtering excludes out-of-range advice, request, and transition rows.
+5. scope filtering excludes out-of-range advice, request, and transition rows;
+6. collector failures add audit caveats without failing the evaluation run.
 
 ### Acceptance bar
 
@@ -575,7 +625,10 @@ This slice is complete when:
 3. **Report noise**
    The inclusion gate must remain strict. A disabled agent with no activity should not get an empty appendix.
 
-4. **Future UI coupling**
+4. **Config-history ambiguity**
+  Session-scoped reports must repeat that enablement and policy come from the current config snapshot, not historical versioned config.
+
+5. **Future UI coupling**
    The JSON summary should be stable enough that a future dedicated frontend surface can reuse it directly rather than re-deriving logic from raw DB tables.
 
 ## Out-Of-Scope Follow-Ups

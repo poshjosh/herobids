@@ -1,6 +1,6 @@
 # Follow-up Plan 2: Tool Simplification and Shadow-Mode Removal
 
-**Status:** In Progress (P1, P2, P5, P6, **P3, P4** landed — P3/P4 completed by 012c Step 1 on 2026-07-19; P7-P8 in progress)
+**Status:** In Progress (P1, P2, P5, P6, **P3, P4** landed in source — remaining cleanup must still remove stale `recommend_only` references from active docs and any generated outputs or packaging paths that could still surface them; P7-P8 in progress)
 **Follows:**
 - [005-implementation-checklist-per-symbol-on-demand.md](./005-implementation-checklist-per-symbol-on-demand.md)
 - [006-followup-plan.md](./006-followup-plan.md)
@@ -120,6 +120,7 @@ Previously-considered options:
 | P6 | Preserve exact transition auditability | `apps/worker/src/tools/recommend-preset-transition.ts`, `apps/worker/src/tools/apply-preset-transition.ts`, `packages/db/src/schema/agent-preset-transitions.ts`, replacement files after merge/rename | `change_strategy_preset` uses one exact audited reference model | Test proving no latest-artifact substitution |
 | P7 | Remove old rollout invariant from docs | `docs/features/2026/07/18/002-platform-preset-assessment-and-transition/*.md` | Docs no longer describe `recommend_only` as required rollout behavior | Review pass across 001/005/006/007 docs |
 | P8 | Remove old tool names from user-facing and internal surfaces | runtime prompt text, tool catalog, schemas, tests, docs | Only `assess_strategy_preset` and `change_strategy_preset` remain | Grep proof with no old tool names in active source surfaces |
+| P11 | Remove stale shadow-mode references from generated outputs and packaging/runtime consumers | checked-in `dist` outputs, package/build scripts, docker/runtime entry surfaces that may consume generated JS directly | No active built artifact or packaging path still exposes `recommend_only`, `auto_apply`, or `platformAssessment.mode` after regeneration | Consumer audit + rebuild + grep proof + targeted validation |
 | P9 | Add configurable multi-instrument request cap | `packages/domain/src/config/schema.ts`, `config/default.yaml`, merged assessment tool files, tool schemas, docs | The merged assessment tool accepts multiple instruments, enforces `platformAssessor.maxInstrumentsPerRequest`, defaults to `3`, and returns only the first `N` with a meaningful truncation message | Schema test, config load proof, and tool test for overflow behavior |
 | P10 | Lock batch execution and billing semantics | merged assessment tool files, `assessment-request-service.ts`, docs | Multi-instrument requests execute serially, allow partial success, and bill per instrument actually assessed | Integration test for serial processing and mixed outcomes |
 
@@ -136,7 +137,9 @@ Implement in this order:
 5. Rename `apply_preset_transition` to `change_strategy_preset`.
 6. Update prompt text, wake guidance, and tool catalog copy.
 7. Update feature docs and rollout documents.
-8. Run executable proof for the full two-tool flow.
+8. Audit checked-in generated outputs and any packaging/runtime consumer that could still surface stale shadow-mode behavior.
+9. Rebuild generated outputs from the cleaned source state.
+10. Run executable proof for the full two-tool flow.
 
 This order is required because the merged-tool contract depends on exact-reference preservation, serial execution semantics, and the batch response shape.
 
@@ -391,6 +394,13 @@ The following must be removed fully, not merely ignored:
   - feature off → `platformAssessment.enabled = false`
   - feature on → complete two-tool flow is allowed
 
+### 7.5 Generated Outputs And Packaging
+- Audit whether any checked-in generated output is used directly by runtime, packaging, deploy, tests, or Docker build paths.
+- If generated `dist` artifacts are kept in the repo, regenerate them from the cleaned source state in the same change.
+- Do not hand-edit generated outputs unless the build path is broken; the normal path is source fix first, then rebuild.
+- If a checked-in generated artifact cannot be regenerated in the current workflow, stop and resolve that build-path issue before claiming shadow-mode removal complete.
+- Grep proof must cover both source and any generated outputs that remain tracked.
+
 ---
 
 ## 8. Assessment Reference Decision Gate
@@ -444,6 +454,7 @@ The work is not complete until this exact scenario passes.
 9. Create a newer artifact for the same canonical identity.
 10. Verify the previously returned exact reference still points to the intended artifact and is not silently substituted by “latest”.
 11. Verify old tool names are not exposed in the active registry/prompt/docs targeted by this feature slice.
+12. Verify no checked-in generated output or packaging/runtime consumer still contains or depends on `recommend_only`, `auto_apply`, or `platformAssessment.mode`.
 
 ---
 
@@ -456,7 +467,8 @@ The work is not complete until this exact scenario passes.
 | Response shape | Snapshot or structural test proving the merged response has one canonical location per fact and does not duplicate recommendation fields |
 | Result entry contract | Test proving `results[]` supports explicit mixed success/failure entries with the locked field set |
 | Apply rename | Registry + execution tests for `change_strategy_preset` |
-| Shadow removal | No source references to `recommend_only`, `auto_apply`, or `transition.shadow_mode_blocked` outside historical docs/dist outputs |
+| Shadow removal | No active source references, no active feature-doc references, and no generated outputs or packaging/runtime consumers still exposing `recommend_only`, `auto_apply`, `platformAssessment.mode`, or `transition.shadow_mode_blocked` |
+| Generated-output safety | Proof that any tracked `dist` or other built artifacts were regenerated from the cleaned source state, or proof that they are not used by runtime/packaging/deploy paths |
 | Exact reference | Test proving apply uses the intended artifact, not a substituted later artifact |
 | Multi-instrument cap | Test proving requests above `platformAssessor.maxInstrumentsPerRequest` return only the first `N` instruments with a meaningful truncation message |
 | Billing semantics | Test proving truncated instruments are not billed and per-instrument outcomes drive billing |
@@ -472,7 +484,7 @@ This plan is complete only when all of the following are true:
 1. The active tool surface is exactly two tools:
    - `assess_strategy_preset`
    - `change_strategy_preset`
-2. `recommend_only` and `auto_apply` are removed from source schema, source runtime logic, source tests, and active feature docs.
+2. `recommend_only` and `auto_apply` are removed from source schema, source runtime logic, source tests, active feature docs, and any generated outputs or packaging/runtime consumers that could still surface them.
 3. `assessmentArtifactId` remains the exact transition reference and is protected by tests.
 4. The merged assessment tool supports multiple instruments up to `platformAssessor.maxInstrumentsPerRequest`, with a default max of `3` and tested overflow behavior.
 5. Accepted instruments are executed serially and partial success behavior is tested.
@@ -482,6 +494,21 @@ This plan is complete only when all of the following are true:
 9. The full acceptance scenario in Section 9 passes.
 
 If any of those are not true, the feature remains partial.
+
+---
+
+## 11A. Careful Removal Sequence For Remaining `recommend_only` Cleanup
+
+The remaining cleanup must be executed carefully so source cleanup does not leave a stale generated/runtime surface behind.
+
+1. Audit all consumers of checked-in built artifacts before deleting or ignoring stale references.
+2. Remove stale shadow-mode references from active docs first so current requirements are unambiguous.
+3. Fix source-only references if any are rediscovered.
+4. Regenerate tracked build outputs from the cleaned source state.
+5. Re-run targeted grep across source plus tracked generated outputs.
+6. Re-run targeted tool and transition tests plus the narrow build or package validation that exercises the regenerated output.
+
+This sequence is mandatory because a stale checked-in artifact is more dangerous than a stale doc comment: it can silently reintroduce removed behavior in packaging or deploy flows.
 
 ---
 
