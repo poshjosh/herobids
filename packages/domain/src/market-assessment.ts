@@ -683,6 +683,83 @@ export const AgentPresetTransitionSchema = z.object({
   regimeSnapshot: z.record(z.unknown()).nullable(),
 });
 
+// ── Active Preset Binding ───────────────────────────────────────────────────
+
+/** First-class preset binding state — the authoritative active preset for an agent scope. */
+export interface ActivePresetBinding {
+  id: string;
+  agentId: string;
+  /** Scope: 'default' or a serialized canonical identity (e.g., 'orderbook|hyperliquid|standard|BTC') */
+  scope: string;
+  /** The key of the active preset (e.g., 'momentum_v1') */
+  activePresetKey: string;
+  /** Style tier: economy | standard | premium */
+  styleTier: 'economy' | 'standard' | 'premium';
+  /** Mechanically derived behavior version */
+  behaviorVersion: string;
+  /** The preset/config version that was applied */
+  appliedPresetVersion: string;
+  /** Assessment artifact that produced this binding (null if manual/default) */
+  sourceArtifactId: string | null;
+  /** Transition that created this binding (null if initial/default) */
+  sourceTransitionId: string | null;
+  /** Binding status: active | superseded | revoked */
+  status: 'active' | 'superseded' | 'revoked';
+  appliedAt: string;
+  createdAt: string;
+}
+
+export const ActivePresetBindingSchema = z.object({
+  id: z.string().min(1),
+  agentId: z.string().min(1),
+  scope: z.string().min(1),
+  activePresetKey: z.string().min(1),
+  styleTier: z.enum(['economy', 'standard', 'premium']),
+  behaviorVersion: z.string().min(1),
+  appliedPresetVersion: z.string().min(1),
+  sourceArtifactId: z.string().nullable(),
+  sourceTransitionId: z.string().nullable(),
+  status: z.enum(['active', 'superseded', 'revoked']),
+  appliedAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
+});
+
+// ── Prepared Preset Transition ──────────────────────────────────────────────
+
+/** Pure preparation result before persisting a transition. Built by the transition service's risk-precedence function. */
+export interface PreparedPresetTransition {
+  agentId: string;
+  assessmentArtifactId: string;
+  /** The exact preset this transition is based on */
+  targetPreset: string;
+  transitionMode: TransitionMode;
+  reason: string | null;
+  /** The previous binding (null if this is the first binding for this scope) */
+  oldBinding: ActivePresetBinding | null;
+  /** Previous preset key. Use "none" when oldBinding is null (first binding for this scope). */
+  oldPresetKey: string;
+  /** Previous behavior version. Use "v1" when oldBinding is null. */
+  oldBehaviorVersion: string;
+  newPresetKey: string;
+  newBehaviorVersion: string;
+  /** The canonical identity scope for this transition */
+  identityScope: string;
+  /** The binding scope being changed */
+  transitionScope: string;
+  /** Durable idempotency key */
+  idempotencyKey: string;
+  /** Prepared position actions (empty for entries_only mode) */
+  positionActions: PreparedPositionAction[];
+}
+
+/** A position action prepared for execution during an entries_and_tighten_existing transition. */
+export interface PreparedPositionAction {
+  positionId: string;
+  action: 'tighten_stop' | 'reduce_exposure' | 'partial_exit' | 'shorten_hold';
+  /** Human-readable description of the action for audit */
+  description: string;
+}
+
 // ── Artifact Freshness & Staleness ──────────────────────────────────────────
 
 /**

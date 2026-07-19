@@ -11,3 +11,6 @@ export * from './economic-calendar.js';
 export * from './document-store.js';
 export * from './document-text-extractor.js';
 export * from './runtime-document-materializer.js';
+export * from './assessment-identity-resolver.js';
+export * from './assessment-request.js';
+export * from './preset-transition.js';

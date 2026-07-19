@@ -60,7 +60,7 @@ Follow these steps to implement all the items in the plan or task-list provided 
 
 12. Wait for **"CodeReviewer"** to signal completion.
 
-   a. If the code review includes either observed gaps or critical/high issues/observations, go to Step 3 with the code review feedback as the target/argument.
+   a. If the code review includes either observed gaps or critical/high issues/observations, go to Step 13.
 
    b. If the code review does not include critical/high issues/observations:
 
@@ -69,3 +69,9 @@ Follow these steps to implement all the items in the plan or task-list provided 
       ii. Print a brief descriptive message for the user including any "Outstanding Issues".
 
       iii. STOP.
+
+13. Determine if addressing the code review feedback review requires either much/complex or little/simple changes. 
+
+   a. If addressing the code review feedback requires much/complex changes, go to Step 1 with the code review feedback as the task-list. 
+   
+   b. If addressing the code review feedback requires little/simple changes, go to Step 3 with the code review feedback as the target/argument.
