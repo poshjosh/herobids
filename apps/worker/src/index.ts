@@ -55,7 +55,8 @@ import { StubRuntimeDocumentMaterializer } from './agents/stub-document-material
 import { LocalDocumentStore } from '@herobids/documents';
 import { UserEventPublisher } from './user-event-publisher.js';
 import { ActorHealthPublisher } from './actor-health-publisher.js';
-import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
+import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler } from './market-intelligence/index.js';
+import type { ReviewScheduler } from './market-intelligence/index.js';
 import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
@@ -1842,10 +1843,54 @@ const marketIntelCoordinator = appConfig.marketData
 
 marketIntelCoordinator?.start();
 
+/** Per-agent review schedulers for agents opted into platform assessment. */
+const reviewSchedulers = new Map<string, ReviewScheduler>();
+
 // ── Platform Assessor ───────────────────────────────────────────────────────
 // TODO(assessment-on-demand): Wire PlatformAssessor into AssessmentRequestService
 // The on-demand assessor is constructed per-request by the request service.
 // See: 005-implementation-checklist-per-symbol-on-demand.md §7-9
+
+// ── Per-Agent Review Schedulers ──────────────────────────────────────────
+// Instantiate a ReviewScheduler for every active agent that has opted into
+// platform assessment (platformAssessment.enabled === true). The scheduler
+// runs a deterministic pre-check on the agent's review interval and emits
+// an assessment_review wake when advice is due.
+try {
+  const activeAgents = await agentRepo.listActiveAgents();
+  for (const agent of activeAgents) {
+    const unifiedConfig = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
+    const platformAssessment = (unifiedConfig['platformAssessment'] ?? {}) as Record<string, unknown>;
+    const enabled = platformAssessment['enabled'] === true;
+
+    if (enabled) {
+      const agentReviewIntervalMs = (typeof platformAssessment['reviewIntervalMs'] === 'number')
+        ? platformAssessment['reviewIntervalMs']
+        : appConfig.platformAssessor.minReviewIntervalMs;
+
+      const scheduler = createReviewScheduler(
+        {
+          db,
+          redis: redisClient,
+          agentId: agent.id,
+          eventPublisher,
+        },
+        agentReviewIntervalMs,
+        {
+          minReviewIntervalMs: appConfig.platformAssessor.minReviewIntervalMs,
+          scannerCandidateLimit: appConfig.platformAssessor.scannerCandidateLimit,
+          cacheFreshnessMs: appConfig.platformAssessor.cacheFreshnessMs,
+        },
+      );
+      scheduler.start();
+      reviewSchedulers.set(agent.id, scheduler);
+      logger.info({ agentId: agent.id, reviewIntervalMs: Math.max(agentReviewIntervalMs, appConfig.platformAssessor.minReviewIntervalMs) }, 'Review scheduler started for agent');
+    }
+  }
+  logger.info({ count: reviewSchedulers.size }, 'Review schedulers initialised');
+} catch (err) {
+  logger.error({ err }, 'Failed to initialise review schedulers');
+}
 
 // ── Economic calendar background refresh ─────────────────────────────────
 // The worker periodically fetches Forex Factory economic calendar data via
@@ -2034,6 +2079,10 @@ process.on('SIGTERM', async () => {
   agentStreamConsumer.stop();
   reminderCoordinator.stop();
   marketMonitor.stop();
+  // Stop per-agent review schedulers
+  for (const scheduler of reviewSchedulers.values()) {
+    scheduler.stop();
+  }
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
@@ -2061,6 +2110,10 @@ process.on('SIGINT', async () => {
   agentStreamConsumer.stop();
   reminderCoordinator.stop();
   marketMonitor.stop();
+  // Stop per-agent review schedulers
+  for (const scheduler of reviewSchedulers.values()) {
+    scheduler.stop();
+  }
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
