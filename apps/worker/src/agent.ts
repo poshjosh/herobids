@@ -2055,8 +2055,8 @@ function buildPresetReviewMessage(
   const lines: string[] = [
     '🔔 **Preset Review Assessment Available**',
     '',
-    'A shared market assessment has been completed for your trading segment.',
-    'The platform assessor has ranked the available strategy presets for the current market conditions.',
+    'A market assessment has been completed for your trading segment.',
+    'The assessment has ranked the available strategy presets for the current market conditions.',
     '',
     '**Assessment Summary:**',
     `- Recommended Preset: **${ctx.recommendedPreset}**`,
