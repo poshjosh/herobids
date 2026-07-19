@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.32 - 2026-07-19
+
 ### Added
 
 - **Evaluation Report Preset-Assessment Summary:** Added a non-scored `## Preset Assessment Summary` appendix to agent evaluation `REPORT.md` with companion JSON artifacts (`preset-assessment-summary.json`, `preset-assessment-events.json`). Answers four agent-local questions: feature enablement, review advice consumption, assessment request reuse, and preset change auditability. Includes best-effort evidence collector with scope-filtered queries across `review_advice`, `market_assessment_requests`, `agent_preset_transitions`, and `agent_preset_bindings` tables. Appendix appears conditionally only when the agent is opted in or has in-scope preset-assessment activity. See [018-evaluation-report-preset-assessment-summary.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/018-evaluation-report-preset-assessment-summary.md).
