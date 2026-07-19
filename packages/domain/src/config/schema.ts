@@ -2012,8 +2012,6 @@ export const PresetTransitionPolicySchema = z.object({
 export const PlatformAssessmentOptInSchema = z.object({
   /** When true, this agent participates in shared platform assessment. */
   enabled: z.boolean().default(false),
-  /** Assessment mode: 'recommend_only' (shadow) or 'auto_apply' (live). */
-  mode: z.enum(['recommend_only', 'auto_apply']).default('recommend_only'),
   /** Minimum confidence threshold for this agent to consider a recommendation. */
   minConfidenceThreshold: z.number().min(0).max(1).optional(),
   /** Minimum score uplift threshold for this agent to consider a recommendation. */
