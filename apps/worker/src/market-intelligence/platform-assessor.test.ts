@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { PlatformAssessor } from './platform-assessor.js';
-import type { PlatformAssessorConfig, PlatformAssessorDeps, EvidencePackage } from './platform-assessor.js';
-import type { MarketAssessmentIdentity } from '@herobids/domain';
+import type { PlatformAssessorConfig, PlatformAssessorDeps } from './platform-assessor.js';
+import type { AssessmentEvidencePorts } from './assessment-ports.js';
+import { ok, err } from '@herobids/domain';
+import type { PresetEntry, MarketAssessmentIdentity } from '@herobids/domain';
+import type { PriceCandle } from '@herobids/market-data';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -46,31 +49,117 @@ function makeRedisMock() {
   };
 }
 
+// ── Mock candles ───────────────────────────────────────────────────────────
+
+function makeMockCandles(count: number): PriceCandle[] {
+  const candles: PriceCandle[] = [];
+  let price = 50000;
+  for (let i = 0; i < count; i++) {
+    const open = price;
+    const close = price + (Math.random() - 0.5) * 200;
+    const high = Math.max(open, close) + Math.random() * 100;
+    const low = Math.min(open, close) - Math.random() * 100;
+    candles.push({
+      timestamp: new Date(Date.now() - (count - i) * 3600000).toISOString(),
+      open,
+      high,
+      low,
+      close,
+      volume: Math.random() * 100,
+    });
+    price = close;
+  }
+  return candles;
+}
+
+// ── Mock preset entry ──────────────────────────────────────────────────────
+
+function makeMockPresetEntry(key: string, strategyType: string, signalBias: string): PresetEntry {
+  return {
+    name: key,
+    description: 'Test preset',
+    strategy: {
+      type: strategyType,
+      decisionMode: 'mechanical',
+      params: {
+        indicators: { rsi: { enabled: true }, macd: { enabled: true } },
+        signalBias,
+        candleInterval: '15m',
+        candleLimit: 48,
+      },
+    },
+  };
+}
+
 // ── Deps factory ───────────────────────────────────────────────────────────
 
 function makeDeps(overrides?: Partial<PlatformAssessorDeps>): PlatformAssessorDeps {
+  const defaultEvidencePorts: AssessmentEvidencePorts = {
+    regime: {
+      getRegime: vi.fn(async () => ok({
+        data: {
+          pass: true,
+          reasons: ['test'],
+          details: {
+            benchmarkSymbol: 'BTC',
+            currentPrice: 50000,
+            emaFast: 49800,
+            emaSlow: 49000,
+            emaTrend: 48500,
+            emaAlignment: 'bullish' as const,
+            adxValue: 28,
+            choppy: false,
+            vwap: 49700,
+            priceAboveVwap: true,
+            marketStructure: 'higherHighs' as const,
+          },
+        },
+        source: 'test-regime',
+        provider: 'test',
+        observedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 300_000).toISOString(),
+      })),
+    },
+    candles: {
+      getCandles: vi.fn(async () => ok({
+        data: makeMockCandles(100),
+        source: 'test-candles',
+        provider: 'test',
+        observedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 300_000).toISOString(),
+      })),
+    },
+    liquidity: {
+      getLiquidity: vi.fn(async () => ok({
+        data: { averageSpreadBps: 3, averageDepthUsd: 100000, quality: 'good' as const },
+        source: 'test-liquidity',
+        provider: 'test',
+        observedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 300_000).toISOString(),
+      })),
+    },
+    breadth: {
+      getBreadth: vi.fn(async () => ok({
+        data: { symbolsAboveMA: 5, totalSymbols: 10, breadthRatio: 0.5 },
+        source: 'test-breadth',
+        provider: 'test',
+        observedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 300_000).toISOString(),
+      })),
+    },
+  };
+
   return {
     db: makeDbMock() as unknown as PlatformAssessorDeps['db'],
     redis: makeRedisMock() as unknown as PlatformAssessorDeps['redis'],
-    getRegimeSnapshot: vi.fn(async () => ({
-      pass: true,
-      reasons: ['test'],
-      details: {
-        benchmarkSymbol: 'BTC',
-        currentPrice: 50000,
-        emaFast: 49800,
-        emaSlow: 49000,
-        emaTrend: 48500,
-        emaAlignment: 'bullish' as const,
-        adxValue: 28,
-        choppy: false,
-        vwap: 49700,
-        priceAboveVwap: true,
-        marketStructure: 'higherHighs' as const,
-      },
-    })),
-    getPresetKeys: vi.fn(async (_styleTier: string) => ['momentum_v1', 'mean_reversion_v1', 'trend_following_v1']),
-    callLlm: vi.fn(async (_prompt: string) => '{}'),
+    evidencePorts: defaultEvidencePorts,
+    getPresets: vi.fn((_styleTier: string) => [
+      { key: 'momentum_v1', entry: makeMockPresetEntry('momentum_v1', 'momentum', 'trend-following') },
+      { key: 'mean_reversion_v1', entry: makeMockPresetEntry('mean_reversion_v1', 'range', 'mean-reverting') },
+      { key: 'trend_following_v1', entry: makeMockPresetEntry('trend_following_v1', 'swing', 'trend-following') },
+    ]),
+    callLlm: vi.fn(async (_prompt: string) => ({ text: '{}', usage: { provider: 'test', model: 'test', inputTokens: 0, outputTokens: 0, reasoningTokens: 0 } })),
+    ...overrides,
   };
 }
 
@@ -101,12 +190,12 @@ describe('PlatformAssessor', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.data.id).toBeDefined();
-        expect(result.data.status).toBe('active');
-        expect(result.data.venueFamily).toBe(identity.venueFamily);
-        expect(result.data.styleTier).toBe(identity.styleTier);
-        expect(result.data.presetRankings).toHaveLength(3);
-        expect(result.data.recommendedPreset).toBe('momentum_v1');
+        expect(result.data.artifact.id).toBeDefined();
+        expect(result.data.artifact.status).toBe('active');
+        expect(result.data.artifact.venueFamily).toBe(identity.venueFamily);
+        expect(result.data.artifact.styleTier).toBe(identity.styleTier);
+        expect(result.data.artifact.presetRankings).toHaveLength(3);
+        expect(result.data.artifact.recommendedPreset).toBe('momentum_v1');
       }
     });
 
@@ -122,17 +211,16 @@ describe('PlatformAssessor', () => {
       }
     });
 
-    it('returns an err result when evidence collection throws', async () => {
+    it('returns an err result when evidence is unavailable', async () => {
       const deps = makeDeps();
-      deps.getRegimeSnapshot = vi.fn(async () => { throw new Error('regime unavailable'); });
-      deps.getPresetKeys = vi.fn(async () => { throw new Error('preset catalog unavailable'); });
+      deps.evidencePorts.regime.getRegime = vi.fn(async () => err({ code: 'test.error', message: 'regime down' }));
       const assessor = new PlatformAssessor(makeConfig(), deps);
 
       const result = await assessor.assessIdentity(makeIdentity());
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.code).toBe('assessment.failed');
+        expect(result.error.code).toBe('assessment.evidence_unavailable');
       }
     });
 
@@ -150,57 +238,102 @@ describe('PlatformAssessor', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.data.venueFamily).toBe('jupiter');
-        expect(result.data.styleTier).toBe('economy');
+        expect(result.data.artifact.venueFamily).toBe('jupiter');
+        expect(result.data.artifact.styleTier).toBe('economy');
       }
     });
   });
 
   describe('collectEvidence', () => {
-    it('returns an EvidencePackage with identity', async () => {
+    it('returns an ok result with an AssessmentEvidenceSnapshot', async () => {
       const assessor = new PlatformAssessor(makeConfig(), makeDeps());
       const identity = makeIdentity();
-      const evidence = await assessor.collectEvidence(identity);
+      const result = await assessor.collectEvidence(identity);
 
-      expect(evidence.identity).toEqual(identity);
-      expect(evidence.collectedAt).toBeDefined();
-      expect(evidence.regime).toBeDefined();
-      expect(evidence.breadth).toBeDefined();
-      expect(evidence.volatility).toBeDefined();
-      expect(evidence.liquidityQuality).toBeDefined();
-      expect(evidence.scanHealth).toBeDefined();
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.identity).toEqual(identity);
+        expect(result.data.collectedAt).toBeDefined();
+        expect(result.data.regime.state).toBe('available');
+        expect(result.data.symbolCandles.state).toBe('available');
+        expect(result.data.volatility.state).toBe('available');
+        expect(result.data.breadth.state).toBe('available');
+      }
     });
 
-    it('uses placeholder regime when getRegimeSnapshot fails', async () => {
+    it('returns err when regime is unavailable', async () => {
       const deps = makeDeps();
-      deps.getRegimeSnapshot = vi.fn(async () => { throw new Error('upstream failure'); });
+      deps.evidencePorts.regime.getRegime = vi.fn(async () => err({ code: 'test.error', message: 'regime down' }));
       const assessor = new PlatformAssessor(makeConfig(), deps);
-
-      const evidence = await assessor.collectEvidence(makeIdentity());
-      expect(evidence.regime.reasons.some((r) => r.includes('placeholder'))).toBe(true);
+      const result = await assessor.collectEvidence(makeIdentity());
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('assessment.evidence_unavailable');
+      }
     });
   });
 
   describe('generateScorecards', () => {
-    it('returns one entry per preset key', async () => {
+    it('returns one entry per preset', () => {
       const assessor = new PlatformAssessor(makeConfig(), makeDeps());
       const identity = makeIdentity();
-      const evidence = await assessor.collectEvidence(identity);
-      const presetKeys = ['p1', 'p2', 'p3'];
+      const candles = makeMockCandles(100);
+      const presets = [
+        { key: 'p1', entry: makeMockPresetEntry('p1', 'momentum', 'trend-following') },
+        { key: 'p2', entry: makeMockPresetEntry('p2', 'range', 'mean-reverting') },
+        { key: 'p3', entry: makeMockPresetEntry('p3', 'swing', 'trend-following') },
+      ];
 
-      const scorecards = await assessor.generateScorecards(identity, evidence, presetKeys);
+      const result = assessor.generateScorecards(identity, candles, presets);
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('expected ok');
+      const scorecards = result.data;
       expect(scorecards).toHaveLength(3);
       expect(scorecards[0]!.presetKey).toBe('p1');
-      expect(scorecards.every((s) => s.scanHealth === 'stale')).toBe(true);
+      expect(scorecards.every((s) => ['healthy', 'degraded', 'no_signal', 'stale'].includes(s.scanHealth))).toBe(true);
     });
 
-    it('returns empty array for empty preset keys', async () => {
+    it('returns empty array for empty presets', () => {
       const assessor = new PlatformAssessor(makeConfig(), makeDeps());
       const identity = makeIdentity();
-      const evidence = await assessor.collectEvidence(identity);
+      const candles = makeMockCandles(100);
 
-      const scorecards = await assessor.generateScorecards(identity, evidence, []);
+      const result = assessor.generateScorecards(identity, candles, []);
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('expected ok');
+      const scorecards = result.data;
       expect(scorecards).toHaveLength(0);
+    });
+
+    it('skips DCA presets', () => {
+      const assessor = new PlatformAssessor(makeConfig(), makeDeps());
+      const identity = makeIdentity();
+      const candles = makeMockCandles(100);
+      const presets = [
+        { key: 'dca_v1', entry: makeMockPresetEntry('dca_v1', 'dca', 'neutral') },
+        { key: 'momentum_v1', entry: makeMockPresetEntry('momentum_v1', 'momentum', 'trend-following') },
+      ];
+
+      const result = assessor.generateScorecards(identity, candles, presets);
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('expected ok');
+      const scorecards = result.data;
+      expect(scorecards).toHaveLength(1);
+      expect(scorecards[0]!.presetKey).toBe('momentum_v1');
+    });
+
+    it('returns error when runner throws', () => {
+      const assessor = new PlatformAssessor(makeConfig(), makeDeps());
+      const identity = makeIdentity();
+      // Passing null candles with a non-empty presets list causes the runner to throw
+      // (the loop body executes and accesses candles.length / iterates over candles)
+      const result = assessor.generateScorecards(identity, null as unknown as PriceCandle[], [
+        { key: 'p1', entry: makeMockPresetEntry('p1', 'momentum', 'trend-following') },
+      ]);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('assessment.scorecard_failed');
+      }
     });
   });
 
@@ -208,10 +341,16 @@ describe('PlatformAssessor', () => {
     it('returns a basic artifact with all required fields', async () => {
       const assessor = new PlatformAssessor(makeConfig(), makeDeps());
       const identity = makeIdentity();
-      const evidence = await assessor.collectEvidence(identity);
-      const scorecards = await assessor.generateScorecards(identity, evidence, ['momentum_v1']);
+      const candles = makeMockCandles(100);
+      const presets = [
+        { key: 'momentum_v1', entry: makeMockPresetEntry('momentum_v1', 'momentum', 'trend-following') },
+      ];
+      const scorecardsResult = assessor.generateScorecards(identity, candles, presets);
+      expect(scorecardsResult.ok).toBe(true);
+      if (!scorecardsResult.ok) throw new Error('expected ok');
+      const scorecards = scorecardsResult.data;
 
-      const artifact = await assessor.rankPresets(identity, evidence, scorecards);
+      const artifact = await assessor.rankPresets(identity, {} as never, scorecards);
       expect(artifact.id).toBeDefined();
       expect(artifact.venueFamily).toBe(identity.venueFamily);
       expect(artifact.styleTier).toBe(identity.styleTier);
@@ -223,9 +362,8 @@ describe('PlatformAssessor', () => {
     it('handles empty scorecards gracefully', async () => {
       const assessor = new PlatformAssessor(makeConfig(), makeDeps());
       const identity = makeIdentity();
-      const evidence = await assessor.collectEvidence(identity);
 
-      const artifact = await assessor.rankPresets(identity, evidence, []);
+      const artifact = await assessor.rankPresets(identity, {} as never, []);
       expect(artifact.presetRankings).toHaveLength(0);
       expect(artifact.recommendedPreset).toBeNull();
     });

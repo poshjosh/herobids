@@ -3,50 +3,26 @@ import { createLogger } from '../logger.js';
 import type { Logger } from 'pino';
 import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
-import type { RegimeResult } from '@herobids/market-data';
+import type { PriceCandle, RegimeResult } from '@herobids/market-data';
 import type {
   MarketAssessmentIdentity,
   MarketAssessmentArtifact,
   PresetScorecardEntry,
   MarketAssessmentPresetRanking,
+  AssessmentEvidenceSnapshot,
+  EvidenceValue,
+  VolatilityEvidence,
+  LiquidityEvidence,
+  BreadthEvidence,
+  ScorecardInput,
+  AssessmentData,
+  AssessmentUnavailable,
+  AssessmentMarketCohort,
+  PresetEntry,
 } from '@herobids/domain';
 import { err, ok, type Result } from '@herobids/domain';
-
-// ── Evidence Package Types ──────────────────────────────────────────────────
-
-export interface EvidencePackage {
-  identity: MarketAssessmentIdentity;
-  collectedAt: string;
-  regime: RegimeResult;
-  breadth: BreadthEvidence;
-  volatility: VolatilityEvidence;
-  liquidityQuality: LiquidityQualityEvidence;
-  scanHealth: ScanHealthEvidence;
-}
-
-export interface BreadthEvidence {
-  symbolsAboveMA: number;
-  totalSymbols: number;
-  breadthRatio: number;
-}
-
-export interface VolatilityEvidence {
-  averageTrueRange: number;
-  volatilityRegime: 'low' | 'normal' | 'high' | 'extreme';
-}
-
-export interface LiquidityQualityEvidence {
-  averageSpreadBps: number;
-  averageDepthUsd: number;
-  quality: 'good' | 'adequate' | 'poor';
-}
-
-export interface ScanHealthEvidence {
-  candidatesDiscovered: number;
-  candidatesScored: number;
-  signalsGenerated: number;
-  health: 'healthy' | 'degraded' | 'no_signal' | 'stale';
-}
+import type { AssessmentEvidencePorts } from './assessment-ports.js';
+import { createPresetScorecardRunner } from './preset-scorecard-runner.js';
 
 // ── LLM Usage Types ────────────────────────────────────────────────────────
 
@@ -85,11 +61,11 @@ export interface PlatformAssessorConfig {
 export interface PlatformAssessorDeps {
   db: Database;
   redis: Redis;
-  /** Access to shared market data / regime computation */
-  getRegimeSnapshot(identity: MarketAssessmentIdentity): Promise<RegimeResult>;
-  /** Access to preset catalog */
-  getPresetKeys(styleTier: string): Promise<string[]>;
-  /** LLM provider for assessment */
+  /** Evidence collection ports for market data. */
+  evidencePorts: AssessmentEvidencePorts;
+  /** Get all presets for a style tier (full PresetEntry objects). */
+  getPresets(styleTier: string): Array<{ key: string; entry: PresetEntry }>;
+  /** LLM provider for assessment ranking (used in 009). */
   callLlm(prompt: string): Promise<{ text: string; usage: LlmCallUsage }>;
   /** Logger instance */
   logger?: Logger;
@@ -142,14 +118,35 @@ export class PlatformAssessor {
     this.log.info({ identity }, 'On-demand assessment started');
 
     try {
-      // Step 1: Collect evidence
-      const evidence = await this.collectEvidence(identity);
+      // Step 1: Resolve supported provider policy (simple: always true for now)
+      // TODO(009): implement venue-based provider policy resolution
+      // const supported = this.resolveProviderPolicy(identity);
 
-      // Step 2: Generate per-preset scorecards
-      const presetKeys = await this.deps.getPresetKeys(identity.styleTier);
-      const scorecards = await this.generateScorecards(identity, evidence, presetKeys);
+      // Step 2: Collect evidence
+      const evidenceResult = await this.collectEvidence(identity);
+      if (!evidenceResult.ok) {
+        return evidenceResult;
+      }
+      const evidence = evidenceResult.data;
 
-      // Step 3: Rank presets via LLM
+      // Step 3: Load presets for the style tier
+      const presets = this.deps.getPresets(identity.styleTier);
+
+      // Step 4: Extract candles from evidence snapshot for scorecard generation
+      const candles = extractCandlesFromSnapshot(evidence);
+
+      // Step 5: Generate scorecards using the deterministic runner
+      const scorecardsResult = this.generateScorecards(identity, candles, presets);
+      if (!scorecardsResult.ok) {
+        return scorecardsResult; // propagate the error
+      }
+      const scorecards = scorecardsResult.data;
+
+      // Step 6: Persist immutable evidence before LLM work
+      // TODO(008): persist evidence snapshot and scorecards to DB
+      // await this.persistEvidence(evidence, scorecards);
+
+      // Step 7: Rank presets via LLM
       const artifact = await this.rankPresets(identity, evidence, scorecards);
 
       this.log.info({ identity, artifactId: artifact.id }, 'On-demand assessment completed');
@@ -167,61 +164,163 @@ export class PlatformAssessor {
 
   // ── Evidence Collection ────────────────────────────────────────────────
 
-  /** Collect deterministic evidence for a canonical identity */
-  async collectEvidence(identity: MarketAssessmentIdentity): Promise<EvidencePackage> {
-    // Phase 1 skeleton — returns placeholder data.
-    // Full implementation will integrate with shared market data infrastructure.
-    const regime = await this.deps.getRegimeSnapshot(identity).catch((err) => {
-      this.log.warn({ err, identity }, 'Regime snapshot failed — using placeholder');
-      return PLACEHOLDER_REGIME;
-    });
+  /** Collect deterministic evidence for a canonical identity via ports. */
+  async collectEvidence(
+    identity: MarketAssessmentIdentity,
+  ): Promise<Result<AssessmentEvidenceSnapshot>> {
+    const ports = this.deps.evidencePorts;
+    const collectedAt = new Date().toISOString();
 
-    return {
+    // 1. Regime snapshot
+    const regimeResult = await ports.regime.getRegime(identity);
+    if (!regimeResult.ok) {
+      this.log.warn({ err: regimeResult.error, identity }, 'Regime evidence unavailable');
+      return err({
+        code: 'assessment.evidence_unavailable',
+        message: `Regime evidence unavailable: ${regimeResult.error.message}`,
+      });
+    }
+    // NOTE: AssessmentData<T> uses `.data` (not `.value`) for the payload field.
+    // See packages/domain/src/market-assessment.ts → AssessmentData<T>.
+    if (isStale(regimeResult.data.expiresAt)) {
+      return err({
+        code: 'assessment.evidence_stale',
+        message: 'Regime evidence is stale',
+      });
+    }
+    const regime: EvidenceValue<RegimeResult> = makeAvailable(
+      regimeResult.data.data,
+      regimeResult.data.source,
+    );
+
+    // 2. Symbol candles
+    const candlesResult = await ports.candles.getCandles({
       identity,
-      collectedAt: new Date().toISOString(),
-      regime,
-      breadth: {
-        symbolsAboveMA: 0,
-        totalSymbols: 0,
-        breadthRatio: 0,
-      },
-      volatility: {
-        averageTrueRange: 0,
-        volatilityRegime: 'normal',
-      },
-      liquidityQuality: {
-        averageSpreadBps: 0,
-        averageDepthUsd: 0,
-        quality: 'adequate',
-      },
-      scanHealth: {
-        candidatesDiscovered: 0,
-        candidatesScored: 0,
-        signalsGenerated: 0,
-        health: 'stale',
-      },
+      interval: '15m',
+      minimumCandles: 48,
+    });
+    if (!candlesResult.ok) {
+      this.log.warn({ err: candlesResult.error, identity }, 'Candle evidence unavailable');
+      return err({
+        code: 'assessment.evidence_unavailable',
+        message: `Candle evidence unavailable: ${candlesResult.error.message}`,
+      });
+    }
+    if (isStale(candlesResult.data.expiresAt)) {
+      return err({
+        code: 'assessment.evidence_stale',
+        message: 'Candle evidence is stale',
+      });
+    }
+    const rawCandles = candlesResult.data.data;
+    const symbolCandles: EvidenceValue<ReadonlyArray<PriceCandle>> = makeAvailable(
+      rawCandles,
+      candlesResult.data.source,
+    );
+
+    // 3. Liquidity
+    const liquidityResult = await ports.liquidity.getLiquidity(identity);
+    let liquidity: EvidenceValue<LiquidityEvidence>;
+    if (liquidityResult.ok) {
+      if (isStale(liquidityResult.data.expiresAt)) {
+        this.log.warn({ identity }, 'Liquidity evidence is stale — treating as unavailable');
+        liquidity = makeUnavailable(
+          'assessment.evidence_stale',
+          'Liquidity evidence is stale',
+        );
+      } else {
+        liquidity = makeAvailable(liquidityResult.data.data, liquidityResult.data.source);
+      }
+    } else {
+      // Liquidity is not mandatory for any venue in the current config;
+      // construct an unavailable EvidenceValue.
+      this.log.warn({ err: liquidityResult.error, identity }, 'Liquidity evidence unavailable');
+      liquidity = makeUnavailable(
+        'assessment.liquidity_unavailable',
+        liquidityResult.error.message,
+      );
+    }
+
+    // 4. Breadth
+    const defaultCohort: AssessmentMarketCohort = {
+      venueFamily: identity.venueFamily,
+      instrumentKind: identity.instrumentKind,
+      symbols: [],
+      lookback: 30,
+      membershipTimestamp: collectedAt,
+      movingAveragePolicy: '200',
     };
+    const breadthResult = await ports.breadth.getBreadth({
+      identity,
+      cohort: defaultCohort,
+    });
+    let breadth: EvidenceValue<BreadthEvidence>;
+    if (breadthResult.ok) {
+      const breadthData = breadthResult.data;
+      if ('data' in breadthData) {
+        const ad = breadthData as AssessmentData<BreadthEvidence>;
+        if (isStale(ad.expiresAt)) {
+          this.log.warn({ identity }, 'Breadth evidence is stale — treating as unavailable');
+          breadth = makeUnavailable('assessment.evidence_stale', 'Breadth evidence is stale');
+        } else {
+          breadth = makeAvailable(ad.data, ad.source);
+        }
+      } else {
+        // AssessmentUnavailable
+        const unavailable = breadthData as AssessmentUnavailable;
+        this.log.warn({ reason: unavailable.reasonCode, identity }, 'Breadth evidence unavailable');
+        breadth = makeUnavailable(unavailable.reasonCode, unavailable.message);
+      }
+    } else {
+      this.log.warn({ err: breadthResult.error, identity }, 'Breadth evidence unavailable');
+      breadth = makeUnavailable(
+        'assessment.breadth_unavailable',
+        breadthResult.error.message,
+      );
+    }
+
+    // 5. Compute volatility from candle data
+    const volatility = computeVolatilityEvidence(rawCandles);
+
+    // 6. Build scorecard input
+    const candleArr = rawCandles as readonly PriceCandle[];
+    const scorecardInput: EvidenceValue<ScorecardInput> = makeAvailable<ScorecardInput>(
+      buildScorecardInput(identity, candleArr),
+      'computed',
+    );
+
+    return ok({
+      schemaVersion: 1,
+      identity,
+      collectedAt,
+      regime,
+      symbolCandles,
+      volatility,
+      liquidity,
+      breadth,
+      scorecardInput,
+    });
   }
 
   // ── Scorecard Generation ───────────────────────────────────────────────
 
-  /** Generate deterministic per-preset scorecards */
-  async generateScorecards(
-    _identity: MarketAssessmentIdentity,
-    _evidence: EvidencePackage,
-    presetKeys: string[],
-  ): Promise<PresetScorecardEntry[]> {
-    // Phase 1 skeleton — returns placeholder scorecards.
-    // Full implementation will run deterministic dry-run scans per preset.
-    return presetKeys.map((presetKey) => ({
-      presetKey,
-      presetBehaviorVersion: '000000000000', // placeholder — real impl will fetch from preset catalog
-      candidatesDiscovered: 0,
-      candidatesScored: 0,
-      signalsGenerated: 0,
-      topConfidence: null,
-      scanHealth: 'stale' as const,
-    }));
+  /** Generate deterministic per-preset scorecards using PresetScorecardRunner. */
+  generateScorecards(
+    identity: MarketAssessmentIdentity,
+    candles: PriceCandle[],
+    presets: Array<{ key: string; entry: PresetEntry }>,
+  ): Result<PresetScorecardEntry[]> {
+    try {
+      const runner = createPresetScorecardRunner({});
+      const result = runner.generateScorecards({ identity, presets, candles });
+      return ok(result);
+    } catch (caught) {
+      const errorMessage = caught instanceof Error ? caught.message : String(caught);
+      return err({
+        code: 'assessment.scorecard_failed',
+        message: errorMessage,
+      });
+    }
   }
 
   // ── LLM Ranking ────────────────────────────────────────────────────────
@@ -229,7 +328,7 @@ export class PlatformAssessor {
   /** Invoke the platform LLM to rank presets */
   async rankPresets(
     identity: MarketAssessmentIdentity,
-    _evidence: EvidencePackage,
+    _evidence: AssessmentEvidenceSnapshot,
     scorecards: PresetScorecardEntry[],
   ): Promise<MarketAssessmentArtifact> {
     // Phase 1 skeleton — returns a basic artifact without LLM call.
@@ -286,22 +385,138 @@ export class PlatformAssessor {
   }
 }
 
-// ── Placeholder Constants ──────────────────────────────────────────────────
+// ── Evidence Value Helpers ──────────────────────────────────────────────────
 
-const PLACEHOLDER_REGIME: RegimeResult = {
-  pass: true,
-  reasons: ['placeholder — regime not yet integrated'],
-  details: {
-    benchmarkSymbol: 'BTC',
-    currentPrice: 0,
-    emaFast: 0,
-    emaSlow: 0,
-    emaTrend: 0,
-    emaAlignment: 'bullish',
-    adxValue: 0,
-    choppy: false,
-    vwap: 0,
-    priceAboveVwap: true,
-    marketStructure: 'higherHighs',
-  },
-};
+/** Returns true when the evidence expiry has already passed. */
+function isStale(expiresAt: string): boolean {
+  return new Date(expiresAt).getTime() <= Date.now();
+}
+
+function makeAvailable<T>(value: T, source: string): EvidenceValue<T> {
+  return {
+    state: 'available',
+    value,
+    source,
+    observedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 300_000).toISOString(), // 5 min
+  };
+}
+
+function makeUnavailable(reasonCode: string, message: string): EvidenceValue<never> {
+  return {
+    state: 'unavailable',
+    reasonCode,
+    message,
+    observedAt: new Date().toISOString(),
+  };
+}
+
+// ── Volatility Computation ──────────────────────────────────────────────────
+
+const ATR_LOOKBACK_PERIODS = 14;
+const VOLATILITY_LOW_PERCENTILE = 25;
+const VOLATILITY_HIGH_PERCENTILE = 75;
+const VOLATILITY_EXTREME_PERCENTILE = 95;
+const VOLATILITY_CALCULATION_VERSION = '1.0.0';
+
+/** Compute ATR and classify volatility regime from candle data. */
+function computeVolatilityEvidence(
+  candles: readonly PriceCandle[],
+): EvidenceValue<VolatilityEvidence> {
+  if (candles.length < 2) {
+    return makeUnavailable(
+      'assessment.volatility_insufficient_data',
+      `Need at least 2 candles for ATR, got ${candles.length}`,
+    );
+  }
+
+  const trueRanges: number[] = [];
+  for (let i = 1; i < candles.length; i++) {
+    const current = candles[i]!;
+    const prev = candles[i - 1]!;
+    const tr = Math.max(
+      current.high - current.low,
+      Math.abs(current.high - prev.close),
+      Math.abs(current.low - prev.close),
+    );
+    trueRanges.push(tr);
+  }
+
+  const lookback = Math.min(ATR_LOOKBACK_PERIODS, trueRanges.length);
+  const recentTRs = trueRanges.slice(-lookback);
+  const atr = recentTRs.reduce((sum, tr) => sum + tr, 0) / recentTRs.length;
+
+  // Classify regime by comparing current ATR against the candle distribution.
+  // Use the most recent trueRange as the "current" ATR for classification.
+  const currentATR = recentTRs[recentTRs.length - 1] ?? atr;
+
+  // Build a sorted copy of true ranges for percentile computation
+  const sortedTRs = [...trueRanges].sort((a, b) => a - b);
+
+  let volatilityRegime: VolatilityEvidence['volatilityRegime'];
+  if (currentATR >= percentileValue(sortedTRs, VOLATILITY_EXTREME_PERCENTILE)) {
+    volatilityRegime = 'extreme';
+  } else if (currentATR >= percentileValue(sortedTRs, VOLATILITY_HIGH_PERCENTILE)) {
+    volatilityRegime = 'high';
+  } else if (currentATR <= percentileValue(sortedTRs, VOLATILITY_LOW_PERCENTILE)) {
+    volatilityRegime = 'low';
+  } else {
+    volatilityRegime = 'normal';
+  }
+
+  return makeAvailable<VolatilityEvidence>(
+    {
+      averageTrueRange: Math.round(atr * 1e8) / 1e8,
+      volatilityRegime,
+      calculationVersion: VOLATILITY_CALCULATION_VERSION,
+    },
+    'computed',
+  );
+}
+
+/** Compute the value at a given percentile from a sorted array. */
+function percentileValue(sorted: number[], pct: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = ((pct / 100) * (sorted.length - 1));
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo]!;
+  const frac = idx - lo;
+  return (sorted[lo]! * (1 - frac)) + (sorted[hi]! * frac);
+}
+
+// ── Scorecard Input Builder ─────────────────────────────────────────────────
+
+function buildScorecardInput(
+  identity: MarketAssessmentIdentity,
+  candles: readonly PriceCandle[],
+): ScorecardInput {
+  const symbol =
+    identity.instrumentKind === 'orderbook' || identity.instrumentKind === 'perp'
+      ? identity.symbol
+      : `${identity.network}:${identity.address}`;
+
+  const start = candles.length > 0 ? candles[0]!.timestamp : new Date(0).toISOString();
+  const end =
+    candles.length > 0
+      ? candles[candles.length - 1]!.timestamp
+      : new Date(0).toISOString();
+
+  return {
+    symbol,
+    candleWindow: { start, end },
+    candlesAvailable: candles.length,
+  };
+}
+
+// ── Snapshot Helpers ────────────────────────────────────────────────────────
+
+/** Extract candles array from an evidence snapshot for scorecard generation. */
+function extractCandlesFromSnapshot(
+  snapshot: AssessmentEvidenceSnapshot,
+): PriceCandle[] {
+  if (snapshot.symbolCandles.state === 'available') {
+    return [...snapshot.symbolCandles.value];
+  }
+  return [];
+}
