@@ -179,6 +179,7 @@ export type {
   AllowedPresetsPolicy,
   PresetTransitionPolicy,
   PlatformAssessmentOptIn,
+  PlatformAssessmentTransitionMode,
   PlatformAssessorConfig,
   PlatformAssessmentLlmConfig,
   WakeGateConfig,

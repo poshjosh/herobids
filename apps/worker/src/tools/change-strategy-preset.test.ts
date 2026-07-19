@@ -17,7 +17,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     },
     publishToInbound: vi.fn(async () => undefined),
     agentConfigOps: {
-      getCurrentConfig: vi.fn().mockResolvedValue({}),
+      getCurrentConfig: vi.fn().mockResolvedValue({ platformAssessment: { mode: 'apply_capable' } }),
       persistConfig: vi.fn(),
       appendJournal: vi.fn(),
       notifyActorConfigUpdate: vi.fn(),
@@ -132,7 +132,7 @@ describe('change_strategy_preset', () => {
     const ctx = makeCtx({
       db: makeMockDb({ selectResult: [artifact] }),
       agentConfigOps: {
-        getCurrentConfig: vi.fn().mockResolvedValue({}),
+        getCurrentConfig: vi.fn().mockResolvedValue({ platformAssessment: { mode: 'apply_capable' } }),
         persistConfig: vi.fn(),
         appendJournal,
         notifyActorConfigUpdate: vi.fn(),
@@ -241,7 +241,7 @@ describe('change_strategy_preset', () => {
       db: makeMockDb({ selectResult: [artifact], insertFn: insertSpy }),
       agentConfigOps: {
         getCurrentConfig: vi.fn().mockResolvedValue({
-          platformAssessment: { enabled: true },
+          platformAssessment: { enabled: true, mode: 'apply_capable' },
         }),
         persistConfig: vi.fn(),
         appendJournal: vi.fn(),
@@ -258,6 +258,28 @@ describe('change_strategy_preset', () => {
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({ applied: true, targetPreset: 'momentum' });
     expect(insertSpy).toHaveBeenCalledOnce();
+  });
+
+  // ── recommend_only mode blocks transitions ────────────────────────────
+
+  it('blocks transition when platformAssessment.mode is recommend_only', async () => {
+    const ctx = makeCtx({
+      agentConfigOps: {
+        getCurrentConfig: vi.fn().mockResolvedValue({ platformAssessment: { mode: 'recommend_only' } }),
+        persistConfig: vi.fn(),
+        appendJournal: vi.fn(),
+        notifyActorConfigUpdate: vi.fn(),
+        getLlmTickCount: vi.fn().mockReturnValue(0),
+      },
+    });
+
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'entries_only' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('assessment.mode_recommend_only');
   });
 
   // ── P6: Exact artifact reference preservation ──────────────────────────

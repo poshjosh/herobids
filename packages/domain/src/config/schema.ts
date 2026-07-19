@@ -2153,6 +2153,9 @@ export const PresetTransitionPolicySchema = z.object({
 export const PlatformAssessmentOptInSchema = z.object({
   /** When true, this agent participates in shared platform assessment. */
   enabled: z.boolean().default(false),
+  /** Assessment transition mode: recommend_only blocks any binding/config/position mutation;
+   *  apply_capable allows mutations when operator rollout policy permits. */
+  mode: z.enum(['recommend_only', 'apply_capable']).default('recommend_only'),
   /** Minimum confidence threshold for this agent to consider a recommendation. */
   minConfidenceThreshold: z.number().min(0).max(1).optional(),
   /** Minimum score uplift threshold for this agent to consider a recommendation. */
@@ -2239,6 +2242,7 @@ export type HybridMode = z.infer<typeof HybridModeSchema>;
 export type AllowedPresetsPolicy = z.infer<typeof AllowedPresetsPolicySchema>;
 export type PresetTransitionPolicy = z.infer<typeof PresetTransitionPolicySchema>;
 export type PlatformAssessmentOptIn = z.infer<typeof PlatformAssessmentOptInSchema>;
+export type PlatformAssessmentTransitionMode = z.infer<typeof PlatformAssessmentOptInSchema.shape.mode>;
 
 // ── Wake Gate Config (deferred infra — type only) ──────────────────────────
 
