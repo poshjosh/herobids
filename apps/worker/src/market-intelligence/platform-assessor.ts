@@ -23,6 +23,7 @@ import type {
 import { err, ok, type Result } from '@herobids/domain';
 import type { AssessmentEvidencePorts } from './assessment-ports.js';
 import { createPresetScorecardRunner } from './preset-scorecard-runner.js';
+import { rankPresetsViaLlm, type LlmRankerConfig } from './llm-ranker.js';
 
 // ── LLM Usage Types ────────────────────────────────────────────────────────
 
@@ -56,6 +57,8 @@ export interface PlatformAssessorConfig {
   maxLlmCallsPerCycle?: number;
   /** How long an artifact is considered fresh (ms). Default: 6 hours */
   cacheFreshnessMs?: number;
+  /** Platform LLM ranking configuration. Required for 009 LLM ranking. */
+  llm?: LlmRankerConfig;
 }
 
 export interface PlatformAssessorDeps {
@@ -147,11 +150,17 @@ export class PlatformAssessor {
       // await this.persistEvidence(evidence, scorecards);
 
       // Step 7: Rank presets via LLM
-      const artifact = await this.rankPresets(identity, evidence, scorecards);
+      const rankingResult = await this.rankPresets(identity, evidence, scorecards, presets);
+      if (!rankingResult.ok) {
+        return rankingResult;
+      }
+      const { artifact, usage } = rankingResult.data;
+
+      const aggregatedUsage = this.aggregateUsage(usage);
 
       this.log.info({ identity, artifactId: artifact.id }, 'On-demand assessment completed');
 
-      return ok({ artifact, llmUsage: this.emptyAggregatedUsage() });
+      return ok({ artifact, llmUsage: aggregatedUsage });
     } catch (caught) {
       const errorMessage = caught instanceof Error ? caught.message : String(caught);
       this.log.error({ err: caught, identity }, 'On-demand assessment failed');
@@ -325,14 +334,79 @@ export class PlatformAssessor {
 
   // ── LLM Ranking ────────────────────────────────────────────────────────
 
-  /** Invoke the platform LLM to rank presets */
+  /**
+   * Invoke the platform LLM to rank presets using the bounded projection
+   * and deterministic artifact assembly from the llm-ranker module.
+   *
+   * Falls back to the Phase 1 placeholder when no LLM config is provided.
+   */
   async rankPresets(
     identity: MarketAssessmentIdentity,
-    _evidence: AssessmentEvidenceSnapshot,
+    evidence: AssessmentEvidenceSnapshot,
     scorecards: PresetScorecardEntry[],
-  ): Promise<MarketAssessmentArtifact> {
-    // Phase 1 skeleton — returns a basic artifact without LLM call.
-    // Full implementation will construct a prompt and call the platform LLM.
+    presets: Array<{ key: string; entry: PresetEntry }>,
+  ): Promise<Result<{ artifact: MarketAssessmentArtifact; usage: LlmCallUsage }>> {
+    // If no LLM config, return the Phase 1 placeholder artifact
+    if (!this.config.llm) {
+      this.log.warn({ identity }, 'No LLM config provided — returning placeholder artifact');
+      return ok({
+        artifact: this.buildPlaceholderArtifact(identity, scorecards),
+        usage: {
+          provider: 'none',
+          model: 'none',
+          inputTokens: 0,
+          outputTokens: 0,
+          reasoningTokens: 0,
+        },
+      });
+    }
+
+    const result = await rankPresetsViaLlm(
+      this.config.llm,
+      { callLlm: this.deps.callLlm },
+      identity,
+      evidence,
+      scorecards,
+      presets.map((p) => ({
+        key: p.key,
+        entry: {
+          name: p.entry.name,
+          description: p.entry.description,
+          strategy: {
+            type: p.entry.strategy.type,
+            decisionMode: p.entry.strategy.decisionMode,
+          },
+        },
+      })),
+      this.config.cacheFreshnessMs,
+    );
+
+    if (!result.ok) {
+      this.log.error({ err: result.error, identity }, 'LLM ranking failed');
+      return result;
+    }
+
+    this.log.info(
+      {
+        identity,
+        provider: this.config.llm.provider,
+        model: this.config.llm.model,
+        inputTokens: result.data.usage.inputTokens,
+        outputTokens: result.data.usage.outputTokens,
+        confidence: result.data.artifact.confidence,
+        recommendedPreset: result.data.artifact.recommendedPreset,
+      },
+      'LLM ranking completed',
+    );
+
+    return ok({ artifact: result.data.artifact, usage: result.data.usage });
+  }
+
+  /** Build a Phase 1 placeholder artifact when no LLM config is available. */
+  private buildPlaceholderArtifact(
+    identity: MarketAssessmentIdentity,
+    scorecards: PresetScorecardEntry[],
+  ): MarketAssessmentArtifact {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + this.config.cacheFreshnessMs);
 
@@ -351,11 +425,11 @@ export class PlatformAssessor {
       id: crypto.randomUUID(),
       venueFamily: identity.venueFamily,
       styleTier: identity.styleTier,
-      assessmentRunId: '', // filled by caller
+      assessmentRunId: '',
       assessedAt: now.toISOString(),
       expiresAt: expiresAt.toISOString(),
-      maxActorUseAge: 'PT12H',
-      maxWakeAge: 'PT6H',
+      maxActorUseAge: new Date(now.getTime() + this.config.cacheFreshnessMs).toISOString(),
+      maxWakeAge: new Date(now.getTime() + this.config.cacheFreshnessMs / 2).toISOString(),
       assessmentVersion: 1,
       artifactVersion: 1,
       rankingPolicyVersion: 1,
@@ -374,12 +448,13 @@ export class PlatformAssessor {
     };
   }
 
-  private emptyAggregatedUsage(): AggregatedLlmUsage {
+  /** Aggregate a single LLM call usage into the AggregatedLlmUsage format. */
+  private aggregateUsage(usage: LlmCallUsage): AggregatedLlmUsage {
     return {
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      totalReasoningTokens: 0,
-      callCount: 0,
+      totalInputTokens: usage.inputTokens,
+      totalOutputTokens: usage.outputTokens,
+      totalReasoningTokens: usage.reasoningTokens,
+      callCount: 1,
       estimatedCostMicrousd: 0,
     };
   }

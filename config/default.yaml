@@ -640,6 +640,31 @@ platformAssessor:
   #   minimumSymbols: 5
   #   maxLookbackDays: 30
   sourceMappings: {}  # per-venue-family overrides — defaults resolve from context
+  # ── Platform LLM ranking configuration ────────────────────────────────
+  # The platform assessor uses its own LLM config (never an agent's config).
+  # Provider and model must exist in the loaded provider registry at startup.
+  llm:
+    provider: openrouter                # provider identifier in providers.yaml
+    model: anthropic/claude-fable-5     # model ID
+    timeoutMs: 30000                    # 30s HTTP timeout
+    maxTokens: 2000                     # max output tokens for ranking response
+    maxInputTokens: 4000                # max input tokens for prompt projection
+    # baseUrl: https://...             # optional base URL override
+    maxConcurrency: 1                   # max concurrent assessment LLM calls
+    retry:
+      maxRetries: 2
+      timeoutBackoffMs: [5000, 15000]
+      serverErrorBackoffMs: 10000
+      defaultRateLimitBackoffMs: 60000
+    scoreBands:
+      aMin: 80
+      bMin: 60
+      cMin: 40
+      dMin: 20
+    recommendationPolicy:
+      minConfidence: 0.6               # min confidence for auto-recommendation
+      minScoreForRecommendation: 40    # min score for auto-recommendation
+      minAllowedScore: 1               # score 0 = exclude from allowedPresets
 
 # Market intelligence — always-on discovery coordinator and monitor.
 # Controls the background market intelligence subsystem that wakes agents

@@ -1283,6 +1283,60 @@ export const MarketIntelligenceConfigSchema = z.object({
   ).optional().default({}),
 });
 
+// ── Platform Assessor LLM Config ───────────────────────────────────────────
+
+/** Score band thresholds for LLM ranking output. */
+export const PlatformAssessmentScoreBandsSchema = z.object({
+  /** Score ≥ this → band 'A'. Default: 80 */
+  aMin: z.number().min(0).max(100).default(80),
+  /** Score ≥ this → band 'B'. Default: 60 */
+  bMin: z.number().min(0).max(100).default(60),
+  /** Score ≥ this → band 'C'. Default: 40 */
+  cMin: z.number().min(0).max(100).default(40),
+  /** Score ≥ this → band 'D'. Default: 20 */
+  dMin: z.number().min(0).max(100).default(20),
+  /** Score < dMin → band 'F'. */
+}).default({});
+
+/** Recommendation policy — guards against low-confidence auto-recommendations. */
+export const PlatformAssessmentRecommendationPolicySchema = z.object({
+  /** Minimum confidence (0–1) required for the rank-1 preset to become the recommended preset.
+   *  Below this threshold, recommendedPreset is set to null. Default: 0.6 */
+  minConfidence: z.number().min(0).max(1).default(0.6),
+  /** Minimum score (0–100) required for the rank-1 preset to become the recommended preset.
+   *  Below this threshold, recommendedPreset is set to null. Default: 40 */
+  minScoreForRecommendation: z.number().min(0).max(100).default(40),
+  /** Minimum score for a preset to appear in allowedPresets. Default: 1 (score 0 = excluded). */
+  minAllowedScore: z.number().min(0).max(100).default(1),
+}).default({});
+
+/** Platform-owned LLM configuration for assessment ranking.
+ *  The platform assessor never falls back to an agent's LLM configuration. */
+export const PlatformAssessmentLlmConfigSchema = z.object({
+  /** LLM provider identifier (must exist in the loaded provider registry). Default: 'openrouter' */
+  provider: z.string().min(1).default('openrouter'),
+  /** Model ID. Default: 'anthropic/claude-fable-5' */
+  model: z.string().min(1).default('anthropic/claude-fable-5'),
+  /** HTTP request timeout in ms. Default: 30_000 */
+  timeoutMs: z.number().int().min(1_000).default(30_000),
+  /** Max output tokens for the LLM response. Default: 2_000 */
+  maxTokens: z.number().int().min(1).default(2_000),
+  /** Max input tokens for the prompt projection. Default: 4_000 */
+  maxInputTokens: z.number().int().min(1).default(4_000),
+  /** Base URL override (for testing or alternative endpoints). */
+  baseUrl: z.string().url().optional(),
+  /** Concurrency limit for assessment LLM calls. Default: 1 */
+  maxConcurrency: z.number().int().min(1).default(1),
+  /** Retry policy for provider calls. */
+  retry: LlmRetryConfigSchema.default({}),
+  /** Score band thresholds. */
+  scoreBands: PlatformAssessmentScoreBandsSchema.default({}),
+  /** Recommendation guard policy. */
+  recommendationPolicy: PlatformAssessmentRecommendationPolicySchema.default({}),
+}).default({});
+
+export type PlatformAssessmentLlmConfig = z.infer<typeof PlatformAssessmentLlmConfigSchema>;
+
 // ── Platform Assessor Config ───────────────────────────────────────────────
 
 export const PlatformAssessorConfigSchema = z.object({
@@ -1303,6 +1357,9 @@ export const PlatformAssessorConfigSchema = z.object({
   /** Maximum number of instruments accepted per assessment request.
    *  If the caller requests more, only the first N are assessed. Default: 3 */
   maxInstrumentsPerRequest: z.number().int().min(1).max(50).default(3),
+  // ── Platform LLM configuration ───────────────────────────────────────
+  /** Platform-owned LLM configuration for ranking. Never falls back to agent config. */
+  llm: PlatformAssessmentLlmConfigSchema.default({}),
   // ── Evidence collection policies ──────────────────────────────────────
   /** Max age for collected evidence before considered stale. Default: 300_000 (5 min) */
   evidenceMaxAgeMs: z.number().int().positive().default(300_000),

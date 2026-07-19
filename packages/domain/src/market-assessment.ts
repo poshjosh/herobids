@@ -932,3 +932,211 @@ export const AssessmentEvidenceSnapshotSchema = z.object({
   breadth: EvidenceValueSchema(BreadthEvidenceSchema),
   scorecardInput: EvidenceValueSchema(ScorecardInputSchema),
 });
+
+// ── Platform Assessment LLM Response ────────────────────────────────────────
+
+/**
+ * A single preset ranking entry produced by the platform LLM.
+ *
+ * The LLM is constrained to only reference preset keys present in the input.
+ * Semantic validation (outside the Zod schema) verifies:
+ *   1. The preset-key set exactly matches the candidate set.
+ *   2. Ranks are a complete, unique 1..N sequence.
+ *   3. Behavior versions equal the catalog-derived versions passed in the projection.
+ */
+export interface PlatformAssessmentRankedPreset {
+  presetKey: string;
+  presetBehaviorVersion: string;
+  rank: number;
+  score: number;
+  pros: string[];
+  cons: string[];
+  fitNotes: string;
+}
+
+export const PlatformAssessmentRankedPresetSchema = z.object({
+  presetKey: z.string().min(1),
+  presetBehaviorVersion: z.string().min(1),
+  rank: z.number().int().positive(),
+  score: z.number().min(0).max(100),
+  pros: z.array(z.string().max(200)).min(1).max(5),
+  cons: z.array(z.string().max(200)).min(1).max(5),
+  fitNotes: z.string().min(1).max(500),
+});
+
+/**
+ * Raw LLM response before semantic validation and artifact assembly.
+ *
+ * The LLM must output valid JSON matching this schema.
+ * After syntactic parsing, deterministic validation checks candidate-set
+ * completeness, rank uniqueness, version consistency, and safety invariants.
+ */
+export interface PlatformAssessmentLlmResponse {
+  currentMarketSummary: string;
+  regimeSummary: string;
+  scanHealthSummary: string;
+  reasoningSummary: string;
+  confidence: number;
+  urgency: 'low' | 'medium' | 'high';
+  rankings: PlatformAssessmentRankedPreset[];
+}
+
+export const PlatformAssessmentLlmResponseSchema = z.object({
+  currentMarketSummary: z.string().min(1).max(1000),
+  regimeSummary: z.string().min(1).max(500),
+  scanHealthSummary: z.string().min(1).max(500),
+  reasoningSummary: z.string().min(1).max(1000),
+  confidence: z.number().min(0).max(1),
+  urgency: z.enum(['low', 'medium', 'high']),
+  rankings: z.array(PlatformAssessmentRankedPresetSchema).min(1).max(20),
+});
+
+// ── Semantic Validation ─────────────────────────────────────────────────────
+
+/**
+ * Error codes for LLM response semantic validation failures.
+ * Namespaced under `assessment.llm_` per the error-handling conventions.
+ */
+export type AssessmentLlmValidationErrorCode =
+  | 'assessment.llm_response_invalid'
+  | 'assessment.llm_missing_candidates'
+  | 'assessment.llm_extra_candidates'
+  | 'assessment.llm_duplicate_candidates'
+  | 'assessment.llm_bad_ranks'
+  | 'assessment.llm_version_mismatch'
+  | 'assessment.llm_unrecognised_directive';
+
+/**
+ * Candidate descriptor for validation — the set of preset keys and their
+ * catalog-derived behavior versions that the LLM MUST rank.
+ */
+export interface AssessmentCandidateDescriptor {
+  presetKey: string;
+  presetBehaviorVersion: string;
+}
+
+/**
+ * Validate that the LLM response is semantically consistent with the
+ * candidate set and free of prohibited content.
+ *
+ * Checks (in order):
+ *   1. Every candidate appears exactly once in the rankings.
+ *   2. No extra (invented) preset keys appear.
+ *   3. Ranks are a complete, unique 1..N sequence.
+ *   4. Behavior versions match the catalog-derived versions.
+ *   5. No unrecognised control directives or policy mutations.
+ *
+ * Returns `ok(undefined)` when valid, or `err({ code, message })` describing
+ * the first violation found.
+ */
+export function validateLlmResponseSemantics(
+  response: PlatformAssessmentLlmResponse,
+  candidates: AssessmentCandidateDescriptor[],
+): Result<undefined> {
+  // Build lookup maps
+  const candidateKeys = new Set(candidates.map((c) => c.presetKey));
+  const candidateVersions = new Map(candidates.map((c) => [c.presetKey, c.presetBehaviorVersion]));
+
+  const rankedKeys = new Set(response.rankings.map((r) => r.presetKey));
+
+  // Check for duplicates in rankings (by presetKey) — must run before
+  // the completeness check, otherwise duplicates masquerade as missing.
+  const seenKeys = new Set<string>();
+  for (const r of response.rankings) {
+    if (seenKeys.has(r.presetKey)) {
+      return err({
+        code: 'assessment.llm_duplicate_candidates' as AssessmentLlmValidationErrorCode,
+        message: `LLM response contains duplicate preset: ${r.presetKey}`,
+      });
+    }
+    seenKeys.add(r.presetKey);
+  }
+
+  // 1. Every candidate appears exactly once
+  for (const ck of candidateKeys) {
+    if (!rankedKeys.has(ck)) {
+      return err({
+        code: 'assessment.llm_missing_candidates' as AssessmentLlmValidationErrorCode,
+        message: `LLM response missing candidate preset: ${ck}`,
+      });
+    }
+  }
+
+  // 2. No extra presets
+  for (const rk of rankedKeys) {
+    if (!candidateKeys.has(rk)) {
+      return err({
+        code: 'assessment.llm_extra_candidates' as AssessmentLlmValidationErrorCode,
+        message: `LLM response contains unrecognised preset: ${rk}`,
+      });
+    }
+  }
+
+  // 3. Ranks are complete, unique 1..N
+  const n = candidates.length;
+  const ranks = new Set(response.rankings.map((r) => r.rank));
+  if (ranks.size !== n) {
+    return err({
+      code: 'assessment.llm_bad_ranks' as AssessmentLlmValidationErrorCode,
+      message: `Expected ${n} unique ranks, got ${ranks.size}`,
+    });
+  }
+  for (let i = 1; i <= n; i++) {
+    if (!ranks.has(i)) {
+      return err({
+        code: 'assessment.llm_bad_ranks' as AssessmentLlmValidationErrorCode,
+        message: `Ranks are not a complete 1..${n} sequence: missing rank ${i}`,
+      });
+    }
+  }
+
+  // 4. Behavior versions match
+  for (const r of response.rankings) {
+    const expectedVersion = candidateVersions.get(r.presetKey);
+    if (expectedVersion !== undefined && r.presetBehaviorVersion !== expectedVersion) {
+      return err({
+        code: 'assessment.llm_version_mismatch' as AssessmentLlmValidationErrorCode,
+        message: `Version mismatch for ${r.presetKey}: expected ${expectedVersion}, got ${r.presetBehaviorVersion}`,
+      });
+    }
+  }
+
+  // 5. No unrecognised control directives in summary text fields
+  const textFields = [
+    response.currentMarketSummary,
+    response.regimeSummary,
+    response.scanHealthSummary,
+    response.reasoningSummary,
+  ];
+  const prohibitedPatterns = [
+    /<tool[\s_]/i,
+    /<function[\s_]/i,
+    /<instruction>/i,
+    /\[SYSTEM\]/i,
+    /\[OVERRIDE\]/i,
+  ];
+  for (const field of textFields) {
+    for (const pattern of prohibitedPatterns) {
+      if (pattern.test(field)) {
+        return err({
+          code: 'assessment.llm_unrecognised_directive' as AssessmentLlmValidationErrorCode,
+          message: 'LLM response contains a prohibited control directive',
+        });
+      }
+    }
+  }
+
+  // Also check fitNotes for prohibited patterns
+  for (const r of response.rankings) {
+    for (const pattern of prohibitedPatterns) {
+      if (pattern.test(r.fitNotes)) {
+        return err({
+          code: 'assessment.llm_unrecognised_directive' as AssessmentLlmValidationErrorCode,
+          message: `LLM ranking for ${r.presetKey} contains a prohibited control directive`,
+        });
+      }
+    }
+  }
+
+  return ok(undefined);
+}

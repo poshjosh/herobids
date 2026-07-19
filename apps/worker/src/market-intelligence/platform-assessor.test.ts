@@ -546,7 +546,10 @@ describe('PlatformAssessor', () => {
       if (!scorecardsResult.ok) throw new Error('expected ok');
       const scorecards = scorecardsResult.data;
 
-      const artifact = await assessor.rankPresets(identity, {} as never, scorecards);
+      const rankingResult = await assessor.rankPresets(identity, {} as never, scorecards, []);
+      expect(rankingResult.ok).toBe(true);
+      if (!rankingResult.ok) throw new Error('expected ok');
+      const artifact = rankingResult.data.artifact;
       expect(artifact.id).toBeDefined();
       expect(artifact.venueFamily).toBe(identity.venueFamily);
       expect(artifact.styleTier).toBe(identity.styleTier);
@@ -559,7 +562,10 @@ describe('PlatformAssessor', () => {
       const assessor = new PlatformAssessor(makeConfig(), makeDeps());
       const identity = makeIdentity();
 
-      const artifact = await assessor.rankPresets(identity, {} as never, []);
+      const rankingResult = await assessor.rankPresets(identity, {} as never, [], []);
+      expect(rankingResult.ok).toBe(true);
+      if (!rankingResult.ok) throw new Error('expected ok');
+      const artifact = rankingResult.data.artifact;
       expect(artifact.presetRankings).toHaveLength(0);
       expect(artifact.recommendedPreset).toBeNull();
     });

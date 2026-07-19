@@ -101,6 +101,9 @@ export {
   PresetTransitionPolicySchema,
   PlatformAssessmentOptInSchema,
   PlatformAssessorConfigSchema,
+  PlatformAssessmentLlmConfigSchema,
+  PlatformAssessmentScoreBandsSchema,
+  PlatformAssessmentRecommendationPolicySchema,
   validateReviewInterval,
 } from './schema.js';
 
@@ -177,6 +180,7 @@ export type {
   PresetTransitionPolicy,
   PlatformAssessmentOptIn,
   PlatformAssessorConfig,
+  PlatformAssessmentLlmConfig,
   WakeGateConfig,
 } from './schema.js';
 
