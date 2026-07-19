@@ -42,6 +42,12 @@ export function canRouteToHybridEvaluator(params: {
     return false;
   }
 
+  // assessment_review scanner wakes must NOT route into the hybrid entry evaluator.
+  // These wakes carry deterministic scanner pre-check advice, not trading signals.
+  if (params.isScannerWake && params.latestScannerContext?.scannerKind === 'assessment_review') {
+    return false;
+  }
+
   if (params.isScannerGated) {
     return params.isScannerWake;
   }
