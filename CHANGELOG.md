@@ -8,6 +8,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Preset Assessment Tool Context Wiring (012):** Replaced assessment-tool stubs with typed ports, services, and authoritative preset binding state:
+  - **Rollout mode** — `platformAssessment.mode` field (`recommend_only` | `apply_capable`) with safe default
+  - **`agent_preset_bindings` table** — authoritative first-class preset-binding state per agent+scope
+  - **Preset transition state machine** — `prepared → applying → applied | deferred | rejected | failed | partially_applied`
+  - **Domain types** — `AssessmentRequestPort`, `PresetTransitionPort`, `AssessmentIdentityResolver`, `ActivePresetBinding`, `PreparedPresetTransition`
+  - **`AssessmentIdentityResolverImpl`** — fail-closed venue normalization, DEX token resolution, style tier from authoritative binding
+  - **`PresetTransitionService`** — 7-step transition process with state machine, binding upsert after actor notification
+  - **Tools wired through ports** — hardcoded `oldPresetKey='unknown'` and `openPositionCount=0` stubs removed
+  See [012-tool-context-wiring.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/012-tool-context-wiring.md).
+
 - **Scanner Pre-Check & Determistic Review Advice (010):** Replaced the placeholder `ReviewScheduler.runPreCheck()` with a real data-driven implementation that produces review advice from persisted scanner candidates without LLM calls or billing:
   - **DB schema** — new `agent_scan_candidates` table for persisting bounded scanner candidate observations with deterministic facts; new `agent_assessment_review_checks` table for durable per-agent review-cycle state with lease/recovery fields; `review_advice.check_id` links advice rows to their parent check record
   - **Scan path instrumentation** — `completeTechnicalScan()` builds `PersistableScanCandidate` entries from entry signals and exit advisories; `onPersistScanCandidates` callback persists via worker composition root
