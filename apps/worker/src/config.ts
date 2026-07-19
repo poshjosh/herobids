@@ -102,6 +102,9 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   SHARED_POSTGRES_USER: { path: 'sharedServices.postgresUser', type: 'string' },
   SHARED_POSTGRES_PASSWORD: { path: 'sharedServices.postgresPassword', type: 'string' },
   SHARED_POSTGRES_DATABASE: { path: 'sharedServices.postgresDatabase', type: 'string' },
+  // Platform Assessor
+  PLATFORM_ASSESSOR_ENABLED: { path: 'platformAssessor.enabled', type: 'boolean' },
+  PLATFORM_ASSESSOR_CACHE_FRESHNESS_MS: { path: 'platformAssessor.cacheFreshnessMs', type: 'number' },
   // Nomad
   NOMAD_TOKEN: { path: 'nomad.token', type: 'string' },
 };

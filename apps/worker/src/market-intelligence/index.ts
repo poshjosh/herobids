@@ -1,7 +1,7 @@
 export { createLeaderElection, type LeaderElection, type LeaderElectionConfig } from './leader-election.js';
 export { createMarketDataCoordinator, type MarketDataCoordinator, type CoordinatorConfig, type CoordinatorDeps } from './coordinator.js';
 export { createMarketMonitor, type MarketMonitor, type MonitorConfig, type MonitorDeps } from './monitor.js';
-export { PlatformAssessor, type PlatformAssessorConfig, type PlatformAssessorDeps } from './platform-assessor.js';
+export { PlatformAssessor, type PlatformAssessorRuntimeConfig, type PlatformAssessorConfig, type PlatformAssessorDeps } from './platform-assessor.js';
 export { type LlmRankerConfig, type LlmRankerDeps, type LlmRankerResult, rankPresetsViaLlm } from './llm-ranker.js';
 export { createPlatformAssessor, type AssessorFactoryResult } from './assessor-factory.js';
 export { ReviewScheduler, createReviewScheduler, type ReviewSchedulerConfig, type ReviewSchedulerDeps, type ReviewCheckOutcome } from './review-scheduler.js';

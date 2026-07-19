@@ -261,6 +261,24 @@ export class AssessmentRequestService {
       minReviewIntervalMs: this.config.minReviewIntervalMs,
     };
 
+    // ── 3a. Enforce enabled gates (operator + agent) ──────────────────
+    // Both the operator-level platform assessor master switch and the
+    // per-agent opt-in must be enabled for any assessment work to proceed.
+    if (!this.config.enabled) {
+      this.log.info({ agentId: params.agentId }, 'Platform assessor disabled at operator level — assessment blocked');
+      return ok({
+        kind: 'identity_unresolved',
+        reason: 'Platform assessment is not available',
+      });
+    }
+    if (!resolvedConfig.enabled) {
+      this.log.info({ agentId: params.agentId }, 'Agent has not opted into platform assessment — assessment blocked');
+      return ok({
+        kind: 'identity_unresolved',
+        reason: 'Agent has not opted into platform assessment',
+      });
+    }
+
     // ── 4. Enforce cooldown ───────────────────────────────────────────
     const cooldownCutoff = new Date(now.getTime() - resolvedConfig.reviewIntervalMs);
 

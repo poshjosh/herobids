@@ -114,9 +114,10 @@ function makeOperatorConfig(overrides?: Partial<PlatformAssessorConfig>): Platfo
 
 // ── Helper: standard select queue for "agent found, no cooldown, no
 //    daily cap hit, no existing completed" — used before billing checks.
+//    Agent has platformAssessment.enabled: true so it passes the enabled gate.
 function agentFoundSelectQueue() {
   return [
-    [{ userId: 'user-1', unifiedConfig: {} }], // step 2: agent query
+    [{ userId: 'user-1', unifiedConfig: { platformAssessment: { enabled: true } } }], // step 2: agent query
     [],                                         // step 4: cooldown check
     [{ count: 0 }],                             // step 5: daily cap count
     [],                                         // step 7: existing completed
@@ -252,7 +253,7 @@ describe('AssessmentRequestService', () => {
   describe('daily cap', () => {
     it('returns billing_blocked when daily cap is exceeded', async () => {
       const service = createService([
-        [{ userId: 'user-1', unifiedConfig: {} }], // step 2: agent
+        [{ userId: 'user-1', unifiedConfig: { platformAssessment: { enabled: true } } }], // step 2: agent
         [],                                         // step 4: cooldown
         [{ count: 5 }],                             // step 5: daily cap count (exceeds max=4)
       ]);
@@ -280,7 +281,7 @@ describe('AssessmentRequestService', () => {
     it('returns cooldown_blocked when recent request exists within cooldown window', async () => {
       const recentDate = new Date(); // now — within cooldown window (24h)
       const service = createService([
-        [{ userId: 'user-1', unifiedConfig: {} }],                           // step 2: agent
+        [{ userId: 'user-1', unifiedConfig: { platformAssessment: { enabled: true } } }],                           // step 2: agent
         [{ id: 'prev-req-1', requestedAt: recentDate }],                     // step 4: cooldown hit
       ]);
 
@@ -343,7 +344,7 @@ describe('AssessmentRequestService', () => {
       }));
 
       const service = createService([
-        [{ userId: 'user-1', unifiedConfig: {} }], // step 2: agent
+        [{ userId: 'user-1', unifiedConfig: { platformAssessment: { enabled: true } } }], // step 2: agent
         [],                                         // step 4: cooldown
         [{ count: 0 }],                             // step 5: daily cap
         [],                                         // step 7: existing completed
@@ -381,7 +382,7 @@ describe('AssessmentRequestService', () => {
       }));
 
       const service = createService([
-        [{ userId: 'user-1', unifiedConfig: {} }], // step 2: agent
+        [{ userId: 'user-1', unifiedConfig: { platformAssessment: { enabled: true } } }], // step 2: agent
         [],                                         // step 4: cooldown
         [{ count: 0 }],                             // step 5: daily cap
         [],                                         // step 7: existing completed
@@ -452,7 +453,7 @@ describe('AssessmentRequestService', () => {
 
       // First request: full flow
       const db1 = makeQueueDb([
-        [{ userId: 'user-1', unifiedConfig: {} }],
+        [{ userId: 'user-1', unifiedConfig: { platformAssessment: { enabled: true } } }],
         [],
         [{ count: 0 }],
         [],                                         // step 7: no existing completed
@@ -473,7 +474,7 @@ describe('AssessmentRequestService', () => {
 
       // Second request with same key: existing completed found at step 7
       const db2 = makeQueueDb([
-        [{ userId: 'user-1', unifiedConfig: {} }],
+        [{ userId: 'user-1', unifiedConfig: { platformAssessment: { enabled: true } } }],
         [],
         [{ count: 0 }],
         // Step 7: an existing completed request with the same group key
@@ -509,7 +510,7 @@ describe('AssessmentRequestService', () => {
   describe('batch assessment', () => {
     it('returns results for each accepted symbol', async () => {
       const service = createService([]); // empty symbol → identity_unresolved for both
-      const result = await service.requestBatchAssessment(
+      const result = await service.requestBatchAssessmentBySymbols(
         ['BTC', 'ETH'],
         {
           agentId: 'agent-1',
@@ -524,7 +525,7 @@ describe('AssessmentRequestService', () => {
 
     it('truncates symbols exceeding maxInstrumentsPerRequest', async () => {
       const service = createService([]);
-      const result = await service.requestBatchAssessment(
+      const result = await service.requestBatchAssessmentBySymbols(
         ['BTC', 'ETH', 'SOL', 'AVAX', 'MATIC'],
         {
           agentId: 'agent-1',
@@ -541,7 +542,7 @@ describe('AssessmentRequestService', () => {
 
     it('handles empty symbols array', async () => {
       const service = createService([]);
-      const result = await service.requestBatchAssessment(
+      const result = await service.requestBatchAssessmentBySymbols(
         [],
         {
           agentId: 'agent-1',

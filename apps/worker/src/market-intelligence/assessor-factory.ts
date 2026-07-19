@@ -3,10 +3,11 @@ import type { Logger } from 'pino';
 import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
 import type {
+  PlatformAssessorConfig as DomainPlatformAssessorConfig,
   PlatformAssessmentLlmConfig,
 } from '@herobids/domain';
 import { callLlmProvider, type LlmProviderConfig, type LlmRequest } from '@herobids/llm';
-import { PlatformAssessor, type PlatformAssessorConfig, type PlatformAssessorDeps, type LlmCallUsage } from './platform-assessor.js';
+import { PlatformAssessor, type PlatformAssessorRuntimeConfig, type PlatformAssessorDeps, type LlmCallUsage } from './platform-assessor.js';
 import type { LlmRankerConfig } from './llm-ranker.js';
 import type { AssessmentEvidencePorts } from './assessment-ports.js';
 import type { PresetEntry } from '@herobids/domain';
@@ -26,15 +27,20 @@ export interface AssessorFactoryResult {
  *
  * The LLM adapter uses the operator-configured platform LLM (never an agent's
  * config). Provider/model availability is validated at construction time:
- * if `llmConfig` is provided but the configured provider is not found in
+ * if the LLM config is provided but the configured provider is not found in
  * `providersBaseUrlMap`, construction throws — this is a loud, intentional
  * failure that prevents silent fallback to agent LLM configuration.
  *
- * If `llmConfig` is entirely absent (operator has not configured platform
+ * If the LLM config is entirely absent (operator has not configured platform
  * LLM ranking), the assessor is still constructed but will return
  * placeholder artifacts (Phase 1 scaffolding). No LLM calls will be made.
  *
- * @param llmConfig - Resolved platform LLM config from operator config.
+ * Runtime operational values (`enabled`, `maxConcurrentAssessments`,
+ * `cacheFreshnessMs`) are derived from the operator config — no hardcoded
+ * defaults. The domain schema (`PlatformAssessorConfigSchema`) is the single
+ * source of truth for all defaults.
+ *
+ * @param operatorConfig - Full resolved operator platform assessor config.
  * @param providersBaseUrlMap - Provider base URL map from providers.yaml.
  * @param db - Database instance.
  * @param redis - Redis instance.
@@ -44,7 +50,7 @@ export interface AssessorFactoryResult {
  * @throws If llmConfig is provided but its provider is not in the loaded registry.
  */
 export function createPlatformAssessor(
-  llmConfig: PlatformAssessmentLlmConfig | undefined,
+  operatorConfig: DomainPlatformAssessorConfig,
   providersBaseUrlMap: Record<string, string> | undefined,
   db: Database,
   redis: Redis,
@@ -53,6 +59,8 @@ export function createPlatformAssessor(
   logger?: Logger,
 ): AssessorFactoryResult {
   const log = logger ?? createLogger('assessor-factory');
+
+  const llmConfig: PlatformAssessmentLlmConfig | undefined = operatorConfig.llm;
 
   // ── Provider validation ───────────────────────────────────────────────
   // Missing, disabled, or invalid platform LLM configuration is a loud
@@ -152,11 +160,12 @@ export function createPlatformAssessor(
     };
   }
 
-  // Build the assessor config
-  const assessorConfig: PlatformAssessorConfig = {
-    enabled: true,
-    maxConcurrentAssessments: 1,
-    cacheFreshnessMs: 21_600_000, // 6 hours
+  // Build the assessor runtime config — all operational values sourced from
+  // the operator config (domain schema is the single source of truth).
+  const assessorConfig: PlatformAssessorRuntimeConfig = {
+    enabled: operatorConfig.enabled,
+    maxConcurrentAssessments: operatorConfig.maxConcurrentAssessments,
+    cacheFreshnessMs: operatorConfig.cacheFreshnessMs,
     llm: rankerConfig ?? undefined,
   };
 

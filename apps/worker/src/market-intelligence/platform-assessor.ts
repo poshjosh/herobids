@@ -50,16 +50,26 @@ export interface AggregatedLlmUsage {
 
 // ── Config & Deps ───────────────────────────────────────────────────────────
 
-export interface PlatformAssessorConfig {
-  /** Enable/disable platform assessor. Default: true */
-  enabled?: boolean;
-  /** Maximum concurrent assessments. Default: 1 */
-  maxConcurrentAssessments?: number;
-  /** How long an artifact is considered fresh (ms). Default: 6 hours */
-  cacheFreshnessMs?: number;
+/**
+ * Runtime operational config for the PlatformAssessor class.
+ *
+ * Derived from the domain {@link import('@herobids/domain').PlatformAssessorConfig}
+ * at construction time by the assessor factory. This is a focused subset — the
+ * domain schema is the single source of truth for defaults and validation.
+ */
+export interface PlatformAssessorRuntimeConfig {
+  /** Enable/disable platform assessor. Derived from operator config. */
+  enabled: boolean;
+  /** Maximum concurrent assessments. Derived from operator config. */
+  maxConcurrentAssessments: number;
+  /** How long an artifact is considered fresh (ms). Derived from operator config. */
+  cacheFreshnessMs: number;
   /** Platform LLM ranking configuration. Required for 009 LLM ranking. */
   llm?: LlmRankerConfig;
 }
+
+/** @deprecated Use {@link PlatformAssessorRuntimeConfig} instead. */
+export type PlatformAssessorConfig = PlatformAssessorRuntimeConfig;
 
 export interface PlatformAssessorDeps {
   db: Database;
@@ -79,7 +89,7 @@ export interface PlatformAssessorDeps {
 const ASSESSOR_LOGGER_NAME = 'platform-assessor';
 
 export class PlatformAssessor {
-  private readonly config: Required<PlatformAssessorConfig>;
+  private readonly config: Required<PlatformAssessorRuntimeConfig>;
   private readonly deps: PlatformAssessorDeps;
   private readonly log: Logger;
 
@@ -89,11 +99,11 @@ export class PlatformAssessor {
   // This gives operators confidence that the platform assessor produces sensible
   // recommendations before any agent acts on them.
 
-  constructor(config: PlatformAssessorConfig, deps: PlatformAssessorDeps) {
+  constructor(config: PlatformAssessorRuntimeConfig, deps: PlatformAssessorDeps) {
     this.config = {
-      enabled: config.enabled ?? true,
-      maxConcurrentAssessments: config.maxConcurrentAssessments ?? 1,
-      cacheFreshnessMs: config.cacheFreshnessMs ?? 21_600_000, // 6 hours
+      enabled: config.enabled,
+      maxConcurrentAssessments: config.maxConcurrentAssessments,
+      cacheFreshnessMs: config.cacheFreshnessMs,
       llm: config.llm as LlmRankerConfig,
     };
     this.deps = deps;

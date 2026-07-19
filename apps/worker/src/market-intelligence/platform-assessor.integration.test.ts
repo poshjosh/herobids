@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { PlatformAssessor } from './platform-assessor.js';
-import type { PlatformAssessorConfig, PlatformAssessorDeps } from './platform-assessor.js';
+import type { PlatformAssessorRuntimeConfig, PlatformAssessorDeps } from './platform-assessor.js';
 import type { AssessmentEvidencePorts } from './assessment-ports.js';
 import type {
   MarketAssessmentIdentity,
@@ -28,7 +28,7 @@ function makeIdentity(
   };
 }
 
-function makeConfig(overrides?: Partial<PlatformAssessorConfig>): PlatformAssessorConfig {
+function makeConfig(overrides?: Partial<PlatformAssessorRuntimeConfig>): PlatformAssessorRuntimeConfig {
   return { enabled: true, maxConcurrentAssessments: 1, cacheFreshnessMs: 60_000, ...overrides };
 }
 

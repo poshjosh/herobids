@@ -1907,7 +1907,7 @@ const evidencePorts = createEvidencePorts({ scannerCandleFetcher });
 const getPresets = createPresetCatalog();
 
 const { assessor: platformAssessor, llmConfig: platformLlmConfig } = createPlatformAssessor(
-  appConfig.platformAssessor.llm,
+  appConfig.platformAssessor,
   providersBaseUrlMap,
   db,
   redisClient,
@@ -2052,17 +2052,23 @@ logger.info(
 
 // ── Per-Agent Review Schedulers ──────────────────────────────────────────
 // Instantiate a ReviewScheduler for every active agent that has opted into
-// platform assessment (platformAssessment.enabled === true). The scheduler
-// runs a deterministic pre-check on the agent's review interval and emits
-// an assessment_review wake when advice is due.
+// platform assessment (platformAssessment.enabled === true), gated on the
+// operator-level platformAssessor.enabled master switch.
+//
+// Both gates must be true: operator *and* agent. If the operator disables
+// platform assessment globally, no review schedulers start regardless of
+// per-agent opt-in.
 try {
-  const activeAgents = await agentRepo.listActiveAgents();
-  for (const agent of activeAgents) {
-    const unifiedConfig = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
-    const platformAssessment = (unifiedConfig['platformAssessment'] ?? {}) as Record<string, unknown>;
-    const enabled = platformAssessment['enabled'] === true;
+  if (!appConfig.platformAssessor.enabled) {
+    logger.info('Platform assessor is disabled at operator level — skipping review scheduler initialisation');
+  } else {
+    const activeAgents = await agentRepo.listActiveAgents();
+    for (const agent of activeAgents) {
+      const unifiedConfig = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
+      const platformAssessment = (unifiedConfig['platformAssessment'] ?? {}) as Record<string, unknown>;
+      const agentEnabled = platformAssessment['enabled'] === true;
 
-    if (enabled) {
+      if (!agentEnabled) continue;
       const agentReviewIntervalMs = (typeof platformAssessment['reviewIntervalMs'] === 'number')
         ? platformAssessment['reviewIntervalMs']
         : appConfig.platformAssessor.minReviewIntervalMs;
@@ -2174,8 +2180,8 @@ try {
       reviewSchedulers.set(agent.id, scheduler);
       logger.info({ agentId: agent.id, reviewIntervalMs: Math.max(agentReviewIntervalMs, appConfig.platformAssessor.minReviewIntervalMs) }, 'Review scheduler started for agent');
     }
+    logger.info({ count: reviewSchedulers.size }, 'Review schedulers initialised');
   }
-  logger.info({ count: reviewSchedulers.size }, 'Review schedulers initialised');
 } catch (err) {
   logger.error({ err }, 'Failed to initialise review schedulers');
 }
