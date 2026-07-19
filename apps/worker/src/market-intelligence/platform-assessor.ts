@@ -487,14 +487,25 @@ function percentileValue(sorted: number[], pct: number): number {
 
 // ── Scorecard Input Builder ─────────────────────────────────────────────────
 
+/** Resolve a canonical symbol string from a MarketAssessmentIdentity for scorecard input. */
+function resolveSymbolForScorecard(identity: MarketAssessmentIdentity): string {
+  switch (identity.instrumentKind) {
+    case 'orderbook':
+    case 'perp':
+      return identity.symbol;
+    case 'swap':
+    case 'dex':
+      return `${identity.network}:${identity.address}`;
+    default:
+      throw new Error(`Unknown instrumentKind: ${(identity as { instrumentKind: string }).instrumentKind}`);
+  }
+}
+
 function buildScorecardInput(
   identity: MarketAssessmentIdentity,
   candles: readonly PriceCandle[],
 ): ScorecardInput {
-  const symbol =
-    identity.instrumentKind === 'orderbook' || identity.instrumentKind === 'perp'
-      ? identity.symbol
-      : `${identity.network}:${identity.address}`;
+  const symbol = resolveSymbolForScorecard(identity);
 
   const start = candles.length > 0 ? candles[0]!.timestamp : new Date(0).toISOString();
   const end =

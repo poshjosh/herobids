@@ -37,7 +37,9 @@ export interface PresetScorecardRunner {
 // ── Implementation ──────────────────────────────────────────────────────────
 
 export class PresetScorecardRunnerImpl implements PresetScorecardRunner {
-  constructor(private readonly _deps: PresetScorecardRunnerDeps) {}
+  // PresetScorecardRunnerDeps is empty for now (candles pre-fetched by caller).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  constructor(_deps: PresetScorecardRunnerDeps) {}
 
   generateScorecards(params: {
     identity: MarketAssessmentIdentity;
@@ -125,10 +127,8 @@ function resolveSymbol(identity: MarketAssessmentIdentity): string {
     case 'swap':
     case 'dex':
       return `${identity.network}:${identity.address}`;
-    default: {
-      const _exhaustive: never = identity;
-      throw new Error(`Unsupported instrumentKind: ${(identity as MarketAssessmentIdentity).instrumentKind}`);
-    }
+    default:
+      throw new Error(`Unsupported instrumentKind: ${(identity as { instrumentKind: string }).instrumentKind}`);
   }
 }
 
