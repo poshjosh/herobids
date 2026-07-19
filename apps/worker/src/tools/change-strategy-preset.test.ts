@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ToolContext } from '@herobids/domain';
 import { marketAssessmentArtifacts } from '@herobids/db';
-import { changeStrategyPresetTool } from './apply-preset-transition.js';
+import { changeStrategyPresetTool } from './change-strategy-preset.js';
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {

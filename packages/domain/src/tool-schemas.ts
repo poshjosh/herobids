@@ -8,25 +8,10 @@ import {
   MarketAssessmentIdentitySchema,
 } from './market-assessment.js';
 
-// ── Preset Assessment & Transition Tool Parameter Schemas ──────────────────
+// ── Preset Transition Tool Parameter Schemas ──────────────────────────────
 
-export const GetMarketPresetAssessmentParamsSchema = z.object({
-  symbol: z.string().min(1).describe('Trading symbol to assess (e.g. "BTC", "ETH"). For swaps, the user-facing token symbol.'),
-  venueFamily: z.string().optional().describe('Venue family to scope the assessment. Inferred from agent binding if omitted.'),
-  instrumentKind: z.enum(['orderbook', 'perp', 'swap', 'dex']).optional().describe('Instrument kind. Inferred from venue family if omitted.'),
-  idempotencyKey: z.string().optional().describe('Client-provided idempotency key. Reuses a cached result without a new charge.'),
-});
-
-export const RecommendPresetTransitionParamsSchema = z.object({
-  assessmentArtifactId: z.string().optional().describe('Exact assessment artifact ID from get_market_preset_assessment. If omitted, resolves from the latest fresh artifact for the agent.'),
-  symbol: z.string().optional().describe('Trading symbol to scope recommendation. Required if assessmentArtifactId is not provided.'),
-}).refine(
-  (data) => data.assessmentArtifactId != null || data.symbol != null,
-  { message: 'At least one of assessmentArtifactId or symbol must be provided.' },
-);
-
-export const ApplyPresetTransitionParamsSchema = z.object({
-  assessmentArtifactId: z.string().min(1).describe('Exact assessment artifact ID used for the recommendation. Required for audit trail.'),
+export const ChangeStrategyPresetParamsSchema = z.object({
+  assessmentArtifactId: z.string().min(1).describe('Exact assessment artifact ID from assess_strategy_preset. Required for audit trail.'),
   targetPreset: z.string().min(1),
   mode: TransitionModeSchema,
   reason: z.string().optional(),
@@ -97,12 +82,7 @@ export type AssessmentBilling = z.infer<typeof AssessmentBillingSchema>;
 export type AssessmentResultEntry = z.infer<typeof AssessmentResultEntrySchema>;
 export type AssessStrategyPresetResponse = z.infer<typeof AssessStrategyPresetResponseSchema>;
 
-export type GetMarketPresetAssessmentParams = z.infer<typeof GetMarketPresetAssessmentParamsSchema>;
-export type RecommendPresetTransitionParams = z.infer<typeof RecommendPresetTransitionParamsSchema>;
-export type ApplyPresetTransitionParams = z.infer<typeof ApplyPresetTransitionParamsSchema>;
-
-export const ChangeStrategyPresetParamsSchema = ApplyPresetTransitionParamsSchema;
-export type ChangeStrategyPresetParams = ApplyPresetTransitionParams;
+export type ChangeStrategyPresetParams = z.infer<typeof ChangeStrategyPresetParamsSchema>;
 
 /**
  * Tool Schema Registry — maps dot-path schema names to JSON Schemas with
@@ -488,22 +468,8 @@ const SCHEMA_REGISTRY: Record<string, SchemaEntry> = {
 
   // ── Preset Assessment & Transition Tool Schemas ──────────────────────────
 
-  'get_market_preset_assessment': {
-    schema: zodToJsonSchemaSimple(GetMarketPresetAssessmentParamsSchema),
-    example: { symbol: 'BTC' },
-    version: '2.0.0',
-    description: 'Run an on-demand per-symbol market assessment. Returns ranked presets, confidence, and market summary for the given symbol. Results may be served from cache if within freshness window.',
-  },
-
-  'recommend_preset_transition': {
-    schema: zodToJsonSchemaSimple(RecommendPresetTransitionParamsSchema),
-    example: { assessmentArtifactId: 'artifact-abc123' },
-    version: '2.0.0',
-    description: 'Get a preset transition recommendation from a specific assessment artifact (or latest fresh artifact for the agent). Combines the shared assessment with your local trading state.',
-  },
-
   'change_strategy_preset': {
-    schema: zodToJsonSchemaSimple(ApplyPresetTransitionParamsSchema),
+    schema: zodToJsonSchemaSimple(ChangeStrategyPresetParamsSchema),
     example: { assessmentArtifactId: 'artifact-abc123', targetPreset: 'momentum', mode: 'entries_only', reason: 'Strong momentum regime detected' },
     version: '2.0.0',
     description: 'Apply a strategy preset change using an exact assessment artifact reference from assess_strategy_preset. Supports entries_only, entries_and_tighten_existing, and entries_and_full_transition modes. Records the transition event for audit.',

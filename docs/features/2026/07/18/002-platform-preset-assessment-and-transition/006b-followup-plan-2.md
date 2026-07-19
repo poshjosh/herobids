@@ -1,6 +1,6 @@
 # Follow-up Plan 2: Tool Simplification and Shadow-Mode Removal
 
-**Status:** Draft
+**Status:** In Progress (P1-P6 complete, P7-P8 in progress)
 **Follows:**
 - [005-implementation-checklist-per-symbol-on-demand.md](./005-implementation-checklist-per-symbol-on-demand.md)
 - [006-followup-plan.md](./006-followup-plan.md)

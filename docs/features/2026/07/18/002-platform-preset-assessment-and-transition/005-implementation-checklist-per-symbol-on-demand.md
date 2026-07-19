@@ -27,7 +27,7 @@ Phase 1 is a **per-symbol, agent-authoritative, on-demand** assessment flow.
 - A worker-owned, **per-agent** review scheduler runs cheap deterministic checks at an interval the agent owner configures, bounded by operator policy.
 - When the deterministic scanner finds a candidate worth reviewing, it **records advice**. It does not generate an assessment, call the LLM, reserve credit, bill, or change a preset.
 - Advice is delivered to the agent through **one dedicated, low-frequency `assessment_review` tick** — never an ordinary scanner signal wake.
-- The agent decides whether to request an assessment via `get_market_preset_assessment` using a symbol-first request.
+- The agent decides whether to request an assessment via `assess_strategy_preset` using a symbol-first request.
 - Only that request may reuse a fresh artifact or start a new **billed** assessment run, and only after synchronous billing authorization succeeds.
 - The platform assessor is **advisory**. The agent decides whether to request, recommend, and apply an allowed transition.
 
@@ -52,7 +52,7 @@ sequenceDiagram
     Advice->>Agent: Deliver ONE dedicated assessment_review tick
     Agent->>Agent: Decide whether an assessment is worth requesting
     opt Agent requests assessment
-      Agent->>Request: get_market_preset_assessment(symbol)
+      Agent->>Request: assess_strategy_preset(symbols=[symbol])
       Request->>Request: Resolve canonical identity, check opt-in/cooldown/cap
       Request->>Request: Re-check fresh artifact cache
       Request->>Billing: Atomically reserve/debit the assessment price
@@ -89,7 +89,7 @@ sequenceDiagram
 | D5 | **Assessment identity is per-symbol** — `{venueFamily, styleTier, symbol}` for orderbook/perp; `{venueFamily, styleTier, network, address}` for swap/dex. `excludeSymbols`, `minLiquidityUsd`, `minVolume24hUsd`, positions, capital, current preset, PnL, transition policy are **not** identity dimensions. | 003 §1–§2; 004 §A1 |
 | D6 | **On-demand only, billing-gated.** No scheduled background assessment generation in phase 1. Billing authorization is the first hard gate before any run. Cache hits are billed. | 003 §3/§4A; 004 §A2/§A3 |
 | D7 | **Defaults from config:** agent review interval 24h, operator minimum floor 24h, cache freshness 6h. All read from resolved config, not literals. | 003 §3B/§4; 004 §A2B/§A3 |
-| D8 | **`recommend_only` remains the initial rollout mode.** Auto-apply stays blocked until shadow evidence satisfies rollout criteria. | 001/002; retained |
+| D8 | **Shadow mode (`recommend_only` / `auto_apply`) has been removed.** Per follow-up plan [006b](./006b-followup-plan-2.md), the platform no longer supports a split assessment/apply mode. The agent's `platformAssessment.enabled` flag gates the feature; when enabled, both assess and apply are available. | 006b; supersedes 001/002 |
 
 Where the amendments were ambiguous, the decisions above are now **settled**. Treat them as authoritative; do not invent alternatives.
 
@@ -320,7 +320,7 @@ A single due check may advise more than one symbol; the review tick receives a *
 Delivery is identical for **every** agent type (§7.0) — one mechanism, no per-type variation.
 
 - When at least one unexpired `advised` record exists, the runtime creates **one** dedicated `assessment_review` tick for that agent. Its context contains only the bounded advice list and deterministic reasons — no generated assessment and no recommendation to switch.
-- The agent then chooses whether to call `get_market_preset_assessment` for any advised symbol, or to do nothing.
+- The agent then chooses whether to call `assess_strategy_preset` for any advised symbol, or to do nothing.
 - Expired/consumed advice does not auto-create another tick; the next opportunity is the next due review.
 - The tick reuses `AgentWakeSource = 'scanner'` with `scannerKind: 'assessment_review'`, routes to the transition-review path only, and must never route through entry-signal or exit-advisory handling.
 - For `scanner_gated` agents this is additionally the **only** scanner-originated route to assessment — ordinary scanner signal wakes must never carry assessment advice.
@@ -382,32 +382,27 @@ File: `apps/worker/src/market-intelligence/platform-assessor.ts`
 
 ## 10. Agent Tools and Transition Safety
 
-### 10.1 `get_market_preset_assessment`
+### 10.1 `assess_strategy_preset`
 
-File: `apps/worker/src/tools/get-market-preset-assessment.ts`; schema `GetMarketPresetAssessmentParamsSchema` (currently `z.object({})`).
+File: `apps/worker/src/tools/assess-strategy-preset.ts`; schema `AssessStrategyPresetParamsSchema`.
 
-- Accept a **symbol-first** request shape; infer venue/binding context where unambiguous; request a disambiguator only when necessary.
+- Accept a **symbol-first** request shape (single or multi-instrument, up to `platformAssessor.maxInstrumentsPerRequest`); venue/binding context is required.
 - Resolve canonical identity **before** cache lookup, billing, persistence, or logging.
 - Call the request service (Section 8). On cache miss, it auto-starts the on-demand run — a cache miss is **not** a `not available` outcome.
 - Return `not available` only for failure/blocked conditions.
-- Return canonical identity, `assessmentArtifactId`, assessed/expiry timestamps, request ID, billing outcome, and idempotency/retry metadata.
-- **Reclassify** the tool as an operation that can incur a charge (including cache reuse); its description and retry semantics must make that side effect clear. (Its current `category: 'read-database'` is no longer accurate.)
+- Return canonical identity, `assessmentArtifactId`, assessed/expiry timestamps, request ID, billing outcome, and idempotency/retry metadata for each assessed instrument.
+- This is a billable tool — each assessed instrument incurs a charge (including cache reuse).
 
-### 10.2 `recommend_preset_transition`
+### 10.2 — Removed (`recommend_preset_transition`)
 
-File: `apps/worker/src/tools/recommend-preset-transition.ts`; schema `RecommendPresetTransitionParamsSchema`.
+This tool has been consolidated into `assess_strategy_preset` per [006b-followup-plan-2.md](./006b-followup-plan-2.md). The assessment tool now returns the recommendation payload directly alongside the artifact data. There is no separate recommendation step.
 
-- Accept an `assessmentArtifactId` or a symbol-first identity request resolving to one already-fresh artifact.
-- **Must not** start a second billable assessment; require a fresh matching artifact or the `assessmentArtifactId` returned by `get_market_preset_assessment`.
-- Use only the matching artifact; return its exact ID, canonical identity, assessed/expiry timestamps, rankings, and recommendation basis.
-- Combine retained agent-local policy/state before suggesting a transition. The platform artifact remains advisory.
+### 10.3 `change_strategy_preset`
 
-### 10.3 `apply_preset_transition`
+File: `apps/worker/src/tools/change-strategy-preset.ts`; schema `ChangeStrategyPresetParamsSchema`.
 
-File: `apps/worker/src/tools/apply-preset-transition.ts`; schema `ApplyPresetTransitionParamsSchema`.
-
-- **Require** the exact `assessmentArtifactId` used by the recommendation. Do not substitute the latest global artifact (current behavior fetches `status='active'` ordered by `assessedAt` — remove that).
-- Before applying, validate: artifact identity and freshness; target preset allowed for the agent's style tier; assessment opt-in/mode and advisory-first gate (`recommend_only` blocks live apply — D8); agent transition policy, dwell time, daily transition cap; creator-locked risk precedence; permitted open-position transition mode.
+- **Require** the exact `assessmentArtifactId` returned by `assess_strategy_preset`. Do not substitute the latest global artifact.
+- Before applying, validate: artifact identity and freshness; target preset allowed for the agent's style tier; agent transition policy, dwell time, daily transition cap; creator-locked risk precedence; permitted open-position transition mode.
 - Persist an immutable transition record: `assessmentArtifactId`, identity snapshot, old/new preset keys, old/new mechanically derived behavior versions, open-position treatment, outcome, reason. (Replace the `segmentKey`/`universeScopeHash` write.)
 - Never substitute a newer artifact for the reviewed one. Never use a transition to widen protection, remove protection, or silently reinterpret an existing position.
 
@@ -433,7 +428,7 @@ Create a requirements matrix naming the **implementing module, persistence home,
 
 - Postgres as authoritative assessment storage; Redis only as an optional cache.
 - Mechanically-derived preset behavior versions on artifacts, scan metrics, decisions, trades, and transitions.
-- `recommend_only` initial rollout with a tested gate before live auto-apply (D8).
+- Feature gate is controlled by `platformAssessment.enabled` per agent. Shadow mode (`recommend_only` / `auto_apply`) has been removed per follow-up plan 006b.
 - Explicit transition modes, creator-locked risk precedence, and the prohibition on silently weakening protection for existing positions.
 - Durable evidence for assessment, review advice, billing, recommendation, and transition outcomes.
 - Phase-1 scan, decision, trade, and transition attribution; analytics feedback deferred only as a **ranking input**, not as data collection.
@@ -494,15 +489,15 @@ Create a requirements matrix naming the **implementing module, persistence home,
 
 - scanner trigger rule only offers assessment when all required filters pass
 - recommendation returns an exact artifact reference
-- apply rejects expired, mismatched, substituted, disallowed, or `recommend_only`-blocked artifacts/transitions
+- apply rejects expired, mismatched, substituted, or disallowed artifacts/transitions
 - behavior-version, attribution, advisory-rollout, and open-position-safety requirements remain covered
 
 ### 14.6 Files to update
 
 - `packages/domain/src/market-assessment.test.ts`
 - `apps/worker/src/market-intelligence/platform-assessor.test.ts`
-- `apps/worker/src/tools/apply-preset-transition.test.ts`
-- add tests for `get-market-preset-assessment`, `recommend-preset-transition`, the request service, the review scheduler, and the advice record
+- `apps/worker/src/tools/change-strategy-preset.test.ts`
+- add tests for `assess-strategy-preset`, the request service, the review scheduler, and the advice record
 - any schema/index tests asserting `universeScopeHash`
 
 ---
@@ -564,7 +559,7 @@ When the schema change is added, verify a clean database applies the generated m
 - Fresh cache reuse and new runs are both billed exactly once per successful request; a request cannot execute until its synchronous billing reservation succeeds.
 - Retries and concurrent requests cannot duplicate provider execution for one canonical identity.
 - Default cache freshness is 6h and default review interval is 24h, both from resolved config; lookup and expiry use the same freshness value.
-- One exact fresh artifact flows from assessment → recommendation → transition application; apply validates and rejects expired/mismatched/substituted/disallowed/`recommend_only`-blocked artifacts.
+- One exact fresh artifact flows from assessment → transition application; apply validates and rejects expired/mismatched/substituted/disallowed artifacts.
 - Invalid or ambiguous identity requests fail before billing or provider side effects.
 - Database schema enforces valid identity shapes and one active artifact per canonical identity.
 - Metric storage distinguishes aggregate scan context from per-symbol assessment evidence.

@@ -281,7 +281,6 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'get_bot_status',
   'get_funding_rates',
   'get_market_overview',
-  'get_market_preset_assessment',
   'get_memory',
   'get_price',
   'get_risk_limits',
@@ -295,7 +294,6 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'publish_artifact',
   'read_document',
   'read_file',
-  'recommend_preset_transition',
   'remove_watch',
   'resolve_bot',
   'resolve_task',
@@ -350,8 +348,6 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   get_risk_limits:     { category: 'read-database',       description: 'Get effective risk limits: which are mutable vs locked, plus runtime state.' },
   find_instrument:     { category: 'read-database',       description: 'Find a tradable instrument by symbol/name. Returns instrumentId (venue-submittable), id (DB internal), symbol, base, quote, type, venue.' },
   resolve_bot:         { category: 'read-database',       description: 'Resolve a bot name/symbol to its bot ID for stop/start/config operations.' },
-  recommend_preset_transition: { category: 'read-database', description: 'Get a preset transition recommendation for a specific assessment artifact (from get_market_preset_assessment). Requires an explicit assessmentArtifactId. Review your open positions and performance before applying.' },
-
   // write-database
   stop_bot:            { category: 'write-database',      description: 'Stop a running bot. Positions remain open unless manually closed.' },
   start_bot:           { category: 'write-database',      description: 'Start a stopped bot. Resumes trading per its configuration.' },
@@ -365,7 +361,6 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   check_regime:        { category: 'read-market-data',    description: 'Evaluate market regime using EMA alignment, ADX, VWAP, and structure filters.' },
   get_funding_rates:   { category: 'read-market-data',    description: 'Get current funding rates for perpetual contracts.' },
   get_market_overview: { category: 'read-market-data',    description: 'Aggregated market overview: top movers, volume leaders, market breadth metrics.' },
-  get_market_preset_assessment: { category: 'read-database', description: 'Request a billable market preset assessment for a specific symbol on a venue. Returns ranked presets, confidence, and market summary. Each successful assessment (including cache hits) incurs a billing charge. Use the returned assessmentArtifactId with recommend_preset_transition.' },
   assess_strategy_preset: { category: 'read-database', description: 'Request a billable market preset assessment for one or more trading symbols. Returns ranked presets, confidence, market summary, and the exact transition reference for change_strategy_preset.' },
   get_price:           { category: 'read-market-data',    description: 'Look up current price of a token. Hyperliquid perps use mark price; DEX tokens use oracle price.' },
 

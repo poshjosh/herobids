@@ -18,9 +18,7 @@ import { accountTools } from './account.js';
 import { instrumentTools } from './find-instrument.js';
 import { resolverTools } from './resolvers.js';
 import { emailTools } from './email.js';
-import { getMarketPresetAssessmentTool } from './get-market-preset-assessment.js';
-import { recommendPresetTransitionTool } from './recommend-preset-transition.js';
-import { changeStrategyPresetTool } from './apply-preset-transition.js';
+import { changeStrategyPresetTool } from './change-strategy-preset.js';
 import { assessStrategyPresetTool } from './assess-strategy-preset.js';
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
@@ -102,8 +100,6 @@ export function createToolRegistry(): ToolRegistry {
     ...resolverTools,
     ...emailTools,
     assessStrategyPresetTool,
-    getMarketPresetAssessmentTool,
-    recommendPresetTransitionTool,
     changeStrategyPresetTool,
   ];
 
