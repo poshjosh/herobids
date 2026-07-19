@@ -22,7 +22,7 @@ import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdap
 import { createFillFirstMarkSource } from '@herobids/engine';
 import type { IdGenerator } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig, ok, err } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, AGENT_STREAM_MAXLEN, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig, ok, err } from '@herobids/domain';
 import { applyPresetToAgent, isStyleKey, type StyleKey } from '@herobids/domain';
 import { getPreset } from '@herobids/domain/config/presets-loader';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
@@ -2031,6 +2031,36 @@ const presetTransitionService = new PresetTransitionService({
       { agentId, activePresetKey, styleTier, behaviorVersion: mapping.presetBehaviorVersion },
       'Preset transition: actor config reloaded successfully',
     );
+
+    // L3: Emit runtime config update event so the agent's runtime summary/prompt
+    // can reflect the new active preset/binding state. Visibility-only — a Redis
+    // failure here must not block the transition.
+    try {
+      await redisClient.xadd(
+        `agent:outbound:${agentId}`,
+        'MAXLEN', '~', AGENT_STREAM_MAXLEN,
+        '*',
+        'envelope',
+        JSON.stringify({
+          schemaVersion: 'v1',
+          messageId: crypto.randomUUID(),
+          correlationId: agentId,
+          initiatorType: 'system',
+          initiatorId: agentId,
+          agentId,
+          type: 'agent.runtime.config_update',
+          createdAt: new Date().toISOString(),
+          payload: {
+            reason: 'binding_changed',
+            activePresetKey,
+            styleTier,
+            behaviorVersion: mapping.presetBehaviorVersion,
+          },
+        }),
+      );
+    } catch (err) {
+      logger.warn({ agentId, err }, 'Failed to emit runtime config update event after preset transition');
+    }
 
     return ok(undefined);
   },
