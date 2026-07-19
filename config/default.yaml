@@ -843,7 +843,10 @@ usageBilling:
   defaultRateCardItems:                    # seed items for how much each type of agent activity costs
     - meterKey: "agent.runtime_ms"
       priceMicrousd: 100
-      perUnit: 60000 
+      perUnit: 60000
+    - meterKey: "assessment.request"
+      priceMicrousd: 200000
+      perUnit: 1
 
 # ---------------------------------------------------------------------------
 # Env-only overrides — read directly from process.env, not part of AppConfigSchema

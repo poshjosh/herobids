@@ -72,13 +72,17 @@ describe('assess_strategy_preset tool', () => {
     expect(result.errorCode).toBe('validation.invalid_params');
   });
 
-  it('returns db.unavailable when no db is provided', async () => {
+  it('returns service unavailable when AssessmentRequestService is not wired', async () => {
     const ctx = makeCtx({ db: undefined });
     const result = await assessStrategyPresetTool.execute(
       { symbols: ['BTC'], venueFamily: 'hyperliquid', instrumentKind: 'perp' },
       ctx,
     );
-    expect(result.success).toBe(false);
-    expect(result.errorCode).toBe('db.unavailable');
+    // When service is not wired, the tool returns success with a service_unavailable result
+    // for each instrument rather than failing at the DB level.
+    expect(result.success).toBe(true);
+    if (result.success && result.data) {
+      expect(result.data.results[0]?.errorCode).toBe('assessment.service_unavailable');
+    }
   });
 });

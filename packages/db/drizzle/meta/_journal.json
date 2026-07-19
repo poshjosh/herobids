@@ -309,6 +309,13 @@
       "when": 1784414280105,
       "tag": "0043_rich_stellaris",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1784441953250,
+      "tag": "0044_lethal_marvel_boy",
+      "breakpoints": true
     }
   ]
 }

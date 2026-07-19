@@ -2,47 +2,105 @@ import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import {
   AssessStrategyPresetParamsSchema,
   AssessStrategyPresetResponseSchema,
-  resolveAssessmentIdentity,
-  isArtifactFresh,
-  type MarketAssessmentIdentity,
   type AssessmentResultEntry,
   type AssessStrategyPresetResponse,
 } from '@herobids/domain';
-import { marketAssessmentArtifacts } from '@herobids/db';
-import { and, eq, desc } from 'drizzle-orm';
-import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import type * as schema from '@herobids/db/schema';
 import { convertZodToJsonSchema } from './registry.js';
 import { createLogger } from '../logger.js';
+import { AssessmentRequestService } from '../market-intelligence/assessment-request-service.js';
+import type { AssessmentRequestOutcome } from '../market-intelligence/assessment-request-service.js';
 
 const logger = createLogger('tool:assess-strategy-preset');
 
-type Db = PostgresJsDatabase<typeof schema>;
+// ── Module-level service reference ─────────────────────────────────────────
 
-/**
- * Build a where clause for the canonical identity columns on the artifacts table.
- * Uses the per-symbol identity model: orderbook/perp keyed by symbol,
- * swap/dex keyed by network + address.
- */
-function identityWhereClause(identity: MarketAssessmentIdentity, table: typeof marketAssessmentArtifacts) {
-  if (identity.instrumentKind === 'swap' || identity.instrumentKind === 'dex') {
-    const { network, address } = identity as Extract<MarketAssessmentIdentity, { instrumentKind: 'swap' | 'dex' }>;
-    return and(
-      eq(table.instrumentKind, identity.instrumentKind),
-      eq(table.venueFamily, identity.venueFamily),
-      eq(table.styleTier, identity.styleTier),
-      eq(table.network, network),
-      eq(table.address, address),
-    );
+let service: AssessmentRequestService | null = null;
+
+export function setAssessmentRequestService(svc: AssessmentRequestService): void {
+  service = svc;
+}
+
+function mapOutcomeToResultEntry(
+  symbol: string,
+  outcome: AssessmentRequestOutcome,
+  idempotencyKey: string | null,
+): AssessmentResultEntry {
+  if (outcome.kind === 'cache_hit' || outcome.kind === 'assessment_completed') {
+    return {
+      success: true,
+      symbol,
+      transitionReference: {
+        assessmentArtifactId: outcome.assessmentArtifactId,
+      },
+      billing: {
+        billed: true,
+        requestId: outcome.requestId,
+        idempotencyKey,
+        source: outcome.kind,
+      },
+    };
   }
-  // orderbook | perp
-  const { symbol } = identity as Extract<MarketAssessmentIdentity, { instrumentKind: 'orderbook' | 'perp' }>;
-  return and(
-    eq(table.instrumentKind, identity.instrumentKind),
-    eq(table.venueFamily, identity.venueFamily),
-    eq(table.styleTier, identity.styleTier),
-    eq(table.symbol, symbol),
-  );
+
+  if (outcome.kind === 'provider_failed') {
+    return {
+      success: false,
+      symbol,
+      error: outcome.error,
+      errorCode: outcome.errorCode ?? 'assessment.provider_failed',
+      billing: {
+        billed: false,
+        requestId: outcome.requestId,
+        idempotencyKey,
+        source: 'failed',
+      },
+    };
+  }
+
+  // Blocked outcomes: request_in_flight, billing_blocked, cooldown_blocked, identity_unresolved
+  const blocked = outcome as Exclude<AssessmentRequestOutcome,
+    { kind: 'cache_hit' } | { kind: 'assessment_completed' } | { kind: 'provider_failed' }>;
+
+  let error: string;
+  let errorCode: string;
+  let requestId: string | null = null;
+
+  switch (blocked.kind) {
+    case 'billing_blocked':
+      error = blocked.reason;
+      errorCode = 'assessment.billing_blocked';
+      requestId = blocked.requestId ?? null;
+      break;
+    case 'cooldown_blocked':
+      error = `Assessment on cooldown until ${blocked.nextEligibleAt}`;
+      errorCode = 'assessment.cooldown_blocked';
+      requestId = blocked.requestId ?? null;
+      break;
+    case 'identity_unresolved':
+      error = blocked.reason;
+      errorCode = 'assessment.identity_unresolved';
+      requestId = blocked.requestId ?? null;
+      break;
+    case 'request_in_flight':
+      error = blocked.message;
+      errorCode = 'assessment.request_in_flight';
+      break;
+    default:
+      error = 'Assessment request blocked';
+      errorCode = 'assessment.blocked';
+  }
+
+  return {
+    success: false,
+    symbol,
+    error,
+    errorCode,
+    billing: {
+      billed: false,
+      requestId,
+      idempotencyKey,
+      source: 'failed',
+    },
+  };
 }
 
 async function executeAssessStrategyPreset(
@@ -55,15 +113,17 @@ async function executeAssessStrategyPreset(
   }
   const { symbols, venueFamily, instrumentKind, idempotencyKey } = parsed.data;
 
-  const db = ctx.db as Db | undefined;
-  if (!db) {
-    return { success: false, error: 'Database not available', errorCode: 'db.unavailable' };
+  // ── VenueFamily is required (R11) ──
+  if (!venueFamily) {
+    return {
+      success: false,
+      error: 'venueFamily is required for assessment requests. Specify the target venue (e.g. hyperliquid, jupiter).',
+      errorCode: 'assessment.venue_family_required',
+    };
   }
 
   // ── Configurable cap ──
-  // TODO: Read maxInstrumentsPerRequest from operator config (platformAssessor.maxInstrumentsPerRequest).
-  // Currently hardcoded to the plan default (3). ToolContext does not yet expose operator-level config.
-  const maxInstrumentsPerRequest = 3;
+  const maxInstrumentsPerRequest = service?.maxInstrumentsPerRequest ?? 3;
   const cap = Math.max(1, maxInstrumentsPerRequest);
   const acceptedSymbols = symbols.slice(0, cap);
   const truncated = symbols.length > cap;
@@ -72,166 +132,59 @@ async function executeAssessStrategyPreset(
   let styleTier: 'economy' | 'standard' | 'premium' = 'standard';
   if (ctx.agentConfigOps) {
     const config = await ctx.agentConfigOps.getCurrentConfig();
-    // TODO: resolve styleTier from agent's preset tier when the unified config API exposes it cleanly
     if (config?.allowedPresets?.styleTier) {
       styleTier = config.allowedPresets.styleTier;
     }
   }
 
-  const results: AssessmentResultEntry[] = [];
-  const now = new Date();
+  // ── Delegate to AssessmentRequestService if available ──
+  if (service) {
+    const batchResult = await service.requestBatchAssessment(
+      acceptedSymbols,
+      {
+        agentId: ctx.agentId,
+        venueFamily,
+        instrumentKind: instrumentKind ?? 'orderbook',
+        styleTier,
+        idempotencyKey,
+      },
+      cap,
+    );
 
-  for (const symbol of acceptedSymbols) {
-    // 1. Resolve canonical identity — hoisted before try/catch so it is
-    //    available in error entries when a later DB query throws.
-    const identityResult = resolveAssessmentIdentity({
-      instrumentKind,
-      venueFamily,
-      styleTier,
-      symbol,
-      // TODO: wire knownSymbols from venue instrument cache for orderbook/perp validation
-      // TODO: wire tokenResolutions from venue token registry for swap/dex resolution
-    });
+    const results: AssessmentResultEntry[] = batchResult.results.map((r) =>
+      mapOutcomeToResultEntry(r.symbol, r.outcome, idempotencyKey ?? null),
+    );
 
-    if (!identityResult.ok) {
-      results.push({
-        success: false,
-        symbol,
-        error: identityResult.error.message,
-        errorCode: identityResult.error.code,
-        billing: {
-          billed: false,
-          requestId: null,
-          idempotencyKey: idempotencyKey ?? null,
-          source: 'failed',
-        },
-      });
-      continue;
-    }
+    const response: AssessStrategyPresetResponse = {
+      success: true,
+      data: {
+        requestedInstrumentCount: symbols.length,
+        assessedInstrumentCount: acceptedSymbols.length,
+        maxInstrumentsPerRequest: cap,
+        message: truncated
+          ? `Requested ${symbols.length} instruments; only the first ${cap} were assessed because the per-request maximum is ${cap}.`
+          : undefined,
+        results,
+      },
+    };
 
-    const canonicalIdentity = identityResult.data;
-
-    try {
-      // 2. Look up the latest active artifact for this canonical identity
-      const [latest] = await db
-        .select()
-        .from(marketAssessmentArtifacts)
-        .where(and(
-          identityWhereClause(canonicalIdentity, marketAssessmentArtifacts),
-          eq(marketAssessmentArtifacts.status, 'active'),
-        ))
-        .orderBy(desc(marketAssessmentArtifacts.assessedAt))
-        .limit(1);
-
-      if (latest) {
-        const artifact = {
-          id: latest.id,
-          assessedAt: latest.assessedAt.toISOString(),
-          expiresAt: latest.expiresAt.toISOString(),
-          styleTier: latest.styleTier,
-          allowedPresets: latest.allowedPresets as string[],
-          currentMarketSummary: latest.currentMarketSummary,
-          regimeSummary: latest.regimeSummary,
-          scanHealthSummary: latest.scanHealthSummary,
-          presetRankings: latest.presetRankings,
-          recommendedPreset: latest.recommendedPreset,
-          confidence: Number(latest.confidence),
-          urgency: latest.urgency as 'low' | 'medium' | 'high',
-          reasoningSummary: latest.reasoningSummary,
-        };
-
-        const fresh = isArtifactFresh(
-          { status: latest.status, expiresAt: artifact.expiresAt },
-          now,
-        );
-
-        if (fresh) {
-          // Cache hit — billable
-          const rankings = artifact.presetRankings as Array<{
-            presetKey: string;
-            presetBehaviorVersion: string;
-            rank: number;
-            score: number;
-            scoreBand: string;
-            pros: string[];
-            cons: string[];
-            fitNotes: string | null;
-          }>;
-
-          results.push({
-            success: true,
-            symbol,
-            canonicalIdentity,
-            assessment: {
-              artifactId: latest.id,
-              assessedAt: artifact.assessedAt,
-              expiresAt: artifact.expiresAt,
-              marketSummary: artifact.currentMarketSummary,
-              regimeSummary: artifact.regimeSummary,
-              scanHealthSummary: artifact.scanHealthSummary,
-              rankings,
-              recommendedPreset: artifact.recommendedPreset,
-              confidence: artifact.confidence,
-              urgency: artifact.urgency,
-            },
-            transitionReference: {
-              assessmentArtifactId: latest.id,
-            },
-            billing: {
-              billed: true,
-              requestId: null,
-              idempotencyKey: idempotencyKey ?? null,
-              source: 'cache_hit',
-            },
-          });
-          continue;
-        }
-
-        // Artifact exists but expired — fall through to new-run stub
-      }
-
-      // 3. No fresh artifact — run a new assessment (stub for now)
-      // TODO: route through AssessmentRequestService when implemented
-      // For now, this is a stub that returns a no-artifact-available result.
-      // When the assessment request service is wired, this will:
-      //   - submit an assessment request
-      //   - wait for the result
-      //   - persist the artifact
-      //   - return the fresh artifact data
-      results.push({
-        success: false,
-        symbol,
-        canonicalIdentity,
-        error: 'No fresh assessment artifact available for this symbol. A new assessment will be generated on the next scanner run.',
-        errorCode: 'assessment.no_fresh_artifact',
-        billing: {
-          billed: false,
-          requestId: null,
-          idempotencyKey: idempotencyKey ?? null,
-          source: 'failed',
-        },
-      });
-    } catch (err) {
-      logger.error({ err, symbol }, 'Failed to assess strategy preset for symbol');
-      results.push({
-        success: false,
-        symbol,
-        canonicalIdentity,
-        error: err instanceof Error ? err.message : 'Unexpected error',
-        errorCode: 'assessment.internal_error',
-        billing: {
-          billed: false,
-          requestId: null,
-          idempotencyKey: idempotencyKey ?? null,
-          source: 'failed',
-        },
-      });
-    }
+    return AssessStrategyPresetResponseSchema.parse(response) as unknown as ToolResult;
   }
 
-  const message = truncated
-    ? `Requested ${symbols.length} instruments; only the first ${cap} were assessed because the per-request maximum is ${cap}.`
-    : undefined;
+  // ── Fallback: service not wired ──
+  logger.warn('AssessmentRequestService not wired — returning unavailable for all instruments');
+  const results: AssessmentResultEntry[] = acceptedSymbols.map((symbol) => ({
+    success: false,
+    symbol,
+    error: 'Assessment request service not available. Assessments will be available once the service is deployed.',
+    errorCode: 'assessment.service_unavailable',
+    billing: {
+      billed: false,
+      requestId: null,
+      idempotencyKey: idempotencyKey ?? null,
+      source: 'failed',
+    },
+  }));
 
   const response: AssessStrategyPresetResponse = {
     success: true,
@@ -239,13 +192,13 @@ async function executeAssessStrategyPreset(
       requestedInstrumentCount: symbols.length,
       assessedInstrumentCount: acceptedSymbols.length,
       maxInstrumentsPerRequest: cap,
-      message,
+      message: truncated
+        ? `Requested ${symbols.length} instruments; only the first ${cap} were assessed because the per-request maximum is ${cap}.`
+        : undefined,
       results,
     },
   };
 
-  // AssessStrategyPresetResponse has the same shape as ToolResult
-  // ({success, data, error, errorCode}) — return it directly to avoid double-wrapping.
   return AssessStrategyPresetResponseSchema.parse(response) as unknown as ToolResult;
 }
 
@@ -255,7 +208,10 @@ export const assessStrategyPresetTool: AgentTool = {
     'Request a billable market preset assessment for one or more trading symbols on a specific venue. ' +
     'Returns ranked presets, confidence scores, market summary, and the exact transition reference needed for change_strategy_preset. ' +
     'Accepts up to the configured maximum instruments per request (default 3). ' +
-    'Each assessed instrument incurs a billing charge. Use idempotencyKey to avoid duplicate charges on retry.',
+    '⚠️ Each assessed instrument incurs a billing charge at the assessment.request rate (cache hits are also billed). ' +
+    'Use the idempotencyKey parameter to avoid duplicate charges on retry. ' +
+    'A provider_failed outcome releases the reservation without charge, but a retry creates a new billable attempt. ' +
+    'Requires venueFamily (e.g. hyperliquid, jupiter) — venue inference is not supported.',
   parametersSchema: AssessStrategyPresetParamsSchema,
   parameters: convertZodToJsonSchema(AssessStrategyPresetParamsSchema),
   category: 'read-database',

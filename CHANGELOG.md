@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Assessment Billing Architecture (007):** Implemented authoritative billing for assessment requests:
+  - **`market_assessment_requests` table** — first-class request ledger tracking every billable attempt with request IDs, idempotency keys, request-group dedup, reservation/capture/release lifecycle, daily-cap counting, LLM cost observability, and canonical identity lookups
+  - **Synchronous billing helpers** in `UsageBillingRepository`: `quoteMeterCharge`, `reserveCharge` (with `SELECT FOR UPDATE`), `captureReservedAssessmentCharge`, `releaseReservedCharge` — all transactional
+  - **`assessment.request` rate-card meter** — `priceMicrousd: 200000` ($0.20/request), seeded in config/rate-card defaults
+  - **Settlement policy** — deterministic reserve/capture/release rules for all 7 request outcomes; `provider_failed` releases without charge but counts toward daily cap
+  - **`AssessmentRequestService` rewrite** — DB-backed idempotency, cross-worker dedup via partial unique index, daily-cap enforcement (rolling 24h), cooldown enforcement, cache-hit billing, LLM token usage observability (R12)
+  - **`assess_strategy_preset` tool rewrite** — thin adapter over `AssessmentRequestService`; venueFamily enforcement (R11); module-level service wiring pattern via `setAssessmentRequestService()`
+  - **`callLlm` signature extended** — returns `LlmCallUsage` alongside text for per-assessment token tracking (R12)
+  - **DB migration** (`0044`) — `market_assessment_requests` table with indexes/constraints, drops `market_assessment_wake_decisions`
+  - **21 new unit tests** — settlement policy (8) + request service (13), all passing
+  - **Default `maxReviewRequestsPerDay = 4`** (was optional), rolling 24h window (R7, R14)
+  See [docs/features/2026/07/18/002-platform-preset-assessment-and-transition/007-assessment-billing-completion-plan.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/007-assessment-billing-completion-plan.md).
 
 ### Changed
 

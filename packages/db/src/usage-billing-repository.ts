@@ -103,6 +103,75 @@ export interface OpenTopUpCreditInput {
   description?: string;
 }
 
+export interface QuoteMeterChargeInput {
+  rateCardId: string;
+  meterKey: string;
+  quantity: number;
+}
+
+export interface ReserveChargeInput {
+  accountId: string;
+  periodId: string;
+  /** Quoted charge amount in microusd (from quoteMeterCharge) */
+  amountMicrousd: number;
+  /** Unique ID for the reservation ledger entry */
+  reservationId: string;
+  /** Human-readable description */
+  description?: string;
+}
+
+export interface ReserveChargeResult {
+  reservationLedgerEntryId: string;
+  reservedAmountMicrousd: number;
+}
+
+export interface CaptureReservedChargeInput {
+  accountId: string;
+  periodId: string;
+  rateCardId: string;
+  /** The quoted amount to capture (should match reservation amount) */
+  amountMicrousd: number;
+  /** The request ID — used as usage event id AND idempotencyKey (R1) */
+  requestId: string;
+  userId: string;
+  agentId: string;
+  /** Meter key for the usage event */
+  meterKey: string;
+  /** Quantity for the usage event */
+  quantity: number;
+  /** Unit for the usage event */
+  unit: string;
+  /** The reservation ledger entry ID to link */
+  reservationLedgerEntryId: string;
+  /** Description for usage charge ledger entry */
+  description?: string;
+  /** Optional metadata for the usage event */
+  metadata?: Record<string, unknown>;
+}
+
+export interface CaptureReservedChargeResult {
+  usageEventId: string;
+  captureLedgerEntryId: string;
+  newSpendStatus: string;
+}
+
+export interface ReleaseReservedChargeInput {
+  accountId: string;
+  periodId: string;
+  /** The quoted amount to release (should match reservation amount) */
+  amountMicrousd: number;
+  /** Unique ID for the release ledger entry */
+  releaseId: string;
+  /** The reservation ledger entry ID this release corresponds to */
+  reservationLedgerEntryId: string;
+  /** Description */
+  description?: string;
+}
+
+export interface ReleaseReservedChargeResult {
+  releaseLedgerEntryId: string;
+}
+
 export type AccountStatus = 'active' | 'soft_limited' | 'hard_limited' | 'suspended';
 
 export interface BillingAccountRow {
@@ -119,7 +188,7 @@ export interface BillingAccountRow {
 }
 
 interface DefaultRateCardSeedItem {
-  meterKey: 'agent.runtime_ms';
+  meterKey: 'agent.runtime_ms' | 'assessment.request';
   priceMicrousd: number;
   perUnit: number;
 }
@@ -145,6 +214,7 @@ export interface RateCardSeedItem {
  */
 const DEFAULT_RATE_CARD_ITEMS: DefaultRateCardSeedItem[] = [
   { meterKey: 'agent.runtime_ms', priceMicrousd: 100, perUnit: 60_000 },
+  { meterKey: 'assessment.request', priceMicrousd: 200000, perUnit: 1 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1018,6 +1088,234 @@ export class UsageBillingRepository {
     const newStatus = computeSpendStatus(period);
     await this.updateAccountStatus(accountId, newStatus);
     return newStatus;
+  }
+
+  /**
+   * Quote a charge for a specific meter without mutating any state.
+   * Looks up the rate card item matching the given meter key and returns
+   * the microusd charge for the given quantity.
+   */
+  async quoteMeterCharge(input: QuoteMeterChargeInput): Promise<number> {
+    const items = await this.getRateCardItems(input.rateCardId);
+    const item = items.find((i) => i.meterKey === input.meterKey);
+    if (!item) {
+      throw new Error(`No rate card item found for meter '${input.meterKey}' in rate card ${input.rateCardId}`);
+    }
+    // Fixed-price meter: priceMicrousd per perUnit, so charge = priceMicrousd * (quantity / perUnit)
+    return Math.ceil((item.priceMicrousd * input.quantity) / item.perUnit);
+  }
+
+  /**
+   * Reserve credit for an assessment request.
+   *
+   * Locks the open period row with SELECT FOR UPDATE (R6), validates account
+   * status (blocks hard_limited/suspended), checks available credit, creates
+   * a reservation ledger entry, and increments reserved_microusd.
+   */
+  async reserveCharge(input: ReserveChargeInput): Promise<ReserveChargeResult> {
+    return this.db.transaction(async (tx) => {
+      // Lock the period row for update (R6)
+      const [period] = await tx
+        .select({
+          status: billingAccounts.status,
+          balanceMicrousd: billingPeriods.balanceMicrousd,
+          reservedMicrousd: billingPeriods.reservedMicrousd,
+          hardCapMicrousd: billingPeriods.hardCapMicrousd,
+        })
+        .from(billingPeriods)
+        .innerJoin(billingAccounts, eq(billingPeriods.accountId, billingAccounts.id))
+        .where(
+          and(
+            eq(billingPeriods.id, input.periodId),
+            eq(billingPeriods.status, 'open'),
+          ),
+        )
+        .for('update')
+        .limit(1);
+
+      if (!period) {
+        throw new Error(`Open period ${input.periodId} not found`);
+      }
+
+      // Block hard_limited and suspended accounts (R8)
+      if (period.status === 'hard_limited') {
+        throw Object.assign(new Error('Account is hard-limited'), { code: 'billing.limit_exceeded' });
+      }
+      if (period.status === 'suspended') {
+        throw Object.assign(new Error('Account is suspended'), { code: 'billing.account_suspended' });
+      }
+
+      // Check available credit: available = balance - reserved (R6)
+      const availableMicrousd = period.balanceMicrousd - period.reservedMicrousd;
+      if (availableMicrousd < input.amountMicrousd) {
+        throw Object.assign(
+          new Error(`Insufficient credit: available ${availableMicrousd}, required ${input.amountMicrousd}`),
+          { code: 'billing.insufficient_credit' },
+        );
+      }
+
+      // Create reservation ledger entry
+      await tx
+        .insert(billingLedgerEntries)
+        .values({
+          id: input.reservationId,
+          accountId: input.accountId,
+          periodId: input.periodId,
+          entryType: 'reservation',
+          direction: 'debit',
+          amountMicrousd: input.amountMicrousd,
+          currency: 'USD',
+          sourceType: 'assessment_request',
+          description: input.description ?? 'Assessment request reservation',
+        })
+        .onConflictDoNothing();
+
+      // Increment reserved_microusd
+      await tx
+        .update(billingPeriods)
+        .set({
+          reservedMicrousd: sql`${billingPeriods.reservedMicrousd} + ${input.amountMicrousd}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(billingPeriods.id, input.periodId));
+
+      return {
+        reservationLedgerEntryId: input.reservationId,
+        reservedAmountMicrousd: input.amountMicrousd,
+      };
+    });
+  }
+
+  /**
+   * Capture a reserved assessment charge.
+   *
+   * Creates one usage event (idempotencyKey = requestId per R1), one
+   * usage_charge ledger entry, decrements reserved_microusd, updates period
+   * totals, and recomputes spend state — all in one transaction.
+   * Reuses the same rating + spend-state recomputation as recordAndRateUsageBatch (R5).
+   */
+  async captureReservedAssessmentCharge(
+    input: CaptureReservedChargeInput,
+  ): Promise<CaptureReservedChargeResult> {
+    return this.db.transaction(async (tx) => {
+      // Create usage event keyed on requestId (R1)
+      const usageEventId = input.requestId;
+      await tx
+        .insert(billingUsageEvents)
+        .values({
+          id: usageEventId,
+          accountId: input.accountId,
+          userId: input.userId,
+          agentId: input.agentId,
+          sourceType: 'assessment_request',
+          meterKey: input.meterKey,
+          quantity: input.quantity,
+          unit: input.unit,
+          idempotencyKey: input.requestId, // R1: per-attempt request id, not caller key
+          occurredAt: new Date(),
+          metadata: input.metadata ?? null,
+        })
+        .onConflictDoNothing();
+
+      // Create usage_charge ledger entry
+      const captureLedgerEntryId = `led_${usageEventId}`;
+      await tx
+        .insert(billingLedgerEntries)
+        .values({
+          id: captureLedgerEntryId,
+          accountId: input.accountId,
+          periodId: input.periodId,
+          entryType: 'usage_charge',
+          direction: 'debit',
+          amountMicrousd: input.amountMicrousd,
+          currency: 'USD',
+          sourceType: 'usage_event',
+          sourceId: usageEventId,
+          description: input.description ?? `${input.meterKey} × ${input.quantity}`,
+        })
+        .onConflictDoNothing();
+
+      // Decrement reserved_microusd and update period totals (R5)
+      await tx
+        .update(billingPeriods)
+        .set({
+          reservedMicrousd: sql`GREATEST(${billingPeriods.reservedMicrousd} - ${input.amountMicrousd}, 0)`,
+          usageChargeMicrousd: sql`${billingPeriods.usageChargeMicrousd} + ${input.amountMicrousd}`,
+          creditAppliedMicrousd: sql`${billingPeriods.creditAppliedMicrousd} + LEAST(${input.amountMicrousd}, GREATEST(${billingPeriods.balanceMicrousd}, 0))`,
+          balanceMicrousd: sql`${billingPeriods.balanceMicrousd} - ${input.amountMicrousd}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(billingPeriods.id, input.periodId));
+
+      // Recompute spend state (R5)
+      const [period] = await tx
+        .select({
+          balanceMicrousd: billingPeriods.balanceMicrousd,
+          hardCapMicrousd: billingPeriods.hardCapMicrousd,
+          softCapMicrousd: billingPeriods.softCapMicrousd,
+          includedCreditMicrousd: billingPeriods.includedCreditMicrousd,
+          usageChargeMicrousd: billingPeriods.usageChargeMicrousd,
+        })
+        .from(billingPeriods)
+        .where(eq(billingPeriods.id, input.periodId))
+        .limit(1);
+
+      let newSpendStatus = 'active';
+      if (period) {
+        newSpendStatus = computeSpendStatus(period);
+        await tx
+          .update(billingAccounts)
+          .set({ status: newSpendStatus, lastEvaluatedAt: new Date(), updatedAt: new Date() })
+          .where(eq(billingAccounts.id, input.accountId));
+      }
+
+      return {
+        usageEventId,
+        captureLedgerEntryId,
+        newSpendStatus,
+      };
+    });
+  }
+
+  /**
+   * Release a reserved charge without capturing it (e.g., after provider_failed).
+   * Creates a reservation_release ledger entry and decrements reserved_microusd.
+   * Does NOT create a usage event or usage charge.
+   */
+  async releaseReservedCharge(
+    input: ReleaseReservedChargeInput,
+  ): Promise<ReleaseReservedChargeResult> {
+    return this.db.transaction(async (tx) => {
+      // Create reservation_release ledger entry
+      await tx
+        .insert(billingLedgerEntries)
+        .values({
+          id: input.releaseId,
+          accountId: input.accountId,
+          periodId: input.periodId,
+          entryType: 'reservation_release',
+          direction: 'credit',
+          amountMicrousd: input.amountMicrousd,
+          currency: 'USD',
+          sourceType: 'assessment_request',
+          sourceId: input.reservationLedgerEntryId,
+          description: input.description ?? 'Assessment request reservation release',
+        })
+        .onConflictDoNothing();
+
+      // Decrement reserved_microusd
+      await tx
+        .update(billingPeriods)
+        .set({
+          reservedMicrousd: sql`GREATEST(${billingPeriods.reservedMicrousd} - ${input.amountMicrousd}, 0)`,
+          updatedAt: new Date(),
+        })
+        .where(eq(billingPeriods.id, input.periodId));
+
+      return {
+        releaseLedgerEntryId: input.releaseId,
+      };
+    });
   }
 
   // ---------------------------------------------------------------------------

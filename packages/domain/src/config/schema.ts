@@ -707,7 +707,7 @@ export const UsageBillingConfigSchema = z.object({
   defaultRateCardName: z.string().default('default'),
   /** Seed items for the default rate card — priceMicrousd per perUnit quantity */
   defaultRateCardItems: z.array(z.object({
-    meterKey: z.enum(['llm.input_tokens', 'llm.cached_input_tokens', 'llm.output_tokens', 'llm.reasoning_tokens', 'agent.runtime_ms']),
+    meterKey: z.enum(['llm.input_tokens', 'llm.cached_input_tokens', 'llm.output_tokens', 'llm.reasoning_tokens', 'agent.runtime_ms', 'assessment.request']),
     /** Scope to a specific provider — omit to apply to all providers */
     provider: z.string().optional(),
     /** Exact model ID or glob with trailing * — omit to apply to all models */
@@ -1291,7 +1291,7 @@ export const PlatformAssessorConfigSchema = z.object({
   /** Operator minimum floor for agent reviewIntervalMs. Default: 24 hours (86_400_000) */
   minReviewIntervalMs: z.number().int().positive().default(86_400_000),
   /** Optional daily cap on billed assessment requests per agent. */
-  maxReviewRequestsPerDay: z.number().int().positive().optional(),
+  maxReviewRequestsPerDay: z.number().int().positive().default(4),
   /** Top N candidates the deterministic scanner pre-check considers. Default: 20 */
   scannerCandidateLimit: z.number().int().positive().default(20),
   /** Single resolved freshness for lookup and artifact expiry. Default: 6 hours (21_600_000) */

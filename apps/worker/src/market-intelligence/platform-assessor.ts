@@ -48,6 +48,27 @@ export interface ScanHealthEvidence {
   health: 'healthy' | 'degraded' | 'no_signal' | 'stale';
 }
 
+// ── LLM Usage Types ────────────────────────────────────────────────────────
+
+/** Per-call LLM usage from a single callLlm invocation. */
+export interface LlmCallUsage {
+  provider: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+}
+
+/** Aggregated LLM usage across all calls in a single assessment run. */
+export interface AggregatedLlmUsage {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalReasoningTokens: number;
+  callCount: number;
+  /** Estimated cost in microusd — never used for user billing (R12). */
+  estimatedCostMicrousd: number;
+}
+
 // ── Config & Deps ───────────────────────────────────────────────────────────
 
 export interface PlatformAssessorConfig {
@@ -69,7 +90,7 @@ export interface PlatformAssessorDeps {
   /** Access to preset catalog */
   getPresetKeys(styleTier: string): Promise<string[]>;
   /** LLM provider for assessment */
-  callLlm(prompt: string): Promise<string>;
+  callLlm(prompt: string): Promise<{ text: string; usage: LlmCallUsage }>;
   /** Logger instance */
   logger?: Logger;
 }
@@ -110,7 +131,7 @@ export class PlatformAssessor {
    */
   async assessIdentity(
     identity: MarketAssessmentIdentity,
-  ): Promise<Result<MarketAssessmentArtifact>> {
+  ): Promise<Result<{ artifact: MarketAssessmentArtifact; llmUsage: AggregatedLlmUsage }>> {
     if (!this.config.enabled) {
       return err({
         code: 'assessment.disabled',
@@ -133,7 +154,7 @@ export class PlatformAssessor {
 
       this.log.info({ identity, artifactId: artifact.id }, 'On-demand assessment completed');
 
-      return ok(artifact);
+      return ok({ artifact, llmUsage: this.emptyAggregatedUsage() });
     } catch (caught) {
       const errorMessage = caught instanceof Error ? caught.message : String(caught);
       this.log.error({ err: caught, identity }, 'On-demand assessment failed');
@@ -251,6 +272,16 @@ export class PlatformAssessor {
       urgency: 'low',
       reasoningSummary: 'Phase 1 scaffolding — reasoning not yet implemented.',
       evidenceRefs: [],
+    };
+  }
+
+  private emptyAggregatedUsage(): AggregatedLlmUsage {
+    return {
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalReasoningTokens: 0,
+      callCount: 0,
+      estimatedCostMicrousd: 0,
     };
   }
 }
