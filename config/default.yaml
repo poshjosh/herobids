@@ -615,6 +615,7 @@ platformAssessor:
   cacheFreshnessMs: 21600000  # 6h — lookup and artifact expiry
   maxConcurrentAssessments: 1
   maxLlmCallsPerCycle: 20
+  maxInstrumentsPerRequest: 3  # max instruments per assessment request
 
 # Market intelligence — always-on discovery coordinator and monitor.
 # Controls the background market intelligence subsystem that wakes agents

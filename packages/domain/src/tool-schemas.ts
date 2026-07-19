@@ -2,7 +2,11 @@ import { z } from 'zod';
 import {
   StrategySchema,
 } from './config/schema.js';
-import { TransitionModeSchema } from './market-assessment.js';
+import {
+  TransitionModeSchema,
+  MarketAssessmentPresetRankingSchema,
+  MarketAssessmentIdentitySchema,
+} from './market-assessment.js';
 
 // ── Preset Assessment & Transition Tool Parameter Schemas ──────────────────
 
@@ -27,6 +31,71 @@ export const ApplyPresetTransitionParamsSchema = z.object({
   mode: TransitionModeSchema,
   reason: z.string().optional(),
 });
+
+// ── Multi-Instrument Preset Assessment ────────────────────────────────────
+
+export const AssessStrategyPresetParamsSchema = z.object({
+  symbols: z.array(z.string().min(1)).min(1).max(50)
+    .describe('Trading symbols to assess (e.g. ["BTC", "ETH", "SOL"]). All symbols share the same venueFamily and instrumentKind.'),
+  venueFamily: z.string().min(1)
+    .describe('Venue family to scope the assessment (e.g. "hyperliquid", "bybit", "jupiter"). Required.'),
+  instrumentKind: z.enum(['orderbook', 'perp', 'swap', 'dex'])
+    .describe('Instrument kind shared across all requested symbols.'),
+  idempotencyKey: z.string().optional()
+    .describe('Client-provided idempotency key. Reuses cached results without new charges.'),
+});
+
+export type AssessStrategyPresetParams = z.infer<typeof AssessStrategyPresetParamsSchema>;
+
+// ── Per-Instrument Response Types ─────────────────────────────────────────
+
+export const AssessmentBillingSchema = z.object({
+  billed: z.boolean(),
+  requestId: z.string().nullable(),
+  idempotencyKey: z.string().nullable(),
+  source: z.enum(['new_run', 'cache_hit', 'fresh_reuse', 'failed', 'truncated']),
+});
+
+export const AssessmentResultEntrySchema = z.object({
+  success: z.boolean(),
+  symbol: z.string(),
+  canonicalIdentity: MarketAssessmentIdentitySchema.optional(),
+  assessment: z.object({
+    artifactId: z.string(),
+    assessedAt: z.string(),
+    expiresAt: z.string(),
+    marketSummary: z.string().nullable(),
+    regimeSummary: z.string().nullable(),
+    scanHealthSummary: z.string().nullable(),
+    rankings: z.array(MarketAssessmentPresetRankingSchema),
+    recommendedPreset: z.string().nullable(),
+    confidence: z.number(),
+    urgency: z.enum(['low', 'medium', 'high']),
+  }).optional(),
+  transitionReference: z.object({
+    assessmentArtifactId: z.string(),
+  }).optional(),
+  billing: AssessmentBillingSchema.optional(),
+  error: z.string().optional(),
+  errorCode: z.string().optional(),
+});
+
+export const AssessStrategyPresetResponseSchema = z.object({
+  success: z.boolean(),
+  data: z.object({
+    requestedInstrumentCount: z.number().int().min(0),
+    assessedInstrumentCount: z.number().int().min(0),
+    maxInstrumentsPerRequest: z.number().int().min(1),
+    message: z.string().optional(),
+    results: z.array(AssessmentResultEntrySchema),
+  }).optional(),
+  error: z.string().optional(),
+  errorCode: z.string().optional(),
+});
+
+export type AssessmentBilling = z.infer<typeof AssessmentBillingSchema>;
+export type AssessmentResultEntry = z.infer<typeof AssessmentResultEntrySchema>;
+export type AssessStrategyPresetResponse = z.infer<typeof AssessStrategyPresetResponseSchema>;
 
 export type GetMarketPresetAssessmentParams = z.infer<typeof GetMarketPresetAssessmentParamsSchema>;
 export type RecommendPresetTransitionParams = z.infer<typeof RecommendPresetTransitionParamsSchema>;

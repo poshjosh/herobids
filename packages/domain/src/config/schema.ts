@@ -1300,6 +1300,9 @@ export const PlatformAssessorConfigSchema = z.object({
   maxConcurrentAssessments: z.number().int().min(1).default(1),
   /** Budget caps: max LLM calls per assessment cycle. Default: 20 */
   maxLlmCallsPerCycle: z.number().int().min(1).default(20),
+  /** Maximum number of instruments accepted per assessment request.
+   *  If the caller requests more, only the first N are assessed. Default: 3 */
+  maxInstrumentsPerRequest: z.number().int().min(1).max(50).default(3),
 }).default({});
 
 export const SharedServicesConfigSchema = z.object({
