@@ -264,6 +264,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'adjust_bot_config',
   'adjust_risk_limits',
   'apply_preset_transition',
+  'assess_strategy_preset',
   'browse_url',
   'check_regime',
   'check_watches',
@@ -365,6 +366,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   get_funding_rates:   { category: 'read-market-data',    description: 'Get current funding rates for perpetual contracts.' },
   get_market_overview: { category: 'read-market-data',    description: 'Aggregated market overview: top movers, volume leaders, market breadth metrics.' },
   get_market_preset_assessment: { category: 'read-database', description: 'Request a billable market preset assessment for a specific symbol on a venue. Returns ranked presets, confidence, and market summary. Each successful assessment (including cache hits) incurs a billing charge. Use the returned assessmentArtifactId with recommend_preset_transition.' },
+  assess_strategy_preset: { category: 'read-database', description: 'Request a billable market preset assessment for one or more trading symbols. Returns ranked presets, confidence, market summary, and the exact transition reference for change_strategy_preset.' },
   get_price:           { category: 'read-market-data',    description: 'Look up current price of a token. Hyperliquid perps use mark price; DEX tokens use oracle price.' },
 
   // read-web

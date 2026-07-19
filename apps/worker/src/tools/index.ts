@@ -21,6 +21,7 @@ import { emailTools } from './email.js';
 import { getMarketPresetAssessmentTool } from './get-market-preset-assessment.js';
 import { recommendPresetTransitionTool } from './recommend-preset-transition.js';
 import { applyPresetTransitionTool } from './apply-preset-transition.js';
+import { assessStrategyPresetTool } from './assess-strategy-preset.js';
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
   const registeredTools = registry.list();
@@ -100,6 +101,7 @@ export function createToolRegistry(): ToolRegistry {
     ...instrumentTools,
     ...resolverTools,
     ...emailTools,
+    assessStrategyPresetTool,
     getMarketPresetAssessmentTool,
     recommendPresetTransitionTool,
     applyPresetTransitionTool,
