@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import type { TechnicalConfig } from './config/schema.js';
+import type { PriceCandle } from './ports/candle-fetcher.js';
 import { err, ok, type Result } from './result.js';
 
 // ── Clean-Slate Cutover Note ────────────────────────────────────────────────
@@ -689,3 +690,243 @@ export function getArtifactFreshnessStatus(
   if (!canUseForTransition(artifact, now)) return 'stale_for_transition';
   return 'fresh';
 }
+
+// ── Evidence & Scorecard Types ──────────────────────────────────────────────
+
+/**
+ * Market regime assessment result.
+ *
+ * Defined here (not imported from @herobids/market-data) because the domain
+ * package must remain dependency-free per ports-and-adapters architecture.
+ * The canonical source is packages/market-data/src/types.ts; this copy must
+ * stay structurally identical.
+ */
+export interface RegimeResult {
+  pass: boolean;
+  reasons: string[];
+  details: {
+    benchmarkSymbol: string;
+    currentPrice: number;
+    emaFast: number;
+    emaSlow: number;
+    emaTrend: number;
+    emaAlignment: 'bullish' | 'bearish';
+    adxValue: number;
+    choppy: boolean;
+    vwap: number;
+    priceAboveVwap: boolean;
+    marketStructure: 'higherHighs' | 'lowerHighs' | 'mixed';
+  };
+}
+
+export const RegimeResultSchema = z.object({
+  pass: z.boolean(),
+  reasons: z.array(z.string()),
+  details: z.object({
+    benchmarkSymbol: z.string(),
+    currentPrice: z.number(),
+    emaFast: z.number(),
+    emaSlow: z.number(),
+    emaTrend: z.number(),
+    emaAlignment: z.enum(['bullish', 'bearish']),
+    adxValue: z.number(),
+    choppy: z.boolean(),
+    vwap: z.number(),
+    priceAboveVwap: z.boolean(),
+    marketStructure: z.enum(['higherHighs', 'lowerHighs', 'mixed']),
+  }),
+});
+
+// ── PriceCandle schema (domain-local; interface lives in ports/candle-fetcher.ts) ─
+
+const PriceCandleSchema = z.object({
+  timestamp: z.string(),
+  open: z.number(),
+  high: z.number(),
+  low: z.number(),
+  close: z.number(),
+  volume: z.number(),
+});
+
+// ── EvidenceValue<T> ────────────────────────────────────────────────────────
+
+/**
+ * Versioned, auditable evidence wrapper.
+ *
+ * Evidence is either available (with a typed value, source, and expiry) or
+ * unavailable (with a reason code and message for observability).
+ */
+export type EvidenceValue<T> =
+  | {
+      state: 'available';
+      value: T;
+      source: string;
+      observedAt: string;
+      expiresAt: string;
+    }
+  | {
+      state: 'unavailable';
+      reasonCode: string;
+      message: string;
+      observedAt: string;
+    };
+
+/**
+ * Create a Zod schema for EvidenceValue<T> given a value schema for T.
+ */
+export function EvidenceValueSchema<T extends z.ZodTypeAny>(valueSchema: T) {
+  return z.discriminatedUnion('state', [
+    z.object({
+      state: z.literal('available'),
+      value: valueSchema,
+      source: z.string(),
+      observedAt: z.string(),
+      expiresAt: z.string(),
+    }),
+    z.object({
+      state: z.literal('unavailable'),
+      reasonCode: z.string(),
+      message: z.string(),
+      observedAt: z.string(),
+    }),
+  ]);
+}
+
+// ── VolatilityEvidence ──────────────────────────────────────────────────────
+
+export interface VolatilityEvidence {
+  averageTrueRange: number;
+  volatilityRegime: 'low' | 'normal' | 'high' | 'extreme';
+  calculationVersion: string;
+}
+
+export const VolatilityEvidenceSchema = z.object({
+  averageTrueRange: z.number().nonnegative(),
+  volatilityRegime: z.enum(['low', 'normal', 'high', 'extreme']),
+  calculationVersion: z.string().min(1),
+});
+
+// ── LiquidityEvidence ───────────────────────────────────────────────────────
+
+export interface LiquidityEvidence {
+  averageSpreadBps: number;
+  averageDepthUsd: number;
+  quality: 'good' | 'adequate' | 'poor';
+}
+
+export const LiquidityEvidenceSchema = z.object({
+  averageSpreadBps: z.number().nonnegative(),
+  averageDepthUsd: z.number().nonnegative(),
+  quality: z.enum(['good', 'adequate', 'poor']),
+});
+
+// ── BreadthEvidence ─────────────────────────────────────────────────────────
+
+export interface BreadthEvidence {
+  symbolsAboveMA: number;
+  totalSymbols: number;
+  breadthRatio: number;
+}
+
+export const BreadthEvidenceSchema = z.object({
+  symbolsAboveMA: z.number().int().nonnegative(),
+  totalSymbols: z.number().int().positive(),
+  breadthRatio: z.number().min(0).max(1),
+});
+
+// ── ScorecardInput ──────────────────────────────────────────────────────────
+
+export interface ScorecardInput {
+  symbol: string;
+  candleWindow: { start: string; end: string };
+  candlesAvailable: number;
+}
+
+export const ScorecardInputSchema = z.object({
+  symbol: z.string().min(1),
+  candleWindow: z.object({
+    start: z.string(),
+    end: z.string(),
+  }),
+  candlesAvailable: z.number().int().nonnegative(),
+});
+
+// ── AssessmentData<T> ───────────────────────────────────────────────────────
+
+export interface AssessmentData<T> {
+  data: T;
+  source: string;
+  provider: string;
+  observedAt: string;
+  expiresAt: string;
+}
+
+export function AssessmentDataSchema<T extends z.ZodTypeAny>(dataSchema: T) {
+  return z.object({
+    data: dataSchema,
+    source: z.string(),
+    provider: z.string(),
+    observedAt: z.string(),
+    expiresAt: z.string(),
+  });
+}
+
+// ── AssessmentUnavailable ───────────────────────────────────────────────────
+
+export interface AssessmentUnavailable {
+  reasonCode: string;
+  message: string;
+  observedAt: string;
+}
+
+export const AssessmentUnavailableSchema = z.object({
+  reasonCode: z.string(),
+  message: z.string(),
+  observedAt: z.string(),
+});
+
+// ── AssessmentMarketCohort ──────────────────────────────────────────────────
+
+export interface AssessmentMarketCohort {
+  venueFamily: string;
+  instrumentKind: string;
+  symbols: string[];
+  lookback: number;
+  membershipTimestamp: string;
+  movingAveragePolicy: '50' | '200';
+}
+
+export const AssessmentMarketCohortSchema = z.object({
+  venueFamily: z.string().min(1),
+  instrumentKind: z.string().min(1),
+  symbols: z.array(z.string()),
+  lookback: z.number().int().positive(),
+  membershipTimestamp: z.string(),
+  movingAveragePolicy: z.enum(['50', '200']),
+});
+
+// ── AssessmentEvidenceSnapshot ──────────────────────────────────────────────
+
+export interface AssessmentEvidenceSnapshot {
+  schemaVersion: 1;
+  identity: MarketAssessmentIdentity;
+  collectedAt: string;
+  regime: EvidenceValue<RegimeResult>;
+  symbolCandles: EvidenceValue<ReadonlyArray<PriceCandle>>;
+  volatility: EvidenceValue<VolatilityEvidence>;
+  liquidity: EvidenceValue<LiquidityEvidence>;
+  breadth: EvidenceValue<BreadthEvidence>;
+  scorecardInput: EvidenceValue<ScorecardInput>;
+}
+
+export const AssessmentEvidenceSnapshotSchema = z.object({
+  schemaVersion: z.literal(1),
+  identity: MarketAssessmentIdentitySchema,
+  collectedAt: z.string(),
+  regime: EvidenceValueSchema(RegimeResultSchema),
+  symbolCandles: EvidenceValueSchema(z.array(PriceCandleSchema)),
+  volatility: EvidenceValueSchema(VolatilityEvidenceSchema),
+  liquidity: EvidenceValueSchema(LiquidityEvidenceSchema),
+  breadth: EvidenceValueSchema(BreadthEvidenceSchema),
+  scorecardInput: EvidenceValueSchema(ScorecardInputSchema),
+});
