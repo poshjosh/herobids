@@ -1303,6 +1303,50 @@ export const PlatformAssessorConfigSchema = z.object({
   /** Maximum number of instruments accepted per assessment request.
    *  If the caller requests more, only the first N are assessed. Default: 3 */
   maxInstrumentsPerRequest: z.number().int().min(1).max(50).default(3),
+  // ── Evidence collection policies ──────────────────────────────────────
+  /** Max age for collected evidence before considered stale. Default: 300_000 (5 min) */
+  evidenceMaxAgeMs: z.number().int().positive().default(300_000),
+  /** Timeout for evidence collection operations. Default: 15_000 (15s) */
+  evidenceTimeoutMs: z.number().int().positive().default(15_000),
+  /** Max evidence payload size. Default: 1_048_576 (1 MB) */
+  evidencePayloadLimitBytes: z.number().int().positive().default(1_048_576),
+  /** Candle collection policy. */
+  candlePolicy: z.object({
+    defaultInterval: z.enum(['5m', '15m', '1H', '4H', '1D']).default('15m'),
+    minimumCandles: z.number().int().positive().default(48),
+    maxCandles: z.number().int().positive().default(200),
+  }).optional().default({}),
+  /** ATR / volatility calculation policy. */
+  atrPolicy: z.object({
+    lookbackPeriods: z.number().int().positive().default(14),
+    volatilityLowPercentile: z.number().min(0).max(100).default(25),
+    volatilityHighPercentile: z.number().min(0).max(100).default(75),
+    volatilityExtremePercentile: z.number().min(0).max(100).default(95),
+    calculationVersion: z.string().default('1.0.0'),
+  }).optional().default({}),
+  /** Liquidity quality classification thresholds. */
+  liquidityPolicy: z.object({
+    goodSpreadBpsMax: z.number().nonnegative().default(5),
+    goodDepthUsdMin: z.number().nonnegative().default(50_000),
+    adequateSpreadBpsMax: z.number().nonnegative().default(25),
+    adequateDepthUsdMin: z.number().nonnegative().default(10_000),
+  }).optional().default({}),
+  /** Breadth cohort configuration. Optional — unavailable until an operator configures a valid cohort. */
+  breadthPolicy: z.object({
+    movingAveragePeriods: z.array(z.enum(['50', '200'])).optional().default(['50']),
+    minimumSymbols: z.number().int().positive().default(5),
+    maxLookbackDays: z.number().int().positive().default(30),
+  }).optional(),
+  /** Per-venue-family source mappings. Operators can override defaults per venue family. */
+  sourceMappings: z.record(
+    z.string(),
+    z.object({
+      candleSource: z.enum(['geckoterminal', 'venue', 'none']),
+      liquiditySource: z.enum(['orderbook', 'pool', 'discovery_cache', 'none']),
+      breadthSource: z.enum(['geckoterminal', 'venue_cache', 'none']),
+      regimeSource: z.enum(['benchmark', 'venue', 'none']),
+    }),
+  ).optional().default({}),
 }).default({});
 
 export const SharedServicesConfigSchema = z.object({

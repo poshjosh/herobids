@@ -616,6 +616,30 @@ platformAssessor:
   maxConcurrentAssessments: 1
   maxLlmCallsPerCycle: 20
   maxInstrumentsPerRequest: 3  # max instruments per assessment request
+  # ── Evidence collection policies ──────────────────────────────────────
+  evidenceMaxAgeMs: 300000          # 5 min — max age for collected evidence
+  evidenceTimeoutMs: 15000          # 15s — timeout for evidence operations
+  evidencePayloadLimitBytes: 1048576 # 1 MB — max evidence payload size
+  candlePolicy:
+    defaultInterval: 15m
+    minimumCandles: 48
+    maxCandles: 200
+  atrPolicy:
+    lookbackPeriods: 14
+    volatilityLowPercentile: 25
+    volatilityHighPercentile: 75
+    volatilityExtremePercentile: 95
+    calculationVersion: "1.0.0"
+  liquidityPolicy:
+    goodSpreadBpsMax: 5
+    goodDepthUsdMin: 50000
+    adequateSpreadBpsMax: 25
+    adequateDepthUsdMin: 10000
+  # breadthPolicy:  # omitted until a valid cohort source is configured
+  #   movingAveragePeriods: ["50"]
+  #   minimumSymbols: 5
+  #   maxLookbackDays: 30
+  sourceMappings: {}  # per-venue-family overrides — defaults resolve from context
 
 # Market intelligence — always-on discovery coordinator and monitor.
 # Controls the background market intelligence subsystem that wakes agents
