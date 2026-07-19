@@ -31,19 +31,7 @@ async function executeApplyPresetTransition(
   }
 
   try {
-    // ── Gate 1: recommend_only (shadow) mode blocks live apply (D8) ──────
-    if (ctx.agentConfigOps) {
-      const currentConfig = await ctx.agentConfigOps.getCurrentConfig();
-      if (currentConfig?.platformAssessment?.mode === 'recommend_only') {
-        return {
-          success: false,
-          error: 'Platform assessment is in recommend_only (shadow) mode. Preset transitions are not yet applied automatically. Review the recommendation and switch manually if desired.',
-          errorCode: 'transition.shadow_mode_blocked',
-        };
-      }
-    }
-
-    // ── Gate 2: Fetch and validate the exact assessment artifact ─────────
+    // ── Gate 1: Fetch and validate the exact assessment artifact ─────────
     const [artifactRow] = await db
       .select()
       .from(marketAssessmentArtifacts)
@@ -58,7 +46,7 @@ async function executeApplyPresetTransition(
       };
     }
 
-    // ── Gate 3: Validate target preset is in the allowed set ─────────────
+    // ── Gate 2: Validate target preset is in the allowed set ─────────────
     const allowedPresets = artifactRow.allowedPresets as string[] ?? [];
     if (allowedPresets.length > 0 && !allowedPresets.includes(targetPreset)) {
       return {
@@ -68,7 +56,7 @@ async function executeApplyPresetTransition(
       };
     }
 
-    // ── Gate 4: Validate artifact freshness ──────────────────────────────
+    // ── Gate 3: Validate artifact freshness ──────────────────────────────
     const now = new Date();
     if (!isArtifactFresh(
       { status: artifactRow.status, expiresAt: artifactRow.expiresAt.toISOString() },

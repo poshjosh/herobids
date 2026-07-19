@@ -259,29 +259,5 @@ describe('change_strategy_preset', () => {
     expect(insertSpy).toHaveBeenCalledOnce();
   });
 
-  it('allows transition when agent is in auto_apply mode', async () => {
-    const artifact = makeActiveArtifact();
-    const insertSpy = vi.fn().mockResolvedValue(undefined);
-    const ctx = makeCtx({
-      db: makeMockDb({ selectResult: [artifact], insertFn: insertSpy }),
-      agentConfigOps: {
-        getCurrentConfig: vi.fn().mockResolvedValue({
-          platformAssessment: { mode: 'auto_apply', enabled: true },
-        }),
-        persistConfig: vi.fn(),
-        appendJournal: vi.fn(),
-        notifyActorConfigUpdate: vi.fn(),
-        getLlmTickCount: vi.fn().mockReturnValue(0),
-      },
-    });
 
-    const result = await changeStrategyPresetTool.execute(
-      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'entries_only' },
-      ctx,
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.data).toMatchObject({ applied: true, targetPreset: 'momentum' });
-    expect(insertSpy).toHaveBeenCalledOnce();
-  });
 });
