@@ -173,8 +173,8 @@ The following implementation decisions were resolved during design review and ar
 | R10 | **Canonical identity columns are authoritative for lookups/indexes; `identity_snapshot` JSON is audit-only** and is never read by query paths. | Prevents accidental reliance on denormalized JSON for correctness. |
 | R11 | **Venue inference is out of scope for this billing slice.** The tool keeps the current explicit `venueFamily` requirement and returns a disambiguation error when absent. | The billing slice must not introduce new inference behavior; venue inference is a separate ergonomics follow-up. |
 | R12 | **The billed unit stays per-request (flat price), but the assessment's real LLM token cost is tracked internally for observability.** Each assessment run aggregates its token usage and records an estimated LLM cost on the request row — this figure never charges the user; it exists solely to set and tune the flat `assessment.request` price from real data. | Keeps predictable, pre-authorizable, quotable pricing and billable cache hits (per-request), while giving the operator real cost data to calibrate the flat price and margin. Reuses the existing LLM pricing path. |
-| R13 | **Seeded `assessment.request` price: `priceMicrousd = 50000` ($0.05).** The meter key, seed plumbing, and `perUnit: 1` are wired; the price is fixed at $0.05 per request and tunable from R12 observability data. | Conservative estimate ~2× standard-tier raw LLM cost at current model pricing; covers premium tier near break-even. Daily cap of 4 requests = $0.20/day. |
-| R14 | **Default `maxReviewRequestsPerDay = 4`**, rolling 24h window. Schema default is explicit; operators may override. | Prevents unbounded spend. At $0.05/request, 4/day = $0.20/day = ~$6/month — trivial for paid users. Combined with R13 this gives a clear cost envelope. |
+| R13 | **Seeded `assessment.request` price: `priceMicrousd = 200000` ($0.20).** The meter key, seed plumbing, and `perUnit: 1` are wired; the price is fixed at $0.20 per request and tunable from R12 observability data. | Covers Claude Fable 5 ($10/1M input, $50/1M output) at ~1.7× margin (~$0.115 raw cost). Daily cap of 4 requests = $0.80/day. |
+| R14 | **Default `maxReviewRequestsPerDay = 4`**, rolling 24h window. Schema default is explicit; operators may override. | Prevents unbounded spend. At $0.20/request, 4/day = $0.80/day = ~$24/month — acceptable for paid users. Combined with R13 this gives a clear cost envelope. |
 
 ---
 
@@ -388,7 +388,7 @@ Required owner files:
 
 - `packages/domain/src/config/schema.ts`
 - `packages/db/src/schema/billing-usage-events.ts`
-- `packages/db/src/usage-billing-repository.ts` — widen the `DefaultRateCardSeedItem` meter-key union and add a seeded `assessment.request` item with `priceMicrousd: 50000`, `perUnit: 1` (fixed per-request meter, so `quantity = 1` yields exactly $0.05).
+- `packages/db/src/usage-billing-repository.ts` — widen the `DefaultRateCardSeedItem` meter-key union and add a seeded `assessment.request` item with `priceMicrousd: 200000`, `perUnit: 1` (fixed per-request meter, so `quantity = 1` yields exactly $0.20).
 - any tests that validate allowed seeded meter keys
 
 ### 6.3 Freeze price at reservation time
@@ -650,7 +650,7 @@ Required files:
 
 - `packages/domain/src/config/schema.ts`
 - `apps/worker/src/config.ts` if env mapping needs to expose additional billing config
-- `config/default.yaml` when the environment relies on the seeded default rate card; include an explicit `assessment.request` seed entry (`priceMicrousd: 50000`, `perUnit: 1`) rather than requiring operators to discover the new meter manually
+- `config/default.yaml` when the environment relies on the seeded default rate card; include an explicit `assessment.request` seed entry (`priceMicrousd: 200000`, `perUnit: 1`) rather than requiring operators to discover the new meter manually
 - `packages/domain/src/config/schema.ts` — set the `maxReviewRequestsPerDay` Zod default to `4` (was `optional()` with no default)
 
 ### 11.2 Assessment config
@@ -829,7 +829,7 @@ The billing-policy decisions required for this follow-up were resolved before dr
 
 | Question | Answer |
 |---|---|
-| Seeded `assessment.request` `priceMicrousd` | **50000** ($0.05). See §6.2. |
+| Seeded `assessment.request` `priceMicrousd` | **200000** ($0.20). See §6.2. |
 | Default `maxReviewRequestsPerDay` | **4** (rolling 24h). Schema default is explicit; operators may override. |
 
 ### 16.2 Open commercial decision

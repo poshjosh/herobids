@@ -1,113 +1,74 @@
-# Follow-up Plan: Gap Closure for Per-Symbol On-Demand Assessment
+# Follow-up Plan: Executable Completion Matrix
 
-**Status:** Draft — mandatory follow-up closure plan
+**Status:** Draft - mandatory completion gate
 **Follows:** [005-implementation-checklist-per-symbol-on-demand.md](./005-implementation-checklist-per-symbol-on-demand.md)
-**Purpose:** Close the end-to-end implementation gaps left open after the base checklist work, with explicit coverage checks and runtime acceptance criteria.
+**Companion plans:** [007-assessment-billing-completion-plan.md](./007-assessment-billing-completion-plan.md) through [013-code-cleanup.md](./013-code-cleanup.md)
 
----
+## Purpose
 
-## 0. How To Use This Document
+This document is the final evidence gate for the per-symbol, on-demand assessment feature. It replaces the previous stale gap register: the `assessment_review` message builder, scanner-wake routing, wake emission, and worker-startup scheduler wiring already exist structurally. They are not proof that the feature works; the remaining work is to make their inputs and downstream request/transition actions real and verifiable.
 
-Use this plan together with [005-implementation-checklist-per-symbol-on-demand.md](./005-implementation-checklist-per-symbol-on-demand.md).
+`005` remains the retained requirements checklist. The follow-up plans own implementation. This document owns the cross-plan acceptance scenarios and the definition of complete.
 
-- `005` remains the authoritative feature build checklist.
-- `006` is the enforcement plan for the remaining gaps, especially the missing end-to-end `assessment_review` delivery path.
-- Work is **not complete** until every row in the Gap Register is closed with executable proof.
+## Current Baseline
 
-This document exists specifically to prevent another partial implementation from being described as complete.
+The following code exists and must be preserved and tested, not reimplemented:
 
----
+- `ReviewScheduler` can emit one `source: scanner`, `scannerKind: assessment_review` wake for advised candidates.
+- Worker startup creates schedulers for initially active opted-in agents and stops them at shutdown.
+- `agent.ts` renders assessment-review advice and prevents that wake from entering the hybrid entry evaluator.
+- `PlatformAssessor`, `AssessmentRequestService`, the three transition tools, and `assess_strategy_preset` are still incomplete or bypass the authoritative flow.
 
-## 1. Gap Register
+Any implementation status must distinguish these existing plumbing surfaces from the remaining behavior below.
 
-Every known gap must have an owner surface, a concrete change, and a proof artifact. No row may remain vague.
+## Completion Register
 
-| Gap ID | Missing behavior | Owner files | Required change | Proof |
-|---|---|---|---|---|
-| G1 | No dedicated assessment-review prompt builder, so the agent cannot see review advice | `apps/worker/src/agent.ts` | Add `buildAssessmentReviewMessage()` for `scannerKind: 'assessment_review'` | Unit test for rendered message plus runtime log or prompt snapshot showing injected advice block |
-| G2 | No `assessment_review` routing block in `runTick()` | `apps/worker/src/agent.ts` | Detect `scannerKind === 'assessment_review'`, route it away from ordinary signal handling, and inject the dedicated review message | Test proving an `assessment_review` wake changes prompt context and does not route through normal entry-signal flow |
-| G3 | No wiring from `ReviewScheduler` to the agent wake pipeline | `apps/worker/src/market-intelligence/review-scheduler.ts` | Convert advised review rows into an `agent.wake` event with `source='scanner'` and `scannerKind='assessment_review'` | Integration test showing one due advised review publishes one wake event |
-| G4 | No integration between `AssessmentRequestService` and `PlatformAssessor` | `apps/worker/src/market-intelligence/assessment-request-service.ts`, `apps/worker/src/market-intelligence/platform-assessor.ts` | Replace assessor stub with a real call into `PlatformAssessor`, persist run intent/artifact, and return real artifact IDs | Integration test proving a request creates or reuses a real artifact |
-| G5 | No scheduler instantiation in worker startup | `apps/worker/src/index.ts` | Instantiate and start `ReviewScheduler` for eligible agents; stop it on worker shutdown | Startup/integration test or runtime evidence showing scheduler creation for an opted-in agent |
-| G6 | No actual `assessment_review` wake emission from the scheduler | `apps/worker/src/market-intelligence/review-scheduler.ts` | Emit exactly one wake per due interval when one or more unexpired `advised` rows exist | Integration test proving one due interval with multiple advised symbols emits one wake |
+| ID | Required behavior | Owning plan | Required executable proof |
+|---|---|---|---|
+| C1 | An assessment has real, versioned, fresh deterministic evidence and scorecards, or fails before LLM/provider work with a structured evidence error. | `008` | Unit tests for every evidence source and unavailable path; integration test persists and reloads the evidence snapshot. |
+| C2 | The assessor calls the platform-owned LLM only after C1, validates a complete ranking, and persists no partial artifact on failure. | `009` | Unit tests for prompt projection, invalid output, and semantic ranking checks; recorded-response integration test. |
+| C3 | Every assessment request, including a cache hit and every public batch path, goes through one durable request/billing/service boundary. | `007` | Service and tool integration tests prove no direct artifact-read path can claim a billable assessment. |
+| C4 | Reservations, capture, release, daily limits, retries, and cross-worker identity leases are durable and idempotent. | `007` | DB integration tests prove no double charge or duplicate provider run under concurrent requests. |
+| C5 | The review pre-check reads persisted scanner candidates and can create meaningful advice without calling an LLM or charging an account. | `010` | Scheduler integration test proves advised/no-advice outcomes and exactly one bounded wake. |
+| C6 | A transition changes the effective active preset and the running actor configuration, preserves creator-locked risk, and performs only the selected permitted position actions. | `012` | Transition integration test proves persisted active-preset state, actor reload, audit record, and rejection of prohibited changes. |
+| C7 | Recommendations and applications use the exact fresh artifact supplied by the billed request; they never substitute a newer artifact or implicitly request another assessment. | `012` | Tool tests for exact-ID handoff, expiry, mismatched identity, and no hidden billable call. |
+| C8 | Legacy segment-key and scheduler artifacts are removed only after all replacements are live and their code/test references are gone. | `013` | Targeted source-only grep, lint, build, and migration/journal validation. |
 
----
+No item may be reported as complete based solely on a TODO removal, a mock-only unit test, a log line, or a passing compilation check.
 
-## 2. Coverage Gate
+## End-to-End Acceptance Scenario
 
-The next implementation effort must satisfy all of the following gates.
+Run this against an isolated integration database, Redis instance, deterministic market-data/LLM fixtures, and a seeded billing account. The scenario must exercise the worker composition root rather than constructing individual methods in isolation.
 
-1. No work may be called complete if any Gap Register row is still open.
-2. No status update may claim end-to-end completion without pointing to code for wake emission, wake consumption, prompt rendering, and request execution.
-3. `pnpm lint` and `pnpm build` are necessary but not sufficient. Runtime-path proof is mandatory.
-4. Any behavior described in prose must be traceable to code in the owner files listed in the Gap Register.
-5. If a slice lands only foundations or scaffolding, its status must say `partial` and list the still-open gap IDs.
+1. Seed an opted-in hybrid `scanner_gated` agent with an active preset, a valid venue binding, persisted scanner candidates, enough credit, and a review check due.
+2. Run the review scheduler. Verify that it writes a review-check record and bounded `review_advice` records with either an auditable advised outcome or an auditable no-advice outcome.
+3. For advised candidates, verify exactly one `assessment_review` wake. Confirm the hybrid entry evaluator is not called and no assessment request, reservation, provider call, or artifact is created merely by delivery.
+4. Have the agent invoke the canonical assessment request tool for one advised symbol. Verify canonical identity resolution, request-row creation, reservation before provider work, persisted run intent, real evidence snapshot, deterministic scorecards, validated LLM artifact, capture, and an exact artifact ID in the response.
+5. Request the same fresh identity from another eligible agent. Verify a separate charged request row and no new provider run. Verify the artifact remains shared and immutable.
+6. Issue concurrent cache-miss requests for one identity from separate worker processes. Verify one provider run and one active artifact, while each successful requesting agent has its own request/billing outcome.
+7. Force provider failure after reservation. Verify release rather than capture, durable failure state, no artifact, and daily-cap accounting. Retry according to the documented request-attempt policy.
+8. Call `recommend_preset_transition` using the returned artifact ID. Verify it reads only that fresh artifact and combines it with the requesting agent's local active-preset, policy, and position state.
+9. In `recommend_only`, verify `apply_preset_transition` rejects without changing state. In an explicitly enabled non-shadow test configuration, verify an `entries_only` transition changes the active preset, writes the exact behavior versions and identity snapshot, and reloads the actor configuration.
+10. Attempt an `entries_and_tighten_existing` transition with a creator-locked stop. Verify the implementation can tighten only; it cannot widen protection, remove protection, add to a losing position, or overwrite a creator lock.
+11. Restart the worker. Verify due-review state, in-flight assessment reconciliation, idempotent request results, and current active-preset state remain recoverable from Postgres.
 
----
+## Evidence Deliverables
 
-## 3. Required Implementation Order
+Before feature closure, retain these executable artifacts in the test report or CI output:
 
-Implement by runtime control flow, not by architecture layer.
+- focused unit and integration test commands with results;
+- migration SQL and matching Drizzle journal entry;
+- source-only removal report for legacy assessment identity symbols;
+- a recorded LLM fixture that exercises the production response schema;
+- a trace or structured test assertion showing reservation precedes provider invocation;
+- a trace showing an assessment-review wake remains advice-only;
+- a trace showing actor configuration changed after a permitted transition.
 
-1. `ReviewScheduler` emits the wake.
-2. Worker startup instantiates and starts the scheduler.
-3. Agent runtime detects `assessment_review` and builds the dedicated prompt segment.
-4. Request service calls the real assessor.
-5. End-to-end tests prove the whole path.
+## Release Gates
 
-This order is mandatory because it exposes broken delivery earlier and prevents false claims based on isolated foundations.
+1. Run all focused plan tests and the end-to-end acceptance scenario.
+2. Run `pnpm lint`, `pnpm build`, and the relevant workspace test suites.
+3. Deploy in `recommend_only` mode first. Monitor persisted request outcomes, evidence failures, ranking validity failures, wake volume, cache-hit ratio, and actor accept/defer/reject outcomes.
+4. Do not enable any mode that changes a preset until the recorded shadow evidence satisfies the rollout policy in `005` and the transition integration tests pass in the target environment.
 
----
-
-## 4. Acceptance Scenario
-
-The feature is not complete until this exact scenario passes.
-
-1. Seed one opted-in agent whose review is due.
-2. Run the scheduler.
-3. Verify one or more `review_advice` rows are persisted with outcome `advised`.
-4. Verify the scheduler emits exactly one `agent.wake` with:
-   - `source = 'scanner'`
-   - `scannerKind = 'assessment_review'`
-5. Verify the agent runtime consumes that wake and injects a dedicated assessment-review message into prompt context.
-6. Verify that if the agent takes no tool action:
-   - no billing occurs
-   - no assessor run occurs
-   - no artifact is created solely because of the wake
-7. Verify that when the agent explicitly calls `get_market_preset_assessment`:
-   - the request service runs
-   - billing gate logic runs
-   - the assessor is invoked or a fresh artifact is reused
-   - a real `assessmentArtifactId` is returned
-8. Verify that `recommend_preset_transition` works only off the exact artifact reference.
-9. Verify that `apply_preset_transition` is blocked when `recommend_only` is active.
-
-If any one of those checks fails, the flow is incomplete.
-
----
-
-## 5. Required Proof Per Gap
-
-Each gap must be closed with both code and executable validation.
-
-| Gap ID | Minimum proof |
-|---|---|
-| G1 | Unit test for `buildAssessmentReviewMessage()` and captured prompt output |
-| G2 | Agent runtime test for `assessment_review` routing |
-| G3 | Scheduler integration test showing wake publication |
-| G4 | Request-service integration test showing assessor invocation and artifact result |
-| G5 | Worker lifecycle test or startup log proof for scheduler instantiation |
-| G6 | Test proving one wake per due interval, not one wake per symbol |
-
----
-
-## 6. Completion Rule
-
-Completion of the per-symbol on-demand assessment feature requires:
-
-- all relevant items in [005-implementation-checklist-per-symbol-on-demand.md](./005-implementation-checklist-per-symbol-on-demand.md) to remain satisfied,
-- all six gaps in this document to be closed,
-- the acceptance scenario in Section 4 to pass,
-- and the final review to enumerate proof for every gap row.
-
-If a future implementation or review cannot do that, it must explicitly say the feature remains incomplete.
+The feature remains incomplete if any completion-register item lacks executable proof.
