@@ -27,11 +27,11 @@ import { PlatformAssessor } from './platform-assessor.js';
 // ── Outcome Types ───────────────────────────────────────────────────────────
 
 export type AssessmentRequestOutcome =
-  | { kind: 'request_in_flight'; message: string }
-  | { kind: 'billing_blocked'; reason: string; requestId?: string }
-  | { kind: 'cooldown_blocked'; nextEligibleAt: string; requestId?: string }
+  | { kind: 'request_in_flight'; message: string; canonicalIdentity?: MarketAssessmentIdentity }
+  | { kind: 'billing_blocked'; reason: string; requestId?: string; canonicalIdentity?: MarketAssessmentIdentity }
+  | { kind: 'cooldown_blocked'; nextEligibleAt: string; requestId?: string; canonicalIdentity?: MarketAssessmentIdentity }
   | { kind: 'identity_unresolved'; reason: string; requestId?: string }
-  | { kind: 'provider_failed'; error: string; errorCode?: string; requestId: string }
+  | { kind: 'provider_failed'; error: string; errorCode?: string; requestId: string; canonicalIdentity?: MarketAssessmentIdentity }
   | { kind: 'cache_hit'; assessmentArtifactId: string; billed: true; requestId: string; canonicalIdentity: MarketAssessmentIdentity; artifact: AssessmentArtifactSummary }
   | { kind: 'assessment_completed'; assessmentArtifactId: string; billed: true; requestId: string; canonicalIdentity: MarketAssessmentIdentity; artifact: AssessmentArtifactSummary };
 
@@ -1142,15 +1142,15 @@ export class AssessmentRequestService {
           artifact: outcome.artifact,
         };
       case 'request_in_flight':
-        return { kind: 'request_in_flight', message: outcome.message };
+        return { kind: 'request_in_flight', message: outcome.message, canonicalIdentity: outcome.canonicalIdentity };
       case 'billing_blocked':
-        return { kind: 'billing_blocked', reason: outcome.reason, requestId: outcome.requestId };
+        return { kind: 'billing_blocked', reason: outcome.reason, requestId: outcome.requestId, canonicalIdentity: outcome.canonicalIdentity };
       case 'cooldown_blocked':
-        return { kind: 'cooldown_blocked', nextEligibleAt: outcome.nextEligibleAt, requestId: outcome.requestId };
+        return { kind: 'cooldown_blocked', nextEligibleAt: outcome.nextEligibleAt, requestId: outcome.requestId, canonicalIdentity: outcome.canonicalIdentity };
       case 'identity_unresolved':
         return { kind: 'identity_unresolved', reason: outcome.reason, requestId: outcome.requestId };
       case 'provider_failed':
-        return { kind: 'provider_failed', error: outcome.error, errorCode: outcome.errorCode, requestId: outcome.requestId };
+        return { kind: 'provider_failed', error: outcome.error, errorCode: outcome.errorCode, requestId: outcome.requestId, canonicalIdentity: outcome.canonicalIdentity };
     }
   }
 

@@ -23,7 +23,7 @@ export function setAssessmentRequestPort(p: AssessmentRequestPort): void {
   port = p;
 }
 
-function mapOutcomeToResultEntry(
+export function mapOutcomeToResultEntry(
   symbol: string,
   outcome: AssessmentRequestPortOutcome,
   idempotencyKey: string | null,
@@ -32,8 +32,21 @@ function mapOutcomeToResultEntry(
     return {
       success: true,
       symbol,
+      canonicalIdentity: outcome.canonicalIdentity,
+      assessment: {
+        artifactId: outcome.assessmentArtifactId,
+        assessedAt: outcome.artifact.assessedAt,
+        expiresAt: outcome.artifact.expiresAt,
+        marketSummary: outcome.artifact.currentMarketSummary,
+        regimeSummary: outcome.artifact.regimeSummary,
+        scanHealthSummary: outcome.artifact.scanHealthSummary,
+        rankings: outcome.artifact.presetRankings,
+        recommendedPreset: outcome.artifact.recommendedPreset,
+        confidence: outcome.artifact.confidence,
+        urgency: outcome.artifact.urgency,
+      },
       transitionReference: {
-        assessmentArtifactId: outcome.assessmentArtifactId!,
+        assessmentArtifactId: outcome.assessmentArtifactId,
       },
       billing: {
         billed: true,
@@ -50,6 +63,7 @@ function mapOutcomeToResultEntry(
       symbol,
       error: outcome.error ?? 'Provider failed',
       errorCode: outcome.errorCode ?? 'assessment.provider_failed',
+      canonicalIdentity: outcome.canonicalIdentity,
       billing: {
         billed: false,
         requestId: outcome.requestId ?? null,
@@ -63,17 +77,20 @@ function mapOutcomeToResultEntry(
   let error: string;
   let errorCode: string;
   let requestId: string | null = null;
+  let canonicalIdentity: AssessmentResultEntry['canonicalIdentity'] = undefined;
 
   switch (outcome.kind) {
     case 'billing_blocked':
       error = outcome.reason ?? 'Billing blocked';
       errorCode = 'assessment.billing_blocked';
       requestId = outcome.requestId ?? null;
+      canonicalIdentity = outcome.canonicalIdentity;
       break;
     case 'cooldown_blocked':
       error = `Assessment on cooldown until ${outcome.nextEligibleAt ?? 'unknown'}`;
       errorCode = 'assessment.cooldown_blocked';
       requestId = outcome.requestId ?? null;
+      canonicalIdentity = outcome.canonicalIdentity;
       break;
     case 'identity_unresolved':
       error = outcome.reason ?? 'Identity unresolved';
@@ -83,6 +100,7 @@ function mapOutcomeToResultEntry(
     case 'request_in_flight':
       error = outcome.message ?? 'Request in flight';
       errorCode = 'assessment.request_in_flight';
+      canonicalIdentity = outcome.canonicalIdentity;
       break;
     default:
       error = 'Assessment request blocked';
@@ -94,6 +112,7 @@ function mapOutcomeToResultEntry(
     symbol,
     error,
     errorCode,
+    canonicalIdentity,
     billing: {
       billed: false,
       requestId,
@@ -137,7 +156,7 @@ async function executeAssessStrategyPreset(
     }
   }
 
-  const resolvedInstrumentKind = (instrumentKind ?? 'orderbook') as 'orderbook' | 'perp';
+  const resolvedInstrumentKind = (instrumentKind ?? 'orderbook') as 'orderbook' | 'perp' | 'swap' | 'dex';
 
   // ── Delegate to AssessmentRequestPort if wired ──
   if (port) {
