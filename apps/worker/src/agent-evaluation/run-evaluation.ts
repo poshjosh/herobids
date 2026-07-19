@@ -22,7 +22,7 @@ import { analyzeSecurity } from './analyzers/security.js';
 import { renderReport } from './render-report.js';
 import { generateEvaluationNarrative } from './generate-narrative.js';
 import { redact, redactJson } from './redaction.js';
-import { derivePresetAssessmentSummary, derivePresetAssessmentEvents } from './preset-assessment-summary.js';
+import { derivePresetAssessmentSummary, derivePresetAssessmentEvents, buildEventsArtifact } from './preset-assessment-summary.js';
 import type { PresetAssessmentSummary } from './preset-assessment-summary.js';
 import { renderPresetAssessmentAppendix } from './render-preset-assessment-appendix.js';
 
@@ -156,16 +156,21 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
           }
         }
 
-        // Write events artifact when events exist
+        // Write events artifact when events exist (wrapped in self-describing envelope)
         const events = derivePresetAssessmentEvents({
           evidence: manifest.presetAssessmentEvidence,
         });
         if (events.length > 0) {
           try {
+            const eventsArtifact = buildEventsArtifact({
+              events,
+              generatedAt,
+              scope: resolvedScope,
+            });
             await store.write(
               runId,
               'preset-assessment-events.json',
-              JSON.stringify(events, null, 2),
+              JSON.stringify(eventsArtifact, null, 2),
             );
           } catch (err) {
             logger.warn({ runId, err: String(err) }, 'Could not write preset-assessment-events.json');

@@ -208,8 +208,23 @@ function deriveQ3AssessmentRequests(
     return { status: 'no', detail: `${rows.length} request(s) exist, but none succeeded (no assessment_completed or cache_hit).` };
   }
 
-  if (completed.length > 0 && cacheHits.length > 0) {
+  // Check for mixed blocked/failed outcomes alongside successes
+  const hasFailures = rows.some(
+    (r) =>
+      r.status === 'billing_blocked' ||
+      r.status === 'cooldown_blocked' ||
+      r.status === 'provider_failed',
+  );
+
+  if (completed.length > 0 && cacheHits.length > 0 && !hasFailures) {
     return { status: 'yes', detail: `${completed.length} fresh completion(s) and ${cacheHits.length} cache hit(s).` };
+  }
+
+  if (hasFailures) {
+    return {
+      status: 'partial',
+      detail: `Successes observed (${completed.length} fresh, ${cacheHits.length} cache hit) but mixed with blocked or failed outcomes.`,
+    };
   }
 
   return { status: 'partial', detail: `${completed.length} fresh completion(s), ${cacheHits.length} cache hit(s) — only one kind of success observed.` };
@@ -594,6 +609,38 @@ export function derivePresetAssessmentEvents(params: {
   events.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
 
   return events;
+}
+
+// ── Events Artifact Envelope ─────────────────────────────────────────────────
+
+/**
+ * The enveloped artifact shape for preset-assessment-events.json.
+ * Wraps the raw event array with schema versioning, generation timestamp,
+ * and scope context so the file is self-describing.
+ */
+export interface PresetAssessmentEventsArtifact {
+  schemaVersion: 1;
+  generatedAt: string;
+  scope: Record<string, unknown>;
+  events: PresetAssessmentEvent[];
+}
+
+/**
+ * Produce a self-describing enveloped events artifact.
+ * Should be used by the caller (run-evaluation.ts) when writing
+ * preset-assessment-events.json to the artifact store.
+ */
+export function buildEventsArtifact(params: {
+  events: PresetAssessmentEvent[];
+  generatedAt: string;
+  scope: ResolvedEvaluationScope;
+}): PresetAssessmentEventsArtifact {
+  return {
+    schemaVersion: 1,
+    generatedAt: params.generatedAt,
+    scope: params.scope,
+    events: params.events,
+  };
 }
 
 // ── Internal ────────────────────────────────────────────────────────────────

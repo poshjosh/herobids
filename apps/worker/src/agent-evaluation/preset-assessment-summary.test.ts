@@ -205,7 +205,7 @@ describe('Q2 — Review advice', () => {
 // ── Q3 — Assessment Requests ────────────────────────────────────────────────
 
 describe('Q3 — Assessment requests and reuse', () => {
-  it("returns 'yes' when both completed and cache_hit exist", () => {
+  it("returns 'yes' when both completed and cache_hit exist with no failures", () => {
     const evidence = makeEvidence({
       requestRows: [
         { id: '1', status: 'assessment_completed' },
@@ -218,6 +218,23 @@ describe('Q3 — Assessment requests and reuse', () => {
       scope: baseScope,
     });
     expect(summary.answers.assessmentRequestsAndReuse.status).toBe('yes');
+  });
+
+  it("returns 'partial' when successes are mixed with blocked or failed outcomes", () => {
+    const evidence = makeEvidence({
+      requestRows: [
+        { id: '1', status: 'assessment_completed' },
+        { id: '2', status: 'cache_hit' },
+        { id: '3', status: 'billing_blocked' },
+        { id: '4', status: 'provider_failed' },
+      ],
+    });
+    const summary = derivePresetAssessmentSummary({
+      evidence,
+      unifiedConfig: null,
+      scope: baseScope,
+    });
+    expect(summary.answers.assessmentRequestsAndReuse.status).toBe('partial');
   });
 
   it("returns 'partial' when only completed, no cache_hit", () => {

@@ -277,11 +277,13 @@ describe('runEvaluation', () => {
     expect(summary.includedInReport).toBe(true);
     expect(summary.inclusionReason).toBe('enabled_and_activity');
 
-    // Verify events artifact was written
+    // Verify events artifact was written (wrapped in self-describing envelope)
     const eventsRaw = written.get('preset-assessment-events.json');
     expect(eventsRaw).toBeDefined();
-    const events = JSON.parse(eventsRaw ?? '[]') as Array<unknown>;
-    expect(events.length).toBeGreaterThan(0);
+    const eventsArtifact = JSON.parse(eventsRaw ?? '{}') as { events: Array<unknown>; schemaVersion: number; scope: Record<string, unknown> };
+    expect(eventsArtifact.events.length).toBeGreaterThan(0);
+    expect(eventsArtifact.schemaVersion).toBe(1);
+    expect(eventsArtifact.scope).toBeDefined();
 
     // Verify appendix is in REPORT.md
     const report = written.get('REPORT.md');
