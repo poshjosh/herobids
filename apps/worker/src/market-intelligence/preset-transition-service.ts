@@ -10,7 +10,10 @@ import {
   ok,
   err,
   isArtifactFresh,
+  computePresetBehaviorVersion,
+  isStyleKey,
   type Result,
+  type StyleKey,
   type PresetTransitionPort,
   type RecommendTransitionParams,
   type ApplyTransitionParams,
@@ -20,6 +23,7 @@ import {
   type ActivePresetBinding,
   type TransitionMode,
 } from '@herobids/domain';
+import { getPreset } from '@herobids/domain/config/presets-loader';
 import { createLogger } from '../logger.js';
 import { randomUUID } from 'node:crypto';
 
@@ -30,11 +34,29 @@ const logger = createLogger('preset-transition-service');
  *
  * `notifyActor` is optional — when absent (e.g. tests, agent not running),
  * the service assumes the actor acknowledged the reload.
+ *
+ * The callback materializes the effective config from the resolved binding
+ * and applies it to the running actor via the existing config-application
+ * path. It returns ok(undefined) on success or err on failure.
  */
 export interface PresetTransitionServiceDeps {
   db: Database;
-  /** Notify the running actor to reload its binding/config. */
-  notifyActor?: (agentId: string, bindingId: string) => Promise<void>;
+  /**
+   * Notify the running actor to reload its binding/config.
+   *
+   * @param agentId   — the agent whose actor should be reloaded
+   * @param activePresetKey — the new preset key (e.g. "momentum")
+   * @param styleTier — the style tier of the new preset
+   * @param behaviorVersion — computed behavior version of the new preset
+   * @returns ok(undefined) when the actor acknowledged the reload,
+   *          err with code + message on failure.
+   */
+  notifyActor?: (
+    agentId: string,
+    activePresetKey: string,
+    styleTier: StyleKey,
+    behaviorVersion: string,
+  ) => Promise<Result<void>>;
 }
 
 /**
@@ -52,6 +74,12 @@ export interface PresetTransitionServiceDeps {
  * Phase 1 only produces 'applied' and 'failed' terminal states.
  * 'deferred', 'rejected', and 'partially_applied' are reserved for
  * future modes (entries_and_tighten_existing with position actions, etc.).
+ *
+ * TODO(M3): Restart reconciliation of `applying`-state transitions is not yet
+ * implemented. If the worker crashes or restarts while a transition is in the
+ * `applying` state, that row may be left stranded. A follow-on slice should
+ * add a startup recovery pass that reaps or retries `applying` transitions
+ * that exceed a timeout threshold.
  */
 export class PresetTransitionService implements PresetTransitionPort {
   constructor(private readonly deps: PresetTransitionServiceDeps) {}
@@ -151,6 +179,11 @@ export class PresetTransitionService implements PresetTransitionPort {
 
     // Step 4: Build PreparedPresetTransition
     const oldBinding = bindingResult.ok ? bindingResult.data : null;
+
+    // Validate and normalize the style tier from the artifact.
+    const styleTier: StyleKey = isStyleKey(artifact.styleTier) ? artifact.styleTier : 'standard';
+    const newBehaviorVersion = this.computeTargetBehaviorVersion(topRanked.presetKey, styleTier) ?? 'unknown';
+
     const prepared: PreparedPresetTransition = {
       agentId,
       assessmentArtifactId: artifact.id,
@@ -159,9 +192,9 @@ export class PresetTransitionService implements PresetTransitionPort {
       reason: null,
       oldBinding,
       oldPresetKey: oldBinding?.activePresetKey ?? 'none',
-      oldBehaviorVersion: oldBinding?.behaviorVersion ?? 'v1',
+      oldBehaviorVersion: oldBinding?.behaviorVersion ?? 'unknown',
       newPresetKey: topRanked.presetKey,
-      newBehaviorVersion: 'v1', // TODO(P?): resolve behaviorVersion from preset catalog — stub for Phase 1
+      newBehaviorVersion,
       identityScope: buildIdentityScope(artifact),
       transitionScope: 'default', // Per-identity scope not yet implemented
       idempotencyKey: randomUUID(),
@@ -213,7 +246,11 @@ export class PresetTransitionService implements PresetTransitionPort {
       // Step 2: Resolve current binding
       const bindingResult = await this.resolveCurrentBinding(agentId, 'default');
       const oldPresetKey = bindingResult.ok ? bindingResult.data.activePresetKey : 'none';
-      const oldBehaviorVersion = bindingResult.ok ? bindingResult.data.behaviorVersion : 'v1';
+      const oldBehaviorVersion = bindingResult.ok ? bindingResult.data.behaviorVersion : 'unknown';
+
+      // Validate style tier and compute target behavior version.
+      const styleTier: StyleKey = isStyleKey(artifact.styleTier) ? artifact.styleTier : 'standard';
+      const newBehaviorVersion = this.computeTargetBehaviorVersion(targetPreset, styleTier) ?? 'unknown';
 
       // Step 3: Verify policy compatibility
       const [agentRow] = await this.deps.db
@@ -277,7 +314,7 @@ export class PresetTransitionService implements PresetTransitionPort {
         oldPresetKey,
         oldPresetBehaviorVersion: oldBehaviorVersion,
         newPresetKey: targetPreset,
-        newPresetBehaviorVersion: 'v1', // TODO(P?): resolve behaviorVersion from preset catalog — stub for Phase 1
+        newPresetBehaviorVersion: newBehaviorVersion,
         assessmentArtifactId: artifact.id,
         identitySnapshot,
         instrumentKind: artifact.instrumentKind,
@@ -292,7 +329,7 @@ export class PresetTransitionService implements PresetTransitionPort {
         positionActionResults: null,
         transitionScope: 'default',
         reason: reason ?? null,
-        appliedAt: now,
+        appliedAt: null,
         regimeSnapshot: null,
         createdAt: now,
       });
@@ -307,9 +344,19 @@ export class PresetTransitionService implements PresetTransitionPort {
       // Binding upsert happens AFTER successful notification to avoid state
       // inconsistency (binding says "new preset" but transition says "failed").
       let actorAcknowledged = false;
+      let actorError: { code: string; message: string } | undefined;
       try {
         if (this.deps.notifyActor) {
-          await this.deps.notifyActor(agentId, transitionId);
+          const notifyResult = await this.deps.notifyActor(
+            agentId,
+            targetPreset,
+            styleTier,
+            newBehaviorVersion,
+          );
+          if (!notifyResult.ok) {
+            actorError = { code: notifyResult.error.code, message: notifyResult.error.message };
+            throw new Error(notifyResult.error.message);
+          }
         }
         // Only persist the binding once the actor has acknowledged the reload
         await this.deps.db
@@ -319,9 +366,9 @@ export class PresetTransitionService implements PresetTransitionPort {
             agentId,
             scope: 'default',
             activePresetKey: targetPreset,
-            styleTier: artifact.styleTier as 'economy' | 'standard' | 'premium',
-            behaviorVersion: 'v1',
-            appliedPresetVersion: 'v1',
+            styleTier,
+            behaviorVersion: newBehaviorVersion,
+            appliedPresetVersion: newBehaviorVersion,
             sourceArtifactId: artifact.id,
             sourceTransitionId: transitionId,
             status: 'active',
@@ -332,18 +379,20 @@ export class PresetTransitionService implements PresetTransitionPort {
             target: [agentPresetBindings.agentId, agentPresetBindings.scope],
             set: {
               activePresetKey: targetPreset,
-              styleTier: artifact.styleTier as 'economy' | 'standard' | 'premium',
-              behaviorVersion: 'v1',
-              appliedPresetVersion: 'v1',
+              styleTier,
+              behaviorVersion: newBehaviorVersion,
+              appliedPresetVersion: newBehaviorVersion,
               sourceArtifactId: artifact.id,
               sourceTransitionId: transitionId,
               status: 'active',
               appliedAt: now,
             },
           });
-        actorAcknowledged = true; // Assume success when no explicit actor runtime
+        actorAcknowledged = true;
       } catch (notifyErr) {
-        logger.error({ err: notifyErr, agentId, transitionId }, 'Actor notification failed');
+        const detail =
+          notifyErr instanceof Error ? notifyErr.message : String(notifyErr);
+        logger.error({ err: detail, agentId, transitionId, actorError }, 'Actor notification failed');
       }
 
       // ── State: applied or failed ─────────────────────────────────────
@@ -388,6 +437,24 @@ export class PresetTransitionService implements PresetTransitionPort {
   }
 
   // ── Private helpers ───────────────────────────────────────────────────
+
+  /**
+   * Compute the behavior version for a target preset from the preset catalog.
+   * Returns the 12-char hex version string, or null if the preset is not found
+   * or is a DCA (bot-only) preset.
+   */
+  private computeTargetBehaviorVersion(
+    presetKey: string,
+    styleTier: StyleKey,
+  ): string | null {
+    const preset = getPreset(presetKey, styleTier);
+    if (!preset) return null;
+    try {
+      return computePresetBehaviorVersion(preset);
+    } catch {
+      return null;
+    }
+  }
 
   /**
    * Resolve the agent's current active preset binding for a given scope.

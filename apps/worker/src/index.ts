@@ -22,7 +22,7 @@ import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdap
 import { createFillFirstMarkSource } from '@herobids/engine';
 import type { IdGenerator } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig, ok } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig, ok, err } from '@herobids/domain';
 import { applyPresetToAgent, isStyleKey, type StyleKey } from '@herobids/domain';
 import { getPreset } from '@herobids/domain/config/presets-loader';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
@@ -57,7 +57,7 @@ import { StubRuntimeDocumentMaterializer } from './agents/stub-document-material
 import { LocalDocumentStore } from '@herobids/documents';
 import { UserEventPublisher } from './user-event-publisher.js';
 import { ActorHealthPublisher } from './actor-health-publisher.js';
-import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler, PresetTransitionService, resolveAuthoritativeBinding } from './market-intelligence/index.js';
+import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler, PresetTransitionService, resolveAuthoritativeBinding, materializeEffectiveConfig, mappingToTechnicalConfig } from './market-intelligence/index.js';
 import type { ReviewScheduler } from './market-intelligence/index.js';
 import { createPlatformAssessor } from './market-intelligence/assessor-factory.js';
 import { AssessmentRequestService } from './market-intelligence/assessment-request-service.js';
@@ -1959,7 +1959,82 @@ setAssessmentRequestPort(assessmentRequestService);
 
 // ── Preset Transition Service ─────────────────────────────────────────────
 // Wire the PresetTransitionPort so tools can delegate preset transitions.
-const presetTransitionService = new PresetTransitionService({ db, notifyActor: undefined });
+//
+// The notifyActor callback materializes the effective technical config from
+// the resolved binding and applies it to the running actor via the existing
+// config-application path (applyPendingConfigUpdate). This is the load-bearing
+// piece of Item 10 — it ensures the actor's runtime state reflects the new
+// preset, not just the database.
+const presetTransitionService = new PresetTransitionService({
+  db,
+  notifyActor: async (agentId, activePresetKey, styleTier, _behaviorVersion) => {
+    const actor = actorRegistry.get(agentId);
+    if (!actor) {
+      // TODO(H3): Cross-worker reload routing via `agent.config.update` Redis
+      // message is not yet implemented. When the actor is not found locally,
+      // we should publish the config update to Redis so the worker that owns
+      // the agent can apply it. Deferred to a follow-on slice.
+      return err({
+        code: 'transition.actor_not_found',
+        message: `Actor not found in registry for agent ${agentId} — agent may be leased to another worker or not running`,
+      });
+    }
+
+    if (!(actor instanceof AgentTradingActor)) {
+      return err({
+        code: 'transition.wrong_actor_type',
+        message: `Actor for agent ${agentId} is not an AgentTradingActor`,
+      });
+    }
+
+    // Materialize the effective config from the preset catalog.
+    const materialized = materializeEffectiveConfig(activePresetKey, styleTier);
+    if (!materialized.ok) {
+      return materialized;
+    }
+
+    const mapping = materialized.data;
+
+    // Build a complete TechnicalConfig: preserve existing venue/filter config,
+    // override strategy fields from the preset.
+    const presetFieldsResult = mappingToTechnicalConfig(mapping);
+    if (!presetFieldsResult.ok) {
+      return presetFieldsResult;
+    }
+    const presetFields = presetFieldsResult.data;
+    const existingConfig = actor.getTechnicalConfig();
+
+    const mergedTechnical: TechnicalConfig = {
+      // Preserve existing filters (venue, venueType, symbols, etc.) — the
+      // preset does not carry venue info.
+      filters: existingConfig?.filters ?? { venue: '', venueType: 'orderbook' },
+      ...(existingConfig?.regime ? { regime: existingConfig.regime } : {}),
+      // Preset-derived strategy fields:
+      indicators: presetFields.indicators,
+      candles: presetFields.candles,
+      signalBias: presetFields.signalBias,
+      scanIntervalMs: presetFields.scanIntervalMs,
+      // Preserve existing operational fields:
+      scanBatchSize: existingConfig?.scanBatchSize ?? 5,
+      autonomousExit: existingConfig?.autonomousExit ?? false,
+    };
+
+    const applyResult = actor.applyPendingConfigUpdate({ technical: mergedTechnical });
+    if (!applyResult.ok) {
+      return err({
+        code: 'transition.actor_config_rejected',
+        message: `Actor for agent ${agentId} rejected config update: ${applyResult.error.message}`,
+      });
+    }
+
+    logger.info(
+      { agentId, activePresetKey, styleTier, behaviorVersion: mapping.presetBehaviorVersion },
+      'Preset transition: actor config reloaded successfully',
+    );
+
+    return ok(undefined);
+  },
+});
 setPresetTransitionPort(presetTransitionService);
 
 logger.info(

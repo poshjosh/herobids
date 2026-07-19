@@ -1,7 +1,7 @@
 import { createLogger } from './logger.js';
 import type { ContextSnapshotPayload, OrderbookVenuePort, SwapVenuePort, MarkSource, LiveRolloutConfig, Subscription, SubscriptionState, SwapTokenSafetyPort, Price, Decision, DecisionId, VenueAccountId, InstrumentId, TechnicalConfig, RiskConfig, AgentWakePayload } from '@herobids/domain';
 import type { OrderId } from '@herobids/domain';
-import { quantity, price, Decimal } from '@herobids/domain';
+import { quantity, price, Decimal, ok, err, type Result } from '@herobids/domain';
 import type { ExecutionActor, IntakeResult } from './execution-actor.js';
 import type { VenueInstrumentCache } from './venue-instrument-cache.js';
 import type { VenueAdapterFactory } from './venue-adapter-factory.js';
@@ -1262,6 +1262,11 @@ export class AgentTradingActor implements ExecutionActor {
     return this.deps.executionMode;
   }
 
+  /** Returns the current technical config, or undefined if none is set. */
+  getTechnicalConfig(): TechnicalConfig | undefined {
+    return this.deps.technicalConfig;
+  }
+
   getLastTechnicalScan(): TechnicalScanState | undefined {
     return this.lastTechnicalScan;
   }
@@ -1270,9 +1275,16 @@ export class AgentTradingActor implements ExecutionActor {
    * Apply a pending config update (called by the worker after agent.config.update message).
    * - Updates technical scan loop if technical config changed.
    * - Execution mode changes are noted but require a restart to take full effect.
+   *
+   * @returns ok(undefined) when the config was applied, or err when the actor
+   *          is not running and cannot accept the update.
    */
-  applyPendingConfigUpdate(newConfig: { technical?: TechnicalConfig | null; execution?: { mode?: string } } | null): void {
-    if (!this.running) return;
+  applyPendingConfigUpdate(
+    newConfig: { technical?: TechnicalConfig | null; execution?: { mode?: string } } | null,
+  ): Result<void> {
+    if (!this.running) {
+      return err({ code: 'actor.not_running', message: 'Actor is not running' });
+    }
 
     const newTechnical = newConfig?.technical ?? undefined;
     const currentTechnical = this.deps.technicalConfig;
@@ -1294,6 +1306,8 @@ export class AgentTradingActor implements ExecutionActor {
         this.logger.info('Technical scan loop stopped (technical config removed)');
       }
     }
+
+    return ok(undefined);
   }
 
   async buildReconnectSnapshot(): Promise<ContextSnapshotPayload | undefined> {
