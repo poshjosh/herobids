@@ -18,6 +18,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Tools wired through ports** — hardcoded `oldPresetKey='unknown'` and `openPositionCount=0` stubs removed
   See [012-tool-context-wiring.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/012-tool-context-wiring.md).
 
+- **Authoritative Binding Runtime Consumption & Transition Reload (012c):** Wired runtime consumption of `agent_preset_bindings` and completed the preset transition actor-reload path:
+  - **Shadow-mode removal** — removed stale `platformAssessment.mode` field and `recommend_only`/`apply_capable` gates; all gating now uses `platformAssessment.enabled` only
+  - **Binding lookup** — `resolveAuthoritativeBinding()` queries `agent_preset_bindings` with most-specific-then-default scope fallback; `isStyleKey()` type guard validates DB-sourced data
+  - **Worker `resolveActivePreset`** — authoritative binding first, unified-config fallback for fresh agents; `applyPresetToAgent` in try-catch for DCA safety
+  - **Config materialization** — `materializeEffectiveConfig()` + `mappingToTechnicalConfig()` project preset→`TechnicalConfig` via `applyPresetToAgent`; Zod-validated; all `'v1'` behavior version stubs replaced with `computePresetBehaviorVersion`
+  - **Actor reload** — `applyPendingConfigUpdate()` returns `Result<void>`; `getTechnicalConfig()` getter added; merged config preserves venue/filters
+  - **Real `notifyActor` callback** — materializes binding config, merges with actor state, applies via config path; transition gated on actor ack; `appliedAt` only set on success
+  - **Runtime visibility** — emits `agent.runtime.config_update` event (`reason: binding_changed`) on success; non-blocking
+  - **M2 gate** — rejects tightening modes with `transition.unsupported_mode`; short-circuits before DB
+  - **Tests** — 40 unit + 16 integration tests; all 2338 tests pass
+  - **Deferred** — restart reconciliation of `applying` transitions (TODO M3), cross-worker Redis routing (TODO H3)
+  See [012c-item-10-and-12-next-slice-plan.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/012c-item-10-and-12-next-slice-plan.md).
+
 - **Scanner Pre-Check & Determistic Review Advice (010):** Replaced the placeholder `ReviewScheduler.runPreCheck()` with a real data-driven implementation that produces review advice from persisted scanner candidates without LLM calls or billing:
   - **DB schema** — new `agent_scan_candidates` table for persisting bounded scanner candidate observations with deterministic facts; new `agent_assessment_review_checks` table for durable per-agent review-cycle state with lease/recovery fields; `review_advice.check_id` links advice rows to their parent check record
   - **Scan path instrumentation** — `completeTechnicalScan()` builds `PersistableScanCandidate` entries from entry signals and exit advisories; `onPersistScanCandidates` callback persists via worker composition root
