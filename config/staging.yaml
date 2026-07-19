@@ -5,7 +5,13 @@
 # All destructive/paid features require explicit opt-in via env vars.
 
 app:
-  logLevel: debug                        # Verbose logging for staging troubleshooting
+  logLevel: debug   
+                       # Verbose logging for staging troubleshooting
+platformAssessor:
+  enabled: true  # disabled by default until shadow mode validated
+  llm:
+    provider: openrouter                # provider identifier in providers.yaml
+    model: deepseek/deepseek-v4-pro     # model ID
 
 llm:
   provider: openrouter                  # LLM provider: openrouter | openai | anthropic | ollama | deepseek

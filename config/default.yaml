@@ -608,8 +608,8 @@ liveRollout:
 # get_market_preset_assessment after receiving review advice through the
 # dedicated assessment_review tick.
 platformAssessor:
-  enabled: false  # disabled by default until shadow mode validated
-  minReviewIntervalMs: 86400000  # 24h — operator floor for agent reviewIntervalMs
+  enabled: true  # disabled by default until shadow mode validated
+  minReviewIntervalMs: 43200000  # 12h — operator floor for agent reviewIntervalMs
   # maxReviewRequestsPerDay: 50  # optional daily cap (unset = no cap)
   scannerCandidateLimit: 20  # top N candidates for deterministic pre-check
   cacheFreshnessMs: 21600000  # 6h — lookup and artifact expiry
@@ -653,18 +653,18 @@ platformAssessor:
     maxAdvicePayloadSize: 16384        # 16 KB max advice payload
     leaseDurationMs: 60000             # 60s review-check lease
     billingPreflightTimeoutMs: 5000    # 5s read-only billing preflight timeout
-    policyVersion: "1.0.0"            # review predicate version
+    policyVersion: "1.0.0"             # review predicate version
     enablePeerComparison: true         # whether to compare peer presets for mismatch
   # ── Platform LLM ranking configuration ────────────────────────────────
   # The platform assessor uses its own LLM config (never an agent's config).
   # Provider and model must exist in the loaded provider registry at startup.
   llm:
-    provider: openrouter                # provider identifier in providers.yaml
-    model: anthropic/claude-fable-5     # model ID
+    provider: ollama                    # provider identifier in providers.yaml
+    model: qwen3.6:35b-a3b-q4_K_M       # model ID
     timeoutMs: 30000                    # 30s HTTP timeout
     maxTokens: 2000                     # max output tokens for ranking response
     maxInputTokens: 4000                # max input tokens for prompt projection
-    # baseUrl: https://...             # optional base URL override
+    # baseUrl: https://...              # optional base URL override
     maxConcurrency: 1                   # max concurrent assessment LLM calls
     retry:
       maxRetries: 2

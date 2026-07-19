@@ -1,10 +1,11 @@
 # Operator configuration — self-documenting reference.
 # Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
 #
-# PRODUCTION: Billing must be a real provider (not mock). The startup guard
-# in apps/*/src/config.ts enforces this — the process will refuse to start if
-# billing.primaryProvider is still 'mock' when NODE_ENV=production.
-# Set BILLING_PRIMARY_PROVIDER=creem (or stripe) in .env.prod.
+platformAssessor:
+  enabled: true  # disabled by default until shadow mode validated
+  llm:
+    provider: openrouter                # provider identifier in providers.yaml
+    model: anthropic/claude-fable-5     # model ID
 
 llm:
   provider: openrouter                  # LLM provider: openrouter | openai | anthropic | ollama | deepseek
@@ -28,7 +29,12 @@ agentRuntime:
 alerts:
   email:
     brandImageUrl: https://openaidom.com/brand/wordmark-dark.png
-          
+
+# PRODUCTION: Billing must be a real provider (not mock). The startup guard
+# in apps/*/src/config.ts enforces this — the process will refuse to start if
+# billing.primaryProvider is still 'mock' when NODE_ENV=production.
+# Set BILLING_PRIMARY_PROVIDER=creem (or stripe) in .env.prod.
+
 # Billing — no default here. The production startup guard (apps/*/src/config.ts)
 # enforces non-mock billing when NODE_ENV=production.
 # Set BILLING_PRIMARY_PROVIDER=creem (or stripe) in .env.prod.
