@@ -8,6 +8,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Platform LLM Preset Ranking (009):** Replaced placeholder `rankPresets()` with a platform-owned, bounded, validated LLM analysis over persisted deterministic evidence:
+  - **Domain types** — `PlatformAssessmentLlmResponseSchema`, `PlatformAssessmentRankedPresetSchema`, `AssessmentCandidateDescriptor`, `validateLlmResponseSemantics()` with checks for missing/extra/duplicate candidates, bad ranks, version mismatches, and prohibited control directives
+  - **Operator config** — `PlatformAssessmentLlmConfigSchema` (provider, model, timeout, token budget, retry, score bands, recommendation policy) in `PlatformAssessorConfigSchema` and `config/default.yaml`
+  - **LLM ranker module** (`llm-ranker.ts`) — bounded evidence projection excluding all agent/account data; system/user prompt construction; JSON response parsing with code-fence stripping; deterministic artifact assembly (score bands, relativeUplift, recommendedPreset guarded by confidence/score policy, allowedPresets filtered by minAllowedScore)
+  - **Assessor factory** (`assessor-factory.ts`) — `createPlatformAssessor()` builds a platform-owned LLM adapter using the `@herobids/llm` boundary; never falls back to agent LLM config
+  - **41 unit tests** covering projection, response parsing, semantic validation, deterministic assembly, and edge cases
+  - All 208 market-intelligence tests pass; `pnpm lint` clean
+  See [docs/features/2026/07/18/002-platform-preset-assessment-and-transition/009-llm-preset-ranking.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/009-llm-preset-ranking.md).
+
 - **Real Evidence & Deterministic Scorecards (008):** Replaced all placeholder evidence in `PlatformAssessor` with auditable market evidence and deterministic dry-run scorecards:
   - **Versioned evidence snapshot types** in `@herobids/domain` — `EvidenceValue<T>` discriminated union, `AssessmentEvidenceSnapshot`, `AssessmentData<T>`, `AssessmentUnavailable`, `AssessmentMarketCohort`, `VolatilityEvidence`, `LiquidityEvidence`, `BreadthEvidence`, `ScorecardInput` with Zod schemas
   - **DB schema** (`0045`) — `evidence_snapshot`, `scorecard_snapshots`, `calculation_versions` JSONB columns on `market_assessment_runs`
