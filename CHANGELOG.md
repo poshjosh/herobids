@@ -8,6 +8,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Scanner Pre-Check & Determistic Review Advice (010):** Replaced the placeholder `ReviewScheduler.runPreCheck()` with a real data-driven implementation that produces review advice from persisted scanner candidates without LLM calls or billing:
+  - **DB schema** — new `agent_scan_candidates` table for persisting bounded scanner candidate observations with deterministic facts; new `agent_assessment_review_checks` table for durable per-agent review-cycle state with lease/recovery fields; `review_advice.check_id` links advice rows to their parent check record
+  - **Scan path instrumentation** — `completeTechnicalScan()` builds `PersistableScanCandidate` entries from entry signals and exit advisories; `onPersistScanCandidates` callback persists via worker composition root
+  - **Domain types** — `ActivePresetState`, `PersistedScannerCandidate`, `ResolvedReviewPreCheckPolicy`, `CandidatePreCheckOutcome`, and `ReviewPreCheckReasonCodes` in `packages/domain/src/review-pre-check.ts`
+  - **Deterministic eligibility predicate** — `evaluateEligibility()` applies regime-bias, volatility, and quality checks with stable reason codes
+  - **Replaced `runPreCheck()`** — reads real `agent_scan_candidates`, resolves active preset, checks fresh artifacts, cooldown, billing preflight, and the predicate; persists check records and advice rows
+  - **Configuration** — `preCheck` block in `PlatformAssessorConfigSchema` and `config/default.yaml`
+  - **Wired into worker** — `resolveActivePreset` and `checkBillingEligibility` callbacks; `onPersistScanCandidates` persists via `db.insert(agentScanCandidates)`
+  See [010-scanner-pre-check.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/010-scanner-pre-check.md).
+
 - **Platform LLM Preset Ranking (009):** Replaced placeholder `rankPresets()` with a platform-owned, bounded, validated LLM analysis over persisted deterministic evidence:
   - **Domain types** — `PlatformAssessmentLlmResponseSchema`, `PlatformAssessmentRankedPresetSchema`, `AssessmentCandidateDescriptor`, `validateLlmResponseSemantics()` with checks for missing/extra/duplicate candidates, bad ranks, version mismatches, and prohibited control directives
   - **Operator config** — `PlatformAssessmentLlmConfigSchema` (provider, model, timeout, token budget, retry, score bands, recommendation policy) in `PlatformAssessorConfigSchema` and `config/default.yaml`

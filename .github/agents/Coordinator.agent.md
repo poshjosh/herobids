@@ -21,19 +21,19 @@ STEPS
 Follow these steps to implement all the items in the plan or task-list provided as argument:
 
 1. Mark each item in the plan or task-list, which has no existing status (e.g. PENDING, DONE e.t.c), as PENDING.
-   - If there is a plan or task-list document, update the document to mark each item as PENDING.
-   - If there is no plan or task-list document, create a plan or task-list in session memory, update it with the content of the plan or task-list provided as argument, then mark each item as PENDING.
+
+   a. If there is a plan or task-list document (passed as target/argument/part of instructions), update the document to mark each item as PENDING.
+
+   b. If there is no plan or task-list document, create a plan or task-list in session memory, update it with the content of the plan or task-list provided as argument, then mark each item as PENDING.
 
 2. Go through the items in the plan or task-list and select the first item marked PENDING.
 
-   a. If there is no item marked PENDING, then all items have been implemented: 
-   
-      i. if there is a CHANGELOG.md, update it - keep it brief
-      ii. print a brief descriptive message for the user including any "Outstanding Issues" 
-      iii. STOP.
+   a. If there is no item marked PENDING, then all items have been implemented, go to Step 11.
 
-   b. If there is an item marked PENDING, go to Step 3 with any of the following that is available as argument:
+   b. If there is an item marked PENDING, go to Step 3 with any of the following that is available as target/argument:
+
       i. the item's text (or link to the item's document/resource if present).
+
       ii. the link to the main plan and a short description explaining the context of the item being implemented with respect to the main plan.
 
 3. Trigger **"Implementer"**.
@@ -55,3 +55,17 @@ Follow these steps to implement all the items in the plan or task-list provided 
 9. Mark the selected (and just implemented) item as DONE.
 
 10. Go to Step 2.
+
+11. Trigger **"CodeReviewer"** to review the implementation of the items marked DONE. Instruct code reviewer to focus on identifying gaps in the implementation with respect to the plan or task-list.
+
+12. Wait for **"CodeReviewer"** to signal completion.
+
+   a. If the code review includes either observed gaps or critical/high issues/observations, go to Step 3 with the code review feedback as the target/argument.
+
+   b. If the code review does not include critical/high issues/observations:
+
+      i. If there is a CHANGELOG.md, update it - keep it brief.
+
+      ii. Print a brief descriptive message for the user including any "Outstanding Issues".
+
+      iii. STOP.

@@ -1,6 +1,7 @@
 import { pgTable, text, timestamp, jsonb, integer, index, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { agents } from './agents.js';
+import { agentAssessmentReviewChecks } from './agent-assessment-review-checks.js';
 
 /**
  * Review-advice records — the handoff from deterministic scanner pre-check
@@ -15,6 +16,11 @@ export const reviewAdvice = pgTable('review_advice', {
   id: text('id').primaryKey(),
   /** Agent this advice is scoped to. */
   agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+
+  // ── Review check linkage ─────────────────────────────────────────────────
+
+  /** The review check that produced this advice row. */
+  checkId: text('check_id').references(() => agentAssessmentReviewChecks.id, { onDelete: 'set null' }),
 
   // ── Canonical identity columns ──────────────────────────────────────────
 
@@ -82,6 +88,7 @@ export const reviewAdvice = pgTable('review_advice', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('idx_review_advice_agent_id').on(t.agentId),
+  index('idx_review_advice_check_id').on(t.checkId),
   index('idx_review_advice_outcome').on(t.outcome),
   index('idx_review_advice_checked_at').on(t.checkedAt),
   index('idx_review_advice_consumed_at').on(t.consumedAt),

@@ -15,6 +15,7 @@ import type { DiscoveredInstrument, FilterConfig } from './technical-phase.js';
 import type { ScannerCandleTarget } from '@herobids/strategy';
 import { completeTechnicalScan } from './complete-technical-scan.js';
 import { computeSignalFingerprint } from './complete-technical-scan.js';
+import type { PersistableScanCandidate } from './complete-technical-scan.js';
 import type { TechnicalScanState } from './runtime-composition.js';
 import { cleanupOrphanedPositions } from './reconciliation-orphaned-cleanup.js';
 import { scannerSignalFingerprintKey } from './redis-keys.js';
@@ -184,6 +185,9 @@ export interface AgentTradingActorDeps {
     confidenceBucketSize: number;
     ttlSeconds: number;
   };
+  /** Persist scanner candidate observations for the deterministic review pre-check.
+   *  Best-effort — failures must not crash the scan. */
+  onPersistScanCandidates?: (candidates: PersistableScanCandidate[]) => Promise<void>;
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -1620,6 +1624,15 @@ export class AgentTradingActor implements ExecutionActor {
         onTechnicalScanComplete: this.deps.onTechnicalScanComplete,
         emitAgentWake: wakeEmitter,
         onJournalEvent: this.deps.onJournalEvent,
+        onPersistScanCandidates: this.deps.onPersistScanCandidates
+          ? async (candidates) => {
+              try {
+                await this.deps.onPersistScanCandidates!(candidates);
+              } catch (err) {
+                this.logger.warn({ err, count: candidates.length }, 'Failed to persist scan candidates — non-fatal');
+              }
+            }
+          : undefined,
       });
       this.lastTechnicalScan = scan;
     } catch (err) {

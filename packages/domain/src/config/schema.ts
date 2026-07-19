@@ -1402,6 +1402,45 @@ export const PlatformAssessorConfigSchema = z.object({
       regimeSource: z.enum(['benchmark', 'venue', 'none']),
     }),
   ).optional().default({}),
+  // ── Deterministic Review Pre-Check Configuration ──────────────────────
+  /** Configuration for the deterministic scanner pre-check that produces
+   *  assessment review advice without LLM calls or billing. */
+  preCheck: z.object({
+    /** Signal count ratio threshold for preset-candidate mismatch flag.
+     *  When a peer preset has >= this ratio × the current preset's signal
+     *  count, the mismatch is flagged. Default: 2.0 */
+    signalRatioThreshold: z.number().min(1.0).default(2.0),
+    /** Lookback window for scan metrics comparison in ms. Default: 24h */
+    scanMetricsLookbackMs: z.number().int().positive().default(86_400_000),
+    /** Minimum signals a preset must generate to be considered "active"
+     *  for comparison purposes. Default: 3 */
+    minSignalsForActive: z.number().int().min(1).default(3),
+    /** Minimum cooldown between review advice for the same (agent, identity).
+     *  Default: 24h */
+    identityCooldownMs: z.number().int().positive().default(86_400_000),
+    /** How long persisted scanner candidate observations are retained
+     *  for review. Must be >= identityCooldownMs. Default: 7 days */
+    candidateRetentionMs: z.number().int().positive().default(604_800_000),
+    /** Maximum candidate stale age — candidates older than this are ignored
+     *  by the pre-check. Default: 24h */
+    candidateMaxAgeMs: z.number().int().positive().default(86_400_000),
+    /** Maximum review-advice payload size in bytes for the assessment_review
+     *  wake. Exceeding candidates are trimmed. Default: 16 KB */
+    maxAdvicePayloadSize: z.number().int().positive().default(16_384),
+    /** Review-check lease duration in ms. A lease that expires before the
+     *  check completes triggers recovery. Default: 60s */
+    leaseDurationMs: z.number().int().positive().default(60_000),
+    /** Timeout for the read-only billing preflight query in ms.
+     *  Default: 5s */
+    billingPreflightTimeoutMs: z.number().int().positive().default(5_000),
+    /** Policy version for the deterministic review predicate.
+     *  Increment when reason codes or eligibility logic change. */
+    policyVersion: z.string().default('1.0.0'),
+    /** Whether the pre-check compares peer presets for mismatch detection.
+     *  When false, only freshness/cooldown/credit checks run.
+     *  Default: true */
+    enablePeerComparison: z.boolean().default(true),
+  }).default({}),
 }).default({});
 
 export const SharedServicesConfigSchema = z.object({

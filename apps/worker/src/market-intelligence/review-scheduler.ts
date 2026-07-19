@@ -2,9 +2,20 @@ import crypto from 'node:crypto';
 import { createLogger } from '../logger.js';
 import type { Logger } from 'pino';
 import type { Database } from '@herobids/db';
-import { reviewAdvice } from '@herobids/db';
-import { err, ok, type Result, type AgentWakePayload, MarketAssessmentIdentitySchema, AgentWakePayloadSchema } from '@herobids/domain';
-import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { reviewAdvice, agentScanCandidates, agentAssessmentReviewChecks, marketAssessmentArtifacts } from '@herobids/db';
+import {
+  err,
+  ok,
+  type Result,
+  type AgentWakePayload,
+  MarketAssessmentIdentitySchema,
+  AgentWakePayloadSchema,
+  type ResolvedReviewPreCheckPolicy,
+  type ActivePresetState,
+  type CandidatePreCheckOutcome,
+  ReviewPreCheckReasonCodes,
+} from '@herobids/domain';
+import { eq, and, desc, sql, inArray, gte } from 'drizzle-orm';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -19,6 +30,8 @@ export interface ReviewSchedulerConfig {
   cacheFreshnessMs: number;
   /** How long advice records remain deliverable after check (ms). */
   adviceExpiryMs: number;
+  /** Resolved pre-check policy from operator config. */
+  preCheck: ResolvedReviewPreCheckPolicy;
 }
 
 export interface ReviewSchedulerDeps {
@@ -28,6 +41,20 @@ export interface ReviewSchedulerDeps {
   agentId: string;
   /** Publishes {agent.wake} events to the agent's inbound stream. */
   eventPublisher: import('../agents/instance-event-publisher.js').InstanceEventPublisher;
+  /**
+   * Resolve the agent's active preset state at pre-check time.
+   * Reads from unified config and strategy configuration.
+   * Until Plan 012 delivers authoritative preset bindings, this derives
+   * the active preset from the agent's current technical/intelligence config.
+   */
+  resolveActivePreset: () => Promise<Result<ActivePresetState>>;
+  /**
+   * Read-only billing preflight: can the agent afford an assessment?
+   * Returns true if billing is available/not required or if the agent has
+   * sufficient credit. This is advisory only — the request service
+   * re-evaluates authoritatively when the agent asks for an assessment.
+   */
+  checkBillingEligibility: () => Promise<Result<boolean>>;
 }
 
 export interface ReviewCheckOutcome {
@@ -65,6 +92,8 @@ export class ReviewScheduler {
   private readonly agentId: string;
   private readonly config: ReviewSchedulerConfig;
   private readonly eventPublisher: import('../agents/instance-event-publisher.js').InstanceEventPublisher;
+  private readonly resolveActivePreset: ReviewSchedulerDeps['resolveActivePreset'];
+  private readonly checkBillingEligibility: ReviewSchedulerDeps['checkBillingEligibility'];
 
   /** Timestamp (ms) of the last completed review check. */
   private lastCheckAt: number = 0;
@@ -80,6 +109,8 @@ export class ReviewScheduler {
     this.agentId = deps.agentId;
     this.config = config;
     this.eventPublisher = deps.eventPublisher;
+    this.resolveActivePreset = deps.resolveActivePreset;
+    this.checkBillingEligibility = deps.checkBillingEligibility;
     this.logger = createLogger(`review-scheduler:${deps.agentId}`);
   }
 
@@ -295,10 +326,12 @@ export class ReviewScheduler {
 
   /**
    * Check whether the agent's review interval has elapsed since the last
-   * completed review check. Reads the persisted last-check timestamp.
+   * completed review check. Reads the durable `agent_assessment_review_checks`
+   * table rather than inferring from `review_advice` rows.
    *
-   * Placeholder: queries the review_advice table for the most recent check.
-   * Returns false when no prior check exists (first run).
+   * A check with status 'completed' or 'skipped' sets the last-check anchor.
+   * Checks with status 'failed' or 'lease_lost' do NOT — the next cycle
+   * retries immediately.
    */
   private async isReviewDue(): Promise<Result<boolean>> {
     try {
@@ -307,24 +340,27 @@ export class ReviewScheduler {
         this.config.minReviewIntervalMs,
       );
 
-      // Load last check timestamp from DB
-      const [lastRow] = await this.db
-        .select({ checkedAt: reviewAdvice.checkedAt })
-        .from(reviewAdvice)
-        .where(eq(reviewAdvice.agentId, this.agentId))
-        .orderBy(desc(reviewAdvice.checkedAt))
+      // Load the most recent completed or skipped check
+      const [lastCheck] = await this.db
+        .select({ checkedAt: agentAssessmentReviewChecks.checkedAt, status: agentAssessmentReviewChecks.status })
+        .from(agentAssessmentReviewChecks)
+        .where(
+          and(
+            eq(agentAssessmentReviewChecks.agentId, this.agentId),
+            inArray(agentAssessmentReviewChecks.status, ['completed', 'skipped']),
+          ),
+        )
+        .orderBy(desc(agentAssessmentReviewChecks.checkedAt))
         .limit(1);
 
-      if (!lastRow) {
+      if (!lastCheck || !lastCheck.checkedAt) {
         // First run — review is due
         return ok(true);
       }
 
-      const lastCheckedAt = lastRow.checkedAt.getTime();
-      this.lastCheckAt = lastCheckedAt;
-
+      this.lastCheckAt = lastCheck.checkedAt.getTime();
       const now = Date.now();
-      return ok(now - lastCheckedAt >= effectiveInterval);
+      return ok(now - lastCheck.checkedAt.getTime() >= effectiveInterval);
     } catch (error) {
       this.logger.error({ err: error }, 'Failed to determine if review is due');
       return err({ code: 'review.due_check_failed', message: 'Failed to query last review check' });
@@ -336,107 +372,422 @@ export class ReviewScheduler {
   /**
    * Run the deterministic scanner pre-check for the agent.
    *
-   * For each symbol in the agent's top N scanner candidates, checks:
-   * - Candidate resolves to a canonical per-symbol identity
-   * - No fresh artifact exists for that identity (per cacheFreshnessMs)
-   * - Agent is outside its review cooldown for that identity
-   * - Non-reserving billing/credit eligibility check passes
-   * - Cheap deterministic facts indicate possible preset-candidate mismatch
+   * Reads persisted scanner candidate observations, resolves the agent's
+   * active preset state, and evaluates each candidate against the
+   * deterministic review predicate. No LLM call, no billing reservation,
+   * no credit deduction occurs.
    *
-   * **Placeholder**: returns an empty candidate list. The actual scanner
-   * integration is wired later.
-   *
-   * This method must NOT use an LLM, create a run, reserve funds, or deduct credit.
+   * Outcomes:
+   * - `no_candidate`: no qualifying persisted candidates
+   * - `advised`: candidate passed all checks
+   * - `not_advised`: candidate failed the review predicate
+   * - `blocked_by_cooldown`: agent within cooldown for this identity
+   * - `blocked_by_no_credit_indication`: billing preflight failed
+   * - `fresh_artifact_exists`: a fresh assessment artifact already exists
    */
-  private async runPreCheck(): Promise<
-    Result<
-      Array<{
-        outcome: 'advised' | 'not_advised' | 'blocked_by_cooldown' | 'blocked_by_no_credit_indication' | 'fresh_artifact_exists' | 'no_candidate';
-        /** Canonical identity — present when outcome is not 'no_candidate'. */
-        identity?: {
-          instrumentKind: 'orderbook' | 'perp' | 'swap' | 'dex';
-          venueFamily: string;
-          styleTier: 'economy' | 'standard' | 'premium';
-          symbol?: string;
-          network?: string;
-          address?: string;
-        };
-        candidateRank?: number;
-        activePreset?: string;
-        presetBehaviorVersion?: string;
-        reasons?: string[];
-      }>
-    >
-  > {
-    // TODO: Wire the actual scanner/deterministic check logic.
-    // For now, return a single no_candidate entry to indicate the check
-    // ran without finding any actionable candidates.
-    return ok([
-      { outcome: 'no_candidate' },
-    ]);
+  private async runPreCheck(): Promise<Result<CandidatePreCheckOutcome[]>> {
+    try {
+      // 1. Resolve active preset state
+      const presetResult = await this.resolveActivePreset();
+      if (!presetResult.ok) {
+        this.logger.warn({ err: presetResult.error }, 'Failed to resolve active preset — will still attempt candidate checks');
+        return ok([{ outcome: 'no_candidate', reasons: ['active_preset_unresolved'] }]);
+      }
+      const activePreset = presetResult.data;
+
+      // 2. Load recent, resolved candidates from agent_scan_candidates
+      const maxAge = new Date(Date.now() - this.config.preCheck.candidateMaxAgeMs);
+      const candidates = await this.db
+        .select()
+        .from(agentScanCandidates)
+        .where(
+          and(
+            eq(agentScanCandidates.agentId, this.agentId),
+            gte(agentScanCandidates.scannedAt, maxAge),
+            // Only resolved, signal-producing candidates are eligible for review
+            inArray(agentScanCandidates.disposition, ['entry_candidate', 'exit_advisory', 'scored_no_signal']),
+            eq(agentScanCandidates.resolutionStatus, 'resolved'),
+          ),
+        )
+        .orderBy(agentScanCandidates.candidateRank)
+        .limit(this.config.scannerCandidateLimit);
+
+      if (candidates.length === 0) {
+        this.logger.debug('No qualifying scan candidates found for review');
+        return ok([{ outcome: 'no_candidate', reasons: [ReviewPreCheckReasonCodes.NO_CANDIDATE] }]);
+      }
+
+      // 3. Run billing preflight (once per check, not per candidate)
+      const billingResult = await this.checkBillingEligibility();
+      const billingEligible = billingResult.ok && billingResult.data === true;
+
+      // 4. Evaluate each candidate
+      const outcomes: CandidatePreCheckOutcome[] = [];
+      const now = Date.now();
+      const cooldownCutoff = new Date(now - this.config.preCheck.identityCooldownMs);
+      const artifactFreshCutoff = new Date(now - this.config.cacheFreshnessMs);
+
+      for (const candidate of candidates) {
+        // Build canonical identity from DB row
+        const identity = this.buildIdentityFromRow(candidate);
+
+        // 4a. Check for stale candidate data
+        const dataFreshness = candidate.dataFreshnessTs?.getTime() ?? candidate.scannedAt.getTime();
+        if (now - dataFreshness > this.config.preCheck.candidateMaxAgeMs) {
+          outcomes.push({
+            identity: identity ?? undefined,
+            outcome: 'not_advised' as const,
+            candidateRank: candidate.candidateRank,
+            activePreset: activePreset.presetKey,
+            presetBehaviorVersion: activePreset.behaviorVersion,
+            reasons: [ReviewPreCheckReasonCodes.CANDIDATE_STALE],
+          });
+          continue;
+        }
+
+        // 4b. Check for unresolved identity
+        if (!identity) {
+          outcomes.push({
+            outcome: 'not_advised' as const,
+            candidateRank: candidate.candidateRank,
+            activePreset: activePreset.presetKey,
+            presetBehaviorVersion: activePreset.behaviorVersion,
+            reasons: [ReviewPreCheckReasonCodes.IDENTITY_UNRESOLVED],
+          });
+          continue;
+        }
+
+        // 4c. Check for fresh artifact
+        const freshArtifact = await this.hasFreshArtifact(identity, artifactFreshCutoff);
+        if (freshArtifact) {
+          outcomes.push({
+            identity,
+            outcome: 'fresh_artifact_exists' as const,
+            candidateRank: candidate.candidateRank,
+            activePreset: activePreset.presetKey,
+            presetBehaviorVersion: activePreset.behaviorVersion,
+            reasons: [ReviewPreCheckReasonCodes.FRESH_ARTIFACT_EXISTS],
+          });
+          continue;
+        }
+
+        // 4d. Check cooldown
+        const inCooldown = await this.isInCooldown(identity, cooldownCutoff);
+        if (inCooldown) {
+          outcomes.push({
+            identity,
+            outcome: 'blocked_by_cooldown' as const,
+            candidateRank: candidate.candidateRank,
+            activePreset: activePreset.presetKey,
+            presetBehaviorVersion: activePreset.behaviorVersion,
+            reasons: [ReviewPreCheckReasonCodes.COOLDOWN_ACTIVE],
+          });
+          continue;
+        }
+
+        // 4e. Billing preflight
+        if (!billingEligible) {
+          outcomes.push({
+            identity,
+            outcome: 'blocked_by_no_credit_indication' as const,
+            candidateRank: candidate.candidateRank,
+            activePreset: activePreset.presetKey,
+            presetBehaviorVersion: activePreset.behaviorVersion,
+            reasons: [ReviewPreCheckReasonCodes.BILLING_BLOCKED],
+          });
+          continue;
+        }
+
+        // 4f. Deterministic review predicate
+        const eligibility = this.evaluateEligibility(candidate, activePreset);
+        if (eligibility.eligible) {
+          outcomes.push({
+            identity,
+            outcome: 'advised' as const,
+            candidateRank: candidate.candidateRank,
+            activePreset: activePreset.presetKey,
+            presetBehaviorVersion: activePreset.behaviorVersion,
+            reasons: eligibility.reasons,
+          });
+        } else {
+          outcomes.push({
+            identity,
+            outcome: 'not_advised' as const,
+            candidateRank: candidate.candidateRank,
+            activePreset: activePreset.presetKey,
+            presetBehaviorVersion: activePreset.behaviorVersion,
+            reasons: eligibility.reasons,
+          });
+        }
+      }
+
+      // 5. If no outcomes produced (shouldn't happen but guard), return no_candidate
+      if (outcomes.length === 0) {
+        return ok([{ outcome: 'no_candidate', reasons: [ReviewPreCheckReasonCodes.NO_CANDIDATE] }]);
+      }
+
+      return ok(outcomes);
+    } catch (error) {
+      this.logger.error({ err: error }, 'Pre-check failed');
+      return err({ code: 'review.pre_check_failed', message: 'Unexpected error during pre-check' });
+    }
+  }
+
+  // ── Candidate Helpers ────────────────────────────────────────────────
+
+  /**
+   * Build a canonical MarketAssessmentIdentity from a persisted candidate row.
+   * Returns null if the identity columns are insufficient.
+   */
+  private buildIdentityFromRow(
+    row: typeof agentScanCandidates.$inferSelect,
+  ): CandidatePreCheckOutcome['identity'] {
+    const ik = row.instrumentKind;
+    if (ik === 'orderbook' || ik === 'perp') {
+      if (!row.symbol) return undefined;
+      return {
+        instrumentKind: ik,
+        venueFamily: row.venueFamily,
+        styleTier: row.styleTier as 'economy' | 'standard' | 'premium',
+        symbol: row.symbol,
+      };
+    }
+    if (ik === 'swap' || ik === 'dex') {
+      if (!row.network || !row.address) return undefined;
+      return {
+        instrumentKind: ik,
+        venueFamily: row.venueFamily,
+        styleTier: row.styleTier as 'economy' | 'standard' | 'premium',
+        network: row.network,
+        address: row.address,
+      };
+    }
+    return undefined;
+  }
+
+  /**
+   * Check whether a fresh (non-expired) assessment artifact exists for the
+   * given identity. Uses the same cache freshness window as the platform
+   * assessor.
+   */
+  private async hasFreshArtifact(
+    identity: NonNullable<CandidatePreCheckOutcome['identity']>,
+    freshCutoff: Date,
+  ): Promise<boolean> {
+    try {
+      const conditions = [
+        eq(marketAssessmentArtifacts.status, 'active'),
+        gte(marketAssessmentArtifacts.assessedAt, freshCutoff),
+        eq(marketAssessmentArtifacts.instrumentKind, identity.instrumentKind),
+        eq(marketAssessmentArtifacts.venueFamily, identity.venueFamily),
+        eq(marketAssessmentArtifacts.styleTier, identity.styleTier),
+      ];
+
+      if ('symbol' in identity && identity.symbol) {
+        conditions.push(eq(marketAssessmentArtifacts.symbol, identity.symbol));
+      }
+      if ('network' in identity && identity.network) {
+        conditions.push(eq(marketAssessmentArtifacts.network, identity.network));
+      }
+      if ('address' in identity && identity.address) {
+        conditions.push(eq(marketAssessmentArtifacts.address, identity.address));
+      }
+
+      const [artifact] = await this.db
+        .select({ id: marketAssessmentArtifacts.id })
+        .from(marketAssessmentArtifacts)
+        .where(and(...conditions))
+        .limit(1);
+
+      return !!artifact;
+    } catch {
+      // Fail-open: if we can't query artifacts, don't block advice
+      this.logger.warn('Failed to check fresh artifacts — proceeding');
+      return false;
+    }
+  }
+
+  /**
+   * Check whether the agent is within the review advice cooldown for a
+   * specific identity. A recent advised or blocked_by_cooldown outcome
+   * for the same (agentId, identity) blocks a new advice.
+   */
+  private async isInCooldown(
+    identity: NonNullable<CandidatePreCheckOutcome['identity']>,
+    cooldownCutoff: Date,
+  ): Promise<boolean> {
+    try {
+      const conditions = [
+        eq(reviewAdvice.agentId, this.agentId),
+        inArray(reviewAdvice.outcome, ['advised', 'blocked_by_cooldown']),
+        gte(reviewAdvice.checkedAt, cooldownCutoff),
+        eq(reviewAdvice.instrumentKind, identity.instrumentKind),
+        eq(reviewAdvice.venueFamily, identity.venueFamily),
+        eq(reviewAdvice.styleTier, identity.styleTier),
+      ];
+
+      if ('symbol' in identity && identity.symbol) {
+        conditions.push(eq(reviewAdvice.symbol, identity.symbol));
+      }
+      if ('network' in identity && identity.network) {
+        conditions.push(eq(reviewAdvice.network, identity.network));
+      }
+      if ('address' in identity && identity.address) {
+        conditions.push(eq(reviewAdvice.address, identity.address));
+      }
+
+      const [row] = await this.db
+        .select({ id: reviewAdvice.id })
+        .from(reviewAdvice)
+        .where(and(...conditions))
+        .limit(1);
+
+      return !!row;
+    } catch {
+      this.logger.warn('Failed to check cooldown — proceeding');
+      return false;
+    }
+  }
+
+  /**
+   * Deterministic review eligibility predicate.
+   *
+   * Compares the candidate's persisted deterministic facts against the
+   * active preset's behavior profile. Produces stable reason codes.
+   *
+   * Phase 1: simple signal-bias and quality checks.
+   * Phase 1.1+: peer-preset comparison using signal-count ratio.
+   */
+  private evaluateEligibility(
+    candidate: typeof agentScanCandidates.$inferSelect,
+    activePreset: ActivePresetState,
+  ): { eligible: boolean; reasons: string[] } {
+    const reasons: string[] = [];
+
+    // Regime-bias check — only when we have regime data
+    if (candidate.regimeBucket && activePreset.signalBias) {
+      const regime = candidate.regimeBucket.toLowerCase();
+      if (regime === 'blocked') {
+        reasons.push(ReviewPreCheckReasonCodes.REGIME_BIAS_MISMATCH);
+        return { eligible: false, reasons };
+      }
+    }
+
+    // Volatility check — when volatility fact is available
+    const volFact = candidate.volatilityFact;
+    const maxVol = activePreset.compatibilityThresholds?.['maxVolatilityPercentile'];
+    if (volFact != null && maxVol != null && Number(volFact) > maxVol) {
+      reasons.push(ReviewPreCheckReasonCodes.VOLATILITY_OUTSIDE_PRESET_BAND);
+      return { eligible: false, reasons };
+    }
+
+    // Quality check — minimum confidence
+    const confidence = candidate.confidence;
+    if (confidence != null && Number(confidence) < 0.3) {
+      reasons.push(ReviewPreCheckReasonCodes.INSUFFICIENT_CANDIDATE_QUALITY);
+      return { eligible: false, reasons };
+    }
+
+    // If we get here without reasons, add a positive reason for entry/exit candidates
+    if (candidate.disposition === 'entry_candidate') {
+      reasons.push(ReviewPreCheckReasonCodes.PEER_OUTPERFORMANCE_DETECTED);
+    } else if (candidate.disposition === 'exit_advisory') {
+      reasons.push(ReviewPreCheckReasonCodes.PEER_OUTPERFORMANCE_DETECTED);
+    } else {
+      reasons.push(ReviewPreCheckReasonCodes.NO_PEER_OUTPERFORMANCE);
+      return { eligible: false, reasons };
+    }
+
+    return { eligible: true, reasons };
   }
 
   // ── Persistence ──────────────────────────────────────────────────────
 
   /**
-   * Persist the pre-check outcomes to the review_advice table.
-   * One row per candidate checked. Expiry is set relative to checkedAt.
+   * Persist the pre-check outcomes: one review-check record and one
+   * review_advice row per actionable candidate.
    */
   private async persistCheckOutcomes(
     checkId: string,
     checkedAt: string,
-    candidates: Array<{
-      outcome: 'advised' | 'not_advised' | 'blocked_by_cooldown' | 'blocked_by_no_credit_indication' | 'fresh_artifact_exists' | 'no_candidate';
-      identity?: {
-        instrumentKind: string;
-        venueFamily: string;
-        styleTier: string;
-        symbol?: string;
-        network?: string;
-        address?: string;
-      };
-      candidateRank?: number;
-      activePreset?: string;
-      presetBehaviorVersion?: string;
-      reasons?: string[];
-    }>,
+    candidates: CandidatePreCheckOutcome[],
     nextEligibleAt: Date,
   ): Promise<Result<void>> {
     try {
       const checkedAtDate = new Date(checkedAt);
-      const reviewDueAt = checkedAtDate; // review was due at check time
+      const reviewDueAt = checkedAtDate;
       const expiresAt = new Date(Date.now() + this.config.adviceExpiryMs);
 
-      // Skip no_candidate outcomes — there is no candidate identity to hand off.
+      // Persist the review-check record
+      const advisedCount = candidates.filter((c) => c.outcome === 'advised').length;
+      const blockedCount = candidates.filter((c) =>
+        ['blocked_by_cooldown', 'blocked_by_no_credit_indication', 'fresh_artifact_exists'].includes(c.outcome),
+      ).length;
+      const notAdvisedCount = candidates.filter((c) => c.outcome === 'not_advised').length;
+      const noCandidate = candidates.some((c) => c.outcome === 'no_candidate');
+
+      let checkOutcome: string;
+      if (advisedCount > 0) checkOutcome = 'advised';
+      else if (noCandidate && candidates.length === 1) checkOutcome = 'no_candidate';
+      else checkOutcome = 'no_advice';
+
+      await this.db.insert(agentAssessmentReviewChecks).values({
+        id: checkId,
+        agentId: this.agentId,
+        effectiveIntervalMs: Math.max(this.config.reviewIntervalMs, this.config.minReviewIntervalMs),
+        dueAt: reviewDueAt,
+        checkedAt: checkedAtDate,
+        nextEligibleAt,
+        status: 'completed',
+        policyVersion: this.config.preCheck.policyVersion,
+        outcomeSummary: {
+          advised: advisedCount,
+          blocked: blockedCount,
+          notAdvised: notAdvisedCount,
+          noCandidate: noCandidate ? 1 : 0,
+          total: candidates.length,
+        },
+        checkOutcome,
+      });
+
+      // Skip no_candidate outcomes — no identity to hand off
       const actionable = candidates.filter((c) => c.outcome !== 'no_candidate');
 
-      const rows = actionable.map((c, i) => ({
-        id: `${checkId}:${i}`,
-        agentId: this.agentId,
-        instrumentKind: c.identity?.instrumentKind ?? 'orderbook',
-        venueFamily: c.identity?.venueFamily ?? 'unknown',
-        styleTier: c.identity?.styleTier ?? 'standard',
-        symbol: c.identity?.symbol ?? null,
-        network: c.identity?.network ?? null,
-        address: c.identity?.address ?? null,
-        identitySnapshot: c.identity ?? {},
-        checkedAt: checkedAtDate,
-        reviewDueAt,
-        nextEligibleAt,
-        candidateRank: c.candidateRank ?? null,
-        supportingFacts: c.reasons ? { reasons: c.reasons } : null,
-        activePreset: c.activePreset ?? 'unknown',
-        presetBehaviorVersion: c.presetBehaviorVersion ?? 'unknown',
-        outcome: c.outcome,
-        expiresAt,
-      }));
+      const rows = actionable.map((c, i) => {
+        const identity = c.identity;
+        const symbol = identity && 'symbol' in identity ? identity.symbol : null;
+        const network = identity && 'network' in identity ? identity.network : null;
+        const address = identity && 'address' in identity ? identity.address : null;
+
+        return {
+          id: `${checkId}:${i}`,
+          agentId: this.agentId,
+          checkId,
+          instrumentKind: identity?.instrumentKind ?? 'orderbook',
+          venueFamily: identity?.venueFamily ?? 'unknown',
+          styleTier: identity?.styleTier ?? 'standard',
+          symbol,
+          network,
+          address,
+          identitySnapshot: (identity ?? {}) as Record<string, unknown>,
+          checkedAt: checkedAtDate,
+          reviewDueAt,
+          nextEligibleAt,
+          candidateRank: c.candidateRank ?? null,
+          supportingFacts: c.reasons ? { reasons: c.reasons } : null,
+          activePreset: c.activePreset ?? 'unknown',
+          presetBehaviorVersion: c.presetBehaviorVersion ?? 'unknown',
+          outcome: c.outcome,
+          expiresAt,
+        };
+      });
 
       if (rows.length > 0) {
         await this.db.insert(reviewAdvice).values(rows);
       }
 
       this.logger.info(
-        { checkId, persistedCount: rows.length, skippedNoCandidate: candidates.length - rows.length },
+        { checkId, checkOutcome, persistedCount: rows.length, outcomeSummary: { advised: advisedCount, blocked: blockedCount, notAdvised: notAdvisedCount } },
         'Review check outcomes persisted',
       );
       return ok(undefined);
@@ -540,6 +891,7 @@ export function createReviewScheduler(
     scannerCandidateLimit: number;
     cacheFreshnessMs: number;
     adviceExpiryMs?: number;
+    preCheck: ResolvedReviewPreCheckPolicy;
   },
 ): ReviewScheduler {
   const config: ReviewSchedulerConfig = {
@@ -548,6 +900,7 @@ export function createReviewScheduler(
     scannerCandidateLimit: operatorConfig.scannerCandidateLimit,
     cacheFreshnessMs: operatorConfig.cacheFreshnessMs,
     adviceExpiryMs: operatorConfig.adviceExpiryMs ?? operatorConfig.cacheFreshnessMs,
+    preCheck: operatorConfig.preCheck,
   };
 
   return new ReviewScheduler(deps, config);

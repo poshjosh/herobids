@@ -58,5 +58,7 @@ export { marketAssessmentRuns } from './market-assessment-runs.js';
 export { marketAssessmentArtifacts } from './market-assessment-artifacts.js';
 export { marketAssessmentRequests } from './market-assessment-requests.js';
 export { agentScanMetrics } from './agent-scan-metrics.js';
+export { agentScanCandidates } from './agent-scan-candidates.js';
 export { agentPresetTransitions } from './agent-preset-transitions.js';
 export { reviewAdvice } from './review-advice.js';
+export { agentAssessmentReviewChecks } from './agent-assessment-review-checks.js';

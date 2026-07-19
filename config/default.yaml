@@ -639,6 +639,22 @@ platformAssessor:
   #   minimumSymbols: 5
   #   maxLookbackDays: 30
   sourceMappings: {}  # per-venue-family overrides — defaults resolve from context
+  # ── Deterministic Review Pre-Check ────────────────────────────────────
+  # Configuration for the scanner pre-check that produces assessment review
+  # advice without LLM calls or billing. The pre-check reads persisted
+  # scanner candidate observations and applies a deterministic predicate.
+  preCheck:
+    signalRatioThreshold: 2.0          # peer preset must have >= 2× signal count to flag mismatch
+    scanMetricsLookbackMs: 86400000    # 24h lookback for scan metrics comparison
+    minSignalsForActive: 3             # minimum signals to consider a preset "active"
+    identityCooldownMs: 86400000       # 24h cooldown per (agent, identity)
+    candidateRetentionMs: 604800000    # 7d retention for persisted candidates
+    candidateMaxAgeMs: 86400000        # 24h max age for a candidate to be considered
+    maxAdvicePayloadSize: 16384        # 16 KB max advice payload
+    leaseDurationMs: 60000             # 60s review-check lease
+    billingPreflightTimeoutMs: 5000    # 5s read-only billing preflight timeout
+    policyVersion: "1.0.0"            # review predicate version
+    enablePeerComparison: true         # whether to compare peer presets for mismatch
   # ── Platform LLM ranking configuration ────────────────────────────────
   # The platform assessor uses its own LLM config (never an agent's config).
   # Provider and model must exist in the loaded provider registry at startup.

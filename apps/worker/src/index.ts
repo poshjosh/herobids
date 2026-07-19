@@ -16,7 +16,7 @@ import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { LlmStrategy, MechanicalStrategy, HybridStrategy, DcaStrategy } from '@herobids/strategy';
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, AgentDocumentsRepository, bots, users, agents } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, AgentDocumentsRepository, bots, users, agents, agentScanCandidates } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter } from '@herobids/venues';
 import { createFillFirstMarkSource } from '@herobids/engine';
@@ -979,10 +979,41 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           maxConcurrentScans: scannerCapacity.maxConcurrentScans,
           signalFingerprintStore: redisClient as unknown as SignalFingerprintStore,
           scannerSignalDedup: appConfig.agentRuntime.scannerSignalDedup,
+          onPersistScanCandidates: async (candidates) => {
+            try {
+              if (candidates.length === 0) return;
+              // Batch insert persisted scanner candidate observations
+              await db.insert(agentScanCandidates).values(
+                candidates.map((c) => ({
+                  id: c.id,
+                  agentId: c.agentId,
+                  scannedAt: new Date(c.scannedAt),
+                  scanVersion: c.scanVersion,
+                  activePresetKey: c.activePresetKey,
+                  presetBehaviorVersion: c.presetBehaviorVersion,
+                  instrumentKind: c.instrumentKind,
+                  venueFamily: c.venueFamily,
+                  styleTier: c.styleTier,
+                  symbol: c.symbol ?? null,
+                  network: c.network ?? null,
+                  address: c.address ?? null,
+                  rawCandidateId: c.rawCandidateId ?? null,
+                  resolutionStatus: c.resolutionStatus ?? null,
+                  candidateRank: c.candidateRank,
+                  scanScope: c.scanScope ?? null,
+                  signalFacts: c.signalFacts,
+                  confidence: c.confidence != null ? String(c.confidence) : null,
+                  regimeBucket: c.regimeBucket ?? null,
+                  volatilityFact: c.volatilityFact != null ? String(c.volatilityFact) : null,
+                  dataFreshnessTs: c.dataFreshnessTs ? new Date(c.dataFreshnessTs) : null,
+                  disposition: c.disposition,
+                })),
+              );
+            } catch (err) {
+              logger.warn({ err, agentId, count: candidates.length }, 'Failed to persist scan candidates — non-fatal');
+            }
+          },
         });
-
-        await actor.start();
-
         // Only register if the session is still active (not stopped during start)
         if (agentState.isSessionPending(agentId, sessionId)) {
           agentState.registerActor(agentId, sessionId, actor, mode, venueType);
@@ -1948,18 +1979,77 @@ try {
         ? platformAssessment['reviewIntervalMs']
         : appConfig.platformAssessor.minReviewIntervalMs;
 
+      // Resolve active preset state from the agent's unified config.
+      // Until Plan 012 delivers authoritative preset bindings, this derives
+      // the active preset from the agent's current strategy configuration.
+      const resolveActivePreset = async () => {
+        const uc = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
+        const tech = (uc['technical'] ?? {}) as Record<string, unknown>;
+        const intelligence = (uc['intelligence'] ?? {}) as Record<string, unknown>;
+        const allowedPresets = (uc['allowedPresets'] ?? {}) as Record<string, unknown>;
+
+        // Derive preset key from strategy type
+        const strategyType = (tech['type'] ?? intelligence['type'] ?? 'momentum') as string;
+        const styleTier = (allowedPresets['styleTier'] ?? 'standard') as 'economy' | 'standard' | 'premium';
+        const scanInterval = (tech['scanIntervalMs'] ?? undefined) as string | undefined;
+
+        // Derive behavior version from indicator config
+        const indicatorsHash = crypto.createHash('sha256')
+          .update(JSON.stringify(tech['indicators'] ?? intelligence['indicators'] ?? {}))
+          .digest('hex')
+          .slice(0, 8);
+        const behaviorVersion = `uc-${styleTier}-${strategyType}-${indicatorsHash}`;
+
+        return {
+          ok: true as const,
+          data: {
+            presetKey: strategyType,
+            behaviorVersion,
+            styleTier,
+            scanInterval,
+            signalBias: (tech['signalBias'] as 'bullish' | 'bearish' | 'neutral' | undefined) ?? 'neutral',
+            enabledIndicators: Object.keys((tech['indicators'] ?? intelligence['indicators'] ?? {}) as Record<string, unknown>),
+            compatibilityThresholds: {},
+          },
+        };
+      };
+
+      // Read-only billing preflight — checks if the agent has an active billing account.
+      const checkBillingEligibility = async () => {
+        try {
+          if (!agent.userId) return { ok: true as const, data: false };
+          const account = await usageBillingRepo.getAccountByUserId(agent.userId);
+          if (!account) return { ok: true as const, data: false };
+          return { ok: true as const, data: account.status === 'active' };
+        } catch {
+          // Fail-open: if billing check fails, allow pre-check to continue
+          return { ok: true as const, data: true };
+        }
+      };
+
       const scheduler = createReviewScheduler(
         {
           db,
           redis: redisClient,
           agentId: agent.id,
           eventPublisher,
+          resolveActivePreset,
+          checkBillingEligibility,
         },
         agentReviewIntervalMs,
         {
           minReviewIntervalMs: appConfig.platformAssessor.minReviewIntervalMs,
           scannerCandidateLimit: appConfig.platformAssessor.scannerCandidateLimit,
           cacheFreshnessMs: appConfig.platformAssessor.cacheFreshnessMs,
+          preCheck: appConfig.platformAssessor.preCheck ?? {
+            signalRatioThreshold: 2.0,
+            scanMetricsLookbackMs: 86_400_000,
+            minSignalsForActive: 3,
+            identityCooldownMs: 86_400_000,
+            candidateMaxAgeMs: 86_400_000,
+            policyVersion: '1.0.0',
+            enablePeerComparison: true,
+          },
         },
       );
       scheduler.start();
