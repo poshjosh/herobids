@@ -106,6 +106,28 @@ export class VenueInstrumentCache {
   }
 
   /**
+   * Get the set of known normalized symbols for a venue.
+   * Returns null if the cache is not ready, the venue is not configured,
+   * or the provider is in a degraded/failed state.
+   *
+   * Unlike hasSymbol(), this does NOT fail-open — null means "cannot validate."
+   */
+  getKnownSymbols(venue: string): Set<string> | null {
+    if (!this.ready) return null;
+    if (this.failedProviders.has(venue)) return null;
+    return this.cache.get(venue) ?? null;
+  }
+
+  /**
+   * Returns true when the cache is ready, the venue is configured, and the
+   * provider is not in a degraded/failed state — i.e. symbol validation is
+   * reliable for this venue.
+   */
+  isVenueReady(venue: string): boolean {
+    return this.ready && !this.failedProviders.has(venue) && this.cache.has(venue);
+  }
+
+  /**
    * Start periodic cache refresh. Refreshes all providers every intervalMs.
    * On refresh failure, the stale cache is kept (don't clear on error).
    */

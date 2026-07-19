@@ -6,3 +6,4 @@ export { type LlmRankerConfig, type LlmRankerDeps, type LlmRankerResult, rankPre
 export { createPlatformAssessor, type AssessorFactoryResult } from './assessor-factory.js';
 export { ReviewScheduler, createReviewScheduler, type ReviewSchedulerConfig, type ReviewSchedulerDeps, type ReviewCheckOutcome } from './review-scheduler.js';
 export { AssessmentRequestService, type AssessmentRequestOutcome, type AssessmentRequestParams, type BatchInstrumentResult, type BatchAssessmentResult } from './assessment-request-service.js';
+export { AssessmentIdentityResolverImpl, type AssessmentIdentityResolverDeps } from './assessment-identity-resolver.js';
