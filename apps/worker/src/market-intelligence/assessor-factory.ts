@@ -26,11 +26,14 @@ export interface AssessorFactoryResult {
  * Construct a PlatformAssessor with a platform-owned LLM adapter.
  *
  * The LLM adapter uses the operator-configured platform LLM (never an agent's
- * config). Provider/model availability is validated at construction time.
+ * config). Provider/model availability is validated at construction time:
+ * if `llmConfig` is provided but the configured provider is not found in
+ * `providersBaseUrlMap`, construction throws — this is a loud, intentional
+ * failure that prevents silent fallback to agent LLM configuration.
  *
- * If `platformAssessor.llm` is missing or the provider is disabled, the
- * assessor is still constructed but will return placeholder artifacts
- * (Phase 1 scaffolding). No LLM calls will be made.
+ * If `llmConfig` is entirely absent (operator has not configured platform
+ * LLM ranking), the assessor is still constructed but will return
+ * placeholder artifacts (Phase 1 scaffolding). No LLM calls will be made.
  *
  * @param llmConfig - Resolved platform LLM config from operator config.
  * @param providersBaseUrlMap - Provider base URL map from providers.yaml.
@@ -39,6 +42,7 @@ export interface AssessorFactoryResult {
  * @param evidencePorts - Evidence collection ports.
  * @param getPresets - Function to load presets for a style tier.
  * @param logger - Optional logger instance.
+ * @throws If llmConfig is provided but its provider is not in the loaded registry.
  */
 export function createPlatformAssessor(
   llmConfig: PlatformAssessmentLlmConfig | undefined,
@@ -50,6 +54,30 @@ export function createPlatformAssessor(
   logger?: Logger,
 ): AssessorFactoryResult {
   const log = logger ?? createLogger('assessor-factory');
+
+  // ── Provider validation ───────────────────────────────────────────────
+  // Missing, disabled, or invalid platform LLM configuration is a loud
+  // construction failure — the assessor must never silently fall back to
+  // an agent's LLM configuration.
+
+  if (llmConfig) {
+    if (!providersBaseUrlMap || Object.keys(providersBaseUrlMap).length === 0) {
+      throw new Error(
+        'Platform assessor LLM config is set but no provider registry is loaded. ' +
+        'Ensure providers.yaml is present and contains the configured provider.',
+      );
+    }
+    if (!(llmConfig.provider in providersBaseUrlMap)) {
+      throw new Error(
+        `Platform assessor LLM provider "${llmConfig.provider}" not found in loaded provider registry. ` +
+        `Available providers: ${Object.keys(providersBaseUrlMap).join(', ') || '(none)'}`,
+      );
+    }
+    log.info(
+      { provider: llmConfig.provider, model: llmConfig.model },
+      'Platform assessor LLM provider validated',
+    );
+  }
 
   // Resolve the LLM ranker config from the domain config
   let rankerConfig: LlmRankerConfig | null = null;
@@ -129,7 +157,6 @@ export function createPlatformAssessor(
   const assessorConfig: PlatformAssessorConfig = {
     enabled: true,
     maxConcurrentAssessments: 1,
-    maxLlmCallsPerCycle: 20,
     cacheFreshnessMs: 21_600_000, // 6 hours
     llm: rankerConfig ?? undefined,
   };

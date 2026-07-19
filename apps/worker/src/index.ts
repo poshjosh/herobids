@@ -57,6 +57,10 @@ import { UserEventPublisher } from './user-event-publisher.js';
 import { ActorHealthPublisher } from './actor-health-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler } from './market-intelligence/index.js';
 import type { ReviewScheduler } from './market-intelligence/index.js';
+import { createPlatformAssessor } from './market-intelligence/assessor-factory.js';
+import { AssessmentRequestService } from './market-intelligence/assessment-request-service.js';
+import { setAssessmentRequestService } from './tools/assess-strategy-preset.js';
+import type { AssessmentEvidencePorts } from './market-intelligence/assessment-ports.js';
 import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
@@ -1847,9 +1851,85 @@ marketIntelCoordinator?.start();
 const reviewSchedulers = new Map<string, ReviewScheduler>();
 
 // ── Platform Assessor ───────────────────────────────────────────────────────
-// TODO(assessment-on-demand): Wire PlatformAssessor into AssessmentRequestService
-// The on-demand assessor is constructed per-request by the request service.
-// See: 005-implementation-checklist-per-symbol-on-demand.md §7-9
+// Construct the shared PlatformAssessor and AssessmentRequestService.
+// The assessor uses platform-owned LLM configuration (never agent config).
+// Evidence ports are stubbed until Plan 008 implements real market-data adapters.
+
+const providersBaseUrlMap: Record<string, string> = {};
+if (providersYaml?.providers) {
+  for (const [key, cfg] of Object.entries(providersYaml.providers)) {
+    if (cfg.baseUrl) {
+      providersBaseUrlMap[key] = cfg.baseUrl;
+    }
+  }
+}
+
+// TODO(008): Replace stubs with real evidence port implementations.
+const evidencePorts: AssessmentEvidencePorts = {
+  regime: {
+    getRegime: async (_identity) => ({
+      ok: false,
+      error: { code: 'assessment.evidence_unavailable', message: 'Regime evidence not yet wired (Plan 008)' },
+    }) as ReturnType<AssessmentEvidencePorts['regime']['getRegime']>,
+  },
+  candles: {
+    getCandles: async (_input) => ({
+      ok: false,
+      error: { code: 'assessment.evidence_unavailable', message: 'Candle evidence not yet wired (Plan 008)' },
+    }) as ReturnType<AssessmentEvidencePorts['candles']['getCandles']>,
+  },
+  liquidity: {
+    getLiquidity: async (_identity) => ({
+      ok: false,
+      error: { code: 'assessment.evidence_unavailable', message: 'Liquidity evidence not yet wired (Plan 008)' },
+    }) as ReturnType<AssessmentEvidencePorts['liquidity']['getLiquidity']>,
+  },
+  breadth: {
+    getBreadth: async (_input) => ({
+      ok: false,
+      error: { code: 'assessment.evidence_unavailable', message: 'Breadth evidence not yet wired (Plan 008)' },
+    }) as ReturnType<AssessmentEvidencePorts['breadth']['getBreadth']>,
+  },
+};
+
+// TODO(008): Replace with real preset catalog loading from DB/config.
+const getPresets = (_styleTier: string): Array<{ key: string; entry: import('@herobids/domain').PresetEntry }> => {
+  return [];
+};
+
+const { assessor: platformAssessor, llmConfig: platformLlmConfig } = createPlatformAssessor(
+  appConfig.platformAssessor.llm,
+  providersBaseUrlMap,
+  db,
+  redisClient,
+  evidencePorts,
+  getPresets,
+  logger,
+);
+
+const usageBillingRepo = new UsageBillingRepository(
+  db,
+  appConfig.usageBilling.defaultRateCardItems,
+  providersYaml,
+  appConfig.usageBilling.fallbackCacheReadPct,
+);
+
+const assessmentRequestService = new AssessmentRequestService(
+  db,
+  usageBillingRepo,
+  appConfig.platformAssessor,
+  platformAssessor,
+);
+
+setAssessmentRequestService(assessmentRequestService);
+
+logger.info(
+  {
+    llmConfigured: platformLlmConfig !== null,
+    ...(platformLlmConfig && { provider: platformLlmConfig.provider, model: platformLlmConfig.model }),
+  },
+  'Platform assessor wired into worker composition root',
+);
 
 // ── Per-Agent Review Schedulers ──────────────────────────────────────────
 // Instantiate a ReviewScheduler for every active agent that has opted into

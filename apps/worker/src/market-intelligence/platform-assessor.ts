@@ -53,8 +53,6 @@ export interface PlatformAssessorConfig {
   enabled?: boolean;
   /** Maximum concurrent assessments. Default: 1 */
   maxConcurrentAssessments?: number;
-  /** Budget caps: max LLM calls per assessment cycle */
-  maxLlmCallsPerCycle?: number;
   /** How long an artifact is considered fresh (ms). Default: 6 hours */
   cacheFreshnessMs?: number;
   /** Platform LLM ranking configuration. Required for 009 LLM ranking. */
@@ -93,7 +91,6 @@ export class PlatformAssessor {
     this.config = {
       enabled: config.enabled ?? true,
       maxConcurrentAssessments: config.maxConcurrentAssessments ?? 1,
-      maxLlmCallsPerCycle: config.maxLlmCallsPerCycle ?? 20,
       cacheFreshnessMs: config.cacheFreshnessMs ?? 21_600_000, // 6 hours
     };
     this.deps = deps;

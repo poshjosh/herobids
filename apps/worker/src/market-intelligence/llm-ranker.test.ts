@@ -879,3 +879,94 @@ describe('validateLlmResponseSemantics', () => {
     expect(result.error.code).toBe('assessment.llm_unrecognised_directive');
   });
 });
+
+// ── Prompt Projection Snapshot ──────────────────────────────────────────────
+
+describe('prompt projection snapshot', () => {
+  it('produces a stable, bounded prompt for the exact projected request', async () => {
+    const identity = makeIdentity();
+    const evidence = makeEvidenceSnapshot();
+    const scorecards = makeScorecards();
+    const presets = makePresets();
+    const config = makeRankerConfig();
+    const cacheFreshnessMs = 21_600_000;
+
+    // Capture the exact prompt text sent to the LLM
+    let capturedPrompt = '';
+    const deps: LlmRankerDeps = {
+      callLlm: vi.fn(async (prompt: string) => {
+        capturedPrompt = prompt;
+        return {
+          text: JSON.stringify(makeValidLlmResponse()),
+          usage: {
+            provider: 'openrouter',
+            model: 'anthropic/claude-fable-5',
+            inputTokens: 500,
+            outputTokens: 300,
+            reasoningTokens: 0,
+          },
+        };
+      }),
+    };
+
+    const result = await rankPresetsViaLlm(config, deps, identity, evidence, scorecards, presets, cacheFreshnessMs);
+    expect(result.ok).toBe(true);
+
+    // The captured prompt must contain the key sections
+    expect(capturedPrompt).toContain('## Symbol Identity');
+    expect(capturedPrompt).toContain('## Evidence Availability');
+    expect(capturedPrompt).toContain('## Market Facts');
+    expect(capturedPrompt).toContain('## Candidates (presets to rank)');
+    expect(capturedPrompt).toContain('## Output Format');
+
+    // Snapshot the full prompt for regression detection
+    expect(capturedPrompt).toMatchSnapshot();
+  });
+
+  it('truncates candidate name and description when they exceed caps', async () => {
+    const identity = makeIdentity();
+    const evidence = makeEvidenceSnapshot();
+    const scorecards = makeScorecards();
+    const rankerCfg = makeRankerConfig();
+    const cacheFreshnessMs = 21_600_000;
+    const longName = 'A'.repeat(150); // exceeds MAX_CANDIDATE_NAME_LENGTH (100)
+    const longDesc = 'B'.repeat(600); // exceeds MAX_CANDIDATE_DESCRIPTION_LENGTH (500)
+    const presets = [
+      {
+        key: 'momentum_v1',
+        entry: {
+          name: longName,
+          description: longDesc,
+          strategy: { type: 'momentum', decisionMode: 'hybrid' as const },
+        },
+      },
+    ];
+    const singleScorecard = [makeScorecards()[0]!];
+
+    let capturedPrompt = '';
+    const deps: LlmRankerDeps = {
+      callLlm: vi.fn(async (prompt: string) => {
+        capturedPrompt = prompt;
+        return {
+          text: JSON.stringify(makeValidLlmResponse({ rankings: [makeValidLlmResponse().rankings[0]!] })),
+          usage: {
+            provider: 'openrouter',
+            model: 'anthropic/claude-fable-5',
+            inputTokens: 500,
+            outputTokens: 300,
+            reasoningTokens: 0,
+          },
+        };
+      }),
+    };
+
+    const result = await rankPresetsViaLlm(rankerCfg, deps, identity, evidence, singleScorecard, presets, cacheFreshnessMs);
+    expect(result.ok).toBe(true);
+
+    // Long name and description should be truncated in the prompt
+    expect(capturedPrompt).not.toContain(longName);
+    expect(capturedPrompt).not.toContain(longDesc);
+    // Should contain truncated versions with '...'
+    expect(capturedPrompt).toContain('...');
+  });
+});

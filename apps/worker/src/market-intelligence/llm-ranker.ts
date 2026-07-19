@@ -49,6 +49,20 @@ export interface LlmRankerResult {
   rawResponse: string;
 }
 
+// ── Projection Caps ─────────────────────────────────────────────────────────
+// Per the plan, all evidence projection fields are bounded before the provider
+// call. These caps prevent unbounded token consumption from large preset
+// catalogs or long descriptions.
+
+const MAX_PROJECTION_CANDIDATES = 20;
+const MAX_CANDIDATE_NAME_LENGTH = 100;
+const MAX_CANDIDATE_DESCRIPTION_LENGTH = 500;
+
+function truncate(str: string, maxLen: number): string {
+  if (str.length <= maxLen) return str;
+  return str.slice(0, maxLen - 3) + '...';
+}
+
 // ── Prompt Projection ───────────────────────────────────────────────────────
 
 /** Bounded market summary from evidence snapshot for the LLM prompt. */
@@ -171,13 +185,13 @@ function buildProjection(
       collectedAt: evidence.collectedAt,
     },
     marketFacts,
-    candidates: scorecards.map((sc) => {
+    candidates: scorecards.slice(0, MAX_PROJECTION_CANDIDATES).map((sc) => {
       const preset = presetMap.get(sc.presetKey);
       return {
         presetKey: sc.presetKey,
         presetBehaviorVersion: sc.presetBehaviorVersion,
-        name: preset?.name ?? sc.presetKey,
-        description: preset?.description ?? '',
+        name: truncate(preset?.name ?? sc.presetKey, MAX_CANDIDATE_NAME_LENGTH),
+        description: truncate(preset?.description ?? '', MAX_CANDIDATE_DESCRIPTION_LENGTH),
         decisionMode: preset?.strategy.decisionMode ?? 'unknown',
         strategyType: preset?.strategy.type ?? 'unknown',
         scorecard: {

@@ -614,7 +614,6 @@ platformAssessor:
   scannerCandidateLimit: 20  # top N candidates for deterministic pre-check
   cacheFreshnessMs: 21600000  # 6h — lookup and artifact expiry
   maxConcurrentAssessments: 1
-  maxLlmCallsPerCycle: 20
   maxInstrumentsPerRequest: 3  # max instruments per assessment request
   # ── Evidence collection policies ──────────────────────────────────────
   evidenceMaxAgeMs: 300000          # 5 min — max age for collected evidence

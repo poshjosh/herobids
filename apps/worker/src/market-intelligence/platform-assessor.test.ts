@@ -41,7 +41,6 @@ function makeConfig(overrides?: Partial<PlatformAssessorConfig>): PlatformAssess
   return {
     enabled: true,
     maxConcurrentAssessments: 1,
-    maxLlmCallsPerCycle: 5,
     cacheFreshnessMs: 60_000,
     ...overrides,
   };
@@ -233,7 +232,7 @@ describe('PlatformAssessor', () => {
 
     it('respects explicit config values', () => {
       const assessor = new PlatformAssessor(
-        { maxLlmCallsPerCycle: 10, cacheFreshnessMs: 120_000 },
+        { cacheFreshnessMs: 120_000 },
         makeDeps(),
       );
       expect(assessor).toBeDefined();

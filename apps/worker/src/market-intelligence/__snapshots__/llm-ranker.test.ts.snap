@@ -1,0 +1,36 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`prompt projection snapshot > produces a stable, bounded prompt for the exact projected request 1`] = `
+"## Symbol Identity
+{"instrumentKind":"perp","venueFamily":"hyperliquid-orderbook","styleTier":"standard","symbol":"BTC"}
+
+## Evidence Availability
+{"regime":"available","candles":"available","volatility":"available","liquidity":"available","breadth":"available","collectedAt":"2026-07-19T10:00:00.000Z"}
+
+## Market Facts
+{"regime":{"trend":"bullish","adx":32,"choppy":false,"marketStructure":"higherHighs"},"volatility":{"atr":150.5,"regime":"normal","calculationVersion":"1.0.0"},"liquidity":{"spreadBps":3.5,"depthUsd":100000,"quality":"good"},"breadth":{"symbolsAboveMA":45,"totalSymbols":100,"ratio":0.45}}
+
+## Candidates (presets to rank)
+[{"presetKey":"momentum_v1","presetBehaviorVersion":"abc123","name":"Momentum Strategy","description":"A trend-following momentum-based strategy","decisionMode":"hybrid","strategyType":"momentum","scorecard":{"candidatesDiscovered":15,"candidatesScored":10,"signalsGenerated":5,"topConfidence":0.85,"scanHealth":"healthy"}},{"presetKey":"mean_reversion_v1","presetBehaviorVersion":"def456","name":"Mean Reversion Strategy","description":"A mean-reversion based counter-trend strategy","decisionMode":"mechanical","strategyType":"mean_reversion","scorecard":{"candidatesDiscovered":12,"candidatesScored":8,"signalsGenerated":3,"topConfidence":0.72,"scanHealth":"degraded"}}]
+
+## Output Format
+{
+  "currentMarketSummary": "2-4 sentences describing current market conditions",
+  "regimeSummary": "1-2 sentences on trend/volatility regime",
+  "scanHealthSummary": "1-2 sentences on scanner performance across presets",
+  "reasoningSummary": "2-4 sentences explaining the top recommendation",
+  "confidence": 0.0,
+  "urgency": "low",
+  "rankings": [
+    {
+      "presetKey": "string (exact match from candidates)",
+      "presetBehaviorVersion": "string (exact match from candidates)",
+      "rank": 1,
+      "score": 85,
+      "pros": ["pro 1", "pro 2"],
+      "cons": ["con 1", "con 2"],
+      "fitNotes": "1-3 sentence fit explanation"
+    }
+  ]
+}"
+`;

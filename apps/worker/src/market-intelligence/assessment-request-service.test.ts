@@ -107,7 +107,6 @@ function makeOperatorConfig(overrides?: Partial<PlatformAssessorConfig>): Platfo
     scannerCandidateLimit: 20,
     cacheFreshnessMs: 21_600_000,
     maxConcurrentAssessments: 1,
-    maxLlmCallsPerCycle: 20,
     maxInstrumentsPerRequest: 3,
     ...overrides,
   };

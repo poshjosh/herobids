@@ -29,7 +29,7 @@ function makeIdentity(
 }
 
 function makeConfig(overrides?: Partial<PlatformAssessorConfig>): PlatformAssessorConfig {
-  return { enabled: true, maxConcurrentAssessments: 1, maxLlmCallsPerCycle: 5, cacheFreshnessMs: 60_000, ...overrides };
+  return { enabled: true, maxConcurrentAssessments: 1, cacheFreshnessMs: 60_000, ...overrides };
 }
 
 function makeMockCandles(count: number): PriceCandle[] {
