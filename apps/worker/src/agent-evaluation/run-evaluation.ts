@@ -22,6 +22,7 @@ import { analyzeSecurity } from './analyzers/security.js';
 import { renderReport } from './render-report.js';
 import { generateEvaluationNarrative } from './generate-narrative.js';
 import { redact, redactJson } from './redaction.js';
+import { derivePresetAssessmentSummary, derivePresetAssessmentEvents } from './preset-assessment-summary.js';
 
 /** Evidence artifact names that must pass through the JSON redaction pass before user-facing output. */
 export const EVIDENCE_ARTIFACTS_FOR_REDACTION = [
@@ -115,6 +116,62 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
       redis: ctx.redis,
     });
     logger.info({ runId, entries: manifest.entries.filter((e) => e.collected).length }, 'Evidence collected');
+
+    // ── Step 1b: Derive preset-assessment artifacts (best-effort) ────────
+    if (manifest.presetAssessmentEvidence) {
+      try {
+        // Read unified-agent-config.json from store (already written by evidence assembler)
+        let unifiedConfig: Record<string, unknown> | null = null;
+        try {
+          const configRaw = await store.read(runId, 'unified-agent-config.json');
+          if (configRaw) {
+            unifiedConfig = JSON.parse(new TextDecoder().decode(configRaw));
+          }
+        } catch {
+          logger.warn({ runId }, 'Could not read unified-agent-config.json for preset-assessment summary');
+        }
+
+        const generatedAt = new Date().toISOString();
+
+        const summary = derivePresetAssessmentSummary({
+          evidence: manifest.presetAssessmentEvidence,
+          unifiedConfig,
+          scope: resolvedScope,
+          generatedAt,
+        });
+
+        // Write summary artifact when appendix is included
+        if (summary.includedInReport) {
+          try {
+            await store.write(
+              runId,
+              'preset-assessment-summary.json',
+              JSON.stringify(summary, null, 2),
+            );
+          } catch (err) {
+            logger.warn({ runId, err: String(err) }, 'Could not write preset-assessment-summary.json');
+          }
+        }
+
+        // Write events artifact when events exist
+        const events = derivePresetAssessmentEvents({
+          evidence: manifest.presetAssessmentEvidence,
+        });
+        if (events.length > 0) {
+          try {
+            await store.write(
+              runId,
+              'preset-assessment-events.json',
+              JSON.stringify(events, null, 2),
+            );
+          } catch (err) {
+            logger.warn({ runId, err: String(err) }, 'Could not write preset-assessment-events.json');
+          }
+        }
+      } catch (err) {
+        logger.warn({ runId, err: String(err) }, 'Preset-assessment summary derivation failed');
+      }
+    }
 
     // ── Step 2: Run analyzers over RAW evidence ──────────────────────────
     // Security analyzer must run BEFORE redaction so it can detect secrets.
