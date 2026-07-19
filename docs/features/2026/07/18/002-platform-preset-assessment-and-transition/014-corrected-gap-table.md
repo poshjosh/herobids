@@ -33,42 +33,45 @@ The earlier table was directionally useful, but not fully accurate.
 
 | # | Item | Status | Impact | Effort | Notes |
 |---|---|---|---|---|---|
-| 1 | Real evidence adapters plus persisted evidence/scorecards | **Not yet implemented** | XH | H | Covered by [015-implementation-plan-evidence-catalog-and-assessment-payload.md](./015-implementation-plan-evidence-catalog-and-assessment-payload.md) Workstream 2. Worker startup still wires regime, candles, liquidity, and breadth to `assessment.evidence_unavailable` stubs, and the assessor still does not persist evidence snapshots/scorecards before LLM ranking. |
-| 2 | Preset catalog wired into assessor factory | **Not yet implemented** | XH | S | Covered by [015-implementation-plan-evidence-catalog-and-assessment-payload.md](./015-implementation-plan-evidence-catalog-and-assessment-payload.md) Workstream 1. Worker composition still passes `getPresets()` as `[]`, so the assessor has no real candidate preset set. |
-| 3 | `assess_strategy_preset` returns the full assessment payload promised by the schema | **Not yet implemented** | XH | M | Covered by [015-implementation-plan-evidence-catalog-and-assessment-payload.md](./015-implementation-plan-evidence-catalog-and-assessment-payload.md) Workstream 3. The domain schema expects assessment data, rankings, recommendation, and canonical identity in the success payload, but the worker tool currently returns mostly billing and transition metadata. |
+| 1 | Real evidence adapters plus persisted evidence/scorecards | **Implemented** (015) | XH | H | Implemented by [015](./015-implementation-plan-evidence-catalog-and-assessment-payload.md) Workstream 2. Regime (via `evaluateRegime()` over `scannerCandleFetcher`), candles (reuses `VenueCandleFetcher` path), liquidity (explicit unavailable — first slice), and breadth (explicit unavailable — first slice) are wired through `evidence-adapters.ts`. `PlatformAssessor.persistEvidence()` writes `evidenceSnapshot`, `scorecardSnapshots`, `calculationVersions`, and `evidenceRefs` into `marketAssessmentRuns` before LLM ranking. **Known gap:** regime uses a separate 1D candle window internally rather than the same 15m candles persisted in the evidence snapshot — audit replay of regime from stored evidence is not yet reproducible. Missing unit tests for `evidence-adapters.ts` and integration test for persistence path. |
+| 2 | Preset catalog wired into assessor factory | **Implemented** (015) | XH | S | Implemented by [015](./015-implementation-plan-evidence-catalog-and-assessment-payload.md) Workstream 1. `createPresetCatalog()` in `preset-catalog-adapter.ts` wraps domain `listPresets()`; eager-loads all 3 style tiers at worker startup, throws loudly on missing/empty; replaces hardcoded `() => []` stub. Missing unit tests for the adapter. |
+| 3 | `assess_strategy_preset` returns the full assessment payload promised by the schema | **Implemented** (015) | XH | M | Implemented by [015](./015-implementation-plan-evidence-catalog-and-assessment-payload.md) Workstream 3. `mapOutcomeToResultEntry` now populates `canonicalIdentity` and the full `assessment` object (artifact mappings: `currentMarketSummary→marketSummary`, `presetRankings→rankings`, etc.). `AssessmentRequestPortOutcome` refactored to discriminated union with `AssessmentArtifactSummary`. `instrumentKind` widened to preserve swap/dex. 20 tool unit tests added covering both cache-hit and fresh-run paths. **Known gap:** service does not yet thread `canonicalIdentity` through all failure/blocked return statements in `requestAssessment()` (internal type and mapper support it, but individual return statements still don't populate it). |
 | 4 | Assessor config propagation and rollout semantics aligned with operator config | **Not yet implemented** | H | S | The LLM config is already seeded, but the assessor factory still hardcodes `enabled: true` and a fixed freshness window instead of propagating resolved operator config cleanly. |
-| 5 | Clean-DB migration rehearsal and journal verification | **Needs verification** | H | M | The assessment migrations are generated and journaled already; what is still missing is clean-DB startup rehearsal and deployment-style proof. |
-| 6 | Durable cross-worker provider lease and request reconciliation | **Not yet implemented** | H | M | Request rows, reservations, and artifact persistence exist, but same-process in-memory lease reuse is still used for in-flight assessment execution. |
-| 7 | Worker-restart reconciliation for in-flight preset transitions | **Not yet implemented** | H | M | The transition service still leaves `applying`-state restart reconciliation as an explicit TODO. |
-| 8 | 006 end-to-end acceptance scenario executed against real worker composition | **Needs verification** | H | M | There are focused unit/integration tests, but not the full 11-step acceptance scenario over real worker composition. |
-| 9 | Recorded provider-response fixture for platform LLM | **Needs verification** | M | S | Current LLM tests are mock-driven. The missing artifact is a recorded visible-text/provider-schema fixture. |
-| 10 | Rollout observability queries and release evidence built from persisted records | **Not yet implemented** | M | M | The persistence surfaces exist, but operator-facing queries/reports for request outcomes, evidence failures, ranking validity, wake volume, cache reuse, and transition outcomes are not yet built. |
-| 11 | Legacy segment-key and deprecated wake/scheduler artifacts removed | **Not yet implemented** | M | M | Deprecated segment-key types and helpers are still in active source and should remain gated on replacement proof. |
-| 12 | Cross-worker actor reload path for preset application | **Not yet implemented** | M | M | Local actor reload is wired through the registry, but remote actor reload via worker-to-worker message routing is still deferred. |
-| 13 | `entries_and_tighten_existing` transition mode implemented rather than explicitly rejected | **Not yet implemented** | M | M | The current apply surface only supports `entries_only`. Tightening/full-transition modes are still explicitly rejected. |
-| 14 | Stale docs/config references to removed tools and shadow-mode rollout cleaned up | **Not yet implemented** | L | S | Some docs and config comments still refer to removed tool names or stale rollout semantics. |
+| 5 | Clean-DB migration rehearsal and journal verification | **Needs verification** | H | M | Covered by [016-durable-execution-transition-reconciliation-and-release-evidence.md](./016-durable-execution-transition-reconciliation-and-release-evidence.md) Workstream 3. The assessment migrations are generated and journaled already; what is still missing is clean-DB startup rehearsal and deployment-style proof. |
+| 6 | Durable cross-worker provider lease and request reconciliation | **Not yet implemented** | H | M | Covered by [016-durable-execution-transition-reconciliation-and-release-evidence.md](./016-durable-execution-transition-reconciliation-and-release-evidence.md) Workstream 1. Request rows, reservations, and artifact persistence exist, but same-process in-memory lease reuse is still used for in-flight assessment execution. |
+| 7 | Worker-restart reconciliation for in-flight preset transitions | **Not yet implemented** | H | M | Covered by [016-durable-execution-transition-reconciliation-and-release-evidence.md](./016-durable-execution-transition-reconciliation-and-release-evidence.md) Workstream 2. The transition service still leaves `applying`-state restart reconciliation as an explicit TODO. |
+| 8 | 006 end-to-end acceptance scenario executed against real worker composition | **Needs verification** | H | M | Covered by [016-durable-execution-transition-reconciliation-and-release-evidence.md](./016-durable-execution-transition-reconciliation-and-release-evidence.md) Workstream 3. There are focused unit/integration tests, but not the full 11-step acceptance scenario over real worker composition. |
+| 9 | Recorded provider-response fixture for platform LLM | **Needs verification** | M | S | Covered by [016-durable-execution-transition-reconciliation-and-release-evidence.md](./016-durable-execution-transition-reconciliation-and-release-evidence.md) Workstream 3. Current LLM tests are mock-driven. The missing artifact is a recorded visible-text/provider-schema fixture. |
+| 10 | Rollout observability queries and release evidence built from persisted records | **Not yet implemented** | M | M | Covered by [016-durable-execution-transition-reconciliation-and-release-evidence.md](./016-durable-execution-transition-reconciliation-and-release-evidence.md) Workstream 3. The persistence surfaces exist, but operator-facing queries/reports for request outcomes, evidence failures, ranking validity, wake volume, cache reuse, and transition outcomes are not yet built. |
+| 11 | Legacy segment-key and deprecated wake/scheduler artifacts removed | **Not yet implemented** | M | M | Covered by [016-durable-execution-transition-reconciliation-and-release-evidence.md](./016-durable-execution-transition-reconciliation-and-release-evidence.md) Workstream 4. Deprecated segment-key types and helpers are still in active source and should remain gated on replacement proof. |
+| 12 | Cross-worker actor reload path for preset application | **Not yet implemented** | M | M | Covered by [016-durable-execution-transition-reconciliation-and-release-evidence.md](./016-durable-execution-transition-reconciliation-and-release-evidence.md) Workstream 2. Local actor reload is wired through the registry, but remote actor reload via worker-to-worker message routing is still deferred. |
+| 13 | `entries_and_tighten_existing` transition mode implemented rather than explicitly rejected | **Not yet implemented** | M | M | Covered by [016-durable-execution-transition-reconciliation-and-release-evidence.md](./016-durable-execution-transition-reconciliation-and-release-evidence.md) Workstream 2. The current apply surface only supports `entries_only`. Tightening/full-transition modes are still explicitly rejected. |
+| 14 | Stale docs/config references to removed tools and shadow-mode rollout cleaned up | **Not yet implemented** | L | S | Follow the gated cleanup in [016-durable-execution-transition-reconciliation-and-release-evidence.md](./016-durable-execution-transition-reconciliation-and-release-evidence.md) Workstream 4. Some docs and config comments still refer to removed tool names or stale rollout semantics. |
 
 ## Item-By-Item Corrections Against The Earlier Table
 
 ### Original item 1
 
-Keep, but widen the note.
+✅ Resolved by 015 Workstream 2.
 
-- The problem is not only adapter wiring.
-- The assessor also still skips persistence of evidence snapshots and deterministic scorecards before LLM ranking.
+- Evidence adapters wired (regime, candles, liquidity, breadth).
+- Evidence snapshots and deterministic scorecards persisted before LLM ranking.
+- **Known gap:** regime uses separate 1D candle window, audit replay not yet reproducible.
 
 ### Original item 2
 
-Keep.
+✅ Resolved by 015 Workstream 1.
 
-- This is still a direct blocker because the worker passes an empty preset catalog into the assessor factory.
+- `createPresetCatalog()` wrapping domain `listPresets()` replaces empty `[]` stub.
+- Assessor now receives real preset catalog at construction time.
 
 ### Original item 3
 
-Replace.
+✅ Resolved by 015 Workstream 3.
 
-- The platform assessor LLM config is already present in `config/default.yaml`.
-- The real gap is config propagation drift and rollout-semantic drift, not missing config seeding.
+- `assess_strategy_preset` returns full `AssessmentResultEntrySchema` shape.
+- Port outcome expanded to discriminated union with `AssessmentArtifactSummary`.
+- 20 tool unit tests added.
 
 ### Original item 4
 
@@ -116,17 +119,17 @@ Keep.
 
 ## Important Gaps Omitted By The Earlier Table
 
-### A. The assessment tool contract is still incomplete
+### A. ~~The assessment tool contract is still incomplete~~ ✅ RESOLVED (015)
 
-This is the biggest omission.
+This was the biggest omission.
 
-- The feature plans now rely on a two-tool flow:
-  - `assess_strategy_preset`
-  - `change_strategy_preset`
-- The domain response schema for `assess_strategy_preset` expects the returned assessment object itself, including rankings, summaries, confidence, urgency, and the exact transition reference.
-- The current worker tool does not yet populate that full success shape.
+- ~~The feature plans now rely on a two-tool flow:~~
+  - ~~`assess_strategy_preset`~~
+  - ~~`change_strategy_preset`~~
+- ~~The domain response schema for `assess_strategy_preset` expects the returned assessment object itself, including rankings, summaries, confidence, urgency, and the exact transition reference.~~
+- ~~The current worker tool does not yet populate that full success shape.~~
 
-Without this, the feature is not genuinely end-to-end even if request billing and artifact persistence work underneath.
+**Resolved by 015 Workstream 3.** `assess_strategy_preset` now returns the full `AssessmentResultEntrySchema` shape including `canonicalIdentity`, `assessment` (artifact ID, assessedAt, expiresAt, marketSummary, regimeSummary, scanHealthSummary, rankings, recommendedPreset, confidence, urgency), `transitionReference`, and `billing`. Both cache-hit and assessment_completed paths produce the same structure. 20 tool unit tests added. **Minor remaining gap:** `canonicalIdentity` not yet threaded through all individual failure/blocked return statements in the service (internal type and mapper support it).
 
 ### B. Cross-worker assessment execution is not yet at the plan’s durability bar
 
@@ -143,9 +146,9 @@ Without this, the feature is not genuinely end-to-end even if request billing an
 
 If the goal is to reach a truthful “production ready” claim for this feature slice, the highest-value order is:
 
-1. Real evidence adapters plus evidence/scorecard persistence.
-2. Real preset catalog wiring.
-3. Fix `assess_strategy_preset` so it returns the documented assessment payload.
+1. ~~Real evidence adapters plus evidence/scorecard persistence.~~ ✅ Done (015)
+2. ~~Real preset catalog wiring.~~ ✅ Done (015)
+3. ~~Fix `assess_strategy_preset` so it returns the documented assessment payload.~~ ✅ Done (015)
 4. Replace same-process-only assessment execution joining with durable cross-worker behavior and recovery.
 5. Prove clean-DB startup and execute the full `006` acceptance scenario.
 6. Add recorded provider fixture and rollout observability evidence.
@@ -153,12 +156,16 @@ If the goal is to reach a truthful “production ready” claim for this feature
 
 ## Current Readiness Verdict
 
-The feature is **not production ready** on the current code state.
+The feature is **not production ready** on the current code state, but the three highest-priority gaps from the previous table have been closed by 015.
 
-The most important reasons are:
+**Resolved by 015:**
+- ✅ Real evidence collection is no longer stubbed at worker composition time (regime, candles wired; liquidity, breadth explicit unavailable per first-slice plan).
+- ✅ The assessor no longer receives an empty preset catalog from the worker (real `listPresets()` adapter wired).
+- ✅ The public assessment tool now returns the full assessment payload required by the documented two-tool flow.
 
-- real evidence collection is still stubbed at worker composition time;
-- the assessor still receives an empty preset catalog from the worker;
-- the public assessment tool does not yet return the full assessment payload required by the documented two-tool flow;
-- restart and cross-worker reconciliation remain incomplete;
-- the definitive `006` end-to-end acceptance scenario has not been executed.
+**Remaining production blockers:**
+- Restart and cross-worker reconciliation remain incomplete (items 6, 7, 12).
+- `entries_and_tighten_existing` not yet implemented (item 13).
+- The definitive `006` end-to-end acceptance scenario has not been executed (item 8).
+- Clean-DB migration rehearsal and journal verification not yet proven (item 5).
+- Regime evidence reproducibility gap: regime computed from separate 1D candle window, not the same 15m candles persisted in the evidence snapshot (see item 1 notes).
