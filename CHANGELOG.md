@@ -6,6 +6,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+
+### Changed
+
+- **Preset assessment tool simplification (006b):** Collapsed the preset-assessment flow from three tools to two:
+  - **`assess_strategy_preset`** replaces `get_market_preset_assessment` + `recommend_preset_transition` as a single billable assessment tool accepting multiple instruments
+  - **`change_strategy_preset`** replaces `apply_preset_transition` as the single apply tool
+  - **Removed shadow mode** (`recommend_only` / `auto_apply`) — feature gating is now via `platformAssessment.enabled` only
+  - **Multi-instrument support:** up to `platformAssessor.maxInstrumentsPerRequest` (default 3) with truncation
+  - **Serial batch execution** with partial success semantics and per-instrument billing
+  - **Exact transition auditability** preserved via `assessmentArtifactId` reference model
+  See [docs/features/2026/07/18/002-platform-preset-assessment-and-transition/006b-followup-plan-2.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/006b-followup-plan-2.md).
+
 ### Added
 
 - **Platform Preset Assessment & Agent Strategy Transition:** Shared market assessment pipeline that ranks strategy presets per market segment, enabling agents to switch presets based on market conditions. Key components:
