@@ -3,7 +3,7 @@ import { createLogger } from '../logger.js';
 import type { Logger } from 'pino';
 import type { Database } from '@herobids/db';
 import { reviewAdvice } from '@herobids/db';
-import { err, ok, type Result } from '@herobids/domain';
+import { err, ok, type Result, type AgentWakePayload, MarketAssessmentIdentitySchema, AgentWakePayloadSchema } from '@herobids/domain';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -26,6 +26,8 @@ export interface ReviewSchedulerDeps {
   /** Redis client — reserved for future cooldown / lock use. */
   redis: unknown;
   agentId: string;
+  /** Publishes {agent.wake} events to the agent's inbound stream. */
+  eventPublisher: import('../agents/instance-event-publisher.js').InstanceEventPublisher;
 }
 
 export interface ReviewCheckOutcome {
@@ -62,6 +64,7 @@ export class ReviewScheduler {
   private readonly db: Database;
   private readonly agentId: string;
   private readonly config: ReviewSchedulerConfig;
+  private readonly eventPublisher: import('../agents/instance-event-publisher.js').InstanceEventPublisher;
 
   /** Timestamp (ms) of the last completed review check. */
   private lastCheckAt: number = 0;
@@ -76,6 +79,7 @@ export class ReviewScheduler {
     this.db = deps.db;
     this.agentId = deps.agentId;
     this.config = config;
+    this.eventPublisher = deps.eventPublisher;
     this.logger = createLogger(`review-scheduler:${deps.agentId}`);
   }
 
@@ -175,26 +179,109 @@ export class ReviewScheduler {
       const preCheck = preCheckResult.data;
 
       // 3. Persist outcomes
-      const persistResult = await this.persistCheckOutcomes(checkId, checkedAt, preCheck);
+      const nextEligibleAtDate = new Date(Date.now() + this.config.reviewIntervalMs);
+      const persistResult = await this.persistCheckOutcomes(checkId, checkedAt, preCheck, nextEligibleAtDate);
       if (!persistResult.ok) return persistResult;
 
-      // 4. Determine if advice should be delivered
-      const advisedCount = preCheck.filter((c: { outcome: string }) => c.outcome === 'advised').length;
-      const nextEligibleAt = new Date(Date.now() + this.config.reviewIntervalMs).toISOString();
-      this.lastCheckAt = Date.now();
-
+      // 4. Compute outcome counts
       const outcomeCounts: Record<string, number> = {};
       for (const c of preCheck) {
         outcomeCounts[c.outcome] = (outcomeCounts[c.outcome] ?? 0) + 1;
       }
 
+      // 5. Build actionable array (matches persistCheckOutcomes ordering)
+      const actionable = preCheck.filter((c) => c.outcome !== 'no_candidate');
+      const nextEligibleAt = nextEligibleAtDate.toISOString();
+
+      // 6. Emit agent wake when advice exists (G3 — one wake per due interval, G6)
+      let effectiveAdvisedCount = 0;
+      const advisedPreFilter = preCheck.filter((c) => c.outcome === 'advised');
+      if (advisedPreFilter.length > 0) {
+        // Compute advice data from in-memory preCheck results rather than
+        // a redundant DB round-trip. Advice IDs mirror the persist ordering
+        // (actionable, non-"no_candidate" items).
+        const advisedCandidates = advisedPreFilter
+          .map((c) => {
+            const actionableIdx = actionable.indexOf(c);
+            // PreCheck identity has optional fields — safeParse validates the discriminated union structure
+            const idParsed = MarketAssessmentIdentitySchema.safeParse(c.identity);
+            if (!idParsed.success) {
+              this.logger.warn({ identity: c.identity, err: idParsed.error.issues }, 'Skipping advised candidate with malformed identity');
+              return null;
+            }
+            return {
+              adviceId: `${checkId}:${actionableIdx}`,
+              identity: idParsed.data,
+              candidateRank: c.candidateRank ?? 1,
+              activePreset: c.activePreset ?? 'unknown',
+              presetBehaviorVersion: c.presetBehaviorVersion ?? 'unknown',
+              reasons: c.reasons ?? ['Deterministic pre-check advised review'],
+            };
+          })
+          .filter((c): c is NonNullable<typeof c> => c !== null);
+
+        effectiveAdvisedCount = advisedCandidates.length;
+
+        if (advisedCandidates.length === 0) {
+          this.logger.warn({ originalCount: advisedPreFilter.length }, 'All advised candidates had malformed identities — skipping wake');
+        } else {
+          const adviceIds = advisedCandidates.map((a) => a.adviceId);
+          const payload: AgentWakePayload = {
+            source: 'scanner',
+            wakeId: crypto.randomUUID(),
+            reason: `Assessment review available for ${advisedCandidates.length} symbols`,
+            eventIds: adviceIds,
+            priority: 'normal',
+            requestedAt: checkedAt,
+            context: {
+              scannerKind: 'assessment_review',
+              advice: advisedCandidates.map((a) => ({
+                identity: a.identity,
+                candidateRank: a.candidateRank,
+                activePreset: a.activePreset,
+                presetBehaviorVersion: a.presetBehaviorVersion,
+                reasons: a.reasons,
+              })),
+              checkedAt,
+              nextEligibleAt,
+            },
+          };
+
+          // Validate payload against schema before emitting (producer-side guard)
+          const parsed = AgentWakePayloadSchema.safeParse(payload);
+          if (!parsed.success) {
+            this.logger.error({ err: parsed.error.issues, payload }, 'Constructed invalid wake payload — this is a bug');
+            return err({ code: 'review.invalid_wake_payload', message: 'Constructed wake payload failed schema validation' });
+          }
+
+          // At-least-once delivery: a crash between emit and mark could result in
+          // a duplicate wake on the next cycle. The consumer must be idempotent.
+          await this.eventPublisher.emitAgentWake(this.agentId, parsed.data);
+
+          const consumedResult = await this.markAdviceConsumed(adviceIds);
+          if (!consumedResult.ok) {
+            this.logger.error(
+              { err: consumedResult.error, wakeId: payload.wakeId, adviceIds },
+              'Wake emitted but failed to mark advice consumed — duplicate wake risk on next cycle',
+            );
+          }
+
+          this.logger.info(
+            { wakeId: payload.wakeId, adviceCount: advisedCandidates.length },
+            'Agent wake emitted for assessment review',
+          );
+        }
+      }
+
+      this.lastCheckAt = Date.now();
+
       return ok({
         checkId,
         checkedAt,
         nextEligibleAt,
-        advisedCount,
+        advisedCount: effectiveAdvisedCount,
         outcomeCounts,
-        hasAdvice: advisedCount > 0,
+        hasAdvice: effectiveAdvisedCount > 0,
       });
     } catch (error) {
       this.logger.error({ err: error, checkId }, 'Review check failed');
@@ -313,11 +400,11 @@ export class ReviewScheduler {
       presetBehaviorVersion?: string;
       reasons?: string[];
     }>,
+    nextEligibleAt: Date,
   ): Promise<Result<void>> {
     try {
       const checkedAtDate = new Date(checkedAt);
       const reviewDueAt = checkedAtDate; // review was due at check time
-      const nextEligibleAt = new Date(Date.now() + this.config.reviewIntervalMs);
       const expiresAt = new Date(Date.now() + this.config.adviceExpiryMs);
 
       // Skip no_candidate outcomes — there is no candidate identity to hand off.
