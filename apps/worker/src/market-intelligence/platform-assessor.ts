@@ -227,14 +227,10 @@ export class PlatformAssessor {
       fitNotes: null,
     }));
 
-    // TODO: remove segmentKey/universeScopeHash fields when MarketAssessmentArtifact domain type is updated
-    // to use canonical identity (instrumentKind, venueFamily, styleTier, symbol/network+address).
     return {
       id: crypto.randomUUID(),
-      segmentKey: { venueFamily: identity.venueFamily, styleTier: identity.styleTier, universeScopeHash: '' },
       venueFamily: identity.venueFamily,
       styleTier: identity.styleTier,
-      universeScopeHash: '',
       assessmentRunId: '', // filled by caller
       assessedAt: now.toISOString(),
       expiresAt: expiresAt.toISOString(),

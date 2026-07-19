@@ -349,14 +349,14 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   get_risk_limits:     { category: 'read-database',       description: 'Get effective risk limits: which are mutable vs locked, plus runtime state.' },
   find_instrument:     { category: 'read-database',       description: 'Find a tradable instrument by symbol/name. Returns instrumentId (venue-submittable), id (DB internal), symbol, base, quote, type, venue.' },
   resolve_bot:         { category: 'read-database',       description: 'Resolve a bot name/symbol to its bot ID for stop/start/config operations.' },
-  recommend_preset_transition: { category: 'read-database', description: 'Get the top-ranked preset recommendation from the latest shared market assessment artifact. Review your open positions and performance before applying.' },
+  recommend_preset_transition: { category: 'read-database', description: 'Get a preset transition recommendation for a specific assessment artifact (from get_market_preset_assessment). Requires an explicit assessmentArtifactId. Review your open positions and performance before applying.' },
 
   // write-database
   stop_bot:            { category: 'write-database',      description: 'Stop a running bot. Positions remain open unless manually closed.' },
   start_bot:           { category: 'write-database',      description: 'Start a stopped bot. Resumes trading per its configuration.' },
   adjust_bot_config:   { category: 'write-database',      description: 'Update configuration for a specific bot. Changes merged and take effect next tick.' },
   adjust_risk_limits:  { category: 'write-database',      description: 'Adjust mutable risk limits. Only operator-default-derived limits can be changed.' },
-  apply_preset_transition: { category: 'write-database', description: 'Apply a preset transition. Supports modes: entries_only (future entries use new preset) and entries_and_tighten_existing (tighten stops on open positions). Records the transition event for audit.' },
+  apply_preset_transition: { category: 'write-database', description: 'Apply a preset transition using an assessment artifact ID (from get_market_preset_assessment) and a mode. Supports: entries_only (future entries only) and entries_and_tighten_existing (tighten stops on open positions). Records the transition event for audit. Requires recommend_preset_transition to be called first when recommend_only mode is active.' },
 
   // read-market-data
   search_tokens:       { category: 'read-market-data',    description: 'Search for tokens by name/symbol on DEX aggregators. Returns liquidity, price, safety metadata, network.' },
@@ -364,7 +364,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   check_regime:        { category: 'read-market-data',    description: 'Evaluate market regime using EMA alignment, ADX, VWAP, and structure filters.' },
   get_funding_rates:   { category: 'read-market-data',    description: 'Get current funding rates for perpetual contracts.' },
   get_market_overview: { category: 'read-market-data',    description: 'Aggregated market overview: top movers, volume leaders, market breadth metrics.' },
-  get_market_preset_assessment: { category: 'read-database', description: 'Read the latest shared market preset assessment artifact for your trading segment. Returns ranked presets, confidence, and market summary.' },
+  get_market_preset_assessment: { category: 'read-database', description: 'Request a billable market preset assessment for a specific symbol on a venue. Returns ranked presets, confidence, and market summary. Each successful assessment (including cache hits) incurs a billing charge. Use the returned assessmentArtifactId with recommend_preset_transition.' },
   get_price:           { category: 'read-market-data',    description: 'Look up current price of a token. Hyperliquid perps use mark price; DEX tokens use oracle price.' },
 
   // read-web

@@ -404,11 +404,13 @@ export const MarketAssessmentPresetRankingSchema = z.object({
 /** A platform-owned assessment execution for a segment. */
 export interface MarketAssessmentRun {
   id: string;
-  segmentKey: MarketAssessmentSegmentKey;
+  /** @deprecated Removed in per-symbol on-demand model — use canonical identity columns instead. */
+  segmentKey?: MarketAssessmentSegmentKey;
   /** Denormalized segment key components for efficient querying */
   venueFamily: string;
   styleTier: string;
-  universeScopeHash: string;
+  /** @deprecated Removed in per-symbol on-demand model. */
+  universeScopeHash?: string;
   startedAt: string; // ISO 8601
   completedAt: string | null;
   status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'budget_exhausted';
@@ -419,10 +421,10 @@ export interface MarketAssessmentRun {
 
 export const MarketAssessmentRunSchema = z.object({
   id: z.string().min(1),
-  segmentKey: MarketAssessmentSegmentKeySchema,
+  segmentKey: MarketAssessmentSegmentKeySchema.optional(),
   venueFamily: z.string().min(1),
   styleTier: z.string().min(1),
-  universeScopeHash: z.string().min(1),
+  universeScopeHash: z.string().min(1).optional(),
   startedAt: z.string().datetime(),
   completedAt: z.string().datetime().nullable(),
   status: z.enum(['pending', 'in_progress', 'completed', 'failed', 'budget_exhausted']),
@@ -436,11 +438,13 @@ export const MarketAssessmentRunSchema = z.object({
 /** Cached shared assessment artifact for a market segment. */
 export interface MarketAssessmentArtifact {
   id: string;
-  segmentKey: MarketAssessmentSegmentKey;
+  /** @deprecated Removed in per-symbol on-demand model — use canonical identity columns instead. */
+  segmentKey?: MarketAssessmentSegmentKey;
   /** Denormalized segment key components for efficient querying */
   venueFamily: string;
   styleTier: string;
-  universeScopeHash: string;
+  /** @deprecated Removed in per-symbol on-demand model. */
+  universeScopeHash?: string;
   assessmentRunId: string;
   assessedAt: string; // ISO 8601
   expiresAt: string; // ISO 8601
@@ -466,10 +470,10 @@ export interface MarketAssessmentArtifact {
 
 export const MarketAssessmentArtifactSchema = z.object({
   id: z.string().min(1),
-  segmentKey: MarketAssessmentSegmentKeySchema,
+  segmentKey: MarketAssessmentSegmentKeySchema.optional(),
   venueFamily: z.string().min(1),
   styleTier: z.string().min(1),
-  universeScopeHash: z.string().min(1),
+  universeScopeHash: z.string().min(1).optional(),
   assessmentRunId: z.string().min(1),
   assessedAt: z.string().datetime(),
   expiresAt: z.string().datetime(),
@@ -499,11 +503,13 @@ export interface MarketAssessmentWakeDecision {
   id: string;
   assessmentArtifactId: string;
   agentId: string;
-  segmentKey: MarketAssessmentSegmentKey;
+  /** @deprecated Removed in per-symbol on-demand model — use canonical identity columns instead. */
+  segmentKey?: MarketAssessmentSegmentKey;
   /** Denormalized segment key components for efficient querying */
   venueFamily: string;
   styleTier: string;
-  universeScopeHash: string;
+  /** @deprecated Removed in per-symbol on-demand model. */
+  universeScopeHash?: string;
   decidedAt: string;
   decision: 'wake_emitted' | 'wake_suppressed';
   suppressionReason: string | null;
@@ -517,10 +523,10 @@ export const MarketAssessmentWakeDecisionSchema = z.object({
   id: z.string().min(1),
   assessmentArtifactId: z.string().min(1),
   agentId: z.string().min(1),
-  segmentKey: MarketAssessmentSegmentKeySchema,
+  segmentKey: MarketAssessmentSegmentKeySchema.optional(),
   venueFamily: z.string().min(1),
   styleTier: z.string().min(1),
-  universeScopeHash: z.string().min(1),
+  universeScopeHash: z.string().min(1).optional(),
   decidedAt: z.string().datetime(),
   decision: z.enum(['wake_emitted', 'wake_suppressed']),
   suppressionReason: z.string().nullable(),
@@ -538,11 +544,13 @@ export interface AgentScanMetrics {
   agentId: string;
   presetKey: string;
   presetBehaviorVersion: string;
-  segmentKey: MarketAssessmentSegmentKey;
+  /** @deprecated Removed in per-symbol on-demand model — use canonical identity columns instead. */
+  segmentKey?: MarketAssessmentSegmentKey;
   /** Denormalized segment key components for efficient querying */
   venueFamily: string;
   styleTier: string;
-  universeScopeHash: string;
+  /** @deprecated Removed in per-symbol on-demand model. */
+  universeScopeHash?: string;
   scannedAt: string;
   candidatesDiscovered: number;
   candidatesScored: number;
@@ -557,10 +565,10 @@ export const AgentScanMetricsSchema = z.object({
   agentId: z.string().min(1),
   presetKey: z.string().min(1),
   presetBehaviorVersion: z.string().min(1),
-  segmentKey: MarketAssessmentSegmentKeySchema,
+  segmentKey: MarketAssessmentSegmentKeySchema.optional(),
   venueFamily: z.string().min(1),
   styleTier: z.string().min(1),
-  universeScopeHash: z.string().min(1),
+  universeScopeHash: z.string().min(1).optional(),
   scannedAt: z.string().datetime(),
   candidatesDiscovered: z.number().int().nonnegative(),
   candidatesScored: z.number().int().nonnegative(),
@@ -581,11 +589,13 @@ export interface AgentPresetTransition {
   newPresetKey: string;
   newPresetBehaviorVersion: string;
   assessmentArtifactId: string | null;
-  segmentKey: MarketAssessmentSegmentKey;
+  /** @deprecated Removed in per-symbol on-demand model — use canonical identity columns instead. */
+  segmentKey?: MarketAssessmentSegmentKey;
   /** Denormalized segment key components for efficient querying */
   venueFamily: string;
   styleTier: string;
-  universeScopeHash: string;
+  /** @deprecated Removed in per-symbol on-demand model. */
+  universeScopeHash?: string;
   /** Execution mode: shadow | live */
   mode: 'shadow' | 'live';
   transitionMode: TransitionMode;
@@ -604,10 +614,10 @@ export const AgentPresetTransitionSchema = z.object({
   newPresetKey: z.string().min(1),
   newPresetBehaviorVersion: z.string().min(1),
   assessmentArtifactId: z.string().nullable(),
-  segmentKey: MarketAssessmentSegmentKeySchema,
+  segmentKey: MarketAssessmentSegmentKeySchema.optional(),
   venueFamily: z.string().min(1),
   styleTier: z.string().min(1),
-  universeScopeHash: z.string().min(1),
+  universeScopeHash: z.string().min(1).optional(),
   mode: z.enum(['shadow', 'live']),
   transitionMode: TransitionModeSchema,
   openPositionCount: z.number().int().nonnegative(),
