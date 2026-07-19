@@ -23,6 +23,8 @@ import { renderReport } from './render-report.js';
 import { generateEvaluationNarrative } from './generate-narrative.js';
 import { redact, redactJson } from './redaction.js';
 import { derivePresetAssessmentSummary, derivePresetAssessmentEvents } from './preset-assessment-summary.js';
+import type { PresetAssessmentSummary } from './preset-assessment-summary.js';
+import { renderPresetAssessmentAppendix } from './render-preset-assessment-appendix.js';
 
 /** Evidence artifact names that must pass through the JSON redaction pass before user-facing output. */
 export const EVIDENCE_ARTIFACTS_FOR_REDACTION = [
@@ -118,6 +120,7 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
     logger.info({ runId, entries: manifest.entries.filter((e) => e.collected).length }, 'Evidence collected');
 
     // ── Step 1b: Derive preset-assessment artifacts (best-effort) ────────
+    let summary: PresetAssessmentSummary | undefined;
     if (manifest.presetAssessmentEvidence) {
       try {
         // Read unified-agent-config.json from store (already written by evidence assembler)
@@ -133,7 +136,7 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
 
         const generatedAt = new Date().toISOString();
 
-        const summary = derivePresetAssessmentSummary({
+        summary = derivePresetAssessmentSummary({
           evidence: manifest.presetAssessmentEvidence,
           unifiedConfig,
           scope: resolvedScope,
@@ -326,9 +329,15 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
       }
     }
 
-    const finalReport = narrativeText
-      ? `${redactedReport}\n\n---\n\n## Commentary\n\n${narrativeText}\n`
+    // Append preset-assessment appendix when included
+    const appendixText = summary ? renderPresetAssessmentAppendix(summary) : '';
+    const reportWithAppendix = appendixText
+      ? `${redactedReport}\n\n${appendixText}`
       : redactedReport;
+
+    const finalReport = narrativeText
+      ? `${reportWithAppendix}\n\n---\n\n## Commentary\n\n${narrativeText}\n`
+      : reportWithAppendix;
 
     // ── Step 6: Write evaluation.json and REPORT.md ──────────────────────
     const result: EvaluationRunResult = {
