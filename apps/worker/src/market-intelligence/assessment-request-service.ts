@@ -20,6 +20,7 @@ import {
   type PlatformAssessorConfig,
   type PlatformAssessmentOptIn,
   type AssessmentRequestPortOutcome,
+  type AssessmentArtifactSummary,
 } from '@herobids/domain';
 import { PlatformAssessor } from './platform-assessor.js';
 
@@ -31,8 +32,8 @@ export type AssessmentRequestOutcome =
   | { kind: 'cooldown_blocked'; nextEligibleAt: string; requestId?: string }
   | { kind: 'identity_unresolved'; reason: string; requestId?: string }
   | { kind: 'provider_failed'; error: string; errorCode?: string; requestId: string }
-  | { kind: 'cache_hit'; assessmentArtifactId: string; billed: true; requestId: string }
-  | { kind: 'assessment_completed'; assessmentArtifactId: string; billed: true; requestId: string };
+  | { kind: 'cache_hit'; assessmentArtifactId: string; billed: true; requestId: string; canonicalIdentity: MarketAssessmentIdentity; artifact: AssessmentArtifactSummary }
+  | { kind: 'assessment_completed'; assessmentArtifactId: string; billed: true; requestId: string; canonicalIdentity: MarketAssessmentIdentity; artifact: AssessmentArtifactSummary };
 
 // ── Request Params ──────────────────────────────────────────────────────────
 
@@ -341,11 +342,14 @@ export class AssessmentRequestService {
       .limit(1);
 
     if (existingCompleted?.assessmentArtifactId) {
+      const artifactSummary = await this.loadArtifactSummary(existingCompleted.assessmentArtifactId);
       return ok({
         kind: existingCompleted.status as 'cache_hit' | 'assessment_completed',
         assessmentArtifactId: existingCompleted.assessmentArtifactId,
         billed: true,
         requestId: existingCompleted.id,
+        canonicalIdentity: identity,
+        artifact: artifactSummary,
       });
     }
 
@@ -473,7 +477,18 @@ export class AssessmentRequestService {
 
     // ── 13. Recheck fresh artifact cache ──────────────────────────────
     const [freshArtifact] = await this.db
-      .select({ id: marketAssessmentArtifacts.id })
+      .select({
+        id: marketAssessmentArtifacts.id,
+        assessedAt: marketAssessmentArtifacts.assessedAt,
+        expiresAt: marketAssessmentArtifacts.expiresAt,
+        currentMarketSummary: marketAssessmentArtifacts.currentMarketSummary,
+        regimeSummary: marketAssessmentArtifacts.regimeSummary,
+        scanHealthSummary: marketAssessmentArtifacts.scanHealthSummary,
+        presetRankings: marketAssessmentArtifacts.presetRankings,
+        recommendedPreset: marketAssessmentArtifacts.recommendedPreset,
+        confidence: marketAssessmentArtifacts.confidence,
+        urgency: marketAssessmentArtifacts.urgency,
+      })
       .from(marketAssessmentArtifacts)
       .where(and(
         ...identityWhereConditions(identity, marketAssessmentArtifacts),
@@ -516,6 +531,18 @@ export class AssessmentRequestService {
           assessmentArtifactId: freshArtifact.id,
           billed: true,
           requestId,
+          canonicalIdentity: identity,
+          artifact: {
+            assessedAt: freshArtifact.assessedAt.toISOString(),
+            expiresAt: freshArtifact.expiresAt.toISOString(),
+            currentMarketSummary: freshArtifact.currentMarketSummary,
+            regimeSummary: freshArtifact.regimeSummary,
+            scanHealthSummary: freshArtifact.scanHealthSummary,
+            presetRankings: freshArtifact.presetRankings as AssessmentArtifactSummary['presetRankings'],
+            recommendedPreset: freshArtifact.recommendedPreset,
+            confidence: Number(freshArtifact.confidence),
+            urgency: freshArtifact.urgency as AssessmentArtifactSummary['urgency'],
+          },
         });
       } catch (captureErr: unknown) {
         const message = captureErr instanceof Error ? captureErr.message : String(captureErr);
@@ -581,12 +608,13 @@ export class AssessmentRequestService {
       });
 
       if (result.ok) {
-        results.push(result.data as unknown as AssessmentRequestPortOutcome);
+        results.push(this.mapInternalToPortOutcome(result.data));
       } else {
         results.push({
           kind: 'provider_failed',
           error: result.error.message,
           errorCode: result.error.code,
+          requestId: crypto.randomUUID(),
         });
       }
     }
@@ -644,7 +672,7 @@ export class AssessmentRequestService {
               kind: 'provider_failed',
               error: result.error.message,
               errorCode: result.error.code,
-              requestId: '',
+              requestId: crypto.randomUUID(),
             },
           });
         }
@@ -656,7 +684,7 @@ export class AssessmentRequestService {
           outcome: {
             kind: 'provider_failed',
             error: message,
-            requestId: '',
+            requestId: crypto.randomUUID(),
           },
         });
       }
@@ -875,6 +903,18 @@ export class AssessmentRequestService {
         assessmentArtifactId: artifact.id,
         billed: true,
         requestId,
+        canonicalIdentity: identity,
+        artifact: {
+          assessedAt: artifact.assessedAt,
+          expiresAt: artifact.expiresAt,
+          currentMarketSummary: artifact.currentMarketSummary,
+          regimeSummary: artifact.regimeSummary,
+          scanHealthSummary: artifact.scanHealthSummary,
+          presetRankings: artifact.presetRankings,
+          recommendedPreset: artifact.recommendedPreset,
+          confidence: artifact.confidence,
+          urgency: artifact.urgency,
+        },
       };
     } catch (captureErr: unknown) {
       const message = captureErr instanceof Error ? captureErr.message : String(captureErr);
@@ -1033,6 +1073,86 @@ export class AssessmentRequestService {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────
+
+  /**
+   * Load an artifact summary from the DB for a cache-hit path
+   * where we only have the artifact ID.
+   */
+  private async loadArtifactSummary(artifactId: string): Promise<AssessmentArtifactSummary> {
+    const [row] = await this.db
+      .select({
+        assessedAt: marketAssessmentArtifacts.assessedAt,
+        expiresAt: marketAssessmentArtifacts.expiresAt,
+        currentMarketSummary: marketAssessmentArtifacts.currentMarketSummary,
+        regimeSummary: marketAssessmentArtifacts.regimeSummary,
+        scanHealthSummary: marketAssessmentArtifacts.scanHealthSummary,
+        presetRankings: marketAssessmentArtifacts.presetRankings,
+        recommendedPreset: marketAssessmentArtifacts.recommendedPreset,
+        confidence: marketAssessmentArtifacts.confidence,
+        urgency: marketAssessmentArtifacts.urgency,
+      })
+      .from(marketAssessmentArtifacts)
+      .where(eq(marketAssessmentArtifacts.id, artifactId))
+      .limit(1);
+
+    if (!row || !row.assessedAt) {
+      // Artifact not found (or row missing key fields) — return a stub with
+      // sentinel values so consumers can distinguish "missing data" from
+      // a real low-confidence assessment.
+      this.log.warn({ artifactId }, 'Cache-hit artifact not found or incomplete — returning stub summary');
+      return {
+        assessedAt: '1970-01-01T00:00:00.000Z',
+        expiresAt: '1970-01-01T00:00:00.000Z',
+        currentMarketSummary: 'Artifact data unavailable',
+        regimeSummary: 'Artifact data unavailable',
+        scanHealthSummary: 'Artifact data unavailable',
+        presetRankings: [],
+        recommendedPreset: null,
+        confidence: -1,
+        urgency: 'low',
+      };
+    }
+
+    return {
+      assessedAt: row.assessedAt.toISOString(),
+      expiresAt: row.expiresAt.toISOString(),
+      currentMarketSummary: row.currentMarketSummary,
+      regimeSummary: row.regimeSummary,
+      scanHealthSummary: row.scanHealthSummary,
+      presetRankings: row.presetRankings as AssessmentArtifactSummary['presetRankings'],
+      recommendedPreset: row.recommendedPreset,
+      confidence: Number(row.confidence),
+      urgency: row.urgency as AssessmentArtifactSummary['urgency'],
+    };
+  }
+
+  /**
+   * Map an internal AssessmentRequestOutcome to the port-level discriminated union.
+   * Strips the `billed` field and ensures the shape matches AssessmentRequestPortOutcome.
+   */
+  private mapInternalToPortOutcome(outcome: AssessmentRequestOutcome): AssessmentRequestPortOutcome {
+    switch (outcome.kind) {
+      case 'cache_hit':
+      case 'assessment_completed':
+        return {
+          kind: outcome.kind,
+          requestId: outcome.requestId,
+          assessmentArtifactId: outcome.assessmentArtifactId,
+          canonicalIdentity: outcome.canonicalIdentity,
+          artifact: outcome.artifact,
+        };
+      case 'request_in_flight':
+        return { kind: 'request_in_flight', message: outcome.message };
+      case 'billing_blocked':
+        return { kind: 'billing_blocked', reason: outcome.reason, requestId: outcome.requestId };
+      case 'cooldown_blocked':
+        return { kind: 'cooldown_blocked', nextEligibleAt: outcome.nextEligibleAt, requestId: outcome.requestId };
+      case 'identity_unresolved':
+        return { kind: 'identity_unresolved', reason: outcome.reason, requestId: outcome.requestId };
+      case 'provider_failed':
+        return { kind: 'provider_failed', error: outcome.error, errorCode: outcome.errorCode, requestId: outcome.requestId };
+    }
+  }
 
   private identitySymbol(identity: MarketAssessmentIdentity): string | null {
     if (identity.instrumentKind === 'orderbook' || identity.instrumentKind === 'perp') {

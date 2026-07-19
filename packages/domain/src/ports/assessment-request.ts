@@ -1,24 +1,61 @@
 import type { Result } from '../result.js';
-import type { MarketAssessmentIdentity } from '../market-assessment.js';
+import type { MarketAssessmentIdentity, MarketAssessmentPresetRanking } from '../market-assessment.js';
 
-/** Outcome of a single assessment request through the port. */
-export interface AssessmentRequestPortOutcome {
-  kind:
-    | 'cache_hit'
-    | 'assessment_completed'
-    | 'billing_blocked'
-    | 'cooldown_blocked'
-    | 'identity_unresolved'
-    | 'provider_failed'
-    | 'request_in_flight';
-  assessmentArtifactId?: string;
-  requestId?: string;
-  error?: string;
-  errorCode?: string;
-  nextEligibleAt?: string;
-  reason?: string;
-  message?: string;
+/** Summary subset of assessment artifact fields returned in port outcomes. */
+export interface AssessmentArtifactSummary {
+  assessedAt: string;
+  expiresAt: string;
+  currentMarketSummary: string;
+  regimeSummary: string;
+  scanHealthSummary: string;
+  presetRankings: MarketAssessmentPresetRanking[];
+  recommendedPreset: string | null;
+  confidence: number;
+  urgency: 'low' | 'medium' | 'high';
 }
+
+/** Outcome of a single assessment request through the port — discriminated union. */
+export type AssessmentRequestPortOutcome =
+  | {
+      kind: 'cache_hit' | 'assessment_completed';
+      requestId: string;
+      assessmentArtifactId: string;
+      canonicalIdentity: MarketAssessmentIdentity;
+      artifact: AssessmentArtifactSummary;
+    }
+  | {
+      kind: 'request_in_flight';
+      message: string;
+      /** Provided when identity resolution succeeded before the in-flight detection. */
+      canonicalIdentity?: MarketAssessmentIdentity;
+    }
+  | {
+      kind: 'billing_blocked';
+      reason: string;
+      requestId?: string;
+      /** Provided when identity resolution succeeded before billing checks. */
+      canonicalIdentity?: MarketAssessmentIdentity;
+    }
+  | {
+      kind: 'cooldown_blocked';
+      nextEligibleAt: string;
+      requestId?: string;
+      /** Provided when identity resolution succeeded before cooldown checks. */
+      canonicalIdentity?: MarketAssessmentIdentity;
+    }
+  | {
+      kind: 'identity_unresolved';
+      reason: string;
+      requestId?: string;
+    }
+  | {
+      kind: 'provider_failed';
+      error: string;
+      errorCode?: string;
+      requestId: string;
+      /** Provided when identity resolution succeeded before the failure. */
+      canonicalIdentity?: MarketAssessmentIdentity;
+    };
 
 /** Parameters for a single assessment request through the port. */
 export interface AssessmentRequestPortParams {
