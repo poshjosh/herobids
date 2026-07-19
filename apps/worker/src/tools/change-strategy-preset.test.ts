@@ -31,7 +31,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     },
     publishToInbound: vi.fn(async () => undefined),
     agentConfigOps: {
-      getCurrentConfig: vi.fn().mockResolvedValue({ platformAssessment: { mode: 'apply_capable' } }),
+      getCurrentConfig: vi.fn().mockResolvedValue({ platformAssessment: { enabled: true } }),
       persistConfig: vi.fn(),
       appendJournal: vi.fn(),
       notifyActorConfigUpdate: vi.fn(),
@@ -159,7 +159,7 @@ describe('change_strategy_preset', () => {
     const ctx = makeCtx({
       db: makeMockDb({ selectResult: [artifact] }),
       agentConfigOps: {
-        getCurrentConfig: vi.fn().mockResolvedValue({ platformAssessment: { mode: 'apply_capable' } }),
+        getCurrentConfig: vi.fn().mockResolvedValue({ platformAssessment: { enabled: true } }),
         persistConfig: vi.fn(),
         appendJournal,
         notifyActorConfigUpdate: vi.fn(),
@@ -264,9 +264,9 @@ describe('change_strategy_preset', () => {
     expect(result.errorCode).toBe('db.unavailable');
   });
 
-  // ── No shadow-mode gate when platformAssessment enabled ───────────────
+  // ── enabled: true gate allows transitions ───────────────────────────
 
-  it('succeeds without shadow-mode gate when platformAssessment is enabled', async () => {
+  it('succeeds when platformAssessment is enabled', async () => {
     const artifact = makeActiveArtifact();
     const mockPort = makeMockTransitionPort();
     setPresetTransitionPort(mockPort);
@@ -275,7 +275,7 @@ describe('change_strategy_preset', () => {
       db: makeMockDb({ selectResult: [artifact] }),
       agentConfigOps: {
         getCurrentConfig: vi.fn().mockResolvedValue({
-          platformAssessment: { enabled: true, mode: 'apply_capable' },
+          platformAssessment: { enabled: true },
         }),
         persistConfig: vi.fn(),
         appendJournal: vi.fn(),
@@ -294,12 +294,12 @@ describe('change_strategy_preset', () => {
     expect(mockPort.applyTransition).toHaveBeenCalledOnce();
   });
 
-  // ── recommend_only mode blocks transitions ────────────────────────────
+  // ── platformAssessment not enabled blocks transitions ──────────────
 
-  it('blocks transition when platformAssessment.mode is recommend_only', async () => {
+  it('blocks transition when platformAssessment is not enabled', async () => {
     const ctx = makeCtx({
       agentConfigOps: {
-        getCurrentConfig: vi.fn().mockResolvedValue({ platformAssessment: { mode: 'recommend_only' } }),
+        getCurrentConfig: vi.fn().mockResolvedValue({ platformAssessment: { enabled: false } }),
         persistConfig: vi.fn(),
         appendJournal: vi.fn(),
         notifyActorConfigUpdate: vi.fn(),
@@ -313,7 +313,7 @@ describe('change_strategy_preset', () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.errorCode).toBe('assessment.mode_recommend_only');
+    expect(result.errorCode).toBe('assessment.not_enabled');
   });
 
   // ── P6: Exact artifact reference preservation ──────────────────────────

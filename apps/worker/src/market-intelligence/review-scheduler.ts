@@ -43,9 +43,13 @@ export interface ReviewSchedulerDeps {
   eventPublisher: import('../agents/instance-event-publisher.js').InstanceEventPublisher;
   /**
    * Resolve the agent's active preset state at pre-check time.
-   * Reads from unified config and strategy configuration.
-   * Until Plan 012 delivers authoritative preset bindings, this derives
-   * the active preset from the agent's current technical/intelligence config.
+   *
+   * Resolution order (authoritative → fallback):
+   * 1. Query `agent_preset_bindings` for an active binding row (set on
+   *    preset transition). If found and valid, derive preset state from the
+   *    bound preset catalog entry via `applyPresetToAgent`.
+   * 2. Fall back to unified-config derivation when no binding exists (the
+   *    common case for agents that have never transitioned).
    */
   resolveActivePreset: () => Promise<Result<ActivePresetState>>;
   /**

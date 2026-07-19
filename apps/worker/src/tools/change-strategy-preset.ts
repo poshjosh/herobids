@@ -34,16 +34,16 @@ async function executeApplyPresetTransition(
   }
   const { assessmentArtifactId, targetPreset, mode, reason } = parsed.data;
 
-  // ── Gate: Ensure assessment transition mode allows mutations ───────
+  // ── Gate: Ensure platform assessment is enabled for this agent ─────
   if (ctx.agentConfigOps) {
     const currentConfig = await ctx.agentConfigOps.getCurrentConfig();
-    const assessmentMode = currentConfig?.platformAssessment?.mode ?? 'recommend_only';
-    if (assessmentMode === 'recommend_only') {
-      logger.warn({ agentId: ctx.agentId, assessmentMode }, 'Blocked preset transition — platformAssessment.mode is recommend_only');
+    const assessmentEnabled = currentConfig?.platformAssessment?.enabled;
+    if (!assessmentEnabled) {
+      logger.warn({ agentId: ctx.agentId }, 'Blocked preset transition — platformAssessment is not enabled');
       return {
         success: false,
-        error: 'Transition mode is recommend_only — cannot apply preset transitions',
-        errorCode: 'assessment.mode_recommend_only',
+        error: 'Platform assessment is not enabled for this agent — cannot apply preset transitions',
+        errorCode: 'assessment.not_enabled',
       };
     }
   }

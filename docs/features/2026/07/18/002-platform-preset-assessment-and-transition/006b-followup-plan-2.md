@@ -1,6 +1,6 @@
 # Follow-up Plan 2: Tool Simplification and Shadow-Mode Removal
 
-**Status:** In Progress (P1, P2, P5, P6 landed; **P3/P4 regressed — shadow-mode `mode`/`recommend_only` still present in source as of 2026-07-19, see 012c Step 1**; P7-P8 in progress)
+**Status:** In Progress (P1, P2, P5, P6, **P3, P4** landed — P3/P4 completed by 012c Step 1 on 2026-07-19; P7-P8 in progress)
 **Follows:**
 - [005-implementation-checklist-per-symbol-on-demand.md](./005-implementation-checklist-per-symbol-on-demand.md)
 - [006-followup-plan.md](./006-followup-plan.md)

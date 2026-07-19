@@ -36,6 +36,13 @@ export const PresetFileSchema = z.object({
 export type PresetEntry = z.infer<typeof PresetEntrySchema>;
 export type StyleKey = 'economy' | 'standard' | 'premium';
 
+/**
+ * Type-narrowing guard: checks whether a string is a valid StyleKey.
+ */
+export function isStyleKey(s: string): s is StyleKey {
+  return s === 'economy' || s === 'standard' || s === 'premium';
+}
+
 // ---------------------------------------------------------------------------
 // Agent style → preset style mapping
 // ---------------------------------------------------------------------------

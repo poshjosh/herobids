@@ -246,7 +246,6 @@ export class AssessmentRequestService {
     }
     const resolvedConfig = configResult.ok ? configResult.data : {
       enabled: true,
-      mode: 'recommend_only' as const,
       reviewIntervalMs: this.config.minReviewIntervalMs,
       minConfidenceThreshold: 0.6,
       minScoreUpliftThreshold: 15,

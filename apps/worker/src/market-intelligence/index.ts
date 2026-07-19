@@ -8,3 +8,4 @@ export { ReviewScheduler, createReviewScheduler, type ReviewSchedulerConfig, typ
 export { AssessmentRequestService, type AssessmentRequestOutcome, type AssessmentRequestParams, type BatchInstrumentResult, type BatchAssessmentResult } from './assessment-request-service.js';
 export { AssessmentIdentityResolverImpl, type AssessmentIdentityResolverDeps } from './assessment-identity-resolver.js';
 export { PresetTransitionService, type PresetTransitionServiceDeps } from './preset-transition-service.js';
+export { resolveAuthoritativeBinding, type AuthoritativeBinding } from './binding-resolver.js';

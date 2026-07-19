@@ -4,7 +4,6 @@ import { validateReviewInterval } from './schema.js';
 
 export interface ResolvedAssessmentConfig {
   enabled: boolean;
-  mode: 'recommend_only' | 'apply_capable';
   reviewIntervalMs: number;
   minConfidenceThreshold: number;
   minScoreUpliftThreshold: number;
@@ -31,7 +30,6 @@ export function resolveAssessmentConfig(
 
   return ok({
     enabled: agentOptIn?.enabled ?? false,
-    mode: agentOptIn?.mode ?? 'recommend_only',
     reviewIntervalMs: agentOptIn?.reviewIntervalMs ?? operatorConfig.minReviewIntervalMs,
     minConfidenceThreshold: agentOptIn?.minConfidenceThreshold ?? 0.6,
     minScoreUpliftThreshold: agentOptIn?.minScoreUpliftThreshold ?? 15,

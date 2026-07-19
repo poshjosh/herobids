@@ -22,7 +22,9 @@ import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdap
 import { createFillFirstMarkSource } from '@herobids/engine';
 import type { IdGenerator } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig, ok } from '@herobids/domain';
+import { applyPresetToAgent, isStyleKey, type StyleKey } from '@herobids/domain';
+import { getPreset } from '@herobids/domain/config/presets-loader';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
 import crypto from 'node:crypto';
@@ -55,7 +57,7 @@ import { StubRuntimeDocumentMaterializer } from './agents/stub-document-material
 import { LocalDocumentStore } from '@herobids/documents';
 import { UserEventPublisher } from './user-event-publisher.js';
 import { ActorHealthPublisher } from './actor-health-publisher.js';
-import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler, PresetTransitionService } from './market-intelligence/index.js';
+import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler, PresetTransitionService, resolveAuthoritativeBinding } from './market-intelligence/index.js';
 import type { ReviewScheduler } from './market-intelligence/index.js';
 import { createPlatformAssessor } from './market-intelligence/assessor-factory.js';
 import { AssessmentRequestService } from './market-intelligence/assessment-request-service.js';
@@ -1985,51 +1987,81 @@ try {
         ? platformAssessment['reviewIntervalMs']
         : appConfig.platformAssessor.minReviewIntervalMs;
 
-      // Resolve active preset state from the agent's unified config.
-      // Until Plan 012 delivers authoritative preset bindings, this derives
-      // the active preset from the agent's current strategy configuration.
+      // Resolve active preset state for the agent.
+      // Authoritative path: query agent_preset_bindings first.
+      // Fallback path: derive from unified config (for agents that have
+      // never transitioned — the common case for fresh agents).
       const resolveActivePreset = async () => {
+        // 1. Try authoritative binding
+        const binding = await resolveAuthoritativeBinding(db, agent.id);
+        if (binding) {
+          const preset = getPreset(binding.activePresetKey, binding.styleTier);
+          if (preset) {
+            try {
+              const mapping = applyPresetToAgent(
+                binding.activePresetKey,
+                preset,
+                binding.styleTier,
+                'llm',
+              );
+              return ok({
+                presetKey: mapping.presetKey,
+                behaviorVersion: mapping.presetBehaviorVersion,
+                styleTier: binding.styleTier,
+                scanInterval: mapping.technical.scanIntervalMs != null
+                  ? String(mapping.technical.scanIntervalMs)
+                  : undefined,
+                signalBias: (mapping.technical.signalBias as 'bullish' | 'bearish' | 'neutral') ?? 'neutral',
+                enabledIndicators: Object.keys(mapping.technical.indicators),
+                compatibilityThresholds: {},
+              });
+            } catch (err) {
+              logger.warn({ agentId: agent.id, binding, err }, 'applyPresetToAgent failed (e.g. DCA preset) — falling back to unified config');
+            }
+          } else {
+            // Preset not found in catalog — fall through to unified config
+            logger.warn({ agentId: agent.id, binding }, 'Binding references unknown preset key — falling back to unified config');
+          }
+        }
+
+        // 2. Fall back to unified-config derivation (today's behavior)
         const uc = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
         const tech = (uc['technical'] ?? {}) as Record<string, unknown>;
         const intelligence = (uc['intelligence'] ?? {}) as Record<string, unknown>;
         const allowedPresets = (uc['allowedPresets'] ?? {}) as Record<string, unknown>;
 
-        // Derive preset key from strategy type
         const strategyType = (tech['type'] ?? intelligence['type'] ?? 'momentum') as string;
-        const styleTier = (allowedPresets['styleTier'] ?? 'standard') as 'economy' | 'standard' | 'premium';
+        const rawStyleTier = (allowedPresets['styleTier'] ?? 'standard') as string;
+        const styleTier: StyleKey = isStyleKey(rawStyleTier) ? rawStyleTier : 'standard';
         const scanInterval = (tech['scanIntervalMs'] ?? undefined) as string | undefined;
 
-        // Derive behavior version from indicator config
         const indicatorsHash = crypto.createHash('sha256')
           .update(JSON.stringify(tech['indicators'] ?? intelligence['indicators'] ?? {}))
           .digest('hex')
           .slice(0, 8);
         const behaviorVersion = `uc-${styleTier}-${strategyType}-${indicatorsHash}`;
 
-        return {
-          ok: true as const,
-          data: {
-            presetKey: strategyType,
-            behaviorVersion,
-            styleTier,
-            scanInterval,
-            signalBias: (tech['signalBias'] as 'bullish' | 'bearish' | 'neutral' | undefined) ?? 'neutral',
-            enabledIndicators: Object.keys((tech['indicators'] ?? intelligence['indicators'] ?? {}) as Record<string, unknown>),
-            compatibilityThresholds: {},
-          },
-        };
+        return ok({
+          presetKey: strategyType,
+          behaviorVersion,
+          styleTier,
+          scanInterval,
+          signalBias: (tech['signalBias'] as 'bullish' | 'bearish' | 'neutral' | undefined) ?? 'neutral',
+          enabledIndicators: Object.keys((tech['indicators'] ?? intelligence['indicators'] ?? {}) as Record<string, unknown>),
+          compatibilityThresholds: {},
+        });
       };
 
       // Read-only billing preflight — checks if the agent has an active billing account.
       const checkBillingEligibility = async () => {
         try {
-          if (!agent.userId) return { ok: true as const, data: false };
+          if (!agent.userId) return ok(false);
           const account = await usageBillingRepo.getAccountByUserId(agent.userId);
-          if (!account) return { ok: true as const, data: false };
-          return { ok: true as const, data: account.status === 'active' };
+          if (!account) return ok(false);
+          return ok(account.status === 'active');
         } catch {
           // Fail-open: if billing check fails, allow pre-check to continue
-          return { ok: true as const, data: true };
+          return ok(true);
         }
       };
 

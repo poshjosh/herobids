@@ -234,10 +234,10 @@ export class PresetTransitionService implements PresetTransitionPort {
       // Defense-in-depth: also checked at the tool level (change_strategy_preset),
       // but this service-level guard ensures no code path can bypass it.
       const platformAssessment = unifiedConfig?.platformAssessment;
-      if (platformAssessment?.mode === 'recommend_only') {
+      if (!platformAssessment?.enabled) {
         return err({
-          code: 'transition.recommend_only',
-          message: 'Agent platform assessment mode is recommend_only — mutations are blocked.',
+          code: 'transition.not_enabled',
+          message: 'Platform assessment is not enabled for this agent — transitions are blocked.',
         });
       }
 
