@@ -13,11 +13,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Domain types:** `MarketAssessmentSegmentKey`, `MarketAssessmentArtifact`, `PresetScorecardEntry`, transition state machine, freshness/staleness validation
   - **UnifiedAgentConfig:** `allowedPresets`, `presetTransition`, `platformAssessment` typed sections for agent-level preset policy
   - **Preset versioning:** Mechanical behavior version from normalized SHA-256 hash of behavior-affecting fields
-  - **Scanner wake:** `ScannerWakeContext` refactored to discriminated union (`signal_scoring` | `preset_review`) with assessment routing
+  - **Scanner wake:** `ScannerWakeContext` refactored to discriminated union (`signal_scoring` | `preset_review` | `assessment_review`) with assessment routing
   - **Platform Assessor:** Worker-hosted scheduled coordinator with leader election, evidence collection, and budget enforcement
   - **Wake Gate:** 7-rule evaluation with materially-better threshold model, consecutive confirmation, and operator-configurable defaults
   - **Transition tools:** `get_market_preset_assessment`, `recommend_preset_transition`, `apply_preset_transition` (v1: `entries_only`, `entries_and_tighten_existing`)
   - **Shadow mode:** `recommend_only` gate blocks live transitions until validated; `config/default.yaml` fully wired
+  - **Per-symbol on-demand follow-up (G1-G6):** ReviewScheduler emits `assessment_review` wake per due interval; worker instantiates per-agent schedulers for opted-in agents; agent runtime routes `assessment_review` wakes with dedicated prompt; AssessmentRequestService calls real PlatformAssessor and persists run/artifact records
   See [docs/features/2026/07/18/002-platform-preset-assessment-and-transition/001-plan.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/001-plan.md).
 
 ## v0.0.31 - 2026-07-18
