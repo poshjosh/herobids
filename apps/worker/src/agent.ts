@@ -2067,11 +2067,10 @@ function buildPresetReviewMessage(
     '',
     'You can use the following tools to evaluate this assessment:',
     '- `get_market_preset_assessment` — read the full assessment artifact',
-    '- `recommend_preset_transition` — get a transition recommendation combining the assessment with your local state',
-    '- `apply_preset_transition` — apply a preset switch (entries-only or with existing position adjustments)',
+    '- `recommend_preset_transition` — get a transition recommendation based on the assessment and your local state',
+    '- `apply_preset_transition` — apply a preset switch',
     '',
-    '**Reminder:** You are the final decision-maker for your account. The platform recommendation is advisory.',
-    'Consider your open positions, recent performance, and creator-locked risk before switching.',
+    '**Reminder:** The platform recommendation is advisory. To actually switch presets, you must use the `apply_preset_transition` tool.',
   ];
   return lines.join('\n');
 }
