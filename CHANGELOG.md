@@ -8,6 +8,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Evidence Adapters, Preset Catalog, and Assessment Payload (015):** Closed the three highest-priority gaps for end-to-end preset assessment:
+  - **Real Preset Catalog** — `createPresetCatalog()` in `preset-catalog-adapter.ts` wraps domain `listPresets()`; eager-loads all 3 style tiers at worker startup, throws loudly on missing/empty; replaces hardcoded `() => []` stub.
+  - **Real Evidence Adapters** — `evidence-adapters.ts` with regime (via `evaluateRegime()` using `scannerCandleFetcher`), candles (reuses `VenueCandleFetcher` path), liquidity (explicit unavailable — first slice), breadth (explicit unavailable — first slice); replaces 4 unconditional stub ports.
+  - **Evidence Persistence** — `PlatformAssessor.persistEvidence()` writes `evidenceSnapshot`, `scorecardSnapshots`, `calculationVersions`, `evidenceRefs` into `marketAssessmentRuns` before LLM ranking; best-effort (non-blocking).
+  - **Port Outcome Expansion** — `AssessmentRequestPortOutcome` refactored to discriminated union; `AssessmentArtifactSummary` carries full assessment payload; `canonicalIdentity` threaded through success and failure outcomes.
+  - **Tool Full Payload** — `assess_strategy_preset` returns full schema-compliant `assessment` object and `canonicalIdentity`; `instrumentKind` widening preserves swap/dex; 20 tool unit tests.
+  - **Tests** — 548 of 552 tests pass (3 pre-existing batch test failures); `pnpm lint` clean.
+  See [015-implementation-plan-evidence-catalog-and-assessment-payload.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/015-implementation-plan-evidence-catalog-and-assessment-payload.md).
+
 - **Preset Assessment Tool Context Wiring (012):** Replaced assessment-tool stubs with typed ports, services, and authoritative preset binding state:
   - **Rollout mode** — `platformAssessment.mode` field (`recommend_only` | `apply_capable`) with safe default
   - **`agent_preset_bindings` table** — authoritative first-class preset-binding state per agent+scope
