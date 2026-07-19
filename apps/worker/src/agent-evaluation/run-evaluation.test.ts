@@ -198,4 +198,165 @@ describe('runEvaluation', () => {
     expect(persistedEvaluation.scope).toEqual({ type: 'allTime' });
     expect(persistedEvaluation.summary?.totalFindings).toBe(0);
   });
+
+  it('does not include preset-assessment appendix in REPORT.md when no evidence is present', async () => {
+    const { store, written } = makeStore();
+
+    await runEvaluation({
+      db: {} as never,
+      runId: 'run-test-no-preset',
+      agentId: 'agent-test-no-preset',
+      resolvedScope: { type: 'allTime' },
+      includeNarrative: false,
+      thresholds,
+      store,
+      storageRoot: '/tmp/eval-artifacts',
+      attemptNumber: 1,
+      maxAttempts: 1,
+    });
+
+    const report = written.get('REPORT.md');
+    expect(report).toBeDefined();
+    expect(report).not.toContain('## Preset Assessment Summary');
+  });
+
+  it('writes preset-assessment artifacts and includes appendix in REPORT.md when evidence is present', async () => {
+    // Override the assembleEvidence mock for this test to include preset-assessment evidence
+    mockAssembleEvidence.mockImplementationOnce(async ({ store, runId }) => {
+      await store.write(runId, 'fills.json', JSON.stringify([], null, 2));
+      await store.write(runId, 'journal.json', JSON.stringify([], null, 2));
+      await store.write(runId, 'sessions.json', JSON.stringify([], null, 2));
+      await store.write(runId, 'positions.json', JSON.stringify([], null, 2));
+      await store.write(runId, 'agent-metadata.json', JSON.stringify({ executionMode: 'paper' }, null, 2));
+      await store.write(
+        runId,
+        'unified-agent-config.json',
+        JSON.stringify({ platformAssessment: { enabled: true } }, null, 2),
+      );
+
+      return {
+        entries: [
+          { artifactName: 'fills.json', collected: true, itemCount: 0 },
+          { artifactName: 'journal.json', collected: true, itemCount: 0 },
+          { artifactName: 'sessions.json', collected: true, itemCount: 0 },
+          { artifactName: 'positions.json', collected: true, itemCount: 0 },
+          { artifactName: 'agent-metadata.json', collected: true },
+          { artifactName: 'unified-agent-config.json', collected: true },
+        ],
+        scope: { type: 'allTime' as const },
+        presetAssessmentEvidence: {
+          reviewAdviceRows: [{ id: 'ra-1', outcome: 'advised', consumedAt: '2026-07-19T12:00:00Z', checkedAt: '2026-07-19T12:00:00Z' }],
+          requestRows: [{ id: 'req-1', status: 'cache_hit', requestedAt: '2026-07-19T12:00:00Z', assessmentArtifactId: 'art-1' }],
+          transitionRows: [],
+          defaultBindingRow: null,
+          auditCaveats: [],
+          collectedAt: '2026-07-19T12:00:00Z',
+        },
+      };
+    });
+
+    const { store, written } = makeStore();
+
+    await runEvaluation({
+      db: {} as never,
+      runId: 'run-test-preset',
+      agentId: 'agent-test-preset',
+      resolvedScope: { type: 'allTime' },
+      includeNarrative: false,
+      thresholds,
+      store,
+      storageRoot: '/tmp/eval-artifacts',
+      attemptNumber: 1,
+      maxAttempts: 1,
+    });
+
+    // Verify summary artifact was written
+    const summaryRaw = written.get('preset-assessment-summary.json');
+    expect(summaryRaw).toBeDefined();
+    const summary = JSON.parse(summaryRaw ?? 'null') as { includedInReport: boolean; inclusionReason: string };
+    expect(summary.includedInReport).toBe(true);
+    expect(summary.inclusionReason).toBe('enabled_and_activity');
+
+    // Verify events artifact was written
+    const eventsRaw = written.get('preset-assessment-events.json');
+    expect(eventsRaw).toBeDefined();
+    const events = JSON.parse(eventsRaw ?? '[]') as Array<unknown>;
+    expect(events.length).toBeGreaterThan(0);
+
+    // Verify appendix is in REPORT.md
+    const report = written.get('REPORT.md');
+    expect(report).toBeDefined();
+    expect(report).toContain('## Preset Assessment Summary');
+
+    // Verify artifacts are in the manifest
+    expect(mockMarkSucceeded).toHaveBeenCalledTimes(1);
+    const [, , result] = mockMarkSucceeded.mock.calls[0] as [unknown, unknown, { artifactManifest: EvaluationArtifactRef[] }];
+    const names = result.artifactManifest.map((a) => a.name);
+    expect(names).toContain('preset-assessment-summary.json');
+    expect(names).toContain('preset-assessment-events.json');
+  });
+
+  it('places preset-assessment appendix before ## Commentary when narrative is enabled', async () => {
+    mockAssembleEvidence.mockImplementationOnce(async ({ store, runId }) => {
+      await store.write(runId, 'fills.json', JSON.stringify([], null, 2));
+      await store.write(runId, 'journal.json', JSON.stringify([], null, 2));
+      await store.write(runId, 'sessions.json', JSON.stringify([], null, 2));
+      await store.write(runId, 'positions.json', JSON.stringify([], null, 2));
+      await store.write(runId, 'agent-metadata.json', JSON.stringify({ executionMode: 'paper' }, null, 2));
+      await store.write(
+        runId,
+        'unified-agent-config.json',
+        JSON.stringify({ platformAssessment: { enabled: true } }, null, 2),
+      );
+
+      return {
+        entries: [
+          { artifactName: 'fills.json', collected: true, itemCount: 0 },
+          { artifactName: 'journal.json', collected: true, itemCount: 0 },
+          { artifactName: 'sessions.json', collected: true, itemCount: 0 },
+          { artifactName: 'positions.json', collected: true, itemCount: 0 },
+          { artifactName: 'agent-metadata.json', collected: true },
+          { artifactName: 'unified-agent-config.json', collected: true },
+        ],
+        scope: { type: 'allTime' as const },
+        presetAssessmentEvidence: {
+          reviewAdviceRows: [{ id: 'ra-1', outcome: 'advised', consumedAt: '2026-07-19T12:00:00Z', checkedAt: '2026-07-19T12:00:00Z' }],
+          requestRows: [],
+          transitionRows: [],
+          defaultBindingRow: null,
+          auditCaveats: [],
+          collectedAt: '2026-07-19T12:00:00Z',
+        },
+      };
+    });
+
+    mockGenerateEvaluationNarrative.mockResolvedValueOnce({
+      text: 'This is the narrative commentary.',
+      metadata: { provider: 'openai', model: 'gpt-4', tokensUsed: 0 },
+    });
+
+    const { store, written } = makeStore();
+
+    await runEvaluation({
+      db: {} as never,
+      runId: 'run-test-preset-narrative',
+      agentId: 'agent-test-preset-narrative',
+      resolvedScope: { type: 'allTime' },
+      includeNarrative: true,
+      narrativeLlm: { provider: 'openai', model: 'gpt-4' },
+      thresholds,
+      store,
+      storageRoot: '/tmp/eval-artifacts',
+      attemptNumber: 1,
+      maxAttempts: 1,
+    });
+
+    const report = written.get('REPORT.md');
+    expect(report).toBeDefined();
+    const appendixIndex = report!.indexOf('## Preset Assessment Summary');
+    const commentaryIndex = report!.indexOf('## Commentary');
+    expect(appendixIndex).toBeGreaterThan(-1);
+    expect(commentaryIndex).toBeGreaterThan(-1);
+    expect(appendixIndex).toBeLessThan(commentaryIndex);
+  });
 });
