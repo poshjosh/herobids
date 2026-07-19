@@ -363,6 +363,7 @@ export interface PresetScorecardEntry {
   signalsGenerated: number;
   topConfidence: number | null;
   scanHealth: 'healthy' | 'degraded' | 'no_signal' | 'stale';
+  evaluationScope: string;
 }
 
 export const PresetScorecardEntrySchema = z.object({
@@ -373,6 +374,7 @@ export const PresetScorecardEntrySchema = z.object({
   signalsGenerated: z.number().int().nonnegative(),
   topConfidence: z.number().min(0).max(1).nullable(),
   scanHealth: z.enum(['healthy', 'degraded', 'no_signal', 'stale']),
+  evaluationScope: z.string().default('single_symbol_dry_run'),
 });
 
 // ── Preset Ranking ──────────────────────────────────────────────────────────
