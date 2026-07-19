@@ -3,7 +3,26 @@ import { PlatformAssessor } from './platform-assessor.js';
 import type { PlatformAssessorConfig, PlatformAssessorDeps } from './platform-assessor.js';
 import type { AssessmentEvidencePorts } from './assessment-ports.js';
 import { ok, err } from '@herobids/domain';
-import type { PresetEntry, MarketAssessmentIdentity, AssessmentData, AssessmentUnavailable, PresetScorecardEntry } from '@herobids/domain';
+import {
+  AssessmentEvidenceSnapshotSchema,
+  EvidenceValueSchema,
+  RegimeResultSchema,
+  PresetScorecardEntrySchema,
+} from '@herobids/domain';
+import type {
+  PresetEntry,
+  MarketAssessmentIdentity,
+  AssessmentData,
+  AssessmentUnavailable,
+  PresetScorecardEntry,
+  AssessmentEvidenceSnapshot,
+  EvidenceValue,
+  RegimeResult,
+  ScorecardInput,
+  VolatilityEvidence,
+  LiquidityEvidence,
+  BreadthEvidence,
+} from '@herobids/domain';
 import type { PriceCandle } from '@herobids/market-data';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -105,6 +124,28 @@ function makeMockPresetEntry(key: string, strategyType: string, signalBias: stri
         candleInterval: '15m',
         candleLimit: 48,
       },
+    },
+  };
+}
+
+// ── Mock regime result ─────────────────────────────────────────────────────
+
+function makeRegimeResult(): RegimeResult {
+  return {
+    pass: true,
+    reasons: ['Strong bullish alignment', 'ADX confirms trend strength'],
+    details: {
+      benchmarkSymbol: 'BTC',
+      currentPrice: 50200,
+      emaFast: 49800,
+      emaSlow: 49000,
+      emaTrend: 48500,
+      emaAlignment: 'bullish',
+      adxValue: 28,
+      choppy: false,
+      vwap: 49700,
+      priceAboveVwap: true,
+      marketStructure: 'higherHighs',
     },
   };
 }
@@ -521,6 +562,332 @@ describe('PlatformAssessor', () => {
       const artifact = await assessor.rankPresets(identity, {} as never, []);
       expect(artifact.presetRankings).toHaveLength(0);
       expect(artifact.recommendedPreset).toBeNull();
+    });
+  });
+
+  describe('Zod schema validation', () => {
+    describe('evidence snapshot Zod validation round-trip', () => {
+      it('validates, serializes, deserializes, and re-validates a snapshot', () => {
+        const regime: EvidenceValue<RegimeResult> = {
+          state: 'available',
+          value: makeRegimeResult(),
+          source: 'test-regime',
+          observedAt: '2026-07-19T10:00:00.000Z',
+          expiresAt: '2026-07-19T10:05:00.000Z',
+        };
+
+        const candles: PriceCandle[] = [
+          { timestamp: '2026-07-19T09:00:00.000Z', open: 50000, high: 50200, low: 49900, close: 50100, volume: 150 },
+          { timestamp: '2026-07-19T09:15:00.000Z', open: 50100, high: 50300, low: 50050, close: 50250, volume: 200 },
+        ];
+
+        const volatility: EvidenceValue<VolatilityEvidence> = {
+          state: 'available',
+          value: { averageTrueRange: 125.5, volatilityRegime: 'normal', calculationVersion: '1.0.0' },
+          source: 'computed',
+          observedAt: '2026-07-19T10:00:00.000Z',
+          expiresAt: '2026-07-19T10:05:00.000Z',
+        };
+
+        const liquidity: EvidenceValue<LiquidityEvidence> = {
+          state: 'available',
+          value: { averageSpreadBps: 3.2, averageDepthUsd: 150000, quality: 'good' },
+          source: 'test-liquidity',
+          observedAt: '2026-07-19T10:00:00.000Z',
+          expiresAt: '2026-07-19T10:05:00.000Z',
+        };
+
+        const breadth: EvidenceValue<BreadthEvidence> = {
+          state: 'available',
+          value: { symbolsAboveMA: 7, totalSymbols: 10, breadthRatio: 0.7 },
+          source: 'test-breadth',
+          observedAt: '2026-07-19T10:00:00.000Z',
+          expiresAt: '2026-07-19T10:05:00.000Z',
+        };
+
+        const scorecardInput: EvidenceValue<ScorecardInput> = {
+          state: 'available',
+          value: {
+            symbol: 'BTC',
+            candleWindow: { start: '2026-07-19T09:00:00.000Z', end: '2026-07-19T09:15:00.000Z' },
+            candlesAvailable: 2,
+          },
+          source: 'computed',
+          observedAt: '2026-07-19T10:00:00.000Z',
+          expiresAt: '2026-07-19T10:05:00.000Z',
+        };
+
+        const snapshot: AssessmentEvidenceSnapshot = {
+          schemaVersion: 1,
+          identity: makeIdentity(),
+          collectedAt: '2026-07-19T10:00:00.000Z',
+          regime,
+          symbolCandles: {
+            state: 'available',
+            value: candles,
+            source: 'test-candles',
+            observedAt: '2026-07-19T10:00:00.000Z',
+            expiresAt: '2026-07-19T10:05:00.000Z',
+          },
+          volatility,
+          liquidity,
+          breadth,
+          scorecardInput,
+        };
+
+        // Step 1: Validate
+        const parsed = AssessmentEvidenceSnapshotSchema.safeParse(snapshot);
+        expect(parsed.success).toBe(true);
+
+        // Step 2: Serialize to JSON
+        const json = JSON.stringify(snapshot);
+
+        // Step 3: Parse back
+        const roundTripped = JSON.parse(json) as AssessmentEvidenceSnapshot;
+
+        // Step 4: Re-validate after round-trip
+        const revalidated = AssessmentEvidenceSnapshotSchema.safeParse(roundTripped);
+        expect(revalidated.success).toBe(true);
+
+        // Step 5: All evidence values are preserved
+        if (revalidated.success) {
+          const rt = revalidated.data;
+          expect(rt.schemaVersion).toBe(1);
+          expect(rt.identity.symbol).toBe('BTC');
+          expect(rt.collectedAt).toBe('2026-07-19T10:00:00.000Z');
+
+          // Regime values preserved
+          if (rt.regime.state === 'available') {
+            expect(rt.regime.value.details.currentPrice).toBe(50200);
+            expect(rt.regime.value.details.emaAlignment).toBe('bullish');
+            expect(rt.regime.value.details.adxValue).toBe(28);
+          }
+
+          // Candles preserved
+          if (rt.symbolCandles.state === 'available') {
+            expect(rt.symbolCandles.value).toHaveLength(2);
+            expect(rt.symbolCandles.value[0]!.close).toBe(50100);
+          }
+
+          // Volatility preserved
+          if (rt.volatility.state === 'available') {
+            expect(rt.volatility.value.averageTrueRange).toBe(125.5);
+            expect(rt.volatility.value.volatilityRegime).toBe('normal');
+          }
+
+          // Liquidity preserved
+          if (rt.liquidity.state === 'available') {
+            expect(rt.liquidity.value.averageDepthUsd).toBe(150000);
+          }
+
+          // Breadth preserved
+          if (rt.breadth.state === 'available') {
+            expect(rt.breadth.value.breadthRatio).toBe(0.7);
+          }
+
+          // ScorecardInput preserved
+          if (rt.scorecardInput.state === 'available') {
+            expect(rt.scorecardInput.value.symbol).toBe('BTC');
+            expect(rt.scorecardInput.value.candlesAvailable).toBe(2);
+          }
+        }
+      });
+    });
+
+    describe('EvidenceValue serialization round-trip', () => {
+      it('preserves available state with complex RegimeResult data', () => {
+        const available: EvidenceValue<RegimeResult> = {
+          state: 'available',
+          value: {
+            pass: false,
+            reasons: ['Bearish EMA alignment', 'Price below VWAP', 'ADX weak'],
+            details: {
+              benchmarkSymbol: 'ETH',
+              currentPrice: 3200.75,
+              emaFast: 3210,
+              emaSlow: 3250,
+              emaTrend: 3300,
+              emaAlignment: 'bearish',
+              adxValue: 15,
+              choppy: true,
+              vwap: 3220,
+              priceAboveVwap: false,
+              marketStructure: 'lowerHighs',
+            },
+          },
+          source: 'test-regime-eth',
+          observedAt: '2026-07-19T10:00:00.000Z',
+          expiresAt: '2026-07-19T10:05:00.000Z',
+        };
+
+        // Validate
+        const evSchema = EvidenceValueSchema(RegimeResultSchema);
+        const parsed = evSchema.safeParse(available);
+        expect(parsed.success).toBe(true);
+
+        // Serialize round-trip
+        const json = JSON.stringify(available);
+        const rt = JSON.parse(json) as EvidenceValue<RegimeResult>;
+        const revalidated = evSchema.safeParse(rt);
+        expect(revalidated.success).toBe(true);
+
+        if (revalidated.success && revalidated.data.state === 'available') {
+          const v = revalidated.data.value;
+          expect(v.pass).toBe(false);
+          expect(v.reasons).toHaveLength(3);
+          expect(v.details.benchmarkSymbol).toBe('ETH');
+          expect(v.details.currentPrice).toBe(3200.75);
+          expect(v.details.emaAlignment).toBe('bearish');
+          expect(v.details.adxValue).toBe(15);
+          expect(v.details.choppy).toBe(true);
+          expect(v.details.marketStructure).toBe('lowerHighs');
+        }
+      });
+
+      it('preserves unavailable state through round-trip', () => {
+        const unavailable: EvidenceValue<RegimeResult> = {
+          state: 'unavailable',
+          reasonCode: 'assessment.regime_timeout',
+          message: 'Regime source timed out after 30s',
+          observedAt: '2026-07-19T10:00:00.000Z',
+        };
+
+        // Validate
+        const evSchema = EvidenceValueSchema(RegimeResultSchema);
+        const parsed = evSchema.safeParse(unavailable);
+        expect(parsed.success).toBe(true);
+
+        // Serialize round-trip
+        const json = JSON.stringify(unavailable);
+        const rt = JSON.parse(json) as EvidenceValue<RegimeResult>;
+        const revalidated = evSchema.safeParse(rt);
+        expect(revalidated.success).toBe(true);
+
+        if (revalidated.success && revalidated.data.state === 'unavailable') {
+          expect(revalidated.data.reasonCode).toBe('assessment.regime_timeout');
+          expect(revalidated.data.message).toBe('Regime source timed out after 30s');
+          expect(revalidated.data.observedAt).toBe('2026-07-19T10:00:00.000Z');
+        }
+      });
+
+      it('discriminates available from unavailable after round-trip', () => {
+        const evSchema = EvidenceValueSchema(RegimeResultSchema);
+
+        const available: EvidenceValue<RegimeResult> = {
+          state: 'available',
+          value: makeRegimeResult(),
+          source: 'test',
+          observedAt: '2026-07-19T10:00:00.000Z',
+          expiresAt: '2026-07-19T10:05:00.000Z',
+        };
+
+        const unavailable: EvidenceValue<RegimeResult> = {
+          state: 'unavailable',
+          reasonCode: 'test.code',
+          message: 'test message',
+          observedAt: '2026-07-19T10:00:00.000Z',
+        };
+
+        // Round-trip both
+        const availRt = evSchema.safeParse(JSON.parse(JSON.stringify(available)));
+        const unavailRt = evSchema.safeParse(JSON.parse(JSON.stringify(unavailable)));
+
+        expect(availRt.success).toBe(true);
+        expect(unavailRt.success).toBe(true);
+
+        if (availRt.success) expect(availRt.data.state).toBe('available');
+        if (unavailRt.success) expect(unavailRt.data.state).toBe('unavailable');
+      });
+    });
+
+    describe('PresetScorecardEntry schema validation', () => {
+      it('validates a realistic PresetScorecardEntry', () => {
+        const entry: PresetScorecardEntry = {
+          presetKey: 'momentum_v1',
+          presetBehaviorVersion: 'abc123def456',
+          candidatesDiscovered: 1,
+          candidatesScored: 1,
+          signalsGenerated: 1,
+          topConfidence: 0.85,
+          scanHealth: 'healthy',
+          evaluationScope: 'single_symbol_dry_run',
+        };
+
+        const parsed = PresetScorecardEntrySchema.safeParse(entry);
+        expect(parsed.success).toBe(true);
+
+        if (parsed.success) {
+          expect(parsed.data.presetKey).toBe('momentum_v1');
+          expect(parsed.data.presetBehaviorVersion).toBe('abc123def456');
+          expect(parsed.data.candidatesDiscovered).toBe(1);
+          expect(parsed.data.candidatesScored).toBe(1);
+          expect(parsed.data.signalsGenerated).toBe(1);
+          expect(parsed.data.topConfidence).toBe(0.85);
+          expect(parsed.data.scanHealth).toBe('healthy');
+          expect(parsed.data.evaluationScope).toBe('single_symbol_dry_run');
+        }
+      });
+
+      it('validates a no_signal entry with null confidence', () => {
+        const entry: PresetScorecardEntry = {
+          presetKey: 'mean_reversion_v1',
+          presetBehaviorVersion: 'xyz789',
+          candidatesDiscovered: 1,
+          candidatesScored: 1,
+          signalsGenerated: 0,
+          topConfidence: null,
+          scanHealth: 'no_signal',
+          evaluationScope: 'single_symbol_dry_run',
+        };
+
+        const parsed = PresetScorecardEntrySchema.safeParse(entry);
+        expect(parsed.success).toBe(true);
+
+        if (parsed.success) {
+          expect(parsed.data.topConfidence).toBeNull();
+          expect(parsed.data.scanHealth).toBe('no_signal');
+        }
+      });
+
+      it('rejects invalid scanHealth values', () => {
+        const entry = {
+          presetKey: 'bad',
+          presetBehaviorVersion: 'v1',
+          candidatesDiscovered: 0,
+          candidatesScored: 0,
+          signalsGenerated: 0,
+          topConfidence: null,
+          scanHealth: 'invalid_value',
+          evaluationScope: 'single_symbol_dry_run',
+        };
+
+        const parsed = PresetScorecardEntrySchema.safeParse(entry);
+        expect(parsed.success).toBe(false);
+      });
+
+      it('round-trips through JSON serialization', () => {
+        const entry: PresetScorecardEntry = {
+          presetKey: 'trend_following_v1',
+          presetBehaviorVersion: 'hash789abc',
+          candidatesDiscovered: 1,
+          candidatesScored: 1,
+          signalsGenerated: 1,
+          topConfidence: 0.92,
+          scanHealth: 'healthy',
+          evaluationScope: 'single_symbol_dry_run',
+        };
+
+        const json = JSON.stringify(entry);
+        const rt = JSON.parse(json) as PresetScorecardEntry;
+        const revalidated = PresetScorecardEntrySchema.safeParse(rt);
+
+        expect(revalidated.success).toBe(true);
+        if (revalidated.success) {
+          expect(revalidated.data.presetKey).toBe('trend_following_v1');
+          expect(revalidated.data.topConfidence).toBe(0.92);
+          expect(revalidated.data.evaluationScope).toBe('single_symbol_dry_run');
+        }
+      });
     });
   });
 });
