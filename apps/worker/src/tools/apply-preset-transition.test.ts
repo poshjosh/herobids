@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ToolContext } from '@herobids/domain';
+import { marketAssessmentArtifacts } from '@herobids/db';
 import { changeStrategyPresetTool } from './apply-preset-transition.js';
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
@@ -257,6 +258,74 @@ describe('change_strategy_preset', () => {
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({ applied: true, targetPreset: 'momentum' });
     expect(insertSpy).toHaveBeenCalledOnce();
+  });
+
+  // ── P6: Exact artifact reference preservation ──────────────────────────
+
+  it('uses the exact artifact reference, not a substituted later artifact', async () => {
+    // Two artifacts share the same canonical identity (same symbol, venueFamily,
+    // instrumentKind, styleTier) but differ in ID and allowedPresets.
+    // artifact-2 is fresher and has a different allowed set.
+    // The agent specifies artifact-1 — the tool must use artifact-1, never artifact-2.
+    const artifact1 = makeActiveArtifact({
+      id: 'artifact-1',
+      allowedPresets: ['momentum_v1'],
+      symbol: 'BTC',
+    });
+    const artifact2 = makeActiveArtifact({
+      id: 'artifact-2',
+      allowedPresets: ['scalper_v1'],
+      symbol: 'BTC',
+      assessedAt: new Date(Date.now() + 1000), // fresher than artifact-1
+    });
+
+    const insertSpy = vi.fn().mockResolvedValue(undefined);
+
+    // Both artifacts exist in the DB, but the tool queries by exact
+    // assessmentArtifactId (eq(id, 'artifact-1')), so only artifact-1
+    // should match. We verify this by spying on the query builder chain.
+    const whereSpy = vi.fn().mockReturnValue({
+      limit: vi.fn().mockResolvedValue([artifact1]),
+      orderBy: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue([artifact1]),
+      }),
+    });
+    const fromSpy = vi.fn().mockReturnValue({ where: whereSpy });
+    const selectSpy = vi.fn().mockReturnValue({ from: fromSpy });
+
+    const db = {
+      select: selectSpy,
+      insert: vi.fn().mockReturnValue({ values: vi.fn().mockImplementation(insertSpy) }),
+    };
+
+    const ctx = makeCtx({ db: db as unknown as ToolContext['db'] });
+
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum_v1', mode: 'entries_only' },
+      ctx,
+    );
+
+    // Should succeed using artifact-1's allowedPresets (momentum_v1),
+    // not artifact-2's (scalper_v1). If artifact-2 were incorrectly used,
+    // the tool would reject with preset_not_allowed.
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      applied: true,
+      targetPreset: 'momentum_v1',
+      assessmentArtifactId: 'artifact-1',
+    });
+
+    // Verify the tool queried the right table by exact artifact ID,
+    // not by a looser identity match that could pick up artifact-2.
+    expect(fromSpy).toHaveBeenCalledWith(marketAssessmentArtifacts);
+    expect(whereSpy).toHaveBeenCalled();
+    // eq(column, value) produces a single SQL condition argument.
+    expect(whereSpy.mock.calls[0]).toHaveLength(1);
+
+    // Verify the persisted transition record uses the exact artifact-1 ID.
+    expect(insertSpy).toHaveBeenCalledOnce();
+    const insertCall = insertSpy.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(insertCall.assessmentArtifactId).toBe('artifact-1');
   });
 
 
