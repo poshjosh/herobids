@@ -60,6 +60,7 @@ import { ActorHealthPublisher } from './actor-health-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler, PresetTransitionService, resolveAuthoritativeBinding, materializeEffectiveConfig, mappingToTechnicalConfig } from './market-intelligence/index.js';
 import type { ReviewScheduler } from './market-intelligence/index.js';
 import { createPlatformAssessor } from './market-intelligence/assessor-factory.js';
+import { createPresetCatalog } from './market-intelligence/preset-catalog-adapter.js';
 import { AssessmentRequestService } from './market-intelligence/assessment-request-service.js';
 import { setAssessmentRequestPort } from './tools/assess-strategy-preset.js';
 import { setPresetTransitionPort } from './tools/change-strategy-preset.js';
@@ -1922,10 +1923,7 @@ const evidencePorts: AssessmentEvidencePorts = {
   },
 };
 
-// TODO(008): Replace with real preset catalog loading from DB/config.
-const getPresets = (_styleTier: string): Array<{ key: string; entry: import('@herobids/domain').PresetEntry }> => {
-  return [];
-};
+const getPresets = createPresetCatalog();
 
 const { assessor: platformAssessor, llmConfig: platformLlmConfig } = createPlatformAssessor(
   appConfig.platformAssessor.llm,
