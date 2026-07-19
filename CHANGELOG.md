@@ -8,6 +8,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Real Evidence & Deterministic Scorecards (008):** Replaced all placeholder evidence in `PlatformAssessor` with auditable market evidence and deterministic dry-run scorecards:
+  - **Versioned evidence snapshot types** in `@herobids/domain` — `EvidenceValue<T>` discriminated union, `AssessmentEvidenceSnapshot`, `AssessmentData<T>`, `AssessmentUnavailable`, `AssessmentMarketCohort`, `VolatilityEvidence`, `LiquidityEvidence`, `BreadthEvidence`, `ScorecardInput` with Zod schemas
+  - **DB schema** (`0045`) — `evidence_snapshot`, `scorecard_snapshots`, `calculation_versions` JSONB columns on `market_assessment_runs`
+  - **Market-data ports** — `AssessmentCandleSource`, `AssessmentLiquiditySource`, `AssessmentBreadthSource`, `AssessmentRegimeSource`, `AssessmentEvidencePorts` interfaces
+  - **Evidence policy config** — `evidenceMaxAgeMs`, `evidenceTimeoutMs`, `candlePolicy`, `atrPolicy`, `liquidityPolicy`, `breadthPolicy`, `sourceMappings` in `PlatformAssessorConfigSchema` and `config/default.yaml`
+  - **Headless `PresetScorecardRunner`** — side-effect-free dry-run of every catalog preset against the same market-data window; reuses `scoreCandidate` from `@herobids/strategy`; never instantiates actors, writes scan metrics, creates wakes, or submits decisions
+  - **Rewritten `PlatformAssessor.collectEvidence()`** — port-driven evidence collection returning `Result<AssessmentEvidenceSnapshot>`; ATR/volatility computation from candle data; staleness checks; stable error codes (`assessment.evidence_unavailable`, `assessment.evidence_stale`, `assessment.scorecard_failed`)
+  - **44 unit + integration tests** — stale/unavailable evidence, non-mandatory paths, Zod schema round-trips, shared artifact immunity, snapshot immutability, side-effect proof
+  - **`PLACEHOLDER_REGIME` and all zero-filled placeholders removed**
+  See [docs/features/2026/07/18/002-platform-preset-assessment-and-transition/008-real-evidence-and-scorecards.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/008-real-evidence-and-scorecards.md).
+
 - **Assessment Billing Architecture (007):** Implemented authoritative billing for assessment requests:
   - **`market_assessment_requests` table** — first-class request ledger tracking every billable attempt with request IDs, idempotency keys, request-group dedup, reservation/capture/release lifecycle, daily-cap counting, LLM cost observability, and canonical identity lookups
   - **Synchronous billing helpers** in `UsageBillingRepository`: `quoteMeterCharge`, `reserveCharge` (with `SELECT FOR UPDATE`), `captureReservedAssessmentCharge`, `releaseReservedCharge` — all transactional
