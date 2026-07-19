@@ -3,7 +3,6 @@ import type { Logger } from 'pino';
 import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
 import type {
-  PlatformAssessorConfig as DomainPlatformAssessorConfig,
   PlatformAssessmentLlmConfig,
 } from '@herobids/domain';
 import { callLlmProvider, type LlmProviderConfig, type LlmRequest } from '@herobids/llm';

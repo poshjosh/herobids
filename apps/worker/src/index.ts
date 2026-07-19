@@ -1901,28 +1901,24 @@ if (providersYaml?.providers) {
 // TODO(008): Replace stubs with real evidence port implementations.
 const evidencePorts: AssessmentEvidencePorts = {
   regime: {
-    getRegime: async (_identity) => ({
-      ok: false,
-      error: { code: 'assessment.evidence_unavailable', message: 'Regime evidence not yet wired (Plan 008)' },
-    }) as ReturnType<AssessmentEvidencePorts['regime']['getRegime']>,
+    getRegime: async (_identity) => {
+      return err({ code: 'assessment.evidence_unavailable', message: 'Regime evidence not yet wired (Plan 008)' }) as Awaited<ReturnType<AssessmentEvidencePorts['regime']['getRegime']>>;
+    },
   },
   candles: {
-    getCandles: async (_input) => ({
-      ok: false,
-      error: { code: 'assessment.evidence_unavailable', message: 'Candle evidence not yet wired (Plan 008)' },
-    }) as ReturnType<AssessmentEvidencePorts['candles']['getCandles']>,
+    getCandles: async (_input) => {
+      return err({ code: 'assessment.evidence_unavailable', message: 'Candle evidence not yet wired (Plan 008)' }) as Awaited<ReturnType<AssessmentEvidencePorts['candles']['getCandles']>>;
+    },
   },
   liquidity: {
-    getLiquidity: async (_identity) => ({
-      ok: false,
-      error: { code: 'assessment.evidence_unavailable', message: 'Liquidity evidence not yet wired (Plan 008)' },
-    }) as ReturnType<AssessmentEvidencePorts['liquidity']['getLiquidity']>,
+    getLiquidity: async (_identity) => {
+      return err({ code: 'assessment.evidence_unavailable', message: 'Liquidity evidence not yet wired (Plan 008)' }) as Awaited<ReturnType<AssessmentEvidencePorts['liquidity']['getLiquidity']>>;
+    },
   },
   breadth: {
-    getBreadth: async (_input) => ({
-      ok: false,
-      error: { code: 'assessment.evidence_unavailable', message: 'Breadth evidence not yet wired (Plan 008)' },
-    }) as ReturnType<AssessmentEvidencePorts['breadth']['getBreadth']>,
+    getBreadth: async (_input) => {
+      return err({ code: 'assessment.evidence_unavailable', message: 'Breadth evidence not yet wired (Plan 008)' }) as Awaited<ReturnType<AssessmentEvidencePorts['breadth']['getBreadth']>>;
+    },
   },
 };
 

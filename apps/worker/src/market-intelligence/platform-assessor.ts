@@ -92,6 +92,7 @@ export class PlatformAssessor {
       enabled: config.enabled ?? true,
       maxConcurrentAssessments: config.maxConcurrentAssessments ?? 1,
       cacheFreshnessMs: config.cacheFreshnessMs ?? 21_600_000, // 6 hours
+      llm: config.llm as LlmRankerConfig,
     };
     this.deps = deps;
     this.log = deps.logger ?? createLogger(ASSESSOR_LOGGER_NAME);

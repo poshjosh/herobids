@@ -86,7 +86,7 @@ export async function resolveAuthoritativeBinding(
         logger.warn({ agentId, scope, styleTier: specific.styleTier }, 'Binding styleTier is not a valid StyleKey — ignoring binding');
         return null;
       }
-      return specific;
+      return specific as AuthoritativeBinding;
     }
   }
 
@@ -108,7 +108,7 @@ export async function resolveAuthoritativeBinding(
     return null;
   }
 
-  return defaultBinding ?? null;
+  return (defaultBinding as AuthoritativeBinding | null) ?? null;
 }
 
 // ── Materialization ─────────────────────────────────────────────────────────

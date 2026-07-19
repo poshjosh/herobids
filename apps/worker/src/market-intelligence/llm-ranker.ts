@@ -130,7 +130,7 @@ function buildProjection(
   const symbolStr =
     identity.instrumentKind === 'swap' || identity.instrumentKind === 'dex'
       ? `${identity.network}:${identity.address}`
-      : identity.symbol;
+      : 'symbol' in identity ? identity.symbol : 'unknown';
 
   const presetMap = new Map(presets.map((p) => [p.key, p.entry]));
 
@@ -329,7 +329,7 @@ function resolveScoreBand(score: number, bands: LlmRankerConfig['scoreBands']): 
 function assembleArtifact(
   identity: MarketAssessmentIdentity,
   llmResponse: PlatformAssessmentLlmResponse,
-  scorecards: PresetScorecardEntry[],
+  _scorecards: PresetScorecardEntry[],
   config: LlmRankerConfig,
   cacheFreshnessMs: number,
   evidenceRefs: string[],

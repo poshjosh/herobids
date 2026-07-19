@@ -8,7 +8,6 @@ import {
   marketAssessmentRequests,
   marketAssessmentRuns,
   marketAssessmentArtifacts,
-  billingAccounts,
 } from '@herobids/db';
 import { UsageBillingRepository } from '@herobids/db';
 import {
@@ -20,13 +19,9 @@ import {
   type MarketAssessmentIdentity,
   type PlatformAssessorConfig,
   type PlatformAssessmentOptIn,
+  type AssessmentRequestPortOutcome,
 } from '@herobids/domain';
 import { PlatformAssessor } from './platform-assessor.js';
-import {
-  resolveSettlement,
-  validateSettlementPolicy,
-  type AssessmentSettlementOutcome,
-} from './assessment-settlement-policy.js';
 
 // ── Outcome Types ───────────────────────────────────────────────────────────
 
@@ -87,13 +82,17 @@ interface ResolvedBillableContext {
 
 // ── Request Group Key ───────────────────────────────────────────────────────
 
+function isSwapIdentity(identity: MarketAssessmentIdentity): identity is MarketAssessmentIdentity & { instrumentKind: 'swap' | 'dex'; network: string; address: string } {
+  return identity.instrumentKind === 'swap' || identity.instrumentKind === 'dex';
+}
+
 function computeRequestGroupKey(
   agentId: string,
   identity: MarketAssessmentIdentity,
   idempotencyKey: string,
 ): string {
   const parts = [agentId, identity.instrumentKind, identity.venueFamily, identity.styleTier];
-  if (identity.instrumentKind === 'swap' || identity.instrumentKind === 'dex') {
+  if (isSwapIdentity(identity)) {
     parts.push(identity.network, identity.address, idempotencyKey);
   } else {
     parts.push(identity.symbol, idempotencyKey);
@@ -108,7 +107,7 @@ function computeRequestGroupKey(
  * string key for lease tracking.
  */
 function identityKey(identity: MarketAssessmentIdentity): string {
-  if (identity.instrumentKind === 'swap' || identity.instrumentKind === 'dex') {
+  if (isSwapIdentity(identity)) {
     return `${identity.instrumentKind}|${identity.venueFamily}|${identity.styleTier}|${identity.network}|${identity.address}`;
   }
   return `${identity.instrumentKind}|${identity.venueFamily}|${identity.styleTier}|${identity.symbol}`;
@@ -123,7 +122,7 @@ function identityWhereConditions(
   identity: MarketAssessmentIdentity,
   table: typeof marketAssessmentRequests | typeof marketAssessmentArtifacts | typeof marketAssessmentRuns,
 ) {
-  if (identity.instrumentKind === 'swap' || identity.instrumentKind === 'dex') {
+  if (isSwapIdentity(identity)) {
     return [
       eq(table.instrumentKind, identity.instrumentKind),
       eq(table.venueFamily, identity.venueFamily),
@@ -175,9 +174,14 @@ export class AssessmentRequestService {
     this.config = operatorConfig;
     this._maxInstrumentsPerRequest = operatorConfig.maxInstrumentsPerRequest;
 
-    if (!validateSettlementPolicy()) {
-      this.log.error('Assessment settlement policy validation failed');
-    }
+    // Validate settlement policy at construction time — logs error if misconfigured.
+    // Uses createLogger directly since `this.log` is assigned after the constructor body.
+    void (async () => {
+      const { validateSettlementPolicy } = await import('./assessment-settlement-policy.js');
+      if (!validateSettlementPolicy()) {
+        createLogger('assessment-request-service').error('Assessment settlement policy validation failed');
+      }
+    })();
   }
 
   // ── Public API ────────────────────────────────────────────────────────
@@ -558,11 +562,44 @@ export class AssessmentRequestService {
   }
 
   /**
+   * Port-compliant batch assessment entry point.
+   * Accepts pre-resolved AssessmentRequestPortParams and processes each serially.
+   */
+  async requestBatchAssessment(
+    params: Array<{ agentId: string; symbol: string; identity: MarketAssessmentIdentity; idempotencyKey?: string }>,
+  ): Promise<Result<AssessmentRequestPortOutcome[]>> {
+    const results: AssessmentRequestPortOutcome[] = [];
+
+    for (const p of params) {
+      const result = await this.requestAssessment({
+        agentId: p.agentId,
+        symbol: p.symbol,
+        venueFamily: p.identity.venueFamily,
+        instrumentKind: p.identity.instrumentKind,
+        styleTier: p.identity.styleTier,
+        idempotencyKey: p.idempotencyKey,
+      });
+
+      if (result.ok) {
+        results.push(result.data as unknown as AssessmentRequestPortOutcome);
+      } else {
+        results.push({
+          kind: 'provider_failed',
+          error: result.error.message,
+          errorCode: result.error.code,
+        });
+      }
+    }
+
+    return ok(results);
+  }
+
+  /**
    * Process a batch of symbols sharing the same venue/instrument context.
    * Each symbol is processed serially through requestAssessment.
    * Partial success is allowed — some symbols may succeed while others fail.
    */
-  async requestBatchAssessment(
+  async requestBatchAssessmentBySymbols(
     symbols: string[],
     sharedParams: Omit<AssessmentRequestParams, 'symbol'>,
     maxInstrumentsPerRequest: number = this.maxInstrumentsPerRequest,
@@ -714,7 +751,7 @@ export class AssessmentRequestService {
 
     // ── Supersede old active artifacts ────────────────────────────────
     try {
-      if (identity.instrumentKind === 'swap' || identity.instrumentKind === 'dex') {
+      if (isSwapIdentity(identity)) {
         await this.db.update(marketAssessmentArtifacts)
           .set({ status: 'superseded' })
           .where(and(

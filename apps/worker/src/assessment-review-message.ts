@@ -15,7 +15,7 @@ export function buildAssessmentReviewMessage(
   const adviceLines = ctx.advice.map((a) => {
     const identityDesc = a.identity.instrumentKind === 'swap' || a.identity.instrumentKind === 'dex'
       ? `${a.identity.network}/${a.identity.address}`
-      : a.identity.symbol ?? 'unknown';
+      : 'symbol' in a.identity ? (a.identity.symbol ?? 'unknown') : 'unknown';
     const reasons = a.reasons.join(', ');
     return `- **#${a.candidateRank}** \`${identityDesc}\` (${a.identity.venueFamily}, ${a.identity.styleTier}) — ${reasons}
   Active Preset: \`${a.activePreset}\` (v${a.presetBehaviorVersion})`;

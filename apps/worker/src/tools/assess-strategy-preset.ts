@@ -28,8 +28,6 @@ function mapOutcomeToResultEntry(
   outcome: AssessmentRequestPortOutcome,
   idempotencyKey: string | null,
 ): AssessmentResultEntry {
-  const billed = outcome.kind === 'cache_hit' || outcome.kind === 'assessment_completed';
-
   if (outcome.kind === 'cache_hit' || outcome.kind === 'assessment_completed') {
     return {
       success: true,
@@ -201,7 +199,7 @@ async function executeAssessStrategyPreset(
     }
 
     const results: AssessmentResultEntry[] = acceptedSymbols.map((symbol, idx) =>
-      mapOutcomeToResultEntry(symbol, outcomes[idx], idempotencyKey ?? null),
+      mapOutcomeToResultEntry(symbol, outcomes[idx]!, idempotencyKey ?? null),
     );
 
     const response: AssessStrategyPresetResponse = {

@@ -215,8 +215,8 @@ export class PresetTransitionService implements PresetTransitionPort {
   async applyTransition(
     params: ApplyTransitionParams,
   ): Promise<Result<PresetTransitionApplicationResult>> {
-    const { agentId, assessmentArtifactId, targetPreset, mode, reason, idempotencyKey } = params;
-    // TODO: store idempotencyKey in agent_preset_transitions for dedup — needs schema migration
+    const { agentId, assessmentArtifactId, targetPreset, mode, reason } = params;
+    // TODO(012c): store idempotencyKey in agent_preset_transitions for dedup — needs schema migration. Currently destructured but unused; re-add when schema supports it.
     const now = new Date();
     const transitionId = randomUUID();
 
@@ -329,7 +329,7 @@ export class PresetTransitionService implements PresetTransitionPort {
         positionActionResults: null,
         transitionScope: 'default',
         reason: reason ?? null,
-        appliedAt: null,
+        appliedAt: now,
         regimeSnapshot: null,
         createdAt: now,
       });

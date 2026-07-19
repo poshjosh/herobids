@@ -6,7 +6,7 @@ import type {
   ResolveIdentityParams,
   MarketAssessmentIdentity,
 } from '@herobids/domain';
-import { resolveAssessmentIdentity, err, type Result } from '@herobids/domain';
+import { resolveAssessmentIdentity, err, type Result, type StyleKey } from '@herobids/domain';
 import type { VenueInstrumentCache } from '../venue-instrument-cache.js';
 import { createLogger } from '../logger.js';
 
@@ -76,9 +76,9 @@ export class AssessmentIdentityResolverImpl implements AssessmentIdentityResolve
     }
 
     // ── 2. Resolve style tier from active preset binding ──
-    let styleTier = explicitTier;
+    let styleTier: StyleKey | undefined = explicitTier;
     if (!styleTier) {
-      styleTier = await this.resolveStyleTier(agentId);
+      styleTier = await this.resolveStyleTier(agentId) ?? undefined;
       if (!styleTier) {
         return err({
           code: 'assessment.identity.no_style_tier',
