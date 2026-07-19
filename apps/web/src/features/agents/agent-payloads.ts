@@ -35,6 +35,16 @@ function parseCooldownMsOrNull(value: string): number | null {
   return Math.round(Number.parseFloat(value) * 1000);
 }
 
+function buildPlatformAssessmentPayload(enabled?: boolean, reviewIntervalHours?: string): { enabled?: boolean; reviewIntervalMs?: number } | null {
+  if (!enabled) return null;
+  const hours = parseInt(reviewIntervalHours ?? '', 10);
+  const payload: { enabled: true; reviewIntervalMs?: number } = { enabled: true };
+  if (!isNaN(hours) && hours > 0) {
+    payload.reviewIntervalMs = hours * 3_600_000;
+  }
+  return payload;
+}
+
 type AgentNotificationPolicy = {
   sendMessage: {
     email: {
@@ -90,6 +100,10 @@ export interface CreateAgentIntentPayloadInput {
   stopLossCooldownSecs: string;
   style?: string;
   strategyPreset?: string;
+  /** When true, enable platform preset assessment for this agent. */
+  platformAssessmentEnabled?: boolean;
+  /** Review interval in hours: "12", "24", "48", "96", or empty string for unset. */
+  platformAssessmentReviewIntervalHours?: string;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
   runtimePolicyOverrides?: RuntimePolicyOverrides;
   subscribedSources?: string[];
@@ -131,6 +145,10 @@ export interface UpdateAgentPayloadInput {
   originalTickIntervalMs?: number | null;
   style?: string;
   strategyPreset?: string;
+  /** When true, enable platform preset assessment for this agent. */
+  platformAssessmentEnabled?: boolean;
+  /** Review interval in hours: "12", "24", "48", "96", or empty string for unset. */
+  platformAssessmentReviewIntervalHours?: string;
   runtimePolicyOverrides?: RuntimePolicyOverrides;
   subscribedSources?: string[];
 }
@@ -166,6 +184,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   runtimePolicyOverrides?: RuntimePolicyOverrides | null;
   wakePreferences?: { subscribedSources?: string[] } | null;
   notificationPolicy?: { sendMessage: { email: { enabled: boolean; source: 'explicit_update' } } } | null;
+  platformAssessment?: { enabled?: boolean; reviewIntervalMs?: number } | null;
 } {
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'hybrid';
@@ -209,6 +228,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(wakePreferences ? { wakePreferences } : {}),
     capabilityMode: input.capabilityMode,
     ...(input.capabilityMode === 'hybrid' ? { hybridMode: input.hybridMode } : {}),
+    platformAssessment: buildPlatformAssessmentPayload(input.platformAssessmentEnabled, input.platformAssessmentReviewIntervalHours),
   };
 }
 
@@ -246,6 +266,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   runtimePolicyOverrides?: RuntimePolicyOverrides | null;
   wakePreferences?: { subscribedSources?: string[] } | null;
   notificationPolicy?: { sendMessage: { email: { enabled: boolean; source: 'explicit_update' } } } | null;
+  platformAssessment?: { enabled?: boolean; reviewIntervalMs?: number } | null;
 } {
   const parsedTickInterval = input.preserveOriginalTickIntervalMs
     ? undefined
@@ -298,5 +319,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     notificationPolicy: emailDeliveryPolicy ?? null,
     capabilityMode: input.capabilityMode,
     hybridMode: input.capabilityMode === 'hybrid' ? input.hybridMode : null,
+    platformAssessment: buildPlatformAssessmentPayload(input.platformAssessmentEnabled, input.platformAssessmentReviewIntervalHours),
   };
 }

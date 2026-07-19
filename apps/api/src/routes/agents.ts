@@ -135,6 +135,10 @@ const CreateAgentSchema = z.object({
   wakePreferences: WakePreferencesSchema.optional(),
   capabilityMode: CapabilityModeSchema.optional(),
   hybridMode: HybridModeSchema.optional(),
+  platformAssessment: z.object({
+    enabled: z.boolean().optional(),
+    reviewIntervalMs: z.number().int().positive().optional(),
+  }).optional(),
 }).superRefine((data, ctx) => {
   if (!data.technical && !data.prompt) {
     ctx.addIssue({
@@ -212,6 +216,10 @@ const UpdateAgentSchema = z.object({
   wakePreferences: WakePreferencesSchema.nullable().optional(),
   capabilityMode: CapabilityModeSchema.nullable().optional(),
   hybridMode: HybridModeSchema.nullable().optional(),
+  platformAssessment: z.object({
+    enabled: z.boolean().optional(),
+    reviewIntervalMs: z.number().int().positive().optional(),
+  }).nullable().optional(),
 });
 
 function mergeTechnicalConfig(
@@ -247,15 +255,18 @@ function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: st
   strategyPresetName: string | null;
   capabilityMode: string | null;
   hybridMode: string | null;
+  platformAssessment: { enabled?: boolean; reviewIntervalMs?: number } | null;
 } {
   const { strategyPreset, strategyPresetName } = extractPresetMeta(agent.unifiedConfig);
   const uc = agent.unifiedConfig as Record<string, unknown> | null;
+  const pa = uc?.['platformAssessment'] as Record<string, unknown> | undefined;
   return {
     technical: uc?.['technical'] ?? null,
     strategyPreset,
     strategyPresetName,
     capabilityMode: (uc?.['capabilityMode'] as string) ?? null,
     hybridMode: (uc?.['hybridMode'] as string) ?? null,
+    platformAssessment: pa ? { enabled: pa['enabled'] as boolean | undefined, reviewIntervalMs: pa['reviewIntervalMs'] as number | undefined } : null,
   };
 }
 
@@ -753,6 +764,14 @@ export async function agentRoutes(
         capabilityMode,
         ...(hybridMode !== undefined ? { hybridMode } : {}),
       };
+    }
+
+    // 002: Stamp platformAssessment into unifiedConfig if provided.
+    if (parsed.data.platformAssessment) {
+      if (!finalUnifiedConfig) {
+        finalUnifiedConfig = {};
+      }
+      finalUnifiedConfig.platformAssessment = parsed.data.platformAssessment;
     }
 
     // Populate technical.filters from the agent's selected connections.
@@ -1517,6 +1536,21 @@ export async function agentRoutes(
       // 'hybrid' → 'intelligence' without also explicitly clearing hybridMode.
       if (effectiveCapability !== 'hybrid') {
         delete (unifiedConfigPatch as Record<string, unknown>)['hybridMode'];
+      }
+    }
+
+    // 002: Stamp platformAssessment into unifiedConfigPatch if provided.
+    if (parsed.data.platformAssessment !== undefined) {
+      if (unifiedConfigPatch === undefined) {
+        const current = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
+        unifiedConfigPatch = { ...current };
+      } else if (unifiedConfigPatch === null) {
+        unifiedConfigPatch = {};
+      }
+      if (parsed.data.platformAssessment === null) {
+        delete (unifiedConfigPatch as Record<string, unknown>)['platformAssessment'];
+      } else {
+        unifiedConfigPatch['platformAssessment'] = parsed.data.platformAssessment;
       }
     }
 

@@ -452,6 +452,48 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                 </div>
               </div>
 
+              {/* Platform Preset Assessment — only when scanner_gated */}
+              {props.value.capabilityMode === 'hybrid' && props.value.hybridMode === 'scanner_gated' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+                    Platform Assessment
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                    Let the platform periodically assess preset fitness and suggest strategy changes.
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={props.value.platformAssessmentEnabled}
+                      onChange={(e) => {
+                        props.onChange({
+                          platformAssessmentEnabled: e.target.checked,
+                          platformAssessmentReviewIntervalHours: e.target.checked ? '24' : '',
+                        });
+                      }}
+                    />
+                    Enable platform preset assessment
+                  </label>
+                  {props.value.platformAssessmentEnabled && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                        Review interval
+                      </label>
+                      <select
+                        style={{ ...inputStyle, cursor: 'pointer', maxWidth: '200px' }}
+                        value={props.value.platformAssessmentReviewIntervalHours}
+                        onChange={(e) => props.onChange({ platformAssessmentReviewIntervalHours: e.target.value })}
+                      >
+                        <option value="12">12 hours</option>
+                        <option value="24">24 hours</option>
+                        <option value="48">48 hours</option>
+                        <option value="96">96 hours</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Wake sources — hidden only when scanner_gated (scanner is the sole trading wake source) */}
               {(props.value.capabilityMode !== 'hybrid' || props.value.hybridMode !== 'scanner_gated') && (
                 <WakeSourceSection

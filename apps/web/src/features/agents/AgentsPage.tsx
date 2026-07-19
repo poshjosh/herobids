@@ -80,6 +80,8 @@ interface IntentState {
   openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
   runtimePolicyOverrides: RuntimePolicyOverrides | null;
   strategyPreset: string;
+  platformAssessmentEnabled: boolean;
+  platformAssessmentReviewIntervalHours: string;
   subscribedSources: string[];
   pendingFiles: File[];
 }
@@ -391,6 +393,8 @@ function CreateAgentFlow({
     openPositionEscalationToJudgePolicy: styleDefaults.openPositionEscalationToJudgePolicy,
     runtimePolicyOverrides: null,
     strategyPreset: '',
+    platformAssessmentEnabled: false,
+    platformAssessmentReviewIntervalHours: '24',
     subscribedSources: ['watch_threshold', 'discovery_delta', 'regime_change'],
     pendingFiles: [],
     };
@@ -696,6 +700,8 @@ function CreateAgentFlow({
         openPositionEscalationToJudgePolicy: intent.openPositionEscalationToJudgePolicy,
         runtimePolicyOverrides: intent.runtimePolicyOverrides ?? undefined,
         subscribedSources: intent.subscribedSources,
+        platformAssessmentEnabled: intent.platformAssessmentEnabled,
+        platformAssessmentReviewIntervalHours: intent.platformAssessmentReviewIntervalHours,
       }));
 
       // Upload any documents selected during creation

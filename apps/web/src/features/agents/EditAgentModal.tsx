@@ -425,6 +425,8 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         style,
         runtimePolicyOverrides: runtimePolicyOverrides ?? undefined,
         subscribedSources: form.subscribedSources,
+        platformAssessmentEnabled: form.platformAssessmentEnabled,
+        platformAssessmentReviewIntervalHours: form.platformAssessmentReviewIntervalHours,
       }));
 
       if (form.pendingFiles.length > 0) {

@@ -54,6 +54,11 @@ export interface AgentFormState {
   // Style-based strategy preset
   strategyPreset: string;
 
+  // Platform preset assessment (scanner_gated agents only)
+  platformAssessmentEnabled: boolean;
+  /** Review interval in hours: one of "12", "24", "48", "96", or "" (unset). */
+  platformAssessmentReviewIntervalHours: string;
+
   // Wake source subscriptions (empty = all sources)
   subscribedSources: string[];
 
@@ -151,6 +156,10 @@ export function agentToFormState(agent: Agent): AgentFormState {
     // metadata but with a technical config fall back to 'custom'; agents with
     // neither fall back to '' (no selection yet).
     strategyPreset: agent.strategyPreset ?? (agent.technical != null ? 'custom' : ''),
+    platformAssessmentEnabled: agent.platformAssessment?.enabled ?? false,
+    platformAssessmentReviewIntervalHours: agent.platformAssessment?.reviewIntervalMs
+      ? String(Math.round(agent.platformAssessment.reviewIntervalMs / 3_600_000))
+      : '',
     subscribedSources: agent.wakePreferences?.subscribedSources ?? [],
     pendingFiles: [],
   };
@@ -190,6 +199,8 @@ export function intentToFormState(intent: {
   stopLossCooldownSecs: string;
   openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
   strategyPreset: string;
+  platformAssessmentEnabled: boolean;
+  platformAssessmentReviewIntervalHours: string;
   subscribedSources: string[];
   pendingFiles: File[];
 }): AgentFormState {
@@ -218,6 +229,8 @@ export function intentToFormState(intent: {
     stopLossCooldownSecs,
     openPositionEscalationToJudgePolicy,
     strategyPreset,
+    platformAssessmentEnabled,
+    platformAssessmentReviewIntervalHours,
     subscribedSources,
     pendingFiles,
   } = intent;
@@ -246,6 +259,8 @@ export function intentToFormState(intent: {
     stopLossCooldownSecs,
     openPositionEscalationToJudgePolicy,
     strategyPreset,
+    platformAssessmentEnabled,
+    platformAssessmentReviewIntervalHours,
     subscribedSources,
     pendingFiles,
   };

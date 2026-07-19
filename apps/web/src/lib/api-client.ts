@@ -959,6 +959,8 @@ export interface Agent {
   capabilityMode?: string | null;
   /** Hybrid sub-mode: 'mixed' | 'scanner_gated'. Only meaningful when capabilityMode='hybrid'. */
   hybridMode?: string | null;
+  /** Platform preset assessment config from unifiedConfig. */
+  platformAssessment?: { enabled?: boolean; reviewIntervalMs?: number } | null;
   createdAt: string;
   updatedAt: string;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;

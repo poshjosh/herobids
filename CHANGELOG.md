@@ -8,7 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Evidence Adapters, Preset Catalog, and Assessment Payload (015):** Closed the three highest-priority gaps for end-to-end preset assessment:
+- **Platform Assessment Agent Form Controls:** Added `platformAssessment.enabled` (checkbox) and `platformAssessment.reviewIntervalMs` (12/24/48/96 hour dropdown) to the agent create/edit form, visible when scanner-gated filter mode is selected. Threaded through form state, create/update payloads, API schemas, unified config persistence, and response enrichment. Closed the three highest-priority gaps for end-to-end preset assessment:
   - **Real Preset Catalog** — `createPresetCatalog()` in `preset-catalog-adapter.ts` wraps domain `listPresets()`; eager-loads all 3 style tiers at worker startup, throws loudly on missing/empty; replaces hardcoded `() => []` stub.
   - **Real Evidence Adapters** — `evidence-adapters.ts` with regime (via `evaluateRegime()` using `scannerCandleFetcher`), candles (reuses `VenueCandleFetcher` path), liquidity (explicit unavailable — first slice), breadth (explicit unavailable — first slice); replaces 4 unconditional stub ports.
   - **Evidence Persistence** — `PlatformAssessor.persistEvidence()` writes `evidenceSnapshot`, `scorecardSnapshots`, `calculationVersions`, `evidenceRefs` into `marketAssessmentRuns` before LLM ranking; best-effort (non-blocking).
