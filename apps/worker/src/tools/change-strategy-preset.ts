@@ -3,7 +3,8 @@ import {
   ChangeStrategyPresetParamsSchema,
   isArtifactFresh,
 } from '@herobids/domain';
-import { agentPresetTransitions, marketAssessmentArtifacts } from '@herobids/db';
+import type { PresetTransitionPort } from '@herobids/domain';
+import { marketAssessmentArtifacts } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '@herobids/db/schema';
@@ -14,6 +15,14 @@ import { randomUUID } from 'node:crypto';
 const logger = createLogger('tool:change-strategy-preset');
 
 type Db = PostgresJsDatabase<typeof schema>;
+
+// ── Module-level port reference ────────────────────────────────────────────
+
+let transitionPort: PresetTransitionPort | null = null;
+
+export function setPresetTransitionPort(p: PresetTransitionPort): void {
+  transitionPort = p;
+}
 
 async function executeApplyPresetTransition(
   params: unknown,
@@ -83,52 +92,38 @@ async function executeApplyPresetTransition(
       };
     }
 
-    // ── Build immutable identity snapshot ────────────────────────────────
-    const identitySnapshot: Record<string, unknown> = {
-      instrumentKind: artifactRow.instrumentKind,
-      venueFamily: artifactRow.venueFamily,
-      styleTier: artifactRow.styleTier,
-    };
-    if (artifactRow.symbol) identitySnapshot['symbol'] = artifactRow.symbol;
-    if (artifactRow.network) identitySnapshot['network'] = artifactRow.network;
-    if (artifactRow.address) identitySnapshot['address'] = artifactRow.address;
+    // ── Delegate to PresetTransitionPort ────────────────────────────────
 
-    // ── Resolve old preset (best-effort) ─────────────────────────────────
-    // TODO: resolve current preset from agent metadata (agents table metadata.strategyPreset).
-    // The unified config does not store the current preset key — it lives in the agents table.
-    // Once agentConfigOps exposes getActivePreset() or similar, use it here.
-    let oldPresetKey = 'unknown';
+    if (!transitionPort) {
+      return {
+        success: false,
+        error: 'Preset transition port not wired — transitions are not available.',
+        errorCode: 'transition.port_unavailable',
+      };
+    }
 
-    // Resolve open position count — stub until position repo is wired into ToolContext
-    const openPositionCount = 0;
-
-    // ── Persist immutable transition record ──────────────────────────────
-    await db.insert(agentPresetTransitions).values({
-      id: randomUUID(),
+    const transitionResult = await transitionPort.applyTransition({
       agentId: ctx.agentId,
-      oldPresetKey,
-      oldPresetBehaviorVersion: 'unknown',
-      newPresetKey: targetPreset,
-      newPresetBehaviorVersion: 'v1',
-      assessmentArtifactId: artifactRow.id,
-      // Identity snapshot (replaces old segmentKey/universeScopeHash)
-      identitySnapshot,
-      instrumentKind: artifactRow.instrumentKind,
-      symbol: artifactRow.symbol ?? null,
-      network: artifactRow.network ?? null,
-      address: artifactRow.address ?? null,
-      transitionMode: mode,
-      openPositionCount,
-      outcome: 'accepted',
-      state: 'prepared',
-      positionActionResults: null,
-      transitionScope: 'default',
-      reason: reason ?? null,
-      appliedAt: now,
-      regimeSnapshot: null,
-      mode: 'live',
-      createdAt: now,
+      assessmentArtifactId,
+      targetPreset,
+      mode,
+      reason: reason ?? 'Agent-initiated preset transition',
+      idempotencyKey: randomUUID(),
     });
+
+    if (!transitionResult.ok) {
+      logger.error(
+        { err: transitionResult.error, agentId: ctx.agentId, targetPreset, mode },
+        'Preset transition failed via port',
+      );
+      return {
+        success: false,
+        error: transitionResult.error.message,
+        errorCode: transitionResult.error.code,
+      };
+    }
+
+    const applied = transitionResult.data;
 
     // ── Journal for audit ────────────────────────────────────────────────
     if (ctx.agentConfigOps) {
@@ -136,31 +131,34 @@ async function executeApplyPresetTransition(
         targetPreset,
         mode,
         reason: reason ?? 'Agent-initiated preset transition',
-        oldPresetKey,
-        assessmentArtifactId: artifactRow.id,
-        identitySnapshot,
-        appliedAt: now.toISOString(),
+        assessmentArtifactId,
+        transitionId: applied.transitionId,
+        state: applied.state,
+        appliedAt: applied.appliedAt,
       });
     }
 
     // TODO(analytics): record transition metrics for later attribution analysis.
-    // Capture: agentId, oldPresetKey, newPresetKey, assessmentArtifactId,
-    // transitionMode, openPositionCount, appliedAt. Feed into analytics pipeline
+    // Capture: agentId, targetPreset, assessmentArtifactId,
+    // transitionMode, transitionId, state, appliedAt. Feed into analytics pipeline
     // once attribution quality is validated (see checklist §13).
 
-    logger.info({ agentId: ctx.agentId, targetPreset, mode, oldPresetKey, assessmentArtifactId }, 'Preset transition applied');
+    logger.info(
+      { agentId: ctx.agentId, targetPreset, mode, transitionId: applied.transitionId, state: applied.state },
+      'Preset transition applied via port',
+    );
 
     return {
       success: true,
       data: {
-        applied: true,
+        applied: applied.state === 'applied',
         targetPreset,
         mode,
         assessmentArtifactId,
-        identitySnapshot,
-        message: `Preset transition applied: switched to "${targetPreset}" in "${mode}" mode. Future entries will use the new preset configuration.`,
-        openPositionCount,
-        appliedAt: now.toISOString(),
+        transitionId: applied.transitionId,
+        state: applied.state,
+        message: `Preset transition ${applied.state}: switched to "${targetPreset}" in "${mode}" mode. Future entries will use the new preset configuration.`,
+        appliedAt: applied.appliedAt,
       },
     };
   } catch (err) {

@@ -5,38 +5,43 @@ import {
   type AssessmentResultEntry,
   type AssessStrategyPresetResponse,
 } from '@herobids/domain';
+import type {
+  AssessmentRequestPort,
+  AssessmentRequestPortParams,
+  AssessmentRequestPortOutcome,
+} from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { createLogger } from '../logger.js';
-import { AssessmentRequestService } from '../market-intelligence/assessment-request-service.js';
-import type { AssessmentRequestOutcome } from '../market-intelligence/assessment-request-service.js';
 
 const logger = createLogger('tool:assess-strategy-preset');
 
-// ── Module-level service reference ─────────────────────────────────────────
+// ── Module-level port reference ────────────────────────────────────────────
 
-let service: AssessmentRequestService | null = null;
+let port: AssessmentRequestPort | null = null;
 
-export function setAssessmentRequestService(svc: AssessmentRequestService): void {
-  service = svc;
+export function setAssessmentRequestPort(p: AssessmentRequestPort): void {
+  port = p;
 }
 
 function mapOutcomeToResultEntry(
   symbol: string,
-  outcome: AssessmentRequestOutcome,
+  outcome: AssessmentRequestPortOutcome,
   idempotencyKey: string | null,
 ): AssessmentResultEntry {
+  const billed = outcome.kind === 'cache_hit' || outcome.kind === 'assessment_completed';
+
   if (outcome.kind === 'cache_hit' || outcome.kind === 'assessment_completed') {
     return {
       success: true,
       symbol,
       transitionReference: {
-        assessmentArtifactId: outcome.assessmentArtifactId,
+        assessmentArtifactId: outcome.assessmentArtifactId!,
       },
       billing: {
         billed: true,
-        requestId: outcome.requestId,
+        requestId: outcome.requestId ?? null,
         idempotencyKey,
-        source: outcome.kind,
+        source: outcome.kind === 'cache_hit' ? 'cache_hit' : 'new_run',
       },
     };
   }
@@ -45,11 +50,11 @@ function mapOutcomeToResultEntry(
     return {
       success: false,
       symbol,
-      error: outcome.error,
+      error: outcome.error ?? 'Provider failed',
       errorCode: outcome.errorCode ?? 'assessment.provider_failed',
       billing: {
         billed: false,
-        requestId: outcome.requestId,
+        requestId: outcome.requestId ?? null,
         idempotencyKey,
         source: 'failed',
       },
@@ -57,31 +62,28 @@ function mapOutcomeToResultEntry(
   }
 
   // Blocked outcomes: request_in_flight, billing_blocked, cooldown_blocked, identity_unresolved
-  const blocked = outcome as Exclude<AssessmentRequestOutcome,
-    { kind: 'cache_hit' } | { kind: 'assessment_completed' } | { kind: 'provider_failed' }>;
-
   let error: string;
   let errorCode: string;
   let requestId: string | null = null;
 
-  switch (blocked.kind) {
+  switch (outcome.kind) {
     case 'billing_blocked':
-      error = blocked.reason;
+      error = outcome.reason ?? 'Billing blocked';
       errorCode = 'assessment.billing_blocked';
-      requestId = blocked.requestId ?? null;
+      requestId = outcome.requestId ?? null;
       break;
     case 'cooldown_blocked':
-      error = `Assessment on cooldown until ${blocked.nextEligibleAt}`;
+      error = `Assessment on cooldown until ${outcome.nextEligibleAt ?? 'unknown'}`;
       errorCode = 'assessment.cooldown_blocked';
-      requestId = blocked.requestId ?? null;
+      requestId = outcome.requestId ?? null;
       break;
     case 'identity_unresolved':
-      error = blocked.reason;
+      error = outcome.reason ?? 'Identity unresolved';
       errorCode = 'assessment.identity_unresolved';
-      requestId = blocked.requestId ?? null;
+      requestId = outcome.requestId ?? null;
       break;
     case 'request_in_flight':
-      error = blocked.message;
+      error = outcome.message ?? 'Request in flight';
       errorCode = 'assessment.request_in_flight';
       break;
     default:
@@ -123,7 +125,7 @@ async function executeAssessStrategyPreset(
   }
 
   // ── Configurable cap ──
-  const maxInstrumentsPerRequest = service?.maxInstrumentsPerRequest ?? 3;
+  const maxInstrumentsPerRequest = port?.maxInstrumentsPerRequest ?? 3;
   const cap = Math.max(1, maxInstrumentsPerRequest);
   const acceptedSymbols = symbols.slice(0, cap);
   const truncated = symbols.length > cap;
@@ -137,22 +139,69 @@ async function executeAssessStrategyPreset(
     }
   }
 
-  // ── Delegate to AssessmentRequestService if available ──
-  if (service) {
-    const batchResult = await service.requestBatchAssessment(
-      acceptedSymbols,
-      {
-        agentId: ctx.agentId,
-        venueFamily,
-        instrumentKind: instrumentKind ?? 'orderbook',
-        styleTier,
-        idempotencyKey,
-      },
-      cap,
-    );
+  const resolvedInstrumentKind = (instrumentKind ?? 'orderbook') as 'orderbook' | 'perp';
 
-    const results: AssessmentResultEntry[] = batchResult.results.map((r) =>
-      mapOutcomeToResultEntry(r.symbol, r.outcome, idempotencyKey ?? null),
+  // ── Delegate to AssessmentRequestPort if wired ──
+  if (port) {
+    // Build AssessmentRequestPortParams for each accepted symbol
+    const paramsArray: AssessmentRequestPortParams[] = acceptedSymbols.map((symbol) => ({
+      agentId: ctx.agentId,
+      symbol,
+      identity: {
+        instrumentKind: resolvedInstrumentKind,
+        venueFamily,
+        styleTier,
+        symbol,
+      },
+      idempotencyKey,
+    }));
+
+    const batchResult = await port.requestBatchAssessment(paramsArray);
+
+    if (!batchResult.ok) {
+      const results: AssessmentResultEntry[] = acceptedSymbols.map((symbol) => ({
+        success: false,
+        symbol,
+        error: batchResult.error.message,
+        errorCode: batchResult.error.code,
+        billing: {
+          billed: false,
+          requestId: null,
+          idempotencyKey: idempotencyKey ?? null,
+          source: 'failed',
+        },
+      }));
+
+      const response: AssessStrategyPresetResponse = {
+        success: true,
+        data: {
+          requestedInstrumentCount: symbols.length,
+          assessedInstrumentCount: acceptedSymbols.length,
+          maxInstrumentsPerRequest: cap,
+          message: truncated
+            ? `Requested ${symbols.length} instruments; only the first ${cap} were assessed because the per-request maximum is ${cap}.`
+            : undefined,
+          results,
+        },
+      };
+
+      return AssessStrategyPresetResponseSchema.parse(response) as unknown as ToolResult;
+    }
+
+    // Zip outcomes with symbols (outcomes are in request order)
+    const outcomes = batchResult.data;
+
+    // Defensive guard: verify port returned the expected number of outcomes
+    if (outcomes.length !== acceptedSymbols.length) {
+      return {
+        success: false,
+        error: `Port returned ${outcomes.length} outcomes for ${acceptedSymbols.length} requested instruments`,
+        errorCode: 'assessment.port_mismatch',
+      };
+    }
+
+    const results: AssessmentResultEntry[] = acceptedSymbols.map((symbol, idx) =>
+      mapOutcomeToResultEntry(symbol, outcomes[idx], idempotencyKey ?? null),
     );
 
     const response: AssessStrategyPresetResponse = {
@@ -171,12 +220,12 @@ async function executeAssessStrategyPreset(
     return AssessStrategyPresetResponseSchema.parse(response) as unknown as ToolResult;
   }
 
-  // ── Fallback: service not wired ──
-  logger.warn('AssessmentRequestService not wired — returning unavailable for all instruments');
+  // ── Fallback: port not wired ──
+  logger.warn('AssessmentRequestPort not wired — returning unavailable for all instruments');
   const results: AssessmentResultEntry[] = acceptedSymbols.map((symbol) => ({
     success: false,
     symbol,
-    error: 'Assessment request service not available. Assessments will be available once the service is deployed.',
+    error: 'Assessment request port not available. Assessments will be available once the service is deployed.',
     errorCode: 'assessment.service_unavailable',
     billing: {
       billed: false,

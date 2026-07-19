@@ -55,11 +55,12 @@ import { StubRuntimeDocumentMaterializer } from './agents/stub-document-material
 import { LocalDocumentStore } from '@herobids/documents';
 import { UserEventPublisher } from './user-event-publisher.js';
 import { ActorHealthPublisher } from './actor-health-publisher.js';
-import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler } from './market-intelligence/index.js';
+import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler, PresetTransitionService } from './market-intelligence/index.js';
 import type { ReviewScheduler } from './market-intelligence/index.js';
 import { createPlatformAssessor } from './market-intelligence/assessor-factory.js';
 import { AssessmentRequestService } from './market-intelligence/assessment-request-service.js';
-import { setAssessmentRequestService } from './tools/assess-strategy-preset.js';
+import { setAssessmentRequestPort } from './tools/assess-strategy-preset.js';
+import { setPresetTransitionPort } from './tools/change-strategy-preset.js';
 import type { AssessmentEvidencePorts } from './market-intelligence/assessment-ports.js';
 import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
@@ -1952,7 +1953,12 @@ const assessmentRequestService = new AssessmentRequestService(
   platformAssessor,
 );
 
-setAssessmentRequestService(assessmentRequestService);
+setAssessmentRequestPort(assessmentRequestService);
+
+// ── Preset Transition Service ─────────────────────────────────────────────
+// Wire the PresetTransitionPort so tools can delegate preset transitions.
+const presetTransitionService = new PresetTransitionService({ db, notifyActor: undefined });
+setPresetTransitionPort(presetTransitionService);
 
 logger.info(
   {

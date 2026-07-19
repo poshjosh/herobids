@@ -1,7 +1,21 @@
-import { describe, it, expect, vi } from 'vitest';
-import type { ToolContext } from '@herobids/domain';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { ToolContext, PresetTransitionPort, PresetTransitionApplicationResult } from '@herobids/domain';
+import { ok } from '@herobids/domain';
 import { marketAssessmentArtifacts } from '@herobids/db';
-import { changeStrategyPresetTool } from './change-strategy-preset.js';
+import { changeStrategyPresetTool, setPresetTransitionPort } from './change-strategy-preset.js';
+
+function makeMockTransitionPort(overrides?: Partial<PresetTransitionPort>): PresetTransitionPort {
+  return {
+    applyTransition: vi.fn().mockResolvedValue(ok<PresetTransitionApplicationResult>({
+      transitionId: 'transition-1',
+      state: 'applied',
+      positionActionResults: null,
+      appliedAt: new Date().toISOString(),
+    })),
+    recommendTransition: vi.fn(),
+    ...overrides,
+  };
+}
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -82,13 +96,20 @@ function makeActiveArtifact(overrides?: Record<string, unknown>) {
 }
 
 describe('change_strategy_preset', () => {
+  beforeEach(() => {
+    // Reset the module-level port between tests so each test starts clean.
+    setPresetTransitionPort(null as unknown as PresetTransitionPort);
+  });
+
   // ── Valid params → success ─────────────────────────────────────────────
 
   it('records transition and returns success for valid params', async () => {
     const artifact = makeActiveArtifact();
-    const insertSpy = vi.fn().mockResolvedValue(undefined);
+    const mockPort = makeMockTransitionPort();
+    setPresetTransitionPort(mockPort);
+
     const ctx = makeCtx({
-      db: makeMockDb({ selectResult: [artifact], insertFn: insertSpy }),
+      db: makeMockDb({ selectResult: [artifact] }),
     });
 
     const result = await changeStrategyPresetTool.execute(
@@ -101,17 +122,17 @@ describe('change_strategy_preset', () => {
       applied: true,
       targetPreset: 'momentum',
       mode: 'entries_only',
-      openPositionCount: 0,
+      transitionId: 'transition-1',
+      state: 'applied',
     });
-    expect(insertSpy).toHaveBeenCalledOnce();
-    const insertCall = insertSpy.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(insertCall.newPresetKey).toBe('momentum');
-    expect(insertCall.transitionMode).toBe('entries_only');
-    expect(insertCall.outcome).toBe('accepted');
-    expect(insertCall.state).toBe('prepared');
-    expect(insertCall.positionActionResults).toBeNull();
-    expect(insertCall.transitionScope).toBe('default');
-    expect(insertCall.agentId).toBe('agent-1');
+    expect(mockPort.applyTransition).toHaveBeenCalledOnce();
+    const call = (mockPort.applyTransition as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.agentId).toBe('agent-1');
+    expect(call.assessmentArtifactId).toBe('artifact-1');
+    expect(call.targetPreset).toBe('momentum');
+    expect(call.mode).toBe('entries_only');
+    expect(call.reason).toBe('Market shifted bullish');
+    expect(call.idempotencyKey).toBeTypeOf('string');
   });
 
   it('returns artifact_not_found for non-existent assessment artifact', async () => {
@@ -132,6 +153,9 @@ describe('change_strategy_preset', () => {
   it('journals the transition via agentConfigOps', async () => {
     const artifact = makeActiveArtifact();
     const appendJournal = vi.fn().mockResolvedValue(undefined);
+    const mockPort = makeMockTransitionPort();
+    setPresetTransitionPort(mockPort);
+
     const ctx = makeCtx({
       db: makeMockDb({ selectResult: [artifact] }),
       agentConfigOps: {
@@ -154,7 +178,9 @@ describe('change_strategy_preset', () => {
     expect(journalCall[1]).toMatchObject({
       targetPreset: 'momentum',
       mode: 'entries_and_tighten_existing',
-      oldPresetKey: 'unknown',
+      reason: 'Better momentum signal',
+      transitionId: 'transition-1',
+      state: 'applied',
     });
   });
 
@@ -208,9 +234,11 @@ describe('change_strategy_preset', () => {
 
   it('allows preset when allowedPresets is empty (no restriction)', async () => {
     const artifact = makeActiveArtifact({ allowedPresets: [] });
-    const insertSpy = vi.fn().mockResolvedValue(undefined);
+    const mockPort = makeMockTransitionPort();
+    setPresetTransitionPort(mockPort);
+
     const ctx = makeCtx({
-      db: makeMockDb({ selectResult: [artifact], insertFn: insertSpy }),
+      db: makeMockDb({ selectResult: [artifact] }),
     });
 
     const result = await changeStrategyPresetTool.execute(
@@ -219,6 +247,7 @@ describe('change_strategy_preset', () => {
     );
 
     expect(result.success).toBe(true);
+    expect(mockPort.applyTransition).toHaveBeenCalledOnce();
   });
 
   // ── DB unavailable → error ─────────────────────────────────────────────
@@ -239,9 +268,11 @@ describe('change_strategy_preset', () => {
 
   it('succeeds without shadow-mode gate when platformAssessment is enabled', async () => {
     const artifact = makeActiveArtifact();
-    const insertSpy = vi.fn().mockResolvedValue(undefined);
+    const mockPort = makeMockTransitionPort();
+    setPresetTransitionPort(mockPort);
+
     const ctx = makeCtx({
-      db: makeMockDb({ selectResult: [artifact], insertFn: insertSpy }),
+      db: makeMockDb({ selectResult: [artifact] }),
       agentConfigOps: {
         getCurrentConfig: vi.fn().mockResolvedValue({
           platformAssessment: { enabled: true, mode: 'apply_capable' },
@@ -260,7 +291,7 @@ describe('change_strategy_preset', () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({ applied: true, targetPreset: 'momentum' });
-    expect(insertSpy).toHaveBeenCalledOnce();
+    expect(mockPort.applyTransition).toHaveBeenCalledOnce();
   });
 
   // ── recommend_only mode blocks transitions ────────────────────────────
@@ -297,14 +328,9 @@ describe('change_strategy_preset', () => {
       allowedPresets: ['momentum_v1'],
       symbol: 'BTC',
     });
-    const artifact2 = makeActiveArtifact({
-      id: 'artifact-2',
-      allowedPresets: ['scalper_v1'],
-      symbol: 'BTC',
-      assessedAt: new Date(Date.now() + 1000), // fresher than artifact-1
-    });
 
-    const insertSpy = vi.fn().mockResolvedValue(undefined);
+    const mockPort = makeMockTransitionPort();
+    setPresetTransitionPort(mockPort);
 
     // Both artifacts exist in the DB, but the tool queries by exact
     // assessmentArtifactId (eq(id, 'artifact-1')), so only artifact-1
@@ -320,7 +346,7 @@ describe('change_strategy_preset', () => {
 
     const db = {
       select: selectSpy,
-      insert: vi.fn().mockReturnValue({ values: vi.fn().mockImplementation(insertSpy) }),
+      insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
     };
 
     const ctx = makeCtx({ db: db as unknown as ToolContext['db'] });
@@ -347,10 +373,10 @@ describe('change_strategy_preset', () => {
     // eq(column, value) produces a single SQL condition argument.
     expect(whereSpy.mock.calls[0]).toHaveLength(1);
 
-    // Verify the persisted transition record uses the exact artifact-1 ID.
-    expect(insertSpy).toHaveBeenCalledOnce();
-    const insertCall = insertSpy.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(insertCall.assessmentArtifactId).toBe('artifact-1');
+    // Verify the transition port was called with the exact artifact-1 ID.
+    expect(mockPort.applyTransition).toHaveBeenCalledOnce();
+    const portCall = (mockPort.applyTransition as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(portCall.assessmentArtifactId).toBe('artifact-1');
   });
 
 
