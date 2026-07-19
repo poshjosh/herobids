@@ -34,6 +34,19 @@ async function executeApplyPresetTransition(
   }
   const { assessmentArtifactId, targetPreset, mode, reason } = parsed.data;
 
+  // ── Gate: Reject tightening modes (out of scope for this slice) ───
+  // entries_and_tighten_existing requires position-action infrastructure
+  // that is not yet implemented. Refuse it explicitly so the agent
+  // receives a clear signal that only entries_only is supported.
+  if (mode === 'entries_and_tighten_existing' || mode === 'entries_and_full_transition') {
+    logger.warn({ agentId: ctx.agentId, mode }, 'Blocked preset transition — tightening mode is not supported in this slice');
+    return {
+      success: false,
+      error: `Transition mode "${mode}" is not supported. Only "entries_only" is available in this release.`,
+      errorCode: 'transition.unsupported_mode',
+    };
+  }
+
   // ── Gate: Ensure platform assessment is enabled for this agent ─────
   if (ctx.agentConfigOps) {
     const currentConfig = await ctx.agentConfigOps.getCurrentConfig();

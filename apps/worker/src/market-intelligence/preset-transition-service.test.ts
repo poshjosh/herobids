@@ -889,4 +889,139 @@ describe('PresetTransitionService', () => {
       expect(allInsertCalls.length).toBe(2);
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // D: Exact-artifact handoff (C7 proof)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe('exact-artifact handoff (C7)', () => {
+    // Helper: build a DB mock that supports the full insert chain including
+    // .onConflictDoUpdate() for the binding upsert.
+    function makeFullMockDb(selectQueue: unknown[]) {
+      const base = makeQueueDb(selectQueue);
+      const insertValues = vi.fn().mockReturnValue({
+        onConflictDoUpdate: vi.fn(() => Promise.resolve()),
+      });
+      return {
+        select: base.select,
+        insert: vi.fn(() => ({ values: insertValues })),
+        update: vi.fn(() => ({
+          set: vi.fn(() => ({
+            where: vi.fn(() => Promise.resolve()),
+          })),
+        })),
+      };
+    }
+
+    it('uses the exact artifact ID — never substitutes a newer artifact for the same identity', async () => {
+      // Simulate two artifacts for the same identity (BTC, hyperliquid, standard):
+      // artifact-old (id=artifact-1) and artifact-new (id=artifact-2, more recent).
+      // The caller specifies artifact-1 — the service must use artifact-1,
+      // not silently substitute artifact-2.
+      const artifactOld = makeActiveArtifact({
+        id: 'artifact-1',
+        symbol: 'BTC',
+        venueFamily: 'hyperliquid',
+        styleTier: 'standard',
+        assessedAt: new Date(Date.now() - 7200_000), // 2 hours ago
+        presetRankings: [
+          { presetKey: 'momentum', rank: 1, score: 85, scoreBand: 'high', pros: [], cons: [], fitNotes: null },
+        ],
+        allowedPresets: ['momentum_v1'],
+      });
+
+      const binding = makeBindingRow({ activePresetKey: 'mean_reversion' });
+      const agent = makeAgentRow();
+
+      const db = makeFullMockDb([
+        [artifactOld], // artifact query by ID → returns artifact-1
+        [binding],     // binding query
+        [agent],       // agent query
+      ]);
+
+      const service = new PresetTransitionService({ db: db as any });
+
+      const result = await service.applyTransition({
+        agentId: 'agent-1',
+        assessmentArtifactId: 'artifact-1', // exact ID specified
+        targetPreset: 'momentum_v1',
+        mode: 'entries_only',
+        idempotencyKey: 'idem-c7-1',
+      });
+
+      // Should succeed using artifact-1's allowedPresets (momentum_v1).
+      // If artifact-2 were substituted, the preset 'momentum_v1' would not
+      // be in its allowedPresets and the call would fail.
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.state).toBe('applied');
+        expect(result.data.positionActionResults).toBeNull();
+      }
+    });
+
+    it('rejects a stale artifact without implicit reassessment', async () => {
+      // An expired artifact is passed — the service must reject it
+      // without silently fetching a newer artifact for the same identity.
+      const expiredArtifact = makeExpiredArtifact();
+
+      const service = createService([
+        [expiredArtifact], // artifact query → expired
+      ]);
+
+      const result = await service.applyTransition({
+        agentId: 'agent-1',
+        assessmentArtifactId: 'artifact-expired',
+        targetPreset: 'momentum',
+        mode: 'entries_only',
+        idempotencyKey: 'idem-c7-2',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('transition.artifact_expired');
+      }
+    });
+
+    it('rejects a superseded artifact without implicit reassessment', async () => {
+      const supersededArtifact = makeSupersededArtifact();
+
+      const service = createService([
+        [supersededArtifact],
+      ]);
+
+      const result = await service.applyTransition({
+        agentId: 'agent-1',
+        assessmentArtifactId: 'artifact-superseded',
+        targetPreset: 'momentum',
+        mode: 'entries_only',
+        idempotencyKey: 'idem-c7-3',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('transition.artifact_expired');
+      }
+    });
+
+    it('rejects artifact_not_found without scanning for alternatives', async () => {
+      // The exact artifact ID is not found — the service returns
+      // artifact_not_found without attempting broad identity-based lookup.
+      const service = createService([
+        [], // artifact query → empty (no match for this exact ID)
+      ]);
+
+      const result = await service.applyTransition({
+        agentId: 'agent-1',
+        assessmentArtifactId: 'nonexistent-artifact',
+        targetPreset: 'momentum',
+        mode: 'entries_only',
+        idempotencyKey: 'idem-c7-4',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('transition.artifact_not_found');
+      }
+    });
+  });
 });

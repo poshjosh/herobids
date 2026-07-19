@@ -168,7 +168,7 @@ describe('change_strategy_preset', () => {
     });
 
     await changeStrategyPresetTool.execute(
-      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'entries_and_tighten_existing', reason: 'Better momentum signal' },
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'entries_only', reason: 'Better momentum signal' },
       ctx,
     );
 
@@ -177,7 +177,7 @@ describe('change_strategy_preset', () => {
     expect(journalCall[0]).toBe('preset_transition');
     expect(journalCall[1]).toMatchObject({
       targetPreset: 'momentum',
-      mode: 'entries_and_tighten_existing',
+      mode: 'entries_only',
       reason: 'Better momentum signal',
       transitionId: 'transition-1',
       state: 'applied',
@@ -377,6 +377,80 @@ describe('change_strategy_preset', () => {
     expect(mockPort.applyTransition).toHaveBeenCalledOnce();
     const portCall = (mockPort.applyTransition as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as Record<string, unknown>;
     expect(portCall.assessmentArtifactId).toBe('artifact-1');
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // M2: Tightening-mode rejection (entries_and_tighten_existing)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  it('rejects entries_and_tighten_existing mode as unsupported', async () => {
+    const ctx = makeCtx();
+
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'entries_and_tighten_existing' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('transition.unsupported_mode');
+    expect(result.error).toContain('entries_and_tighten_existing');
+    expect(result.error).toContain('entries_only');
+  });
+
+  it('rejects entries_and_full_transition mode as unsupported', async () => {
+    const ctx = makeCtx();
+
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'entries_and_full_transition', reason: 'Full migration' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('transition.unsupported_mode');
+    expect(result.error).toContain('entries_and_full_transition');
+  });
+
+  it('rejects tightening mode before any DB query or port call', async () => {
+    // Verify the rejection gate fires before the DB is even touched.
+    // Use a DB mock that would throw if accessed — the gate should
+    // short-circuit before any DB interaction.
+    const throwingDb = new Proxy({} as Record<string, unknown>, {
+      get() {
+        throw new Error('DB should not be accessed for tightening-mode rejection');
+      },
+    });
+    const ctx = makeCtx({ db: throwingDb as unknown as ToolContext['db'] });
+
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'entries_and_tighten_existing' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('transition.unsupported_mode');
+  });
+
+  it('allows entries_only mode through the gate', async () => {
+    const artifact = makeActiveArtifact();
+    const mockPort = makeMockTransitionPort();
+    setPresetTransitionPort(mockPort);
+
+    const ctx = makeCtx({
+      db: makeMockDb({ selectResult: [artifact] }),
+    });
+
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'artifact-1', targetPreset: 'momentum', mode: 'entries_only' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      applied: true,
+      targetPreset: 'momentum',
+      mode: 'entries_only',
+    });
+    expect(mockPort.applyTransition).toHaveBeenCalledOnce();
   });
 
 

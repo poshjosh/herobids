@@ -17,6 +17,7 @@ import {
   recordActiveWatches,
   recordActiveWatchSummary,
   trimDynamicBlocks,
+  updateRuntimeDescriptor,
   type PromptEnrichmentPolicy,
   type ActivityTimelineEvent,
   type RuntimeContextProvider,
@@ -2982,5 +2983,231 @@ describe('runtime composition helpers', () => {
       // Then trimOrder 1, same situation → dropped.
       // So result should be empty.
       expect(result).toHaveLength(0);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // C: Runtime reload integration — binding-derived config applies to actor
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe('runtime config update (binding reload)', () => {
+    it('applyRuntimeMessage updates runtime descriptor on agent.runtime.config_update', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      const summary = applyRuntimeMessage(state, {
+        type: 'agent.runtime.config_update',
+        payload: {
+          runtimeDescriptor: {
+            goal: 'Updated goal after preset transition',
+            executionMode: 'live' as const,
+            resolvedSkills: [
+              {
+                id: 'momentum-trading',
+                name: 'Momentum Trading',
+                description: 'Momentum-based trading strategy',
+                instructions: 'Follow momentum signals.',
+                requiredTools: ['submit_decision', 'send_message'],
+                capabilityFamilies: ['trading'],
+                bindingRequirements: {},
+                contextRequirements: [],
+                requiredContextBlocks: ['corePlatformContext'],
+                promptRendererHints: ['core-system'],
+                requiredGuardrails: [],
+                suggestedTickIntervalMs: 900_000,
+                visibility: 'public' as const,
+              },
+            ],
+          },
+          reason: 'binding_changed',
+        },
+      });
+
+      expect(summary).toBe('Runtime config updated: binding_changed');
+      expect(state.runtimeDescriptor.goal).toBe('Updated goal after preset transition');
+      expect(state.runtimeDescriptor.executionMode).toBe('live');
+      expect(state.runtimeDescriptor.resolvedSkills).toHaveLength(1);
+      expect(state.runtimeDescriptor.resolvedSkills[0]!.id).toBe('momentum-trading');
+    });
+
+    it('updateRuntimeDescriptor changes active preset reflected in prompt', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      // Simulate a preset transition: update the goal and skills to reflect
+      // the new active preset (momentum).
+      updateRuntimeDescriptor(state, {
+        ...baseDescriptor,
+        goal: 'Trade using momentum strategy on BTC',
+        resolvedSkills: [
+          {
+            id: 'momentum-trading',
+            name: 'Momentum Trading',
+            description: 'Momentum-based trading strategy',
+            instructions: 'Follow momentum signals.',
+            requiredTools: ['submit_decision', 'send_message', 'publish_artifact', 'set_memory'],
+            capabilityFamilies: ['trading'],
+            bindingRequirements: {},
+            contextRequirements: [],
+            requiredContextBlocks: ['corePlatformContext'],
+            promptRendererHints: ['core-system'],
+            requiredGuardrails: [],
+            suggestedTickIntervalMs: 900_000,
+            visibility: 'public' as const,
+          },
+        ],
+      });
+
+      const timing = createPromptTimingContext({
+        currentTimeMs: Date.now(),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.now() + 900_000,
+      });
+      const prompt = buildSystemPrompt(state, timing);
+
+      // The prompt should reflect the updated goal and skill set
+      expect(prompt).toContain('Trade using momentum strategy on BTC');
+      expect(prompt).not.toContain('Trade carefully'); // original goal replaced
+    });
+
+    it('config_update event is recorded in recent events for audit', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      applyRuntimeMessage(state, {
+        type: 'agent.runtime.config_update',
+        payload: {
+          runtimeDescriptor: {
+            goal: 'New strategy active',
+          },
+          reason: 'preset_switched_to_momentum',
+        },
+      });
+
+      const configEvents = state.metrics.recentEvents.filter(
+        (e) => e.type === 'agent.runtime.config_update',
+      );
+      expect(configEvents).toHaveLength(1);
+      expect(configEvents[0]!.summary).toContain('preset_switched_to_momentum');
+    });
+
+    it('updateRuntimeDescriptor preserves unchanged fields from the existing descriptor', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      const originalName = state.runtimeDescriptor.name;
+      const originalAgentId = state.runtimeDescriptor.agentId;
+
+      // Partial update — only change goal
+      updateRuntimeDescriptor(state, {
+        agentId: originalAgentId,
+        goal: 'New goal only',
+      });
+
+      expect(state.runtimeDescriptor.goal).toBe('New goal only');
+      expect(state.runtimeDescriptor.name).toBe(originalName); // preserved
+      expect(state.runtimeDescriptor.agentId).toBe(originalAgentId);
+    });
+
+    it('updateRuntimeDescriptor applies name from update when provided', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      updateRuntimeDescriptor(state, {
+        agentId: baseDescriptor.agentId,
+        name: 'momentum-agent-v2',
+        goal: 'Updated',
+      });
+
+      expect(state.runtimeDescriptor.name).toBe('momentum-agent-v2');
+    });
+
+    it('multiple config updates stack correctly (simulating review → apply cycle)', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      // First update: assessment review wake
+      applyRuntimeMessage(state, {
+        type: 'agent.runtime.config_update',
+        payload: {
+          runtimeDescriptor: {
+            goal: 'Reviewing: momentum scored best',
+          },
+          reason: 'assessment_review',
+        },
+      });
+
+      expect(state.runtimeDescriptor.goal).toBe('Reviewing: momentum scored best');
+
+      // Second update: actual transition applied
+      applyRuntimeMessage(state, {
+        type: 'agent.runtime.config_update',
+        payload: {
+          runtimeDescriptor: {
+            goal: 'Applied: momentum strategy active',
+            resolvedSkills: [
+              {
+                id: 'momentum-active',
+                name: 'Momentum (Active)',
+                description: 'Active momentum strategy',
+                instructions: 'Trade momentum.',
+                requiredTools: ['submit_decision', 'send_message', 'publish_artifact', 'set_memory'],
+                capabilityFamilies: ['trading'],
+                bindingRequirements: {},
+                contextRequirements: [],
+                requiredContextBlocks: ['corePlatformContext'],
+                promptRendererHints: ['core-system'],
+                requiredGuardrails: [],
+                suggestedTickIntervalMs: 900_000,
+                visibility: 'public' as const,
+              },
+            ],
+          },
+          reason: 'binding_changed',
+        },
+      });
+
+      expect(state.runtimeDescriptor.goal).toBe('Applied: momentum strategy active');
+      expect(state.runtimeDescriptor.resolvedSkills).toHaveLength(1);
+      expect(state.runtimeDescriptor.resolvedSkills[0]!.id).toBe('momentum-active');
+
+      // Both events recorded
+      const configEvents = state.metrics.recentEvents.filter(
+        (e) => e.type === 'agent.runtime.config_update',
+      );
+      expect(configEvents).toHaveLength(2);
+    });
+
+    it('config_update without runtimeDescriptor still records event', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      const originalGoal = state.runtimeDescriptor.goal;
+
+      const summary = applyRuntimeMessage(state, {
+        type: 'agent.runtime.config_update',
+        payload: {
+          reason: 'health_check',
+        },
+      });
+
+      expect(summary).toBe('Runtime config update received');
+      // Descriptor should be unchanged since no runtimeDescriptor payload
+      expect(state.runtimeDescriptor.goal).toBe(originalGoal);
+    });
+
+    it('runtime descriptor update is visible in subsequent prompt builds', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      // Initial prompt
+      const timing = createPromptTimingContext({
+        currentTimeMs: Date.now(),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.now() + 900_000,
+      });
+      const promptBefore = buildSystemPrompt(state, timing);
+      expect(promptBefore).toContain('Trade carefully');
+
+      // Apply config update
+      updateRuntimeDescriptor(state, {
+        ...baseDescriptor,
+        goal: 'Trade aggressively with momentum',
+      });
+
+      // Subsequent prompt reflects the change
+      const promptAfter = buildSystemPrompt(state, timing);
+      expect(promptAfter).toContain('Trade aggressively with momentum');
+      expect(promptAfter).not.toContain('Trade carefully');
     });
   });
