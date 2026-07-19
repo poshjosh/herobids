@@ -20,6 +20,7 @@ import {
   type PlatformAssessorConfig,
   type PlatformAssessmentOptIn,
   type AssessmentRequestPortOutcome,
+  type AssessmentRequestPortParams,
   type AssessmentArtifactSummary,
 } from '@herobids/domain';
 import { PlatformAssessor } from './platform-assessor.js';
@@ -590,10 +591,10 @@ export class AssessmentRequestService {
 
   /**
    * Port-compliant batch assessment entry point.
-   * Accepts pre-resolved AssessmentRequestPortParams and processes each serially.
+   * Accepts pre-resolution AssessmentRequestPortParams and processes each serially.
    */
   async requestBatchAssessment(
-    params: Array<{ agentId: string; symbol: string; identity: MarketAssessmentIdentity; idempotencyKey?: string }>,
+    params: AssessmentRequestPortParams[],
   ): Promise<Result<AssessmentRequestPortOutcome[]>> {
     const results: AssessmentRequestPortOutcome[] = [];
 
@@ -601,9 +602,9 @@ export class AssessmentRequestService {
       const result = await this.requestAssessment({
         agentId: p.agentId,
         symbol: p.symbol,
-        venueFamily: p.identity.venueFamily,
-        instrumentKind: p.identity.instrumentKind,
-        styleTier: p.identity.styleTier,
+        venueFamily: p.venueFamily,
+        instrumentKind: p.instrumentKind,
+        styleTier: p.styleTier,
         idempotencyKey: p.idempotencyKey,
       });
 

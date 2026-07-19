@@ -1,0 +1,8 @@
+-- Reconstructed migration — the original 0047_gifted_night_nurse.sql was
+-- accidentally deleted. The snapshot (0047_snapshot.json) is intact.
+-- All SQL files 0000–0048 (skipping this file) apply cleanly in order
+-- against fresh Postgres, so this migration was a snapshot-only bump
+-- with no additional DDL changes beyond what 0046 and 0048 cover.
+--
+-- This empty file restores Drizzle journal/file alignment.
+-- Bug report: docs/bug-reports/2026/07/19/001-missing-migration-0047-gifted-night-nurse.md

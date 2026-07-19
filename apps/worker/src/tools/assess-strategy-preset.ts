@@ -164,12 +164,9 @@ async function executeAssessStrategyPreset(
     const paramsArray: AssessmentRequestPortParams[] = acceptedSymbols.map((symbol) => ({
       agentId: ctx.agentId,
       symbol,
-      identity: {
-        instrumentKind: resolvedInstrumentKind,
-        venueFamily,
-        styleTier,
-        symbol,
-      },
+      venueFamily,
+      instrumentKind: resolvedInstrumentKind,
+      styleTier,
       idempotencyKey,
     }));
 

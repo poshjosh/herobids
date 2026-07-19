@@ -57,11 +57,19 @@ export type AssessmentRequestPortOutcome =
       canonicalIdentity?: MarketAssessmentIdentity;
     };
 
-/** Parameters for a single assessment request through the port. */
+/**
+ * Parameters for a single assessment request through the port.
+ *
+ * This is the pre-resolution boundary: callers provide the user-facing symbol
+ * plus venue/instrument context, and the service resolves the canonical
+ * `MarketAssessmentIdentity` internally.
+ */
 export interface AssessmentRequestPortParams {
   agentId: string;
   symbol: string;
-  identity: MarketAssessmentIdentity;
+  venueFamily?: string;
+  instrumentKind?: 'orderbook' | 'perp' | 'swap' | 'dex';
+  styleTier?: 'economy' | 'standard' | 'premium';
   idempotencyKey?: string;
 }
 
