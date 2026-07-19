@@ -19,7 +19,7 @@ export type AssessmentRequestOutcome =
   | { kind: 'billing_blocked'; reason: string }
   | { kind: 'cooldown_blocked'; nextEligibleAt: string }
   | { kind: 'identity_unresolved'; reason: string }
-  | { kind: 'provider_failed'; error: string }
+  | { kind: 'provider_failed'; error: string; errorCode?: string }
   | { kind: 'cache_hit'; assessmentArtifactId: string; billed: true }
   | { kind: 'assessment_completed'; assessmentArtifactId: string; billed: true };
 
@@ -36,6 +36,28 @@ export interface AssessmentRequestParams {
   knownSymbols?: Set<string>;
   /** For swap/dex: mapping from user-facing symbol to canonical {network, address}. */
   tokenResolutions?: Map<string, { network: string; address: string }>;
+}
+
+// ── Batch Types ─────────────────────────────────────────────────────────────
+
+/** Per-instrument result from a batch assessment request. */
+export interface BatchInstrumentResult {
+  symbol: string;
+  outcome: AssessmentRequestOutcome;
+}
+
+/** Outcome of a batch assessment request. */
+export interface BatchAssessmentResult {
+  /** Results per accepted instrument, in request order. */
+  results: BatchInstrumentResult[];
+  /** Number of instruments requested. */
+  requestedCount: number;
+  /** Number of instruments actually assessed (may be less due to cap). */
+  assessedCount: number;
+  /** The cap that was enforced. */
+  maxInstrumentsPerRequest: number;
+  /** Human-readable truncation message, if applicable. */
+  truncationMessage?: string;
 }
 
 // ── Identity Key Serialization ──────────────────────────────────────────────
@@ -81,17 +103,20 @@ export class AssessmentRequestService {
    */
   private readonly idempotencyCache = new Map<string, AssessmentRequestOutcome>();
 
+  /** Maximum instruments accepted per batch request. */
+  private readonly maxInstrumentsPerRequest: number;
+
   // NOTE: This uses the domain PlatformAssessorConfig (@herobids/domain)
   // which includes scheduling fields (minReviewIntervalMs, etc.) not present
   // in the local PlatformAssessorConfig (platform-assessor.ts).
   // When billing is wired (Step 7), use the domain type.
   constructor(
     private readonly db: Database,
-    _operatorConfig: PlatformAssessorConfig,
+    operatorConfig: PlatformAssessorConfig,
     private readonly assessor: PlatformAssessor,
   ) {
     this.log = createLogger('assessment-request-service');
-    void _operatorConfig;
+    this.maxInstrumentsPerRequest = operatorConfig.maxInstrumentsPerRequest;
   }
 
   // ── Public API ────────────────────────────────────────────────────────
@@ -149,7 +174,7 @@ export class AssessmentRequestService {
 
     // ── 3. Validate opt-in and mode (stub) ────────────────────────────
     // TODO(Step 7): Query agent's PlatformAssessmentOptIn from DB,
-    // resolve via resolveAssessmentConfig, and validate enabled + mode.
+    // resolve via resolveAssessmentConfig, and validate enabled.
 
     // ── 4. Enforce cooldown (stub) ────────────────────────────────────
     // TODO(Step 7): Check last assessment time per (agentId, key).
@@ -181,6 +206,93 @@ export class AssessmentRequestService {
     } finally {
       this.inFlightLeases.delete(key);
     }
+  }
+
+  /**
+   * Process a batch of symbols sharing the same venue/instrument context.
+   * Each symbol is processed serially through requestAssessment.
+   * Partial success is allowed — some symbols may succeed while others fail.
+   *
+   * @param symbols - Array of trading symbols to assess (e.g. ["BTC", "ETH"])
+   * @param sharedParams - Shared venue/instrument context for all symbols
+   * @param maxInstrumentsPerRequest - Configured max per request (default: from operator config)
+   * @returns BatchAssessmentResult with per-symbol outcomes
+   */
+  async requestBatchAssessment(
+    symbols: string[],
+    sharedParams: Omit<AssessmentRequestParams, 'symbol'>,
+    maxInstrumentsPerRequest: number = this.maxInstrumentsPerRequest,
+  ): Promise<BatchAssessmentResult> {
+    // Guard against misconfigured zero or negative cap.
+    const cap = Math.max(1, maxInstrumentsPerRequest);
+
+    // Guard against empty symbols array.
+    if (symbols.length === 0) {
+      return {
+        results: [],
+        requestedCount: 0,
+        assessedCount: 0,
+        maxInstrumentsPerRequest: cap,
+        truncationMessage: undefined,
+      };
+    }
+
+    const requestedCount = symbols.length;
+    const acceptedSymbols = symbols.slice(0, cap);
+    const assessedCount = acceptedSymbols.length;
+
+    let truncationMessage: string | undefined;
+    if (requestedCount > cap) {
+      truncationMessage = `Requested ${requestedCount} instruments; only the first ${assessedCount} were assessed because the per-request maximum is ${cap}.`;
+      this.log.info({ requestedCount, assessedCount, maxInstrumentsPerRequest: cap }, 'Assessment batch truncated');
+    }
+
+    const results: BatchInstrumentResult[] = [];
+
+    // Process serially in request order
+    for (const symbol of acceptedSymbols) {
+      // Defensive: requestAssessment currently always returns ok(), but
+      // future changes may return err(). We also wrap in try/catch so a
+      // thrown exception in one iteration doesn't abandon remaining symbols.
+      try {
+        const result = await this.requestAssessment({
+          ...sharedParams,
+          symbol,
+        });
+
+        if (result.ok) {
+          results.push({ symbol, outcome: result.data });
+        } else {
+          // Wrap error as a provider_failed outcome, preserving the error code.
+          results.push({
+            symbol,
+            outcome: {
+              kind: 'provider_failed',
+              error: result.error.message,
+              errorCode: result.error.code,
+            },
+          });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.log.warn({ err, symbol }, 'Assessment request threw — captured as provider_failed');
+        results.push({
+          symbol,
+          outcome: {
+            kind: 'provider_failed',
+            error: message,
+          },
+        });
+      }
+    }
+
+    return {
+      results,
+      requestedCount,
+      assessedCount,
+      maxInstrumentsPerRequest: cap,
+      truncationMessage,
+    };
   }
 
   // ── Assessor ─────────────────────────────────────────────────────────
@@ -233,7 +345,7 @@ export class AssessmentRequestService {
       } catch (err) {
         this.log.error({ err, runId }, 'Failed to update run status to failed');
       }
-      return { kind: 'provider_failed', error: result.error.message };
+      return { kind: 'provider_failed', error: result.error.message, errorCode: result.error.code };
     }
 
     const artifact = result.data;
