@@ -61,10 +61,10 @@ import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler
 import type { ReviewScheduler } from './market-intelligence/index.js';
 import { createPlatformAssessor } from './market-intelligence/assessor-factory.js';
 import { createPresetCatalog } from './market-intelligence/preset-catalog-adapter.js';
+import { createEvidencePorts } from './market-intelligence/evidence-adapters.js';
 import { AssessmentRequestService } from './market-intelligence/assessment-request-service.js';
 import { setAssessmentRequestPort } from './tools/assess-strategy-preset.js';
 import { setPresetTransitionPort } from './tools/change-strategy-preset.js';
-import type { AssessmentEvidencePorts } from './market-intelligence/assessment-ports.js';
 import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
@@ -1888,7 +1888,8 @@ const reviewSchedulers = new Map<string, ReviewScheduler>();
 // ── Platform Assessor ───────────────────────────────────────────────────────
 // Construct the shared PlatformAssessor and AssessmentRequestService.
 // The assessor uses platform-owned LLM configuration (never agent config).
-// Evidence ports are stubbed until Plan 008 implements real market-data adapters.
+// Evidence ports are backed by the worker's scanner candle fetcher.
+// Liquidity and breadth remain explicitly unavailable in the first shipped slice.
 
 const providersBaseUrlMap: Record<string, string> = {};
 if (providersYaml?.providers) {
@@ -1899,29 +1900,9 @@ if (providersYaml?.providers) {
   }
 }
 
-// TODO(008): Replace stubs with real evidence port implementations.
-const evidencePorts: AssessmentEvidencePorts = {
-  regime: {
-    getRegime: async (_identity) => {
-      return err({ code: 'assessment.evidence_unavailable', message: 'Regime evidence not yet wired (Plan 008)' }) as Awaited<ReturnType<AssessmentEvidencePorts['regime']['getRegime']>>;
-    },
-  },
-  candles: {
-    getCandles: async (_input) => {
-      return err({ code: 'assessment.evidence_unavailable', message: 'Candle evidence not yet wired (Plan 008)' }) as Awaited<ReturnType<AssessmentEvidencePorts['candles']['getCandles']>>;
-    },
-  },
-  liquidity: {
-    getLiquidity: async (_identity) => {
-      return err({ code: 'assessment.evidence_unavailable', message: 'Liquidity evidence not yet wired (Plan 008)' }) as Awaited<ReturnType<AssessmentEvidencePorts['liquidity']['getLiquidity']>>;
-    },
-  },
-  breadth: {
-    getBreadth: async (_input) => {
-      return err({ code: 'assessment.evidence_unavailable', message: 'Breadth evidence not yet wired (Plan 008)' }) as Awaited<ReturnType<AssessmentEvidencePorts['breadth']['getBreadth']>>;
-    },
-  },
-};
+// Real evidence ports backed by the worker's scanner candle fetcher.
+// Liquidity and breadth remain explicitly unavailable in the first shipped slice.
+const evidencePorts = createEvidencePorts({ scannerCandleFetcher });
 
 const getPresets = createPresetCatalog();
 
