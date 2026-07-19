@@ -3,7 +3,7 @@ import { PlatformAssessor } from './platform-assessor.js';
 import type { PlatformAssessorConfig, PlatformAssessorDeps } from './platform-assessor.js';
 import type { AssessmentEvidencePorts } from './assessment-ports.js';
 import { ok, err } from '@herobids/domain';
-import type { PresetEntry, MarketAssessmentIdentity } from '@herobids/domain';
+import type { PresetEntry, MarketAssessmentIdentity, AssessmentData, AssessmentUnavailable, PresetScorecardEntry } from '@herobids/domain';
 import type { PriceCandle } from '@herobids/market-data';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -25,6 +25,24 @@ function makeConfig(overrides?: Partial<PlatformAssessorConfig>): PlatformAssess
     maxLlmCallsPerCycle: 5,
     cacheFreshnessMs: 60_000,
     ...overrides,
+  };
+}
+
+function makeExpiredAssessmentData<T>(data: T, source: string): AssessmentData<T> {
+  return {
+    data,
+    source,
+    provider: 'test',
+    observedAt: new Date(Date.now() - 600_000).toISOString(),
+    expiresAt: new Date(Date.now() - 1).toISOString(), // expired 1ms ago
+  };
+}
+
+function makeAssessmentUnavailable(reasonCode: string): AssessmentUnavailable {
+  return {
+    reasonCode,
+    message: `Test: ${reasonCode}`,
+    observedAt: new Date().toISOString(),
   };
 }
 
@@ -271,6 +289,123 @@ describe('PlatformAssessor', () => {
         expect(result.error.code).toBe('assessment.evidence_unavailable');
       }
     });
+
+    it('returns assessment.evidence_stale when regime is stale', async () => {
+      const deps = makeDeps();
+      deps.evidencePorts.regime.getRegime = vi.fn(async () =>
+        ok(makeExpiredAssessmentData(
+          { pass: true, reasons: ['test'], details: { benchmarkSymbol: 'BTC', currentPrice: 50000, emaFast: 49800, emaSlow: 49000, emaTrend: 48500, emaAlignment: 'bullish' as const, adxValue: 28, choppy: false, vwap: 49700, priceAboveVwap: true, marketStructure: 'higherHighs' as const } },
+          'test-regime',
+        )),
+      );
+      const assessor = new PlatformAssessor(makeConfig(), deps);
+
+      const result = await assessor.collectEvidence(makeIdentity());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('assessment.evidence_stale');
+      }
+    });
+
+    it('returns assessment.evidence_stale when candles are stale', async () => {
+      const deps = makeDeps();
+      deps.evidencePorts.candles.getCandles = vi.fn(async () =>
+        ok(makeExpiredAssessmentData(makeMockCandles(100), 'test-candles')),
+      );
+      const assessor = new PlatformAssessor(makeConfig(), deps);
+
+      const result = await assessor.collectEvidence(makeIdentity());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('assessment.evidence_stale');
+      }
+    });
+
+    it('returns assessment.evidence_unavailable when candles are unavailable', async () => {
+      const deps = makeDeps();
+      deps.evidencePorts.candles.getCandles = vi.fn(async () =>
+        err({ code: 'test.error', message: 'candles down' }),
+      );
+      const assessor = new PlatformAssessor(makeConfig(), deps);
+
+      const result = await assessor.collectEvidence(makeIdentity());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('assessment.evidence_unavailable');
+      }
+    });
+
+    it('still returns ok when liquidity is unavailable (non-mandatory)', async () => {
+      const deps = makeDeps();
+      deps.evidencePorts.liquidity.getLiquidity = vi.fn(async () =>
+        err({ code: 'test.error', message: 'liquidity down' }),
+      );
+      const assessor = new PlatformAssessor(makeConfig(), deps);
+
+      const result = await assessor.collectEvidence(makeIdentity());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.liquidity.state).toBe('unavailable');
+      }
+    });
+
+    it('still returns ok when breadth is unavailable (non-mandatory)', async () => {
+      const deps = makeDeps();
+      deps.evidencePorts.breadth.getBreadth = vi.fn(async () =>
+        err({ code: 'test.error', message: 'breadth down' }),
+      );
+      const assessor = new PlatformAssessor(makeConfig(), deps);
+
+      const result = await assessor.collectEvidence(makeIdentity());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.breadth.state).toBe('unavailable');
+      }
+    });
+
+    it('handles breadth returning AssessmentUnavailable (not error)', async () => {
+      const deps = makeDeps();
+      deps.evidencePorts.breadth.getBreadth = vi.fn(async () =>
+        ok(makeAssessmentUnavailable('assessment.breadth_not_configured')),
+      );
+      const assessor = new PlatformAssessor(makeConfig(), deps);
+
+      const result = await assessor.collectEvidence(makeIdentity());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.breadth.state).toBe('unavailable');
+      }
+    });
+
+    it('returns ok with unavailable volatility when < 2 candles provided', async () => {
+      const deps = makeDeps();
+      deps.evidencePorts.candles.getCandles = vi.fn(async () =>
+        ok({
+          data: makeMockCandles(1),
+          source: 'test-candles',
+          provider: 'test',
+          observedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+        }),
+      );
+      const assessor = new PlatformAssessor(makeConfig(), deps);
+
+      const result = await assessor.collectEvidence(makeIdentity());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.volatility.state).toBe('unavailable');
+        if (result.data.volatility.state === 'unavailable') {
+          expect(result.data.volatility.reasonCode).toContain('volatility');
+        }
+      }
+    });
   });
 
   describe('generateScorecards', () => {
@@ -333,6 +468,26 @@ describe('PlatformAssessor', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.code).toBe('assessment.scorecard_failed');
+      }
+    });
+
+    it('returns PresetScorecardEntry with evaluationScope field set', () => {
+      const assessor = new PlatformAssessor(makeConfig(), makeDeps());
+      const identity = makeIdentity();
+      const candles = makeMockCandles(100);
+      const presets = [
+        { key: 'momentum_v1', entry: makeMockPresetEntry('momentum_v1', 'momentum', 'trend-following') },
+        { key: 'mean_reversion_v1', entry: makeMockPresetEntry('mean_reversion_v1', 'range', 'mean-reverting') },
+      ];
+
+      const result = assessor.generateScorecards(identity, candles, presets);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('expected ok');
+      const scorecards = result.data;
+      expect(scorecards).toHaveLength(2);
+      for (const entry of scorecards) {
+        expect(entry.evaluationScope).toBe('single_symbol_dry_run');
       }
     });
   });
