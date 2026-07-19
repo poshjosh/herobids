@@ -570,3 +570,62 @@ When the schema change is added, verify a clean database applies the generated m
 - Retained requirements (behavior versions, advisory rollout, transition safety, auditability, attribution) remain implemented and tested.
 - Obsolete segment/scheduler/wake code is deleted, not left dormant, except deferred infra explicitly named in the requirements matrix; `rg universeScopeHash` is clean of assessment-identity usages.
 - Focused tests, migration verification, `pnpm lint`, and `pnpm build` pass.
+
+---
+
+## 19. Outstanding Issues (from implementation session 2026-07-18)
+
+### [Step 1] Identity & Billing Contracts
+- MEDIUM: Missing tests for `knownSymbols`-omitted, `perp`/`dex` resolution paths via `resolveAssessmentIdentity`
+- MEDIUM: `validateSettlementPolicy()` is a weak validator (throw-only, no semantic checks against documented rules)
+- LOW: No tests for `validateSettlementPolicy()` itself
+- LOW: JSDoc on `resolveAssessmentIdentity` missing two error codes (`invalid_symbol`, `no_token_resolutions`)
+- LOW: No whitespace-trimming test for symbol normalization
+
+### [Step 2] Review Scheduler, Advice, Tick
+- MEDIUM: `runPreCheck` return type uses flat union with optional identity — could be discriminated union for compile-time safety
+- LOW: `identitySnapshot: c.identity ?? {}` falls back to empty object if identity absent (unreachable but silent)
+- LOW: No tests for review-scheduler, review-advice schema, or ScannerWakeContext discriminated union
+- LOW: `review-advice.ts` CHECK constraints use raw SQL column names instead of Drizzle template literals for consistency and type safety
+
+### [Step 3] Config Schemas & Validation
+- MEDIUM: No tests for `resolveAssessmentConfig` and `validateReviewInterval`
+- MEDIUM: `assessmentPrice` missing from operator config (deferred to billing step)
+- MEDIUM: `minConfidenceThreshold` default 0.6 is a literal, not operator-config-derived
+- LOW: Worker references stale `PlatformAssessorConfig` fields (pre-existing, resolved in Step 7)
+
+### [Step 4] Tool Parameter Schemas
+- MEDIUM: `RecommendPresetTransitionParamsSchema` `.refine()` constraint (at least one of `assessmentArtifactId`/`symbol`) is invisible in JSON Schema output
+- MEDIUM: Registry description still says "shared assessment" — should say "per-symbol assessment"
+- LOW: Lost `.describe()` on `ApplyPresetTransitionParamsSchema.targetPreset`
+- LOW: `get_market_preset_assessment` description omits billing side-effect for cache hits
+- LOW: `recommend_preset_transition` example shows only one path (artifact-reference), missing symbol-first path
+
+### [Step 5] DB Schema
+- MEDIUM: `review-advice.ts` CHECK constraints use raw SQL column names (e.g. `instrument_kind`) instead of Drizzle template literals (`${t.instrumentKind}`) — functionally identical but loses TypeScript compile-time column-name verification
+- LOW: `identitySnapshot` default inconsistency: `marketAssessmentRuns`/`marketAssessmentArtifacts` use `default(sql'{}'::jsonb)`, while `reviewAdvice`/`agentPresetTransitions` have no default
+
+### [Step 6] Assessment Request Service
+- MEDIUM: Idempotency scope is key-only (not `agentId + identity + key`) — must be widened when real billing is wired
+- MEDIUM: Race condition between billing reservation and per-identity lease when wired — two concurrent requests from same agent with different idempotency keys could both pass billing before acquiring lease
+- MEDIUM: `venueFamily`/`styleTier`/`instrumentKind` have hard-coded defaults (`'hyperliquid'`, `'standard'`, `'orderbook'`) — should come from resolved config or be required params
+- LOW: Unbounded in-memory cache growth for `idempotencyCache` (no TTL/size cap/eviction)
+- LOW: `identityKey` delimiter collision risk with `|` character
+- LOW: No concurrency limit enforcement (`maxConcurrentAssessments`)
+
+### [Step 7] PlatformAssessor Refactor
+- MEDIUM: `identityToSegmentKey` discriminated union narrowing may need explicit `switch` statement for robust TS narrowing
+- MEDIUM: `PlatformAssessorDeps.db` and `redis` are now unused (persistence responsibility moved to `AssessmentRequestService`)
+- LOW: `maxLlmCallsPerCycle` is dead config on the class after cycle loop removal
+
+### [Step 8–10] Tools, Deletions, Retained Requirements
+- MEDIUM: Duplicate `identityWhereClause` in two tool files — should be extracted to shared utility
+- MEDIUM: `recommend_preset_transition` Path B (symbol-first) returns early without calling `identityWhereClause` — dead code
+- LOW: `WakeGateConfig` interface retained in `schema.ts` for engine's `wake-gate.ts` compat — may need eventual deletion
+- LOW: `MarketAssessmentWakeDecision` interface and Zod schema are dead code after DB table deletion
+
+### [Step 11] Tests & Verification
+- MEDIUM: No integration tests for assessment request service against Postgres (concurrent same-identity requests)
+- MEDIUM: No tests for tool execution paths (`get_market_preset_assessment`, `recommend_preset_transition`, `apply_preset_transition`)
+- LOW: Pre-existing `presets.test.ts` failures (9 tests) due to missing `config/strategy-presets/*.yaml` files — unrelated to this feature
+- LOW: No migration application verification against a live database
