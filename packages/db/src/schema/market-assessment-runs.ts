@@ -35,6 +35,12 @@ export const marketAssessmentRuns = pgTable('market_assessment_runs', {
   completedAt: timestamp('completed_at', { withTimezone: true }),
   status: text('status').notNull().default('pending'), // pending | in_progress | completed | failed | budget_exhausted
   evidenceRefs: jsonb('evidence_refs').notNull().$type<string[]>(),
+  /** Immutable evidence snapshot captured during assessment. */
+  evidenceSnapshot: jsonb('evidence_snapshot').notNull().default(sql`'{}'::jsonb`).$type<Record<string, unknown>>(),
+  /** Deterministic scorecard results as JSON array. */
+  scorecardSnapshots: jsonb('scorecard_snapshots').notNull().default(sql`'[]'::jsonb`).$type<Record<string, unknown>[]>(),
+  /** Calculation versions for reproducibility/audit. */
+  calculationVersions: jsonb('calculation_versions').notNull().default(sql`'{}'::jsonb`).$type<Record<string, unknown>>(),
   errorMessage: text('error_message'),
   assessmentVersion: integer('assessment_version').notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
