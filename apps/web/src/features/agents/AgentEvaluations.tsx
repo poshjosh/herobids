@@ -402,6 +402,9 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
   const [offset, setOffset] = useState(0);
   const [includeNarrative, setIncludeNarrative] = useState(true);
 
+  // ── Strategy review state ──────────────────────────────────────────────
+  const [reviewRequestId, setReviewRequestId] = useState<string | null>(null);
+
   // ── List query ─────────────────────────────────────────────────────────
   const listQuery = useQuery({
     queryKey: ['agents', agentId, 'evaluations', offset],
@@ -457,10 +460,55 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
     },
   });
 
+  // ── Strategy review eligibility ─────────────────────────────────────
+  const reviewEligibilityQuery = useQuery({
+    queryKey: ['agents', agentId, 'platform-assessment-review', 'eligibility'],
+    queryFn: () => agentsApi.platformAssessmentReviews.eligibility(agentId),
+    staleTime: 30_000,
+  });
+
+  // ── Strategy review trigger ─────────────────────────────────────────
+  const reviewTriggerMutation = useMutation({
+    mutationFn: () => agentsApi.platformAssessmentReviews.trigger(agentId),
+    onSuccess: (data) => {
+      setReviewRequestId(data.requestId);
+      void qc.invalidateQueries({
+        queryKey: ['agents', agentId, 'platform-assessment-review', 'eligibility'],
+      });
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && (error.status === 409)) {
+        setReviewConflictMessage('A review is already in progress');
+        return;
+      }
+      throw error;
+    },
+  });
+
+  // ── Strategy review status polling ─────────────────────────────────
+  const reviewStatusQuery = useQuery({
+    queryKey: ['agents', agentId, 'platform-assessment-review', reviewRequestId],
+    queryFn: () => agentsApi.platformAssessmentReviews.get(agentId, reviewRequestId!),
+    enabled: !!reviewRequestId,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return 5_000;
+      const isTerminal = ['succeeded', 'failed'].includes(data.status);
+      return isTerminal ? false : 5_000;
+    },
+  });
+
+  const reviewStatus = reviewStatusQuery.data ?? null;
+  const [reviewConflictMessage, setReviewConflictMessage] = useState<string | null>(null);
+
   // ── Handlers ───────────────────────────────────────────────────────────
   const handleTrigger = useCallback(() => {
     triggerMutation.mutate({ includeNarrative });
   }, [triggerMutation, includeNarrative]);
+
+  const handleReviewTrigger = useCallback(() => {
+    reviewTriggerMutation.mutate();
+  }, [reviewTriggerMutation]);
 
   const handleSelectRun = useCallback((runId: string) => {
     setSelectedRunId((prev) => (prev === runId ? null : runId));
@@ -644,6 +692,76 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                     intl.formatMessage({ id: 'agents.evaluations.notAvailable' })}
                 </span>
               )}
+          </div>
+
+          {/* Strategy review section */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 0', borderTop: '1px solid var(--color-border)', borderBottom: '1px solid var(--color-border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleReviewTrigger}
+                disabled={
+                  reviewTriggerMutation.isPending ||
+                  (reviewEligibilityQuery.isSuccess && !reviewEligibilityQuery.data?.canTrigger) ||
+                  (reviewStatus !== null && ['queued', 'running'].includes(reviewStatus.status))
+                }
+              >
+                {reviewTriggerMutation.isPending || (reviewStatus !== null && ['queued', 'running'].includes(reviewStatus.status))
+                  ? 'Running review…'
+                  : 'Run Strategy Review'}
+              </Button>
+
+              {reviewTriggerMutation.isError && (
+                <span style={{ fontSize: '12px', color: 'var(--color-danger)' }}>
+                  {reviewTriggerMutation.error instanceof ApiError
+                    ? (reviewTriggerMutation.error as ApiError).message
+                    : 'Failed to trigger review'}
+                </span>
+              )}
+            </div>
+
+            {/* Eligibility hint */}
+            {reviewEligibilityQuery.isSuccess &&
+              !reviewEligibilityQuery.data.canTrigger && (
+                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                  {reviewEligibilityQuery.data.reason ?? 'Strategy review is not available for this agent'}
+                </span>
+              )}
+
+            {/* Review result summary */}
+            {reviewStatus !== null && (
+              <div style={{
+                marginTop: '4px',
+                padding: '8px 10px',
+                borderRadius: '6px',
+                fontSize: '13px',
+                background: reviewStatus.status === 'succeeded'
+                  ? (reviewStatus.resultSummary?.hasAdvice ? 'var(--color-success-subtle)' : 'var(--color-surface-2)')
+                  : reviewStatus.status === 'failed'
+                    ? 'var(--color-danger-subtle)'
+                    : 'var(--color-surface-2)',
+              }}>
+                {reviewStatus.status === 'queued' || reviewStatus.status === 'running' ? (
+                  <span style={{ color: 'var(--color-text-muted)' }}>Review in progress…</span>
+                ) : reviewStatus.status === 'failed' ? (
+                  <span style={{ color: 'var(--color-danger)' }}>
+                    Review failed: {reviewStatus.errorMessage ?? 'Unknown error'}
+                  </span>
+                ) : reviewStatus.status === 'succeeded' && reviewStatus.resultSummary ? (
+                  <span style={{ color: 'var(--color-text-primary)' }}>
+                    {reviewStatus.resultSummary.hasAdvice
+                      ? `Review complete — ${reviewStatus.resultSummary.advisedCount} symbol(s) have advice`
+                      : 'Review complete — no advice at this time'}
+                    {reviewStatus.resultSummary.checkOutcome && (
+                      <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginLeft: '8px' }}>
+                        ({reviewStatus.resultSummary.checkOutcome})
+                      </span>
+                    )}
+                  </span>
+                ) : null}
+              </div>
+            )}
           </div>
 
           {/* Error state */}

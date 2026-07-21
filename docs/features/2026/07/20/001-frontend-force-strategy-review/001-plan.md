@@ -60,9 +60,10 @@ The following current-state facts are load-bearing for this plan.
 ### 2.3 Worker
 
 1. The worker instantiates `reviewSchedulers` as an in-memory `Map<string, ReviewScheduler>` inside [apps/worker/src/index.ts](/Users/chinomso.ikwuagwu/dev_ai/herobids/apps/worker/src/index.ts).
-2. The scheduler startup happens once during worker boot from `listActiveAgents()`. There is no visible full reconciliation loop for add/remove/update after boot.
+2. The scheduler lifecycle is already wired in two places: the boot-time `listActiveAgents()` loop and the worker session lifecycle hooks (`onSessionActive` / `onSessionStopped`).
 3. `ReviewScheduler.runReviewCheck()` in [apps/worker/src/market-intelligence/review-scheduler.ts](/Users/chinomso.ikwuagwu/dev_ai/herobids/apps/worker/src/market-intelligence/review-scheduler.ts) still calls `isReviewDue()` first, so it is **not** a true force path today.
 4. Review advice wake delivery already uses the canonical `agent.wake` stream through [apps/worker/src/agents/instance-event-publisher.ts](/Users/chinomso.ikwuagwu/dev_ai/herobids/apps/worker/src/agents/instance-event-publisher.ts).
+5. There is still no clear documented reconciliation path for mid-session config changes that would newly opt an already-running agent into platform assessment without a fresh `onSessionActive` transition.
 
 ### 2.4 Persistence
 
@@ -81,6 +82,9 @@ This plan adopts the following contract.
 5. The feature must work across API and worker process boundaries. The API must not depend on direct in-process access to the worker-local scheduler map.
 6. The user must get a durable request/result state that survives network retries and page refreshes.
 7. The existing evaluation flow remains unchanged.
+8. The manual trigger is an **active-agent operational action**. It is not an offline report generator for stopped agents.
+9. The manual trigger must continue to respect **identity cooldown and fresh-artifact suppression**. The only bypass in this feature is the due-interval gate.
+10. For v1, “active” means both: the persisted agent row has `agents.status = 'active'`, and there is a current runtime session in `running` status for that agent.
 
 ## 4. Proposed User Experience
 
@@ -136,6 +140,8 @@ The frontend should support these user-visible states:
 6. **Failed**: show human-readable error.
 
 The UI must not represent “no advice” as a failure.
+
+For the first slice, the UI only needs to show the **latest** manual-review request/result state. Durable backend history is still required for auditability and future expansion.
 
 ## 5. Proposed Architecture
 
@@ -227,6 +233,8 @@ Recommended endpoints:
 
 The eligibility endpoint keeps the UI simple and avoids duplicating business rules in the client.
 
+This route is part of the recommended design, not an optional stretch. Availability depends on server-owned facts that the frontend should not infer.
+
 ### 5.5 Keep the evaluation feature separate
 
 Do not route the new control through [apps/api/src/routes/agent-evaluations.ts](/Users/chinomso.ikwuagwu/dev_ai/herobids/apps/api/src/routes/agent-evaluations.ts).
@@ -247,7 +255,7 @@ Add:
 2. repository helpers to create, mark running, mark succeeded, mark failed, and fetch run status;
 3. shared TypeScript types for run status and result payload.
 
-Optionally extend `agent_assessment_review_checks` with a `trigger_source` or equivalent field if audit separation between scheduled and manual checks is needed.
+Do **not** extend `agent_assessment_review_checks` with a `trigger_source` marker in v1. The dedicated manual-review run table is the audit boundary for manual vs scheduled initiation in this slice.
 
 ### 6.2 Worker runtime
 
@@ -270,7 +278,9 @@ Validation rules should include:
 2. one active manual review run per agent at a time;
 3. operator-level feature enabled;
 4. agent-level `platformAssessment.enabled === true`;
-5. any additional state constraints chosen in the open questions below.
+5. `agents.status === 'active'`;
+6. a current runtime session exists for the agent in `running` status (same semantics as `AgentRepository.getActiveSession()`);
+7. any future state constraints added after this plan.
 
 The API should return structured failure reasons instead of generic 500s.
 
@@ -282,11 +292,15 @@ Update [apps/web/src/features/agents/AgentEvaluations.tsx](/Users/chinomso.ikwua
 2. a query for manual-review eligibility;
 3. a mutation for starting the run;
 4. polling for the request status until terminal;
-5. a compact result summary block.
+5. a compact result summary block for the latest request only.
 
 Add i18n strings in the locale bundles and focused component tests.
 
 The frontend must not reuse evaluation text such as “Run Evaluation” or “No evaluations yet” for this feature.
+
+Visibility should be driven by the feature's real source of truth: `platformAssessment.enabled` plus the API eligibility response. The client should not re-derive availability from the current `scanner_gated` form rule.
+
+Do **not** add a visible manual-review history list in the first slice. Persist backend history, but render only the latest request/result state.
 
 ### 6.5 Documentation
 
@@ -296,7 +310,7 @@ No changes are required to the evaluation appendix docs for this feature.
 
 ## 7. Eligibility And Result Semantics
 
-The implementation should treat these as the default rules unless an open question below changes them.
+The implementation should treat these as fixed v1 defaults.
 
 ### 7.1 Recommended eligibility contract
 
@@ -304,11 +318,11 @@ The implementation should treat these as the default rules unless an open questi
 
 1. operator `platformAssessor.enabled` is true;
 2. agent `platformAssessment.enabled` is true;
-3. there is no in-flight manual review request for the agent.
+3. there is no in-flight manual review request for the agent;
+4. the persisted agent row has `status = 'active'`;
+5. the agent has a current runtime session in `running` status.
 
-Possible additional gate:
-
-4. agent status is compatible with a wake-producing review.
+If any of the above are false, the API should return `canTrigger = false` with a machine-readable reason and a user-facing explanation.
 
 ### 7.2 Recommended result contract
 
@@ -384,9 +398,11 @@ This plan updates [docs/tech/user-acceptance-tests.md](/Users/chinomso.ikwuagwu/
 
 ## 10. Risks And Adjacent Gaps
 
-1. **Existing scheduler lifecycle gap remains.** Review schedulers are still initialized at worker startup only. This plan intentionally avoids depending on that map for the manual path, but it does not fix periodic-review reconciliation after agent config changes.
+1. **A narrower scheduler lifecycle gap remains.** Review schedulers are already started at boot and on session activation, but this plan does not fix mid-session config changes that would newly opt an already-running agent into platform assessment without another `onSessionActive` transition.
 2. **Manual trigger may often return no advice.** If the agent has no recent persisted scanner candidates, the feature is working correctly even though the result may look like a no-op.
 3. **Cross-surface wording must stay precise.** “Evaluation” and “strategy review” are different actions and must remain distinct in UI copy, route names, and logs.
+4. **Frontend visibility and runtime semantics are not perfectly aligned today.** The create/edit form currently exposes periodic strategy assessment only for the scanner-gated hybrid path, but this feature should key off `platformAssessment.enabled` and server eligibility rather than mirroring that UI rule.
+5. **No internal override path is planned in v1.** Testing or operator-only bypasses for cooldown and fresh-artifact suppression are explicitly out of scope for this slice and should not leak into the user-facing design.
 
 ## 11. Completion Bar
 
@@ -399,19 +415,10 @@ This plan is complete when all of the following are true:
 5. the existing evaluation feature is unchanged;
 6. [docs/tech/user-acceptance-tests.md](/Users/chinomso.ikwuagwu/dev_ai/herobids/docs/tech/user-acceptance-tests.md) includes manual coverage for the new control.
 
-## 12. Genuine Open Questions
+## 12. Open Questions
 
-1. **Should manual review require the agent to be active?**  
-   The current scheduled path assumes a running agent can consume the emitted `assessment_review` wake. A stopped agent can still produce persisted advice, but the wake is less useful. We need a product decision: active-only, active-or-paused, or allowed for any opted-in agent.
+None for v1 scope. The previously open scope choices are now fixed in this plan:
 
-2. **Should the manual path respect identity cooldown and fresh-artifact suppression exactly as scheduled reviews do?**  
-   The recommended default is yes, because “force review” should mean “force a check now,” not “override every safeguard.” But there is a legitimate operator/testing argument for bypassing some suppression reasons.
-
-3. **Do we want only the latest manual review result in the UI, or a visible history?**  
-   The API/persistence layer benefits from durable run rows either way, but the frontend could stop at “show latest result” for the first slice.
-
-4. **Should the control be shown only when current UI semantics imply `scanner_gated`, or whenever `platformAssessment.enabled` is true?**  
-   Today the create/edit flow exposes platform assessment only for `hybrid + scanner_gated`, but the worker-side review machinery itself is not expressed in those exact UI terms.
-
-5. **Should the API expose a lightweight eligibility endpoint, or should the frontend infer availability from existing agent detail data?**  
-   The plan recommends a dedicated eligibility route to keep policy centralized, but this is still a tradeoff between clarity and surface area.
+1. no trigger marker on review-check rows in v1;
+2. latest-result only in the UI;
+3. no internal override path yet.

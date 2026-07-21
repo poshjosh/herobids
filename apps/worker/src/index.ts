@@ -5,6 +5,11 @@ import { WorkerRuntime, QUEUE_NAME } from './runtime.js';
 import type { PersistedInstance } from './runtime.js';
 import { BacktestRuntime } from './backtest-runtime.js';
 import { EvaluationRuntime } from './agent-evaluation/index.js';
+import { ManualReviewRuntime } from './manual-review-runtime.js';
+import type { ManualReviewRunnerFactory } from './manual-review-runtime.js';
+import {
+  AssessmentReviewRunner,
+} from './market-intelligence/assessment-review-runner.js';
 import { InstanceLease } from './instance-lease.js';
 import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
@@ -1845,6 +1850,138 @@ const evaluationRuntime = new EvaluationRuntime(
 );
 evaluationRuntime.start();
 
+// Start manual review runtime (BullMQ consumer for user-triggered platform assessment reviews)
+const manualReviewRuntime = new ManualReviewRuntime(
+  {
+    redis: redisConnection,
+    concurrency: 2,
+    maxRuntimeMs: 120_000,
+  },
+  db,
+  // Runner factory — creates a per-agent AssessmentReviewRunner on each job.
+  // Uses the same deps construction pattern as startReviewSchedulerForAgent.
+  (async (agentId: string) => {
+    try {
+      // Load agent config
+      const [agent] = await db
+        .select({
+          id: agents.id,
+          userId: agents.userId,
+          unifiedConfig: agents.unifiedConfig,
+          status: agents.status,
+        })
+        .from(agents)
+        .where(eq(agents.id, agentId))
+        .limit(1);
+
+      if (!agent) {
+        return err({ code: 'review.agent_not_found', message: `Agent ${agentId} not found` });
+      }
+
+      const unifiedConfig = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
+      const platformAssessment = (unifiedConfig['platformAssessment'] ?? {}) as Record<string, unknown>;
+      const agentEnabled = platformAssessment['enabled'] === true;
+      if (!agentEnabled) {
+        return err({ code: 'review.not_enabled', message: 'Platform assessment is not enabled for this agent' });
+      }
+
+      const agentReviewIntervalMs = (typeof platformAssessment['reviewIntervalMs'] === 'number')
+        ? platformAssessment['reviewIntervalMs']
+        : appConfig.platformAssessor.minReviewIntervalMs;
+
+      // Resolve active preset (same logic as startReviewSchedulerForAgent)
+      const resolveActivePreset = async () => {
+        const binding = await resolveAuthoritativeBinding(db, agentId);
+        if (binding) {
+          const preset = getPreset(binding.activePresetKey, binding.styleTier);
+          if (preset) {
+            try {
+              const mapping = applyPresetToAgent(binding.activePresetKey, preset, binding.styleTier, 'llm');
+              return ok({
+                presetKey: mapping.presetKey,
+                behaviorVersion: mapping.presetBehaviorVersion,
+                styleTier: binding.styleTier,
+                scanInterval: mapping.technical.scanIntervalMs != null ? String(mapping.technical.scanIntervalMs) : undefined,
+                signalBias: (mapping.technical.signalBias as 'bullish' | 'bearish' | 'neutral') ?? 'neutral',
+                enabledIndicators: Object.keys(mapping.technical.indicators),
+                compatibilityThresholds: {},
+              });
+            } catch { /* fall through */ }
+          }
+        }
+
+        const uc = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
+        const tech = (uc['technical'] ?? {}) as Record<string, unknown>;
+        const intelligence = (uc['intelligence'] ?? {}) as Record<string, unknown>;
+        const allowedPresets = (uc['allowedPresets'] ?? {}) as Record<string, unknown>;
+
+        const strategyType = (tech['type'] ?? intelligence['type'] ?? 'momentum') as string;
+        const rawStyleTier = (allowedPresets['styleTier'] ?? 'standard') as string;
+        const styleTier = isStyleKey(rawStyleTier) ? rawStyleTier : 'standard';
+
+        const indicatorsHash = crypto.createHash('sha256')
+          .update(JSON.stringify(tech['indicators'] ?? intelligence['indicators'] ?? {}))
+          .digest('hex')
+          .slice(0, 8);
+        const behaviorVersion = `uc-${styleTier}-${strategyType}-${indicatorsHash}`;
+
+        return ok({
+          presetKey: strategyType,
+          behaviorVersion,
+          styleTier,
+          scanInterval: (tech['scanIntervalMs'] ?? undefined) as string | undefined,
+          signalBias: (tech['signalBias'] as 'bullish' | 'bearish' | 'neutral' | undefined) ?? 'neutral',
+          enabledIndicators: Object.keys((tech['indicators'] ?? intelligence['indicators'] ?? {}) as Record<string, unknown>),
+          compatibilityThresholds: {},
+        });
+      };
+
+      // Billing preflight
+      const checkBillingEligibility = async () => {
+        try {
+          if (!agent.userId) return ok(false);
+          const account = await usageBillingRepo.getAccountByUserId(agent.userId);
+          if (!account) return ok(false);
+          return ok(account.status === 'active');
+        } catch {
+          return ok(true);
+        }
+      };
+
+      const runner = new AssessmentReviewRunner(
+        {
+          db,
+          agentId,
+          eventPublisher,
+          resolveActivePreset,
+          checkBillingEligibility,
+        },
+        {
+          reviewIntervalMs: Math.max(agentReviewIntervalMs, appConfig.platformAssessor.minReviewIntervalMs),
+          minReviewIntervalMs: appConfig.platformAssessor.minReviewIntervalMs,
+          scannerCandidateLimit: appConfig.platformAssessor.scannerCandidateLimit,
+          cacheFreshnessMs: appConfig.platformAssessor.cacheFreshnessMs,
+          adviceExpiryMs: appConfig.platformAssessor.cacheFreshnessMs,
+          preCheck: appConfig.platformAssessor.preCheck ?? {
+            signalRatioThreshold: 2.0,
+            scanMetricsLookbackMs: 86_400_000,
+            minSignalsForActive: 3,
+            identityCooldownMs: 86_400_000,
+            candidateMaxAgeMs: 86_400_000,
+            policyVersion: '1.0.0',
+            enablePeerComparison: true,
+          },
+        },
+      );
+
+      return ok({ runner });
+    } catch (error) {
+      return err({ code: 'review.runner_factory_failed', message: (error as Error).message });
+    }
+  }) as ManualReviewRunnerFactory,
+);
+manualReviewRuntime.start();
+
 // Start alert dispatcher (polls journal → routes → delivers to Telegram)
 // Uses Redis lease for singleton coordination across multiple workers
 const alertDispatcher = new AlertDispatcher(appConfig.alerts, journal, alertDeliveryRepo, logger, redisClient, workerId);
@@ -2412,6 +2549,7 @@ process.on('SIGTERM', async () => {
   await alertDispatcher.stop();
   await backtestRuntime.stop();
   await evaluationRuntime.stop();
+  await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();
   await runtime.shutdown();
   await publicStreamPool?.shutdown();
@@ -2443,6 +2581,7 @@ process.on('SIGINT', async () => {
   await alertDispatcher.stop();
   await backtestRuntime.stop();
   await evaluationRuntime.stop();
+  await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();
   await runtime.shutdown();
   await publicStreamPool?.shutdown();

@@ -3,8 +3,8 @@ import cors from '@fastify/cors';
 import fastifyMultipart from '@fastify/multipart';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { createDatabase, EVALUATION_QUEUE_NAME } from '@herobids/db';
-import type { EvaluationJobData } from '@herobids/db';
+import { createDatabase, EVALUATION_QUEUE_NAME, MANUAL_REVIEW_QUEUE_NAME } from '@herobids/db';
+import type { EvaluationJobData, ManualReviewJobData } from '@herobids/db';
 import { botRoutes } from './routes/bots.js';
 import { venueAccountRoutes } from './routes/accounts.js';
 import { credentialRoutes } from './routes/credentials.js';
@@ -25,6 +25,7 @@ import { datasetRoutes } from './routes/datasets.js';
 import { agentDocumentRoutes } from './routes/agent-documents.js';
 import { exportRoutes } from './routes/exports.js';
 import { agentEvaluationRoutes } from './routes/agent-evaluations.js';
+import { platformAssessmentReviewRoutes } from './routes/agent-platform-assessment-reviews.js';
 import { actorHealthRoutes } from './routes/actor-health.js';
 import { adminRoutes } from './routes/admin.js';
 import { eventsRoutes } from './routes/events.js';
@@ -185,6 +186,10 @@ const evaluationQueue = new Queue<EvaluationJobData>(EVALUATION_QUEUE_NAME, {
   connection: redisConnection,
 });
 
+const manualReviewQueue = new Queue<ManualReviewJobData>(MANUAL_REVIEW_QUEUE_NAME, {
+  connection: redisConnection,
+});
+
 // Register auth plugin (JWT verification on all non-public routes)
 await authPlugin(app, { config: appConfig.auth, db });
 
@@ -261,6 +266,9 @@ await agentEvaluationRoutes(app, evaluationQueue, db, {
   providersYaml,
   catalogTimeoutMs: appConfig.llm.catalog.timeoutMs,
   catalogCacheTtlMs: appConfig.llm.catalog.cacheTtlMs,
+});
+await platformAssessmentReviewRoutes(app, manualReviewQueue, db, {
+  platformAssessorEnabled: appConfig.platformAssessor?.enabled ?? false,
 });
 await actorHealthRoutes(app, db, redisClient);
 await adminRoutes(app, db, redisClient, { marketDataConfig: appConfig.marketData });

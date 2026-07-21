@@ -7,6 +7,26 @@ import type {
   EvaluationScope,
 } from '@herobids/domain';
 
+export interface PlatformAssessmentReviewStatus {
+  requestId: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  trigger: string;
+  requestedAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  resultSummary: {
+    hasAdvice: boolean;
+    advisedCount: number;
+    outcomeCounts: Record<string, number>;
+    checkOutcome: string | null;
+    checkedAt: string;
+    nextEligibleAt: string;
+    checkId: string;
+  } | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -1198,6 +1218,16 @@ export const agents = {
       `${config.apiBaseUrl}/agents/${agentId}/evaluations/${runId}/artifacts/${artifactName}`,
     getBundleUrl: (agentId: string, runId: string) =>
       `${config.apiBaseUrl}/agents/${agentId}/evaluations/${runId}/artifacts/bundle`,
+  },
+  platformAssessmentReviews: {
+    eligibility: (agentId: string) =>
+      request<{ canTrigger: boolean; reason: string | null }>(`/agents/${agentId}/platform-assessment/reviews/eligibility`),
+    trigger: (agentId: string) =>
+      request<{ requestId: string }>(`/agents/${agentId}/platform-assessment/reviews`, {
+        method: 'POST',
+      }),
+    get: (agentId: string, requestId: string) =>
+      request<PlatformAssessmentReviewStatus>(`/agents/${agentId}/platform-assessment/reviews/${requestId}`),
   },
   outcomes: () => request<{ outcomes: AgentOutcomes[] }>('/agents/outcomes'),
 };
