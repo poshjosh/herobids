@@ -20,7 +20,7 @@ import {
   type CandidatePreCheckOutcome,
   ReviewPreCheckReasonCodes,
 } from '@herobids/domain';
-import { eq, and, desc, sql, inArray, gte } from 'drizzle-orm';
+import { eq, and, desc, inArray, gte } from 'drizzle-orm';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -405,21 +405,21 @@ export class AssessmentReviewRunner {
 
       if (symbolOrNull && !networkOrNull && !addressOrNull) {
         return {
-          instrumentKind: 'orderbook',
-          venueFamily: candidate.venueFamily ?? 'hyperliquid',
-          styleTier: candidate.styleTier ?? 'standard',
+          instrumentKind: 'orderbook' as const,
+          venueFamily: (candidate.venueFamily ?? 'hyperliquid') as string,
+          styleTier: (candidate.styleTier ?? 'standard') as string,
           symbol: symbolOrNull,
-        };
+        } as CandidatePreCheckOutcome['identity'];
       }
 
       if (networkOrNull && addressOrNull && !symbolOrNull) {
         return {
-          instrumentKind: 'swap',
-          venueFamily: candidate.venueFamily ?? 'jupiter',
-          styleTier: candidate.styleTier ?? 'standard',
+          instrumentKind: 'swap' as const,
+          venueFamily: (candidate.venueFamily ?? 'jupiter') as string,
+          styleTier: (candidate.styleTier ?? 'standard') as string,
           network: networkOrNull,
           address: addressOrNull,
-        };
+        } as CandidatePreCheckOutcome['identity'];
       }
 
       return null;
@@ -437,8 +437,6 @@ export class AssessmentReviewRunner {
   ): Promise<boolean> {
     try {
       const conditions = [
-        eq(marketAssessmentArtifacts.agentId, this.agentId),
-        eq(marketAssessmentArtifacts.status, 'active'),
         gte(marketAssessmentArtifacts.assessedAt, freshCutoff),
         eq(marketAssessmentArtifacts.instrumentKind, identity.instrumentKind),
         eq(marketAssessmentArtifacts.venueFamily, identity.venueFamily),

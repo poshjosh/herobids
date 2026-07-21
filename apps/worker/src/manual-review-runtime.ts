@@ -1,20 +1,17 @@
 import { Worker } from 'bullmq';
-import { createLogger } from '../logger.js';
+import { createLogger } from './logger.js';
 import type { Database } from '@herobids/db';
 import {
   MANUAL_REVIEW_QUEUE_NAME,
   markManualReviewRunning,
   markManualReviewSucceeded,
   markManualReviewFailed,
-  getManualReviewRun,
 } from '@herobids/db';
 import type { ManualReviewJobData, ManualReviewResultSummary } from '@herobids/db';
-import { ok, err, type Result } from '@herobids/domain';
-import {
+import type { Result } from '@herobids/domain';
+import type {
   AssessmentReviewRunner,
-  type AssessmentReviewRunnerConfig,
-  type AssessmentReviewRunnerDeps,
-} from '../market-intelligence/assessment-review-runner.js';
+} from './market-intelligence/assessment-review-runner.js';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

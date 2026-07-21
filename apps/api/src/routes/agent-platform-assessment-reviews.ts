@@ -9,7 +9,6 @@ import {
   createManualReviewRun,
   getManualReviewRun,
   hasActiveManualReviewRun,
-  MANUAL_REVIEW_QUEUE_NAME,
 } from '@herobids/db';
 import type { ManualReviewJobData } from '@herobids/db';
 
