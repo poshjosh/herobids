@@ -8,7 +8,7 @@ export interface ManualReviewRunRow {
   id: string;
   agentId: string;
   requestedByUserId: string;
-  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  status: string;
   trigger: string;
   requestedAt: Date;
   startedAt: Date | null;
