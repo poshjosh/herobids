@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.33 - 2026-07-21
+
+### Fixed
+
+- **Staging agents not trading — actor start never called.** See [docs/bug-reports/2026/07/21/001-staging-agents-not-trading-actor-start-never-called.md](docs/bug-reports/2026/07/21/001-staging-agents-not-trading-actor-start-never-called.md).
+- **Create-agent request failed when platform assessment wasn't enabled:** `buildCreateAgentPayload` sent `platformAssessment: null`, which the create API schema rejects (only the update schema accepts `null`). The web payload builder now omits the key entirely on create. See [docs/bug-reports/2026/07/21/002-create-agent-platform-assessment-null-payload.md](docs/bug-reports/2026/07/21/002-create-agent-platform-assessment-null-payload.md).
+
 ## v0.0.32 - 2026-07-19
 
 ### Added
