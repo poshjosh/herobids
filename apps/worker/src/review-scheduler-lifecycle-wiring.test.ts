@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 /**
  * Regression coverage for RC2 in
- * docs/features/2026/07/21/001-staging-agents-not-trading-actor-start-never-called.md
+ * docs/bug-reports/2026/07/21/001-staging-agents-not-trading-actor-start-never-called.md
  *
  * The worker composition root (apps/worker/src/index.ts) only created
  * per-agent ReviewSchedulers once, in a one-time boot loop over

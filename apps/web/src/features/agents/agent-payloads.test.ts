@@ -893,6 +893,38 @@ describe('buildCreateAgentPayload — emailDelivery mapping', () => {
   });
 });
 
+describe('buildCreateAgentPayload — platformAssessment', () => {
+  // Regression: CreateAgentSchema.platformAssessment is `.optional()` (NOT
+  // `.nullable()`, unlike UpdateAgentSchema) — there's nothing to "clear" on
+  // create. Sending `platformAssessment: null` fails Zod validation with
+  // "Expected object, received null" and blocks every agent creation that
+  // doesn't opt into platform assessment. See
+  // docs/bug-reports/2026/07/21/002-create-agent-platform-assessment-null-payload.md
+  it('omits platformAssessment entirely when not enabled (must not send null)', () => {
+    const payload = buildCreateAgentPayload(BASE_CREATE_INPUT);
+    expect(payload).not.toHaveProperty('platformAssessment');
+  });
+
+  it('omits platformAssessment when platformAssessmentEnabled is explicitly false', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, platformAssessmentEnabled: false });
+    expect(payload).not.toHaveProperty('platformAssessment');
+  });
+
+  it('includes platformAssessment as an object when enabled', () => {
+    const payload = buildCreateAgentPayload({
+      ...BASE_CREATE_INPUT,
+      platformAssessmentEnabled: true,
+      platformAssessmentReviewIntervalHours: '24',
+    });
+    expect(payload.platformAssessment).toEqual({ enabled: true, reviewIntervalMs: 24 * 3_600_000 });
+  });
+
+  it('includes platformAssessment without reviewIntervalMs when hours is unset', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, platformAssessmentEnabled: true });
+    expect(payload.platformAssessment).toEqual({ enabled: true });
+  });
+});
+
 describe('buildUpdateAgentPayload — emailDelivery mapping', () => {
   it('sends notificationPolicy: null when emailDelivery is "inherit" (clears override)', () => {
     const payload = buildUpdateAgentPayload({ ...BASE_UPDATE_INPUT, emailDelivery: 'inherit' });

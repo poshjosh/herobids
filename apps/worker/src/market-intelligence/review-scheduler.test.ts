@@ -10,7 +10,7 @@ import { ReviewScheduler, type ReviewSchedulerConfig, type ReviewSchedulerDeps }
  * `runPreCheck()` / `persistCheckOutcomes()` paths inside `runReviewCheck()` —
  * that logic is covered elsewhere. The goal here is to guard the class's
  * `start()`/`stop()` scheduling contract in isolation, since RC2
- * (docs/features/2026/07/21/001-staging-agents-not-trading-actor-start-never-called.md)
+ * (docs/bug-reports/2026/07/21/001-staging-agents-not-trading-actor-start-never-called.md)
  * showed that a ReviewScheduler which is never `start()`-ed produces no
  * observable error anywhere — only silence. `runReviewCheck` is stubbed via
  * spyOn so these tests exercise the real `start()`/`stop()`/timer contract.

@@ -184,7 +184,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   runtimePolicyOverrides?: RuntimePolicyOverrides | null;
   wakePreferences?: { subscribedSources?: string[] } | null;
   notificationPolicy?: { sendMessage: { email: { enabled: boolean; source: 'explicit_update' } } } | null;
-  platformAssessment?: { enabled?: boolean; reviewIntervalMs?: number } | null;
+  platformAssessment?: { enabled?: boolean; reviewIntervalMs?: number };
 } {
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'hybrid';
@@ -194,6 +194,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   const wakePreferences: { subscribedSources?: string[] } | undefined =
     subscribedSources.length > 0 ? { subscribedSources } : undefined;
   const emailDeliveryPolicy = buildEmailDeliveryPolicy(input.emailDelivery);
+  const platformAssessment = buildPlatformAssessmentPayload(input.platformAssessmentEnabled, input.platformAssessmentReviewIntervalHours);
 
   return {
     name: input.name.trim(),
@@ -228,7 +229,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(wakePreferences ? { wakePreferences } : {}),
     capabilityMode: input.capabilityMode,
     ...(input.capabilityMode === 'hybrid' ? { hybridMode: input.hybridMode } : {}),
-    platformAssessment: buildPlatformAssessmentPayload(input.platformAssessmentEnabled, input.platformAssessmentReviewIntervalHours),
+    ...(platformAssessment ? { platformAssessment } : {}),
   };
 }
 

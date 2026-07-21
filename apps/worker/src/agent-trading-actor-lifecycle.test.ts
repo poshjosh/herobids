@@ -6,7 +6,7 @@ import type { OrderId, FillId } from '@herobids/domain';
 
 /**
  * Regression coverage for RC1 in
- * docs/features/2026/07/21/001-staging-agents-not-trading-actor-start-never-called.md
+ * docs/bug-reports/2026/07/21/001-staging-agents-not-trading-actor-start-never-called.md
  *
  * The worker composition root (apps/worker/src/index.ts) constructs an
  * AgentTradingActor and MUST call `actor.start()` before the actor is usable —
