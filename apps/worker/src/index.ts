@@ -1018,11 +1018,20 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
             }
           },
         });
+
+        await actor.start();
+
         // Only register if the session is still active (not stopped during start)
         if (agentState.isSessionPending(agentId, sessionId)) {
           agentState.registerActor(agentId, sessionId, actor, mode, venueType);
           instanceExecutionModes.set(agentId, mode);
           logger.info({ agentId, mode, venue: binding.venue }, 'Agent trading actor registered');
+          // Worker startup is not the sole lifecycle hook for review schedulers
+          // (see 010-scanner-pre-check.md) — start one here too for agents that
+          // opt into platform assessment and become active after boot.
+          if (agent) {
+            startReviewSchedulerForAgent(agent);
+          }
           void actorHealthPublisher.publish({
             actorType: 'agent',
             actorId: agentId,
@@ -1050,6 +1059,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
     if (actor && actor instanceof AgentTradingActor) {
       actor.stop().catch((err) => logger.error({ err, agentId }, 'Failed to stop agent trading actor'));
     }
+    stopReviewSchedulerForAgent(agentId);
     void actorHealthPublisher.publish({
       actorType: 'agent',
       actorId: agentId,
@@ -2051,134 +2061,154 @@ logger.info(
 );
 
 // ── Per-Agent Review Schedulers ──────────────────────────────────────────
-// Instantiate a ReviewScheduler for every active agent that has opted into
-// platform assessment (platformAssessment.enabled === true), gated on the
-// operator-level platformAssessor.enabled master switch.
+// Creates/stops a ReviewScheduler for an agent opted into platform assessment
+// (platformAssessment.enabled === true), gated on the operator-level
+// platformAssessor.enabled master switch. Both gates must be true: operator
+// *and* agent.
 //
-// Both gates must be true: operator *and* agent. If the operator disables
-// platform assessment globally, no review schedulers start regardless of
-// per-agent opt-in.
+// Worker startup is not the sole lifecycle hook (see 010-scanner-pre-check.md):
+// startReviewSchedulerForAgent() is called both from the boot-time loop below
+// (for agents already active at boot) and from onSessionActive (for agents
+// that become active afterward — the normal case, since agents are started
+// on demand). stopReviewSchedulerForAgent() is called from onSessionStopped.
+type ReviewSchedulerAgentRow = Awaited<ReturnType<typeof agentRepo.listActiveAgents>>[number];
+
+function startReviewSchedulerForAgent(agent: ReviewSchedulerAgentRow): void {
+  if (!appConfig.platformAssessor.enabled) return;
+  if (reviewSchedulers.has(agent.id)) return; // already running — idempotent
+
+  const unifiedConfig = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
+  const platformAssessment = (unifiedConfig['platformAssessment'] ?? {}) as Record<string, unknown>;
+  const agentEnabled = platformAssessment['enabled'] === true;
+  if (!agentEnabled) return;
+
+  const agentReviewIntervalMs = (typeof platformAssessment['reviewIntervalMs'] === 'number')
+    ? platformAssessment['reviewIntervalMs']
+    : appConfig.platformAssessor.minReviewIntervalMs;
+
+  // Resolve active preset state for the agent.
+  // Authoritative path: query agent_preset_bindings first.
+  // Fallback path: derive from unified config (for agents that have
+  // never transitioned — the common case for fresh agents).
+  const resolveActivePreset = async () => {
+    // 1. Try authoritative binding
+    const binding = await resolveAuthoritativeBinding(db, agent.id);
+    if (binding) {
+      const preset = getPreset(binding.activePresetKey, binding.styleTier);
+      if (preset) {
+        try {
+          const mapping = applyPresetToAgent(
+            binding.activePresetKey,
+            preset,
+            binding.styleTier,
+            'llm',
+          );
+          return ok({
+            presetKey: mapping.presetKey,
+            behaviorVersion: mapping.presetBehaviorVersion,
+            styleTier: binding.styleTier,
+            scanInterval: mapping.technical.scanIntervalMs != null
+              ? String(mapping.technical.scanIntervalMs)
+              : undefined,
+            signalBias: (mapping.technical.signalBias as 'bullish' | 'bearish' | 'neutral') ?? 'neutral',
+            enabledIndicators: Object.keys(mapping.technical.indicators),
+            compatibilityThresholds: {},
+          });
+        } catch (err) {
+          logger.warn({ agentId: agent.id, binding, err }, 'applyPresetToAgent failed (e.g. DCA preset) — falling back to unified config');
+        }
+      } else {
+        // Preset not found in catalog — fall through to unified config
+        logger.warn({ agentId: agent.id, binding }, 'Binding references unknown preset key — falling back to unified config');
+      }
+    }
+
+    // 2. Fall back to unified-config derivation (today's behavior)
+    const uc = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
+    const tech = (uc['technical'] ?? {}) as Record<string, unknown>;
+    const intelligence = (uc['intelligence'] ?? {}) as Record<string, unknown>;
+    const allowedPresets = (uc['allowedPresets'] ?? {}) as Record<string, unknown>;
+
+    const strategyType = (tech['type'] ?? intelligence['type'] ?? 'momentum') as string;
+    const rawStyleTier = (allowedPresets['styleTier'] ?? 'standard') as string;
+    const styleTier: StyleKey = isStyleKey(rawStyleTier) ? rawStyleTier : 'standard';
+    const scanInterval = (tech['scanIntervalMs'] ?? undefined) as string | undefined;
+
+    const indicatorsHash = crypto.createHash('sha256')
+      .update(JSON.stringify(tech['indicators'] ?? intelligence['indicators'] ?? {}))
+      .digest('hex')
+      .slice(0, 8);
+    const behaviorVersion = `uc-${styleTier}-${strategyType}-${indicatorsHash}`;
+
+    return ok({
+      presetKey: strategyType,
+      behaviorVersion,
+      styleTier,
+      scanInterval,
+      signalBias: (tech['signalBias'] as 'bullish' | 'bearish' | 'neutral' | undefined) ?? 'neutral',
+      enabledIndicators: Object.keys((tech['indicators'] ?? intelligence['indicators'] ?? {}) as Record<string, unknown>),
+      compatibilityThresholds: {},
+    });
+  };
+
+  // Read-only billing preflight — checks if the agent has an active billing account.
+  const checkBillingEligibility = async () => {
+    try {
+      if (!agent.userId) return ok(false);
+      const account = await usageBillingRepo.getAccountByUserId(agent.userId);
+      if (!account) return ok(false);
+      return ok(account.status === 'active');
+    } catch {
+      // Fail-open: if billing check fails, allow pre-check to continue
+      return ok(true);
+    }
+  };
+
+  const scheduler = createReviewScheduler(
+    {
+      db,
+      redis: redisClient,
+      agentId: agent.id,
+      eventPublisher,
+      resolveActivePreset,
+      checkBillingEligibility,
+    },
+    agentReviewIntervalMs,
+    {
+      minReviewIntervalMs: appConfig.platformAssessor.minReviewIntervalMs,
+      scannerCandidateLimit: appConfig.platformAssessor.scannerCandidateLimit,
+      cacheFreshnessMs: appConfig.platformAssessor.cacheFreshnessMs,
+      preCheck: appConfig.platformAssessor.preCheck ?? {
+        signalRatioThreshold: 2.0,
+        scanMetricsLookbackMs: 86_400_000,
+        minSignalsForActive: 3,
+        identityCooldownMs: 86_400_000,
+        candidateMaxAgeMs: 86_400_000,
+        policyVersion: '1.0.0',
+        enablePeerComparison: true,
+      },
+    },
+  );
+  scheduler.start();
+  reviewSchedulers.set(agent.id, scheduler);
+  logger.info({ agentId: agent.id, reviewIntervalMs: Math.max(agentReviewIntervalMs, appConfig.platformAssessor.minReviewIntervalMs) }, 'Review scheduler started for agent');
+}
+
+function stopReviewSchedulerForAgent(agentId: string): void {
+  const scheduler = reviewSchedulers.get(agentId);
+  if (!scheduler) return;
+  scheduler.stop();
+  reviewSchedulers.delete(agentId);
+  logger.info({ agentId }, 'Review scheduler stopped for agent');
+}
+
 try {
   if (!appConfig.platformAssessor.enabled) {
     logger.info('Platform assessor is disabled at operator level — skipping review scheduler initialisation');
   } else {
     const activeAgents = await agentRepo.listActiveAgents();
     for (const agent of activeAgents) {
-      const unifiedConfig = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
-      const platformAssessment = (unifiedConfig['platformAssessment'] ?? {}) as Record<string, unknown>;
-      const agentEnabled = platformAssessment['enabled'] === true;
-
-      if (!agentEnabled) continue;
-      const agentReviewIntervalMs = (typeof platformAssessment['reviewIntervalMs'] === 'number')
-        ? platformAssessment['reviewIntervalMs']
-        : appConfig.platformAssessor.minReviewIntervalMs;
-
-      // Resolve active preset state for the agent.
-      // Authoritative path: query agent_preset_bindings first.
-      // Fallback path: derive from unified config (for agents that have
-      // never transitioned — the common case for fresh agents).
-      const resolveActivePreset = async () => {
-        // 1. Try authoritative binding
-        const binding = await resolveAuthoritativeBinding(db, agent.id);
-        if (binding) {
-          const preset = getPreset(binding.activePresetKey, binding.styleTier);
-          if (preset) {
-            try {
-              const mapping = applyPresetToAgent(
-                binding.activePresetKey,
-                preset,
-                binding.styleTier,
-                'llm',
-              );
-              return ok({
-                presetKey: mapping.presetKey,
-                behaviorVersion: mapping.presetBehaviorVersion,
-                styleTier: binding.styleTier,
-                scanInterval: mapping.technical.scanIntervalMs != null
-                  ? String(mapping.technical.scanIntervalMs)
-                  : undefined,
-                signalBias: (mapping.technical.signalBias as 'bullish' | 'bearish' | 'neutral') ?? 'neutral',
-                enabledIndicators: Object.keys(mapping.technical.indicators),
-                compatibilityThresholds: {},
-              });
-            } catch (err) {
-              logger.warn({ agentId: agent.id, binding, err }, 'applyPresetToAgent failed (e.g. DCA preset) — falling back to unified config');
-            }
-          } else {
-            // Preset not found in catalog — fall through to unified config
-            logger.warn({ agentId: agent.id, binding }, 'Binding references unknown preset key — falling back to unified config');
-          }
-        }
-
-        // 2. Fall back to unified-config derivation (today's behavior)
-        const uc = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
-        const tech = (uc['technical'] ?? {}) as Record<string, unknown>;
-        const intelligence = (uc['intelligence'] ?? {}) as Record<string, unknown>;
-        const allowedPresets = (uc['allowedPresets'] ?? {}) as Record<string, unknown>;
-
-        const strategyType = (tech['type'] ?? intelligence['type'] ?? 'momentum') as string;
-        const rawStyleTier = (allowedPresets['styleTier'] ?? 'standard') as string;
-        const styleTier: StyleKey = isStyleKey(rawStyleTier) ? rawStyleTier : 'standard';
-        const scanInterval = (tech['scanIntervalMs'] ?? undefined) as string | undefined;
-
-        const indicatorsHash = crypto.createHash('sha256')
-          .update(JSON.stringify(tech['indicators'] ?? intelligence['indicators'] ?? {}))
-          .digest('hex')
-          .slice(0, 8);
-        const behaviorVersion = `uc-${styleTier}-${strategyType}-${indicatorsHash}`;
-
-        return ok({
-          presetKey: strategyType,
-          behaviorVersion,
-          styleTier,
-          scanInterval,
-          signalBias: (tech['signalBias'] as 'bullish' | 'bearish' | 'neutral' | undefined) ?? 'neutral',
-          enabledIndicators: Object.keys((tech['indicators'] ?? intelligence['indicators'] ?? {}) as Record<string, unknown>),
-          compatibilityThresholds: {},
-        });
-      };
-
-      // Read-only billing preflight — checks if the agent has an active billing account.
-      const checkBillingEligibility = async () => {
-        try {
-          if (!agent.userId) return ok(false);
-          const account = await usageBillingRepo.getAccountByUserId(agent.userId);
-          if (!account) return ok(false);
-          return ok(account.status === 'active');
-        } catch {
-          // Fail-open: if billing check fails, allow pre-check to continue
-          return ok(true);
-        }
-      };
-
-      const scheduler = createReviewScheduler(
-        {
-          db,
-          redis: redisClient,
-          agentId: agent.id,
-          eventPublisher,
-          resolveActivePreset,
-          checkBillingEligibility,
-        },
-        agentReviewIntervalMs,
-        {
-          minReviewIntervalMs: appConfig.platformAssessor.minReviewIntervalMs,
-          scannerCandidateLimit: appConfig.platformAssessor.scannerCandidateLimit,
-          cacheFreshnessMs: appConfig.platformAssessor.cacheFreshnessMs,
-          preCheck: appConfig.platformAssessor.preCheck ?? {
-            signalRatioThreshold: 2.0,
-            scanMetricsLookbackMs: 86_400_000,
-            minSignalsForActive: 3,
-            identityCooldownMs: 86_400_000,
-            candidateMaxAgeMs: 86_400_000,
-            policyVersion: '1.0.0',
-            enablePeerComparison: true,
-          },
-        },
-      );
-      scheduler.start();
-      reviewSchedulers.set(agent.id, scheduler);
-      logger.info({ agentId: agent.id, reviewIntervalMs: Math.max(agentReviewIntervalMs, appConfig.platformAssessor.minReviewIntervalMs) }, 'Review scheduler started for agent');
+      startReviewSchedulerForAgent(agent);
     }
     logger.info({ count: reviewSchedulers.size }, 'Review schedulers initialised');
   }
