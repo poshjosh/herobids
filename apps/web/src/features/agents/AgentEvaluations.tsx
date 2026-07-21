@@ -478,7 +478,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
     },
     onError: (error) => {
       if (error instanceof ApiError && (error.status === 409)) {
-        setReviewConflictMessage('A review is already in progress');
+        setReviewConflictMessage(intl.formatMessage({ id: 'agents.strategyReview.alreadyInProgress' }));
         return;
       }
       throw error;
@@ -708,15 +708,21 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                 }
               >
                 {reviewTriggerMutation.isPending || (reviewStatus !== null && ['queued', 'running'].includes(reviewStatus.status))
-                  ? 'Running review…'
-                  : 'Run Strategy Review'}
+                  ? intl.formatMessage({ id: 'agents.strategyReview.running' })
+                  : intl.formatMessage({ id: 'agents.strategyReview.runReview' })}
               </Button>
 
               {reviewTriggerMutation.isError && (
                 <span style={{ fontSize: '12px', color: 'var(--color-danger)' }}>
                   {reviewTriggerMutation.error instanceof ApiError
                     ? (reviewTriggerMutation.error as ApiError).message
-                    : 'Failed to trigger review'}
+                    : intl.formatMessage({ id: 'agents.strategyReview.triggerError' })}
+                </span>
+              )}
+
+              {reviewConflictMessage && (
+                <span style={{ fontSize: '12px', color: 'var(--color-warning)' }}>
+                  {reviewConflictMessage}
                 </span>
               )}
             </div>
@@ -725,7 +731,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
             {reviewEligibilityQuery.isSuccess &&
               !reviewEligibilityQuery.data.canTrigger && (
                 <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                  {reviewEligibilityQuery.data.reason ?? 'Strategy review is not available for this agent'}
+                  {reviewEligibilityQuery.data.reason ?? intl.formatMessage({ id: 'agents.strategyReview.notAvailable' })}
                 </span>
               )}
 
@@ -743,16 +749,16 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                     : 'var(--color-surface-2)',
               }}>
                 {reviewStatus.status === 'queued' || reviewStatus.status === 'running' ? (
-                  <span style={{ color: 'var(--color-text-muted)' }}>Review in progress…</span>
+                  <span style={{ color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.strategyReview.inProgress' })}</span>
                 ) : reviewStatus.status === 'failed' ? (
                   <span style={{ color: 'var(--color-danger)' }}>
-                    Review failed: {reviewStatus.errorMessage ?? 'Unknown error'}
+                    {intl.formatMessage({ id: 'agents.strategyReview.failed' }, { error: reviewStatus.errorMessage ?? intl.formatMessage({ id: 'agents.strategyReview.unknownError' }) })}
                   </span>
                 ) : reviewStatus.status === 'succeeded' && reviewStatus.resultSummary ? (
                   <span style={{ color: 'var(--color-text-primary)' }}>
                     {reviewStatus.resultSummary.hasAdvice
-                      ? `Review complete — ${reviewStatus.resultSummary.advisedCount} symbol(s) have advice`
-                      : 'Review complete — no advice at this time'}
+                      ? intl.formatMessage({ id: 'agents.strategyReview.completeWithAdvice' }, { count: reviewStatus.resultSummary.advisedCount })
+                      : intl.formatMessage({ id: 'agents.strategyReview.completeNoAdvice' })}
                     {reviewStatus.resultSummary.checkOutcome && (
                       <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginLeft: '8px' }}>
                         ({reviewStatus.resultSummary.checkOutcome})

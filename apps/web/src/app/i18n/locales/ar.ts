@@ -914,4 +914,16 @@ export const messages: Record<string, string> = {
   'agents.evaluations.triggeredAt': 'Requested',
   'agents.evaluations.viewReport': 'View Report',
 
+  // Strategy Review
+  'agents.strategyReview.runReview': 'Run Strategy Review',
+  'agents.strategyReview.running': 'Running review…',
+  'agents.strategyReview.triggerError': 'Failed to trigger review',
+  'agents.strategyReview.notAvailable': 'Strategy review is not available for this agent',
+  'agents.strategyReview.inProgress': 'Review in progress…',
+  'agents.strategyReview.failed': 'Review failed: {error}',
+  'agents.strategyReview.unknownError': 'Unknown error',
+  'agents.strategyReview.alreadyInProgress': 'A review is already in progress',
+  'agents.strategyReview.completeWithAdvice': 'Review complete — {count} {count, plural, one {symbol has} other {symbols have}} advice',
+  'agents.strategyReview.completeNoAdvice': 'Review complete — no advice at this time',
+
 };
