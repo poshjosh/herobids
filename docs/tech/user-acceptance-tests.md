@@ -171,6 +171,18 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 | AG-E09 | Model selection visible | Open edit form for agent with intelligence capability | AI Configuration tab shows model provider/economy/premium fields directly (no inherit/override toggle) | — | |
 | AG-E10 | Guardrails editable | Open edit form; expand Advanced Settings → Trading Setup | Daily loss limit, max slippage, max open positions, stop-loss fields present and editable | — | |
 
+### 6.1a Agents — Forced Strategy Review
+
+Route: `/agents/:id` — dedicated operator control to trigger a deterministic strategy review on demand.
+
+| ID | Test Case | Steps | Expected | Status | Notes |
+|----|-----------|-------|----------|--------|-------|
+| AG-R01 | Force-review control visibility | Open an agent detail page for an agent with periodic strategy assessment enabled | A dedicated strategy-review control is visible in the Evaluations area | — | |
+| AG-R02 | Force-review unavailable state | Open an ineligible agent detail page | The control is either hidden or disabled, and the UI does not present it as an active action | — | Final copy depends on implementation choice |
+| AG-R03 | Force-review trigger — request accepted | Click the strategy-review control for an eligible agent | The UI enters a pending state and shows that the manual review request was accepted | — | |
+| AG-R04 | Force-review terminal no-advice outcome | Trigger a review when the agent has no qualifying candidates | The request completes with a valid no-advice or no-candidate result, not a generic error | — | |
+| AG-R05 | Force-review remains separate from evaluation | Trigger a strategy review from the agent detail page | No general evaluation run is created automatically; the feature remains distinct from Run Evaluation | — | |
+
 ---
 
 ## 6b. Agents — Simplified Creation Flow
