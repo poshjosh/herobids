@@ -294,7 +294,7 @@ export class AssessmentReviewRunner {
             eq(agentScanCandidates.resolutionStatus, 'resolved'),
           ),
         )
-        .orderBy(agentScanCandidates.candidateRank)
+        .orderBy(desc(agentScanCandidates.scannedAt), agentScanCandidates.candidateRank)
         .limit(this.config.scannerCandidateLimit);
 
       if (candidates.length === 0) {
