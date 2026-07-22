@@ -140,8 +140,13 @@ function setPlatformAssessment(agentId: string, enabled: boolean): void {
 function getPlatformAssessment(agentId: string): string | null {
   return dbVal(dbExec(`SELECT (unified_config->'platformAssessment'->>'enabled')::text AS val FROM agents WHERE id = '${agentId}'`));
 }
-function workerLogs(): string {
-  try { return execSync(`docker compose logs worker 2>&1 | tail -500 || true`, { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 }); } catch { return ''; }
+function workerLogContains(pattern: string): boolean {
+  try {
+    execSync(`docker compose logs worker 2>&1 | grep -qF "${pattern}"`, { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +219,7 @@ async function runS19(token: string, connectionId: string): Promise<void> {
 
   const tableOk = dbVal(dbExec("SELECT count(*)::text FROM information_schema.tables WHERE table_schema='public' AND table_name='market_assessment_artifacts'"));
   record('S19-schema', tableOk === '1', `Schema ready: ${tableOk === '1'}`);
-  const llmOk = workerLogs().includes('Platform assessor LLM configured');
+  const llmOk = workerLogContains('Platform assessor LLM configured');
   record('S19-llm', llmOk, llmOk ? 'LLM config propagated' : 'LLM config not found in logs');
   await stopAndDeleteAgent(token, agentId);
 }
