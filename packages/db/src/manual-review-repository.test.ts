@@ -15,8 +15,9 @@ import crypto from 'node:crypto';
 // These tests require a running Postgres instance (e.g., docker compose up -d).
 // They use the same test DB URL pattern as other integration tests.
 const DB_URL = process.env['TEST_DATABASE_URL'] ?? 'postgresql://postgres:postgres@localhost:5432/herobids_test';
+const SKIP = !process.env['TEST_DATABASE_URL'] && !process.env['DATABASE_URL'];
 
-describe('ManualReviewRepository', () => {
+describe.skipIf(SKIP)('ManualReviewRepository', () => {
   const db = createDatabase(DB_URL);
   const agentId = `test-agent-${crypto.randomUUID().slice(0, 8)}`;
   const userId = `test-user-${crypto.randomUUID().slice(0, 8)}`;

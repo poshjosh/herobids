@@ -478,7 +478,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
     },
     onError: (error) => {
       if (error instanceof ApiError && (error.status === 409)) {
-        setReviewConflictMessage(intl.formatMessage({ id: 'agents.strategyReview.alreadyInProgress' }));
+        // Already running — handled by the render block
         return;
       }
       throw error;
@@ -499,7 +499,6 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
   });
 
   const reviewStatus = reviewStatusQuery.data ?? null;
-  const [reviewConflictMessage, setReviewConflictMessage] = useState<string | null>(null);
 
   // ── Strategy review advice ──────────────────────────────────────────
   const reviewAdviceQuery = useQuery({
@@ -723,15 +722,11 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
 
               {reviewTriggerMutation.isError && (
                 <span style={{ fontSize: '12px', color: 'var(--color-danger)' }}>
-                  {reviewTriggerMutation.error instanceof ApiError
-                    ? (reviewTriggerMutation.error as ApiError).message
-                    : intl.formatMessage({ id: 'agents.strategyReview.triggerError' })}
-                </span>
-              )}
-
-              {reviewConflictMessage && (
-                <span style={{ fontSize: '12px', color: 'var(--color-warning)' }}>
-                  {reviewConflictMessage}
+                  {reviewTriggerMutation.error instanceof ApiError && (reviewTriggerMutation.error as ApiError).status === 409
+                    ? intl.formatMessage({ id: 'agents.strategyReview.alreadyInProgress' })
+                    : reviewTriggerMutation.error instanceof ApiError
+                      ? (reviewTriggerMutation.error as ApiError).message
+                      : intl.formatMessage({ id: 'agents.strategyReview.triggerError' })}
                 </span>
               )}
             </div>
