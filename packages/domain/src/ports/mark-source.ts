@@ -7,7 +7,7 @@ export interface MarkError extends DomainError {
 
 export interface Mark {
   price: Price;
-  source: 'last_fill' | 'oracle' | 'ticker';
+  source: 'last_fill' | 'oracle' | 'ticker' | 'hyperliquid_mid';
   instrument: string;
   timestamp: string;
   /** True when the mark is a stale fallback (e.g. old fill when oracle is unavailable). Callers with a fresher price source should prefer their own. */
