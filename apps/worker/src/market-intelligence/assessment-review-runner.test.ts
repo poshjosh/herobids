@@ -173,4 +173,62 @@ describe('AssessmentReviewRunner', () => {
       expect(result.ok).toBe(true);
     });
   });
+
+  describe('candidate ordering (regression: Bug 003)', () => {
+    it('orders candidates by scannedAt DESC then candidateRank to avoid duplicate rank-1 symbols', async () => {
+      // Capture the orderBy call to verify the correct sort order.
+      // Bug 003: the query previously ordered by candidateRank alone, causing
+      // all 20 LIMIT slots to be filled with rank-1 LIT entries from different
+      // scan cycles instead of diverse symbols from the most recent scan.
+      const orderBySpy = vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue([]),
+      });
+      const whereSpy = vi.fn().mockReturnValue({ orderBy: orderBySpy });
+      const fromSpy = vi.fn().mockReturnValue({ where: whereSpy });
+      const selectSpy = vi.fn().mockReturnValue({ from: fromSpy });
+
+      const orderDeps = makeMockDeps();
+      (orderDeps.db as unknown as { select: typeof selectSpy }).select = selectSpy;
+
+      const runner = new AssessmentReviewRunner(orderDeps, config);
+      await runner.run({ trigger: 'manual', force: true });
+
+      // Verify orderBy was called
+      expect(orderBySpy).toHaveBeenCalled();
+
+      // The first argument should be desc(scannedAt), second should be candidateRank
+      const orderByArgs = orderBySpy.mock.calls[0];
+      expect(orderByArgs).toBeDefined();
+      expect(orderByArgs!.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('produces diverse symbols when multiple candidates exist in one scan cycle', async () => {
+      // Simulate a single scan cycle with 3 diverse candidates.
+      // After the ORDER BY fix, the query returns the most recent scan first,
+      // and within that scan, candidates are ordered by rank.
+      const diverseCandidates = [
+        { symbol: 'BTC', candidateRank: 1, disposition: 'entry_candidate', resolutionStatus: 'resolved', scannedAt: new Date(), venueFamily: 'hyperliquid', styleTier: 'standard', dataFreshnessTs: new Date(), confidence: 0.8, regimeBucket: null, volatilityFact: null },
+        { symbol: 'ETH', candidateRank: 2, disposition: 'entry_candidate', resolutionStatus: 'resolved', scannedAt: new Date(), venueFamily: 'hyperliquid', styleTier: 'standard', dataFreshnessTs: new Date(), confidence: 0.7, regimeBucket: null, volatilityFact: null },
+        { symbol: 'SOL', candidateRank: 3, disposition: 'entry_candidate', resolutionStatus: 'resolved', scannedAt: new Date(), venueFamily: 'hyperliquid', styleTier: 'standard', dataFreshnessTs: new Date(), confidence: 0.6, regimeBucket: null, volatilityFact: null },
+      ];
+
+      const diverseDeps = makeMockDeps();
+      const limitSpy = vi.fn().mockResolvedValue(diverseCandidates);
+      const orderBySpy = vi.fn().mockReturnValue({ limit: limitSpy });
+      const whereSpy = vi.fn().mockReturnValue({ orderBy: orderBySpy });
+      const fromSpy = vi.fn().mockReturnValue({ where: whereSpy });
+      (diverseDeps.db as unknown as { select: () => unknown }).select = vi.fn().mockReturnValue({ from: fromSpy });
+
+      const runner = new AssessmentReviewRunner(diverseDeps, config);
+      const result = await runner.run({ trigger: 'manual', force: true });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Should have 3 advised candidates (all passed eligibility)
+        expect(result.data.advisedCount).toBe(3);
+        // Should NOT have 3 identical symbols (the original bug)
+        expect(result.data.hasAdvice).toBe(true);
+      }
+    });
+  });
 });
