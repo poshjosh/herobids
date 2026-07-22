@@ -160,9 +160,73 @@ The decisions endpoint only queries the `decisions` table. Rejected decisions ar
 
 | File | Role |
 |------|------|
-| `apps/worker/src/agents/agent-decision-handler.ts` | Builds Decision object, calls submitDecisionForExecution |
-| `apps/worker/src/agents/agent-intake-resolver.ts` | Provides persistDecision for agent intake |
-| `packages/engine/src/decision-intake.ts` | Shared submitDecisionForExecution pipeline |
-| `packages/db/src/repositories.ts` | DecisionRepository.insertDecision (line 767) |
-| `apps/api/src/routes/agents.ts` | GET /agents/:id/decisions (line 2084) |
-| `apps/worker/src/agent.ts` | Agent runtime envelope construction (line 1184) |
+| `apps/worker/src/agent-trading-actor.ts:913` | `getDecisionContext()` returns undefined when mark fetch fails |
+| `apps/worker/src/agents/agent-decision-handler.ts:174` | Handler rejects with `no_context` code |
+| `packages/engine/src/mark-source.ts` | `FillFirstMarkSource` — no venue oracle fallback for perps |
+| `packages/db/src/repositories.ts:767` | `DecisionRepository.insertDecision()` — never reached |
+| `packages/engine/src/decision-intake.ts:141` | `submitDecisionForExecution()` — never reached |
+
+## Related Bugs
+
+- **Bug 001** (`docs/bug-reports/2026/07/21/001-staging-agents-not-trading-actor-start-never-called.md`): RC1 (`actor.start()` deleted) masked this gap — no agent could trade, so the mark-price issue was invisible. After RC1 was fixed on 2026-07-21, agents could trade again, exposing this pre-existing gap.
+
+## Was This Bug Introduced Recently?
+
+**No — it's a pre-existing gap masked by Bug 001 (RC1).**
+
+Timeline:
+1. **2026-07-19:** Platform-preset-assessment feature lands. `actor.start()` accidentally deleted → ALL agents dead, no decisions reach the pipeline.
+2. **2026-07-21:** Bug 001 fixed → agents can start and submit decisions.
+3. **2026-07-22:** Agent submits `go_long LIT-PERP`. Mark source fails (no fills, no CoinGecko mapping for perp). Decision rejected. This bug discovered.
+
+The mark-source gap (`FillFirstMarkSource` lacks a venue-level oracle fallback for Hyperliquid perps) pre-dates the platform-preset-assessment feature. It was never reached because either (a) agents used a different path before the feature, or (b) RC1 blocked all trading.
+
+## Why Existing Tests Did Not Prevent This
+
+Three layers of missing coverage:
+
+| Layer | What's tested | What's missing |
+|-------|--------------|----------------|
+| **Unit (mark source)** | No dedicated test file for `FillFirstMarkSource` | No test proves mark resolution for a perp with zero fills and no CoinGecko mapping |
+| **Integration (decision intake)** | `agent-decision-handler.test.ts` mocks `getDecisionContext` → always succeeds | Never exercises the real mark-source failure path through the agent trading actor |
+| **End-to-end** | `agent-trade-test.ts` exercises full pipeline BUT is explicitly *"NOT part of the routine test suite"* with no CI gating | The one test that would catch this isn't run automatically |
+
+Same pattern as Bug 001: unit tests verify isolation; the bug is in the integration between layers, which nothing exercises automatically.
+
+## Recommended Tests (All Levels)
+
+### Level 1 — Unit: Mark source resolution for perps
+**File:** `packages/engine/src/mark-source.test.ts` (new or extend)
+```typescript
+it('resolves mark for perp via venue oracle when no fills and no CoinGecko mapping')
+it('returns structured error when all three sources fail')
+```
+
+### Level 2 — Integration: Agent actor decision context after start
+**File:** `apps/worker/src/agent-trading-actor.test.ts` (extend)
+```typescript
+it('getDecisionContext returns defined for a freshly-scanned perp after start()')
+it('getDecisionContext returns undefined with reason when all mark sources fail')
+```
+
+### Level 3 — Integration: Full decision pipeline end-to-end
+**File:** `apps/worker/src/__tests__/integration/agent-decision-pipeline.integration.test.ts` (new)
+```typescript
+it('persists accepted decision to decisions table after agent submits')
+it('persists rejected decision to decision_failures with failure code')
+it('GET /agents/:id/decisions includes the persisted decision')
+```
+
+### Level 4 — Composition root wiring
+**File:** Extract `onSessionActive` callback from `index.ts` for testability
+```typescript
+it('actor.getDecisionContext returns defined after onSessionActive completes')
+```
+
+### Level 5 — Promote agent-trade-test to CI gating
+**File:** `.github/workflows/agent-trade-test.yml` (new)
+Run `scripts/shell/tests/agent-trade-test.sh` in paper mode on every PR.
+
+### Level 6 — Post-deploy smoke check
+**File:** `infra/hetzner/scripts/smoke-check.sh` (extend)
+Query `decisions` table after agent startup; fail deploy if no decisions appear within timeout.
