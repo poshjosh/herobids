@@ -34,7 +34,7 @@ export class HyperliquidMarkSource implements MarkSource {
     try {
       // Refresh cache if stale
       const now = Date.now();
-      if (now - this.lastFetchMs > this.cacheTtlMs || this.midPrices.size === 0) {
+      if (now - this.lastFetchMs >= this.cacheTtlMs || this.midPrices.size === 0) {
         await this.refreshMidPrices();
       }
 
