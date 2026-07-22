@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.34 - 2026-07-22
+
 ### Added
 
 - **Frontend-Triggered Forced Strategy Review:** New user-triggered control to run a deterministic strategy review on demand. Adds `agent_assessment_review_runs` table for durable request lifecycle, `AssessmentReviewRunner` (extracted shared review executor), `ManualReviewRuntime` (BullMQ consumer), API routes (`POST/GET`), and a "Run Strategy Review" button in the agent detail Evaluations card with polling and result summary. The manual path reuses the same pre-check/wake/persistence logic as the scheduled path, bypassing only the due-interval gate. See [001-frontend-force-strategy-review/001-plan.md](docs/features/2026/07/20/001-frontend-force-strategy-review/001-plan.md).
