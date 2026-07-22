@@ -6,27 +6,30 @@
 
 ## Root Cause (Confirmed via live DB inspection)
 
-The decision was **rejected** by `AgentDecisionHandler` due to a missing mark price. It was never passed to `submitDecisionForExecution`, so it was never persisted to the `decisions` table.
+The new venue-aware scanner (introduced by the platform-preset-assessment feature, commits `86f660eb` / `79326f83`) discovers candidates directly from Hyperliquid's full perp market. But the `OracleMarkSource`'s CoinGecko fallback (`COIN_ID_MAP` in `packages/venues/src/oracle-mark-source.ts`) has only 12 hardcoded coin IDs. **Zero** of the 5 instruments the new scanner discovered are in the map. And since the agent has no fill history, `LastFillMarkSource` also fails. Result: every decision is rejected with `no_context`.
 
-### Evidence chain
+### Evidence
 
-1. `agent_messages` table — contains the `agent.decision.submit` event ✅
-2. `decision_failures` table — contains:
-   ```
-   failure_code: no_context
-   failure_message: No decision context available — actor may still be initializing or mark price unavailable
-   instrument_id: LIT-PERP
-   ```
-3. Worker log:
-   ```
-   [06:21:09] WARN (agent-actor-2c3cb331): Failed to fetch mark for decision context
-   ```
-4. Worker log detail:
-   ```
-   "No mark available for LIT-PERP: fill source (No fills found for instrument: LIT-PERP),
-    fallback (No CoinGecko mapping for instrument: LIT-PERP)"
-   ```
-5. `decisions` table — **0 rows total** (confirmed via `SELECT COUNT(*)`)
+| Source | Data |
+|--------|------|
+| `agent_scan_candidates` | 5 instruments: `AAVE(30)`, `KAITO(16)`, `LIT(38)`, `ONDO(12)`, `XMR(38)` |
+| `COIN_ID_MAP` (hardcoded) | 12 IDs: `BTC, ETH, SOL, HYPE, DOGE, AVAX, LINK, ARB, OP, SUI, JUP, BONK` |
+| Worker logs | `"No mark available for LIT-PERP: fill source (No fills), fallback (No CoinGecko mapping)"` |
+| Worker logs | `"No mark available for KAITO-PERP: fill source (No fills), fallback (No CoinGecko mapping)"` |
+| `decision_failures` | 1 row: `failure_code: no_context`, `instrument_id: LIT-PERP` |
+| `decisions` | **0 rows total** |
+
+### Pre-feature vs post-feature
+
+| | Before feature (July 15) | After feature (July 22) |
+|---|---|---|
+| **Instruments traded** | `BTC`, `ETH` | `LIT`, `KAITO`, `AAVE`, `XMR`, `ONDO` |
+| **In CoinGecko map?** | ✅ Both are | ❌ Zero of five are |
+| **Mark resolution** | Works | Always fails |
+
+### Why this is a regression from the feature
+
+The scanner changes (`86f660eb` — venue-aware discovery, `79326f83` — wire into AgentTradingActor) expanded candidate discovery to the full Hyperliquid perp universe. The `COIN_ID_MAP` was never expanded to match. This is a **coverage gap created by expanding the scanner without expanding the mark source**.
 
 ### Execution flow that led to the bug
 
@@ -123,32 +126,26 @@ All three diagnostic queries confirmed:
 
 The activity feed (`/agents/:id/activity-feed`) pulls from `agent_messages` — it records that the protocol message was received and dispatched. It does NOT reflect whether the decision was ultimately accepted or rejected by the intake pipeline. This is a **UI observability gap**.
 
-## Recommended Fix (advisory — do not implement yet)
+## Recommended Fix
 
-Two separate problems:
+### Problem A (root cause): Scanner discovers instruments the mark source can't price
 
-### Problem A: Mark price unavailable for newly scanned perp instruments
+**Files:**
+- `packages/venues/src/oracle-mark-source.ts:13` — `COIN_ID_MAP` only has 12 entries
+- `apps/worker/src/index.ts:~79326f83` — venue-aware scanner discovers full Hyperliquid perp universe
 
-**File:** `apps/worker/src/agent-trading-actor.ts:913` — `getDecisionContext()`
+**Fix:** Expand `COIN_ID_MAP` to include all Hyperliquid perps the scanner may discover. At minimum, add the 5 instruments currently being scanned: `AAVE`, `KAITO`, `LIT`, `ONDO`, `XMR`. The correct CoinGecko IDs are:
+- `AAVE` → `aave`
+- `XMR` → `monero`
+- `LIT` → `litentry`
+- `KAITO` → needs research (may not exist on CoinGecko)
+- `ONDO` → `ondo-finance`
 
-The mark source (`FillFirstMarkSource`) relies on:
-1. Recent fills (not available for a new agent that hasn't traded yet)
-2. CoinGecko fallback (doesn't map perp symbols like `LIT-PERP`)
-
-**Possible fix approaches:**
-- Add a third fallback: use the Hyperliquid venue's own mark price / oracle price API
-- Pre-warm the mark source on session start by fetching marks for all candidate instruments
-- Add a startup readiness gate: don't process decisions until at least one mark fetch succeeds
+Alternatively: add a venue-level mark source (Hyperliquid's own `/info` or oracle price endpoint) so the mark source doesn't depend on CoinGecko at all for perp instruments.
 
 ### Problem B: Rejected decisions are invisible in the UI
 
-**Files:** `apps/api/src/routes/agents.ts:2084`, `apps/web/src/features/agents/AgentDetailPage.tsx`
-
-The decisions endpoint only queries the `decisions` table. Rejected decisions are stored in `decision_failures` but never surfaced.
-
-**Possible fix approach:**
-- Merge `decision_failures` into the decisions endpoint response
-- Make the activity feed reflect the actual decision outcome (accepted vs rejected)
+(Same as before — decisions endpoint only queries `decisions` table, `decision_failures` never surfaced)
 
 ## Impact
 
@@ -172,14 +169,16 @@ The decisions endpoint only queries the `decisions` table. Rejected decisions ar
 
 ## Was This Bug Introduced Recently?
 
-**No — it's a pre-existing gap masked by Bug 001 (RC1).**
+**Yes — by the platform-preset-assessment feature's scanner changes.**
 
-Timeline:
-1. **2026-07-19:** Platform-preset-assessment feature lands. `actor.start()` accidentally deleted → ALL agents dead, no decisions reach the pipeline.
-2. **2026-07-21:** Bug 001 fixed → agents can start and submit decisions.
-3. **2026-07-22:** Agent submits `go_long LIT-PERP`. Mark source fails (no fills, no CoinGecko mapping for perp). Decision rejected. This bug discovered.
+The timeline:
+1. **Before July 19:** Agents traded `BTC`/`ETH` using the old scanner. Both are in `COIN_ID_MAP`. Mark resolution worked.
+2. **July 19:** Commits `86f660eb` (venue-aware discovery) and `79326f83` (wire scanner into AgentTradingActor) expanded candidate discovery to the full Hyperliquid perp universe. The `COIN_ID_MAP` (12 hardcoded IDs) was not expanded.
+3. **July 19-21:** Bug 001 (RC1 — `actor.start()` deleted) masked this gap — no agent could trade at all.
+4. **July 21:** Bug 001 fixed → agents can trade. Scanner discovers `LIT`, `KAITO`, `AAVE`, `XMR`, `ONDO`. None in `COIN_ID_MAP`. All decisions rejected.
+5. **July 22:** Bug discovered.
 
-The mark-source gap (`FillFirstMarkSource` lacks a venue-level oracle fallback for Hyperliquid perps) pre-dates the platform-preset-assessment feature. It was never reached because either (a) agents used a different path before the feature, or (b) RC1 blocked all trading.
+The regression is in the **scanner expansion** (commits `86f660eb` and `79326f83`), not in the mark source itself. The mark source was never broken — it was simply never given the new instruments to resolve. The scanner now feeds it instruments it can't handle.
 
 ## Why Existing Tests Did Not Prevent This
 
