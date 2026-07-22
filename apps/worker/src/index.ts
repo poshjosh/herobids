@@ -23,10 +23,11 @@ import { fetchOpenRouterPricing } from '@herobids/llm';
 import { MarketDataRecorder } from '@herobids/backtesting';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, AgentDocumentsRepository, bots, users, agents, agentScanCandidates } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter } from '@herobids/venues';
+import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, HyperliquidMarkSource } from '@herobids/venues';
 import { createFillFirstMarkSource } from '@herobids/engine';
 import type { IdGenerator } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
+import { MarkSelector } from '@herobids/engine';
 import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, AGENT_STREAM_MAXLEN, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig, ok, err } from '@herobids/domain';
 import { applyPresetToAgent, isStyleKey, type StyleKey } from '@herobids/domain';
 import { getPreset } from '@herobids/domain/config/presets-loader';
@@ -576,6 +577,22 @@ const oracleMarkSource = new OracleMarkSource({
   vsCurrency: appConfig.marking.oracleVsCurrency,
 });
 
+// Hyperliquid venue-level mid-price source — resolves perp marks for ALL
+// Hyperliquid instruments without needing CoinGecko. Chained before the
+// CoinGecko oracle: LastFill → HyperliquidMid → CoinGecko.
+const hyperliquidMarkSource = new HyperliquidMarkSource({
+  timeoutMs: appConfig.marking.oracleTimeoutMs,
+});
+
+// Composite fallback: try Hyperliquid's own mid prices first (works for
+// all listed perps), then fall back to CoinGecko (for non-Hyperliquid
+// instruments like swaps/dex).
+const compositeFallbackSource = new MarkSelector(
+  { stalenessThresholdMs: 30_000 },
+  hyperliquidMarkSource,
+  oracleMarkSource,
+);
+
 // --- Venue instrument cache (symbol validation) ---
 // Created before AgentIntakeResolver so the cache reference is available
 // at construction time. Warmup happens later, after venue adapters are
@@ -910,6 +927,15 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
         }
         // else: intelligence agent — no technical config, stays undefined
 
+        // Construct the agent's mark source outside the constructor so it can be
+        // reused in onPersistScanCandidates for mark-coverage filtering.
+        const agentMarkSource = createFillFirstMarkSource({
+          fillLookup: fillRepo,
+          actorId: agentId,
+          fallbackSource: compositeFallbackSource,
+          stalenessThresholdMs: appConfig.marking.stalenessThresholdMs,
+        });
+
         actor = new AgentTradingActor({
           agentId,
           executionMode: mode,
@@ -929,12 +955,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           createStreamPoolHandle: venueType !== 'swap'
             ? (testnet: boolean) => createScopedStreamPoolHandle(publicStreamPool, binding.venue, testnet)
             : undefined,
-          markSource: createFillFirstMarkSource({
-            fillLookup: fillRepo,
-            actorId: agentId,
-            fallbackSource: oracleMarkSource,
-            stalenessThresholdMs: appConfig.marking.stalenessThresholdMs,
-          }),
+          markSource: agentMarkSource,
           journal,
           idGen,
           positionRepo,
@@ -991,9 +1012,32 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           onPersistScanCandidates: async (candidates) => {
             try {
               if (candidates.length === 0) return;
+              // Filter: only persist candidates the mark source can price.
+              // Prevents agents from submitting decisions on instruments that
+              // will always be rejected with no_context (Bug 002).
+              const pricedCandidates = [];
+              for (const c of candidates) {
+                const instrument = c.symbol
+                  ? `${c.symbol}-PERP`
+                  : c.address
+                    ? `${c.network ?? ''}:${c.address}`
+                    : null;
+                if (!instrument) {
+                  pricedCandidates.push(c); // No symbol/address — persist anyway (defensive)
+                  continue;
+                }
+                const markResult = await agentMarkSource.fetchMark(instrument);
+                if (markResult.ok) {
+                  pricedCandidates.push(c);
+                } else {
+                  logger.debug({ symbol: c.symbol, instrument }, 'Skipping candidate — mark unavailable');
+                }
+              }
+              if (pricedCandidates.length === 0) return;
+
               // Batch insert persisted scanner candidate observations
               await db.insert(agentScanCandidates).values(
-                candidates.map((c) => ({
+                pricedCandidates.map((c) => ({
                   id: c.id,
                   agentId: c.agentId,
                   scannedAt: new Date(c.scannedAt),
@@ -1673,7 +1717,7 @@ const runtime = new WorkerRuntime(
       markSource: createFillFirstMarkSource({
         fillLookup: fillRepo,
         actorId: botId,
-        fallbackSource: oracleMarkSource,
+        fallbackSource: compositeFallbackSource,
         stalenessThresholdMs: appConfig.marking.stalenessThresholdMs,
       }),
       recordMarketSnapshot,

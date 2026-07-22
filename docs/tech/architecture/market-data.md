@@ -257,11 +257,15 @@ an undifferentiated price or token list.
 
 ### Trading actors
 
-`apps/worker/src/trading-actor.ts` uses:
+`apps/worker/src/trading-actor.ts` and `apps/worker/src/agent-trading-actor.ts` use:
 
 - `StreamMarketDataFeed` for orderbook venues when the stream pool is present
 - polling fallback when the stream path is unavailable or unsupported
-- `OracleMarkSource` for reference marking and P&L/risk valuation support
+- a 3-level mark source chain for reference pricing and P&L/risk valuation:
+  1. `LastFillMarkSource` — most recent fill price (most accurate, within staleness window)
+  2. `HyperliquidMarkSource` — venue mid prices for ALL Hyperliquid perps via `/info` API
+  3. `OracleMarkSource` (CoinGecko) — last resort for non-Hyperliquid instruments
+- `HyperliquidMarkSource` (`packages/venues/src/hyperliquid-mark-source.ts`) is a new venue-level mark source that queries Hyperliquid's own `/info` endpoint (`{"type": "allMids"}`) which returns mid prices for every listed perpetual. This eliminates the need for CoinGecko fallback for perp instruments and prevents `no_context` rejections when the agent has no fill history and CoinGecko has no mapping for a perp symbol.
 
 ### Agent runtime
 
