@@ -2,7 +2,51 @@
 
 **Date:** 2026-07-22  
 **Severity:** HIGH (core observability gap — users can't see their agent's trading decisions)  
-**Status:** Open
+**Status:** Root cause confirmed
+
+## Root Cause (Confirmed via live DB inspection)
+
+The decision was **rejected** by `AgentDecisionHandler` due to a missing mark price. It was never passed to `submitDecisionForExecution`, so it was never persisted to the `decisions` table.
+
+### Evidence chain
+
+1. `agent_messages` table — contains the `agent.decision.submit` event ✅
+2. `decision_failures` table — contains:
+   ```
+   failure_code: no_context
+   failure_message: No decision context available — actor may still be initializing or mark price unavailable
+   instrument_id: LIT-PERP
+   ```
+3. Worker log:
+   ```
+   [06:21:09] WARN (agent-actor-2c3cb331): Failed to fetch mark for decision context
+   ```
+4. Worker log detail:
+   ```
+   "No mark available for LIT-PERP: fill source (No fills found for instrument: LIT-PERP),
+    fallback (No CoinGecko mapping for instrument: LIT-PERP)"
+   ```
+5. `decisions` table — **0 rows total** (confirmed via `SELECT COUNT(*)`)
+
+### Execution flow that led to the bug
+
+```
+1. Agent scans → finds LIT-PERP candidate
+2. Agent submits go_long LIT-PERP → recorded in agent_messages ✅
+3. AgentDecisionHandler.handleDecisionSubmit() called
+4. getDecisionContext('LIT-PERP') called on AgentTradingActor
+5. markSource.fetchMark('LIT-PERP') returns error:
+   - Fill source: No fills (agent hasn't traded this instrument yet)
+   - Fallback (CoinGecko): No mapping for LIT-PERP (it's a Hyperliquid perp)
+6. getDecisionContext returns undefined
+7. Handler rejects with 'no_context' → persisted to decision_failures ✅
+8. submitDecisionForExecution is NEVER called → decisions table remains empty ❌
+9. Activity feed shows decision.accepted (records protocol message receipt, not outcome)
+```
+
+### Why the activity feed shows "accepted" but the decision was rejected
+
+The activity feed (`/agents/:id/activity-feed`) pulls from `agent_messages` — it records that the protocol message was received and dispatched. It does NOT reflect whether the decision was ultimately accepted or rejected by the intake pipeline. This is a **UI observability gap**: the activity feed should show the actual decision outcome (accepted vs rejected), not just message receipt.
 
 ## Summary
 
@@ -51,34 +95,60 @@ The decisions API endpoint queries:
 and(eq(decisions.actorType, 'agent'), eq(decisions.actorId, id))
 ```
 
-### Potential root causes (unconfirmed)
+### Confirmed: Decision rejected — never persisted
 
-1. **The decision may not have been persisted.** If `submitDecisionForExecution` threw or returned early (e.g., planner produced no orders for a `go_flat` from flat position), the decision might not have reached `persistDecision`. However, persistence happens at step 1 of the pipeline, before planning/risk/execution, so this is unlikely unless there's an uncaught exception.
+All three diagnostic queries confirmed:
+1. **`decisions` table: 0 rows total** — decision was never persisted
+2. **`decision_failures`: 1 row** — `failure_code: no_context`, `instrument_id: LIT-PERP`
+3. **Worker log**: `WARN Failed to fetch mark for decision context`
+4. **Worker log detail**: `No mark available for LIT-PERP: fill source (No fills found for instrument: LIT-PERP), fallback (No CoinGecko mapping for instrument: LIT-PERP)`
 
-2. **The decision may have been stored with a different `actorType`/`actorId`.** If `initiatorType` or `initiatorId` from the envelope is somehow different from expected (e.g., the envelope's `initiatorId` is the trading instance ID rather than the agent UUID), the query filter would not match.
+### Execution flow
 
-3. **The decision may have been stored but the query filters it out.** If `actorType` defaulted to `'system'` (the fallback in `insertDecision` when `decision.actorType` is falsy), the query for `actorType = 'agent'` would miss it.
+```
+1. Agent scans → finds LIT-PERP candidate
+2. Agent submits go_long LIT-PERP → recorded in agent_messages ✅
+3. AgentDecisionHandler.handleDecisionSubmit() called
+4. getDecisionContext('LIT-PERP') called on AgentTradingActor
+5. markSource.fetchMark('LIT-PERP') returns error:
+   - Fill source: No fills (agent hasn't traded this instrument yet)
+   - Fallback (CoinGecko): No mapping for LIT-PERP (it's a Hyperliquid perp)
+6. getDecisionContext returns undefined
+7. Handler rejects with 'no_context' → persisted to decision_failures ✅
+8. submitDecisionForExecution is NEVER called → decisions table remains empty ❌
+9. Activity feed shows decision.accepted (records protocol message receipt, not outcome)
+```
 
-### Recommended diagnostic steps
+### Why the activity feed shows "accepted" but the decision was rejected
 
-1. **Check the `decisions` table directly** for the agent's ID:
-   ```sql
-   SELECT id, actor_type, actor_id, instrument_id, intent, created_at
-   FROM decisions
-   WHERE actor_id = '2c3cb331-95c8-4419-b7b7-8bff49d7a4c0'
-   ORDER BY created_at DESC
-   LIMIT 10;
-   ```
+The activity feed (`/agents/:id/activity-feed`) pulls from `agent_messages` — it records that the protocol message was received and dispatched. It does NOT reflect whether the decision was ultimately accepted or rejected by the intake pipeline. This is a **UI observability gap**.
 
-2. **Check what `actor_type` the decision was stored with.** If it's `'system'` instead of `'agent'`, the query filter is the issue (see potential cause #3).
+## Recommended Fix (advisory — do not implement yet)
 
-3. **Check the worker logs** for any errors during decision intake (look for "Agent decision handler" or "Failed to persist" messages).
+Two separate problems:
 
-4. **Verify the API response** directly:
-   ```bash
-   curl -H "Authorization: Bearer <token>" \
-     http://localhost:3000/agents/2c3cb331-95c8-4419-b7b7-8bff49d7a4c0/decisions
-   ```
+### Problem A: Mark price unavailable for newly scanned perp instruments
+
+**File:** `apps/worker/src/agent-trading-actor.ts:913` — `getDecisionContext()`
+
+The mark source (`FillFirstMarkSource`) relies on:
+1. Recent fills (not available for a new agent that hasn't traded yet)
+2. CoinGecko fallback (doesn't map perp symbols like `LIT-PERP`)
+
+**Possible fix approaches:**
+- Add a third fallback: use the Hyperliquid venue's own mark price / oracle price API
+- Pre-warm the mark source on session start by fetching marks for all candidate instruments
+- Add a startup readiness gate: don't process decisions until at least one mark fetch succeeds
+
+### Problem B: Rejected decisions are invisible in the UI
+
+**Files:** `apps/api/src/routes/agents.ts:2084`, `apps/web/src/features/agents/AgentDetailPage.tsx`
+
+The decisions endpoint only queries the `decisions` table. Rejected decisions are stored in `decision_failures` but never surfaced.
+
+**Possible fix approach:**
+- Merge `decision_failures` into the decisions endpoint response
+- Make the activity feed reflect the actual decision outcome (accepted vs rejected)
 
 ## Impact
 
