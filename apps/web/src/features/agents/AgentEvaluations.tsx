@@ -501,6 +501,15 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
   const reviewStatus = reviewStatusQuery.data ?? null;
   const [reviewConflictMessage, setReviewConflictMessage] = useState<string | null>(null);
 
+  // ── Strategy review advice ──────────────────────────────────────────
+  const reviewAdviceQuery = useQuery({
+    queryKey: ['agents', agentId, 'platform-assessment-review', reviewRequestId, 'advice'],
+    queryFn: () => agentsApi.platformAssessmentReviews.getAdvice(agentId, reviewRequestId!),
+    enabled: !!reviewRequestId && reviewStatus?.status === 'succeeded',
+  });
+
+  const adviceData = reviewAdviceQuery.data ?? null;
+
   // ── Handlers ───────────────────────────────────────────────────────────
   const handleTrigger = useCallback(() => {
     triggerMutation.mutate({ includeNarrative });
@@ -766,6 +775,66 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                     )}
                   </span>
                 ) : null}
+              </div>
+            )}
+
+            {/* Advice table */}
+            {reviewStatus?.status === 'succeeded' && adviceData && adviceData.advice.length > 0 && (
+              <div style={{ marginTop: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
+                      <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
+                        {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.symbol' })}
+                      </th>
+                      <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
+                        {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.preset' })}
+                      </th>
+                      <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
+                        {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.outcome' })}
+                      </th>
+                      <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
+                        {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.reasons' })}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adviceData.advice.map((a, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                        <td style={{ padding: '4px 8px', color: 'var(--color-text-primary)' }}>{a.symbol ?? '—'}</td>
+                        <td style={{ padding: '4px 8px', color: 'var(--color-text-secondary)' }}>{a.activePreset}</td>
+                        <td style={{ padding: '4px 8px' }}>
+                          <span style={{
+                            padding: '1px 6px',
+                            borderRadius: '10px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            background: a.outcome === 'advised' ? 'var(--color-success-subtle)' : 'var(--color-surface-2)',
+                            color: a.outcome === 'advised' ? 'var(--color-success)' : 'var(--color-text-muted)',
+                          }}>
+                            {a.outcome}
+                          </span>
+                        </td>
+                        <td style={{ padding: '4px 8px' }}>
+                          {a.reasons.length > 0
+                            ? a.reasons.map((r, j) => (
+                                <code key={j} style={{
+                                  display: 'inline-block',
+                                  marginRight: '4px',
+                                  marginBottom: '2px',
+                                  padding: '1px 5px',
+                                  borderRadius: '4px',
+                                  fontSize: '11px',
+                                  background: 'var(--color-surface-3)',
+                                  color: 'var(--color-text-muted)',
+                                }}>{r}</code>
+                              ))
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

@@ -344,6 +344,13 @@
       "when": 1784459221841,
       "tag": "0048_medical_forgotten_one",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1784700865785,
+      "tag": "0049_smart_kinsey_walden",
+      "breakpoints": true
     }
   ]
 }

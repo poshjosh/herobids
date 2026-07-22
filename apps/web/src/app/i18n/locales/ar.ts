@@ -925,5 +925,10 @@ export const messages: Record<string, string> = {
   'agents.strategyReview.alreadyInProgress': 'A review is already in progress',
   'agents.strategyReview.completeWithAdvice': 'Review complete — {count} {count, plural, one {symbol has} other {symbols have}} advice',
   'agents.strategyReview.completeNoAdvice': 'Review complete — no advice at this time',
+  'agents.strategyReview.adviceColumn.symbol': 'Symbol',
+  'agents.strategyReview.adviceColumn.outcome': 'Outcome',
+  'agents.strategyReview.adviceColumn.preset': 'Active Preset',
+  'agents.strategyReview.adviceColumn.rank': 'Rank',
+  'agents.strategyReview.adviceColumn.reasons': 'Reasons',
 
 };

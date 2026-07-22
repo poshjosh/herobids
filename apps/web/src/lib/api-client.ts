@@ -27,6 +27,18 @@ export interface PlatformAssessmentReviewStatus {
   errorMessage: string | null;
 }
 
+export interface PlatformAssessmentReviewAdvice {
+  requestId: string;
+  checkId: string;
+  advice: Array<{
+    symbol: string | null;
+    outcome: string;
+    activePreset: string;
+    candidateRank: number | null;
+    reasons: string[];
+  }>;
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -1228,6 +1240,8 @@ export const agents = {
       }),
     get: (agentId: string, requestId: string) =>
       request<PlatformAssessmentReviewStatus>(`/agents/${agentId}/platform-assessment/reviews/${requestId}`),
+    getAdvice: (agentId: string, requestId: string) =>
+      request<PlatformAssessmentReviewAdvice>(`/agents/${agentId}/platform-assessment/reviews/${requestId}/advice`),
   },
   outcomes: () => request<{ outcomes: AgentOutcomes[] }>('/agents/outcomes'),
 };

@@ -9,6 +9,7 @@ import {
   createManualReviewRun,
   getManualReviewRun,
   hasActiveManualReviewRun,
+  reviewAdvice,
 } from '@herobids/db';
 import type { ManualReviewJobData } from '@herobids/db';
 
@@ -225,6 +226,57 @@ export async function platformAssessmentReviewRoutes(
       return reply.send({
         canTrigger,
         reason: canTrigger ? null : reasons.join('; '),
+      });
+    },
+  );
+
+  // ── GET /agents/:id/platform-assessment/reviews/:requestId/advice ────
+
+  app.get<{ Params: { id: string; requestId: string } }>(
+    '/agents/:id/platform-assessment/reviews/:requestId/advice',
+    async (request, reply) => {
+      const { id: agentId, requestId } = request.params;
+
+      // Ownership check
+      const [agent] = await db
+        .select({ id: agents.id, userId: agents.userId })
+        .from(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.userId, request.userId)));
+      if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+      const run = await getManualReviewRun(db, requestId);
+      if (!run) return reply.status(404).send({ error: 'not_found' });
+      if (run.agentId !== agentId) return reply.status(404).send({ error: 'not_found' });
+
+      // Only fetch advice for completed runs that have a checkId
+      if (!run.checkId || run.status !== 'succeeded') {
+        return reply.send({ requestId: run.id, advice: [] });
+      }
+
+      const rows = await db
+        .select({
+          symbol: reviewAdvice.symbol,
+          outcome: reviewAdvice.outcome,
+          activePreset: reviewAdvice.activePreset,
+          candidateRank: reviewAdvice.candidateRank,
+          reasons: reviewAdvice.supportingFacts,
+        })
+        .from(reviewAdvice)
+        .where(eq(reviewAdvice.checkId, run.checkId))
+        .orderBy(reviewAdvice.candidateRank);
+
+      const advice = rows.map((r) => ({
+        symbol: r.symbol,
+        outcome: r.outcome,
+        activePreset: r.activePreset,
+        candidateRank: r.candidateRank,
+        reasons: (r.reasons as Record<string, unknown> | null)?.reasons ?? [],
+      }));
+
+      return reply.send({
+        requestId: run.id,
+        checkId: run.checkId,
+        advice,
       });
     },
   );
