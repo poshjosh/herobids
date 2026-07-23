@@ -3,11 +3,14 @@ import type { ScannerWakeContext } from '@herobids/domain';
 /**
  * Build a user-facing message for an assessment_review scanner wake.
  *
- * Presents the deterministic scanner pre-check results to the agent so it can
- * decide whether to request a full market assessment via
- * `assess_strategy_preset`. The advice is purely informational — no
- * billing, no assessor invocation, no artifact creation occurs from the wake
- * alone.
+ * This is the **active** assessment-review prompt. The review scheduler
+ * (`AssessmentReviewRunner`) emits `scannerKind: 'assessment_review'` wakes
+ * after a deterministic pre-check. The agent must call `assess_strategy_preset`
+ * to get a full ranked assessment (with `allowedPresets`, `freshnessNote`, and
+ * the `assessmentArtifactId` needed by `change_strategy_preset`) before acting.
+ *
+ * No billing, no assessor invocation, and no artifact creation occurs from the
+ * wake alone — it is purely informational.
  */
 export function buildAssessmentReviewMessage(
   ctx: ScannerWakeContext & { scannerKind: 'assessment_review' },
@@ -30,10 +33,17 @@ export function buildAssessmentReviewMessage(
     ...adviceLines,
     '',
     '**What to do:**',
-    '- Use `assess_strategy_preset` to request a full assessment for one or more candidate symbols.',
-    '  Pass multiple symbols in one call (e.g. `["BTC", "ETH"]`) — each assessed symbol incurs a charge.',
-    '  The tool returns ranked presets, confidence scores, and the exact reference needed for `change_strategy_preset`.',
-    '- Use `change_strategy_preset` to apply the recommended preset switch for any assessed symbol.',
+    '1. Call `assess_strategy_preset` for one or more candidate symbols (e.g. `["BTC", "ETH"]`).',
+    '   ⚠️ Each assessed symbol incurs a billing charge. Pass multiple symbols in one call when possible.',
+    '2. The response includes, for each symbol:',
+    '   - `rankings` — all presets with scores, pros, and cons',
+    '   - `allowedPresets` — the subset of presets eligible for `change_strategy_preset`',
+    '   - `recommendedPreset` — the top-ranked preset (if confidence/score thresholds are met)',
+    '   - `freshnessNote` and `expiresAt` — how long the artifact is valid; you must act before expiry',
+    '   - `assessmentArtifactId` — the exact reference required by `change_strategy_preset`',
+    '3. Pick a target preset from `allowedPresets`, then call `change_strategy_preset` with the exact `assessmentArtifactId`.',
+    '   - If the artifact expires before you act, request a fresh assessment.',
+    '   - If `change_strategy_preset` rejects your target, the error will list the allowed presets — pick one and retry.',
     '',
     `Next review eligible after: \`${ctx.nextEligibleAt}\``,
     '',

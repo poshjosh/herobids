@@ -8,7 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **Strategy preset tool agent guidance:** `assess_strategy_preset` now returns `allowedPresets` (the subset of ranked presets eligible for transition) and `freshnessNote` (human-readable expiry guidance) in each assessment result. Both `assess_strategy_preset` and `change_strategy_preset` tool descriptions rewritten with explicit workflow guidance, freshness semantics, and error-recovery instructions so LLM agents can correctly navigate the assess→apply flow without trial-and-error.
+- **Strategy preset tool agent guidance:** `assess_strategy_preset` now returns `allowedPresets` (the subset of ranked presets eligible for transition) and `freshnessNote` (human-readable expiry guidance) in each assessment result. Both `assess_strategy_preset` and `change_strategy_preset` tool descriptions rewritten with explicit workflow guidance, freshness semantics, and error-recovery instructions. The active `assessment_review` wake prompt (`buildAssessmentReviewMessage`) rewritten with numbered assess→review→apply steps, `allowedPresets`/freshness awareness, and error-recovery guidance. The deferred `preset_review` prompt (`buildPresetReviewMessage`) documented as unused with a deferred-phase note.
 
 ## v0.0.34 - 2026-07-22
 

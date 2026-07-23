@@ -2047,6 +2047,16 @@ async function shutdown(reason: string): Promise<void> {
  * Build a user-facing message that presents the preset-review assessment
  * to the agent's LLM. The agent can then use transition tools
  * (`assess_strategy_preset`, `change_strategy_preset`) to evaluate and act.
+ *
+ * ⚠️ DEFERRED — This function is NOT currently used in production.
+ * The `preset_review` scanner wake variant (`scannerKind: 'preset_review'`)
+ * is deferred per the 005 implementation checklist. No code emits this wake
+ * variant today. When the platform assessor gains the ability to push
+ * pre-computed assessments directly (future phase), this prompt will be used.
+ *
+ * For the active assessment-review path, see `buildAssessmentReviewMessage` in
+ * `assessment-review-message.ts`, which handles `scannerKind: 'assessment_review'`
+ * wakes emitted by `AssessmentReviewRunner`.
  */
 function buildPresetReviewMessage(
   ctx: ScannerWakeContext & { scannerKind: 'preset_review' },
@@ -2064,11 +2074,18 @@ function buildPresetReviewMessage(
     `- Assessor Confidence: **${(ctx.confidence * 100).toFixed(0)}%**`,
     `- Assessment Reference: \`${ctx.assessmentRef}\``,
     '',
-    'You can use the following tools to evaluate and act on this assessment:',
-    '- `assess_strategy_preset` — request a new or read a cached assessment for one or more symbols',
-    '- `change_strategy_preset` — apply a preset switch for an assessed symbol',
+    '**What to do:**',
+    '1. Call `assess_strategy_preset` for the relevant symbols to get the full assessment payload.',
+    '   This includes the complete ranked preset list, `allowedPresets` (the subset eligible for switching),',
+    '   and a `freshnessNote` telling you how long the artifact is valid.',
+    '2. Review the rankings, pros/cons, and `allowedPresets` list.',
+    '   Only presets in `allowedPresets` can be applied via `change_strategy_preset`.',
+    '3. Use `change_strategy_preset` with the exact `assessmentArtifactId` to apply a switch.',
+    '   Act before the artifact expires — check `expiresAt` and `freshnessNote` in the response.',
+    '   If the artifact has expired, request a fresh assessment first.',
     '',
-    '**Reminder:** The platform recommendation is advisory. To actually switch presets, you must use the `change_strategy_preset` tool.',
+    '**Reminder:** The platform recommendation is advisory. You are the final decision-maker.',
+    'Consider your open positions, recent performance, and risk limits before acting.',
   ];
   return lines.join('\n');
 }

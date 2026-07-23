@@ -148,9 +148,9 @@ describe('buildAssessmentReviewMessage', () => {
     expect(msg).toContain('assess_strategy_preset');
   });
 
-  it('warns that each assessed symbol incurs a charge', () => {
+  it('warns that each assessed symbol incurs a billing charge', () => {
     const msg = buildAssessmentReviewMessage(makeScannerWakeContext());
-    expect(msg).toContain('each assessed symbol incurs a charge');
+    expect(msg).toContain('Each assessed symbol incurs a billing charge');
   });
 
   it('states that no billing has occurred from the wake alone', () => {
