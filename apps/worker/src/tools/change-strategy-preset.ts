@@ -183,9 +183,17 @@ async function executeApplyPresetTransition(
 export const changeStrategyPresetTool: AgentTool = {
   name: 'change_strategy_preset',
   description:
-    'Apply a strategy preset change using an exact assessment artifact reference from assess_strategy_preset. ' +
-    'Validates artifact identity, freshness, and allowed presets before applying. ' +
-    'Records an immutable transition event with identity snapshot for audit.',
+    'Apply a strategy preset switch using the exact assessment artifact ID from a prior assess_strategy_preset call. ' +
+    'This tool validates three things before applying: ' +
+    '(1) Artifact identity — the artifact ID must match an existing assessment. ' +
+    '(2) Freshness — the artifact must not be expired; check expiresAt and freshnessNote in the assessment response. ' +
+    'If expired, call assess_strategy_preset again for a fresh artifact. ' +
+    '(3) Allowed presets — the targetPreset must be in the assessment\'s allowedPresets list. ' +
+    'Currently only entries_only mode is supported (existing positions are NOT modified). ' +
+    'On failure, check the errorCode: ' +
+    '"assessment.artifact_expired" means request a fresh assessment; ' +
+    '"transition.preset_not_allowed" means the error includes the list of allowed presets — pick one from that list; ' +
+    '"transition.unsupported_mode" means only entries_only is available.',
   parametersSchema: ChangeStrategyPresetParamsSchema,
   parameters: convertZodToJsonSchema(ChangeStrategyPresetParamsSchema),
   category: 'write-database',

@@ -23,6 +23,27 @@ export function setAssessmentRequestPort(p: AssessmentRequestPort): void {
   port = p;
 }
 
+/**
+ * Compute a human-readable freshness note from an ISO expiry timestamp.
+ * Gives the agent a clear, actionable signal about the time window for
+ * acting on the assessment before it expires.
+ */
+export function computeFreshnessNote(expiresAt: string): string {
+  const expiresAtDate = new Date(expiresAt);
+  const minutesRemaining = Math.round((expiresAtDate.getTime() - Date.now()) / 60_000);
+  if (minutesRemaining <= 0) {
+    return 'This assessment has already expired. Request a fresh assessment via assess_strategy_preset before applying any transition.';
+  }
+  if (minutesRemaining < 2) {
+    return `This assessment expires in less than 2 minutes. Act immediately or request a fresh assessment.`;
+  }
+  if (minutesRemaining < 60) {
+    return `Valid for approximately ${minutesRemaining} minutes. After expiry, you must call assess_strategy_preset again before applying any transition.`;
+  }
+  const hours = Math.round(minutesRemaining / 60);
+  return `Valid for approximately ${hours} hour${hours !== 1 ? 's' : ''}. After expiry, you must call assess_strategy_preset again before applying any transition.`;
+}
+
 export function mapOutcomeToResultEntry(
   symbol: string,
   outcome: AssessmentRequestPortOutcome,
@@ -42,6 +63,8 @@ export function mapOutcomeToResultEntry(
         scanHealthSummary: outcome.artifact.scanHealthSummary,
         rankings: outcome.artifact.presetRankings,
         recommendedPreset: outcome.artifact.recommendedPreset,
+        allowedPresets: outcome.artifact.allowedPresets,
+        freshnessNote: computeFreshnessNote(outcome.artifact.expiresAt),
         confidence: outcome.artifact.confidence,
         urgency: outcome.artifact.urgency,
       },
@@ -268,13 +291,15 @@ async function executeAssessStrategyPreset(
 export const assessStrategyPresetTool: AgentTool = {
   name: 'assess_strategy_preset',
   description:
-    'Request a billable market preset assessment for one or more trading symbols on a specific venue. ' +
-    'Returns ranked presets, confidence scores, market summary, and the exact transition reference needed for change_strategy_preset. ' +
+    'Request a market assessment that ranks available strategy presets for one or more trading symbols on a venue. ' +
+    'Returns for each symbol: ranked presets with scores, pros, and cons; the recommended preset (top-ranked, if confidence/score thresholds are met); ' +
+    'allowed presets — the subset of ranked presets that are eligible for change_strategy_preset; ' +
+    'an assessment artifact ID, expiry time, and a freshnessNote indicating how long the artifact remains valid. ' +
     'Accepts up to the configured maximum instruments per request (default 3). ' +
-    '⚠️ Each assessed instrument incurs a billing charge at the assessment.request rate (cache hits are also billed). ' +
-    'Use the idempotencyKey parameter to avoid duplicate charges on retry. ' +
-    'A provider_failed outcome releases the reservation without charge, but a retry creates a new billable attempt. ' +
-    'Requires venueFamily (e.g. hyperliquid, jupiter) — venue inference is not supported.',
+    '⚠️ Each assessed instrument incurs a billing charge. Use idempotencyKey to avoid duplicate charges on retry. ' +
+    'Requires venueFamily (e.g. hyperliquid, jupiter). ' +
+    'After receiving results, review the rankings and allowedPresets, then use change_strategy_preset to apply a switch. ' +
+    'If the artifact expires, request a fresh assessment — do not reuse an expired artifact ID.',
   parametersSchema: AssessStrategyPresetParamsSchema,
   parameters: convertZodToJsonSchema(AssessStrategyPresetParamsSchema),
   category: 'read-database',

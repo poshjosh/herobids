@@ -54,6 +54,8 @@ export const AssessmentResultEntrySchema = z.object({
     scanHealthSummary: z.string().nullable(),
     rankings: z.array(MarketAssessmentPresetRankingSchema),
     recommendedPreset: z.string().nullable(),
+    allowedPresets: z.array(z.string()),
+    freshnessNote: z.string(),
     confidence: z.number(),
     urgency: z.enum(['low', 'medium', 'high']),
   }).optional(),

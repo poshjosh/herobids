@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Strategy preset tool agent guidance:** `assess_strategy_preset` now returns `allowedPresets` (the subset of ranked presets eligible for transition) and `freshnessNote` (human-readable expiry guidance) in each assessment result. Both `assess_strategy_preset` and `change_strategy_preset` tool descriptions rewritten with explicit workflow guidance, freshness semantics, and error-recovery instructions so LLM agents can correctly navigate the assess→apply flow without trial-and-error.
+
 ## v0.0.34 - 2026-07-22
 
 ### Added
