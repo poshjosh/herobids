@@ -429,7 +429,11 @@ export function scanCandidates(
   const signals = candidates
     .map((c) => scoreCandidate(c, config))
     .filter((s): s is ScoredSignal => s !== null)
-    .sort((a, b) => b.confidence - a.confidence);
+    .sort((a, b) =>
+      b.confidence - a.confidence
+      || b.reasons.length - a.reasons.length          // more confirming signals win the tie
+      || a.instrumentId.localeCompare(b.instrumentId) // last-resort stable fallback
+    );
 
   if (config.maxResults !== undefined) {
     return signals.slice(0, config.maxResults);

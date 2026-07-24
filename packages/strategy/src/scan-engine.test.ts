@@ -598,9 +598,126 @@ describe('scanCandidates', () => {
       config,
     );
     expect(results.length).toBe(2);
-    expect(results[0]!.symbol).toBe('VALID');
-    expect(results[0]!.intent).toBe('go_long');
-    expect(results[1]!.symbol).toBe('OVERBOUGHT');
-    expect(results[1]!.intent).toBe('go_short');
+    // Equal confidence + equal reasons.length → alphabetical by instrumentId.
+    // ins-OVERBOUGHT < ins-VALID, so bearish sorts first.
+    expect(results[0]!.symbol).toBe('OVERBOUGHT');
+    expect(results[0]!.intent).toBe('go_short');
+    expect(results[1]!.symbol).toBe('VALID');
+    expect(results[1]!.intent).toBe('go_long');
+  });
+
+  it('ranks by reasons.length when confidence is equal (more confirming signals wins the tie)', () => {
+    // Use volumeWeight=0 so strong volume adds a reason without changing confidence.
+    // Both candidates get RSI healthy (same confidence), but one also has strong volume.
+    const config: ScanConfig = {
+      signalBias: 'trend-following',
+      indicators: {
+        ...noIndicators,
+        rsi: { enabled: true },
+        volume: { enabled: true, strongRatio: 1.5, recentBars: 4, avgBars: 20 },
+        confidence: { rsiWeight: 0.15, volumeWeight: 0, minConfidence: 0.10, minReasons: 1 },
+      },
+    };
+
+    // Fewer reasons: flat RSI candles, no strong volume
+    const fewerReasons = makeFlatRsiCandles(30, 1_000);
+    // More reasons: alternating + strong volume → RSI healthy + Strong volume
+    const moreReasons = makeStrongVolumeCandles();
+
+    const results = scanCandidates(
+      [candidate(moreReasons, 'MORE'), candidate(fewerReasons, 'FEWER')],
+      config,
+    );
+
+    expect(results.length).toBe(2);
+    expect(results[0]!.symbol).toBe('MORE');
+    expect(results[1]!.symbol).toBe('FEWER');
+    expect(results[0]!.confidence).toBe(results[1]!.confidence);
+    expect(results[0]!.reasons.length).toBeGreaterThan(results[1]!.reasons.length);
+  });
+
+  it('ranks alphabetically by instrumentId when confidence and reasons.length are both equal', () => {
+    // Two identical-physical candidates → same confidence AND same reasons.length.
+    // instrumentId differs → alphabetical order decides.
+    const config: ScanConfig = {
+      signalBias: 'trend-following',
+      indicators: {
+        ...noIndicators,
+        rsi: { enabled: true },
+        confidence: { minConfidence: 0.10, minReasons: 1 },
+      },
+    };
+
+    const candles = makeFlatRsiCandles(30);
+    const ctxA: CandidateContext = { symbol: 'AAA', instrumentId: 'ins-AAA', candles };
+    const ctxB: CandidateContext = { symbol: 'BBB', instrumentId: 'ins-BBB', candles };
+
+    const results = scanCandidates([ctxB, ctxA], config);
+
+    expect(results.length).toBe(2);
+    expect(results[0]!.instrumentId).toBe('ins-AAA');
+    expect(results[1]!.instrumentId).toBe('ins-BBB');
+    expect(results[0]!.confidence).toBe(results[1]!.confidence);
+    expect(results[0]!.reasons.length).toBe(results[1]!.reasons.length);
+  });
+
+  it('produces stable top-N ordering regardless of input shuffle', () => {
+    // Three candidates: A has highest confidence, B & C tied but B has more reasons.
+    // Confidences: A > B = C. Among B & C, B has more reasons.
+    const config: ScanConfig = {
+      signalBias: 'trend-following',
+      indicators: {
+        ...noIndicators,
+        rsi: { enabled: true },
+        volume: { enabled: true, strongRatio: 1.5, recentBars: 4, avgBars: 20 },
+        confidence: { rsiWeight: 0.15, volumeWeight: 0, minConfidence: 0.10, minReasons: 1 },
+      },
+    };
+
+    // Candidate A: flat RSI candles on BTC (uses makeOverboughtCandles with different config to get a different confidence)
+    // Actually, let's use different indicator configs to get distinct confidences.
+    // Simpler: use the same base candle but toggle volume on/off to control reasons.
+    // A: overbought → bearish, confidence = rsiWeight (0.15), 1 reason
+    // B: healthy + strong volume → bullish, confidence = rsiWeight (0.15), 2 reasons
+    // C: healthy, no strong volume → bullish, confidence = rsiWeight (0.15), 1 reason
+
+    const ctxA: CandidateContext = {
+      symbol: 'C', instrumentId: 'ins-C', candles: makeOverboughtCandles(30),
+    };
+    const ctxB: CandidateContext = {
+      symbol: 'B', instrumentId: 'ins-B', candles: makeStrongVolumeCandles(),
+    };
+    const ctxC: CandidateContext = {
+      symbol: 'A', instrumentId: 'ins-A', candles: makeFlatRsiCandles(30),
+    };
+
+    // Deterministic reference order from sorted input
+    const reference = scanCandidates([ctxA, ctxB, ctxC], config);
+    const referenceIds = reference.map((s) => s.instrumentId);
+
+    // Shuffle 5 times and verify consistent results
+    const shuffledOrders: CandidateContext[][] = [
+      [ctxC, ctxA, ctxB],
+      [ctxB, ctxC, ctxA],
+      [ctxC, ctxB, ctxA],
+      [ctxA, ctxC, ctxB],
+      [ctxB, ctxA, ctxC],
+    ];
+
+    for (const order of shuffledOrders) {
+      const results = scanCandidates(order, config);
+      const ids = results.map((s) => s.instrumentId);
+      expect(ids).toEqual(referenceIds);
+    }
+
+    // Also verify top-2 with maxResults is stable
+    const cappedConfig: ScanConfig = { ...config, maxResults: 2 };
+    const cappedReference = scanCandidates([ctxA, ctxB, ctxC], cappedConfig);
+    const cappedRefIds = cappedReference.map((s) => s.instrumentId);
+
+    for (const order of shuffledOrders) {
+      const results = scanCandidates(order, cappedConfig);
+      expect(results.map((s) => s.instrumentId)).toEqual(cappedRefIds);
+    }
   });
 });
