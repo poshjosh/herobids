@@ -231,7 +231,7 @@ not "None."
 
 ---
 
-## Item 5 [PENDING] — Write `agent_scan_metrics` for **every** scan
+## Item 5 [DONE] — Write `agent_scan_metrics` for **every** scan
 
 ### Problem
 
