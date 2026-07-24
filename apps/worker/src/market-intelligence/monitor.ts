@@ -239,9 +239,11 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
       const isActive = await redis.sismember('agent:sessions:active', agentId);
       if (!isActive) continue;
 
-      // 004: Scanner-gated agents disable watch_threshold entirely.
-      // They trade exclusively on scanner entry/exit signals.
-      if (await checkScannerGated(agentId)) continue;
+      // 004: Scanner-gated agents still have watches evaluated for safety
+      // (stop-loss/take-profit), but wake delivery uses context-only mode
+      // so they are not woken up for watch threshold crossings. This is
+      // consistent with discovery_delta and regime_change handling.
+      const agentScannerGated = await checkScannerGated(agentId);
 
       // Fetch wake prefs once per agent per cycle — hoisted to avoid duplicate
       // redis.get calls inside the per-watch processing loop.
@@ -344,7 +346,10 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           // enqueue agent.wake — the runtime records it as pending context.
           // wake and batched modes both enqueue; the per-source cooldown
           // mechanism already defers batched wakes until eligibility.
-          if (watchWakeMode !== 'context') {
+          // 004: scanner_gated agents always get context-only delivery for
+          // watch_threshold, consistent with discovery_delta and regime_change.
+          const effectiveWatchMode = agentScannerGated ? 'context' : watchWakeMode;
+          if (effectiveWatchMode !== 'context') {
             await enqueueWake(
               agentId,
               eventId,

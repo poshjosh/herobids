@@ -144,7 +144,7 @@ connection (the one already used for `agentRepo` / `botRepo`).
 
 ---
 
-## Item 3 [PENDING] — Bounded retry / backoff for transient candle failures (cadence-aware)
+## Item 3 [DONE] — Bounded retry / backoff for transient candle failures (cadence-aware)
 
 ### Problem
 

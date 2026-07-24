@@ -1605,17 +1605,30 @@ describe('createMarketMonitor — subscription filtering (C4)', () => {
 describe('scanner_gated agent detection (004)', () => {
   const SCANNER_GATED_KEY = 'agent:scanner_gated';
 
-  it('watch threshold evaluation skips scanner_gated agents', async () => {
+  // Helper: seed a watch for a scanner-gated agent with correct key patterns
+  function seedScannerGatedWatch(
+    redis: ReturnType<typeof makeRedisMock>,
+    agentId: string,
+    overrides: Parameters<typeof makeWatch>[0] = {},
+  ) {
+    redis.sadd('agent:sessions:active', agentId);
+    const watchData = makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false, ...overrides });
+    redis._hstore.set(`agent:watches:${agentId}`, new Map([['watch-1', watchData]]));
+    redis._scanKeys.push(`agent:watches:${agentId}`);
+    redis._store.set(`${SCANNER_GATED_KEY}:${agentId}`, '1');
+    return watchData;
+  }
+
+  it('evaluates watches for scanner_gated agents and updates lastCheckedAt', async () => {
     const redis = makeRedisMock();
     const publisher = makePublisherMock();
 
-    const watchId = DEFAULT_WATCH_ID;
-    const watchJson = makeWatch({ watchId, symbol: 'SOL', thresholdPrice: 200, condition: 'above' });
-    redis._hstore.set(`watches:${watchId}`, new Map(Object.entries(JSON.parse(watchJson))));
-    redis._scanKeys.push(`watches:${watchId}`);
-
-    redis._sset.set('agents:active', new Set(['agent-gated-1']));
-    redis._store.set(`${SCANNER_GATED_KEY}:agent-gated-1`, '1');
+    const agentId = 'agent-gated-1';
+    seedScannerGatedWatch(redis, agentId);
+    // Seed discovery snapshot with price data above threshold → should trigger
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
+    ]));
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
@@ -1624,10 +1637,85 @@ describe('scanner_gated agent detection (004)', () => {
 
     await monitor.evaluate();
 
+    // Verify the watch was evaluated: hset was called with updated lastCheckedAt
+    const hsetCalls = (redis.hset as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (call: unknown[]) => typeof call[0] === 'string' && call[0] === `agent:watches:${agentId}`,
+    );
+    expect(hsetCalls.length).toBeGreaterThanOrEqual(1);
+
+    // The updated watch JSON should contain a recent lastCheckedAt
+    const updatedWatchJson = hsetCalls[0]?.[2] as string;
+    expect(updatedWatchJson).toBeDefined();
+    const updated = JSON.parse(updatedWatchJson!) as { lastCheckedAt: string };
+    expect(updated.lastCheckedAt).toBeDefined();
+    // Should be within the last few seconds
+    const lastChecked = new Date(updated.lastCheckedAt).getTime();
+    expect(Date.now() - lastChecked).toBeLessThan(10_000);
+  });
+
+  it('emits watch event but does NOT enqueue wake for scanner_gated agents (context-only)', async () => {
+    const redis = makeRedisMock();
+    const publisher = makePublisherMock();
+
+    const agentId = 'agent-gated-2';
+    seedScannerGatedWatch(redis, agentId);
+    // Seed discovery snapshot with price above threshold → trigger
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
+    ]));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
+      { redis, publisher },
+    );
+
+    await monitor.evaluate();
+
+    // Event should still be emitted (context-only, not wake)
+    const triggerCalls = publisher.emitMarketWatchTriggered.mock.calls.filter(
+      (call: unknown[]) => call[0] === agentId,
+    );
+    expect(triggerCalls.length).toBe(1);
+
+    // No wake should be enqueued for the scanner-gated agent
     const wakeCalls = publisher.emitAgentWake.mock.calls.filter(
-      (call: any[]) => call[0]?.agentId === 'agent-gated-1',
+      (call: unknown[]) => call[0]?.agentId === agentId,
     );
     expect(wakeCalls.length).toBe(0);
+  });
+
+  it('does NOT trigger when price is below threshold for scanner_gated agent', async () => {
+    const redis = makeRedisMock();
+    const publisher = makePublisherMock();
+
+    const agentId = 'agent-gated-3';
+    seedScannerGatedWatch(redis, agentId);
+    // Seed discovery snapshot with price below threshold → no trigger
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 150 },
+    ]));
+
+    const monitor = createMarketMonitor(
+      { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
+      { redis, publisher },
+    );
+
+    await monitor.evaluate();
+
+    // No trigger — price below threshold
+    const triggerCalls = publisher.emitMarketWatchTriggered.mock.calls.filter(
+      (call: unknown[]) => call[0] === agentId,
+    );
+    expect(triggerCalls.length).toBe(0);
+
+    // lastCheckedAt should still be updated (watch was evaluated)
+    const hsetCalls = (redis.hset as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (call: unknown[]) => typeof call[0] === 'string' && call[0] === `agent:watches:${agentId}`,
+    );
+    expect(hsetCalls.length).toBeGreaterThanOrEqual(1);
+    const updatedWatchJson = hsetCalls[0]?.[2] as string;
+    const updated = JSON.parse(updatedWatchJson!) as { lastCheckedAt: string };
+    expect(updated.lastCheckedAt).toBeDefined();
   });
 
   it('discovery_delta uses context-only delivery for scanner_gated agents (no wake)', async () => {
@@ -1637,12 +1725,9 @@ describe('scanner_gated agent detection (004)', () => {
     redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
       { network: 'solana', address: '0xNEW', symbol: 'NEW', discoveryVectors: ['trending'] },
     ]));
-    redis._store.set('market-intel:discovery:prev', makeDiscoverySnapshot([
-      { network: 'solana', address: '0xOLD', symbol: 'OLD', discoveryVectors: [] },
-    ]));
 
-    redis._sset.set('agents:active', new Set(['agent-gated-2']));
-    redis._store.set(`${SCANNER_GATED_KEY}:agent-gated-2`, '1');
+    redis._sset.set('agent:sessions:active', new Set(['agent-gated-4']));
+    redis._store.set(`${SCANNER_GATED_KEY}:agent-gated-4`, '1');
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: false, discoveryDeltas: true, regimeChanges: false } },
@@ -1652,7 +1737,7 @@ describe('scanner_gated agent detection (004)', () => {
     await monitor.evaluate();
 
     const wakeCallsForGated = publisher.emitAgentWake.mock.calls.filter(
-      (call: any[]) => call[0]?.agentId === 'agent-gated-2',
+      (call: unknown[]) => call[0]?.agentId === 'agent-gated-4',
     );
     expect(wakeCallsForGated.length).toBe(0);
   });
@@ -1661,12 +1746,16 @@ describe('scanner_gated agent detection (004)', () => {
     const redis = makeRedisMock();
     const publisher = makePublisherMock();
 
-    const watchJson = makeWatch({ watchId: 'w-normal', symbol: 'SOL', thresholdPrice: 200, condition: 'above' });
-    redis._hstore.set('watches:w-normal', new Map(Object.entries(JSON.parse(watchJson))));
-    redis._scanKeys.push('watches:w-normal');
-
-    redis._sset.set('agents:active', new Set(['agent-normal']));
+    const agentId = 'agent-normal';
+    redis.sadd('agent:sessions:active', agentId);
+    const watchData = makeWatch({ symbol: 'SOL', thresholdPrice: 200, condition: 'above', lastConditionMet: false });
+    redis._hstore.set(`agent:watches:${agentId}`, new Map([['watch-1', watchData]]));
+    redis._scanKeys.push(`agent:watches:${agentId}`);
     // Deliberately NOT setting scanner_gated key — key is absent
+    // Seed discovery price to trigger
+    redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
+      { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 204 },
+    ]));
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
@@ -1675,5 +1764,12 @@ describe('scanner_gated agent detection (004)', () => {
 
     // Should not throw; fail-open means agent is not blocked
     await expect(monitor.evaluate()).resolves.toBeUndefined();
+
+    // Non-gated agent should get the event emitted (wake is coalesced for later flush)
+    const triggerCalls = publisher.emitMarketWatchTriggered.mock.calls.filter(
+      (call: unknown[]) => call[0] === agentId,
+    );
+    expect(triggerCalls.length).toBe(1);
+    expect(monitor.getMetrics().eventsEmitted).toBe(1);
   });
 });
