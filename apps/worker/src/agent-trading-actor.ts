@@ -13,9 +13,8 @@ import { evaluateRegime } from '@herobids/market-data';
 import { runTechnicalPhase } from './technical-phase.js';
 import type { DiscoveredInstrument, FilterConfig } from './technical-phase.js';
 import type { ScannerCandleTarget } from '@herobids/strategy';
-import { completeTechnicalScan } from './complete-technical-scan.js';
-import { computeSignalFingerprint } from './complete-technical-scan.js';
-import type { PersistableScanCandidate } from './complete-technical-scan.js';
+import { completeTechnicalScan, computeSignalFingerprint, deriveVenueFamily, deriveStyleTier } from './complete-technical-scan.js';
+import type { PersistableScanCandidate, ScanMetricInput } from './complete-technical-scan.js';
 import type { TechnicalScanState } from './runtime-composition.js';
 import { cleanupOrphanedPositions } from './reconciliation-orphaned-cleanup.js';
 import { scannerSignalFingerprintKey } from './redis-keys.js';
@@ -188,6 +187,9 @@ export interface AgentTradingActorDeps {
   /** Persist scanner candidate observations for the deterministic review pre-check.
    *  Best-effort — failures must not crash the scan. */
   onPersistScanCandidates?: (candidates: PersistableScanCandidate[]) => Promise<void>;
+  /** Persist a per-scan metrics row for scanner health and signal observability.
+   *  Best-effort — failures must not crash the scan. */
+  onPersistScanMetrics?: (metrics: ScanMetricInput) => Promise<void>;
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -1539,6 +1541,26 @@ export class AgentTradingActor implements ExecutionActor {
       if (this.deps.onTechnicalScanComplete) {
         await Promise.resolve(this.deps.onTechnicalScanComplete(agentId, capacityScan)).catch(() => {});
       }
+      if (this.deps.onPersistScanMetrics) {
+        try {
+          const styleTier = deriveStyleTier(technicalConfig);
+          await this.deps.onPersistScanMetrics({
+            agentId,
+            presetKey: (technicalConfig as Record<string, unknown>)['preset'] as string ?? 'unknown',
+            presetBehaviorVersion: `ts-${styleTier}-v1`,
+            venueFamily: deriveVenueFamily(technicalConfig),
+            styleTier,
+            scanScope: { discovered: 0, symbolsSelected: 0, eligible: 0, fetched: 0, scored: 0, signals: 0 },
+            scannedAt: new Date().toISOString(),
+            candidatesDiscovered: 0,
+            candidatesScored: 0,
+            signalsGenerated: 0,
+            scanHealth: 'overlap_skipped',
+            topConfidence: null,
+            regimeBucket: 'unavailable',
+          });
+        } catch (_) { /* best-effort */ }
+      }
       return;
     }
 
@@ -1568,6 +1590,26 @@ export class AgentTradingActor implements ExecutionActor {
       this.lastTechnicalScan = overlapScan;
       if (this.deps.onTechnicalScanComplete) {
         await Promise.resolve(this.deps.onTechnicalScanComplete(agentId, overlapScan)).catch(() => {});
+      }
+      if (this.deps.onPersistScanMetrics) {
+        try {
+          const styleTier = deriveStyleTier(technicalConfig);
+          await this.deps.onPersistScanMetrics({
+            agentId,
+            presetKey: (technicalConfig as Record<string, unknown>)['preset'] as string ?? 'unknown',
+            presetBehaviorVersion: `ts-${styleTier}-v1`,
+            venueFamily: deriveVenueFamily(technicalConfig),
+            styleTier,
+            scanScope: { discovered: 0, symbolsSelected: 0, eligible: 0, fetched: 0, scored: 0, signals: 0 },
+            scannedAt: new Date().toISOString(),
+            candidatesDiscovered: 0,
+            candidatesScored: 0,
+            signalsGenerated: 0,
+            scanHealth: 'overlap_skipped',
+            topConfidence: null,
+            regimeBucket: 'unavailable',
+          });
+        } catch (_) { /* best-effort */ }
       }
       return;
     }
@@ -1644,6 +1686,15 @@ export class AgentTradingActor implements ExecutionActor {
                 await this.deps.onPersistScanCandidates!(candidates);
               } catch (err) {
                 this.logger.warn({ err, count: candidates.length }, 'Failed to persist scan candidates — non-fatal');
+              }
+            }
+          : undefined,
+        onPersistScanMetrics: this.deps.onPersistScanMetrics
+          ? async (metrics) => {
+              try {
+                await this.deps.onPersistScanMetrics!(metrics);
+              } catch (err) {
+                this.logger.warn({ err, agentId }, 'Failed to persist scan metrics — non-fatal');
               }
             }
           : undefined,

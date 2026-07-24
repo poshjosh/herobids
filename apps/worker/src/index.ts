@@ -21,7 +21,7 @@ import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { LlmStrategy, MechanicalStrategy, HybridStrategy, DcaStrategy } from '@herobids/strategy';
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, AgentDocumentsRepository, bots, users, agents, agentScanCandidates } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, AgentDocumentsRepository, bots, users, agents, agentScanCandidates, agentScanMetrics } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, HyperliquidMarkSource } from '@herobids/venues';
 import { createFillFirstMarkSource } from '@herobids/engine';
@@ -1064,6 +1064,28 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
               );
             } catch (err) {
               logger.warn({ err, agentId, count: candidates.length }, 'Failed to persist scan candidates — non-fatal');
+            }
+          },
+          onPersistScanMetrics: async (metrics) => {
+            try {
+              await db.insert(agentScanMetrics).values({
+                id: crypto.randomUUID(),
+                agentId: metrics.agentId,
+                presetKey: metrics.presetKey,
+                presetBehaviorVersion: metrics.presetBehaviorVersion,
+                venueFamily: metrics.venueFamily,
+                styleTier: metrics.styleTier,
+                scanScope: metrics.scanScope,
+                scannedAt: new Date(metrics.scannedAt),
+                candidatesDiscovered: metrics.candidatesDiscovered,
+                candidatesScored: metrics.candidatesScored,
+                signalsGenerated: metrics.signalsGenerated,
+                scanHealth: metrics.scanHealth,
+                topConfidence: metrics.topConfidence,
+                regimeBucket: metrics.regimeBucket,
+              });
+            } catch (err) {
+              logger.warn({ err, agentId }, 'Failed to persist scan metrics — non-fatal');
             }
           },
         });

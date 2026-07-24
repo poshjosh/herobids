@@ -25,7 +25,7 @@ export const agentScanMetrics = pgTable('agent_scan_metrics', {
   candidatesDiscovered: integer('candidates_discovered').notNull().default(0),
   candidatesScored: integer('candidates_scored').notNull().default(0),
   signalsGenerated: integer('signals_generated').notNull().default(0),
-  scanHealth: text('scan_health').notNull(), // healthy | degraded | no_signal | stale
+  scanHealth: text('scan_health').notNull(), // healthy_signals | healthy_no_signal | data_path_failure | no_candidates | overlap_skipped
   topConfidence: numeric('top_confidence'),
   /** Market regime classification at scan time */
   regimeBucket: text('regime_bucket'),
