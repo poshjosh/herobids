@@ -281,7 +281,7 @@ make them trade. It is the diagnostic feeder for Item 6.
 
 ---
 
-## Item 6 [PENDING] — Investigate why the scanner runs **only for mo-day** (report §2, §7 MEDIUM)
+## Item 6 [DONE] — Investigate why the scanner runs **only for mo-day** (report §2, §7 MEDIUM)
 
 > This is the report's **headline finding** (`swing` and `range` produce zero candidates,
 > zero decisions, zero fills). `001` deferred it outright. This plan does not fix it blind —

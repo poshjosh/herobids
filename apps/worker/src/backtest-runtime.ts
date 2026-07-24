@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq';
 import { createLogger } from './logger.js';
 import type { Database } from '@herobids/db';
-import { BacktestingRepository, PgJournal, DecisionRepository } from '@herobids/db';
+import { BacktestingRepository, LlmArtifactRepository, PgJournal, DecisionRepository } from '@herobids/db';
 import { LlmStrategy, MechanicalStrategy } from '@herobids/strategy';
 import { runBacktest, ArrayHistoricalDataFeed, runValidation } from '@herobids/backtesting';
 import type { HistoricalFrame, ValidationThresholds, BacktestConfig } from '@herobids/backtesting';
@@ -118,7 +118,7 @@ export class BacktestRuntime {
   }
 
   private createStrategy(strategyType: string, decisionMode?: string): Strategy {
-    const repo = new BacktestingRepository(this.db);
+    const llmArtifactRepo = new LlmArtifactRepository(this.db);
     // DCA is timer-driven, no signal evaluation
     if (strategyType === 'dca') {
       throw new Error('DCA strategy is not supported for backtesting — it requires real-time scheduling');
@@ -144,7 +144,7 @@ export class BacktestRuntime {
       case 'llm':
         return new LlmStrategy(
           () => crypto.randomUUID(),
-          async (artifact) => { await repo.insertLlmArtifact({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null }); },
+          async (artifact) => { await llmArtifactRepo.insert({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null, source: 'llm_strategy', decisionIds: null }); },
         );
       case 'hybrid':
         throw new Error('hybrid decisionMode is not yet supported for backtesting');

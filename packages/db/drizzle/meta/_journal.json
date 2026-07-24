@@ -351,6 +351,20 @@
       "when": 1784700865785,
       "tag": "0049_smart_kinsey_walden",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1784885503100,
+      "tag": "0050_ancient_george_stacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1784886246694,
+      "tag": "0051_mighty_gressill",
+      "breakpoints": true
     }
   ]
 }

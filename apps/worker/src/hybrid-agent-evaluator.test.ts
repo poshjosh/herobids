@@ -124,7 +124,7 @@ describe('runHybridEvaluator', () => {
       },
     } as Awaited<ReturnType<typeof callLlmProvider>>);
 
-    const submitDecision = vi.fn().mockResolvedValue(undefined);
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
 
     await runHybridEvaluator({
       state: makeState(),
@@ -159,7 +159,7 @@ describe('runHybridEvaluator', () => {
       },
     } as Awaited<ReturnType<typeof callLlmProvider>>);
 
-    const submitDecision = vi.fn().mockResolvedValue(undefined);
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
 
     const result = await runHybridEvaluator({
       state: makeState(),
@@ -218,7 +218,7 @@ describe('runHybridEvaluator', () => {
       },
     } as Awaited<ReturnType<typeof callLlmProvider>>);
 
-    const submitDecision = vi.fn().mockResolvedValue(undefined);
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
 
     const result = await runHybridEvaluator({
       state,
@@ -251,7 +251,7 @@ describe('runHybridEvaluator', () => {
       scanIntervalMs: 60_000,
     };
 
-    const submitDecision = vi.fn().mockResolvedValue(undefined);
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
 
     const result = await runHybridEvaluator({
       state,
@@ -292,7 +292,7 @@ describe('runHybridEvaluator', () => {
       },
     } as Awaited<ReturnType<typeof callLlmProvider>>);
 
-    const submitDecision = vi.fn().mockResolvedValue(undefined);
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
 
     await runHybridEvaluator({
       state,
@@ -334,7 +334,7 @@ describe('runHybridEvaluator', () => {
       },
     } as Awaited<ReturnType<typeof callLlmProvider>>);
 
-    const submitDecision = vi.fn().mockResolvedValue(undefined);
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
 
     await runHybridEvaluator({
       state,
@@ -376,7 +376,7 @@ describe('runHybridEvaluator', () => {
       },
     } as Awaited<ReturnType<typeof callLlmProvider>>);
 
-    const submitDecision = vi.fn().mockResolvedValue(undefined);
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
 
     await runHybridEvaluator({
       state,
@@ -387,6 +387,107 @@ describe('runHybridEvaluator', () => {
     });
 
     expect(submitDecision).toHaveBeenCalledWith('ETH-PERP', 'go_long', 300, pricingIdentity);
+  });
+
+  it('calls onArtifact with submitted decision IDs on success', async () => {
+    mockedCallLlmProvider.mockResolvedValue({
+      ok: true,
+      data: {
+        content: '```json\n[{"symbol":"BTC","intent":"go_long","sizeUsd":250}]\n```',
+        toolCalls: [],
+        model: 'test-model',
+        provider: 'test-provider',
+        tokensUsed: 42,
+        latencyMs: 12,
+        cached: false,
+      },
+    } as Awaited<ReturnType<typeof callLlmProvider>>);
+
+    const submitDecision = vi.fn().mockResolvedValue('decision-abc-123');
+    const onArtifact = vi.fn().mockResolvedValue(undefined);
+
+    await runHybridEvaluator({
+      state: makeState(),
+      llmConfig: { provider: 'test-provider', model: 'test-model', maxTokens: 500, timeoutMs: 1000 },
+      maxPositions: 5,
+      submitDecision,
+      onArtifact,
+      logger,
+    });
+
+    expect(onArtifact).toHaveBeenCalledTimes(1);
+    const artifactArg = onArtifact.mock.calls[0]?.[0];
+    expect(artifactArg.source).toBe('hybrid_evaluator');
+    expect(artifactArg.decisionIds).toEqual(['decision-abc-123']);
+    expect(artifactArg.parseStatus).toBe('success');
+    expect(artifactArg.rawResponse).toBe('```json\n[{"symbol":"BTC","intent":"go_long","sizeUsd":250}]\n```');
+    expect(artifactArg.provider).toBe('test-provider');
+    expect(artifactArg.model).toBe('test-model');
+    expect(artifactArg.tokensUsed).toBe(42);
+    expect(artifactArg.latencyMs).toBe(12);
+    expect(artifactArg.cached).toBe(false);
+  });
+
+  it('calls onArtifact with parseStatus provider_error when the LLM call throws', async () => {
+    mockedCallLlmProvider.mockRejectedValue(new Error('Network timeout'));
+
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
+    const onArtifact = vi.fn().mockResolvedValue(undefined);
+
+    const result = await runHybridEvaluator({
+      state: makeState(),
+      llmConfig: { provider: 'test-provider', model: 'test-model', maxTokens: 500, timeoutMs: 1000 },
+      maxPositions: 5,
+      submitDecision,
+      onArtifact,
+      logger,
+    });
+
+    expect(onArtifact).toHaveBeenCalledTimes(1);
+    const artifactArg = onArtifact.mock.calls[0]?.[0];
+    expect(artifactArg.source).toBe('hybrid_evaluator');
+    expect(artifactArg.parseStatus).toBe('provider_error');
+    expect(artifactArg.parseError).toBe('Network timeout');
+    expect(artifactArg.decisionIds).toEqual([]);
+    expect(artifactArg.rawResponse).toBeNull();
+    expect(artifactArg.cached).toBe(false);
+    expect(result.errors.some((e) => e.startsWith('llm_call_failed'))).toBe(true);
+  });
+
+  it('calls onArtifact with parseStatus parse_error when the LLM response is malformed JSON', async () => {
+    mockedCallLlmProvider.mockResolvedValue({
+      ok: true,
+      data: {
+        content: 'not valid json at all',
+        toolCalls: [],
+        model: 'test-model',
+        provider: 'test-provider',
+        tokensUsed: 15,
+        latencyMs: 7,
+        cached: false,
+      },
+    } as Awaited<ReturnType<typeof callLlmProvider>>);
+
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
+    const onArtifact = vi.fn().mockResolvedValue(undefined);
+
+    const result = await runHybridEvaluator({
+      state: makeState(),
+      llmConfig: { provider: 'test-provider', model: 'test-model', maxTokens: 500, timeoutMs: 1000 },
+      maxPositions: 5,
+      submitDecision,
+      onArtifact,
+      logger,
+    });
+
+    expect(onArtifact).toHaveBeenCalledTimes(1);
+    const artifactArg = onArtifact.mock.calls[0]?.[0];
+    expect(artifactArg.source).toBe('hybrid_evaluator');
+    expect(artifactArg.parseStatus).toBe('parse_error');
+    expect(artifactArg.decisionIds).toEqual([]);
+    expect(artifactArg.rawResponse).toBe('not valid json at all');
+    expect(artifactArg.cached).toBe(false);
+    expect(result.errors.some((e) => e.startsWith('parse_failed'))).toBe(true);
   });
 });
 
@@ -718,7 +819,7 @@ describe('scanner wake routes to single-shot hybrid evaluator', () => {
       },
     } as Awaited<ReturnType<typeof callLlmProvider>>);
 
-    const submitDecision = vi.fn().mockResolvedValue(undefined);
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
 
     const result = await runHybridEvaluator({
       state,
@@ -772,7 +873,7 @@ describe('scanner wake routes to single-shot hybrid evaluator', () => {
       },
     } as Awaited<ReturnType<typeof callLlmProvider>>);
 
-    const submitDecision = vi.fn().mockResolvedValue(undefined);
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
 
     const result = await runHybridEvaluator({
       state,

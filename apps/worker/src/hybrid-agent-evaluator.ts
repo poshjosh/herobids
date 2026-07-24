@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { LlmProviderConfig, LlmResult } from '@herobids/llm';
 import { callLlmProvider, stripEmptyValues } from '@herobids/llm';
 import { z } from 'zod';
@@ -116,13 +117,32 @@ export interface HybridEvaluatorInput {
   /** Publish a decision to the inbound stream for engine processing.
    *  `pricingIdentity` is carried through from the scan layer so the hybrid
    *  runtime can convert USD-denominated size to base units using a
-   *  chain/address-aware price lookup. */
+   *  chain/address-aware price lookup.
+   *  Returns the decision ID assigned to the published decision. */
   submitDecision: (
     instrumentId: string,
     intent: string,
     sizeUsd?: number,
     pricingIdentity?: HybridPricingIdentity,
-  ) => Promise<void>;
+  ) => Promise<string>;
+  /** Persist an LLM decision artifact for audit and cost tracking.
+   *  Invoked after the LLM call resolves (success or failure). */
+  onArtifact?: (artifact: {
+    source: 'hybrid_evaluator';
+    decisionIds: string[];
+    contextHash: string;
+    context: Record<string, unknown>;
+    promptPayload: string;
+    promptVersion: string;
+    rawResponse: string | null;
+    parseStatus: string;
+    parseError?: string;
+    provider: string;
+    model: string;
+    tokensUsed: number;
+    latencyMs: number;
+    cached: boolean;
+  }) => Promise<void>;
   logger: {
     info: (obj: Record<string, unknown> | string, msg?: string) => void;
     warn: (obj: Record<string, unknown> | string, msg?: string) => void;
@@ -157,7 +177,7 @@ export interface HybridEvaluatorResult {
  * 4. Submit each decision via the engine intake
  */
 export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<HybridEvaluatorResult> {
-  const { state, llmConfig, maxPositions, submitDecision, logger } = input;
+  const { state, llmConfig, maxPositions, submitDecision, onArtifact, logger } = input;
 
   const result: HybridEvaluatorResult = {
     decisionsSubmitted: 0,
@@ -193,6 +213,17 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
   };
   const prompt = buildHybridPrompt(promptInput);
 
+  const promptVersion = 'hybrid-v2';
+  const contextHash = computeHybridContextHash(prompt);
+
+  // Build context snapshot for artifact persistence
+  const artifactContext: Record<string, unknown> = {
+    scannerSignals: scan.signals.length,
+    openPositions: state.metrics.openPositions.length,
+    portfolio: state.metrics.portfolio,
+    maxPositions,
+  };
+
   // Call LLM (single-shot, no tools)
   let llmResult: LlmResult;
   try {
@@ -209,6 +240,23 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ err }, 'Hybrid evaluator: LLM call failed');
     result.errors.push(`llm_call_failed: ${msg}`);
+
+    // Emit artifact for provider failure
+    await emitHybridArtifact(onArtifact, buildHybridArtifact({
+      decisionIds: [],
+      contextHash,
+      context: artifactContext,
+      promptPayload: prompt,
+      promptVersion,
+      rawResponse: null,
+      parseStatus: 'provider_error',
+      parseError: msg,
+      provider: llmConfig.provider,
+      model: llmConfig.model,
+      tokensUsed: 0,
+      latencyMs: 0,
+    }));
+
     return result;
   }
 
@@ -216,6 +264,23 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
     logger.error({ error: llmResult.error }, 'Hybrid evaluator: LLM returned error');
     result.errors.push(`llm_error: ${llmResult.error.code} — ${llmResult.error.message}`);
     result.llmError = { code: llmResult.error.code, message: llmResult.error.message };
+
+    // Emit artifact for provider error
+    await emitHybridArtifact(onArtifact, buildHybridArtifact({
+      decisionIds: [],
+      contextHash,
+      context: artifactContext,
+      promptPayload: prompt,
+      promptVersion,
+      rawResponse: null,
+      parseStatus: 'provider_error',
+      parseError: llmResult.error.message,
+      provider: llmConfig.provider,
+      model: llmConfig.model,
+      tokensUsed: 0,
+      latencyMs: 0,
+    }));
+
     return result;
   }
 
@@ -253,6 +318,24 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
       logger.warn({ errors: validated.error.flatten(), rawResponse: content.slice(0, 500) },
         'Hybrid evaluator: LLM returned malformed JSON — skipping tick');
       result.errors.push(`malformed_response: ${validated.error.message}`);
+
+      // Emit artifact for parse failure
+      await emitHybridArtifact(onArtifact, buildHybridArtifact({
+        decisionIds: [],
+        contextHash,
+        context: artifactContext,
+        promptPayload: prompt,
+        promptVersion,
+        rawResponse: content,
+        parseStatus: 'parse_error',
+        parseError: validated.error.message,
+        provider: llmResult.data.provider,
+        model: llmResult.data.model,
+        tokensUsed: llmResult.data.tokensUsed,
+        latencyMs: llmResult.data.latencyMs,
+        cached: llmResult.data.cached,
+      }));
+
       return result;
     }
     decisions = validated.data;
@@ -261,10 +344,29 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
     logger.warn({ err, rawResponse: content.slice(0, 500) },
       'Hybrid evaluator: failed to parse LLM response as JSON');
     result.errors.push(`parse_failed: ${msg}`);
+
+    // Emit artifact for parse failure
+    await emitHybridArtifact(onArtifact, buildHybridArtifact({
+      decisionIds: [],
+      contextHash,
+      context: artifactContext,
+      promptPayload: prompt,
+      promptVersion,
+      rawResponse: content,
+      parseStatus: 'parse_error',
+      parseError: msg,
+      provider: llmResult.data.provider,
+      model: llmResult.data.model,
+      tokensUsed: llmResult.data.tokensUsed,
+      latencyMs: llmResult.data.latencyMs,
+      cached: llmResult.data.cached,
+    }));
+
     return result;
   }
 
-  // Submit each decision
+  // Submit each decision, tracking IDs for artifact persistence
+  const submittedDecisionIds: string[] = [];
   for (const decision of decisions) {
     // 'skip' = no action on an entry signal; 'hold' = keep existing position as-is.
     // Neither requires a submission to the engine.
@@ -291,7 +393,8 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
     }
 
     try {
-      await submitDecision(instrumentId, decision.intent, decision.sizeUsd, resolved.pricingIdentity);
+      const decisionId = await submitDecision(instrumentId, decision.intent, decision.sizeUsd, resolved.pricingIdentity);
+      submittedDecisionIds.push(decisionId);
       result.decisionsSubmitted++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -300,6 +403,22 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
     }
   }
 
+  // Emit artifact for successful evaluation
+  await emitHybridArtifact(onArtifact, buildHybridArtifact({
+    decisionIds: submittedDecisionIds,
+    contextHash,
+    context: artifactContext,
+    promptPayload: prompt,
+    promptVersion,
+    rawResponse: content,
+    parseStatus: 'success',
+    provider: llmResult.data.provider,
+    model: llmResult.data.model,
+    tokensUsed: llmResult.data.tokensUsed,
+    latencyMs: llmResult.data.latencyMs,
+    cached: llmResult.data.cached,
+  }));
+
   logger.info({
     decisionsSubmitted: result.decisionsSubmitted,
     decisionsSkipped: result.decisionsSkipped,
@@ -307,4 +426,55 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
   }, 'Hybrid evaluator complete');
 
   return result;
+}
+
+/**
+ * Fire-and-forget artifact persistence — catch errors so a failing
+ * artifact write never blocks the evaluator's return path.
+ */
+async function emitHybridArtifact(
+  onArtifact: HybridEvaluatorInput['onArtifact'],
+  artifact: Parameters<NonNullable<HybridEvaluatorInput['onArtifact']>>[0],
+): Promise<void> {
+  if (!onArtifact) return;
+  try {
+    await onArtifact(artifact);
+  } catch {
+    // Silently ignore — artifact persistence is best-effort audit, not a control-plane dependency.
+  }
+}
+
+/**
+ * Compute a SHA-256 hash of the hybrid prompt for context deduplication.
+ * Matches the hashing approach used by LlmStrategy.buildContextHash.
+ */
+function computeHybridContextHash(prompt: string): string {
+  return `hybrid-${crypto.createHash('sha256').update(prompt).digest('hex').slice(0, 16)}`;
+}
+
+/**
+ * Build a hybrid evaluator artifact record. All artifact emission sites
+ * share the same shape with a few varying fields — this helper reduces
+ * duplication and ensures consistency across error/success paths.
+ */
+function buildHybridArtifact(overrides: {
+  contextHash: string;
+  context: Record<string, unknown>;
+  promptPayload: string;
+  promptVersion: string;
+  parseStatus: string;
+  parseError?: string;
+  rawResponse: string | null;
+  tokensUsed: number;
+  latencyMs: number;
+  provider: string;
+  model: string;
+  decisionIds: string[];
+  cached?: boolean;
+}): Parameters<NonNullable<HybridEvaluatorInput['onArtifact']>>[0] {
+  return {
+    source: 'hybrid_evaluator' as const,
+    cached: false,
+    ...overrides,
+  };
 }

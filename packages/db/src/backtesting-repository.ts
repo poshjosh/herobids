@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { eq, and, desc, gte, lte } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { decisionContexts, replayCorpora, replayMarketEvents, backtestRuns, llmDecisionArtifacts } from './schema/index.js';
+import { decisionContexts, replayCorpora, replayMarketEvents, backtestRuns } from './schema/index.js';
 
 export interface InsertDecisionContext {
   decisionId: string;
@@ -325,53 +325,5 @@ export class BacktestingRepository {
       .orderBy(desc(backtestRuns.createdAt))
       .limit(limit)
       .offset(offset);
-  }
-
-  // --- LLM Decision Artifacts ---
-
-  async insertLlmArtifact(artifact: {
-    decisionId: string;
-    contextHash: string;
-    context: Record<string, unknown>;
-    promptPayload: string;
-    promptVersion: string;
-    rawResponse: string | null;
-    parsedDecision: Record<string, unknown> | null;
-    parseStatus: string;
-    parseError?: string;
-    provider: string;
-    model: string;
-    tokensUsed: number;
-    latencyMs: number;
-    cached: boolean;
-  }): Promise<string> {
-    const id = crypto.randomUUID();
-    await this.db.insert(llmDecisionArtifacts).values({
-      id,
-      decisionId: artifact.decisionId,
-      contextHash: artifact.contextHash,
-      context: artifact.context,
-      promptPayload: artifact.promptPayload,
-      promptVersion: artifact.promptVersion,
-      rawResponse: artifact.rawResponse,
-      parsedDecision: artifact.parsedDecision,
-      parseStatus: artifact.parseStatus,
-      parseError: artifact.parseError ?? null,
-      provider: artifact.provider,
-      model: artifact.model,
-      tokensUsed: artifact.tokensUsed,
-      latencyMs: artifact.latencyMs,
-      cached: artifact.cached,
-    });
-    return id;
-  }
-
-  async getLlmArtifactByDecisionId(decisionId: string) {
-    const [row] = await this.db
-      .select()
-      .from(llmDecisionArtifacts)
-      .where(eq(llmDecisionArtifacts.decisionId, decisionId))
-      .limit(1);
-    return row ?? null;
   }
 }

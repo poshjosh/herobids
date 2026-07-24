@@ -1,0 +1,1 @@
+CREATE INDEX "idx_llm_decision_artifacts_decision_ids" ON "llm_decision_artifacts" USING gin ("decision_ids");

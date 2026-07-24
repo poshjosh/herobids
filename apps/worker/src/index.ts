@@ -21,7 +21,7 @@ import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { LlmStrategy, MechanicalStrategy, HybridStrategy, DcaStrategy } from '@herobids/strategy';
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, AgentDocumentsRepository, bots, users, agents, agentScanCandidates, agentScanMetrics } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, LlmArtifactRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, AgentDocumentsRepository, bots, users, agents, agentScanCandidates, agentScanMetrics } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, HyperliquidMarkSource } from '@herobids/venues';
 import { createFillFirstMarkSource } from '@herobids/engine';
@@ -206,6 +206,7 @@ const balanceSnapshotRepo = new BalanceSnapshotRepository(db);
 const reconciliationRepo = new ReconciliationEventRepository(db);
 const decisionRepo = new DecisionRepository(db);
 const backtestingRepo = new BacktestingRepository(db);
+const llmArtifactRepo = new LlmArtifactRepository(db);
 const alertDeliveryRepo = new AlertDeliveryRepository(db);
 const tokenSafetyOverrideRepo = new TokenSafetyOverrideRepository(db);
 const decisionFailureRepo = new DecisionFailureRepository(db);
@@ -1270,7 +1271,7 @@ function createStrategy(strategyConfig: StrategyConfig, candleFetcher?: CandleFe
     case 'llm':
       return new LlmStrategy(
         () => idGen.decisionId(),
-        async (artifact) => { await backtestingRepo.insertLlmArtifact({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null }); },
+        async (artifact) => { await llmArtifactRepo.insert({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null, source: 'llm_strategy', decisionIds: null }); },
       );
 
     case 'hybrid': {
@@ -1278,7 +1279,7 @@ function createStrategy(strategyConfig: StrategyConfig, candleFetcher?: CandleFe
       const mechanical = new MechanicalStrategy(candleFetcher, null, () => idGen.decisionId());
       const llm = new LlmStrategy(
         () => idGen.decisionId(),
-        async (artifact) => { await backtestingRepo.insertLlmArtifact({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null }); },
+        async (artifact) => { await llmArtifactRepo.insert({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null, source: 'llm_strategy', decisionIds: null }); },
       );
       return new HybridStrategy(mechanical, llm);
     }

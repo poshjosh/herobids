@@ -1,12 +1,21 @@
 import { pgTable, text, timestamp, jsonb, integer, boolean, index } from 'drizzle-orm/pg-core';
 
 /**
- * LLM decision artifacts — audit trail for every LLM strategy call.
+ * LLM decision artifacts — audit trail for every LLM strategy / hybrid evaluator call.
  * Records prompt, response, parsing result, and provider details.
+ *
+ * Two source paths:
+ * - llm_strategy: 1 artifact : 1 decision (decisionId set, decisionIds null)
+ * - hybrid_evaluator: 1 artifact : N decisions (decisionId null, decisionIds set)
  */
 export const llmDecisionArtifacts = pgTable('llm_decision_artifacts', {
   id: text('id').primaryKey(),
-  decisionId: text('decision_id').notNull(),
+  /** Single decision ID — null for hybrid_evaluator (1:N). Use the nullable column directly; the old NOT NULL constraint is dropped by migration. */
+  decisionId: text('decision_id'),
+  /** Array of decision UUIDs — null for llm_strategy (1:1). */
+  decisionIds: jsonb('decision_ids').$type<string[]>(),
+  /** Discriminator: 'llm_strategy' | 'hybrid_evaluator' */
+  source: text('source').notNull().default('llm_strategy'),
   contextHash: text('context_hash').notNull(),
   /** Normalized context that produced the prompt */
   context: jsonb('context').notNull().$type<Record<string, unknown>>(),
@@ -35,5 +44,6 @@ export const llmDecisionArtifacts = pgTable('llm_decision_artifacts', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('idx_llm_decision_artifacts_decision_id').on(t.decisionId),
+  index('idx_llm_decision_artifacts_decision_ids').on(t.decisionIds),
   index('idx_llm_decision_artifacts_context_hash').on(t.contextHash),
 ]);
