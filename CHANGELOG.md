@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Post-evaluation fixes (Plan 002):** Deterministic scan candidate ordering with reasons.length tiebreaker; `agent_scan_metrics` persistence for every scan (including overlap-skipped); `LlmDecisionArtifact` persistence for hybrid evaluator (nullable decisionId, decisionIds array, onArtifact callback on all LLM outcomes); bounded candle-fetch retry with full jitter and cross-scan Redis circuit breaker (scan-cycle units); evaluate-agent SKILL.md Redis key-type guidance.
+
+### Fixed
+
+- **Watch evaluation restored for scanner-gated agents:** Removed blanket skip in `evaluateWatches()` that prevented `lastCheckedAt` updates and stop-loss/take-profit evaluation for scanner-gated agents. Scanner-gated agents now use context-only wake delivery, consistent with discovery_delta/regime_change handling.
+
+### Investigations
+
+- **Scanner runs for all agents (not just mo-day):** Root cause is Binance interval casing — presets use uppercase `4H`/`1H` but Binance requires lowercase. Swing/range candle fetches return HTTP 400. See [003-item6-findings.md](docs/features/2026/07/24/001-post-eval-fixes/003-item6-findings.md).
+
+See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
+
 ### Changed
 
 - **Strategy preset tool agent guidance:** `assess_strategy_preset` now returns `allowedPresets` (the subset of ranked presets eligible for transition) and `freshnessNote` (human-readable expiry guidance) in each assessment result. Both `assess_strategy_preset` and `change_strategy_preset` tool descriptions rewritten with explicit workflow guidance, freshness semantics, and error-recovery instructions. The active `assessment_review` wake prompt (`buildAssessmentReviewMessage`) rewritten with numbered assess→review→apply steps, `allowedPresets`/freshness awareness, and error-recovery guidance. The deferred `preset_review` prompt (`buildPresetReviewMessage`) documented as unused with a deferred-phase note.

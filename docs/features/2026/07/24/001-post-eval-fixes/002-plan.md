@@ -1,6 +1,6 @@
 # 002 — Post-Evaluation Fixes: Determinism, Artifacts, Backoff, Observability, Dead Agents
 
-**Status:** In Progress
+**Status:** Complete
 **Created:** 2026-07-24
 **Depends on:** Evaluation `.ignore/eval/2026/07/23/REPORT.md`
 
@@ -11,9 +11,11 @@ actionable issues. This plan covers their implementation.
 
 Not in scope (deferred):
 - Reducing `scanIntervalMs`
-- Fixing watch evaluation for scanner-gated agents
-- Investigating why scanner only runs for mo-day
 - Increasing `maxOpenPositions`
+
+> **Note:** "Fixing watch evaluation for scanner-gated agents" and "Investigating why scanner only runs for mo-day" were promoted to in-scope as Items 6 and 7 respectively.
+>
+> Item 6 findings: see [003-item6-findings.md](./003-item6-findings.md) — root cause is Binance interval casing (`4H` → `4h`). Fix deferred to follow-up plan.
 
 ---
 
@@ -209,7 +211,7 @@ agentRuntime:
 
 ---
 
-## Item 4 [PENDING] — `agent:memory` Redis `WRONGTYPE` (tooling fix, not a no-op)
+## Item 4 [DONE] — `agent:memory` Redis `WRONGTYPE` (tooling fix, not a no-op)
 
 ### Finding
 
