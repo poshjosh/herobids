@@ -142,9 +142,9 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
               >
                 <option value="5m">5m</option>
                 <option value="15m">15m</option>
-                <option value="1H">1H</option>
-                <option value="4H">4H</option>
-                <option value="1D">1D</option>
+                <option value="1h">1h</option>
+                <option value="4h">4h</option>
+                <option value="1d">1d</option>
               </select>
             </div>
             <div style={{ flex: 1 }}>

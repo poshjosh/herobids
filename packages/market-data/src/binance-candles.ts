@@ -59,7 +59,7 @@ export async function fetchBinanceCandles(
 ): Promise<PriceCandle[]> {
   await config.rateLimiter.acquire();
 
-  const interval = options?.interval ?? '1h';
+  const interval = (options?.interval ?? '1h').toLowerCase();
   const limit = options?.limit ?? 100;
   const binanceSymbol = resolveBinanceSymbol(symbol);
 

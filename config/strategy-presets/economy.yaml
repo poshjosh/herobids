@@ -46,12 +46,12 @@ presets:
 
   momentum-position:
     name: "Momentum — Position"
-    description: "Longer-term trend following on 4H candles. Conservative position sizing."
+    description: "Longer-term trend following on 4h candles. Conservative position sizing."
     strategy:
       type: momentum
       decisionMode: mechanical
       params:
-        candleInterval: "4H"
+        candleInterval: "4h"
         candleLimit: 72
         minCandleCount: 30
         stopLossPct: 5
@@ -105,7 +105,7 @@ presets:
       type: range
       decisionMode: mechanical
       params:
-        candleInterval: "1H"
+        candleInterval: "1h"
         candleLimit: 48
         minCandleCount: 20
         stopLossPct: 3
@@ -145,7 +145,7 @@ presets:
       type: swing
       decisionMode: mechanical
       params:
-        candleInterval: "4H"
+        candleInterval: "4h"
         candleLimit: 48
         minCandleCount: 20
         stopLossPct: 4
@@ -225,7 +225,7 @@ presets:
       type: contrarian
       decisionMode: mechanical
       params:
-        candleInterval: "1H"
+        candleInterval: "1h"
         candleLimit: 48
         minCandleCount: 20
         stopLossPct: 4

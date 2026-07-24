@@ -8,7 +8,7 @@ export interface BotCustomConfigFormState {
 
   // Signal interpretation (mechanical params)
   signalBias: 'trend-following' | 'mean-reverting';
-  candleInterval: '5m' | '15m' | '1H' | '4H' | '1D';
+  candleInterval: '5m' | '15m' | '1h' | '4h' | '1d';
   candleLimit: string; // controlled number input → parseInt
 
   // Exit targets (mechanical params — both required for mechanical strategy)

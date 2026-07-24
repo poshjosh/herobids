@@ -34,7 +34,7 @@ export interface TechnicalConfig {
       minReasons: number;
     };
   };
-  candles: { interval: '5m' | '15m' | '1H' | '4H' | '1D'; limit: number };
+  candles: { interval: '5m' | '15m' | '1h' | '4h' | '1d'; limit: number };
   signalBias: 'trend-following' | 'mean-reverting';
   scanIntervalMs: number;
   scanBatchSize: number;

@@ -16,7 +16,7 @@ export interface TechnicalConfigFormState {
     symbols: string[];
     excludeSymbols: string[];
   };
-  candles: { interval: '5m' | '15m' | '1H' | '4H' | '1D'; limit: string };
+  candles: { interval: '5m' | '15m' | '1h' | '4h' | '1d'; limit: string };
   signalBias: 'trend-following' | 'mean-reverting';
   scanIntervalMins: string;
   scanBatchSize: string;

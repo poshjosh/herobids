@@ -1381,7 +1381,7 @@ export const PlatformAssessorConfigSchema = z.object({
   evidencePayloadLimitBytes: z.number().int().positive().default(1_048_576),
   /** Candle collection policy. */
   candlePolicy: z.object({
-    defaultInterval: z.enum(['5m', '15m', '1H', '4H', '1D']).default('15m'),
+    defaultInterval: z.enum(['5m', '15m', '1h', '4h', '1d']).default('15m'),
     minimumCandles: z.number().int().positive().default(48),
     maxCandles: z.number().int().positive().default(200),
   }).optional().default({}),
@@ -1931,7 +1931,7 @@ export const SentimentConfigSchema = z.object({
 
 export const MechanicalParamsSchema = z.object({
   // Candle fetching
-  candleInterval: z.enum(['5m', '15m', '1H', '4H', '1D']).default('15m'),
+  candleInterval: z.enum(['5m', '15m', '1h', '4h', '1d']).default('15m'),
   candleLimit: z.number().int().min(20).max(500).default(48),
   minCandleCount: z.number().int().min(5).default(20),
 
@@ -2087,7 +2087,7 @@ export const TechnicalConfigSchema = z.object({
   regime: RegimeParamsSchema.optional(),
   indicators: IndicatorConfigSchema.default({}),
   candles: z.object({
-    interval: z.enum(['5m', '15m', '1H', '4H', '1D']).default('15m'),
+    interval: z.enum(['5m', '15m', '1h', '4h', '1d']).default('15m'),
     limit: z.number().int().min(20).max(500).default(100),
   }).default({}),
   signalBias: z.enum(['trend-following', 'mean-reverting']).default('trend-following'),
@@ -2120,7 +2120,7 @@ export const StrictTechnicalConfigSchema = z.object({
   regime: RegimeParamsSchema.optional(),
   indicators: IndicatorConfigSchema,
   candles: z.object({
-    interval: z.enum(['5m', '15m', '1H', '4H', '1D']).default('15m'),
+    interval: z.enum(['5m', '15m', '1h', '4h', '1d']).default('15m'),
     limit: z.number().int().min(20).max(500).default(100),
   }),
   signalBias: z.enum(['trend-following', 'mean-reverting']),

@@ -165,7 +165,7 @@ export function materializeEffectiveConfig(
  * the actor's technical config. Only the fields carried by the mapping
  * are checked — venue/filter fields are the caller's responsibility.
  */
-const _candleIntervalSchema = z.enum(['5m', '15m', '1H', '4H', '1D']);
+const _candleIntervalSchema = z.enum(['5m', '15m', '1h', '4h', '1d']);
 const _signalBiasSchema = z.enum(['trend-following', 'mean-reverting']);
 const _scanIntervalMsSchema = z.number().int().min(10_000);
 

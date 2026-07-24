@@ -372,3 +372,69 @@ TBD by investigation; expect the watch-evaluation module + a regression test.
 - No hard-coded magic numbers — all backoff/retry values come from operator config
   (AGENTS.md configuration rule).
 - Items 6 and 7 end with either a fix or a written findings note — never silent deferral.
+
+---
+
+## Outstanding Issues
+
+### Item 1 — Deterministic candidate ordering
+
+#### MEDIUM
+1. **Misleading test name** — An existing test renamed/fixed now has a name that doesn't match its updated expected behavior. Rename it.
+2. **Missing explicit assertions in shuffle test** — The shuffle stability test should include explicit expected-order assertions.
+3. **Abandoned dev comments** — Clean up leftover development comments in test file.
+
+#### LOW
+4. **Floating-point concern** — Theoretical floating-point comparison issue in confidence sort (extremely low risk in practice).
+5. **Minor formatting** — Aesthetic cleanup in test file.
+
+---
+
+### Item 5 — agent_scan_metrics for every scan
+
+#### MEDIUM
+4. **Duplicated `presetBehaviorVersion`** — Template `` `ts-${styleTier}-v1` `` duplicated in 4 locations (`buildPersistableCandidates`, `buildScanMetrics`, 2 overlap-skipped paths). Extract into shared helper.
+5. **Error silently swallowed in overlap_skipped paths** — `catch (_) { /* best-effort */ }` violates AGENTS.md "Do not swallow errors". Should log with `this.logger.warn`.
+
+#### LOW
+6. **`scannedAt` differs from `scan.timestamp`** — Sub-millisecond difference, semantically meaningless. Deferrable.
+7. **`scanScope` typed as `Record<string, unknown>`** — Could be tightened to named type. Deferrable.
+8. **`regimeBucket: 'unavailable'` vs `null`** — For skipped scans, null is more precise since regime check never ran. Deferrable.
+9. **Duplicate overlap-skipped metric objects** — Both early-return paths build identical objects. Could extract helper. Deferrable.
+
+---
+
+### Item 2 — llm_decision_artifacts persistence
+
+#### MEDIUM
+4. **No test for `cached: true` propagation** — No test asserting that when `llmResult.data.cached` is `true`, the artifact's `cached` field is `true`. All test cases use `cached: false`.
+
+#### LOW
+5. **No dedicated test for `!llmResult.ok` artifact emission** — The `provider_error` path is tested only via the throw case, not the structured error path.
+6. **Double index mutation on fresh DBs** — Drizzle creates btree index via schema, migration 0051 mutates to GIN. No functional issue.
+
+---
+
+### Item 3 — Bounded retry/backoff for candle failures
+
+#### MEDIUM
+1. **Stale breaker state lingers after natural expiry** — `shouldSkip` returns false but doesn't clean up stale Redis key. Deferred cleanup to TTL or `recordSuccess`.
+2. **`deriveScannerHealth` ignores `breakerSkips`** — When all symbols are breaker-skipped, health reports `data_path_failure` instead of distinguishing breaker activity.
+
+#### LOW
+3. **Double `classifyCandleError` call for unsupported errors** — Called in both `shouldRetry` and catch block. Harmless.
+4. **`RetryOptions.enabled` not consumed at runtime** — Gating at construction time, field is informative only.
+5. **`breakerSkips` typed as optional on `TechnicalScanState`** — Could be required for compile-time safety.
+6. **`FakeRedisStore.set` ignores TTL arguments** — No test verifies TTL is actually passed to Redis.
+
+---
+
+### Item 7 — Watch evaluation fix
+
+#### MEDIUM
+1. **Scanner-gated context-only tests check `emitAgentWake` mock instead of Redis wake key** — `emitAgentWake` is never called during `evaluate()`, only during `flushPendingWakes()`. Assertions are vacuously true.
+2. **"Fails open" test doesn't verify wake enqueue for non-gated agents** — Only checks event emission, not wake bucket.
+
+#### LOW
+3. **Discovery_delta test uses old `_sset.set()` pattern** — Inconsistent with other tests using `redis.sadd()`.
+4. **Missing comment** — No explanation of why previous-snapshot seeding was removed from discovery_delta test.

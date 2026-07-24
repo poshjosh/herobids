@@ -45,12 +45,12 @@ presets:
 
   momentum-position:
     name: "Momentum — Position"
-    description: "Longer-term trend following on 4H candles. Wider stops, bigger targets."
+    description: "Longer-term trend following on 4h candles. Wider stops, bigger targets."
     strategy:
       type: momentum
       decisionMode: mechanical
       params:
-        candleInterval: "4H"
+        candleInterval: "4h"
         candleLimit: 72
         minCandleCount: 30
         stopLossPct: 8
@@ -104,7 +104,7 @@ presets:
       type: range
       decisionMode: mechanical
       params:
-        candleInterval: "1H"
+        candleInterval: "1h"
         candleLimit: 48
         minCandleCount: 20
         stopLossPct: 4
@@ -139,12 +139,12 @@ presets:
 
   swing:
     name: "Swing"
-    description: "Medium-term swing trading. 4H candles, CHOCH confirmations, moderate risk."
+    description: "Medium-term swing trading. 4h candles, CHOCH confirmations, moderate risk."
     strategy:
       type: swing
       decisionMode: mechanical
       params:
-        candleInterval: "4H"
+        candleInterval: "4h"
         candleLimit: 48
         minCandleCount: 20
         stopLossPct: 5
@@ -224,7 +224,7 @@ presets:
       type: contrarian
       decisionMode: mechanical
       params:
-        candleInterval: "1H"
+        candleInterval: "1h"
         candleLimit: 48
         minCandleCount: 20
         stopLossPct: 5

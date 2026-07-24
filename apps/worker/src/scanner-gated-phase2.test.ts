@@ -68,7 +68,7 @@ function makeTechnicalConfig(overrides?: Partial<TechnicalConfig>): TechnicalCon
       confidence: { minConfidence: 0.45 },
       rsi: { period: 14, overbought: 80, healthyMax: 70, weakBelow: 30 },
     },
-    candles: { interval: '1H' as const, limit: 50 },
+    candles: { interval: '1h' as const, limit: 50 },
     signalBias: 'trend-following' as const,
     scanIntervalMs: 60_000,
     scanBatchSize: 10,

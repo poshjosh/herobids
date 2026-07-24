@@ -15,7 +15,7 @@ import type { PriceCandle, RegimeResult } from '@herobids/market-data';
 // Defined locally to match the MechanicalParamsSchema candleInterval enum.
 // Keep in sync with packages/domain/src/config/schema.ts.
 
-export type CandleInterval = '5m' | '15m' | '1H' | '4H' | '1D';
+export type CandleInterval = '5m' | '15m' | '1h' | '4h' | '1d';
 
 // ── Assessment Evidence Ports ───────────────────────────────────────────────
 //

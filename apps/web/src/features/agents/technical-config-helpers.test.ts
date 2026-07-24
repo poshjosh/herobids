@@ -48,7 +48,7 @@ describe('technical config helpers', () => {
           minReasons: 0,
         },
       },
-      candles: { interval: '1H', limit: 250 },
+      candles: { interval: '1h', limit: 250 },
       signalBias: 'mean-reverting',
       scanIntervalMs: 120_000,
       scanBatchSize: 0,
