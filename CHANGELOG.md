@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.35 - 2026-07-24
+
 ### Added
 
 - **Post-evaluation fixes (Plan 002):** Deterministic scan candidate ordering with reasons.length tiebreaker; `agent_scan_metrics` persistence for every scan (including overlap-skipped); `LlmDecisionArtifact` persistence for hybrid evaluator (nullable decisionId, decisionIds array, onArtifact callback on all LLM outcomes); bounded candle-fetch retry with full jitter and cross-scan Redis circuit breaker (scan-cycle units); evaluate-agent SKILL.md Redis key-type guidance.
