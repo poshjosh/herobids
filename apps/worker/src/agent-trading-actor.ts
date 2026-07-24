@@ -1,4 +1,6 @@
 import { createLogger } from './logger.js';
+import type { CandleFetchBreaker } from './candle-fetch-breaker.js';
+import type { RetryOptions } from './candle-fetch-retry.js';
 import type { ContextSnapshotPayload, OrderbookVenuePort, SwapVenuePort, MarkSource, LiveRolloutConfig, Subscription, SubscriptionState, SwapTokenSafetyPort, Price, Decision, DecisionId, VenueAccountId, InstrumentId, TechnicalConfig, RiskConfig, AgentWakePayload } from '@herobids/domain';
 import type { OrderId } from '@herobids/domain';
 import { quantity, price, Decimal, ok, err, type Result } from '@herobids/domain';
@@ -190,6 +192,10 @@ export interface AgentTradingActorDeps {
   /** Persist a per-scan metrics row for scanner health and signal observability.
    *  Best-effort — failures must not crash the scan. */
   onPersistScanMetrics?: (metrics: ScanMetricInput) => Promise<void>;
+  /** In-cycle retry config for transient candle fetch failures. Fail-open when absent. */
+  candleFetchRetry?: RetryOptions;
+  /** Cross-scan circuit breaker for symbols that fail every retry. Fail-open when absent. */
+  candleFetchBreaker?: CandleFetchBreaker;
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -1634,6 +1640,9 @@ export class AgentTradingActor implements ExecutionActor {
         getOpenPositions: () => [...this.positions.values()],
         generateDecisionId: () => this.deps.idGen.decisionId(),
         logger: this.logger,
+        candleFetchRetry: this.deps.candleFetchRetry,
+        candleFetchBreaker: this.deps.candleFetchBreaker,
+        currentScanEpoch: Math.floor(Date.now() / technicalConfig.scanIntervalMs),
       });
 
       // ── Scanner signal dedup: suppress wake when fingerprint hasn't changed ──

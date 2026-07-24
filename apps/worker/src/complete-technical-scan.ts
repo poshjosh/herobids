@@ -190,6 +190,7 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
     fetched: phaseResult.fetchedCount,
     unsupported: phaseResult.unsupportedCount,
     fetchFailures: phaseResult.fetchFailures,
+    breakerSkips: phaseResult.breakerSkips,
     signalsGenerated: phaseResult.signalsGenerated,
     overlapSkipped: phaseResult.overlapSkipped,
     pricingIdentities,

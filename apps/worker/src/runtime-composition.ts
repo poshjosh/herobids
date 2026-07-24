@@ -140,6 +140,8 @@ export interface TechnicalScanState {
   unsupported: number;
   /** Count of symbols that encountered transient fetch failures. */
   fetchFailures: number;
+  /** Count of symbols skipped because the circuit breaker is open. */
+  breakerSkips?: number;
   /** Count of signals generated. */
   signalsGenerated: number;
   /** Whether this scan was skipped due to an overlapping scan already in progress. */

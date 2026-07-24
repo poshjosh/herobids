@@ -4,6 +4,9 @@ import type { PositionState } from '@herobids/engine';
 import type { PriceCandle, RegimeParams, RegimeResult } from '@herobids/market-data';
 import { scanCandidates, scoreCandidate } from '@herobids/strategy';
 import type { CandidateContext, ScanConfig, ScannerCandleTarget, ScoredSignal } from '@herobids/strategy';
+import type { RetryOptions } from './candle-fetch-retry.js';
+import { retryWithBackoff } from './candle-fetch-retry.js';
+import type { CandleFetchBreaker } from './candle-fetch-breaker.js';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -22,7 +25,7 @@ export interface DiscoveredInstrument {
 export type FilterConfig = TechnicalConfig['filters'];
 
 /** Classification of a single candle-fetch attempt in the technical scan. */
-export type CandleFetchStatus = 'eligible_fetched' | 'eligible_empty' | 'unsupported' | 'transient_failure';
+export type CandleFetchStatus = 'eligible_fetched' | 'eligible_empty' | 'unsupported' | 'transient_failure' | 'skipped_breaker_open';
 
 export interface SymbolFetchOutcome {
   symbol: string;
@@ -65,6 +68,12 @@ export interface TechnicalPhaseDeps {
     warn: (obj: Record<string, unknown> | string, msg?: string) => void;
     error: (obj: Record<string, unknown> | string, msg?: string) => void;
   };
+  /** Optional in-cycle retry config for transient candle fetch failures. Fail-open when absent. */
+  candleFetchRetry?: RetryOptions;
+  /** Optional cross-scan circuit breaker for symbols that fail every retry. Fail-open when absent. */
+  candleFetchBreaker?: CandleFetchBreaker;
+  /** Monotonically increasing scan identifier used by the breaker to express skip durations in scan cycles. */
+  currentScanEpoch?: number;
 }
 
 export interface TechnicalPhaseResult {
@@ -88,6 +97,8 @@ export interface TechnicalPhaseResult {
   unsupportedCount: number;
   /** Count of symbols that encountered transient fetch failures. */
   fetchFailures: number;
+  /** Count of symbols skipped because the circuit breaker is open. */
+  breakerSkips: number;
   /** Count of symbols that returned eligible data (eligible_fetched + eligible_empty). */
   eligibleCount: number;
   /** Count of symbols that returned non-empty candles (eligible_fetched only). */
@@ -160,6 +171,7 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
     symbolOutcomes: [],
     unsupportedCount: 0,
     fetchFailures: 0,
+    breakerSkips: 0,
     eligibleCount: 0,
     fetchedCount: 0,
   };
@@ -218,9 +230,14 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
     }
   }
 
-  // 5. Fetch candles in batches — classify per-symbol outcomes for health matrix
+  // 5. Fetch candles in batches — classify per-symbol outcomes for health matrix.
+  //    Transient failures are retried in-cycle with jittered backoff; symbols that
+  //    fail every retry across consecutive scans are skipped by the circuit breaker.
   const candlesBySymbol = new Map<string, PriceCandle[]>();
   const unsupportedSymbols = new Set<string>(); // per-scan cache: skip unsupported in subsequent batches
+  const { candleFetchRetry, candleFetchBreaker } = deps;
+  const scanEpoch = deps.currentScanEpoch;
+
   for (let i = 0; i < allSymbols.length; i += config.scanBatchSize) {
     const batch = allSymbols.slice(i, i + config.scanBatchSize)
       .filter((sym) => !unsupportedSymbols.has(sym)); // skip already-classified-unsupported
@@ -235,20 +252,57 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
           result.unsupportedCount++;
           return;
         }
+
+        // Circuit breaker: skip symbols that have failed every retry across consecutive scans.
+        if (candleFetchBreaker && scanEpoch != null) {
+          const skip = await candleFetchBreaker.shouldSkip(agentId, target.providerSymbol, scanEpoch);
+          if (skip) {
+            result.symbolOutcomes.push({ symbol, status: 'skipped_breaker_open', resolvedProviderSymbol: target.providerSymbol });
+            result.breakerSkips++;
+            return;
+          }
+        }
+
+        const fetchAttempt = async () => deps.fetchCandles(target, config.candles.interval, config.candles.limit);
+
         try {
-          const candles = await deps.fetchCandles(target, config.candles.interval, config.candles.limit);
+          let candles: PriceCandle[];
+
+          if (candleFetchRetry) {
+            const retryResult = await retryWithBackoff(fetchAttempt, {
+              ...candleFetchRetry,
+              shouldRetry: (err) => classifyCandleError(err).status !== 'unsupported',
+            });
+            if (!retryResult.ok) {
+              throw retryResult.error;
+            }
+            candles = retryResult.value;
+          } else {
+            candles = await fetchAttempt();
+          }
+
           candlesBySymbol.set(symbol, candles);
           const candleCount = candles.length;
           const status: CandleFetchStatus = candleCount > 0 ? 'eligible_fetched' : 'eligible_empty';
           result.symbolOutcomes.push({ symbol, status, candleCount });
+
+          // Successful fetch (after any retries) — close the breaker for this symbol.
+          if (candleFetchBreaker) {
+            await candleFetchBreaker.recordSuccess(agentId, target.providerSymbol);
+          }
         } catch (err) {
           const { status, detail } = classifyCandleError(err);
           result.symbolOutcomes.push({ symbol, status, errorDetail: detail });
           if (status === 'unsupported') {
             unsupportedSymbols.add(symbol);
             result.unsupportedCount++;
+            // Unsupported (HTTP 400) — never retry, never open breaker. Permanent skip.
           } else {
             result.fetchFailures++;
+            // Transient failure after all retries exhausted — record for breaker.
+            if (candleFetchBreaker && scanEpoch != null) {
+              await candleFetchBreaker.recordFailure(agentId, target.providerSymbol, scanEpoch);
+            }
           }
           const outcomeMsg = `candle_fetch_${status}(${symbol}): ${detail}`;
           result.errors.push(outcomeMsg);

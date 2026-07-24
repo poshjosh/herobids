@@ -494,6 +494,20 @@ agentRuntime:
     topN: 5                    # top N signals included in fingerprint (rank-insensitive, canonicalized alphabetically)
     confidenceBucketSize: 0.05 # confidence band for fingerprint bucketing (<=0.05 noise absorbed)
     ttlSeconds: 600            # fingerprint TTL in Redis — forces eventual re-evaluation even with unchanging signals
+  # In-cycle bounded retry for transient candle fetch failures (rate limits, 5xx, timeouts).
+  # Retries happen within a single scan with jittered backoff. Fail-open when absent.
+  candleFetchRetry:
+    enabled: true
+    maxRetries: 3              # in-cycle retries before giving up on a symbol this scan
+    baseDelayMs: 250           # first retry delay; grows ×2 with full jitter
+    maxDelayMs: 2000           # per-retry ceiling (stays well within one scan)
+  # Cross-scan circuit breaker for symbols that fail every retry across consecutive scans.
+  # Skip duration is measured in scan cycles, not milliseconds, so it is cadence-aware.
+  candleFetchBreaker:
+    enabled: true
+    failScansBeforeOpen: 3     # consecutive fully-failed scans before opening the breaker
+    baseSkipScans: 2           # skip this many scan cycles when breaker first opens
+    maxSkipScans: 8            # ceiling on skip cycles (grows ×2 per opening up to this cap)
   contextDiff:
     fullContextEveryTicks: 10  # force full context every N ticks (not a diff)
     maxDiffTokens: 200         # fall back to full context if diff exceeds this token budget

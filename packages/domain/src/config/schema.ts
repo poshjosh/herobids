@@ -1099,6 +1099,20 @@ export const AgentRuntimeConfigSchema = z.object({
     confidenceBucketSize: z.number().min(0.01).max(1).default(0.05),
     ttlSeconds: z.number().int().min(60).default(600),
   }).default({}),
+  /** In-cycle bounded retry for transient candle fetch failures (rate limits, 5xx, timeouts). */
+  candleFetchRetry: z.object({
+    enabled: z.boolean().default(true),
+    maxRetries: z.number().int().min(0).max(10).default(3),
+    baseDelayMs: z.number().int().min(50).max(5000).default(250),
+    maxDelayMs: z.number().int().min(100).max(10000).default(2000),
+  }).default({}),
+  /** Cross-scan circuit breaker for symbols that fail every retry across consecutive scans. */
+  candleFetchBreaker: z.object({
+    enabled: z.boolean().default(true),
+    failScansBeforeOpen: z.number().int().min(1).max(20).default(3),
+    baseSkipScans: z.number().int().min(1).max(50).default(2),
+    maxSkipScans: z.number().int().min(1).max(100).default(8),
+  }).default({}),
   promptStyle: z.enum(['classic', 'enriched']).default('enriched'),
   promptEnrichment: z.object({
     memory: z.object({

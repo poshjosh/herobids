@@ -18,3 +18,10 @@ export const SCANNER_SIGNAL_FINGERPRINT_KEY = 'agent:scanner:fingerprint' as con
 export function scannerSignalFingerprintKey(agentId: string): string {
   return `${SCANNER_SIGNAL_FINGERPRINT_KEY}:${agentId}`;
 }
+
+/** Key pattern: scanner:candle-breaker:{agentId}:{providerSymbol} — cross-scan circuit breaker state. */
+export const CANDLE_BREAKER_KEY = 'scanner:candle-breaker' as const;
+
+export function candleBreakerKey(agentId: string, providerSymbol: string): string {
+  return `${CANDLE_BREAKER_KEY}:${agentId}:${providerSymbol}`;
+}

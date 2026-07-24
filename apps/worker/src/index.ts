@@ -16,6 +16,8 @@ import type { TradingActorDeps } from './trading-actor.js';
 import type { ExecutionActor } from './execution-actor.js';
 import { VenueAdapterFactory } from './venue-adapter-factory.js';
 import { AgentTradingActor, type SignalFingerprintStore } from './agent-trading-actor.js';
+import { CandleFetchBreaker } from './candle-fetch-breaker.js';
+import type { RetryOptions } from './candle-fetch-retry.js';
 import { createSwapTokenSafetyAdapter } from './token-safety-adapter.js';
 import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { LlmStrategy, MechanicalStrategy, HybridStrategy, DcaStrategy } from '@herobids/strategy';
@@ -290,6 +292,24 @@ const scannerCandleFetcher = sharedMarketDataRegistry
       binanceConfig: sharedMarketDataRegistry.configs.binance,
       scannerRateLimiter,
     })
+  : undefined;
+
+// Cross-scan circuit breaker for transient candle fetch failures.
+// Uses Redis to track per-symbol fail counts and skip durations measured
+// in scan cycles (not milliseconds), so the breaker is cadence-aware.
+// Disabled when candleFetchBreaker.enabled is false — breaker dep is optional downstream.
+const candleFetchBreaker = appConfig.agentRuntime.candleFetchBreaker.enabled
+  ? new CandleFetchBreaker(redisClient, {
+      failScansBeforeOpen: appConfig.agentRuntime.candleFetchBreaker.failScansBeforeOpen,
+      baseSkipScans: appConfig.agentRuntime.candleFetchBreaker.baseSkipScans,
+      maxSkipScans: appConfig.agentRuntime.candleFetchBreaker.maxSkipScans,
+    })
+  : undefined;
+
+// In-cycle retry config sourced from operator config.
+// Disabled when candleFetchRetry.enabled is false — retry dep is optional downstream.
+const candleFetchRetry: RetryOptions | undefined = appConfig.agentRuntime.candleFetchRetry.enabled
+  ? appConfig.agentRuntime.candleFetchRetry
   : undefined;
 
 /**
@@ -1007,6 +1027,8 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           technicalConfig,
           discoverCandidates: buildDiscoverCandidates({ bindingVenue: binding.venue, bindingVenueType: venueType }),
           fetchCandles: scannerCandleFetcher,
+          candleFetchRetry,
+          candleFetchBreaker,
           maxConcurrentScans: scannerCapacity.maxConcurrentScans,
           signalFingerprintStore: redisClient as unknown as SignalFingerprintStore,
           scannerSignalDedup: appConfig.agentRuntime.scannerSignalDedup,

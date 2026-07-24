@@ -74,7 +74,7 @@ correct, cheap, necessary precondition — not a complete fix on its own.
 
 ---
 
-## Item 2 [PENDING] — `llm_decision_artifacts` persistence (minimal, complete)
+## Item 2 [DONE] — `llm_decision_artifacts` persistence (minimal, complete)
 
 ### Problem
 
