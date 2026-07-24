@@ -312,7 +312,7 @@ Investigation only (reads + Item 5 data). No code change in this item.
 
 ---
 
-## Item 7 [PENDING] — Verify / restore watch evaluation (report §4.2.A MEDIUM — safety)
+## Item 7 [DONE] — Verify / restore watch evaluation (report §4.2.A MEDIUM — safety)
 
 > The report calls stale watches *"a significant anomaly — stop-loss and take-profit monitors
 > are not functional."* `001` deferred it. Non-functional protective exits is a safety issue

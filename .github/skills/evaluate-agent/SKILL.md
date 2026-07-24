@@ -61,7 +61,9 @@ Save as JSON or CSV files under `<output-folder>/db/`.
 
 ### Step 5 — Collect Redis state
 
-Inspect relevant Redis keys (reminders, rate-limit buckets, session state) and save snapshots to `<output-folder>/redis/`.
+Inspect relevant Redis keys (reminders, rate-limit buckets, session state, agent memory) and save snapshots to `<output-folder>/redis/`.
+
+> **Key-type awareness:** Always run `TYPE <key>` before reading a value. The `agent:memory:<id>` keys are Redis **hashes** — use `HGETALL agent:memory:<id>`, not `GET`. Using `GET` on a hash key returns `WRONGTYPE` and produces a false-alarm diagnostic. Other common key types: `agent:sessions:count:<id>` (string), `agent:wake:prefs:<id>` (string), rate-limit buckets (hash or sorted set depending on implementation).
 
 ### Step 6 — Analyse and answer the following questions
 
