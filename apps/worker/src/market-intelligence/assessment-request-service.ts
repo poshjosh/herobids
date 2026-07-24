@@ -505,6 +505,7 @@ export class AssessmentRequestService {
         scanHealthSummary: marketAssessmentArtifacts.scanHealthSummary,
         presetRankings: marketAssessmentArtifacts.presetRankings,
         recommendedPreset: marketAssessmentArtifacts.recommendedPreset,
+        allowedPresets: marketAssessmentArtifacts.allowedPresets,
         confidence: marketAssessmentArtifacts.confidence,
         urgency: marketAssessmentArtifacts.urgency,
       })
@@ -559,6 +560,7 @@ export class AssessmentRequestService {
             scanHealthSummary: freshArtifact.scanHealthSummary,
             presetRankings: freshArtifact.presetRankings as AssessmentArtifactSummary['presetRankings'],
             recommendedPreset: freshArtifact.recommendedPreset,
+            allowedPresets: freshArtifact.allowedPresets as string[],
             confidence: Number(freshArtifact.confidence),
             urgency: freshArtifact.urgency as AssessmentArtifactSummary['urgency'],
           },
@@ -931,6 +933,7 @@ export class AssessmentRequestService {
           scanHealthSummary: artifact.scanHealthSummary,
           presetRankings: artifact.presetRankings,
           recommendedPreset: artifact.recommendedPreset,
+          allowedPresets: artifact.allowedPresets,
           confidence: artifact.confidence,
           urgency: artifact.urgency,
         },
@@ -1107,6 +1110,7 @@ export class AssessmentRequestService {
         scanHealthSummary: marketAssessmentArtifacts.scanHealthSummary,
         presetRankings: marketAssessmentArtifacts.presetRankings,
         recommendedPreset: marketAssessmentArtifacts.recommendedPreset,
+        allowedPresets: marketAssessmentArtifacts.allowedPresets,
         confidence: marketAssessmentArtifacts.confidence,
         urgency: marketAssessmentArtifacts.urgency,
       })
@@ -1127,6 +1131,7 @@ export class AssessmentRequestService {
         scanHealthSummary: 'Artifact data unavailable',
         presetRankings: [],
         recommendedPreset: null,
+        allowedPresets: [],
         confidence: -1,
         urgency: 'low',
       };
@@ -1140,6 +1145,7 @@ export class AssessmentRequestService {
       scanHealthSummary: row.scanHealthSummary,
       presetRankings: row.presetRankings as AssessmentArtifactSummary['presetRankings'],
       recommendedPreset: row.recommendedPreset,
+      allowedPresets: (row.allowedPresets as string[]) ?? [],
       confidence: Number(row.confidence),
       urgency: row.urgency as AssessmentArtifactSummary['urgency'],
     };

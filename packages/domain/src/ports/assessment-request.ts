@@ -10,6 +10,7 @@ export interface AssessmentArtifactSummary {
   scanHealthSummary: string;
   presetRankings: MarketAssessmentPresetRanking[];
   recommendedPreset: string | null;
+  allowedPresets: string[];
   confidence: number;
   urgency: 'low' | 'medium' | 'high';
 }
