@@ -174,7 +174,7 @@ const REQUIRED_SCANNER_FIELDS = [
 const COMPLETE_TECHNICAL = {
   filters: { venue: 'hyperliquid', venueType: 'orderbook', symbols: ['BTC', 'ETH'] },
   indicators: { rsi: { period: 14 }, macd: { fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 } },
-  candles: { interval: '1H', limit: 100 },
+  candles: { interval: '1h', limit: 100 },
   signalBias: 'trend-following',
   scanIntervalMs: 60_000,
   scanBatchSize: 5,

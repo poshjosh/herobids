@@ -391,8 +391,8 @@ describe('Phase 2: Provider eligibility classification', () => {
     // fetchCandles called for FAKETOKEN (first occurrence in batch) and BTC = 2 calls
     // (FAKETOKEN appears only once in allSymbols because openSymbols dedup removes it)
     expect(fetchCandles).toHaveBeenCalledTimes(2);
-    expect(fetchCandles).toHaveBeenCalledWith({ venueType: 'orderbook', providerSymbol: 'FAKETOKEN' }, '1H', 50);
-    expect(fetchCandles).toHaveBeenCalledWith({ venueType: 'orderbook', providerSymbol: 'BTC' }, '1H', 50);
+    expect(fetchCandles).toHaveBeenCalledWith({ venueType: 'orderbook', providerSymbol: 'FAKETOKEN' }, '1h', 50);
+    expect(fetchCandles).toHaveBeenCalledWith({ venueType: 'orderbook', providerSymbol: 'BTC' }, '1h', 50);
   });
 
   it('unsupported count is distinct from transient failure count', async () => {

@@ -863,7 +863,7 @@ describe('StrictTechnicalConfigSchema', () => {
         priceAction: { enabled: true },
         confidence: {},
       },
-      candles: { interval: '1H', limit: 100 },
+      candles: { interval: '1h', limit: 100 },
       signalBias: 'trend-following',
       scanIntervalMs: 120_000,
       scanBatchSize: 10,

@@ -65,7 +65,7 @@ describe('technical config helpers', () => {
     expect(formState.confidence.priceActionWeight).toBe('0');
     expect(formState.confidence.minConfidence).toBe('0');
     expect(formState.confidence.minReasons).toBe('0');
-    expect(formState.candles.interval).toBe('1H');
+    expect(formState.candles.interval).toBe('1h');
     expect(formState.candles.limit).toBe('250');
     expect(formState.signalBias).toBe('mean-reverting');
     expect(formState.scanIntervalMins).toBe('2');

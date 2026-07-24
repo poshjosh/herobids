@@ -33,7 +33,7 @@ interface BreakerState {
 /** Minimal Redis interface used by the breaker — only GET/SET/DEL. */
 export interface BreakerRedisStore {
   get(key: string): Promise<string | null>;
-  set(key: string, value: string, ...extraArgs: (string | number)[]): Promise<unknown>;
+  set(key: string, value: string, expiryFlag: string, ttlSeconds: number): Promise<unknown>;
   del(key: string): Promise<number>;
 }
 

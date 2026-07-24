@@ -1104,7 +1104,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
                 candidatesScored: metrics.candidatesScored,
                 signalsGenerated: metrics.signalsGenerated,
                 scanHealth: metrics.scanHealth,
-                topConfidence: metrics.topConfidence,
+                topConfidence: metrics.topConfidence != null ? String(metrics.topConfidence) : null,
                 regimeBucket: metrics.regimeBucket,
               });
             } catch (err) {
