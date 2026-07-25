@@ -508,6 +508,12 @@ agentRuntime:
     failScansBeforeOpen: 3     # consecutive fully-failed scans before opening the breaker
     baseSkipScans: 2           # skip this many scan cycles when breaker first opens
     maxSkipScans: 8            # ceiling on skip cycles (grows ×2 per opening up to this cap)
+  # Cross-session crash-loop guard — persist crash counters in Redis and block
+  # relaunch when an agent has crashed too many times within the sliding window.
+  crashLoopGuard:
+    enabled: true
+    maxCrashesInWindow: 3     # crashes within the window before relaunch is blocked
+    windowMs: 300000          # 5-minute sliding window
   contextDiff:
     fullContextEveryTicks: 10  # force full context every N ticks (not a diff)
     maxDiffTokens: 200         # fall back to full context if diff exceeds this token budget

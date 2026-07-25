@@ -30,6 +30,7 @@ export const PLATFORM_ALERT_EVENTS = {
   RUNTIME_FAILED: 'agent.runtime.failed',
   PAUSED_BY_GUARDRAIL: 'agent.paused_by_guardrail',
   EXECUTION_CRITICAL_FAILURE: 'agent.execution_critical_failure',
+  CRASH_LOOP_BLOCKED: 'agent.runtime.crash_loop_blocked',
 } as const;
 
 export type PlatformAlertEvent = typeof PLATFORM_ALERT_EVENTS[keyof typeof PLATFORM_ALERT_EVENTS];
@@ -166,6 +167,7 @@ function eventSubject(event: PlatformAlertEvent): string {
     case PLATFORM_ALERT_EVENTS.RUNTIME_FAILED: return 'Runtime Failed';
     case PLATFORM_ALERT_EVENTS.PAUSED_BY_GUARDRAIL: return 'Agent Paused by Guardrail';
     case PLATFORM_ALERT_EVENTS.EXECUTION_CRITICAL_FAILURE: return 'Critical Execution Failure';
+    case PLATFORM_ALERT_EVENTS.CRASH_LOOP_BLOCKED: return 'Agent Crash Loop Blocked';
   }
 }
 

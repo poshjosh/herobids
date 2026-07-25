@@ -1113,6 +1113,13 @@ export const AgentRuntimeConfigSchema = z.object({
     baseSkipScans: z.number().int().min(1).max(50).default(2),
     maxSkipScans: z.number().int().min(1).max(100).default(8),
   }).default({}),
+  /** Cross-session crash-loop guard — persist crash counters in Redis and block
+   *  relaunch when an agent has crashed too many times within the sliding window. */
+  crashLoopGuard: z.object({
+    enabled: z.boolean().default(true),
+    maxCrashesInWindow: z.number().int().min(1).default(3),
+    windowMs: z.number().int().min(10_000).default(300_000),
+  }).default({}),
   promptStyle: z.enum(['classic', 'enriched']).default('enriched'),
   promptEnrichment: z.object({
     memory: z.object({

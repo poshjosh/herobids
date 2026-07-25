@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Agent Redis cleanup on crash path:** Ephemeral runtime Redis keys (`agent:inbound`, `agent:outbound`, `agent:prompt:*`, `agent:scanner:*`, `agent:watches:summary`, `herobids:actor-health`) are now cleaned up on all terminal session paths (graceful stop, runtime end, start timeout, hard crash). Previously, crashed agents leaked these keys indefinitely. See [001-plan.md](docs/features/2026/07/24/002-agent-redis-cleanup-and-crash-loop-detection/001-plan.md).
+- **Cross-session crash-loop guard:** Sliding-window crash counter in Redis (`agent:crash:events:*` ZSET) blocks agent relaunch when `maxCrashesInWindow` (default 3) crashes occur within `windowMs` (default 5 min). Auto-unblocks when the window clears. A dedicated `CRASH_LOOP_BLOCKED` platform alert fires once per window.
+- **Session projection cleanup on crash:** `agent:sessions:active`, `agent:sessions:count`, and `agent:wake:prefs` Redis keys are now fully cleared when an agent crashes (all sessions retired as crashed), preventing the market monitor from pushing wakes to a dead agent.
+
+### Changed
+
+- **`InstanceStatusPayloadSchema`** now accepts `'crashed'` status in addition to `starting`, `running`, `paused`, `stopped`, `degraded`, `recovering`.
+
 ## v0.0.35 - 2026-07-24
 
 ### Added

@@ -525,7 +525,10 @@ const agentRuntimeLauncher = (() => {
         ...(appConfig.marketData
           ? { marketDataConfigJson: JSON.stringify(appConfig.marketData) }
           : {}),
-        onAgentCrashed: (agentId) => cascadeStopAgentBots(agentId),
+        onAgentCrashed: async (agentId) => {
+          await cascadeStopAgentBots(agentId);
+          await sessionManager.handleAgentCrashed(agentId);
+        },
       },
       agentRepo,
       // platformAlerts is constructed later in this file — pass undefined now,
@@ -1176,6 +1179,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
   plansConfig: appConfig.plans,
   usageBillingConfig: appConfig.usageBilling,
   providersYaml,
+  crashLoopGuard: appConfig.agentRuntime.crashLoopGuard,
 }, agentReconnectHandler, platformAlerts, redisClient);
 
 // Queue used by the broker callback to enqueue bot start jobs

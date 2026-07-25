@@ -255,7 +255,7 @@ export const ReconciliationNoticePayloadSchema = z.object({
 export type ReconciliationNoticePayload = z.infer<typeof ReconciliationNoticePayloadSchema>;
 
 export const InstanceStatusPayloadSchema = z.object({
-  status: z.enum(['starting', 'running', 'paused', 'stopped', 'degraded', 'recovering']),
+  status: z.enum(['starting', 'running', 'paused', 'stopped', 'crashed', 'degraded', 'recovering']),
   reason: z.string().optional(),
   liveState: z.string().optional(),
   updatedAt: z.string().datetime(),

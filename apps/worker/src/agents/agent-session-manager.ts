@@ -19,6 +19,9 @@ import { PLATFORM_ALERT_EVENTS } from '../alerting/platform-alert-service.js';
 import { resolveEffectiveLlmSelection } from '../llm-selection.js';
 import type { Redis } from 'ioredis';
 import { createLogger } from '../logger.js';
+import { cleanupEphemeralAgentRedisState } from './agent-ephemeral-redis-cleanup.js';
+import { isCrashLaunchBlocked, recordCrashEvent, shouldFireCrashLoopAlert } from './agent-crash-loop-guard.js';
+import type { CrashLoopGuardConfig } from './agent-crash-loop-guard.js';
 
 const logger = createLogger('agent-session-manager');
 
@@ -74,6 +77,8 @@ export interface AgentSessionManagerConfig {
   usageBillingConfig?: UsageBillingConfig;
   /** Provider registry — forwarded to agent containers for per-model rate card seeding */
   providersYaml?: ProvidersYaml;
+  /** Cross-session crash-loop guard config — if unset, guard is disabled */
+  crashLoopGuard?: CrashLoopGuardConfig;
 }
 
 /**
@@ -277,6 +282,30 @@ export class AgentSessionManager {
       if (this.stopping) return;
       if (this.runtimeLauncher.hasRuntime(session.id)) {
         continue;
+      }
+
+      // Crash-loop guard: block launch if the agent has crashed too many times
+      // within the sliding window. A blocked session never reaches first-boot
+      // heartbeat, so it never increments agent:sessions:count.
+      if (this.redis && this.config.crashLoopGuard?.enabled) {
+        const blocked = await isCrashLaunchBlocked(this.redis, session.agentId, this.config.crashLoopGuard, Date.now());
+        if (blocked) {
+          await this.agentRepo.markSessionStopped(session.id, new Date());
+          await this.agentRepo.updateAgent(session.agentId, { status: 'crashed' });
+          await this.eventPublisher.emitGuardrailTriggered(session.agentId, {
+            scope: 'agent_guardrail',
+            code: 'runtime.crash_loop_blocked',
+            message: 'Agent launch blocked — repeated crashes detected within the crash-loop window.',
+            details: { sessionId: session.id },
+          });
+          await this.eventPublisher.emitInstanceStatus(session.agentId, {
+            status: 'crashed',
+            reason: 'runtime.crash_loop_blocked',
+            updatedAt: new Date().toISOString(),
+          });
+          logger.warn({ agentId: session.agentId, sessionId: session.id }, 'Agent launch blocked by crash-loop guard');
+          continue; // do not launch
+        }
       }
 
       // Atomically claim the session (starting → launching) before launching.
@@ -543,6 +572,8 @@ export class AgentSessionManager {
           await this.redis.srem('agent:sessions:active', session.agentId);
           await this.redis.del(`agent:wake:prefs:${session.agentId}`);
           await this.redis.del(`agent:sessions:count:${session.agentId}`);
+          // Last session stopped — clean up ephemeral runtime keys
+          await cleanupEphemeralAgentRedisState(this.redis, session.agentId);
         }
       } catch (err) {
         logger.warn({ err, agentId: session.agentId }, 'Failed to clean up wake preferences from Redis on session stop');
@@ -591,9 +622,32 @@ export class AgentSessionManager {
           await this.redis.srem('agent:sessions:active', agentId);
           await this.redis.del(`agent:wake:prefs:${agentId}`);
           await this.redis.del(`agent:sessions:count:${agentId}`);
+          // Last session ended — clean up ephemeral runtime keys
+          await cleanupEphemeralAgentRedisState(this.redis, agentId);
         }
       } catch (err) {
         logger.warn({ err, agentId }, 'Failed to clean up wake preferences from Redis on runtime session end');
+      }
+    }
+
+    // Record crash for cross-session crash-loop guard (runtime-reported crash path).
+    // Deduped by sessionId — if onContainerDie already recorded this session, it's a no-op.
+    if (status === 'crashed' && this.redis) {
+      const cfg = this.config.crashLoopGuard;
+      if (cfg?.enabled) {
+        try {
+          const result = await recordCrashEvent(this.redis, agentId, sessionId, cfg, Date.now());
+          if (result.blocked && await shouldFireCrashLoopAlert(this.redis, agentId, cfg.windowMs)) {
+            this.platformAlerts?.fireAlert(PLATFORM_ALERT_EVENTS.CRASH_LOOP_BLOCKED, {
+              agentId,
+              sessionId,
+              message: `Agent crash loop detected — ${result.crashCount} crashes within ${Math.round(cfg.windowMs / 1000)}s. Automatic relaunch is blocked until the crash window clears.`,
+              detail: 'The agent will not be restarted automatically. Investigate the crash cause before restarting.',
+            }).catch((err: unknown) => logger.warn({ err, agentId }, 'Failed to send crash-loop alert'));
+          }
+        } catch (err) {
+          logger.warn({ err, agentId }, 'Failed to record crash event in handleRuntimeSessionEnd');
+        }
       }
     }
 
@@ -617,6 +671,46 @@ export class AgentSessionManager {
         this.config.onAgentStatusChange(agentId, agent.userId, status);
       }
     }
+  }
+
+  /**
+   * Called when an agent crashes (all its sessions have been retired as 'crashed').
+   * Fully clears the Redis session projection and ephemeral runtime keys, then
+   * records the crash for the cross-session crash-loop guard.
+   */
+  async handleAgentCrashed(agentId: string, sessionId?: string): Promise<void> {
+    if (this.redis) {
+      try {
+        // Clear session projection fully (not decrement — all sessions are retired)
+        await this.redis.srem('agent:sessions:active', agentId);
+        await this.redis.del(`agent:sessions:count:${agentId}`);
+        await this.redis.del(`agent:wake:prefs:${agentId}`);
+
+        // Clean up ephemeral runtime keys
+        await cleanupEphemeralAgentRedisState(this.redis, agentId);
+      } catch (err) {
+        logger.warn({ err, agentId }, 'Failed to clean up agent session projection on crash');
+      }
+
+      // Record crash for cross-session loop guard
+      const cfg = this.config.crashLoopGuard;
+      if (cfg?.enabled) {
+        try {
+          const result = await recordCrashEvent(this.redis, agentId, sessionId, cfg, Date.now());
+          if (result.blocked && await shouldFireCrashLoopAlert(this.redis, agentId, cfg.windowMs)) {
+            this.platformAlerts?.fireAlert(PLATFORM_ALERT_EVENTS.CRASH_LOOP_BLOCKED, {
+              agentId,
+              message: `Agent crash loop detected — ${result.crashCount} crashes within ${Math.round(cfg.windowMs / 1000)}s. Automatic relaunch is blocked until the crash window clears.`,
+              detail: 'The agent will not be restarted automatically. Investigate the crash cause before restarting.',
+            }).catch((err: unknown) => logger.warn({ err, agentId }, 'Failed to send crash-loop alert'));
+          }
+        } catch (err) {
+          logger.warn({ err, agentId }, 'Failed to record crash event for crash-loop guard');
+        }
+      }
+    }
+
+    logger.info({ agentId, sessionId }, 'Agent crash handler completed — session projection cleared');
   }
 
   /** Handle heartbeat from agent runtime */
@@ -830,6 +924,13 @@ export class AgentSessionManager {
 
     await this.runtimeLauncher.stop(sessionId);
     await this.agentRepo.updateAgent(session.agentId, { status: 'stopped' });
+
+    // Clean up ephemeral runtime keys (do NOT decrement agent:sessions:count —
+    // a timed-out session may never have reached first-boot heartbeat).
+    if (this.redis) {
+      await cleanupEphemeralAgentRedisState(this.redis, session.agentId);
+    }
+
     logger.warn({ sessionId, agentId: session.agentId }, 'Agent session start timed out');
     // Notify real-time event stream (best-effort)
     if (this.config.onAgentStatusChange) {
