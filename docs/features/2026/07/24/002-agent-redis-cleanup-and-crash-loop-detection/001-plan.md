@@ -472,3 +472,19 @@ AGENT_ID="70b61677-ae13-4e49-ba0f-d47d6eead4ee"
 - `apps/worker/src/alerting/platform-alert-service.ts` — `PLATFORM_ALERT_EVENTS` (~L28), `eventSubject` (~L163)
 - `packages/domain/src/config/schema.ts` — `AgentRuntimeConfigSchema` (~L1067)
 - `config/default.yaml` — `agentRuntime` (~L426)
+
+---
+
+## 11. Outstanding Issues (post-implementation)
+
+### MEDIUM
+
+1. **Unit tests not yet written** (Steps 1 & 2): `cleanupEphemeralAgentRedisState` and `recordCrashEvent`/`isCrashLaunchBlocked` unit tests specified in §5.1 of the plan are pending.
+
+2. **SessionId dedup from container-die path**: `onAgentCrashed` callback doesn't pass `sessionId`, so the container-die path uses timestamp-based ZSET members while `handleRuntimeSessionEnd` uses actual session IDs. The DB state gates mostly prevent double-counting, but it's not a hard guarantee.
+
+### LOW
+
+1. **Nomad path not wired**: `onAgentCrashed` is only passed to `DockerAgentManager`, not `NomadRuntimeAdapter`. Nomad deployments won't get Redis projection cleanup or crash-loop protection from the container-die path.
+
+2. **Stale crash keys if guard disabled**: `agent:crash:events:*` ZSET keys get `PEXPIRE` only on `recordCrashEvent` calls. If the guard is later disabled, `isCrashLaunchBlocked` doesn't set TTL, so old keys could linger.
