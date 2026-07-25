@@ -94,6 +94,9 @@ export async function isCrashLaunchBlocked(
     // Prune entries older than the window
     await redis.zremrangebyscore(key, '-inf', cutoff);
 
+    // Ensure the key self-cleans even if recordCrashEvent is never called again
+    await redis.pexpire(key, cfg.windowMs);
+
     // Count remaining entries
     const crashCount = await redis.zcard(key);
 

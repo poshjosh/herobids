@@ -2035,4 +2035,341 @@ describe('AgentSessionManager', () => {
       expect(redis._store.get('agent:sessions:count:agent-b')).toBe('1');
     });
   });
+
+  // ── Crash path & ephemeral cleanup ────────────────────────────────────────
+
+  function makeCrashRedisMock() {
+    const store = new Map<string, string>();
+    const sset = new Map<string, Set<string>>();
+    const zset = new Map<string, Map<string, number>>();
+    const pipelineMock = {
+      del: vi.fn().mockReturnThis(),
+      exec: vi.fn().mockResolvedValue([]),
+    };
+    return {
+      _store: store,
+      _sset: sset,
+      _zset: zset,
+      get: vi.fn(async (key: string) => store.get(key) ?? null),
+      set: vi.fn(async (key: string, value: string, ...args: string[]) => {
+        // Support SET key value PX ms NX
+        if (args.includes('NX') && store.has(key)) return null;
+        store.set(key, value);
+        return 'OK';
+      }),
+      del: vi.fn(async (...keys: string[]) => {
+        let deleted = 0;
+        for (const k of keys) {
+          if (store.delete(k)) deleted++;
+          if (sset.delete(k)) deleted++;
+          if (zset.delete(k)) deleted++;
+        }
+        return deleted;
+      }),
+      sadd: vi.fn(async (key: string, ...members: string[]) => {
+        if (!sset.has(key)) sset.set(key, new Set());
+        let added = 0;
+        for (const m of members) {
+          if (!sset.get(key)!.has(m)) { sset.get(key)!.add(m); added++; }
+        }
+        return added;
+      }),
+      srem: vi.fn(async (key: string, ...members: string[]) => {
+        const s = sset.get(key);
+        if (!s) return 0;
+        let removed = 0;
+        for (const m of members) {
+          if (s.delete(m)) removed++;
+        }
+        return removed;
+      }),
+      smembers: vi.fn(async (key: string) => [...(sset.get(key) ?? [])]),
+      sismember: vi.fn(async (key: string, member: string) => (sset.get(key)?.has(member) ? 1 : 0)),
+      incr: vi.fn(async (key: string) => {
+        const v = Number(store.get(key) ?? '0') + 1;
+        store.set(key, String(v));
+        return v;
+      }),
+      decr: vi.fn(async (key: string) => {
+        const v = Number(store.get(key) ?? '0') - 1;
+        store.set(key, String(v));
+        return v;
+      }),
+      pipeline: vi.fn(() => pipelineMock),
+      // Crash guard methods
+      zadd: vi.fn(async (key: string, score: number, member: string) => {
+        if (!zset.has(key)) zset.set(key, new Map());
+        zset.get(key)!.set(member, score);
+        return 1;
+      }),
+      zremrangebyscore: vi.fn(async (_key: string, _min: string, _max: string) => 0),
+      zcard: vi.fn(async (key: string) => zset.get(key)?.size ?? 0),
+      pexpire: vi.fn(async () => 1),
+      exec: vi.fn(async () => []),
+    } as any;
+  }
+
+  describe('handleAgentCrashed', () => {
+    it('clears session projection fully (srem + del count + del prefs)', async () => {
+      const redis = makeCrashRedisMock();
+      const { agentRepo } = buildManager();
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        { emitGuardrailTriggered: vi.fn(), emitInstanceStatus: vi.fn() } as any,
+        { stop: vi.fn(), cleanupSessionDocuments: vi.fn() } as any,
+        { budgets: TEST_RUNTIME_BUDGETS, crashLoopGuard: { enabled: true, maxCrashesInWindow: 3, windowMs: 300_000 } },
+        undefined as any,
+        undefined,
+        redis,
+      );
+
+      await manager.handleAgentCrashed('agent-1', 'sess-crash-1');
+
+      // Session projection cleared
+      expect(redis.srem).toHaveBeenCalledWith('agent:sessions:active', 'agent-1');
+      expect(redis.del).toHaveBeenCalledWith('agent:sessions:count:agent-1');
+      expect(redis.del).toHaveBeenCalledWith('agent:wake:prefs:agent-1');
+    });
+
+    it('calls ephemeral cleanup via pipeline', async () => {
+      const redis = makeCrashRedisMock();
+      const { agentRepo } = buildManager();
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        { emitGuardrailTriggered: vi.fn(), emitInstanceStatus: vi.fn() } as any,
+        { stop: vi.fn(), cleanupSessionDocuments: vi.fn() } as any,
+        { budgets: TEST_RUNTIME_BUDGETS, crashLoopGuard: { enabled: true, maxCrashesInWindow: 3, windowMs: 300_000 } },
+        undefined as any,
+        undefined,
+        redis,
+      );
+
+      await manager.handleAgentCrashed('agent-1', 'sess-crash-1');
+
+      // Cleanup calls pipeline
+      expect(redis.pipeline).toHaveBeenCalled();
+      const pipeline = redis.pipeline();
+      expect(pipeline.del).toHaveBeenCalledWith('agent:inbound:agent-1');
+      expect(pipeline.exec).toHaveBeenCalled();
+    });
+
+    it('records crash event when guard is enabled', async () => {
+      const redis = makeCrashRedisMock();
+      const { agentRepo } = buildManager();
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        { emitGuardrailTriggered: vi.fn(), emitInstanceStatus: vi.fn() } as any,
+        { stop: vi.fn(), cleanupSessionDocuments: vi.fn() } as any,
+        { budgets: TEST_RUNTIME_BUDGETS, crashLoopGuard: { enabled: true, maxCrashesInWindow: 3, windowMs: 300_000 } },
+        undefined as any,
+        undefined,
+        redis,
+      );
+
+      await manager.handleAgentCrashed('agent-1', 'sess-crash-1');
+
+      // ZADD called for crash event
+      expect(redis.zadd).toHaveBeenCalledWith(
+        'agent:crash:events:agent-1',
+        expect.any(Number),
+        'sess-crash-1',
+      );
+    });
+
+    it('fires crash-loop alert on block transition', async () => {
+      const redis = makeCrashRedisMock();
+      const { agentRepo } = buildManager();
+      const platformAlerts = { fireAlert: vi.fn().mockResolvedValue(undefined) };
+
+      // Simulate 3 crashes already → next one triggers block
+      redis.zcard.mockResolvedValue(3);
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        { emitGuardrailTriggered: vi.fn(), emitInstanceStatus: vi.fn() } as any,
+        { stop: vi.fn(), cleanupSessionDocuments: vi.fn() } as any,
+        { budgets: TEST_RUNTIME_BUDGETS, crashLoopGuard: { enabled: true, maxCrashesInWindow: 3, windowMs: 300_000 } },
+        undefined as any,
+        platformAlerts as any,
+        redis,
+      );
+
+      await manager.handleAgentCrashed('agent-1', 'sess-crash-1');
+
+      expect(platformAlerts.fireAlert).toHaveBeenCalledWith(
+        expect.stringContaining('crash_loop_blocked'),
+        expect.objectContaining({ agentId: 'agent-1' }),
+      );
+    });
+
+    it('does NOT fire alert if already alerted (SET NX returns null)', async () => {
+      const redis = makeCrashRedisMock();
+      const { agentRepo } = buildManager();
+      const platformAlerts = { fireAlert: vi.fn().mockResolvedValue(undefined) };
+
+      redis.zcard.mockResolvedValue(3);
+      // Simulate alert already sent: SET NX returns null
+      redis.set.mockResolvedValue(null);
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        { emitGuardrailTriggered: vi.fn(), emitInstanceStatus: vi.fn() } as any,
+        { stop: vi.fn(), cleanupSessionDocuments: vi.fn() } as any,
+        { budgets: TEST_RUNTIME_BUDGETS, crashLoopGuard: { enabled: true, maxCrashesInWindow: 3, windowMs: 300_000 } },
+        undefined as any,
+        platformAlerts as any,
+        redis,
+      );
+
+      await manager.handleAgentCrashed('agent-1', 'sess-crash-1');
+
+      expect(platformAlerts.fireAlert).not.toHaveBeenCalled();
+    });
+
+    it('handles Redis errors gracefully without throwing', async () => {
+      const redis = makeCrashRedisMock();
+      const { agentRepo } = buildManager();
+      redis.srem.mockRejectedValueOnce(new Error('Redis gone'));
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        { emitGuardrailTriggered: vi.fn(), emitInstanceStatus: vi.fn() } as any,
+        { stop: vi.fn(), cleanupSessionDocuments: vi.fn() } as any,
+        { budgets: TEST_RUNTIME_BUDGETS },
+        undefined as any,
+        undefined,
+        redis,
+      );
+
+      await expect(manager.handleAgentCrashed('agent-1')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('handleStartTimeout — ephemeral cleanup', () => {
+    it('calls ephemeral cleanup without changing session count', async () => {
+      const redis = makeCrashRedisMock();
+      const { agentRepo } = buildManager();
+
+      (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'sess-timeout',
+        agentId: 'agent-1',
+        status: 'starting',
+      });
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'agent-1',
+        userId: 'user-1',
+      });
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        { emitGuardrailTriggered: vi.fn(), emitInstanceStatus: vi.fn() } as any,
+        { stop: vi.fn(), cleanupSessionDocuments: vi.fn() } as any,
+        { budgets: TEST_RUNTIME_BUDGETS },
+        undefined as any,
+        undefined,
+        redis,
+      );
+
+      await manager.handleStartTimeout('sess-timeout');
+
+      // Ephemeral cleanup called
+      expect(redis.pipeline).toHaveBeenCalled();
+      const pipeline = redis.pipeline();
+      expect(pipeline.del).toHaveBeenCalledWith('agent:inbound:agent-1');
+
+      // Session count NOT decremented
+      const decrCalls = redis.decr.mock.calls.filter(
+        (c: string[]) => c[0] === 'agent:sessions:count:agent-1',
+      );
+      expect(decrCalls).toHaveLength(0);
+    });
+  });
+
+  describe('handleRuntimeSessionEnd — crash recording', () => {
+    it('records crash event when status is crashed', async () => {
+      const redis = makeCrashRedisMock();
+      const { agentRepo } = buildManager();
+
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'agent-1',
+        userId: 'user-1',
+      });
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        { emitGuardrailTriggered: vi.fn(), emitInstanceStatus: vi.fn() } as any,
+        { stop: vi.fn(), cleanupSessionDocuments: vi.fn() } as any,
+        { budgets: TEST_RUNTIME_BUDGETS, crashLoopGuard: { enabled: true, maxCrashesInWindow: 3, windowMs: 300_000 } },
+        undefined as any,
+        undefined,
+        redis,
+      );
+
+      await manager.handleRuntimeSessionEnd('sess-crash-1', 'agent-1', 'crashed');
+
+      // ZADD called for crash event with sessionId
+      expect(redis.zadd).toHaveBeenCalledWith(
+        'agent:crash:events:agent-1',
+        expect.any(Number),
+        'sess-crash-1',
+      );
+    });
+
+    it('does NOT record crash when status is stopped (graceful end)', async () => {
+      const redis = makeCrashRedisMock();
+      const { agentRepo } = buildManager();
+
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'agent-1',
+        userId: 'user-1',
+      });
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        { emitGuardrailTriggered: vi.fn(), emitInstanceStatus: vi.fn() } as any,
+        { stop: vi.fn(), cleanupSessionDocuments: vi.fn() } as any,
+        { budgets: TEST_RUNTIME_BUDGETS, crashLoopGuard: { enabled: true, maxCrashesInWindow: 3, windowMs: 300_000 } },
+        undefined as any,
+        undefined,
+        redis,
+      );
+
+      await manager.handleRuntimeSessionEnd('sess-stop-1', 'agent-1', 'stopped');
+
+      // No ZADD for graceful stop
+      expect(redis.zadd).not.toHaveBeenCalled();
+    });
+
+    it('fires crash-loop alert on block transition', async () => {
+      const redis = makeCrashRedisMock();
+      const { agentRepo } = buildManager();
+      const platformAlerts = { fireAlert: vi.fn().mockResolvedValue(undefined) };
+
+      redis.zcard.mockResolvedValue(3);
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'agent-1',
+        userId: 'user-1',
+      });
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        { emitGuardrailTriggered: vi.fn(), emitInstanceStatus: vi.fn() } as any,
+        { stop: vi.fn(), cleanupSessionDocuments: vi.fn() } as any,
+        { budgets: TEST_RUNTIME_BUDGETS, crashLoopGuard: { enabled: true, maxCrashesInWindow: 3, windowMs: 300_000 } },
+        undefined as any,
+        platformAlerts as any,
+        redis,
+      );
+
+      await manager.handleRuntimeSessionEnd('sess-crash-1', 'agent-1', 'crashed');
+
+      expect(platformAlerts.fireAlert).toHaveBeenCalledWith(
+        expect.stringContaining('crash_loop_blocked'),
+        expect.objectContaining({ agentId: 'agent-1' }),
+      );
+    });
+  });
 });

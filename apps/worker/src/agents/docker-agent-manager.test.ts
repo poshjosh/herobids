@@ -609,7 +609,7 @@ describe('DockerAgentManager — onAgentCrashed callback', () => {
 
     expect(agentRepo.retireActiveSessionsWithStatus).toHaveBeenCalledWith('agent-001', 'crashed', expect.any(Date));
     expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-001', { status: 'crashed' });
-    expect(onAgentCrashed).toHaveBeenCalledWith('agent-001');
+    expect(onAgentCrashed).toHaveBeenCalledWith('agent-001', 'sess-001');
   });
 
   it('does not call onAgentCrashed when agent was already stopped (voluntary exit)', async () => {

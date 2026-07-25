@@ -525,9 +525,9 @@ const agentRuntimeLauncher = (() => {
         ...(appConfig.marketData
           ? { marketDataConfigJson: JSON.stringify(appConfig.marketData) }
           : {}),
-        onAgentCrashed: async (agentId) => {
+        onAgentCrashed: async (agentId, sessionId?) => {
           await cascadeStopAgentBots(agentId);
-          await sessionManager.handleAgentCrashed(agentId);
+          await sessionManager.handleAgentCrashed(agentId, sessionId);
         },
       },
       agentRepo,

@@ -184,23 +184,23 @@ await redis.pexpire(key, cfg.windowMs);
 
 ## 5. Implementation steps
 
-### Step 1 — Unit tests
-- [ ] Create `apps/worker/src/agents/agent-ephemeral-redis-cleanup.test.ts` (5 test cases).
-- [ ] Create `apps/worker/src/agents/agent-crash-loop-guard.test.ts` (18 test cases across 3 functions).
-- [ ] Extend `apps/worker/src/agents/agent-session-manager.test.ts` (9 test cases).
+### Step 1 — Unit tests ✅ DONE
+- [x] Create `apps/worker/src/agents/agent-ephemeral-redis-cleanup.test.ts` (5 test cases).
+- [x] Create `apps/worker/src/agents/agent-crash-loop-guard.test.ts` (22 test cases across 3 functions).
+- [x] Extend `apps/worker/src/agents/agent-session-manager.test.ts` (11 new test cases).
 
-### Step 2 — SessionId dedup
-- [ ] Update `docker-agent-manager.ts` to pass `sessionId` to `onAgentCrashed`.
-- [ ] Update `index.ts` `onAgentCrashed` callback signature to accept and forward `sessionId`.
+### Step 2 — SessionId dedup ✅ DONE
+- [x] Update `docker-agent-manager.ts` to pass `sessionId` to `onAgentCrashed`.
+- [x] Update `index.ts` `onAgentCrashed` callback signature to accept and forward `sessionId`.
 
-### Step 3 — Stale key cleanup
-- [ ] Add `pexpire` call in `isCrashLaunchBlocked`.
-- [ ] Update unit test to verify.
+### Step 3 — Stale key cleanup ✅ DONE
+- [x] Add `pexpire` call in `isCrashLaunchBlocked`.
+- [x] Update unit test to verify.
 
-### Step 4 — Validate
-- [ ] `pnpm lint` passes.
-- [ ] `pnpm build` passes.
-- [ ] `pnpm --filter @herobids/worker run test` passes (all existing + new tests).
+### Step 4 — Validate ✅ DONE
+- [x] `pnpm lint` passes.
+- [x] `pnpm build` passes.
+- [x] `pnpm --filter @herobids/worker run test` passes (2519 tests, all new tests pass).
 
 ---
 

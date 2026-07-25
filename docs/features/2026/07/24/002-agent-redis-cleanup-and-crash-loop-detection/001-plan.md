@@ -477,14 +477,14 @@ AGENT_ID="70b61677-ae13-4e49-ba0f-d47d6eead4ee"
 
 ## 11. Outstanding Issues (post-implementation)
 
-### MEDIUM
+### ✅ RESOLVED
 
-1. **Unit tests not yet written** (Steps 1 & 2): `cleanupEphemeralAgentRedisState` and `recordCrashEvent`/`isCrashLaunchBlocked` unit tests specified in §5.1 of the plan are pending.
+1. ~~**Unit tests not yet written**~~ — Added in [002-followup-plan.md](./002-followup-plan.md): `agent-ephemeral-redis-cleanup.test.ts` (5 cases), `agent-crash-loop-guard.test.ts` (22 cases), `agent-session-manager.test.ts` extended (+11 cases).
 
-2. **SessionId dedup from container-die path**: `onAgentCrashed` callback doesn't pass `sessionId`, so the container-die path uses timestamp-based ZSET members while `handleRuntimeSessionEnd` uses actual session IDs. The DB state gates mostly prevent double-counting, but it's not a hard guarantee.
+2. ~~**SessionId dedup from container-die path**~~ — Fixed: `onAgentCrashed` callback now accepts optional `sessionId` and `DockerAgentManager.onContainerDie` passes it through.
 
-### LOW
+3. ~~**Stale crash keys if guard disabled**~~ — Fixed: `isCrashLaunchBlocked` now calls `pexpire` on the ZSET key to ensure self-cleanup even if `recordCrashEvent` is never called again.
 
-1. **Nomad path not wired**: `onAgentCrashed` is only passed to `DockerAgentManager`, not `NomadRuntimeAdapter`. Nomad deployments won't get Redis projection cleanup or crash-loop protection from the container-die path.
+### LOW (remaining)
 
-2. **Stale crash keys if guard disabled**: `agent:crash:events:*` ZSET keys get `PEXPIRE` only on `recordCrashEvent` calls. If the guard is later disabled, `isCrashLaunchBlocked` doesn't set TTL, so old keys could linger.
+1. **Nomad path not wired**: `onAgentCrashed` is only passed to `DockerAgentManager`, not `NomadRuntimeAdapter`. Nomad deployments won't get Redis projection cleanup or crash-loop protection from the container-die path. Tracked for when Nomad agent support goes to production.

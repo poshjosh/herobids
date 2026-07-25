@@ -65,7 +65,7 @@ export interface DockerAgentManagerConfig {
   /** Max number of processes (PIDs) inside the container. Default: 10 */
   maxProcesses?: number;
   /** Called after a container crash is confirmed and the DB is updated. */
-  onAgentCrashed?: (agentId: string) => Promise<void>;
+  onAgentCrashed?: (agentId: string, sessionId?: string) => Promise<void>;
 }
 
 export interface DockerContainerSpec {
@@ -134,7 +134,7 @@ export class DockerAgentManager {
   private readonly cpuShares: number;
   private readonly tempStorageMb: number;
   private readonly maxProcesses: number;
-  private readonly onAgentCrashed?: (agentId: string) => Promise<void>;
+  private readonly onAgentCrashed?: (agentId: string, sessionId?: string) => Promise<void>;
   private readonly terminationListeners: DockerTerminationListener[] = [];
 
   private eventStreamAbort: AbortController | null = null;
@@ -539,7 +539,7 @@ export class DockerAgentManager {
       });
 
       try {
-        await this.onAgentCrashed?.(agentId);
+        await this.onAgentCrashed?.(agentId, sessionId);
       } catch (err) {
         logger.error({ err, agentId }, 'onAgentCrashed callback failed');
       }
