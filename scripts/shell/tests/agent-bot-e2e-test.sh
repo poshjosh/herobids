@@ -38,8 +38,10 @@ done
 echo "[agent-bot-e2e] Running agent-broker LLM inheritance tests..."
 cd "$REPO_ROOT"
 
-# Run only the LLM inheritance test suite
-pnpm test -- --run -t "manage_bot create_and_start.*LLM inheritance" 2>&1 | tail -20
+# Run only the LLM inheritance test suite, scoped to the single test file
+# so we don't load integration/e2e test files that need a running stack.
+pnpm vitest run apps/worker/src/agents/agent-broker.test.ts \
+  -t "manage_bot create_and_start.*LLM inheritance" 2>&1 | tail -20
 
 EXIT_CODE=$?
 if [[ $EXIT_CODE -eq 0 ]]; then

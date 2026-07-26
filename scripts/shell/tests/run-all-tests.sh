@@ -159,7 +159,7 @@ fi
 # Runs the focused vitest suite (4 tests) to keep feedback fast.
 
 run_tier "Agent-bot LLM inheritance" \
-  bash -c "cd '${ROOT}' && pnpm test -- --run -t 'manage_bot create_and_start.*LLM inheritance'"
+  bash -c "cd '${ROOT}' && pnpm vitest run apps/worker/src/agents/agent-broker.test.ts -t 'manage_bot create_and_start.*LLM inheritance'"
 
 # ─── Step 2: Ensure postgres + redis are up ──────────────────────────────────
 
