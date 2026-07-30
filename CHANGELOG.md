@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.36 - 2026-07-30
+
 ### Added
 
 - **Preset review tools for trading agents:** `assess_strategy_preset` and `change_strategy_preset` added to the `trading` skill's `requiredTools`, enabling hybrid agents to act on `assessment_review` wake advice.
