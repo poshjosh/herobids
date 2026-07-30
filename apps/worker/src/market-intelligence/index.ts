@@ -10,3 +10,4 @@ export { AssessmentRequestService, type AssessmentRequestOutcome, type Assessmen
 export { AssessmentIdentityResolverImpl, type AssessmentIdentityResolverDeps } from './assessment-identity-resolver.js';
 export { PresetTransitionService, type PresetTransitionServiceDeps } from './preset-transition-service.js';
 export { resolveAuthoritativeBinding, materializeEffectiveConfig, mappingToTechnicalConfig, type AuthoritativeBinding, type MaterializeConfigError } from './binding-resolver.js';
+export { resolveActivePresetState } from './resolve-active-preset.js';
