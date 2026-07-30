@@ -3,14 +3,11 @@
 **Status:** Ready for implementation
 **Scope:** Close the real remaining gaps in the **active** preset-review pipeline for `capabilityMode = 'hybrid'` agents, surfaced by the 2026-07-29 staging evaluation.
 
-> **This is the only plan an implementing agent should follow.** It supersedes `001-plan.md` and `002-plan-revised.md` in full. Where they conflict with this document, this document wins. Every claim below has been verified against the current codebase; file/line anchors are approximate and will drift as edits land — locate by symbol name, not line number.
-
 ## Companion Documents
 
 - [002-platform-preset-assessment-and-transition/001-plan.md](../../07/18/002-platform-preset-assessment-and-transition/001-plan.md) — upstream feature architecture
 - [003-plan-amendment-per-symbol-on-demand-assessment](../../07/18/002-platform-preset-assessment-and-transition/003-plan-amendment-per-symbol-on-demand-assessment.md) — per-symbol on-demand supersession
 - [005-implementation-checklist-per-symbol-on-demand](../../07/18/002-platform-preset-assessment-and-transition/005-implementation-checklist-per-symbol-on-demand.md) — **this plan updates §7.0** (see Change 6)
-- [001-plan.md](./001-plan.md), [002-plan-revised.md](./002-plan-revised.md) — **both superseded by this document**
 
 ---
 
