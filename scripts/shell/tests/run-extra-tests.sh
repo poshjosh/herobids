@@ -187,6 +187,7 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   tier_enabled 5 && echo -e "  ${BLUE}Tier 5${RESET} (full stack + venue)  → agent-trade-test.sh"
   tier_enabled 5 && echo -e "                                          → bot-trade-test.sh"
   tier_enabled 5 && echo -e "                                          → platform-preset-assessment-test.sh"
+  tier_enabled 5 && echo -e "                                          → preset-review-gap-closure-test.sh"
   tier_enabled 5 && echo -e "                                          → scanner-provider-smoke-test.sh"
   tier_enabled 6 && echo -e "  ${BLUE}Tier 6${RESET} (external infra)     → caddy-routing-smoke-test.sh"
   tier_enabled 6 && echo -e "                                          → test-telegram-messaging.sh"
@@ -486,6 +487,9 @@ if tier_enabled 5; then
 
     run_script "platform-preset-assessment (operator + agent config gating)" \
       "${TESTS_DIR}/platform-preset-assessment-test.sh"
+
+    run_script "preset-review-gap-closure (hybrid preset resolution + intelligence gating)" \
+      "${TESTS_DIR}/preset-review-gap-closure-test.sh"
 
     run_script "scanner-provider-smoke (BTC+ETH candle scan)" \
       "${TESTS_DIR}/scanner-provider-smoke-test.sh"
