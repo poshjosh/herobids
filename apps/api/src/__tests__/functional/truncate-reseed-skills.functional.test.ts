@@ -120,6 +120,8 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
       'find_instrument',
       'get_account_summary',
       'resolve_watch',
+      'assess_strategy_preset',
+      'change_strategy_preset',
     ]);
     expect(new Set(tools)).toEqual(expectedTools);
 

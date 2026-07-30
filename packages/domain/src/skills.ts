@@ -129,7 +129,7 @@ To decide, you can:
 - Use \`find_instrument\` to resolve an instrumentId by symbol, name, or pair before calling submit_decision. Filter by venue (e.g. venue="jupiter" for Solana, venue="hyperliquid" for perpetuals).
 - Use \`submit_decision\` to submit a trade intent for a specific instrument. Only call this after completing the Observe and Assess phases above.
 - Use \`adjust_risk_limits\` to adjust mutable (default-derived) risk limits within operator ceilings.`,
-  requiredTools: ['get_market_overview', 'check_regime', 'get_price', 'get_funding_rates', 'search_tokens', 'discover_tokens', 'get_risk_limits', 'get_account_summary', 'get_analytics', 'list_positions', 'watch_token', 'list_watches', 'remove_watch', 'resolve_watch', 'check_watches', 'find_instrument', 'submit_decision', 'adjust_risk_limits'],
+  requiredTools: ['get_market_overview', 'check_regime', 'get_price', 'get_funding_rates', 'search_tokens', 'discover_tokens', 'get_risk_limits', 'get_account_summary', 'get_analytics', 'list_positions', 'watch_token', 'list_watches', 'remove_watch', 'resolve_watch', 'check_watches', 'find_instrument', 'submit_decision', 'adjust_risk_limits', 'assess_strategy_preset', 'change_strategy_preset'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
     trading: {
