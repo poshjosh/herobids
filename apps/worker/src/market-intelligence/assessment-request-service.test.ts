@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AssessmentRequestService } from './assessment-request-service.js';
-import { UsageBillingRepository } from '@herobids/db';
+import { UsageBillingRepository, reviewAdvice } from '@herobids/db';
 import { PlatformAssessor } from './platform-assessor.js';
 import type { PlatformAssessorConfig } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
@@ -110,6 +110,89 @@ function makeOperatorConfig(overrides?: Partial<PlatformAssessorConfig>): Platfo
     maxInstrumentsPerRequest: 3,
     ...overrides,
   };
+}
+
+// ── Spied DB mock for markAdviceActedOn tests ─────────────────────────────
+
+/**
+ * Creates a DB mock with spies on the update chain (update → set → where).
+ * Exposes _updateSpy, _setSpy, _whereSpy so tests can verify the arguments
+ * passed to each Drizzle builder method.
+ */
+function makeSpiedDb(selectQueue: unknown[]) {
+  const baseDb = makeQueueDb(selectQueue);
+  const setSpy = vi.fn();
+  const whereSpy = vi.fn();
+  const updateSpy = vi.fn();
+
+  return {
+    db: {
+      ...baseDb,
+      update: updateSpy.mockImplementation(() => ({
+        set: setSpy.mockImplementation(() => ({
+          where: whereSpy.mockImplementation(() => Promise.resolve()),
+        })),
+      })),
+    },
+    updateSpy,
+    setSpy,
+    whereSpy,
+  };
+}
+
+/**
+ * Extract a human-readable string from a Drizzle SQL condition by walking
+ * its queryChunks. This is more stable than JSON.stringify because it
+ * explicitly handles the known Drizzle internal structure rather than
+ * relying on JSON serialization quirks.
+ *
+ * Note: Drizzle 0.44 SQL objects have queryChunks but no toSQL() method.
+ */
+function extractConditionText(condition: unknown): string {
+  const parts: string[] = [];
+
+  function walk(chunk: unknown): void {
+    if (chunk === null || chunk === undefined) return;
+
+    if (typeof chunk === 'string') {
+      parts.push(chunk);
+      return;
+    }
+
+    if (typeof chunk === 'number') {
+      parts.push(String(chunk));
+      return;
+    }
+
+    if (Array.isArray(chunk)) {
+      for (const item of chunk) walk(item);
+      return;
+    }
+
+    if (typeof chunk === 'object') {
+      const obj = chunk as Record<string, unknown>;
+      // Column reference: { name: 'agent_id', table: {...} }
+      if (typeof obj.name === 'string') {
+        parts.push(obj.name);
+      }
+      // Text fragment: { value: [' = '] } — Drizzle SQL chunk
+      // Param value: { value: 'BTC', brand: ... } — Drizzle parameter wrapper
+      if (typeof obj.value === 'string' || typeof obj.value === 'number') {
+        parts.push(String(obj.value));
+      } else if (obj.value instanceof Date) {
+        parts.push(obj.value.toISOString());
+      } else if (Array.isArray(obj.value)) {
+        for (const v of obj.value) walk(v);
+      }
+      // Nested SQL: queryChunks
+      if (Array.isArray(obj.queryChunks)) {
+        for (const qc of obj.queryChunks) walk(qc);
+      }
+    }
+  }
+
+  walk(condition);
+  return parts.join('');
 }
 
 // ── Helper: standard select queue for "agent found, no cooldown, no
@@ -553,6 +636,222 @@ describe('AssessmentRequestService', () => {
 
       expect(result.results).toHaveLength(0);
       expect(result.requestedCount).toBe(0);
+    });
+  });
+
+  // ── markAdviceActedOn (assessment_requested_at) ─────────────────────
+
+  describe('markAdviceActedOn (assessment_requested_at)', () => {
+    /** Minimal select queue: agent found + cooldown hit → exits after step 3b fire-and-forget. */
+    function actedOnSelectQueue() {
+      return [
+        [{ userId: 'user-1', unifiedConfig: { platformAssessment: { enabled: true } } }],
+        [{ id: 'prev-req-1', requestedAt: new Date() }], // cooldown hit
+      ];
+    }
+
+    it('correlates advice for orderbook/perp instruments using symbol match', async () => {
+      const { db, updateSpy, setSpy, whereSpy } = makeSpiedDb(actedOnSelectQueue());
+
+      const service = new AssessmentRequestService(
+        db as any, billingRepo, makeOperatorConfig(), assessor,
+      );
+
+      await service.requestAssessment({
+        agentId: 'agent-1',
+        symbol: 'BTC',
+        venueFamily: 'hyperliquid',
+        instrumentKind: 'orderbook',
+        styleTier: 'standard',
+      });
+
+      // markAdviceActedOn should have been called (update on reviewAdvice table)
+      expect(updateSpy).toHaveBeenCalled();
+      expect(updateSpy.mock.calls[0]?.[0]).toBe(reviewAdvice);
+
+      // .set() should only touch assessmentRequestedAt
+      const setArg = setSpy.mock.calls[0]?.[0];
+      expect(setArg).toBeDefined();
+      expect(setArg).toHaveProperty('assessmentRequestedAt');
+      expect(setArg.assessmentRequestedAt).toBeInstanceOf(Date);
+
+      // WHERE conditions use symbol (orderbook path) — verify the
+      // actual symbol VALUE appears as a WHERE parameter
+      const whereStr = extractConditionText(whereSpy.mock.calls[0]?.[0]);
+      expect(whereStr).toContain('BTC');
+      // The equality operator confirms a column = value condition
+      expect(whereStr).toContain(' = ');
+      // WHERE must include the agent's ID
+      expect(whereStr).toContain('agent_id');
+      expect(whereStr).toContain('agent-1');
+    });
+
+    it('correlates advice for swap/dex instruments using network+address match', async () => {
+      const { db, updateSpy, setSpy, whereSpy } = makeSpiedDb(actedOnSelectQueue());
+
+      const service = new AssessmentRequestService(
+        db as any, billingRepo, makeOperatorConfig(), assessor,
+      );
+
+      await service.requestAssessment({
+        agentId: 'agent-1',
+        symbol: 'USDC',
+        venueFamily: 'jupiter',
+        instrumentKind: 'swap',
+        styleTier: 'standard',
+        tokenResolutions: new Map([
+          ['USDC', { network: 'solana', address: '0xUSDC123' }],
+        ]),
+      });
+
+      // markAdviceActedOn should have been called (update on reviewAdvice table)
+      expect(updateSpy).toHaveBeenCalled();
+      expect(updateSpy.mock.calls[0]?.[0]).toBe(reviewAdvice);
+
+      // .set() should only touch assessmentRequestedAt
+      const setArg = setSpy.mock.calls[0]?.[0];
+      expect(setArg).toBeDefined();
+      expect(setArg).toHaveProperty('assessmentRequestedAt');
+
+      // WHERE conditions use network+address (swap path) — verify
+      // the actual network / address VALUES appear as WHERE parameters
+      const whereStr = extractConditionText(whereSpy.mock.calls[0]?.[0]);
+      expect(whereStr).toContain('solana');
+      expect(whereStr).toContain('0xUSDC123');
+      // The user-facing symbol column is NOT in the WHERE — identity
+      // matching for swap uses network+address, not symbol
+      expect(whereStr).not.toContain('symbol =');
+    });
+
+    it('does NOT correlate expired advice', async () => {
+      const { db, updateSpy, whereSpy } = makeSpiedDb(actedOnSelectQueue());
+
+      const service = new AssessmentRequestService(
+        db as any, billingRepo, makeOperatorConfig(), assessor,
+      );
+
+      await service.requestAssessment({
+        agentId: 'agent-1',
+        symbol: 'BTC',
+        venueFamily: 'hyperliquid',
+        instrumentKind: 'orderbook',
+      });
+
+      expect(updateSpy).toHaveBeenCalled();
+
+      // WHERE must include expires_at > now() to exclude expired rows.
+      // gt(expiresAt, now) emits a " > " fragment and an ISO date value.
+      const whereStr = extractConditionText(whereSpy.mock.calls[0]?.[0]);
+      expect(whereStr).toContain(' > ');
+      expect(whereStr).toMatch(/20\d{2}-\d{2}-\d{2}T/); // ISO date for `now`
+    });
+
+    it('is idempotent — only matches rows without prior assessmentRequestedAt', async () => {
+      const { db, updateSpy, whereSpy } = makeSpiedDb(actedOnSelectQueue());
+
+      const service = new AssessmentRequestService(
+        db as any, billingRepo, makeOperatorConfig(), assessor,
+      );
+
+      await service.requestAssessment({
+        agentId: 'agent-1',
+        symbol: 'BTC',
+        venueFamily: 'hyperliquid',
+        instrumentKind: 'orderbook',
+      });
+
+      expect(updateSpy).toHaveBeenCalled();
+
+      // WHERE must include assessment_requested_at IS NULL for idempotency.
+      // isNull() emits " is null" in Drizzle's parameterized SQL.
+      const whereStr = extractConditionText(whereSpy.mock.calls[0]?.[0]);
+      expect(whereStr).toContain('is null');
+    });
+
+    it('does NOT correlate non-advised rows — only matches outcome advised', async () => {
+      const { db, updateSpy, whereSpy } = makeSpiedDb(actedOnSelectQueue());
+
+      const service = new AssessmentRequestService(
+        db as any, billingRepo, makeOperatorConfig(), assessor,
+      );
+
+      await service.requestAssessment({
+        agentId: 'agent-1',
+        symbol: 'BTC',
+        venueFamily: 'hyperliquid',
+        instrumentKind: 'orderbook',
+      });
+
+      expect(updateSpy).toHaveBeenCalled();
+
+      // WHERE must include outcome = 'advised' to exclude non-advised rows.
+      // The literal value "advised" appears as a WHERE parameter.
+      const whereStr = extractConditionText(whereSpy.mock.calls[0]?.[0]);
+      expect(whereStr).toContain('advised');
+    });
+
+    it('only matches rows with consumedAt IS NOT NULL', async () => {
+      const { db, updateSpy, whereSpy } = makeSpiedDb(actedOnSelectQueue());
+
+      const service = new AssessmentRequestService(
+        db as any, billingRepo, makeOperatorConfig(), assessor,
+      );
+
+      await service.requestAssessment({
+        agentId: 'agent-1',
+        symbol: 'BTC',
+        venueFamily: 'hyperliquid',
+        instrumentKind: 'orderbook',
+      });
+
+      expect(updateSpy).toHaveBeenCalled();
+
+      // WHERE must include consumed_at IS NOT NULL to exclude rows
+      // that were never consumed (delivered to the agent).
+      // The raw sql template preserves "IS NOT NULL" literally.
+      const whereStr = extractConditionText(whereSpy.mock.calls[0]?.[0]);
+      expect(whereStr).toContain('IS NOT NULL');
+    });
+
+    it('does not modify consumedAt — only sets assessmentRequestedAt', async () => {
+      const { db, updateSpy, setSpy } = makeSpiedDb(actedOnSelectQueue());
+
+      const service = new AssessmentRequestService(
+        db as any, billingRepo, makeOperatorConfig(), assessor,
+      );
+
+      await service.requestAssessment({
+        agentId: 'agent-1',
+        symbol: 'BTC',
+        venueFamily: 'hyperliquid',
+        instrumentKind: 'orderbook',
+      });
+
+      expect(updateSpy).toHaveBeenCalled();
+
+      // .set() must ONLY contain assessmentRequestedAt — never consumedAt
+      const setArg = setSpy.mock.calls[0]?.[0];
+      expect(setArg).toBeDefined();
+      expect(Object.keys(setArg as Record<string, unknown>)).toEqual(['assessmentRequestedAt']);
+      expect(setArg).not.toHaveProperty('consumedAt');
+    });
+
+    it('does NOT call markAdviceActedOn when identity is unresolved', async () => {
+      const { db, updateSpy } = makeSpiedDb([]);
+
+      const service = new AssessmentRequestService(
+        db as any, billingRepo, makeOperatorConfig(), assessor,
+      );
+
+      await service.requestAssessment({
+        agentId: 'agent-1',
+        symbol: '', // empty symbol → identity_unresolved
+        venueFamily: 'hyperliquid',
+        instrumentKind: 'orderbook',
+      });
+
+      // markAdviceActedOn should NOT have been called — identity was unresolved
+      expect(updateSpy).not.toHaveBeenCalled();
     });
   });
 });
