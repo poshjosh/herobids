@@ -108,6 +108,63 @@ describe('review scheduler start/stop gating (onSessionActive / onSessionStopped
  * used by startReviewSchedulerForAgent()/stopReviewSchedulerForAgent() to guarantee
  * at most one active scheduler per agent, and clean removal on session stop.
  */
+/**
+ * Mirrors the capability-mode gate at the top of startReviewSchedulerForAgent():
+ *   if (unifiedConfig['capabilityMode'] !== 'hybrid') return;
+ *
+ * This gate was added to prevent intelligence agents from running the
+ * automatic review scheduler, since preset review is only meaningful
+ * for hybrid agents.
+ *
+ * SOURCE-MIRROR: mirrors index.ts startReviewSchedulerForAgent() capabilityMode gate
+ */
+function resolveCapabilityModeGate(
+  agent: MirroredAgentRow,
+): { shouldStart: boolean; reason?: 'not_hybrid' } {
+  const unifiedConfig = agent.unifiedConfig ?? {};
+  if (unifiedConfig['capabilityMode'] !== 'hybrid') {
+    return { shouldStart: false, reason: 'not_hybrid' };
+  }
+  return { shouldStart: true };
+}
+
+describe('review scheduler capability-mode gating', () => {
+  it('startReviewSchedulerForAgent returns early for non-hybrid (intelligence) agent', () => {
+    const agent = makeAgent({
+      unifiedConfig: {
+        platformAssessment: { enabled: true },
+        capabilityMode: 'intelligence',
+      },
+    });
+
+    const result = resolveCapabilityModeGate(agent);
+    expect(result).toEqual({ shouldStart: false, reason: 'not_hybrid' });
+  });
+
+  it('startReviewSchedulerForAgent starts for hybrid agent', () => {
+    const agent = makeAgent({
+      unifiedConfig: {
+        platformAssessment: { enabled: true },
+        capabilityMode: 'hybrid',
+      },
+    });
+
+    const result = resolveCapabilityModeGate(agent);
+    expect(result).toEqual({ shouldStart: true });
+  });
+
+  it('returns early when capabilityMode is missing (treats as non-hybrid)', () => {
+    const agent = makeAgent({
+      unifiedConfig: {
+        platformAssessment: { enabled: true },
+      },
+    });
+
+    const result = resolveCapabilityModeGate(agent);
+    expect(result).toEqual({ shouldStart: false, reason: 'not_hybrid' });
+  });
+});
+
 describe('review scheduler registry lifecycle (Map-based, mirrors index.ts)', () => {
   it('registers exactly one scheduler per agent and removes it on stop', () => {
     const registry = new Map<string, { stopped: boolean }>();
@@ -132,5 +189,63 @@ describe('review scheduler registry lifecycle (Map-based, mirrors index.ts)', ()
 
     stop('agent-1'); // stopping again is a no-op, not a throw
     expect(registry.size).toBe(0);
+  });
+});
+
+/**
+ * Mirrors the ManualReviewRunnerFactory defense-in-depth gate from index.ts:
+ *
+ *   if (unifiedConfig['capabilityMode'] !== 'hybrid') {
+ *     return err({ code: 'review.capability_mode_unsupported', ... });
+ *   }
+ *
+ * This is a safety net — the API already rejects non-hybrid agents, but if a
+ *
+ * SOURCE-MIRROR: mirrors index.ts ManualReviewRunnerFactory capabilityMode gate
+ * job somehow reaches the worker for a non-hybrid agent (stale enqueue, race),
+ * the factory rejects cleanly so the run terminates instead of executing
+ * against a non-existent preset.
+ */
+function resolveManualReviewFactoryCapabilityGate(
+  unifiedConfig: Record<string, unknown> | null,
+): { ok: false; error: { code: string } } | { ok: true } {
+  const uc = (unifiedConfig ?? {}) as Record<string, unknown>;
+  if (uc['capabilityMode'] !== 'hybrid') {
+    return { ok: false, error: { code: 'review.capability_mode_unsupported' } };
+  }
+  return { ok: true };
+}
+
+describe('ManualReviewRunnerFactory — defense-in-depth capability gate', () => {
+  it('returns review.capability_mode_unsupported for non-hybrid agent', () => {
+    const result = resolveManualReviewFactoryCapabilityGate({
+      capabilityMode: 'intelligence',
+      platformAssessment: { enabled: true },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('review.capability_mode_unsupported');
+    }
+  });
+
+  it('passes capability gate for hybrid agent', () => {
+    const result = resolveManualReviewFactoryCapabilityGate({
+      capabilityMode: 'hybrid',
+      platformAssessment: { enabled: true },
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('treats missing capabilityMode as not-hybrid (rejects)', () => {
+    const result = resolveManualReviewFactoryCapabilityGate({
+      platformAssessment: { enabled: true },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('review.capability_mode_unsupported');
+    }
   });
 });

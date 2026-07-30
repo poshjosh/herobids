@@ -180,4 +180,23 @@ describe('buildAssessmentReviewMessage', () => {
     expect(msg).toContain('SOL');
     expect(msg).not.toContain('#2'); // no second candidate
   });
+
+  // ── Wake routing regression guards ───────────────────────────────────
+
+  it('assessment_review wake message points at assess_strategy_preset, not preset_review', () => {
+    const msg = buildAssessmentReviewMessage(makeScannerWakeContext());
+    // The active wake message must instruct the agent to call assess_strategy_preset
+    expect(msg).toContain('assess_strategy_preset');
+    // It must NOT mention the deprecated preset_review scanner kind
+    expect(msg).not.toContain('preset_review');
+  });
+
+  it('assessment_review wake message instructs the agent on the full assessment flow', () => {
+    const msg = buildAssessmentReviewMessage(makeScannerWakeContext());
+    // The message should guide the agent through the complete flow:
+    // assess → review results → change
+    expect(msg).toContain('Call `assess_strategy_preset`');
+    expect(msg).toContain('call `change_strategy_preset`');
+    expect(msg).toContain('assessmentArtifactId');
+  });
 });

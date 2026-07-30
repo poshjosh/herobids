@@ -99,20 +99,22 @@ export async function platformAssessmentReviewRoutes(
         });
       }
 
+      // Gate: preset review is only meaningful for hybrid agents.
+      // This must fire BEFORE resource checks (e.g. review_already_in_progress)
+      // so non-hybrid agents get a consistent 403 regardless of other state.
+      if (unifiedConfig['capabilityMode'] !== 'hybrid') {
+        return reply.status(403).send({
+          error: 'capability_mode_unsupported',
+          message: 'Strategy review is only available for hybrid agents',
+        });
+      }
+
       // No active (in-flight) manual review run
       const hasActive = await hasActiveManualReviewRun(db, agentId);
       if (hasActive) {
         return reply.status(409).send({
           error: 'review_already_in_progress',
           message: 'A manual review is already in progress for this agent',
-        });
-      }
-
-      // Gate: preset review is only meaningful for hybrid agents
-      if (unifiedConfig['capabilityMode'] !== 'hybrid') {
-        return reply.status(403).send({
-          error: 'capability_mode_unsupported',
-          message: 'Strategy review is only available for hybrid agents',
         });
       }
 
