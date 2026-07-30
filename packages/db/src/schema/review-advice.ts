@@ -84,6 +84,8 @@ export const reviewAdvice = pgTable('review_advice', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   /** When the agent received this advice via the assessment_review tick (null if never consumed). */
   consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  /** When the agent subsequently requested a platform assessment for this identity (null if advice not yet acted on). */
+  assessmentRequestedAt: timestamp('assessment_requested_at', { withTimezone: true }),
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -92,6 +94,7 @@ export const reviewAdvice = pgTable('review_advice', {
   index('idx_review_advice_outcome').on(t.outcome),
   index('idx_review_advice_checked_at').on(t.checkedAt),
   index('idx_review_advice_consumed_at').on(t.consumedAt),
+  index('idx_review_advice_assessment_requested_at').on(t.assessmentRequestedAt),
   index('idx_review_advice_identity_lookup').on(t.instrumentKind, t.venueFamily, t.styleTier, t.symbol, t.network, t.address),
   index('idx_review_advice_agent_outcome_checked').on(t.agentId, t.outcome, t.checkedAt),
   // orderbook/perp → symbol NOT NULL, network IS NULL, address IS NULL

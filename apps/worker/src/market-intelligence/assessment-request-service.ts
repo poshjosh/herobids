@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, and, gte, desc, sql } from 'drizzle-orm';
+import { eq, and, gte, desc, sql, or, isNull, gt } from 'drizzle-orm';
 import { createLogger } from '../logger.js';
 import type { Logger } from 'pino';
 import type { Database } from '@herobids/db';
@@ -8,6 +8,7 @@ import {
   marketAssessmentRequests,
   marketAssessmentRuns,
   marketAssessmentArtifacts,
+  reviewAdvice,
 } from '@herobids/db';
 import { UsageBillingRepository } from '@herobids/db';
 import {
@@ -278,6 +279,15 @@ export class AssessmentRequestService {
         reason: 'Agent has not opted into platform assessment',
       });
     }
+
+    // ── 3b. Correlate to prior advice (fire-and-forget) ───────────────
+    // Mark any delivered advice rows as "acted on" now that the agent has
+    // initiated a real assessment request for this canonical identity.
+    // Outcome-agnostic: we record the act of requesting, not whether the
+    // request succeeded or was blocked by cooldown/billing/cache.
+    this.markAdviceActedOn(params.agentId, identity).catch((e) =>
+      this.log.warn({ err: e, agentId: params.agentId }, 'Failed to mark advice as acted on'),
+    );
 
     // ── 4. Enforce cooldown ───────────────────────────────────────────
     const cooldownCutoff = new Date(now.getTime() - resolvedConfig.reviewIntervalMs);
@@ -1202,5 +1212,51 @@ export class AssessmentRequestService {
 
   private serializeIdentity(identity: MarketAssessmentIdentity): Record<string, unknown> {
     return { ...identity };
+  }
+
+  /**
+   * Mark delivered advice rows as "acted on" when the agent initiates a
+   * real assessment request for the same canonical identity.
+   *
+   * Correlates on agentId + canonical identity columns — never on
+   * assessmentArtifactId (which does not exist until the request succeeds).
+   * Runs as fire-and-forget; failures are logged but do not block the request.
+   */
+  private async markAdviceActedOn(
+    agentId: string,
+    identity: MarketAssessmentIdentity,
+  ): Promise<void> {
+    const now = new Date();
+
+    // Build identity conditions matching the canonical identity columns
+    const identityConditions = [
+      eq(reviewAdvice.instrumentKind, identity.instrumentKind),
+      eq(reviewAdvice.venueFamily, identity.venueFamily),
+      eq(reviewAdvice.styleTier, identity.styleTier),
+    ];
+
+    // For orderbook/perp, match on symbol; for swap/dex, match on network+address
+    if (isSwapIdentity(identity)) {
+      identityConditions.push(
+        eq(reviewAdvice.network, identity.network),
+        eq(reviewAdvice.address, identity.address),
+      );
+    } else {
+      identityConditions.push(eq(reviewAdvice.symbol, identity.symbol));
+    }
+
+    await this.db
+      .update(reviewAdvice)
+      .set({ assessmentRequestedAt: now })
+      .where(
+        and(
+          eq(reviewAdvice.agentId, agentId),
+          ...identityConditions,
+          eq(reviewAdvice.outcome, 'advised'),
+          gt(reviewAdvice.expiresAt, now),
+          isNull(reviewAdvice.assessmentRequestedAt),
+          sql`${reviewAdvice.consumedAt} IS NOT NULL`,
+        ),
+      );
   }
 }
