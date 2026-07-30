@@ -256,9 +256,10 @@ There is exactly **one** way any agent is notified to consider a review: the per
 
 | Agent type | How it is triggered | Explicitly forbidden |
 |---|---|---|
-| `intelligence` | Per-agent scheduler → one `assessment_review` tick when advice is due | A second/extra path because it already has other wakes |
 | `hybrid` / `mixed` | Per-agent scheduler → one `assessment_review` tick when advice is due | Piggybacking on signal wakes |
 | `hybrid` / `scanner_gated` | Per-agent scheduler → one `assessment_review` tick when advice is due | Any assessment offer inside ordinary scanner signal wakes |
+
+> **`intelligence` is out-of-scope for preset review.** Intelligence agents have no strategy preset (`capabilityMode` ≠ `'hybrid'`), so preset review does not apply to them. The scheduler, forced-review API trigger, eligibility endpoint, and worker defense-in-depth all gate on `capabilityMode === 'hybrid'`. (Change 3, 2026-07-30.)
 
 Rules that hold for **all** types:
 
