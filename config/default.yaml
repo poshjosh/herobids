@@ -629,10 +629,10 @@ liveRollout:
 # dedicated assessment_review tick.
 platformAssessor:
   enabled: true  # disabled by default until shadow mode validated
-  minReviewIntervalMs: 43200000  # 12h — operator floor for agent reviewIntervalMs
+  minReviewIntervalMs: 10800000  # 3h — operator floor for agent reviewIntervalMs
   # maxReviewRequestsPerDay: 50  # optional daily cap (unset = no cap)
   scannerCandidateLimit: 20  # top N candidates for deterministic pre-check
-  cacheFreshnessMs: 21600000  # 6h — lookup and artifact expiry
+  cacheFreshnessMs: 10800000  # 3h — lookup and artifact expiry
   maxConcurrentAssessments: 1
   maxInstrumentsPerRequest: 3  # max instruments per assessment request
   # ── Evidence collection policies ──────────────────────────────────────
