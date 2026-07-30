@@ -206,9 +206,9 @@ if (unifiedConfig['capabilityMode'] !== 'hybrid') {
 | 2 | Change 3 — gate scheduler + forced-review path to hybrid | none | Low | DONE |
 | 3 | Change 6 — update 005 §7.0 | Change 3 | Low (doc only) | DONE |
 | 4 | Change 1 — centralize + fix active-preset resolution | none | Medium | DONE |
-| 5 | Change 5 (part) — tests for Changes 1–3 | 1,2,4 | Low | IN PROGRESS |
-| 6 | Change 4 — `assessment_requested_at` column + correlation | 4 | Medium (migration + service change) | PENDING |
-| 7 | Change 5 (part) — tests for Change 4 | 6 | Medium | PENDING |
+| 5 | Change 5 (part) — tests for Changes 1–3 | 1,2,4 | Low | DONE |
+| 6 | Change 4 — `assessment_requested_at` column + correlation | 4 | Medium (migration + service change) | DONE |
+| 7 | Change 5 (part) — tests for Change 4 | 6 | Medium | DONE |
 
 Steps 1–4 are independent and parallelizable. Lock the active path with tests (Step 5) before the observability change (Step 6).
 

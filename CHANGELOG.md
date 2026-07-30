@@ -8,13 +8,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Agent Redis cleanup on crash path:** Ephemeral runtime Redis keys (`agent:inbound`, `agent:outbound`, `agent:prompt:*`, `agent:scanner:*`, `agent:watches:summary`, `herobids:actor-health`) are now cleaned up on all terminal session paths (graceful stop, runtime end, start timeout, hard crash). Previously, crashed agents leaked these keys indefinitely. See [001-plan.md](docs/features/2026/07/24/002-agent-redis-cleanup-and-crash-loop-detection/001-plan.md).
-- **Cross-session crash-loop guard:** Sliding-window crash counter in Redis (`agent:crash:events:*` ZSET) blocks agent relaunch when `maxCrashesInWindow` (default 3) crashes occur within `windowMs` (default 5 min). Auto-unblocks when the window clears. A dedicated `CRASH_LOOP_BLOCKED` platform alert fires once per window.
-- **Session projection cleanup on crash:** `agent:sessions:active`, `agent:sessions:count`, and `agent:wake:prefs` Redis keys are now fully cleared when an agent crashes (all sessions retired as crashed), preventing the market monitor from pushing wakes to a dead agent.
+- **Preset review tools for trading agents:** `assess_strategy_preset` and `change_strategy_preset` added to the `trading` skill's `requiredTools`, enabling hybrid agents to act on `assessment_review` wake advice.
+- **`assessment_requested_at` column on `review_advice`:** New nullable timestamp tracks when advice was acted on (agent requested a platform assessment), separate from `consumed_at` (wake delivered). Enables distinguishing delivered-but-ignored from delivered-and-acted-on advice.
+- **Active-preset resolution helper (`resolveActivePresetState`):** Centralized, three-step resolution (authoritative binding → `metadata.strategyPreset` → loud `'momentum'` fallback). Replaces broken `tech.type`/`intelligence.type` logic that always returned `'momentum'`.
+- **Regression tests:** 33 new test assertions across 6 test files covering active-preset resolution, skills, scheduler gating, API gates, worker defense-in-depth, wake routing, and `assessment_requested_at` correlation.
 
 ### Changed
 
-- **`InstanceStatusPayloadSchema`** now accepts `'crashed'` status in addition to `starting`, `running`, `paused`, `stopped`, `degraded`, `recovering`.
+- **Preset review gated to hybrid agents:** The automatic review scheduler, forced-review API trigger (`POST`), eligibility endpoint, and worker `ManualReviewRunnerFactory` all now gate on `capabilityMode === 'hybrid'`. Intelligence agents no longer generate review noise.
+
+### Fixed
+
+- **Active preset always resolving to `'momentum'`:** Fixed by removing the broken `tech.type`/`intelligence.type` logic and replacing it with a proper `metadata.strategyPreset` lookup.
 
 ## v0.0.35 - 2026-07-24
 
