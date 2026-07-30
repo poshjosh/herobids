@@ -1062,8 +1062,27 @@ async function main(): Promise<void> {
   {
     section('Phase 2.5: Agent bot creation');
 
-    // Wait for the agent runtime to subscribe to its Redis stream
-    await sleep(5000);
+    // Wait for the agent session to be fully running before publishing.
+    // handleManageBot requires an active session (status === 'running'), and
+    // the Docker runtime launcher can take 15-30s to build and start a container.
+    // A blind sleep is not reliable — poll until the session is running.
+    const runningDeadline = Date.now() + 120_000;
+    let sessionRunning = false;
+    while (Date.now() < runningDeadline) {
+      const agentRes = await apiRequest<AgentStatusBody>('GET', `/agents/${agentId}`, { token });
+      if (agentRes.status === 200 && agentRes.body.activeSession?.status === 'running') {
+        sessionRunning = true;
+        ok(`Agent session running — agentId=${agentId}`);
+        break;
+      }
+      if (agentRes.status === 200 && agentRes.body.status === 'crashed') {
+        fatal(`Agent ${agentId} crashed before reaching running state`);
+      }
+      await sleep(3_000);
+    }
+    if (!sessionRunning) {
+      fatal(`Agent ${agentId} did not reach running state within 120s`);
+    }
 
     // Publish a manage_bot message to the agent's inbound Redis stream.
     // This exercises the exact broker path that was broken by the connectionId/venueAccountId confusion.

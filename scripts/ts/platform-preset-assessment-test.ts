@@ -228,8 +228,8 @@ async function runS19(token: string, connectionId: string): Promise<void> {
 async function main(): Promise<void> {
   log(`Scenarios: ${SCENARIOS.join(', ')}  PLATFORM_ASSESSOR_ENABLED=${process.env['PLATFORM_ASSESSOR_ENABLED'] ?? 'unset'}`);
 
-  // Clean up leftover agents
-  dbExec("UPDATE agents SET status = 'stopped' WHERE status NOT IN ('stopped', 'crashed'); DELETE FROM agents;");
+  // Clean up leftover agents (FK order: billing_usage_events → agents)
+  dbExec("DELETE FROM billing_usage_events; UPDATE agents SET status = 'stopped' WHERE status NOT IN ('stopped', 'crashed'); DELETE FROM agents;");
   log('Cleaned up leftover agents');
 
   const token = await authenticate();
