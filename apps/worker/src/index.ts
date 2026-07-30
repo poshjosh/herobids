@@ -1972,6 +1972,15 @@ const manualReviewRuntime = new ManualReviewRuntime(
       }
 
       const unifiedConfig = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
+
+      // Defense-in-depth: preset review is only meaningful for hybrid agents.
+      // If a job somehow reaches the worker for a non-hybrid agent (stale
+      // enqueue, race), reject cleanly so the run terminates instead of
+      // executing against a non-existent preset.
+      if (unifiedConfig['capabilityMode'] !== 'hybrid') {
+        return err({ code: 'review.capability_mode_unsupported', message: 'Strategy review is only available for hybrid agents' });
+      }
+
       const platformAssessment = (unifiedConfig['platformAssessment'] ?? {}) as Record<string, unknown>;
       const agentEnabled = platformAssessment['enabled'] === true;
       if (!agentEnabled) {
@@ -2304,6 +2313,9 @@ logger.info(
 type ReviewSchedulerAgentRow = Awaited<ReturnType<typeof agentRepo.listActiveAgents>>[number];
 
 function startReviewSchedulerForAgent(agent: ReviewSchedulerAgentRow): void {
+  // Gate: preset review is only meaningful for hybrid agents
+  if (((agent.unifiedConfig ?? {}) as Record<string, unknown>)['capabilityMode'] !== 'hybrid') return;
+
   if (!appConfig.platformAssessor.enabled) return;
   if (reviewSchedulers.has(agent.id)) return; // already running — idempotent
 

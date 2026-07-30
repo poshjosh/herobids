@@ -108,6 +108,14 @@ export async function platformAssessmentReviewRoutes(
         });
       }
 
+      // Gate: preset review is only meaningful for hybrid agents
+      if (unifiedConfig['capabilityMode'] !== 'hybrid') {
+        return reply.status(403).send({
+          error: 'capability_mode_unsupported',
+          message: 'Strategy review is only available for hybrid agents',
+        });
+      }
+
       // Create run row and enqueue job
       const runId = crypto.randomUUID();
       await createManualReviewRun(db, {
@@ -213,6 +221,11 @@ export async function platformAssessmentReviewRoutes(
         .limit(1);
       if (!activeSession) {
         reasons.push('No active runtime session');
+      }
+
+      // Gate: preset review is only meaningful for hybrid agents
+      if (unifiedConfig['capabilityMode'] !== 'hybrid') {
+        reasons.push('Strategy review is only available for hybrid agents');
       }
 
       // No in-flight run
