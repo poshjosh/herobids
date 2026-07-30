@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, and, gte, desc, sql, or, isNull, gt } from 'drizzle-orm';
+import { eq, and, gte, desc, sql, isNull, gt } from 'drizzle-orm';
 import { createLogger } from '../logger.js';
 import type { Logger } from 'pino';
 import type { Database } from '@herobids/db';

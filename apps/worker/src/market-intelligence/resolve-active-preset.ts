@@ -55,9 +55,9 @@ export async function resolveActivePresetState(
   const allowedPresets = (uc['allowedPresets'] ?? {}) as Record<string, unknown>;
 
   if (typeof strategyPreset === 'string' && strategyPreset.length > 0) {
-    const styleTier: StyleKey = isStyleKey(strategyPresetStyle)
+    const styleTier: StyleKey = (typeof strategyPresetStyle === 'string' && isStyleKey(strategyPresetStyle))
       ? strategyPresetStyle
-      : isStyleKey(allowedPresets['styleTier'] as string | undefined)
+      : (typeof allowedPresets['styleTier'] === 'string' && isStyleKey(allowedPresets['styleTier'] as string))
         ? (allowedPresets['styleTier'] as StyleKey)
         : 'standard';
 
@@ -86,7 +86,7 @@ export async function resolveActivePresetState(
 
   // ── Step 3: Last-resort safety fallback ───────────────────────────────
   const allowedStyleTier = allowedPresets['styleTier'] as string | undefined;
-  const fallbackStyleTier: StyleKey = isStyleKey(allowedStyleTier) ? allowedStyleTier : 'standard';
+  const fallbackStyleTier: StyleKey = (typeof allowedStyleTier === 'string' && isStyleKey(allowedStyleTier)) ? allowedStyleTier : 'standard';
   logger.warn({ agentId: agent.id, fallbackStyleTier }, 'No active preset resolved — using safety fallback "momentum"');
 
   return ok({
