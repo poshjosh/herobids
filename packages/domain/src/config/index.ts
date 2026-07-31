@@ -1,4 +1,3 @@
-export { getPreset, loadPresets, resetPresetCache, listPresets } from './presets-loader.js';
 export {
   agentStyleToPresetStyle,
   applyPresetToAgent,

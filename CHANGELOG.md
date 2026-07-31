@@ -6,6 +6,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Meaningful strategy review UX:** User-triggered ("forced") strategy reviews now run the billed platform assessment synchronously. The frontend shows a two-phase UX: per-instrument pre-check table → assessment progress → preset ranking results (current vs. recommended, scores, pros/cons). The agent receives artifact IDs in the wake message and can call `change_strategy_preset` directly — no duplicate billing.
+- **New API endpoint:** `GET /agents/:id/platform-assessment/reviews/:requestId/results` — returns preset rankings, recommended presets, confidence, urgency, and agent-action status from `marketAssessmentArtifacts` joined via `reviewAdvice.assessmentArtifactId`.
+- **`assessment_artifact_id` column on `review_advice`:** Nullable FK to `market_assessment_artifacts` — links pre-check advice rows to their synchronous assessment artifacts (migration `0053_purple_photon`).
+- **`ReviewPreCheckReasonDescriptions` map:** Human-readable descriptions for all 12 review pre-check reason codes, consumed by the API advice endpoint so the frontend never renders raw enum strings.
+- **Agent-action tracking:** The results endpoint checks `agentPresetBindings.sourceArtifactId` to determine whether the agent has acted on a review's recommendation.
+- **`capacityExceeded` flag** plumbed through runner → result summary → API → frontend, so the UX can show when some advised instruments were not assessed due to operator-configured limits.
+- **Tests:** Wake message regression guard (scheduled path unchanged), reason code exhaustiveness, `runAssessments` cap/failure/DEX-filtering behavior, schema backward compatibility for wake payloads with/without optional assessment fields.
+
+### Changed
+
+- **Advice endpoint enrichment:** `GET /agents/:id/platform-assessment/reviews/:requestId/advice` now returns `activePresetName` (resolved via `getPreset`), `reasonsDisplay` (human-readable), `assessmentArtifactId`, `assessmentRequestedAt`, and `consumedAt`.
+- **Wake message dual-path:** When assessment artifacts are present (manual review), the agent is told to call `change_strategy_preset` directly. When absent (scheduled review), the existing message is unchanged.
+- **`AssessmentReviewRunner`** now accepts an optional `assessmentRequestPort` — only wired for the manual review path. The scheduled scheduler path is untouched.
+- **`ManualReviewResultSummary`** extended with optional `assessmentStatus`, `assessedCount`, `totalAdvised`, and `capacityExceeded` fields (backward compatible).
+- **Preset display names** resolved server-side; reason codes resolved to human-readable descriptions — raw keys/codes never shown in the UI.
+
 ## v0.0.36 - 2026-07-30
 
 ### Added

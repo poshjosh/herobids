@@ -14,8 +14,9 @@ import {
   agentPresetBindings,
 } from '@herobids/db';
 import type { ManualReviewJobData } from '@herobids/db';
-import { getPreset, ReviewPreCheckReasonDescriptions } from '@herobids/domain';
+import { ReviewPreCheckReasonDescriptions } from '@herobids/domain';
 import type { StyleKey } from '@herobids/domain';
+import { getPreset } from '@herobids/domain/config/presets-loader';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -371,7 +372,7 @@ export async function platformAssessmentReviewRoutes(
       // Check agent action for each artifact
       const artifactIds = rows.map((r) => r.artifactId).filter(Boolean) as string[];
       let bindings: Array<{
-        sourceArtifactId: string;
+        sourceArtifactId: string | null;
         activePresetKey: string;
         appliedAt: Date;
       }> = [];
@@ -393,7 +394,9 @@ export async function platformAssessmentReviewRoutes(
       }
 
       const results = rows.map((r) => {
-        const binding = bindings.find((b) => b.sourceArtifactId === r.artifactId);
+        const binding = bindings.find(
+          (b) => b.sourceArtifactId === r.artifactId && b.sourceArtifactId !== null,
+        );
         const rankings = (r.presetRankings as Array<Record<string, unknown>> | null) ?? [];
         return {
           symbol: r.symbol,

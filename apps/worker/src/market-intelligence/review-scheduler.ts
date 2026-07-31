@@ -64,6 +64,7 @@ export class ReviewScheduler {
       cacheFreshnessMs: config.cacheFreshnessMs,
       adviceExpiryMs: config.adviceExpiryMs,
       preCheck: config.preCheck,
+      maxAssessmentsPerReview: 0,
     };
 
     const runnerDeps: AssessmentReviewRunnerDeps = {
