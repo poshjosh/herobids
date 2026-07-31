@@ -5,11 +5,12 @@ import { z } from 'zod';
 import { eq, and, or, inArray, notInArray, sql, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { AgentRepository, AgentDocumentsRepository, agents, agentConnections, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
+import { DecisionApprovalRepository } from '@herobids/db';
 import { AgentDocumentService, sanitizeFilename } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
-import type { AgentRiskDefaultsConfig, AlertsConfig, AuthConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
+import type { AgentRiskDefaultsConfig, AgentApprovalsConfig, AlertsConfig, AuthConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
 import { AgentRuntimePolicyOverridesSchema, AgentRiskDefaultsSchema, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
@@ -18,6 +19,8 @@ import {
   parseSlashCommand,
   formatCommandHelp,
   formatUnknownCommandResponse,
+  formatAmbiguousApprovalResponse,
+  formatApprovalCodeNotFound,
 } from './telegram-slash-commands.js';
 import {
   handleAgents,
@@ -644,9 +647,13 @@ export async function telegramWebhookHandler(
   redisClient: Redis,
   alertsConfig?: AlertsConfig,
   authConfig?: AuthConfig,
+  agentApprovalsConfig?: AgentApprovalsConfig,
 ): Promise<void> {
   const botToken = alertsConfig?.telegram?.botToken ?? '';
   const webhookSecret = alertsConfig?.telegram?.webhookSecret ?? '';
+  const resolveRateLimit = agentApprovalsConfig?.resolveRateLimitPerMinute ?? 20;
+
+  const approvalRepo = new DecisionApprovalRepository(db);
 
   async function sendTelegramText(chatId: string, text: string): Promise<void> {
     await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -684,6 +691,64 @@ export async function telegramWebhookHandler(
   }
 
   const agentRepo = new AgentRepository(db);
+
+  /**
+   * Resolve a pending approval via Telegram slash command.
+   * For approve: marks the approval as approved and publishes to Redis
+   * for worker-side execution (mirrors the web API approve endpoint).
+   * For reject: marks the approval as rejected directly.
+   */
+  async function resolveApprovalViaTelegram(
+    chatId: string,
+    userId: string,
+    approvalId: string,
+    action: 'approve' | 'reject',
+    agentId: string,
+  ): Promise<void> {
+    const resolutionSource = action === 'approve' ? 'telegram_yes' : 'telegram_no';
+
+    if (action === 'reject') {
+      const updated = await approvalRepo.updateStatus(approvalId, 'rejected', {
+        resolvedByUserId: userId,
+        resolutionSource,
+      });
+      if (updated === 0) {
+        await sendTelegramText(chatId, formatApprovalCodeNotFound());
+        return;
+      }
+      await sendTelegramText(chatId, 'Trade proposal rejected.');
+      return;
+    }
+
+    // Approve: mark as approved, then publish to Redis for worker execution.
+    const approvedRows = await approvalRepo.updateStatus(approvalId, 'approved', {
+      resolvedByUserId: userId,
+      resolutionSource,
+    });
+    if (approvedRows === 0) {
+      await sendTelegramText(chatId, formatApprovalCodeNotFound());
+      return;
+    }
+
+    // Publish to Redis to trigger worker-side execution (same channel as web API).
+    try {
+      const message = JSON.stringify({
+        userId,
+        resolutionSource,
+        effectiveAgentId: agentId,
+        effectiveBotId: agentId,
+      });
+      await redisClient.publish(`approval:execute:${approvalId}`, message);
+    } catch (err) {
+      // Execution dispatch is best-effort; approval is already recorded.
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      await approvalRepo.recordResolutionAttempt(approvalId, 'redis.publish_failed', errorMessage);
+      await sendTelegramText(chatId, 'Trade approved! Approval recorded but execution dispatch failed. The approval will be retried.');
+      return;
+    }
+
+    await sendTelegramText(chatId, 'Trade approved! The trade is being executed.');
+  }
 
   async function processWebhookUpdate(
     chatId: string,
@@ -801,6 +866,55 @@ export async function telegramWebhookHandler(
         if (slashCmd.command === 'disconnect') {
           const response = await handleDisconnect(db, userId, slashCmd.args);
           await sendTelegramText(chatId, response);
+          return;
+        }
+
+        // Approval resolution commands
+        if (slashCmd.command === 'yes' || slashCmd.command === 'no') {
+          const action = slashCmd.command === 'yes' ? 'approve' : 'reject' as const;
+          const code = slashCmd.args[0] ?? null;
+
+          // Rate-limit approval resolution attempts
+          const rateLimitKey = `ratelimit:approval:resolve:${userId}`;
+          const rateCount = await redisClient.incr(rateLimitKey);
+          if (rateCount === 1) await redisClient.expire(rateLimitKey, 60);
+          if (rateCount > resolveRateLimit) {
+            await sendTelegramText(chatId, 'Too many approval requests. Please wait a moment and try again.');
+            return;
+          }
+
+          // No code provided — check pending count
+          if (!code) {
+            const pendingCount = await approvalRepo.countPendingByUserId(userId);
+            if (pendingCount === 1) {
+              // Exactly one — resolve it
+              const pendingApprovals = await approvalRepo.findPendingByUserId(userId);
+              const approval = pendingApprovals[0]!;
+              await resolveApprovalViaTelegram(chatId, userId, approval.id, action, approval.agentId);
+            } else {
+              await sendTelegramText(chatId, formatAmbiguousApprovalResponse(action, pendingCount));
+            }
+            return;
+          }
+
+          // Code provided — look up by (userId, shortCode)
+          const approval = await approvalRepo.findByUserIdAndShortCode(userId, code);
+          if (!approval) {
+            await sendTelegramText(chatId, formatApprovalCodeNotFound());
+            return;
+          }
+          if (approval.status !== 'pending') {
+            // Already resolved or expired — safe generic message
+            await sendTelegramText(chatId, formatApprovalCodeNotFound());
+            return;
+          }
+          if (new Date() > new Date(approval.expiresAt)) {
+            await approvalRepo.updateExpired([approval.id]);
+            await sendTelegramText(chatId, 'This approval has expired and is no longer valid.');
+            return;
+          }
+
+          await resolveApprovalViaTelegram(chatId, userId, approval.id, action, approval.agentId);
           return;
         }
 

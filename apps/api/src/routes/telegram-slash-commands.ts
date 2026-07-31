@@ -23,6 +23,8 @@ export const SLASH_COMMANDS = [
   'connect',
   'disconnect',
   'to',
+  'yes',
+  'no',
 ] as const;
 
 export type SlashCommand = (typeof SLASH_COMMANDS)[number];
@@ -129,7 +131,7 @@ interface CommandHelpEntry {
   command: SlashCommand;
   syntax: string;
   description: string;
-  category: 'help' | 'discovery' | 'lifecycle' | 'config' | 'messaging';
+  category: 'help' | 'discovery' | 'lifecycle' | 'config' | 'approvals' | 'messaging';
 }
 
 const COMMAND_HELP: CommandHelpEntry[] = [
@@ -151,6 +153,9 @@ const COMMAND_HELP: CommandHelpEntry[] = [
   { command: 'disconnect', syntax: '/disconnect <agent> <id|label>', description: 'Revoke a connection', category: 'config' },
 
   { command: 'to', syntax: '/to <agent> <message>', description: 'Send a message to an agent', category: 'messaging' },
+
+  { command: 'yes', syntax: '/yes [code]', description: 'Approve a pending trade (code required unless 1 pending)', category: 'approvals' },
+  { command: 'no', syntax: '/no [code]', description: 'Reject a pending trade (code required unless 1 pending)', category: 'approvals' },
 ];
 
 const DETAILED_HELP: Record<string, string> = {
@@ -291,15 +296,46 @@ const DETAILED_HELP: Record<string, string> = {
     '  /to "DCA Bot" check my positions',
     '  /to all status report',
   ].join('\n'),
+
+  yes: [
+    '/yes [code]',
+    '',
+    'Approve a pending trade proposal.',
+    'Always use the code when available:',
+    '  /yes 26B8D',
+    '',
+    'Without a code, /yes only works when you have exactly one',
+    'unresolved approval. If you have zero or multiple pending',
+    'approvals, you must provide the code.',
+    '',
+    'Tip: /yes or /no without a code only works when you have',
+    'exactly one pending approval.',
+  ].join('\n'),
+
+  no: [
+    '/no [code]',
+    '',
+    'Reject a pending trade proposal.',
+    'Always use the code when available:',
+    '  /no 26B8D',
+    '',
+    'Without a code, /no only works when you have exactly one',
+    'unresolved approval. If you have zero or multiple pending',
+    'approvals, you must provide the code.',
+    '',
+    'Tip: /yes or /no without a code only works when you have',
+    'exactly one pending approval.',
+  ].join('\n'),
 };
 
-const CATEGORY_ORDER: CommandHelpEntry['category'][] = ['help', 'discovery', 'lifecycle', 'config', 'messaging'];
+const CATEGORY_ORDER: CommandHelpEntry['category'][] = ['help', 'discovery', 'lifecycle', 'config', 'approvals', 'messaging'];
 
 const CATEGORY_LABELS: Record<CommandHelpEntry['category'], string> = {
   help: 'Help',
   discovery: 'Discovery',
   lifecycle: 'Lifecycle',
   config: 'Config (agent must be stopped)',
+  approvals: 'Trade Approvals',
   messaging: 'Messaging',
 };
 
@@ -364,5 +400,46 @@ export function formatUnknownCommandResponse(attemptedCommand: string): string {
     `Unknown command: /${attemptedCommand}`,
     '',
     buildGeneralHelp(),
+  ].join('\n');
+}
+
+/**
+ * Format a response for an ambiguous /yes or /no (no code, but not exactly
+ * one pending approval). Prefers codeful syntax in the example.
+ */
+export function formatAmbiguousApprovalResponse(
+  action: 'approve' | 'reject',
+  pendingCount: number,
+): string {
+  const command = action === 'approve' ? '/yes' : '/no';
+  if (pendingCount === 0) {
+    return [
+      'You have no pending trade approvals.',
+      '',
+      `When an approval is pending, use the code from the request:`,
+      `  ${command} 26B8D`,
+      '',
+      `Tip: ${command} without a code only works when you have exactly one pending approval.`,
+    ].join('\n');
+  }
+
+  return [
+    `You have ${pendingCount} pending trade approvals. Please use the code from the approval message.`,
+    '',
+    `Approve: /yes 26B8D`,
+    `Reject:  /no 26B8D`,
+  ].join('\n');
+}
+
+/**
+ * Format a safe "not found" response for an invalid/foreign/expired code.
+ * Does not leak whether the code belongs to another user.
+ */
+export function formatApprovalCodeNotFound(): string {
+  return [
+    'Approval code not found.',
+    '',
+    'It may have expired or already been resolved.',
+    'Use /yes CODE or /no CODE with the exact code from your approval message.',
   ].join('\n');
 }

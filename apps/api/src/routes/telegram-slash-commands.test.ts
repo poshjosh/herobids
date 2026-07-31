@@ -3,6 +3,8 @@ import {
   parseSlashCommand,
   formatCommandHelp,
   formatUnknownCommandResponse,
+  formatAmbiguousApprovalResponse,
+  formatApprovalCodeNotFound,
 } from './telegram-slash-commands.js';
 
 // ─── parseSlashCommand ────────────────────────────────────────────────────
@@ -209,6 +211,64 @@ describe('parseSlashCommand', () => {
     expect(parseSlashCommand('hello /agents')).toBeNull();
     expect(parseSlashCommand('check /info Momentum')).toBeNull();
   });
+
+  it('parses /yes with no args', () => {
+    expect(parseSlashCommand('/yes')).toEqual({
+      command: 'yes',
+      rawCommand: '/yes',
+      args: [],
+    });
+  });
+
+  it('parses /yes with a code', () => {
+    expect(parseSlashCommand('/yes 26B8D')).toEqual({
+      command: 'yes',
+      rawCommand: '/yes',
+      args: ['26B8D'],
+    });
+  });
+
+  it('parses /no with no args', () => {
+    expect(parseSlashCommand('/no')).toEqual({
+      command: 'no',
+      rawCommand: '/no',
+      args: [],
+    });
+  });
+
+  it('parses /no with a code', () => {
+    expect(parseSlashCommand('/no 26B8D')).toEqual({
+      command: 'no',
+      rawCommand: '/no',
+      args: ['26B8D'],
+    });
+  });
+
+  it('parses /yes and /no case-insensitively', () => {
+    expect(parseSlashCommand('/YES 26B8D')).toEqual({
+      command: 'yes',
+      rawCommand: '/YES',
+      args: ['26B8D'],
+    });
+    expect(parseSlashCommand('/No 26B8D')).toEqual({
+      command: 'no',
+      rawCommand: '/No',
+      args: ['26B8D'],
+    });
+  });
+
+  it('strips bot suffix from /yes and /no', () => {
+    expect(parseSlashCommand('/yes@MyBot 26B8D')).toEqual({
+      command: 'yes',
+      rawCommand: '/yes@MyBot',
+      args: ['26B8D'],
+    });
+    expect(parseSlashCommand('/no@TradingBot AB12C')).toEqual({
+      command: 'no',
+      rawCommand: '/no@TradingBot',
+      args: ['AB12C'],
+    });
+  });
 });
 
 // ─── formatCommandHelp ────────────────────────────────────────────────────
@@ -258,6 +318,7 @@ describe('formatCommandHelp', () => {
       'help', 'agents', 'info', 'log',
       'connections', 'start', 'pause', 'resume', 'stop',
       'restart', 'mode', 'connect', 'disconnect', 'to',
+      'yes', 'no',
     ];
     for (const cmd of knownCommands) {
       const help = formatCommandHelp(cmd);
@@ -289,6 +350,27 @@ describe('formatCommandHelp', () => {
     const help = formatCommandHelp('');
     expect(help).toContain('Available commands');
   });
+
+  it('general help includes /yes and /no in the approvals category', () => {
+    const help = formatCommandHelp();
+    expect(help).toContain('Trade Approvals');
+    expect(help).toContain('/yes');
+    expect(help).toContain('/no');
+  });
+
+  it('returns detailed help for /yes', () => {
+    const help = formatCommandHelp('yes');
+    expect(help).toContain('/yes [code]');
+    expect(help).toContain('Approve a pending trade proposal');
+    expect(help).toContain('/yes 26B8D');
+  });
+
+  it('returns detailed help for /no', () => {
+    const help = formatCommandHelp('no');
+    expect(help).toContain('/no [code]');
+    expect(help).toContain('Reject a pending trade proposal');
+    expect(help).toContain('/no 26B8D');
+  });
 });
 
 // ─── formatUnknownCommandResponse ─────────────────────────────────────────
@@ -298,5 +380,52 @@ describe('formatUnknownCommandResponse', () => {
     const response = formatUnknownCommandResponse('foobar');
     expect(response).toContain('Unknown command: /foobar');
     expect(response).toContain('Available commands');
+  });
+});
+
+// ─── formatAmbiguousApprovalResponse ──────────────────────────────────────
+
+describe('formatAmbiguousApprovalResponse', () => {
+  it('returns no-pending message when count is 0', () => {
+    const response = formatAmbiguousApprovalResponse('approve', 0);
+    expect(response).toContain('no pending trade approvals');
+    expect(response).toContain('/yes 26B8D');
+    expect(response).not.toContain('/no');
+  });
+
+  it('returns no-pending message for reject when count is 0', () => {
+    const response = formatAmbiguousApprovalResponse('reject', 0);
+    expect(response).toContain('no pending trade approvals');
+    expect(response).toContain('/no 26B8D');
+  });
+
+  it('returns multiple-pending message with codeful syntax', () => {
+    const response = formatAmbiguousApprovalResponse('approve', 3);
+    expect(response).toContain('3 pending trade approvals');
+    expect(response).toContain('Approve: /yes 26B8D');
+    expect(response).toContain('Reject:  /no 26B8D');
+  });
+
+  it('prefers codeful syntax in all cases', () => {
+    for (const count of [0, 2, 5]) {
+      const response = formatAmbiguousApprovalResponse('approve', count);
+      expect(response).toContain('26B8D');
+    }
+  });
+});
+
+// ─── formatApprovalCodeNotFound ───────────────────────────────────────────
+
+describe('formatApprovalCodeNotFound', () => {
+  it('returns a safe message without leaking user information', () => {
+    const response = formatApprovalCodeNotFound();
+    expect(response).toContain('not found');
+    expect(response).toContain('expired');
+    expect(response).toContain('/yes CODE');
+    expect(response).toContain('/no CODE');
+    // Must not mention userId or ownership
+    expect(response).not.toContain('belongs');
+    expect(response).not.toContain('another user');
+    expect(response).not.toContain('owner');
   });
 });
