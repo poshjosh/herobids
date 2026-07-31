@@ -21,8 +21,13 @@ See [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) for how t
 1. Go to **AI Agents** in the sidebar.
 2. Click **New AI Agent**.
 3. Give it a name and a goal — describe what you want it to trade and how.
-4. Choose an **agent style** (Careful, Balanced, or Bold). This controls how aggressively it spends its LLM budget. See [Agent Style](/docs/agents/agent-style) for the full breakdown.
-5. Optionally set billing caps from the **Billing** page to prevent surprise costs.
+4. Choose a **preset**:
+   - **Trading** — Full autonomy with direct trading and bot management.
+   - **Direct Trading** — Direct trading without bot management.
+   - **Trading Assistant** — Trading analysis with per-trade user approval. The agent proposes trades; you approve or reject each one.
+   - **Personal Assistant** — General-purpose tasks, research, and communication.
+5. Choose an **agent style** (Careful, Balanced, or Bold). This controls how aggressively it spends its LLM budget. See [Agent Style](/docs/agents/agent-style) for the full breakdown.
+6. Optionally set billing caps from the **Billing** page to prevent surprise costs.
 
 ## 4. Start your agent
 

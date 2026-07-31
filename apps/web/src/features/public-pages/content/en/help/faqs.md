@@ -1,5 +1,26 @@
 # Frequently Asked Questions
 
+## How do trade approvals work?
+
+If your agent's **Trade Authorization** is set to **Approval required**, the agent won't execute trades on its own. Instead, it sends each trade proposal to you for review.
+
+Each proposal includes:
+- What the agent wants to do (buy/sell, size, price)
+- A confidence score and rationale
+- A **6-character short code** (e.g. `26B8D`)
+
+You have three ways to respond:
+
+1. **Telegram** — Use `/yes 26B8D` to approve or `/no 26B8D` to reject. Always include the code. Code-less `/yes` and `/no` only work when you have exactly one pending approval.
+
+2. **Web app** — Go to your agent's detail page and use the **Approvals** panel. Click **Approve** or **Reject** on any pending proposal.
+
+3. **API** — Use the approvals API endpoints for programmatic resolution.
+
+Approvals expire after a configurable time window (default 24 hours). Expired approvals cannot be actioned — the agent will submit a new proposal if it still wants to trade.
+
+See [Trade Authorization](/docs/agents/#trade-authorization) for more on configuring authorization mode.
+
 ## How do I talk to my agent from Telegram?
 
 First, make sure your Telegram account is linked — go to **Settings** in the web app and enter your Telegram Chat ID. Your agent must be running.

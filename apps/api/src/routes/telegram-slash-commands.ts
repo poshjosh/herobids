@@ -154,8 +154,8 @@ const COMMAND_HELP: CommandHelpEntry[] = [
 
   { command: 'to', syntax: '/to <agent> <message>', description: 'Send a message to an agent', category: 'messaging' },
 
-  { command: 'yes', syntax: '/yes [code]', description: 'Approve a pending trade (code required unless 1 pending)', category: 'approvals' },
-  { command: 'no', syntax: '/no [code]', description: 'Reject a pending trade (code required unless 1 pending)', category: 'approvals' },
+  { command: 'yes', syntax: '/yes <code>', description: 'Approve a pending trade (include the short code; omit only when exactly 1 is pending)', category: 'approvals' },
+  { command: 'no', syntax: '/no <code>', description: 'Reject a pending trade (include the short code; omit only when exactly 1 is pending)', category: 'approvals' },
 ];
 
 const DETAILED_HELP: Record<string, string> = {
@@ -298,33 +298,23 @@ const DETAILED_HELP: Record<string, string> = {
   ].join('\n'),
 
   yes: [
-    '/yes [code]',
+    '/yes <code>',
     '',
-    'Approve a pending trade proposal.',
-    'Always use the code when available:',
-    '  /yes 26B8D',
+    'Approve a pending trade proposal using the short code from the approval message.',
+    'Example: /yes 26B8D',
     '',
-    'Without a code, /yes only works when you have exactly one',
-    'unresolved approval. If you have zero or multiple pending',
-    'approvals, you must provide the code.',
-    '',
-    'Tip: /yes or /no without a code only works when you have',
-    'exactly one pending approval.',
+    'You may omit the code only when you have exactly one unresolved approval.',
+    'If you have zero or multiple pending approvals, the code is required.',
   ].join('\n'),
 
   no: [
-    '/no [code]',
+    '/no <code>',
     '',
-    'Reject a pending trade proposal.',
-    'Always use the code when available:',
-    '  /no 26B8D',
+    'Reject a pending trade proposal using the short code from the approval message.',
+    'Example: /no 26B8D',
     '',
-    'Without a code, /no only works when you have exactly one',
-    'unresolved approval. If you have zero or multiple pending',
-    'approvals, you must provide the code.',
-    '',
-    'Tip: /yes or /no without a code only works when you have',
-    'exactly one pending approval.',
+    'You may omit the code only when you have exactly one unresolved approval.',
+    'If you have zero or multiple pending approvals, the code is required.',
   ].join('\n'),
 };
 
@@ -416,18 +406,18 @@ export function formatAmbiguousApprovalResponse(
     return [
       'You have no pending trade approvals.',
       '',
-      `When an approval is pending, use the code from the request:`,
+      'When an approval is pending, use the short code from the approval message:',
       `  ${command} 26B8D`,
       '',
-      `Tip: ${command} without a code only works when you have exactly one pending approval.`,
+      `${command} without a code only works when you have exactly one unresolved approval.`,
     ].join('\n');
   }
 
   return [
-    `You have ${pendingCount} pending trade approvals. Please use the code from the approval message.`,
+    `You have ${pendingCount} pending trade approvals. Use the short code from the approval message:`,
     '',
-    `Approve: /yes 26B8D`,
-    `Reject:  /no 26B8D`,
+    `  /yes 26B8D  — approve`,
+    `  /no 26B8D   — reject`,
   ].join('\n');
 }
 
@@ -440,6 +430,6 @@ export function formatApprovalCodeNotFound(): string {
     'Approval code not found.',
     '',
     'It may have expired or already been resolved.',
-    'Use /yes CODE or /no CODE with the exact code from your approval message.',
+    'Use /yes <code> or /no <code> with the exact code from your approval message.',
   ].join('\n');
 }

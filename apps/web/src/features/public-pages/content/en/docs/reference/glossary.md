@@ -18,6 +18,18 @@ Guardrails control agent behavior — tool allowlists, time budgets, pause state
 
 Your agent's goal text and your explicit constraints determine how your agent trades. The platform won't add hidden restrictions you didn't ask for. System-level rules (execution mode, slippage, retries) are always enforced.
 
+## Approval
+
+A trade proposal that is waiting for your review before execution. When your agent's Trade Authorization is set to **Approval required**, each trade decision becomes an approval you must explicitly approve or reject. Approvals expire after a configurable time window.
+
+## Approval Code
+
+A 6-character short code (e.g. `26B8D`) that identifies a specific pending approval. Use it with Telegram slash commands (`/yes 26B8D`, `/no 26B8D`) or the web Approvals panel.
+
+## Authorization Mode
+
+Controls whether your agent's trade decisions execute immediately or wait for your approval. Two modes: **Direct** (immediate execution) and **Approval required** (each trade waits for user approval). Set when creating or editing a trading-capable agent.
+
 ---
 
 ## Binding
@@ -105,7 +117,7 @@ The process of comparing what the platform thinks your positions are against wha
 
 ## Skill Preset
 
-A bundled set of capabilities for an agent. Determines which tools your agent can use. Chosen when you create the agent. Examples: `trading`, `personal-assistant`.
+A bundled set of capabilities for an agent. Determines which tools your agent can use. Chosen when you create the agent. Examples: `trading`, `direct-trading`, `trading-assistant`, `personal-assistant`.
 
 ## Slippage
 

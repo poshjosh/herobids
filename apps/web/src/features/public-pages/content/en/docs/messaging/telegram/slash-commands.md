@@ -49,6 +49,13 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., `"DCA 
 |---|---|
 | `/to <agent> <message>` | Send a message to an agent |
 
+### Trade Approvals
+
+| Command | Description |
+|---|---|
+| `/yes <code>` | Approve a pending trade proposal (code required unless exactly 1 pending) |
+| `/no <code>` | Reject a pending trade proposal (code required unless exactly 1 pending) |
+
 ## Usage Examples
 
 ```text
@@ -71,7 +78,22 @@ Agent names with spaces must be wrapped in single or double quotes (e.g., `"DCA 
 /connect Momentum "Hyperliquid Main"
 /disconnect Momentum conn_abc123
 /to Momentum what's the market looking like?
+/yes 26B8D
+/no 26B8D
 ```
+
+## Trade Approval Workflow
+
+When your agent's **Trade Authorization** is set to **Approval required**, the agent will send you a trade proposal before executing. Each proposal includes a **6-character short code** (e.g. `26B8D`).
+
+To respond from Telegram:
+
+- **Approve:** `/yes 26B8D`
+- **Reject:** `/no 26B8D`
+
+Always use the code. Code-less `/yes` and `/no` are accepted only when you have exactly one unresolved approval. If you have zero or multiple pending approvals, the code is required.
+
+You can also approve or reject from the web app — see the **Approvals** panel on your agent's detail page.
 
 ## Default Routing
 
