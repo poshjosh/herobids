@@ -2012,6 +2012,7 @@ const manualReviewRuntime = new ManualReviewRuntime(
           eventPublisher,
           resolveActivePreset,
           checkBillingEligibility,
+          assessmentRequestPort: assessmentRequestService,
         },
         {
           reviewIntervalMs: Math.max(agentReviewIntervalMs, appConfig.platformAssessor.minReviewIntervalMs),
@@ -2028,6 +2029,7 @@ const manualReviewRuntime = new ManualReviewRuntime(
             policyVersion: '1.0.0',
             enablePeerComparison: true,
           },
+          maxAssessmentsPerReview: appConfig.platformAssessor.maxInstrumentsPerRequest,
         },
       );
 

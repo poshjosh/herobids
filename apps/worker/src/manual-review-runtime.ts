@@ -97,6 +97,9 @@ export class ManualReviewRuntime {
             checkedAt: outcome.data.checkedAt,
             nextEligibleAt: outcome.data.nextEligibleAt,
             checkId: outcome.data.checkId,
+            assessmentStatus: outcome.data.assessmentResults ? 'completed' : 'not_applicable',
+            assessedCount: outcome.data.assessmentResults?.length ?? 0,
+            totalAdvised: outcome.data.advisedCount,
           };
 
           await markManualReviewSucceeded(this.db, runId, resultSummary);

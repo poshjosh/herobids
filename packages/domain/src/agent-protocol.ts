@@ -429,6 +429,14 @@ export const ScannerWakeContextSchema = z.discriminatedUnion('scannerKind', [
       presetBehaviorVersion: z.string().min(1),
       /** Deterministic reason(s) the candidate was advised — cheap facts only, no LLM. */
       reasons: z.array(z.string().min(1)).min(1),
+      /** The market assessment artifact ID, if a synchronous assessment was performed. */
+      assessmentArtifactId: z.string().min(1).optional(),
+      /** The preset key recommended by the platform assessor, if available. */
+      recommendedPreset: z.string().min(1).nullable().optional(),
+      /** The platform assessor's confidence (0-1), if available. */
+      confidence: z.number().min(0).max(1).optional(),
+      /** When the assessment artifact expires, if available. */
+      expiresAt: z.string().datetime().optional(),
     })).min(1),
     /** When the deterministic pre-check ran. */
     checkedAt: z.string().datetime(),

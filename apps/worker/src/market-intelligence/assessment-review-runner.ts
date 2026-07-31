@@ -19,7 +19,11 @@ import {
   type ActivePresetState,
   type CandidatePreCheckOutcome,
   ReviewPreCheckReasonCodes,
+  type AssessmentRequestPort,
+  type AssessmentRequestPortParams,
+  type AssessmentResultEntry,
 } from '@herobids/domain';
+import { mapOutcomeToResultEntry } from '../tools/assess-strategy-preset.js';
 import { eq, and, desc, inArray, gte } from 'drizzle-orm';
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -37,6 +41,8 @@ export interface AssessmentReviewRunnerConfig {
   adviceExpiryMs: number;
   /** Resolved pre-check policy from operator config. */
   preCheck: ResolvedReviewPreCheckPolicy;
+  /** Cap on instruments assessed per forced review (mirrors platformAssessor.maxInstrumentsPerRequest). */
+  maxAssessmentsPerReview: number;
 }
 
 export interface AssessmentReviewRunnerDeps {
@@ -48,6 +54,10 @@ export interface AssessmentReviewRunnerDeps {
   resolveActivePreset: () => Promise<Result<ActivePresetState>>;
   /** Read-only billing preflight. */
   checkBillingEligibility: () => Promise<Result<boolean>>;
+  /** Only required for the manual/forced path. When set, advised instruments are
+   *  synchronously assessed via the platform assessor after the pre-check.
+   *  The scheduled path omits this dep and keeps the old wake-only behavior. */
+  assessmentRequestPort?: AssessmentRequestPort;
 }
 
 export interface ReviewCheckOutcome {
@@ -57,6 +67,15 @@ export interface ReviewCheckOutcome {
   advisedCount: number;
   outcomeCounts: Record<string, number>;
   hasAdvice: boolean;
+  /** Present only for the manual/forced path when assessments ran. */
+  assessmentResults?: Array<{
+    symbol: string;
+    identity: Record<string, unknown>;
+    candidateRank: number;
+    entry: AssessmentResultEntry;
+  }>;
+  /** True if more advised instruments existed than maxAssessmentsPerReview allowed. */
+  assessmentCapacityExceeded?: boolean;
 }
 
 export interface ReviewRunParams {
@@ -89,6 +108,7 @@ export class AssessmentReviewRunner {
   private readonly eventPublisher: AssessmentReviewRunnerDeps['eventPublisher'];
   private readonly resolveActivePreset: AssessmentReviewRunnerDeps['resolveActivePreset'];
   private readonly checkBillingEligibility: AssessmentReviewRunnerDeps['checkBillingEligibility'];
+  private readonly assessmentRequestPort?: AssessmentReviewRunnerDeps['assessmentRequestPort'];
 
   constructor(deps: AssessmentReviewRunnerDeps, config: AssessmentReviewRunnerConfig) {
     this.db = deps.db;
@@ -97,6 +117,7 @@ export class AssessmentReviewRunner {
     this.eventPublisher = deps.eventPublisher;
     this.resolveActivePreset = deps.resolveActivePreset;
     this.checkBillingEligibility = deps.checkBillingEligibility;
+    this.assessmentRequestPort = deps.assessmentRequestPort;
     this.logger = createLogger(`review-runner:${deps.agentId}`);
   }
 
@@ -136,9 +157,35 @@ export class AssessmentReviewRunner {
       if (!preCheckResult.ok) return preCheckResult;
       const preCheck = preCheckResult.data;
 
+      // 2b. For manual triggers: run synchronous assessments for advised instruments
+      let assessmentResults: ReviewCheckOutcome['assessmentResults'];
+      let assessmentCapacityExceeded = false;
+      if (params.trigger === 'manual' && this.assessmentRequestPort) {
+        const advisedPreFilter = preCheck.filter((c) => c.outcome === 'advised');
+        if (advisedPreFilter.length > 0) {
+          const assessmentOutcome = await this.runAssessments(advisedPreFilter);
+          assessmentResults = assessmentOutcome.results;
+          assessmentCapacityExceeded = assessmentOutcome.capacityExceeded;
+          this.logger.info(
+            { assessedCount: assessmentResults.length, capacityExceeded: assessmentCapacityExceeded },
+            'Manual-review synchronous assessments complete',
+          );
+        }
+      }
+
       // 3. Persist outcomes
       const nextEligibleAtDate = new Date(Date.now() + this.config.reviewIntervalMs);
-      const persistResult = await this.persistCheckOutcomes(checkId, checkedAt, preCheck, nextEligibleAtDate);
+      // Build assessment artifact map for persistence
+      const assessmentArtifactMap = new Map<string, string>();
+      if (assessmentResults) {
+        for (const r of assessmentResults) {
+          const artifactId = r.entry.assessment?.artifactId;
+          if (artifactId) {
+            assessmentArtifactMap.set(r.symbol, artifactId);
+          }
+        }
+      }
+      const persistResult = await this.persistCheckOutcomes(checkId, checkedAt, preCheck, nextEligibleAtDate, assessmentArtifactMap);
       if (!persistResult.ok) return persistResult;
 
       // 4. Compute outcome counts
@@ -179,6 +226,27 @@ export class AssessmentReviewRunner {
         if (advisedCandidates.length === 0) {
           this.logger.warn({ originalCount: advisedPreFilter.length }, 'All advised candidates had malformed identities — skipping wake');
         } else {
+          // Build assessment lookup: symbol → { artifactId, recommendedPreset, confidence, expiresAt }
+          const assessmentBySymbol = new Map<string, {
+            artifactId: string;
+            recommendedPreset: string | null;
+            confidence: number;
+            expiresAt: string;
+          }>();
+          if (assessmentResults) {
+            for (const r of assessmentResults) {
+              const a = r.entry.assessment;
+              if (a) {
+                assessmentBySymbol.set(r.symbol, {
+                  artifactId: a.artifactId,
+                  recommendedPreset: a.recommendedPreset,
+                  confidence: a.confidence,
+                  expiresAt: a.expiresAt,
+                });
+              }
+            }
+          }
+
           const adviceIds = advisedCandidates.map((a) => a.adviceId);
           const payload: AgentWakePayload = {
             source: 'scanner',
@@ -189,13 +257,23 @@ export class AssessmentReviewRunner {
             requestedAt: checkedAt,
             context: {
               scannerKind: 'assessment_review',
-              advice: advisedCandidates.map((a) => ({
-                identity: a.identity,
-                candidateRank: a.candidateRank,
-                activePreset: a.activePreset,
-                presetBehaviorVersion: a.presetBehaviorVersion,
-                reasons: a.reasons,
-              })),
+              advice: advisedCandidates.map((a) => {
+                const symbol = 'symbol' in a.identity ? a.identity.symbol : undefined;
+                const assessment = symbol ? assessmentBySymbol.get(symbol) : undefined;
+                return {
+                  identity: a.identity,
+                  candidateRank: a.candidateRank,
+                  activePreset: a.activePreset,
+                  presetBehaviorVersion: a.presetBehaviorVersion,
+                  reasons: a.reasons,
+                  ...(assessment && {
+                    assessmentArtifactId: assessment.artifactId,
+                    recommendedPreset: assessment.recommendedPreset,
+                    confidence: assessment.confidence,
+                    expiresAt: assessment.expiresAt,
+                  }),
+                };
+              }),
               checkedAt,
               nextEligibleAt,
             },
@@ -231,6 +309,8 @@ export class AssessmentReviewRunner {
         advisedCount: effectiveAdvisedCount,
         outcomeCounts,
         hasAdvice: effectiveAdvisedCount > 0,
+        assessmentResults,
+        assessmentCapacityExceeded,
       });
     } catch (error) {
       this.logger.error({ err: error, checkId }, 'Review check failed');
@@ -544,6 +624,78 @@ export class AssessmentReviewRunner {
     return { eligible: true, reasons };
   }
 
+  // ── Synchronous Assessments ──────────────────────────────────────────
+
+  private async runAssessments(
+    advised: CandidatePreCheckOutcome[],
+  ): Promise<{
+    results: Array<{ symbol: string; identity: Record<string, unknown>; candidateRank: number; entry: AssessmentResultEntry }>;
+    capacityExceeded: boolean;
+  }> {
+    if (!this.assessmentRequestPort) {
+      return { results: [], capacityExceeded: false };
+    }
+
+    // Build AssessmentRequestPortParams from advised candidates
+    const allParams: { params: AssessmentRequestPortParams; identity: Record<string, unknown>; candidateRank: number; symbol: string }[] = [];
+    for (const c of advised) {
+      const id = c.identity;
+      if (!id || !('symbol' in id) || !id.symbol) continue;
+      // narrowed to 'orderbook' | 'perp' by symbol guard, assignable to 'orderbook' | 'perp' | 'swap' | 'dex'
+      const instrumentKind = id.instrumentKind;
+      allParams.push({
+        params: {
+          agentId: this.agentId,
+          symbol: id.symbol,
+          venueFamily: id.venueFamily ?? 'hyperliquid',
+          instrumentKind,
+          styleTier: id.styleTier ?? 'standard',
+        },
+        identity: id as Record<string, unknown>,
+        candidateRank: c.candidateRank ?? 1,
+        symbol: id.symbol,
+      });
+    }
+
+    if (allParams.length === 0) {
+      return { results: [], capacityExceeded: false };
+    }
+
+    // Sort by candidateRank (lower = better) and cap
+    allParams.sort((a, b) => a.candidateRank - b.candidateRank);
+    const capacityExceeded = allParams.length > this.config.maxAssessmentsPerReview;
+    const toAssess = allParams.slice(0, this.config.maxAssessmentsPerReview);
+
+    // Single batched call
+    const batchResult = await this.assessmentRequestPort.requestBatchAssessment(
+      toAssess.map((p) => p.params),
+    );
+
+    if (!batchResult.ok) {
+      this.logger.warn({ err: batchResult.error }, 'Batch assessment call failed — review proceeds with pre-check only');
+      return { results: [], capacityExceeded };
+    }
+
+    // Map outcomes to results using the shared mapOutcomeToResultEntry
+    const outcomes = batchResult.data;
+    const results: Array<{ symbol: string; identity: Record<string, unknown>; candidateRank: number; entry: AssessmentResultEntry }> = [];
+
+    for (let i = 0; i < toAssess.length; i++) {
+      const param = toAssess[i]!;
+      const outcome = outcomes[i];
+      if (!outcome) continue;
+      const entry = mapOutcomeToResultEntry(param.symbol, outcome, null);
+      results.push({
+        symbol: param.symbol,
+        identity: param.identity,
+        candidateRank: param.candidateRank,
+        entry,
+      });
+    }
+
+    return { results, capacityExceeded };
+  }
+
   // ── Persistence ──────────────────────────────────────────────────────
 
   private async persistCheckOutcomes(
@@ -551,6 +703,7 @@ export class AssessmentReviewRunner {
     checkedAt: string,
     candidates: CandidatePreCheckOutcome[],
     nextEligibleAt: Date,
+    assessmentArtifactMap?: Map<string, string>,
   ): Promise<Result<void>> {
     try {
       const checkedAtDate = new Date(checkedAt);
@@ -616,6 +769,7 @@ export class AssessmentReviewRunner {
           presetBehaviorVersion: c.presetBehaviorVersion ?? 'unknown',
           outcome: c.outcome,
           expiresAt,
+          assessmentArtifactId: assessmentArtifactMap?.get(symbol ?? '') ?? null,
         };
       });
 

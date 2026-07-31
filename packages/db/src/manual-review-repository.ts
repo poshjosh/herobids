@@ -28,6 +28,9 @@ export interface ManualReviewResultSummary {
   checkedAt: string;
   nextEligibleAt: string;
   checkId: string;
+  assessmentStatus?: 'not_applicable' | 'assessing' | 'completed';
+  assessedCount?: number;
+  totalAdvised?: number;
 }
 
 // ── Repository helpers ──────────────────────────────────────────────────────
