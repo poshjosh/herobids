@@ -197,6 +197,7 @@ export interface RuntimeSessionMetrics {
   decisionsSubmitted: number;
   decisionsAccepted: number;
   decisionsRejected: number;
+  decisionsPendingApproval: number;
   lastPnlSummary: string | null;
   lastPositionSide: string | null;
   currentReminder: RuntimeReminderContext | null;
@@ -753,7 +754,13 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       content: [
         `Agent ID: ${state.runtimeDescriptor.agentId}`,
         ...(hasTradingCapability(state.runtimeDescriptor)
-          ? [`Execution mode: ${state.runtimeDescriptor.executionMode}`]
+          ? [
+              `Execution mode: ${state.runtimeDescriptor.executionMode}`,
+              `Authorization mode: ${state.runtimeDescriptor.authorizationMode}`,
+            ]
+          : []),
+        ...(state.runtimeDescriptor.authorizationMode === 'approval_required'
+          ? ['Trade approval required — your submit_decision calls will be recorded for user review. No trade executes until the user approves with /yes <code> or rejects with /no <code>. Include the short code shown in the approval response when telling the user how to respond.']
           : []),
         ...(state.context.workspaceRoot && hasVisibleWorkspacePathTooling(state)
           ? [
@@ -1469,6 +1476,7 @@ export function createRuntimeCompositionState(
       decisionsSubmitted: 0,
       decisionsAccepted: 0,
       decisionsRejected: 0,
+      decisionsPendingApproval: 0,
       lastPnlSummary: null,
       lastPositionSide: null,
       currentReminder: null,
@@ -1812,6 +1820,14 @@ export function applyRuntimeMessage(
   if (type === 'instance.decision.accepted') {
     state.metrics.decisionsAccepted++;
     const summary = `Decision accepted: ${payload['decisionId'] ?? 'unknown'}`;
+    pushRecentEvent(state, type, summary);
+    return summary;
+  }
+
+  if (type === 'instance.decision.pending_approval') {
+    state.metrics.decisionsPendingApproval++;
+    const code = typeof payload['shortCode'] === 'string' ? payload['shortCode'] : '????';
+    const summary = `Trade approval pending: code ${code}`;
     pushRecentEvent(state, type, summary);
     return summary;
   }

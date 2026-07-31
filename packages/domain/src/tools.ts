@@ -110,6 +110,8 @@ export interface ToolContext {
   phase: 'scout' | 'judge';
   /** The agent's own execution mode. Used by tools that enforce mode-rank constraints. */
   executionMode: 'paper' | 'shadow' | 'live';
+  /** Authorization mode for agent-direct trade decisions: 'direct' (execute immediately) or 'approval_required' (require user approval). */
+  authorizationMode: 'direct' | 'approval_required';
   /** Redis client for agent memory, watches, and pub/sub */
   redis: {
     hset: (key: string, field: string, value: string) => Promise<number>;
@@ -336,7 +338,7 @@ export interface ToolCatalogEntry {
  */
 export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   // execute-trade
-  submit_decision:     { category: 'execute-trade',       description: 'Submit a trade decision for a specific instrument. Evaluated by risk gate and executed if approved.' },
+  submit_decision:     { category: 'execute-trade',       description: 'Submit a trade decision for a specific instrument. In direct mode, accepted decisions execute immediately. In approval_required mode, the decision is recorded and sent to the user for approval — no trade executes until the user responds with /yes <code> or /no <code>.' },
   create_bot:          { category: 'execute-trade',       description: 'Create and start a new trading bot with its own strategy and risk parameters.' },
 
   // read-database

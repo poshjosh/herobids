@@ -302,6 +302,7 @@ export function buildRuntimeDescriptor(input: {
   name?: string | null;
   goal: string;
   executionMode?: string | null;
+  authorizationMode?: string | null;
   toolPolicy?: Record<string, unknown> | null;
   dailyTokenBudget?: string | null;
   dailyLossLimit?: string | null;
@@ -320,6 +321,7 @@ export function buildRuntimeDescriptor(input: {
     name: input.name ?? input.agentId,
     goal: input.goal,
     executionMode: input.executionMode ?? 'paper',
+    authorizationMode: input.authorizationMode ?? 'direct',
     resolvedSkills: input.capabilityDescriptor.resolvedSkills,
     grantedConnectionsByFamily: input.capabilityDescriptor.grantedConnectionsByFamily,
     defaultConnectionByFamily: input.capabilityDescriptor.defaultConnectionByFamily,

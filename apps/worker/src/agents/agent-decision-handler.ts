@@ -3,14 +3,30 @@ import type { MessageEnvelope, DecisionSubmitPayload } from '@herobids/domain';
 import { Decimal } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
 import type { DecisionFailureRepository } from '@herobids/db';
+import type { DecisionApprovalRepository } from '@herobids/db';
 import { submitDecisionForExecution, DecisionContextHashMismatchError, validatePerTradeLevels } from '@herobids/engine';
 import type { DecisionIntakeDeps, DecisionContext, PositionState, LevelValidationError } from '@herobids/engine';
 import type { IntakeResult } from '../execution-actor.js';
 import { isIntakeRejection } from '../execution-actor.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import { createLogger } from '../logger.js';
+import crypto from 'node:crypto';
 
 const logger = createLogger('agent-decision-handler');
+
+/** Alphabet for human-safe short codes — excludes confusing chars (0, O, I, L, lowercase). */
+const SHORT_CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRTVWXYZ';
+const SHORT_CODE_LENGTH = 6;
+
+/** Generate a 6-character uppercase short code using crypto.randomBytes. */
+function generateShortCode(): string {
+  const bytes = crypto.randomBytes(SHORT_CODE_LENGTH);
+  let code = '';
+  for (let i = 0; i < SHORT_CODE_LENGTH; i++) {
+    code += SHORT_CODE_ALPHABET[bytes[i]! % SHORT_CODE_ALPHABET.length];
+  }
+  return code;
+}
 
 /** Intents that grow (or initiate) a position — used for level validation and stop-loss/take-profit reminders. */
 const POSITION_GROWING_INTENTS = new Set<DecisionIntent>(['go_long', 'go_short', 'increase']);
@@ -68,6 +84,8 @@ export class AgentDecisionHandler {
     private readonly eventPublisher: InstanceEventPublisher,
     private readonly decisionFailureRepo?: DecisionFailureRepository,
     thresholds?: { noContext?: number; swapInstrumentFormat?: number },
+    private readonly approvalRepo?: DecisionApprovalRepository,
+    private readonly agentApprovalsTtlMs?: number,
   ) {
     this.breakerThresholds = {
       no_context: thresholds?.noContext ?? 10,
@@ -178,10 +196,10 @@ export class AgentDecisionHandler {
 
     // Track outcome for synchronous reply to the agent's submit_decision tool
     const expectsReply = payload._expectsReply === true;
-    let syncReply: { status: 'accepted' | 'rejected' | 'error'; code?: string; message?: string; planId?: string } | null = null;
+    let syncReply: { status: 'accepted' | 'rejected' | 'error' | 'pending_approval'; code?: string; message?: string; planId?: string; approvalId?: string; shortCode?: string; expiresAt?: string } | null = null;
     const setSyncReply = (
-      status: 'accepted' | 'rejected' | 'error',
-      opts: { code?: string; message?: string; planId?: string },
+      status: 'accepted' | 'rejected' | 'error' | 'pending_approval',
+      opts: { code?: string; message?: string; planId?: string; approvalId?: string; shortCode?: string; expiresAt?: string },
     ) => {
       syncReply = { status, ...opts };
     };
@@ -234,7 +252,205 @@ export class AgentDecisionHandler {
       return;
     }
 
-    // 3. Resolve execution deps — try bot registry first, then agent grants
+    // 3. Resolve authorization mode from the agent's unified config.
+    // Default to 'direct' for agents without a unifiedConfig row (legacy or direct-launched).
+    const raw = agent?.unifiedConfig as unknown as Record<string, unknown> | null | undefined;
+    const authorizationMode: 'direct' | 'approval_required' =
+      raw?.authorizationMode === 'approval_required' ? 'approval_required' : 'direct';
+
+    // 3a. Approval-required gate: create a pending approval instead of executing.
+    if (authorizationMode === 'approval_required' && this.approvalRepo && this.agentApprovalsTtlMs) {
+      // Reject dry-run submissions in approval-required mode.
+      if (payload.dryRun) {
+        const msg = 'Dry-run submissions are not supported in approval-required mode. Set authorizationMode to \'direct\' to test decisions without execution.';
+        setSyncReply('rejected', { code: 'dry_run_approval_mode', message: msg });
+        await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
+          decisionId: payload.decisionId,
+          code: 'dry_run_approval_mode',
+          message: msg,
+          retryable: false,
+        });
+        this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'dry_run_approval_mode', failureMessage: msg, failureClass: 'rejection', retryable: false });
+        return;
+      }
+      // Resolve lightweight execution context to build the approval snapshot.
+      const intakeResult = await this.intakeResolver.getIntakeDeps(resolveId, payload.instrumentId);
+      if (!intakeResult || isIntakeRejection(intakeResult)) {
+        const msg = !intakeResult
+          ? 'No execution context — cannot create approval without a valid trading connection'
+          : intakeResult.message;
+        const code = !intakeResult ? 'instance_not_running' : intakeResult.code;
+        setSyncReply('rejected', { code, message: msg });
+        await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
+          decisionId: payload.decisionId,
+          code,
+          message: msg,
+          retryable: true,
+        });
+        this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: code, failureMessage: msg, failureClass: 'rejection', retryable: true });
+        return;
+      }
+
+      const userId = agent?.userId;
+      if (!userId) {
+        const msg = 'Approval-required mode requires an owned agent with a user — cannot create approval';
+        setSyncReply('rejected', { code: 'approval_no_user', message: msg });
+        await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
+          decisionId: payload.decisionId,
+          code: 'approval_no_user',
+          message: msg,
+          retryable: false,
+        });
+        this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'approval_no_user', failureMessage: msg, failureClass: 'rejection', retryable: false });
+        return;
+      }
+
+      // Generate a unique short code per user.
+      // The unique index is on (userId, shortCode), so we retry on DB-level collisions.
+      let shortCode = generateShortCode();
+      const MAX_CODE_ATTEMPTS = 5;
+      let approvalId: string | null = null;
+      const expiresAt = new Date(Date.now() + this.agentApprovalsTtlMs);
+      const proposedPayload: Record<string, unknown> = {
+        instrumentId: payload.instrumentId,
+        intent: payload.intent,
+        targetSize: payload.targetSize,
+        limitPrice: payload.limitPrice ?? null,
+        stopLoss: payload.stopLoss ?? null,
+        takeProfit: payload.takeProfit ?? null,
+        confidence: payload.confidence ?? null,
+        rationaleSummary: payload.rationaleSummary,
+        contextHash: payload.contextHash ?? null,
+        metadata: payload.metadata ?? {},
+      };
+
+      for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
+        // Pre-check: skip codes already known to exist (optimistic fast path).
+        const existing = await this.approvalRepo.findByUserIdAndShortCode(userId, shortCode);
+        if (existing) {
+          shortCode = generateShortCode();
+          continue;
+        }
+
+        try {
+          approvalId = await this.approvalRepo.createApproval({
+            shortCode,
+            userId,
+            agentId: effectiveAgentId,
+            actorType: initiatorType,
+            actorId: initiatorId,
+            venueAccountId: intakeResult.venueAccountId,
+            authorizationModeSnapshot: authorizationMode,
+            status: 'pending',
+            instrumentId: payload.instrumentId,
+            intent: payload.intent,
+            targetSize: payload.targetSize,
+            limitPrice: payload.limitPrice ?? null,
+            stopLoss: payload.stopLoss ?? null,
+            takeProfit: payload.takeProfit ?? null,
+            confidence: payload.confidence?.toString() ?? null,
+            rationaleSummary: payload.rationaleSummary,
+            contextHash: payload.contextHash ?? null,
+            proposedPayload,
+            expiresAt,
+          });
+          break; // Success — exit the retry loop.
+        } catch (err: unknown) {
+          // PostgreSQL unique violation error code (23505).
+          // The index is on (userId, shortCode) — a concurrent request beat us to this code.
+          const isUniqueViolation =
+            typeof err === 'object' && err !== null &&
+            'code' in err && (err as { code: string }).code === '23505';
+          if (isUniqueViolation) {
+            shortCode = generateShortCode();
+            continue;
+          }
+          throw err;
+        }
+      }
+      if (!approvalId) {
+        const msg = 'Failed to generate a unique short code after multiple attempts';
+        setSyncReply('error', { code: 'approval_code_collision', message: msg });
+        return;
+      }
+
+      const expiresAtISO = expiresAt.toISOString();
+      const approvalNote = `Decision recorded and sent to the user for approval. No trade has been executed yet. Ask the user to approve with /yes ${shortCode} or reject with /no ${shortCode}.`;
+
+      setSyncReply('pending_approval', {
+        message: approvalNote,
+        approvalId,
+        shortCode,
+        expiresAt: expiresAtISO,
+      });
+      await publishSyncReply();
+      syncReply = null; // Prevent double-publish in finally block
+
+      // Emit the pending approval event for activity feed / notifications.
+      try {
+        await this.eventPublisher.emitDecisionPendingApproval(effectiveBotId, {
+          decisionId: payload.decisionId,
+          approvalId,
+          shortCode,
+          expiresAt: expiresAtISO,
+          instrumentId: payload.instrumentId,
+          intent: payload.intent,
+          targetSize: payload.targetSize,
+          rationaleSummary: payload.rationaleSummary,
+        });
+      } catch (err) {
+        logger.warn({ decisionId: payload.decisionId, approvalId, err }, 'Failed to emit pending approval event');
+      }
+
+      // TODO: Platform-authored user notification (Change 11 from the plan).
+      // This needs to deliver to both web UI and Telegram. The message format
+      // should include the short code, instrument, intent, size, and rationale.
+      // This is not dependent on the agent calling send_message — it is a
+      // platform-pushed notification triggered by the approval creation.
+
+      // Publish a user notification to Redis pub/sub so the API/WebSocket layer
+      // can deliver it to the user's connected clients (web UI, Telegram bot).
+      if (userId) {
+        await this.eventPublisher.publishUserNotification(userId, {
+          type: 'decision.pending_approval',
+          payload: {
+            approvalId,
+            shortCode,
+            agentId: effectiveAgentId,
+            instrumentId: payload.instrumentId,
+            intent: payload.intent,
+            targetSize: payload.targetSize,
+            rationaleSummary: payload.rationaleSummary,
+            expiresAt: expiresAtISO,
+          },
+        });
+      }
+
+      // Trigger a platform notification to the user.
+      // Use the existing send_message pattern via the event publisher/journal.
+      try {
+        await this.eventPublisher.emitJournalEvent(effectiveAgentId, {
+          journalType: 'approval.pending',
+          timestamp: new Date().toISOString(),
+          detail: JSON.stringify({
+            approvalId,
+            shortCode,
+            instrumentId: payload.instrumentId,
+            intent: payload.intent,
+            targetSize: payload.targetSize,
+            rationaleSummary: payload.rationaleSummary,
+            expiresAt: expiresAtISO,
+            ttlMs: this.agentApprovalsTtlMs,
+          }),
+        });
+      } catch (err) {
+        logger.error({ decisionId: payload.decisionId, approvalId, err }, 'Failed to emit approval journal event');
+      }
+
+      return;
+    }
+
+    // 4. Resolve execution deps — try bot registry first, then agent grants
     const intakeResult = await this.intakeResolver.getIntakeDeps(resolveId, payload.instrumentId);
     if (!intakeResult) {
       const msg = 'No execution context — ensure the actor is active and has an active trading grant';

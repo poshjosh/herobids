@@ -20,11 +20,11 @@ const SubmitDecisionParamsSchema = z.object({
 
 const submitDecisionTool: AgentTool = {
   name: 'submit_decision',
-  description: 'Submit a trade decision for a specific instrument. The decision will be evaluated by the risk gate and executed if approved. Use this to express trading intent based on your analysis.',
+  description: 'Submit a trade decision for a specific instrument. In direct authorization mode, accepted decisions proceed to execution immediately. In approval_required mode, the decision is recorded and sent to the user for approval — no trade executes until the user responds with /yes <code> or /no <code>. Check your runtime context for the active authorization mode.',
   parametersSchema: SubmitDecisionParamsSchema,
   parameters: convertZodToJsonSchema(SubmitDecisionParamsSchema),
   category: 'execute-trade',
-  promptGuidance: 'Use dryRun=true first to preview the decision before submitting. Call find_instrument to get the correct instrumentId, and get_account_summary to see available capital and open positions. targetSize is denominated in the base asset (e.g. ETH in ETH/USDC), so a $50 position at $2500/ETH is "0.02". Use get_schema("venue-defaults") for recommended slippage values.',
+  promptGuidance: 'Use dryRun=true first to preview the decision before submitting. Call find_instrument to get the correct instrumentId, and get_account_summary to see available capital and open positions. targetSize is denominated in the base asset (e.g. ETH in ETH/USDC), so a $50 position at $2500/ETH is "0.02". Use get_schema("venue-defaults") for recommended slippage values. In approval_required mode, your decision will be recorded and sent to the user — ask them to approve with /yes <code> or reject with /no <code>. No trade executes without user approval.',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const p = params as z.infer<typeof SubmitDecisionParamsSchema>;
 
@@ -71,6 +71,7 @@ const submitDecisionTool: AgentTool = {
       rationaleSummary: p.rationaleSummary,
       confidence: p.confidence,
       safetyOverrideId: p.safetyOverrideId,
+      dryRun: p.dryRun,
       // Signal to the handler that this decision expects a synchronous reply
       _expectsReply: true,
     });
@@ -88,7 +89,7 @@ const submitDecisionTool: AgentTool = {
     }
 
     const [, raw] = reply;
-    let parsed: { status: string; code?: string; message?: string; planId?: string };
+    let parsed: { status: string; code?: string; message?: string; planId?: string; approvalId?: string; shortCode?: string; expiresAt?: string };
     try {
       parsed = JSON.parse(raw);
     } catch {
@@ -108,6 +109,20 @@ const submitDecisionTool: AgentTool = {
           decisionId,
           planId: parsed.planId,
           note: parsed.message ?? 'Decision accepted by engine and sent for execution.',
+        },
+      };
+    }
+
+    if (parsed.status === 'pending_approval') {
+      return {
+        success: true,
+        data: {
+          ok: true,
+          status: 'pending_approval',
+          approvalId: parsed.approvalId,
+          shortCode: parsed.shortCode,
+          expiresAt: parsed.expiresAt,
+          note: parsed.message ?? `Decision recorded and sent to the user for approval. No trade has been executed yet. Ask the user to approve with /yes ${parsed.shortCode ?? '<code>'} or reject with /no ${parsed.shortCode ?? '<code>'}.`,
         },
       };
     }

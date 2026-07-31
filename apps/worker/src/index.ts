@@ -23,7 +23,7 @@ import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { LlmStrategy, MechanicalStrategy, HybridStrategy, DcaStrategy } from '@herobids/strategy';
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, LlmArtifactRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, AgentDocumentsRepository, bots, users, agents, agentScanCandidates, agentScanMetrics } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, LlmArtifactRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, AgentDocumentsRepository, DecisionApprovalRepository, bots, users, agents, agentScanCandidates, agentScanMetrics } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, HyperliquidMarkSource } from '@herobids/venues';
 import { createFillFirstMarkSource } from '@herobids/engine';
@@ -211,6 +211,7 @@ const llmArtifactRepo = new LlmArtifactRepository(db);
 const alertDeliveryRepo = new AlertDeliveryRepository(db);
 const tokenSafetyOverrideRepo = new TokenSafetyOverrideRepository(db);
 const decisionFailureRepo = new DecisionFailureRepository(db);
+const decisionApprovalRepo = new DecisionApprovalRepository(db);
 const instrumentRepo = new InstrumentRepository(db);
 
 // Document store shared by API and worker — must use the same root directory.
@@ -699,6 +700,8 @@ const agentDecisionHandler = new AgentDecisionHandler(
     noContext: appConfig.agentRiskDefaults.agentDecisionNoContextThreshold,
     swapInstrumentFormat: appConfig.agentRiskDefaults.agentDecisionSwapInstrumentFormatThreshold,
   },
+  decisionApprovalRepo,
+  appConfig.agentApprovals.ttlMs,
 );
 
 const snapshotResolver: ContextSnapshotResolver = {

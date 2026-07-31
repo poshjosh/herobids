@@ -140,6 +140,19 @@ const MESSAGE_CLASSIFICATIONS: Record<string, ActivityClassification> = {
     title: 'Decision rejected',
     summaryFn: (row) => row.errorDetail?.message ?? 'Decision was rejected by the platform.',
   },
+  [INSTANCE_MESSAGE_TYPES.DECISION_PENDING_APPROVAL]: {
+    category: 'decision',
+    severity: 'info',
+    eventType: 'decision.pending_approval',
+    title: 'Decision pending approval',
+    summaryFn: (row) => {
+      const p = row.payload as Record<string, unknown> | null;
+      const instrument = typeof p?.['instrumentId'] === 'string' ? p['instrumentId'] : 'unknown';
+      const intent = typeof p?.['intent'] === 'string' ? p['intent'] : 'unknown';
+      const code = typeof p?.['shortCode'] === 'string' ? p['shortCode'] : '????';
+      return `Trade decision for ${instrument} (${intent}) requires approval. Use /yes ${code} or /no ${code}.`;
+    },
+  },
   [INSTANCE_MESSAGE_TYPES.GUARDRAIL_TRIGGERED]: {
     category: 'risk',
     severity: 'warn',

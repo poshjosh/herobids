@@ -41,6 +41,8 @@ export interface RuntimeDescriptor {
   name?: string;
   goal: string;
   executionMode: string;
+  /** Authorization mode for agent-direct trade decisions: 'direct' (execute immediately) or 'approval_required' (require user approval). */
+  authorizationMode: string;
   resolvedSkills: SkillDefinition[];
   grantedConnectionsByFamily: Record<string, RuntimeFamilyBindingDescriptor[]>;
   defaultConnectionByFamily: Record<string, string | null>;

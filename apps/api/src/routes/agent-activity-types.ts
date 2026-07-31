@@ -22,6 +22,7 @@ export type AgentActivityEventType =
   | 'runtime.failed'
   | 'decision.accepted'
   | 'decision.rejected'
+  | 'decision.pending_approval'
   | 'message.authored'
   | 'system.alert'
   | 'artifact.published'

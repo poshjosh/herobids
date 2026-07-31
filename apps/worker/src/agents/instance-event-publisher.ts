@@ -2,6 +2,7 @@ import type { Redis } from 'ioredis';
 import type {
   DecisionAcceptedPayload,
   DecisionRejectedPayload,
+  DecisionPendingApprovalPayload,
   PlanStatusPayload,
   ExecutionResultPayload,
   GuardrailTriggeredPayload,
@@ -40,6 +41,10 @@ export class InstanceEventPublisher {
 
   async emitDecisionRejected(agentId: string, payload: DecisionRejectedPayload): Promise<void> {
     await this.publish(agentId, INSTANCE_MESSAGE_TYPES.DECISION_REJECTED, payload);
+  }
+
+  async emitDecisionPendingApproval(agentId: string, payload: DecisionPendingApprovalPayload): Promise<void> {
+    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.DECISION_PENDING_APPROVAL, payload);
   }
 
   async emitPlanStatus(agentId: string, payload: PlanStatusPayload): Promise<void> {
@@ -91,11 +96,31 @@ export class InstanceEventPublisher {
   }
 
   /**
+   * Publish a user-facing notification to the `user:notification:{userId}` Redis pub/sub channel.
+   * This is a fire-and-forget best-effort delivery; the API/WebSocket layer consumes it for
+   * real-time UI and Telegram notifications.
+   */
+  async publishUserNotification(userId: string, notification: { type: string; payload: Record<string, unknown> }): Promise<void> {
+    const channel = `user:notification:${userId}`;
+    const message = JSON.stringify({
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      type: notification.type,
+      payload: notification.payload,
+    });
+    try {
+      await this.redis.publish(channel, message);
+    } catch (err) {
+      logger.error({ channel, type: notification.type, err }, 'Failed to publish user notification');
+    }
+  }
+
+  /**
    * Publish a synchronous decision reply to a Redis list so the agent's
    * submit_decision tool can BLPOP it and get immediate feedback.
    * Errors propagate to the caller — it is the caller's responsibility to log and continue.
    */
-  async publishDecisionReply(decisionId: string, reply: { status: 'accepted' | 'rejected' | 'error'; code?: string; message?: string; planId?: string }): Promise<void> {
+  async publishDecisionReply(decisionId: string, reply: { status: 'accepted' | 'rejected' | 'error' | 'pending_approval'; code?: string; message?: string; planId?: string; approvalId?: string; shortCode?: string; expiresAt?: string }): Promise<void> {
     const replyKey = `agent:decision:reply:${decisionId}`;
     await this.redis.lpush(replyKey, JSON.stringify(reply));
     // Expire after 60s to prevent leaking keys if the agent never reads

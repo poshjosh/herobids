@@ -276,6 +276,8 @@ interface AgentConfig {
   capabilityMode?: 'intelligence' | 'hybrid';
   /** 004: Hybrid sub-mode from UnifiedAgentConfig ('mixed' | 'scanner_gated'). Only meaningful when capabilityMode === 'hybrid'. */
   hybridMode?: 'mixed' | 'scanner_gated';
+  /** Authorization mode from UnifiedAgentConfig ('direct' | 'approval_required'). Controls whether agent-direct trade decisions execute immediately or require user approval. */
+  authorizationMode?: 'direct' | 'approval_required';
   /** Per-agent open position escalation to judge policy: never | uncovered_or_triggered | always */
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
   /** Resolved per-agent runtime policy — derived from style + overrides at session start */
@@ -471,6 +473,7 @@ function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
     name: agentConfig.name ?? AGENT_ID!,
     goal: agentGoal,
     executionMode: agentConfig.executionMode ?? 'paper',
+    authorizationMode: agentConfig.authorizationMode ?? 'direct',
     resolvedSkills,
     grantedConnectionsByFamily: {},
     defaultConnectionByFamily: {},
@@ -492,6 +495,7 @@ const runtimeDescriptor = agentConfig.runtimeDescriptor
   ? {
     ...agentConfig.runtimeDescriptor,
     name: agentConfig.runtimeDescriptor.name ?? agentConfig.name ?? agentConfig.runtimeDescriptor.agentId,
+    authorizationMode: agentConfig.authorizationMode ?? agentConfig.runtimeDescriptor.authorizationMode ?? 'direct',
     budgets: { ...agentRuntimePolicy.defaultBudgets },
   }
   : buildFallbackRuntimeDescriptor();
@@ -1677,6 +1681,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     sessionId: SESSION_ID!,
     phase,
     executionMode: (agentConfig.executionMode ?? 'paper') as 'paper' | 'shadow' | 'live',
+    authorizationMode: (agentConfig.authorizationMode ?? 'direct') as 'direct' | 'approval_required',
     redis: {
       hset: redis.hset.bind(redis),
       hget: redis.hget.bind(redis),

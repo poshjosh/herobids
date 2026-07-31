@@ -58,6 +58,8 @@ export const DecisionSubmitPayloadSchema = z.object({
   artifacts: z.array(z.record(z.unknown())).optional(),
   metadata: z.record(z.unknown()).optional(),
   safetyOverrideId: z.string().min(1).optional(),
+  /** If true, the decision should be validated but not submitted. Not supported in approval_required mode. */
+  dryRun: z.boolean().optional(),
   /** Internal protocol flag — set by the submit_decision tool, not by clients. Signals the handler to publish a synchronous reply via Redis list. */
   _expectsReply: z.boolean().optional(),
 });
@@ -208,6 +210,18 @@ export const DecisionRejectedPayloadSchema = z.object({
 });
 
 export type DecisionRejectedPayload = z.infer<typeof DecisionRejectedPayloadSchema>;
+
+export const DecisionPendingApprovalPayloadSchema = z.object({
+  decisionId: z.string().min(1),
+  approvalId: z.string().min(1),
+  shortCode: z.string().length(6),
+  expiresAt: z.string().datetime(),
+  instrumentId: z.string().min(1),
+  intent: z.string().min(1),
+  targetSize: z.string().min(1),
+  rationaleSummary: z.string().min(1),
+});
+export type DecisionPendingApprovalPayload = z.infer<typeof DecisionPendingApprovalPayloadSchema>;
 
 export const PlanStatusPayloadSchema = z.object({
   decisionId: z.string().min(1),
@@ -497,6 +511,7 @@ export const INSTANCE_MESSAGE_TYPES = {
   CONTEXT_SNAPSHOT: 'instance.context.snapshot',
   DECISION_ACCEPTED: 'instance.decision.accepted',
   DECISION_REJECTED: 'instance.decision.rejected',
+  DECISION_PENDING_APPROVAL: 'instance.decision.pending_approval',
   PLAN_STATUS: 'instance.plan.status',
   EXECUTION_RESULT: 'instance.execution.result',
   GUARDRAIL_TRIGGERED: 'instance.guardrail.triggered',
@@ -642,6 +657,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: ContextSnapshotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: DecisionAcceptedPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_REJECTED]: DecisionRejectedPayloadSchema,
+  [INSTANCE_MESSAGE_TYPES.DECISION_PENDING_APPROVAL]: DecisionPendingApprovalPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.PLAN_STATUS]: PlanStatusPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.EXECUTION_RESULT]: ExecutionResultPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.GUARDRAIL_TRIGGERED]: GuardrailTriggeredPayloadSchema,
