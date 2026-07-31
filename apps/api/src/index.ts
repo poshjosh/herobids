@@ -207,7 +207,7 @@ await app.register(cors, {
 app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
 // Telegram webhook — public (unauthenticated), token-validated
-await telegramWebhookHandler(app, db, redisClient, appConfig.alerts, appConfig.auth);
+await telegramWebhookHandler(app, db, redisClient, appConfig.alerts, appConfig.auth, appConfig.agentApprovals);
 
 // Auth routes (public — Google OAuth flow + exchange endpoint)
 const authMailer = createAuthMailer(appConfig.alerts, appConfig.auth.frontendOrigin ? `${appConfig.auth.frontendOrigin}/brand/wordmark-dark.png` : undefined);
