@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.37 - 2026-07-31
+
 ### Added
 
 - **Authorization Mode & Trade Approvals:** New `authorizationMode` on agent config (`direct` | `approval_required`). In approval mode, `submit_decision` records trade proposals for human review. Approve/reject via web UI or Telegram `/yes <code>` / `/no <code>`. New `trading-assistant` skill preset, `decision_approvals` table with 6-char human-safe codes, approval lifecycle with worker-gated status transitions, web `ApprovalsPanel`, operator `agentApprovals` config, platform-authored Telegram notifications, and full documentation.
