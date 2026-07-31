@@ -64,11 +64,13 @@ Follow these steps to implement all the items in the plan or task-list provided 
 
    b. If the code review does not include critical/high issues/observations:
 
-      i. If there is a CHANGELOG.md, update it - keep it brief.
+      i. Verify the implementation of the items marked DONE with respect to the plan or task-list. Do this by running any verification tests/steps/commands/processes, or by checking the implementation against the plan/task-list. Fix any identified problems till the verification passes.
 
-      ii. Print a brief descriptive message for the user including any "Outstanding Issues".
+      ii. If there is a CHANGELOG.md, update it - keep it brief.
 
-      iii. STOP.
+      iii. Print a brief descriptive message for the user including any "Outstanding Issues".
+
+      iv. STOP.
 
 13. Determine if addressing the code review feedback review requires either much/complex or little/simple changes. 
 
