@@ -133,6 +133,21 @@ export const ReviewPreCheckReasonCodes = {
   NO_CANDIDATE: 'no_candidate',
 } as const;
 
+export const ReviewPreCheckReasonDescriptions: Record<ReviewPreCheckReasonCode, string> = {
+  regime_bias_mismatch: 'Market regime does not match this preset\'s bias',
+  volatility_outside_preset_band: 'Volatility is outside this preset\'s acceptable range',
+  insufficient_candidate_quality: 'Signal confidence is below the minimum threshold',
+  no_peer_outperformance: 'No other preset is outperforming the current one here',
+  peer_outperformance_detected: 'A different preset is generating more signals on this instrument',
+  candidate_stale: 'Scanner data for this instrument is too old to act on',
+  identity_unresolved: 'Could not resolve a canonical identity for this instrument',
+  fresh_artifact_exists: 'A recent assessment already exists for this instrument',
+  cooldown_active: 'This instrument was reviewed too recently to review again',
+  billing_blocked: 'Assessment was skipped due to a billing restriction',
+  agent_disabled: 'This agent is disabled',
+  no_candidate: 'No scanner candidates were available to review',
+};
+
 export type ReviewPreCheckReasonCode = (typeof ReviewPreCheckReasonCodes)[keyof typeof ReviewPreCheckReasonCodes];
 
 // ── Review Check Result ─────────────────────────────────────────────────────
