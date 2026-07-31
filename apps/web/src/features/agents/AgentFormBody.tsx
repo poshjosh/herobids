@@ -480,6 +480,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                         value={props.value.platformAssessmentReviewIntervalHours}
                         onChange={(e) => props.onChange({ platformAssessmentReviewIntervalHours: e.target.value })}
                       >
+                        <option value="6">6 hours</option>
                         <option value="12">12 hours</option>
                         <option value="24">24 hours</option>
                         <option value="48">48 hours</option>

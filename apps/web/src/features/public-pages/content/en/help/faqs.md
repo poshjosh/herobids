@@ -61,8 +61,12 @@ There are two ways exits are handled:
 
 1. **Advisory mode** (default) — When the scanner detects a potential exit, it wakes the LLM with an "exit review" section showing P&L, current price, and RSI. The agent then decides whether to close (`go_flat`) or hold each position. This gives you full control over exit decisions through your agent's reasoning.
 
-2. **Autonomous mode** — When enabled, the scanner submits exit decisions directly without waking the LLM. This is faster (no delay waiting for the next scan cycle) and cheaper (fewer LLM calls). Recommended if you want quick exits without manual agent involvement.
+2. **Autonomous mode** — When enabled, the scanner submits exit decisions directly without waking the LLM. This is faster (no delay waiting for the next scan cycle) and cheaper (fewer LLM calls). Recommended if you want quick exits without manual agent involvement. See [Agent Style](/docs/agents/agent-style) to understand how your agent style (Careful, Balanced, or Bold) affects exit behavior.
 
 ### What about stop-losses and take-profits?
 
 These execute automatically regardless of mode. Per-trade stop-loss and take-profit levels, plus portfolio-wide drawdown limits, are **hard safety nets** that fire immediately — they don't wait for the next scanner cycle or an LLM decision. They protect your positions in real time.
+
+> **Note:** If your agent hits a hard billing cap (see [Billing Limits](/docs/agents/billing-limits)), it will stop reasoning but **will not automatically close positions**. You'll need to act manually or adjust the cap.
+
+> **Note:** If your agent hits a hard billing cap (see [Billing Limits](/docs/agents/billing-limits)), it will stop reasoning but **will not automatically close positions**. You'll need to act manually or adjust the cap.
