@@ -8,6 +8,10 @@ To bring the power of AI agents to everyone.
 
 Make using AI agents as simple as describing what you want to an AI agent that knows what to do to get what you want.
 
+## Tag line/About
+
+Low cost AI agents that trade, assist, research and more.
+
 ## Core Concepts
 
 We offer AI agents as a service. AI agents: 
