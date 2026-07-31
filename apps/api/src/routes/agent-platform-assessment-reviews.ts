@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { Queue } from 'bullmq';
 import crypto from 'node:crypto';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray, gte } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import {
   agents,
@@ -10,8 +10,12 @@ import {
   getManualReviewRun,
   hasActiveManualReviewRun,
   reviewAdvice,
+  marketAssessmentArtifacts,
+  agentPresetBindings,
 } from '@herobids/db';
 import type { ManualReviewJobData } from '@herobids/db';
+import { getPreset, ReviewPreCheckReasonDescriptions } from '@herobids/domain';
+import type { StyleKey } from '@herobids/domain';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -275,23 +279,162 @@ export async function platformAssessmentReviewRoutes(
           activePreset: reviewAdvice.activePreset,
           candidateRank: reviewAdvice.candidateRank,
           reasons: reviewAdvice.supportingFacts,
+          assessmentArtifactId: reviewAdvice.assessmentArtifactId,
+          assessmentRequestedAt: reviewAdvice.assessmentRequestedAt,
+          consumedAt: reviewAdvice.consumedAt,
+          styleTier: reviewAdvice.styleTier,
         })
         .from(reviewAdvice)
         .where(eq(reviewAdvice.checkId, run.checkId))
         .orderBy(reviewAdvice.candidateRank);
 
-      const advice = rows.map((r) => ({
-        symbol: r.symbol,
-        outcome: r.outcome,
-        activePreset: r.activePreset,
-        candidateRank: r.candidateRank,
-        reasons: (r.reasons as Record<string, unknown> | null)?.reasons ?? [],
-      }));
+      const advice = rows.map((r) => {
+        const activePresetName =
+          getPreset(r.activePreset, r.styleTier as StyleKey)?.name ?? r.activePreset;
+        const reasonsDisplay = (
+          (r.reasons as Record<string, unknown> | null)?.reasons as string[] ?? []
+        ).map(
+          (code) =>
+            ReviewPreCheckReasonDescriptions[
+              code as keyof typeof ReviewPreCheckReasonDescriptions
+            ] ?? code,
+        );
+        return {
+          symbol: r.symbol,
+          outcome: r.outcome,
+          activePreset: r.activePreset,
+          activePresetName,
+          candidateRank: r.candidateRank,
+          reasons: (r.reasons as Record<string, unknown> | null)?.reasons ?? [],
+          reasonsDisplay,
+          assessmentArtifactId: r.assessmentArtifactId ?? null,
+          assessmentRequestedAt: r.assessmentRequestedAt?.toISOString() ?? null,
+          consumedAt: r.consumedAt?.toISOString() ?? null,
+        };
+      });
 
       return reply.send({
         requestId: run.id,
         checkId: run.checkId,
         advice,
+      });
+    },
+  );
+
+  // ── GET /agents/:id/platform-assessment/reviews/:requestId/results ────
+
+  app.get<{ Params: { id: string; requestId: string } }>(
+    '/agents/:id/platform-assessment/reviews/:requestId/results',
+    async (request, reply) => {
+      const { id: agentId, requestId } = request.params;
+
+      // Ownership check
+      const [agent] = await db
+        .select({ id: agents.id, userId: agents.userId })
+        .from(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.userId, request.userId)));
+      if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+      const run = await getManualReviewRun(db, requestId);
+      if (!run) return reply.status(404).send({ error: 'not_found' });
+      if (run.agentId !== agentId) return reply.status(404).send({ error: 'not_found' });
+
+      // Not ready yet
+      if (run.status !== 'succeeded' || !run.checkId) {
+        return reply.send({ requestId: run.id, status: run.status, results: [] });
+      }
+
+      // Join review_advice → market_assessment_artifacts
+      const rows = await db
+        .select({
+          symbol: reviewAdvice.symbol,
+          artifactId: marketAssessmentArtifacts.id,
+          outcome: reviewAdvice.outcome,
+          activePreset: reviewAdvice.activePreset,
+          styleTier: reviewAdvice.styleTier,
+          candidateRank: reviewAdvice.candidateRank,
+          recommendedPreset: marketAssessmentArtifacts.recommendedPreset,
+          allowedPresets: marketAssessmentArtifacts.allowedPresets,
+          confidence: marketAssessmentArtifacts.confidence,
+          urgency: marketAssessmentArtifacts.urgency,
+          expiresAt: marketAssessmentArtifacts.expiresAt,
+          presetRankings: marketAssessmentArtifacts.presetRankings,
+        })
+        .from(reviewAdvice)
+        .innerJoin(
+          marketAssessmentArtifacts,
+          eq(reviewAdvice.assessmentArtifactId, marketAssessmentArtifacts.id),
+        )
+        .where(eq(reviewAdvice.checkId, run.checkId))
+        .orderBy(reviewAdvice.candidateRank);
+
+      // Check agent action for each artifact
+      const artifactIds = rows.map((r) => r.artifactId).filter(Boolean) as string[];
+      let bindings: Array<{
+        sourceArtifactId: string;
+        activePresetKey: string;
+        appliedAt: Date;
+      }> = [];
+      if (artifactIds.length > 0) {
+        bindings = await db
+          .select({
+            sourceArtifactId: agentPresetBindings.sourceArtifactId,
+            activePresetKey: agentPresetBindings.activePresetKey,
+            appliedAt: agentPresetBindings.appliedAt,
+          })
+          .from(agentPresetBindings)
+          .where(
+            and(
+              eq(agentPresetBindings.agentId, agentId),
+              inArray(agentPresetBindings.sourceArtifactId, artifactIds),
+              gte(agentPresetBindings.appliedAt, run.requestedAt ?? new Date(0)),
+            ),
+          );
+      }
+
+      const results = rows.map((r) => {
+        const binding = bindings.find((b) => b.sourceArtifactId === r.artifactId);
+        const rankings = (r.presetRankings as Array<Record<string, unknown>> | null) ?? [];
+        return {
+          symbol: r.symbol,
+          artifactId: r.artifactId,
+          currentPreset: r.activePreset,
+          currentPresetName:
+            getPreset(r.activePreset, r.styleTier as StyleKey)?.name ?? r.activePreset,
+          recommendedPreset: r.recommendedPreset,
+          recommendedPresetName: r.recommendedPreset
+            ? (getPreset(r.recommendedPreset, r.styleTier as StyleKey)?.name ?? r.recommendedPreset)
+            : null,
+          confidence: r.confidence,
+          urgency: r.urgency,
+          expiresAt: r.expiresAt?.toISOString() ?? null,
+          rankings: rankings.map((p: Record<string, unknown>) => ({
+            presetKey: p['presetKey'],
+            presetName:
+              getPreset(p['presetKey'] as string, r.styleTier as StyleKey)?.name ??
+              (p['presetKey'] as string),
+            rank: p['rank'],
+            score: p['score'],
+            scoreBand: p['scoreBand'],
+            pros: p['pros'],
+            cons: p['cons'],
+            fitNotes: p['fitNotes'],
+          })),
+          agentAction: binding ? 'acted' : 'awaiting',
+          agentActionDetail: binding
+            ? {
+                appliedPreset: binding.activePresetKey,
+                appliedAt: binding.appliedAt?.toISOString() ?? null,
+              }
+            : null,
+        };
+      });
+
+      return reply.send({
+        requestId: run.id,
+        status: run.status,
+        capacityExceeded: (run.resultSummary as Record<string, unknown> | null)?.capacityExceeded === true,
+        results,
       });
     },
   );

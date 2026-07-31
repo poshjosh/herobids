@@ -100,6 +100,7 @@ export class ManualReviewRuntime {
             assessmentStatus: outcome.data.assessmentResults ? 'completed' : 'not_applicable',
             assessedCount: outcome.data.assessmentResults?.length ?? 0,
             totalAdvised: outcome.data.advisedCount,
+            capacityExceeded: outcome.data.assessmentCapacityExceeded ?? false,
           };
 
           await markManualReviewSucceeded(this.db, runId, resultSummary);

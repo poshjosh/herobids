@@ -31,6 +31,7 @@ export interface ManualReviewResultSummary {
   assessmentStatus?: 'not_applicable' | 'assessing' | 'completed';
   assessedCount?: number;
   totalAdvised?: number;
+  capacityExceeded?: boolean;
 }
 
 // ── Repository helpers ──────────────────────────────────────────────────────
