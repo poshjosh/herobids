@@ -50,3 +50,19 @@ The hard cap never closes your positions automatically. It simply stops reasonin
 You can set your own caps from the **Billing** page at any time. If you do not set any caps, no spending limits are enforced.
 
 See [Agent Billing Limits](/docs/agents/billing-limits) for the full explanation.
+
+## How do agents with "Filter" mode (scanner-gated) manage or close open positions?
+
+Agents in **Filter** mode (`scanner_gated`) only receive trading decisions when the technical scanner wakes them — so it's natural to wonder how they handle exits if no position trigger is active.
+
+The answer: **the scanner evaluates every open position on every cycle**, even when there are no new entry opportunities. It fetches live candles for each of your agent's open positions, checks the indicators (RSI, price action, etc.), and flags any that look like they should be closed.
+
+There are two ways exits are handled:
+
+1. **Advisory mode** (default) — When the scanner detects a potential exit, it wakes the LLM with an "exit review" section showing P&L, current price, and RSI. The agent then decides whether to close (`go_flat`) or hold each position. This gives you full control over exit decisions through your agent's reasoning.
+
+2. **Autonomous mode** — When enabled, the scanner submits exit decisions directly without waking the LLM. This is faster (no delay waiting for the next scan cycle) and cheaper (fewer LLM calls). Recommended if you want quick exits without manual agent involvement.
+
+### What about stop-losses and take-profits?
+
+These execute automatically regardless of mode. Per-trade stop-loss and take-profit levels, plus portfolio-wide drawdown limits, are **hard safety nets** that fire immediately — they don't wait for the next scanner cycle or an LLM decision. They protect your positions in real time.
