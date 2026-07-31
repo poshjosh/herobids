@@ -416,6 +416,46 @@ describe('Source-specific context schemas', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('validates assessment_review payloads without optional assessment fields (backward compat)', () => {
+    const result = ScannerWakeContextSchema.safeParse({
+      scannerKind: 'assessment_review',
+      checkedAt: '2026-07-31T12:00:00.000Z',
+      nextEligibleAt: '2026-08-01T12:00:00.000Z',
+      advice: [
+        {
+          identity: { instrumentKind: 'orderbook', venueFamily: 'hyperliquid', styleTier: 'standard', symbol: 'BTC' },
+          candidateRank: 1,
+          activePreset: 'momentum',
+          presetBehaviorVersion: 'v1',
+          reasons: ['peer_outperformance_detected'],
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('validates assessment_review payloads with optional assessment fields', () => {
+    const result = ScannerWakeContextSchema.safeParse({
+      scannerKind: 'assessment_review',
+      checkedAt: '2026-07-31T12:00:00.000Z',
+      nextEligibleAt: '2026-08-01T12:00:00.000Z',
+      advice: [
+        {
+          identity: { instrumentKind: 'orderbook', venueFamily: 'hyperliquid', styleTier: 'standard', symbol: 'BTC' },
+          candidateRank: 1,
+          activePreset: 'momentum',
+          presetBehaviorVersion: 'v1',
+          reasons: ['peer_outperformance_detected'],
+          assessmentArtifactId: 'artifact-abc',
+          recommendedPreset: 'range',
+          confidence: 0.85,
+          expiresAt: '2026-07-31T18:00:00.000Z',
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 // ── SendMessagePayloadSchema — email/messaging split validation ─────────────
