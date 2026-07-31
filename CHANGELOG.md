@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Authorization Mode & Trade Approvals:** New `authorizationMode` on agent config (`direct` | `approval_required`). In approval mode, `submit_decision` records trade proposals for human review. Approve/reject via web UI or Telegram `/yes <code>` / `/no <code>`. New `trading-assistant` skill preset, `decision_approvals` table with 6-char human-safe codes, approval lifecycle with worker-gated status transitions, web `ApprovalsPanel`, operator `agentApprovals` config, platform-authored Telegram notifications, and full documentation.
 - **Meaningful strategy review UX:** User-triggered ("forced") strategy reviews now run the billed platform assessment synchronously. The frontend shows a two-phase UX: per-instrument pre-check table → assessment progress → preset ranking results (current vs. recommended, scores, pros/cons). The agent receives artifact IDs in the wake message and can call `change_strategy_preset` directly — no duplicate billing.
 - **New API endpoint:** `GET /agents/:id/platform-assessment/reviews/:requestId/results` — returns preset rankings, recommended presets, confidence, urgency, and agent-action status from `marketAssessmentArtifacts` joined via `reviewAdvice.assessmentArtifactId`.
 - **`assessment_artifact_id` column on `review_advice`:** Nullable FK to `market_assessment_artifacts` — links pre-check advice rows to their synchronous assessment artifacts (migration `0053_purple_photon`).
