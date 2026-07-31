@@ -181,6 +181,63 @@ export function resolveExecutionModeForSkills(input: {
 }
 
 /**
+ * Resolve authorization mode for an agent based on its skill capabilities.
+ *
+ * Invariant: `authorizationModeProvided` indicates whether the caller submitted an
+ * explicit authorizationMode value (as opposed to omitting the field entirely).
+ * When `authorizationModeProvided` is `true`, `submittedAuthorizationMode` is the
+ * caller-supplied value and may be `null` (explicit clear); when `false`,
+ * `submittedAuthorizationMode` is ignored and the default applies.
+ *
+ * Rules:
+ *  - Non-trading agents: explicit authorizationMode is rejected; resolve to null.
+ *  - Trading agents: explicit value is validated against the set of valid modes
+ *    (`direct`, `approval_required`); omission defaults to `'direct'`.
+ */
+export function resolveAuthorizationMode(input: {
+  skillIds: string[] | null | undefined;
+  submittedAuthorizationMode: string | null | undefined;
+  authorizationModeProvided: boolean;
+}): {
+  value: string | null;
+  issue?: { code: 'custom'; path: string[]; message: string };
+} {
+  const hasTradingCapability = hasSkillCapabilityFamily(input.skillIds, 'trading');
+  const validModes = new Set(['direct', 'approval_required']);
+
+  if (!hasTradingCapability) {
+    if (input.authorizationModeProvided && input.submittedAuthorizationMode != null) {
+      return {
+        value: null,
+        issue: {
+          code: 'custom',
+          path: ['authorizationMode'],
+          message: 'Authorization mode is only valid for agents with trading skills',
+        },
+      };
+    }
+    return { value: null };
+  }
+
+  if (input.authorizationModeProvided) {
+    if (input.submittedAuthorizationMode == null || !validModes.has(input.submittedAuthorizationMode)) {
+      return {
+        value: null,
+        issue: {
+          code: 'custom',
+          path: ['authorizationMode'],
+          message: 'authorizationMode must be "direct" or "approval_required" for agents with trading skills',
+        },
+      };
+    }
+    return { value: input.submittedAuthorizationMode };
+  }
+
+  // Trading-capable agent with no explicit authorizationMode — default to direct
+  return { value: 'direct' };
+}
+
+/**
  * Live and shadow execution both resolve a trading decision against a real venue
  * account (see AGENTS.md: agent → agent_connections → connections → venue_accounts).
  * Without a granted connection there is no execution context to resolve at runtime,

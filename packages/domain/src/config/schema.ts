@@ -515,6 +515,13 @@ export const AgentRiskDefaultsSchema = z.object({
   maxBots: z.number().int().min(1).default(5),
 }).default({});
 
+export const AgentApprovalsConfigSchema = z.object({
+  /** Max lifetime of a pending trade approval before it expires (ms). Default: 24 hours. */
+  ttlMs: z.number().int().min(60_000).default(86_400_000),
+  /** Rate limit for approval resolution checks per minute. */
+  resolveRateLimitPerMinute: z.number().int().min(1).default(20),
+}).default({});
+
 export const StreamConfigSchema = z.object({
   private: z.object({
     reconnectBaseMs: z.number().min(100).default(1_000),
@@ -1573,6 +1580,7 @@ export const AppConfigSchema = z.object({
     maxPositionSizePct: z.number().min(0).max(100).default(25),
   }),
   agentRiskDefaults: AgentRiskDefaultsSchema,
+  agentApprovals: AgentApprovalsConfigSchema,
   agentCostEstimates: AgentCostEstimatesSchema,
   reconciliation: ReconciliationConfigSchema.default({}),
   streams: StreamConfigSchema.default({}),
@@ -1776,6 +1784,7 @@ export type MarketDataConfig = z.infer<typeof MarketDataConfigSchema>;
 export type TokenSafetyConfig = z.infer<typeof TokenSafetyConfigSchema>;
 export type MarketIntelligenceConfig = z.infer<typeof MarketIntelligenceConfigSchema>;
 export type PlatformAssessorConfig = z.infer<typeof PlatformAssessorConfigSchema>;
+export type AgentApprovalsConfig = z.infer<typeof AgentApprovalsConfigSchema>;
 export type AlertsConfig = z.infer<typeof AlertsConfigSchema>;
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type PlansConfig = z.infer<typeof PlansConfigSchema>;
@@ -2187,6 +2196,9 @@ export const PlatformAssessmentOptInSchema = z.object({
 export const CapabilityModeSchema = z.enum(['intelligence', 'hybrid']);
 export const HybridModeSchema = z.enum(['mixed', 'scanner_gated']);
 
+export const AuthorizationModeSchema = z.enum(['direct', 'approval_required']);
+export type AuthorizationMode = z.infer<typeof AuthorizationModeSchema>;
+
 export const UnifiedAgentConfigSchema = z.object({
   technical: TechnicalConfigSchema.optional(),
   intelligence: IntelligenceConfigSchema.optional(),
@@ -2214,6 +2226,7 @@ export const UnifiedAgentConfigSchema = z.object({
   allowedPresets: AllowedPresetsPolicySchema.optional(),
   presetTransition: PresetTransitionPolicySchema.optional(),
   platformAssessment: PlatformAssessmentOptInSchema.optional(),
+  authorizationMode: AuthorizationModeSchema.default('direct'),
 }).superRefine((data, ctx) => {
   if (!data.technical && !data.intelligence) {
     ctx.addIssue({

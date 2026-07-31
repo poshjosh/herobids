@@ -108,6 +108,13 @@ agentRiskDefaults:
   perTradeLevelMonitorIntervalMs: 5000   # interval for periodic per-trade stop-loss / take-profit monitor loop
   maxBots: 5                              # operator default for agent max concurrent bots
 
+# Agent trade-approval workflow policy.
+# Controls pending-approval lifecycle and throughput — only relevant when
+# an agent's authorizationMode is set to 'approval_required'.
+agentApprovals:
+  ttlMs: 86400000                    # 24h — max lifetime of a pending approval before expiry
+  resolveRateLimitPerMinute: 20      # max approval-resolution checks per minute per worker
+
 # Per-tick LLM cost estimates by usage tier (USD). Derived from eval data
 # (.ignore/eval/2026/06/) — includes both input and output token costs for
 # typical flash+pro scout/judge usage at each tier's expected escalation rate.

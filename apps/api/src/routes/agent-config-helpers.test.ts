@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { resolveNotificationPolicy, resolveExecutionModeForSkills, validateConnectionRequirement } from './agent-config-helpers.js';
+import { resolveNotificationPolicy, resolveExecutionModeForSkills, resolveAuthorizationMode, validateConnectionRequirement } from './agent-config-helpers.js';
 
 describe('resolveNotificationPolicy', () => {
   beforeEach(() => {
@@ -288,6 +288,109 @@ describe('resolveExecutionModeForSkills', () => {
         hasConnections: false,
       });
       expect(result.value).toBe('paper');
+    });
+  });
+});
+
+describe('resolveAuthorizationMode', () => {
+  describe('non-trading agents', () => {
+    it('returns null when no explicit authMode is provided', () => {
+      const result = resolveAuthorizationMode({
+        skillIds: [NON_TRADING_SKILL],
+        submittedAuthorizationMode: undefined,
+        authorizationModeProvided: false,
+      });
+      expect(result.value).toBeNull();
+      expect(result.issue).toBeUndefined();
+    });
+
+    it('returns an issue when an explicit authMode is provided for a non-trading agent', () => {
+      const result = resolveAuthorizationMode({
+        skillIds: [NON_TRADING_SKILL],
+        submittedAuthorizationMode: 'direct',
+        authorizationModeProvided: true,
+      });
+      expect(result.issue).toBeDefined();
+      expect(result.issue?.path).toContain('authorizationMode');
+      expect(result.value).toBeNull();
+    });
+
+    it('rejects authMode for agents with null/empty skillIds', () => {
+      const result = resolveAuthorizationMode({
+        skillIds: null,
+        submittedAuthorizationMode: 'approval_required',
+        authorizationModeProvided: true,
+      });
+      expect(result.issue).toBeDefined();
+      expect(result.issue?.path).toContain('authorizationMode');
+      expect(result.value).toBeNull();
+    });
+  });
+
+  describe('trading agents — mode provided', () => {
+    it('resolves explicit "direct" mode', () => {
+      const result = resolveAuthorizationMode({
+        skillIds: [TRADING_SKILL],
+        submittedAuthorizationMode: 'direct',
+        authorizationModeProvided: true,
+      });
+      expect(result.value).toBe('direct');
+      expect(result.issue).toBeUndefined();
+    });
+
+    it('resolves explicit "approval_required" mode', () => {
+      const result = resolveAuthorizationMode({
+        skillIds: [TRADING_SKILL],
+        submittedAuthorizationMode: 'approval_required',
+        authorizationModeProvided: true,
+      });
+      expect(result.value).toBe('approval_required');
+      expect(result.issue).toBeUndefined();
+    });
+
+    it('returns an issue for an invalid authMode string', () => {
+      const result = resolveAuthorizationMode({
+        skillIds: [TRADING_SKILL],
+        submittedAuthorizationMode: 'invalid_mode',
+        authorizationModeProvided: true,
+      });
+      expect(result.issue).toBeDefined();
+      expect(result.issue?.path).toContain('authorizationMode');
+      expect(result.value).toBeNull();
+    });
+
+    it('returns an issue for null authMode when explicitly provided', () => {
+      const result = resolveAuthorizationMode({
+        skillIds: [TRADING_SKILL],
+        submittedAuthorizationMode: null,
+        authorizationModeProvided: true,
+      });
+      expect(result.issue).toBeDefined();
+      expect(result.issue?.path).toContain('authorizationMode');
+      expect(result.value).toBeNull();
+    });
+  });
+
+  describe('trading agents — mode not provided', () => {
+    it('defaults to "direct" when no explicit authMode is provided', () => {
+      const result = resolveAuthorizationMode({
+        skillIds: [TRADING_SKILL],
+        submittedAuthorizationMode: undefined,
+        authorizationModeProvided: false,
+      });
+      expect(result.value).toBe('direct');
+      expect(result.issue).toBeUndefined();
+    });
+
+    it('defaults to "direct" when authorizationModeProvided is false even with a value', () => {
+      // The submitted value is ignored when the flag indicates it was not provided.
+      const result = resolveAuthorizationMode({
+        skillIds: [TRADING_SKILL],
+        submittedAuthorizationMode: 'approval_required',
+        authorizationModeProvided: false,
+      });
+      expect(result.value).toBe('direct');
+      expect(result.issue).toBeUndefined();
     });
   });
 });

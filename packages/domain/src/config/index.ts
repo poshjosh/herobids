@@ -91,6 +91,7 @@ export {
   IntelligenceConfigSchema,
   CapabilityModeSchema,
   HybridModeSchema,
+  AuthorizationModeSchema,
   VwapParamsSchema,
   PriceActionParamsSchema,
   SentimentConfigSchema,
@@ -105,6 +106,7 @@ export {
   PlatformAssessmentLlmConfigSchema,
   PlatformAssessmentScoreBandsSchema,
   PlatformAssessmentRecommendationPolicySchema,
+  AgentApprovalsConfigSchema,
   validateReviewInterval,
 } from './schema.js';
 
@@ -176,6 +178,8 @@ export type {
   EvaluationThresholds,
   CapabilityMode,
   HybridMode,
+  AuthorizationMode,
+  AgentApprovalsConfig,
   GmailIntegrationConfig,
   AllowedPresetsPolicy,
   PresetTransitionPolicy,

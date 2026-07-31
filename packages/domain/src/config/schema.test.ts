@@ -17,6 +17,7 @@ import {
   resolveAgentRuntimePolicy,
   CapabilityModeSchema,
   HybridModeSchema,
+  AuthorizationModeSchema,
   UnifiedAgentConfigSchema,
   type AgentStyleValue,
   type ReasoningLevel,
@@ -1510,5 +1511,57 @@ describe('UnifiedAgentConfigSchema — capabilityMode / hybridMode', () => {
     if (result.success) {
       expect(result.data.hybridMode).toBeUndefined();
     }
+  });
+});
+
+describe('UnifiedAgentConfigSchema — authorizationMode', () => {
+  const validBase = {
+    intelligence: { provider: 'openrouter', lightModel: 'test' },
+  };
+
+  it('defaults to "direct"', () => {
+    const result = UnifiedAgentConfigSchema.safeParse(validBase);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.authorizationMode).toBe('direct');
+    }
+  });
+
+  it('accepts "approval_required"', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      ...validBase,
+      authorizationMode: 'approval_required',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.authorizationMode).toBe('approval_required');
+    }
+  });
+
+  it('accepts explicit "direct"', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      ...validBase,
+      authorizationMode: 'direct',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.authorizationMode).toBe('direct');
+    }
+  });
+
+  it('rejects invalid authorizationMode values', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      ...validBase,
+      authorizationMode: 'admin_only',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('AuthorizationModeSchema rejects invalid strings', () => {
+    expect(() => AuthorizationModeSchema.parse('invalid')).toThrow();
+  });
+
+  it('AuthorizationModeSchema rejects empty string', () => {
+    expect(() => AuthorizationModeSchema.parse('')).toThrow();
   });
 });
