@@ -1,4 +1,4 @@
-import type { Decision, VenueAccountId, DecisionId, InstrumentId, DecisionIntent } from '@herobids/domain';
+import type { Decision, VenueAccountId, DecisionId, InstrumentId } from '@herobids/domain';
 import type { MessageEnvelope, DecisionSubmitPayload } from '@herobids/domain';
 import { Decimal } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
@@ -74,7 +74,7 @@ export class AgentDecisionHandler {
   }
 
   private async sendApprovalTelegramNotification(
-    userId: string,
+    _userId: string,
     agentId: string,
     agentName: string,
     shortCode: string,

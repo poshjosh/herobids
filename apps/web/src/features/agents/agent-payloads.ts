@@ -159,7 +159,9 @@ export interface UpdateAgentPayloadInput {
   skillPresetId?: string;
   /** Authorization mode: 'direct' or 'approval_required'. Only meaningful for trading agents. */
   authorizationMode?: 'direct' | 'approval_required';
-}(input: CreateAgentIntentPayloadInput): {
+}
+
+export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   name: string;
   prompt: string;
   skillIds: string[];

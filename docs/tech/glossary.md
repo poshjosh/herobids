@@ -22,6 +22,15 @@ An orchestration or product-level control around the agent runtime (tool allowli
 ### Agent Mode Purity
 The principle that an agent's goal text and explicit creator-specified constraints are the source of trading policy. The platform must not inject hidden constraints the creator did not ask for. Operational mechanics (execution mode, slippage, retries, schema validation) are always enforced — they are infrastructure, not policy.
 
+### Approval
+A trade proposal that is waiting for user review before execution. When an agent's authorization mode is `approval_required`, each trade decision becomes an approval that the user must explicitly approve or reject. Approvals expire after a configurable time window.
+
+### Approval Code
+A short code that identifies a specific pending approval. Used with Telegram slash commands (`/yes <code>`, `/no <code>`) or the web Approvals panel.
+
+### Authorization Mode
+Controls whether an agent's trade decisions execute immediately or wait for user approval. Two modes: `direct` (immediate execution) and `approval_required` (each trade waits for user approval). Set when creating or editing a trading-capable agent.
+
 ---
 
 ## B

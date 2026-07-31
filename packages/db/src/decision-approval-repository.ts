@@ -139,8 +139,9 @@ export class DecisionApprovalRepository {
           eq(decisionApprovals.id, id),
           eq(decisionApprovals.status, 'pending'),
         ),
-      );
-    return result.rowCount ?? 0;
+      )
+      .returning({ id: decisionApprovals.id });
+    return result.length;
   }
 
   async updateExpired(ids: string[]): Promise<void> {

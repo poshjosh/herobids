@@ -1,9 +1,8 @@
-import type { Decision, DecisionId, InstrumentId, VenueAccountId, DecisionIntent } from '@herobids/domain';
+import type { Decision, DecisionId, InstrumentId, VenueAccountId, DecisionIntent, ActorType } from '@herobids/domain';
 import { Decimal } from '@herobids/domain';
-import type { DecisionApprovalRepository, DecisionApprovalRow, ResolutionInfo } from '@herobids/db';
+import type { DecisionApprovalRepository } from '@herobids/db';
 import type { DecisionFailureRepository } from '@herobids/db';
 import { submitDecisionForExecution, DecisionContextHashMismatchError, validatePerTradeLevels } from '@herobids/engine';
-import type { DecisionIntakeDeps, DecisionContext, PositionState, LevelValidationError } from '@herobids/engine';
 import { isIntakeRejection } from '../execution-actor.js';
 import type { DecisionIntakeResolver } from '../agents/agent-decision-handler.js';
 import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
@@ -111,7 +110,7 @@ export class ApprovalService {
         approvalId,
         approvalResolutionSource: resolutionSource,
       },
-      actorType: approval.actorType,
+      actorType: approval.actorType as ActorType,
       actorId: approval.actorId,
     };
 

@@ -18,7 +18,6 @@ import {
   connections,
   decisions,
   decisionFailures,
-  decisionApprovals,
   executionPlans,
   skillEntitlements,
   skillRevisions,

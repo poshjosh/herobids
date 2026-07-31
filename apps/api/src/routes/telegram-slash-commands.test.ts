@@ -360,14 +360,14 @@ describe('formatCommandHelp', () => {
 
   it('returns detailed help for /yes', () => {
     const help = formatCommandHelp('yes');
-    expect(help).toContain('/yes [code]');
+    expect(help).toContain('/yes <code>');
     expect(help).toContain('Approve a pending trade proposal');
     expect(help).toContain('/yes 26B8D');
   });
 
   it('returns detailed help for /no', () => {
     const help = formatCommandHelp('no');
-    expect(help).toContain('/no [code]');
+    expect(help).toContain('/no <code>');
     expect(help).toContain('Reject a pending trade proposal');
     expect(help).toContain('/no 26B8D');
   });
@@ -402,8 +402,8 @@ describe('formatAmbiguousApprovalResponse', () => {
   it('returns multiple-pending message with codeful syntax', () => {
     const response = formatAmbiguousApprovalResponse('approve', 3);
     expect(response).toContain('3 pending trade approvals');
-    expect(response).toContain('Approve: /yes 26B8D');
-    expect(response).toContain('Reject:  /no 26B8D');
+    expect(response).toContain('/yes 26B8D');
+    expect(response).toContain('/no 26B8D');
   });
 
   it('prefers codeful syntax in all cases', () => {
@@ -421,8 +421,8 @@ describe('formatApprovalCodeNotFound', () => {
     const response = formatApprovalCodeNotFound();
     expect(response).toContain('not found');
     expect(response).toContain('expired');
-    expect(response).toContain('/yes CODE');
-    expect(response).toContain('/no CODE');
+    expect(response).toContain('/yes <code>');
+    expect(response).toContain('/no <code>');
     // Must not mention userId or ownership
     expect(response).not.toContain('belongs');
     expect(response).not.toContain('another user');

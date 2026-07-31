@@ -43,7 +43,7 @@ describe('getToolCatalogEntry()', () => {
     expect(entry).toBeDefined();
     expect(entry!.category).toBe('execute-trade');
     expect(entry!.description).toBe(
-      'Submit a trade decision for a specific instrument. Evaluated by risk gate and executed if approved.',
+      'Submit a trade decision for a specific instrument. In direct mode, accepted decisions execute immediately. In approval_required mode, the decision is recorded and sent to the user for approval — no trade executes until the user responds with /yes <code> or /no <code>.',
     );
   });
 
