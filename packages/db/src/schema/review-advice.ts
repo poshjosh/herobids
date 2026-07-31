@@ -2,6 +2,7 @@ import { pgTable, text, timestamp, jsonb, integer, index, check } from 'drizzle-
 import { sql } from 'drizzle-orm';
 import { agents } from './agents.js';
 import { agentAssessmentReviewChecks } from './agent-assessment-review-checks.js';
+import { marketAssessmentArtifacts } from './market-assessment-artifacts.js';
 
 /**
  * Review-advice records — the handoff from deterministic scanner pre-check
@@ -86,6 +87,8 @@ export const reviewAdvice = pgTable('review_advice', {
   consumedAt: timestamp('consumed_at', { withTimezone: true }),
   /** When the agent subsequently requested a platform assessment for this identity (null if advice not yet acted on). */
   assessmentRequestedAt: timestamp('assessment_requested_at', { withTimezone: true }),
+  /** Assessment artifact produced by a synchronous forced-review assessment. Null until the review runner calls the platform assessor. */
+  assessmentArtifactId: text('assessment_artifact_id').references(() => marketAssessmentArtifacts.id, { onDelete: 'set null' }),
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -95,6 +98,7 @@ export const reviewAdvice = pgTable('review_advice', {
   index('idx_review_advice_checked_at').on(t.checkedAt),
   index('idx_review_advice_consumed_at').on(t.consumedAt),
   index('idx_review_advice_assessment_requested_at').on(t.assessmentRequestedAt),
+  index('idx_review_advice_assessment_artifact_id').on(t.assessmentArtifactId),
   index('idx_review_advice_identity_lookup').on(t.instrumentKind, t.venueFamily, t.styleTier, t.symbol, t.network, t.address),
   index('idx_review_advice_agent_outcome_checked').on(t.agentId, t.outcome, t.checkedAt),
   // orderbook/perp → symbol NOT NULL, network IS NULL, address IS NULL

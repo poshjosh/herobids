@@ -1,0 +1,3 @@
+ALTER TABLE "review_advice" ADD COLUMN "assessment_artifact_id" text;--> statement-breakpoint
+ALTER TABLE "review_advice" ADD CONSTRAINT "review_advice_assessment_artifact_id_market_assessment_artifacts_id_fk" FOREIGN KEY ("assessment_artifact_id") REFERENCES "public"."market_assessment_artifacts"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_review_advice_assessment_artifact_id" ON "review_advice" USING btree ("assessment_artifact_id");
