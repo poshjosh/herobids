@@ -53,9 +53,10 @@ export class ApprovalService {
     if (approval.executionStatus !== null) {
       return { kind: 'already_resolved', status: approval.status };
     }
-    // Accept both 'pending' and 'approved' — the API may have already marked
-    // it as approved before publishing the execution request.
-    if (approval.status !== 'pending' && approval.status !== 'approved') {
+    // Only accept 'pending' — the API no longer transitions status before
+    // publishing the execution request. The worker is now the sole authority
+    // for the pending → approved transition.
+    if (approval.status !== 'pending') {
       return { kind: 'already_resolved', status: approval.status };
     }
     if (new Date() > new Date(approval.expiresAt)) {
@@ -156,15 +157,14 @@ export class ApprovalService {
       }
     }
 
-    // Update status to approved + record resolution info BEFORE execution.
-    // Only update if still 'pending' — the API may have already set it to 'approved'.
-    // This prevents double-execution if the process crashes mid-flight.
-    if (approval.status === 'pending') {
-      await this.deps.approvalRepo.updateStatus(approvalId, 'approved', {
-        resolvedByUserId: userId,
-        resolutionSource,
-      });
-    }
+    // Transition status to 'approved' at this point — execution context is
+    // valid and risk validation is about to proceed. This is the single authority
+    // for the pending → approved transition. If the process crashes after this
+    // point, the approval is 'approved' with executionStatus reflecting the outcome.
+    await this.deps.approvalRepo.updateStatus(approvalId, 'approved', {
+      resolvedByUserId: userId,
+      resolutionSource,
+    });
 
     // Submit through the shared engine pipeline.
     try {

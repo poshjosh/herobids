@@ -65,11 +65,80 @@ export class AgentDecisionHandler {
     thresholds?: { noContext?: number; swapInstrumentFormat?: number },
     private readonly approvalRepo?: DecisionApprovalRepository,
     private readonly agentApprovalsTtlMs?: number,
+    private readonly telegramBotToken?: string,
   ) {
     this.breakerThresholds = {
       no_context: thresholds?.noContext ?? 10,
       'swap.instrument_format': thresholds?.swapInstrumentFormat ?? 5,
     };
+  }
+
+  private async sendApprovalTelegramNotification(
+    userId: string,
+    agentId: string,
+    agentName: string,
+    shortCode: string,
+    instrumentId: string,
+    intent: string,
+    targetSize: string,
+    limitPrice: string | null | undefined,
+    stopLoss: string | null | undefined,
+    takeProfit: string | null | undefined,
+    confidence: number | null | undefined,
+    rationaleSummary: string,
+    expiresAtISO: string,
+  ): Promise<void> {
+    if (!this.telegramBotToken) return;
+
+    const chatId = await this.agentRepo.getEffectiveTelegramChatId(agentId);
+    if (!chatId) return;
+
+    const lines = [
+      `🔔 <b>Trade approval requested by ${escapeHtmlTelegram(agentName)}</b>`,
+      '',
+      `<b>Code:</b> <code>${escapeHtmlTelegram(shortCode)}</code>`,
+      `<b>Instrument:</b> ${escapeHtmlTelegram(instrumentId)}`,
+      `<b>Intent:</b> ${escapeHtmlTelegram(intent)}`,
+      `<b>Target size:</b> ${escapeHtmlTelegram(targetSize)}`,
+      `<b>Limit price:</b> ${limitPrice ? escapeHtmlTelegram(limitPrice) : 'market'}`,
+      `<b>Stop loss:</b> ${stopLoss ? escapeHtmlTelegram(stopLoss) : 'none'}`,
+      `<b>Take profit:</b> ${takeProfit ? escapeHtmlTelegram(takeProfit) : 'none'}`,
+      `<b>Confidence:</b> ${confidence != null ? `${confidence}%` : 'not specified'}`,
+      '',
+      '<b>Rationale:</b>',
+      escapeHtmlTelegram(rationaleSummary),
+      '',
+      `Approve with /yes <code>${escapeHtmlTelegram(shortCode)}</code>`,
+      `Reject with /no <code>${escapeHtmlTelegram(shortCode)}</code>`,
+      '',
+      '<i>Tip: /yes or /no without a code only works when you have exactly one pending approval.</i>',
+      `<i>Expires: ${escapeHtmlTelegram(expiresAtISO)}</i>`,
+    ];
+
+    const text = lines.join('\n');
+
+    try {
+      const response = await fetch(
+        `https://api.telegram.org/bot${this.telegramBotToken}/sendMessage`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = await response.text();
+        logger.warn({ chatId, status: response.status, body }, 'Telegram approval notification delivery failed');
+      }
+    } catch (err) {
+      logger.warn({ chatId, err }, 'Telegram approval notification network error');
+    }
   }
 
   private recordFailure(input: {
@@ -381,11 +450,27 @@ export class AgentDecisionHandler {
         logger.warn({ decisionId: payload.decisionId, approvalId, err }, 'Failed to emit pending approval event');
       }
 
-      // TODO: Platform-authored user notification (Change 11 from the plan).
-      // This needs to deliver to both web UI and Telegram. The message format
-      // should include the short code, instrument, intent, size, and rationale.
-      // This is not dependent on the agent calling send_message — it is a
-      // platform-pushed notification triggered by the approval creation.
+      // Deliver platform-authored notification directly via Telegram.
+      // This is best-effort — failure does not block approval creation.
+      if (this.telegramBotToken && userId) {
+        this.sendApprovalTelegramNotification(
+          userId,
+          effectiveAgentId,
+          agent?.name ?? 'Agent',
+          shortCode,
+          payload.instrumentId,
+          payload.intent,
+          payload.targetSize,
+          payload.limitPrice,
+          payload.stopLoss,
+          payload.takeProfit,
+          payload.confidence,
+          payload.rationaleSummary,
+          expiresAtISO,
+        ).catch((err) => {
+          logger.warn({ approvalId, err }, 'Failed to send approval Telegram notification');
+        });
+      }
 
       // Publish a user notification to Redis pub/sub so the API/WebSocket layer
       // can deliver it to the user's connected clients (web UI, Telegram bot).
@@ -801,4 +886,11 @@ export class AgentDecisionHandler {
       await publishSyncReply();
     }
   }
+}
+
+function escapeHtmlTelegram(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }

@@ -2435,42 +2435,41 @@ export async function agentRoutes(
       return reply.status(410).send({ error: 'expired', message: 'Approval has expired' });
     }
 
-    // Mark the approval as approved with resolution metadata.
-    // Guard against race with expiry sweep: only update if still 'pending'.
-    const approvedRows = await approvalRepo.updateStatus(approvalId, 'approved', {
-      resolvedByUserId: request.userId,
-      resolutionSource: 'web',
-    });
-    if (approvedRows === 0) {
-      return reply.status(409).send({ error: 'already_resolved', message: 'Approval status changed before it could be approved.' });
+    // Publish to Redis to trigger worker-side execution.
+    // The worker will validate execution context before transitioning status
+    // to 'approved'. This ensures the approval is only consumed on successful execution.
+    if (!redisClient) {
+      return reply.status(503).send({
+        error: 'service_unavailable',
+        message: 'Execution dispatch unavailable. Please try again later.',
+      });
     }
 
-    // Publish to Redis to trigger worker-side execution.
-    if (redisClient) {
-      try {
-        const message = JSON.stringify({
-          userId: request.userId,
-          resolutionSource: 'web',
-          effectiveAgentId: agentId,
-          effectiveBotId: agentId,
-        });
-        await redisClient.publish(`approval:execute:${approvalId}`, message);
-      } catch (err) {
-        request.log.error({ err, approvalId }, 'Failed to publish approval execution message');
-        // Execution request delivery is best-effort. The approval is recorded
-        // but could not be dispatched; it remains pending and can be retried.
-        return reply.status(202).send({
-          status: 'approved',
-          approvalId,
-          message: 'Approval recorded but execution could not be dispatched. The approval remains pending and can be retried.',
-        });
-      }
+    try {
+      const message = JSON.stringify({
+        userId: request.userId,
+        resolutionSource: 'web',
+        effectiveAgentId: agentId,
+        effectiveBotId: agentId,
+      });
+      await redisClient.publish(`approval:execute:${approvalId}`, message);
+    } catch (err) {
+      request.log.error({ err, approvalId }, 'Failed to publish approval execution message');
+      const errMsg = err instanceof Error ? err.message : String(err);
+      await approvalRepo.recordResolutionAttempt(approvalId, 'redis.publish_failed', errMsg);
+      return reply.status(202).send({
+        status: 'pending',
+        approvalId,
+        executionStatus: approval.executionStatus ?? null,
+        message: 'Approval submitted but execution could not be dispatched. The approval remains pending and can be retried.',
+      });
     }
 
     return reply.send({
-      status: 'approved',
+      status: 'pending',
       approvalId,
-      message: 'Approval confirmed. The trade is being executed.',
+      executionStatus: approval.executionStatus ?? null,
+      message: 'Approval submitted for execution.',
     });
   });
 
@@ -2520,6 +2519,7 @@ export async function agentRoutes(
     return reply.send({
       status: 'rejected',
       approvalId,
+      executionStatus: approval.executionStatus ?? null,
       message: 'Trade proposal rejected.',
     });
   });

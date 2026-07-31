@@ -704,6 +704,7 @@ const agentDecisionHandler = new AgentDecisionHandler(
   },
   decisionApprovalRepo,
   appConfig.agentApprovals.ttlMs,
+  appConfig.alerts.telegram.botToken || undefined,
 );
 
 const approvalService = new ApprovalService({
@@ -2656,8 +2657,8 @@ agentCleanupSubscriber.on('pmessage', (_pattern: string, channel: string, _messa
 });
 
 // Subscribe to API-originated approval execution signals (approval:execute:{approvalId}).
-// The API publishes to this channel after updating an approval to 'approved' status.
-// The worker picks it up and executes the stored proposal through the engine pipeline.
+// The API publishes to this channel when a user approves a pending approval.
+// The worker validates execution context before transitioning status to 'approved'.
 approvalExecuteSubscriber = new Redis(redisConnection);
 approvalExecuteSubscriber.psubscribe('approval:execute:*', (err) => {
   if (err) logger.error({ err }, 'Failed to subscribe to approval:execute:* channels');

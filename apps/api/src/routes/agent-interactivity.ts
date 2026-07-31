@@ -720,16 +720,10 @@ export async function telegramWebhookHandler(
       return;
     }
 
-    // Approve: mark as approved, then publish to Redis for worker execution.
-    const approvedRows = await approvalRepo.updateStatus(approvalId, 'approved', {
-      resolvedByUserId: userId,
-      resolutionSource,
-    });
-    if (approvedRows === 0) {
-      await sendTelegramText(chatId, formatApprovalCodeNotFound());
-      return;
-    }
-
+    // Approve: publish to Redis for worker-side execution. The worker will
+    // transition status to 'approved' only after successful execution context
+    // resolution. Ownership, expiry, and pending status are already validated
+    // by the caller.
     // Publish to Redis to trigger worker-side execution (same channel as web API).
     try {
       const message = JSON.stringify({
@@ -740,14 +734,14 @@ export async function telegramWebhookHandler(
       });
       await redisClient.publish(`approval:execute:${approvalId}`, message);
     } catch (err) {
-      // Execution dispatch is best-effort; approval is already recorded.
+      // Execution dispatch is best-effort; approval remains pending.
       const errorMessage = err instanceof Error ? err.message : String(err);
       await approvalRepo.recordResolutionAttempt(approvalId, 'redis.publish_failed', errorMessage);
-      await sendTelegramText(chatId, 'Trade approved! Approval recorded but execution dispatch failed. The approval will be retried.');
+      await sendTelegramText(chatId, 'Approval submitted but execution dispatch failed. The approval remains pending and can be retried.');
       return;
     }
 
-    await sendTelegramText(chatId, 'Trade approved! The trade is being executed.');
+    await sendTelegramText(chatId, 'Approval submitted for execution.');
   }
 
   async function processWebhookUpdate(
