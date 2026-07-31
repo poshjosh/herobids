@@ -43,6 +43,8 @@ export { TokenSafetyOverrideRepository } from './token-safety-override-repositor
 export type { IssueOverrideParams, TokenSafetyOverrideRow } from './token-safety-override-repository.js';
 export { DecisionFailureRepository } from './decision-failure-repository.js';
 export type { InsertDecisionFailure, DecisionFailureQuery } from './decision-failure-repository.js';
+export { DecisionApprovalRepository } from './decision-approval-repository.js';
+export type { InsertDecisionApproval, ResolutionInfo, DecisionApprovalRow } from './decision-approval-repository.js';
 export { AgentDocumentsRepository } from './agent-documents-repository.js';
 export type { InsertAgentDocument, UpdateAgentDocument, DocumentSource, ExtractionStatus, DocumentLifecycleState } from './agent-documents-repository.js';
 export {

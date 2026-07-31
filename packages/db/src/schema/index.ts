@@ -51,6 +51,7 @@ export { agentConnections } from './agent-connections.js';
 export { agentConnectionAudit } from './agent-connection-audit.js';
 export { tokenSafetyOverrides } from './token-safety-overrides.js';
 export { decisionFailures } from './decision-failures.js';
+export { decisionApprovals } from './decision-approvals.js';
 export { llmPricingSnapshots } from './llm-pricing-snapshots.js';
 export { agentEvaluations } from './agent-evaluations.js';
 export { agentDocuments } from './agent-documents.js';
