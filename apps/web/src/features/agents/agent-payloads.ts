@@ -107,6 +107,10 @@ export interface CreateAgentIntentPayloadInput {
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
   runtimePolicyOverrides?: RuntimePolicyOverrides;
   subscribedSources?: string[];
+  /** Product preset identifier (trading, direct-trading, trading-assistant, etc.). */
+  skillPresetId?: string;
+  /** Authorization mode: 'direct' or 'approval_required'. Only meaningful for trading agents. */
+  authorizationMode?: 'direct' | 'approval_required';
 }
 
 export interface UpdateAgentPayloadInput {
@@ -151,9 +155,11 @@ export interface UpdateAgentPayloadInput {
   platformAssessmentReviewIntervalHours?: string;
   runtimePolicyOverrides?: RuntimePolicyOverrides;
   subscribedSources?: string[];
-}
-
-export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
+  /** Product preset identifier (trading, direct-trading, trading-assistant, etc.). */
+  skillPresetId?: string;
+  /** Authorization mode: 'direct' or 'approval_required'. Only meaningful for trading agents. */
+  authorizationMode?: 'direct' | 'approval_required';
+}(input: CreateAgentIntentPayloadInput): {
   name: string;
   prompt: string;
   skillIds: string[];
@@ -185,6 +191,8 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   wakePreferences?: { subscribedSources?: string[] } | null;
   notificationPolicy?: { sendMessage: { email: { enabled: boolean; source: 'explicit_update' } } } | null;
   platformAssessment?: { enabled?: boolean; reviewIntervalMs?: number };
+  skillPresetId?: string;
+  authorizationMode?: 'direct' | 'approval_required';
 } {
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'hybrid';
@@ -230,6 +238,8 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     capabilityMode: input.capabilityMode,
     ...(input.capabilityMode === 'hybrid' ? { hybridMode: input.hybridMode } : {}),
     ...(platformAssessment ? { platformAssessment } : {}),
+    ...(input.skillPresetId ? { skillPresetId: input.skillPresetId } : {}),
+    ...(input.authorizationMode ? { authorizationMode: input.authorizationMode } : {}),
   };
 }
 
@@ -268,6 +278,8 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   wakePreferences?: { subscribedSources?: string[] } | null;
   notificationPolicy?: { sendMessage: { email: { enabled: boolean; source: 'explicit_update' } } } | null;
   platformAssessment?: { enabled?: boolean; reviewIntervalMs?: number } | null;
+  skillPresetId?: string | null;
+  authorizationMode?: 'direct' | 'approval_required' | null;
 } {
   const parsedTickInterval = input.preserveOriginalTickIntervalMs
     ? undefined
@@ -321,5 +333,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     capabilityMode: input.capabilityMode,
     hybridMode: input.capabilityMode === 'hybrid' ? input.hybridMode : null,
     platformAssessment: buildPlatformAssessmentPayload(input.platformAssessmentEnabled, input.platformAssessmentReviewIntervalHours),
+    ...(input.skillPresetId !== undefined ? { skillPresetId: input.skillPresetId } : {}),
+    ...(input.authorizationMode !== undefined ? { authorizationMode: input.authorizationMode } : {}),
   };
 }

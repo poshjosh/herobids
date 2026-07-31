@@ -36,9 +36,19 @@ interface EditAgentModalProps {
 
 /** Fixed skill sets matching SKILL_PRESET_SKILL_IDS in agent-display.ts. */
 const TRADING_SKILL_IDS = ['bot-management', 'trading'];
+const DIRECT_TRADING_SKILL_IDS = ['trading'];
 const ASSISTANT_SKILL_IDS = ['task-management', 'web-access'];
 
-function resolvePresetFromSkillIds(skillIds: string[]): SkillPresetId {
+function resolvePresetFromSkillIds(skillIds: string[], skillPresetId?: string | null): SkillPresetId {
+  // Prefer the persisted skillPresetId when available (handles direct-trading and
+  // trading-assistant which share the same ['trading'] skill array).
+  if (skillPresetId) {
+    const validPresets: SkillPresetId[] = ['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom'];
+    if (validPresets.includes(skillPresetId as SkillPresetId)) {
+      return skillPresetId as SkillPresetId;
+    }
+  }
+
   if (skillIds.length === 0) return 'custom';
 
   const sorted = [...skillIds].sort();
@@ -46,6 +56,7 @@ function resolvePresetFromSkillIds(skillIds: string[]): SkillPresetId {
     a.length === b.length && a.every((id, i) => id === b[i]);
 
   if (setsEqual(sorted, [...TRADING_SKILL_IDS].sort())) return 'trading';
+  if (setsEqual(sorted, [...DIRECT_TRADING_SKILL_IDS].sort())) return 'direct-trading';
   if (setsEqual(sorted, [...ASSISTANT_SKILL_IDS].sort())) return 'personal-assistant';
   return 'custom';
 }
@@ -87,7 +98,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     (initialData.runtimePolicyOverrides as RuntimePolicyOverrides | null) ?? null,
   );
   const [skillPreset, setSkillPreset] = useState<SkillPresetId>(() =>
-    resolvePresetFromSkillIds(initialData.skillIds ?? []),
+    resolvePresetFromSkillIds(initialData.skillIds ?? [], initialData.skillPresetId),
   );
   const executionModeTouchedRef = useRef(false);
   const [tickIntervalTouched, setTickIntervalTouched] = useState(false);
@@ -278,12 +289,12 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     return parsed.kind === 'valid' ? parsed.tickIntervalMs : null;
   }
   const showIntelligence = form.capabilityMode === 'intelligence' || form.capabilityMode === 'hybrid';
-  const requiresTradingSetup = skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
+  const requiresTradingSetup = skillPreset === 'trading' || skillPreset === 'direct-trading' || skillPreset === 'trading-assistant' || hasCapabilityFamily(selectedSkills, 'trading');
   // Short-circuit to false when a non-trading preset (Custom or
   // Personal Assistant) is selected — no trading skills are inferred
   // and we don't want the fallback to currentHasTradingCapability keeping
   // the trading tab visible while the skills query is still loading.
-  const hasTradingCapability = (skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading')) && showIntelligence && (skillsQuery.isSuccess
+  const hasTradingCapability = (skillPreset === 'trading' || skillPreset === 'direct-trading' || skillPreset === 'trading-assistant' || hasCapabilityFamily(selectedSkills, 'trading')) && showIntelligence && (skillsQuery.isSuccess
     ? hasCapabilityFamily(selectedSkills, 'trading')
     : currentHasTradingCapability);
   // Field-value fallback: show trading controls whenever stored values are present,
@@ -305,7 +316,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     setForm((state) => {
       const resolvedSkills = selectableSkills.filter((s) => state.skillIds.includes(s.id));
       const syntheticTradingSkill =
-        skillPreset === 'trading' ? [{ capabilityFamilies: ['trading'] }] : [];
+        skillPreset === 'trading' || skillPreset === 'direct-trading' || skillPreset === 'trading-assistant' ? [{ capabilityFamilies: ['trading'] }] : [];
       const effectiveSkills =
         resolvedSkills.length > 0 ? resolvedSkills : syntheticTradingSkill;
       const hasTradingSkill = hasCapabilityFamily(effectiveSkills, 'trading');
@@ -427,6 +438,8 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         subscribedSources: form.subscribedSources,
         platformAssessmentEnabled: form.platformAssessmentEnabled,
         platformAssessmentReviewIntervalHours: form.platformAssessmentReviewIntervalHours,
+        skillPresetId: skillPreset !== 'custom' ? skillPreset : undefined,
+        authorizationMode: form.authorizationMode,
       }));
 
       if (form.pendingFiles.length > 0) {
@@ -506,7 +519,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   // Clear trading values when switching to a non-trading preset
                   // so stale values don't keep trading UI visible via the
                   // field-value fallback in showTradingControls.
-                  ...(preset !== 'trading' ? {
+                  ...(preset !== 'trading' && preset !== 'direct-trading' && preset !== 'trading-assistant' ? {
                     executionMode: '' as const,
                     capital: '',
                     dailyLossLimit: '',
@@ -520,7 +533,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 }));
                 // Clear trading session overrides when switching away from trading
                 // so the hour grid (0-23) becomes editable again.
-                if (preset !== 'trading') {
+                if (preset !== 'trading' && preset !== 'direct-trading' && preset !== 'trading-assistant') {
                   setRuntimePolicyOverrides((current) => {
                     if (!current?.tradingSessions) return current;
                     const { tradingSessions: _, ...rest } = current;
@@ -531,6 +544,8 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               style={{ ...inputStyle, cursor: 'pointer' }}
             >
               <option value="trading">{intl.formatMessage({ id: 'agents.create.skillPreset.trading' })}</option>
+              <option value="direct-trading">{intl.formatMessage({ id: 'agents.create.skillPreset.directTrading' })}</option>
+              <option value="trading-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.tradingAssistant' })}</option>
               <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.personalAssistant' })}</option>
               <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
             </select>

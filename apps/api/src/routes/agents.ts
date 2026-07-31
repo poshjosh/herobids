@@ -60,6 +60,7 @@ import {
   optionalPositiveDecimalStringSchema,
   optionalPositiveIntegerSchema,
   resolveExecutionModeForSkills,
+  resolveAuthorizationMode,
   validateConnectionRequirement,
   resolveNotificationPolicy,
   resolveAgentRiskContractForResponse,
@@ -139,6 +140,8 @@ const CreateAgentSchema = z.object({
     enabled: z.boolean().optional(),
     reviewIntervalMs: z.number().int().positive().optional(),
   }).optional(),
+  authorizationMode: z.enum(['direct', 'approval_required']).optional(),
+  skillPresetId: z.enum(['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom']).optional(),
 }).superRefine((data, ctx) => {
   if (!data.technical && !data.prompt) {
     ctx.addIssue({
@@ -220,6 +223,8 @@ const UpdateAgentSchema = z.object({
     enabled: z.boolean().optional(),
     reviewIntervalMs: z.number().int().positive().optional(),
   }).nullable().optional(),
+  authorizationMode: z.enum(['direct', 'approval_required']).nullable().optional(),
+  skillPresetId: z.enum(['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom']).nullable().optional(),
 });
 
 function mergeTechnicalConfig(
@@ -237,14 +242,16 @@ const PauseAgentSchema = z.object({
 }).optional();
 
 /** Extract preset fields from unifiedConfig.metadata, if present. */
-function extractPresetMeta(unifiedConfig: unknown): { strategyPreset: string | null; strategyPresetName: string | null } {
+function extractPresetMeta(unifiedConfig: unknown): { strategyPreset: string | null; strategyPresetName: string | null; skillPresetId: string | null } {
   const uc = unifiedConfig as Record<string, unknown> | null;
   const meta = uc?.['metadata'] as Record<string, unknown> | undefined;
   const preset = meta?.['strategyPreset'];
   const name = meta?.['strategyPresetName'];
+  const skillPresetId = meta?.['skillPresetId'];
   return {
     strategyPreset: typeof preset === 'string' && preset.length > 0 ? preset : null,
     strategyPresetName: typeof name === 'string' && name.length > 0 ? name : null,
+    skillPresetId: typeof skillPresetId === 'string' && skillPresetId.length > 0 ? skillPresetId : null,
   };
 }
 
@@ -256,10 +263,13 @@ function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: st
   capabilityMode: string | null;
   hybridMode: string | null;
   platformAssessment: { enabled?: boolean; reviewIntervalMs?: number } | null;
+  authorizationMode: string | null;
+  skillPresetId: string | null;
 } {
-  const { strategyPreset, strategyPresetName } = extractPresetMeta(agent.unifiedConfig);
+  const { strategyPreset, strategyPresetName, skillPresetId } = extractPresetMeta(agent.unifiedConfig);
   const uc = agent.unifiedConfig as Record<string, unknown> | null;
   const pa = uc?.['platformAssessment'] as Record<string, unknown> | undefined;
+  const authMode = uc?.['authorizationMode'] as string | undefined;
   return {
     technical: uc?.['technical'] ?? null,
     strategyPreset,
@@ -267,6 +277,8 @@ function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: st
     capabilityMode: (uc?.['capabilityMode'] as string) ?? null,
     hybridMode: (uc?.['hybridMode'] as string) ?? null,
     platformAssessment: pa ? { enabled: pa['enabled'] as boolean | undefined, reviewIntervalMs: pa['reviewIntervalMs'] as number | undefined } : null,
+    authorizationMode: typeof authMode === 'string' && authMode.length > 0 ? authMode : null,
+    skillPresetId,
   };
 }
 
@@ -699,6 +711,15 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: [connectionRequirementIssue] });
     }
 
+    const authorizationMode = resolveAuthorizationMode({
+      skillIds: parsed.data.skillIds ?? [],
+      submittedAuthorizationMode: parsed.data.authorizationMode,
+      authorizationModeProvided: parsed.data.authorizationMode !== undefined,
+    });
+    if (authorizationMode.issue) {
+      return reply.status(400).send({ error: 'validation_error', details: [authorizationMode.issue] });
+    }
+
     const skillPlanPolicy = resolveSkillPlanPolicy(request.userPlanId || 'free', request.isAdmin);
     const assignmentResolution = await resolveSkillAssignmentsForUser(
       db,
@@ -772,6 +793,25 @@ export async function agentRoutes(
         finalUnifiedConfig = {};
       }
       finalUnifiedConfig.platformAssessment = parsed.data.platformAssessment;
+    }
+
+    // 002: Stamp authorizationMode into unifiedConfig.
+    if (authorizationMode.value) {
+      if (!finalUnifiedConfig) {
+        finalUnifiedConfig = {};
+      }
+      finalUnifiedConfig.authorizationMode = authorizationMode.value;
+    }
+
+    // 002: Stamp skillPresetId into unifiedConfig.metadata.
+    const resolvedSkillPresetId = parsed.data.skillPresetId ?? null;
+    if (resolvedSkillPresetId) {
+      if (!finalUnifiedConfig) {
+        finalUnifiedConfig = {};
+      }
+      const meta = (finalUnifiedConfig['metadata'] as Record<string, unknown>) ?? {};
+      meta['skillPresetId'] = resolvedSkillPresetId;
+      finalUnifiedConfig['metadata'] = meta;
     }
 
     // Populate technical.filters from the agent's selected connections.
@@ -1299,6 +1339,15 @@ export async function agentRoutes(
       }
     }
 
+    const authorizationMode = resolveAuthorizationMode({
+      skillIds: mergedSkillIds,
+      submittedAuthorizationMode: parsed.data.authorizationMode,
+      authorizationModeProvided: parsed.data.authorizationMode !== undefined,
+    });
+    if (authorizationMode.issue) {
+      return reply.status(400).send({ error: 'validation_error', details: [authorizationMode.issue] });
+    }
+
     const skillPlanPolicy = resolveSkillPlanPolicy(request.userPlanId || 'free', request.isAdmin);
     const assignmentResolution = await resolveSkillAssignmentsForUser(
       db,
@@ -1551,6 +1600,44 @@ export async function agentRoutes(
         delete (unifiedConfigPatch as Record<string, unknown>)['platformAssessment'];
       } else {
         unifiedConfigPatch['platformAssessment'] = parsed.data.platformAssessment;
+      }
+    }
+
+    // 002: Stamp authorizationMode into unifiedConfigPatch.
+    // Always update when skills changed (to clear stale values on non-trading agents)
+    // or when authorizationMode is explicitly provided.
+    if (parsed.data.authorizationMode !== undefined || parsed.data.skillIds !== undefined) {
+      if (unifiedConfigPatch === undefined) {
+        const current = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
+        unifiedConfigPatch = { ...current };
+      } else if (unifiedConfigPatch === null) {
+        unifiedConfigPatch = {};
+      }
+      if (authorizationMode.value) {
+        unifiedConfigPatch['authorizationMode'] = authorizationMode.value;
+      } else {
+        delete (unifiedConfigPatch as Record<string, unknown>)['authorizationMode'];
+      }
+    }
+
+    // 002: Stamp skillPresetId into unifiedConfigPatch.metadata if provided.
+    if (parsed.data.skillPresetId !== undefined) {
+      if (unifiedConfigPatch === undefined) {
+        const current = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
+        unifiedConfigPatch = { ...current };
+      } else if (unifiedConfigPatch === null) {
+        unifiedConfigPatch = {};
+      }
+      const meta = (unifiedConfigPatch['metadata'] as Record<string, unknown> | null) ?? {};
+      if (parsed.data.skillPresetId === null) {
+        delete meta['skillPresetId'];
+      } else {
+        meta['skillPresetId'] = parsed.data.skillPresetId;
+      }
+      if (Object.keys(meta).length > 0) {
+        unifiedConfigPatch['metadata'] = meta;
+      } else {
+        delete (unifiedConfigPatch as Record<string, unknown>)['metadata'];
       }
     }
 

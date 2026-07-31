@@ -450,6 +450,8 @@ export const messages: Record<string, string> = {
   'agents.create.skillPreset': 'What type of AI agent?',
   'agents.create.skillPreset.help': '',
   'agents.create.skillPreset.trading': 'Trading',
+  'agents.create.skillPreset.directTrading': 'Direct Trading',
+  'agents.create.skillPreset.tradingAssistant': 'Trading Assistant',
   'agents.create.skillPreset.personalAssistant': 'Personal assistant',
   'agents.create.skillPreset.custom': 'Custom',
   'agents.create.skillPreset.includes': 'Includes: {skills}',

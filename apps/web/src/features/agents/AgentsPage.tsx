@@ -52,6 +52,8 @@ interface IntentState {
   technicalConfig: TechnicalConfigFormState;
   skillPreset: SkillPresetId;
   skillIds: string[];
+  /** Authorization mode: 'direct' | 'approval_required'. Default depends on preset. */
+  authorizationMode: 'direct' | 'approval_required';
   executionMode: 'test' | 'live';
   provider: string;
   lightModel: string;
@@ -369,6 +371,7 @@ function CreateAgentFlow({
     technicalConfig: defaultTechnicalConfigFormState(),
     skillPreset: 'trading',
     skillIds: resolveSkillPresetSkillIds('trading'),
+    authorizationMode: 'direct',
     executionMode: 'test',
     provider: '',
     lightModel: '',
@@ -516,7 +519,7 @@ function CreateAgentFlow({
   useEffect(() => {
     setIntent((state) => {
       const resolvedSkills = skills.filter((s) => state.skillIds.includes(s.id));
-      const syntheticTradingSkill = state.skillPreset === 'trading'
+      const syntheticTradingSkill = (state.skillPreset === 'trading' || state.skillPreset === 'direct-trading' || state.skillPreset === 'trading-assistant')
         ? [{ capabilityFamilies: ['trading'] }]
         : [];
       const effectiveSkills = resolvedSkills.length > 0 ? resolvedSkills : syntheticTradingSkill;
@@ -574,7 +577,7 @@ function CreateAgentFlow({
     savedModelSettings,
   );
   const showIntelligence = intent.capabilityMode === 'intelligence' || intent.capabilityMode === 'hybrid';
-  const requiresTradingSetup = intent.skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
+  const requiresTradingSetup = intent.skillPreset === 'trading' || intent.skillPreset === 'direct-trading' || intent.skillPreset === 'trading-assistant' || hasCapabilityFamily(selectedSkills, 'trading');
   const availableConnections = (tradingConnectionsQuery.data?.connections ?? []).filter(
     (connection) => connection.status === 'active',
   );
@@ -702,6 +705,8 @@ function CreateAgentFlow({
         subscribedSources: intent.subscribedSources,
         platformAssessmentEnabled: intent.platformAssessmentEnabled,
         platformAssessmentReviewIntervalHours: intent.platformAssessmentReviewIntervalHours,
+        skillPresetId: intent.skillPreset !== 'custom' ? intent.skillPreset : undefined,
+        authorizationMode: intent.authorizationMode,
       }));
 
       // Upload any documents selected during creation
@@ -823,10 +828,12 @@ function CreateAgentFlow({
                     ...state,
                     skillPreset,
                     skillIds: resolveSkillPresetSkillIds(skillPreset, state.skillIds),
+                    // trading-assistant defaults to approval_required; all others default to direct
+                    authorizationMode: skillPreset === 'trading-assistant' ? 'approval_required' as const : 'direct' as const,
                   };
                   // Clear trading sessions when switching away from trading
                   // so the hour grid (0-23) becomes editable again.
-                  if (skillPreset !== 'trading' && next.runtimePolicyOverrides?.tradingSessions) {
+                  if (skillPreset !== 'trading' && skillPreset !== 'direct-trading' && skillPreset !== 'trading-assistant' && next.runtimePolicyOverrides?.tradingSessions) {
                     const { tradingSessions: _, ...rest } = next.runtimePolicyOverrides;
                     next.runtimePolicyOverrides = Object.keys(rest).length > 0 ? rest : null;
                   }
@@ -836,6 +843,8 @@ function CreateAgentFlow({
               style={{ ...inputStyle, cursor: 'pointer' }}
             >
               <option value="trading">{intl.formatMessage({ id: 'agents.create.skillPreset.trading' })}</option>
+              <option value="direct-trading">{intl.formatMessage({ id: 'agents.create.skillPreset.directTrading' })}</option>
+              <option value="trading-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.tradingAssistant' })}</option>
               <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.personalAssistant' })}</option>
               <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
             </select>

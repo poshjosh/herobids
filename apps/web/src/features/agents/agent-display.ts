@@ -17,10 +17,12 @@ export const CAPABILITY_FAMILY_LABELS: Record<string, string> = {
   trading: 'Trading',
 };
 
-export type SkillPresetId = 'trading' | 'personal-assistant' | 'custom';
+export type SkillPresetId = 'trading' | 'direct-trading' | 'trading-assistant' | 'personal-assistant' | 'custom';
 
 const SKILL_PRESET_SKILL_IDS: Record<Exclude<SkillPresetId, 'custom'>, string[]> = {
   trading: ['bot-management', 'trading'],
+  'direct-trading': ['trading'],
+  'trading-assistant': ['trading'],
   'personal-assistant': ['task-management', 'web-access', 'email'],
 };
 

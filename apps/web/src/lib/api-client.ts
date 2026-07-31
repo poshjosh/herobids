@@ -1034,6 +1034,10 @@ export interface Agent {
   hybridMode?: string | null;
   /** Platform preset assessment config from unifiedConfig. */
   platformAssessment?: { enabled?: boolean; reviewIntervalMs?: number } | null;
+  /** Authorization mode: 'direct' | 'approval_required'. Derived from unified config. */
+  authorizationMode?: string | null;
+  /** Skill preset identifier persisted in unifiedConfig.metadata. */
+  skillPresetId?: string | null;
   createdAt: string;
   updatedAt: string;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;
@@ -1160,6 +1164,14 @@ export const agents = {
     runtimePolicyOverrides?: Record<string, unknown> | null;
     openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
     wakePreferences?: { subscribedSources?: string[] } | null;
+    notificationPolicy?: { sendMessage: { email: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update' } } } | null;
+    capabilityMode?: string | null;
+    hybridMode?: string | null;
+    platformAssessment?: { enabled?: boolean; reviewIntervalMs?: number } | null;
+    technical?: Record<string, unknown> | null;
+    strategyPreset?: string | null;
+    skillPresetId?: string | null;
+    authorizationMode?: 'direct' | 'approval_required' | null;
   }) =>
     request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: {
@@ -1190,6 +1202,14 @@ export const agents = {
     runtimePolicyOverrides?: Record<string, unknown> | null;
     openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
     wakePreferences?: { subscribedSources?: string[] } | null;
+    notificationPolicy?: { sendMessage: { email: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update' } } } | null;
+    capabilityMode?: string | null;
+    hybridMode?: string | null;
+    platformAssessment?: { enabled?: boolean; reviewIntervalMs?: number } | null;
+    technical?: Record<string, unknown> | null;
+    strategyPreset?: string | null;
+    skillPresetId?: string | null;
+    authorizationMode?: 'direct' | 'approval_required' | null;
   }) =>
     request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),

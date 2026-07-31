@@ -64,6 +64,9 @@ export interface AgentFormState {
 
   /** Files selected in the document picker, pending upload after agent creation. */
   pendingFiles: File[];
+
+  /** Authorization mode: 'direct' | 'approval_required'. Only meaningful for trading agents. */
+  authorizationMode: 'direct' | 'approval_required';
 }
 
 // ---------------------------------------------------------------------------
@@ -162,6 +165,9 @@ export function agentToFormState(agent: Agent): AgentFormState {
       : '',
     subscribedSources: agent.wakePreferences?.subscribedSources ?? [],
     pendingFiles: [],
+    authorizationMode: (
+      agent.authorizationMode === 'direct' || agent.authorizationMode === 'approval_required'
+    ) ? agent.authorizationMode : 'direct',
   };
 }
 
@@ -203,6 +209,7 @@ export function intentToFormState(intent: {
   platformAssessmentReviewIntervalHours: string;
   subscribedSources: string[];
   pendingFiles: File[];
+  authorizationMode: 'direct' | 'approval_required';
 }): AgentFormState {
   const {
     name,
@@ -233,6 +240,7 @@ export function intentToFormState(intent: {
     platformAssessmentReviewIntervalHours,
     subscribedSources,
     pendingFiles,
+    authorizationMode,
   } = intent;
   return {
     name,
@@ -263,5 +271,6 @@ export function intentToFormState(intent: {
     platformAssessmentReviewIntervalHours,
     subscribedSources,
     pendingFiles,
+    authorizationMode,
   };
 }

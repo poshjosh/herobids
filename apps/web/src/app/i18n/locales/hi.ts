@@ -450,6 +450,8 @@ export const messages: Record<string, string> = {
   'agents.create.skillPreset': 'AI एजेंट का प्रकार क्या है?',
   'agents.create.skillPreset.help': '',
   'agents.create.skillPreset.trading': 'ट्रेडिंग',
+  'agents.create.skillPreset.directTrading': 'Direct Trading',
+  'agents.create.skillPreset.tradingAssistant': 'Trading Assistant',
   'agents.create.skillPreset.personalAssistant': 'पर्सनल असिस्टेंट',
   'agents.create.skillPreset.custom': 'कस्टम',
   'agents.create.skillPreset.includes': 'शामिल हैं: {skills}',

@@ -333,6 +333,7 @@ Rule: Use send_email for any external email recipient. Use send_message for comm
 export const SKILL_PRESET_MAP: Record<string, string[]> = {
   trading: ['bot-management', 'trading'],
   'direct-trading': ['trading'],
+  'trading-assistant': ['trading'],
   'personal-assistant': ['task-management', 'web-access', 'email'],
   custom: [],       // user configures skills manually
 };
