@@ -6,11 +6,12 @@ import { ApiError, agents as agentsApi, skills as skillsApi, type AgentOutboundM
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
-import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatExecutionMode, formatObjectivePreview, formatSkillSelection, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
+import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatExecutionMode, formatAuthorizationMode, formatSkillPresetId, formatObjectivePreview, formatSkillSelection, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
 import { AgentTradesTable } from './AgentTradesTable.js';
 import { AgentEvaluations } from './AgentEvaluations.js';
+import { ApprovalsPanel } from './ApprovalsPanel.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { getToken } from '../../lib/session.js';
 import { buildDeliveryDescriptors, getMessageClassBadgeVariant } from './agent-message-display.js';
@@ -223,6 +224,7 @@ export function AgentDetailPage() {
     : (agent.activeSession?.status === 'unhealthy' && agent.status !== 'stopped')
       ? intl.formatMessage({ id: 'agents.detail.runtimeAlert.unhealthy' })
       : null;
+  const presetLabel = formatSkillPresetId(agent.skillPresetId, intl);
 
   return (
     <PageShell>
@@ -290,6 +292,12 @@ export function AgentDetailPage() {
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
             <KV label={intl.formatMessage({ id: 'common.status' })} value={<StatusBadge status={agent.status} />} />
             {hasTradingCapability && <KV label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(agent.executionMode, intl)} />}
+            {hasTradingCapability && (
+              <KV label={intl.formatMessage({ id: 'agents.authorizationMode.label' })} value={formatAuthorizationMode(agent.authorizationMode, intl)} />
+            )}
+            {presetLabel && (
+              <KV label={intl.formatMessage({ id: 'agents.detail.skillPreset' })} value={presetLabel} />
+            )}
             {agent.strategyPresetName && (
               <KV label="Strategy" value={agent.strategyPresetName} />
             )}
@@ -411,6 +419,10 @@ export function AgentDetailPage() {
               </div>
             </details>
           </Card>
+        )}
+
+        {hasTradingCapability && (
+          <ApprovalsPanel agentId={id!} />
         )}
 
         {agent.activeSession && (

@@ -980,6 +980,51 @@ export interface UsagePeriodsResponse {
 
 // --- Agents ---
 
+export interface DecisionApproval {
+  id: string;
+  shortCode: string;
+  userId: string;
+  agentId: string;
+  actorType: string;
+  actorId: string;
+  venueAccountId: string;
+  authorizationModeSnapshot: string;
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+  executionStatus: 'accepted' | 'rejected' | 'error' | null;
+  instrumentId: string;
+  intent: string;
+  targetSize: string;
+  limitPrice: string | null;
+  stopLoss: string | null;
+  takeProfit: string | null;
+  confidence: string | null;
+  rationaleSummary: string;
+  contextHash: string | null;
+  proposedPayload: Record<string, unknown>;
+  decisionId: string | null;
+  planId: string | null;
+  resolvedByUserId: string | null;
+  resolvedAt: string | null;
+  resolutionSource: 'web' | 'telegram_yes' | 'telegram_no' | 'api' | null;
+  lastResolutionAttemptAt: string | null;
+  lastResolutionErrorCode: string | null;
+  lastResolutionErrorMessage: string | null;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApprovalListResponse {
+  approvals: DecisionApproval[];
+}
+
+export interface ApprovalActionResponse {
+  status: string;
+  approvalId: string;
+  executionStatus: 'accepted' | 'rejected' | 'error' | null;
+  message: string;
+}
+
 export interface Agent {
   id: string;
   userId: string;
@@ -1305,6 +1350,16 @@ export const agents = {
       request<PlatformAssessmentReviewAdvice>(`/agents/${agentId}/platform-assessment/reviews/${requestId}/advice`),
     getResults: (agentId: string, requestId: string) =>
       request<PlatformAssessmentReviewResults>(`/agents/${agentId}/platform-assessment/reviews/${requestId}/results`),
+  },
+  approvals: {
+    list: (agentId: string, status?: string) => {
+      const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+      return request<ApprovalListResponse>(`/agents/${agentId}/approvals${qs}`);
+    },
+    approve: (agentId: string, approvalId: string) =>
+      request<ApprovalActionResponse>(`/agents/${agentId}/approvals/${approvalId}/approve`, { method: 'POST' }),
+    reject: (agentId: string, approvalId: string) =>
+      request<ApprovalActionResponse>(`/agents/${agentId}/approvals/${approvalId}/reject`, { method: 'POST' }),
   },
   outcomes: () => request<{ outcomes: AgentOutcomes[] }>('/agents/outcomes'),
 };

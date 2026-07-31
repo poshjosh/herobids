@@ -26,6 +26,22 @@ const SKILL_PRESET_SKILL_IDS: Record<Exclude<SkillPresetId, 'custom'>, string[]>
   'personal-assistant': ['task-management', 'web-access', 'email'],
 };
 
+const SKILL_PRESET_DISPLAY_KEYS: Record<Exclude<SkillPresetId, 'custom'>, string> = {
+  trading: 'agents.skillPresetId.trading',
+  'direct-trading': 'agents.skillPresetId.directTrading',
+  'trading-assistant': 'agents.skillPresetId.tradingAssistant',
+  'personal-assistant': 'agents.skillPresetId.personalAssistant',
+};
+
+/** Format a skillPresetId value into a human-readable label. */
+export function formatSkillPresetId(presetId: string | null | undefined, intl?: IntlShape): string | null {
+  if (!presetId) return null;
+  const key = SKILL_PRESET_DISPLAY_KEYS[presetId as Exclude<SkillPresetId, 'custom'>];
+  if (key) return formatMessageOrFallback(intl, key, presetId);
+  if (presetId === 'custom') return formatMessageOrFallback(intl, 'agents.create.skillPreset.custom', 'Custom');
+  return presetId;
+}
+
 function formatMessageOrFallback(intl: IntlShape | undefined, id: string, fallback: string): string {
   if (!intl) {
     return fallback;
@@ -153,6 +169,13 @@ export function formatExecutionMode(executionMode: string | null | undefined, in
 
   const fallback = EXECUTION_MODE_LABELS[executionMode] ?? executionMode;
   return formatMessageOrFallback(intl, `agents.executionMode.${executionMode}`, fallback);
+}
+
+export function formatAuthorizationMode(mode: string | null | undefined, intl?: IntlShape): string {
+  if (mode === 'approval_required') {
+    return formatMessageOrFallback(intl, 'agents.authorizationMode.display.approvalRequired', 'Approval required');
+  }
+  return formatMessageOrFallback(intl, 'agents.authorizationMode.display.direct', 'Direct');
 }
 
 export function formatCapabilityFamily(family: string, intl?: IntlShape): string {

@@ -516,6 +516,8 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 setForm((prev) => ({
                   ...prev,
                   skillIds: resolveSkillPresetSkillIds(preset, prev.skillIds),
+                  // trading-assistant defaults to approval_required; others default to direct
+                  authorizationMode: preset === 'trading-assistant' ? 'approval_required' as const : 'direct' as const,
                   // Clear trading values when switching to a non-trading preset
                   // so stale values don't keep trading UI visible via the
                   // field-value fallback in showTradingControls.

@@ -4,7 +4,7 @@ import { useIntl } from 'react-intl';
 import { agents as agentsApi, skills as skillsApi, type Agent, type AgentOutcomes, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Card, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
 import { formatPnl, pnlColor } from '../../lib/formatting.js';
-import { extractAgentObjective, formatExecutionMode, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
+import { extractAgentObjective, formatExecutionMode, formatAuthorizationMode, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
 
 interface AgentSummaryCardProps {
   agent: Agent;
@@ -49,6 +49,19 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
                 }}
               >
                 {intl.formatMessage({ id: 'agents.modeBadge' }, { mode: formatExecutionMode(agent.executionMode, intl) })}
+              </span>
+            )}
+            {hasTradingCapability && agent.authorizationMode === 'approval_required' && (
+              <span
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: '20px',
+                  background: 'var(--color-warning-subtle)',
+                  fontSize: '12px',
+                  color: 'var(--color-warning)',
+                }}
+              >
+                {formatAuthorizationMode(agent.authorizationMode, intl)}
               </span>
             )}
           </div>
@@ -122,6 +135,7 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
         <KV label={intl.formatMessage({ id: 'common.created' })} value={<RelativeTime timestamp={agent.createdAt} />} />
         <KV label={intl.formatMessage({ id: 'common.updated' })} value={<RelativeTime timestamp={agent.updatedAt} />} />
         {hasTradingCapability && <KV label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(agent.executionMode, intl)} />}
+        {hasTradingCapability && <KV label={intl.formatMessage({ id: 'agents.authorizationMode.label' })} value={formatAuthorizationMode(agent.authorizationMode, intl)} />}
       </div>
 
     </Card>
