@@ -22,6 +22,10 @@ export interface PlatformAssessmentReviewStatus {
     checkedAt: string;
     nextEligibleAt: string;
     checkId: string;
+    assessmentStatus?: 'not_applicable' | 'assessing' | 'completed';
+    assessedCount?: number;
+    totalAdvised?: number;
+    capacityExceeded?: boolean;
   } | null;
   errorCode: string | null;
   errorMessage: string | null;
@@ -34,8 +38,45 @@ export interface PlatformAssessmentReviewAdvice {
     symbol: string | null;
     outcome: string;
     activePreset: string;
+    activePresetName: string;
     candidateRank: number | null;
     reasons: string[];
+    reasonsDisplay: string[];
+    assessmentArtifactId: string | null;
+    assessmentRequestedAt: string | null;
+    consumedAt: string | null;
+  }>;
+}
+
+export interface PlatformAssessmentReviewResults {
+  requestId: string;
+  status: string;
+  capacityExceeded: boolean;
+  results: Array<{
+    symbol: string | null;
+    artifactId: string;
+    currentPreset: string;
+    currentPresetName: string;
+    recommendedPreset: string | null;
+    recommendedPresetName: string | null;
+    confidence: number;
+    urgency: string;
+    expiresAt: string | null;
+    rankings: Array<{
+      presetKey: string;
+      presetName: string;
+      rank: number;
+      score: number;
+      scoreBand: string;
+      pros: string[];
+      cons: string[];
+      fitNotes: string | null;
+    }>;
+    agentAction: 'awaiting' | 'acted';
+    agentActionDetail: {
+      appliedPreset: string;
+      appliedAt: string | null;
+    } | null;
   }>;
 }
 
@@ -1242,6 +1283,8 @@ export const agents = {
       request<PlatformAssessmentReviewStatus>(`/agents/${agentId}/platform-assessment/reviews/${requestId}`),
     getAdvice: (agentId: string, requestId: string) =>
       request<PlatformAssessmentReviewAdvice>(`/agents/${agentId}/platform-assessment/reviews/${requestId}/advice`),
+    getResults: (agentId: string, requestId: string) =>
+      request<PlatformAssessmentReviewResults>(`/agents/${agentId}/platform-assessment/reviews/${requestId}/results`),
   },
   outcomes: () => request<{ outcomes: AgentOutcomes[] }>('/agents/outcomes'),
 };

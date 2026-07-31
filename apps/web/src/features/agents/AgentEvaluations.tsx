@@ -509,6 +509,15 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
 
   const adviceData = reviewAdviceQuery.data ?? null;
 
+  // ── Strategy review results (preset rankings) ───────────────────────
+  const reviewResultsQuery = useQuery({
+    queryKey: ['agents', agentId, 'platform-assessment-review', reviewRequestId, 'results'],
+    queryFn: () => agentsApi.platformAssessmentReviews.getResults(agentId, reviewRequestId!),
+    enabled: !!reviewRequestId && reviewStatus?.status === 'succeeded' && reviewStatus?.resultSummary?.assessmentStatus === 'completed',
+  });
+
+  const resultsData = reviewResultsQuery.data ?? null;
+
   // ── Handlers ───────────────────────────────────────────────────────────
   const handleTrigger = useCallback(() => {
     triggerMutation.mutate({ includeNarrative });
@@ -773,63 +782,176 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
               </div>
             )}
 
-            {/* Advice table */}
+            {/* Two-phase UX: Phase A — per-instrument table (collapsed if results exist) */}
             {reviewStatus?.status === 'succeeded' && adviceData && adviceData.advice.length > 0 && (
               <div style={{ marginTop: '8px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
-                      <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
-                        {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.symbol' })}
-                      </th>
-                      <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
-                        {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.preset' })}
-                      </th>
-                      <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
-                        {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.outcome' })}
-                      </th>
-                      <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
-                        {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.reasons' })}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {adviceData.advice.map((a, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '4px 8px', color: 'var(--color-text-primary)' }}>{a.symbol ?? '—'}</td>
-                        <td style={{ padding: '4px 8px', color: 'var(--color-text-secondary)' }}>{a.activePreset}</td>
-                        <td style={{ padding: '4px 8px' }}>
-                          <span style={{
-                            padding: '1px 6px',
-                            borderRadius: '10px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: a.outcome === 'advised' ? 'var(--color-success-subtle)' : 'var(--color-surface-2)',
-                            color: a.outcome === 'advised' ? 'var(--color-success)' : 'var(--color-text-muted)',
-                          }}>
-                            {a.outcome}
+                {/* Phase C: Assessment Results (primary UX) */}
+                {resultsData && resultsData.results.length > 0 && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '8px' }}>
+                      {intl.formatMessage({ id: 'agents.strategyReview.results.title' })}
+                    </div>
+                    {resultsData.results.map((r, i) => (
+                      <div key={i} style={{
+                        marginBottom: '12px',
+                        padding: '10px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--color-border)',
+                        background: 'var(--color-surface-1)',
+                      }}>
+                        {/* Symbol header */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                            {r.symbol ?? 'Unknown'}
                           </span>
-                        </td>
-                        <td style={{ padding: '4px 8px' }}>
-                          {a.reasons.length > 0
-                            ? a.reasons.map((r, j) => (
-                                <code key={j} style={{
-                                  display: 'inline-block',
-                                  marginRight: '4px',
-                                  marginBottom: '2px',
-                                  padding: '1px 5px',
-                                  borderRadius: '4px',
-                                  fontSize: '11px',
-                                  background: 'var(--color-surface-3)',
-                                  color: 'var(--color-text-muted)',
-                                }}>{r}</code>
-                              ))
-                            : '—'}
-                        </td>
-                      </tr>
+                          {r.urgency && r.urgency !== 'low' && (
+                            <span style={{
+                              padding: '1px 6px', borderRadius: '10px', fontSize: '10px', fontWeight: 600,
+                              background: r.urgency === 'high' ? 'var(--color-danger-subtle)' : 'var(--color-warning-subtle)',
+                              color: r.urgency === 'high' ? 'var(--color-danger)' : 'var(--color-warning)',
+                            }}>
+                              {r.urgency}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Current vs Recommended */}
+                        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '8px', fontSize: '12px' }}>
+                          <div>
+                            <span style={{ color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.strategyReview.results.current' })}: </span>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{r.currentPresetName}</span>
+                          </div>
+                          {r.recommendedPresetName && (
+                            <div>
+                              <span style={{ color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.strategyReview.results.recommended' })}: </span>
+                              <span style={{ color: 'var(--color-success)', fontWeight: 600 }}>{r.recommendedPresetName}</span>
+                              <span style={{ marginLeft: '4px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                                ({intl.formatMessage({ id: 'agents.strategyReview.results.confidence' })}: {(r.confidence * 100).toFixed(0)}%)
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Preset ranking table */}
+                        {r.rankings.length > 0 && (
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', marginBottom: '8px' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
+                                <th style={{ padding: '2px 6px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{intl.formatMessage({ id: 'agents.strategyReview.results.column.preset' })}</th>
+                                <th style={{ padding: '2px 6px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{intl.formatMessage({ id: 'agents.strategyReview.results.column.score' })}</th>
+                                <th style={{ padding: '2px 6px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{intl.formatMessage({ id: 'agents.strategyReview.results.column.pros' })}</th>
+                                <th style={{ padding: '2px 6px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{intl.formatMessage({ id: 'agents.strategyReview.results.column.cons' })}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {r.rankings.map((p, j) => (
+                                <tr key={j} style={{
+                                  borderBottom: '1px solid var(--color-border)',
+                                  background: p.presetKey === r.currentPreset
+                                    ? 'var(--color-info-subtle)'
+                                    : p.presetKey === r.recommendedPreset
+                                      ? 'var(--color-success-subtle)'
+                                      : 'transparent',
+                                }}>
+                                  <td style={{ padding: '2px 6px', color: 'var(--color-text-primary)', fontWeight: p.presetKey === r.recommendedPreset ? 700 : 400 }}>
+                                    {p.presetName}
+                                    {p.presetKey === r.currentPreset && (
+                                      <span style={{ marginLeft: '4px', fontSize: '9px', color: 'var(--color-text-muted)' }}>
+                                        ({intl.formatMessage({ id: 'agents.strategyReview.results.current' })})
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '2px 6px', color: 'var(--color-text-secondary)' }}>{(p.score * 100).toFixed(0)}%</td>
+                                  <td style={{ padding: '2px 6px', color: 'var(--color-text-secondary)' }}>
+                                    {p.pros.slice(0, 2).join(', ')}{p.pros.length > 2 ? '…' : ''}
+                                  </td>
+                                  <td style={{ padding: '2px 6px', color: 'var(--color-text-muted)' }}>
+                                    {p.cons.slice(0, 2).join(', ')}{p.cons.length > 2 ? '…' : ''}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+
+                        {/* Agent action status */}
+                        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                          {r.agentAction === 'acted' && r.agentActionDetail
+                            ? intl.formatMessage({ id: 'agents.strategyReview.results.agentActed' }, { preset: r.agentActionDetail.appliedPreset })
+                            : intl.formatMessage({ id: 'agents.strategyReview.results.agentNotified' })}
+                        </div>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
+                    {resultsData.capacityExceeded && (
+                      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                        {intl.formatMessage({ id: 'agents.strategyReview.results.capacityExceeded' })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Phase B: Assessing progress */}
+                {reviewStatus?.resultSummary?.assessmentStatus === 'assessing' && (
+                  <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
+                    {intl.formatMessage({ id: 'agents.strategyReview.assessing' }, {
+                      assessed: reviewStatus.resultSummary.assessedCount ?? 0,
+                      total: reviewStatus.resultSummary.totalAdvised ?? 0,
+                    })}
+                  </div>
+                )}
+
+                {/* Phase A: Per-instrument table (collapsed, show details) */}
+                <details open={!resultsData || resultsData.results.length === 0}>
+                  <summary style={{ fontSize: '12px', color: 'var(--color-text-muted)', cursor: 'pointer', marginBottom: '4px' }}>
+                    {intl.formatMessage({ id: 'agents.strategyReview.details' })}
+                  </summary>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
+                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
+                          {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.symbol' })}
+                        </th>
+                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
+                          {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.preset' })}
+                        </th>
+                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
+                          {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.outcome' })}
+                        </th>
+                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
+                          {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.reasons' })}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adviceData.advice.map((a, i) => (
+                        <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                          <td style={{ padding: '4px 8px', color: 'var(--color-text-primary)' }}>{a.symbol ?? '—'}</td>
+                          <td style={{ padding: '4px 8px', color: 'var(--color-text-secondary)' }}>{a.activePresetName}</td>
+                          <td style={{ padding: '4px 8px' }}>
+                            <span style={{
+                              padding: '1px 6px', borderRadius: '10px', fontSize: '11px', fontWeight: 600,
+                              background: a.outcome === 'advised' ? 'var(--color-success-subtle)' : 'var(--color-surface-2)',
+                              color: a.outcome === 'advised' ? 'var(--color-success)' : 'var(--color-text-muted)',
+                            }}>
+                              {a.outcome}
+                            </span>
+                          </td>
+                          <td style={{ padding: '4px 8px' }}>
+                            {a.reasonsDisplay.length > 0
+                              ? a.reasonsDisplay.map((r, j) => (
+                                  <code key={j} style={{
+                                    display: 'inline-block', marginRight: '4px', marginBottom: '2px',
+                                    padding: '1px 5px', borderRadius: '4px', fontSize: '11px',
+                                    background: 'var(--color-surface-3)', color: 'var(--color-text-muted)',
+                                  }}>{r}</code>
+                                ))
+                              : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </details>
               </div>
             )}
           </div>
