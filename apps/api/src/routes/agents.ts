@@ -18,6 +18,7 @@ import {
   connections,
   decisions,
   decisionFailures,
+  decisionApprovals,
   executionPlans,
   skillEntitlements,
   skillRevisions,
@@ -28,6 +29,7 @@ import {
   positions,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
+import { DecisionApprovalRepository } from '@herobids/db';
 import {
   AgentRiskDefaultsSchema,
   AgentRuntimePolicyOverridesSchema,
@@ -562,6 +564,8 @@ export async function agentRoutes(
   agentCostEstimates?: AgentCostEstimatesConfig,
   redisClient?: Redis,
 ): Promise<void> {
+  const approvalRepo = new DecisionApprovalRepository(db);
+
   function resolveSkillPlanPolicy(planId: string, isAdmin: boolean) {
     if (!plansConfig) {
       return { canViewMarketplaceSkills: true };
@@ -2369,5 +2373,154 @@ export async function agentRoutes(
       .limit(limit);
 
     return reply.send({ agentId: id, failures: rows });
+  });
+
+  // --- Approvals ---
+
+  // GET /agents/:id/approvals?status=pending — list approvals for an agent
+  app.get<{ Params: { id: string }; Querystring: { status?: string } }>('/agents/:id/approvals', async (request, reply) => {
+    const { id } = request.params;
+
+    // Verify the agent belongs to the requesting user
+    const [agent] = await db.select({ id: agents.id, userId: agents.userId })
+      .from(agents).where(eq(agents.id, id)).limit(1);
+    if (!agent) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+    if (agent.userId !== request.userId) {
+      return reply.status(403).send({ error: 'forbidden', message: 'Agent does not belong to this user' });
+    }
+
+    const statusFilter = request.query.status;
+    if (statusFilter === 'pending') {
+      const rows = await approvalRepo.findPendingByAgentId(id);
+      return reply.send({ approvals: rows });
+    }
+
+    // Default: return pending
+    const rows = await approvalRepo.findPendingByAgentId(id);
+    return reply.send({ approvals: rows });
+  });
+
+  // POST /agents/:id/approvals/:approvalId/approve — approve a pending approval
+  app.post<{ Params: { id: string; approvalId: string } }>('/agents/:id/approvals/:approvalId/approve', async (request, reply) => {
+    const { id: agentId, approvalId } = request.params;
+
+    // Verify the agent belongs to the requesting user
+    const [agent] = await db.select({ id: agents.id, userId: agents.userId })
+      .from(agents).where(eq(agents.id, agentId)).limit(1);
+    if (!agent) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+    if (agent.userId !== request.userId) {
+      return reply.status(403).send({ error: 'forbidden', message: 'Agent does not belong to this user' });
+    }
+
+    // Look up the approval
+    const approval = await approvalRepo.findById(approvalId);
+    if (!approval) {
+      return reply.status(404).send({ error: 'not_found', message: 'Approval not found' });
+    }
+    if (approval.agentId !== agentId) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+    if (approval.userId !== request.userId) {
+      return reply.status(403).send({ error: 'forbidden', message: 'Approval does not belong to this user' });
+    }
+    if (approval.status !== 'pending') {
+      return reply.status(409).send({ error: 'already_resolved', status: approval.status, message: `Approval is already ${approval.status}` });
+    }
+    if (new Date() > new Date(approval.expiresAt)) {
+      await approvalRepo.updateExpired([approvalId]);
+      return reply.status(410).send({ error: 'expired', message: 'Approval has expired' });
+    }
+
+    // Mark the approval as approved with resolution metadata.
+    // Guard against race with expiry sweep: only update if still 'pending'.
+    const approvedRows = await approvalRepo.updateStatus(approvalId, 'approved', {
+      resolvedByUserId: request.userId,
+      resolutionSource: 'web',
+    });
+    if (approvedRows === 0) {
+      return reply.status(409).send({ error: 'already_resolved', message: 'Approval status changed before it could be approved.' });
+    }
+
+    // Publish to Redis to trigger worker-side execution.
+    if (redisClient) {
+      try {
+        const message = JSON.stringify({
+          userId: request.userId,
+          resolutionSource: 'web',
+          effectiveAgentId: agentId,
+          effectiveBotId: agentId,
+        });
+        await redisClient.publish(`approval:execute:${approvalId}`, message);
+      } catch (err) {
+        request.log.error({ err, approvalId }, 'Failed to publish approval execution message');
+        // Execution request delivery is best-effort. The approval is recorded
+        // but could not be dispatched; it remains pending and can be retried.
+        return reply.status(202).send({
+          status: 'approved',
+          approvalId,
+          message: 'Approval recorded but execution could not be dispatched. The approval remains pending and can be retried.',
+        });
+      }
+    }
+
+    return reply.send({
+      status: 'approved',
+      approvalId,
+      message: 'Approval confirmed. The trade is being executed.',
+    });
+  });
+
+  // POST /agents/:id/approvals/:approvalId/reject — reject a pending approval
+  app.post<{ Params: { id: string; approvalId: string } }>('/agents/:id/approvals/:approvalId/reject', async (request, reply) => {
+    const { id: agentId, approvalId } = request.params;
+
+    // Verify the agent belongs to the requesting user
+    const [agent] = await db.select({ id: agents.id, userId: agents.userId })
+      .from(agents).where(eq(agents.id, agentId)).limit(1);
+    if (!agent) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+    if (agent.userId !== request.userId) {
+      return reply.status(403).send({ error: 'forbidden', message: 'Agent does not belong to this user' });
+    }
+
+    // Look up the approval
+    const approval = await approvalRepo.findById(approvalId);
+    if (!approval) {
+      return reply.status(404).send({ error: 'not_found', message: 'Approval not found' });
+    }
+    if (approval.agentId !== agentId) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+    if (approval.userId !== request.userId) {
+      return reply.status(403).send({ error: 'forbidden', message: 'Approval does not belong to this user' });
+    }
+    if (approval.status !== 'pending') {
+      return reply.status(409).send({ error: 'already_resolved', status: approval.status, message: `Approval is already ${approval.status}` });
+    }
+    if (new Date() > new Date(approval.expiresAt)) {
+      await approvalRepo.updateExpired([approvalId]);
+      return reply.status(410).send({ error: 'expired', message: 'Approval has expired' });
+    }
+
+    // Mark the approval as rejected.
+    // Guard against race with expiry sweep: only update if still 'pending'.
+    const rejectedRows = await approvalRepo.updateStatus(approvalId, 'rejected', {
+      resolvedByUserId: request.userId,
+      resolutionSource: 'web',
+    });
+    if (rejectedRows === 0) {
+      return reply.status(409).send({ error: 'already_resolved', message: 'Approval status changed before it could be rejected.' });
+    }
+
+    return reply.send({
+      status: 'rejected',
+      approvalId,
+      message: 'Trade proposal rejected.',
+    });
   });
 }

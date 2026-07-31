@@ -5,10 +5,11 @@ import type { AgentRepository } from '@herobids/db';
 import type { DecisionFailureRepository } from '@herobids/db';
 import type { DecisionApprovalRepository } from '@herobids/db';
 import { submitDecisionForExecution, DecisionContextHashMismatchError, validatePerTradeLevels } from '@herobids/engine';
-import type { DecisionIntakeDeps, DecisionContext, PositionState, LevelValidationError } from '@herobids/engine';
+import type { DecisionIntakeDeps, DecisionContext, PositionState } from '@herobids/engine';
 import type { IntakeResult } from '../execution-actor.js';
 import { isIntakeRejection } from '../execution-actor.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
+import { POSITION_GROWING_INTENTS, formatLevelValidationMessage } from '../shared/decision-validation.js';
 import { createLogger } from '../logger.js';
 import crypto from 'node:crypto';
 
@@ -28,30 +29,8 @@ function generateShortCode(): string {
   return code;
 }
 
-/** Intents that grow (or initiate) a position — used for level validation and stop-loss/take-profit reminders. */
-const POSITION_GROWING_INTENTS = new Set<DecisionIntent>(['go_long', 'go_short', 'increase']);
-
 /** Max age (ms) for a tracked failure entry before it's considered stale and pruned. */
 const FAILURE_ENTRY_MAX_AGE_MS = 5 * 60_000; // 5 min
-
-/** Map a level validation error to an agent-facing rejection message. */
-function formatLevelValidationMessage(error: LevelValidationError): string {
-  const { reason, markPrice, level } = error;
-  switch (reason) {
-    case 'above_mark_for_long':
-      return `Rejected: stopLoss (${level}) must be below current price (${markPrice}) for a long position.`;
-    case 'below_mark_for_short':
-      return `Rejected: stopLoss (${level}) must be above current price (${markPrice}) for a short position.`;
-    case 'below_mark_for_long':
-      return `Rejected: takeProfit (${level}) must be above current price (${markPrice}) for a long position.`;
-    case 'above_mark_for_short':
-      return `Rejected: takeProfit (${level}) must be below current price (${markPrice}) for a short position.`;
-    default: {
-      const _exhaustive: never = reason;
-      throw new Error(`Unhandled level validation reason: ${String(_exhaustive)}`);
-    }
-  }
-}
 
 /**
  * Resolves the execution context needed by the decision intake pipeline.

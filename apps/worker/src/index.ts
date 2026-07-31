@@ -57,6 +57,7 @@ import {
   DockerRuntimeAdapter,
   NomadRuntimeAdapter,
 } from './agents/index.js';
+import { ApprovalService } from './services/approval-service.js';
 import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/index.js';
 import { DockerAgentManager } from './agents/docker-agent-manager.js';
 import { DockerRuntimeDocumentMaterializer } from './agents/docker-document-materializer.js';
@@ -194,6 +195,7 @@ const redisConnection = {
 const redisClient = new Redis(redisConnection);
 let botStopSubscriber: Redis | undefined;
 let agentCleanupSubscriber: Redis | undefined;
+let approvalExecuteSubscriber: Redis | undefined;
 const workerId = `worker-${crypto.randomUUID().slice(0, 8)}`;
 const lease = new InstanceLease(redisClient, workerId, 30);
 
@@ -703,6 +705,14 @@ const agentDecisionHandler = new AgentDecisionHandler(
   decisionApprovalRepo,
   appConfig.agentApprovals.ttlMs,
 );
+
+const approvalService = new ApprovalService({
+  approvalRepo: decisionApprovalRepo,
+  intakeResolver,
+  eventPublisher,
+  decisionFailureRepo,
+  agentApprovalsTtlMs: appConfig.agentApprovals.ttlMs,
+});
 
 const snapshotResolver: ContextSnapshotResolver = {
   resolveSnapshots: async (instanceId: string) => {
@@ -2536,6 +2546,7 @@ process.on('SIGTERM', async () => {
   clearInterval(healthRefreshInterval);
   clearInterval(pricingRefreshInterval);
   clearInterval(botOrphanSweepInterval);
+  clearInterval(approvalExpiryInterval);
   clearInterval(economicCalendarRefreshInterval);
   instrumentCache.stop();
   agentRuntimeLauncher.stopEventStream();
@@ -2559,6 +2570,7 @@ process.on('SIGTERM', async () => {
   await lifecycleQueue.close();
   await botStopSubscriber?.quit();
   await agentCleanupSubscriber?.quit();
+  await approvalExecuteSubscriber?.quit();
   await redisClient.quit();
   process.exit(0);
 });
@@ -2568,6 +2580,7 @@ process.on('SIGINT', async () => {
   clearInterval(healthRefreshInterval);
   clearInterval(pricingRefreshInterval);
   clearInterval(botOrphanSweepInterval);
+  clearInterval(approvalExpiryInterval);
   clearInterval(economicCalendarRefreshInterval);
   instrumentCache.stop();
   agentRuntimeLauncher.stopEventStream();
@@ -2591,6 +2604,7 @@ process.on('SIGINT', async () => {
   await lifecycleQueue.close();
   await botStopSubscriber?.quit();
   await agentCleanupSubscriber?.quit();
+  await approvalExecuteSubscriber?.quit();
   await redisClient.quit();
   process.exit(0);
 });
@@ -2640,6 +2654,41 @@ agentCleanupSubscriber.on('pmessage', (_pattern: string, channel: string, _messa
     logger.error({ err, agentId }, 'Failed to stop agent container via cleanup signal');
   });
 });
+
+// Subscribe to API-originated approval execution signals (approval:execute:{approvalId}).
+// The API publishes to this channel after updating an approval to 'approved' status.
+// The worker picks it up and executes the stored proposal through the engine pipeline.
+approvalExecuteSubscriber = new Redis(redisConnection);
+approvalExecuteSubscriber.psubscribe('approval:execute:*', (err) => {
+  if (err) logger.error({ err }, 'Failed to subscribe to approval:execute:* channels');
+});
+approvalExecuteSubscriber.on('pmessage', async (_pattern: string, channel: string, message: string) => {
+  const approvalId = channel.replace('approval:execute:', '');
+  if (!approvalId) return;
+  logger.info({ approvalId }, 'Received approval:execute signal');
+  try {
+    const payload = JSON.parse(message) as { userId: string; resolutionSource: string; effectiveAgentId: string; effectiveBotId: string };
+    const result = await approvalService.executeApproval(
+      approvalId,
+      payload.userId,
+      payload.resolutionSource,
+      payload.effectiveAgentId,
+      payload.effectiveBotId,
+    );
+    logger.info({ approvalId, result: result.kind, status: 'status' in result ? result.status : undefined }, 'Approval execution complete');
+  } catch (err) {
+    logger.error({ approvalId, err }, 'Failed to execute approval');
+  }
+});
+
+// Periodic approval expiry sweep — expires stale pending approvals past their TTL.
+const approvalExpiryInterval = setInterval(async () => {
+  try {
+    await approvalService.expireStaleApprovals();
+  } catch (err) {
+    logger.error({ err }, 'Approval expiry sweep failed');
+  }
+}, Math.min(appConfig.agentApprovals.ttlMs, 60_000)); // Check at most every 60s
 
 sessionManager.start();
 agentHealthMonitor.start();

@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, lt } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { decisionApprovals } from './schema/index.js';
 
@@ -123,9 +123,9 @@ export class DecisionApprovalRepository {
     id: string,
     status: string,
     resolutionInfo: ResolutionInfo,
-  ): Promise<void> {
+  ): Promise<number> {
     const now = new Date();
-    await this.db
+    const result = await this.db
       .update(decisionApprovals)
       .set({
         status,
@@ -134,7 +134,13 @@ export class DecisionApprovalRepository {
         resolvedAt: now,
         updatedAt: now,
       })
-      .where(eq(decisionApprovals.id, id));
+      .where(
+        and(
+          eq(decisionApprovals.id, id),
+          eq(decisionApprovals.status, 'pending'),
+        ),
+      );
+    return result.rowCount ?? 0;
   }
 
   async updateExpired(ids: string[]): Promise<void> {
@@ -194,5 +200,19 @@ export class DecisionApprovalRepository {
         ),
       );
     return rows.length;
+  }
+
+  /** Find all pending approvals past their expiry time. */
+  async findExpiredPending(): Promise<DecisionApprovalRow[]> {
+    const now = new Date();
+    return this.db
+      .select()
+      .from(decisionApprovals)
+      .where(
+        and(
+          eq(decisionApprovals.status, 'pending'),
+          lt(decisionApprovals.expiresAt, now),
+        ),
+      );
   }
 }
