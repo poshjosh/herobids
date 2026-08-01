@@ -2,6 +2,8 @@
 
 Bybit is a centralized cryptocurrency exchange. You create an account, verify your identity, deposit funds (crypto or fiat), and trade on their platform.
 
+Multi-chain support, including: Bitcoin (BTC), Ethereum (ERC-20), BNB Smart Chain (BEP-20), TRON (TRC-20), Solana (SOL), Arbitrum, One, Optimism, Base, Avalanche C-Chain, Polygon, TON, XRP Ledger (XRP), Cardano. [Visit the bybit website for the full list](https://www.bybit.com).
+
 ## What it's good for
 
 - **Wide asset selection** — Hundreds of spot and perpetual pairs.

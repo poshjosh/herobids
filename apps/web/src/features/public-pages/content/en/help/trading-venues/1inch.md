@@ -2,6 +2,8 @@
 
 1inch is a DEX aggregator across EVM-compatible blockchains (Ethereum, Arbitrum, BSC, Avalanche, Polygon, Optimism, and others). Like Jupiter but for Ethereum's ecosystem — it finds the best swap routes across all available decentralized exchanges.
 
+Multi-chain EVM, with support including: Ethereum, BNB Chain (BSC), Polygon, Arbitrum, Optimism, Avalanche, Gnosis, Base, zkSync Era, Linea, Unichain, Sonic, Solana. [Visit the 1inch website for the full list](https://1inch.com/).
+
 ## What it's good for
 
 - **Multi-chain swaps** — Trade on any EVM-compatible blockchain from one interface.

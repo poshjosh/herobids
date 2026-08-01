@@ -2,6 +2,8 @@
 
 Hyperliquid is a decentralized perpetual futures exchange. It lets you trade with leverage and go long or short — no account or ID verification needed.
 
+Hyperliquid chain also bridges to Ethereum, Arbitrum, Solana, Base
+
 ## What it's good for
 
 - **Leveraged trading** — Trade with up to 50x leverage on major assets.
