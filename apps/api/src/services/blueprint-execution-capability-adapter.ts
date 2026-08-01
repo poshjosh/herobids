@@ -4,8 +4,7 @@ import type {
   BlueprintExecutionCapabilityResult,
   BlueprintExecutionCapabilityProfile,
 } from '@herobids/domain';
-import type { ProviderCatalogResponse } from '@herobids/domain';
-import { PROVIDER_CATEGORIES, getProviderCategories } from '@herobids/domain';
+import { getProviderCategories } from '@herobids/domain';
 
 // ── Venue Profile Resolver (stub interface) ──────────────────────────────────
 
@@ -27,24 +26,15 @@ export interface VenueProfileResolver {
 // ── Stub Implementation ──────────────────────────────────────────────────────
 
 /**
- * Stub venue profile resolver that uses the provider catalog to derive basic
+ * Stub venue profile resolver that uses PROVIDER_CATEGORIES to derive basic
  * capability profiles. TODO: Replace with full venue-adapter integration
  * from packages/venues when adapters expose their capability contracts.
  */
 class StubVenueProfileResolver implements VenueProfileResolver {
-  private readonly providerCatalog: ProviderCatalogResponse;
-
-  constructor(providerCatalog: ProviderCatalogResponse) {
-    this.providerCatalog = providerCatalog;
-  }
-
   getCapabilityProfile(
     provider: string,
     venueType: 'orderbook' | 'swap',
   ): BlueprintExecutionCapabilityProfile | null {
-    const providerDef = this.providerCatalog.providers.find((p) => p.id === provider);
-    if (!providerDef) return null;
-
     const categories = getProviderCategories(provider);
     const isTrading = categories.includes('trading') || categories.includes('swap');
     const isSwap = categories.includes('swap');
@@ -97,12 +87,10 @@ class StubVenueProfileResolver implements VenueProfileResolver {
  * - Bot any mode: exactly 1 active connection + 1 venue account
  */
 export class BlueprintExecutionCapabilityAdapter implements BlueprintExecutionCapabilityResolver {
-  private readonly venueResolver: VenueProfileResolver;
+  private venueResolver: VenueProfileResolver;
 
-  constructor(
-    providerCatalog: ProviderCatalogResponse,
-  ) {
-    this.venueResolver = new StubVenueProfileResolver(providerCatalog);
+  constructor(_providerCatalog?: unknown) {
+    this.venueResolver = new StubVenueProfileResolver();
   }
 
   /**
