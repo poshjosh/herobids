@@ -11,6 +11,9 @@ import type {
   BotQueryPayload,
   AgentRiskDefaultsConfig,
   ToolPositionRecord,
+  AssessStrategyPresetRequestPayload,
+  ChangeStrategyPresetRequestPayload,
+  ToolContext,
 } from '@herobids/domain';
 import {
   Decimal,
@@ -26,7 +29,8 @@ import {
   resolveEffectiveLlmSelection,
   renderEmail,
 } from '@herobids/domain';
-import type { AgentRepository, BotRepository } from '@herobids/db';
+import type { AgentRepository, BotRepository, Database } from '@herobids/db';
+import { PgJournal } from '@herobids/db';
 import { forceReply, type TelegramClient } from '../alerting/telegram-client.js';
 import type { EmailClient } from '../alerting/email-client.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
@@ -34,6 +38,8 @@ import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import { CapabilityPolicyEngine, DEFAULT_CAPABILITY_GRANTS } from './capability-policy.js';
 import type { CapabilityGrant } from './capability-policy.js';
+import { assessStrategyPresetTool } from '../tools/assess-strategy-preset.js';
+import { changeStrategyPresetTool } from '../tools/change-strategy-preset.js';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('agent-message-broker');
@@ -104,6 +110,7 @@ export class AgentMessageBroker {
     readonly onAgentConfigUpdate?: (agentId: string, config: Record<string, unknown> | null) => void,
     private readonly agentRiskDefaults?: AgentRiskDefaultsConfig,
     private readonly brandImageUrl?: string,
+    private readonly db?: Database,
   ) {}
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
@@ -186,6 +193,8 @@ export class AgentMessageBroker {
       [AGENT_MESSAGE_TYPES.SEND_MESSAGE]: 'send_message',
       [AGENT_MESSAGE_TYPES.MANAGE_BOT]: 'manage_bot',
       [AGENT_MESSAGE_TYPES.BOT_QUERY]: 'bot_query',
+      [AGENT_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET]: 'assess_strategy_preset',
+      [AGENT_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET]: 'change_strategy_preset',
     };
     const capabilityName = capabilityByType[envelope.type];
     // Saved so recordEnd can be called in the finally block on every exit path.
@@ -337,6 +346,14 @@ export class AgentMessageBroker {
           this.onAgentConfigUpdate?.(effectiveAgentId, configPayload.config ?? null);
           break;
         }
+
+        case AGENT_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET:
+          await this.handleAssessStrategyPreset(effectiveAgentId, envelope);
+          break;
+
+        case AGENT_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET:
+          await this.handleChangeStrategyPreset(effectiveAgentId, envelope);
+          break;
 
         default:
           await this.agentRepo.markMessageProcessed(envelope.messageId, 'rejected', {
@@ -1086,6 +1103,120 @@ export class AgentMessageBroker {
     }
 
     throw new Error(`Unknown bot query action: ${(payload as { action: string }).action}`);
+  }
+
+  /**
+   * Handle a brokered assess_strategy_preset request from an agent container.
+   * Builds a minimal ToolContext and delegates to the tool's execute function.
+   * The ports are already wired in the worker process.
+   */
+  private async handleAssessStrategyPreset(agentId: string, envelope: MessageEnvelope): Promise<void> {
+    const payload = envelope.payload as AssessStrategyPresetRequestPayload;
+    try {
+      const toolCtx = this.buildPresetToolContext(agentId, envelope.correlationId ?? payload.sessionId);
+
+      const toolResult = await assessStrategyPresetTool.execute(payload, toolCtx);
+
+      await this.eventPublisher.emitAssessStrategyPresetResult(agentId, {
+        requestMessageId: envelope.messageId,
+        correlationId: envelope.correlationId,
+        result: toolResult,
+      });
+    } catch (err) {
+      logger.error({ agentId, err }, 'Assess strategy preset handler failed');
+      await this.eventPublisher.emitAssessStrategyPresetResult(agentId, {
+        requestMessageId: envelope.messageId,
+        correlationId: envelope.correlationId,
+        result: {
+          success: false,
+          error: err instanceof Error ? err.message : 'Unexpected broker error',
+          errorCode: 'broker.internal_error',
+          fault: true,
+        },
+      });
+      throw;
+    }
+  }
+
+  /**
+   * Handle a brokered change_strategy_preset request from an agent container.
+   * Builds a minimal ToolContext with db access and delegates to the tool's execute function.
+   * The ports are already wired in the worker process.
+   */
+  private async handleChangeStrategyPreset(agentId: string, envelope: MessageEnvelope): Promise<void> {
+    const payload = envelope.payload as ChangeStrategyPresetRequestPayload;
+    try {
+      const toolCtx = this.buildPresetToolContext(agentId, envelope.correlationId ?? payload.sessionId);
+
+      const toolResult = await changeStrategyPresetTool.execute(payload, toolCtx);
+
+      await this.eventPublisher.emitChangeStrategyPresetResult(agentId, {
+        requestMessageId: envelope.messageId,
+        correlationId: envelope.correlationId,
+        result: toolResult,
+      });
+    } catch (err) {
+      logger.error({ agentId, err }, 'Change strategy preset handler failed');
+      await this.eventPublisher.emitChangeStrategyPresetResult(agentId, {
+        requestMessageId: envelope.messageId,
+        correlationId: envelope.correlationId,
+        result: {
+          success: false,
+          error: err instanceof Error ? err.message : 'Unexpected broker error',
+          errorCode: 'broker.internal_error',
+          fault: true,
+        },
+      });
+      throw;
+    }
+  }
+
+  /**
+   * Build a minimal ToolContext for preset tool execution in the broker.
+   * Only provides the fields that the preset tools actually use:
+   * - agentId, agentConfigOps (getCurrentConfig, appendJournal), db
+   * All other ToolContext fields are stubbed since the preset tools don't access them.
+   */
+  private buildPresetToolContext(agentId: string, sessionId: string): ToolContext {
+    const db = this.db;
+    const journal = db ? new PgJournal(db) : null;
+
+    const agentConfigOps: ToolContext['agentConfigOps'] = {
+      getCurrentConfig: () => this.agentRepo.getUnifiedConfig(agentId),
+      persistConfig: async () => {},
+      appendJournal: (type, payload) => {
+        if (!journal) {
+          logger.warn({ agentId, type }, 'Journal append skipped — db not wired to broker');
+          return Promise.resolve();
+        }
+        return journal.append({ actorType: 'agent', actorId: agentId, type, payload });
+      },
+      notifyActorConfigUpdate: async () => {},
+      getLlmTickCount: () => 0,
+    };
+
+    return {
+      agentId,
+      sessionId,
+      phase: 'judge',
+      executionMode: 'paper',
+      authorizationMode: 'direct',
+      redis: {
+        hset: async () => 0,
+        hget: async () => null,
+        hgetall: async () => null,
+        hdel: async () => 0,
+        publish: async () => 0,
+        blpop: async () => null,
+        smembers: async () => [],
+        sadd: async () => 0,
+        srem: async () => 0,
+        expire: async () => 0,
+      },
+      publishToInbound: async () => {},
+      agentConfigOps,
+      db: db as unknown,
+    };
   }
 
   /**

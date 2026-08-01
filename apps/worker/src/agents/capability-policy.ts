@@ -143,6 +143,18 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     limits: { maxPerMinute: 20, maxConcurrent: 2, timeoutMs: 30_000 },
   },
   {
+    capability: 'assess_strategy_preset',
+    tier: 'brokered',
+    enabled: true,
+    limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 60_000 },
+  },
+  {
+    capability: 'change_strategy_preset',
+    tier: 'brokered',
+    enabled: true,
+    limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 },
+  },
+  {
     capability: 'venue_api',
     tier: 'never',
     enabled: false,

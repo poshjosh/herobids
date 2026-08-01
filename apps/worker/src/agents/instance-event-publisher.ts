@@ -14,6 +14,8 @@ import type {
   MarketDiscoveryDetectedPayload,
   MarketRegimeChangedPayload,
   AgentWakePayload,
+  AssessStrategyPresetResultPayload,
+  ChangeStrategyPresetResultPayload,
 } from '@herobids/domain';
 import { INSTANCE_MESSAGE_TYPES, MARKET_MONITOR_MESSAGE_TYPES, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { TechnicalScanState } from '../runtime-composition.js';
@@ -95,6 +97,14 @@ export class InstanceEventPublisher {
     await this.publish(agentId, INSTANCE_MESSAGE_TYPES.JOURNAL_EVENT, payload);
   }
 
+  async emitAssessStrategyPresetResult(agentId: string, payload: AssessStrategyPresetResultPayload): Promise<void> {
+    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET_RESULT, payload as unknown as Record<string, unknown>);
+  }
+
+  async emitChangeStrategyPresetResult(agentId: string, payload: ChangeStrategyPresetResultPayload): Promise<void> {
+    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET_RESULT, payload as unknown as Record<string, unknown>);
+  }
+
   /**
    * Publish a user-facing notification to the `user:notification:{userId}` Redis pub/sub channel.
    * This is a fire-and-forget best-effort delivery; the API/WebSocket layer consumes it for
@@ -167,7 +177,9 @@ export class InstanceEventPublisher {
     const envelope = {
       schemaVersion: 'v1',
       messageId: crypto.randomUUID(),
-      correlationId: (payload as { decisionId?: string }).decisionId ?? crypto.randomUUID(),
+      correlationId: (payload as { correlationId?: string; decisionId?: string }).correlationId
+        ?? (payload as { decisionId?: string }).decisionId
+        ?? crypto.randomUUID(),
       initiatorType: 'system',
       initiatorId: agentId,
       agentId,
