@@ -4,7 +4,7 @@ import { useIntl } from 'react-intl';
 import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
 import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, auth as authApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, resolveGoalPlaceholderKey, type SkillPresetId } from './agent-display.js';
+import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholderKey, type SkillPresetId } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
@@ -579,9 +579,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               setForm((prev) => ({ ...prev, goal }));
             }}
             onGoalBlur={() => validateFieldOnBlur('goal')}
-            goalPlaceholder={skillsQuery.data
-              ? (resolveGoalPlaceholder(form.skillIds, skillsQuery.data.skills) ?? intl.formatMessage({ id: resolveGoalPlaceholderKey(skillPreset) }))
-              : intl.formatMessage({ id: resolveGoalPlaceholderKey(skillPreset) })}
+            goalPlaceholder={intl.formatMessage({ id: resolveGoalPlaceholderKey(skillPreset) })}
             goalLabel={intl.formatMessage({ id: 'agents.edit.objective' })}
             goalError={formErrors.goal}
             required

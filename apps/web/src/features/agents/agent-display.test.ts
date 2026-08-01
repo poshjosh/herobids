@@ -8,7 +8,7 @@ describe('skill preset resolution', () => {
   });
 
   it('trading preset resolves to bot-management and trading', () => {
-    expect(resolveSkillPresetSkillIds('trading')).toEqual(['bot-management', 'trading']);
+    expect(resolveSkillPresetSkillIds('trading')).toEqual(['trading', 'bot-management']);
   });
 
   it('custom preset clears all skillIds', () => {
