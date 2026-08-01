@@ -97,7 +97,7 @@ This complements tunnel testing because:
 
 **Dependencies:** `curl`, `jq`, `ngrok`
 
-### Task 2: formalize the existing mock helper — `PENDING`
+### Task 2: formalize the existing mock helper — `DONE`
 
 **File strategy:** prefer evolving `scripts/test-slash-commands.sh` into the supported local mock entrypoint, or move it under `scripts/shell/tests/` while preserving its current coverage.
 
@@ -198,3 +198,15 @@ The doc must state explicitly that mock mode can still trigger real outbound Tel
 - **L2:** ngrok logs redirected to `/dev/null` — should use temp file for debugging
 - **L3:** `--help` flag parsing duplicates `sed` pattern (acceptable, pre-existing pattern)
 - **L-new:** `NGROK_STARTED_BY_US` initialized after trap registration (unset-variable window)
+
+### [Task 2] Mock webhook helper
+- **M1:** Positional CHAT_ID silently lost when env file sets CHAT_ID via `--env-file`
+- **M2:** CHAT_ID_ENV env var name is non-standard and redundant
+- **M3:** Payload inconsistency between single-message and batch modes (batch missing `from` field)
+- **L1:** Batch mode still uses string-interpolated JSON instead of jq
+- **L2:** `--env-file` double-parsed (preview pass + main loop) — confusing control flow
+- **L3:** `date +%s` inside `--argjson` without error guard
+- **L4:** jq dependency check only in single-message mode, not top-level
+- **L5:** `$0` used in `--help` sed command instead of `${BASH_SOURCE[0]}`
+- **L6:** Style inconsistency: `[[ ]]` vs `[ ]` between modes
+- **L7:** Comment header references CHAT_ID but resolution uses CHAT_ID_ENV
