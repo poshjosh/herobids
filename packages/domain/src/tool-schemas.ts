@@ -223,8 +223,13 @@ function zodToJsonSchemaSimple(zodSchema: z.ZodType): Record<string, unknown> {
   return {};
 }
 
-// Registry of named schemas
-const SCHEMA_REGISTRY: Record<string, SchemaEntry> = {
+// Registry of named schemas — lazy-initialized to avoid ESM ordering issues
+// where imported Zod schemas (e.g. StrategySchema) may not be initialized yet
+// at module evaluation time in certain deployment layouts (pnpm deploy --prod).
+let _schemaRegistry: Record<string, SchemaEntry> | null = null;
+
+function buildSchemaRegistry(): Record<string, SchemaEntry> {
+  return {
   'create_bot.config.strategy': {
     schema: zodToJsonSchemaSimple(StrategySchema),
     example: {
@@ -476,25 +481,33 @@ const SCHEMA_REGISTRY: Record<string, SchemaEntry> = {
     version: '2.0.0',
     description: 'Apply a strategy preset change using an exact assessment artifact reference from assess_strategy_preset. Supports entries_only, entries_and_tighten_existing, and entries_and_full_transition modes. Records the transition event for audit.',
   },
-};
+  };
+}
+
+function getSchemaRegistry(): Record<string, SchemaEntry> {
+  if (!_schemaRegistry) {
+    _schemaRegistry = buildSchemaRegistry();
+  }
+  return _schemaRegistry;
+}
 
 /**
  * Get a schema entry by name. Returns undefined if not found.
  */
 export function getToolSchema(name: string): SchemaEntry | undefined {
-  return SCHEMA_REGISTRY[name];
+  return getSchemaRegistry()[name];
 }
 
 /**
  * List all registered schema names.
  */
 export function listToolSchemaNames(): string[] {
-  return Object.keys(SCHEMA_REGISTRY).sort();
+  return Object.keys(getSchemaRegistry()).sort();
 }
 
 /**
  * Get all schema entries.
  */
 export function getAllToolSchemas(): Record<string, SchemaEntry> {
-  return { ...SCHEMA_REGISTRY };
+  return { ...getSchemaRegistry() };
 }
