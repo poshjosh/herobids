@@ -20,7 +20,7 @@ Ship the reusable marketplace core for blueprints so the platform has one instal
 2. Blueprints are first-class marketplace assets in the database and API.
 3. Save-as-blueprint and instantiate-from-blueprint are server-owned flows.
 4. Agents and bots can be attributed back to source blueprints.
-5. A thin UI exists for browse, publish, fork, and use.
+5. A thin user-facing discovery flow exists as an agent leaderboard backed by published blueprints.
 
 ## Out of Scope
 
@@ -114,18 +114,20 @@ Allow users to create runnable instances by supplying only missing private bindi
 ### 6. Add thin but real UI flows
 
 **Goal**
-Expose the new asset model in the product without waiting for rich merchandising.
+Expose the new asset model in the product without making blueprint browsing the primary user mental model.
 
 **Main changes**
-1. Add a `blueprints` feature area in the web app.
-2. Extend `apps/web/src/lib/api-client.ts` with blueprint marketplace methods.
-3. Add browse, publish, fork, and use flows.
-4. Add save-as-blueprint entry points from agent and bot surfaces.
+1. Add an agent leaderboard or discover-agents surface in the web app as the primary Phase 1 discovery entry point.
+2. Back leaderboard entries with published blueprints so every user-facing copy action resolves to a stable blueprint-backed install flow.
+3. Extend `apps/web/src/lib/api-client.ts` with the API methods needed for leaderboard discovery plus blueprint-backed copy flows.
+4. Add user-facing actions such as `Use this agent`, `Create my own version`, or equivalent copy language rather than exposing blueprint terminology as the primary CTA.
+5. Add save-as-blueprint entry points from agent and bot surfaces for creators and internal authoring flows.
+6. Do not require a dedicated blueprint marketplace page or blueprint-first navigation entry in Phase 1.
 
 **Validation**
-1. users can complete publish to fork to instantiate from the UI
-2. UI tests cover route registration and payload application behavior
-3. thin flows are functional even if presentation remains basic
+1. users can discover an agent on the leaderboard and create their own version from its published blueprint
+2. UI tests cover leaderboard route registration, copy-action wiring, and payload application behavior
+3. thin flows are functional even if the underlying blueprint asset remains mostly invisible to end users
 
 ## Sequencing
 
@@ -157,9 +159,9 @@ Expose the new asset model in the product without waiting for rich merchandising
 
 ### Product flow
 
-1. A user can browse blueprints.
-2. A user can publish and fork a blueprint.
-3. A user can create a new agent or bot from a blueprint without manual payload assembly.
+1. A user can browse a leaderboard or discover-agents surface.
+2. A user can select an agent and create their own version from its published blueprint.
+3. Creator-facing flows can still publish or save the backing blueprint without requiring end users to navigate a blueprint marketplace page.
 
 ## Acceptance Criteria
 
