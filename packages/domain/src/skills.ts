@@ -327,6 +327,34 @@ Rule: Use send_email for any external email recipient. Use send_message for comm
 };
 
 /**
+ * `platform-docs` skill — read platform documentation, schemas, and mappings.
+ * Used by the onboarding chat agent and any agent that needs to understand
+ * platform capabilities, form schemas, or configuration options.
+ */
+export const PLATFORM_DOCS_SKILL: SkillDefinition = {
+  id: 'platform-docs',
+  name: 'Platform Docs',
+  description: 'Search and read platform documentation, form schemas, and configuration references.',
+  instructions: `You have access to platform documentation tools.
+
+- Use \`list_app_docs\` to discover available documentation pages, schemas, and references.
+- Use \`search_app_docs(query)\` to search for specific topics across all docs.
+- Use \`read_app_docs(id)\` to read a specific document or schema by its ID.
+
+Use these tools to answer user questions about platform capabilities, guide them through agent creation, explain configuration options, and help them understand connection types, venue options, and risk settings.`,
+  requiredTools: ['search_app_docs', 'list_app_docs', 'read_app_docs'],
+  capabilityFamilies: [],
+  bindingRequirements: {},
+  contextRequirements: [],
+  requiredContextBlocks: ['corePlatformContext'],
+  promptRendererHints: ['core-system'],
+  requiredGuardrails: ['token-budget'],
+  suggestedTickIntervalMs: 900_000, // 15 minutes
+  visibility: 'public',
+  promptHint: 'Ask me about platform features, agent configuration, or how to get started.',
+};
+
+/**
  * Preset → skill ID mapping.
  * When a user selects a preset in the UI, this is what gets stored as skillIds.
  */
@@ -348,4 +376,5 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   WEB_ACCESS_SKILL,
   TASK_MANAGEMENT_SKILL,
   EMAIL_SKILL,
+  PLATFORM_DOCS_SKILL,
 ];

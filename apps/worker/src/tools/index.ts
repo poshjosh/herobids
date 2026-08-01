@@ -20,6 +20,7 @@ import { resolverTools } from './resolvers.js';
 import { emailTools } from './email.js';
 import { changeStrategyPresetTool } from './change-strategy-preset.js';
 import { assessStrategyPresetTool } from './assess-strategy-preset.js';
+import { platformDocsTools } from './platform-docs.js';
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
   const registeredTools = registry.list();
@@ -99,6 +100,7 @@ export function createToolRegistry(): ToolRegistry {
     ...instrumentTools,
     ...resolverTools,
     ...emailTools,
+    ...platformDocsTools,
     assessStrategyPresetTool,
     changeStrategyPresetTool,
   ];

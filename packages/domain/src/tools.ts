@@ -287,6 +287,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'get_price',
   'get_risk_limits',
   'get_schema',
+  'list_app_docs',
   'list_bots',
   'list_files',
   'list_memory_keys',
@@ -294,6 +295,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'list_tasks',
   'list_watches',
   'publish_artifact',
+  'read_app_docs',
   'read_document',
   'read_file',
   'remove_watch',
@@ -301,6 +303,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'resolve_task',
   'resolve_watch',
   'schedule_reminder',
+  'search_app_docs',
   'search_tokens',
   'search_web',
   'send_email',
@@ -373,6 +376,9 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
 
   // read-config
   get_schema:          { category: 'read-config',         description: "Fetch JSON Schema for named config parameters or tool sub-schemas. Call with name='all' to list all." },
+  search_app_docs:     { category: 'read-config',         description: 'Search platform docs, schemas, and mappings. Returns ranked results with excerpts.' },
+  list_app_docs:       { category: 'read-config',         description: 'List all available documentation pages, schemas, and reference materials.' },
+  read_app_docs:       { category: 'read-config',         description: 'Read a specific documentation page or schema by its path ID.' },
 
   // read-memory
   get_memory:          { category: 'read-memory',         description: 'Retrieve a stored memory value by key. Returns found/not-found.' },
