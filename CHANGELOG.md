@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Preset Tool Broker Mediation:** `assess_strategy_preset` and `change_strategy_preset` now work end-to-end in agent containers via broker-mediated execution. When tool ports are not wired (agent container context), the tools publish requests to Redis and wait for broker responses via BLPOP on reply lists. The broker handlers execute the tools against wired ports in the worker process and publish results back. Previously, agent calls to these tools returned `service_unavailable` (13 observed calls, all failing). Includes canary tests and integration tests.
+
 ## v0.0.38 - 2026-08-01
 
 ### Added
