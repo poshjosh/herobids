@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # create-agents.sh — Create trading agents via the REST API.
 #
-# Creates two agents:
-#   - thyper   (Hyperliquid perpetuals, shadow mode)
-#   - t1inch   (1inch DEX swaps, shadow mode)
+# Creates three agents:
+#   - thyper     (Hyperliquid perpetals, contrarian, hybrid scanner-gated)
+#   - t1inch     (1inch DEX swaps, range, hybrid scanner-gated)
+#   - tplaybook  (Hyperliquid perpetals, ICT swing trading, intelligence mode)
+#   - security-auditor (non-trading, 24h tick)
 #
 # Prerequisites:
 #   - The API must be healthy.
@@ -30,15 +32,22 @@ DRY_RUN=0
 # Agent definitions
 # ---------------------------------------------------------------------------
 
-AGENT_PROMPT="Grow this portfolio aggressively"
 AGENT_PROVIDER="ollama"
 AGENT_LIGHT_MODEL="qwen3:8b"
 AGENT_HEAVY_MODEL="qwen3.6:35b-a3b-q4_K_M"
-AGENT_EXECUTION_MODE="shadow"
-AGENT_TICK_INTERVAL_MS="900000"   # 15 minutes
-AGENT_CAPITAL="1000"
-AGENT_DAILY_LOSS_LIMIT="100"
-AGENT_MAX_SLIPPAGE_BPS="25"
+PLATFORM_ASSESSMENT_3H='{"enabled":true,"reviewIntervalMs":10800000}'
+
+# thyper — Hyperliquid contrarian mean-reversion
+THYPER_AGENT_NAME="thyper"
+THYPER_AGENT_PROMPT="Grow this portfolio aggressively"
+
+# t1inch — 1inch range-bound mean-reversion
+T1INCH_AGENT_NAME="t1inch"
+T1INCH_AGENT_PROMPT="Grow this portfolio aggressively"
+
+# tplaybook — ICT swing trading
+TPLAYBOOK_AGENT_NAME="tplaybook"
+TPLAYBOOK_AGENT_PROMPT="Grow this portfolio aggressively"
 
 # Security audit agent (non-trading)
 SECURITY_AUDIT_NAME="security-auditor"
@@ -227,23 +236,23 @@ log_ok "Found Hyperliquid connection: ${HYPERLIQUID_CONNECTION_ID}"
 log_ok "Found 1inch connection: ${ONEINCH_CONNECTION_ID}"
 
 # ---------------------------------------------------------------------------
-# Agent creation helper
+# Agent payload builders
 # ---------------------------------------------------------------------------
 
-build_agent_payload() {
-  local name="$1"
-  local connection_id="$2"
+build_thyper_agent_payload() {
+  local connection_id="$1"
   jq -n \
-    --arg name "$name" \
-    --arg prompt "$AGENT_PROMPT" \
+    --arg name "$THYPER_AGENT_NAME" \
+    --arg prompt "$THYPER_AGENT_PROMPT" \
     --arg provider "$AGENT_PROVIDER" \
     --arg lightModel "$AGENT_LIGHT_MODEL" \
     --arg heavyModel "$AGENT_HEAVY_MODEL" \
-    --arg executionMode "$AGENT_EXECUTION_MODE" \
-    --arg tickIntervalMs "$AGENT_TICK_INTERVAL_MS" \
-    --arg capital "$AGENT_CAPITAL" \
-    --arg dailyMaxLossPct "$AGENT_DAILY_LOSS_LIMIT" \
-    --argjson maxSlippageBps "$AGENT_MAX_SLIPPAGE_BPS" \
+    --arg capabilityMode "hybrid" \
+    --arg hybridMode "scanner_gated" \
+    --arg strategyPreset "contrarian" \
+    --arg executionVenue "hyperliquid" \
+    --arg authorizationMode "direct" \
+    --argjson platformAssessment "$PLATFORM_ASSESSMENT_3H" \
     --arg connectionId "$connection_id" \
     '{
       name: $name,
@@ -252,42 +261,110 @@ build_agent_payload() {
       lightModel: $lightModel,
       heavyModel: $heavyModel,
       skillIds: ["trading"],
-      executionMode: $executionMode,
-      tickIntervalMs: ($tickIntervalMs | tonumber),
-      capital: $capital,
-      risk: {
-        dailyMaxLossPct: ($dailyMaxLossPct | tonumber)
-      },
-      executionDefaults: {
-        mode: $executionMode,
-        slippageBps: $maxSlippageBps
-      },
+      capabilityMode: $capabilityMode,
+      hybridMode: $hybridMode,
+      strategyPreset: $strategyPreset,
+      executionVenue: $executionVenue,
+      authorizationMode: $authorizationMode,
+      platformAssessment: $platformAssessment,
       connectionIds: [$connectionId]
     }'
 }
 
-grant_trading_capability() {
-  local agent_id="$1"
-  local connection_id="$2"
-  local agent_name="$3"
+build_t1inch_agent_payload() {
+  local connection_id="$1"
+  jq -n \
+    --arg name "$T1INCH_AGENT_NAME" \
+    --arg prompt "$T1INCH_AGENT_PROMPT" \
+    --arg provider "$AGENT_PROVIDER" \
+    --arg lightModel "$AGENT_LIGHT_MODEL" \
+    --arg heavyModel "$AGENT_HEAVY_MODEL" \
+    --arg capabilityMode "hybrid" \
+    --arg hybridMode "scanner_gated" \
+    --arg strategyPreset "range" \
+    --arg executionVenue "1inch" \
+    --arg authorizationMode "approval_required" \
+    --argjson platformAssessment "$PLATFORM_ASSESSMENT_3H" \
+    --arg connectionId "$connection_id" \
+    '{
+      name: $name,
+      prompt: $prompt,
+      provider: $provider,
+      lightModel: $lightModel,
+      heavyModel: $heavyModel,
+      skillIds: ["trading"],
+      capabilityMode: $capabilityMode,
+      hybridMode: $hybridMode,
+      strategyPreset: $strategyPreset,
+      executionVenue: $executionVenue,
+      authorizationMode: $authorizationMode,
+      platformAssessment: $platformAssessment,
+      connectionIds: [$connectionId]
+    }'
+}
 
-  log_info "Granting trading capability for ${agent_name} (connectionId=${connection_id})..."
-
-  api_call PATCH "/agents/${agent_id}" \
-    "$(jq -n --arg connectionId "$connection_id" '{ connectionIds: [$connectionId] }')"
-
-  if [[ "$HTTP_STATUS" -eq 200 ]]; then
-    log_ok "Trading capability granted for ${agent_name}"
-    return 0
+build_tplaybook_agent_payload() {
+  local connection_id="$1"
+  local skill_id1="$2"
+  local skill_id2="$3"
+  if [[ -n "$skill_id1" && -n "$skill_id2" ]]; then
+    jq -n \
+      --arg name "$TPLAYBOOK_AGENT_NAME" \
+      --arg prompt "$TPLAYBOOK_AGENT_PROMPT" \
+      --arg provider "$AGENT_PROVIDER" \
+      --arg lightModel "$AGENT_LIGHT_MODEL" \
+      --arg heavyModel "$AGENT_HEAVY_MODEL" \
+      --arg capabilityMode "intelligence" \
+      --arg executionVenue "hyperliquid" \
+      --arg authorizationMode "direct" \
+      --arg connectionId "$connection_id" \
+      --arg skillId1 "$skill_id1" \
+      --arg skillId2 "$skill_id2" \
+      '{
+        name: $name,
+        prompt: $prompt,
+        provider: $provider,
+        lightModel: $lightModel,
+        heavyModel: $heavyModel,
+        capabilityMode: $capabilityMode,
+        executionVenue: $executionVenue,
+        authorizationMode: $authorizationMode,
+        connectionIds: [$connectionId],
+        skillIds: ["trading", $skillId1, $skillId2]
+      }'
   else
-    log_error "Failed to grant trading capability for ${agent_name} (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
-    return 1
+    jq -n \
+      --arg name "$TPLAYBOOK_AGENT_NAME" \
+      --arg prompt "$TPLAYBOOK_AGENT_PROMPT" \
+      --arg provider "$AGENT_PROVIDER" \
+      --arg lightModel "$AGENT_LIGHT_MODEL" \
+      --arg heavyModel "$AGENT_HEAVY_MODEL" \
+      --arg capabilityMode "intelligence" \
+      --arg executionVenue "hyperliquid" \
+      --arg authorizationMode "direct" \
+      --arg connectionId "$connection_id" \
+      '{
+        name: $name,
+        prompt: $prompt,
+        provider: $provider,
+        lightModel: $lightModel,
+        heavyModel: $heavyModel,
+        capabilityMode: $capabilityMode,
+        executionVenue: $executionVenue,
+        authorizationMode: $authorizationMode,
+        connectionIds: [$connectionId],
+        skillIds: ["trading"]
+      }'
   fi
 }
 
-create_and_bind_agent() {
+# ---------------------------------------------------------------------------
+# Agent creation helper
+# ---------------------------------------------------------------------------
+
+create_agent() {
   local name="$1"
-  local connection_id="$2"
+  local payload="$2"
 
   log_section "Creating agent: ${name}"
 
@@ -297,29 +374,11 @@ create_and_bind_agent() {
     local existing_id
     existing_id="$(echo "$RESPONSE_BODY" | jq -r --arg name "$name" '.[] | select(.name == $name) | .id' | head -1)"
     if [[ -n "$existing_id" && "$existing_id" != "null" ]]; then
-      log_info "Agent '${name}' already exists (id=${existing_id}) — granting trading capability"
-
-      # Check if already granted
-      api_call GET "/agents/${existing_id}/capabilities/trading/connections"
-      if [[ "$HTTP_STATUS" -eq 200 ]]; then
-        local already_granted
-        already_granted="$(echo "$RESPONSE_BODY" | jq -r --arg cid "$connection_id" '.connections[] | select(.connectionId == $cid and .grantStatus == "active") | .connectionId' | head -1)"
-        if [[ -n "$already_granted" && "$already_granted" != "null" ]]; then
-          log_ok "Trading capability already granted for ${name}"
-          echo "$existing_id"
-          return 0
-        fi
-      fi
-
-      grant_trading_capability "$existing_id" "$connection_id" "$name" || die "Failed to grant trading capability"
+      log_info "Agent '${name}' already exists (id=${existing_id}) — skipping creation"
       echo "$existing_id"
       return 0
     fi
   fi
-
-  # Create the agent (connectionIds in payload auto-creates the capability grant)
-  local payload
-  payload="$(build_agent_payload "$name" "$connection_id")"
 
   api_call POST /agents "$payload"
 
@@ -402,14 +461,42 @@ create_non_trading_agent() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 3 — Create trading agents
+# Step 3 — Look up skill IDs for tplaybook
 # ---------------------------------------------------------------------------
 
-THYPER_ID="$(create_and_bind_agent "thyper" "$HYPERLIQUID_CONNECTION_ID")"
-T1INCH_ID="$(create_and_bind_agent "t1inch" "$ONEINCH_CONNECTION_ID")"
+log_section "Step 3: Look up skill IDs"
+
+ICT_BEARISH_SKILL_ID=""
+ICT_BULLISH_SKILL_ID=""
+
+api_call GET /skills '?scope=selectable'
+if [[ "$HTTP_STATUS" -eq 200 ]]; then
+  ICT_BEARISH_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r --arg name "ICT Bearish Swing" '.skills[]? | select(.name == $name) | .id' | head -1)"
+  ICT_BULLISH_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r --arg name "ICT Bullish Swing" '.skills[]? | select(.name == $name) | .id' | head -1)"
+fi
+
+if [[ -n "$ICT_BEARISH_SKILL_ID" && "$ICT_BEARISH_SKILL_ID" != "null" ]]; then
+  log_ok "Found ICT Bearish Swing skill: ${ICT_BEARISH_SKILL_ID}"
+else
+  log_warn "ICT Bearish Swing skill not found — tplaybook will be created without skill bindings"
+fi
+
+if [[ -n "$ICT_BULLISH_SKILL_ID" && "$ICT_BULLISH_SKILL_ID" != "null" ]]; then
+  log_ok "Found ICT Bullish Swing skill: ${ICT_BULLISH_SKILL_ID}"
+else
+  log_warn "ICT Bullish Swing skill not found — tplaybook will be created without skill bindings"
+fi
 
 # ---------------------------------------------------------------------------
-# Step 4 — Create security-auditor agent
+# Step 4 — Create trading agents
+# ---------------------------------------------------------------------------
+
+THYPER_ID="$(create_agent "$THYPER_AGENT_NAME" "$(build_thyper_agent_payload "$HYPERLIQUID_CONNECTION_ID")")"
+T1INCH_ID="$(create_agent "$T1INCH_AGENT_NAME" "$(build_t1inch_agent_payload "$ONEINCH_CONNECTION_ID")")"
+TPLAYBOOK_ID="$(create_agent "$TPLAYBOOK_AGENT_NAME" "$(build_tplaybook_agent_payload "$HYPERLIQUID_CONNECTION_ID" "${ICT_BEARISH_SKILL_ID:-}" "${ICT_BULLISH_SKILL_ID:-}")")"
+
+# ---------------------------------------------------------------------------
+# Step 5 — Create security-auditor agent
 # ---------------------------------------------------------------------------
 
 if [[ ! -f "$SECURITY_AUDIT_PROMPT_FILE" ]]; then
@@ -421,11 +508,13 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 5 — Summary
+# Step 6 — Summary
 # ---------------------------------------------------------------------------
 
 log_section "Agent creation summary"
 log_ok "thyper           → id=${THYPER_ID}  connection=Hyperliquid (${HYPERLIQUID_CONNECTION_ID})"
 log_ok "t1inch           → id=${T1INCH_ID}  connection=1inch (${ONEINCH_CONNECTION_ID})"
+log_ok "tplaybook        → id=${TPLAYBOOK_ID}  connection=Hyperliquid (${HYPERLIQUID_CONNECTION_ID})"
 log_ok "security-auditor → id=${SECURITY_AUDITOR_ID}  tick=24h (non-trading)"
+log_info "All agents are in 'stopped' state. Start them via the API or UI when ready."
 log_info "All agents are in 'stopped' state. Start them via the API or UI when ready."

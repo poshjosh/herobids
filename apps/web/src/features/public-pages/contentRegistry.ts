@@ -86,7 +86,6 @@ export const PUBLIC_PAGE_REGISTRY: Record<string, SectionMeta> = {
       'trading-venues': {
         title: 'Trading Venues',
         pages: {
-          'trading-venues/index': { title: 'Overview' },
           'trading-venues/hyperliquid': { title: 'Hyperliquid' },
           'trading-venues/bybit': { title: 'Bybit' },
           'trading-venues/jupiter': { title: 'Jupiter' },
