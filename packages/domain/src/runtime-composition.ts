@@ -61,7 +61,7 @@ export interface RuntimeDescriptorUpdatePayload {
 }
 
 /** Normalize a guardrail value that may be a number or numeric string to a finite number, or null. */
-export function toGuardrailNumber(value: number | string | undefined | null): number | null {
+export function toGuardrailNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
     const n = Number(value);

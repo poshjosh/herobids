@@ -1539,6 +1539,7 @@ describe('agent routes strategy preset resolution', () => {
     expect(technical['filters']).toEqual({
       venue: 'hyperliquid',
       venueType: 'orderbook',
+      quoteAssetSymbol: 'USDC',
     });
   });
 
@@ -1692,6 +1693,7 @@ describe('agent routes strategy preset resolution', () => {
     expect(technical['filters']).toEqual({
       venue: 'hyperliquid',
       venueType: 'orderbook',
+      quoteAssetSymbol: 'USDC',
     });
   });
 
@@ -1751,6 +1753,7 @@ describe('agent routes strategy preset resolution', () => {
     expect(technical['filters']).toEqual({
       venue: 'hyperliquid',
       venueType: 'orderbook',
+      quoteAssetSymbol: 'USDC',
     });
   });
 
@@ -1815,6 +1818,7 @@ describe('agent routes strategy preset resolution', () => {
     expect(technical['filters']).toEqual({
       venue: 'hyperliquid',
       venueType: 'orderbook',
+      quoteAssetSymbol: 'USDC',
     });
   });
 
@@ -2402,7 +2406,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
 // ---------------------------------------------------------------------------
 describe('agent routes — technical config persistence', () => {
   const TECHNICAL_STUB = {
-    filters: { venue: 'hyperliquid', venueType: 'orderbook' as const },
+    filters: { venue: 'hyperliquid', venueType: 'orderbook' as const, quoteAssetSymbol: 'USDC' },
     indicators: {
       rsi: { enabled: true, period: 14, healthyMin: 40, healthyMax: 70, overbought: 80, weakBelow: 30 },
       macd: { enabled: true, fast: 12, slow: 26, signal: 9 },

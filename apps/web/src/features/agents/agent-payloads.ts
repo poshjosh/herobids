@@ -297,6 +297,10 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   else risk.stopLossPct = null;
   risk.stopLossCooldownMs = parseCooldownMsOrNull(input.stopLossCooldownSecs);
 
+  const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'hybrid';
+  const includeTechnical = input.technicalPreFilterEnabled;
+  const includeAuthorizationMode = includeIntelligence && input.hasTradingCapability;
+
   // Build canonical execution defaults (WP4 shared value object)
   const executionDefaults: Record<string, unknown> = {
     mode: includeIntelligence && input.hasTradingCapability ? (input.executionMode || null) : null,
@@ -310,10 +314,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   const tickIntervalMs = input.preserveOriginalTickIntervalMs
     ? (input.originalTickIntervalMs ?? null)
     : parsedTickInterval ?? null;
-
-  const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'hybrid';
-  const includeTechnical = input.technicalPreFilterEnabled;
-  const includeAuthorizationMode = includeIntelligence && input.hasTradingCapability;
 
   // Resolve wakePreferences for update:
   // - subscribedSources provided with items → send wakePreferences with those sources

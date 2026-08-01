@@ -1728,6 +1728,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
               capital: row.capital,
               dailyLossLimit: row.dailyLossLimit,
               maxDrawdownPct: row.maxDrawdownPct,
+              risk: (row.risk as Record<string, unknown> | null) ?? null,
             };
           },
         }
