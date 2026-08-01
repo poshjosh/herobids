@@ -25,6 +25,10 @@ export function setAssessmentRequestPort(p: AssessmentRequestPort): void {
   port = p;
 }
 
+export function clearAssessmentRequestPort(): void {
+  port = null;
+}
+
 /**
  * Compute a human-readable freshness note from an ISO expiry timestamp.
  * Gives the agent a clear, actionable signal about the time window for

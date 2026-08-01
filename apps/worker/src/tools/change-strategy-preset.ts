@@ -25,6 +25,10 @@ export function setPresetTransitionPort(p: PresetTransitionPort): void {
   transitionPort = p;
 }
 
+export function clearPresetTransitionPort(): void {
+  transitionPort = null;
+}
+
 async function executeApplyPresetTransition(
   params: unknown,
   ctx: ToolContext,
