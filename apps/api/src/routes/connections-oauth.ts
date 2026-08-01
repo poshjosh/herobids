@@ -8,6 +8,7 @@ import {
   generateConnectionOAuthState,
   verifyConnectionOAuthState,
   OAUTH_CONNECTION_STATE_COOKIE,
+  OAUTH_CONNECTION_RETURN_TO_COOKIE,
 } from './connections-oauth-state.js';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { checkConnectionLimit, checkCredentialLimit } from '../plan-guards.js';
@@ -103,6 +104,30 @@ export async function connectionsOauthRoutes(
     );
   }
 
+  function sanitizeFrontendReturnTo(value: string | undefined): string {
+    if (!value || !value.startsWith('/') || value.startsWith('//')) {
+      return '/connections';
+    }
+
+    try {
+      const url = new URL(value, frontendOrigin);
+      if (url.origin !== frontendOrigin) {
+        return '/connections';
+      }
+      return `${url.pathname}${url.search}${url.hash}`;
+    } catch {
+      return '/connections';
+    }
+  }
+
+  function setConnectionOAuthReturnToCookie(reply: FastifyReply, returnTo: string): void {
+    const securePart = secureCookie ? '; Secure' : '';
+    reply.header(
+      'Set-Cookie',
+      `${OAUTH_CONNECTION_RETURN_TO_COOKIE}=${encodeURIComponent(returnTo)}; HttpOnly; SameSite=Lax; Path=/connections/oauth/gmail/callback; Max-Age=600${securePart}`,
+    );
+  }
+
   // ── 2.2 POST /connections/oauth/gmail/authorize ──────────────────────────
 
   app.post('/connections/oauth/gmail/authorize', async (request, reply) => {
@@ -112,8 +137,10 @@ export async function connectionsOauthRoutes(
       );
     }
 
+    const body = (request.body ?? {}) as { returnTo?: string };
     const { state, authorizeUrl } = buildGmailAuthorizeFlow(request.userId);
     setConnectionOAuthStateCookie(reply, state);
+    setConnectionOAuthReturnToCookie(reply, sanitizeFrontendReturnTo(body.returnTo));
 
     return { authorizeUrl };
   });
@@ -127,8 +154,10 @@ export async function connectionsOauthRoutes(
       );
     }
 
+    const query = request.query as { returnTo?: string };
     const { state, authorizeUrl } = buildGmailAuthorizeFlow(request.userId);
     setConnectionOAuthStateCookie(reply, state);
+    setConnectionOAuthReturnToCookie(reply, sanitizeFrontendReturnTo(query.returnTo));
 
     return reply.redirect(authorizeUrl);
   });
@@ -148,6 +177,10 @@ export async function connectionsOauthRoutes(
     const cookieState = parseCookieValue(
       request.headers['cookie'],
       OAUTH_CONNECTION_STATE_COOKIE,
+    );
+    const cookieReturnTo = parseCookieValue(
+      request.headers['cookie'],
+      OAUTH_CONNECTION_RETURN_TO_COOKIE,
     );
     const stateUserId = verifyConnectionOAuthState(
       state ?? '',
@@ -373,9 +406,10 @@ export async function connectionsOauthRoutes(
     }
 
     // Redirect to frontend success page
-    const callbackUrl = new URL('/connections', frontendOrigin);
+    const callbackUrl = new URL(sanitizeFrontendReturnTo(cookieReturnTo), frontendOrigin);
     callbackUrl.searchParams.set('setup', 'gmail');
     callbackUrl.searchParams.set('status', 'ok');
+    callbackUrl.searchParams.set('connectionId', connectionId);
     return reply.redirect(callbackUrl.toString());
   });
 }

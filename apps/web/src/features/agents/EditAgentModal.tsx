@@ -721,99 +721,123 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               />
             }
             connectionSlot={
-              (allPickerConnections.length > 0) ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <FieldLabel>{intl.formatMessage({ id: 'agents.create.connections' })}</FieldLabel>
-                  {(availableConnectionsQuery.isLoading || allConnectionsQuery.isLoading) ? (
-                    <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
-                  ) : (
-                    <>
-                      <select
-                        value=""
-                        onChange={(e) => {
-                          const id = e.target.value;
-                          if (!id) return;
-                          setForm((prev) => {
-                            const currentIds = prev.connectionIds ?? [];
-                            return currentIds.includes(id)
-                              ? prev
-                              : { ...prev, connectionIds: [...currentIds, id] };
-                          });
-                        }}
-                        style={{ ...inputStyle, cursor: 'pointer' }}
-                      >
-                        <option value="">{intl.formatMessage({ id: 'agents.create.chooseConnection' })}</option>
-                        {/* Trading connections group */}
-                        {allPickerConnections.some((c) => venueTypeMap[c.provider] !== undefined) && (
-                          <optgroup label={intl.formatMessage({ id: 'agents.create.connections.trading' })}>
-                            {allPickerConnections
-                              .filter((c) => venueTypeMap[c.provider] !== undefined)
-                              .map((connection) => (
-                                <option key={connection.connectionId} value={connection.connectionId}>
-                                  {connection.label} ({connection.provider})
-                                </option>
-                              ))}
-                          </optgroup>
-                        )}
-                        {/* Non-trading connections group */}
-                        {allPickerConnections.some((c) => venueTypeMap[c.provider] === undefined) && (
-                          <optgroup label={intl.formatMessage({ id: 'agents.create.connections.other' })}>
-                            {allPickerConnections
-                              .filter((c) => venueTypeMap[c.provider] === undefined)
-                              .map((connection) => (
-                                <option key={connection.connectionId} value={connection.connectionId}>
-                                  {connection.label} ({connection.provider})
-                                </option>
-                              ))}
-                          </optgroup>
-                        )}
-                      </select>
-                      {(form.connectionIds ?? []).length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                          {(form.connectionIds ?? []).map((id) => {
-                            const conn = allPickerConnections.find((c) => c.connectionId === id);
-                            return (
-                              <span
-                                key={id}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <FieldLabel>{intl.formatMessage({ id: 'agents.create.connections' })}</FieldLabel>
+                {(availableConnectionsQuery.isLoading || allConnectionsQuery.isLoading) ? (
+                  <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
+                ) : allPickerConnections.length === 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                      {intl.formatMessage({ id: 'agents.create.noConnections' })}
+                    </div>
+                    <div>
+                      <Button variant="secondary" size="sm" onClick={() => setShowAddConnection(true)}>
+                        {intl.formatMessage({ id: 'agents.create.addConnection' })}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        if (!id) return;
+                        setForm((prev) => {
+                          const currentIds = prev.connectionIds ?? [];
+                          return currentIds.includes(id)
+                            ? prev
+                            : { ...prev, connectionIds: [...currentIds, id] };
+                        });
+                      }}
+                      style={{ ...inputStyle, cursor: 'pointer' }}
+                    >
+                      <option value="">{intl.formatMessage({ id: 'agents.create.chooseConnection' })}</option>
+                      {/* Trading connections group */}
+                      {allPickerConnections.some((c) => venueTypeMap[c.provider] !== undefined) && (
+                        <optgroup label={intl.formatMessage({ id: 'agents.create.connections.trading' })}>
+                          {allPickerConnections
+                            .filter((c) => venueTypeMap[c.provider] !== undefined)
+                            .map((connection) => (
+                              <option key={connection.connectionId} value={connection.connectionId}>
+                                {connection.label} ({connection.provider})
+                              </option>
+                            ))}
+                        </optgroup>
+                      )}
+                      {/* Non-trading connections group */}
+                      {allPickerConnections.some((c) => venueTypeMap[c.provider] === undefined) && (
+                        <optgroup label={intl.formatMessage({ id: 'agents.create.connections.other' })}>
+                          {allPickerConnections
+                            .filter((c) => venueTypeMap[c.provider] === undefined)
+                            .map((connection) => (
+                              <option key={connection.connectionId} value={connection.connectionId}>
+                                {connection.label} ({connection.provider})
+                              </option>
+                            ))}
+                        </optgroup>
+                      )}
+                    </select>
+                    {(form.connectionIds ?? []).length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {(form.connectionIds ?? []).map((id) => {
+                          const conn = allPickerConnections.find((c) => c.connectionId === id);
+                          return (
+                            <span
+                              key={id}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                background: 'var(--color-surface-2)',
+                                fontSize: '12px',
+                                cursor: 'default',
+                              }}
+                            >
+                              {conn?.label ?? id}
+                              <button
+                                type="button"
+                                onClick={() => setForm((prev) => ({
+                                  ...prev,
+                                  connectionIds: (prev.connectionIds ?? []).filter((cid) => cid !== id),
+                                }))}
                                 style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  padding: '2px 8px',
-                                  borderRadius: '12px',
-                                  background: 'var(--color-surface-2)',
-                                  fontSize: '12px',
-                                  cursor: 'default',
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: '0 2px',
+                                  fontSize: '14px',
+                                  lineHeight: '1',
+                                  color: 'var(--color-text-muted)',
                                 }}
                               >
-                                {conn?.label ?? id}
-                                <button
-                                  type="button"
-                                  onClick={() => setForm((prev) => ({
-                                    ...prev,
-                                    connectionIds: (prev.connectionIds ?? []).filter((cid) => cid !== id),
-                                  }))}
-                                  style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    padding: '0 2px',
-                                    fontSize: '14px',
-                                    lineHeight: '1',
-                                    color: 'var(--color-text-muted)',
-                                  }}
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              ) : null
+                                ×
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowAddConnection(true)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '4px 0',
+                        fontSize: '12px',
+                        color: 'var(--color-brand)',
+                        textAlign: 'left',
+                      }}
+                    >
+                      {intl.formatMessage({ id: 'agents.create.addConnection' })}
+                    </button>
+                  </>
+                )}
+              </div>
             }
             modelSlot={
               showIntelligence ? (

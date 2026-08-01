@@ -68,9 +68,13 @@ interface Props {
   defaultCapability?: 'trading';
   /** When true, render as a standalone page card instead of inside a Modal. */
   standalone?: boolean;
+  /** Optional relative path to return to after an OAuth-only provider finishes auth. */
+  oauthReturnTo?: string;
+  /** Called immediately before redirecting the browser into an OAuth-only provider flow. */
+  onBeforeOAuthRedirect?: () => void;
 }
 
-export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, standalone }: Props) {
+export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, standalone, oauthReturnTo, onBeforeOAuthRedirect }: Props) {
   const intl = useIntl();
   const [providerChoice, setProviderChoice] = useState('');  // '' = not yet initialised; see defaultProviderChoice below
   const [label, setLabel] = useState('');
@@ -157,7 +161,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
   });
 
   const oauthMutation = useMutation({
-    mutationFn: (providerId: string) => connectionsApi.beginOAuth(providerId),
+    mutationFn: (providerId: string) => connectionsApi.beginOAuth(providerId, oauthReturnTo ? { returnTo: oauthReturnTo } : undefined),
     onSuccess: ({ authorizeUrl }) => {
       window.location.href = authorizeUrl;
     },
@@ -176,6 +180,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
 
   const handleOAuthConnect = () => {
     if (effectiveProvider) {
+      onBeforeOAuthRedirect?.();
       oauthMutation.mutate(effectiveProvider);
     }
   };

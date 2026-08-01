@@ -56,3 +56,6 @@ export function verifyConnectionOAuthState(
 
 /** Cookie name for connection OAuth CSRF state. */
 export const OAUTH_CONNECTION_STATE_COOKIE = 'oauth_connection_state';
+
+/** Cookie name for the frontend return path after connection OAuth completes. */
+export const OAUTH_CONNECTION_RETURN_TO_COOKIE = 'oauth_connection_return_to';

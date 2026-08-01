@@ -262,8 +262,8 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         </div>
       )}
 
-      {/* Platform link — only when trading setup is required */}
-      {props.showTradingControls && props.requiresTradingSetup && (
+      {/* Platform link — available for all agents so non-trading skills can use generic providers like Gmail */}
+      {props.connectionSlot && (
         <div style={fieldGap}>{props.connectionSlot}</div>
       )}
 

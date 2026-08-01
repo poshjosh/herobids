@@ -199,6 +199,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'hybrid';
   const includeTechnical = input.technicalPreFilterEnabled;
+  const includeAuthorizationMode = includeIntelligence && input.requiresTradingSetup;
 
   const subscribedSources = input.subscribedSources ?? [];
   const wakePreferences: { subscribedSources?: string[] } | undefined =
@@ -241,7 +242,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.capabilityMode === 'hybrid' ? { hybridMode: input.hybridMode } : {}),
     ...(platformAssessment ? { platformAssessment } : {}),
     ...(input.skillPresetId ? { skillPresetId: input.skillPresetId } : {}),
-    ...(input.authorizationMode ? { authorizationMode: input.authorizationMode } : {}),
+    ...(includeAuthorizationMode && input.authorizationMode ? { authorizationMode: input.authorizationMode } : {}),
   };
 }
 
@@ -292,6 +293,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
 
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'hybrid';
   const includeTechnical = input.technicalPreFilterEnabled;
+  const includeAuthorizationMode = includeIntelligence && input.hasTradingCapability;
 
   // Resolve wakePreferences for update:
   // - subscribedSources provided with items → send wakePreferences with those sources
@@ -336,6 +338,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     hybridMode: input.capabilityMode === 'hybrid' ? input.hybridMode : null,
     platformAssessment: buildPlatformAssessmentPayload(input.platformAssessmentEnabled, input.platformAssessmentReviewIntervalHours),
     ...(input.skillPresetId !== undefined ? { skillPresetId: input.skillPresetId } : {}),
-    ...(input.authorizationMode !== undefined ? { authorizationMode: input.authorizationMode } : {}),
+    ...(includeAuthorizationMode && input.authorizationMode !== undefined ? { authorizationMode: input.authorizationMode } : {}),
   };
 }

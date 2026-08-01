@@ -49,6 +49,8 @@ function renderModal(options: {
   prompt?: string;
   tickIntervalMs?: number | null;
   technical?: Record<string, unknown> | null;
+  availableConnections?: Array<{ connectionId: string; label: string; provider: string; status: string; connectionStatus?: string; profile?: Record<string, unknown> | null }>;
+  allConnections?: Array<{ id: string; label: string; provider: string; status: string; profile?: Record<string, unknown> | null }>;
 } = {}): string {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -62,6 +64,12 @@ function renderModal(options: {
     maxPositionSizePct: 100,
     stopLossPct: 10,
     stopLossCooldownMs: 300000,
+  });
+  queryClient.setQueryData(['capabilities', 'trading', 'connections'], {
+    connections: options.availableConnections ?? [],
+  });
+  queryClient.setQueryData(['connections'], {
+    connections: options.allConnections ?? [],
   });
 
   return renderToStaticMarkup(
@@ -210,5 +218,18 @@ describe('EditAgentModal rendering', () => {
 
     expect(html).not.toContain(messages['agents.executionMode.label']);
     expect(html).not.toContain(messages['agents.edit.executionModeHelp'].replace('{mode}', ''));
+  });
+
+  it('shows the add-connection empty state for non-trading agents with no existing connections', () => {
+    const html = renderModal({
+      prompt: '',
+      technical: TECHNICAL_CONFIG,
+      availableConnections: [],
+      allConnections: [],
+    });
+
+    expect(html).toContain(messages['agents.create.connections']);
+    expect(html).toContain(messages['agents.create.noConnections']);
+    expect(html).toContain(messages['agents.create.addConnection']);
   });
 });

@@ -3,7 +3,7 @@ import Fastify from 'fastify';
 import type { AppConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { connectionsOauthRoutes } from './connections-oauth.js';
-import { OAUTH_CONNECTION_STATE_COOKIE } from './connections-oauth-state.js';
+import { OAUTH_CONNECTION_RETURN_TO_COOKIE, OAUTH_CONNECTION_STATE_COOKIE } from './connections-oauth-state.js';
 
 function makeAppConfig(): AppConfig {
   return {
@@ -91,6 +91,27 @@ describe('connectionsOauthRoutes', () => {
     expect(authorizeUrl.searchParams.get('redirect_uri')).toBe('http://localhost:3000/connections/oauth/gmail/callback');
     expect(authorizeUrl.searchParams.get('redirect_uri')).not.toContain('http://api:3000');
     expect(authorizeUrl.searchParams.get('scope')).toContain('https://www.googleapis.com/auth/userinfo.email');
+
+    await app.close();
+  });
+
+  it('stores a caller-provided relative returnTo path for the OAuth callback redirect', async () => {
+    const app = Fastify({ logger: false });
+    decorateWithAuth(app);
+    await connectionsOauthRoutes(app, {} as Database, makeAppConfig());
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/connections/oauth/gmail/authorize',
+      payload: { returnTo: '/agents?create=1&oauthReturn=1' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const setCookie = res.headers['set-cookie'];
+    const cookies = Array.isArray(setCookie) ? setCookie : [setCookie];
+    expect(cookies.some((cookie) => cookie?.includes(`${OAUTH_CONNECTION_RETURN_TO_COOKIE}=%2Fagents%3Fcreate%3D1%26oauthReturn%3D1`))).toBe(true);
+    expect(cookies.some((cookie) => cookie?.includes(`${OAUTH_CONNECTION_STATE_COOKIE}=`))).toBe(true);
 
     await app.close();
   });

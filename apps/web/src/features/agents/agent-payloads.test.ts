@@ -112,6 +112,39 @@ describe('agent payload builders', () => {
     });
   });
 
+  it('buildCreateAgentPayload omits authorizationMode for non-trading agents', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'assistant',
+      goal: 'Read my Gmail and summarize messages.',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: ['email'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'test',
+      connectionIds: ['gmail-conn-1'],
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      emailDelivery: 'inherit',
+      tickIntervalMins: '',
+      capital: '',
+      dailyLossLimit: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      authorizationMode: 'direct',
+    });
+
+    expect(payload).not.toHaveProperty('authorizationMode');
+  });
+
   it('buildCreateAgentPayload includes technical config and intelligence fields in hybrid mode', () => {
     expect(buildCreateAgentPayload({
       name: '  technical scout  ',
@@ -460,6 +493,40 @@ describe('agent payload builders', () => {
       emailDelivery: 'inherit',
     });
     expect(payload).not.toHaveProperty('connectionIds');
+  });
+
+  it('buildUpdateAgentPayload omits authorizationMode for non-trading agents', () => {
+    const payload = buildUpdateAgentPayload({
+      name: 'assistant',
+      prompt: 'Read my Gmail and summarize messages.',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technicalPreFilterEnabled: false,
+      technical: null,
+      skillIds: ['email'],
+      hasBotManagementSkill: false,
+      executionMode: '',
+      hasTradingCapability: false,
+      connectionIds: ['gmail-conn-1'],
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyLossLimit: '',
+      maxDrawdownPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      tickIntervalMins: '',
+      capital: '',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
+      authorizationMode: 'direct',
+    });
+
+    expect(payload).not.toHaveProperty('authorizationMode');
   });
 
   it('buildUpdateAgentPayload clears execution mode in hybrid mode when hasTradingCapability is false', () => {

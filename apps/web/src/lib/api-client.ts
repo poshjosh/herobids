@@ -1397,10 +1397,11 @@ export const connections = {
   get: (id: string) => request<Connection>(`/connections/${id}`),
   create: (data: { provider: string; label: string; credentialId?: string }) =>
     request<Connection>('/connections', { method: 'POST', body: JSON.stringify(data) }),
-  beginOAuth: (provider: string) =>
+  beginOAuth: (provider: string, options?: { returnTo?: string }) =>
     requestAgainstBase<{ authorizeUrl: string }>(config.apiOrigin, `/connections/oauth/${provider}/authorize`, {
       method: 'POST',
       credentials: 'include',
+      ...(options?.returnTo ? { body: JSON.stringify({ returnTo: options.returnTo }) } : {}),
     }),
   revoke: (id: string) => request<void>(`/connections/${id}`, { method: 'DELETE' }),
   delete: (id: string) => request<void>(`/connections/${id}?permanent=true`, { method: 'DELETE' }),
