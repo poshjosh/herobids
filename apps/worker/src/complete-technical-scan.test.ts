@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { completeTechnicalScan, type CompleteTechnicalScanParams } from './complete-technical-scan.js';
 import { deriveScannerHealth } from './complete-technical-scan.js';
 import { computeSignalFingerprint, bucketConfidence } from './complete-technical-scan.js';
+import { buildPersistableCandidates } from './complete-technical-scan.js';
 import type { TechnicalPhaseResult } from './technical-phase.js';
 import type { TechnicalConfig } from '@herobids/domain';
 import type { ScoredSignal } from '@herobids/strategy';
@@ -758,5 +759,448 @@ describe('computeSignalFingerprint', () => {
   it('handles empty signals gracefully', () => {
     const fp = computeSignalFingerprint([], [], true, defaultTopN, defaultBucketSize);
     expect(fp).toBe('exit:none|regime:pass');
+  });
+});
+
+// ─── Phase 4: Swap signal identity validation ────────────────────────────────
+
+describe('Phase 4 — swap signal identity validation', () => {
+  it('removes a swap signal that is missing pricingIdentity from scan signals', async () => {
+    const swapSignal: ScoredSignal = {
+      symbol: 'BONK',
+      instrumentId: 'BONK:ADDR/USDC:ADDR',
+      venueType: 'swap',
+      confidence: 0.78,
+      reasons: ['volume strong'],
+      intent: 'go_long',
+      indicators: { rsi: 48 },
+      // pricingIdentity intentionally omitted — should be dropped
+    };
+    const phaseResult = makePhaseResult({
+      signals: [swapSignal],
+      signalsGenerated: 1,
+    });
+    const onJournalEvent = vi.fn();
+
+    const scan = await completeTechnicalScan(makeParams({
+      phaseResult,
+      onJournalEvent,
+    }));
+
+    // The swap signal should be filtered out
+    expect(scan.signals).toHaveLength(0);
+    expect(scan.signalsGenerated).toBe(0);
+    expect(scan.pricingIdentities).toEqual({});
+
+    // A journal event should be emitted
+    expect(onJournalEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scanner.incomplete_swap_identity',
+        payload: expect.objectContaining({
+          symbol: 'BONK',
+          hasPricingIdentity: false,
+        }),
+      }),
+    );
+  });
+
+  it('removes a swap signal with pricingIdentity but missing chain', async () => {
+    const swapSignal: ScoredSignal = {
+      symbol: 'BONK',
+      instrumentId: 'BONK:ADDR/USDC:ADDR',
+      venueType: 'swap',
+      confidence: 0.78,
+      reasons: ['volume strong'],
+      intent: 'go_long',
+      indicators: { rsi: 48 },
+      pricingIdentity: { kind: 'dex', symbol: 'BONK', chain: '', address: '0xaddr' },
+      swapExecutionIdentity: {
+        network: 'solana',
+        baseSymbol: 'BONK',
+        baseAddress: '0xbonk',
+        quoteSymbol: 'USDC',
+        quoteAddress: '0xusdc',
+      },
+    };
+    const phaseResult = makePhaseResult({
+      signals: [swapSignal],
+      signalsGenerated: 1,
+    });
+
+    const scan = await completeTechnicalScan(makeParams({ phaseResult }));
+    expect(scan.signals).toHaveLength(0);
+    expect(scan.signalsGenerated).toBe(0);
+  });
+
+  it('removes a swap signal with pricingIdentity but missing address', async () => {
+    const swapSignal: ScoredSignal = {
+      symbol: 'BONK',
+      instrumentId: 'BONK:ADDR/USDC:ADDR',
+      venueType: 'swap',
+      confidence: 0.78,
+      reasons: ['volume strong'],
+      intent: 'go_long',
+      indicators: { rsi: 48 },
+      pricingIdentity: { kind: 'dex', symbol: 'BONK', chain: 'solana', address: '' },
+      swapExecutionIdentity: {
+        network: 'solana',
+        baseSymbol: 'BONK',
+        baseAddress: '0xbonk',
+        quoteSymbol: 'USDC',
+        quoteAddress: '0xusdc',
+      },
+    };
+    const phaseResult = makePhaseResult({
+      signals: [swapSignal],
+      signalsGenerated: 1,
+    });
+
+    const scan = await completeTechnicalScan(makeParams({ phaseResult }));
+    expect(scan.signals).toHaveLength(0);
+  });
+
+  it('removes a swap signal missing swapExecutionIdentity', async () => {
+    const swapSignal: ScoredSignal = {
+      symbol: 'BONK',
+      instrumentId: 'BONK:ADDR/USDC:ADDR',
+      venueType: 'swap',
+      confidence: 0.78,
+      reasons: ['volume strong'],
+      intent: 'go_long',
+      indicators: { rsi: 48 },
+      pricingIdentity: { kind: 'dex', symbol: 'BONK', chain: 'solana', address: '0xbonk' },
+      // swapExecutionIdentity intentionally omitted
+    };
+    const phaseResult = makePhaseResult({
+      signals: [swapSignal],
+      signalsGenerated: 1,
+    });
+
+    const scan = await completeTechnicalScan(makeParams({ phaseResult }));
+    expect(scan.signals).toHaveLength(0);
+  });
+
+  it('preserves a valid swap signal with complete identity', async () => {
+    const validSwapSignal: ScoredSignal = {
+      symbol: 'BONK',
+      instrumentId: 'BONK:0xbonk/USDC:0xusdc',
+      venueType: 'swap',
+      confidence: 0.78,
+      reasons: ['volume strong'],
+      intent: 'go_long',
+      indicators: { rsi: 48 },
+      pricingIdentity: { kind: 'dex', symbol: 'BONK', chain: 'solana', address: '0xbonk' },
+      swapExecutionIdentity: {
+        network: 'solana',
+        baseSymbol: 'BONK',
+        baseAddress: '0xbonk',
+        quoteSymbol: 'USDC',
+        quoteAddress: '0xusdc',
+      },
+    };
+    const phaseResult = makePhaseResult({
+      signals: [validSwapSignal],
+      signalsGenerated: 1,
+    });
+
+    const scan = await completeTechnicalScan(makeParams({ phaseResult }));
+    expect(scan.signals).toHaveLength(1);
+    expect(scan.signals[0]?.instrumentId).toBe('BONK:0xbonk/USDC:0xusdc');
+    expect(scan.pricingIdentities).toEqual({
+      'BONK:0xbonk/USDC:0xusdc': { kind: 'dex', symbol: 'BONK', chain: 'solana', address: '0xbonk' },
+    });
+  });
+
+  it('preserves orderbook signals alongside filtered swap signals', async () => {
+    const validOrderbookSignal: ScoredSignal = {
+      symbol: 'BTC',
+      instrumentId: 'BTC-PERP',
+      venueType: 'orderbook',
+      confidence: 0.92,
+      reasons: ['RSI healthy'],
+      intent: 'go_long',
+      indicators: { rsi: 58 },
+      pricingIdentity: { kind: 'perps', symbol: 'BTC', chain: 'hyperliquid' },
+    };
+    const invalidSwapSignal: ScoredSignal = {
+      symbol: 'BONK',
+      instrumentId: 'BONK:ADDR/USDC:ADDR',
+      venueType: 'swap',
+      confidence: 0.78,
+      reasons: ['volume strong'],
+      intent: 'go_long',
+      indicators: { rsi: 48 },
+      // missing pricingIdentity → should be dropped
+    };
+    const phaseResult = makePhaseResult({
+      signals: [validOrderbookSignal, invalidSwapSignal],
+      signalsGenerated: 2,
+    });
+
+    const scan = await completeTechnicalScan(makeParams({ phaseResult }));
+    expect(scan.signals).toHaveLength(1);
+    expect(scan.signals[0]?.instrumentId).toBe('BTC-PERP');
+    expect(scan.signalsGenerated).toBe(1);
+    expect(scan.pricingIdentities).toEqual({
+      'BTC-PERP': { kind: 'perps', symbol: 'BTC', chain: 'hyperliquid' },
+    });
+  });
+
+  it('does not emit a wake for swap signals that were filtered out', async () => {
+    const invalidSwapSignal: ScoredSignal = {
+      symbol: 'BONK',
+      instrumentId: 'BONK:ADDR/USDC:ADDR',
+      venueType: 'swap',
+      confidence: 0.78,
+      reasons: ['volume strong'],
+      intent: 'go_long',
+      indicators: { rsi: 48 },
+      // missing pricingIdentity
+    };
+    const phaseResult = makePhaseResult({
+      signals: [invalidSwapSignal],
+      signalsGenerated: 1,
+    });
+    const emitAgentWake = vi.fn().mockResolvedValue(undefined);
+
+    await completeTechnicalScan(makeParams({
+      phaseResult,
+      emitAgentWake,
+      isHybridMode: true,
+    }));
+
+    // No wake should be emitted because the only signal was filtered out
+    expect(emitAgentWake).not.toHaveBeenCalled();
+  });
+
+  it('classifies as healthy_no_signal when all swap signals are filtered out', async () => {
+    // Three swap signals — all with incomplete identity so they get filtered.
+    const swapSignals: ScoredSignal[] = [
+      {
+        symbol: 'BONK',
+        instrumentId: 'BONK:0xbonk/USDC:0xusdc',
+        venueType: 'swap',
+        confidence: 0.78,
+        reasons: ['volume strong'],
+        intent: 'go_long',
+        indicators: { rsi: 48 },
+        // missing pricingIdentity
+      },
+      {
+        symbol: 'WIF',
+        instrumentId: 'WIF:0xwif/USDC:0xusdc',
+        venueType: 'swap',
+        confidence: 0.65,
+        reasons: ['trend strong'],
+        intent: 'go_long',
+        indicators: { rsi: 52 },
+        pricingIdentity: { kind: 'dex', symbol: 'WIF', chain: 'solana' },
+        // has pricingIdentity but missing swapExecutionIdentity
+      },
+      {
+        symbol: 'JUP',
+        instrumentId: 'JUP:0xjup/USDC:0xusdc',
+        venueType: 'swap',
+        confidence: 0.72,
+        reasons: ['breakout'],
+        intent: 'go_long',
+        indicators: { rsi: 58 },
+        pricingIdentity: { kind: 'dex', symbol: 'JUP', chain: 'solana', address: '0xjup' },
+        swapExecutionIdentity: {
+          network: 'solana', baseSymbol: 'JUP', baseAddress: '0xjup',
+          quoteSymbol: 'USDC', quoteAddress: '0xusdc',
+        },
+        // has complete identity — this one passes
+      },
+    ];
+    const phaseResult = makePhaseResult({
+      signals: swapSignals,
+      signalsGenerated: 3,
+      candidatesScored: 3,
+      eligibleCount: 3,
+      fetchedCount: 3,
+      candidatesDiscovered: 5,
+    });
+
+    const scan = await completeTechnicalScan(makeParams({
+      phaseResult,
+      isHybridMode: true,
+    }));
+
+    // Only 1 of 3 swap signals had complete identity → scannerHealth should
+    // use the post-filter count, not the pre-filter 3.
+    expect(scan.signalsGenerated).toBe(1);
+    expect(scan.scannerHealth).toEqual({
+      status: 'healthy_signals',
+      reason: '1 signal(s) generated',
+    });
+  });
+
+  it('classifies as healthy_no_signal when all swap signals are filtered out (zero pass)', async () => {
+    // All swap signals have incomplete identity — zero pass filtering.
+    const swapSignals: ScoredSignal[] = [
+      {
+        symbol: 'BONK',
+        instrumentId: 'BONK:0xbonk/USDC:0xusdc',
+        venueType: 'swap',
+        confidence: 0.78,
+        reasons: ['volume strong'],
+        intent: 'go_long',
+        indicators: { rsi: 48 },
+        // missing pricingIdentity
+      },
+      {
+        symbol: 'WIF',
+        instrumentId: 'WIF:0xwif/USDC:0xusdc',
+        venueType: 'swap',
+        confidence: 0.65,
+        reasons: ['trend strong'],
+        intent: 'go_long',
+        indicators: { rsi: 52 },
+        pricingIdentity: { kind: 'dex', symbol: 'WIF', chain: 'solana' },
+        // has pricingIdentity but missing swapExecutionIdentity
+      },
+    ];
+    const phaseResult = makePhaseResult({
+      signals: swapSignals,
+      signalsGenerated: 2,
+      candidatesScored: 2,
+      eligibleCount: 2,
+      fetchedCount: 2,
+      candidatesDiscovered: 5,
+    });
+
+    const scan = await completeTechnicalScan(makeParams({
+      phaseResult,
+      isHybridMode: true,
+    }));
+
+    // All swap signals filtered out → post-filter count is 0 → healthy_no_signal.
+    expect(scan.signalsGenerated).toBe(0);
+    expect(scan.scannerHealth).toEqual({
+      status: 'healthy_no_signal',
+      reason: 'Data available, candidates scored, no signals generated — conservative strategy',
+    });
+  });
+});
+
+// ─── Phase 4: DEX instrumentKind persistence ─────────────────────────────────
+
+describe('buildPersistableCandidates — DEX instrumentKind', () => {
+  const basePhaseResult = makePhaseResult({
+    signals: [],
+    signalsGenerated: 0,
+    positionIndicators: [],
+  });
+  const techConfig = makeTechnicalConfig();
+
+  it('sets instrumentKind to dex for swap signals', () => {
+    const phaseResult = {
+      ...basePhaseResult,
+      signals: [
+        {
+          symbol: 'BONK',
+          instrumentId: 'BONK:0xbonk/USDC:0xusdc',
+          venueType: 'swap' as const,
+          confidence: 0.78,
+          reasons: ['volume strong'],
+          intent: 'go_long' as const,
+          indicators: { rsi: 48 },
+          swapExecutionIdentity: {
+            network: 'solana',
+            baseSymbol: 'BONK',
+            baseAddress: '0xbonk',
+            quoteSymbol: 'USDC',
+            quoteAddress: '0xusdc',
+          },
+        },
+      ],
+    };
+
+    const candidates = buildPersistableCandidates('agent-1', '2026-01-01T00:00:00Z', phaseResult, techConfig);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.instrumentKind).toBe('dex');
+  });
+
+  it('sets network and address from swapExecutionIdentity for dex signals', () => {
+    const phaseResult = {
+      ...basePhaseResult,
+      signals: [
+        {
+          symbol: 'BONK',
+          instrumentId: 'BONK:0xbonk/USDC:0xusdc',
+          venueType: 'swap' as const,
+          confidence: 0.78,
+          reasons: ['volume strong'],
+          intent: 'go_long' as const,
+          indicators: { rsi: 48 },
+          swapExecutionIdentity: {
+            network: 'solana',
+            baseSymbol: 'BONK',
+            baseAddress: '0xbonk',
+            quoteSymbol: 'USDC',
+            quoteAddress: '0xusdc',
+          },
+        },
+      ],
+    };
+
+    const candidates = buildPersistableCandidates('agent-1', '2026-01-01T00:00:00Z', phaseResult, techConfig);
+
+    expect(candidates[0]?.network).toBe('solana');
+    expect(candidates[0]?.address).toBe('0xbonk');
+  });
+
+  it('keeps instrumentKind as orderbook for non-swap signals', () => {
+    const phaseResult = {
+      ...basePhaseResult,
+      signals: [
+        {
+          symbol: 'BTC',
+          instrumentId: 'BTC-PERP',
+          venueType: 'orderbook' as const,
+          confidence: 0.92,
+          reasons: ['RSI healthy'],
+          intent: 'go_long' as const,
+          indicators: { rsi: 58 },
+        },
+      ],
+    };
+
+    const candidates = buildPersistableCandidates('agent-1', '2026-01-01T00:00:00Z', phaseResult, techConfig);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.instrumentKind).toBe('orderbook');
+    expect(candidates[0]?.network).toBeUndefined();
+    expect(candidates[0]?.address).toBeUndefined();
+  });
+
+  it('uses instrumentId as rawCandidateId for swap signals', () => {
+    const phaseResult = {
+      ...basePhaseResult,
+      signals: [
+        {
+          symbol: 'BONK',
+          instrumentId: 'BONK:0xbonk/USDC:0xusdc',
+          venueType: 'swap' as const,
+          confidence: 0.78,
+          reasons: ['volume strong'],
+          intent: 'go_long' as const,
+          indicators: { rsi: 48 },
+          swapExecutionIdentity: {
+            network: 'solana',
+            baseSymbol: 'BONK',
+            baseAddress: '0xbonk',
+            quoteSymbol: 'USDC',
+            quoteAddress: '0xusdc',
+          },
+        },
+      ],
+    };
+
+    const candidates = buildPersistableCandidates('agent-1', '2026-01-01T00:00:00Z', phaseResult, techConfig);
+
+    expect(candidates[0]?.rawCandidateId).toBe('BONK:0xbonk/USDC:0xusdc');
   });
 });

@@ -30,7 +30,7 @@ import { createFillFirstMarkSource } from '@herobids/engine';
 import type { IdGenerator } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
 import { MarkSelector } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, AGENT_STREAM_MAXLEN, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig, ok, err } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, AGENT_STREAM_MAXLEN, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig, type TokenSafetyConfig, ok, err } from '@herobids/domain';
 
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
@@ -39,6 +39,7 @@ import { resolve } from 'node:path';
 import { loadConfig, MONOREPO_CONFIG_DIR } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
 import { resolveSwapAssetsFromBinding, resolveSwapNetwork } from './resolve-swap-assets.js';
+import { validateSwapScannerConfig } from './swap-startup-validation.js';
 import { resolveBotStartupContext, BotStartupError } from './startup-context.js';
 import { buildPublicStreamConnectors, createScopedStreamPoolHandle } from './public-stream-routing.js';
 import { AlertDispatcher } from './alerting/index.js';
@@ -73,7 +74,7 @@ import { createEvidencePorts } from './market-intelligence/evidence-adapters.js'
 import { AssessmentRequestService } from './market-intelligence/assessment-request-service.js';
 import { setAssessmentRequestPort } from './tools/assess-strategy-preset.js';
 import { setPresetTransitionPort } from './tools/change-strategy-preset.js';
-import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
+import { createProviderRegistry, createPriceService, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
 import { resolveSwapTokenData, type DexScreenerProvider, type CanonicalResolver } from './swap-token-resolver.js';
@@ -269,8 +270,9 @@ const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
 // explicit ScannerCandleTarget — no venue-global assumptions.
 
 import { discoverScannerCandidates } from './scanner-candidate-discovery.js';
+import { discoverSwapScannerCandidates } from './swap-candidate-discovery.js';
 import { createScannerCandleFetcher } from './scanner-candle-fetcher.js';
-import { normalizeOrderbookCandidates } from './scanner-pre-filter.js';
+import { normalizeScannerCandidates } from './scanner-pre-filter.js';
 
 /** Capacity policy values sourced from operator config. */
 const scannerCapacity = appConfig.marketData?.binance?.scanner ?? {
@@ -287,12 +289,23 @@ const scannerRateLimiter = new TokenBucketRateLimiter({
   maxWaitMs: 5_000, // short wait — scanner batches are time-sensitive
 });
 
+// GeckoTerminal candle rate limiter for swap scanner traffic.
+// Budget sourced from operator config: marketData.geckoterminal.candles.requestsPerMinute (15 RPM).
+const geckoTerminalCandleBudget = appConfig.marketData?.geckoterminal?.candles ?? { requestsPerMinute: 15 };
+const geckoTerminalScannerLimiter = new TokenBucketRateLimiter({
+  requestsPerMinute: geckoTerminalCandleBudget.requestsPerMinute,
+  burstCapacity: geckoTerminalCandleBudget.burstCapacity ?? geckoTerminalCandleBudget.requestsPerMinute,
+  maxWaitMs: geckoTerminalCandleBudget.maxWaitMs ?? 5_000,
+});
+
 // Phase 3: venue-agnostic scanner candle fetcher. Uses an explicit
 // ScannerCandleTarget instead of assuming Hyperliquid.
 const scannerCandleFetcher = sharedMarketDataRegistry
   ? createScannerCandleFetcher({
       binanceConfig: sharedMarketDataRegistry.configs.binance,
+      geckoTerminalConfig: sharedMarketDataRegistry.configs.geckoterminal,
       scannerRateLimiter,
+      geckoTerminalRateLimiter: geckoTerminalScannerLimiter,
     })
   : undefined;
 
@@ -315,63 +328,111 @@ const candleFetchRetry: RetryOptions | undefined = appConfig.agentRuntime.candle
   : undefined;
 
 /**
- * Build a venue-aware discoverCandidates closure for the given orderbook binding.
+ * Build a venue-aware discoverCandidates closure.
  *
- * Discovery branches by venue (Hyperliquid asset contexts vs Bybit tickers),
- * then normalizes candle-provider symbols. Swap-venue agents receive an empty
- * candidate list (swap scanning is deferred to Part 2).
+ * Orderbook venues (Hyperliquid, Bybit) use the existing venue-specific discovery
+ * paths. Swap venues (Jupiter, 1inch) use {@link registry.discovery.discover()}
+ * when enabled by operator flags; when disabled they return no candidates —
+ * byte-for-byte identical to pre-Phase-3 behaviour.
  *
- * Unrecognized orderbook venues are rejected with an explicit error log —
- * the scanner does not silently fall back to a different venue.
+ * Unrecognized venues are rejected with an explicit error log — the scanner does
+ * not silently fall back to a different venue.
  */
 function buildDiscoverCandidates(params: {
   bindingVenue: string;
   bindingVenueType: 'orderbook' | 'swap';
+  /** Resolved token-safety network for swap venues (e.g. 'solana', 'base'). */
+  swapNetwork?: string;
+  /** Effective quote asset symbol for pool filtering (default 'USDC'). */
+  swapQuoteAssetSymbol?: string;
+  /** Effective quote asset address from canonical tokens for swap execution identity. */
+  swapQuoteAssetAddress?: string;
+  /** Whether swap scanning is enabled (master kill-switch + per-venue flag). */
+  swapEnabled: boolean;
 }): (filters: FilterConfig) => Promise<DiscoveredInstrument[]> {
-  const { bindingVenue, bindingVenueType } = params;
+  const {
+    bindingVenue,
+    bindingVenueType,
+    swapNetwork,
+    swapQuoteAssetSymbol,
+    swapQuoteAssetAddress,
+    swapEnabled,
+  } = params;
 
-  // Only orderbook venues are supported by the scanner discovery path.
-  // Swap-venue agents get an empty candidate list (swap scanning is Part 2).
-  if (bindingVenueType !== 'orderbook') {
-    return async (_filters: FilterConfig) => [];
+  // ── Orderbook path ──────────────────────────────────────────────────────
+  if (bindingVenueType === 'orderbook') {
+    // Validate that the orderbook venue is one we support for scanning.
+    if (bindingVenue !== 'hyperliquid' && bindingVenue !== 'bybit') {
+      logger.warn(
+        { venue: bindingVenue },
+        'Scanner discovery: unsupported orderbook venue — returning empty candidates',
+      );
+      return async (_filters: FilterConfig) => [];
+    }
+
+    const venue: 'hyperliquid' | 'bybit' = bindingVenue;
+
+    return async (filters: FilterConfig) => {
+      if (!sharedMarketDataRegistry) return [];
+      if (!filters) return [];
+
+      const discovered = await discoverScannerCandidates({
+        registry: sharedMarketDataRegistry,
+        filters,
+        bindingVenue: venue,
+        bindingVenueType: 'orderbook',
+        maxCandidates: scannerCapacity.maxCandidates,
+      });
+
+      const { supported, unsupportedCount } = normalizeScannerCandidates(discovered);
+
+      if (unsupportedCount > 0) {
+        logger.info(
+          { venue, discovered: discovered.length, supported: supported.length, unsupported: unsupportedCount },
+          'Scanner normalize dropped unresolvable orderbook candidates',
+        );
+      }
+
+      return supported;
+    };
   }
 
-  // Validate that the orderbook venue is one we support for scanning.
-  if (bindingVenue !== 'hyperliquid' && bindingVenue !== 'bybit') {
-    logger.warn(
-      { venue: bindingVenue },
-      'Scanner discovery: unsupported orderbook venue — returning empty candidates',
+  // ── Swap path ───────────────────────────────────────────────────────────
+  // Gate: when swap scanning is disabled, return no candidates (pre-Phase-3 behaviour).
+  if (!swapEnabled || !swapNetwork || (bindingVenue !== 'jupiter' && bindingVenue !== '1inch')) {
+    logger.info(
+      { bindingVenue, swapEnabled, swapNetwork },
+      'Swap scanner discovery disabled — returning empty candidates',
     );
     return async (_filters: FilterConfig) => [];
   }
 
-  const venue: 'hyperliquid' | 'bybit' = bindingVenue;
+  const venue: 'jupiter' | '1inch' = bindingVenue as 'jupiter' | '1inch';
+  const quoteAssetSymbol = swapQuoteAssetSymbol ?? 'USDC';
+
+  // Startup validation guarantees swapQuoteAssetAddress is resolved when we reach
+  // this path, but emit a warning if it's missing anyway (defensive).
+  if (!swapQuoteAssetAddress) {
+    logger.warn(
+      { venue },
+      'Swap scanner: swapQuoteAssetAddress is undefined — quote address cross-validation is disabled',
+    );
+  }
 
   return async (filters: FilterConfig) => {
     if (!sharedMarketDataRegistry) return [];
     if (!filters) return [];
 
-    const discovered = await discoverScannerCandidates({
-      registry: sharedMarketDataRegistry,
+    return discoverSwapScannerCandidates({
+      discovery: sharedMarketDataRegistry.discovery,
+      venue,
+      swapNetwork,
+      quoteAssetSymbol,
+      quoteAssetAddress: swapQuoteAssetAddress,
       filters,
-      bindingVenue: venue,
-      bindingVenueType: 'orderbook',
       maxCandidates: scannerCapacity.maxCandidates,
+      logger,
     });
-
-    // Normalize candle-provider symbols to canonical Binance form.
-    // Actual unsupported-instrument filtering happens at the HTTP level
-    // (tracked via classifyCandleError in technical-phase.ts).
-    const { supported, unsupportedCount } = normalizeOrderbookCandidates(discovered);
-
-    if (unsupportedCount > 0) {
-      logger.info(
-        { venue, discovered: discovered.length, supported: supported.length, unsupported: unsupportedCount },
-        'Scanner normalize dropped unresolvable orderbook candidates',
-      );
-    }
-
-    return supported;
   };
 }
 
@@ -926,13 +987,17 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
         // Bots are validated at startup by BotConfigSchema (swapAssets required for swap venues).
         let resolvedSwapAssets: { baseAsset: string; quoteAsset: string; baseDecimals: number; quoteDecimals: number } | undefined;
         if (venueType === 'swap') {
-          resolvedSwapAssets = resolveSwapAssetsFromBinding(binding);
+          // resolveSwapAssetsFromBinding expects BindingLike { id, bindingProfile },
+          // but the binding from resolveActiveBinding has { profile }. Remap.
+          resolvedSwapAssets = resolveSwapAssetsFromBinding({ id: binding.id, bindingProfile: binding.profile });
         }
 
         let actor: AgentTradingActor | undefined;
 
         // Guard: reject unsupported 1inch chain before actor starts (mirrors bot path)
-        const resolvedSwapNetwork = resolveSwapNetwork(binding.venue, binding, appConfig.venues['1inch']);
+        // Remap binding { profile } to BindingLike { bindingProfile }.
+        const bindingForSwap = { id: binding.id, bindingProfile: binding.profile };
+        const resolvedSwapNetwork = resolveSwapNetwork(binding.venue, bindingForSwap, appConfig.venues['1inch']);
         if (venueType === 'swap' && binding.venue === '1inch' && appConfig.marketData?.tokenSafety?.enabled && !resolvedSwapNetwork) {
           throw new CredentialResolutionError(
             `Unsupported 1inch chain for agent ${agentId} — no token-safety network resolved from binding or config`,
@@ -963,6 +1028,66 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
             : undefined;
         }
         // else: intelligence agent — no technical config, stays undefined
+
+        // Phase 1 (DEX venue completion): validate swap scanner configuration.
+        // For a swap-bound scanner_gated agent, resolve the effective quote asset
+        // from operator-owned canonical tokens and fail startup when the configuration
+        // is incoherent (unresolved network, excluded network, missing canonical quote).
+        if (
+          capabilityMode === 'hybrid'
+          && hybridMode === 'scanner_gated'
+          && venueType === 'swap'
+          && technicalConfig
+        ) {
+          const swapEnabled = appConfig.agentRuntime.scanner?.swap?.enabled ?? false;
+          if (!swapEnabled) {
+            logger.info(
+              { agentId, venue: binding.venue },
+              'Scanner swap scanning disabled by operator config (agentRuntime.scanner.swap.enabled=false) — swap-bound agent will idle',
+            );
+          } else {
+            // Check per-venue flag if present
+            const venues = appConfig.agentRuntime.scanner?.swap?.venues;
+            const venueFlag = binding.venue === 'jupiter'
+              ? venues?.jupiter
+              : binding.venue === '1inch'
+                ? venues?.['1inch']
+                : undefined;
+
+            if (venueFlag === false) {
+              logger.info(
+                { agentId, venue: binding.venue },
+                'Scanner swap scanning disabled per-venue by operator config — swap-bound agent will idle',
+              );
+            } else {
+              const canonicalTokens: TokenSafetyConfig['canonicalTokens'] | undefined =
+                appConfig.marketData?.tokenSafety?.canonicalTokens;
+
+              const result = validateSwapScannerConfig(
+                resolvedSwapNetwork,
+                binding.venue,
+                technicalConfig,
+                canonicalTokens,
+              );
+
+              if (!result.ok) {
+                throw new CredentialResolutionError(
+                  `Cannot start swap scanner for agent ${agentId}: ${result.error.message}`,
+                );
+              }
+
+              logger.info(
+                {
+                  agentId,
+                  venue: binding.venue,
+                  network: result.data.network,
+                  quoteAssetSymbol: result.data.quoteAssetSymbol,
+                },
+                'Swap scanner configuration validated',
+              );
+            }
+          }
+        }
 
         // Construct the agent's mark source outside the constructor so it can be
         // reused in onPersistScanCandidates for mark-coverage filtering.
@@ -1033,6 +1158,9 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           emitAgentWake: (wakeAgentId, payload) => eventPublisher.emitAgentWake(wakeAgentId, payload),
           isHybridMode: agent?.unifiedConfig?.capabilityMode === 'hybrid',
           instrumentCache,
+          oneInchConfig: appConfig.venues['1inch'],
+          bindingProfile: binding.profile,
+          canonicalTokens: appConfig.marketData?.tokenSafety?.canonicalTokens,
           perTradeLevelMonitorIntervalMs: appConfig.agentRiskDefaults.perTradeLevelMonitorIntervalMs,
           onJournalEvent: (event) => {
             eventPublisher.emitJournalEvent(agentId, {
@@ -1041,7 +1169,27 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
             }).catch((err) => logger.warn({ err, agentId, eventType: event.type }, 'Failed to emit journal event'));
           },
           technicalConfig,
-          discoverCandidates: buildDiscoverCandidates({ bindingVenue: binding.venue, bindingVenueType: venueType }),
+          discoverCandidates: buildDiscoverCandidates({
+            bindingVenue: binding.venue,
+            bindingVenueType: venueType,
+            swapNetwork: venueType === 'swap' ? resolvedSwapNetwork : undefined,
+            swapQuoteAssetSymbol: technicalConfig?.filters.quoteAssetSymbol ?? 'USDC',
+            swapQuoteAssetAddress: (() => {
+              if (venueType !== 'swap' || !resolvedSwapNetwork) return undefined;
+              const canonicalTokens = appConfig.marketData?.tokenSafety?.canonicalTokens;
+              const networkTokens = canonicalTokens?.[resolvedSwapNetwork];
+              const quoteSymbol = technicalConfig?.filters.quoteAssetSymbol ?? 'USDC';
+              return networkTokens?.[quoteSymbol]?.address;
+            })(),
+            swapEnabled: venueType === 'swap'
+              ? (appConfig.agentRuntime.scanner?.swap?.enabled ?? false)
+                && (binding.venue === 'jupiter'
+                  ? (appConfig.agentRuntime.scanner?.swap?.venues?.jupiter ?? true)
+                  : binding.venue === '1inch'
+                    ? (appConfig.agentRuntime.scanner?.swap?.venues?.['1inch'] ?? true)
+                    : false)
+              : false,
+          }),
           fetchCandles: scannerCandleFetcher,
           candleFetchRetry,
           candleFetchBreaker,
@@ -1051,11 +1199,72 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           onPersistScanCandidates: async (candidates) => {
             try {
               if (candidates.length === 0) return;
-              // Filter: only persist candidates the mark source can price.
-              // Prevents agents from submitting decisions on instruments that
-              // will always be rejected with no_context (Bug 002).
+              // Filter: only persist candidates that can be priced.
+              // - Orderbook candidates go through the mark-coverage check
+              //   (prevents agents from submitting decisions on instruments
+              //   that will always be rejected with no_context — Bug 002).
+              // - DEX candidates use priceService.resolvePriceTarget() with
+              //   their exact on-chain identity. If pricing fails, they are
+              //   persisted anyway (defensive — DEX observations must not be
+              //   suppressed by a CoinGecko-specific SYMBOL-PERP check).
               const pricedCandidates = [];
+              /** Lazily-created price service for DEX candidate identity resolution.
+               *  Constructed only when the first DEX candidate is encountered so
+               *  orderbook-only agents never pay the provider-registry cost. */
+              let dexPriceService: ReturnType<typeof createPriceService> | null = null;
+              // TODO(Phase 5): parallelize resolvePriceTarget calls for multi-DEX scans
+              // to avoid serial chain-of-await latency when many DEX candidates are present.
               for (const c of candidates) {
+                if (c.instrumentKind === 'dex') {
+                  // DEX candidate: resolve exact on-chain price identity.
+                  // c.network (e.g. 'base', 'solana') passes through to
+                  // resolveDexScreenerTarget which filters by DexScreener network
+                  // field — these values are supported by the DexScreener API.
+                  if (!c.symbol || !c.network || !c.address) {
+                    logger.warn(
+                      { symbol: c.symbol, network: c.network, address: c.address },
+                      'DEX candidate missing network/address — persisting anyway (defensive)',
+                    );
+                    pricedCandidates.push(c);
+                    continue;
+                  }
+                  if (!dexPriceService && sharedMarketDataRegistry) {
+                    dexPriceService = createPriceService(sharedMarketDataRegistry);
+                  }
+                  if (dexPriceService) {
+                    try {
+                      const priceResult = await dexPriceService.resolvePriceTarget(
+                        c.symbol,
+                        c.network,
+                        c.address,
+                      );
+                      if (priceResult.ok && !priceResult.data.stale) {
+                        pricedCandidates.push(c);
+                      } else {
+                        logger.debug(
+                          { symbol: c.symbol, network: c.network, address: c.address },
+                          'DEX candidate price unavailable or stale — persisting anyway (defensive)',
+                        );
+                        pricedCandidates.push(c);
+                      }
+                    } catch {
+                      logger.debug(
+                        { symbol: c.symbol, network: c.network },
+                        'DEX candidate price lookup error — persisting anyway (defensive)',
+                      );
+                      pricedCandidates.push(c);
+                    }
+                  } else {
+                    // No market data registry — persist DEX candidates without pricing check.
+                    logger.debug(
+                      { symbol: c.symbol },
+                      'DEX candidate persisted without price check — market data registry unavailable',
+                    );
+                    pricedCandidates.push(c);
+                  }
+                  continue;
+                }
+                // Orderbook candidate: use the existing mark-coverage check.
                 const instrument = c.symbol
                   ? `${c.symbol}-PERP`
                   : c.address

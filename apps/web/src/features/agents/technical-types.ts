@@ -15,6 +15,7 @@ export interface TechnicalConfigFormState {
     networks: string[];
     symbols: string[];
     excludeSymbols: string[];
+    quoteAssetSymbol?: string;
   };
   candles: { interval: '5m' | '15m' | '1h' | '4h' | '1d'; limit: string };
   signalBias: 'trend-following' | 'mean-reverting';

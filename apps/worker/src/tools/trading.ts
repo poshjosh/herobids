@@ -5,7 +5,7 @@ import { convertZodToJsonSchema } from './registry.js';
 
 // --- submit_decision ---
 
-const SubmitDecisionParamsSchema = z.object({
+export const SubmitDecisionParamsSchema = z.object({
   instrumentId: z.string().min(1).describe('Venue-specific instrument identifier. Use base tickers for perpetuals venues (e.g. "BTC", "SOL") and pair symbols for swap venues (e.g. "SOL/USDC").'),
   intent: z.enum(['go_long', 'go_short', 'go_flat', 'increase', 'decrease']).describe('Trading intent: go_long, go_short, go_flat (close), increase, or decrease position'),
   targetSize: z.string().regex(/^\d+(\.\d+)?$/, 'Must be a decimal string').describe('Target position size in BASE units as a decimal string — the amount of the traded asset, not a dollar value. For ETH/USDC this means ETH (e.g. "0.0064"), not USDC.'),

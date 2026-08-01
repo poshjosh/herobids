@@ -360,9 +360,9 @@ describe('Phase 2: Provider eligibility classification', () => {
   });
 
   it('per-scan unsupported cache — second occurrence of same unsupported symbol skipped', async () => {
-    // Two candidates: 'FAKETOKEN' appears twice (would happen if it's an
-    // open-position symbol AND a candidate). The second attempt should be skipped
-    // by the per-scan unsupported cache.
+    // Two targets with the same instrumentId (a candidate and an open position
+    // on the same instrument). The second attempt should be skipped by the
+    // per-scan unsupported cache because the instrumentId keys match.
     const fetchCandles = vi.fn()
       .mockRejectedValueOnce(new Error('HTTP error: 400 Bad Request')) // FAKETOKEN → unsupported
       .mockResolvedValueOnce(makeCandles()); // BTC → success
@@ -371,10 +371,11 @@ describe('Phase 2: Provider eligibility classification', () => {
         makeInstrument('FAKETOKEN'),
         makeInstrument('BTC'),
       ]),
-      // Open position on same unsupported symbol
+      // Open position with the same instrumentId as the FAKETOKEN candidate.
       getOpenPositions: vi.fn().mockReturnValue([{
         venue: 'hyperliquid',
         symbol: 'FAKETOKEN',
+        instrumentId: 'FAKETOKEN-PERP', // matches makeInstrument below
         side: 'long',
         size: { toString: () => '1' } as unknown as PositionState['size'],
         entryPrice: { toString: () => '100' } as unknown as PositionState['entryPrice'],
@@ -385,11 +386,11 @@ describe('Phase 2: Provider eligibility classification', () => {
 
     const result = await runTechnicalPhase(deps);
 
-    // FAKETOKEN should only be attempted once (cached after first 400)
-    // BTC should also be attempted
+    // FAKETOKEN-PERP should only be attempted once (cached after first 400)
+    // BTC-PERP should also be attempted
     expect(result.unsupportedCount).toBe(1);
-    // fetchCandles called for FAKETOKEN (first occurrence in batch) and BTC = 2 calls
-    // (FAKETOKEN appears only once in allSymbols because openSymbols dedup removes it)
+    // fetchCandles called for FAKETOKEN-PERP (first occurrence in batch) and BTC-PERP = 2 calls
+    // (FAKETOKEN-PERP appears only once in allIds because the open position shares the same instrumentId)
     expect(fetchCandles).toHaveBeenCalledTimes(2);
     expect(fetchCandles).toHaveBeenCalledWith({ venueType: 'orderbook', providerSymbol: 'FAKETOKEN' }, '1h', 50);
     expect(fetchCandles).toHaveBeenCalledWith({ venueType: 'orderbook', providerSymbol: 'BTC' }, '1h', 50);

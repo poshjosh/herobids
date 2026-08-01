@@ -14,6 +14,7 @@ export interface TechnicalConfig {
     networks?: string[];
     symbols?: string[];
     excludeSymbols?: string[];
+    quoteAssetSymbol?: string;
   };
   indicators: {
     rsi: { enabled: boolean; period: number; healthyMin: number; healthyMax: number; overbought: number; weakBelow: number };
@@ -81,7 +82,7 @@ function parseIntOrFallback(value: string, fallback: number): number {
 
 export function defaultTechnicalConfigFormState(): TechnicalConfigFormState {
   return {
-    filters: { venue: '', venueType: '', minVolume24hUsd: '', minLiquidityUsd: '', networks: [], symbols: [], excludeSymbols: [] },
+    filters: { venue: '', venueType: '', minVolume24hUsd: '', minLiquidityUsd: '', networks: [], symbols: [], excludeSymbols: [], quoteAssetSymbol: 'USDC' },
     candles: { interval: '15m', limit: '100' },
     signalBias: 'trend-following',
     scanIntervalMins: '1',
@@ -116,6 +117,7 @@ export function technicalFormStateToPayload(
       ...(state.filters.networks.length > 0 ? { networks: state.filters.networks } : {}),
       ...(state.filters.symbols.length > 0 ? { symbols: state.filters.symbols } : {}),
       ...(state.filters.excludeSymbols.length > 0 ? { excludeSymbols: state.filters.excludeSymbols } : {}),
+      ...(state.filters.quoteAssetSymbol ? { quoteAssetSymbol: state.filters.quoteAssetSymbol } : {}),
     },
     indicators: {
       rsi: {
@@ -195,6 +197,7 @@ export function technicalConfigToFormState(config: Record<string, unknown>): Tec
       networks: (filters['networks'] as string[] | undefined) ?? [],
       symbols: (filters['symbols'] as string[] | undefined) ?? [],
       excludeSymbols: (filters['excludeSymbols'] as string[] | undefined) ?? [],
+      quoteAssetSymbol: typeof filters['quoteAssetSymbol'] === 'string' ? filters['quoteAssetSymbol'] : 'USDC',
     },
     candles: {
       interval: (candles['interval'] as '5m' | '15m' | '1H' | '4H' | '1D' | undefined) ?? '15m',

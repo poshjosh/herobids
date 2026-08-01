@@ -89,6 +89,12 @@ function mapPoolsToTokens(pools: DiscoveredPool[], vector: string): DiscoveredTo
     discoveryVectors: [vector],
     poolAddress: pool.poolAddress,
     poolCreatedAt: pool.poolCreatedAt,
+    pool: {
+      poolAddress: pool.poolAddress,
+      network: pool.network,
+      baseToken: pool.baseToken,
+      quoteToken: pool.quoteToken,
+    },
   }));
 }
 

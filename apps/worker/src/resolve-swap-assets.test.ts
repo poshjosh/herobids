@@ -141,6 +141,16 @@ describe('resolveSwapNetwork', () => {
     expect(resolveSwapNetwork('1inch', binding, { tokenSafetyNetwork: 'base', chainId: 8453 })).toBe('arbitrum');
   });
 
+  it('binding chainId overrides operator chainId (regression)', () => {
+    // Binding has chainId 42161 (Arbitrum), operator config has chainId 8453 (Base).
+    // The binding's chainId must win — we must not silently route to Base.
+    const binding = {
+      id: 'b-regression-1',
+      bindingProfile: { chainId: 42161 },
+    };
+    expect(resolveSwapNetwork('1inch', binding, { chainId: 8453 })).toBe('arbitrum');
+  });
+
   it('returns undefined when no chain info anywhere', () => {
     expect(resolveSwapNetwork('1inch')).toBeUndefined();
   });

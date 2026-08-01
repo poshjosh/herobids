@@ -117,6 +117,15 @@ export interface DiscoveredToken {
   discoveryVectors: string[];
   poolAddress?: string;
   poolCreatedAt?: string;
+  /** Atomic pool identity from a single discovery record.
+   *  Never merge individual fields from different providers — the entire object
+   *  (poolAddress, network, baseToken, quoteToken) comes from one record.
+   *  Consumers that need a pool address should read token.pool?.poolAddress
+   *  during transition; the loose poolAddress field is removed in a future cleanup. */
+  pool?: Pick<
+    DiscoveredPool,
+    'poolAddress' | 'network' | 'baseToken' | 'quoteToken'
+  >;
   // Provider enrichment fields — currently populated by the CMC post-merge pass.
   // holderCount remains reserved for providers that can supply it.
   marketCapUsd?: number;

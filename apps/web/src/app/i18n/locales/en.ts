@@ -899,6 +899,7 @@ export const messages: Record<string, string> = {
   'agents.technical.filters.symbolsHelp': 'Only scan these symbols (comma-separated). Leave blank to scan all.',
   'agents.technical.filters.excludeSymbols': 'Exclude symbols',
   'agents.technical.filters.networks': 'Networks',
+  'agents.technical.filters.quoteAssetSymbol': 'Quote asset',
 
   // Scan settings
   'agents.technical.scan.title': 'Scan Settings',

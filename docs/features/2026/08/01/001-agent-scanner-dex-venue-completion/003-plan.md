@@ -1,6 +1,6 @@
 # 011 - Agent Scanner DEX Venue Completion
 
-**Status:** Planned  
+**Status:** Implemented  
 **Created:** 2026-08-01  
 **Depends on:** [004 Part 1 - Orderbook Scanner Completion](../../07/17/004-agent-scanner-multi-venue-signal-support/001-plan.md) (implemented)
 
@@ -72,7 +72,8 @@ These decisions resolve the open questions in the prior scanner plans.
    `scanner.swap_exit_unresolved`, `scanner.swap_candidate_skipped` (with a
    `reason` field: `missing_base_address` | `missing_quote_address` |
    `missing_pool_address` | `non_canonical_quote` | `incoherent_pool`),
-   `scanner.swap_discovery_empty`, and `scanner.swap_discovery_error`.
+   `scanner.swap_discovery_empty`, `scanner.swap_discovery_error`, and
+   `scanner.incomplete_swap_identity`.
 
 ## Design
 
@@ -176,7 +177,7 @@ report at `docs/bug-reports/2026/07/12/002-...` shows positions ending with
 
 ## Implementation Phases
 
-### Phase 0 - Lock Contracts and Test Fixtures
+### Phase 0 - Lock Contracts and Test Fixtures [DONE]
 
 **Files**
 
@@ -209,7 +210,7 @@ report at `docs/bug-reports/2026/07/12/002-...` shows positions ending with
   ticker-derived candle target.
 - Existing orderbook scanner tests pass unchanged in behaviour.
 
-### Phase 1 - Preserve Pool Sides and Resolve Quote Policy
+### Phase 1 - Preserve Pool Sides and Resolve Quote Policy [DONE]
 
 **Files**
 
@@ -256,7 +257,7 @@ feature does not convert idle agents into hard startup failures.
 - A swap agent whose network lacks canonical tokens fails startup with one
   named error, observable in logs.
 
-### Phase 2 - Exact Swap Parsing and Intake Validation
+### Phase 2 - Exact Swap Parsing and Intake Validation [DONE]
 
 **Files**
 
@@ -307,7 +308,7 @@ feature does not convert idle agents into hard startup failures.
   unchanged, and the exact ID clears the `swap.instrument_format` check and the
   new `validateTradeInstrument()` — not the removed `hasSymbol()` path.
 
-### Phase 3 - Swap Candidate Discovery and Candle Routing
+### Phase 3 - Swap Candidate Discovery and Candle Routing [DONE]
 
 **Files**
 
@@ -357,7 +358,7 @@ feature does not convert idle agents into hard startup failures.
 - Empty or invalid discovery data yields explicit, named scanner health/journal
   events, not a silent empty scan.
 
-### Phase 4 - Completion, Pricing, and Persistence
+### Phase 4 - Completion, Pricing, and Persistence [DONE]
 
 **Files**
 
@@ -392,7 +393,7 @@ feature does not convert idle agents into hard startup failures.
 - DEX sizing receives the selected token's exact Solana/Base identity.
 - Persisted candidates do not mislabel DEX data as orderbook data.
 
-### Phase 5 - Verification and Rollout
+### Phase 5 - Verification and Rollout [DONE]
 
 **Unit and integration coverage**
 
@@ -465,3 +466,59 @@ pnpm lint
 - The public `submit_decision` schema is unchanged and verified to accept the
   exact `BASE:ADDR/QUOTE:ADDR` ID; a regression test guards this.
 - Targeted tests, worker tests, and `pnpm lint` pass.
+
+---
+
+## Outstanding Issues
+
+### [Phase 0] MEDIUM-5 — Circuit breaker state silently resets on deploy
+Breaker keys changed from `scanner:candle-breaker:{agentId}:{BTC}` to `scanner:candle-breaker:{agentId}:{orderbook:BTC}`. Old keys linger in Redis until TTL expiry. Breakers effectively reset on deploy — document in deploy notes.
+
+### [Phase 0] LOW-2 — Redundant `venueType` spread in `normalizeScannerCandidates`
+After early return for non-orderbook candidates, the spread `{ ...candidate.candleTarget, venueType: 'orderbook' as const }` re-declares `venueType` redundantly. Not harmful (helps TypeScript narrowing) but may confuse readers.
+
+### [Phase 0] LOW-3 — `symbolsSelected` / `symbolOutcomes` naming in `TechnicalPhaseResult`
+These fields now hold instrument IDs, not symbols. Renaming would be a breaking API change — defer to a future major version.
+
+### [Phase 1] MEDIUM-3 — Hardcoded quote asset options in UI
+The quote asset `<select>` hardcodes USDC/USDT options. The plan says options come from `canonicalTokens[network]` keys. Hardcoding works for initial release (Solana/Base have both) but won't show new canonical tokens. Defer to follow-up.
+
+### [Phase 1] LOW-6 — Redundant `?? 'USDC'` after Zod default
+`quoteAssetSymbol ?? 'USDC'` is redundant since Zod schema applies `.default('USDC')`. Harmless as defensive code, but an empty string would not be caught by `??`. Trust Zod default or switch to `||`.
+
+### [Phase 2] MEDIUM-4 — `parseSwapInstrumentId` throws instead of returning Result
+Per AGENTS.md, public APIs should return `Result<T, E>`. Currently throws `SwapInstrumentParseError`. Added `// TODO(Phase 5)` comment. All callers use try/catch. Convert in a future phase.
+
+### [Phase 2] LOW-6 — Inconsistent `isVenueReady` check in `validateJupiterLegacy`
+`validateJupiterExact` and `validateJupiterBaseQualified` check `isVenueReady('jupiter')` but `validateJupiterLegacy` only checks `isReady()`. Functionally equivalent (fail-open for degraded venues) but stylistically inconsistent.
+
+### [Phase 2] LOW-7 — Missing 1inch-specific malformed instrument ID test
+Malformed ID tests only cover `'jupiter'`. Add parallel `'1inch'` test.
+
+### [Phase 2] LOW-8 — No direct unit tests for `buildSwapDecisionMetadata`
+Tested only indirectly. Extract into testable pure function or add integration tests.
+
+### [Phase 3] LOW-1 — Multiple `t.pool!` non-null assertions in discovery loop
+After `poolBackedTokens.filter((t) => t.pool)`, the code uses `t.pool!` throughout. A cleaner pattern: extract `const pool = token.pool` with a defensive continue. Purely stylistic.
+
+### [Phase 3] LOW-2 — IIFE for `swapQuoteAssetAddress` reduces readability
+7-line inline IIFE in AgentTradingActor constructor. Extract to named helper function.
+
+### [Phase 3] LOW-3 — `binanceConfig` passed to swap `VenueCandleFetcher` unnecessarily
+Swap fetcher doesn't use binanceConfig. Verify if constructor requires it or if null can be passed.
+
+### [Phase 3] LOW-4 — No unit test for HTTP 404 → `unsupported` classification
+`classifyCandleError` now handles HTTP 404 as GeckoTerminal-specific. Add test.
+
+### [Phase 3] LOW-5 — `minLiquidityUsd` double-applied
+Applied at discovery source level AND post-identity filter. Defensive but redundant if discovery API supports it.
+
+### [Phase 3] LOW-6 — YAML key `1inch` should be quoted
+Numeric-starting key in YAML. Quote for safety: `'1inch': true`.
+
+### [Phase 3] LOW-7 — Plan mark as DONE for Phase 2 (bookkeeping)
+Unrelated to Phase 3 changes. Was from prior merge.
+
+## Final note
+
+The feature is safe to merge with agentRuntime.scanner.swap.enabled: false (default). Enable Jupiter first via config, then 1inch after Base matrix passes.

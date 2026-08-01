@@ -515,6 +515,17 @@ agentRuntime:
     failScansBeforeOpen: 3     # consecutive fully-failed scans before opening the breaker
     baseSkipScans: 2           # skip this many scan cycles when breaker first opens
     maxSkipScans: 8            # ceiling on skip cycles (grows ×2 per opening up to this cap)
+  # ── Scanner subsystem ──────────────────────────────────────────────────────
+  # Operator-level control for swap (DEX) venue scanning.
+  # scanner.swap.enabled = master kill-switch for all swap-bound agents.
+  # scanner.swap.venues.<venue> = per-venue rollout flags (absent/true = enabled
+  #   when master switch is on; false = explicitly disabled).
+  scanner:
+    swap:
+      enabled: false            # DEFAULT: false — safe rollout. Set to true to enable DEX scanning.
+      venues:
+        jupiter: true           # Enable Jupiter (Solana) scanning when master switch is on.
+        1inch: true             # Enable 1inch (Base) scanning when master switch is on.
   # Cross-session crash-loop guard — persist crash counters in Redis and block
   # relaunch when an agent has crashed too many times within the sliding window.
   crashLoopGuard:

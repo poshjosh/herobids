@@ -1,9 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createScannerCandleFetcher } from './scanner-candle-fetcher.js';
-import type { BinanceCandlesConfig, PriceCandle } from '@herobids/market-data';
+import type { BinanceCandlesConfig, PriceCandle, GeckoTerminalConfig } from '@herobids/market-data';
 import { VenueCandleFetcher } from '@herobids/venues';
 import { TokenBucketRateLimiter } from '@herobids/market-data';
-import type { ScannerCandleTarget } from '@herobids/strategy';
+import type { ScannerCandleTarget } from '@herobids/domain';
 
 // ─── Mock VenueCandleFetcher ────────────────────────────────────────────────
 
@@ -38,9 +38,23 @@ function makeBinanceConfig(): BinanceCandlesConfig {
   };
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────────
+function makeGeckoTerminalConfig(): GeckoTerminalConfig {
+  return {
+    baseUrl: 'https://api.geckoterminal.com',
+    rateLimiter: { acquire: vi.fn().mockResolvedValue(undefined) },
+    timeoutMs: 5_000,
+  };
+}
 
-describe('createScannerCandleFetcher', () => {
+// ─── Phase 3: Swap target tests ─────────────────────────────────────────────
+
+describe('createScannerCandleFetcher (Phase 3)', () => {
+  beforeEach(() => {
+    MockedVenueCandleFetcher.mockReset();
+  });
+
+  // ─── Orderbook target tests (pre-Phase-3 behaviour preserved) ────────────
+
   it('creates a function that calls VenueCandleFetcher.fetchCandles with the target providerSymbol', async () => {
     const mockFetchCandles = vi.fn().mockResolvedValue([
       makeCandle('2026-07-17T12:00:00.000Z', 100),
@@ -52,10 +66,13 @@ describe('createScannerCandleFetcher', () => {
     });
 
     const binanceConfig = makeBinanceConfig();
-    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const scannerRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const geckoTerminalRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 15 });
     const fetchCandles = createScannerCandleFetcher({
       binanceConfig,
-      scannerRateLimiter: rateLimiter,
+      geckoTerminalConfig: makeGeckoTerminalConfig(),
+      scannerRateLimiter,
+      geckoTerminalRateLimiter,
     });
 
     const target: ScannerCandleTarget = {
@@ -70,27 +87,31 @@ describe('createScannerCandleFetcher', () => {
     expect(mockFetchCandles).toHaveBeenCalledWith('BTCUSDT', '15m', 100);
   });
 
-  it('constructs VenueCandleFetcher with binance config and null GeckoTerminal config', async () => {
+  it('constructs orderbook VenueCandleFetcher with binance config and null GeckoTerminal config', async () => {
     const mockFetchCandles = vi.fn().mockResolvedValue([]);
     MockedVenueCandleFetcher.mockImplementationOnce(function () {
       return { fetchCandles: mockFetchCandles } as unknown as VenueCandleFetcher;
     });
 
     const binanceConfig = makeBinanceConfig();
-    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const scannerRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const geckoTerminalRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 15 });
     createScannerCandleFetcher({
       binanceConfig,
-      scannerRateLimiter: rateLimiter,
+      geckoTerminalConfig: makeGeckoTerminalConfig(),
+      scannerRateLimiter,
+      geckoTerminalRateLimiter,
     });
 
+    // Orderbook fetcher constructed once with null GeckoTerminal config
     expect(MockedVenueCandleFetcher).toHaveBeenCalledWith(
       binanceConfig,
-      null, // no GeckoTerminal config for orderbook
+      null,
       'orderbook',
     );
   });
 
-  it('acquires the rate limiter before fetching candles', async () => {
+  it('acquires the orderbook rate limiter before fetching candles', async () => {
     const mockFetchCandles = vi.fn().mockResolvedValue([
       makeCandle('2026-07-17T12:00:00.000Z', 100),
     ]);
@@ -98,13 +119,15 @@ describe('createScannerCandleFetcher', () => {
       return { fetchCandles: mockFetchCandles } as unknown as VenueCandleFetcher;
     });
 
-    // Use a spy to track acquire calls
-    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
-    const acquireSpy = vi.spyOn(rateLimiter, 'acquire');
+    const scannerRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const acquireSpy = vi.spyOn(scannerRateLimiter, 'acquire');
+    const geckoTerminalRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 15 });
 
     const fetchCandles = createScannerCandleFetcher({
       binanceConfig: makeBinanceConfig(),
-      scannerRateLimiter: rateLimiter,
+      geckoTerminalConfig: makeGeckoTerminalConfig(),
+      scannerRateLimiter,
+      geckoTerminalRateLimiter,
     });
 
     const target: ScannerCandleTarget = {
@@ -115,22 +138,24 @@ describe('createScannerCandleFetcher', () => {
     await fetchCandles(target, '1h', 50);
 
     expect(acquireSpy).toHaveBeenCalledTimes(1);
-    // acquire must be called before fetchCandles
     const acquireOrder = acquireSpy.mock.invocationCallOrder[0]!;
     const fetchOrder = mockFetchCandles.mock.invocationCallOrder[0]!;
     expect(acquireOrder).toBeLessThan(fetchOrder);
   });
 
-  it('propagates errors from VenueCandleFetcher.fetchCandles', async () => {
+  it('propagates errors from VenueCandleFetcher.fetchCandles (orderbook)', async () => {
     const mockFetchCandles = vi.fn().mockRejectedValue(new Error('Binance fetch failed'));
     MockedVenueCandleFetcher.mockImplementationOnce(function () {
       return { fetchCandles: mockFetchCandles } as unknown as VenueCandleFetcher;
     });
 
-    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const scannerRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const geckoTerminalRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 15 });
     const fetchCandles = createScannerCandleFetcher({
       binanceConfig: makeBinanceConfig(),
-      scannerRateLimiter: rateLimiter,
+      geckoTerminalConfig: makeGeckoTerminalConfig(),
+      scannerRateLimiter,
+      geckoTerminalRateLimiter,
     });
 
     const target: ScannerCandleTarget = {
@@ -141,16 +166,19 @@ describe('createScannerCandleFetcher', () => {
     await expect(fetchCandles(target, '15m', 100)).rejects.toThrow('Binance fetch failed');
   });
 
-  it('passes the correct interval and limit to fetchCandles', async () => {
+  it('passes the correct interval and limit to orderbook fetchCandles', async () => {
     const mockFetchCandles = vi.fn().mockResolvedValue([]);
     MockedVenueCandleFetcher.mockImplementationOnce(function () {
       return { fetchCandles: mockFetchCandles } as unknown as VenueCandleFetcher;
     });
 
-    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const scannerRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const geckoTerminalRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 15 });
     const fetchCandles = createScannerCandleFetcher({
       binanceConfig: makeBinanceConfig(),
-      scannerRateLimiter: rateLimiter,
+      geckoTerminalConfig: makeGeckoTerminalConfig(),
+      scannerRateLimiter,
+      geckoTerminalRateLimiter,
     });
 
     const target: ScannerCandleTarget = {
@@ -162,4 +190,250 @@ describe('createScannerCandleFetcher', () => {
 
     expect(mockFetchCandles).toHaveBeenCalledWith('SOLUSDT', '4h', 200);
   });
+
+  // ─── Phase 3: Swap target tests ─────────────────────────────────────────
+
+  it('creates a per-call VenueCandleFetcher for swap targets with correct network and poolAddress', async () => {
+    const binanceConfig = makeBinanceConfig();
+    const orderbookMock = vi.fn().mockResolvedValue([]);
+    const swapMock = vi.fn().mockResolvedValue([
+      makeCandle('2026-08-01T12:00:00.000Z', 50),
+    ]);
+
+    // First call: orderbook fetcher construction
+    MockedVenueCandleFetcher.mockImplementationOnce(function () {
+      return { fetchCandles: orderbookMock } as unknown as VenueCandleFetcher;
+    });
+    // Second call: per-call swap fetcher
+    MockedVenueCandleFetcher.mockImplementationOnce(function () {
+      return { fetchCandles: swapMock } as unknown as VenueCandleFetcher;
+    });
+
+    const geckoTerminalConfig = makeGeckoTerminalConfig();
+    const scannerRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const geckoTerminalRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 15 });
+
+    const fetchCandles = createScannerCandleFetcher({
+      binanceConfig,
+      geckoTerminalConfig,
+      scannerRateLimiter,
+      geckoTerminalRateLimiter,
+    });
+
+    const target: ScannerCandleTarget = {
+      venueType: 'swap',
+      network: 'solana',
+      poolAddress: 'SoLx9b1mX...someSolanaPoolAddress',
+    };
+
+    const result = await fetchCandles(target, '15m', 100);
+
+    expect(result).toHaveLength(1);
+    expect(MockedVenueCandleFetcher).toHaveBeenCalledTimes(2); // orderbook + per-call swap
+    expect(MockedVenueCandleFetcher).toHaveBeenNthCalledWith(
+      2,
+      binanceConfig,
+      { config: geckoTerminalConfig, network: 'solana' },
+      'swap',
+    );
+    // swapMock called with poolAddress as symbol
+    expect(swapMock).toHaveBeenCalledWith('SoLx9b1mX...someSolanaPoolAddress', '15m', 100);
+  });
+
+  it('uses the GeckoTerminal rate limiter for swap targets', async () => {
+    const orderbookMock = vi.fn().mockResolvedValue([]);
+    const swapMock = vi.fn().mockResolvedValue([]);
+
+    MockedVenueCandleFetcher.mockImplementationOnce(function () {
+      return { fetchCandles: orderbookMock } as unknown as VenueCandleFetcher;
+    });
+    MockedVenueCandleFetcher.mockImplementationOnce(function () {
+      return { fetchCandles: swapMock } as unknown as VenueCandleFetcher;
+    });
+
+    const scannerRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const scannerAcquireSpy = vi.spyOn(scannerRateLimiter, 'acquire');
+    const geckoTerminalRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 15 });
+    const geckoAcquireSpy = vi.spyOn(geckoTerminalRateLimiter, 'acquire');
+
+    const fetchCandles = createScannerCandleFetcher({
+      binanceConfig: makeBinanceConfig(),
+      geckoTerminalConfig: makeGeckoTerminalConfig(),
+      scannerRateLimiter,
+      geckoTerminalRateLimiter,
+    });
+
+    const swapTarget: ScannerCandleTarget = {
+      venueType: 'swap',
+      network: 'solana',
+      poolAddress: 'somePoolAddr',
+    };
+
+    await fetchCandles(swapTarget, '15m', 100);
+
+    // Swap target uses GeckoTerminal rate limiter, not the Binance scanner one
+    expect(geckoAcquireSpy).toHaveBeenCalledTimes(1);
+    expect(scannerAcquireSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT throw SWAP_CANDLE_UNSUPPORTED for swap targets (Phase 3)', async () => {
+    const mockFetchCandles = vi.fn().mockResolvedValue([]);
+    MockedVenueCandleFetcher.mockImplementationOnce(function () {
+      return { fetchCandles: mockFetchCandles } as unknown as VenueCandleFetcher;
+    });
+    // Per-call swap fetcher
+    MockedVenueCandleFetcher.mockImplementationOnce(function () {
+      return { fetchCandles: mockFetchCandles } as unknown as VenueCandleFetcher;
+    });
+
+    const scannerRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const geckoTerminalRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 15 });
+    const fetchCandles = createScannerCandleFetcher({
+      binanceConfig: makeBinanceConfig(),
+      geckoTerminalConfig: makeGeckoTerminalConfig(),
+      scannerRateLimiter,
+      geckoTerminalRateLimiter,
+    });
+
+    const target: ScannerCandleTarget = {
+      venueType: 'swap',
+      network: 'solana',
+      poolAddress: 'SoLx9b1mX...',
+    };
+
+    // Should NOT throw SWAP_CANDLE_UNSUPPORTED — swap targets are now supported
+    await expect(fetchCandles(target, '15m', 100)).resolves.toBeDefined();
+  });
+
+  it('propagates errors from swap VenueCandleFetcher', async () => {
+    const orderbookMock = vi.fn().mockResolvedValue([]);
+    const swapMock = vi.fn().mockRejectedValue(new Error('GeckoTerminal OHLCV fetch failed'));
+
+    MockedVenueCandleFetcher.mockImplementationOnce(function () {
+      return { fetchCandles: orderbookMock } as unknown as VenueCandleFetcher;
+    });
+    MockedVenueCandleFetcher.mockImplementationOnce(function () {
+      return { fetchCandles: swapMock } as unknown as VenueCandleFetcher;
+    });
+
+    const scannerRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const geckoTerminalRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 15 });
+    const fetchCandles = createScannerCandleFetcher({
+      binanceConfig: makeBinanceConfig(),
+      geckoTerminalConfig: makeGeckoTerminalConfig(),
+      scannerRateLimiter,
+      geckoTerminalRateLimiter,
+    });
+
+    const target: ScannerCandleTarget = {
+      venueType: 'swap',
+      network: 'base',
+      poolAddress: '0xDeadBeef...',
+    };
+
+    await expect(fetchCandles(target, '15m', 100)).rejects.toThrow('GeckoTerminal OHLCV fetch failed');
+  });
+
+  it('constructs per-call swap fetcher with the correct network from the target', async () => {
+    const binanceConfig = makeBinanceConfig();
+    const orderbookMock = vi.fn().mockResolvedValue([]);
+    const swapMock = vi.fn().mockResolvedValue([]);
+
+    MockedVenueCandleFetcher.mockImplementationOnce(function () {
+      return { fetchCandles: orderbookMock } as unknown as VenueCandleFetcher;
+    });
+    MockedVenueCandleFetcher.mockImplementationOnce(function () {
+      return { fetchCandles: swapMock } as unknown as VenueCandleFetcher;
+    });
+
+    const geckoTerminalConfig = makeGeckoTerminalConfig();
+    const scannerRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const geckoTerminalRateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 15 });
+
+    const fetchCandles = createScannerCandleFetcher({
+      binanceConfig,
+      geckoTerminalConfig,
+      scannerRateLimiter,
+      geckoTerminalRateLimiter,
+    });
+
+    // 1inch/Base target
+    const baseTarget: ScannerCandleTarget = {
+      venueType: 'swap',
+      network: 'base',
+      poolAddress: '0xBasePoolAddress123',
+    };
+
+    await fetchCandles(baseTarget, '15m', 100);
+
+    // Per-call VenueCandleFetcher constructed with network='base' from target
+    expect(MockedVenueCandleFetcher).toHaveBeenNthCalledWith(
+      2,
+      binanceConfig,
+      { config: geckoTerminalConfig, network: 'base' },
+      'swap',
+    );
+  });
 });
+
+// ─── classifyCandleError ──────────────────────────────────────────────────
+
+import { classifyCandleError } from './technical-phase.js';
+
+describe('classifyCandleError', () => {
+  it('classifies HTTP 404 (GeckoTerminal pool not found) as unsupported', () => {
+    const err = new Error('HTTP error: 404 — pool not found');
+    const result = classifyCandleError(err);
+    expect(result.status).toBe('unsupported');
+    expect(result.detail).toContain('HTTP error: 404');
+  });
+
+  it('classifies HTTP 400 as unsupported', () => {
+    const err = new Error('HTTP error: 400 — bad request');
+    const result = classifyCandleError(err);
+    expect(result.status).toBe('unsupported');
+  });
+
+  it('classifies "Invalid symbol" as unsupported', () => {
+    const err = new Error('Invalid symbol: BTCUSDT');
+    const result = classifyCandleError(err);
+    expect(result.status).toBe('unsupported');
+  });
+
+  it('classifies HTTP 429 as transient_failure', () => {
+    const err = new Error('HTTP error: 429 — rate limited');
+    const result = classifyCandleError(err);
+    expect(result.status).toBe('transient_failure');
+  });
+
+  it('classifies HTTP 5xx as transient_failure', () => {
+    const err = new Error('HTTP error: 502 — bad gateway');
+    const result = classifyCandleError(err);
+    expect(result.status).toBe('transient_failure');
+  });
+
+  it('classifies "Rate limit exceeded" as transient_failure', () => {
+    const err = new Error('Rate limit exceeded');
+    const result = classifyCandleError(err);
+    expect(result.status).toBe('transient_failure');
+  });
+
+  it('classifies timeout/abort errors as transient_failure', () => {
+    expect(classifyCandleError(new Error('timeout')).status).toBe('transient_failure');
+    expect(classifyCandleError(new Error('AbortError')).status).toBe('transient_failure');
+    expect(classifyCandleError(new Error('Timeout')).status).toBe('transient_failure');
+  });
+
+  it('classifies unknown errors as transient_failure (safe default)', () => {
+    const err = new Error('some unknown network blip');
+    const result = classifyCandleError(err);
+    expect(result.status).toBe('transient_failure');
+  });
+
+  it('handles non-Error throwables', () => {
+    const result = classifyCandleError('plain string error');
+    expect(result.status).toBe('transient_failure');
+    expect(result.detail).toBe('plain string error');
+  });
+});
+

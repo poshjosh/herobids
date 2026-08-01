@@ -14,6 +14,8 @@ import { buildAgentRiskLimits } from '../agent-risk-limits.js';
 import type { VenueInstrumentCache } from '../venue-instrument-cache.js';
 import type { IntakeResult } from '../execution-actor.js';
 import { resolveSwapNetwork } from '../resolve-swap-assets.js';
+import { parseSwapInstrumentId } from '../swap-instrument-id.js';
+import { validateTradeInstrument } from '../validate-trade-instrument.js';
 
 const logger = createLogger('agent-intake-resolver');
 
@@ -33,6 +35,8 @@ export interface AgentIntakeResolverDeps {
   agentRiskDefaults: AgentRiskDefaultsConfig;
   swapTokenSafety?: SwapTokenSafetyPort;
   oneInchConfig?: { tokenSafetyNetwork?: string; chainId?: number };
+  /** Canonical token definitions for quote address validation on swap venues */
+  canonicalTokens?: Record<string, Record<string, { address: string; name: string; aliases: string[] }>>;
   instrumentCache?: VenueInstrumentCache;
 }
 
@@ -62,14 +66,27 @@ export class AgentIntakeResolver {
       return undefined;
     }
 
-    // Venue symbol validation — reject unknown instruments
-    if (this.deps.instrumentCache?.isReady() && !this.deps.instrumentCache.hasSymbol(binding.venue, instrumentId)) {
-      return {
-        rejected: true,
-        code: 'instrument_unknown',
-        message: `'${instrumentId}' is not a recognized instrument on ${binding.venue}`,
-        retryable: false,
-      };
+    // Venue-specific instrument validation — replaces the generic hasSymbol() check
+    // with rules that understand orderbook vs. swap venue semantics.
+    if (this.deps.instrumentCache?.isReady()) {
+      const validation = validateTradeInstrument(
+        binding.venue,
+        instrumentId,
+        this.deps.instrumentCache,
+        {
+          oneInchConfig: this.deps.oneInchConfig,
+          canonicalTokens: this.deps.canonicalTokens,
+          bindingProfile: binding.profile,
+        },
+      );
+      if (!validation.valid) {
+        return {
+          rejected: true,
+          code: 'instrument_unknown',
+          message: validation.reason ?? `'${instrumentId}' is not a recognized instrument on ${binding.venue}`,
+          retryable: false,
+        };
+      }
     }
 
     const openPositions = await this.deps.positionRepo.getOpenByActorAndVenueAccount('agent', agentId, binding.venueAccountId);
@@ -85,12 +102,22 @@ export class AgentIntakeResolver {
     // wired so the decision intake pipeline applies the swap safety gate.
     const venueType: 'orderbook' | 'swap' | undefined =
       binding.venue === 'jupiter' || binding.venue === '1inch' ? 'swap' : 'orderbook';
+    // Remap from { profile } to BindingLike { bindingProfile } for resolveSwapNetwork.
+    const bindingLike = { id: binding.id, bindingProfile: binding.profile };
     const swapNetwork = venueType === 'swap'
-      ? resolveSwapNetwork(binding.venue, binding, this.deps.oneInchConfig)
+      ? resolveSwapNetwork(binding.venue, bindingLike, this.deps.oneInchConfig)
       : undefined;
-    const swapBaseTokenAddress = instrumentId.includes('/')
-      ? instrumentId.split('/')[0]?.split(':').at(-1)
-      : instrumentId;
+    // Use the typed parser to extract the base token address, falling back to
+    // the raw instrumentId when parsing fails (non-swap instrument format).
+    let swapBaseTokenAddress: string | undefined;
+    if (venueType === 'swap') {
+      try {
+        const parsed = parseSwapInstrumentId(instrumentId);
+        swapBaseTokenAddress = parsed.baseAddress ?? parsed.baseSymbol;
+      } catch {
+        swapBaseTokenAddress = instrumentId;
+      }
+    }
 
     return {
       actorType: 'agent',
