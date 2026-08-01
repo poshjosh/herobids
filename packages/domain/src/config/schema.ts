@@ -2063,6 +2063,53 @@ export const ExecutionConfigSchema = z.object({
   slippageBps: z.number().min(0).optional(),
 });
 
+// ── Shared domain value objects (agent + bot vocabulary) ──────────────────────
+
+/**
+ * Strategy identity — canonicalized from {@link StrategySchema}.
+ * Required for bots; optional/absent for non-trading agents.
+ */
+export const StrategyIdentitySchema = StrategySchema;
+export type StrategyIdentity = z.infer<typeof StrategyIdentitySchema>;
+
+/**
+ * Risk posture — the canonical nullable value shape shared by agents and bots.
+ * Every field is optional/nullable: null or absent means "use operator default".
+ * Token-safety guards (liquidity, volume, age, override) belong in TokenSafety,
+ * not here.
+ */
+export const RiskPostureSchema = z.object({
+  /** Max position size as % of equity (0–100). Agent-mutable when not creator-configured. */
+  maxPositionSizePct: z.number().min(0).max(100).optional().nullable(),
+  /** Max number of open (non-flat) positions. Agent-mutable when not creator-configured. */
+  maxOpenPositions: z.number().min(1).optional().nullable(),
+  /** Stop-loss unrealized-loss guard as % of equity (0–100). 0 = disabled. Agent-mutable when not creator-configured. */
+  stopLossPct: z.number().min(0).max(100).optional().nullable(),
+  /** Cooldown in ms before re-entering an instrument after a stop-loss exit. 0 = disabled. Agent-mutable when not creator-configured. */
+  stopLossCooldownMs: z.number().min(0).optional().nullable(),
+  /** Daily realized-loss cap as % of equity (0–100). Creator-only — not agent-mutable. */
+  dailyMaxLossPct: z.number().min(0).max(100).optional().nullable(),
+  /** Peak-to-current equity drawdown cap as % of peak equity (0–100). Agent-mutable when not creator-configured. */
+  maxDrawdownPct: z.number().min(0).max(100).optional().nullable(),
+  /** Max new positions allowed per calendar day (0 = unlimited). Shared — promoted from bot-only. */
+  maxNewPositionsPerDay: z.number().int().min(0).optional().nullable(),
+  /** Parabolic-move guard: skip entry when 24h change exceeds this % (0 = disabled). */
+  avoidParabolicMovePct: z.number().min(0).optional().nullable(),
+  /** Per-order notional cap in USD (absolute, unavoidable). Creator-only — not agent-mutable. */
+  maxOrderNotional: z.number().min(0).optional().nullable(),
+});
+export type RiskPosture = z.infer<typeof RiskPostureSchema>;
+
+/**
+ * Execution defaults — canonicalized from ExecutionConfigSchema plus agent
+ * executionMode / maxSlippageBps.
+ */
+export const ExecutionDefaultsSchema = z.object({
+  mode: z.enum(['paper', 'shadow', 'live']).default('paper'),
+  slippageBps: z.number().min(0).optional(),
+});
+export type ExecutionDefaults = z.infer<typeof ExecutionDefaultsSchema>;
+
 export const BotConfigSchema = z.object({
   strategy: StrategySchema,
   risk: RiskConfigSchema.default({}),
