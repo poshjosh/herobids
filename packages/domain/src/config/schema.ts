@@ -493,7 +493,7 @@ export const AgentRiskDefaultsSchema = z.object({
   maxOpenPositions: z.number().min(1).default(10),
   maxPositionSizePct: z.number().min(0).max(100).default(100),
   maxPositionSize: z.number().min(0).default(1_000_000),
-  stopLossMaxUnrealizedLossPct: z.number().min(0).max(100).default(10),
+  stopLossPct: z.number().min(0).max(100).default(10),
   dailyMaxLossPct: z.number().min(0).max(100).default(20),
   stopLossCooldownMs: z.number().min(0).default(300_000),
   maxOrderNotionalMultiplier: z.number().min(0).default(1),

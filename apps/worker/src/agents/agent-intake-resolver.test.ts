@@ -103,7 +103,7 @@ describe('AgentIntakeResolver', () => {
           maxOpenPositions: 10,
           maxPositionSizePct: 100,
           maxPositionSize: 1000000000,
-          stopLossMaxUnrealizedLossPct: 10,
+          stopLossPct: 10,
           dailyMaxLossPct: 20,
           stopLossCooldownMs: 300000,
           maxOrderNotionalMultiplier: 1,

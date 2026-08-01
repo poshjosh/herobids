@@ -8,7 +8,7 @@ export interface ValidationResult {
 export interface ValidationConstraints {
   maxOpenPositions: number;
   maxPositionSizePct: number;
-  stopLossMaxUnrealizedLossPct: number;
+  stopLossPct: number;
 }
 
 export interface CreateAgentFormIntent {
@@ -94,13 +94,13 @@ export function validateCreateAgentForm(
     }
   }
 
-  // stopLossPct: if provided, 0-100 AND ≤ constraints.stopLossMaxUnrealizedLossPct
+  // stopLossPct: if provided, 0-100 AND ≤ constraints.stopLossPct
   if (intent.stopLossPct.trim()) {
     const sl = Number(intent.stopLossPct);
     if (!Number.isFinite(sl) || sl < 0 || sl > 100) {
       errors.stopLossPct = 'Stop loss must be between 0 and 100.';
-    } else if (sl > constraints.stopLossMaxUnrealizedLossPct) {
-      errors.stopLossPct = `Stop loss cannot exceed the platform limit of ${constraints.stopLossMaxUnrealizedLossPct}%.`;
+    } else if (sl > constraints.stopLossPct) {
+      errors.stopLossPct = `Stop loss cannot exceed the platform limit of ${constraints.stopLossPct}%.`;
     }
   }
 

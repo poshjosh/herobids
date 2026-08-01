@@ -4,7 +4,7 @@ import { validateCreateAgentForm, type ValidationConstraints } from './form-vali
 const DEFAULT_CONSTRAINTS: ValidationConstraints = {
   maxOpenPositions: 10,
   maxPositionSizePct: 100,
-  stopLossMaxUnrealizedLossPct: 100,
+  stopLossPct: 100,
 };
 
 function validIntent(overrides: Partial<Parameters<typeof validateCreateAgentForm>[0]> = {}) {
@@ -141,7 +141,7 @@ describe('validateCreateAgentForm', () => {
   it('returns error for stopLossPct > constraint', () => {
     const result = validateCreateAgentForm(
       validIntent({ stopLossPct: '60' }),
-      { ...DEFAULT_CONSTRAINTS, stopLossMaxUnrealizedLossPct: 30 },
+      { ...DEFAULT_CONSTRAINTS, stopLossPct: 30 },
     );
     expect(result.valid).toBe(false);
     expect(result.errors.stopLossPct).toBeDefined();

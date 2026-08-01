@@ -740,7 +740,7 @@ function CreateAgentFlow({
   const validationConstraints: ValidationConstraints = {
     maxOpenPositions: riskDefaultsQuery.data?.maxOpenPositions ?? 10,
     maxPositionSizePct: riskDefaultsQuery.data?.maxPositionSizePct ?? 100,
-    stopLossMaxUnrealizedLossPct: riskDefaultsQuery.data?.stopLossPct ?? 100,
+    stopLossPct: riskDefaultsQuery.data?.stopLossPct ?? 100,
   };
 
   function validateFieldOnBlur(fieldName: string) {

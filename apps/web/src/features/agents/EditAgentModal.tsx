@@ -308,7 +308,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const validationConstraints: ValidationConstraints = {
     maxOpenPositions: riskDefaultsQuery.data?.maxOpenPositions ?? 10,
     maxPositionSizePct: riskDefaultsQuery.data?.maxPositionSizePct ?? 100,
-    stopLossMaxUnrealizedLossPct: riskDefaultsQuery.data?.stopLossPct ?? 100,
+    stopLossPct: riskDefaultsQuery.data?.stopLossPct ?? 100,
   };
 
   // Sync capabilityMode from technicalPreFilterEnabled toggle + trading skill presence

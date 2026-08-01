@@ -575,11 +575,11 @@ export function validateAgentRiskBounds(
     });
   }
 
-  if (input.stopLossPct != null && input.stopLossPct > defaults.stopLossMaxUnrealizedLossPct) {
+  if (input.stopLossPct != null && input.stopLossPct > defaults.stopLossPct) {
     issues.push({
       code: 'custom',
       path: ['stopLossPct'],
-      message: `stopLossPct cannot exceed the platform limit of ${defaults.stopLossMaxUnrealizedLossPct}%`,
+      message: `stopLossPct cannot exceed the platform limit of ${defaults.stopLossPct}%`,
     });
   }
 
@@ -621,12 +621,10 @@ export function resolveAgentRiskContractForResponse(
   },
   agentRiskDefaults: AgentRiskDefaultsConfig,
 ): ResolvedAgentRiskContract {
-  // Canonical-first-then-legacy fallback for stopLossPct, consistent with extractCeilings.
-  const raw = agentRiskDefaults as Record<string, number>;
   const ceilings: AgentRiskCeilings = {
     maxOpenPositions: agentRiskDefaults.maxOpenPositions,
     maxPositionSizePct: agentRiskDefaults.maxPositionSizePct,
-    stopLossPct: raw['stopLossPct'] ?? agentRiskDefaults.stopLossMaxUnrealizedLossPct,
+    stopLossPct: agentRiskDefaults.stopLossPct,
     stopLossCooldownMs: agentRiskDefaults.stopLossCooldownMs,
     maxDrawdownPct: agentRiskDefaults.maxDrawdownPct,
   };

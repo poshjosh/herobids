@@ -26,18 +26,10 @@ function parseOptionalNumber(value: string | number | null): number | undefined 
  * Extract AgentRiskCeilings from operator config defaults.
  */
 export function extractCeilings(defaults: AgentRiskDefaultsConfig): AgentRiskCeilings {
-  // Read stopLossPct first (canonical name, lands in WP5), fall back to
-  // stopLossMaxUnrealizedLossPct (legacy name in current operator config).
-  // Uses a type assertion because AgentRiskDefaultsConfig currently only
-  // carries the legacy field — the canonical field arrives in WP5.
-  const raw = defaults as Record<string, number>;
-  if (raw['stopLossPct'] !== undefined && defaults.stopLossMaxUnrealizedLossPct !== undefined) {
-    console.debug('agent-risk-limits: both stopLossPct (canonical) and stopLossMaxUnrealizedLossPct (legacy) are set; using canonical');
-  }
   return {
     maxOpenPositions: defaults.maxOpenPositions,
     maxPositionSizePct: defaults.maxPositionSizePct,
-    stopLossPct: raw['stopLossPct'] ?? defaults.stopLossMaxUnrealizedLossPct,
+    stopLossPct: defaults.stopLossPct,
     stopLossCooldownMs: defaults.stopLossCooldownMs,
     maxDrawdownPct: defaults.maxDrawdownPct,
   };

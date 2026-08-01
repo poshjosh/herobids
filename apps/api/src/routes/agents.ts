@@ -577,7 +577,7 @@ export async function agentRoutes(
       dailyLossLimitDefaultRatio: agentRiskDefaults.dailyLossLimitDefaultRatio,
       maxOpenPositions: agentRiskDefaults.maxOpenPositions,
       maxPositionSizePct: agentRiskDefaults.maxPositionSizePct,
-      stopLossPct: agentRiskDefaults.stopLossMaxUnrealizedLossPct,
+      stopLossPct: agentRiskDefaults.stopLossPct,
       stopLossCooldownMs: agentRiskDefaults.stopLossCooldownMs,
       dailyMaxLossPct: agentRiskDefaults.dailyMaxLossPct,
       maxDrawdownPct: agentRiskDefaults.maxDrawdownPct,

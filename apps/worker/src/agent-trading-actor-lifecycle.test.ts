@@ -99,7 +99,7 @@ function makeAgentActorDeps(overrides?: Partial<AgentTradingActorDeps>): AgentTr
       maxPositionSizePct: 100,
       dailyMaxLossPct: 20,
       stopLossCooldownMs: 300000,
-      stopLossMaxUnrealizedLossPct: 10,
+      stopLossPct: 10,
       maxOrderNotional: price('10000'),
     },
     venueAdapterFactory: {

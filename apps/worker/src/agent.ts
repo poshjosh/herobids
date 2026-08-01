@@ -260,7 +260,7 @@ interface AgentConfig {
   agentRiskDefaults?: {
     maxOpenPositions: number;
     maxPositionSizePct: number;
-    stopLossMaxUnrealizedLossPct: number;
+    stopLossPct: number;
     stopLossCooldownMs: number;
     maxPositionSize: number;
     maxOrderNotionalMultiplier: number;

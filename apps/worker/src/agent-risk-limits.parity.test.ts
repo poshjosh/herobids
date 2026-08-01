@@ -33,7 +33,7 @@ function defaults(overrides: Partial<AgentRiskDefaultsConfig> = {}): AgentRiskDe
     maxOpenPositions: 10,
     maxPositionSizePct: 100,
     maxPositionSize: 1_000_000,
-    stopLossMaxUnrealizedLossPct: 10,
+    stopLossPct: 10,
     dailyMaxLossPct: 20,
     stopLossCooldownMs: 300_000,
     maxOrderNotionalMultiplier: 1,
@@ -65,15 +65,14 @@ describe('extractCeilings', () => {
     expect(ceilings).toEqual({
       maxOpenPositions: 10,
       maxPositionSizePct: 50,
-      // The extractCeilings bridge maps stopLossMaxUnrealizedLossPct → stopLossPct
-      stopLossPct: d.stopLossMaxUnrealizedLossPct,
+      stopLossPct: d.stopLossPct,
       stopLossCooldownMs: 300_000,
       maxDrawdownPct: 15,
     });
   });
 
-  it('maps stopLossMaxUnrealizedLossPct operator default to stopLossPct', () => {
-    const d = defaults({ stopLossMaxUnrealizedLossPct: 7 });
+  it('returns stopLossPct ceiling from operator default', () => {
+    const d = defaults({ stopLossPct: 7 });
     const ceilings = extractCeilings(d);
     expect(ceilings.stopLossPct).toBe(7);
   });
@@ -154,7 +153,7 @@ describe('resolveContract', () => {
   it('marks creator-set fields as immutable with source=user', () => {
     const contract = resolveContract(
       source({ maxOpenPositions: 3, stopLossPct: '5' }),
-      defaults({ maxOpenPositions: 10, stopLossMaxUnrealizedLossPct: 10 }),
+      defaults({ maxOpenPositions: 10, stopLossPct: 10 }),
     );
 
     expect(contract.maxOpenPositions.effectiveValue).toBe(3);
@@ -300,7 +299,7 @@ describe('buildRiskLimitsFromContract', () => {
     expect(limits.maxPositionSize.toString()).toBe('500000');
     expect(limits.maxOpenPositions).toBe(3);
     expect(limits.maxDrawdownPct).toBe(20); // from operator default
-    expect(limits.stopLossMaxUnrealizedLossPct).toBe(10); // from operator default, mapped from stopLossPct
+    expect(limits.stopLossMaxUnrealizedLossPct).toBe(10); // from operator default
     expect(limits.stopLossCooldownMs).toBe(300_000);
     expect(limits.maxPositionSizePct).toBe(100);
   });

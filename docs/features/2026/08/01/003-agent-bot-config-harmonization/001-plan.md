@@ -103,7 +103,7 @@ Before changing any storage or bridge path, add tests that record the current `c
 
 Recompose `BotConfigSchema` from the shared value objects, renaming `RiskConfigSchema.stopLossMaxUnrealizedLossPct` to `stopLossPct` and aligning risk fields to canonical names. Bot risk values remain effective (non-null) values with no contract wrapper.
 
-### 4. Converge agent instance — **PENDING**
+### 4. Converge agent instance — **DONE**
 
 Replace the scattered agent risk columns and the `unifiedConfig` strategy metadata sidecar with the typed shared value objects:
 
