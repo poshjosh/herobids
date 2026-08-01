@@ -400,6 +400,20 @@
       "when": 1785597364686,
       "tag": "0056_naive_rocket_racer",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1785607584885,
+      "tag": "0057_mighty_argent",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1785607924576,
+      "tag": "0058_absent_genesis",
+      "breakpoints": true
     }
   ]
 }

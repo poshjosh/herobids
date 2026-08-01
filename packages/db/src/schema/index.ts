@@ -3,6 +3,12 @@ export { venueAccounts } from './venue-accounts.js';
 export { userCredentials } from './user-credentials.js';
 // portfolios REMOVED — no MVP benefit; user thinks in wallets/accounts
 export { blueprints } from './blueprints.js';
+export { blueprintRevisions } from './blueprint-revisions.js';
+export { blueprintRevisionSkills } from './blueprint-revision-skills.js';
+export { blueprintLikes } from './blueprint-likes.js';
+export { blueprintUsageEvents } from './blueprint-usage-events.js';
+export { blueprintInstantiationRequests } from './blueprint-instantiation-requests.js';
+export { blueprintForkRequests } from './blueprint-fork-requests.js';
 export { bots } from './bots.js';
 export { decisions } from './decisions.js';
 export { executionPlans } from './execution-plans.js';

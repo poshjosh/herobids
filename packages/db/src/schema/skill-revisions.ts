@@ -26,6 +26,7 @@ export const skillRevisions = pgTable('skill_revisions', {
   createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  uniqueIndex('uq_skill_revisions_skill_id').on(t.skillId, t.id),
   uniqueIndex('uq_skill_revisions_skill_version').on(t.skillId, t.version),
   index('idx_skill_revisions_skill_created').on(t.skillId, t.createdAt),
 ]);

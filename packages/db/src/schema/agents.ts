@@ -61,6 +61,9 @@ export const agents = pgTable('agents', {
   wakePreferences: jsonb('wake_preferences').$type<WakePreferences | null>(),
   /** Per-agent open position escalation to judge policy: never | uncovered_or_triggered | always */
   openPositionEscalationToJudgePolicy: text('open_position_escalation_to_judge_policy').notNull().default('uncovered_or_triggered'),
+  /** Blueprint attribution — both null (not from blueprint) or both non-null (from blueprint revision) */
+  blueprintId: text('blueprint_id'),
+  blueprintRevisionId: text('blueprint_revision_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
