@@ -45,6 +45,7 @@ export const ADVANCED_FIELD_TAB: Record<string, number> = {
   tickIntervalMins: 0,
   dailySpendBudgetUsd: 0,
   // Trading Setup
+  authorizationMode: 1,
   executionMode: 1,
   venue: 1,
   dailyLossLimit: 1,
@@ -264,28 +265,6 @@ export function AgentFormBody(props: AgentFormBodyProps) {
       {/* Platform link — only when trading setup is required */}
       {props.showTradingControls && props.requiresTradingSetup && (
         <div style={fieldGap}>{props.connectionSlot}</div>
-      )}
-
-      {/* Authorization Mode — only when trading setup is required */}
-      {props.showTradingControls && props.requiresTradingSetup && (
-        <div style={fieldGap}>
-          <FieldLabel>
-            {intl.formatMessage({ id: 'agents.authorizationMode.label' })}
-          </FieldLabel>
-          <select
-            style={{ ...inputStyle, cursor: 'pointer' }}
-            value={props.value.authorizationMode}
-            onChange={(e) => props.onChange({ authorizationMode: e.target.value as 'direct' | 'approval_required' })}
-          >
-            <option value="direct">{intl.formatMessage({ id: 'agents.authorizationMode.direct' })}</option>
-            <option value="approval_required">{intl.formatMessage({ id: 'agents.authorizationMode.approvalRequired' })}</option>
-          </select>
-          <div style={helperStyle}>
-            {props.value.authorizationMode === 'direct'
-              ? intl.formatMessage({ id: 'agents.authorizationMode.directHelp' })
-              : intl.formatMessage({ id: 'agents.authorizationMode.approvalRequiredHelp' })}
-          </div>
-        </div>
       )}
 
       {/* Telegram Chat ID — always visible */}

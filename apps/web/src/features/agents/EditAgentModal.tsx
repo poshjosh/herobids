@@ -516,12 +516,12 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 setForm((prev) => ({
                   ...prev,
                   skillIds: resolveSkillPresetSkillIds(preset, prev.skillIds),
-                  // trading-assistant defaults to approval_required; others default to direct
-                  authorizationMode: preset === 'trading-assistant' ? 'approval_required' as const : 'direct' as const,
+                  // authorizationMode defaults to direct for all presets
+                  authorizationMode: 'direct' as const,
                   // Clear trading values when switching to a non-trading preset
                   // so stale values don't keep trading UI visible via the
                   // field-value fallback in showTradingControls.
-                  ...(preset !== 'trading' && preset !== 'direct-trading' && preset !== 'trading-assistant' ? {
+                  ...(preset !== 'trading' ? {
                     executionMode: '' as const,
                     capital: '',
                     dailyLossLimit: '',
@@ -535,7 +535,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 }));
                 // Clear trading session overrides when switching away from trading
                 // so the hour grid (0-23) becomes editable again.
-                if (preset !== 'trading' && preset !== 'direct-trading' && preset !== 'trading-assistant') {
+                if (preset !== 'trading') {
                   setRuntimePolicyOverrides((current) => {
                     if (!current?.tradingSessions) return current;
                     const { tradingSessions: _, ...rest } = current;
@@ -546,8 +546,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               style={{ ...inputStyle, cursor: 'pointer' }}
             >
               <option value="trading">{intl.formatMessage({ id: 'agents.create.skillPreset.trading' })}</option>
-              <option value="direct-trading">{intl.formatMessage({ id: 'agents.create.skillPreset.directTrading' })}</option>
-              <option value="trading-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.tradingAssistant' })}</option>
               <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.personalAssistant' })}</option>
               <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
             </select>
@@ -959,6 +957,24 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                       </div>
                     </div>
                   )}
+
+                  {/* Trade Authorization */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '48px' }}>
+                    <FieldLabel>{intl.formatMessage({ id: 'agents.authorizationMode.label' })}</FieldLabel>
+                    <select
+                      style={{ ...inputStyle, cursor: 'pointer' }}
+                      value={form.authorizationMode}
+                      onChange={(e) => setForm((prev) => ({ ...prev, authorizationMode: e.target.value as 'direct' | 'approval_required' }))}
+                    >
+                      <option value="direct">{intl.formatMessage({ id: 'agents.authorizationMode.direct' })}</option>
+                      <option value="approval_required">{intl.formatMessage({ id: 'agents.authorizationMode.approvalRequired' })}</option>
+                    </select>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                      {form.authorizationMode === 'direct'
+                        ? intl.formatMessage({ id: 'agents.authorizationMode.directHelp' })
+                        : intl.formatMessage({ id: 'agents.authorizationMode.approvalRequiredHelp' })}
+                    </div>
+                  </div>
 
                   <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>
                     {intl.formatMessage({ id: 'agents.create.tradingControls.title' })}

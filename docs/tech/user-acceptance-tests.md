@@ -169,7 +169,7 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 | AG-E07 | Advanced settings tabs present | Open edit form; expand Advanced Settings | Three tabs visible: AI Configuration, Trading Setup, Strategy — same as create form | — | 2026-07-13: Updated — Skills tab removed; Hybrid Wake Mode moved from Strategy to Trading Setup |
 | AG-E08 | Skills editable in Advanced | Open edit form; expand Advanced Settings → Skills tab | SkillPicker shown; skill changes reflected on save | — | |
 | AG-E09 | Model selection visible | Open edit form for agent with intelligence capability | AI Configuration tab shows model provider/economy/premium fields directly (no inherit/override toggle) | — | |
-| AG-E10 | Guardrails editable | Open edit form; expand Advanced Settings → Trading Setup | Daily loss limit, max slippage, max open positions, stop-loss fields present and editable | — | |
+| AG-E10 | Guardrails & authorization editable | Open edit form; expand Advanced Settings → Trading Setup | Trade Authorization (Auto / Require approval), daily loss limit, max slippage, max open positions, stop-loss fields present and editable | — | 2026-08-01: Trade Authorization moved into Trading Setup tab (after Venue/Execution Mode); labels shortened to "Auto" / "Require approval" | |
 
 ### 6.1a Agents — Forced Strategy Review
 

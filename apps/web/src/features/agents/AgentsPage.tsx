@@ -828,12 +828,12 @@ function CreateAgentFlow({
                     ...state,
                     skillPreset,
                     skillIds: resolveSkillPresetSkillIds(skillPreset, state.skillIds),
-                    // trading-assistant defaults to approval_required; all others default to direct
-                    authorizationMode: skillPreset === 'trading-assistant' ? 'approval_required' as const : 'direct' as const,
+                    // authorizationMode defaults to direct for all presets
+                    authorizationMode: 'direct' as const,
                   };
                   // Clear trading sessions when switching away from trading
                   // so the hour grid (0-23) becomes editable again.
-                  if (skillPreset !== 'trading' && skillPreset !== 'direct-trading' && skillPreset !== 'trading-assistant' && next.runtimePolicyOverrides?.tradingSessions) {
+                  if (skillPreset !== 'trading' && next.runtimePolicyOverrides?.tradingSessions) {
                     const { tradingSessions: _, ...rest } = next.runtimePolicyOverrides;
                     next.runtimePolicyOverrides = Object.keys(rest).length > 0 ? rest : null;
                   }
@@ -843,8 +843,6 @@ function CreateAgentFlow({
               style={{ ...inputStyle, cursor: 'pointer' }}
             >
               <option value="trading">{intl.formatMessage({ id: 'agents.create.skillPreset.trading' })}</option>
-              <option value="direct-trading">{intl.formatMessage({ id: 'agents.create.skillPreset.directTrading' })}</option>
-              <option value="trading-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.tradingAssistant' })}</option>
               <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.personalAssistant' })}</option>
               <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
             </select>
@@ -1334,6 +1332,24 @@ function CreateAgentFlow({
                       ))}
                     </select>
                     {formErrors.venue && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.venue}</div>}
+                  </div>
+
+                  {/* Trade Authorization */}
+                  <div data-field="authorizationMode">
+                    <FieldLabel>{intl.formatMessage({ id: 'agents.authorizationMode.label' })}</FieldLabel>
+                    <select
+                      style={{ ...inputStyle, cursor: 'pointer' }}
+                      value={intent.authorizationMode}
+                      onChange={(e) => setIntent((prev) => ({ ...prev, authorizationMode: e.target.value as 'direct' | 'approval_required' }))}
+                    >
+                      <option value="direct">{intl.formatMessage({ id: 'agents.authorizationMode.direct' })}</option>
+                      <option value="approval_required">{intl.formatMessage({ id: 'agents.authorizationMode.approvalRequired' })}</option>
+                    </select>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                      {intent.authorizationMode === 'direct'
+                        ? intl.formatMessage({ id: 'agents.authorizationMode.directHelp' })
+                        : intl.formatMessage({ id: 'agents.authorizationMode.approvalRequiredHelp' })}
+                    </div>
                   </div>
 
                   <div>
