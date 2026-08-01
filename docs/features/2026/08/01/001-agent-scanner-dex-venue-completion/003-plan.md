@@ -518,3 +518,7 @@ Numeric-starting key in YAML. Quote for safety: `'1inch': true`.
 
 ### [Phase 3] LOW-7 — Plan mark as DONE for Phase 2 (bookkeeping)
 Unrelated to Phase 3 changes. Was from prior merge.
+
+## Final note
+
+The feature is safe to merge with agentRuntime.scanner.swap.enabled: false (default). Enable Jupiter first via config, then 1inch after Base matrix passes.
