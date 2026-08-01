@@ -229,6 +229,7 @@ interface AgentConfig {
   name?: string;
   prompt?: string;
   goal?: string;
+  /** @deprecated Use executionDefaults JSONB (executionDefaults.mode) instead. */
   executionMode?: string;
   provider?: string;
   lightModel?: string;
@@ -236,9 +237,12 @@ interface AgentConfig {
   costPreset?: CostPreset;
   dailySpendBudgetUsd?: number;
   dexWatchlistSymbols?: string[];
+  /** @deprecated Use risk.dailyMaxLossPct (percent of equity) instead. USD-denominated loss limit. */
   dailyLossLimit?: string;
+  /** @deprecated Use risk.maxDrawdownPct instead. */
   maxDrawdownPct?: number | string;
   maxBots?: number;
+  /** @deprecated Use executionDefaults.slippageBps instead. */
   maxSlippageBps?: number;
   maxOpenPositions?: number;
   maxPositionSizePct?: number | string;

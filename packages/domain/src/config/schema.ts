@@ -489,6 +489,7 @@ export const AgentCostEstimatesSchema = z.object({
 }).default({});
 
 export const AgentRiskDefaultsSchema = z.object({
+  /** @deprecated Use dailyMaxLossPct (percent of equity) instead. Ratio-based loss limit. */
   dailyLossLimitDefaultRatio: z.number().min(0).max(1).default(0.05),
   maxOpenPositions: z.number().min(1).default(10),
   maxPositionSizePct: z.number().min(0).max(100).default(100),

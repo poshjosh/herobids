@@ -878,7 +878,11 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
 
       const desc = state.runtimeDescriptor;
       const lines: string[] = [];
-      if (desc.guardrails.dailyLossLimit) lines.push(`Daily loss limit (rolling 24h realized loss): ${formatUsdAmount(desc.guardrails.dailyLossLimit)} — when reached, new positions are blocked until losses roll out of the 24h window, but go_flat and decrease remain available to manage existing positions`);
+      if (desc.guardrails.dailyMaxLossPct != null) {
+        lines.push(`Daily loss limit (rolling 24h realized loss): ${desc.guardrails.dailyMaxLossPct}% of equity — when reached, new positions are blocked until losses roll out of the 24h window, but go_flat and decrease remain available to manage existing positions`);
+      } else if (desc.guardrails.dailyLossLimit) {
+        lines.push(`Daily loss limit (rolling 24h realized loss): ${formatUsdAmount(desc.guardrails.dailyLossLimit)} — when reached, new positions are blocked until losses roll out of the 24h window, but go_flat and decrease remain available to manage existing positions`);
+      }
       if (desc.guardrails.maxDrawdownPct != null) lines.push(`Max drawdown: ${desc.guardrails.maxDrawdownPct}% of peak equity`);
       if (desc.guardrails.maxBots != null) lines.push(`Max concurrent bots: ${desc.guardrails.maxBots}`);
       if (desc.guardrails.maxOpenPositions != null) lines.push(`Max open positions: ${desc.guardrails.maxOpenPositions}`);

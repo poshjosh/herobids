@@ -29,32 +29,6 @@ function normalizeBotConfig(config: Record<string, unknown>, venue: string, symb
   return normalized;
 }
 
-/**
- * Add legacy `stopLossMaxUnrealizedLossPct` field to bot risk config for
- * backward compatibility with the current frontend (BotsPage, BotCustomConfigSection).
- * The frontend reads `stopLossMaxUnrealizedLossPct` from the API response but
- * the DB stores the canonical `stopLossPct` field.
- *
- * TODO: Remove after WP6 frontend update — the frontend will read `stopLossPct` directly.
- */
-function addLegacyRiskFields(bot: Record<string, unknown>): Record<string, unknown> {
-  const config = bot['config'] as Record<string, unknown> | undefined;
-  const risk = config?.['risk'] as Record<string, unknown> | undefined;
-  if (risk && typeof risk['stopLossPct'] === 'number' && risk['stopLossMaxUnrealizedLossPct'] === undefined) {
-    return {
-      ...bot,
-      config: {
-        ...config,
-        risk: {
-          ...risk,
-          stopLossMaxUnrealizedLossPct: risk['stopLossPct'],
-        },
-      },
-    };
-  }
-  return bot;
-}
-
 export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, redis: Redis, plansConfig?: PlansConfig, agentRiskDefaults?: AgentRiskDefaultsConfig): Promise<void> {
   // Create bot
   app.post('/bots', async (request, reply) => {
@@ -244,7 +218,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       void reply.header('Deprecation', 'true');
       void reply.header('Link', '</blueprints>; rel="deprecation"; title="Use blueprintId instead of config"');
     }
-    return reply.status(201).send(addLegacyRiskFields(bot as Record<string, unknown>));
+    return reply.status(201).send(bot as Record<string, unknown>);
   });
 
   // Update bot config
@@ -352,7 +326,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
   // List bots
   app.get('/bots', async (request, reply) => {
     const botList = await db.select().from(bots).where(eq(bots.userId, request.userId));
-    return reply.send({ bots: botList.map((b) => addLegacyRiskFields(b as Record<string, unknown>)) });
+    return reply.send({ bots: botList.map((b) => b as Record<string, unknown>) });
   });
 
   // Get single bot
@@ -362,7 +336,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     if (!bot) {
       return reply.status(404).send({ error: 'not_found' });
     }
-    return reply.send(addLegacyRiskFields(bot as Record<string, unknown>));
+    return reply.send(bot as Record<string, unknown>);
   });
 
   // GET /bots/:id/costs — total fees from fills for this bot

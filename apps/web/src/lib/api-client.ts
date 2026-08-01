@@ -1048,10 +1048,14 @@ export interface Agent {
   /** WP4 canonical: shared ExecutionDefaults JSONB. */
   executionDefaults?: Record<string, unknown> | null;
   telegramChatId: string | null;
+  /** @deprecated Use risk JSONB (risk.dailyMaxLossPct) instead. */
   executionMode: string | null;
+  /** @deprecated Use risk JSONB (risk.dailyMaxLossPct) instead. */
   dailyLossLimit: string | null;
+  /** @deprecated Use risk JSONB (risk.maxDrawdownPct) instead. */
   maxDrawdownPct: number | null;
   maxBots: number | null;
+  /** @deprecated Use executionDefaults JSONB (executionDefaults.slippageBps) instead. */
   maxSlippageBps: number | null;
   maxOpenPositions: number | null;
   maxPositionSizePct: string | null;

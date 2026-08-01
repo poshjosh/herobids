@@ -128,7 +128,7 @@ Enforcement logic (`checkRisk`) is unchanged. Update the value-sourcing seams:
 
 Update `apps/web` agent forms and `api-client` types, i18n locales (unit labels change from USD to % for daily loss / drawdown), config strategy-presets, and test/seed scripts (`create-agents.sh`, `agent-trade-test.ts`, `agent-bot-cascade-test.ts`). Ensure non-trading agent forms still hide strategy/capital/exchange (UAT AG-S02).
 
-### 7. Update docs — **PENDING**
+### 7. Update docs — **DONE**
 
 Update AGENTS.md, `docs/tech/agents/runtime-boundary-and-message-contract.md`, `docs/tech/glossary.md`, and `docs/tech/user-acceptance-tests.md` to the canonical names/units; resolve the `stopLossPct` naming-mismatch item in TODO.md.
 

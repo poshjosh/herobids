@@ -131,21 +131,31 @@ async function buildRuntime(ctx: ToolContext, contract: ResolvedAgentRiskContrac
 
   const openPositionsBlocked = openPositionsCurrent >= openPositionsLimit;
 
-  // Derive the daily loss limit: prefer explicit dollar limit from agent DB column first,
-  // then fall back to capital × dailyMaxLossPct percentage calculation.
+  // Derive the daily loss limit: prefer agent.risk.dailyMaxLossPct (percent of equity),
+  // then fall back to the legacy dailyLossLimit USD column.
   let dailyLossLimitFromUser = false;
   if (ctx.agentRepo) {
     try {
       const agent = await ctx.agentRepo.getAgent(ctx.agentId);
-      if (agent?.dailyLossLimit != null) {
-        // Explicit dollar cap — takes priority over percentage calculation
+      const risk = (agent?.risk ?? {}) as Record<string, unknown> | null;
+      if (risk?.['dailyMaxLossPct'] != null) {
+        // Canonical percent-of-equity source
+        dailyLossLimitPct = Number(risk['dailyMaxLossPct']);
+        if (agent?.capital) {
+          const capital = Number(agent.capital);
+          if (!Number.isNaN(capital) && capital > 0) {
+            dailyLossLimit = String(capital * dailyLossLimitPct / 100);
+          }
+        }
+      } else if (agent?.dailyLossLimit != null) {
+        // Legacy fallback: explicit dollar cap
         const val = Number(agent.dailyLossLimit);
         if (!Number.isNaN(val) && val > 0) {
           dailyLossLimit = agent.dailyLossLimit;
           dailyLossLimitFromUser = true;
         }
       } else if (agent?.capital) {
-        // Fallback: compute from capital × dailyMaxLossPct
+        // Last fallback: compute from capital × dailyMaxLossPct via config
         if (ctx.agentConfigOps) {
           try {
             const config = await ctx.agentConfigOps.getCurrentConfig();

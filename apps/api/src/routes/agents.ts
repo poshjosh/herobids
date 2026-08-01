@@ -955,7 +955,7 @@ export async function agentRoutes(
           openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
           ...(finalUnifiedConfig ? { unifiedConfig: finalUnifiedConfig } : {}),
           wakePreferences: parsed.data.wakePreferences ?? null,
-          // WP5: replace as never with proper Drizzle-typed values
+          // TODO: replace as never with proper Drizzle-typed values (RiskPosture, StrategyIdentity, ExecutionDefaults)
           risk: riskJsonb as never,
           strategy: strategyJsonb as never,
           executionDefaults: executionDefaultsJsonb as never,
@@ -1857,7 +1857,7 @@ export async function agentRoutes(
           ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
           ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
           ...(unifiedConfigPatch !== undefined ? { unifiedConfig: unifiedConfigPatch } : {}),
-          // WP5: replace as never with proper Drizzle-typed values
+          // TODO: replace as never with proper Drizzle-typed values (RiskPosture, StrategyIdentity, ExecutionDefaults)
           ...(riskUpdateJsonb !== undefined ? { risk: riskUpdateJsonb as never } : {}),
           ...(strategyUpdateJsonb !== undefined ? { strategy: strategyUpdateJsonb as never } : {}),
           ...(executionDefaultsUpdateJsonb !== undefined ? { executionDefaults: executionDefaultsUpdateJsonb as never } : {}),

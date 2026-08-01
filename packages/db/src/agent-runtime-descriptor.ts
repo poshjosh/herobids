@@ -305,7 +305,10 @@ export function buildRuntimeDescriptor(input: {
   authorizationMode?: string | null;
   toolPolicy?: Record<string, unknown> | null;
   dailyTokenBudget?: string | null;
+  /** @deprecated Use dailyMaxLossPct (percent of equity) instead. */
   dailyLossLimit?: string | null;
+  /** Daily realized-loss cap as percent of equity (0–100). Canonical replacement for dailyLossLimit. */
+  dailyMaxLossPct?: string | null;
   maxDrawdownPct?: number | null;
   maxBots?: number | null;
   maxOpenPositions?: number | null;
@@ -330,6 +333,7 @@ export function buildRuntimeDescriptor(input: {
     guardrails: {
       dailyTokenBudget: input.dailyTokenBudget ?? 'unlimited tokens',
       dailyLossLimit: input.dailyLossLimit ?? null,
+      dailyMaxLossPct: input.dailyMaxLossPct ?? null,
       maxDrawdownPct: input.maxDrawdownPct ?? null,
       maxBots: input.maxBots ?? null,
       maxOpenPositions: input.maxOpenPositions ?? null,
