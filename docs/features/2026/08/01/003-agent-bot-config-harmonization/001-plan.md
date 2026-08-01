@@ -114,7 +114,7 @@ Replace the scattered agent risk columns and the `unifiedConfig` strategy metada
 - Keep agent-only fields (`capital`, `maxBots`, prompt, skills, style, model policy, technical/intelligence config, wake prefs, escalation) as agent extensions.
 - Update `AgentRiskLimitSource` and `extractCreatorInput`/`extractCeilings` in [apps/worker/src/agent-risk-limits.ts](../../../../../../apps/worker/src/agent-risk-limits.ts) to read the new `risk` JSONB instead of columns. **Do not touch** `agent-risk-contract.ts` resolution logic or the mutable-field set — only the source of the raw values changes.
 
-### 5. Update enforcement bridge and consumers — **PENDING**
+### 5. Update enforcement bridge and consumers — **DONE**
 
 Enforcement logic (`checkRisk`) is unchanged. Update the value-sourcing seams:
 

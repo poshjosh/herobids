@@ -42,7 +42,7 @@ export interface AgentFormState {
   tickIntervalMins: string;
 
   // Trading guardrails
-  dailyLossLimit: string;
+  dailyMaxLossPct: string;
   maxDrawdownPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
@@ -96,7 +96,8 @@ export function agentToFormState(agent: Agent): AgentFormState {
 
   // Map stored concrete modes back to the user-facing abstraction.
   // The DB stores paper, shadow, or live; the form state only knows test and live.
-  const rawExecutionMode = agent.executionMode;
+  // Read from agent.executionDefaults JSONB (WP4 canonical) with fallback to legacy top-level.
+  const rawExecutionMode = (agent.executionDefaults as Record<string, unknown> | null)?.mode ?? agent.executionMode;
   const executionMode: AgentFormState['executionMode'] =
     rawExecutionMode === 'paper' || rawExecutionMode === 'shadow'
       ? 'test'
@@ -141,18 +142,21 @@ export function agentToFormState(agent: Agent): AgentFormState {
     dailySpendBudgetUsd:
       agent.dailySpendBudgetUsd != null ? String(agent.dailySpendBudgetUsd) : '',
     tickIntervalMins: formatTickIntervalMinutesForInput(agent.tickIntervalMs),
-    dailyLossLimit: agent.dailyLossLimit ?? '',
-    maxDrawdownPct: agent.maxDrawdownPct != null ? String(agent.maxDrawdownPct) : '',
+    // Read from agent.risk JSONB (WP4 canonical) with fallback to legacy top-level fields
+    dailyMaxLossPct: (agent.risk as Record<string, unknown> | null)?.dailyMaxLossPct != null ? String((agent.risk as Record<string, unknown> | null)!.dailyMaxLossPct) : (agent.dailyLossLimit ?? ''),
+    maxDrawdownPct: (agent.risk as Record<string, unknown> | null)?.maxDrawdownPct != null ? String((agent.risk as Record<string, unknown> | null)!.maxDrawdownPct) : (agent.maxDrawdownPct != null ? String(agent.maxDrawdownPct) : ''),
     maxSlippageBps:
-      agent.maxSlippageBps != null ? String(agent.maxSlippageBps) : '',
+      (agent.executionDefaults as Record<string, unknown> | null)?.slippageBps != null ? String((agent.executionDefaults as Record<string, unknown> | null)!.slippageBps) : (agent.maxSlippageBps != null ? String(agent.maxSlippageBps) : ''),
     maxOpenPositions:
-      agent.maxOpenPositions != null ? String(agent.maxOpenPositions) : '',
-    maxPositionSizePct: agent.maxPositionSizePct ?? '',
-    stopLossPct: agent.stopLossPct ?? '',
+      (agent.risk as Record<string, unknown> | null)?.maxOpenPositions != null ? String((agent.risk as Record<string, unknown> | null)!.maxOpenPositions) : (agent.maxOpenPositions != null ? String(agent.maxOpenPositions) : ''),
+    maxPositionSizePct: (agent.risk as Record<string, unknown> | null)?.maxPositionSizePct != null ? String((agent.risk as Record<string, unknown> | null)!.maxPositionSizePct) : (agent.maxPositionSizePct ?? ''),
+    stopLossPct: (agent.risk as Record<string, unknown> | null)?.stopLossPct != null ? String((agent.risk as Record<string, unknown> | null)!.stopLossPct) : (agent.stopLossPct ?? ''),
     stopLossCooldownSecs:
-      agent.stopLossCooldownMs != null
-        ? String(agent.stopLossCooldownMs / 1000)
-        : '',
+      (agent.risk as Record<string, unknown> | null)?.stopLossCooldownMs != null
+        ? String(Number((agent.risk as Record<string, unknown> | null)!.stopLossCooldownMs) / 1000)
+        : (agent.stopLossCooldownMs != null
+          ? String(agent.stopLossCooldownMs / 1000)
+          : ''),
     openPositionEscalationToJudgePolicy,
     // Hydrate the preset selection from the persisted metadata so preset-managed
     // agents reopen with the matching preset card selected. Agents with no preset
@@ -196,7 +200,7 @@ export function intentToFormState(intent: {
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
   tickIntervalMins: string;
-  dailyLossLimit: string;
+  dailyMaxLossPct: string;
   maxDrawdownPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
@@ -227,7 +231,7 @@ export function intentToFormState(intent: {
     costPreset,
     dailySpendBudgetUsd,
     tickIntervalMins,
-    dailyLossLimit,
+    dailyMaxLossPct,
     maxDrawdownPct,
     maxSlippageBps,
     maxOpenPositions,
@@ -258,7 +262,7 @@ export function intentToFormState(intent: {
     costPreset,
     dailySpendBudgetUsd,
     tickIntervalMins,
-    dailyLossLimit,
+    dailyMaxLossPct,
     maxDrawdownPct,
     maxSlippageBps,
     maxOpenPositions,

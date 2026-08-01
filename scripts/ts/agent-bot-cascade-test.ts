@@ -337,7 +337,7 @@ Just wait for further instructions.
         name: `Cascade Test ${new Date().toISOString().slice(0, 10)}`,
         prompt: goal,
         skillIds: ['bot-management'],
-        executionMode: EXECUTION_MODE,
+        executionDefaults: { mode: EXECUTION_MODE },
         tickIntervalMs: TICK_INTERVAL_MS,
         capital: '100000',
         provider: LLM_PROVIDER,

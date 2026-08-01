@@ -48,7 +48,7 @@ export const ADVANCED_FIELD_TAB: Record<string, number> = {
   authorizationMode: 1,
   executionMode: 1,
   venue: 1,
-  dailyLossLimit: 1,
+  dailyMaxLossPct: 1,
   maxSlippageBps: 1,
   maxOpenPositions: 1,
   maxPositionSizePct: 1,
@@ -331,7 +331,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                 costPreset: props.value.costPreset,
                 dailySpendBudgetUsd: props.value.dailySpendBudgetUsd,
                 tickIntervalMins: props.value.tickIntervalMins,
-                dailyLossLimit: props.value.dailyLossLimit,
+                dailyMaxLossPct: props.value.dailyMaxLossPct,
                 maxSlippageBps: props.value.maxSlippageBps,
                 maxOpenPositions: props.value.maxOpenPositions,
                 maxPositionSizePct: props.value.maxPositionSizePct,
@@ -344,7 +344,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                 if ('costPreset' in patch && patch.costPreset !== undefined) agentPatch.costPreset = patch.costPreset;
                 if ('dailySpendBudgetUsd' in patch && patch.dailySpendBudgetUsd !== undefined) agentPatch.dailySpendBudgetUsd = patch.dailySpendBudgetUsd;
                 if ('tickIntervalMins' in patch && patch.tickIntervalMins !== undefined) agentPatch.tickIntervalMins = patch.tickIntervalMins;
-                if ('dailyLossLimit' in patch && patch.dailyLossLimit !== undefined) agentPatch.dailyLossLimit = patch.dailyLossLimit;
+                if ('dailyMaxLossPct' in patch && patch.dailyMaxLossPct !== undefined) agentPatch.dailyMaxLossPct = patch.dailyMaxLossPct;
                 if ('maxSlippageBps' in patch && patch.maxSlippageBps !== undefined) agentPatch.maxSlippageBps = patch.maxSlippageBps;
                 if ('maxOpenPositions' in patch && patch.maxOpenPositions !== undefined) agentPatch.maxOpenPositions = patch.maxOpenPositions;
                 if ('maxPositionSizePct' in patch && patch.maxPositionSizePct !== undefined) agentPatch.maxPositionSizePct = patch.maxPositionSizePct;

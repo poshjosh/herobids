@@ -242,7 +242,7 @@ build_agent_payload() {
     --arg executionMode "$AGENT_EXECUTION_MODE" \
     --arg tickIntervalMs "$AGENT_TICK_INTERVAL_MS" \
     --arg capital "$AGENT_CAPITAL" \
-    --arg dailyLossLimit "$AGENT_DAILY_LOSS_LIMIT" \
+    --arg dailyMaxLossPct "$AGENT_DAILY_LOSS_LIMIT" \
     --argjson maxSlippageBps "$AGENT_MAX_SLIPPAGE_BPS" \
     --arg connectionId "$connection_id" \
     '{
@@ -255,8 +255,13 @@ build_agent_payload() {
       executionMode: $executionMode,
       tickIntervalMs: ($tickIntervalMs | tonumber),
       capital: $capital,
-      dailyLossLimit: $dailyLossLimit,
-      maxSlippageBps: $maxSlippageBps,
+      risk: {
+        dailyMaxLossPct: ($dailyMaxLossPct | tonumber)
+      },
+      executionDefaults: {
+        mode: $executionMode,
+        slippageBps: $maxSlippageBps
+      },
       connectionIds: [$connectionId]
     }'
 }

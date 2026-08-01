@@ -39,7 +39,7 @@ const TECHNICAL_CONFIG = {
 function renderModal(options: {
   capabilityReadiness?: CapabilityReadiness;
   capital?: string;
-  dailyLossLimit?: string;
+  dailyMaxLossPct?: string;
   maxDrawdownPct?: number | null;
   maxSlippageBps?: number | '';
   maxOpenPositions?: number | '';
@@ -89,7 +89,7 @@ function renderModal(options: {
             telegramChatId: null,
             executionMode: 'paper',
             dailyTokenBudget: 45000,
-            dailyLossLimit: options.dailyLossLimit ?? '250',
+            dailyMaxLossPct: options.dailyMaxLossPct ?? '250',
             maxDrawdownPct: options.maxDrawdownPct ?? null,
             maxSlippageBps: options.maxSlippageBps === '' ? null : (options.maxSlippageBps ?? 25),
             maxOpenPositions: options.maxOpenPositions === '' ? null : (options.maxOpenPositions ?? 5),
@@ -155,7 +155,7 @@ describe('EditAgentModal rendering', () => {
   it('omits the trading setup tab until capability readiness is loaded when no trading values are set', () => {
     const html = renderModal({
       capital: '',
-      dailyLossLimit: '',
+      dailyMaxLossPct: '',
       maxSlippageBps: '',
       maxOpenPositions: '',
       maxPositionSizePct: '',

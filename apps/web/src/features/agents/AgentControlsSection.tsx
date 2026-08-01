@@ -9,7 +9,7 @@ export interface AgentControlsFormValue {
   costPreset: AgentCostPresetValue;
   dailySpendBudgetUsd: string;
   tickIntervalMins: string;
-  dailyLossLimit: string;
+  dailyMaxLossPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
   maxPositionSizePct: string;
@@ -30,7 +30,7 @@ interface AgentControlsSectionProps {
 }
 
 export interface TradingGuardrailsFormValue {
-  dailyLossLimit: string;
+  dailyMaxLossPct: string;
   maxDrawdownPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
@@ -41,7 +41,6 @@ export interface TradingGuardrailsFormValue {
 }
 
 export interface AgentRiskDefaultsView {
-  dailyLossLimitDefaultRatio: number;
   maxOpenPositions: number;
   maxPositionSizePct: number;
   stopLossPct: number;
@@ -189,14 +188,14 @@ export function TradingGuardrailsFields({ value, onChange, defaults = null, fiel
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
       <div>
-        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.dailyLossLimit' })}</FieldLabel>
+        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.dailyMaxLossPct' })}</FieldLabel>
         <input
           style={inputStyle}
-          value={value.dailyLossLimit}
-          onChange={(event) => onChange({ dailyLossLimit: event.target.value })}
+          value={value.dailyMaxLossPct}
+          onChange={(event) => onChange({ dailyMaxLossPct: event.target.value })}
           placeholder={intl.formatMessage({ id: 'common.unlimited' })}
         />
-        <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.dailyLossLimit.help' })}</div>
+        <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.dailyMaxLossPct.help' })}</div>
       </div>
 
       <div data-field="maxDrawdownPct">
