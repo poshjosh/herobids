@@ -5,6 +5,9 @@ import { useIntl } from 'react-intl';
 import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
 import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, skills as skillsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, dashboard, type AgentOutcomes, type ProviderSetupResult, type Skill } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Card, SectionLabel, MetricCard, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
+import { BlueprintBrowse } from '../blueprints/BlueprintBrowse.js';
+import { BlueprintInstantiateFlow } from '../blueprints/BlueprintInstantiateFlow.js';
+import type { BlueprintSummary } from '../../lib/api-client.js';
 import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, type SkillPresetId } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
@@ -130,6 +133,8 @@ function clearCreateAgentOAuthDraft(): void {
 
 export function AgentsPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const [agentTab, setAgentTab] = useState<'my-agents' | 'marketplace'>('my-agents');
+  const [selectedBlueprint, setSelectedBlueprint] = useState<BlueprintSummary | null>(null);
   const intl = useIntl();
   const navigate = useNavigate();
   const location = useLocation();
@@ -229,113 +234,148 @@ export function AgentsPage() {
     <PageShell>
       <PageHeader
         title={intl.formatMessage({ id: 'agents.title' })}
-        subtitle={intl.formatMessage({ id: 'agents.subtitle' })}
-        action={<Button variant="primary" onClick={openCreate}>{intl.formatMessage({ id: 'agents.newAgent' })}</Button>}
+        subtitle={agentTab === 'marketplace'
+          ? 'Discover and deploy AI agents from the community marketplace'
+          : intl.formatMessage({ id: 'agents.subtitle' })}
+        action={agentTab === 'my-agents'
+          ? <Button variant="primary" onClick={openCreate}>{intl.formatMessage({ id: 'agents.newAgent' })}</Button>
+          : undefined}
       />
 
-      {/* ── Summary metrics ─────────────────────────────────────── */}
-      {query.isSuccess && items.length > 0 && (
-        <div className="metrics-summary-row">
-          <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.active' })} value={counts.active} total={items.length} />
-          <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.paused' })} value={counts.paused} />
-          <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.unhealthy' })} value={counts.unhealthy} />
-          <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.stopped' })} value={counts.stopped} />
-          <MetricCard
-            className="metrics-summary-card"
-            label={intl.formatMessage({ id: 'missionControl.metric.totalPnl' })}
-            value={overviewQuery.isLoading ? '—' : formatPnl(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
-            color={overviewQuery.isLoading ? undefined : pnlColor(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
-          />
-        </div>
-      )}
+      {/* ── Tab bar ─────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '20px' }}>
+        <Button
+          variant={agentTab === 'my-agents' ? 'primary' : 'secondary'}
+          size="sm"
+          onClick={() => setAgentTab('my-agents')}
+        >
+          My Agents
+        </Button>
+        <Button
+          variant={agentTab === 'marketplace' ? 'primary' : 'secondary'}
+          size="sm"
+          onClick={() => setAgentTab('marketplace')}
+        >
+          Marketplace
+        </Button>
+      </div>
 
-      {query.isLoading && <LoadingRows count={3} />}
-      {query.isError && <ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} />}
-
-      {query.isSuccess && items.length === 0 && (
-        <EmptyState
-          title={intl.formatMessage({ id: 'agents.empty.title' })}
-          message={intl.formatMessage({ id: 'agents.empty.message' })}
-          action={<Button variant="primary" onClick={openCreate}>{intl.formatMessage({ id: 'agents.createAgent' })}</Button>}
-        />
-      )}
-
-      {/* ── Quick trading setup card ─────────────────────────────── */}
-      {query.isSuccess && items.length > 0 && (
-        setupSuccess ? (
-          <Card style={{ padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'var(--color-surface-success, rgba(34,197,94,0.08))', border: '1px solid var(--color-border-subtle)' }}>
-            <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-              {intl.formatMessage({ id: 'missionControl.setup.successMessage' }, { label: setupSuccess.label, provider: setupSuccess.provider })}
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => setSetupSuccess(null)}>
-              {intl.formatMessage({ id: 'missionControl.setup.successDismiss' })}
-            </Button>
-          </Card>
-        ) : (
-          <Card style={{ padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: '1px solid var(--color-border-subtle)' }}>
-            <div>
-              <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '2px' }}>
-                {intl.formatMessage({ id: 'missionControl.setup.title' })}
-              </div>
-              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                {intl.formatMessage({ id: 'missionControl.setup.message' })}
-              </div>
+      {/* ── My Agents tab ───────────────────────────────────────── */}
+      {agentTab === 'my-agents' && (
+        <>
+          {/* ── Summary metrics ─────────────────────────────────────── */}
+          {query.isSuccess && items.length > 0 && (
+            <div className="metrics-summary-row">
+              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.active' })} value={counts.active} total={items.length} />
+              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.paused' })} value={counts.paused} />
+              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.unhealthy' })} value={counts.unhealthy} />
+              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.stopped' })} value={counts.stopped} />
+              <MetricCard
+                className="metrics-summary-card"
+                label={intl.formatMessage({ id: 'missionControl.metric.totalPnl' })}
+                value={overviewQuery.isLoading ? '—' : formatPnl(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
+                color={overviewQuery.isLoading ? undefined : pnlColor(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
+              />
             </div>
-            <Button variant="secondary" size="sm" onClick={() => setShowSetup(true)}>
-              {intl.formatMessage({ id: 'missionControl.setup.cta' })}
-            </Button>
-          </Card>
-        )
-      )}
+          )}
 
-      {query.isSuccess && items.length > 0 && (
-        <div className="agents-content-grid">
-          {/* Left: Agent list */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {items.map((agent) => (
-              <AgentSummaryCard key={agent.id} agent={agent} outcomes={outcomesByAgentId.get(agent.id)} />
-            ))}
-          </div>
+          {query.isLoading && <LoadingRows count={3} />}
+          {query.isError && <ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} />}
 
-          {/* Right: Recent activity */}
-          <section className="recent-activity-panel" aria-label={intl.formatMessage({ id: 'missionControl.section.recentActivity' })}>
-            <SectionLabel>{intl.formatMessage({ id: 'missionControl.section.recentActivity' })}</SectionLabel>
-            <Card style={{ padding: '0' }}>
-              {(activityQuery.isLoading || agentActivityQuery.isLoading) && (
-                <div style={{ padding: '20px' }}><LoadingRows count={4} /></div>
-              )}
-              {(activityQuery.isError || agentActivityQuery.isError) && (
-                <ErrorState
-                  message={intl.formatMessage({ id: 'common.errorTitle', defaultMessage: 'Something went wrong' })}
-                  onRetry={() => { void activityQuery.refetch(); void agentActivityQuery.refetch(); }}
-                />
-              )}
-              {activityQuery.isSuccess && agentActivityQuery.isSuccess &&
-               (activityQuery.data?.events.length ?? 0) === 0 &&
-               (agentActivityQuery.data?.entries.length ?? 0) === 0 && (
-                <EmptyState
-                  title={intl.formatMessage({ id: 'missionControl.noActivityYet.title' })}
-                  message={intl.formatMessage({ id: 'missionControl.noActivityYet.message' })}
-                />
-              )}
-              {activityQuery.isSuccess && agentActivityQuery.isSuccess &&
-               ((activityQuery.data?.events.length ?? 0) > 0 || (agentActivityQuery.data?.entries.length ?? 0) > 0) && (
+          {query.isSuccess && items.length === 0 && (
+            <EmptyState
+              title={intl.formatMessage({ id: 'agents.empty.title' })}
+              message={intl.formatMessage({ id: 'agents.empty.message' })}
+              action={<Button variant="primary" onClick={openCreate}>{intl.formatMessage({ id: 'agents.createAgent' })}</Button>}
+            />
+          )}
+
+          {/* ── Quick trading setup card ─────────────────────────────── */}
+          {query.isSuccess && items.length > 0 && (
+            setupSuccess ? (
+              <Card style={{ padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'var(--color-surface-success, rgba(34,197,94,0.08))', border: '1px solid var(--color-border-subtle)' }}>
+                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                  {intl.formatMessage({ id: 'missionControl.setup.successMessage' }, { label: setupSuccess.label, provider: setupSuccess.provider })}
+                </span>
+                <Button variant="ghost" size="sm" onClick={() => setSetupSuccess(null)}>
+                  {intl.formatMessage({ id: 'missionControl.setup.successDismiss' })}
+                </Button>
+              </Card>
+            ) : (
+              <Card style={{ padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: '1px solid var(--color-border-subtle)' }}>
                 <div>
-                  {mergedRecentActivity.map((item, index) => (
-                    item.kind === 'agent'
-                      ? <AgentActivityItem key={`agent-${item.id}`} entry={item.entry} isLast={index === mergedRecentActivity.length - 1} />
-                      : <ActivityItem key={`bot-${item.id}`} event={item.event} isLast={index === mergedRecentActivity.length - 1} />
-                  ))}
-                  <div style={{ padding: '12px 20px', borderTop: '1px solid var(--color-border-subtle)' }}>
-                    <Button variant="ghost" size="sm" onClick={() => navigate('/activity')} style={{ width: '100%', justifyContent: 'center' }}>
-                      {intl.formatMessage({ id: 'missionControl.viewAllActivity' })}
-                    </Button>
+                  <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '2px' }}>
+                    {intl.formatMessage({ id: 'missionControl.setup.title' })}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                    {intl.formatMessage({ id: 'missionControl.setup.message' })}
                   </div>
                 </div>
-              )}
-            </Card>
-          </section>
-        </div>
+                <Button variant="secondary" size="sm" onClick={() => setShowSetup(true)}>
+                  {intl.formatMessage({ id: 'missionControl.setup.cta' })}
+                </Button>
+              </Card>
+            )
+          )}
+
+          {query.isSuccess && items.length > 0 && (
+            <div className="agents-content-grid">
+              {/* Left: Agent list */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {items.map((agent) => (
+                  <AgentSummaryCard key={agent.id} agent={agent} outcomes={outcomesByAgentId.get(agent.id)} />
+                ))}
+              </div>
+
+              {/* Right: Recent activity */}
+              <section className="recent-activity-panel" aria-label={intl.formatMessage({ id: 'missionControl.section.recentActivity' })}>
+                <SectionLabel>{intl.formatMessage({ id: 'missionControl.section.recentActivity' })}</SectionLabel>
+                <Card style={{ padding: '0' }}>
+                  {(activityQuery.isLoading || agentActivityQuery.isLoading) && (
+                    <div style={{ padding: '20px' }}><LoadingRows count={4} /></div>
+                  )}
+                  {(activityQuery.isError || agentActivityQuery.isError) && (
+                    <ErrorState
+                      message={intl.formatMessage({ id: 'common.errorTitle', defaultMessage: 'Something went wrong' })}
+                      onRetry={() => { void activityQuery.refetch(); void agentActivityQuery.refetch(); }}
+                    />
+                  )}
+                  {activityQuery.isSuccess && agentActivityQuery.isSuccess &&
+                   (activityQuery.data?.events.length ?? 0) === 0 &&
+                   (agentActivityQuery.data?.entries.length ?? 0) === 0 && (
+                    <EmptyState
+                      title={intl.formatMessage({ id: 'missionControl.noActivityYet.title' })}
+                      message={intl.formatMessage({ id: 'missionControl.noActivityYet.message' })}
+                    />
+                  )}
+                  {activityQuery.isSuccess && agentActivityQuery.isSuccess &&
+                   ((activityQuery.data?.events.length ?? 0) > 0 || (agentActivityQuery.data?.entries.length ?? 0) > 0) && (
+                    <div>
+                      {mergedRecentActivity.map((item, index) => (
+                        item.kind === 'agent'
+                          ? <AgentActivityItem key={`agent-${item.id}`} entry={item.entry} isLast={index === mergedRecentActivity.length - 1} />
+                          : <ActivityItem key={`bot-${item.id}`} event={item.event} isLast={index === mergedRecentActivity.length - 1} />
+                      ))}
+                      <div style={{ padding: '12px 20px', borderTop: '1px solid var(--color-border-subtle)' }}>
+                        <Button variant="ghost" size="sm" onClick={() => navigate('/activity')} style={{ width: '100%', justifyContent: 'center' }}>
+                          {intl.formatMessage({ id: 'missionControl.viewAllActivity' })}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              </section>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Marketplace tab ──────────────────────────────────────── */}
+      {agentTab === 'marketplace' && (
+        <BlueprintBrowse
+          defaultKind="agent"
+          onUseBlueprint={setSelectedBlueprint}
+        />
       )}
 
       {showCreate && (
@@ -376,6 +416,20 @@ export function AgentsPage() {
             setSetupStep('form');
             setSetupResult(null);
             setSetupSuccess({ label: setupResult.connection.label, provider: setupResult.connection.provider });
+          }}
+        />
+      )}
+
+      {/* ── Blueprint instantiate flow ────────────────────────────── */}
+      {selectedBlueprint && (
+        <BlueprintInstantiateFlow
+          blueprint={selectedBlueprint}
+          onClose={() => setSelectedBlueprint(null)}
+          onCreated={(actorId) => {
+            setSelectedBlueprint(null);
+            setAgentTab('my-agents');
+            void qc.invalidateQueries({ queryKey: ['agents'] });
+            navigate(`/agents/${actorId}`);
           }}
         />
       )}

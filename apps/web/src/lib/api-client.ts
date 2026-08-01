@@ -1619,3 +1619,64 @@ export const admin = {
   marketDataOverview: () => request<AdminMarketDataOverview>('/admin/market-data/overview'),
   marketDataProviders: () => request<{ providers: AdminProviderRow[] }>('/admin/market-data/providers'),
 };
+
+// ---------------------------------------------------------------------------
+// Blueprints (marketplace)
+// ---------------------------------------------------------------------------
+
+import type {
+  BlueprintBrowseParams,
+  BlueprintBrowseResponse,
+  BlueprintDetail,
+  BlueprintInstantiatePreviewRequest,
+  BlueprintInstantiatePreviewResponse,
+  BlueprintInstantiateRequest,
+  BlueprintInstantiateResponse,
+} from './blueprint-types.js';
+
+export { type BlueprintSummary, type BlueprintDetail } from './blueprint-types.js';
+
+export const blueprints = {
+  /** Browse published blueprints with cursor pagination, filters, and sort. */
+  browse: (params: BlueprintBrowseParams = {}) => {
+    const qs = new URLSearchParams();
+    if (params.kind) qs.set('kind', params.kind);
+    if (params.strategyType) qs.set('strategyType', params.strategyType);
+    if (params.style) qs.set('style', params.style);
+    if (params.venueType) qs.set('venueType', params.venueType);
+    if (params.tags && params.tags.length > 0) qs.set('tags', params.tags.join(','));
+    if (params.sort) qs.set('sort', params.sort);
+    if (params.cursor) qs.set('cursor', params.cursor);
+    if (params.limit) qs.set('limit', String(params.limit));
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return request<BlueprintBrowseResponse>(`/blueprints${query}`);
+  },
+
+  /** Get a single blueprint with its full revision payload. */
+  get: (id: string, revisionId?: string) => {
+    const qs = revisionId ? `?revisionId=${encodeURIComponent(revisionId)}` : '';
+    return request<BlueprintDetail>(`/blueprints/${id}${qs}`);
+  },
+
+  /** Preview what an instantiation will look like — read-only, writes nothing. */
+  previewInstantiation: (blueprintId: string, body: BlueprintInstantiatePreviewRequest) =>
+    request<BlueprintInstantiatePreviewResponse>(
+      `/blueprints/${blueprintId}/instantiate/preview`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  /** Confirm an instantiation — creates a stopped actor with attribution. Idempotent. */
+  instantiate: (
+    blueprintId: string,
+    body: BlueprintInstantiateRequest,
+    idempotencyKey: string,
+  ) =>
+    request<BlueprintInstantiateResponse>(
+      `/blueprints/${blueprintId}/instantiate`,
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+        headers: { 'Idempotency-Key': idempotencyKey },
+      },
+    ),
+};
