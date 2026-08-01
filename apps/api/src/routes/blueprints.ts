@@ -1,14 +1,17 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, or, sql } from 'drizzle-orm';
+import { eq, and, or, sql, desc, asc, inArray, gte, lte } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import {
   blueprints,
   blueprintRevisions,
   blueprintRevisionSkills,
   blueprintInstantiationRequests,
+  blueprintForkRequests,
   blueprintUsageEvents,
+  blueprintLikes,
   bots,
   agents,
   agentSkills,
@@ -21,6 +24,15 @@ import {
   BlueprintInstantiatePreviewRequestSchema,
   BlueprintInstantiatePreviewResponseSchema,
   BlueprintInstantiateRequestSchema,
+  PublishBlueprintSchema,
+  BlueprintBrowseQuerySchema,
+  BlueprintForkRequestSchema,
+  BlueprintSummarySchema,
+  BlueprintDetailSchema,
+  BlueprintRevisionSummarySchema,
+  PublicationStatusSchema,
+  encodeBlueprintCursor,
+  decodeBlueprintCursor,
 } from '@herobids/domain';
 import type {
   AgentRiskDefaultsConfig,
@@ -28,11 +40,19 @@ import type {
   BlueprintExecutionCapabilityInput,
   AgentBlueprintRevisionPayload,
   BotBlueprintRevisionPayload,
+  PlansConfig,
 } from '@herobids/domain';
 import { listPresets, getPreset } from '@herobids/domain/config/presets-loader';
 import { computeInstantiateRequestHash } from '../services/blueprint-idempotency.js';
 import { resolveEffectiveRisk } from '../services/blueprint-risk-resolver.js';
 import { validateSkillPortability } from '../services/blueprint-skill-validator.js';
+import {
+  scoreFromMetrics,
+  computeBlueprintMetrics,
+  recomputeBlueprintScores,
+  refreshLikeCount,
+  refreshForkCount,
+} from '../services/blueprint-scoring.js';
 
 // --- Request schemas ---
 
@@ -227,6 +247,103 @@ function deepMergeEdits(
   return result;
 }
 
+// --- Lifecycle transition helpers ---
+
+/**
+ * Allowed lifecycle transitions per the plan.
+ * Editing does not itself change lifecycle status.
+ */
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  draft: ['private', 'published', 'archived'],
+  private: ['draft', 'published', 'archived'],
+  published: ['published', 'delisted', 'archived'],
+  delisted: ['published', 'archived'],
+  archived: [],
+};
+
+function isAllowedTransition(from: string, to: string): boolean {
+  return ALLOWED_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+// --- Response builders ---
+
+interface BlueprintLineageInfo {
+  sourceBlueprintId: string | null;
+  sourceBlueprintRevisionId: string | null;
+}
+
+async function buildBlueprintDetail(
+  db: Database,
+  bp: typeof blueprints.$inferSelect,
+  revision: typeof blueprintRevisions.$inferSelect,
+  lineageOverride?: BlueprintLineageInfo,
+): Promise<z.infer<typeof BlueprintDetailSchema>> {
+  const skillRefs = await getRevisionSkillRefs(db, revision.id);
+
+  const lineage = lineageOverride
+    ? { sourceBlueprintId: lineageOverride.sourceBlueprintId, sourceBlueprintRevisionId: lineageOverride.sourceBlueprintRevisionId }
+    : (bp.sourceBlueprintId
+      ? { sourceBlueprintId: bp.sourceBlueprintId, sourceBlueprintRevisionId: bp.sourceBlueprintRevisionId }
+      : null);
+
+  return BlueprintDetailSchema.parse({
+    id: bp.id,
+    authorId: bp.authorId,
+    publicationStatus: bp.publicationStatus,
+    kind: bp.kind,
+    name: revision.name,
+    description: revision.description,
+    tags: revision.tags,
+    strategyType: revision.strategyType,
+    style: revision.style,
+    venueType: revision.venueType,
+    likeCount: bp.likeCount,
+    forkCount: bp.forkCount,
+    popularityScore: bp.popularityScore,
+    trendingScore: bp.trendingScore,
+    publishedAt: bp.publishedAt?.toISOString() ?? null,
+    currentRevisionId: bp.currentRevisionId,
+    publishedRevisionId: bp.publishedRevisionId,
+    sourceBlueprintId: bp.sourceBlueprintId,
+    createdAt: bp.createdAt.toISOString(),
+    updatedAt: bp.updatedAt.toISOString(),
+    revision: {
+      id: revision.id,
+      blueprintId: revision.blueprintId,
+      version: revision.version,
+      kind: revision.kind,
+      name: revision.name,
+      description: revision.description,
+      strategyType: revision.strategyType,
+      style: revision.style,
+      tags: revision.tags,
+      venueType: revision.venueType,
+      changeSummary: revision.changeSummary,
+      createdByUserId: revision.createdByUserId,
+      createdAt: revision.createdAt.toISOString(),
+      payload: revision.payload as z.infer<typeof BlueprintDetailSchema>['revision']['payload'],
+      skills: skillRefs,
+    },
+    lineage,
+  });
+}
+
+// --- Compute fork request hash ---
+
+function computeForkRequestHash(params: {
+  sourceBlueprintId: string;
+  sourceBlueprintRevisionId: string;
+  edits?: Record<string, unknown> | null;
+}): string {
+  return computeInstantiateRequestHash({
+    operation: 'fork',
+    blueprintId: params.sourceBlueprintId,
+    revisionId: params.sourceBlueprintRevisionId,
+    kind: 'fork',
+    edits: params.edits,
+  });
+}
+
 // --- Route module ---
 
 export async function blueprintRoutes(
@@ -234,7 +351,26 @@ export async function blueprintRoutes(
   db: Database,
   agentRiskDefaults: AgentRiskDefaultsConfig,
   executionCapabilityResolver: BlueprintExecutionCapabilityResolver,
+  plansConfig?: PlansConfig,
 ): Promise<void> {
+  // Periodic score recomputation (matches skills.ts pattern)
+  const scoreRefreshTimer = setInterval(() => {
+    void (async () => {
+      try {
+        const rows = await db.select({ id: blueprints.id }).from(blueprints);
+        for (const row of rows) {
+          await refreshLikeCount(db, row.id);
+          await refreshForkCount(db, row.id);
+          await recomputeBlueprintScores(db, row.id);
+        }
+      } catch (error: unknown) {
+        app.log.error({ err: error }, '[blueprints] failed periodic score recomputation');
+      }
+    })();
+  }, 60 * 60 * 1000);
+  app.addHook('onClose', async () => {
+    clearInterval(scoreRefreshTimer);
+  });
   // GET /blueprints/presets — list available strategy presets for a style
   // Registered before /:id so Fastify doesn't swallow it as a param.
   app.get('/blueprints/presets', async (req, reply) => {
@@ -295,13 +431,181 @@ export async function blueprintRoutes(
     return reply.send(split);
   });
 
-  // TODO (Phase 1 Milestone B): GET /blueprints — list user's own blueprints.
-  // Stubbed — old schema column `userId` no longer exists; replaced by `authorId`.
-  app.get('/blueprints', async (_request, reply) => {
-    return reply.status(501).send({
-      error: 'not_implemented',
-      message: 'This endpoint will be reimplemented in Milestone B using the new blueprint schema with browse/sort/pagination.',
+  // GET /blueprints — browse published blueprints with cursor pagination
+  app.get<{ Querystring: unknown }>('/blueprints', async (request, reply) => {
+    const rawQuery = request.query as Record<string, unknown>;
+
+    // Parse tags from comma-separated string if provided
+    if (typeof rawQuery.tags === 'string' && rawQuery.tags.length > 0) {
+      rawQuery.tags = rawQuery.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
+    }
+
+    const parsed = BlueprintBrowseQuerySchema.safeParse(rawQuery);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    const query = parsed.data;
+    const limit = query.limit;
+
+    // Build WHERE clauses
+    const whereClauses: SQL[] = [
+      eq(blueprints.publicationStatus, 'published'),
+      sql`${blueprints.publishedRevisionId} IS NOT NULL`,
+    ];
+
+    if (query.kind) {
+      whereClauses.push(eq(blueprints.kind, query.kind));
+    }
+    if (query.strategyType) {
+      whereClauses.push(eq(blueprints.strategyType, query.strategyType));
+    }
+    if (query.style) {
+      whereClauses.push(eq(blueprints.style, query.style));
+    }
+    if (query.venueType) {
+      whereClauses.push(eq(blueprints.venueType, query.venueType));
+    }
+    if (query.tags && query.tags.length > 0) {
+      // ANY match: blueprint has at least one of the requested tags
+      const tagConditions = query.tags.map((tag) => sql`${tag} = ANY(${blueprints.tags})`);
+      whereClauses.push(or(...tagConditions)!);
+    }
+
+    // Decode cursor for pagination
+    const cursorValues = query.cursor ? decodeBlueprintCursor(query.cursor) : {};
+    const lastScore = cursorValues.score !== undefined ? Number(cursorValues.score) : undefined;
+    const lastId = cursorValues.id as string | undefined;
+    const lastPublishedAt = cursorValues.publishedAt as string | undefined;
+
+    // Build cursor WHERE clause for pagination
+    if (lastId) {
+      if (query.sort === 'trending') {
+        // trendingScore DESC, popularityScore DESC, id ASC
+        if (lastScore !== undefined && cursorValues.popularityScore !== undefined) {
+          const lastPop = Number(cursorValues.popularityScore);
+          whereClauses.push(
+            or(
+              sql`${blueprints.trendingScore} < ${lastScore}`,
+              and(
+                sql`${blueprints.trendingScore} = ${lastScore}`,
+                sql`${blueprints.popularityScore} < ${lastPop}`,
+              )!,
+              and(
+                sql`${blueprints.trendingScore} = ${lastScore}`,
+                sql`${blueprints.popularityScore} = ${lastPop}`,
+                sql`${blueprints.id} > ${lastId}`,
+              )!,
+            )!,
+          );
+        }
+      } else if (query.sort === 'newest') {
+        // publishedAt DESC, id ASC
+        if (lastPublishedAt) {
+          whereClauses.push(
+            or(
+              sql`${blueprints.publishedAt} < ${new Date(lastPublishedAt).toISOString()}`,
+              and(
+                sql`${blueprints.publishedAt} = ${new Date(lastPublishedAt).toISOString()}`,
+                sql`${blueprints.id} > ${lastId}`,
+              )!,
+            )!,
+          );
+        }
+      } else {
+        // 'popular' (default): popularityScore DESC, id ASC
+        if (lastScore !== undefined) {
+          whereClauses.push(
+            or(
+              sql`${blueprints.popularityScore} < ${lastScore}`,
+              and(
+                sql`${blueprints.popularityScore} = ${lastScore}`,
+                sql`${blueprints.id} > ${lastId}`,
+              )!,
+            )!,
+          );
+        }
+      }
+    }
+
+    // Build query with dynamic WHERE
+    let rowsQuery = db.select().from(blueprints).$dynamic();
+    if (whereClauses.length === 1) {
+      rowsQuery = rowsQuery.where(whereClauses[0]!);
+    } else if (whereClauses.length > 1) {
+      rowsQuery = rowsQuery.where(and(...whereClauses)!);
+    }
+
+    // ORDER BY
+    if (query.sort === 'trending') {
+      rowsQuery = rowsQuery.orderBy(desc(blueprints.trendingScore), desc(blueprints.popularityScore), asc(blueprints.id));
+    } else if (query.sort === 'newest') {
+      rowsQuery = rowsQuery.orderBy(desc(blueprints.publishedAt), asc(blueprints.id));
+    } else {
+      // 'popular' (default)
+      rowsQuery = rowsQuery.orderBy(desc(blueprints.popularityScore), asc(blueprints.id));
+    }
+
+    // Fetch one extra to determine if there's a next page
+    rowsQuery = rowsQuery.limit(limit + 1);
+    const rows = await rowsQuery;
+
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
+    // Build summaries from publishedRevisionId
+    const revisionIds = pageRows
+      .map((r) => r.publishedRevisionId)
+      .filter((id): id is string => id !== null);
+    const revisionRows = revisionIds.length > 0
+      ? await db.select().from(blueprintRevisions).where(inArray(blueprintRevisions.id, revisionIds))
+      : [];
+    const revisionById = new Map(revisionRows.map((r) => [r.id, r]));
+
+    const items = pageRows.map((bp) => {
+      const rev = bp.publishedRevisionId ? revisionById.get(bp.publishedRevisionId) : null;
+      return BlueprintSummarySchema.parse({
+        id: bp.id,
+        authorId: bp.authorId,
+        publicationStatus: bp.publicationStatus,
+        kind: bp.kind,
+        name: rev?.name ?? bp.name,
+        description: rev?.description ?? bp.description,
+        tags: rev?.tags ?? bp.tags,
+        strategyType: rev?.strategyType ?? bp.strategyType,
+        style: rev?.style ?? bp.style,
+        venueType: rev?.venueType ?? bp.venueType,
+        likeCount: bp.likeCount,
+        forkCount: bp.forkCount,
+        popularityScore: bp.popularityScore,
+        trendingScore: bp.trendingScore,
+        publishedAt: bp.publishedAt?.toISOString() ?? null,
+        currentRevisionId: bp.currentRevisionId!,
+        publishedRevisionId: bp.publishedRevisionId,
+        sourceBlueprintId: bp.sourceBlueprintId,
+        createdAt: bp.createdAt.toISOString(),
+        updatedAt: bp.updatedAt.toISOString(),
+      });
     });
+
+    // Build next cursor
+    let nextCursor: string | null = null;
+    if (hasMore && items.length > 0) {
+      const last = pageRows[pageRows.length - 1]!;
+      const cursorPayload: Record<string, unknown> = { id: last.id };
+      if (query.sort === 'newest') {
+        cursorPayload.publishedAt = last.publishedAt?.toISOString() ?? '';
+        cursorPayload.score = 0;
+      } else if (query.sort === 'trending') {
+        cursorPayload.score = last.trendingScore;
+        cursorPayload.popularityScore = last.popularityScore;
+      } else {
+        cursorPayload.score = last.popularityScore;
+      }
+      nextCursor = encodeBlueprintCursor(cursorPayload);
+    }
+
+    return reply.send({ items, nextCursor });
   });
 
   // TODO (Phase 1 Milestone B): POST /blueprints — create a new blueprint.
@@ -314,13 +618,25 @@ export async function blueprintRoutes(
     });
   });
 
-  // TODO (Phase 1 Milestone B): GET /blueprints/:id — get a single blueprint (owned or public).
-  // Stubbed — uses removed helper resolveBlueprintForRead (old userId/visibility columns).
-  app.get<{ Params: { id: string } }>('/blueprints/:id', async (_request, reply) => {
-    return reply.status(501).send({
-      error: 'not_implemented',
-      message: 'This endpoint will be reimplemented in Milestone B using the new schema (authorId, publicationStatus, revision payload).',
-    });
+  // GET /blueprints/:id — retrieve a single blueprint detail
+  app.get<{ Params: { id: string }; Querystring: { revisionId?: string } }>('/blueprints/:id', async (request, reply) => {
+    const resolved = await resolveTargetRevision(
+      db,
+      request.params.id,
+      request.query?.revisionId,
+      request.userId,
+      request.isAdmin,
+    );
+    if ('error' in resolved) {
+      const status = resolved.code === BlueprintErrorCodes.NOT_FOUND ? 404
+        : resolved.code === BlueprintErrorCodes.LIFECYCLE_CONFLICT ? 409
+        : 400;
+      return reply.status(status).send({ error: resolved.code, message: resolved.error });
+    }
+
+    const { blueprint: bp, revision } = resolved;
+    const detail = await buildBlueprintDetail(db, bp, revision);
+    return reply.send(detail);
   });
 
   // TODO (Phase 1 Milestone B): PUT /blueprints/:id — update blueprint.
@@ -333,42 +649,700 @@ export async function blueprintRoutes(
     });
   });
 
-  // TODO (Phase 1 Milestone B): DELETE /blueprints/:id — delete blueprint.
-  // Stubbed — uses removed helper resolveBlueprintForWrite (old userId column).
-  app.delete<{ Params: { id: string } }>('/blueprints/:id', async (_request, reply) => {
-    return reply.status(501).send({
-      error: 'not_implemented',
-      message: 'This endpoint will be reimplemented in Milestone B with lifecycle-based deletion.',
+  // DELETE /blueprints/:id — hard delete (only for eligible draft blueprints)
+  app.delete<{ Params: { id: string } }>('/blueprints/:id', async (request, reply) => {
+    const [bp] = await db.select().from(blueprints)
+      .where(and(eq(blueprints.id, request.params.id), eq(blueprints.authorId, request.userId)))
+      .limit(1);
+    if (!bp) {
+      return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    // Only draft blueprints that have never been published are eligible
+    if (bp.publicationStatus !== 'draft') {
+      return reply.status(409).send({
+        error: BlueprintErrorCodes.LIFECYCLE_CONFLICT,
+        message: 'Only draft blueprints can be hard-deleted',
+      });
+    }
+
+    if (bp.publishedRevisionId !== null || bp.publishedAt !== null) {
+      return reply.status(409).send({
+        error: BlueprintErrorCodes.LIFECYCLE_CONFLICT,
+        message: 'Cannot delete a blueprint that has been published',
+      });
+    }
+
+    const deleteResult = await db.transaction(async (tx) => {
+      // Lock the blueprint row
+      const [lockedBp] = await tx.select().from(blueprints)
+        .where(eq(blueprints.id, bp.id))
+        .for('update');
+      if (!lockedBp) return { kind: 'error' as const, code: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' };
+
+      // Verify predicates under lock
+      if (lockedBp.publicationStatus !== 'draft' || lockedBp.publishedRevisionId !== null || lockedBp.publishedAt !== null) {
+        return { kind: 'error' as const, code: BlueprintErrorCodes.LIFECYCLE_CONFLICT, message: 'Blueprint is not eligible for hard delete' };
+      }
+
+      // Check for references: likes
+      const [likeCheck] = await tx.execute(sql`
+        SELECT COUNT(*)::int AS cnt FROM blueprint_likes WHERE blueprint_id = ${bp.id}
+      `);
+      if (Number(likeCheck?.cnt ?? 0) > 0) {
+        return { kind: 'error' as const, code: BlueprintErrorCodes.LIFECYCLE_CONFLICT, message: 'Blueprint has likes' };
+      }
+
+      // Check for references: usage events
+      const [usageCheck] = await tx.execute(sql`
+        SELECT COUNT(*)::int AS cnt FROM blueprint_usage_events WHERE blueprint_id = ${bp.id}
+      `);
+      if (Number(usageCheck?.cnt ?? 0) > 0) {
+        return { kind: 'error' as const, code: BlueprintErrorCodes.LIFECYCLE_CONFLICT, message: 'Blueprint has usage events' };
+      }
+
+      // Check for references: fork requests where this is the source
+      const [forkCheck] = await tx.execute(sql`
+        SELECT COUNT(*)::int AS cnt FROM blueprint_fork_requests WHERE source_blueprint_id = ${bp.id}
+      `);
+      if (Number(forkCheck?.cnt ?? 0) > 0) {
+        return { kind: 'error' as const, code: BlueprintErrorCodes.LIFECYCLE_CONFLICT, message: 'Blueprint has fork references' };
+      }
+
+      // Check for agents referencing this blueprint
+      const [agentCheck] = await tx.execute(sql`
+        SELECT COUNT(*)::int AS cnt FROM agents WHERE blueprint_id = ${bp.id}
+      `);
+      if (Number(agentCheck?.cnt ?? 0) > 0) {
+        return { kind: 'error' as const, code: BlueprintErrorCodes.LIFECYCLE_CONFLICT, message: 'Blueprint has active agent instances' };
+      }
+
+      // Check for bots referencing this blueprint
+      const [botCheck] = await tx.execute(sql`
+        SELECT COUNT(*)::int AS cnt FROM bots WHERE blueprint_id = ${bp.id}
+      `);
+      if (Number(botCheck?.cnt ?? 0) > 0) {
+        return { kind: 'error' as const, code: BlueprintErrorCodes.LIFECYCLE_CONFLICT, message: 'Blueprint has active bot instances' };
+      }
+
+      // Break pointer cycle
+      await tx.update(blueprints).set({
+        currentRevisionId: null,
+        publishedRevisionId: null,
+      }).where(eq(blueprints.id, bp.id));
+
+      // Delete revision skills
+      const revisions = await tx.select({ id: blueprintRevisions.id })
+        .from(blueprintRevisions)
+        .where(eq(blueprintRevisions.blueprintId, bp.id));
+      const revisionIds = revisions.map((r) => r.id);
+      if (revisionIds.length > 0) {
+        await tx.delete(blueprintRevisionSkills)
+          .where(inArray(blueprintRevisionSkills.blueprintRevisionId, revisionIds));
+      }
+
+      // Delete revisions
+      await tx.delete(blueprintRevisions)
+        .where(eq(blueprintRevisions.blueprintId, bp.id));
+
+      // Delete the blueprint
+      await tx.delete(blueprints).where(eq(blueprints.id, bp.id));
+
+      return { kind: 'deleted' as const };
+    });
+
+    if (deleteResult.kind === 'error') {
+      const status = deleteResult.code === BlueprintErrorCodes.NOT_FOUND ? 404 : 409;
+      return reply.status(status).send({ error: deleteResult.code, message: deleteResult.message });
+    }
+
+    return reply.status(204).send();
+  });
+
+  // POST /blueprints/:id/fork — fork a blueprint (idempotent)
+  app.post<{ Params: { id: string }; Body: unknown }>('/blueprints/:id/fork', async (request, reply) => {
+    // Validate Idempotency-Key header
+    const idempotencyKey = (request.headers['idempotency-key'] as string | undefined) ?? '';
+    const trimmedKey = idempotencyKey.trim();
+    if (trimmedKey.length < 1 || trimmedKey.length > 200) {
+      return reply.status(400).send({
+        error: BlueprintErrorCodes.VALIDATION,
+        message: 'Idempotency-Key header must be 1-200 printable ASCII characters',
+      });
+    }
+    if (!/^[\x20-\x7E]+$/.test(trimmedKey)) {
+      return reply.status(400).send({
+        error: BlueprintErrorCodes.VALIDATION,
+        message: 'Idempotency-Key must contain only printable ASCII characters',
+      });
+    }
+
+    const parsed = BlueprintForkRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    // Resolve the source blueprint + revision
+    const resolved = await resolveTargetRevision(
+      db,
+      request.params.id,
+      parsed.data.revisionId,
+      request.userId,
+      request.isAdmin,
+    );
+    if ('error' in resolved) {
+      const status = resolved.code === BlueprintErrorCodes.NOT_FOUND ? 404
+        : resolved.code === BlueprintErrorCodes.LIFECYCLE_CONFLICT ? 409
+        : 400;
+      return reply.status(status).send({ error: resolved.code, message: resolved.error });
+    }
+
+    const { blueprint: sourceBp, revision: sourceRevision } = resolved;
+
+    // Compute fork request hash
+    const forkHash = computeForkRequestHash({
+      sourceBlueprintId: sourceBp.id,
+      sourceBlueprintRevisionId: sourceRevision.id,
+      edits: (parsed.data.edits ?? null) as Record<string, unknown> | null,
+    });
+
+    const lockKey = `fork:${request.userId}:${trimmedKey}`;
+    const forkBpId = crypto.randomUUID();
+    const forkRevisionId = crypto.randomUUID();
+    const forkReqId = crypto.randomUUID();
+    const usageEventId = crypto.randomUUID();
+    const now = new Date();
+
+    const result = await db.transaction(async (tx) => {
+      // Advisory lock serializes per (userId, idempotencyKey)
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
+
+      // Check for existing completed fork request
+      const [existing] = await tx
+        .select()
+        .from(blueprintForkRequests)
+        .where(
+          and(
+            eq(blueprintForkRequests.userId, request.userId),
+            eq(blueprintForkRequests.idempotencyKey, trimmedKey),
+          ),
+        );
+
+      if (existing) {
+        if (existing.requestHash === forkHash) {
+          // Same hash → return stored fork
+          return {
+            kind: 'idempotent_replay' as const,
+            forkBlueprintId: existing.forkBlueprintId,
+            responsePayload: existing.responsePayload,
+          };
+        }
+        return { kind: 'idempotency_conflict' as const };
+      }
+
+      // Lock source blueprint
+      const [lockedSource] = await tx
+        .select()
+        .from(blueprints)
+        .where(eq(blueprints.id, sourceBp.id))
+        .for('update');
+      if (!lockedSource) {
+        return { kind: 'error' as const, code: BlueprintErrorCodes.NOT_FOUND, message: 'Source blueprint not found' };
+      }
+
+      // Copy revision payload
+      const sourcePayload = sourceRevision.payload as Record<string, unknown>;
+      let forkPayload: Record<string, unknown>;
+      if (parsed.data.edits) {
+        forkPayload = deepMergeEdits(sourcePayload, parsed.data.edits as Record<string, unknown>);
+      } else {
+        forkPayload = { ...sourcePayload };
+      }
+
+      // Ensure kind is preserved
+      forkPayload.kind = sourceRevision.kind;
+
+      // Derive facets from payload
+      const forkName = `${sourceRevision.name} (fork)`;
+      const forkDescription = sourceRevision.description;
+      const forkStrategyType = (forkPayload.strategyType as string) ?? sourceRevision.strategyType;
+      const forkStyle = (forkPayload.style as string) ?? sourceRevision.style;
+      const forkTags = (forkPayload.tags as string[]) ?? sourceRevision.tags;
+      const forkVenueType = (forkPayload.venueType as string) ?? sourceRevision.venueType;
+
+      // Create new blueprint (draft, with lineage)
+      await tx.insert(blueprints).values({
+        id: forkBpId,
+        authorId: request.userId,
+        publicationStatus: 'draft',
+        kind: sourceRevision.kind,
+        name: forkName,
+        description: forkDescription,
+        strategyType: forkStrategyType,
+        style: forkStyle,
+        tags: forkTags,
+        venueType: forkVenueType,
+        sourceBlueprintId: sourceBp.id,
+        sourceBlueprintRevisionId: sourceRevision.id,
+        currentRevisionId: forkRevisionId,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Create revision 1
+      await tx.insert(blueprintRevisions).values({
+        id: forkRevisionId,
+        blueprintId: forkBpId,
+        version: 1,
+        kind: sourceRevision.kind,
+        name: forkName,
+        description: forkDescription,
+        strategyType: forkStrategyType,
+        style: forkStyle,
+        tags: forkTags,
+        venueType: forkVenueType,
+        payload: forkPayload,
+        changeSummary: `Forked from ${sourceBp.id}`,
+        createdByUserId: request.userId,
+        createdAt: now,
+      });
+
+      // Copy skill dependencies for agent blueprints
+      if (sourceRevision.kind === 'agent') {
+        const skillRefs = await getRevisionSkillRefs(tx as unknown as Database, sourceRevision.id);
+        if (skillRefs.length > 0) {
+          await tx.insert(blueprintRevisionSkills).values(
+            skillRefs.map((s, i) => ({
+              blueprintRevisionId: forkRevisionId,
+              skillId: s.skillId,
+              skillRevisionId: s.skillRevisionId,
+              orderIndex: i,
+            })),
+          );
+        }
+      }
+
+      // Emit fork_created usage event (credits the source blueprint)
+      await tx.insert(blueprintUsageEvents).values({
+        id: usageEventId,
+        blueprintId: sourceBp.id,
+        blueprintRevisionId: sourceRevision.id,
+        userId: request.userId,
+        subjectKind: 'blueprint',
+        subjectId: forkBpId,
+        eventType: 'fork_created',
+        isSelfUsage: sourceBp.authorId === request.userId,
+        occurredAt: now,
+        metadata: {
+          idempotencyKey: trimmedKey,
+          forkBlueprintId: forkBpId,
+        },
+      });
+
+      // Record idempotency result
+      const responsePayload: Record<string, unknown> = {
+        forkBlueprintId: forkBpId,
+        sourceBlueprintId: sourceBp.id,
+        sourceBlueprintRevisionId: sourceRevision.id,
+        createdAt: now.toISOString(),
+      };
+      await tx.insert(blueprintForkRequests).values({
+        id: forkReqId,
+        userId: request.userId,
+        idempotencyKey: trimmedKey,
+        requestHash: forkHash,
+        sourceBlueprintId: sourceBp.id,
+        sourceBlueprintRevisionId: sourceRevision.id,
+        forkBlueprintId: forkBpId,
+        responsePayload,
+      });
+
+      return {
+        kind: 'created' as const,
+        forkBlueprintId: forkBpId,
+        responsePayload,
+      };
+    });
+
+    // Handle transaction result
+    if (result.kind === 'idempotent_replay') {
+      return reply.status(200).send(result.responsePayload);
+    }
+    if (result.kind === 'idempotency_conflict') {
+      return reply.status(409).send({
+        error: BlueprintErrorCodes.IDEMPOTENCY_CONFLICT,
+        message: 'Different request body for the same idempotency key',
+      });
+    }
+    if (result.kind === 'error') {
+      const status = result.code === BlueprintErrorCodes.NOT_FOUND ? 404 : 400;
+      return reply.status(status).send({ error: result.code, message: result.message });
+    }
+
+    // Refresh fork count and recompute scores for source after transaction commit
+    await refreshForkCount(db, sourceBp.id);
+    await recomputeBlueprintScores(db, sourceBp.id);
+
+    // Return the new fork detail
+    const [forkBp] = await db.select().from(blueprints).where(eq(blueprints.id, forkBpId)).limit(1);
+    const [forkRev] = await db.select().from(blueprintRevisions).where(eq(blueprintRevisions.id, forkRevisionId)).limit(1);
+    if (forkBp && forkRev) {
+      const detail = await buildBlueprintDetail(db, forkBp, forkRev, {
+        sourceBlueprintId: sourceBp.id,
+        sourceBlueprintRevisionId: sourceRevision.id,
+      });
+      return reply.status(201).send(detail);
+    }
+
+    return reply.status(201).send(result.responsePayload);
+  });
+
+  // POST /blueprints/:id/publish — publish the current revision to marketplace
+  app.post<{ Params: { id: string }; Body: unknown }>('/blueprints/:id/publish', async (request, reply) => {
+    const parsed = PublishBlueprintSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    const [bp] = await db.select().from(blueprints)
+      .where(and(eq(blueprints.id, request.params.id), eq(blueprints.authorId, request.userId)))
+      .limit(1);
+    if (!bp) {
+      return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    // Check allowed transition
+    if (!isAllowedTransition(bp.publicationStatus, 'published')) {
+      return reply.status(409).send({
+        error: BlueprintErrorCodes.LIFECYCLE_CONFLICT,
+        message: `Cannot publish from status "${bp.publicationStatus}"`,
+      });
+    }
+
+    // Verify expectedCurrentRevisionId matches
+    if (parsed.data.expectedCurrentRevisionId !== bp.currentRevisionId) {
+      return reply.status(409).send({
+        error: BlueprintErrorCodes.REVISION_STALE,
+        message: 'Current revision has changed since the expected value was captured',
+      });
+    }
+
+    const targetRevisionId = bp.currentRevisionId;
+    if (!targetRevisionId) {
+      return reply.status(409).send({ error: BlueprintErrorCodes.LIFECYCLE_CONFLICT, message: 'Blueprint has no current revision' });
+    }
+
+    // Load the revision
+    const [revision] = await db.select().from(blueprintRevisions).where(eq(blueprintRevisions.id, targetRevisionId));
+    if (!revision) {
+      return reply.status(409).send({ error: BlueprintErrorCodes.LIFECYCLE_CONFLICT, message: 'Current revision not found' });
+    }
+
+    // Validate skill portability for agent blueprints
+    if (bp.kind === 'agent') {
+      const skillRefs = await getRevisionSkillRefs(db, targetRevisionId);
+      if (skillRefs.length > 0) {
+        const portability = await validateSkillPortability(skillRefs, db);
+        if (!portability.valid) {
+          return reply.status(400).send({
+            error: BlueprintErrorCodes.DEPENDENCY_UNAVAILABLE,
+            message: portability.errors.join('; '),
+          });
+        }
+      }
+    }
+
+    const publishTime = new Date();
+
+    await db.transaction(async (tx) => {
+      await tx.update(blueprints).set({
+        publicationStatus: 'published',
+        publishedAt: publishTime,
+        publishedRevisionId: targetRevisionId,
+        delistedAt: null,
+        // Copy current-revision facets
+        name: revision.name,
+        description: revision.description,
+        tags: revision.tags,
+        strategyType: revision.strategyType,
+        style: revision.style,
+        venueType: revision.venueType,
+        updatedAt: publishTime,
+      }).where(eq(blueprints.id, bp.id));
+    });
+
+    const [publishedBp] = await db.select().from(blueprints).where(eq(blueprints.id, bp.id)).limit(1);
+    const detail = await buildBlueprintDetail(db, publishedBp!, revision);
+    return reply.send(detail);
+  });
+
+  // POST /blueprints/:id/draft — move to draft status (from private)
+  app.post<{ Params: { id: string } }>('/blueprints/:id/draft', async (request, reply) => {
+    const [bp] = await db.select().from(blueprints)
+      .where(and(eq(blueprints.id, request.params.id), eq(blueprints.authorId, request.userId)))
+      .limit(1);
+    if (!bp) {
+      return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    if (!isAllowedTransition(bp.publicationStatus, 'draft')) {
+      return reply.status(409).send({
+        error: BlueprintErrorCodes.LIFECYCLE_CONFLICT,
+        message: `Cannot move to draft from status "${bp.publicationStatus}"`,
+      });
+    }
+
+    await db.update(blueprints).set({
+      publicationStatus: 'draft',
+      updatedAt: new Date(),
+    }).where(eq(blueprints.id, bp.id));
+
+    const [updated] = await db.select().from(blueprints).where(eq(blueprints.id, bp.id)).limit(1);
+    return reply.send({
+      id: updated!.id,
+      publicationStatus: updated!.publicationStatus,
+      updatedAt: updated!.updatedAt.toISOString(),
     });
   });
 
-  // TODO (Phase 1 Milestone B): POST /blueprints/:id/clone — create an independent copy.
-  // Stubbed — old schema columns (userId, configData, configVersion, visibility) no longer exist.
-  // Replacement in Milestone B will use POST /blueprints/:id/fork with Idempotency-Key.
-  app.post<{ Params: { id: string } }>('/blueprints/:id/clone', async (_request, reply) => {
-    return reply.status(501).send({
-      error: 'not_implemented',
-      message: 'This endpoint will be reimplemented in Milestone B as POST /blueprints/:id/fork.',
+  // POST /blueprints/:id/private — move to private status (from draft)
+  app.post<{ Params: { id: string } }>('/blueprints/:id/private', async (request, reply) => {
+    const [bp] = await db.select().from(blueprints)
+      .where(and(eq(blueprints.id, request.params.id), eq(blueprints.authorId, request.userId)))
+      .limit(1);
+    if (!bp) {
+      return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    if (!isAllowedTransition(bp.publicationStatus, 'private')) {
+      return reply.status(409).send({
+        error: BlueprintErrorCodes.LIFECYCLE_CONFLICT,
+        message: `Cannot move to private from status "${bp.publicationStatus}"`,
+      });
+    }
+
+    await db.update(blueprints).set({
+      publicationStatus: 'private',
+      updatedAt: new Date(),
+    }).where(eq(blueprints.id, bp.id));
+
+    const [updated] = await db.select().from(blueprints).where(eq(blueprints.id, bp.id)).limit(1);
+    return reply.send({
+      id: updated!.id,
+      publicationStatus: updated!.publicationStatus,
+      updatedAt: updated!.updatedAt.toISOString(),
     });
   });
 
-  // TODO (Phase 1 Milestone B): POST /blueprints/:id/publish — set visibility to public.
-  // Stubbed — old schema column `visibility` replaced by `publicationStatus`.
-  app.post<{ Params: { id: string } }>('/blueprints/:id/publish', async (_request, reply) => {
-    return reply.status(501).send({
-      error: 'not_implemented',
-      message: 'This endpoint will be reimplemented in Milestone B using publicationStatus lifecycle transitions.',
+  // POST /blueprints/:id/delist — delist from marketplace (from published)
+  app.post<{ Params: { id: string } }>('/blueprints/:id/delist', async (request, reply) => {
+    const [bp] = await db.select().from(blueprints)
+      .where(and(eq(blueprints.id, request.params.id), eq(blueprints.authorId, request.userId)))
+      .limit(1);
+    if (!bp) {
+      return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    if (!isAllowedTransition(bp.publicationStatus, 'delisted')) {
+      return reply.status(409).send({
+        error: BlueprintErrorCodes.LIFECYCLE_CONFLICT,
+        message: `Cannot delist from status "${bp.publicationStatus}"`,
+      });
+    }
+
+    const now = new Date();
+    await db.update(blueprints).set({
+      publicationStatus: 'delisted',
+      delistedAt: now,
+      updatedAt: now,
+    }).where(eq(blueprints.id, bp.id));
+
+    const [updated] = await db.select().from(blueprints).where(eq(blueprints.id, bp.id)).limit(1);
+    return reply.send({
+      id: updated!.id,
+      publicationStatus: updated!.publicationStatus,
+      delistedAt: updated!.delistedAt?.toISOString() ?? null,
+      updatedAt: updated!.updatedAt.toISOString(),
     });
   });
 
-  // TODO (Phase 1 Milestone B): POST /blueprints/:id/unpublish — set visibility to private.
-  // Stubbed — old schema column `visibility` replaced by `publicationStatus`.
-  app.post<{ Params: { id: string } }>('/blueprints/:id/unpublish', async (_request, reply) => {
-    return reply.status(501).send({
-      error: 'not_implemented',
-      message: 'This endpoint will be reimplemented in Milestone B using publicationStatus lifecycle transitions.',
+  // POST /blueprints/:id/archive — archive the blueprint (terminal state)
+  app.post<{ Params: { id: string } }>('/blueprints/:id/archive', async (request, reply) => {
+    const [bp] = await db.select().from(blueprints)
+      .where(and(eq(blueprints.id, request.params.id), eq(blueprints.authorId, request.userId)))
+      .limit(1);
+    if (!bp) {
+      return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    if (!isAllowedTransition(bp.publicationStatus, 'archived')) {
+      return reply.status(409).send({
+        error: BlueprintErrorCodes.LIFECYCLE_CONFLICT,
+        message: `Cannot archive from status "${bp.publicationStatus}"`,
+      });
+    }
+
+    const now = new Date();
+
+    // Archive: keep published pointers if formerly published, set both delistedAt + archivedAt if published
+    const updateData: Record<string, unknown> = {
+      publicationStatus: 'archived',
+      archivedAt: now,
+      updatedAt: now,
+    };
+    if (bp.publicationStatus === 'published') {
+      updateData['delistedAt'] = now;
+    }
+
+    await db.update(blueprints).set(updateData).where(eq(blueprints.id, bp.id));
+
+    const [updated] = await db.select().from(blueprints).where(eq(blueprints.id, bp.id)).limit(1);
+    return reply.send({
+      id: updated!.id,
+      publicationStatus: updated!.publicationStatus,
+      archivedAt: updated!.archivedAt?.toISOString() ?? null,
+      delistedAt: updated!.delistedAt?.toISOString() ?? null,
+      updatedAt: updated!.updatedAt.toISOString(),
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Like / Unlike
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // PUT /blueprints/:id/like — like a published blueprint
+  app.put<{ Params: { id: string } }>('/blueprints/:id/like', async (request, reply) => {
+    const [bp] = await db.select().from(blueprints).where(eq(blueprints.id, request.params.id)).limit(1);
+    if (!bp) {
+      return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    // Must be published
+    if (bp.publicationStatus !== 'published') {
+      return reply.status(409).send({
+        error: BlueprintErrorCodes.LIFECYCLE_CONFLICT,
+        message: 'Only published blueprints can be liked',
+      });
+    }
+
+    // Author cannot like own blueprint
+    if (bp.authorId === request.userId) {
+      return reply.status(403).send({
+        error: BlueprintErrorCodes.FORBIDDEN,
+        message: 'Authors cannot like their own blueprints',
+      });
+    }
+
+    await db.insert(blueprintLikes).values({
+      blueprintId: bp.id,
+      userId: request.userId,
+      createdAt: new Date(),
+    }).onConflictDoNothing();
+
+    const likeCount = await refreshLikeCount(db, bp.id);
+    await recomputeBlueprintScores(db, bp.id);
+    return reply.send({ liked: true, likeCount });
+  });
+
+  // DELETE /blueprints/:id/like — unlike a published blueprint
+  app.delete<{ Params: { id: string } }>('/blueprints/:id/like', async (request, reply) => {
+    const [bp] = await db.select().from(blueprints).where(eq(blueprints.id, request.params.id)).limit(1);
+    if (!bp) {
+      return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    await db.delete(blueprintLikes).where(and(
+      eq(blueprintLikes.blueprintId, bp.id),
+      eq(blueprintLikes.userId, request.userId),
+    ));
+
+    const likeCount = await refreshLikeCount(db, bp.id);
+    await recomputeBlueprintScores(db, bp.id);
+    return reply.send({ liked: false, likeCount });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Revisions
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // GET /blueprints/:id/revisions — list revisions (owner/admin only)
+  app.get<{ Params: { id: string }; Querystring: { cursor?: string; limit?: string } }>(
+    '/blueprints/:id/revisions',
+    async (request, reply) => {
+      const [bp] = await db.select().from(blueprints).where(eq(blueprints.id, request.params.id)).limit(1);
+      if (!bp) {
+        return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+      }
+
+      // Owner/admin only
+      if (bp.authorId !== request.userId && !request.isAdmin) {
+        return reply.status(403).send({ error: BlueprintErrorCodes.FORBIDDEN });
+      }
+
+      const limit = Math.min(Math.max(parseInt(request.query?.limit ?? '20', 10) || 20, 1), 50);
+      const cursor = request.query?.cursor;
+
+      // Decode cursor for pagination (cursor contains last version + id)
+      let cursorVersion: number | undefined;
+      let cursorId: string | undefined;
+      if (cursor) {
+        const cv = decodeBlueprintCursor(cursor);
+        cursorVersion = cv.version !== undefined ? Number(cv.version) : undefined;
+        cursorId = cv.id as string | undefined;
+      }
+
+      const whereClauses: SQL[] = [eq(blueprintRevisions.blueprintId, bp.id)];
+      if (cursorVersion !== undefined && cursorId) {
+        whereClauses.push(
+          or(
+            sql`${blueprintRevisions.version} < ${cursorVersion}`,
+            and(
+              sql`${blueprintRevisions.version} = ${cursorVersion}`,
+              sql`${blueprintRevisions.id} > ${cursorId}`,
+            )!,
+          )!,
+        );
+      }
+
+      let revQuery = db.select().from(blueprintRevisions).$dynamic();
+      if (whereClauses.length === 1) {
+        revQuery = revQuery.where(whereClauses[0]!);
+      } else {
+        revQuery = revQuery.where(and(...whereClauses)!);
+      }
+      revQuery = revQuery.orderBy(desc(blueprintRevisions.version), asc(blueprintRevisions.id)).limit(limit + 1);
+
+      const revisions = await revQuery;
+      const hasMore = revisions.length > limit;
+      const pageRevisions = hasMore ? revisions.slice(0, limit) : revisions;
+
+      const items = pageRevisions.map((rev) =>
+        BlueprintRevisionSummarySchema.parse({
+          id: rev.id,
+          blueprintId: rev.blueprintId,
+          version: rev.version,
+          kind: rev.kind,
+          name: rev.name,
+          description: rev.description,
+          strategyType: rev.strategyType,
+          style: rev.style,
+          tags: rev.tags,
+          venueType: rev.venueType,
+          changeSummary: rev.changeSummary,
+          createdByUserId: rev.createdByUserId,
+          createdAt: rev.createdAt.toISOString(),
+        }),
+      );
+
+      let nextCursor: string | null = null;
+      if (hasMore && items.length > 0) {
+        const last = pageRevisions[pageRevisions.length - 1]!;
+        nextCursor = encodeBlueprintCursor({ version: last.version, id: last.id });
+      }
+
+      return reply.send({ items, nextCursor });
+    },
+  );
 
   // ─────────────────────────────────────────────────────────────────────────
   // Phase 1 Marketplace: Preview & Confirmation
