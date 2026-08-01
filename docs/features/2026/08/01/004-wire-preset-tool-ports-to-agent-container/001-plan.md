@@ -176,3 +176,58 @@ If the broker-mediated approach causes issues in staging:
 1. The tools already return `"service_unavailable"` as the fallback when the broker is unreachable — this is the current behavior, so the degradation path is identical to today
 2. The `port !== null` fast path for worker-context callers is unchanged
 3. To fully roll back: revert the agent container changes (Change 2) — the tools go back to `"service_unavailable"`, which is the pre-fix state
+
+---
+
+## Outstanding Issues (post-implementation)
+
+All implementation steps completed 2026-08-01. Remaining non-blocking issues:
+
+### [Change 1 — Add broker message types]
+
+**MEDIUM-1: Field naming inconsistency between `ToolResultPayloadSchema` and `PresetToolResultSchema`**
+`ToolResultPayloadSchema` uses `message` for human-readable description. `PresetToolResultSchema` uses `error` only for failures, with no success-path message field. Consider adding optional `message` field for consistency or documenting the divergence.
+
+**LOW-1: No refinement enforcing `errorCode` when `success` is `false`**
+`PresetToolResultSchema` has `errorCode` as optional even on failure. Add a `.refine()` or discriminated union to require `errorCode` when `success === false`.
+
+### [Change 3 — Add broker handlers]
+
+**LOW-1: Unnecessary `db: db as unknown` cast in `buildPresetToolContext`**
+`Database | undefined` is directly assignable to `unknown`. The cast is harmless but misleading.
+
+**LOW-2: Double error logging in preset handlers**
+The handler's catch block logs (`logger.error`), then the outer `handleMessage` catch also logs the same error. Consistent with other handler patterns but adds extra log entry.
+
+### [Change 2 — Modify preset tools to broker-mediate]
+
+**LOW-1: Hard-coded BLPOP timeout (30s) and reply list TTL (60s)**
+These are internal mechanics but affect user-visible behavior. Consider reading from operator config or extracting as named constants.
+
+**LOW-2: Reply envelope shape (`{ result }`) is an implicit contract**
+The `publishPresetToolReply` wraps results in `{ result }` and the tool unwraps via `parsed.result`. If the shape changes, the consumer silently breaks. Add JSDoc at both sites.
+
+**LOW-3: `assess_strategy_preset` lacks `platformAssessment.enabled` gate**
+`change_strategy_preset` checks this gate before broker-mediating; `assess_strategy_preset` does not. If both tools should be gated, add the check. If assessment requests are always allowed, document the asymmetry.
+
+### [Change 4 — Agent wiring test]
+
+**MEDIUM-1: Duplicated `agentConfigOps` mock construction**
+5 `change_strategy_preset` tests construct the same 5-method mock object. Extract to a `makeEnabledCtx()` helper.
+
+**LOW-1: Silent `blpop` default in `makeCtx`**
+The default `blpop` mock returns `null` (timeout). New tests that forget to override it get silent timeouts instead of clear errors. Consider defaulting to `mockRejectedValue(new Error('blpop not mocked'))` for loud failures.
+
+### [Change 5 — Integration test]
+
+**MEDIUM-1: No `change_strategy_preset` integration test**
+Only `assess_strategy_preset` has integration coverage. Add equivalent tests for `change_strategy_preset`.
+
+**MEDIUM-2: Test 2 has 35s timeout (excessive for CI)**
+The tool's hardcoded 30s BLPOP timeout forces a long CI wait. Consider making the BLPOP timeout configurable.
+
+**LOW-1: `agentConfigOps` mocks don't satisfy full `ToolContext` type**
+Missing `persistConfig`, `notifyActorConfigUpdate`, `getLlmTickCount` methods. No runtime impact but violates strict typing ethos. Extract a `makeMockAgentConfigOps()` helper.
+
+**LOW-2: `as AgentDecisionHandler` / `as AgentSessionManager` casts on concrete classes**
+Classes have private fields making structural typing impossible. Acceptable pragmatically, but consider extracting narrow interfaces for what the broker actually calls.

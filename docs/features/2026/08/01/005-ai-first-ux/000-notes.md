@@ -38,3 +38,66 @@ Open questions
 
 - Should our initial messages be translated into various supported languages?
 - Should the app documentation related skill be available by default e.g core skill?
+
+---
+
+## Resolution (2026-08-01)
+
+### Open Questions Resolved
+
+1. **Should initial messages be translated?** → Yes. Use existing i18n keys for preset display names. Pass the user's locale to the chat LLM context so it responds in-language.
+
+2. **Should platform-docs skill be available by default (core skill)?** → No. It should be a separate public skill (`platform-docs`), NOT part of `base`. It is assigned to the onboarding chat agent specifically. Other agents can opt-in if needed. See Plan 001.
+
+### Design Decisions
+
+3. **Secrets handling** → Rather than asking users to click/navigate to a form, the chat displays embedded forms inline using a `[FORM:connection:venue=X]` marker protocol. The LLM decides *when* and *which type* of form — the frontend owns rendering and secret handling. See Plan 003.
+
+4. **Chain vs platform** → The chat agent asks users about chains they use (Ethereum, Solana, etc.) and maps to venues internally using the venue/chain mapping. Users shouldn't need to know venue names.
+
+### Core Design Principles (2026-08-01)
+
+5. **Chat is an alternate route, not a replacement for forms.** Every field in `CreateAgentSchema` remains accessible via the existing form. The chat covers the happy path (~6-8 fields for 80% of users: preset, goal, chain, risk style, capital, connection). Edge-case and power-user fields (`tickIntervalMs`, `openPositionEscalationToJudgePolicy`, `wakePreferences`, etc.) stay form-only. The form is the authoritative fallback — if chat gets stuck, the form is always one click away.
+
+6. **Scoped to create-agent for v1.** The chat is not a general-purpose "Chat With AI" surface yet. It is single-purpose: guide the user through agent creation. No "ask anything," no brainstorming, no research. This means the greeting is honest about scope, and user expectations are set correctly.
+
+7. **UI label is "Guided Setup."** In the UI, this feature is called **Guided Setup** — not "Chat With AI." "Chat With AI" becomes the label when we expand to general chat in a future iteration. The underlying infrastructure (threads, messages, tools) is the same, but the user-facing label matches the v1 scope.
+
+8. **Chat is embedded on the onboarding/create-agent page.** For v1, there is no separate `/chat` route or sidebar item. The chat lives on the agent creation page: new users land on Guided Setup (chat), with a "Use the form instead" link. Returning users see a tab choice: "Guided (Chat)" | "Form" when they navigate to "New Agent."
+
+### Implementation Plans
+
+| Plan | File |
+|------|------|
+| Platform Docs Skill + Tools | [001-platform-docs-skill.md](./001-platform-docs-skill.md) |
+| Onboarding Chat Implementation | [002-onboarding-chat.md](./002-onboarding-chat.md) |
+| Supporting Aspects (i18n, Forms, Prototyping) | [003-supporting-aspects.md](./003-supporting-aspects.md) |
+| ADRs & Product Spec Updates | [004-adrs-and-product-spec.md](./004-adrs-and-product-spec.md) |
+
+### ADR
+
+One ADR is needed: **ADR 005 — Onboarding Chat Agent Runtime Model** at `docs/tech/adrs/2026/08/005-onboarding-chat-agent-runtime-model.md`. This records the decision that the chat agent is per-message invoked, not a continuously-running agent runtime.
+
+### Product Spec
+
+`docs/product/chat-with-ai/product-ux-spec.md` needs updates to add:
+- Agent onboarding as a primary use case
+- Embedded actions (forms, quick replies) as a chat feature
+- Chat → Agent conversion as the primary onboarding path (not a future action)
+
+### Further Open Questions Resolved
+
+5. **Landing page: new users only or everyone?** → New users (0 agents) land on Guided Setup (chat) on the create-agent page. Users with ≥1 agent land on `/agents`; they see "Guided (Chat)" | "Form" tabs when clicking "New Agent."
+
+6. **How much thread history goes into LLM context?** → Sliding window of last 20 messages + a structured thread summary injected as a system message (key facts: selected preset, venue, capital, connection IDs collected so far). The summary is updated after each tool call or key decision point.
+
+7. **OAuth flows in chat — how does the thread resume after redirect?** → Use popup window OAuth where the provider supports it (no redirect needed). Fallback: include `?threadId=X` in the OAuth redirect URL so the frontend reopens the correct thread and injects a system message with the result. Needs a technical spike to confirm per-provider feasibility.
+
+8. **Telegram `/chat` command?** → Deferred. Out of scope for v1. Telegram bot commands remain agent-operational only.
+
+9. **Should `platform-docs` appear in the skill picker for regular agents?** → Yes, available in the skill picker (`visibility: 'public'`) but not auto-selected for any preset. Useful for agents that do self-configuration.
+
+10. **Can the user continue a thread after agent creation?** → Yes. The thread remains active after `create_agent` succeeds. The user can create multiple agents in the same thread. Thread metadata tracks `agentCreatedIds: [...]` so the sidebar can show linked agents.
+
+11. **Public website chat widget (marketing site)?** → Out of scope for this feature. The onboarding chat is for authenticated users. A public chat widget is a separate product decision involving unauthenticated access, rate limiting, and lead capture.
+
