@@ -1,6 +1,7 @@
 import { pgTable, text, timestamp, integer, index, type AnyPgColumn, boolean, doublePrecision } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { users } from './users.js';
+import { skillRevisions } from './skill-revisions.js';
 
 /**
  * Skills — reusable capability bundles that define what an agent can do.
@@ -18,6 +19,8 @@ export const skills = pgTable('skills', {
   archivedAt: timestamp('archived_at', { withTimezone: true }),
   /** The latest revision pointer for this skill catalog entry. */
   currentRevisionId: text('current_revision_id'),
+  /** Pointer to the currently published revision. Set transactionally on publish. */
+  publishedRevisionId: text('published_revision_id').references(() => skillRevisions.id),
   priceCents: integer('price_cents').notNull().default(0),
   autoPublishedByPlan: boolean('auto_published_by_plan').notNull().default(false),
   likeCount: integer('like_count').notNull().default(0),

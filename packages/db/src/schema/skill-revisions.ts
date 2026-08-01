@@ -24,6 +24,8 @@ export const skillRevisions = pgTable('skill_revisions', {
   tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
   changeSummary: text('change_summary'),
   createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  /** When this revision was first published. null = staged/never published. */
+  publishedAt: timestamp('published_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   uniqueIndex('uq_skill_revisions_skill_id').on(t.skillId, t.id),

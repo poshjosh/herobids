@@ -414,6 +414,20 @@
       "when": 1785607924576,
       "tag": "0058_absent_genesis",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1785608271921,
+      "tag": "0059_chemical_prism",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1785608808871,
+      "tag": "0060_fluffy_sprite",
+      "breakpoints": true
     }
   ]
 }
