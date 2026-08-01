@@ -222,7 +222,6 @@ Route: `/skills` — capability bundles that tell agents what they can do.
 | SK-03 | Free plan auto-publishes non-draft skills | Create a non-draft skill on the free plan | Created skill is auto-published and the plan note says non-draft skills auto-publish | — | |
 | SK-04 | Marketplace access is gated by plan | Open `/skills` on a plan without marketplace access | Marketplace section is hidden and the page shows "Marketplace access is not available on your current plan." | ✅ | Free plan has `canViewMarketplaceSkills: true`; no-marketplace message only shown when plan disallows it — tested with a plan that hides marketplace |
 | SK-05 | Skill card actions respect normalized state | Open built-in, personal, and marketplace cards | Built-in and marketplace cards show Copy icon (two overlapping sheets); marketplace user skills show Like icon (thumbs-up, fills solid when liked), Edit icon (pencil, toggles to X when editor open), Publish icon (eye), Delist icon (eye with slash); price labels render for priced skills | — | |
-| SK-06 | Admin catalog is admin-only | Open `/skills` as a non-admin and as an admin | Non-admin users do not see the admin catalog; admins do | — | |
 
 ---
 

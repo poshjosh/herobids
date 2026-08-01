@@ -162,6 +162,19 @@ export function resolveGoalPlaceholder(skillIds: string[], skills: Skill[]): str
   return null;
 }
 
+const GOAL_PLACEHOLDER_BY_PRESET: Record<SkillPresetId, string> = {
+  trading: 'agents.create.goalPlaceholder.trading',
+  'direct-trading': 'agents.create.goalPlaceholder.trading',
+  'trading-assistant': 'agents.create.goalPlaceholder.trading',
+  'personal-assistant': 'agents.create.goalPlaceholder.personalAssistant',
+  custom: 'agents.create.goalPlaceholder.custom',
+};
+
+/** Return the i18n key for the goal placeholder matching the given preset. */
+export function resolveGoalPlaceholderKey(preset: SkillPresetId): string {
+  return GOAL_PLACEHOLDER_BY_PRESET[preset];
+}
+
 export function formatExecutionMode(executionMode: string | null | undefined, intl?: IntlShape): string {
   if (!executionMode) {
     return formatMessageOrFallback(intl, 'agents.executionMode.not_set', 'Not set');

@@ -113,7 +113,7 @@ export interface AgentFormBodyProps {
   connectionSlot?: React.ReactNode;
   tradingSetupSlot?: React.ReactNode;
   computeBudgetSlot?: React.ReactNode;
-  nameAutoHint?: React.ReactNode;
+
   /** Cancel/Review (or Save) buttons rendered at the top of Advanced Settings. */
   advancedActionsSlot?: React.ReactNode;
   /** Called when the Advanced Settings section is expanded or collapsed. */
@@ -301,7 +301,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         {props.formErrors.name && (
           <div style={errorStyle}>{props.formErrors.name}</div>
         )}
-        {props.nameAutoHint}
+
       </div>
 
       {/* Actions at top of Advanced Settings.

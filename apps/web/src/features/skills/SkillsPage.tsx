@@ -5,7 +5,7 @@ import { skills as skillsApi, agentTools, type CreateSkillRequest, type Skill, t
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel, Button, ErrorBanner, ToolTagPicker } from '../../lib/ui.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 
-type SkillCategoryTab = 'all' | 'mine' | 'built-in' | 'marketplace' | 'admin';
+type SkillCategoryTab = 'all' | 'mine' | 'built-in' | 'marketplace';
 
 function filterSkillsBySearch(skills: Skill[], term: string): Skill[] {
   const t = term.trim().toLowerCase();
@@ -24,10 +24,6 @@ export function SkillsPage() {
   const marketplaceUnavailableMessage = intl.formatMessage({
     id: 'skills.marketplaceUnavailable',
     defaultMessage: 'Marketplace access is not available on your current plan.',
-  });
-  const adminUnavailableMessage = intl.formatMessage({
-    id: 'skills.adminUnavailable',
-    defaultMessage: 'Admin scope unavailable for this account.',
   });
   const skillsEntitlements = user?.planEntitlements?.skills ?? null;
   const canViewMarketplace = skillsEntitlements?.canViewMarketplaceSkills ?? true;
@@ -62,11 +58,6 @@ export function SkillsPage() {
     queryKey: ['skills', 'marketplace'],
     queryFn: () => skillsApi.list({ scope: 'marketplace', sort: 'popular' }),
     enabled: canViewMarketplace,
-  });
-
-  const adminQuery = useQuery({
-    queryKey: ['skills', 'admin'],
-    queryFn: () => skillsApi.listAdminIfAllowed(),
   });
 
   const toolsQuery = useQuery({
@@ -107,20 +98,16 @@ export function SkillsPage() {
   const rawMarketplaceSkills = canViewMarketplace
     ? (marketplaceQuery.data?.skills ?? []).filter((skill) => skill.sourceKind === 'user')
     : [];
-  const rawAdminSkills = adminQuery.data?.skills ?? [];
-
   const builtIn = filterSkillsBySearch(rawBuiltIn, searchTerm);
   const mySkills = filterSkillsBySearch(rawMySkills, searchTerm);
   const marketplaceSkills = filterSkillsBySearch(rawMarketplaceSkills, searchTerm);
-  const adminSkills = filterSkillsBySearch(rawAdminSkills, searchTerm);
-  const adminAccessDenied = adminQuery.data === null;
-  const hasAnySkills = builtIn.length > 0 || mySkills.length > 0 || marketplaceSkills.length > 0 || adminSkills.length > 0;
-  const isLoading = selectableQuery.isLoading || mineQuery.isLoading || (canViewMarketplace && marketplaceQuery.isLoading) || (adminQuery.isLoading && builtIn.length === 0 && mySkills.length === 0 && marketplaceSkills.length === 0);
+  const hasAnySkills = builtIn.length > 0 || mySkills.length > 0 || marketplaceSkills.length > 0;
+  const isLoading = selectableQuery.isLoading || mineQuery.isLoading || (canViewMarketplace && marketplaceQuery.isLoading);
   const queryError = selectableQuery.error ?? mineQuery.error ?? (canViewMarketplace ? marketplaceQuery.error : null);
 
   const allSkills = useMemo(() => {
     const seen = new Set<string>();
-    const result: Array<{ skill: Skill; mode: 'built-in' | 'mine' | 'marketplace' | 'admin' }> = [];
+    const result: Array<{ skill: Skill; mode: 'built-in' | 'mine' | 'marketplace' }> = [];
     for (const skill of mySkills) {
       if (!seen.has(skill.id)) { seen.add(skill.id); result.push({ skill, mode: 'mine' as const }); }
     }
@@ -132,23 +119,17 @@ export function SkillsPage() {
         if (!seen.has(skill.id)) { seen.add(skill.id); result.push({ skill, mode: 'marketplace' as const }); }
       }
     }
-    if (!adminQuery.isLoading && !adminQuery.isError && !adminAccessDenied) {
-      for (const skill of adminSkills) {
-        if (!seen.has(skill.id)) { seen.add(skill.id); result.push({ skill, mode: 'admin' as const }); }
-      }
-    }
     return result;
-  }, [mySkills, builtIn, marketplaceSkills, adminSkills, canViewMarketplace, adminQuery.isLoading, adminQuery.isError, adminAccessDenied]);
+  }, [mySkills, builtIn, marketplaceSkills, canViewMarketplace]);
 
   const skillTabs: Array<{ key: SkillCategoryTab; label: string }> = [
     { key: 'all', label: intl.formatMessage({ id: 'skills.tab.all', defaultMessage: 'All skills' }) },
     { key: 'mine', label: intl.formatMessage({ id: 'skills.tab.mine', defaultMessage: 'Your skills' }) },
     { key: 'built-in', label: intl.formatMessage({ id: 'skills.tab.builtIn', defaultMessage: 'Built-in' }) },
     { key: 'marketplace', label: intl.formatMessage({ id: 'skills.tab.marketplace', defaultMessage: 'Marketplace' }) },
-    { key: 'admin', label: intl.formatMessage({ id: 'skills.tab.adminCatalog', defaultMessage: 'Admin catalog' }) },
   ];
 
-  const renderSkillGrid = (skills: Skill[], mode: 'built-in' | 'mine' | 'marketplace' | 'admin') => (
+  const renderSkillGrid = (skills: Skill[], mode: 'built-in' | 'mine' | 'marketplace') => (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', alignItems: 'start' }}>
       {skills.map((skill) => (
         <SkillCard key={skill.id} skill={skill} mode={mode} onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} tools={toolsQuery.data?.tools ?? []} categories={toolsQuery.data?.categories ?? []} toolsLoading={toolsQuery.isLoading} toolsError={toolsQuery.error} />
@@ -159,7 +140,7 @@ export function SkillsPage() {
   const renderCategorySection = (
     title: string,
     skills: Skill[],
-    mode: 'built-in' | 'mine' | 'marketplace' | 'admin',
+    mode: 'built-in' | 'mine' | 'marketplace',
     emptyTitle: string,
     emptyMessage: string,
   ) => (
@@ -189,13 +170,6 @@ export function SkillsPage() {
       {!canViewMarketplace && (
         <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
           {marketplaceUnavailableMessage}
-        </div>
-      )}
-      {adminQuery.isLoading && <LoadingRows count={2} />}
-      {adminQuery.isError && <ErrorBanner message={(adminQuery.error as Error).message} />}
-      {adminAccessDenied && !adminQuery.isLoading && !adminQuery.isError && (
-        <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
-          {adminUnavailableMessage}
         </div>
       )}
     </div>
@@ -244,29 +218,8 @@ export function SkillsPage() {
       );
     }
 
-    if (adminQuery.isLoading) {
-      return <LoadingRows count={2} />;
-    }
-
-    if (adminQuery.isError) {
-      return <ErrorBanner message={(adminQuery.error as Error).message} />;
-    }
-
-    if (adminAccessDenied) {
-      return (
-        <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
-          {adminUnavailableMessage}
-        </div>
-      );
-    }
-
-    return renderCategorySection(
-      intl.formatMessage({ id: 'skills.tab.adminCatalog', defaultMessage: 'Admin catalog' }),
-      adminSkills,
-      'admin',
-      intl.formatMessage({ id: 'skills.empty.admin.title', defaultMessage: 'No admin skills' }),
-      intl.formatMessage({ id: 'skills.empty.admin.message', defaultMessage: 'The admin skill catalog is currently empty.' }),
-    );
+    // All tab keys are exhausted above — fallback to all skills
+    return renderAllSkills();
   };
 
   return (
@@ -453,13 +406,6 @@ export function SkillsPage() {
               defaultMessage: 'Skills will appear here once built-in or user-authored capability bundles are available.',
             })}
           />
-          {adminQuery.isError ? (
-            <ErrorBanner message={(adminQuery.error as Error).message} />
-          ) : adminAccessDenied ? (
-            <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
-              {adminUnavailableMessage}
-            </div>
-          ) : null}
         </div>
       )}
 
@@ -528,7 +474,7 @@ function SkillCard({
   toolsError = null,
 }: {
   skill: Skill;
-  mode: 'built-in' | 'mine' | 'marketplace' | 'admin';
+  mode: 'built-in' | 'mine' | 'marketplace';
   onChanged: () => void;
   skillsEntitlements: {
     canCreatePrivateSkills: boolean;
