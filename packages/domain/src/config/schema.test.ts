@@ -19,6 +19,7 @@ import {
   HybridModeSchema,
   AuthorizationModeSchema,
   UnifiedAgentConfigSchema,
+  RiskConfigSchema,
   type AgentStyleValue,
   type ReasoningLevel,
 } from './schema.js';
@@ -1563,5 +1564,34 @@ describe('UnifiedAgentConfigSchema — authorizationMode', () => {
 
   it('AuthorizationModeSchema rejects empty string', () => {
     expect(() => AuthorizationModeSchema.parse('')).toThrow();
+  });
+});
+
+// ── RiskConfigSchema backward-compat preprocess ────────────────────────────
+
+describe('RiskConfigSchema legacy field normalization', () => {
+  it('normalizes stopLossMaxUnrealizedLossPct → stopLossPct when only legacy field is present', () => {
+    const result = RiskConfigSchema.safeParse({ stopLossMaxUnrealizedLossPct: 10 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.stopLossPct).toBe(10);
+      expect((result.data as Record<string, unknown>)['stopLossMaxUnrealizedLossPct']).toBeUndefined();
+    }
+  });
+
+  it('passes stopLossPct through unchanged (preprocess is a no-op)', () => {
+    const result = RiskConfigSchema.safeParse({ stopLossPct: 5 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.stopLossPct).toBe(5);
+    }
+  });
+
+  it('stopLossPct wins when both fields are present', () => {
+    const result = RiskConfigSchema.safeParse({ stopLossPct: 5, stopLossMaxUnrealizedLossPct: 10 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.stopLossPct).toBe(5);
+    }
   });
 });

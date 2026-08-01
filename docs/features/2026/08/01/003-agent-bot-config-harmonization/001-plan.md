@@ -99,7 +99,7 @@ Add `StrategyIdentity`, `RiskPosture`, `ExecutionDefaults` to `packages/domain/s
 
 Before changing any storage or bridge path, add tests that record the current `checkRisk` decisions ([packages/engine/src/risk-gate.ts](../../../../../../packages/engine/src/risk-gate.ts)) and the current `buildAgentRiskLimits` output ([apps/worker/src/agent-risk-limits.ts](../../../../../../apps/worker/src/agent-risk-limits.ts)) for a representative matrix of inputs — including the three provenance paths (creator-set/immutable, operator-default/mutable, agent-override/mutable) and the `hasCapital` false case. These are the golden reference the refactor must preserve, modulo the one intended config unit canonicalization for daily loss and drawdown. Enforcement logic itself does not change, so parity must stay green.
 
-### 3. Converge bot config — **PENDING**
+### 3. Converge bot config — **DONE**
 
 Recompose `BotConfigSchema` from the shared value objects, renaming `RiskConfigSchema.stopLossMaxUnrealizedLossPct` to `stopLossPct` and aligning risk fields to canonical names. Bot risk values remain effective (non-null) values with no contract wrapper.
 
@@ -174,6 +174,12 @@ Update AGENTS.md, `docs/tech/agents/runtime-boundary-and-message-contract.md`, `
 - **LOW:** Test name `"resolves contract with exactly five risk fields and no extra keys"` describes a structural invariant, not behavior. Rename to `"exposes only the five agent-mutable risk fields in the contract"`.
 - **LOW:** Test name `"maps stopLossMaxUnrealizedLossPct operator default to stopLossPct"` describes mapping internals. Rename to `"returns stopLossPct ceiling from the operator stopLossMaxUnrealizedLossPct default"`.
 - **LOW:** Minor redundancy between unit and e2e capital-null tests — intentional but worth a clarifying comment.
+
+### WP3 — Converge bot config
+- **MEDIUM:** `config.tokenSafety!` non-null assertions in `apps/worker/src/index.ts` (lines ~2000). Guard makes them safe but violates strict TS conventions. Use a local variable after guard.
+- **LOW:** `addLegacyRiskFields` named "Fields" (plural) but only adds one field. May grow later.
+- **LOW:** No diagnostic when both canonical and legacy `stopLoss*` field present in input — add `console.debug` warning.
+- **LOW:** PATCH `/bots/:id/config` does not validate through `BotConfigSchema` (pre-existing, not introduced by WP3).
 
 ## Acceptance Criteria
 
