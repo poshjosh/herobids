@@ -646,6 +646,8 @@ export async function blueprintRoutes(
     const bpVenueType = payload.kind === 'bot' ? payload.venueType : null;
 
     await db.transaction(async (tx) => {
+      // Step 1: Insert blueprint with currentRevisionId = null to satisfy
+      // the non-deferrable composite FK fk_blueprints_current_revision.
       await tx.insert(blueprints).values({
         id: blueprintId,
         authorId: request.userId,
@@ -657,7 +659,7 @@ export async function blueprintRoutes(
         style: bpStyle,
         tags: bpTags,
         venueType: bpVenueType,
-        currentRevisionId: revisionId,
+        currentRevisionId: null,
         createdAt: now,
         updatedAt: now,
       });
@@ -677,6 +679,12 @@ export async function blueprintRoutes(
         createdByUserId: request.userId,
         createdAt: now,
       });
+
+      // Step 3: Set currentRevisionId now that the revision exists.
+      await tx.update(blueprints).set({
+        currentRevisionId: revisionId,
+        updatedAt: now,
+      }).where(eq(blueprints.id, blueprintId));
 
       if (skills.length > 0) {
         await tx.insert(blueprintRevisionSkills).values(
@@ -1073,6 +1081,8 @@ export async function blueprintRoutes(
       const forkVenueType = (forkPayload.venueType as string) ?? sourceRevision.venueType;
 
       // Create new blueprint (draft, with lineage)
+      // Step 1: Insert blueprint with currentRevisionId = null to satisfy
+      // the non-deferrable composite FK fk_blueprints_current_revision.
       await tx.insert(blueprints).values({
         id: forkBpId,
         authorId: request.userId,
@@ -1086,7 +1096,7 @@ export async function blueprintRoutes(
         venueType: forkVenueType,
         sourceBlueprintId: sourceBp.id,
         sourceBlueprintRevisionId: sourceRevision.id,
-        currentRevisionId: forkRevisionId,
+        currentRevisionId: null,
         createdAt: now,
         updatedAt: now,
       });
@@ -1123,6 +1133,12 @@ export async function blueprintRoutes(
           );
         }
       }
+
+      // Step 3: Set currentRevisionId now that the revision exists.
+      await tx.update(blueprints).set({
+        currentRevisionId: forkRevisionId,
+        updatedAt: now,
+      }).where(eq(blueprints.id, forkBpId));
 
       // Emit fork_created usage event (credits the source blueprint)
       await tx.insert(blueprintUsageEvents).values({
