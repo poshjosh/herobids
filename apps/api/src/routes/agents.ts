@@ -14,6 +14,9 @@ import {
   agentRuntimeSessions,
   agentSkills,
   billingUsageEvents,
+  blueprints,
+  blueprintRevisions,
+  blueprintRevisionSkills,
   bots,
   connections,
   decisions,
@@ -52,6 +55,8 @@ import { getPreset } from '@herobids/domain/config/presets-loader';
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
+import { projectAgentToBlueprintPayload } from '../services/blueprint-projection.js';
+import { buildBlueprintDetail } from './blueprints.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import {
   CostPresetSchema,
@@ -871,15 +876,13 @@ export async function agentRoutes(
     // Build risk JSONB (RiskPosture shape) from creator input.
     // Only the canonical risk field is accepted — legacy flat fields have been removed.
     // Null means "use operator default" — preserved per-field.
-    const riskJsonb: Record<string, unknown> | null = parsed.data.risk !== undefined
-      ? (parsed.data.risk as Record<string, unknown> | null)
-      : null;
+    const riskJsonb: import('@herobids/domain').RiskPosture | null = parsed.data.risk ?? null;
 
     // Build strategy JSONB (StrategyIdentity shape) — absent for non-trading agents.
     // Canonical strategy field takes precedence over legacy strategyPreset.
-    let strategyJsonb: Record<string, unknown> | null = null;
+    let strategyJsonb: import('@herobids/domain').StrategyIdentity | null = null;
     if (parsed.data.strategy !== undefined) {
-      strategyJsonb = parsed.data.strategy as Record<string, unknown> | null;
+      strategyJsonb = parsed.data.strategy ?? null;
     } else {
       const isTradingAgent = capabilityMode === 'hybrid';
       if (isTradingAgent && parsed.data.strategyPreset) {
@@ -889,15 +892,13 @@ export async function agentRoutes(
         strategyJsonb = {
           type: strategyType,
           ...(decisionMode ? { decisionMode } : {}),
-        };
+        } as import('@herobids/domain').StrategyIdentity;
       }
     }
 
     // Build executionDefaults JSONB (ExecutionDefaults shape).
     // Only the canonical executionDefaults field is accepted — legacy fields have been removed.
-    const executionDefaultsJsonb: Record<string, unknown> | null = parsed.data.executionDefaults !== undefined
-      ? (parsed.data.executionDefaults as Record<string, unknown> | null)
-      : null;
+    const executionDefaultsJsonb: import('@herobids/domain').ExecutionDefaults | null = parsed.data.executionDefaults ?? null;
 
     const createTxResult = await db.transaction(async (tx): Promise<
       | { kind: 'ok' }
@@ -924,9 +925,9 @@ export async function agentRoutes(
           ...(finalUnifiedConfig ? { unifiedConfig: finalUnifiedConfig } : {}),
           wakePreferences: parsed.data.wakePreferences ?? null,
           // Canonical JSONB fields (replacing legacy flat columns)
-          risk: riskJsonb as never,
-          strategy: strategyJsonb as never,
-          executionDefaults: executionDefaultsJsonb as never,
+          risk: riskJsonb,
+          strategy: strategyJsonb,
+          executionDefaults: executionDefaultsJsonb,
           createdAt: now,
           updatedAt: now,
         } as never);
@@ -1758,7 +1759,7 @@ export async function agentRoutes(
     let riskUpdateJsonb: Record<string, unknown> | null | undefined;
     if (parsed.data.risk !== undefined) {
       // Canonical risk provided — null clears it, value replaces entirely
-      riskUpdateJsonb = parsed.data.risk as Record<string, unknown> | null;
+      riskUpdateJsonb = parsed.data.risk ?? null;
     } else {
       // Read existing risk JSONB and spread it so partial updates don't wipe other fields.
       // Drizzle's jsonb.set() replaces the entire column — it does not deep-merge.
@@ -1800,7 +1801,7 @@ export async function agentRoutes(
     // Canonical strategy field takes full precedence — when provided, replaces entirely.
     let strategyUpdateJsonb: Record<string, unknown> | null | undefined;
     if (parsed.data.strategy !== undefined) {
-      strategyUpdateJsonb = parsed.data.strategy as Record<string, unknown> | null;
+      strategyUpdateJsonb = parsed.data.strategy ?? null;
     } else {
       const existingConfig = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
       const effectiveCapabilityMode = capabilityModeUpdate !== undefined && capabilityModeUpdate !== null
@@ -1825,7 +1826,7 @@ export async function agentRoutes(
     // Canonical executionDefaults field takes full precedence — when provided, replaces entirely.
     let executionDefaultsUpdateJsonb: Record<string, unknown> | null | undefined;
     if (parsed.data.executionDefaults !== undefined) {
-      executionDefaultsUpdateJsonb = parsed.data.executionDefaults as Record<string, unknown> | null;
+      executionDefaultsUpdateJsonb = parsed.data.executionDefaults ?? null;
     }
 
     const txResult = await db.transaction(async (tx): Promise<
@@ -2622,5 +2623,113 @@ export async function agentRoutes(
       executionStatus: approval.executionStatus ?? null,
       message: 'Trade proposal rejected.',
     });
+  });
+
+  // POST /agents/:id/blueprints — create a draft blueprint from an existing agent
+  app.post<{ Params: { id: string }; Body: unknown }>('/agents/:id/blueprints', async (request, reply) => {
+    const parsing = z.object({
+      name: z.string().min(1).optional(),
+      description: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+    }).safeParse(request.body ?? {});
+    if (!parsing.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsing.error.issues });
+    }
+
+    // Find agent owned by user
+    const [agent] = await db.select().from(agents)
+      .where(and(eq(agents.id, request.params.id), eq(agents.userId, request.userId)))
+      .limit(1);
+    if (!agent) {
+      return reply.status(404).send({ error: 'not_found', message: 'Agent not found' });
+    }
+
+    // Project agent to blueprint payload
+    const payload = projectAgentToBlueprintPayload(agent);
+
+    // Override name/description/tags from request body if provided
+    if (parsing.data.name) payload.name = parsing.data.name;
+    if (parsing.data.description) payload.description = parsing.data.description;
+    if (parsing.data.tags) payload.tags = parsing.data.tags;
+
+    // Get agent's skill references
+    const skillRows = await db.select({
+      skillId: agentSkills.skillId,
+      skillRevisionId: agentSkills.skillRevisionId,
+    }).from(agentSkills)
+      .where(eq(agentSkills.agentId, agent.id))
+      .orderBy(agentSkills.orderIndex);
+
+    const skillRefs = skillRows.map((s) => ({
+      skillId: s.skillId,
+      skillRevisionId: s.skillRevisionId,
+    }));
+
+    const blueprintId = crypto.randomUUID();
+    const revisionId = crypto.randomUUID();
+    const now = new Date();
+
+    // Derive facets from payload
+    const bpName = payload.name;
+    const bpDescription = payload.description;
+    const bpTags = payload.tags;
+    const bpStrategyType = (payload.strategy?.type as string | undefined) ?? null;
+    const bpStyle = payload.style;
+
+    await db.transaction(async (tx) => {
+      // Insert blueprint (draft)
+      await tx.insert(blueprints).values({
+        id: blueprintId,
+        authorId: request.userId,
+        publicationStatus: 'draft',
+        kind: 'agent',
+        name: bpName,
+        description: bpDescription,
+        strategyType: bpStrategyType,
+        style: bpStyle,
+        tags: bpTags,
+        venueType: null,
+        currentRevisionId: revisionId,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Insert revision 1
+      await tx.insert(blueprintRevisions).values({
+        id: revisionId,
+        blueprintId,
+        version: 1,
+        kind: 'agent',
+        name: bpName,
+        description: bpDescription,
+        strategyType: bpStrategyType,
+        style: bpStyle,
+        tags: bpTags,
+        venueType: null,
+        payload,
+        createdByUserId: request.userId,
+        createdAt: now,
+      });
+
+      // Insert skill dependencies
+      if (skillRefs.length > 0) {
+        await tx.insert(blueprintRevisionSkills).values(
+          skillRefs.map((s, i) => ({
+            blueprintRevisionId: revisionId,
+            skillId: s.skillId,
+            skillRevisionId: s.skillRevisionId,
+            orderIndex: i,
+          })),
+        );
+      }
+    });
+
+    const [bp] = await db.select().from(blueprints).where(eq(blueprints.id, blueprintId)).limit(1);
+    const [rev] = await db.select().from(blueprintRevisions).where(eq(blueprintRevisions.id, revisionId)).limit(1);
+    if (!bp || !rev) {
+      return reply.status(500).send({ error: 'internal_error', message: 'Failed to create blueprint' });
+    }
+    const detail = await buildBlueprintDetail(db, bp, rev);
+    return reply.status(201).send(detail);
   });
 }

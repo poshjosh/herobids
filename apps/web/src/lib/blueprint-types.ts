@@ -153,3 +153,21 @@ export interface BlueprintBrowseResponse {
   items: BlueprintSummary[];
   nextCursor: string | null;
 }
+
+// ── Create / Edit ─────────────────────────────────────────────────────
+
+/** Full blueprint revision payload (agent or bot discriminated union). */
+export type BlueprintRevisionPayload = Record<string, unknown>;
+
+/** Body for creating a new blueprint from scratch. */
+export interface CreateBlueprintBody {
+  payload: BlueprintRevisionPayload;
+  skills?: BlueprintSkillRef[];
+}
+
+/** Body for creating a new revision (edit) of an existing blueprint. */
+export interface CreateRevisionBody {
+  payload: BlueprintRevisionPayload;
+  changeSummary?: string | null;
+  expectedBaseRevisionId?: string;
+}

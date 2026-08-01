@@ -1632,6 +1632,10 @@ import type {
   BlueprintInstantiatePreviewResponse,
   BlueprintInstantiateRequest,
   BlueprintInstantiateResponse,
+  BlueprintRevisionPayload,
+  BlueprintSkillRef,
+  CreateBlueprintBody,
+  CreateRevisionBody,
 } from './blueprint-types.js';
 
 export { type BlueprintSummary, type BlueprintDetail } from './blueprint-types.js';
@@ -1657,6 +1661,40 @@ export const blueprints = {
     const qs = revisionId ? `?revisionId=${encodeURIComponent(revisionId)}` : '';
     return request<BlueprintDetail>(`/blueprints/${id}${qs}`);
   },
+
+  /** Create a new blueprint from scratch. */
+  create: (body: CreateBlueprintBody) =>
+    request<BlueprintDetail>('/blueprints', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Create a new revision (edit) of an existing blueprint. */
+  createRevision: (blueprintId: string, body: CreateRevisionBody) =>
+    request<BlueprintDetail>(`/blueprints/${blueprintId}/revisions`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Create a draft blueprint from an existing agent. */
+  createFromAgent: (
+    agentId: string,
+    body: { name?: string; description?: string; tags?: string[] },
+  ) =>
+    request<BlueprintDetail>(`/agents/${agentId}/blueprints`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Create a draft blueprint from an existing bot. */
+  createFromBot: (
+    botId: string,
+    body: { name?: string; description?: string; tags?: string[] },
+  ) =>
+    request<BlueprintDetail>(`/bots/${botId}/blueprints`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   /** Preview what an instantiation will look like — read-only, writes nothing. */
   previewInstantiation: (blueprintId: string, body: BlueprintInstantiatePreviewRequest) =>

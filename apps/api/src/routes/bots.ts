@@ -2,9 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
+import { z } from 'zod';
 import { eq, and, sql, sum, asc, inArray, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { bots, connections, blueprints, PgJournal, fills, journalEvents, agents } from '@herobids/db';
+import { bots, connections, blueprints, blueprintRevisions, blueprintRevisionSkills, PgJournal, fills, journalEvents, agents } from '@herobids/db';
 import type { PlansConfig, AgentRiskDefaultsConfig } from '@herobids/domain';
 import {
   CreateInstanceSchema,
@@ -14,6 +15,8 @@ import { checkBotLimit, checkLiveEnabled } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import { canonicalizeExecutionMode } from './agent-config-helpers.js';
 import { BotConfigSchema, INSTANCE_MESSAGE_TYPES, validateExecutionCapability, venueTypeFromProvider, AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import { projectBotToBlueprintPayload } from '../services/blueprint-projection.js';
+import { buildBlueprintDetail } from './blueprints.js';
 import type { LifecycleJob } from '../types.js';
 
 function normalizeBotConfig(config: Record<string, unknown>, venue: string, symbol: string): Record<string, unknown> {
@@ -57,7 +60,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
         return reply.status(404).send({ error: 'not_found', message: 'Blueprint not found' });
       }
       const base = bp.configData as Record<string, unknown>;
-      const overrides = (parsed.data.configOverrides ?? {}) as Record<string, unknown>;
+      const overrides = parsed.data.configOverrides ?? {};
       // Section-level merge: for each top-level key, if both sides are plain objects,
       // merge them one level deep so that e.g. { strategy: { lookbackPeriod: 21 } }
       // adds/overrides that one field without discarding sibling fields like type.
@@ -72,7 +75,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       configSnapshot = resolvedConfig;
       blueprintId = parsed.data.blueprintId;
     } else {
-      resolvedConfig = parsed.data.config as Record<string, unknown>;
+      resolvedConfig = parsed.data.config ?? {};
     }
 
     resolvedConfig = normalizeBotConfig(resolvedConfig, parsed.data.venue, parsed.data.symbol);
@@ -625,5 +628,90 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     });
 
     return reply.status(202).send({ status: 'starting', botId: id });
+  });
+
+  // POST /bots/:id/blueprints — create a draft blueprint from an existing bot
+  app.post<{ Params: { id: string }; Body: unknown }>('/bots/:id/blueprints', async (request, reply) => {
+    const parsing = z.object({
+      name: z.string().min(1).optional(),
+      description: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+    }).safeParse(request.body ?? {});
+    if (!parsing.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsing.error.issues });
+    }
+
+    // Find bot owned by user
+    const [bot] = await db.select().from(bots)
+      .where(and(eq(bots.id, request.params.id), eq(bots.userId, request.userId)))
+      .limit(1);
+    if (!bot) {
+      return reply.status(404).send({ error: 'not_found', message: 'Bot not found' });
+    }
+
+    // Project bot to blueprint payload
+    const payload = projectBotToBlueprintPayload(bot);
+
+    // Override name/description/tags from request body if provided
+    if (parsing.data.name) payload.name = parsing.data.name;
+    if (parsing.data.description) payload.description = parsing.data.description;
+    if (parsing.data.tags) payload.tags = parsing.data.tags;
+
+    // Bot blueprints do not have skill dependencies in Phase 1
+
+    const blueprintId = crypto.randomUUID();
+    const revisionId = crypto.randomUUID();
+    const now = new Date();
+
+    // Derive facets from payload
+    const bpName = payload.name;
+    const bpDescription = payload.description;
+    const bpTags = payload.tags;
+    const bpStrategyType = (payload.strategy?.type as string | undefined) ?? null;
+    const bpVenueType = payload.venueType;
+
+    await db.transaction(async (tx) => {
+      // Insert blueprint (draft)
+      await tx.insert(blueprints).values({
+        id: blueprintId,
+        authorId: request.userId,
+        publicationStatus: 'draft',
+        kind: 'bot',
+        name: bpName,
+        description: bpDescription,
+        strategyType: bpStrategyType,
+        style: null,
+        tags: bpTags,
+        venueType: bpVenueType,
+        currentRevisionId: revisionId,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Insert revision 1
+      await tx.insert(blueprintRevisions).values({
+        id: revisionId,
+        blueprintId,
+        version: 1,
+        kind: 'bot',
+        name: bpName,
+        description: bpDescription,
+        strategyType: bpStrategyType,
+        style: null,
+        tags: bpTags,
+        venueType: bpVenueType,
+        payload,
+        createdByUserId: request.userId,
+        createdAt: now,
+      });
+    });
+
+    const [bp] = await db.select().from(blueprints).where(eq(blueprints.id, blueprintId)).limit(1);
+    const [rev] = await db.select().from(blueprintRevisions).where(eq(blueprintRevisions.id, revisionId)).limit(1);
+    if (!bp || !rev) {
+      return reply.status(500).send({ error: 'internal_error', message: 'Failed to create blueprint' });
+    }
+    const detail = await buildBlueprintDetail(db, bp, rev);
+    return reply.status(201).send(detail);
   });
 }

@@ -31,6 +31,8 @@ import {
   BlueprintDetailSchema,
   BlueprintRevisionSummarySchema,
   PublicationStatusSchema,
+  CreateBlueprintSchema,
+  CreateBlueprintRevisionSchema,
   encodeBlueprintCursor,
   decodeBlueprintCursor,
 } from '@herobids/domain';
@@ -177,7 +179,7 @@ function isTradingCapable(payload: Record<string, unknown>): boolean {
 /**
  * Extract skill refs from the blueprint revision's associated skills.
  */
-async function getRevisionSkillRefs(
+export async function getRevisionSkillRefs(
   db: Database,
   revisionId: string,
 ): Promise<Array<{ skillId: string; skillRevisionId: string }>> {
@@ -211,6 +213,13 @@ const DEEP_MERGE_FIELDS = new Set([
 ]);
 
 /**
+ * Type predicate: narrows unknown to a plain (non-array) object.
+ */
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
  * Deep-merge installer edits into a base payload.
  * For fields in DEEP_MERGE_FIELDS, merges the edit object into the base object
  * (installer fields override, other base fields preserved).
@@ -228,18 +237,11 @@ function deepMergeEdits(
 
     if (
       DEEP_MERGE_FIELDS.has(key) &&
-      typeof editVal === 'object' &&
-      editVal !== null &&
-      !Array.isArray(editVal) &&
-      typeof result[key] === 'object' &&
-      result[key] !== null &&
-      !Array.isArray(result[key])
+      isPlainObject(editVal) &&
+      isPlainObject(result[key])
     ) {
       // Deep merge: installer fields override, other base fields preserved
-      result[key] = {
-        ...(result[key] as Record<string, unknown>),
-        ...(editVal as Record<string, unknown>),
-      };
+      result[key] = { ...result[key], ...editVal };
     } else {
       result[key] = editVal;
     }
@@ -272,7 +274,7 @@ interface BlueprintLineageInfo {
   sourceBlueprintRevisionId: string | null;
 }
 
-async function buildBlueprintDetail(
+export async function buildBlueprintDetail(
   db: Database,
   bp: typeof blueprints.$inferSelect,
   revision: typeof blueprintRevisions.$inferSelect,
@@ -608,14 +610,93 @@ export async function blueprintRoutes(
     return reply.send({ items, nextCursor });
   });
 
-  // TODO (Phase 1 Milestone B): POST /blueprints — create a new blueprint.
-  // Stubbed — old schema columns (userId, configData, configVersion, visibility) no longer exist.
-  // Replacement in Milestone B will use POST /blueprints with BlueprintRevisionPayloadSchema.
-  app.post<{ Body: unknown }>('/blueprints', async (_request, reply) => {
-    return reply.status(501).send({
-      error: 'not_implemented',
-      message: 'This endpoint will be reimplemented in Milestone B using the new revision-based schema.',
+  // POST /blueprints — create a new blueprint from scratch
+  app.post<{ Body: unknown }>('/blueprints', async (request, reply) => {
+    const parsed = CreateBlueprintSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    const payload = parsed.data.payload;
+    const skills = parsed.data.skills ?? [];
+
+    // Validate skill portability for agent blueprints
+    if (payload.kind === 'agent' && skills.length > 0) {
+      const portability = await validateSkillPortability(skills, db);
+      if (!portability.valid) {
+        return reply.status(400).send({
+          error: BlueprintErrorCodes.DEPENDENCY_UNAVAILABLE,
+          message: portability.errors.join('; '),
+        });
+      }
+    }
+
+    const blueprintId = crypto.randomUUID();
+    const revisionId = crypto.randomUUID();
+    const now = new Date();
+
+    // Derive facets from payload
+    const bpName = payload.name;
+    const bpDescription = payload.description;
+    const bpTags = payload.tags;
+    const bpStrategyType = payload.kind === 'agent'
+      ? (payload.strategy?.type as string | undefined) ?? null
+      : (payload.strategy?.type as string | undefined) ?? null;
+    const bpStyle = payload.kind === 'agent' ? payload.style : null;
+    const bpVenueType = payload.kind === 'bot' ? payload.venueType : null;
+
+    await db.transaction(async (tx) => {
+      await tx.insert(blueprints).values({
+        id: blueprintId,
+        authorId: request.userId,
+        publicationStatus: 'draft',
+        kind: payload.kind,
+        name: bpName,
+        description: bpDescription,
+        strategyType: bpStrategyType,
+        style: bpStyle,
+        tags: bpTags,
+        venueType: bpVenueType,
+        currentRevisionId: revisionId,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await tx.insert(blueprintRevisions).values({
+        id: revisionId,
+        blueprintId,
+        version: 1,
+        kind: payload.kind,
+        name: bpName,
+        description: bpDescription,
+        strategyType: bpStrategyType,
+        style: bpStyle,
+        tags: bpTags,
+        venueType: bpVenueType,
+        payload,
+        createdByUserId: request.userId,
+        createdAt: now,
+      });
+
+      if (skills.length > 0) {
+        await tx.insert(blueprintRevisionSkills).values(
+          skills.map((s, i) => ({
+            blueprintRevisionId: revisionId,
+            skillId: s.skillId,
+            skillRevisionId: s.skillRevisionId,
+            orderIndex: i,
+          })),
+        );
+      }
     });
+
+    const [bp] = await db.select().from(blueprints).where(eq(blueprints.id, blueprintId)).limit(1);
+    const [rev] = await db.select().from(blueprintRevisions).where(eq(blueprintRevisions.id, revisionId)).limit(1);
+    if (!bp || !rev) {
+      return reply.status(500).send({ error: 'internal_error', message: 'Failed to create blueprint' });
+    }
+    const detail = await buildBlueprintDetail(db, bp, rev);
+    return reply.status(201).send(detail);
   });
 
   // GET /blueprints/:id — retrieve a single blueprint detail
@@ -639,23 +720,144 @@ export async function blueprintRoutes(
     return reply.send(detail);
   });
 
-  // TODO (Phase 1 Milestone B): PUT /blueprints/:id — update blueprint.
-  // Stubbed — old schema columns (configVersion, configData, userId) no longer exist.
-  // Replacement will use blueprint revisions instead of in-place config mutation.
-  app.put<{ Params: { id: string }; Body: unknown }>('/blueprints/:id', async (_request, reply) => {
-    return reply.status(501).send({
-      error: 'not_implemented',
-      message: 'This endpoint will be reimplemented in Milestone B using revision-based editing.',
+  // POST /blueprints/:id/revisions — create a new revision (edit the blueprint)
+  app.post<{ Params: { id: string }; Body: unknown }>('/blueprints/:id/revisions', async (request, reply) => {
+    const parsed = CreateBlueprintRevisionSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    const [bp] = await db.select().from(blueprints)
+      .where(and(eq(blueprints.id, request.params.id)))
+      .limit(1);
+    if (!bp) {
+      return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    // Only owner or admin can edit
+    if (bp.authorId !== request.userId && !request.isAdmin) {
+      return reply.status(403).send({ error: BlueprintErrorCodes.FORBIDDEN });
+    }
+
+    // Stale edit detection: if expectedBaseRevisionId is provided, verify it matches currentRevisionId
+    if (parsed.data.expectedBaseRevisionId && parsed.data.expectedBaseRevisionId !== bp.currentRevisionId) {
+      return reply.status(409).send({
+        error: BlueprintErrorCodes.REVISION_STALE,
+        message: 'Current revision has changed since the expected base was captured. Re-fetch and retry.',
+      });
+    }
+
+    const payload = parsed.data.payload;
+    const changeSummary = parsed.data.changeSummary ?? null;
+
+    // Validate skill portability for agent blueprints (if skills are referenced in the payload)
+    if (payload.kind === 'agent') {
+      // For edits, we don't have skills in the body — they stay with the current revision's skills.
+      // Agent payload changes don't affect skill dependencies in Phase 1.
+      // Skills are managed at creation time only (POST /blueprints, POST /agents/:id/blueprints).
+    }
+
+    const newRevisionId = crypto.randomUUID();
+    const now = new Date();
+
+    // Derive facets from the new payload
+    const revName = payload.name;
+    const revDescription = payload.description;
+    const revTags = payload.tags;
+    const revStrategyType = payload.kind === 'agent'
+      ? (payload.strategy?.type as string | undefined) ?? null
+      : (payload.strategy?.type as string | undefined) ?? null;
+    const revStyle = payload.kind === 'agent' ? payload.style : null;
+    const revVenueType = payload.kind === 'bot' ? payload.venueType : null;
+
+    await db.transaction(async (tx) => {
+      // Lock blueprint FOR UPDATE
+      const [lockedBp] = await tx
+        .select()
+        .from(blueprints)
+        .where(eq(blueprints.id, bp.id))
+        .for('update');
+      if (!lockedBp) {
+        throw new Error('Blueprint not found under lock');
+      }
+
+      // Allocate version
+      const [maxRow] = await tx.execute(sql`
+        SELECT COALESCE(MAX(version), 0)::int AS max_ver
+        FROM blueprint_revisions
+        WHERE blueprint_id = ${bp.id}
+      `);
+      const nextVersion = (Number((maxRow as { max_ver: number } | undefined)?.max_ver ?? 0)) + 1;
+
+      // Insert new revision
+      await tx.insert(blueprintRevisions).values({
+        id: newRevisionId,
+        blueprintId: bp.id,
+        version: nextVersion,
+        kind: payload.kind,
+        name: revName,
+        description: revDescription,
+        strategyType: revStrategyType,
+        style: revStyle,
+        tags: revTags,
+        venueType: revVenueType,
+        payload,
+        changeSummary,
+        createdByUserId: request.userId,
+        createdAt: now,
+      });
+
+      // Copy skill dependencies from the *previous* current revision (skills are immutable per creation)
+      // If this is an agent blueprint, the skills stay the same across revisions
+      if (bp.currentRevisionId && bp.kind === 'agent') {
+        const prevSkillRefs = await getRevisionSkillRefs(tx as unknown as Database, bp.currentRevisionId);
+        if (prevSkillRefs.length > 0) {
+          await tx.insert(blueprintRevisionSkills).values(
+            prevSkillRefs.map((s, i) => ({
+              blueprintRevisionId: newRevisionId,
+              skillId: s.skillId,
+              skillRevisionId: s.skillRevisionId,
+              orderIndex: i,
+            })),
+          );
+        }
+      }
+
+      // Advance currentRevisionId and update facets
+      // Do NOT change publishedRevisionId or publicationStatus
+      await tx.update(blueprints).set({
+        currentRevisionId: newRevisionId,
+        name: revName,
+        description: revDescription,
+        tags: revTags,
+        strategyType: revStrategyType,
+        style: revStyle,
+        venueType: revVenueType,
+        updatedAt: now,
+      }).where(eq(blueprints.id, bp.id));
     });
+
+    const [updatedBp] = await db.select().from(blueprints).where(eq(blueprints.id, bp.id)).limit(1);
+    const [newRev] = await db.select().from(blueprintRevisions).where(eq(blueprintRevisions.id, newRevisionId)).limit(1);
+    if (!updatedBp || !newRev) {
+      return reply.status(500).send({ error: 'internal_error', message: 'Failed to create revision' });
+    }
+    const detail = await buildBlueprintDetail(db, updatedBp, newRev);
+    return reply.status(201).send(detail);
   });
 
   // DELETE /blueprints/:id — hard delete (only for eligible draft blueprints)
   app.delete<{ Params: { id: string } }>('/blueprints/:id', async (request, reply) => {
     const [bp] = await db.select().from(blueprints)
-      .where(and(eq(blueprints.id, request.params.id), eq(blueprints.authorId, request.userId)))
+      .where(eq(blueprints.id, request.params.id))
       .limit(1);
     if (!bp) {
       return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    // Only owner or admin can delete
+    if (bp.authorId !== request.userId && !request.isAdmin) {
+      return reply.status(403).send({ error: BlueprintErrorCodes.FORBIDDEN });
     }
 
     // Only draft blueprints that have never been published are eligible
@@ -803,7 +1005,7 @@ export async function blueprintRoutes(
     const forkHash = computeForkRequestHash({
       sourceBlueprintId: sourceBp.id,
       sourceBlueprintRevisionId: sourceRevision.id,
-      edits: (parsed.data.edits ?? null) as Record<string, unknown> | null,
+      edits: parsed.data.edits ?? null,
     });
 
     const lockKey = `fork:${request.userId}:${trimmedKey}`;
@@ -851,10 +1053,10 @@ export async function blueprintRoutes(
       }
 
       // Copy revision payload
-      const sourcePayload = sourceRevision.payload as Record<string, unknown>;
+      const sourcePayload = sourceRevision.payload;
       let forkPayload: Record<string, unknown>;
       if (parsed.data.edits) {
-        forkPayload = deepMergeEdits(sourcePayload, parsed.data.edits as Record<string, unknown>);
+        forkPayload = deepMergeEdits(sourcePayload, parsed.data.edits);
       } else {
         forkPayload = { ...sourcePayload };
       }
@@ -1005,10 +1207,15 @@ export async function blueprintRoutes(
     }
 
     const [bp] = await db.select().from(blueprints)
-      .where(and(eq(blueprints.id, request.params.id), eq(blueprints.authorId, request.userId)))
+      .where(eq(blueprints.id, request.params.id))
       .limit(1);
     if (!bp) {
       return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    // Only owner or admin can publish
+    if (bp.authorId !== request.userId && !request.isAdmin) {
+      return reply.status(403).send({ error: BlueprintErrorCodes.FORBIDDEN });
     }
 
     // Check allowed transition
@@ -1079,10 +1286,15 @@ export async function blueprintRoutes(
   // POST /blueprints/:id/draft — move to draft status (from private)
   app.post<{ Params: { id: string } }>('/blueprints/:id/draft', async (request, reply) => {
     const [bp] = await db.select().from(blueprints)
-      .where(and(eq(blueprints.id, request.params.id), eq(blueprints.authorId, request.userId)))
+      .where(eq(blueprints.id, request.params.id))
       .limit(1);
     if (!bp) {
       return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    // Only owner or admin can change lifecycle
+    if (bp.authorId !== request.userId && !request.isAdmin) {
+      return reply.status(403).send({ error: BlueprintErrorCodes.FORBIDDEN });
     }
 
     if (!isAllowedTransition(bp.publicationStatus, 'draft')) {
@@ -1108,10 +1320,15 @@ export async function blueprintRoutes(
   // POST /blueprints/:id/private — move to private status (from draft)
   app.post<{ Params: { id: string } }>('/blueprints/:id/private', async (request, reply) => {
     const [bp] = await db.select().from(blueprints)
-      .where(and(eq(blueprints.id, request.params.id), eq(blueprints.authorId, request.userId)))
+      .where(eq(blueprints.id, request.params.id))
       .limit(1);
     if (!bp) {
       return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    // Only owner or admin can change lifecycle
+    if (bp.authorId !== request.userId && !request.isAdmin) {
+      return reply.status(403).send({ error: BlueprintErrorCodes.FORBIDDEN });
     }
 
     if (!isAllowedTransition(bp.publicationStatus, 'private')) {
@@ -1137,10 +1354,15 @@ export async function blueprintRoutes(
   // POST /blueprints/:id/delist — delist from marketplace (from published)
   app.post<{ Params: { id: string } }>('/blueprints/:id/delist', async (request, reply) => {
     const [bp] = await db.select().from(blueprints)
-      .where(and(eq(blueprints.id, request.params.id), eq(blueprints.authorId, request.userId)))
+      .where(eq(blueprints.id, request.params.id))
       .limit(1);
     if (!bp) {
       return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    // Only owner or admin can change lifecycle
+    if (bp.authorId !== request.userId && !request.isAdmin) {
+      return reply.status(403).send({ error: BlueprintErrorCodes.FORBIDDEN });
     }
 
     if (!isAllowedTransition(bp.publicationStatus, 'delisted')) {
@@ -1169,10 +1391,15 @@ export async function blueprintRoutes(
   // POST /blueprints/:id/archive — archive the blueprint (terminal state)
   app.post<{ Params: { id: string } }>('/blueprints/:id/archive', async (request, reply) => {
     const [bp] = await db.select().from(blueprints)
-      .where(and(eq(blueprints.id, request.params.id), eq(blueprints.authorId, request.userId)))
+      .where(eq(blueprints.id, request.params.id))
       .limit(1);
     if (!bp) {
       return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    // Only owner or admin can change lifecycle
+    if (bp.authorId !== request.userId && !request.isAdmin) {
+      return reply.status(403).send({ error: BlueprintErrorCodes.FORBIDDEN });
     }
 
     if (!isAllowedTransition(bp.publicationStatus, 'archived')) {
@@ -1376,25 +1603,29 @@ export async function blueprintRoutes(
       }
 
       const { blueprint: bp, revision } = resolved;
-      const rawPayload = revision.payload as Record<string, unknown>;
+      const rawPayload = revision.payload;
       const isTrading = isTradingCapable(rawPayload);
 
       // Build the preview payload — deep-merge installer edits into the raw payload
       let editablePayload: Record<string, unknown>;
       if (parsed.data.edits) {
-        editablePayload = deepMergeEdits(rawPayload, parsed.data.edits as Record<string, unknown>);
+        editablePayload = deepMergeEdits(rawPayload, parsed.data.edits);
       } else {
         editablePayload = { ...rawPayload };
       }
 
-      // Extract raw risk
-      const rawRisk = (rawPayload.risk as Record<string, unknown> | null | undefined) ?? null;
+      // Extract raw risk — rawPayload is Record<string, unknown> from DB, so .risk is unknown.
+      // resolveEffectiveRisk expects RiskPosture | null and Partial<RiskPosture> | null.
+      const rawRisk = (rawPayload.risk ?? null) as import('@herobids/domain').RiskPosture | null;
 
-      // Resolve effective risk
-      const installerRiskEdits = parsed.data.edits?.risk as Record<string, unknown> | undefined;
+      // Resolve effective risk — parsed.data.edits is from the Zod-validated request.
+      // Use the blueprint kind to narrow the discriminated union for risk access.
+      const editsRisk = parsed.data.edits && parsed.data.edits.kind === 'agent'
+        ? (parsed.data.edits as { risk?: Record<string, unknown> }).risk
+        : undefined;
       const effectiveRisk = resolveEffectiveRisk(
-        rawRisk as import('@herobids/domain').RiskPosture | null,
-        (installerRiskEdits ?? null) as Partial<import('@herobids/domain').RiskPosture> | null,
+        rawRisk,
+        (editsRisk ?? null) as Partial<import('@herobids/domain').RiskPosture> | null,
         agentRiskDefaults,
       );
 
@@ -1524,7 +1755,7 @@ export async function blueprintRoutes(
       }
 
       const { blueprint: bp, revision } = resolved;
-      const rawPayload = revision.payload as Record<string, unknown>;
+      const rawPayload = revision.payload;
       const isTrading = isTradingCapable(rawPayload);
 
       // 4. Compute request hash
@@ -1539,7 +1770,7 @@ export async function blueprintRoutes(
         blueprintId: bp.id,
         revisionId: revision.id,
         kind: bp.kind,
-        edits: (parsed.data.edits ?? null) as Record<string, unknown> | null,
+        edits: parsed.data.edits ?? null,
         bindingIds,
         requestedMode: parsed.data.requestedMode ?? null,
         liveOptIn: parsed.data.liveOptIn ?? null,
@@ -1739,17 +1970,21 @@ export async function blueprintRoutes(
         // 10. Apply installer edits to produce final payload (deep-merge for object fields)
         let finalPayload: Record<string, unknown>;
         if (parsed.data.edits) {
-          finalPayload = deepMergeEdits(rawPayload, parsed.data.edits as Record<string, unknown>);
+          finalPayload = deepMergeEdits(rawPayload, parsed.data.edits);
         } else {
           finalPayload = { ...rawPayload };
         }
 
         // 11. Resolve effective risk and validate against operator ceilings
-        const rawRisk = (rawPayload.risk as Record<string, unknown> | null | undefined) ?? null;
-        const installerRiskEdits = parsed.data.edits?.risk as Record<string, unknown> | undefined;
+        // rawPayload is Record<string, unknown> from DB; resolveEffectiveRisk expects RiskPosture.
+        const rawRisk = (rawPayload.risk ?? null) as import('@herobids/domain').RiskPosture | null;
+        // parsed.data.edits is from the Zod-validated request — narrow by kind.
+        const editsRisk = parsed.data.edits && parsed.data.edits.kind === 'agent'
+          ? (parsed.data.edits as { risk?: Record<string, unknown> }).risk
+          : undefined;
         const effectiveRisk = resolveEffectiveRisk(
-          rawRisk as import('@herobids/domain').RiskPosture | null,
-          (installerRiskEdits ?? null) as Partial<import('@herobids/domain').RiskPosture> | null,
+          rawRisk,
+          (editsRisk ?? null) as Partial<import('@herobids/domain').RiskPosture> | null,
           agentRiskDefaults,
         );
         // Reject if any user-provided risk value exceeds the operator ceiling
@@ -1782,7 +2017,7 @@ export async function blueprintRoutes(
           }
           if (agentPayloadFinal.executionDefaults) {
             unifiedConfig.execution = {
-              ...(unifiedConfig.execution as Record<string, unknown> ?? {}),
+              ...(isPlainObject(unifiedConfig.execution) ? unifiedConfig.execution : {}),
               mode: agentPayloadFinal.executionDefaults.mode,
             };
           }
@@ -1808,8 +2043,8 @@ export async function blueprintRoutes(
             capital: agentPayloadFinal.capital ?? null,
             maxBots: agentPayloadFinal.maxBots ?? null,
             tickIntervalMs: agentPayloadFinal.tickIntervalMs ?? null,
-            toolPolicy: (agentPayloadFinal.toolPolicy as Record<string, unknown>) ?? null,
-            modelPolicy: (agentPayloadFinal.modelPolicy as Record<string, unknown>) ?? null,
+            toolPolicy: agentPayloadFinal.toolPolicy ?? null,
+            modelPolicy: agentPayloadFinal.modelPolicy ?? null,
             openPositionEscalationToJudgePolicy: agentPayloadFinal.openPositionEscalationToJudgePolicy ?? 'uncovered_or_triggered',
             blueprintId: bp.id,
             blueprintRevisionId: revision.id,
