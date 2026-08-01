@@ -169,6 +169,19 @@ export class InstanceEventPublisher {
   }
 
   /**
+   * Publish a preset tool reply to a Redis list so the agent container can
+   * BLPOP it and receive the broker's response synchronously. The reply key
+   * is derived from the requestMessageId that the tool generates before
+   * publishing the request into the inbound stream.
+   */
+  async publishPresetToolReply(requestMessageId: string, result: Record<string, unknown>): Promise<void> {
+    const replyKey = `agent:preset:reply:${requestMessageId}`;
+    await this.redis.lpush(replyKey, JSON.stringify({ result }));
+    // Expire after 60s to prevent leaking keys if the agent never reads
+    await this.redis.expire(replyKey, 60);
+  }
+
+  /**
    * Publish a protocol message to the instance's outbound Redis Stream.
    * Stream key: `agent:outbound:{agentId}`
    */

@@ -4,6 +4,7 @@ import {
   AssessStrategyPresetResponseSchema,
   type AssessmentResultEntry,
   type AssessStrategyPresetResponse,
+  AGENT_MESSAGE_TYPES,
 } from '@herobids/domain';
 import type {
   AssessmentRequestPort,
@@ -12,6 +13,7 @@ import type {
 } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { createLogger } from '../logger.js';
+import { randomUUID } from 'node:crypto';
 
 const logger = createLogger('tool:assess-strategy-preset');
 
@@ -257,7 +259,43 @@ async function executeAssessStrategyPreset(
     return AssessStrategyPresetResponseSchema.parse(response) as unknown as ToolResult;
   }
 
-  // ── Fallback: port not wired ──
+  // ── Broker-mediated path: port not wired (agent container context) ──
+  // ctx.redis.blpop is only wired in the agent container runtime — unit tests
+  // and stubbed contexts omit it, so this check serves as a context sentinel.
+  if (ctx.publishToInbound && typeof ctx.redis.blpop === 'function') {
+    const requestMessageId = randomUUID();
+    const requestPayload = {
+      ...parsed.data,
+      agentId: ctx.agentId,
+      sessionId: ctx.sessionId,
+      requestMessageId,
+    };
+
+    try {
+      await ctx.publishToInbound(AGENT_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET, requestPayload as Record<string, unknown>);
+
+      const reply = await ctx.redis.blpop(`agent:preset:reply:${requestMessageId}`, 30);
+      if (!reply) {
+        return {
+          success: false,
+          error: 'Broker request timed out after 30s',
+          errorCode: 'broker.timeout',
+        };
+      }
+
+      const parsed = JSON.parse(reply[1]) as { result: ToolResult };
+      return parsed.result;
+    } catch (err) {
+      logger.error({ err, agentId: ctx.agentId }, 'Broker-mediated assess_strategy_preset failed');
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Broker communication failed',
+        errorCode: 'broker.communication_error',
+      };
+    }
+  }
+
+  // ── Fallback: neither port nor broker available ──
   logger.warn('AssessmentRequestPort not wired — returning unavailable for all instruments');
   const results: AssessmentResultEntry[] = acceptedSymbols.map((symbol) => ({
     success: false,

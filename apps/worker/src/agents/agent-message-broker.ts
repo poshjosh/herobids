@@ -1117,24 +1117,36 @@ export class AgentMessageBroker {
 
       const toolResult = await assessStrategyPresetTool.execute(payload, toolCtx);
 
-      await this.eventPublisher.emitAssessStrategyPresetResult(agentId, {
+      const resultPayload = {
         requestMessageId: envelope.messageId,
         correlationId: envelope.correlationId,
         result: toolResult,
-      });
+      };
+      await this.eventPublisher.emitAssessStrategyPresetResult(agentId, resultPayload);
+
+      // Also publish to reply list for synchronous tool response when requestMessageId is set
+      if (payload.requestMessageId) {
+        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, toolResult as Record<string, unknown>);
+      }
     } catch (err) {
       logger.error({ agentId, err }, 'Assess strategy preset handler failed');
-      await this.eventPublisher.emitAssessStrategyPresetResult(agentId, {
+      const errorResult = {
+        success: false,
+        error: err instanceof Error ? err.message : 'Unexpected broker error',
+        errorCode: 'broker.internal_error',
+        fault: true,
+      };
+      const errorPayload = {
         requestMessageId: envelope.messageId,
         correlationId: envelope.correlationId,
-        result: {
-          success: false,
-          error: err instanceof Error ? err.message : 'Unexpected broker error',
-          errorCode: 'broker.internal_error',
-          fault: true,
-        },
-      });
-      throw;
+        result: errorResult,
+      };
+      await this.eventPublisher.emitAssessStrategyPresetResult(agentId, errorPayload);
+
+      if (payload.requestMessageId) {
+        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, errorResult as Record<string, unknown>);
+      }
+      return;
     }
   }
 
@@ -1150,24 +1162,36 @@ export class AgentMessageBroker {
 
       const toolResult = await changeStrategyPresetTool.execute(payload, toolCtx);
 
-      await this.eventPublisher.emitChangeStrategyPresetResult(agentId, {
+      const resultPayload = {
         requestMessageId: envelope.messageId,
         correlationId: envelope.correlationId,
         result: toolResult,
-      });
+      };
+      await this.eventPublisher.emitChangeStrategyPresetResult(agentId, resultPayload);
+
+      // Also publish to reply list for synchronous tool response when requestMessageId is set
+      if (payload.requestMessageId) {
+        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, toolResult as Record<string, unknown>);
+      }
     } catch (err) {
       logger.error({ agentId, err }, 'Change strategy preset handler failed');
-      await this.eventPublisher.emitChangeStrategyPresetResult(agentId, {
+      const errorResult = {
+        success: false,
+        error: err instanceof Error ? err.message : 'Unexpected broker error',
+        errorCode: 'broker.internal_error',
+        fault: true,
+      };
+      const errorPayload = {
         requestMessageId: envelope.messageId,
         correlationId: envelope.correlationId,
-        result: {
-          success: false,
-          error: err instanceof Error ? err.message : 'Unexpected broker error',
-          errorCode: 'broker.internal_error',
-          fault: true,
-        },
-      });
-      throw;
+        result: errorResult,
+      };
+      await this.eventPublisher.emitChangeStrategyPresetResult(agentId, errorPayload);
+
+      if (payload.requestMessageId) {
+        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, errorResult as Record<string, unknown>);
+      }
+      return;
     }
   }
 

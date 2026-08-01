@@ -656,6 +656,8 @@ export type JournalEventPayload = z.infer<typeof JournalEventPayloadSchema>;
 export const AssessStrategyPresetRequestPayloadSchema = AssessStrategyPresetParamsSchema.extend({
   agentId: z.string().min(1),
   sessionId: z.string().min(1),
+  /** ID the tool generates so the broker can reply via a dedicated Redis list key. */
+  requestMessageId: z.string().optional(),
 });
 export type AssessStrategyPresetRequestPayload = z.infer<typeof AssessStrategyPresetRequestPayloadSchema>;
 
@@ -663,6 +665,8 @@ export type AssessStrategyPresetRequestPayload = z.infer<typeof AssessStrategyPr
 export const ChangeStrategyPresetRequestPayloadSchema = ChangeStrategyPresetParamsSchema.extend({
   agentId: z.string().min(1),
   sessionId: z.string().min(1),
+  /** ID the tool generates so the broker can reply via a dedicated Redis list key. */
+  requestMessageId: z.string().optional(),
 });
 export type ChangeStrategyPresetRequestPayload = z.infer<typeof ChangeStrategyPresetRequestPayloadSchema>;
 
