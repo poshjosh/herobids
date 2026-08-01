@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.38 - 2026-08-01
+
 ### Added
 
 - **Agent-Bot Config Harmonization:** Shared domain value objects (`RiskPosture`, `StrategyIdentity`, `ExecutionDefaults`) provide a single canonical vocabulary for agent and bot configuration. Agents store risk in a typed `risk` JSONB column (null-means-default), optional `strategy` JSONB (absent for non-trading), and `executionDefaults` JSONB. `stopLossPct` renamed from `stopLossMaxUnrealizedLossPct` in operator config; `dailyLossLimit` (USD) → `dailyMaxLossPct` (%) at config layer. 76 parity tests ensure identical enforcement behavior. All web forms, i18n, api-client, and scripts updated.
