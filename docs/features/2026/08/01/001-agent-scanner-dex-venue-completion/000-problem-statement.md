@@ -47,9 +47,11 @@ The scanner uses the same indicator model (RSI, MACD, volume profile, support/re
 
 ## Q&A
 
-See [Q&A](./Q-A.md) for detailed questions and answers covering:
+See [Q&A](./Q-and-A.md) for detailed questions and answers covering:
 - Why agents don't trade (root cause investigation)
 - Venue scope decisions (all 4 venues)
 - Data source decisions (venue-native discovery, shared candle fetcher)
 - 1inch inclusion rationale
 - Binance-as-proxy for Hyperliquid candles
+
+See also [Q&A 2](./Q-and-A-2.md)
