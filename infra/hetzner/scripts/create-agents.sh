@@ -2,7 +2,10 @@
 # create-agents.sh — Create agents on a OpenAIdom instance.
 #
 # Creates:
-#   - security-auditor   (system security audit, 24h tick)
+#   - thyper            (Hyperliquid, contrarian, hybrid scanner-gated)
+#   - t1inch            (1inch DEX, range, hybrid scanner-gated)
+#   - tplaybook         (Hyperliquid, ICT swing trading, intelligence mode)
+#   - security-auditor  (system security audit, 24h tick)
 #
 # Prerequisites:
 #   - The API must be healthy.
@@ -45,6 +48,22 @@ if [[ ! -f "$SECURITY_AUDIT_PROMPT_FILE" ]]; then
   die "Security audit prompt not found: ${SECURITY_AUDIT_PROMPT_FILE}"
 fi
 SECURITY_AUDIT_PROMPT="$(<"$SECURITY_AUDIT_PROMPT_FILE")"
+
+# ─── Trading agent definitions ───────────────────────────────────────────────
+
+PLATFORM_ASSESSMENT_3H='{"enabled":true,"reviewIntervalMs":10800000}'
+
+# thyper — Hyperliquid contrarian mean-reversion
+THYPER_AGENT_NAME="thyper"
+THYPER_AGENT_PROMPT="Scan Hyperliquid for overbought/oversold conditions. Use contrarian mean-reversion signals to enter positions against prevailing sentiment when extreme readings are detected. Submit long decisions on oversold bounces and short decisions on overbought rejections."
+
+# t1inch — 1inch range-bound mean-reversion
+T1INCH_AGENT_NAME="t1inch"
+T1INCH_AGENT_PROMPT="Scan 1inch for tokens trading in well-defined ranges. Identify range support and resistance levels. Submit long decisions near support and short decisions near resistance. Use range-bound mean-reversion with tight stop-losses on range breaks."
+
+# tplaybook — ICT swing trading
+TPLAYBOOK_AGENT_NAME="tplaybook"
+TPLAYBOOK_AGENT_PROMPT="Follow the ICT trading playbook. Use the ICT Bearish Swing and ICT Bullish Swing skills to identify high-probability swing trade setups. Execute only when daily bias aligns with the trade direction. Manage positions with structured stop-loss and profit-taking rules."
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 
@@ -237,39 +256,191 @@ else
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Agent creation helper
+# Step 2 — Look up trading connections
 # ═══════════════════════════════════════════════════════════════════════════════
 
-build_agent_payload() {
-  local name="$1"
-  local prompt="$2"
-  local skill_ids_json="$3"
-  local tick_interval_ms="$4"
+log_section "Step 2: Look up trading connections"
+
+api_call GET /capabilities/trading/connections
+
+if [[ "$HTTP_STATUS" -ne 200 ]]; then
+  log_error "Failed to list trading connections (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
+  die "Connection lookup failed."
+fi
+
+HYPERLIQUID_CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.connections[] | select(.label == "Hyperliquid") | .connectionId' | head -1)"
+ONEINCH_CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.connections[] | select(.label == "1inch") | .connectionId' | head -1)"
+
+if [[ -z "$HYPERLIQUID_CONNECTION_ID" || "$HYPERLIQUID_CONNECTION_ID" == "null" ]]; then
+  die "No connection found with label 'Hyperliquid'.
+  Run quick-setup-remote.sh first to provision Hyperliquid credentials."
+fi
+
+if [[ -z "$ONEINCH_CONNECTION_ID" || "$ONEINCH_CONNECTION_ID" == "null" ]]; then
+  die "No connection found with label '1inch'.
+  Run quick-setup-remote.sh first to provision 1inch credentials."
+fi
+
+log_ok "Found Hyperliquid connection: ${HYPERLIQUID_CONNECTION_ID}"
+log_ok "Found 1inch connection: ${ONEINCH_CONNECTION_ID}"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Step 3 — Look up skill IDs for tplaybook
+# ═══════════════════════════════════════════════════════════════════════════════
+
+log_section "Step 3: Look up skill IDs"
+
+ICT_BEARISH_SKILL_ID=""
+ICT_BULLISH_SKILL_ID=""
+
+api_call GET /skills '?scope=selectable'
+if [[ "$HTTP_STATUS" -eq 200 ]]; then
+  ICT_BEARISH_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r --arg name "ICT Bearish Swing" '.skills[]? | select(.name == $name) | .id' | head -1)"
+  ICT_BULLISH_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r --arg name "ICT Bullish Swing" '.skills[]? | select(.name == $name) | .id' | head -1)"
+fi
+
+if [[ -n "$ICT_BEARISH_SKILL_ID" && "$ICT_BEARISH_SKILL_ID" != "null" ]]; then
+  log_ok "Found ICT Bearish Swing skill: ${ICT_BEARISH_SKILL_ID}"
+else
+  log_warn "ICT Bearish Swing skill not found — tplaybook will be created without skill bindings"
+fi
+
+if [[ -n "$ICT_BULLISH_SKILL_ID" && "$ICT_BULLISH_SKILL_ID" != "null" ]]; then
+  log_ok "Found ICT Bullish Swing skill: ${ICT_BULLISH_SKILL_ID}"
+else
+  log_warn "ICT Bullish Swing skill not found — tplaybook will be created without skill bindings"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Agent payload builders
+# ═══════════════════════════════════════════════════════════════════════════════
+
+build_thyper_agent_payload() {
+  local connection_id="$1"
   jq -n \
-    --arg name "$name" \
-    --arg prompt "$prompt" \
+    --arg name "$THYPER_AGENT_NAME" \
+    --arg prompt "$THYPER_AGENT_PROMPT" \
     --arg provider "$AGENT_PROVIDER" \
     --arg lightModel "$AGENT_LIGHT_MODEL" \
     --arg heavyModel "$AGENT_HEAVY_MODEL" \
-    --arg tickIntervalMs "$tick_interval_ms" \
-    --argjson skillIds "$skill_ids_json" \
+    --arg capabilityMode "hybrid" \
+    --arg hybridMode "scanner_gated" \
+    --arg strategyPreset "contrarian" \
+    --arg executionVenue "hyperliquid" \
+    --arg authorizationMode "direct" \
+    --argjson platformAssessment "$PLATFORM_ASSESSMENT_3H" \
+    --arg connectionId "$connection_id" \
     '{
       name: $name,
       prompt: $prompt,
       provider: $provider,
       lightModel: $lightModel,
       heavyModel: $heavyModel,
-      skillIds: $skillIds,
-      tickIntervalMs: ($tickIntervalMs | tonumber),
-      runtimePolicyOverrides: { maxHoldDurationMs: 0 }
+      skillIds: ["trading"],
+      capabilityMode: $capabilityMode,
+      hybridMode: $hybridMode,
+      strategyPreset: $strategyPreset,
+      executionVenue: $executionVenue,
+      authorizationMode: $authorizationMode,
+      platformAssessment: $platformAssessment,
+      connectionIds: [$connectionId]
     }'
 }
 
+build_t1inch_agent_payload() {
+  local connection_id="$1"
+  jq -n \
+    --arg name "$T1INCH_AGENT_NAME" \
+    --arg prompt "$T1INCH_AGENT_PROMPT" \
+    --arg provider "$AGENT_PROVIDER" \
+    --arg lightModel "$AGENT_LIGHT_MODEL" \
+    --arg heavyModel "$AGENT_HEAVY_MODEL" \
+    --arg capabilityMode "hybrid" \
+    --arg hybridMode "scanner_gated" \
+    --arg strategyPreset "range" \
+    --arg executionVenue "1inch" \
+    --arg authorizationMode "approval_required" \
+    --argjson platformAssessment "$PLATFORM_ASSESSMENT_3H" \
+    --arg connectionId "$connection_id" \
+    '{
+      name: $name,
+      prompt: $prompt,
+      provider: $provider,
+      lightModel: $lightModel,
+      heavyModel: $heavyModel,
+      skillIds: ["trading"],
+      capabilityMode: $capabilityMode,
+      hybridMode: $hybridMode,
+      strategyPreset: $strategyPreset,
+      executionVenue: $executionVenue,
+      authorizationMode: $authorizationMode,
+      platformAssessment: $platformAssessment,
+      connectionIds: [$connectionId]
+    }'
+}
+
+build_tplaybook_agent_payload() {
+  local connection_id="$1"
+  local skill_id1="$2"
+  local skill_id2="$3"
+  if [[ -n "$skill_id1" && -n "$skill_id2" ]]; then
+    jq -n \
+      --arg name "$TPLAYBOOK_AGENT_NAME" \
+      --arg prompt "$TPLAYBOOK_AGENT_PROMPT" \
+      --arg provider "$AGENT_PROVIDER" \
+      --arg lightModel "$AGENT_LIGHT_MODEL" \
+      --arg heavyModel "$AGENT_HEAVY_MODEL" \
+      --arg capabilityMode "intelligence" \
+      --arg executionVenue "hyperliquid" \
+      --arg authorizationMode "direct" \
+      --arg connectionId "$connection_id" \
+      --arg skillId1 "$skill_id1" \
+      --arg skillId2 "$skill_id2" \
+      '{
+        name: $name,
+        prompt: $prompt,
+        provider: $provider,
+        lightModel: $lightModel,
+        heavyModel: $heavyModel,
+        capabilityMode: $capabilityMode,
+        executionVenue: $executionVenue,
+        authorizationMode: $authorizationMode,
+        connectionIds: [$connectionId],
+        skillIds: ["trading", $skillId1, $skillId2]
+      }'
+  else
+    jq -n \
+      --arg name "$TPLAYBOOK_AGENT_NAME" \
+      --arg prompt "$TPLAYBOOK_AGENT_PROMPT" \
+      --arg provider "$AGENT_PROVIDER" \
+      --arg lightModel "$AGENT_LIGHT_MODEL" \
+      --arg heavyModel "$AGENT_HEAVY_MODEL" \
+      --arg capabilityMode "intelligence" \
+      --arg executionVenue "hyperliquid" \
+      --arg authorizationMode "direct" \
+      --arg connectionId "$connection_id" \
+      '{
+        name: $name,
+        prompt: $prompt,
+        provider: $provider,
+        lightModel: $lightModel,
+        heavyModel: $heavyModel,
+        capabilityMode: $capabilityMode,
+        executionVenue: $executionVenue,
+        authorizationMode: $authorizationMode,
+        connectionIds: [$connectionId],
+        skillIds: ["trading"]
+      }'
+  fi
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Agent creation helper
+# ═══════════════════════════════════════════════════════════════════════════════
+
 create_agent() {
   local name="$1"
-  local prompt="$2"
-  local skill_ids_json="$3"
-  local tick_interval_ms="$4"
+  local payload="$2"
 
   log_section "Creating agent: ${name}"
 
@@ -284,10 +455,6 @@ create_agent() {
       return 0
     fi
   fi
-
-  # Create the agent
-  local payload
-  payload="$(build_agent_payload "$name" "$prompt" "$skill_ids_json" "$tick_interval_ms")"
 
   api_call POST /agents "$payload"
 
@@ -304,15 +471,42 @@ create_agent() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Step 2 — Create security-auditor agent
+# Step 4 — Create trading agents
 # ═══════════════════════════════════════════════════════════════════════════════
 
-SECURITY_AUDITOR_ID="$(create_agent "security-auditor" "$SECURITY_AUDIT_PROMPT" '["web-access","programming","file-management","task-management"]' "$AGENT_TICK_INTERVAL_MS")"
+THYPER_ID="$(create_agent "$THYPER_AGENT_NAME" "$(build_thyper_agent_payload "$HYPERLIQUID_CONNECTION_ID")")"
+T1INCH_ID="$(create_agent "$T1INCH_AGENT_NAME" "$(build_t1inch_agent_payload "$ONEINCH_CONNECTION_ID")")"
+TPLAYBOOK_ID="$(create_agent "$TPLAYBOOK_AGENT_NAME" "$(build_tplaybook_agent_payload "$HYPERLIQUID_CONNECTION_ID" "${ICT_BEARISH_SKILL_ID:-}" "${ICT_BULLISH_SKILL_ID:-}")")"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Step 3 — Summary
+# Step 5 — Create security-auditor agent
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SECURITY_AUDITOR_ID="$(create_agent "security-auditor" "$(jq -n \
+    --arg name "security-auditor" \
+    --arg prompt "$SECURITY_AUDIT_PROMPT" \
+    --arg provider "$AGENT_PROVIDER" \
+    --arg lightModel "$AGENT_LIGHT_MODEL" \
+    --arg heavyModel "$AGENT_HEAVY_MODEL" \
+    --arg tickIntervalMs "$AGENT_TICK_INTERVAL_MS" \
+    '{
+      name: $name,
+      prompt: $prompt,
+      provider: $provider,
+      lightModel: $lightModel,
+      heavyModel: $heavyModel,
+      skillIds: ["web-access","programming","file-management","task-management"],
+      tickIntervalMs: ($tickIntervalMs | tonumber),
+      runtimePolicyOverrides: { maxHoldDurationMs: 0 }
+    }')")"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Step 6 — Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 
 log_section "Agent creation summary"
-log_ok "security-auditor  → id=${SECURITY_AUDITOR_ID}  provider=${AGENT_PROVIDER}/${AGENT_LIGHT_MODEL}  tick=24h"
-log_info "Agent is in 'stopped' state. Start it via the API or UI when ready."
+log_ok "thyper           → id=${THYPER_ID}  connection=Hyperliquid (${HYPERLIQUID_CONNECTION_ID})"
+log_ok "t1inch           → id=${T1INCH_ID}  connection=1inch (${ONEINCH_CONNECTION_ID})"
+log_ok "tplaybook        → id=${TPLAYBOOK_ID}  connection=Hyperliquid (${HYPERLIQUID_CONNECTION_ID})"
+log_ok "security-auditor → id=${SECURITY_AUDITOR_ID}  tick=24h (non-trading)"
+log_info "All agents are in 'stopped' state. Start them via the API or UI when ready."
