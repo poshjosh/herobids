@@ -176,7 +176,7 @@ report at `docs/bug-reports/2026/07/12/002-...` shows positions ending with
 
 ## Implementation Phases
 
-### Phase 0 - Lock Contracts and Test Fixtures [PENDING]
+### Phase 0 - Lock Contracts and Test Fixtures [DONE]
 
 **Files**
 
@@ -478,3 +478,9 @@ After early return for non-orderbook candidates, the spread `{ ...candidate.cand
 
 ### [Phase 0] LOW-3 — `symbolsSelected` / `symbolOutcomes` naming in `TechnicalPhaseResult`
 These fields now hold instrument IDs, not symbols. Renaming would be a breaking API change — defer to a future major version.
+
+### [Phase 1] MEDIUM-3 — Hardcoded quote asset options in UI
+The quote asset `<select>` hardcodes USDC/USDT options. The plan says options come from `canonicalTokens[network]` keys. Hardcoding works for initial release (Solana/Base have both) but won't show new canonical tokens. Defer to follow-up.
+
+### [Phase 1] LOW-6 — Redundant `?? 'USDC'` after Zod default
+`quoteAssetSymbol ?? 'USDC'` is redundant since Zod schema applies `.default('USDC')`. Harmless as defensive code, but an empty string would not be caught by `??`. Trust Zod default or switch to `||`.

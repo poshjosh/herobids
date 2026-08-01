@@ -785,6 +785,7 @@ export const messages: Record<string, string> = {
   'agents.technical.filters.symbolsHelp': 'केवल इन सिंबलों को स्कैन करें (कॉमा से अलग)। सभी को स्कैन करने के लिए खाली छोड़ें।',
   'agents.technical.filters.excludeSymbols': 'सिंबल बहिष्कृत करें',
   'agents.technical.filters.networks': 'नेटवर्क',
+  'agents.technical.filters.quoteAssetSymbol': 'कोट परिसंपत्ति',
 
   // Scan settings
   'agents.technical.scan.title': 'स्कैन सेटिंग्स',

@@ -30,7 +30,7 @@ import { createFillFirstMarkSource } from '@herobids/engine';
 import type { IdGenerator } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
 import { MarkSelector } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, AGENT_STREAM_MAXLEN, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig, ok, err } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, AGENT_STREAM_MAXLEN, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig, type TokenSafetyConfig, ok, err } from '@herobids/domain';
 
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
@@ -39,6 +39,7 @@ import { resolve } from 'node:path';
 import { loadConfig, MONOREPO_CONFIG_DIR } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
 import { resolveSwapAssetsFromBinding, resolveSwapNetwork } from './resolve-swap-assets.js';
+import { validateSwapScannerConfig } from './swap-startup-validation.js';
 import { resolveBotStartupContext, BotStartupError } from './startup-context.js';
 import { buildPublicStreamConnectors, createScopedStreamPoolHandle } from './public-stream-routing.js';
 import { AlertDispatcher } from './alerting/index.js';
@@ -963,6 +964,66 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
             : undefined;
         }
         // else: intelligence agent — no technical config, stays undefined
+
+        // Phase 1 (DEX venue completion): validate swap scanner configuration.
+        // For a swap-bound scanner_gated agent, resolve the effective quote asset
+        // from operator-owned canonical tokens and fail startup when the configuration
+        // is incoherent (unresolved network, excluded network, missing canonical quote).
+        if (
+          capabilityMode === 'hybrid'
+          && hybridMode === 'scanner_gated'
+          && venueType === 'swap'
+          && technicalConfig
+        ) {
+          const swapEnabled = appConfig.agentRuntime.scanner?.swap?.enabled ?? false;
+          if (!swapEnabled) {
+            logger.info(
+              { agentId, venue: binding.venue },
+              'Scanner swap scanning disabled by operator config (agentRuntime.scanner.swap.enabled=false) — swap-bound agent will idle',
+            );
+          } else {
+            // Check per-venue flag if present
+            const venues = appConfig.agentRuntime.scanner?.swap?.venues;
+            const venueFlag = binding.venue === 'jupiter'
+              ? venues?.jupiter
+              : binding.venue === '1inch'
+                ? venues?.['1inch']
+                : undefined;
+
+            if (venueFlag === false) {
+              logger.info(
+                { agentId, venue: binding.venue },
+                'Scanner swap scanning disabled per-venue by operator config — swap-bound agent will idle',
+              );
+            } else {
+              const canonicalTokens: TokenSafetyConfig['canonicalTokens'] | undefined =
+                appConfig.marketData?.tokenSafety?.canonicalTokens;
+
+              const result = validateSwapScannerConfig(
+                resolvedSwapNetwork,
+                binding.venue,
+                technicalConfig,
+                canonicalTokens,
+              );
+
+              if (!result.ok) {
+                throw new CredentialResolutionError(
+                  `Cannot start swap scanner for agent ${agentId}: ${result.error.message}`,
+                );
+              }
+
+              logger.info(
+                {
+                  agentId,
+                  venue: binding.venue,
+                  network: result.data.network,
+                  quoteAssetSymbol: result.data.quoteAssetSymbol,
+                },
+                'Swap scanner configuration validated',
+              );
+            }
+          }
+        }
 
         // Construct the agent's mark source outside the constructor so it can be
         // reused in onPersistScanCandidates for mark-coverage filtering.

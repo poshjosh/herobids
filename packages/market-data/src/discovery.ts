@@ -112,6 +112,9 @@ function mergeDiscoveredTokens(tokens: DiscoveredToken[]): DiscoveredToken[] {
       priceUsd: higherLiquidity.priceUsd,
       poolAddress: higherLiquidity.poolAddress ?? existing.poolAddress,
       poolCreatedAt: higherLiquidity.poolCreatedAt ?? existing.poolCreatedAt,
+      // Atomic pool identity — take the entire pool object from the higher-liquidity
+      // record, never independently merge poolAddress/baseToken/quoteToken from different sources.
+      pool: higherLiquidity.pool ?? existing.pool,
       marketCapUsd: existing.marketCapUsd ?? token.marketCapUsd,
       fullyDilutedValuationUsd: existing.fullyDilutedValuationUsd ?? token.fullyDilutedValuationUsd,
       holderCount: existing.holderCount ?? token.holderCount,

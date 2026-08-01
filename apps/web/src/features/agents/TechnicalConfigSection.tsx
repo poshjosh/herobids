@@ -102,6 +102,19 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
             />
           </div>
         )}
+        {value.filters.venueType === 'swap' && (
+          <div>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.technical.filters.quoteAssetSymbol' })}</FieldLabel>
+            <select
+              style={{ ...inputStyle, cursor: 'pointer' }}
+              value={value.filters.quoteAssetSymbol ?? 'USDC'}
+              onChange={(e) => setFilters({ quoteAssetSymbol: e.target.value })}
+            >
+              <option value="USDC">USDC</option>
+              <option value="USDT">USDT</option>
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Scan settings */}

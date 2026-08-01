@@ -1120,6 +1120,21 @@ export const AgentRuntimeConfigSchema = z.object({
     baseSkipScans: z.number().int().min(1).max(50).default(2),
     maxSkipScans: z.number().int().min(1).max(100).default(8),
   }).default({}),
+  /** Scanner subsystem configuration. Operator config — deploy/restart, not runtime. */
+  scanner: z.object({
+    /** Master kill-switch for swap (DEX) scanning. When false (default), swap-bound
+     *  agents return no candidates — byte-for-byte identical to today's behaviour.
+     *  Set to true to enable swap scanning globally; use per-venue flags for rollout. */
+    swap: z.object({
+      enabled: z.boolean().optional().default(false),
+      /** Per-venue rollout flags. Absent/true = enabled when swap.enabled is true.
+       *  false = this venue is explicitly disabled regardless of swap.enabled. */
+      venues: z.object({
+        jupiter: z.boolean().optional(),
+        '1inch': z.boolean().optional(),
+      }).optional(),
+    }).optional().default({}),
+  }).optional().default({}),
   /** Cross-session crash-loop guard — persist crash counters in Redis and block
    *  relaunch when an agent has crashed too many times within the sliding window. */
   crashLoopGuard: z.object({
@@ -2099,6 +2114,11 @@ export const TechnicalConfigSchema = z.object({
     networks: z.array(z.string()).optional(),
     symbols: z.array(z.string()).optional(),
     excludeSymbols: z.array(z.string()).optional(),
+    /** Canonical quote asset symbol for swap scanning (e.g. USDC, USDT).
+     *  Defaults to 'USDC'. Must be a key in the operator-owned
+     *  marketData.tokenSafety.canonicalTokens[network] map.
+     *  Agent instance config (runtime, DB) — not operator config. */
+    quoteAssetSymbol: z.string().optional().default('USDC'),
   }),
   regime: RegimeParamsSchema.optional(),
   indicators: IndicatorConfigSchema.default({}),
@@ -2132,6 +2152,7 @@ export const StrictTechnicalConfigSchema = z.object({
     networks: z.array(z.string()).optional(),
     symbols: z.array(z.string()).optional(),
     excludeSymbols: z.array(z.string()).optional(),
+    quoteAssetSymbol: z.string().optional().default('USDC'),
   }),
   regime: RegimeParamsSchema.optional(),
   indicators: IndicatorConfigSchema,

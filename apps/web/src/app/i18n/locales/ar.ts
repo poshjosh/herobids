@@ -783,6 +783,7 @@ export const messages: Record<string, string> = {
   'agents.technical.filters.symbolsHelp': 'افحص هذه الرموز فقط (مفصولة بفواصل). اتركه فارغاً لفحص الجميع.',
   'agents.technical.filters.excludeSymbols': 'استبعاد الرموز',
   'agents.technical.filters.networks': 'الشبكات',
+  'agents.technical.filters.quoteAssetSymbol': 'أصل التسعير',
 
   // Scan settings
   'agents.technical.scan.title': 'إعدادات الفحص',
