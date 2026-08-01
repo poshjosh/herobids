@@ -72,7 +72,8 @@ These decisions resolve the open questions in the prior scanner plans.
    `scanner.swap_exit_unresolved`, `scanner.swap_candidate_skipped` (with a
    `reason` field: `missing_base_address` | `missing_quote_address` |
    `missing_pool_address` | `non_canonical_quote` | `incoherent_pool`),
-   `scanner.swap_discovery_empty`, and `scanner.swap_discovery_error`.
+   `scanner.swap_discovery_empty`, `scanner.swap_discovery_error`, and
+   `scanner.incomplete_swap_identity`.
 
 ## Design
 
@@ -307,7 +308,7 @@ feature does not convert idle agents into hard startup failures.
   unchanged, and the exact ID clears the `swap.instrument_format` check and the
   new `validateTradeInstrument()` — not the removed `hasSymbol()` path.
 
-### Phase 3 - Swap Candidate Discovery and Candle Routing [PENDING]
+### Phase 3 - Swap Candidate Discovery and Candle Routing [DONE]
 
 **Files**
 

@@ -74,7 +74,7 @@ import { createEvidencePorts } from './market-intelligence/evidence-adapters.js'
 import { AssessmentRequestService } from './market-intelligence/assessment-request-service.js';
 import { setAssessmentRequestPort } from './tools/assess-strategy-preset.js';
 import { setPresetTransitionPort } from './tools/change-strategy-preset.js';
-import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
+import { createProviderRegistry, createPriceService, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
 import { resolveSwapTokenData, type DexScreenerProvider, type CanonicalResolver } from './swap-token-resolver.js';
@@ -1199,11 +1199,72 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           onPersistScanCandidates: async (candidates) => {
             try {
               if (candidates.length === 0) return;
-              // Filter: only persist candidates the mark source can price.
-              // Prevents agents from submitting decisions on instruments that
-              // will always be rejected with no_context (Bug 002).
+              // Filter: only persist candidates that can be priced.
+              // - Orderbook candidates go through the mark-coverage check
+              //   (prevents agents from submitting decisions on instruments
+              //   that will always be rejected with no_context — Bug 002).
+              // - DEX candidates use priceService.resolvePriceTarget() with
+              //   their exact on-chain identity. If pricing fails, they are
+              //   persisted anyway (defensive — DEX observations must not be
+              //   suppressed by a CoinGecko-specific SYMBOL-PERP check).
               const pricedCandidates = [];
+              /** Lazily-created price service for DEX candidate identity resolution.
+               *  Constructed only when the first DEX candidate is encountered so
+               *  orderbook-only agents never pay the provider-registry cost. */
+              let dexPriceService: ReturnType<typeof createPriceService> | null = null;
+              // TODO(Phase 5): parallelize resolvePriceTarget calls for multi-DEX scans
+              // to avoid serial chain-of-await latency when many DEX candidates are present.
               for (const c of candidates) {
+                if (c.instrumentKind === 'dex') {
+                  // DEX candidate: resolve exact on-chain price identity.
+                  // c.network (e.g. 'base', 'solana') passes through to
+                  // resolveDexScreenerTarget which filters by DexScreener network
+                  // field — these values are supported by the DexScreener API.
+                  if (!c.symbol || !c.network || !c.address) {
+                    logger.warn(
+                      { symbol: c.symbol, network: c.network, address: c.address },
+                      'DEX candidate missing network/address — persisting anyway (defensive)',
+                    );
+                    pricedCandidates.push(c);
+                    continue;
+                  }
+                  if (!dexPriceService && sharedMarketDataRegistry) {
+                    dexPriceService = createPriceService(sharedMarketDataRegistry);
+                  }
+                  if (dexPriceService) {
+                    try {
+                      const priceResult = await dexPriceService.resolvePriceTarget(
+                        c.symbol,
+                        c.network,
+                        c.address,
+                      );
+                      if (priceResult.ok && !priceResult.data.stale) {
+                        pricedCandidates.push(c);
+                      } else {
+                        logger.debug(
+                          { symbol: c.symbol, network: c.network, address: c.address },
+                          'DEX candidate price unavailable or stale — persisting anyway (defensive)',
+                        );
+                        pricedCandidates.push(c);
+                      }
+                    } catch {
+                      logger.debug(
+                        { symbol: c.symbol, network: c.network },
+                        'DEX candidate price lookup error — persisting anyway (defensive)',
+                      );
+                      pricedCandidates.push(c);
+                    }
+                  } else {
+                    // No market data registry — persist DEX candidates without pricing check.
+                    logger.debug(
+                      { symbol: c.symbol },
+                      'DEX candidate persisted without price check — market data registry unavailable',
+                    );
+                    pricedCandidates.push(c);
+                  }
+                  continue;
+                }
+                // Orderbook candidate: use the existing mark-coverage check.
                 const instrument = c.symbol
                   ? `${c.symbol}-PERP`
                   : c.address

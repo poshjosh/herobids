@@ -88,6 +88,19 @@ function resolveDecisionInstrumentId(
 
     const symbolSignalMatch = scan.signals.find((signal) => signal.symbol === decision.symbol);
     if (symbolSignalMatch) {
+      // Phase 4: DEX signals resolved by symbol-only may be ambiguous
+      // (same ticker on different chains). Log a warning so operators
+      // can detect when the LLM omits the exact instrument ID.
+      if (symbolSignalMatch.venueType === 'swap') {
+        input.logger.warn(
+          {
+            symbol: decision.symbol,
+            resolvedInstrumentId: symbolSignalMatch.instrumentId,
+            note: 'LLM resolved DEX signal by symbol only — potential ambiguity for same-ticker tokens on different chains',
+          },
+          'Hybrid evaluator: DEX signal resolved by display symbol — prefer exact instrumentId from the LLM',
+        );
+      }
       const id = symbolSignalMatch.instrumentId;
       const pricingIdentity = scan.pricingIdentities?.[id];
       return { instrumentId: id, pricingIdentity };

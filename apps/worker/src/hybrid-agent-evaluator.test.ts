@@ -1445,3 +1445,166 @@ describe('HybridAgentDecisionSchema reason field (Phase 4)', () => {
     expect(result.success).toBe(true);
   });
 });
+
+// ─── Phase 4: DEX symbol-only resolution warning ─────────────────────────────
+
+describe('Phase 4 — DEX symbol-only resolution logs warning', () => {
+  beforeEach(() => {
+    mockedCallLlmProvider.mockReset();
+    logger.info.mockReset();
+    logger.warn.mockReset();
+    logger.error.mockReset();
+  });
+
+  it('logs a warning when LLM resolves a DEX signal by symbol only', async () => {
+    mockedCallLlmProvider.mockResolvedValue({
+      ok: true,
+      data: {
+        // LLM returns only "symbol" (no "instrumentId"), common with simpler models
+        content: '[{"symbol":"BONK","intent":"go_long","sizeUsd":100}]',
+        toolCalls: [],
+        model: 'test-model',
+        provider: 'test-provider',
+        tokensUsed: 42,
+        latencyMs: 12,
+        cached: false,
+      },
+    } as Awaited<ReturnType<typeof callLlmProvider>>);
+
+    const state = createRuntimeCompositionState(baseDescriptor);
+    state.metrics.portfolio.availableCapitalUsd = 10_000;
+    state.metrics.lastTechnicalScan = {
+      ...makeScan(),
+      signals: [
+        {
+          symbol: 'BONK',
+          instrumentId: 'BONK:0xbonk/USDC:0xusdc',
+          venueType: 'swap',
+          confidence: 0.78,
+          reasons: ['volume strong'],
+          intent: 'go_long',
+          indicators: { rsi: 48 },
+        },
+      ],
+      signalsGenerated: 1,
+      pricingIdentities: {
+        'BONK:0xbonk/USDC:0xusdc': { kind: 'dex', symbol: 'BONK', chain: 'solana', address: '0xbonk' },
+      },
+    };
+
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
+
+    await runHybridEvaluator({
+      state,
+      llmConfig: { provider: 'test-provider', model: 'test-model', maxTokens: 500, timeoutMs: 1000 },
+      maxPositions: 5,
+      submitDecision,
+      logger,
+    });
+
+    // Should still resolve and submit (not skip), but with a warning
+    expect(submitDecision).toHaveBeenCalledWith(
+      'BONK:0xbonk/USDC:0xusdc',
+      'go_long',
+      100,
+      { kind: 'dex', symbol: 'BONK', chain: 'solana', address: '0xbonk' },
+    );
+
+    // The warning about symbol-only DEX resolution should be logged
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        symbol: 'BONK',
+        resolvedInstrumentId: 'BONK:0xbonk/USDC:0xusdc',
+      }),
+      expect.stringContaining('DEX signal resolved by display symbol'),
+    );
+  });
+
+  it('does NOT log the warning when LLM provides exact instrumentId for DEX signal', async () => {
+    mockedCallLlmProvider.mockResolvedValue({
+      ok: true,
+      data: {
+        content: '[{"instrumentId":"BONK:0xbonk/USDC:0xusdc","intent":"go_long","sizeUsd":100}]',
+        toolCalls: [],
+        model: 'test-model',
+        provider: 'test-provider',
+        tokensUsed: 42,
+        latencyMs: 12,
+        cached: false,
+      },
+    } as Awaited<ReturnType<typeof callLlmProvider>>);
+
+    const state = createRuntimeCompositionState(baseDescriptor);
+    state.metrics.portfolio.availableCapitalUsd = 10_000;
+    state.metrics.lastTechnicalScan = {
+      ...makeScan(),
+      signals: [
+        {
+          symbol: 'BONK',
+          instrumentId: 'BONK:0xbonk/USDC:0xusdc',
+          venueType: 'swap',
+          confidence: 0.78,
+          reasons: ['volume strong'],
+          intent: 'go_long',
+          indicators: { rsi: 48 },
+        },
+      ],
+      signalsGenerated: 1,
+      pricingIdentities: {
+        'BONK:0xbonk/USDC:0xusdc': { kind: 'dex', symbol: 'BONK', chain: 'solana', address: '0xbonk' },
+      },
+    };
+
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
+
+    await runHybridEvaluator({
+      state,
+      llmConfig: { provider: 'test-provider', model: 'test-model', maxTokens: 500, timeoutMs: 1000 },
+      maxPositions: 5,
+      submitDecision,
+      logger,
+    });
+
+    expect(submitDecision).toHaveBeenCalled();
+    // Should NOT have the DEX symbol-only warning
+    const dexWarningCalls = logger.warn.mock.calls.filter(
+      ([, msg]) => typeof msg === 'string' && msg.includes('DEX signal resolved by display symbol'),
+    );
+    expect(dexWarningCalls).toHaveLength(0);
+  });
+
+  it('does NOT log the warning for orderbook signals resolved by symbol', async () => {
+    mockedCallLlmProvider.mockResolvedValue({
+      ok: true,
+      data: {
+        content: '[{"symbol":"BTC","intent":"go_long","sizeUsd":500}]',
+        toolCalls: [],
+        model: 'test-model',
+        provider: 'test-provider',
+        tokensUsed: 42,
+        latencyMs: 12,
+        cached: false,
+      },
+    } as Awaited<ReturnType<typeof callLlmProvider>>);
+
+    const state = createRuntimeCompositionState(baseDescriptor);
+    state.metrics.portfolio.availableCapitalUsd = 10_000;
+    state.metrics.lastTechnicalScan = makeScan(); // uses default BTC-PERP orderbook signal
+
+    const submitDecision = vi.fn().mockResolvedValue('mock-decision-id');
+
+    await runHybridEvaluator({
+      state,
+      llmConfig: { provider: 'test-provider', model: 'test-model', maxTokens: 500, timeoutMs: 1000 },
+      maxPositions: 5,
+      submitDecision,
+      logger,
+    });
+
+    // Should NOT log the DEX symbol-only warning for orderbook signals
+    const dexWarningCalls = logger.warn.mock.calls.filter(
+      ([, msg]) => typeof msg === 'string' && msg.includes('DEX signal resolved by display symbol'),
+    );
+    expect(dexWarningCalls).toHaveLength(0);
+  });
+});

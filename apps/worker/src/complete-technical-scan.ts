@@ -32,7 +32,7 @@ export interface PersistableScanCandidate {
   scanVersion: string;
   activePresetKey: string;
   presetBehaviorVersion: string;
-  instrumentKind: 'orderbook' | 'perp' | 'swap' | 'dex';
+  instrumentKind: 'orderbook' | 'perp' | 'swap' | 'dex'; // 'swap' reserved for future swap venue types
   venueFamily: string;
   styleTier: 'economy' | 'standard' | 'premium';
   symbol?: string;
@@ -164,13 +164,51 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
   const { phaseResult, technicalConfig, agentId, isHybridMode, onTechnicalScanComplete, emitAgentWake, onJournalEvent } =
     params;
 
+  // Phase 4: Validate swap signals before entering TechnicalScanState.
+  // A swap (venueType: 'swap') signal must have exact pricingIdentity
+  // (kind: 'dex', chain, address) AND swapExecutionIdentity. Incomplete
+  // swap signals are dropped — they must not trigger scanner wakes.
+  const scanSignals: ScoredSignal[] = [];
+  for (const signal of phaseResult.signals) {
+    if (signal.venueType === 'swap') {
+      const pricing = signal.pricingIdentity;
+      const swapExec = signal.swapExecutionIdentity;
+      const isValid =
+        pricing?.kind === 'dex' &&
+        !!pricing.chain &&
+        !!pricing.address &&
+        !!swapExec;
+      if (!isValid) {
+        if (onJournalEvent) {
+          onJournalEvent({
+            type: 'scanner.incomplete_swap_identity',
+            payload: {
+              agentId,
+              symbol: signal.symbol,
+              instrumentId: signal.instrumentId,
+              chain: pricing?.chain ?? null,
+              address: pricing?.address ?? null,
+              hasPricingIdentity: !!pricing,
+              hasDexKind: pricing?.kind === 'dex',
+              hasChain: !!pricing?.chain,
+              hasAddress: !!pricing?.address,
+              hasSwapExecutionIdentity: !!swapExec,
+            },
+          });
+        }
+        continue;
+      }
+    }
+    scanSignals.push(signal);
+  }
+
   // Build pricing-identity sidecar for hybrid USD-to-base conversion.
   // Each signal now carries its own venue-aware pricing identity determined
   // during discovery.  Signals lacking an explicit pricing identity (e.g.
   // orderbook go_long signals without venue context) are skipped — the
   // hybrid evaluator cannot safely reprice them.
   const pricingIdentities: Record<string, HybridPricingIdentity> = {};
-  for (const signal of phaseResult.signals) {
+  for (const signal of scanSignals) {
     if (signal.pricingIdentity) {
       pricingIdentities[signal.instrumentId] = signal.pricingIdentity;
     }
@@ -180,7 +218,7 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
     timestamp: new Date().toISOString(),
     scanIntervalMs: technicalConfig.scanIntervalMs,
     regimeResult: phaseResult.regimeResult,
-    signals: phaseResult.signals,
+    signals: scanSignals,
     positionIndicators: phaseResult.positionIndicators,
     summary: phaseResult.summary,
     symbolOutcomes: phaseResult.symbolOutcomes,
@@ -191,13 +229,16 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
     unsupported: phaseResult.unsupportedCount,
     fetchFailures: phaseResult.fetchFailures,
     breakerSkips: phaseResult.breakerSkips,
-    signalsGenerated: phaseResult.signalsGenerated,
+    signalsGenerated: scanSignals.length,
     overlapSkipped: phaseResult.overlapSkipped,
     pricingIdentities,
   };
 
   // Derive operator-facing scanner health classification from scan outcomes.
-  const health = deriveScannerHealth(phaseResult);
+  // Use post-filter counts (scanSignals.length) rather than pre-filter
+  // phaseResult.signalsGenerated so that swap signals dropped for incomplete
+  // identity do not inflate the health status.
+  const health = deriveScannerHealth({ ...phaseResult, signalsGenerated: scanSignals.length });
   scan.scannerHealth = health;
 
   const eligibleCount = phaseResult.eligibleCount;
@@ -216,7 +257,7 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
         eligible: eligibleCount,
         fetched: fetchedCount,
         scored: phaseResult.candidatesScored,
-        signalsGenerated: phaseResult.signalsGenerated,
+        signalsGenerated: scanSignals.length,
         unsupported: scan.unsupported,
         fetchFailures: scan.fetchFailures,
         timestamp: scan.timestamp,
@@ -234,10 +275,10 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
 
   // If agent has hybrid mode and scanner found signals or exit advisories, emit a wake.
   const hasExitAdvisories = phaseResult.positionIndicators.some((ind) => ind.exitAdvisory === true);
-  const shouldWake = (phaseResult.signals.length > 0 || hasExitAdvisories) && isHybridMode && !!emitAgentWake;
+  const shouldWake = (scanSignals.length > 0 || hasExitAdvisories) && isHybridMode && !!emitAgentWake;
 
   if (shouldWake && emitAgentWake) {
-    const topSignal = phaseResult.signals[0];
+    const topSignal = scanSignals[0];
     const exitAdvisorySymbols = phaseResult.positionIndicators
       .filter((ind) => ind.exitAdvisory === true)
       .map((ind) => ind.symbol);
@@ -246,7 +287,7 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
       wakeId: crypto.randomUUID(),
       source: 'scanner',
       reason: [
-        phaseResult.signals.length > 0 ? `${phaseResult.signals.length} signal(s)` : '',
+        scanSignals.length > 0 ? `${scanSignals.length} signal(s)` : '',
         exitAdvisorySymbols.length > 0
           ? `${exitAdvisorySymbols.length} exit advisory/ies (${exitAdvisorySymbols.join(', ')})`
           : '',
@@ -258,7 +299,7 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
       requestedAt: new Date().toISOString(),
       context: {
         scannerKind: 'signal_scoring' as const,
-        signalCount: phaseResult.signals.length,
+        signalCount: scanSignals.length,
         topSymbol: topSignal?.symbol,
         topConfidence: topSignal?.confidence,
         regimePass: phaseResult.regimeResult?.pass ?? null,
@@ -270,7 +311,9 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
   if (params.onPersistScanCandidates) {
     try {
       const scannedAt = new Date().toISOString();
-      const candidates = buildPersistableCandidates(agentId, scannedAt, phaseResult, technicalConfig);
+      // Use scanSignals (post-validation) so invalid swap signals are not persisted.
+      const filteredPhase = { ...phaseResult, signals: scanSignals };
+      const candidates = buildPersistableCandidates(agentId, scannedAt, filteredPhase, technicalConfig);
       if (candidates.length > 0) {
         await params.onPersistScanCandidates(candidates);
       }
@@ -282,7 +325,7 @@ export async function completeTechnicalScan(params: CompleteTechnicalScanParams)
 
   // ── Persist scan metrics for scanner health and signal observability ──
   if (params.onPersistScanMetrics) {
-    const metrics = buildScanMetrics(agentId, phaseResult, health, technicalConfig);
+    const metrics = buildScanMetrics(agentId, phaseResult, health, technicalConfig, scanSignals.length);
     await params.onPersistScanMetrics(metrics);
   }
 
@@ -314,6 +357,7 @@ export function deriveVenueFamily(technicalConfig: TechnicalConfig): string {
   return 'unknown';
 }
 
+/** @visibleForTesting */
 /**
  * Build persistable candidates from the scan phase result.
  *
@@ -321,7 +365,7 @@ export function deriveVenueFamily(technicalConfig: TechnicalConfig): string {
  * were discovered but did not produce signals are recorded as `scored_no_signal`
  * to enable peer-preset comparison in the review pre-check.
  */
-function buildPersistableCandidates(
+export function buildPersistableCandidates(
   agentId: string,
   scannedAt: string,
   phaseResult: TechnicalPhaseResult,
@@ -346,6 +390,13 @@ function buildPersistableCandidates(
     const id = crypto.randomUUID();
     const rawId = signal.instrumentId || signal.symbol;
 
+    // Phase 4: DEX signals carry exact on-chain identity for execution and pricing.
+    // Orderbook signals remain unchanged (instrumentKind: 'orderbook').
+    const isSwap = signal.venueType === 'swap';
+    const instrumentKind: PersistableScanCandidate['instrumentKind'] = isSwap ? 'dex' : 'orderbook';
+    const network = isSwap ? signal.swapExecutionIdentity?.network : undefined;
+    const address = isSwap ? signal.swapExecutionIdentity?.baseAddress : undefined;
+
     candidates.push({
       id,
       agentId,
@@ -353,10 +404,12 @@ function buildPersistableCandidates(
       scanVersion,
       activePresetKey: presetKey,
       presetBehaviorVersion: behaviorVersion,
-      instrumentKind: 'orderbook',
+      instrumentKind,
       venueFamily,
       styleTier,
       symbol: signal.symbol,
+      network,
+      address,
       rawCandidateId: rawId,
       resolutionStatus: signal.symbol ? 'resolved' : 'unresolved',
       candidateRank: i + 1,
@@ -431,6 +484,8 @@ function buildScanMetrics(
   phaseResult: TechnicalPhaseResult,
   health: ScannerHealthResult,
   technicalConfig: TechnicalConfig,
+  /** Post-filter signal count (after swap identity validation). */
+  postFilterSignalCount: number,
 ): ScanMetricInput {
   const venueFamily = deriveVenueFamily(technicalConfig);
   const styleTier = deriveStyleTier(technicalConfig);
@@ -459,12 +514,12 @@ function buildScanMetrics(
       eligible: phaseResult.eligibleCount,
       fetched: phaseResult.fetchedCount,
       scored: phaseResult.candidatesScored,
-      signals: phaseResult.signalsGenerated,
+      signals: postFilterSignalCount,
     },
     scannedAt: new Date().toISOString(),
     candidatesDiscovered: phaseResult.candidatesDiscovered,
     candidatesScored: phaseResult.candidatesScored,
-    signalsGenerated: phaseResult.signalsGenerated,
+    signalsGenerated: postFilterSignalCount,
     scanHealth: health.status,
     topConfidence,
     regimeBucket,
