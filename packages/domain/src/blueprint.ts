@@ -275,6 +275,8 @@ export const BlueprintInstantiateRequestSchema = z.object({
   bindings: BlueprintBindingSchema.optional(),
   requestedMode: z.enum(['paper', 'shadow', 'live']).optional(),
   liveOptIn: z.boolean().optional(),
+  /** If set, confirmation must reject (409) if the re-resolved mode differs from this. */
+  expectedMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
 }).strict();
 
 export const BlueprintForkRequestSchema = z.object({
@@ -357,6 +359,7 @@ export const BlueprintErrorCodes = {
   LIFECYCLE_CONFLICT: 'blueprint.lifecycle_conflict',
   DEPENDENCY_UNAVAILABLE: 'blueprint.dependency_unavailable',
   IDEMPOTENCY_CONFLICT: 'blueprint.idempotency_conflict',
+  MODE_CHANGED: 'blueprint.mode_changed',
 } as const;
 
 // ── Cursor Encoding ──────────────────────────────────────────────────────────
