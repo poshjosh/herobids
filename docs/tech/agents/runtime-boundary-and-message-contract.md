@@ -128,7 +128,7 @@ Every risk limit applied to an agent runtime follows exactly one of two paths:
 
 | Path | Source | Mutability at runtime | Example |
 |------|--------|----------------------|---------| 
-| **User-configured** | Explicitly set by the creator in the agent's config (via UI or API) | **Immutable** — the agent cannot weaken or remove it | User sets `dailyLossLimit: 500` → engine enforces a hard $500/day rolling realized-loss cap. User sets `maxDrawdownPct: 15` → engine enforces a 15% peak-to-current equity drawdown cap. |
+| **User-configured** | Explicitly set by the creator in the agent's config (via UI or API) | **Immutable** — the agent cannot weaken or remove it | User sets `dailyMaxLossPct: 5` → engine enforces a hard 5% daily realized-loss cap (percent of equity). User sets `maxDrawdownPct: 15` → engine enforces a 15% peak-to-current equity drawdown cap. |
 | **Operator default** | Read from `config.agentRiskDefaults.*` because the user did *not* specify a value | **Agent-mutable** — the agent can read and adjust it via tools, within operator-defined bounds | Default `maxOpenPositions: 10` → agent may raise it up to `agentRiskDefaults.maxOpenPositions` ceiling |
 
 Key invariants:
@@ -145,7 +145,7 @@ Key invariants:
 
 2. **Position count cap.** Comes from operator default when not user-specified. Agent may raise or lower it.
 
-3. **Daily loss.** If the user explicitly set `dailyLossLimit`, it is a hard cap on rolling 24h realized loss. Otherwise the operator default (`dailyMaxLossPct`) applies and the agent can adjust.
+3. **Daily loss.** If the user explicitly set `dailyMaxLossPct`, it is a hard cap on rolling 24h realized loss (percent of equity). Otherwise the operator default applies and the agent can adjust.
 
 4. **Drawdown.** If the user explicitly set `maxDrawdownPct`, it is a hard cap on peak-to-current equity drawdown (percentage). Otherwise the operator default (`maxDrawdownPct`) applies and the agent can adjust. This is a separate control from daily loss — the engine enforces them independently.
 

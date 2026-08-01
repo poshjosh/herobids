@@ -124,7 +124,7 @@ Enforcement logic (`checkRisk`) is unchanged. Update the value-sourcing seams:
 - Agent create/update routes, worker agent-evaluation (`evidence-assembler`, `trading` analyzer), and domain exports.
 - Rename `config.agentRiskDefaults.stopLossMaxUnrealizedLossPct` → `stopLossPct` and update `extractCeilings`.
 
-### 6. Update surfaces — **PENDING**
+### 6. Update surfaces — **DONE**
 
 Update `apps/web` agent forms and `api-client` types, i18n locales (unit labels change from USD to % for daily loss / drawdown), config strategy-presets, and test/seed scripts (`create-agents.sh`, `agent-trade-test.ts`, `agent-bot-cascade-test.ts`). Ensure non-trading agent forms still hide strategy/capital/exchange (UAT AG-S02).
 

@@ -67,14 +67,14 @@ A user-owned secret record for authenticating with an external provider or syste
 
 ## D
 
-### dailyLossLimit
-**User-configured instance setting.** Hard cap on rolling 24-hour realized loss for the agent's direct trading path. Stored as a decimal string in the agent's Postgres config. Units: USD (or account base currency). When the user does not set this, the operator fallback `dailyMaxLossPct` is applied instead.
+### dailyLossLimit (deprecated)
+**Deprecated.** Superseded by [`dailyMaxLossPct`](#dailymaxlosspct). Was a user-configured hard cap on rolling 24-hour realized loss in absolute USD. Now configured as a percentage of equity.
 
-### dailyLossLimitDefaultRatio
-**Operator config setting.** Ratio of agent capital used to derive a default `dailyLossLimit` when the user has not explicitly configured one. Example: `0.05` means default loss limit = 5% of capital.
+### dailyLossLimitDefaultRatio (deprecated)
+**Deprecated.** Was an operator config setting used to derive a default absolute `dailyLossLimit` from agent capital. Removed in favor of direct percentage configuration via [`dailyMaxLossPct`](#dailymaxlosspct).
 
 ### dailyMaxLossPct
-**Operator config setting.** Fallback/ceiling for rolling 24-hour realized loss, applied as a percentage of equity, when the creator did not set `dailyLossLimit`. Agent may adjust downward at runtime.
+**User-configured / operator default setting.** Rolling 24-hour realized-loss cap as a percentage of equity. When the user explicitly configures this, it is immutable at runtime. When not configured, the operator default from `config.agentRiskDefaults.dailyMaxLossPct` applies and the agent may adjust it within operator bounds. Part of the agent's `RiskPosture` JSONB column. Replaces the deprecated absolute-USD `dailyLossLimit`.
 
 ### Decision
 A proposal to change exposure on one instrument, submitted through the platform message protocol. Decisions may originate from an agent, bot, user, or system. The engine is the sole authority over whether a decision becomes an order.
@@ -172,7 +172,10 @@ The difference between the expected price of a trade and the price at which it a
 **Operator config / agent-adjustable setting.** Cooldown period (in milliseconds) after a stop-loss exit before the agent may re-enter a position. Default: 300,000 ms (5 minutes).
 
 ### stopLossMaxUnrealizedLossPct
-**Operator config setting.** Maximum unrealized loss per position as a percentage of equity before a forced exit is triggered. Default: 10%.
+**Engine enforcement name.** Maximum unrealized loss per position as a percentage of equity before a forced exit is triggered. Default: 10%. This is the internal risk-gate field name preserved for enforcement consistency. The config-level field that maps to it is [`stopLossPct`](#stoplosspct).
+
+### stopLossPct
+**User-configured / operator default setting.** Stop-loss threshold as a percentage of equity. When the user explicitly configures this, it is immutable at runtime; otherwise the operator default applies and the agent may adjust it within operator bounds. Mapped to the engine enforcement field `stopLossMaxUnrealizedLossPct`. Part of the agent's `RiskPosture` JSONB column.
 
 ### Strategic Intent
 The initiator's proposed target-state outcome. In trading terms, this is the desired final exposure, not a venue-specific order instruction. The engine converts strategic intent into an executable plan.
