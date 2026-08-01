@@ -393,6 +393,13 @@
       "when": 1785582871603,
       "tag": "0055_shallow_solo",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1785597364686,
+      "tag": "0056_naive_rocket_racer",
+      "breakpoints": true
     }
   ]
 }

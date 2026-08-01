@@ -420,7 +420,7 @@ export function resolveNotificationPolicy(
   };
 }
 
-export function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null; style?: string | null; runtimePolicyOverrides?: Record<string, unknown> | null; maxDrawdown?: unknown }>(agent: T): Omit<T, 'maxDrawdown'> & {
+export function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null; style?: string | null; runtimePolicyOverrides?: Record<string, unknown> | null; maxDrawdown?: unknown; strategy?: unknown; risk?: unknown; executionDefaults?: unknown }>(agent: T): Omit<T, 'maxDrawdown'> & {
   provider: string | null;
   lightModel: string | null;
   heavyModel: string | null;
@@ -429,6 +429,9 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
   dailyLlmTokenBudget: number | null;
   dexWatchlistSymbols: string[] | null;
   resolvedRuntimePolicy: Record<string, unknown> | null;
+  strategy: unknown;
+  risk: unknown;
+  executionDefaults: unknown;
 } {
   const modelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
   const result: Record<string, unknown> = {
@@ -446,6 +449,9 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
       agent.style ?? null,
       (agent.runtimePolicyOverrides ?? null) as Parameters<typeof resolveAgentRuntimePolicy>[1],
     ) as unknown as Record<string, unknown> | null,
+    strategy: (agent as Record<string, unknown>)['strategy'] ?? null,
+    risk: (agent as Record<string, unknown>)['risk'] ?? null,
+    executionDefaults: (agent as Record<string, unknown>)['executionDefaults'] ?? null,
   };
   delete result['maxDrawdown'];
   return result as Omit<T, 'maxDrawdown'> & {
@@ -457,6 +463,9 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
     dailyLlmTokenBudget: number | null;
     dexWatchlistSymbols: string[] | null;
     resolvedRuntimePolicy: Record<string, unknown> | null;
+    strategy: unknown;
+    risk: unknown;
+    executionDefaults: unknown;
   };
 }
 
@@ -510,21 +519,25 @@ export function validateMaxHoldDurationInvariant(params: {
  * Returns validation issues (empty array = valid).
  */
 export function validateDailyLossRequiresCapital(input: {
-  dailyLossLimit?: string | null;
+  dailyMaxLossPct?: string | number | null;
   maxDrawdownPct?: number | null;
   capital?: string | null;
 }): Array<{ code: 'custom'; path: string[]; message: string }> {
   const issues: Array<{ code: 'custom'; path: string[]; message: string }> = [];
 
+  const dailyMaxLossPct = input.dailyMaxLossPct == null || input.dailyMaxLossPct === ''
+    ? null
+    : Number(input.dailyMaxLossPct);
+
   if (
-    input.dailyLossLimit != null &&
-    input.dailyLossLimit !== '' &&
+    dailyMaxLossPct != null &&
+    dailyMaxLossPct > 0 &&
     (!input.capital || input.capital === '')
   ) {
     issues.push({
       code: 'custom',
-      path: ['dailyLossLimit'],
-      message: 'Capital must be set when dailyLossLimit is configured. Daily loss enforcement requires an equity baseline.',
+      path: ['dailyMaxLossPct'],
+      message: 'Capital must be set when dailyMaxLossPct is configured. Daily loss enforcement requires an equity baseline.',
     });
   }
 

@@ -1,25 +1,10 @@
-import { price, quantity, type AgentRiskDefaultsConfig, type AgentRiskOverrides, type AgentRiskCreatorInput, type AgentRiskCeilings, type ResolvedAgentRiskContract, resolveAgentRiskContract, type RiskPosture } from '@herobids/domain';
+import { price, type AgentRiskDefaultsConfig, type AgentRiskOverrides, type AgentRiskCreatorInput, type AgentRiskCeilings, type ResolvedAgentRiskContract, resolveAgentRiskContract, type ResolvedAgentRiskProfile, resolveAgentRiskProfile, type RiskPosture } from '@herobids/domain';
 import type { RiskLimits } from '@herobids/engine';
 
 export interface AgentRiskLimitSource {
   capital: string | null;
-  dailyLossLimit: string | null;
-  maxDrawdownPct: string | number | null;
-  maxOpenPositions: number | null;
-  maxPositionSizePct: string | number | null;
-  stopLossPct: string | number | null;
-  stopLossCooldownMs: number | null;
-  /** Typed RiskPosture JSONB — canonical source. Takes precedence over column values when present. */
+  /** Canonical RiskPosture JSONB — the sole risk source. */
   riskPosture: RiskPosture | null;
-}
-
-function parseOptionalNumber(value: string | number | null): number | undefined {
-  if (value == null) {
-    return undefined;
-  }
-
-  const parsed = typeof value === 'number' ? value : Number.parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 /**
@@ -36,17 +21,16 @@ export function extractCeilings(defaults: AgentRiskDefaultsConfig): AgentRiskCei
 }
 
 /**
- * Extract AgentRiskCreatorInput from the raw nullable source columns.
- * Reads from the typed riskPosture JSONB first, falling back to legacy column values.
+ * Extract AgentRiskCreatorInput from the canonical riskPosture JSONB.
  */
 export function extractCreatorInput(source: AgentRiskLimitSource): AgentRiskCreatorInput {
   const rp = source.riskPosture;
   return {
-    maxOpenPositions: rp?.maxOpenPositions ?? source.maxOpenPositions,
-    maxPositionSizePct: rp?.maxPositionSizePct ?? parseOptionalNumber(source.maxPositionSizePct) ?? null,
-    stopLossPct: rp?.stopLossPct ?? parseOptionalNumber(source.stopLossPct) ?? null,
-    stopLossCooldownMs: rp?.stopLossCooldownMs ?? source.stopLossCooldownMs,
-    maxDrawdownPct: rp?.maxDrawdownPct ?? parseOptionalNumber(source.maxDrawdownPct) ?? null,
+    maxOpenPositions: rp?.maxOpenPositions ?? null,
+    maxPositionSizePct: rp?.maxPositionSizePct ?? null,
+    stopLossPct: rp?.stopLossPct ?? null,
+    stopLossCooldownMs: rp?.stopLossCooldownMs ?? null,
+    maxDrawdownPct: rp?.maxDrawdownPct ?? null,
   };
 }
 
@@ -67,6 +51,32 @@ export function resolveContract(
 }
 
 /**
+ * Resolve the full 9-field agent risk profile (read-only read model).
+ *
+ * Includes the 5 mutable fields from the contract + 4 immutable fields
+ * (dailyMaxLossPct, maxNewPositionsPerDay, avoidParabolicMovePct, maxOrderNotional).
+ *
+ * Used by get_risk_limits to give the agent full visibility into its risk posture.
+ */
+export function resolveProfile(
+  source: AgentRiskLimitSource,
+  defaults: AgentRiskDefaultsConfig,
+  overrides: AgentRiskOverrides = {},
+): ResolvedAgentRiskProfile {
+  return resolveAgentRiskProfile(
+    source.riskPosture ?? null,
+    extractCeilings(defaults),
+    defaults.dailyMaxLossPct,
+    overrides,
+    {
+      hasCapital: source.capital != null,
+      capital: source.capital != null ? Number.parseFloat(source.capital) : undefined,
+      maxOrderNotionalMultiplier: defaults.maxOrderNotionalMultiplier,
+    },
+  );
+}
+
+/**
  * Build engine-facing RiskLimits from the resolved contract and additional capital-derived fields.
  */
 export function buildRiskLimitsFromContract(
@@ -75,16 +85,10 @@ export function buildRiskLimitsFromContract(
   defaults: AgentRiskDefaultsConfig,
 ): RiskLimits {
   const capital = source.capital;
-  const dailyLossLimit = source.dailyLossLimit;
-
-  // Agent flows always use the operator ceiling for absolute maxDrawdown.
-  // The canonical agent drawdown control is maxDrawdownPct.
-  const maxDrawdown = defaults.maxDrawdown != null ? String(defaults.maxDrawdown) : '1000000000';
+  const rp = source.riskPosture;
 
   return {
-    maxPositionSize: quantity(String(defaults.maxPositionSize)),
     maxOpenPositions: contract.maxOpenPositions.effectiveValue,
-    maxDrawdown: price(maxDrawdown),
     maxDrawdownPct: contract.maxDrawdownPct.effectiveValue,
     stopLossMaxUnrealizedLossPct: contract.stopLossPct.effectiveValue,
     stopLossCooldownMs: contract.stopLossCooldownMs.effectiveValue,
@@ -92,11 +96,13 @@ export function buildRiskLimitsFromContract(
     ...(contract.maxPositionSizePct.source !== 'default' || capital != null ? {
       maxPositionSizePct: contract.maxPositionSizePct.effectiveValue,
     } : {}),
-    ...(capital != null ? {
+    // dailyMaxLossPct: creator-set → use it; otherwise → operator default
+    dailyMaxLossPct: rp?.dailyMaxLossPct ?? defaults.dailyMaxLossPct,
+    // maxOrderNotional: creator-set → use it; otherwise → derive from capital
+    ...(rp?.maxOrderNotional != null ? {
+      maxOrderNotional: price(String(rp.maxOrderNotional)),
+    } : capital != null ? {
       maxOrderNotional: price(String(Number.parseFloat(capital) * defaults.maxOrderNotionalMultiplier)),
-      dailyMaxLossPct: dailyLossLimit != null
-        ? (Number.parseFloat(dailyLossLimit) / Number.parseFloat(capital)) * 100
-        : defaults.dailyMaxLossPct,
     } : {}),
   };
 }

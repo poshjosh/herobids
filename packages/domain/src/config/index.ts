@@ -34,6 +34,7 @@ export {
   AgentRuntimePolicySchema,
   ModelDefaultsSchema,
   BotConfigSchema,
+  BotRiskSchema,
   RiskConfigSchema,
   RiskPlaybookSchema,
   TokenSafetySchema,
@@ -115,6 +116,19 @@ export {
 } from './schema.js';
 
 export {
+  initStrategyRegistry,
+  getStrategyParameters,
+  isStrategySupported,
+  validateStrategyParams,
+  listStrategyCombinations,
+  SUPPORTED_STRATEGY_TYPES,
+  SUPPORTED_DECISION_MODES,
+  type StrategyParameterEntry,
+  type SupportedStrategyType,
+  type SupportedDecisionMode,
+} from './strategy-parameters.js';
+
+export {
   resolveAssessmentConfig,
   type ResolvedAssessmentConfig,
 } from './assessment-config.js';
@@ -129,6 +143,7 @@ export type {
   NomadConfig,
   RuntimeBackend,
   BotConfig,
+  BotRisk,
   RiskConfig,
   RiskPlaybook,
   TokenSafety,

@@ -12,12 +12,12 @@ export interface RiskError extends DomainError {
 /** Risk limits configuration for a trading instance */
 export interface RiskLimits {
   /** Maximum absolute position size (in base units) */
-  maxPositionSize: Quantity;
+  maxPositionSize?: Quantity;
   /** Maximum number of open (non-flat) positions across all instruments */
-  maxOpenPositions: number;
+  maxOpenPositions?: number;
   /** Maximum allowed drawdown from peak equity (as a positive value, e.g. 1000 = $1000).
    *  Preserved for non-agent trading flows. Agents should use maxDrawdownPct instead. */
-  maxDrawdown: Price;
+  maxDrawdown?: Price;
   /** Maximum notional per single order */
   maxOrderNotional?: Price;
   /** Maximum position size as % of current equity (0–100). Checked only when equity is provided. */
@@ -70,7 +70,7 @@ export function checkRisk(
   const isRiskReducing = plan.action === 'close' || plan.action === 'reduce';
 
   // 1. Max drawdown breach (absolute USD — preserved for non-agent flows)
-  if (!isRiskReducing && snapshot.currentDrawdown.gte(limits.maxDrawdown)) {
+  if (!isRiskReducing && limits.maxDrawdown && snapshot.currentDrawdown.gte(limits.maxDrawdown)) {
     return err({
       code: 'risk.max_drawdown_exceeded',
       message: `Current drawdown ${snapshot.currentDrawdown.toString()} exceeds limit ${limits.maxDrawdown.toString()}`,
@@ -106,10 +106,12 @@ export function checkRisk(
     }
   }
 
-  // 1b. Daily max loss (rolling 24h) — checked when both limit and snapshot data present
+  // 1b. Daily max loss (rolling 24h) — checked when both limit and snapshot data present.
+  // dailyMaxLossPct === 0 means "disabled" (no daily loss limit).
   if (
     !isRiskReducing &&
     limits.dailyMaxLossPct != null &&
+    limits.dailyMaxLossPct > 0 &&
     snapshot.dailyLoss != null &&
     snapshot.equity != null
   ) {
@@ -151,7 +153,7 @@ export function checkRisk(
 
   // 2. Max open positions (only check if opening a new position)
   const isOpening = plan.action === 'open_long' || plan.action === 'open_short';
-  if (isOpening && snapshot.openPositionCount >= limits.maxOpenPositions) {
+  if (isOpening && limits.maxOpenPositions != null && snapshot.openPositionCount >= limits.maxOpenPositions) {
     return err({
       code: 'risk.max_open_positions_exceeded',
       message: `Open position count ${snapshot.openPositionCount} would exceed limit ${limits.maxOpenPositions}`,
@@ -165,7 +167,7 @@ export function checkRisk(
   // 3. Max position size — check resulting size after plan executes
   for (const order of plan.orders) {
     const resultingSize = computeResultingSize(snapshot.currentPosition, order.side, order.quantity);
-    if (resultingSize.gt(limits.maxPositionSize)) {
+    if (limits.maxPositionSize && resultingSize.gt(limits.maxPositionSize)) {
       return err({
         code: 'risk.max_position_size_exceeded',
         message: `Resulting position size ${resultingSize.toString()} would exceed limit ${limits.maxPositionSize.toString()}`,

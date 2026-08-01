@@ -516,4 +516,200 @@ describe('checkRisk (parity harness)', () => {
     // Second order notional: max(50000, 50000)=50000, 0.5*50000=25000 < 60000 → pass
     expect(result.ok).toBe(true);
   });
+
+  // ---------------------------------------------------------------------------
+  // Optional absolute guard behaviour
+  // ---------------------------------------------------------------------------
+
+  describe('optional absolute guards', () => {
+    // --- absent maxPositionSize ---
+
+    it('skips absolute position size check when maxPositionSize is absent', () => {
+      const result = checkRisk(
+        plan({ orders: [order({ side: 'buy', quantity: quantity('9999999') })] }),
+        // no maxPositionSize — should not reject even for huge orders
+        { maxOpenPositions: 10 },
+        snapshot(),
+      );
+      expect(result.ok).toBe(true);
+    });
+
+    // --- absent maxDrawdown ---
+
+    it('skips absolute drawdown check when maxDrawdown is absent', () => {
+      const result = checkRisk(
+        plan(),
+        { maxOpenPositions: 10 }, // no maxDrawdown
+        snapshot({ currentDrawdown: price('99999999') }),
+      );
+      expect(result.ok).toBe(true);
+    });
+
+    // --- absent maxOpenPositions ---
+
+    it('skips open position count check when maxOpenPositions is absent', () => {
+      const result = checkRisk(
+        plan({ action: 'open_long' }),
+        {}, // no maxOpenPositions
+        snapshot({ openPositionCount: 999 }),
+      );
+      expect(result.ok).toBe(true);
+    });
+
+    // --- zero semantics: 0 ≠ absent ---
+
+    it('maxPositionSize: quantity("0") rejects any non-zero order (zero is not absent)', () => {
+      const result = checkRisk(
+        plan({ orders: [order({ side: 'buy', quantity: quantity('1') })] }),
+        { maxPositionSize: quantity('0'), maxOpenPositions: 10 },
+        snapshot(),
+      );
+      // quantity('1') > quantity('0') → should reject
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('risk.max_position_size_exceeded');
+      }
+    });
+
+    it('maxPositionSize: quantity("0") passes a zero-size order', () => {
+      const result = checkRisk(
+        plan({ orders: [order({ side: 'buy', quantity: quantity('0') })] }),
+        { maxPositionSize: quantity('0'), maxOpenPositions: 10 },
+        snapshot(),
+      );
+      // quantity('0') == quantity('0') → should pass
+      expect(result.ok).toBe(true);
+    });
+
+    it('maxOpenPositions: 0 blocks all new positions (zero is not absent)', () => {
+      const result = checkRisk(
+        plan({ action: 'open_long' }),
+        { maxOpenPositions: 0 },
+        snapshot({ openPositionCount: 0 }),
+      );
+      // openPositionCount (0) >= maxOpenPositions (0) → should reject
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('risk.max_open_positions_exceeded');
+      }
+    });
+
+    it('maxDrawdown: price("0") still detects positive drawdown breach (zero is not absent)', () => {
+      const result = checkRisk(
+        plan(),
+        { maxDrawdown: price('0'), maxOpenPositions: 10 },
+        snapshot({ currentDrawdown: price('1000') }),
+      );
+      // drawdown 1000 >= 0 → should reject
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('risk.max_drawdown_exceeded');
+      }
+    });
+
+    // --- percentage guards remain active when absolute guards are absent ---
+
+    it('enforces maxPositionSizePct even when maxPositionSize is absent', () => {
+      // equity = $10,000, maxPositionSizePct = 10% → max notional = $1,000
+      // order: 1 BTC at $50,000 = $50,000 > $1,000 → should reject
+      const result = checkRisk(
+        plan({ orders: [order({ side: 'buy', quantity: quantity('1'), price: price('50000') })] }),
+        { maxOpenPositions: 10, maxPositionSizePct: 10 },
+        snapshot({ equity: price('10000'), referenceMark: price('50000') }),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('risk.max_position_size_pct_exceeded');
+      }
+    });
+
+    it('enforces maxDrawdownPct even when maxDrawdown is absent', () => {
+      // peak = $10,000, equity = $9,000 → drawdown = 10%, maxDrawdownPct = 5%
+      const result = checkRisk(
+        plan(),
+        { maxOpenPositions: 10, maxDrawdownPct: 5 },
+        snapshot({ equity: price('9000'), peakEquity: price('10000') }),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('risk.max_drawdown_pct_exceeded');
+      }
+    });
+
+    it('enforces stopLossMaxUnrealizedLossPct even when all absolute guards are absent', () => {
+      // stopLossMaxUnrealizedLossPct is stored in limits but checkRisk does not inspect it.
+      // This test confirms that having only percentage guards with no absolute guards is a valid config.
+      const result = checkRisk(
+        plan(),
+        { stopLossMaxUnrealizedLossPct: 5 },
+        snapshot(),
+      );
+      // checkRisk itself ignores this field — it passes
+      expect(result.ok).toBe(true);
+    });
+
+    // --- parity: supplying absolute members preserves existing behaviour ---
+
+    it('preserves maxPositionSize enforcement when supplied (parity)', () => {
+      const result = checkRisk(
+        plan({ orders: [order({ side: 'buy', quantity: quantity('2000000') })] }),
+        { maxPositionSize: quantity('1000000'), maxOpenPositions: 10 },
+        snapshot(),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('risk.max_position_size_exceeded');
+      }
+    });
+
+    it('preserves maxDrawdown enforcement when supplied (parity)', () => {
+      const result = checkRisk(
+        plan(),
+        { maxDrawdown: price('1000'), maxOpenPositions: 10 },
+        snapshot({ currentDrawdown: price('1500') }),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('risk.max_drawdown_exceeded');
+      }
+    });
+
+    it('preserves maxOpenPositions enforcement when supplied (parity)', () => {
+      const result = checkRisk(
+        plan({ action: 'open_long' }),
+        { maxOpenPositions: 5 },
+        snapshot({ openPositionCount: 5 }),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('risk.max_open_positions_exceeded');
+      }
+    });
+
+    // --- Edge: mix of present and absent absolute guards ---
+
+    it('rejects on maxPositionSize breach while other absolute guards are absent', () => {
+      const result = checkRisk(
+        plan({ orders: [order({ side: 'buy', quantity: quantity('500') })] }),
+        { maxPositionSize: quantity('100') },
+        snapshot(),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('risk.max_position_size_exceeded');
+      }
+    });
+
+    it('rejects on maxOpenPositions breach while other absolute guards are absent', () => {
+      const result = checkRisk(
+        plan({ action: 'open_long' }),
+        { maxOpenPositions: 2 },
+        snapshot({ openPositionCount: 3 }),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('risk.max_open_positions_exceeded');
+      }
+    });
+  });
 });

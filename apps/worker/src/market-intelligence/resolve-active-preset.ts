@@ -1,4 +1,4 @@
-import { ok, type Result, type ActivePresetState, isStyleKey, applyPresetToAgent, type StyleKey } from '@herobids/domain';
+import { ok, type Result, type ActivePresetState, isStyleKey, applyPresetToAgent, type StyleKey, type StrategyIdentity } from '@herobids/domain';
 import { getPreset } from '@herobids/domain/config/presets-loader';
 import type { Database } from '@herobids/db';
 import { resolveAuthoritativeBinding } from './binding-resolver.js';
@@ -18,7 +18,7 @@ const logger = createLogger('resolve-active-preset');
  */
 export async function resolveActivePresetState(
   db: Database,
-  agent: { id: string; unifiedConfig: unknown },
+  agent: { id: string; unifiedConfig: unknown; strategy?: StrategyIdentity | null },
 ): Promise<Result<ActivePresetState>> {
   // ── Step 1: Authoritative binding ─────────────────────────────────────
   const binding = await resolveAuthoritativeBinding(db, agent.id);
@@ -46,10 +46,13 @@ export async function resolveActivePresetState(
     }
   }
 
-  // ── Step 2: Unified-config metadata fallback ──────────────────────────
+  // ── Step 2: Canonical strategy + unifiedConfig metadata fallback ──────
   const uc = (agent.unifiedConfig ?? {}) as Record<string, unknown>;
   const metadata = (uc['metadata'] ?? {}) as Record<string, unknown>;
-  const strategyPreset = metadata['strategyPreset'] as string | undefined;
+  // Prefer canonical strategy.type; fall back to unifiedConfig.metadata.strategyPreset
+  const canonicalPreset = agent.strategy?.type ?? null;
+  const strategyPreset = canonicalPreset
+    ?? (metadata['strategyPreset'] as string | undefined);
   const strategyPresetStyle = metadata['strategyPresetStyle'] as string | undefined;
   const presetBehaviorVersion = metadata['presetBehaviorVersion'] as string | undefined;
   const allowedPresets = (uc['allowedPresets'] ?? {}) as Record<string, unknown>;

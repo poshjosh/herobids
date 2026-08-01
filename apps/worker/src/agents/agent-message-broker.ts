@@ -611,7 +611,8 @@ export class AgentMessageBroker {
       // Safety gate: agent execution mode must not be exceeded by bot execution mode.
       // Paper agents can only create paper bots; shadow agents can create paper or shadow;
       // live agents can create any mode.
-      const agentMode = agent.executionMode ?? 'paper';
+      // Read execution mode from canonical executionDefaults.mode (no legacy column fallback)
+      const agentMode = agent.executionDefaults?.mode ?? 'paper';
       const botMode = validatedConfig.execution.mode ?? 'paper';
       const modeCheck = checkModeEscalation(botMode, agentMode, 'create');
       if (!modeCheck.allowed) {
@@ -883,7 +884,7 @@ export class AgentMessageBroker {
       // Safety gate: agent execution mode must not be exceeded by bot execution mode after merge.
       // Mirrors the create_and_start guard — prevents escalation via adjust_config.
       const adjustedBotMode = validation.data.execution.mode ?? 'paper';
-      const agentModeForAdjust = agent.executionMode ?? 'paper';
+      const agentModeForAdjust = agent.executionDefaults?.mode ?? 'paper';
       const modeCheck = checkModeEscalation(adjustedBotMode, agentModeForAdjust, 'adjust');
       if (!modeCheck.allowed) {
         throw new Error(modeCheck.error);
@@ -1296,8 +1297,8 @@ function applyAgentCapitalLimit(config: Record<string, unknown>, capital: string
   const configuredMaxOrderNotional = parsePositiveDecimal(riskConfig['maxOrderNotional']);
 
   riskConfig['maxOrderNotional'] = configuredMaxOrderNotional && configuredMaxOrderNotional.lte(capitalLimit)
-    ? configuredMaxOrderNotional.toString()
-    : capitalLimit.toString();
+    ? configuredMaxOrderNotional.toNumber()
+    : capitalLimit.toNumber();
 
   return {
     ...config,
