@@ -1,6 +1,6 @@
 # 011 - Agent Scanner DEX Venue Completion
 
-**Status:** Planned  
+**Status:** Implemented  
 **Created:** 2026-08-01  
 **Depends on:** [004 Part 1 - Orderbook Scanner Completion](../../07/17/004-agent-scanner-multi-venue-signal-support/001-plan.md) (implemented)
 
@@ -358,7 +358,7 @@ feature does not convert idle agents into hard startup failures.
 - Empty or invalid discovery data yields explicit, named scanner health/journal
   events, not a silent empty scan.
 
-### Phase 4 - Completion, Pricing, and Persistence [PENDING]
+### Phase 4 - Completion, Pricing, and Persistence [DONE]
 
 **Files**
 
@@ -393,7 +393,7 @@ feature does not convert idle agents into hard startup failures.
 - DEX sizing receives the selected token's exact Solana/Base identity.
 - Persisted candidates do not mislabel DEX data as orderbook data.
 
-### Phase 5 - Verification and Rollout [PENDING]
+### Phase 5 - Verification and Rollout [DONE]
 
 **Unit and integration coverage**
 

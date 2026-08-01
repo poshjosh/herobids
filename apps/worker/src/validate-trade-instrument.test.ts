@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { validateTradeInstrument } from './validate-trade-instrument.js';
+import { parseSwapInstrumentId } from './swap-instrument-id.js';
 import type { VenueInstrumentCache } from './venue-instrument-cache.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -305,5 +306,145 @@ describe('Malformed instrument IDs', () => {
     const result = validateTradeInstrument('jupiter', 'A/B/C', makeCache(true));
     expect(result.valid).toBe(false);
     expect(result.reason).toContain('not a valid swap instrument ID');
+  });
+});
+
+// ── Schema regression guard — exact DEX instrument IDs ──────────────────────
+// Phase 5 guard: verifies that the exact BASE:ADDR/QUOTE:ADDR ID passes
+// through every Zod schema boundary and clears both parseSwapInstrumentId()
+// and validateTradeInstrument() for Jupiter (Solana) and 1inch (Base).
+
+import { DecisionSubmitPayloadSchema } from '@herobids/domain';
+import { SubmitDecisionParamsSchema } from './tools/trading.js';
+
+const SOL_BONK_MINT = 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263';
+const SOL_USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const BASE_WETH_ADDR = '0x4200000000000000000000000000000000000006';
+const BASE_USDC_ADDR = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+
+const SOL_EXACT_ID = `BONK:${SOL_BONK_MINT}/USDC:${SOL_USDC_MINT}`;
+const EVM_EXACT_ID = `WETH:${BASE_WETH_ADDR}/USDC:${BASE_USDC_ADDR}`;
+
+describe('Schema regression guard — exact DEX instrument IDs', () => {
+  // ── DecisionSubmitPayloadSchema ─────────────────────────────────────────
+
+  describe('DecisionSubmitPayloadSchema', () => {
+    it('accepts Solana exact BASE:ADDR/QUOTE:ADDR ID', () => {
+      const result = DecisionSubmitPayloadSchema.safeParse({
+        decisionId: 'dec-001',
+        instrumentId: SOL_EXACT_ID,
+        intent: 'go_long',
+        targetSize: '1.5',
+        rationaleSummary: 'Momentum signal',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts EVM exact BASE:ADDR/QUOTE:ADDR ID', () => {
+      const result = DecisionSubmitPayloadSchema.safeParse({
+        decisionId: 'dec-002',
+        instrumentId: EVM_EXACT_ID,
+        intent: 'go_long',
+        targetSize: '0.01',
+        rationaleSummary: 'Base DEX signal',
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
+  // ── SubmitDecisionParamsSchema ──────────────────────────────────────────
+
+  describe('SubmitDecisionParamsSchema', () => {
+    const validParams = {
+      instrumentId: '',
+      intent: 'go_long' as const,
+      targetSize: '1.5',
+      rationaleSummary: 'Test signal',
+    };
+
+    it('accepts Solana exact BASE:ADDR/QUOTE:ADDR ID', () => {
+      const result = SubmitDecisionParamsSchema.safeParse({
+        ...validParams,
+        instrumentId: SOL_EXACT_ID,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts EVM exact BASE:ADDR/QUOTE:ADDR ID', () => {
+      const result = SubmitDecisionParamsSchema.safeParse({
+        ...validParams,
+        instrumentId: EVM_EXACT_ID,
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
+  // ── parseSwapInstrumentId ───────────────────────────────────────────────
+
+  describe('parseSwapInstrumentId', () => {
+    it('parses Solana exact ID with both addresses', () => {
+      const parsed = parseSwapInstrumentId(SOL_EXACT_ID);
+      expect(parsed.displaySymbol).toBe('BONK/USDC');
+      expect(parsed.baseAddress).toBe(SOL_BONK_MINT);
+      expect(parsed.quoteAddress).toBe(SOL_USDC_MINT);
+      expect(parsed.isExact).toBe(true);
+    });
+
+    it('parses EVM exact ID with both addresses', () => {
+      const parsed = parseSwapInstrumentId(EVM_EXACT_ID);
+      expect(parsed.displaySymbol).toBe('WETH/USDC');
+      expect(parsed.baseAddress).toBe(BASE_WETH_ADDR);
+      expect(parsed.quoteAddress).toBe(BASE_USDC_ADDR);
+      expect(parsed.isExact).toBe(true);
+    });
+  });
+
+  // ── validateTradeInstrument (Jupiter) ───────────────────────────────────
+
+  describe('validateTradeInstrument — Jupiter', () => {
+    it('validates Solana exact pair when both mints are cached', () => {
+      const cache = makeCache(true, {
+        jupiter: new Set([SOL_BONK_MINT, SOL_USDC_MINT]),
+      });
+      const result = validateTradeInstrument('jupiter', SOL_EXACT_ID, cache);
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects Solana exact pair when base mint is missing', () => {
+      const cache = makeCache(true, {
+        jupiter: new Set([SOL_USDC_MINT]),
+      });
+      const result = validateTradeInstrument('jupiter', SOL_EXACT_ID, cache);
+      expect(result.valid).toBe(false);
+    });
+  });
+
+  // ── validateTradeInstrument (1inch) ─────────────────────────────────────
+
+  describe('validateTradeInstrument — 1inch', () => {
+    it('validates EVM exact pair with canonical USDC on Base', () => {
+      const result = validateTradeInstrument('1inch', EVM_EXACT_ID, makeCache(false), {
+        oneInchConfig: { chainId: 8453 },
+        canonicalTokens: {
+          base: {
+            USDC: { address: BASE_USDC_ADDR, name: 'USD Coin', aliases: [] as string[] },
+          },
+        },
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects EVM exact pair when quote mismatches canonical USDC', () => {
+      const result = validateTradeInstrument('1inch', EVM_EXACT_ID, makeCache(false), {
+        oneInchConfig: { chainId: 8453 },
+        canonicalTokens: {
+          base: {
+            USDC: { address: '0x0000000000000000000000000000000000000001', name: 'Fake', aliases: [] as string[] },
+          },
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('does not match canonical USDC address');
+    });
   });
 });

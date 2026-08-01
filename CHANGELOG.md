@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Agent Scanner DEX Venue Completion:** Hybrid and scanner-gated agents bound to Jupiter (Solana) or 1inch (Base) now receive technically scored DEX swap signals with exact, address-qualified instrument IDs (`BASE:ADDR/QUOTE:ADDR`). Full pipeline: pool discovery → OHLCV via GeckoTerminal → technical scoring → completed scan → hybrid prompt → exact decision intake → swap execution. Operator-controlled via `agentRuntime.scanner.swap.enabled` and per-venue flags. Includes exact swap instrument ID parsing, venue-specific trade validation, atomic pool identity preservation, swap candle routing, candidate discovery gating, and schema regression guard tests.
+
 ## v0.0.37 - 2026-07-31
 
 ### Added
