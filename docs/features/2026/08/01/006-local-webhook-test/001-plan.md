@@ -150,7 +150,7 @@ The plan should not create a second overlapping mock script unless the existing 
 
 Do not add Telegram `entities` support to the script unless the application starts depending on them. Current slash-command parsing is text-based.
 
-### Task 3: local testing reference doc — `PENDING`
+### Task 3: local testing reference doc — `DONE`
 
 **File:** add `docs/tech/telegram-local-testing.md`
 
@@ -210,3 +210,11 @@ The doc must state explicitly that mock mode can still trigger real outbound Tel
 - **L5:** `$0` used in `--help` sed command instead of `${BASH_SOURCE[0]}`
 - **L6:** Style inconsistency: `[[ ]]` vs `[ ]` between modes
 - **L7:** Comment header references CHAT_ID but resolution uses CHAT_ID_ENV
+
+### [Task 3] Local testing reference doc
+- **M1:** Secret env var naming inconsistency (TELEGRAM_WEBHOOK_SECRET vs WEBHOOK_SECRET)
+- **M2:** Troubleshooting for worker overwrite is incomplete (missing "set to match" option)
+- **M3:** Prerequisites "user linked to DB" is imprecise (should mention `user_chats` table)
+- **L1:** Tunnel Verification vs Webhook Contract checklist redundancy
+- **L2:** `--help` flag not documented for either script
+- **L3:** No mention of batch mode `from` field omission
