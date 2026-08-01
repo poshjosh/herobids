@@ -119,6 +119,16 @@ ICT_BULLISH_SKILL_DESCRIPTION="Trade bullish swings using the ICT EMA model: dai
 ICT_BULLISH_SKILL_TAG="bullish, swing, inner circle trader, ict"
 ICT_BULLISH_SKILL_SOURCE_FILE="$REPO_ROOT/docs/skills/ict-bullish-swing.md"
 
+# Agent defaults
+THYPER_AGENT_NAME="thyper"
+THYPER_AGENT_PROMPT="Scan Hyperliquid for overbought/oversold conditions. Use contrarian mean-reversion signals to enter positions against prevailing sentiment when extreme readings are detected. Submit long decisions on oversold bounces and short decisions on overbought rejections."
+T1INCH_AGENT_NAME="t1inch"
+T1INCH_AGENT_PROMPT="Scan 1inch for tokens trading in well-defined ranges. Identify range support and resistance levels. Submit long decisions near support and short decisions near resistance. Use range-bound mean-reversion with tight stop-losses on range breaks."
+TPLAYBOOK_AGENT_NAME="tplaybook"
+TPLAYBOOK_AGENT_PROMPT="Follow the ICT trading playbook. Use the ICT Bearish Swing and ICT Bullish Swing skills to identify high-probability swing trade setups. Execute only when daily bias aligns with the trade direction. Manage positions with structured stop-loss and profit-taking rules."
+
+PLATFORM_ASSESSMENT_3H='{"enabled":true,"reviewIntervalMs":10800000}'
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -223,6 +233,13 @@ VENUE_ACCOUNT_ID=""
 CONNECTION_ID=""
 AUTO_DETECTED_PROVIDERS=()
 MULTI_SETUP_SUMMARIES=()
+
+# Agent tracking
+AGENT_HL_CONNECTION_ID=""
+AGENT_ONEINCH_CONNECTION_ID=""
+THYPER_AGENT_ID=""
+T1INCH_AGENT_ID=""
+TPLAYBOOK_AGENT_ID=""
 
 require_var() {
   local var="$1"
@@ -600,6 +617,168 @@ ensure_ict_bullish_skill() {
   die "${ICT_BULLISH_SKILL_NAME} provisioning step failed."
 }
 
+# ---------------------------------------------------------------------------
+# Agent payload builders
+# ---------------------------------------------------------------------------
+
+build_thyper_agent_payload() {
+  local connection_id="$1"
+  jq -n \
+    --arg name "$THYPER_AGENT_NAME" \
+    --arg prompt "$THYPER_AGENT_PROMPT" \
+    --arg capabilityMode "hybrid" \
+    --arg hybridMode "scanner_gated" \
+    --arg strategyPreset "contrarian" \
+    --arg executionVenue "hyperliquid" \
+    --arg authorizationMode "direct" \
+    --argjson platformAssessment "$PLATFORM_ASSESSMENT_3H" \
+    --arg connectionId "$connection_id" \
+    '{
+      name: $name,
+      prompt: $prompt,
+      capabilityMode: $capabilityMode,
+      hybridMode: $hybridMode,
+      strategyPreset: $strategyPreset,
+      executionVenue: $executionVenue,
+      authorizationMode: $authorizationMode,
+      platformAssessment: $platformAssessment,
+      connectionIds: [$connectionId]
+    }'
+}
+
+build_t1inch_agent_payload() {
+  local connection_id="$1"
+  jq -n \
+    --arg name "$T1INCH_AGENT_NAME" \
+    --arg prompt "$T1INCH_AGENT_PROMPT" \
+    --arg capabilityMode "hybrid" \
+    --arg hybridMode "scanner_gated" \
+    --arg strategyPreset "range" \
+    --arg executionVenue "1inch" \
+    --arg authorizationMode "approval_required" \
+    --argjson platformAssessment "$PLATFORM_ASSESSMENT_3H" \
+    --arg connectionId "$connection_id" \
+    '{
+      name: $name,
+      prompt: $prompt,
+      capabilityMode: $capabilityMode,
+      hybridMode: $hybridMode,
+      strategyPreset: $strategyPreset,
+      executionVenue: $executionVenue,
+      authorizationMode: $authorizationMode,
+      platformAssessment: $platformAssessment,
+      connectionIds: [$connectionId]
+    }'
+}
+
+build_tplaybook_agent_payload() {
+  local connection_id="$1"
+  local skill_id1="$2"
+  local skill_id2="$3"
+  if [[ -n "$skill_id1" && -n "$skill_id2" ]]; then
+    jq -n \
+      --arg name "$TPLAYBOOK_AGENT_NAME" \
+      --arg prompt "$TPLAYBOOK_AGENT_PROMPT" \
+      --arg capabilityMode "intelligence" \
+      --arg executionVenue "hyperliquid" \
+      --arg authorizationMode "direct" \
+      --arg connectionId "$connection_id" \
+      --arg skillId1 "$skill_id1" \
+      --arg skillId2 "$skill_id2" \
+      '{
+        name: $name,
+        prompt: $prompt,
+        capabilityMode: $capabilityMode,
+        executionVenue: $executionVenue,
+        authorizationMode: $authorizationMode,
+        connectionIds: [$connectionId],
+        skillIds: [$skillId1, $skillId2]
+      }'
+  else
+    jq -n \
+      --arg name "$TPLAYBOOK_AGENT_NAME" \
+      --arg prompt "$TPLAYBOOK_AGENT_PROMPT" \
+      --arg capabilityMode "intelligence" \
+      --arg executionVenue "hyperliquid" \
+      --arg authorizationMode "direct" \
+      --arg connectionId "$connection_id" \
+      '{
+        name: $name,
+        prompt: $prompt,
+        capabilityMode: $capabilityMode,
+        executionVenue: $executionVenue,
+        authorizationMode: $authorizationMode,
+        connectionIds: [$connectionId]
+      }'
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Agent provisioning helpers
+# ---------------------------------------------------------------------------
+
+ensure_agent() {
+  local agent_name="$1"
+  local agent_payload="$2"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log_info "Dry-run mode: skipping agent '${agent_name}' provisioning"
+    return 0
+  fi
+
+  log_section "Provision agent: ${agent_name}"
+
+  api_call GET /agents '?scope=mine'
+  if [[ "$HTTP_STATUS" -eq 200 ]]; then
+    local existing_id
+    existing_id="$(echo "$RESPONSE_BODY" | jq -r --arg name "$agent_name" '.agents[]? | select(.name == $name) | .id' | head -1)"
+    if [[ -n "$existing_id" && "$existing_id" != "null" ]]; then
+      log_info "Agent already exists: ${agent_name} (id=${existing_id})"
+      printf '%s\n' "$existing_id"
+      return 0
+    fi
+  else
+    log_warn "Failed to list agents (HTTP ${HTTP_STATUS}) — attempting creation anyway"
+  fi
+
+  api_call POST /agents "$agent_payload"
+  if [[ "$HTTP_STATUS" -eq 201 ]]; then
+    local created_id
+    created_id="$(echo "$RESPONSE_BODY" | jq -r '.id')"
+    log_ok "Created agent: ${agent_name} (id=${created_id})"
+    printf '%s\n' "$created_id"
+    return 0
+  fi
+
+  log_error "Agent creation failed for '${agent_name}' (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
+  die "Agent provisioning step failed."
+}
+
+create_agents() {
+  log_section "Provision agents"
+
+  # thyper — requires Hyperliquid connection
+  if [[ -n "$AGENT_HL_CONNECTION_ID" ]]; then
+    THYPER_AGENT_ID="$(ensure_agent "$THYPER_AGENT_NAME" "$(build_thyper_agent_payload "$AGENT_HL_CONNECTION_ID")" | tail -1)"
+  else
+    log_warn "Skipping ${THYPER_AGENT_NAME}: no Hyperliquid connection available"
+  fi
+
+  # t1inch — requires 1inch connection
+  if [[ -n "$AGENT_ONEINCH_CONNECTION_ID" ]]; then
+    T1INCH_AGENT_ID="$(ensure_agent "$T1INCH_AGENT_NAME" "$(build_t1inch_agent_payload "$AGENT_ONEINCH_CONNECTION_ID")" | tail -1)"
+  else
+    log_warn "Skipping ${T1INCH_AGENT_NAME}: no 1inch connection available"
+  fi
+
+  # tplaybook — requires Hyperliquid connection + ICT skills
+  if [[ -n "$AGENT_HL_CONNECTION_ID" ]]; then
+    TPLAYBOOK_AGENT_ID="$(ensure_agent "$TPLAYBOOK_AGENT_NAME" "$(build_tplaybook_agent_payload "$AGENT_HL_CONNECTION_ID" "${ICT_BEARISH_SKILL_ID:-}" "${ICT_BULLISH_SKILL_ID:-}")" | tail -1)"
+  else
+    log_warn "Skipping ${TPLAYBOOK_AGENT_NAME}: no Hyperliquid connection available"
+  fi
+}
+
 # Core
 require_var API_BASE_URL
 require_var AUTH_EMAIL
@@ -872,6 +1051,11 @@ if [[ "$RUN_MULTI_PROVIDER" -eq 1 ]]; then
     if [[ "$HTTP_STATUS" -eq 201 ]]; then
       multi_credential_id="$(echo "$RESPONSE_BODY" | jq -r '.credential.id')"
       multi_connection_id="$(echo "$RESPONSE_BODY" | jq -r '.connection.id')"
+      # Capture connection ID for agent provisioning before it gets overwritten
+      case "$provider" in
+        hyperliquid) AGENT_HL_CONNECTION_ID="$multi_connection_id" ;;
+        1inch)       AGENT_ONEINCH_CONNECTION_ID="$multi_connection_id" ;;
+      esac
       multi_venue_account_id="$(echo "$RESPONSE_BODY" | jq -r '.venueAccount.id // empty')"
       multi_connection_id="$(echo "$RESPONSE_BODY" | jq -r '.connection.id // empty')"
 
@@ -908,6 +1092,11 @@ elif [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
   if [[ "$HTTP_STATUS" -eq 201 ]]; then
     CREDENTIAL_ID="$(echo "$RESPONSE_BODY" | jq -r '.credential.id')"
     CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.connection.id')"
+    # Capture connection ID for agent provisioning before it gets overwritten
+    case "$SETUP_PROVIDER_RESOLVED" in
+      hyperliquid) AGENT_HL_CONNECTION_ID="$CONNECTION_ID" ;;
+      1inch)       AGENT_ONEINCH_CONNECTION_ID="$CONNECTION_ID" ;;
+    esac
     VENUE_ACCOUNT_ID="$(echo "$RESPONSE_BODY" | jq -r '.venueAccount.id // empty')"
     CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.connection.id // empty')"
     log_ok "Guided setup created credential=${CREDENTIAL_ID} connection=${CONNECTION_ID}"
@@ -985,6 +1174,12 @@ else
       die "Connection step failed."
     fi
   fi
+
+  # Capture connection ID for agent provisioning
+  case "$ADVANCED_CONNECTION_PROVIDER" in
+    hyperliquid) AGENT_HL_CONNECTION_ID="$CONNECTION_ID" ;;
+    1inch)       AGENT_ONEINCH_CONNECTION_ID="$CONNECTION_ID" ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------
@@ -1020,6 +1215,12 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Provision agents
+# ---------------------------------------------------------------------------
+
+create_agents
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 
@@ -1037,6 +1238,15 @@ if [[ -n "${ICT_BEARISH_SKILL_ID:-}" && "${ICT_BEARISH_SKILL_ID:-}" != "null" ]]
 fi
 if [[ -n "${ICT_BULLISH_SKILL_ID:-}" && "${ICT_BULLISH_SKILL_ID:-}" != "null" ]]; then
   log_ok "Skill:       ${ICT_BULLISH_SKILL_ID}  (${ICT_BULLISH_SKILL_NAME})"
+fi
+if [[ -n "${THYPER_AGENT_ID:-}" && "${THYPER_AGENT_ID:-}" != "null" ]]; then
+  log_ok "Agent:       ${THYPER_AGENT_ID}  (${THYPER_AGENT_NAME})"
+fi
+if [[ -n "${T1INCH_AGENT_ID:-}" && "${T1INCH_AGENT_ID:-}" != "null" ]]; then
+  log_ok "Agent:       ${T1INCH_AGENT_ID}  (${T1INCH_AGENT_NAME})"
+fi
+if [[ -n "${TPLAYBOOK_AGENT_ID:-}" && "${TPLAYBOOK_AGENT_ID:-}" != "null" ]]; then
+  log_ok "Agent:       ${TPLAYBOOK_AGENT_ID}  (${TPLAYBOOK_AGENT_NAME})"
 fi
 if [[ "$RUN_MULTI_PROVIDER" -eq 1 ]]; then
   for summary in "${MULTI_SETUP_SUMMARIES[@]}"; do
