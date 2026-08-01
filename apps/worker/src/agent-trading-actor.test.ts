@@ -3128,4 +3128,132 @@ describe('AgentTradingActor', () => {
       await actor.stop();
     });
   });
+
+  // ── buildSwapDecisionMetadata ────────────────────────────────────────────
+
+  describe('buildSwapDecisionMetadata (swap instrument ID parsing)', () => {
+    it('returns undefined for orderbook venue', () => {
+      const actor = new AgentTradingActor(makeBaseDeps({ venueType: 'orderbook' }));
+      const result = (actor as any).buildSwapDecisionMetadata('BTC/USD:USD');
+      expect(result).toBeUndefined();
+    });
+
+    it('returns pre-configured swapAssets when deps.swapAssets is set', () => {
+      const swapAssets = {
+        baseAsset: 'SOL',
+        quoteAsset: 'USDC',
+        baseDecimals: 9,
+        quoteDecimals: 6,
+      };
+      const actor = new AgentTradingActor(makeBaseDeps({
+        venueType: 'swap',
+        swapAssets,
+        swapBaseTokenAddress: 'So11111111111111111111111111111111111111112',
+      }));
+
+      const result = (actor as any).buildSwapDecisionMetadata('SOL/USDC');
+
+      expect(result).toBeDefined();
+      expect(result.swapAssets).toEqual(swapAssets);
+      expect(result.swapBaseTokenAddress).toBe('So11111111111111111111111111111111111111112');
+    });
+
+    it('EXACT form BASE:ADDR/QUOTE:ADDR → both addresses preserved', () => {
+      const actor = new AgentTradingActor(makeBaseDeps({ venueType: 'swap' }));
+
+      const result = (actor as any).buildSwapDecisionMetadata(
+        'WETH:0x4200000000000000000000000000000000000006/USDC:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      );
+
+      expect(result).toBeDefined();
+      expect(result.swapAssets).toEqual({
+        baseAsset: '0x4200000000000000000000000000000000000006',
+        quoteAsset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      });
+      expect(result.swapBaseTokenAddress).toBe('0x4200000000000000000000000000000000000006');
+    });
+
+    it('EXACT form: quote address is NOT dropped', () => {
+      const actor = new AgentTradingActor(makeBaseDeps({ venueType: 'swap' }));
+
+      const result = (actor as any).buildSwapDecisionMetadata(
+        'BONK:DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263/USDC:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+      );
+
+      expect(result).toBeDefined();
+      expect(result.swapAssets!.quoteAsset).toBe('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+      // Quote address is the full on-chain address, NOT just the symbol "USDC"
+      expect(result.swapAssets!.quoteAsset).not.toBe('USDC');
+    });
+
+    it('Legacy BASE:ADDR/QUOTE form → base address only, quote is symbol', () => {
+      const actor = new AgentTradingActor(makeBaseDeps({ venueType: 'swap' }));
+
+      const result = (actor as any).buildSwapDecisionMetadata(
+        'BONK:DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263/USDC',
+      );
+
+      expect(result).toBeDefined();
+      expect(result.swapAssets).toEqual({
+        baseAsset: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+        quoteAsset: 'USDC',
+      });
+      expect(result.swapBaseTokenAddress).toBe('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263');
+    });
+
+    it('Legacy BASE/QUOTE form → no addresses, both are symbols', () => {
+      const actor = new AgentTradingActor(makeBaseDeps({ venueType: 'swap' }));
+
+      const result = (actor as any).buildSwapDecisionMetadata('WETH/USDC');
+
+      expect(result).toBeDefined();
+      expect(result.swapAssets).toEqual({
+        baseAsset: 'WETH',
+        quoteAsset: 'USDC',
+      });
+      expect(result.swapBaseTokenAddress).toBe('WETH');
+    });
+
+    it('malformed instrument returns swapBaseTokenAddress fallback', () => {
+      const actor = new AgentTradingActor(makeBaseDeps({
+        venueType: 'swap',
+        swapBaseTokenAddress: 'fallback-address',
+      }));
+
+      const result = (actor as any).buildSwapDecisionMetadata('NOT_A_VALID_INSTRUMENT');
+
+      expect(result).toBeDefined();
+      expect(result.swapAssets).toBeUndefined();
+      expect(result.swapBaseTokenAddress).toBe('fallback-address');
+    });
+
+    it('malformed instrument without swapBaseTokenAddress falls back to raw instrumentId', () => {
+      const actor = new AgentTradingActor(makeBaseDeps({ venueType: 'swap' }));
+
+      const result = (actor as any).buildSwapDecisionMetadata('NOT_A_VALID_INSTRUMENT');
+
+      expect(result).toBeDefined();
+      expect(result.swapAssets).toBeUndefined();
+      expect(result.swapBaseTokenAddress).toBe('NOT_A_VALID_INSTRUMENT');
+    });
+
+    it('merges configured decimals into parsed swapAssets', () => {
+      const swapAssets = {
+        baseAsset: 'SOL',
+        quoteAsset: 'USDC',
+        baseDecimals: 9,
+        quoteDecimals: 6,
+      };
+      const actor = new AgentTradingActor(makeBaseDeps({
+        venueType: 'swap',
+        swapAssets,
+      }));
+
+      // deps.swapAssets is set → uses pre-configured assets (not parsing)
+      const result = (actor as any).buildSwapDecisionMetadata('ANY/THING');
+
+      expect(result).toBeDefined();
+      expect(result.swapAssets).toEqual(swapAssets);
+    });
+  });
 });

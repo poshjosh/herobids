@@ -123,7 +123,7 @@ export interface TechnicalPhaseResult {
  * classification logic: HTTP 400 = unsupported, HTTP 429/5xx/timeout = transient.
  * No Binance-specific HTTP assumptions are applied to GeckoTerminal errors.
  */
-function classifyCandleError(err: unknown): { status: CandleFetchStatus; detail: string } {
+export function classifyCandleError(err: unknown): { status: CandleFetchStatus; detail: string } {
   const msg = err instanceof Error ? err.message : String(err);
 
   // HTTP 400 → unsupported instrument (pool not found, invalid symbol, etc.)
