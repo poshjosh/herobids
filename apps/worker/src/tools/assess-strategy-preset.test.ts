@@ -72,7 +72,7 @@ describe('assess_strategy_preset tool', () => {
     expect(result.errorCode).toBe('validation.invalid_params');
   });
 
-  it('returns service unavailable when AssessmentRequestPort is not wired', async () => {
+  it('returns service unavailable when neither AssessmentRequestPort nor broker is available (unit test / worker direct-call context)', async () => {
     const ctx = makeCtx({ db: undefined });
     const result = await assessStrategyPresetTool.execute(
       { symbols: ['BTC'], venueFamily: 'hyperliquid', instrumentKind: 'perp' },

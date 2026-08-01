@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ToolContext, PresetTransitionPort, PresetTransitionApplicationResult } from '@herobids/domain';
 import { ok } from '@herobids/domain';
 import { marketAssessmentArtifacts } from '@herobids/db';
-import { changeStrategyPresetTool, setPresetTransitionPort } from './change-strategy-preset.js';
+import { changeStrategyPresetTool, setPresetTransitionPort, clearPresetTransitionPort } from './change-strategy-preset.js';
 
 function makeMockTransitionPort(overrides?: Partial<PresetTransitionPort>): PresetTransitionPort {
   return {
@@ -98,7 +98,7 @@ function makeActiveArtifact(overrides?: Record<string, unknown>) {
 describe('change_strategy_preset', () => {
   beforeEach(() => {
     // Reset the module-level port between tests so each test starts clean.
-    setPresetTransitionPort(null as unknown as PresetTransitionPort);
+    clearPresetTransitionPort();
   });
 
   // ── Valid params → success ─────────────────────────────────────────────
