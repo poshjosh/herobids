@@ -1,8 +1,9 @@
 # 002 - Agent Blueprint Marketplace Field Classification
 
-**Status:** Draft
+**Status:** Draft pre-harmonization manifest
 **Created:** 2026-08-01
-**Depends on:** [003-target-state-brief.md](./003-target-state-brief.md), [004-adr-list.md](./004-adr-list.md)
+**Depends on:** [003-target-state-brief.md](./003-target-state-brief.md), [004-adr-list.md](./004-adr-list.md), [002-agent-bot-config-harmonization-closure.md](../003-agent-bot-config-harmonization/002-agent-bot-config-harmonization-closure.md)
+**Required by:** [003-agent-blueprint-marketplace-phase-1-implementation.md](../003-agent-bot-config-harmonization/003-agent-blueprint-marketplace-phase-1-implementation.md)
 **Implements:** [ADR 002 — Template vs Instance Boundary](../../../../../tech/adrs/2026/08/002-template-vs-instance-boundary.md)
 
 ## Purpose
@@ -11,7 +12,7 @@ ADR 002 requires every behavior-affecting field to be classified as **template-e
 
 It is the single source of truth for what server-side projection copies into a blueprint and what it deliberately drops. Projection tests in WP4 must assert against this table field-by-field.
 
-> **Note on representation.** The template-eligible strategy, risk, and execution fields below are expressed through the shared `StrategyIdentity`, `RiskPosture`, and `ExecutionDefaults` value objects delivered by the [config harmonization prerequisite](../003-agent-bot-config-harmonization/001-plan.md). After that work lands, the scattered agent risk columns referenced in this table are replaced by those typed structures; the classification (template-eligible vs instance-only) is unchanged.
+> **Pre-harmonization notice.** This table describes the current legacy storage surface and must not be read as evidence that Plan 008 is implemented. Plan 008 must rewrite it as an exit artifact: replace removed flat columns with canonical `strategy`, raw nullable `risk`, and `executionDefaults`; retain `capital`, `maxBots`, and `tickIntervalMs`; and classify every `unifiedConfig` branch and metadata key with its implemented destination. Plan 009 projection cannot begin until that rewrite is complete.
 
 ## Classification Rules
 
@@ -103,11 +104,11 @@ To keep installer intent explicit without stripping behavior:
 
 1. Instantiation returns the fully-resolved template-eligible field set to the client for review.
 2. The installer may edit the copied values (including inherited risk limits) before creating the instance.
-3. A deeper "fork and edit the blueprint itself" authoring flow may land in Phase 1b or Phase 2; the review-and-edit-at-instantiate path is the Phase 1 minimum.
+3. A deeper "fork and edit the blueprint itself" authoring flow may land in Milestone B or Phase 2; the review-and-edit-at-instantiate path is the Phase 1 minimum.
 
 ## Verification Hook
 
-WP4 projection tests must, for each row above:
+Plan 009 Milestone A projection tests must, for each row in the post-Plan-008 rewrite:
 1. assert every template-eligible field survives save-as-blueprint,
 2. assert every instance-only field is absent from the stored blueprint payload,
 3. assert each split field is decomposed correctly (authored half present, runtime/private half absent).

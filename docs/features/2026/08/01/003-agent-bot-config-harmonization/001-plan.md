@@ -1,6 +1,6 @@
 # 001 - Agent and Bot Configuration Harmonization Plan
 
-**Status:** Draft
+**Status:** Implemented with outstanding closure in [002-agent-bot-config-harmonization-closure.md](./002-agent-bot-config-harmonization-closure.md)
 **Created:** 2026-08-01
 **Blocks:** [002-agent-blueprint-marketplace](../002-agent-blueprint-marketplace/001-plan.md)
 

@@ -1,9 +1,11 @@
-# 002 - Agent Blueprint Marketplace Phase 1 Plan
+# 002 - Agent Blueprint Marketplace Phase 1 Plan (Superseded)
 
-**Status:** Draft  
+**Status:** Superseded for implementation by [003-agent-blueprint-marketplace-phase-1-implementation.md](../003-agent-bot-config-harmonization/003-agent-blueprint-marketplace-phase-1-implementation.md)
 **Created:** 2026-08-01  
 **Depends on:** [003-target-state-brief.md](./003-target-state-brief.md), [004-adr-list.md](./004-adr-list.md), [005-delivery-map.md](./005-delivery-map.md), [007-field-classification.md](./007-field-classification.md)  
 **Prerequisite:** [003-agent-bot-config-harmonization](../003-agent-bot-config-harmonization/001-plan.md) — the shared `StrategyIdentity`, `RiskPosture`, and `ExecutionDefaults` value objects must land first; this plan builds the blueprint contract on them.
+
+> This document is retained as historical planning context. Do not implement from it. Plan 009 is the sole implementation contract and replaces the Phase 1a/1b labels below with Milestone A/B while preserving the accepted ADRs and target state.
 
 ## Phase Goal
 
