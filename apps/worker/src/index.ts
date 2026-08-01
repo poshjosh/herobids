@@ -927,13 +927,17 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
         // Bots are validated at startup by BotConfigSchema (swapAssets required for swap venues).
         let resolvedSwapAssets: { baseAsset: string; quoteAsset: string; baseDecimals: number; quoteDecimals: number } | undefined;
         if (venueType === 'swap') {
-          resolvedSwapAssets = resolveSwapAssetsFromBinding(binding);
+          // resolveSwapAssetsFromBinding expects BindingLike { id, bindingProfile },
+          // but the binding from resolveActiveBinding has { profile }. Remap.
+          resolvedSwapAssets = resolveSwapAssetsFromBinding({ id: binding.id, bindingProfile: binding.profile });
         }
 
         let actor: AgentTradingActor | undefined;
 
         // Guard: reject unsupported 1inch chain before actor starts (mirrors bot path)
-        const resolvedSwapNetwork = resolveSwapNetwork(binding.venue, binding, appConfig.venues['1inch']);
+        // Remap binding { profile } to BindingLike { bindingProfile }.
+        const bindingForSwap = { id: binding.id, bindingProfile: binding.profile };
+        const resolvedSwapNetwork = resolveSwapNetwork(binding.venue, bindingForSwap, appConfig.venues['1inch']);
         if (venueType === 'swap' && binding.venue === '1inch' && appConfig.marketData?.tokenSafety?.enabled && !resolvedSwapNetwork) {
           throw new CredentialResolutionError(
             `Unsupported 1inch chain for agent ${agentId} — no token-safety network resolved from binding or config`,
@@ -1094,6 +1098,9 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           emitAgentWake: (wakeAgentId, payload) => eventPublisher.emitAgentWake(wakeAgentId, payload),
           isHybridMode: agent?.unifiedConfig?.capabilityMode === 'hybrid',
           instrumentCache,
+          oneInchConfig: appConfig.venues['1inch'],
+          bindingProfile: binding.profile,
+          canonicalTokens: appConfig.marketData?.tokenSafety?.canonicalTokens,
           perTradeLevelMonitorIntervalMs: appConfig.agentRiskDefaults.perTradeLevelMonitorIntervalMs,
           onJournalEvent: (event) => {
             eventPublisher.emitJournalEvent(agentId, {

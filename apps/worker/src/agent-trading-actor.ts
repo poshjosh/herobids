@@ -7,6 +7,8 @@ import { quantity, price, Decimal, ok, err, type Result } from '@herobids/domain
 import type { ExecutionActor, IntakeResult } from './execution-actor.js';
 import type { VenueInstrumentCache } from './venue-instrument-cache.js';
 import type { VenueAdapterFactory } from './venue-adapter-factory.js';
+import { parseSwapInstrumentId } from './swap-instrument-id.js';
+import { validateTradeInstrument } from './validate-trade-instrument.js';
 import { assertLiveReadiness } from './live-gate.js';
 import type { StreamConfig } from './trading-actor.js';
 import type { SwapConfirmationPoller } from '@herobids/venues';
@@ -170,6 +172,12 @@ export interface AgentTradingActorDeps {
   isHybridMode?: boolean;
   /** In-memory venue instrument cache for symbol validation at decision intake */
   instrumentCache?: VenueInstrumentCache;
+  /** 1inch operator-level config for network resolution in instrument validation */
+  oneInchConfig?: { tokenSafetyNetwork?: string; chainId?: number };
+  /** Binding-level profile for network resolution (carries chainId / network overrides) */
+  bindingProfile?: Record<string, unknown> | null;
+  /** Canonical token definitions for quote address validation on swap venues */
+  canonicalTokens?: Record<string, Record<string, { address: string; name: string; aliases: string[] }>>;
   /** Interval in ms for the per-trade stop-loss / take-profit monitor loop (operator config) */
   perTradeLevelMonitorIntervalMs?: number;
   /** Callback invoked alongside journal.append for events the agent's circuit breaker should track.
@@ -873,14 +881,27 @@ export class AgentTradingActor implements ExecutionActor {
       };
     }
 
-    // Venue symbol validation — reject unknown instruments
-    if (this.deps.instrumentCache?.isReady() && !this.deps.instrumentCache.hasSymbol(this.deps.venue, instrumentId)) {
-      return {
-        rejected: true,
-        code: 'instrument_unknown',
-        message: `'${instrumentId}' is not a recognized instrument on ${this.deps.venue}`,
-        retryable: false,
-      };
+    // Venue-specific instrument validation — replaces the generic hasSymbol() check
+    // with rules that understand orderbook vs. swap venue semantics.
+    if (this.deps.instrumentCache?.isReady()) {
+      const validation = validateTradeInstrument(
+        this.deps.venue,
+        instrumentId,
+        this.deps.instrumentCache,
+        {
+          oneInchConfig: this.deps.oneInchConfig,
+          canonicalTokens: this.deps.canonicalTokens,
+          bindingProfile: this.deps.bindingProfile,
+        },
+      );
+      if (!validation.valid) {
+        return {
+          rejected: true,
+          code: 'instrument_unknown',
+          message: validation.reason ?? `'${instrumentId}' is not a recognized instrument on ${this.deps.venue}`,
+          retryable: false,
+        };
+      }
     }
 
     // Compute per-instrument unrealized P&L; when unavailable (missing marks),
@@ -1399,6 +1420,11 @@ export class AgentTradingActor implements ExecutionActor {
   } | undefined {
     if (this.deps.venueType !== 'swap') return undefined;
 
+    // Capture decimals before the early return so they survive TypeScript narrowing.
+    const configuredDecimals = this.deps.swapAssets
+      ? { baseDecimals: this.deps.swapAssets.baseDecimals, quoteDecimals: this.deps.swapAssets.quoteDecimals }
+      : undefined;
+
     if (this.deps.swapAssets) {
       return {
         swapAssets: this.deps.swapAssets,
@@ -1406,24 +1432,32 @@ export class AgentTradingActor implements ExecutionActor {
       };
     }
 
-    const [rawBaseAsset, rawQuoteAsset] = instrumentId.split('/');
-    if (!rawBaseAsset || !rawQuoteAsset) {
-      // When only a base token is given (e.g. "ETH" without "/USDC"),
-      // treat it as the swap base token address so token safety always runs.
-      // An undefined rawBaseAsset (empty instrumentId) still passes undefined
-      // to preserve the existing no-op guard downstream.
+    // Parse instrument ID to extract addresses with correct semantics.
+    // This preserves BOTH base and quote addresses — the old ad-hoc split
+    // dropped the quote address (bug: rawQuoteAsset.split(':')[0] discarded QUOTE_ID).
+    let parsed;
+    try {
+      parsed = parseSwapInstrumentId(instrumentId);
+    } catch {
+      // Malformed instrument ID — when only a base token is given (e.g. "ETH"
+      // without "/USDC"), treat it as the swap base token address so token
+      // safety always runs.
       return {
-        swapBaseTokenAddress: this.deps.swapBaseTokenAddress ?? rawBaseAsset,
+        swapBaseTokenAddress: this.deps.swapBaseTokenAddress ?? instrumentId,
       };
     }
 
-    const baseAsset = rawBaseAsset.split(':').at(-1) ?? rawBaseAsset;
-    const quoteAsset = rawQuoteAsset.split(':')[0] ?? rawQuoteAsset;
+    // Always populate both addresses when available so the pipeline can use
+    // exact on-chain identities for swap execution.
+    const swapAssets: { baseAsset: string; quoteAsset: string; baseDecimals?: number; quoteDecimals?: number } = {
+      baseAsset: parsed.baseAddress ?? parsed.baseSymbol,
+      quoteAsset: parsed.quoteAddress ?? parsed.quoteSymbol,
+      ...configuredDecimals,
+    };
+
     return {
-      swapAssets: { baseAsset, quoteAsset },
-      // Direct-agent swap decisions are instrument-scoped, so derive the base token
-      // from the requested symbol when startup had no single canonical instrument.
-      swapBaseTokenAddress: this.deps.swapBaseTokenAddress ?? baseAsset,
+      swapAssets,
+      swapBaseTokenAddress: this.deps.swapBaseTokenAddress ?? swapAssets.baseAsset,
     };
   }
 

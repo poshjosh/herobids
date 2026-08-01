@@ -209,7 +209,7 @@ report at `docs/bug-reports/2026/07/12/002-...` shows positions ending with
   ticker-derived candle target.
 - Existing orderbook scanner tests pass unchanged in behaviour.
 
-### Phase 1 - Preserve Pool Sides and Resolve Quote Policy [PENDING]
+### Phase 1 - Preserve Pool Sides and Resolve Quote Policy [DONE]
 
 **Files**
 
@@ -484,3 +484,18 @@ The quote asset `<select>` hardcodes USDC/USDT options. The plan says options co
 
 ### [Phase 1] LOW-6 — Redundant `?? 'USDC'` after Zod default
 `quoteAssetSymbol ?? 'USDC'` is redundant since Zod schema applies `.default('USDC')`. Harmless as defensive code, but an empty string would not be caught by `??`. Trust Zod default or switch to `||`.
+
+### [Phase 2] MEDIUM-4 — `parseSwapInstrumentId` throws instead of returning Result
+Per AGENTS.md, public APIs should return `Result<T, E>`. Currently throws `SwapInstrumentParseError`. Added `// TODO(Phase 5)` comment. All callers use try/catch. Convert in a future phase.
+
+### [Phase 2] LOW-6 — Inconsistent `isVenueReady` check in `validateJupiterLegacy`
+`validateJupiterExact` and `validateJupiterBaseQualified` check `isVenueReady('jupiter')` but `validateJupiterLegacy` only checks `isReady()`. Functionally equivalent (fail-open for degraded venues) but stylistically inconsistent.
+
+### [Phase 2] LOW-7 — Missing 1inch-specific malformed instrument ID test
+Malformed ID tests only cover `'jupiter'`. Add parallel `'1inch'` test.
+
+### [Phase 2] LOW-8 — No direct unit tests for `buildSwapDecisionMetadata`
+Tested only indirectly. Extract into testable pure function or add integration tests.
+
+### [Phase 2] LOW-9 — `!= null` loose equality style nitpick
+`!= null` is idiomatic JS but TypeScript strict conventionally uses `!== null && !== undefined`.
