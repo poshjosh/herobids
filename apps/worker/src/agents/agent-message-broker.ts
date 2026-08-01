@@ -1126,7 +1126,7 @@ export class AgentMessageBroker {
 
       // Also publish to reply list for synchronous tool response when requestMessageId is set
       if (payload.requestMessageId) {
-        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, toolResult as Record<string, unknown>);
+        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, toolResult as unknown as Record<string, unknown>);
       }
     } catch (err) {
       logger.error({ agentId, err }, 'Assess strategy preset handler failed');
@@ -1144,7 +1144,7 @@ export class AgentMessageBroker {
       await this.eventPublisher.emitAssessStrategyPresetResult(agentId, errorPayload);
 
       if (payload.requestMessageId) {
-        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, errorResult as Record<string, unknown>);
+        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, errorResult as unknown as Record<string, unknown>);
       }
       return;
     }
@@ -1171,7 +1171,7 @@ export class AgentMessageBroker {
 
       // Also publish to reply list for synchronous tool response when requestMessageId is set
       if (payload.requestMessageId) {
-        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, toolResult as Record<string, unknown>);
+        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, toolResult as unknown as Record<string, unknown>);
       }
     } catch (err) {
       logger.error({ agentId, err }, 'Change strategy preset handler failed');
@@ -1189,7 +1189,7 @@ export class AgentMessageBroker {
       await this.eventPublisher.emitChangeStrategyPresetResult(agentId, errorPayload);
 
       if (payload.requestMessageId) {
-        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, errorResult as Record<string, unknown>);
+        await this.eventPublisher.publishPresetToolReply(payload.requestMessageId, errorResult as unknown as Record<string, unknown>);
       }
       return;
     }
