@@ -71,7 +71,7 @@ This complements tunnel testing because:
 
 ## Implementation Tasks
 
-### Task 1: `scripts/shell/tests/setup-local-telegram-webhook.sh` (tunnel setup)
+### Task 1: `scripts/shell/tests/setup-local-telegram-webhook.sh` (tunnel setup) — `DONE`
 
 **File:** `scripts/shell/tests/setup-local-telegram-webhook.sh`
 **Pattern:** Follow the style of `test-telegram-messaging.sh` for env loading, output formatting, and exit codes.
@@ -97,7 +97,7 @@ This complements tunnel testing because:
 
 **Dependencies:** `curl`, `jq`, `ngrok`
 
-### Task 2: formalize the existing mock helper
+### Task 2: formalize the existing mock helper — `PENDING`
 
 **File strategy:** prefer evolving `scripts/test-slash-commands.sh` into the supported local mock entrypoint, or move it under `scripts/shell/tests/` while preserving its current coverage.
 
@@ -150,7 +150,7 @@ The plan should not create a second overlapping mock script unless the existing 
 
 Do not add Telegram `entities` support to the script unless the application starts depending on them. Current slash-command parsing is text-based.
 
-### Task 3: local testing reference doc
+### Task 3: local testing reference doc — `PENDING`
 
 **File:** add `docs/tech/telegram-local-testing.md`
 
@@ -186,3 +186,15 @@ The doc must state explicitly that mock mode can still trigger real outbound Tel
 4. Multi-user routing validation — that's already covered by `agent-interactivity.test.ts`
 5. Automatic tunnel URL rotation monitoring and re-registration after the setup script exits
 6. Fully offline end-to-end success for routed messages — successful local ingress can still produce real outbound Telegram API calls
+
+## Outstanding Issues
+
+### [Task 1] Tunnel setup script
+- **M1:** `$0` in help text resolves to invocation path, not canonical path (use `${BASH_SOURCE[0]}`)
+- **M2:** No minimum-length verification for `TELEGRAM_WEBHOOK_SECRET` (should require ≥8 chars)
+- **M3:** Step counters are inaccurate (Step N/5) — cosmetic
+- **M4:** `--stop` exits 0 when nothing to stop — could use distinct code or better message
+- **L1:** Comment header style nit (minor inconsistency with reference script)
+- **L2:** ngrok logs redirected to `/dev/null` — should use temp file for debugging
+- **L3:** `--help` flag parsing duplicates `sed` pattern (acceptable, pre-existing pattern)
+- **L-new:** `NGROK_STARTED_BY_US` initialized after trap registration (unset-variable window)
