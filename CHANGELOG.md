@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Local Telegram Webhook Test Toolkit:** Two-level local testing workflow for inbound Telegram messaging. Tunnel setup script (`scripts/shell/tests/setup-local-telegram-webhook.sh`) establishes an ngrok tunnel to localhost:3000, registers the webhook with Telegram, and verifies registration. Mock webhook helper (`scripts/test-slash-commands.sh`) formalized with CLI flags (`--message-text`, `--chat-id`, `--webhook-secret`, `--wrong-secret`, `--env-file`) for fast local ingress testing with response code interpretation and async routing guidance. Reference doc (`docs/tech/telegram-local-testing.md`) covers both levels, the webhook contract, and troubleshooting.
+
 ## v0.0.39 - 2026-08-01
 
 ### Added
