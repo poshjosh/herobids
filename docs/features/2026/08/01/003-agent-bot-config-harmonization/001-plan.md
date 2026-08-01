@@ -95,7 +95,7 @@ Where agent and bot fields mean the same thing, this table picks the single cano
 
 Add `StrategyIdentity`, `RiskPosture`, `ExecutionDefaults` to `packages/domain/src/config/schema.ts`, canonicalizing field names and units per the table above. `RiskPosture` is a nullable value shape (each field optional/nullable = "use operator default"). Keep them additive first so nothing breaks yet. Do **not** fold provenance/mutability into these — they are values only.
 
-### 2. Capture a risk-gate parity harness — **PENDING**
+### 2. Capture a risk-gate parity harness — **DONE**
 
 Before changing any storage or bridge path, add tests that record the current `checkRisk` decisions ([packages/engine/src/risk-gate.ts](../../../../../../packages/engine/src/risk-gate.ts)) and the current `buildAgentRiskLimits` output ([apps/worker/src/agent-risk-limits.ts](../../../../../../apps/worker/src/agent-risk-limits.ts)) for a representative matrix of inputs — including the three provenance paths (creator-set/immutable, operator-default/mutable, agent-override/mutable) and the `hasCapital` false case. These are the golden reference the refactor must preserve, modulo the one intended config unit canonicalization for daily loss and drawdown. Enforcement logic itself does not change, so parity must stay green.
 
@@ -168,6 +168,12 @@ Update AGENTS.md, `docs/tech/agents/runtime-boundary-and-message-contract.md`, `
 - **MEDIUM:** `maxOrderNotional` type mismatch — `RiskPostureSchema` uses `z.number()` but existing bot `RiskConfigSchema` uses `z.string()`. WP3 implementer must reconcile. Add comment noting the type decision.
 - **LOW:** `avoidParabolicMovePct` lacks `.max()` upper bound; other percentage fields have `.max(100)`.
 - **LOW:** `ExecutionDefaultsSchema` duplicates `ExecutionConfigSchema` shape without linking; risk of silent divergence before WP3 convergence.
+
+### WP2 — Risk-gate parity harness
+- **MEDIUM:** Test name `"reports dailyMaxLossPct as non-mutable"` and `"reports maxOrderNotional as non-mutable"` are misleading — the fields are *absent* from the contract, not "present but non-mutable." Rename to `"dailyMaxLossPct is absent from the mutable contract"` / `"maxOrderNotional is absent from the mutable contract"`.
+- **LOW:** Test name `"resolves contract with exactly five risk fields and no extra keys"` describes a structural invariant, not behavior. Rename to `"exposes only the five agent-mutable risk fields in the contract"`.
+- **LOW:** Test name `"maps stopLossMaxUnrealizedLossPct operator default to stopLossPct"` describes mapping internals. Rename to `"returns stopLossPct ceiling from the operator stopLossMaxUnrealizedLossPct default"`.
+- **LOW:** Minor redundancy between unit and e2e capital-null tests — intentional but worth a clarifying comment.
 
 ## Acceptance Criteria
 
