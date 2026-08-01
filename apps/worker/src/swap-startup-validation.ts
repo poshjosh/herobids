@@ -83,5 +83,16 @@ export function validateSwapScannerConfig(
     });
   }
 
+  // 5. Quote asset canonical token must have an address for cross-validation
+  const quoteToken = networkTokens[quoteSymbol]!;
+  if (!quoteToken.address) {
+    return err({
+      code: 'swap.quote_address_missing',
+      message:
+        `Canonical token '${quoteSymbol}' on network '${resolvedSwapNetwork}' has no address. ` +
+        'Populate the address field in marketData.tokenSafety.canonicalTokens before enabling swap scanning.',
+    });
+  }
+
   return ok({ network: resolvedSwapNetwork, quoteAssetSymbol: quoteSymbol });
 }

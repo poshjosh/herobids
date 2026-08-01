@@ -462,4 +462,124 @@ describe('runTechnicalPhase', () => {
     expect(result.candidatesDiscovered).toBe(0);
     expect(result.errors).toHaveLength(0);
   });
+
+  // ─── Phase 3: Swap exit evaluation ────────────────────────────────────────
+
+  it('skips swap exit positions with exact instrumentId when poolAddress cannot be resolved', async () => {
+    const swapPosition = makeOpenPosition('BONK');
+    swapPosition.venue = 'jupiter';
+    swapPosition.instrumentId = 'BONK:DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263/USDC:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const deps = makeBaseDeps({
+      discoverCandidates: vi.fn().mockResolvedValue([]),
+      getOpenPositions: vi.fn().mockReturnValue([swapPosition]),
+      fetchCandles: vi.fn().mockResolvedValue(makeCandles(100)),
+      logger: logger as unknown as TechnicalPhaseDeps['logger'],
+    });
+
+    const result = await runTechnicalPhase(deps);
+
+    // Swap position with exact instrumentId but poolAddress not available
+    // should emit scanner.swap_exit_unresolved with reason=missing_pool_address
+    const unresolvedWarns = logger.warn.mock.calls.filter(
+      ([obj]: [Record<string, unknown>]) => obj?.event === 'scanner.swap_exit_unresolved',
+    );
+    expect(unresolvedWarns.length).toBeGreaterThanOrEqual(1);
+    // The Phase 3 block emits with reason=missing_pool_address
+    const phase3Warn = unresolvedWarns.find(
+      ([obj]: [Record<string, unknown>]) => obj?.reason === 'missing_pool_address',
+    );
+    expect(phase3Warn).toBeDefined();
+    // Position is counted in symbolsSelected (Phase 0 guard passes → added to openPositions)
+    // but exit evaluation can't proceed without a candle target
+    expect(result.exitsSubmitted).toBe(0);
+  });
+
+  it('skips swap positions with null instrumentId (Phase 0 behavior preserved)', async () => {
+    const swapPosition = makeOpenPosition('BONK');
+    swapPosition.venue = 'jupiter';
+    swapPosition.instrumentId = undefined;
+
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const deps = makeBaseDeps({
+      discoverCandidates: vi.fn().mockResolvedValue([]),
+      getOpenPositions: vi.fn().mockReturnValue([swapPosition]),
+      fetchCandles: vi.fn().mockResolvedValue(makeCandles(100)),
+      logger: logger as unknown as TechnicalPhaseDeps['logger'],
+    });
+
+    await runTechnicalPhase(deps);
+
+    const unresolvedWarn = logger.warn.mock.calls.find(
+      ([obj]: [Record<string, unknown>]) => obj?.event === 'scanner.swap_exit_unresolved',
+    );
+    expect(unresolvedWarn).toBeDefined();
+  });
+
+  it('skips swap positions with unparseable instrumentId (no colon or slash)', async () => {
+    const swapPosition = makeOpenPosition('BONK');
+    swapPosition.venue = '1inch';
+    swapPosition.instrumentId = 'BONK/USDC'; // legacy format, no address qualifiers
+
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const deps = makeBaseDeps({
+      discoverCandidates: vi.fn().mockResolvedValue([]),
+      getOpenPositions: vi.fn().mockReturnValue([swapPosition]),
+      fetchCandles: vi.fn().mockResolvedValue(makeCandles(100)),
+      logger: logger as unknown as TechnicalPhaseDeps['logger'],
+    });
+
+    const result = await runTechnicalPhase(deps);
+
+    // Phase 0 guard: instrumentId has no ':' → emits scanner.swap_exit_unresolved
+    // Position is NOT added to openPositions → symbolsSelected = 0
+    const unresolvedWarns = logger.warn.mock.calls.filter(
+      ([obj]: [Record<string, unknown>]) => obj?.event === 'scanner.swap_exit_unresolved',
+    );
+    expect(unresolvedWarns.length).toBeGreaterThanOrEqual(1);
+    // No candidates → no exit evaluation
+    expect(result.exitsSubmitted).toBe(0);
+  });
+
+  it('skips swap positions with unknown venue (no network mapping)', async () => {
+    const swapPosition = makeOpenPosition('BONK');
+    swapPosition.venue = 'unknown-dex';
+    swapPosition.instrumentId = 'BONK:addr/USDC:addr';
+
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const deps = makeBaseDeps({
+      discoverCandidates: vi.fn().mockResolvedValue([]),
+      getOpenPositions: vi.fn().mockReturnValue([swapPosition]),
+      fetchCandles: vi.fn().mockResolvedValue(makeCandles(100)),
+      logger: logger as unknown as TechnicalPhaseDeps['logger'],
+    });
+
+    // Should not skip — unknown venues are not in SWAP_VENUES set,
+    // so they fall through to the orderbook path.
+    // This is the existing behavior for unrecognized venues.
+    await runTechnicalPhase(deps);
+
+    // No swap_exit_unresolved for unknown venue (treated as orderbook)
+    const unresolvedWarn = logger.warn.mock.calls.find(
+      ([obj]: [Record<string, unknown>]) => obj?.event === 'scanner.swap_exit_unresolved',
+    );
+    expect(unresolvedWarn).toBeUndefined();
+  });
+
+  it('preserves orderbook exit evaluation unchanged (Phase 3 regression guard)', async () => {
+    const openPos = makeOpenPosition('BTC');
+    openPos.venue = 'hyperliquid';
+    const deps = makeBaseDeps({
+      discoverCandidates: vi.fn().mockResolvedValue([]),
+      getOpenPositions: vi.fn().mockReturnValue([openPos]),
+      fetchCandles: vi.fn().mockResolvedValue(makeOverboughtCandles()),
+    });
+
+    const result = await runTechnicalPhase(deps);
+
+    // Orderbook positions still get exit evaluation candles fetched
+    // Overbought → go_flat
+    expect(result.exitsSubmitted).toBeGreaterThan(0);
+  });
 });

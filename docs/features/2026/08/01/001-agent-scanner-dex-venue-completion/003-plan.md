@@ -256,7 +256,7 @@ feature does not convert idle agents into hard startup failures.
 - A swap agent whose network lacks canonical tokens fails startup with one
   named error, observable in logs.
 
-### Phase 2 - Exact Swap Parsing and Intake Validation [PENDING]
+### Phase 2 - Exact Swap Parsing and Intake Validation [DONE]
 
 **Files**
 
@@ -497,5 +497,23 @@ Malformed ID tests only cover `'jupiter'`. Add parallel `'1inch'` test.
 ### [Phase 2] LOW-8 — No direct unit tests for `buildSwapDecisionMetadata`
 Tested only indirectly. Extract into testable pure function or add integration tests.
 
-### [Phase 2] LOW-9 — `!= null` loose equality style nitpick
-`!= null` is idiomatic JS but TypeScript strict conventionally uses `!== null && !== undefined`.
+### [Phase 3] LOW-1 — Multiple `t.pool!` non-null assertions in discovery loop
+After `poolBackedTokens.filter((t) => t.pool)`, the code uses `t.pool!` throughout. A cleaner pattern: extract `const pool = token.pool` with a defensive continue. Purely stylistic.
+
+### [Phase 3] LOW-2 — IIFE for `swapQuoteAssetAddress` reduces readability
+7-line inline IIFE in AgentTradingActor constructor. Extract to named helper function.
+
+### [Phase 3] LOW-3 — `binanceConfig` passed to swap `VenueCandleFetcher` unnecessarily
+Swap fetcher doesn't use binanceConfig. Verify if constructor requires it or if null can be passed.
+
+### [Phase 3] LOW-4 — No unit test for HTTP 404 → `unsupported` classification
+`classifyCandleError` now handles HTTP 404 as GeckoTerminal-specific. Add test.
+
+### [Phase 3] LOW-5 — `minLiquidityUsd` double-applied
+Applied at discovery source level AND post-identity filter. Defensive but redundant if discovery API supports it.
+
+### [Phase 3] LOW-6 — YAML key `1inch` should be quoted
+Numeric-starting key in YAML. Quote for safety: `'1inch': true`.
+
+### [Phase 3] LOW-7 — Plan mark as DONE for Phase 2 (bookkeeping)
+Unrelated to Phase 3 changes. Was from prior merge.

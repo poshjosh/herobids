@@ -118,17 +118,21 @@ export interface TechnicalPhaseResult {
  * Classify a candle-fetch error into one of four outcome statuses.
  * Uses error message patterns since HttpError (from @herobids/market-data/http)
  * is not re-exported through the market-data barrel.
+ *
+ * Orderbook errors (Binance) and swap errors (GeckoTerminal) follow the same
+ * classification logic: HTTP 400 = unsupported, HTTP 429/5xx/timeout = transient.
+ * No Binance-specific HTTP assumptions are applied to GeckoTerminal errors.
  */
 function classifyCandleError(err: unknown): { status: CandleFetchStatus; detail: string } {
   const msg = err instanceof Error ? err.message : String(err);
 
-  // Swap candle routing not yet implemented (Phase 3) — permanent skip, not transient.
-  if (msg.startsWith('SWAP_CANDLE_UNSUPPORTED:')) {
+  // HTTP 400 → unsupported instrument (pool not found, invalid symbol, etc.)
+  if (msg.includes('HTTP error: 400') || msg.includes('Invalid symbol')) {
     return { status: 'unsupported', detail: msg };
   }
 
-  // HTTP 400 → unsupported symbol (Binance code -1121 "Invalid symbol")
-  if (msg.includes('HTTP error: 400') || msg.includes('Invalid symbol')) {
+  // HTTP 404 → pool not found (GeckoTerminal-specific)
+  if (msg.includes('HTTP error: 404')) {
     return { status: 'unsupported', detail: msg };
   }
 
@@ -137,12 +141,12 @@ function classifyCandleError(err: unknown): { status: CandleFetchStatus; detail:
     return { status: 'transient_failure', detail: msg };
   }
 
-  // HTTP 429 → upstream rate limit (shouldn't happen if limiter works, but defensive)
+  // HTTP 429 → upstream rate limit
   if (msg.includes('HTTP error: 429')) {
     return { status: 'transient_failure', detail: msg };
   }
 
-  // HTTP 5xx → transient Binance server error
+  // HTTP 5xx → transient server error (Binance, GeckoTerminal, etc.)
   if (msg.includes('HTTP error: 5')) {
     return { status: 'transient_failure', detail: msg };
   }
@@ -231,6 +235,7 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
             symbol: pos.symbol,
             instrumentId: pos.instrumentId ?? null,
             event: 'scanner.swap_exit_unresolved',
+            reason: 'non_exact_instrument_id',
           },
           'Swap position has no exact instrumentId — skipped for exit scanning',
         );
@@ -260,19 +265,73 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
   for (const candidate of candidates) {
     candleTargetByInstrumentId.set(candidate.instrumentId, candidate.candleTarget);
   }
-  // TODO(Phase 3): Construct swap candle targets from position identity (network + poolAddress).
-  // Phase 0/1 cannot route swap candles yet, so swap positions are skipped.
+  // ── Phase 3 swap exit block ─────────────────────────────────────────────
+  // NOTE: This block is infrastructure pre-built for Phase 4. Swap exit
+  // positions always reach the `missing_pool_address` skip below because pool
+  // addresses are not yet persisted with positions. When Phase 4 lands, pool
+  // addresses will be stored on position open and this path will resolve.
+  //
+  // Construct swap candle targets from position identity.
+  // For swap positions with a valid exact instrumentId, derive the network from
+  // the venue (jupiter → solana, 1inch → base). The pool address is not
+  // available from position data alone — swap exit positions that cannot
+  // resolve a pool address are skipped with scanner.swap_exit_unresolved.
+  //
+  // NETWORK_BY_SWAP_VENUE intentionally duplicates resolveSwapNetwork's
+  // venue → network mapping. resolveSwapNetwork is not available in the
+  // exit evaluation context (it requires a binding, not a position).
+  const NETWORK_BY_SWAP_VENUE: Record<string, string> = {
+    jupiter: 'solana',
+    '1inch': 'base',
+  };
   for (const pos of openPositions) {
     const id = pos.instrumentId ?? pos.symbol;
     if (SWAP_VENUES.has(pos.venue)) {
+      // Attempt to resolve a candle target from swap position identity.
+      const network = NETWORK_BY_SWAP_VENUE[pos.venue];
+      if (!network) {
+        logger.warn(
+          {
+            venue: pos.venue,
+            symbol: pos.symbol,
+            instrumentId: id,
+            event: 'scanner.swap_exit_unresolved',
+            reason: 'unknown_network',
+          },
+          'Swap position exit skipped — cannot resolve network from venue',
+        );
+        continue;
+      }
+      // Parse instrumentId to extract base/quote addresses.
+      // Format: BASE:ADDR/QUOTE:ADDR (exact) or BASE/QUOTE (legacy).
+      const colonIdx = id.indexOf(':');
+      const slashIdx = id.indexOf('/');
+      if (colonIdx === -1 || slashIdx === -1 || colonIdx >= slashIdx) {
+        logger.warn(
+          {
+            venue: pos.venue,
+            symbol: pos.symbol,
+            instrumentId: id,
+            event: 'scanner.swap_exit_unresolved',
+            reason: 'unparseable_instrument_id',
+          },
+          'Swap position exit skipped — instrumentId is not an exact address-qualified pair',
+        );
+        continue;
+      }
+      // Pool address is not available from position identity alone.
+      // The position was opened from a discovered pool, but the poolAddress
+      // is not persisted with the position. Emit unresolved and skip.
       logger.warn(
         {
           venue: pos.venue,
           symbol: pos.symbol,
           instrumentId: id,
-          event: 'scanner.swap_exit_unsupported_candle_target',
+          network,
+          event: 'scanner.swap_exit_unresolved',
+          reason: 'missing_pool_address',
         },
-        'Swap position exit candle target is not yet supported — skipped',
+        'Swap position exit skipped — pool address not available from position identity',
       );
       continue;
     }
