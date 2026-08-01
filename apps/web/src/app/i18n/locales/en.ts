@@ -359,7 +359,7 @@ export const messages: Record<string, string> = {
   'billing.checkout.cancelled': 'Checkout was cancelled — your payment was not processed.',
 
   // Connections
-  'connections.subtitle': 'Platform accounts your AI agents can use.',
+  'connections.subtitle': 'External platforms your AI agents can connect to',
   'connections.empty.message': 'Connect a platform so your AI agents can start working.',
   'connections.addConnection': 'Add connection',
   'connections.connectPlatform': 'Connect a platform',
@@ -526,7 +526,7 @@ export const messages: Record<string, string> = {
   'agents.edit.intelligenceIgnoredWarning': "Switching to Technical-only: the agent's LLM configuration (goal, skills, model) will be ignored at runtime but is not deleted. Switch back to Intelligence or Both to re-enable it.",
 
   // Agent controls (shared create/edit labels)
-  'agents.create.connections': 'Connections',
+  'agents.create.connections': 'Connect to external platform',
   'agents.create.connections.trading': 'Trading',
   'agents.create.connections.other': 'Other',
   'agents.create.controls.title': 'Controls & cadence',
@@ -820,7 +820,7 @@ export const messages: Record<string, string> = {
   'billing.upgrade.missing_provider_mapping': 'The selected plan is missing its billing provider mapping.',
 
   // Setup: unified provider-link form
-  'setup.form.title': 'Connect agent to platform',
+  'setup.form.title': 'Connect agent to external platform',
   'setup.form.standaloneSubtitle': 'Connect a trading exchange, email account, or custom integration. Secrets are encrypted and never stored in plain text.',
   'setup.form.provider': 'Provider',
   'setup.form.group.trading': 'Trading',

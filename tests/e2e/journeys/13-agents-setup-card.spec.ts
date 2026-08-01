@@ -31,7 +31,7 @@ test.describe('Journey 13: AI Agents setup card UI flow', () => {
 
     // Open the setup form
     await ctaButton.click();
-    await expect(page.getByRole('dialog').locator('div').filter({ hasText: /^Connect agent to platform$/ }).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('dialog').locator('div').filter({ hasText: /^Connect agent to external platform$/ }).first()).toBeVisible({ timeout: 5_000 });
 
     // Provider is auto-selected (Hyperliquid) from catalog once form opens
     await expect(page.getByRole('dialog').getByRole('combobox')).toHaveValue('hyperliquid', { timeout: 5_000 });

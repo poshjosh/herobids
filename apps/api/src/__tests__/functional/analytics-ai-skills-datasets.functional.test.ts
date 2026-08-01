@@ -369,7 +369,7 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
       // Free plan auto-publishes created skills.
       expect(fork.publicationStatus).toBe('published');
       expect(fork.forkOf).toBe(sourceId);
-      expect(fork.name).toContain('fork');
+      expect(fork.name).toContain('copy');
     });
 
     it('returns 404 when forking a non-existent skill', async () => {

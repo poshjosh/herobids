@@ -664,29 +664,78 @@ function SkillCard({
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
         {canPublish && (
-          <Button size="sm" variant="primary" onClick={() => publishMutation.mutate()} disabled={isActionPending}>
-            {hasUnpublishedRevision
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => publishMutation.mutate()}
+            disabled={isActionPending}
+            aria-label={hasUnpublishedRevision
               ? intl.formatMessage({ id: 'skills.actions.publishUpdate', defaultMessage: 'Publish update' })
               : intl.formatMessage({ id: 'skills.actions.publish', defaultMessage: 'Publish' })}
+            title={hasUnpublishedRevision
+              ? intl.formatMessage({ id: 'skills.actions.publishUpdate', defaultMessage: 'Publish update' })
+              : intl.formatMessage({ id: 'skills.actions.publish', defaultMessage: 'Publish' })}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
           </Button>
         )}
         {canDelist && (
-          <Button size="sm" variant="secondary" onClick={() => delistMutation.mutate()} disabled={isActionPending}>
-            {intl.formatMessage({ id: 'skills.actions.delist', defaultMessage: 'Delist' })}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => delistMutation.mutate()}
+            disabled={isActionPending}
+            aria-label={intl.formatMessage({ id: 'skills.actions.delist', defaultMessage: 'Delist' })}
+            title={intl.formatMessage({ id: 'skills.actions.delist', defaultMessage: 'Delist' })}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+              <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+              <path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+              <line x1="2" y1="2" x2="22" y2="22" />
+            </svg>
           </Button>
         )}
         {canLike && (
-          <Button size="sm" variant="secondary" onClick={() => likeMutation.mutate()} disabled={isActionPending}>
-            {skill.isLikedByViewer
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => likeMutation.mutate()}
+            disabled={isActionPending}
+            aria-label={skill.isLikedByViewer
               ? intl.formatMessage({ id: 'skills.actions.unlike', defaultMessage: 'Unlike' })
-              : intl.formatMessage({ id: 'skills.actions.like', defaultMessage: 'Like' })} ({skill.likeCount})
+              : intl.formatMessage({ id: 'skills.actions.like', defaultMessage: 'Like' })}
+            title={skill.isLikedByViewer
+              ? intl.formatMessage({ id: 'skills.actions.unlike', defaultMessage: 'Unlike' })
+              : intl.formatMessage({ id: 'skills.actions.like', defaultMessage: 'Like' })}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill={skill.isLikedByViewer ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M7 10v12" />
+              <path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z" />
+            </svg>
+            <span style={{ marginLeft: '4px' }}>{skill.likeCount}</span>
           </Button>
         )}
         {canFork && (
-          <Button size="sm" variant="secondary" onClick={() => forkMutation.mutate()} disabled={isActionPending}>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => forkMutation.mutate()}
+            disabled={isActionPending}
+            aria-label={intl.formatMessage({ id: 'skills.actions.copy', defaultMessage: 'Copy' })}
+            title={intl.formatMessage({ id: 'skills.actions.copy', defaultMessage: 'Copy' })}
+          >
             {forkMutation.isPending
               ? intl.formatMessage({ id: 'skills.actions.copying', defaultMessage: 'Copying...' })
-              : intl.formatMessage({ id: 'skills.actions.copy', defaultMessage: 'Copy' })}
+              : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              )}
           </Button>
         )}
         {canManage && (
@@ -701,16 +750,41 @@ function SkillCard({
               setIsEditing((current) => !current);
             }}
             disabled={isActionPending}
+            aria-label={isEditing
+              ? intl.formatMessage({ id: 'skills.actions.closeEditor', defaultMessage: 'Close editor' })
+              : intl.formatMessage({ id: 'skills.actions.edit', defaultMessage: 'Edit' })}
+            title={isEditing
+              ? intl.formatMessage({ id: 'skills.actions.closeEditor', defaultMessage: 'Close editor' })
+              : intl.formatMessage({ id: 'skills.actions.edit', defaultMessage: 'Edit' })}
           >
-              {isEditing
-                ? intl.formatMessage({ id: 'skills.actions.closeEditor', defaultMessage: 'Close editor' })
-                : intl.formatMessage({ id: 'skills.actions.edit', defaultMessage: 'Edit' })}
+            {isEditing ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+              </svg>
+            )}
           </Button>
         )}
-        <Button size="sm" variant="ghost" onClick={() => setShowMetrics((previous) => !previous)}>
-            {showMetrics
-              ? intl.formatMessage({ id: 'skills.actions.hideMetrics', defaultMessage: 'Hide metrics' })
-              : intl.formatMessage({ id: 'skills.actions.showMetrics', defaultMessage: 'Show metrics' })}
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => setShowMetrics((previous) => !previous)}
+          aria-label={showMetrics
+            ? intl.formatMessage({ id: 'skills.actions.hideMetrics', defaultMessage: 'Hide metrics' })
+            : intl.formatMessage({ id: 'skills.actions.showMetrics', defaultMessage: 'Show metrics' })}
+          title={showMetrics
+            ? intl.formatMessage({ id: 'skills.actions.hideMetrics', defaultMessage: 'Hide metrics' })
+            : intl.formatMessage({ id: 'skills.actions.showMetrics', defaultMessage: 'Show metrics' })}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6"  y1="20" x2="6"  y2="14" />
+          </svg>
         </Button>
       </div>
 

@@ -291,11 +291,14 @@ const scannerRateLimiter = new TokenBucketRateLimiter({
 
 // GeckoTerminal candle rate limiter for swap scanner traffic.
 // Budget sourced from operator config: marketData.geckoterminal.candles.requestsPerMinute (15 RPM).
-const geckoTerminalCandleBudget = appConfig.marketData?.geckoterminal?.candles ?? { requestsPerMinute: 15 };
+const geckoTerminalCandleBudget = appConfig.marketData?.geckoterminal?.candles ?? ({ requestsPerMinute: 15 } as const);
+const geckoTerminalCandleBudgetRpm = geckoTerminalCandleBudget.requestsPerMinute;
+const geckoTerminalCandleBudgetBurst = ('burstCapacity' in geckoTerminalCandleBudget ? geckoTerminalCandleBudget.burstCapacity : undefined) ?? geckoTerminalCandleBudgetRpm;
+const geckoTerminalCandleBudgetMaxWait = ('maxWaitMs' in geckoTerminalCandleBudget ? geckoTerminalCandleBudget.maxWaitMs : undefined) ?? 5_000;
 const geckoTerminalScannerLimiter = new TokenBucketRateLimiter({
-  requestsPerMinute: geckoTerminalCandleBudget.requestsPerMinute,
-  burstCapacity: geckoTerminalCandleBudget.burstCapacity ?? geckoTerminalCandleBudget.requestsPerMinute,
-  maxWaitMs: geckoTerminalCandleBudget.maxWaitMs ?? 5_000,
+  requestsPerMinute: geckoTerminalCandleBudgetRpm,
+  burstCapacity: geckoTerminalCandleBudgetBurst,
+  maxWaitMs: geckoTerminalCandleBudgetMaxWait,
 });
 
 // Phase 3: venue-agnostic scanner candle fetcher. Uses an explicit
@@ -2411,7 +2414,7 @@ const presetTransitionService = new PresetTransitionService({
     const mergedTechnical: TechnicalConfig = {
       // Preserve existing filters (venue, venueType, symbols, etc.) — the
       // preset does not carry venue info.
-      filters: existingConfig?.filters ?? { venue: '', venueType: 'orderbook' },
+      filters: existingConfig?.filters ?? { venue: '', venueType: 'orderbook', quoteAssetSymbol: 'USDC' },
       ...(existingConfig?.regime ? { regime: existingConfig.regime } : {}),
       // Preset-derived strategy fields:
       indicators: presetFields.indicators,

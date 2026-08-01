@@ -18,7 +18,7 @@ test.describe('Journey 9: Connections page renders', () => {
     await page.goto('/connections');
 
     await expect(page.getByRole('heading', { name: /^Connections$/i })).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText(/Platform accounts your AI agents can use/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/External platforms your AI agents can connect to/i)).toBeVisible({ timeout: 5_000 });
     await expect(page.getByText(/Connect a platform so your AI agents can start working/i)).toBeVisible({ timeout: 5_000 });
   });
 });

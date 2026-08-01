@@ -169,14 +169,10 @@ export function SeverityDot({ severity }: { severity: 'info' | 'warn' | 'critica
 // Button
 // ---------------------------------------------------------------------------
 
-interface ButtonProps {
+interface ButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'children' | 'style'> {
   children: ReactNode;
-  onClick?: React.MouseEventHandler<HTMLButtonElement>;
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
   size?: 'sm' | 'md';
-  disabled?: boolean;
-  type?: 'button' | 'submit';
-  form?: string;
   style?: CSSProperties;
 }
 
@@ -205,20 +201,16 @@ const BUTTON_STYLES: Record<string, CSSProperties> = {
 
 export function Button({
   children,
-  onClick,
   variant = 'secondary',
   size = 'md',
   disabled,
-  type = 'button',
-  form,
   style,
+  ...rest
 }: ButtonProps) {
   return (
     <button
-      type={type}
-      form={form}
-      onClick={onClick}
       disabled={disabled}
+      {...rest}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
