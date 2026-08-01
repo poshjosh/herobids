@@ -121,6 +121,7 @@ done
 
 [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]      || prereq_fail "TELEGRAM_BOT_TOKEN is not set"
 [[ -n "${TELEGRAM_WEBHOOK_SECRET:-}" ]] || prereq_fail "TELEGRAM_WEBHOOK_SECRET is not set"
+[[ "${#TELEGRAM_WEBHOOK_SECRET}" -ge 8 ]] || prereq_fail "TELEGRAM_WEBHOOK_SECRET must be at least 8 characters (got ${#TELEGRAM_WEBHOOK_SECRET})"
 
 MASKED_TOKEN="$(echo "${TELEGRAM_BOT_TOKEN}" | sed 's/\(.\{8\}\).*/\1****/')"
 log "TELEGRAM_BOT_TOKEN=${MASKED_TOKEN}"

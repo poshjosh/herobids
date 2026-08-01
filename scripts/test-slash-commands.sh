@@ -62,7 +62,7 @@ info()  { echo -e "${BLUE}[→]${NC} $*"; }
 ## ─── Set defaults ──────────────────────────────────────────────────────────
 
 API_BASE="${API_BASE:-http://localhost:3000}"
-WEBHOOK_SECRET="${WEBHOOK_SECRET:-dev-secret-123}"
+WEBHOOK_SECRET="${WEBHOOK_SECRET:-${TELEGRAM_WEBHOOK_SECRET:-dev-secret-123}}"
 CHAT_ID=""
 MESSAGE_TEXT=""
 WRONG_SECRET=false
