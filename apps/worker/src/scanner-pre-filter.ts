@@ -2,8 +2,8 @@ import { resolveBinanceSymbol } from '@herobids/market-data';
 import type { DiscoveredInstrument } from './technical-phase.js';
 
 /**
- * Result of normalizing orderbook scanner candidates against the configured
- * candle provider (Binance).
+ * Result of normalizing scanner candidates against the configured
+ * candle provider (Binance for orderbook venues).
  */
 export interface NormalizeResult {
   /** Candidates with normalized candle-provider symbols. */
@@ -18,24 +18,30 @@ export interface NormalizeResult {
 }
 
 /**
- * Normalize orderbook scanner candidates before candle fetch.
+ * Normalize scanner candidates before candle fetch.
  *
- * Normalizes each candidate's {@link ScannerCandleTarget.providerSymbol} via
- * {@link resolveBinanceSymbol} to the canonical Binance form. The current
- * implementation does NOT pre-filter against a supported-instrument list —
- * actual unsupported-symbol detection happens at the HTTP level when Binance
- * returns HTTP 400 (tracked via {@link classifyCandleError}).
+ * Orderbook candidates have their {@link ScannerCandleTarget.providerSymbol}
+ * normalized via {@link resolveBinanceSymbol} to the canonical Binance form.
+ * Swap candidates pass through unchanged — they use network + pool address
+ * identity and do not go through Binance symbol resolution.
  *
- * This function is intentionally venue-agnostic: it works for any orderbook
- * venue whose candle target resolves through the same Binance symbol mapping.
+ * The current implementation does NOT pre-filter against a supported-instrument
+ * list — actual unsupported-symbol detection happens at the HTTP level when
+ * Binance returns HTTP 400 (tracked via {@link classifyCandleError}).
  */
-export function normalizeOrderbookCandidates(
+export function normalizeScannerCandidates(
   candidates: DiscoveredInstrument[],
 ): NormalizeResult {
   const supported: DiscoveredInstrument[] = [];
   const unsupported: DiscoveredInstrument[] = [];
 
   for (const candidate of candidates) {
+    // Swap candidates do not go through Binance symbol resolution — pass through unchanged.
+    if (candidate.candleTarget.venueType !== 'orderbook') {
+      supported.push(candidate);
+      continue;
+    }
+
     const resolved = resolveBinanceSymbol(candidate.candleTarget.providerSymbol);
     if (!resolved) {
       unsupported.push(candidate);
@@ -46,6 +52,7 @@ export function normalizeOrderbookCandidates(
       ...candidate,
       candleTarget: {
         ...candidate.candleTarget,
+        venueType: 'orderbook' as const,
         providerSymbol: resolved,
       },
     });

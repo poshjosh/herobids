@@ -176,7 +176,7 @@ report at `docs/bug-reports/2026/07/12/002-...` shows positions ending with
 
 ## Implementation Phases
 
-### Phase 0 - Lock Contracts and Test Fixtures
+### Phase 0 - Lock Contracts and Test Fixtures [PENDING]
 
 **Files**
 
@@ -209,7 +209,7 @@ report at `docs/bug-reports/2026/07/12/002-...` shows positions ending with
   ticker-derived candle target.
 - Existing orderbook scanner tests pass unchanged in behaviour.
 
-### Phase 1 - Preserve Pool Sides and Resolve Quote Policy
+### Phase 1 - Preserve Pool Sides and Resolve Quote Policy [PENDING]
 
 **Files**
 
@@ -256,7 +256,7 @@ feature does not convert idle agents into hard startup failures.
 - A swap agent whose network lacks canonical tokens fails startup with one
   named error, observable in logs.
 
-### Phase 2 - Exact Swap Parsing and Intake Validation
+### Phase 2 - Exact Swap Parsing and Intake Validation [PENDING]
 
 **Files**
 
@@ -307,7 +307,7 @@ feature does not convert idle agents into hard startup failures.
   unchanged, and the exact ID clears the `swap.instrument_format` check and the
   new `validateTradeInstrument()` — not the removed `hasSymbol()` path.
 
-### Phase 3 - Swap Candidate Discovery and Candle Routing
+### Phase 3 - Swap Candidate Discovery and Candle Routing [PENDING]
 
 **Files**
 
@@ -357,7 +357,7 @@ feature does not convert idle agents into hard startup failures.
 - Empty or invalid discovery data yields explicit, named scanner health/journal
   events, not a silent empty scan.
 
-### Phase 4 - Completion, Pricing, and Persistence
+### Phase 4 - Completion, Pricing, and Persistence [PENDING]
 
 **Files**
 
@@ -392,7 +392,7 @@ feature does not convert idle agents into hard startup failures.
 - DEX sizing receives the selected token's exact Solana/Base identity.
 - Persisted candidates do not mislabel DEX data as orderbook data.
 
-### Phase 5 - Verification and Rollout
+### Phase 5 - Verification and Rollout [PENDING]
 
 **Unit and integration coverage**
 
@@ -465,3 +465,16 @@ pnpm lint
 - The public `submit_decision` schema is unchanged and verified to accept the
   exact `BASE:ADDR/QUOTE:ADDR` ID; a regression test guards this.
 - Targeted tests, worker tests, and `pnpm lint` pass.
+
+---
+
+## Outstanding Issues
+
+### [Phase 0] MEDIUM-5 — Circuit breaker state silently resets on deploy
+Breaker keys changed from `scanner:candle-breaker:{agentId}:{BTC}` to `scanner:candle-breaker:{agentId}:{orderbook:BTC}`. Old keys linger in Redis until TTL expiry. Breakers effectively reset on deploy — document in deploy notes.
+
+### [Phase 0] LOW-2 — Redundant `venueType` spread in `normalizeScannerCandidates`
+After early return for non-orderbook candidates, the spread `{ ...candidate.candleTarget, venueType: 'orderbook' as const }` re-declares `venueType` redundantly. Not harmful (helps TypeScript narrowing) but may confuse readers.
+
+### [Phase 0] LOW-3 — `symbolsSelected` / `symbolOutcomes` naming in `TechnicalPhaseResult`
+These fields now hold instrument IDs, not symbols. Renaming would be a breaking API change — defer to a future major version.

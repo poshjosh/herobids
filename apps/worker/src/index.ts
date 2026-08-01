@@ -270,7 +270,7 @@ const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
 
 import { discoverScannerCandidates } from './scanner-candidate-discovery.js';
 import { createScannerCandleFetcher } from './scanner-candle-fetcher.js';
-import { normalizeOrderbookCandidates } from './scanner-pre-filter.js';
+import { normalizeScannerCandidates } from './scanner-pre-filter.js';
 
 /** Capacity policy values sourced from operator config. */
 const scannerCapacity = appConfig.marketData?.binance?.scanner ?? {
@@ -362,7 +362,7 @@ function buildDiscoverCandidates(params: {
     // Normalize candle-provider symbols to canonical Binance form.
     // Actual unsupported-instrument filtering happens at the HTTP level
     // (tracked via classifyCandleError in technical-phase.ts).
-    const { supported, unsupportedCount } = normalizeOrderbookCandidates(discovered);
+    const { supported, unsupportedCount } = normalizeScannerCandidates(discovered);
 
     if (unsupportedCount > 0) {
       logger.info(

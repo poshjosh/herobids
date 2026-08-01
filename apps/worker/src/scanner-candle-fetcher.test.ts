@@ -3,7 +3,7 @@ import { createScannerCandleFetcher } from './scanner-candle-fetcher.js';
 import type { BinanceCandlesConfig, PriceCandle } from '@herobids/market-data';
 import { VenueCandleFetcher } from '@herobids/venues';
 import { TokenBucketRateLimiter } from '@herobids/market-data';
-import type { ScannerCandleTarget } from '@herobids/strategy';
+import type { ScannerCandleTarget } from '@herobids/domain';
 
 // ─── Mock VenueCandleFetcher ────────────────────────────────────────────────
 
@@ -161,5 +161,26 @@ describe('createScannerCandleFetcher', () => {
     await fetchCandles(target, '4h', 200);
 
     expect(mockFetchCandles).toHaveBeenCalledWith('SOLUSDT', '4h', 200);
+  });
+
+  it('throws SWAP_CANDLE_UNSUPPORTED when target is a swap venue', async () => {
+    const mockFetchCandles = vi.fn().mockResolvedValue([]);
+    MockedVenueCandleFetcher.mockImplementationOnce(function () {
+      return { fetchCandles: mockFetchCandles } as unknown as VenueCandleFetcher;
+    });
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const fetchCandles = createScannerCandleFetcher({
+      binanceConfig: makeBinanceConfig(),
+      scannerRateLimiter: rateLimiter,
+    });
+
+    const target: ScannerCandleTarget = {
+      venueType: 'swap',
+      network: 'solana',
+      poolAddress: '0xabc123',
+    };
+
+    await expect(fetchCandles(target, '15m', 100)).rejects.toThrow('SWAP_CANDLE_UNSUPPORTED');
   });
 });

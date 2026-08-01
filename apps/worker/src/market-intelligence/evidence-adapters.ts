@@ -90,7 +90,7 @@ export function createEvidencePorts(params: CreateEvidencePortsParams): Assessme
       }
 
       const target = identityToScannerTarget(identity);
-      if (!target) {
+      if (!target || target.venueType !== 'orderbook') {
         return err({
           code: 'assessment.evidence_unsupported_identity',
           message: `Regime evidence not supported for ${identity.instrumentKind} identities`,

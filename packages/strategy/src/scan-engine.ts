@@ -1,5 +1,5 @@
 import type { PriceCandle } from '@herobids/market-data';
-import type { HybridPricingIdentity } from '@herobids/domain';
+import type { HybridPricingIdentity, ScannerCandleTarget, SwapExecutionIdentity } from '@herobids/domain';
 import {
   rsi,
   macd,
@@ -15,20 +15,19 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** Identifies an orderbook candle source for scanner candle fetching. */
-export interface ScannerCandleTarget {
-  venueType: 'orderbook';
-  providerSymbol: string;
-}
+// Re-export ScannerCandleTarget for backward compatibility — consumers that
+// previously imported it from @herobids/strategy continue to work.
+export type { ScannerCandleTarget };
 
 export interface CandidateContext {
   symbol: string;
   instrumentId: string;
   candles: PriceCandle[];
   venue?: string;
-  venueType?: 'orderbook';
+  venueType?: 'orderbook' | 'swap';
   candleTarget?: ScannerCandleTarget;
   pricingIdentity?: HybridPricingIdentity;
+  swapExecutionIdentity?: SwapExecutionIdentity;
   meta?: {
     volume24hUsd?: number;
     liquidityUsd?: number;
@@ -40,8 +39,9 @@ export interface ScoredSignal {
   symbol: string;
   instrumentId: string;
   venue?: string;
-  venueType?: 'orderbook';
+  venueType?: 'orderbook' | 'swap';
   pricingIdentity?: HybridPricingIdentity;
+  swapExecutionIdentity?: SwapExecutionIdentity;
   confidence: number;
   reasons: string[];
   intent: 'go_long' | 'go_short';
@@ -415,6 +415,7 @@ export function scoreCandidate(
     venue: candidate.venue,
     venueType: candidate.venueType,
     pricingIdentity: candidate.pricingIdentity,
+    swapExecutionIdentity: candidate.swapExecutionIdentity,
     confidence,
     reasons,
     intent,

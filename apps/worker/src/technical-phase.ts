@@ -1,9 +1,10 @@
 import type { Decision, DecisionId, HybridPricingIdentity, InstrumentId, VenueAccountId, RiskConfig, TechnicalConfig } from '@herobids/domain';
-import { quantity } from '@herobids/domain';
+import { quantity, scannerTargetKey } from '@herobids/domain';
+import type { SwapExecutionIdentity, ScannerCandleTarget } from '@herobids/domain';
 import type { PositionState } from '@herobids/engine';
 import type { PriceCandle, RegimeParams, RegimeResult } from '@herobids/market-data';
 import { scanCandidates, scoreCandidate } from '@herobids/strategy';
-import type { CandidateContext, ScanConfig, ScannerCandleTarget, ScoredSignal } from '@herobids/strategy';
+import type { CandidateContext, ScanConfig, ScoredSignal } from '@herobids/strategy';
 import type { RetryOptions } from './candle-fetch-retry.js';
 import { retryWithBackoff } from './candle-fetch-retry.js';
 import type { CandleFetchBreaker } from './candle-fetch-breaker.js';
@@ -14,9 +15,10 @@ export interface DiscoveredInstrument {
   symbol: string;
   instrumentId: string;
   venue: string;
-  venueType: 'orderbook';
+  venueType: 'orderbook' | 'swap';
   candleTarget: ScannerCandleTarget;
   pricingIdentity: HybridPricingIdentity;
+  swapExecutionIdentity?: SwapExecutionIdentity;
   volume24hUsd?: number;
   liquidityUsd?: number;
   priceChange24hPct?: number;
@@ -29,6 +31,9 @@ export type CandleFetchStatus = 'eligible_fetched' | 'eligible_empty' | 'unsuppo
 
 export interface SymbolFetchOutcome {
   symbol: string;
+  /** Exact instrument ID this outcome corresponds to. */
+  instrumentId: string;
+  /** For orderbook targets, the provider symbol used for candle fetching. Undefined for swap targets. */
   resolvedProviderSymbol?: string;
   status: CandleFetchStatus;
   candleCount?: number;
@@ -117,6 +122,11 @@ export interface TechnicalPhaseResult {
 function classifyCandleError(err: unknown): { status: CandleFetchStatus; detail: string } {
   const msg = err instanceof Error ? err.message : String(err);
 
+  // Swap candle routing not yet implemented (Phase 3) — permanent skip, not transient.
+  if (msg.startsWith('SWAP_CANDLE_UNSUPPORTED:')) {
+    return { status: 'unsupported', detail: msg };
+  }
+
   // HTTP 400 → unsupported symbol (Binance code -1121 "Invalid symbol")
   if (msg.includes('HTTP error: 400') || msg.includes('Invalid symbol')) {
     return { status: 'unsupported', detail: msg };
@@ -204,60 +214,122 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
     }
   }
 
-  // 3. Get open positions
-  const openPositions = deps.getOpenPositions().filter((p) => p.side !== 'flat');
-  const openInstrumentIds = new Set(openPositions.map((p) => p.symbol));
-
-  // 4. Collect all symbols to fetch (candidates + open positions for exit eval)
-  const openSymbols = [...openInstrumentIds].filter(
-    (sym) => !candidates.some((c) => c.symbol === sym),
-  );
-  const allSymbols = [
-    ...candidates.map((c) => c.symbol),
-    ...openSymbols,
-  ];
-  result.symbolsSelected = allSymbols.length; // includes both entry candidates + open-position symbols
-
-  // Build a symbol → ScannerCandleTarget map so fetchCandles receives venue-aware targets.
-  // Candidates carry explicit candle targets; open positions fall back to the symbol itself.
-  const candleTargetBySymbol = new Map<string, ScannerCandleTarget>();
-  for (const candidate of candidates) {
-    candleTargetBySymbol.set(candidate.symbol, candidate.candleTarget);
+  // 3. Get open positions — apply position-identity migration guard:
+  //    - orderbook positions may use instrumentId ?? symbol as their scan key.
+  //    - swap positions with null/non-exact instrumentId are skipped for exit scanning
+  //      and emit scanner.swap_exit_unresolved.
+  const SWAP_VENUES = new Set(['jupiter', '1inch']);
+  const allOpenPositions = deps.getOpenPositions().filter((p) => p.side !== 'flat');
+  const openPositions: PositionState[] = [];
+  for (const pos of allOpenPositions) {
+    if (SWAP_VENUES.has(pos.venue)) {
+      // Intentionally simple check for Phase 0 — Phase 2 replaces this with parseSwapInstrumentId().
+      if (!pos.instrumentId || !pos.instrumentId.includes(':')) {
+        logger.warn(
+          {
+            venue: pos.venue,
+            symbol: pos.symbol,
+            instrumentId: pos.instrumentId ?? null,
+            event: 'scanner.swap_exit_unresolved',
+          },
+          'Swap position has no exact instrumentId — skipped for exit scanning',
+        );
+        continue;
+      }
+    }
+    openPositions.push(pos);
   }
-  for (const sym of openSymbols) {
-    if (!candleTargetBySymbol.has(sym)) {
-      candleTargetBySymbol.set(sym, { venueType: 'orderbook', providerSymbol: sym });
+
+  // Use exact instrumentId as scan key; orderbook positions fall back to symbol.
+  const openInstrumentIds = new Set(
+    openPositions.map((p) => p.instrumentId ?? p.symbol),
+  );
+
+  // 4. Collect all instrument IDs to fetch (candidates + open positions for exit eval)
+  const candidateIds = candidates.map((c) => c.instrumentId);
+  const openIds = [...openInstrumentIds].filter(
+    (id) => !candidates.some((c) => c.instrumentId === id),
+  );
+  const allIds = [...candidateIds, ...openIds];
+  result.symbolsSelected = allIds.length; // includes both entry candidates + open-position symbols
+
+  // Build instrumentId → ScannerCandleTarget map so fetchCandles receives venue-aware targets.
+  // Candidates carry explicit candle targets; open positions fall back to the symbol itself
+  // as an orderbook target.
+  const candleTargetByInstrumentId = new Map<string, ScannerCandleTarget>();
+  for (const candidate of candidates) {
+    candleTargetByInstrumentId.set(candidate.instrumentId, candidate.candleTarget);
+  }
+  // TODO(Phase 3): Construct swap candle targets from position identity (network + poolAddress).
+  // Phase 0/1 cannot route swap candles yet, so swap positions are skipped.
+  for (const pos of openPositions) {
+    const id = pos.instrumentId ?? pos.symbol;
+    if (SWAP_VENUES.has(pos.venue)) {
+      logger.warn(
+        {
+          venue: pos.venue,
+          symbol: pos.symbol,
+          instrumentId: id,
+          event: 'scanner.swap_exit_unsupported_candle_target',
+        },
+        'Swap position exit candle target is not yet supported — skipped',
+      );
+      continue;
+    }
+    if (!candleTargetByInstrumentId.has(id)) {
+      candleTargetByInstrumentId.set(id, { venueType: 'orderbook', providerSymbol: pos.symbol });
     }
   }
 
-  // 5. Fetch candles in batches — classify per-symbol outcomes for health matrix.
-  //    Transient failures are retried in-cycle with jittered backoff; symbols that
+  // Build an instrumentId → display symbol reverse map for symbolOutcomes.
+  const displaySymbolById = new Map<string, string>();
+  for (const candidate of candidates) {
+    displaySymbolById.set(candidate.instrumentId, candidate.symbol);
+  }
+  for (const pos of openPositions) {
+    const id = pos.instrumentId ?? pos.symbol;
+    if (!displaySymbolById.has(id)) {
+      displaySymbolById.set(id, pos.symbol);
+    }
+  }
+
+  // 5. Fetch candles in batches — classify per-instrument outcomes for health matrix.
+  //    Transient failures are retried in-cycle with jittered backoff; instruments that
   //    fail every retry across consecutive scans are skipped by the circuit breaker.
-  const candlesBySymbol = new Map<string, PriceCandle[]>();
-  const unsupportedSymbols = new Set<string>(); // per-scan cache: skip unsupported in subsequent batches
+  //    Keyed by exact instrumentId to avoid same-ticker collisions.
+  const candlesByInstrumentId = new Map<string, PriceCandle[]>();
+  const unsupportedIds = new Set<string>(); // per-scan cache: skip unsupported in subsequent batches
   const { candleFetchRetry, candleFetchBreaker } = deps;
   const scanEpoch = deps.currentScanEpoch;
 
-  for (let i = 0; i < allSymbols.length; i += config.scanBatchSize) {
-    const batch = allSymbols.slice(i, i + config.scanBatchSize)
-      .filter((sym) => !unsupportedSymbols.has(sym)); // skip already-classified-unsupported
+  for (let i = 0; i < allIds.length; i += config.scanBatchSize) {
+    const batch = allIds.slice(i, i + config.scanBatchSize)
+      .filter((id) => !unsupportedIds.has(id)); // skip already-classified-unsupported
     if (batch.length === 0) continue;
 
     await Promise.all(
-      batch.map(async (symbol) => {
-        const target = candleTargetBySymbol.get(symbol);
+      batch.map(async (id) => {
+        const target = candleTargetByInstrumentId.get(id);
+        const displaySymbol = displaySymbolById.get(id) ?? id;
         if (!target) {
           // Should never happen with the map construction above, but defensive.
-          result.symbolOutcomes.push({ symbol, status: 'unsupported', errorDetail: 'No candle target mapped' });
+          result.symbolOutcomes.push({ symbol: displaySymbol, instrumentId: id, status: 'unsupported', errorDetail: 'No candle target mapped' });
           result.unsupportedCount++;
           return;
         }
 
-        // Circuit breaker: skip symbols that have failed every retry across consecutive scans.
+        // Circuit breaker: skip instruments that have failed every retry across consecutive scans.
+        // Key is derived from the full ScannerCandleTarget, not just providerSymbol.
         if (candleFetchBreaker && scanEpoch != null) {
-          const skip = await candleFetchBreaker.shouldSkip(agentId, target.providerSymbol, scanEpoch);
+          const breakerKey = scannerTargetKey(target);
+          const skip = await candleFetchBreaker.shouldSkip(agentId, breakerKey, scanEpoch);
           if (skip) {
-            result.symbolOutcomes.push({ symbol, status: 'skipped_breaker_open', resolvedProviderSymbol: target.providerSymbol });
+            result.symbolOutcomes.push({
+              symbol: displaySymbol,
+              instrumentId: id,
+              status: 'skipped_breaker_open',
+              resolvedProviderSymbol: target.venueType === 'orderbook' ? target.providerSymbol : undefined,
+            });
             result.breakerSkips++;
             return;
           }
@@ -281,32 +353,34 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
             candles = await fetchAttempt();
           }
 
-          candlesBySymbol.set(symbol, candles);
+          candlesByInstrumentId.set(id, candles);
           const candleCount = candles.length;
           const status: CandleFetchStatus = candleCount > 0 ? 'eligible_fetched' : 'eligible_empty';
-          result.symbolOutcomes.push({ symbol, status, candleCount });
+          result.symbolOutcomes.push({ symbol: displaySymbol, instrumentId: id, status, candleCount });
 
-          // Successful fetch (after any retries) — close the breaker for this symbol.
+          // Successful fetch (after any retries) — close the breaker for this target.
           if (candleFetchBreaker) {
-            await candleFetchBreaker.recordSuccess(agentId, target.providerSymbol);
+            const breakerKey = scannerTargetKey(target);
+            await candleFetchBreaker.recordSuccess(agentId, breakerKey);
           }
         } catch (err) {
           const { status, detail } = classifyCandleError(err);
-          result.symbolOutcomes.push({ symbol, status, errorDetail: detail });
+          result.symbolOutcomes.push({ symbol: displaySymbol, instrumentId: id, status, errorDetail: detail });
           if (status === 'unsupported') {
-            unsupportedSymbols.add(symbol);
+            unsupportedIds.add(id);
             result.unsupportedCount++;
             // Unsupported (HTTP 400) — never retry, never open breaker. Permanent skip.
           } else {
             result.fetchFailures++;
             // Transient failure after all retries exhausted — record for breaker.
             if (candleFetchBreaker && scanEpoch != null) {
-              await candleFetchBreaker.recordFailure(agentId, target.providerSymbol, scanEpoch);
+              const breakerKey = scannerTargetKey(target);
+              await candleFetchBreaker.recordFailure(agentId, breakerKey, scanEpoch);
             }
           }
-          const outcomeMsg = `candle_fetch_${status}(${symbol}): ${detail}`;
+          const outcomeMsg = `candle_fetch_${status}(${id}): ${detail}`;
           result.errors.push(outcomeMsg);
-          logger.warn({ err, symbol, status }, `Technical phase: candle fetch ${status} — skipping symbol`);
+          logger.warn({ err, instrumentId: id, status }, `Technical phase: candle fetch ${status} — skipping instrument`);
         }
       }),
     );
@@ -322,10 +396,10 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
     }
   }
 
-  // 6. Build CandidateContext[] for successfully-fetched candidates
+  // 6. Build CandidateContext[] for successfully-fetched candidates (keyed by instrumentId)
   const candidateContexts: CandidateContext[] = [];
   for (const candidate of candidates) {
-    const candles = candlesBySymbol.get(candidate.symbol);
+    const candles = candlesByInstrumentId.get(candidate.instrumentId);
     if (!candles) continue;
     candidateContexts.push({
       symbol: candidate.symbol,
@@ -335,6 +409,7 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
       venueType: candidate.venueType,
       candleTarget: candidate.candleTarget,
       pricingIdentity: candidate.pricingIdentity,
+      swapExecutionIdentity: candidate.swapExecutionIdentity,
       meta: {
         volume24hUsd: candidate.volume24hUsd,
         liquidityUsd: candidate.liquidityUsd,
@@ -404,9 +479,10 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
     }
   }
 
-  // 10. Exit evaluation for open positions
+  // 10. Exit evaluation for open positions (swap-identity guard already applied above)
   for (const openPos of openPositions) {
-    const candles = candlesBySymbol.get(openPos.symbol);
+    const posId = openPos.instrumentId ?? openPos.symbol;
+    const candles = candlesByInstrumentId.get(posId);
     if (!candles) {
       // Cannot evaluate exit without candles — skip
       continue;
@@ -414,7 +490,7 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
 
     const candidateCtx: CandidateContext = {
       symbol: openPos.symbol,
-      instrumentId: openPos.symbol,
+      instrumentId: posId,
       candles,
     };
 
@@ -440,7 +516,7 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
     const posIndicator: PositionIndicatorUpdate = {
       symbol: openPos.symbol,
       side: openPos.side as 'long' | 'flat',
-      instrumentId: openPos.symbol,
+      instrumentId: posId,
       entryPrice: Number.isFinite(entryPriceNum) ? entryPriceNum : undefined,
       rsi: rsiVal,
       signalNote,
@@ -452,7 +528,7 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
         // flag this position for LLM exit review, do NOT submit directly.
         posIndicator.exitAdvisory = true;
         result.positionIndicators.push(posIndicator);
-        logger.info({ symbol: openPos.symbol, reason: scored === null ? 'hard_reject' : 'confidence_below_threshold' },
+        logger.info({ symbol: openPos.symbol, instrumentId: posId, reason: scored === null ? 'hard_reject' : 'confidence_below_threshold' },
           'Technical phase: advisory mode — skipping exit submission for LLM review');
         continue;
       }
@@ -460,7 +536,7 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
       const exitDecision: Decision = {
         id: deps.generateDecisionId() as DecisionId,
         venueAccountId: venueAccountId as VenueAccountId,
-        instrumentId: openPos.symbol as InstrumentId,
+        instrumentId: posId as InstrumentId,
         intent: 'go_flat',
         targetSize: quantity('0'),
         timestamp: new Date().toISOString(),
@@ -478,8 +554,8 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
         result.exitsSubmitted++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        result.errors.push(`exit_submit_failed(${openPos.symbol}): ${msg}`);
-        logger.error({ err, symbol: openPos.symbol }, 'Technical phase: exit submission failed');
+        result.errors.push(`exit_submit_failed(${posId}): ${msg}`);
+        logger.error({ err, instrumentId: posId }, 'Technical phase: exit submission failed');
       }
     }
     result.positionIndicators.push(posIndicator);
