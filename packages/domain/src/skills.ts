@@ -260,7 +260,7 @@ export const WEB_ACCESS_SKILL: SkillDefinition = {
   requiredGuardrails: ['token-budget'],
   suggestedTickIntervalMs: 900_000,
   visibility: 'public',
-  promptHint: 'Describe what topics to research and how to report findings (e.g., "Monitor crypto news for regulatory changes and send me daily summaries")',
+  promptHint: "e.g. 'Research the best noise-cancelling headphones under $200 and send me a comparison'",
 };
 
 /**
@@ -286,7 +286,7 @@ export const TASK_MANAGEMENT_SKILL: SkillDefinition = {
   requiredGuardrails: ['token-budget'],
   suggestedTickIntervalMs: 900_000,
   visibility: 'public',
-  promptHint: 'Describe what tasks and reminders the agent should track (e.g., "Remind me to review positions every 4 hours and track all action items")',
+  promptHint: "e.g. 'Remind me next Tuesday at 9 AM to wish Jane a happy birthday'",
 };
 
 /**
@@ -312,7 +312,7 @@ Examples:
 - "ETH just dropped below $2000 — alert me" → send_message with messageClass="alert"
 
 Rule: Use send_email for any external email recipient. Use send_message for communicating with the user.`,
-  promptHint: 'e.g. "Send a weekly summary email to my team" or "Email me a heads-up whenever a position closes"',
+  promptHint: "e.g. 'Forward any invoice from the accounting firm to my personal inbox'",
   requiredTools: ['send_email'],
   capabilityFamilies: ['email'],
   bindingRequirements: {
