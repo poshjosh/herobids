@@ -21,7 +21,7 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     dailyLlmTokenBudget: null,
     telegramChatId: null,
     executionMode: 'paper',
-    dailyLossLimit: null,
+    dailyMaxLossPct: null,
     maxDrawdownPct: null,
     maxBots: null,
     maxSlippageBps: null,

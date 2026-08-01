@@ -1,4 +1,4 @@
-# 010 - Agent Blueprint Marketplace Target-State Brief
+# 002 - Agent Blueprint Marketplace Target-State Brief
 
 **Status:** Draft  
 **Created:** 2026-08-01  

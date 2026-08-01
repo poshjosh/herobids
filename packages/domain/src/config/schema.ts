@@ -489,11 +489,12 @@ export const AgentCostEstimatesSchema = z.object({
 }).default({});
 
 export const AgentRiskDefaultsSchema = z.object({
+  /** @deprecated Use dailyMaxLossPct (percent of equity) instead. Ratio-based loss limit. */
   dailyLossLimitDefaultRatio: z.number().min(0).max(1).default(0.05),
   maxOpenPositions: z.number().min(1).default(10),
   maxPositionSizePct: z.number().min(0).max(100).default(100),
   maxPositionSize: z.number().min(0).default(1_000_000),
-  stopLossMaxUnrealizedLossPct: z.number().min(0).max(100).default(10),
+  stopLossPct: z.number().min(0).max(100).default(10),
   dailyMaxLossPct: z.number().min(0).max(100).default(20),
   stopLossCooldownMs: z.number().min(0).default(300_000),
   maxOrderNotionalMultiplier: z.number().min(0).default(1),
@@ -1817,22 +1818,76 @@ export type PlanLimitsEntitlements = z.infer<typeof PlanLimitsEntitlementsSchema
 
 // --- Trading Instance Config (stored in Postgres JSONB, per-instance) ---
 
-export const RiskConfigSchema = z.object({
-  maxPositionSizePct: z.number().min(0).max(100).optional(),
-  maxPositionSize: z.string().optional(),
-  maxOpenPositions: z.number().min(1).optional(),
-  maxDrawdown: z.string().optional(),
-  dailyMaxLossPct: z.number().min(0).max(100).optional(),
-  stopLossCooldownMs: z.number().min(0).optional(),
-  stopLossMaxUnrealizedLossPct: z.number().min(0).max(100).optional(),
-  maxOrderNotional: z.string().optional(),
-  minSwapTokenLiquidityUsd: z.number().min(0).optional(),
-  minSwapTokenVolume24hUsd: z.number().min(0).optional(),
-  minSwapTokenAgeHours: z.number().min(0).optional(),
-  allowSwapTokenSafetyOverride: z.boolean().optional(),
-  maxNewPositionsPerDay: z.number().int().min(0).optional(),
-  avoidParabolicMovePct: z.number().min(0).optional(),
+/**
+ * Token-safety guardrails for swap/DEX venues.
+ * Venue/DEX-specific — kept separate from the shared risk core.
+ *
+ * **Precedence:** When both `tokenSafety.*` and the deprecated
+ * `risk.minSwapToken*` / `risk.allowSwapTokenSafetyOverride` fields are
+ * present, `tokenSafety.*` takes precedence.
+ */
+export const TokenSafetySchema = z.object({
+  /** Minimum token liquidity in USD. Tokens below this threshold are filtered out. */
+  minLiquidityUsd: z.number().min(0).optional(),
+  /** Minimum 24h trading volume in USD. Tokens below this threshold are filtered out. */
+  minVolume24hUsd: z.number().min(0).optional(),
+  /** Minimum token age in hours. Tokens younger than this are filtered out. */
+  minAgeHours: z.number().min(0).optional(),
+  /** Whether the agent/bot is allowed to issue token-safety overrides. */
+  allowOverrides: z.boolean().optional(),
 });
+export type TokenSafety = z.infer<typeof TokenSafetySchema>;
+
+export const RiskConfigSchema = z.preprocess(
+  (input) => {
+    // Accept legacy stopLossMaxUnrealizedLossPct as input alias → normalize to stopLossPct
+    if (typeof input === 'object' && input !== null) {
+      const obj = input as Record<string, unknown>;
+      if ('stopLossMaxUnrealizedLossPct' in obj && !('stopLossPct' in obj)) {
+        console.debug('RiskConfigSchema: normalizing legacy stopLossMaxUnrealizedLossPct to stopLossPct');
+        return { ...obj, stopLossPct: obj['stopLossMaxUnrealizedLossPct'] };
+      }
+    }
+    return input;
+  },
+  z.object({
+    maxPositionSizePct: z.number().min(0).max(100).optional(),
+    maxPositionSize: z.string().optional(),
+    maxOpenPositions: z.number().min(1).optional(),
+    maxDrawdown: z.string().optional(),
+    dailyMaxLossPct: z.number().min(0).max(100).optional(),
+    stopLossCooldownMs: z.number().min(0).optional(),
+    stopLossPct: z.number().min(0).max(100).optional(),
+    /**
+     * Per-order notional cap (absolute, as a string — e.g. "1000" for $1,000).
+     * Note: This is `z.string()` here, while `RiskPostureSchema.maxOrderNotional`
+     * is `z.number()`. Reconciliation of this type mismatch is deferred.
+     */
+    maxOrderNotional: z.string().optional(),
+    /**
+     * @deprecated Use tokenSafety.minLiquidityUsd instead.
+     * When both are present, tokenSafety.minLiquidityUsd takes precedence.
+     */
+    minSwapTokenLiquidityUsd: z.number().min(0).optional(),
+    /**
+     * @deprecated Use tokenSafety.minVolume24hUsd instead.
+     * When both are present, tokenSafety.minVolume24hUsd takes precedence.
+     */
+    minSwapTokenVolume24hUsd: z.number().min(0).optional(),
+    /**
+     * @deprecated Use tokenSafety.minAgeHours instead.
+     * When both are present, tokenSafety.minAgeHours takes precedence.
+     */
+    minSwapTokenAgeHours: z.number().min(0).optional(),
+    /**
+     * @deprecated Use tokenSafety.allowOverrides instead.
+     * When both are present, tokenSafety.allowOverrides takes precedence.
+     */
+    allowSwapTokenSafetyOverride: z.boolean().optional(),
+    maxNewPositionsPerDay: z.number().int().min(0).optional(),
+    avoidParabolicMovePct: z.number().min(0).optional(),
+  }),
+);
 
 /**
  * Risk playbook values forwarded from RiskConfigSchema into the strategy snapshot.
@@ -2058,15 +2113,63 @@ export const StrategySchema = z.object({
   { message: 'decisionMode is required for non-DCA strategies', path: ['decisionMode'] },
 );
 
-export const ExecutionConfigSchema = z.object({
+/**
+ * Execution defaults — canonicalized from the agent executionMode / maxSlippageBps.
+ * Shared by both bots and agents. This is the canonical name;
+ * {@link ExecutionConfigSchema} is a deprecated alias.
+ */
+export const ExecutionDefaultsSchema = z.object({
   mode: z.enum(['paper', 'shadow', 'live']).default('paper'),
   slippageBps: z.number().min(0).optional(),
 });
+export type ExecutionDefaults = z.infer<typeof ExecutionDefaultsSchema>;
+
+/** @deprecated Use {@link ExecutionDefaultsSchema} (canonical name) instead. Alias retained for backward compat. */
+export const ExecutionConfigSchema = ExecutionDefaultsSchema;
+
+// ── Shared domain value objects (agent + bot vocabulary) ──────────────────────
+
+/**
+ * Strategy identity — canonicalized from {@link StrategySchema}.
+ * Required for bots; optional/absent for non-trading agents.
+ */
+export const StrategyIdentitySchema = StrategySchema;
+export type StrategyIdentity = z.infer<typeof StrategyIdentitySchema>;
+
+/**
+ * Risk posture — the canonical nullable value shape shared by agents and bots.
+ * Every field is optional/nullable: null or absent means "use operator default".
+ * Token-safety guards (liquidity, volume, age, override) belong in TokenSafety,
+ * not here.
+ */
+export const RiskPostureSchema = z.object({
+  /** Max position size as % of equity (0–100). Agent-mutable when not creator-configured. */
+  maxPositionSizePct: z.number().min(0).max(100).optional().nullable(),
+  /** Max number of open (non-flat) positions. Agent-mutable when not creator-configured. */
+  maxOpenPositions: z.number().min(1).optional().nullable(),
+  /** Stop-loss unrealized-loss guard as % of equity (0–100). 0 = disabled. Agent-mutable when not creator-configured. */
+  stopLossPct: z.number().min(0).max(100).optional().nullable(),
+  /** Cooldown in ms before re-entering an instrument after a stop-loss exit. 0 = disabled. Agent-mutable when not creator-configured. */
+  stopLossCooldownMs: z.number().min(0).optional().nullable(),
+  /** Daily realized-loss cap as % of equity (0–100). Creator-only — not agent-mutable. */
+  dailyMaxLossPct: z.number().min(0).max(100).optional().nullable(),
+  /** Peak-to-current equity drawdown cap as % of peak equity (0–100). Agent-mutable when not creator-configured. */
+  maxDrawdownPct: z.number().min(0).max(100).optional().nullable(),
+  /** Max new positions allowed per calendar day (0 = unlimited). Shared — promoted from bot-only. */
+  maxNewPositionsPerDay: z.number().int().min(0).optional().nullable(),
+  /** Parabolic-move guard: skip entry when 24h change exceeds this % (0 = disabled). */
+  avoidParabolicMovePct: z.number().min(0).optional().nullable(),
+  /** Per-order notional cap in USD (absolute, unavoidable). Creator-only — not agent-mutable. */
+  maxOrderNotional: z.number().min(0).optional().nullable(),
+});
+export type RiskPosture = z.infer<typeof RiskPostureSchema>;
 
 export const BotConfigSchema = z.object({
   strategy: StrategySchema,
   risk: RiskConfigSchema.default({}),
   execution: ExecutionConfigSchema.default({}),
+  /** Token-safety guardrails for swap/DEX venues. Prefer this over the deprecated risk.* fields. */
+  tokenSafety: TokenSafetySchema.optional(),
   venue: z.string().optional(),
   symbol: z.string(),
   venueType: z.enum(['orderbook', 'swap']).optional(),
@@ -2097,6 +2200,12 @@ export const BotConfigSchema = z.object({
 );
 
 export type BotConfig = z.infer<typeof BotConfigSchema>;
+/**
+ * RiskConfig — the TypeScript type inferred from {@link RiskConfigSchema}.
+ * Note: This type no longer includes the legacy `stopLossMaxUnrealizedLossPct`
+ * field. Input data with that field is normalized to `stopLossPct` by the
+ * schema's preprocess step.
+ */
 export type RiskConfig = z.infer<typeof RiskConfigSchema>;
 export type StrategyConfig = z.infer<typeof StrategySchema>;
 export type LlmParams = z.infer<typeof LlmParamsSchema>;

@@ -1,4 +1,4 @@
-# 010 - Agent Blueprint Marketplace Planning Set
+# 002 - Agent Blueprint Marketplace Planning Set
 
 **Status:** Draft  
 **Created:** 2026-08-01  
@@ -14,6 +14,7 @@ The planning set is split into four documents with distinct jobs:
 2. ADR list: the architectural decisions that must be locked before implementation spreads.
 3. Delivery map: the high-level workstreams and sequence.
 4. Hardened Phase 1 plan: the first implementation-ready slice with validation.
+5. Field classification: the template-vs-instance manifest that projection must satisfy.
 
 This split is intentional because the project does not need backward compatibility for legacy blueprint, database, or Redis state. We can design the clean target first, then sequence delivery from that target.
 
@@ -23,6 +24,7 @@ This split is intentional because the project does not need backward compatibili
 2. [004-adr-list.md](./004-adr-list.md)
 3. [005-delivery-map.md](./005-delivery-map.md)
 4. [006-phase-1-plan.md](./006-phase-1-plan.md)
+5. [007-field-classification.md](./007-field-classification.md)
 
 ## Supporting Material
 

@@ -6,7 +6,7 @@ const DEFAULTS: AgentRiskDefaultsConfig = {
   maxOpenPositions: 10,
   maxPositionSizePct: 100,
   maxPositionSize: 1_000_000,
-  stopLossMaxUnrealizedLossPct: 10,
+  stopLossPct: 10,
   dailyMaxLossPct: 20,
   stopLossCooldownMs: 300_000,
   maxOrderNotionalMultiplier: 1,
@@ -80,9 +80,9 @@ describe('buildAgentRiskLimits()', () => {
   });
 
   describe('stopLossPct', () => {
-    it('uses default stopLossMaxUnrealizedLossPct when source is null', () => {
+    it('uses default stopLossPct when source is null', () => {
       const limits = buildAgentRiskLimits(EMPTY_SOURCE, DEFAULTS);
-      expect(limits.stopLossMaxUnrealizedLossPct).toBe(DEFAULTS.stopLossMaxUnrealizedLossPct);
+      expect(limits.stopLossMaxUnrealizedLossPct).toBe(DEFAULTS.stopLossPct);
     });
 
     it('uses user-configured stopLossPct over default', () => {

@@ -27,6 +27,7 @@ const getRiskLimitsTool: AgentTool = {
         limits: {
           maxOpenPositions: formatField(contract.maxOpenPositions),
           maxPositionSizePct: formatField(contract.maxPositionSizePct),
+          stopLossPct: formatField(contract.stopLossPct),
           stopLossCooldownMs: formatField(contract.stopLossCooldownMs),
           maxDrawdownPct: formatField(contract.maxDrawdownPct),
         },
@@ -41,6 +42,7 @@ const getRiskLimitsTool: AgentTool = {
 const AdjustRiskLimitsParamsSchema = z.object({
   maxOpenPositions: z.number().int().positive().optional().nullable().describe('Max concurrent open positions. Set null to reset to operator default.'),
   maxPositionSizePct: z.number().min(0).max(100).optional().nullable().describe('Max position size as % of equity (0-100). Set null to reset to operator default.'),
+  stopLossPct: z.number().min(0).max(100).optional().nullable().describe('Max unrealized loss per position as % of equity before forced exit (0-100). Set null to reset to operator default.'),
   stopLossCooldownMs: z.number().int().min(0).optional().nullable().describe('Cooldown in ms after stop-loss exit before re-entry. Set null to reset to operator default.'),
   maxDrawdownPct: z.number().min(0).max(100).optional().nullable().describe('Max peak-to-current equity drawdown % (0-100). Set null to reset to operator default.'),
 });
@@ -62,6 +64,7 @@ const adjustRiskLimitsTool: AgentTool = {
     const overrides: Record<string, number | null> = {};
     if (p.maxOpenPositions !== undefined) overrides.maxOpenPositions = p.maxOpenPositions ?? null;
     if (p.maxPositionSizePct !== undefined) overrides.maxPositionSizePct = p.maxPositionSizePct ?? null;
+    if (p.stopLossPct !== undefined) overrides.stopLossPct = p.stopLossPct ?? null;
     if (p.stopLossCooldownMs !== undefined) overrides.stopLossCooldownMs = p.stopLossCooldownMs ?? null;
     if (p.maxDrawdownPct !== undefined) overrides.maxDrawdownPct = p.maxDrawdownPct ?? null;
 
@@ -83,6 +86,7 @@ const adjustRiskLimitsTool: AgentTool = {
         limits: result.contract ? {
           maxOpenPositions: formatField(result.contract.maxOpenPositions),
           maxPositionSizePct: formatField(result.contract.maxPositionSizePct),
+          stopLossPct: formatField(result.contract.stopLossPct),
           stopLossCooldownMs: formatField(result.contract.stopLossCooldownMs),
           maxDrawdownPct: formatField(result.contract.maxDrawdownPct),
         } : undefined,
@@ -127,21 +131,31 @@ async function buildRuntime(ctx: ToolContext, contract: ResolvedAgentRiskContrac
 
   const openPositionsBlocked = openPositionsCurrent >= openPositionsLimit;
 
-  // Derive the daily loss limit: prefer explicit dollar limit from agent DB column first,
-  // then fall back to capital × dailyMaxLossPct percentage calculation.
+  // Derive the daily loss limit: prefer agent.risk.dailyMaxLossPct (percent of equity),
+  // then fall back to the legacy dailyLossLimit USD column.
   let dailyLossLimitFromUser = false;
   if (ctx.agentRepo) {
     try {
       const agent = await ctx.agentRepo.getAgent(ctx.agentId);
-      if (agent?.dailyLossLimit != null) {
-        // Explicit dollar cap — takes priority over percentage calculation
+      const risk = (agent?.risk ?? {}) as Record<string, unknown> | null;
+      if (risk?.['dailyMaxLossPct'] != null) {
+        // Canonical percent-of-equity source
+        dailyLossLimitPct = Number(risk['dailyMaxLossPct']);
+        if (agent?.capital) {
+          const capital = Number(agent.capital);
+          if (!Number.isNaN(capital) && capital > 0) {
+            dailyLossLimit = String(capital * dailyLossLimitPct / 100);
+          }
+        }
+      } else if (agent?.dailyLossLimit != null) {
+        // Legacy fallback: explicit dollar cap
         const val = Number(agent.dailyLossLimit);
         if (!Number.isNaN(val) && val > 0) {
           dailyLossLimit = agent.dailyLossLimit;
           dailyLossLimitFromUser = true;
         }
       } else if (agent?.capital) {
-        // Fallback: compute from capital × dailyMaxLossPct
+        // Last fallback: compute from capital × dailyMaxLossPct via config
         if (ctx.agentConfigOps) {
           try {
             const config = await ctx.agentConfigOps.getCurrentConfig();

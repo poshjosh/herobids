@@ -25,7 +25,10 @@ export interface RuntimeBudgetPolicy {
 
 export interface RuntimeGuardrailDescriptor {
   dailyTokenBudget?: string | null;
+  /** @deprecated Use dailyMaxLossPct (percent of equity) instead. USD-denominated loss limit. */
   dailyLossLimit?: string | null;
+  /** Daily realized-loss cap as percent of equity (0–100). Canonical replacement for dailyLossLimit. */
+  dailyMaxLossPct?: string | null;
   maxDrawdownPct?: number | null;
   maxBots?: number | null;
   maxOpenPositions?: number | null;

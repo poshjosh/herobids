@@ -90,7 +90,7 @@ agentRiskDefaults:
   maxOpenPositions: 10                   # max concurrent non-flat positions
   maxPositionSizePct: 100                # max position notional as % of capital (100 = full capital)
   maxPositionSize: 1000000               # max absolute position size in base units (operator ceiling)
-  stopLossMaxUnrealizedLossPct: 10       # max unrealized loss per position as % of equity before forced exit
+  stopLossPct: 10                        # max unrealized loss per position as % of equity before forced exit
   dailyMaxLossPct: 20                    # operator ceiling: max rolling 24h realized loss as % of equity.
                                          # Fallback when user did not configure dailyLossLimit. See glossary.
   stopLossCooldownMs: 300000             # 5 min cooldown after a stop-loss exit before re-entry

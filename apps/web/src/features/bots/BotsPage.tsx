@@ -68,8 +68,8 @@ function buildCustomBotConfig(
   const dailyLoss = parseFloat(c.dailyMaxLossPct);
   if (Number.isFinite(dailyLoss)) risk['dailyMaxLossPct'] = dailyLoss;
 
-  const maxUnrealized = parseFloat(c.stopLossMaxUnrealizedLossPct);
-  if (Number.isFinite(maxUnrealized)) risk['stopLossMaxUnrealizedLossPct'] = maxUnrealized;
+  const maxUnrealized = parseFloat(c.stopLossPct);
+  if (Number.isFinite(maxUnrealized)) risk['stopLossPct'] = maxUnrealized;
 
   return {
     strategy: {

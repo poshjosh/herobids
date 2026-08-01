@@ -698,10 +698,10 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         prompt: agent.prompt,
         status: agent.status,
         skillIds,
-        executionMode: agent.executionMode,
-        dailyLossLimit: agent.dailyLossLimit,
+        executionMode: (agent.executionDefaults as Record<string, unknown> | null)?.['mode'] ?? agent.executionMode,
+        dailyMaxLossPct: (agent.risk as Record<string, unknown> | null)?.['dailyMaxLossPct'] ?? null,
         maxBots: agent.maxBots,
-        maxSlippageBps: agent.maxSlippageBps,
+        slippageBps: (agent.executionDefaults as Record<string, unknown> | null)?.['slippageBps'] ?? null,
         createdAt: agent.createdAt instanceof Date ? agent.createdAt.toISOString() : agent.createdAt,
       } as Record<string, unknown>);
 
@@ -741,10 +741,10 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         prompt: agent.prompt,
         status: agent.status,
         skillIds,
-        executionMode: agent.executionMode,
-        dailyLossLimit: agent.dailyLossLimit,
+        executionMode: (agent.executionDefaults as Record<string, unknown> | null)?.['mode'] ?? agent.executionMode,
+        dailyMaxLossPct: (agent.risk as Record<string, unknown> | null)?.['dailyMaxLossPct'] ?? null,
         maxBots: agent.maxBots,
-        maxSlippageBps: agent.maxSlippageBps,
+        slippageBps: (agent.executionDefaults as Record<string, unknown> | null)?.['slippageBps'] ?? null,
         createdAt: agent.createdAt instanceof Date ? agent.createdAt.toISOString() : agent.createdAt,
       } as Record<string, unknown>);
 

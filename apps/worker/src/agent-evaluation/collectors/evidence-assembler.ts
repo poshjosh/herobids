@@ -133,6 +133,8 @@ export async function assembleEvidence(ctx: EvidenceAssemblyContext): Promise<Ev
     const agentRepo = new AgentRepository(ctx.db);
     const agent = await agentRepo.getAgent(ctx.agentId);
     if (agent) {
+      const risk = (agent.risk ?? {}) as Record<string, unknown>;
+      const execDefaults = (agent.executionDefaults ?? {}) as Record<string, unknown>;
       const metadata = {
         id: agent.id,
         name: agent.name,
@@ -142,6 +144,11 @@ export async function assembleEvidence(ctx: EvidenceAssemblyContext): Promise<Ev
         dailyLossLimit: agent.dailyLossLimit,
         maxBots: agent.maxBots,
         maxSlippageBps: agent.maxSlippageBps,
+        // Canonical JSONB fields
+        dailyMaxLossPct: risk['dailyMaxLossPct'] ?? null,
+        maxDrawdownPct: risk['maxDrawdownPct'] ?? null,
+        slippageBps: execDefaults['slippageBps'] ?? null,
+        executionModeCanonical: execDefaults['mode'] ?? null,
         createdAt: agent.createdAt,
       };
       await ctx.store.write(ctx.runId, 'agent-metadata.json', JSON.stringify(metadata, null, 2));

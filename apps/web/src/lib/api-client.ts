@@ -1041,11 +1041,21 @@ export interface Agent {
   costPreset: string | null;
   dailySpendBudgetUsd: number | null;
   dailyLlmTokenBudget: number | null;
+  /** WP4 canonical: shared RiskPosture JSONB (nullable fields = operator default). */
+  risk?: Record<string, unknown> | null;
+  /** WP4 canonical: shared StrategyIdentity JSONB. null/absent for non-trading agents. */
+  strategy?: Record<string, unknown> | null;
+  /** WP4 canonical: shared ExecutionDefaults JSONB. */
+  executionDefaults?: Record<string, unknown> | null;
   telegramChatId: string | null;
+  /** @deprecated Use risk JSONB (risk.dailyMaxLossPct) instead. */
   executionMode: string | null;
+  /** @deprecated Use risk JSONB (risk.dailyMaxLossPct) instead. */
   dailyLossLimit: string | null;
+  /** @deprecated Use risk JSONB (risk.maxDrawdownPct) instead. */
   maxDrawdownPct: number | null;
   maxBots: number | null;
+  /** @deprecated Use executionDefaults JSONB (executionDefaults.slippageBps) instead. */
   maxSlippageBps: number | null;
   maxOpenPositions: number | null;
   maxPositionSizePct: string | null;
@@ -1195,14 +1205,8 @@ export const agents = {
     dailySpendBudgetUsd?: number | null;
     executionMode?: string | null;
     telegramChatId?: string | null;
-    dailyLossLimit?: string | null;
-    maxDrawdownPct?: number | null;
-    maxBots?: number | null;
-    maxSlippageBps?: number | null;
-    maxOpenPositions?: number | null;
-    maxPositionSizePct?: number | null;
-    stopLossPct?: number | null;
-    stopLossCooldownMs?: number | null;
+    risk?: Record<string, unknown> | null;
+    executionDefaults?: Record<string, unknown> | null;
     tickIntervalMs?: number | null;
     capital?: string | null;
     style?: string | null;
@@ -1233,14 +1237,8 @@ export const agents = {
     dailySpendBudgetUsd?: number | null;
     telegramChatId?: string | null;
     executionMode?: string | null;
-    dailyLossLimit?: string | null;
-    maxDrawdownPct?: number | null;
-    maxBots?: number | null;
-    maxSlippageBps?: number | null;
-    maxOpenPositions?: number | null;
-    maxPositionSizePct?: number | null;
-    stopLossPct?: number | null;
-    stopLossCooldownMs?: number | null;
+    risk?: Record<string, unknown> | null;
+    executionDefaults?: Record<string, unknown> | null;
     tickIntervalMs?: number | null;
     capital?: string | null;
     style?: string | null;

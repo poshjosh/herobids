@@ -23,6 +23,7 @@ import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { LlmStrategy, MechanicalStrategy, HybridStrategy, DcaStrategy } from '@herobids/strategy';
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { MarketDataRecorder } from '@herobids/backtesting';
+import type { RiskPosture } from '@herobids/domain';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, LlmArtifactRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, AgentDocumentsRepository, DecisionApprovalRepository, bots, users, agents, agentScanCandidates, agentScanMetrics } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, HyperliquidMarkSource } from '@herobids/venues';
@@ -724,6 +725,7 @@ const intakeResolver: DecisionIntakeResolver = {
             maxPositionSizePct: agent.maxPositionSizePct ?? null,
             stopLossPct: agent.stopLossPct ?? null,
             stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
+            riskPosture: (agent.risk as RiskPosture | null) ?? null,
           }, appConfig.agentRiskDefaults, (agent.riskOverrides as Record<string, number> | null) ?? {});
           actor.updateRiskLimits(freshLimits);
         }
@@ -1115,6 +1117,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
             maxPositionSizePct: agent?.maxPositionSizePct ?? null,
             stopLossPct: agent?.stopLossPct ?? null,
             stopLossCooldownMs: agent?.stopLossCooldownMs ?? null,
+            riskPosture: (agent?.risk as RiskPosture | null) ?? null,
           }, agentDefaults, (agent?.riskOverrides as Record<string, number> | null) ?? {}),
           venueAdapterFactory,
           createStreamPoolHandle: venueType !== 'swap'
@@ -1968,7 +1971,7 @@ const runtime = new WorkerRuntime(
         maxPositionSizePct: config.risk.maxPositionSizePct,
         dailyMaxLossPct: config.risk.dailyMaxLossPct,
         stopLossCooldownMs: config.risk.stopLossCooldownMs,
-        stopLossMaxUnrealizedLossPct: config.risk.stopLossMaxUnrealizedLossPct,
+        stopLossMaxUnrealizedLossPct: config.risk.stopLossPct,
         maxOrderNotional: liveGateResult.effectiveMaxOrderNotional,
       },
       idGen,
@@ -2000,7 +2003,14 @@ const runtime = new WorkerRuntime(
       shadowQuoteSlippageBps: appConfig.execution.shadowQuoteSlippageBps,
       credentialId: resolvedCredentialId,
       swapTokenSafety: config.venueType === 'swap' ? swapTokenSafety : undefined,
-      swapTokenSafetyThresholds: (config.risk.minSwapTokenLiquidityUsd != null || config.risk.minSwapTokenVolume24hUsd != null || config.risk.minSwapTokenAgeHours != null || config.risk.allowSwapTokenSafetyOverride != null)
+      swapTokenSafetyThresholds: (config.tokenSafety?.minLiquidityUsd != null || config.tokenSafety?.minVolume24hUsd != null || config.tokenSafety?.minAgeHours != null || config.tokenSafety?.allowOverrides != null)
+        ? {
+            minLiquidityUsd: config.tokenSafety!.minLiquidityUsd,
+            minVolume24hUsd: config.tokenSafety!.minVolume24hUsd,
+            minAgeHours: config.tokenSafety!.minAgeHours,
+            allowOverrides: config.tokenSafety!.allowOverrides,
+          }
+        : (config.risk.minSwapTokenLiquidityUsd != null || config.risk.minSwapTokenVolume24hUsd != null || config.risk.minSwapTokenAgeHours != null || config.risk.allowSwapTokenSafetyOverride != null)
         ? {
             minLiquidityUsd: config.risk.minSwapTokenLiquidityUsd,
             minVolume24hUsd: config.risk.minSwapTokenVolume24hUsd,

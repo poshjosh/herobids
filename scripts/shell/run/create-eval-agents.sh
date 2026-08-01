@@ -372,7 +372,9 @@ build_agent_payload() {
       lightModel: $lightModel,
       heavyModel: $heavyModel,
       skillIds: $skillIds,
-      executionMode: $executionMode,
+      executionDefaults: {
+        mode: $executionMode
+      },
       capital: $capital,
       telegramChatId: $telegramChatId,
       strategyPreset: $strategyPreset,

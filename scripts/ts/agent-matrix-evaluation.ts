@@ -395,7 +395,7 @@ async function createAgent(
     prompt: AGENT_GOAL,
     skillIds,
     connectionIds: [connectionId],
-    executionMode: EXECUTION_MODE,
+    executionDefaults: { mode: EXECUTION_MODE },
     tickIntervalMs: TICK_INTERVAL_MS,
     capital: CAPITAL,
     style: STYLE,
@@ -575,7 +575,7 @@ async function main(): Promise<void> {
     console.log(`  ICT skills:          ${hasSkills ? 'ICT Bearish Swing + ICT Bullish Swing' : 'None'}`);
     console.log(`  Skill IDs attached:  ${hasSkills ? ictSkillIds.join(', ') : '(trading only)'}`);
     console.log(`  ─── Fixed across all agents ───`);
-    console.log(`  executionMode:       ${EXECUTION_MODE}`);
+    console.log(`  executionDefaults.mode: ${EXECUTION_MODE}`);
     console.log(`  capital:             $${CAPITAL}`);
     console.log(`  style:               ${STYLE}`);
     console.log(`  provider:            ${LLM_PROVIDER}`);

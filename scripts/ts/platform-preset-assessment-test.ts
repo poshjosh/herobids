@@ -101,7 +101,7 @@ async function createProviderLink(token: string): Promise<string> {
 async function createAgent(token: string, connectionId: string): Promise<string> {
   const res = await apiRequest<{ id?: string }>('POST', '/agents', { token, body: {
     name: `AssessTest-${Date.now()}`, prompt: 'Test agent. Do not trade.',
-    skillIds: ['trading'], executionMode: EXECUTION_MODE, tickIntervalMs: 60_000,
+    skillIds: ['trading'], executionDefaults: { mode: EXECUTION_MODE }, tickIntervalMs: 60_000,
     capital: '1000', provider: LLM_PROVIDER, lightModel: LLM_LIGHT_MODEL, heavyModel: LLM_HEAVY_MODEL,
     connectionIds: [connectionId],
   }});

@@ -577,7 +577,7 @@ export async function agentRoutes(
       dailyLossLimitDefaultRatio: agentRiskDefaults.dailyLossLimitDefaultRatio,
       maxOpenPositions: agentRiskDefaults.maxOpenPositions,
       maxPositionSizePct: agentRiskDefaults.maxPositionSizePct,
-      stopLossPct: agentRiskDefaults.stopLossMaxUnrealizedLossPct,
+      stopLossPct: agentRiskDefaults.stopLossPct,
       stopLossCooldownMs: agentRiskDefaults.stopLossCooldownMs,
       dailyMaxLossPct: agentRiskDefaults.dailyMaxLossPct,
       maxDrawdownPct: agentRiskDefaults.maxDrawdownPct,
@@ -881,6 +881,47 @@ export async function agentRoutes(
       }
     }
 
+    // Build risk JSONB (RiskPosture shape) from creator input.
+    // Null means "use operator default" — preserved per-field.
+    const riskPosture: Record<string, unknown> = {
+      maxDrawdownPct: parsed.data.maxDrawdownPct ?? null,
+      maxPositionSizePct: finalMaxPositionSizePct != null ? Number(finalMaxPositionSizePct) : null,
+      maxOpenPositions: parsed.data.maxOpenPositions ?? null,
+      stopLossPct: finalStopLossPct != null ? Number(finalStopLossPct) : null,
+      stopLossCooldownMs: parsed.data.stopLossCooldownMs ?? null,
+      dailyMaxLossPct: null, // WP5 handles derivation from dailyLossLimit / capital
+      maxOrderNotional: null, // WP5 handles derivation from capital × multiplier
+      maxNewPositionsPerDay: null,
+      avoidParabolicMovePct: null,
+    };
+    // Strip null-valued keys to keep JSONB clean
+    for (const key of Object.keys(riskPosture)) {
+      if (riskPosture[key] === null) delete riskPosture[key];
+    }
+    const riskJsonb = Object.keys(riskPosture).length > 0 ? riskPosture : null;
+
+    // Build strategy JSONB (StrategyIdentity shape) — absent for non-trading agents.
+    const isTradingAgent = capabilityMode === 'hybrid';
+    let strategyJsonb: Record<string, unknown> | null = null;
+    if (isTradingAgent && parsed.data.strategyPreset) {
+      const strategyType = parsed.data.strategyPreset;
+      // decisionMode: hybrid if capabilityMode is hybrid, otherwise derive from preset
+      const decisionMode = capabilityMode === 'hybrid' ? 'hybrid' : undefined;
+      strategyJsonb = {
+        type: strategyType,
+        ...(decisionMode ? { decisionMode } : {}),
+      };
+    }
+
+    // Build executionDefaults JSONB (ExecutionDefaults shape).
+    let executionDefaultsJsonb: Record<string, unknown> | null = null;
+    if (executionMode.value != null || parsed.data.maxSlippageBps != null) {
+      executionDefaultsJsonb = {
+        mode: executionMode.value ?? 'paper',
+        ...(parsed.data.maxSlippageBps != null ? { slippageBps: parsed.data.maxSlippageBps } : {}),
+      };
+    }
+
     const createTxResult = await db.transaction(async (tx): Promise<
       | { kind: 'ok' }
       | { kind: 'conn_error'; status: number; body: Record<string, unknown> }
@@ -914,6 +955,10 @@ export async function agentRoutes(
           openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
           ...(finalUnifiedConfig ? { unifiedConfig: finalUnifiedConfig } : {}),
           wakePreferences: parsed.data.wakePreferences ?? null,
+          // TODO: replace as never with proper Drizzle-typed values (RiskPosture, StrategyIdentity, ExecutionDefaults)
+          risk: riskJsonb as never,
+          strategy: strategyJsonb as never,
+          executionDefaults: executionDefaultsJsonb as never,
           createdAt: now,
           updatedAt: now,
         } as never);
@@ -1727,6 +1772,77 @@ export async function agentRoutes(
       ? (notificationPolicyInput === null ? null : resolveNotificationPolicy(notificationPolicyInput, agent.notificationPolicy as Parameters<typeof resolveNotificationPolicy>[1]))
       : undefined;
 
+    // Build risk JSONB (RiskPosture shape) from the effective update values.
+    // Resolve effective values: explicit update wins, then preset resolution, then existing agent value.
+    const effectiveMaxDrawdownPct =
+      rawMaxDrawdownPct !== undefined
+        ? rawMaxDrawdownPct
+        : (agent.maxDrawdownPct != null ? Number(agent.maxDrawdownPct) : null);
+    const effectiveMaxPositionSizePct =
+      finalMaxPositionSizePctUpdate !== undefined
+        ? (finalMaxPositionSizePctUpdate != null ? Number(finalMaxPositionSizePctUpdate) : null)
+        : (agent.maxPositionSizePct != null ? Number(agent.maxPositionSizePct) : null);
+    const effectiveMaxOpenPositions =
+      agentUpdates.maxOpenPositions !== undefined
+        ? agentUpdates.maxOpenPositions
+        : agent.maxOpenPositions;
+    const effectiveStopLossPct =
+      finalStopLossPctUpdate !== undefined
+        ? (finalStopLossPctUpdate != null ? Number(finalStopLossPctUpdate) : null)
+        : (agent.stopLossPct != null ? Number(agent.stopLossPct) : null);
+    const effectiveStopLossCooldownMs =
+      agentUpdates.stopLossCooldownMs !== undefined
+        ? agentUpdates.stopLossCooldownMs
+        : agent.stopLossCooldownMs;
+
+    // Read existing risk JSONB and spread it so partial updates don't wipe other fields.
+    // Drizzle's jsonb.set() replaces the entire column — it does not deep-merge.
+    const existingRisk = (agent.risk as Record<string, unknown> | null) ?? {};
+    const riskPostureUpdate: Record<string, unknown> = { ...existingRisk };
+    if (rawMaxDrawdownPct !== undefined) riskPostureUpdate['maxDrawdownPct'] = effectiveMaxDrawdownPct;
+    if (finalMaxPositionSizePctUpdate !== undefined) riskPostureUpdate['maxPositionSizePct'] = effectiveMaxPositionSizePct;
+    if (agentUpdates.maxOpenPositions !== undefined) riskPostureUpdate['maxOpenPositions'] = effectiveMaxOpenPositions;
+    if (finalStopLossPctUpdate !== undefined) riskPostureUpdate['stopLossPct'] = effectiveStopLossPct;
+    if (agentUpdates.stopLossCooldownMs !== undefined) riskPostureUpdate['stopLossCooldownMs'] = effectiveStopLossCooldownMs;
+    const riskUpdateJsonb = Object.keys(riskPostureUpdate).length > 0 ? riskPostureUpdate : undefined;
+
+    // Build strategy JSONB (StrategyIdentity shape) — absent for non-trading agents.
+    const existingConfig = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
+    const effectiveCapabilityMode = capabilityModeUpdate !== undefined && capabilityModeUpdate !== null
+      ? capabilityModeUpdate
+      : existingConfig['capabilityMode'] as string | undefined;
+    const effectiveStrategyPreset = strategyPresetUpdate !== undefined
+      ? strategyPresetUpdate
+      : extractPresetMeta(agent.unifiedConfig).strategyPreset;
+    let strategyUpdateJsonb: Record<string, unknown> | null | undefined;
+    if (strategyPresetUpdate !== undefined || capabilityModeUpdate !== undefined) {
+      if (effectiveCapabilityMode === 'hybrid' && effectiveStrategyPreset) {
+        strategyUpdateJsonb = {
+          type: effectiveStrategyPreset,
+          decisionMode: effectiveCapabilityMode === 'hybrid' ? 'hybrid' : undefined,
+        };
+      } else {
+        strategyUpdateJsonb = null;
+      }
+    }
+
+    // Build executionDefaults JSONB update.
+    let executionDefaultsUpdateJsonb: Record<string, unknown> | null | undefined;
+    if (parsed.data.executionMode !== undefined || parsed.data.maxSlippageBps !== undefined) {
+      const effectiveExecMode = executionMode.value ?? agent.executionMode;
+      const effectiveSlippageBps = parsed.data.maxSlippageBps !== undefined
+        ? parsed.data.maxSlippageBps
+        : agent.maxSlippageBps;
+      if (effectiveExecMode != null || effectiveSlippageBps != null) {
+        executionDefaultsUpdateJsonb = {
+          mode: effectiveExecMode ?? 'paper',
+          ...(effectiveSlippageBps != null ? { slippageBps: effectiveSlippageBps } : {}),
+        };
+      } else {
+        executionDefaultsUpdateJsonb = null;
+      }
+    }
+
     const txResult = await db.transaction(async (tx): Promise<
       | { kind: 'ok' }
       | { kind: 'conn_error'; status: number; body: Record<string, unknown> }
@@ -1741,6 +1857,10 @@ export async function agentRoutes(
           ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
           ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
           ...(unifiedConfigPatch !== undefined ? { unifiedConfig: unifiedConfigPatch } : {}),
+          // TODO: replace as never with proper Drizzle-typed values (RiskPosture, StrategyIdentity, ExecutionDefaults)
+          ...(riskUpdateJsonb !== undefined ? { risk: riskUpdateJsonb as never } : {}),
+          ...(strategyUpdateJsonb !== undefined ? { strategy: strategyUpdateJsonb as never } : {}),
+          ...(executionDefaultsUpdateJsonb !== undefined ? { executionDefaults: executionDefaultsUpdateJsonb as never } : {}),
           toolPolicy: effectiveToolPolicy,
           modelPolicy: effectiveModelPolicy,
           updatedAt: new Date(),

@@ -91,7 +91,7 @@ export interface CreateAgentIntentPayloadInput {
   emailDelivery?: 'inherit' | 'allow' | 'disable';
   tickIntervalMins: string;
   capital: string;
-  dailyLossLimit: string;
+  dailyMaxLossPct: string;
   maxDrawdownPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
@@ -129,7 +129,7 @@ export interface UpdateAgentPayloadInput {
   emailDelivery: 'inherit' | 'allow' | 'disable';
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
-  dailyLossLimit: string;
+  dailyMaxLossPct: string;
   maxDrawdownPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
@@ -174,15 +174,10 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   dailySpendBudgetUsd?: number;
   executionMode?: string;
   telegramChatId?: string;
-  dailyLossLimit?: string;
-  maxSlippageBps?: number;
-  maxOpenPositions?: number;
-  maxPositionSizePct?: number;
-  stopLossPct?: number;
-  stopLossCooldownMs?: number;
+  risk?: Record<string, unknown>;
+  executionDefaults?: Record<string, unknown>;
   tickIntervalMs?: number;
   capital?: string;
-  maxDrawdownPct?: number;
   capabilityMode?: CapabilityMode;
   hybridMode?: HybridMode;
   technical?: TechnicalConfig;
@@ -196,6 +191,20 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   skillPresetId?: string;
   authorizationMode?: 'direct' | 'approval_required';
 } {
+  // Build canonical risk posture (WP4 shared value object)
+  const risk: Record<string, unknown> = {};
+  if (input.dailyMaxLossPct?.trim()) risk.dailyMaxLossPct = parseFloat(input.dailyMaxLossPct);
+  if (input.maxDrawdownPct?.trim()) risk.maxDrawdownPct = parseFloat(input.maxDrawdownPct);
+  if (input.maxOpenPositions) risk.maxOpenPositions = parseInt(input.maxOpenPositions, 10);
+  if (input.maxPositionSizePct) risk.maxPositionSizePct = parseFloat(input.maxPositionSizePct);
+  if (input.stopLossPct) risk.stopLossPct = parseFloat(input.stopLossPct);
+  if (input.stopLossCooldownSecs) risk.stopLossCooldownMs = parseCooldownMsOrNull(input.stopLossCooldownSecs) ?? undefined;
+
+  // Build canonical execution defaults (WP4 shared value object)
+  const executionDefaults: Record<string, unknown> = {};
+  if (input.requiresTradingSetup) executionDefaults.mode = input.executionMode;
+  if (input.maxSlippageBps) executionDefaults.slippageBps = parseInt(input.maxSlippageBps, 10);
+
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'hybrid';
   const includeTechnical = input.technicalPreFilterEnabled;
@@ -225,13 +234,8 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(emailDeliveryPolicy !== undefined ? { notificationPolicy: emailDeliveryPolicy } : {}),
     ...(tickIntervalMs != null ? { tickIntervalMs } : {}),
     ...(input.capital.trim() ? { capital: input.capital.trim() } : {}),
-    ...(input.dailyLossLimit?.trim() ? { dailyLossLimit: input.dailyLossLimit.trim() } : {}),
-    ...(input.maxDrawdownPct?.trim() ? { maxDrawdownPct: parseFloat(input.maxDrawdownPct) } : {}),
-    ...(input.maxSlippageBps ? { maxSlippageBps: parseInt(input.maxSlippageBps, 10) } : {}),
-    ...(input.maxOpenPositions ? { maxOpenPositions: parseInt(input.maxOpenPositions, 10) } : {}),
-    ...(input.maxPositionSizePct ? { maxPositionSizePct: parseFloat(input.maxPositionSizePct) } : {}),
-    ...(input.stopLossPct ? { stopLossPct: parseFloat(input.stopLossPct) } : {}),
-    ...(input.stopLossCooldownSecs ? { stopLossCooldownMs: parseCooldownMsOrNull(input.stopLossCooldownSecs) ?? undefined } : {}),
+    ...(Object.keys(risk).length > 0 ? { risk } : {}),
+    ...(Object.keys(executionDefaults).length > 0 ? { executionDefaults } : {}),
     ...(input.style ? { style: input.style } : {}),
     ...(input.strategyPreset !== undefined ? { strategyPreset: input.strategyPreset } : {}),
     ...(normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) ? { openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) } : {}),
@@ -259,13 +263,8 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   telegramChatId: string | null;
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom' | null;
   dailySpendBudgetUsd: number | null;
-  dailyLossLimit: string | null;
-  maxDrawdownPct: number | null;
-  maxSlippageBps: number | null;
-  maxOpenPositions: number | null;
-  maxPositionSizePct: number | null;
-  stopLossPct: number | null;
-  stopLossCooldownMs: number | null;
+  risk?: Record<string, unknown> | null;
+  executionDefaults?: Record<string, unknown> | null;
   tickIntervalMs: number | null;
   capital: string | null;
   provider: string | null;
@@ -284,6 +283,27 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   skillPresetId?: string | null;
   authorizationMode?: 'direct' | 'approval_required' | null;
 } {
+  // Build canonical risk posture (WP4 shared value object)
+  const risk: Record<string, unknown> = {};
+  if (input.dailyMaxLossPct?.trim()) risk.dailyMaxLossPct = parseFloat(input.dailyMaxLossPct);
+  else risk.dailyMaxLossPct = null; // Explicit clear when empty
+  if (input.maxDrawdownPct?.trim()) risk.maxDrawdownPct = parseFloat(input.maxDrawdownPct);
+  else risk.maxDrawdownPct = null;
+  if (input.maxOpenPositions) risk.maxOpenPositions = parseInt(input.maxOpenPositions, 10);
+  else risk.maxOpenPositions = null;
+  if (input.maxPositionSizePct) risk.maxPositionSizePct = parseFloat(input.maxPositionSizePct);
+  else risk.maxPositionSizePct = null;
+  if (input.stopLossPct) risk.stopLossPct = parseFloat(input.stopLossPct);
+  else risk.stopLossPct = null;
+  risk.stopLossCooldownMs = parseCooldownMsOrNull(input.stopLossCooldownSecs);
+
+  // Build canonical execution defaults (WP4 shared value object)
+  const executionDefaults: Record<string, unknown> = {
+    mode: includeIntelligence && input.hasTradingCapability ? (input.executionMode || null) : null,
+  };
+  if (input.maxSlippageBps) executionDefaults.slippageBps = parseInt(input.maxSlippageBps, 10);
+  else executionDefaults.slippageBps = null;
+
   const parsedTickInterval = input.preserveOriginalTickIntervalMs
     ? undefined
     : getTickIntervalMsOrThrow(input.tickIntervalMins);
@@ -313,13 +333,8 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     telegramChatId: input.telegramChatId.trim() || null,
     costPreset: input.costPreset || null,
     dailySpendBudgetUsd: input.dailySpendBudgetUsd ? parseFloat(input.dailySpendBudgetUsd) : null,
-    dailyLossLimit: input.dailyLossLimit?.trim() || null,
-    maxDrawdownPct: input.maxDrawdownPct?.trim() ? parseFloat(input.maxDrawdownPct) : null,
-    maxSlippageBps: input.maxSlippageBps ? parseInt(input.maxSlippageBps, 10) : null,
-    maxOpenPositions: input.maxOpenPositions ? parseInt(input.maxOpenPositions, 10) : null,
-    maxPositionSizePct: input.maxPositionSizePct ? parseFloat(input.maxPositionSizePct) : null,
-    stopLossPct: input.stopLossPct ? parseFloat(input.stopLossPct) : null,
-    stopLossCooldownMs: parseCooldownMsOrNull(input.stopLossCooldownSecs),
+    risk,
+    executionDefaults,
     tickIntervalMs,
     capital: input.capital.trim() || null,
     ...(normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) ? { openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) } : {}),

@@ -24,7 +24,7 @@ export interface BotCustomConfigFormState {
   maxPositionSizePct: string;
   maxOpenPositions: string;
   dailyMaxLossPct: string;
-  stopLossMaxUnrealizedLossPct: string;
+  stopLossPct: string;
 }
 
 export const defaultBotCustomConfig: BotCustomConfigFormState = {
@@ -41,7 +41,7 @@ export const defaultBotCustomConfig: BotCustomConfigFormState = {
   maxPositionSizePct: '',
   maxOpenPositions: '',
   dailyMaxLossPct: '',
-  stopLossMaxUnrealizedLossPct: '',
+  stopLossPct: '',
 };
 
 export interface BotCustomConfigSectionProps {
@@ -328,11 +328,11 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
             style={inputStyle}
             type="number"
             placeholder="use default"
-            value={value.stopLossMaxUnrealizedLossPct}
-            onChange={(e) => onChange({ stopLossMaxUnrealizedLossPct: e.target.value })}
-            onBlur={() => markBlurred('stopLossMaxUnrealizedLossPct')}
+            value={value.stopLossPct}
+            onChange={(e) => onChange({ stopLossPct: e.target.value })}
+            onBlur={() => markBlurred('stopLossPct')}
           />
-          {isBlurred('stopLossMaxUnrealizedLossPct') && value.stopLossMaxUnrealizedLossPct && isPctOutOfRange(value.stopLossMaxUnrealizedLossPct) && (
+          {isBlurred('stopLossPct') && value.stopLossPct && isPctOutOfRange(value.stopLossPct) && (
             <div style={errorTextStyle}>Must be a number between 0 and 100</div>
           )}
         </div>

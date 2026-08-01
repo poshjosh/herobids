@@ -105,7 +105,7 @@ async function createAgent(token: string, connectionId: string, capabilityMode: 
       ? 'You are a hybrid trading agent. When you receive an assessment_review wake, call assess_strategy_preset then change_strategy_preset. Do not place real trades.'
       : 'You are an intelligence agent. Analyze markets. Do not trade.',
     skillIds: ['trading'],
-    executionMode: EXECUTION_MODE,
+    executionDefaults: { mode: EXECUTION_MODE },
     tickIntervalMs: 60_000,
     capital: '1000',
     provider: LLM_PROVIDER,

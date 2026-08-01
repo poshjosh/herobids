@@ -224,7 +224,7 @@ export async function handleInfo(
       `Status: ${agent.status}`,
       `Execution mode: ${agent.executionMode}`,
       `Capital: ${capitalDisplay}`,
-      `Daily loss limit: ${fmtUsd(agent.dailyLossLimit)}`,
+      `Daily loss limit: ${(agent.risk as Record<string, unknown> | null)?.['dailyMaxLossPct'] != null ? `${(agent.risk as Record<string, unknown>)?.['dailyMaxLossPct']}%` : fmtUsd(agent.dailyLossLimit)}`,
       `Max drawdown: ${fmtPct(agent.maxDrawdownPct)}`,
       `Max position size: ${fmtPct(agent.maxPositionSizePct)}`,
       `Stop loss: ${fmtPct(agent.stopLossPct)}`,

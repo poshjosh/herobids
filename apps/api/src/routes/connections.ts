@@ -59,9 +59,8 @@ export async function connectionRoutes(
         name: agents.name,
         prompt: agents.prompt,
         toolPolicy: agents.toolPolicy,
-        executionMode: agents.executionMode,
-        dailyLossLimit: agents.dailyLossLimit,
-        maxDrawdownPct: agents.maxDrawdownPct,
+        risk: agents.risk,
+        executionDefaults: agents.executionDefaults,
         maxBots: agents.maxBots,
       })
       .from(agents)
@@ -71,15 +70,18 @@ export async function connectionRoutes(
       return;
     }
 
+    const risk = (agentRow.risk ?? {}) as Record<string, unknown>;
+    const executionDefaults = (agentRow.executionDefaults ?? {}) as Record<string, unknown>;
+
     const capabilityDescriptor = await resolveRuntimeCapabilityDescriptor(db, agentId);
     const runtimeDescriptor = buildRuntimeDescriptor({
       agentId,
       name: agentRow.name,
       goal: agentRow.prompt,
-      executionMode: agentRow.executionMode,
+      executionMode: executionDefaults['mode'] as string | undefined,
       toolPolicy: (agentRow.toolPolicy as Record<string, unknown> | null) ?? {},
-      dailyLossLimit: agentRow.dailyLossLimit,
-      maxDrawdownPct: agentRow.maxDrawdownPct != null ? Number(agentRow.maxDrawdownPct) : null,
+      dailyMaxLossPct: risk['dailyMaxLossPct'] != null ? String(risk['dailyMaxLossPct']) : null,
+      maxDrawdownPct: risk['maxDrawdownPct'] != null ? Number(risk['maxDrawdownPct']) : null,
       maxBots: agentRow.maxBots,
       budgets,
       capabilityDescriptor,

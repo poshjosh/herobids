@@ -1,4 +1,4 @@
-import { price, quantity, type AgentRiskDefaultsConfig, type AgentRiskOverrides, type AgentRiskCreatorInput, type AgentRiskCeilings, type ResolvedAgentRiskContract, resolveAgentRiskContract } from '@herobids/domain';
+import { price, quantity, type AgentRiskDefaultsConfig, type AgentRiskOverrides, type AgentRiskCreatorInput, type AgentRiskCeilings, type ResolvedAgentRiskContract, resolveAgentRiskContract, type RiskPosture } from '@herobids/domain';
 import type { RiskLimits } from '@herobids/engine';
 
 export interface AgentRiskLimitSource {
@@ -9,6 +9,8 @@ export interface AgentRiskLimitSource {
   maxPositionSizePct: string | number | null;
   stopLossPct: string | number | null;
   stopLossCooldownMs: number | null;
+  /** Typed RiskPosture JSONB — canonical source. Takes precedence over column values when present. */
+  riskPosture: RiskPosture | null;
 }
 
 function parseOptionalNumber(value: string | number | null): number | undefined {
@@ -27,7 +29,7 @@ export function extractCeilings(defaults: AgentRiskDefaultsConfig): AgentRiskCei
   return {
     maxOpenPositions: defaults.maxOpenPositions,
     maxPositionSizePct: defaults.maxPositionSizePct,
-    stopLossPct: defaults.stopLossMaxUnrealizedLossPct,
+    stopLossPct: defaults.stopLossPct,
     stopLossCooldownMs: defaults.stopLossCooldownMs,
     maxDrawdownPct: defaults.maxDrawdownPct,
   };
@@ -35,14 +37,16 @@ export function extractCeilings(defaults: AgentRiskDefaultsConfig): AgentRiskCei
 
 /**
  * Extract AgentRiskCreatorInput from the raw nullable source columns.
+ * Reads from the typed riskPosture JSONB first, falling back to legacy column values.
  */
 export function extractCreatorInput(source: AgentRiskLimitSource): AgentRiskCreatorInput {
+  const rp = source.riskPosture;
   return {
-    maxOpenPositions: source.maxOpenPositions,
-    maxPositionSizePct: parseOptionalNumber(source.maxPositionSizePct) ?? null,
-    stopLossPct: parseOptionalNumber(source.stopLossPct) ?? null,
-    stopLossCooldownMs: source.stopLossCooldownMs,
-    maxDrawdownPct: parseOptionalNumber(source.maxDrawdownPct) ?? null,
+    maxOpenPositions: rp?.maxOpenPositions ?? source.maxOpenPositions,
+    maxPositionSizePct: rp?.maxPositionSizePct ?? parseOptionalNumber(source.maxPositionSizePct) ?? null,
+    stopLossPct: rp?.stopLossPct ?? parseOptionalNumber(source.stopLossPct) ?? null,
+    stopLossCooldownMs: rp?.stopLossCooldownMs ?? source.stopLossCooldownMs,
+    maxDrawdownPct: rp?.maxDrawdownPct ?? parseOptionalNumber(source.maxDrawdownPct) ?? null,
   };
 }
 

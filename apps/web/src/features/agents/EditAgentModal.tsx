@@ -304,11 +304,11 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   // values synchronously, so this naturally becomes false without needing a
   // skillPreset gate.
   const showTradingControls = requiresTradingSetup || hasTradingCapability
-    || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxDrawdownPct.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim());
+    || Boolean(form.capital.trim() || form.dailyMaxLossPct.trim() || form.maxDrawdownPct.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim());
   const validationConstraints: ValidationConstraints = {
     maxOpenPositions: riskDefaultsQuery.data?.maxOpenPositions ?? 10,
     maxPositionSizePct: riskDefaultsQuery.data?.maxPositionSizePct ?? 100,
-    stopLossMaxUnrealizedLossPct: riskDefaultsQuery.data?.stopLossPct ?? 100,
+    stopLossPct: riskDefaultsQuery.data?.stopLossPct ?? 100,
   };
 
   // Sync capabilityMode from technicalPreFilterEnabled toggle + trading skill presence
@@ -419,7 +419,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         emailDelivery: form.emailDelivery,
         costPreset: form.costPreset,
         dailySpendBudgetUsd: form.dailySpendBudgetUsd,
-        dailyLossLimit: form.dailyLossLimit,
+        dailyMaxLossPct: form.dailyMaxLossPct,
         maxDrawdownPct: form.maxDrawdownPct,
         maxSlippageBps: form.maxSlippageBps,
         maxOpenPositions: form.maxOpenPositions,
@@ -524,7 +524,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   ...(preset !== 'trading' ? {
                     executionMode: '' as const,
                     capital: '',
-                    dailyLossLimit: '',
+                    dailyMaxLossPct: '',
                     maxDrawdownPct: '',
                     maxSlippageBps: '',
                     maxOpenPositions: '',
@@ -1005,7 +1005,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   </div>
                   <TradingGuardrailsFields
                     value={{
-                      dailyLossLimit: form.dailyLossLimit,
+                      dailyMaxLossPct: form.dailyMaxLossPct,
                       maxDrawdownPct: form.maxDrawdownPct,
                       maxSlippageBps: form.maxSlippageBps,
                       maxOpenPositions: form.maxOpenPositions,

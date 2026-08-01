@@ -253,9 +253,9 @@ async function createBenchmarkAgent(token: string, bc: BenchmarkCase): Promise<s
   const payload: Record<string, unknown> = {
     name: `bench-${bc.id}`,
     prompt: BENCHMARK_GOAL,
-    // 'trading' skill required to run ticks; executionMode: 'paper' keeps it safe
+    // 'trading' skill required to run ticks; executionDefaults.mode: 'paper' keeps it safe
     skillIds: ['trading'],
-    executionMode: 'paper',
+    executionDefaults: { mode: 'paper' },
     tickIntervalMs: TICK_INTERVAL_MS,
     capital: '10000',
     provider: LLM_PROVIDER,

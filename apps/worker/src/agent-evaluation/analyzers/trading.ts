@@ -73,8 +73,11 @@ export async function analyzeTrading(
   const agentMeta = await readJsonArtifact(store, runId, 'agent-metadata.json') as Record<string, unknown> | null;
   const hasTradingCapability = agentMeta != null && (
     agentMeta['executionMode'] != null ||
+    agentMeta['executionModeCanonical'] != null ||
     agentMeta['dailyLossLimit'] != null ||
-    agentMeta['maxSlippageBps'] != null
+    agentMeta['dailyMaxLossPct'] != null ||
+    agentMeta['maxSlippageBps'] != null ||
+    agentMeta['slippageBps'] != null
   );
 
   // Applicable if the agent is trading-capable OR has fills in the scope

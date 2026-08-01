@@ -419,7 +419,7 @@ async function createAgent(token: string, connectionId: string): Promise<string>
         name: `Trade Test ${new Date().toISOString().slice(0, 10)}`,
         prompt: TRADE_TEST_GOAL,
         skillIds: ['trading', 'bot-management', 'risk-monitoring'],
-        executionMode: EXECUTION_MODE,
+        executionDefaults: { mode: EXECUTION_MODE },
         tickIntervalMs: TICK_INTERVAL_MS,
         // Required: sets maxOrderNotional; must cover BTC order notional (~$640 at current prices)
         capital: '100000',
