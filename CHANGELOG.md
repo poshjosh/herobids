@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.39 - 2026-08-01
+
 ### Added
 
 - **Platform Docs Skill & Tools:** New `platform-docs` skill with three tools (`search_app_docs`, `list_app_docs`, `read_app_docs`) that give LLM agents the ability to read the platform's own documentation, forms, and configuration schemas. The docs index covers all public markdown pages, CreateAgentSchema/UpdateAgentSchema fields, skill preset mappings, venue/chain mappings, agent style defaults, connection types, execution modes, agent lifecycle, billing model, UI terminology reference, and per-skill detail entries. Skill is auto-seeded via `syncSystemSkills` and is `visibility: public` but NOT added to any `SKILL_PRESET_MAP` — it's assigned directly to the onboarding chat agent.
