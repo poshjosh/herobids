@@ -1,4 +1,4 @@
-# 010 - Agent Blueprint Marketplace ADR List
+# 002 - Agent Blueprint Marketplace ADR List
 
 **Status:** Draft  
 **Created:** 2026-08-01

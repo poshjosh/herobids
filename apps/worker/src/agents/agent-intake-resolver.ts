@@ -2,7 +2,7 @@ import { eq, and, desc, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agentConnections, connections } from '@herobids/db';
 import type { AgentRepository, PositionRepository, DecisionRepository, ExecutionPlanRepository, FillRepository, OrderRepository, BalanceSnapshotRepository, BacktestingRepository } from '@herobids/db';
-import type { AgentRiskDefaultsConfig, AgentRiskOverrides, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
+import type { AgentRiskDefaultsConfig, AgentRiskOverrides, MarkSource, RiskPosture, SwapTokenSafetyPort } from '@herobids/domain';
 import { quantity, price, getProviderIdsForRuntimeFamily } from '@herobids/domain';
 import { PaperExecutor, realClock, flatPosition } from '@herobids/engine';
 import type { DecisionContext, PositionState } from '@herobids/engine';
@@ -140,6 +140,7 @@ export class AgentIntakeResolver {
         maxPositionSizePct: agent.maxPositionSizePct ?? null,
         stopLossPct: agent.stopLossPct ?? null,
         stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
+        riskPosture: (agent.risk as RiskPosture | null) ?? null,
       }, this.deps.agentRiskDefaults, overrides),
       markSource: this.deps.markSource,
       persistence: this.buildPersistence(agentId, binding.venueAccountId, binding.venue),

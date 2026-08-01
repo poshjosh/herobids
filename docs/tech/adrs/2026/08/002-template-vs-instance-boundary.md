@@ -76,3 +76,30 @@ The instance surface excludes at least:
 1. Any field that materially changes behavior must be classified as template-eligible or instance-only.
 2. Private bindings and runtime state must never be stored in published blueprints.
 3. Save-as-blueprint and instantiate-from-blueprint flows must be backed by server-owned projection helpers.
+
+## Amendment 1 — User-Configured Risk Limits Are Template-Eligible
+
+**Date:** 2026-08-01
+**Status:** Accepted
+
+### Context
+
+The original decision listed "risk posture" as template-eligible and `riskOverrides` (runtime self-adjustments) as instance-only, but left a gray zone: user-configured hard limits such as `dailyLossLimit`, `maxDrawdownPct`, `stopLossPct`, `maxOpenPositions`, and related caps. These materially change behavior, yet they also read as a private risk preference, which appears to tension with agent-purity rules in AGENTS.md.
+
+### Decision
+
+User-configured risk limits are **template-eligible**. They travel with the blueprint.
+
+### Rationale
+
+1. The installer chooses the limits at the moment they choose to copy the agent or blueprint. Copying is consent to the recipe as authored, including its risk posture.
+2. Risk posture is a defining characteristic of an agent recipe; stripping it produces a materially different copy, which this ADR forbids.
+3. Agent-purity is preserved: the copied limits become *the installer's own* user-configured limits on their new instance. They remain immutable to the running agent, exactly as if the installer had typed them.
+
+### Guard
+
+Instantiation must surface the inherited limits to the installer, and the installer may edit the copied values before or after instantiation. This keeps installer intent explicit without stripping behavior.
+
+### Follow-Up Rule
+
+4. User-configured risk limits are classified template-eligible; instantiation must surface them for review and allow the installer to edit them before the instance is created.

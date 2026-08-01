@@ -23,6 +23,7 @@ import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { LlmStrategy, MechanicalStrategy, HybridStrategy, DcaStrategy } from '@herobids/strategy';
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { MarketDataRecorder } from '@herobids/backtesting';
+import type { RiskPosture } from '@herobids/domain';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, LlmArtifactRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, AgentDocumentsRepository, DecisionApprovalRepository, bots, users, agents, agentScanCandidates, agentScanMetrics } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, HyperliquidMarkSource } from '@herobids/venues';
@@ -721,6 +722,7 @@ const intakeResolver: DecisionIntakeResolver = {
             maxPositionSizePct: agent.maxPositionSizePct ?? null,
             stopLossPct: agent.stopLossPct ?? null,
             stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
+            riskPosture: (agent.risk as RiskPosture | null) ?? null,
           }, appConfig.agentRiskDefaults, (agent.riskOverrides as Record<string, number> | null) ?? {});
           actor.updateRiskLimits(freshLimits);
         }
@@ -1112,6 +1114,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
             maxPositionSizePct: agent?.maxPositionSizePct ?? null,
             stopLossPct: agent?.stopLossPct ?? null,
             stopLossCooldownMs: agent?.stopLossCooldownMs ?? null,
+            riskPosture: (agent?.risk as RiskPosture | null) ?? null,
           }, agentDefaults, (agent?.riskOverrides as Record<string, number> | null) ?? {}),
           venueAdapterFactory,
           createStreamPoolHandle: venueType !== 'swap'

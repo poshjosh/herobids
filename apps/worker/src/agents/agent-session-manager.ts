@@ -493,6 +493,8 @@ export class AgentSessionManager {
           maxPositionSizePct: agent.maxPositionSizePct ?? null,
           stopLossPct: agent.stopLossPct ?? null,
           stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
+          // Canonical risk posture JSONB — takes precedence over legacy columns in the agent runtime
+          risk: agent.risk ?? null,
           agentRiskDefaults: this.config.agentRiskDefaults,
           runtimeDescriptor,
           // 004: Explicit capability / hybrid mode from UnifiedAgentConfig

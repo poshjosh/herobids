@@ -181,6 +181,11 @@ Update AGENTS.md, `docs/tech/agents/runtime-boundary-and-message-contract.md`, `
 - **LOW:** No diagnostic when both canonical and legacy `stopLoss*` field present in input — add `console.debug` warning.
 - **LOW:** PATCH `/bots/:id/config` does not validate through `BotConfigSchema` (pre-existing, not introduced by WP3).
 
+### WP4 — Converge agent instance
+- **LOW:** `agent-intake-resolver.ts` and `index.ts` use `(agent.risk as RiskPosture | null) ?? null` — the `?? null` is redundant since the cast already includes `| null`. Harmless, could be simplified.
+- **LOW:** PATCH handler does not strip null keys from merged `riskPostureUpdate` (unlike POST handler). No behavioral impact — `??` in `extractCreatorInput` falls through on `null` — but the JSONB may accumulate null-valued keys from explicit-null PATCHes. Purely cosmetic.
+- **LOW:** `extractCeilings` uses `defaults as Record<string, number>` to read the canonical `stopLossPct` field before it exists on `AgentRiskDefaultsConfig`. Documented as a WP5 workaround.
+
 ## Acceptance Criteria
 
 1. `StrategyIdentity`, `RiskPosture`, and `ExecutionDefaults` are the single shared value vocabulary used by both agents and bots.

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Decimal, SYSTEM_SKILLS, resolveAgentRiskContract, resolveAgentRuntimePolicy, type AgentRiskCeilings, type AgentRiskCreatorInput, type AgentRiskOverrides, type ResolvedAgentRiskContract, type AgentRiskDefaultsConfig } from '@herobids/domain';
+import { Decimal, SYSTEM_SKILLS, resolveAgentRiskContract, resolveAgentRuntimePolicy, type AgentRiskCeilings, type AgentRiskCreatorInput, type AgentRiskOverrides, type ResolvedAgentRiskContract, type AgentRiskDefaultsConfig, type RiskPosture } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-model-catalog.js';
 
@@ -605,6 +605,7 @@ export function validateAgentRiskBounds(
 /**
  * Resolve the agent's risk contract for API responses.
  * Shows per-field source, mutability, and effective values.
+ * Reads from the typed risk JSONB first, falling back to column values for backward compat.
  */
 export function resolveAgentRiskContractForResponse(
   agent: {
@@ -615,23 +616,29 @@ export function resolveAgentRiskContractForResponse(
     stopLossCooldownMs?: number | null;
     maxDrawdownPct?: string | number | null;
     riskOverrides?: AgentRiskOverrides | null;
+    /** Typed RiskPosture JSONB — canonical source. Takes precedence over column values when present. */
+    risk?: RiskPosture | null;
   },
   agentRiskDefaults: AgentRiskDefaultsConfig,
 ): ResolvedAgentRiskContract {
+  // Canonical-first-then-legacy fallback for stopLossPct, consistent with extractCeilings.
+  const raw = agentRiskDefaults as Record<string, number>;
   const ceilings: AgentRiskCeilings = {
     maxOpenPositions: agentRiskDefaults.maxOpenPositions,
     maxPositionSizePct: agentRiskDefaults.maxPositionSizePct,
-    stopLossPct: agentRiskDefaults.stopLossMaxUnrealizedLossPct,
+    stopLossPct: raw['stopLossPct'] ?? agentRiskDefaults.stopLossMaxUnrealizedLossPct,
     stopLossCooldownMs: agentRiskDefaults.stopLossCooldownMs,
     maxDrawdownPct: agentRiskDefaults.maxDrawdownPct,
   };
 
+  const rp = agent.risk ?? null;
+
   const creatorInput: AgentRiskCreatorInput = {
-    maxOpenPositions: agent.maxOpenPositions ?? null,
-    maxPositionSizePct: agent.maxPositionSizePct != null ? Number(agent.maxPositionSizePct) : null,
-    stopLossPct: agent.stopLossPct != null ? Number(agent.stopLossPct) : null,
-    stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
-    maxDrawdownPct: agent.maxDrawdownPct != null ? Number(agent.maxDrawdownPct) : null,
+    maxOpenPositions: rp?.maxOpenPositions ?? agent.maxOpenPositions ?? null,
+    maxPositionSizePct: rp?.maxPositionSizePct ?? (agent.maxPositionSizePct != null ? Number(agent.maxPositionSizePct) : null),
+    stopLossPct: rp?.stopLossPct ?? (agent.stopLossPct != null ? Number(agent.stopLossPct) : null),
+    stopLossCooldownMs: rp?.stopLossCooldownMs ?? agent.stopLossCooldownMs ?? null,
+    maxDrawdownPct: rp?.maxDrawdownPct ?? (agent.maxDrawdownPct != null ? Number(agent.maxDrawdownPct) : null),
   };
 
   return resolveAgentRiskContract(creatorInput, ceilings, agent.riskOverrides ?? {}, {

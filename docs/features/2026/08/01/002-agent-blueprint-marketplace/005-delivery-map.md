@@ -1,4 +1,4 @@
-# 010 - Agent Blueprint Marketplace Delivery Map
+# 002 - Agent Blueprint Marketplace Delivery Map
 
 **Status:** Draft  
 **Created:** 2026-08-01

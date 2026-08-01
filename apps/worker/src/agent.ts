@@ -13,7 +13,7 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal, LlmArtifactRepository } from '@herobids/db';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml } from '@herobids/domain';
@@ -278,6 +278,8 @@ interface AgentConfig {
   hybridMode?: 'mixed' | 'scanner_gated';
   /** Authorization mode from UnifiedAgentConfig ('direct' | 'approval_required'). Controls whether agent-direct trade decisions execute immediately or require user approval. */
   authorizationMode?: 'direct' | 'approval_required';
+  /** Risk posture JSONB — canonical source for creator-configured risk limits. Falls back to legacy columns when absent. */
+  risk?: RiskPosture | null;
   /** Per-agent open position escalation to judge policy: never | uncovered_or_triggered | always */
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
   /** Resolved per-agent runtime policy — derived from style + overrides at session start */
@@ -1486,6 +1488,7 @@ function buildRiskContractOps(): ToolContext['riskContractOps'] {
         maxPositionSizePct: agentConfig.maxPositionSizePct ?? null,
         stopLossPct: agentConfig.stopLossPct ?? null,
         stopLossCooldownMs: agentConfig.stopLossCooldownMs ?? null,
+        riskPosture: agentConfig.risk ?? null,
       });
       return resolveAgentRiskContract(creatorInput, ceilings, overrides, {
         hasCapital: agentConfig.capital != null,
@@ -1502,6 +1505,7 @@ function buildRiskContractOps(): ToolContext['riskContractOps'] {
         maxPositionSizePct: agentConfig.maxPositionSizePct ?? null,
         stopLossPct: agentConfig.stopLossPct ?? null,
         stopLossCooldownMs: agentConfig.stopLossCooldownMs ?? null,
+        riskPosture: agentConfig.risk ?? null,
       });
       const currentContract = resolveAgentRiskContract(creatorInput, ceilings, currentOverrides, {
         hasCapital: agentConfig.capital != null,
