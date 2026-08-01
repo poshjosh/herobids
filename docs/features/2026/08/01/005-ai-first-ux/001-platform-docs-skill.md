@@ -253,3 +253,19 @@ The index must cover:
 | Docs index gets stale vs actual frontend pages | Regenerate on build; CI check that index is up to date |
 | Schema field docs diverge from actual Zod validation | Include a CI check or test that verifies schema docs coverage |
 | Large content exhausts LLM context window | `list_app_docs` returns summaries only; `read_app_docs` returns one doc at a time; `search_app_docs` returns excerpts |
+
+## Outstanding Issues
+
+### MEDIUM
+
+- **Docs Index content fidelity for remaining markdown pages** — `help/get-started`, `help/faqs`, `help/pricing`, `help/trading-venues/*`, `docs/agents/agent-style`, `docs/agents/billing-limits`, `docs/messaging/*`, `docs/messaging/telegram/*` — have abbreviated/summarized content rather than verbatim content from the source `.md` files. The essential information is present and accurate, but wording differs from source. Could be made verbatim in a future pass.
+
+- **Missing style detail entries** (context budgets, tool turn limits, LLM token limits) — the `AGENT_STYLE_ENTRY` summarizes style defaults but doesn't include the full context budget tables from the `agent-style.md` page. Consider adding `reference/agent-style-detail` with the complete tables.
+
+### LOW
+
+- **No build-time index regeneration** — content is hardcoded in `platform-docs-data.ts`. A build script that walks the markdown directory would keep content in sync automatically (deferred per plan's "simpler for v1" decision).
+
+- **Search is substring-only** — no stemming, fuzzy matching, or tokenization. Sufficient for the current index size (~39 entries).
+
+- **No CI check for docs coverage** — schema field docs could diverge from actual Zod validation over time. Add a CI check or test that verifies schema docs coverage per the mitigation in the Risks table.
