@@ -171,26 +171,15 @@ describe('resolveExecutionModeForSkills', () => {
       expect(result.value).toBe('live');
     });
 
-    it('resolves test mode to paper when no venue context exists', () => {
+    it('returns an issue when test mode is submitted (non-canonical, rejected)', () => {
       const result = resolveExecutionModeForSkills({
         skillIds: [TRADING_SKILL],
         submittedExecutionMode: 'test',
         executionModeProvided: true,
-        hasConnections: false,
-        hasVenue: false,
       });
-      expect(result.value).toBe('paper');
-    });
-
-    it('resolves test mode to paper when a venue is selected but no connections exist', () => {
-      const result = resolveExecutionModeForSkills({
-        skillIds: [TRADING_SKILL],
-        submittedExecutionMode: 'test',
-        executionModeProvided: true,
-        hasConnections: false,
-        hasVenue: true,
-      });
-      expect(result.value).toBe('paper');
+      expect(result.issue).toBeDefined();
+      expect(result.issue?.path).toContain('executionMode');
+      expect(result.value).toBeNull();
     });
 
     it('returns an issue when an invalid mode string is submitted', () => {

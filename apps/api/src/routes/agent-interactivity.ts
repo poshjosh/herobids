@@ -92,7 +92,7 @@ const UpdateAgentSchema = z.object({
   dailySpendBudgetUsd: z.number().positive().nullable().optional(),
   dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).nullable().optional(),
   telegramChatId: z.string().nullable().optional(),
-  executionMode: z.enum(['paper', 'shadow', 'live', 'test']).nullable().optional(),
+  executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
   dailyLossLimit: nullablePositiveDecimalStringSchema,
   maxDrawdownPct: z.number().min(0).max(100).nullable().optional(),
   maxBots: nullablePositiveIntegerSchema(),
@@ -366,8 +366,8 @@ export async function agentInteractivityRoutes(
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
     }
 
-    // Determine whether the agent has trading connections — used to resolve
-    // the `test` input alias to the correct concrete simulation mode.
+    // Determine whether the agent has trading connections — used to validate
+    // connection requirements for shadow/live modes.
     const [existingActiveConn] = await db.select({ id: agentConnections.id })
       .from(agentConnections)
       .where(and(eq(agentConnections.agentId, id), eq(agentConnections.status, 'active')))
@@ -423,10 +423,12 @@ export async function agentInteractivityRoutes(
       ...(rawMaxDrawdownPct !== undefined
         ? { risk: { ...riskPosture, maxDrawdownPct: rawMaxDrawdownPct != null ? Number(rawMaxDrawdownPct) : null } }
         : {}),
-      executionDefaults: {
-        ...((agent.executionDefaults as Record<string,unknown> | null) ?? {}),
-        mode: ((executionMode.value as string) ?? 'paper') as 'paper' | 'shadow' | 'live',
-      },
+      executionDefaults: executionMode.value !== null
+        ? {
+            ...((agent.executionDefaults as Record<string,unknown> | null) ?? {}),
+            mode: executionMode.value,
+          }
+        : (agent.executionDefaults ?? null),
       ...(parsed.data.runtimePolicyOverrides !== undefined ? { runtimePolicyOverrides: parsed.data.runtimePolicyOverrides } : {}),
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,

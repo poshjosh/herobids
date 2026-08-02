@@ -924,7 +924,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
         name: 'shadow agent',
         prompt: 'test',
         skillIds: ['trading'],
-        executionMode: 'shadow',
+        executionDefaults: { mode: 'shadow' },
         connectionIds: ['conn-1'],
       },
     });
@@ -1508,6 +1508,9 @@ describe('agent routes strategy preset resolution', () => {
       connectionRows: [
         { id: 'conn-1', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid' },
       ],
+      skillRows: [
+        { id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-trading' },
+      ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
 
@@ -1522,9 +1525,11 @@ describe('agent routes strategy preset resolution', () => {
         name: 'hybrid-filter-agent',
         prompt: 'trade momentum',
         style: 'balanced',
+        skillIds: ['trading'],
         strategyPreset: 'momentum',
         capabilityMode: 'hybrid',
         hybridMode: 'scanner_gated',
+        executionDefaults: { mode: 'paper' },
         connectionIds: ['conn-1'],
       },
     });
@@ -1548,6 +1553,9 @@ describe('agent routes strategy preset resolution', () => {
     const { db, insertedValues } = buildDb({
       agentRows: [createdAgent],
       connectionRows: [],
+      skillRows: [
+        { id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-trading' },
+      ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
 
@@ -1562,9 +1570,11 @@ describe('agent routes strategy preset resolution', () => {
         name: 'no-conn-agent',
         prompt: 'trade momentum',
         style: 'balanced',
+        skillIds: ['trading'],
         strategyPreset: 'momentum',
         capabilityMode: 'hybrid',
         hybridMode: 'scanner_gated',
+        executionDefaults: { mode: 'paper' },
       },
     });
 
@@ -3455,6 +3465,9 @@ describe('agent routes — capabilityMode and hybridMode (004)', () => {
     const { db, insertedValues } = buildDb({
       agentRows: [createdAgent],
       activeLinkRows: [createdAgent],
+      skillRows: [
+        { id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-trading' },
+      ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
 
@@ -3468,7 +3481,9 @@ describe('agent routes — capabilityMode and hybridMode (004)', () => {
       payload: {
         name: 'hybrid-default',
         technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
+        skillIds: ['trading'],
         capabilityMode: 'hybrid',
+        executionDefaults: { mode: 'paper' },
       },
     });
 
@@ -3492,6 +3507,9 @@ describe('agent routes — capabilityMode and hybridMode (004)', () => {
     const { db, insertedValues } = buildDb({
       agentRows: [createdAgent],
       activeLinkRows: [createdAgent],
+      skillRows: [
+        { id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-trading' },
+      ],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
 
@@ -3505,8 +3523,10 @@ describe('agent routes — capabilityMode and hybridMode (004)', () => {
       payload: {
         name: 'hybrid-ok',
         technical: { filters: { venue: 'hyperliquid', venueType: 'orderbook' } },
+        skillIds: ['trading'],
         capabilityMode: 'hybrid',
         hybridMode: 'scanner_gated',
+        executionDefaults: { mode: 'paper' },
       },
     });
 

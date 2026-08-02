@@ -290,7 +290,7 @@ describe('PUT /agents/:id', () => {
     }));
   });
 
-  it('clears execution mode when trading skills are removed on PUT', async () => {
+  it('preserves execution defaults when trading skills are removed on PUT', async () => {
     const updateSet = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
     const deleteWhere = vi.fn().mockResolvedValue(undefined);
     const insertOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
@@ -298,13 +298,13 @@ describe('PUT /agents/:id', () => {
     const updatedAgent = {
       ...stubAgent,
       skillIds: ['task-management'],
-      executionMode: null,
+      executionDefaults: null,
     };
     const db = {
       select: vi.fn().mockImplementation(() => {
         selectCount++;
         if (selectCount === 1) {
-          return makeChain([{ ...stubAgent, executionMode: 'paper' }]);
+          return makeChain([{ ...stubAgent, executionDefaults: { mode: 'paper' } }]);
         }
         if (selectCount === 2) {
           return makeChain([{ skillId: 'trading' }]);
@@ -359,7 +359,7 @@ describe('PUT /agents/:id', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ executionMode: 'paper' }));
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ executionDefaults: { mode: 'paper' } }));
   });
 
   it('returns 409 when agent is running', async () => {

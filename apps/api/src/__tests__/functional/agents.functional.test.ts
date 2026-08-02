@@ -494,17 +494,17 @@ describe.skipIf(SKIP)('Agents functional', () => {
   });
 
   describe('execution mode lifecycle', () => {
-    it('resolves test mode to paper with no connections, then to shadow after granting a connection', async () => {
-      // 1. Create agent with test mode + venue hint, no connections
+    it('resolves paper mode to shadow after granting a connection (venue-backed simulation upgrade)', async () => {
+      // 1. Create agent with paper mode + venue hint, no connections
       const createRes = await ctx.app.inject({
         method: 'POST',
         url: '/agents',
         headers: authHeader(),
         payload: {
-          name: 'Test Mode Agent',
+          name: 'Paper Mode Agent',
           prompt: 'Trade BTC.',
           skillIds: ['trading'],
-          executionMode: 'test',
+          executionDefaults: { mode: 'paper' },
           executionVenue: 'hyperliquid',
         },
       });

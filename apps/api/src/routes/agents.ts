@@ -176,11 +176,11 @@ const CreateAgentSchema = z.object({
   }
   // Canonical field cross-validation: strategy implies the agent is trading-capable
   const isTradingCapable = hasSkillCapabilityFamily(data.skillIds, 'trading') || data.capabilityMode === 'hybrid';
-  if (data.strategy && isTradingCapable && !data.executionDefaults) {
+  if (isTradingCapable && !data.executionDefaults) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['executionDefaults'],
-      message: 'executionDefaults is required when strategy is configured for a trading-capable agent',
+      message: 'executionDefaults is required for trading-capable agents',
     });
   }
 });
@@ -708,7 +708,7 @@ export async function agentRoutes(
     const rawExecutionMode = parsed.data.executionDefaults?.mode;
     const executionMode = resolveExecutionModeForSkills({
       skillIds: parsed.data.skillIds ?? [],
-      submittedExecutionMode: rawExecutionMode as 'paper' | 'shadow' | 'live' | 'test' | undefined,
+      submittedExecutionMode: rawExecutionMode as 'paper' | 'shadow' | 'live' | undefined,
       executionModeProvided: rawExecutionMode !== undefined,
       currentExecutionMode: null,
       hasConnections: connectionIds.length > 0,
@@ -721,6 +721,16 @@ export async function agentRoutes(
     const connectionRequirementIssue = validateConnectionRequirement(executionMode.value, connectionIds.length > 0);
     if (connectionRequirementIssue) {
       return reply.status(400).send({ error: 'validation_error', details: [connectionRequirementIssue] });
+    }
+
+    // Persist the resolved execution mode so trading-capable agents always have a concrete mode stored.
+    // resolveExecutionModeForSkills may default or upgrade the mode (e.g. paper → shadow),
+    // and the resolved value must be what gets persisted, not the raw parsed input.
+    if (executionMode.value !== null) {
+      parsed.data.executionDefaults = {
+        ...(parsed.data.executionDefaults ?? {}),
+        mode: executionMode.value,
+      };
     }
 
     const authorizationMode = resolveAuthorizationMode({
@@ -1316,7 +1326,7 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: holdInvariantIssues });
     }
 
-    const submittedMode = parsed.data.executionDefaults?.mode as 'paper' | 'shadow' | 'live' | 'test' | undefined;
+    const submittedMode = parsed.data.executionDefaults?.mode as 'paper' | 'shadow' | 'live' | undefined;
     const currentMode = (agent.executionDefaults as Record<string, unknown> | null)?.mode as string | undefined;
     const executionMode = resolveExecutionModeForSkills({
       skillIds: mergedSkillIds,
@@ -1360,6 +1370,18 @@ export async function agentRoutes(
             });
           }
         }
+      }
+    }
+
+    // Ensure trading-capable agents always persist a concrete execution mode.
+    // If the caller omitted executionDefaults (or explicitly nulled it),
+    // fall back to the resolved mode from resolveExecutionModeForSkills.
+    // This prevents regression: a trading agent must never have null executionDefaults.
+    if (executionMode.value !== null) {
+      if (!parsed.data.executionDefaults) {
+        parsed.data.executionDefaults = { mode: executionMode.value };
+      } else if (!parsed.data.executionDefaults.mode) {
+        parsed.data.executionDefaults = { ...parsed.data.executionDefaults, mode: executionMode.value };
       }
     }
 

@@ -8,23 +8,19 @@ const CAPABILITY_FAMILIES_BY_SKILL_ID = new Map(SYSTEM_SKILLS.map((skill) => [sk
 const AGENT_EXECUTION_MODES = new Set(['paper', 'shadow', 'live'] as const);
 
 type AgentExecutionMode = 'paper' | 'shadow' | 'live';
-type NullableAgentExecutionMode = AgentExecutionMode | 'test' | null | undefined;
+type NullableAgentExecutionMode = AgentExecutionMode | null | undefined;
 
 /**
- * Map the user-facing input alias `test` to a concrete simulation mode.
- * - test with no connections → paper (pure simulation, no venue needed)
- * - test with connections → shadow (venue-backed simulation)
- * - All other modes pass through unchanged.
- *
- * `test` is an input alias only — audits, logs, and downstream consumers
- * always see the concrete mode.
+ * Pass-through canonical execution modes; non-canonical values return null.
+ * `test` is no longer accepted — callers must send canonical values only.
  */
 export function canonicalizeExecutionMode(
   mode: string | null | undefined,
-  opts?: { hasConnections?: boolean; hasVenue?: boolean },
+  _opts?: { hasConnections?: boolean; hasVenue?: boolean },
 ): string | null | undefined {
-  if (mode === 'test') return opts?.hasConnections ? 'shadow' : 'paper';
-  return mode;
+  if (mode == null) return mode;
+  if (AGENT_EXECUTION_MODES.has(mode as AgentExecutionMode)) return mode;
+  return null;
 }
 
 export const CostPresetSchema = z.enum(['minimal', 'standard', 'premium', 'custom']);
@@ -104,15 +100,14 @@ export function hasSkillCapabilityFamily(skillIds: string[] | null | undefined, 
 
 function normalizeExecutionMode(
   value: string | null | undefined,
-  opts?: { hasConnections?: boolean; hasVenue?: boolean },
+  _opts?: { hasConnections?: boolean; hasVenue?: boolean },
 ): NullableAgentExecutionMode {
   if (value == null) {
     return value;
   }
 
-  // Canonicalize user-facing input alias (test) to concrete backend mode
-  const canonical = canonicalizeExecutionMode(value, opts);
-  return AGENT_EXECUTION_MODES.has(canonical as AgentExecutionMode) ? canonical as AgentExecutionMode : null;
+  // Only canonical values accepted — non-canonical (including 'test') returns null
+  return AGENT_EXECUTION_MODES.has(value as AgentExecutionMode) ? value as AgentExecutionMode : null;
 }
 
 export function resolveExecutionModeForSkills(input: {
@@ -154,7 +149,7 @@ export function resolveExecutionModeForSkills(input: {
         issue: {
           code: 'custom',
           path: ['executionMode'],
-          message: 'executionMode must be explicitly set for agents with trading skills (test or live)',
+          message: 'executionMode must be explicitly set for agents with trading skills (paper, shadow, or live)',
         },
       };
     }

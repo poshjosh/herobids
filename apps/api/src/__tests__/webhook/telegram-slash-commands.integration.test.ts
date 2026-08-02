@@ -619,7 +619,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
       select: vi.fn().mockImplementation(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
-        return makeChain([stubAgent({ status: 'active', executionMode: 'test' })]);
+        return makeChain([stubAgent({ status: 'active', executionDefaults: { mode: 'paper' } })]);
       }),
     } as unknown as Database;
     const redis = buildMockRedis();
@@ -700,7 +700,7 @@ describe('Telegram Slash Commands — Stopped-Agent Constraints (Handler Unit)',
 
   it('handleMode accepts stopped agent and calls setExecutionMode', async () => {
     const mockSetMode = vi.mocked(setExecutionMode);
-    mockSetMode.mockResolvedValue(ok({ mode: 'test' }));
+    mockSetMode.mockResolvedValue(ok({ mode: 'live' }));
 
     const { handleMode } = await import('../../routes/telegram-command-handlers.js');
 
@@ -715,6 +715,6 @@ describe('Telegram Slash Commands — Stopped-Agent Constraints (Handler Unit)',
 
     const result = await handleMode(db, TEST_USER_ID, ['MyAgent', 'live']);
     expect(result).toContain('execution mode set to');
-    expect(setExecutionMode).toHaveBeenCalled();
+    expect(setExecutionMode).toHaveBeenCalledWith(db, AGENT_ID, TEST_USER_ID, 'live');
   });
 });

@@ -327,12 +327,11 @@ export async function listAgentConnections(
 
 // ── Set execution mode ────────────────────────────────────────────────────
 
-// TODO(Slice 5): Add paper/shadow alias handling.
 export async function setExecutionMode(
   db: Database,
   agentId: string,
   userId: string,
-  mode: 'test' | 'live',
+  mode: 'paper' | 'shadow' | 'live',
 ): Promise<Result<{ mode: string }, AgentConfigError>> {
   try {
     const [agent] = await db
@@ -353,21 +352,17 @@ export async function setExecutionMode(
       });
     }
 
-    // Map 'test' and 'live' to internal execution modes
-    // 'test' → 'paper' (simulated), 'live' → 'live'
-    const internalMode = mode === 'test' ? 'paper' : 'live';
-
     const existingExecDefaults = (agent.executionDefaults as Record<string, unknown> | null) ?? {};
 
     await db
       .update(agents)
       .set({
-        executionDefaults: { ...existingExecDefaults, mode: internalMode },
+        executionDefaults: { ...existingExecDefaults, mode },
         updatedAt: new Date(),
       })
       .where(eq(agents.id, agentId));
 
-    return ok({ mode: internalMode });
+    return ok({ mode });
   } catch (cause) {
     return err({
       code: 'config.internal_error',

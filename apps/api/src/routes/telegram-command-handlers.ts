@@ -861,28 +861,25 @@ export async function handleMode(
     if (args.length === 1) {
       const mode = (agent.executionDefaults as Record<string, unknown> | null)?.['mode'] as string | undefined;
       if (mode === 'shadow') {
-        return `${agent.name} execution mode: live (shadow)`;
+        return `${agent.name} execution mode: shadow (venue-backed simulation)`;
       }
-      // Map internal modes to display values
-      const displayMode = mode === 'paper' ? 'test' : mode;
-      if (displayMode && displayMode !== 'test') {
-        return `${agent.name} execution mode: ${displayMode}`;
+      if (mode === 'paper') {
+        return `${agent.name} execution mode: paper (simulated)`;
       }
-      if (displayMode === 'test') {
-        return `${agent.name} execution mode: test (simulated)`;
+      if (mode === 'live') {
+        return `${agent.name} execution mode: live`;
       }
       return `${agent.name} execution mode: not applicable`;
     }
 
     // Set mode
     const rawMode = args[1]!.toLowerCase();
-    const validModes = ['test', 'live', 'paper', 'shadow'];
+    const validModes = ['paper', 'shadow', 'live'];
     if (!validModes.includes(rawMode)) {
-      return `Invalid mode "${args[1]}". Use test, live, paper, or shadow.`;
+      return `Invalid mode "${args[1]}". Use paper, shadow, or live.`;
     }
 
-    // Normalize: paper/shadow → test, live → live
-    const normalizedMode = rawMode === 'paper' || rawMode === 'shadow' ? 'test' : 'live';
+    const canonicalMode = rawMode as 'paper' | 'shadow' | 'live';
 
     // Validate agent is stopped
     if (agent.status !== 'stopped') {
@@ -899,10 +896,12 @@ export async function handleMode(
       return `Cannot set execution mode: ${agent.name} does not have trading skills.`;
     }
 
-    const result = await setExecutionMode(db, agent.id, userId, normalizedMode);
+    const result = await setExecutionMode(db, agent.id, userId, canonicalMode);
 
     if (result.ok) {
-      const displayMode = normalizedMode === 'test' ? 'test (simulated)' : 'live';
+      const displayMode = canonicalMode === 'paper' ? 'paper (simulated)'
+        : canonicalMode === 'shadow' ? 'shadow (venue-backed simulation)'
+        : 'live';
       return `${agent.name} execution mode set to ${displayMode}.`;
     }
 

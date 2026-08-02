@@ -81,8 +81,8 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
 
     resolvedConfig = normalizeBotConfig(resolvedConfig, parsed.data.venue, parsed.data.symbol);
 
-    // Canonicalize the user-facing input alias `test` to a concrete backend mode
-    // before schema validation. Bots always require a venue, so `test` → `shadow`.
+    // Pass-through canonical execution mode; non-canonical values (including `test`)
+    // will be rejected by BotConfigSchema validation below.
     const rawExecutionMode = (resolvedConfig['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
     if (rawExecutionMode) {
       const canonical = canonicalizeExecutionMode(rawExecutionMode, { hasConnections: true });
@@ -238,8 +238,8 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    // Canonicalize the user-facing input alias `test` to a concrete backend mode.
-    // Bots always require a venue, so `test` always resolves to `shadow`.
+    // Pass-through canonical execution mode; non-canonical values (including `test`)
+    // will be rejected by BotConfigSchema validation. Bots always require a venue.
     let newExecutionMode = (parsed.data.config['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
     if (newExecutionMode) {
       const canonical = canonicalizeExecutionMode(newExecutionMode, { hasConnections: true });
