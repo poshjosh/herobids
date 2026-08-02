@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Implicit Agent Blueprint Publication:** Starting an agent now automatically creates or syncs a published blueprint representing its current authored config and skill set. Deterministic SHA-256 fingerprinting prevents duplicate revisions when config is unchanged. Failed blueprint sync reverts the agent claim (loud-failure). New `agent-blueprint-sync-service` with `ensurePublishedBlueprintForAgent()` and 10 unit tests covering first-publish, unchanged restart, changed-config revision, skill portability errors, and defensive edge cases.
+
+- **Blueprint API Client Methods:** Added `publish`, `delist`, `like`, `unlike`, `fork`, `archive`, `draft`, `private`, and `delete` methods to the frontend `blueprints.*` API client. `BlueprintDetailPage` migrated from raw `fetch()` calls to the shared API client for all lifecycle actions.
+
 ### Changed
 
 - **`search_app_docs` token-aware matching:** Replaced substring-only search with tokenization + token-coverage scoring + lightweight stemming. Queries are now split into individual words matched independently against the docs index; stemming handles common word variants (venues↔venue, trading↔trade, configuration↔configure) with zero external dependencies. Results are ranked by token coverage weighted by match field (title > heading > tag > content). Added unit tests for all three platform-docs tools.
