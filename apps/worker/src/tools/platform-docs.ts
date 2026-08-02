@@ -17,100 +17,243 @@ interface SearchResult {
 
 const EXCERPT_MAX_LENGTH = 200;
 
-function excerpt(content: string, query: string): string {
-  const lowerContent = content.toLowerCase();
-  const lowerQuery = query.toLowerCase();
-  const idx = lowerContent.indexOf(lowerQuery);
-  if (idx === -1) {
+// ─── Tokenization & Stemming ────────────────────────────────────────────────
+
+/**
+ * Split a query string into individual search tokens.
+ * Each token is matched independently against the index,
+ * so "crypto exchange venue" finds docs containing any of those words.
+ *
+ * Tokens shorter than 2 characters are dropped (single letters match
+ * nearly everything). Common English function words are also removed
+ * to prevent noise in natural-language queries from LLM agents.
+ */
+const STOPWORDS = new Set([
+  'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'the', 'a', 'an',
+  'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by', 'from',
+  'and', 'or', 'not', 'but', 'if', 'so', 'no',
+  'it', 'its', 'this', 'that', 'these', 'those',
+  'i', 'we', 'you', 'he', 'she', 'they',
+  'what', 'how', 'why', 'when', 'where', 'which', 'who',
+  'can', 'will', 'would', 'could', 'should', 'may', 'do', 'does',
+  'has', 'have', 'had', 'get', 'got',
+  'me', 'my', 'our', 'your', 'us',
+  'just', 'only', 'also', 'very', 'too',
+]);
+
+const MIN_TOKEN_LENGTH = 2;
+
+function tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= MIN_TOKEN_LENGTH)
+    .filter((t) => !STOPWORDS.has(t));
+}
+
+/**
+ * Lightweight English stemming — strips common suffixes so that
+ * "venues" ↔ "venue", "trading" ↔ "trade", "configuration" ↔ "configure".
+ * No external deps; sufficient for a ~39-entry index.
+ */
+function stem(word: string): string {
+  return word
+    .replace(/(ies|ied)$/, 'y')                 // "strategies" → "strategy"
+    .replace(/(sses|shes|ches|xes|zzes)$/, (m) => m.slice(0, -2)) // "watches" → "watch"
+    .replace(/(ss|sh|ch|x|zz)es$/, '$1')        // "bosses" → "boss" (keep ending)
+    .replace(/ses$/, 's')                        // "houses" → "hous" (close enough)
+    .replace(/s$/, '')                           // "venues" → "venue"
+    .replace(/(ing|ed)$/, '')                    // "trading" → "trad", "configured" → "configur"
+    .replace(/(ation|ition)$/, 'e')              // "configuration" → "configure"
+    .replace(/(ement|ness|able|ible)$/, '');     // "payment" → "pay"
+}
+
+/**
+ * Expand a token into all its matchable forms: the original token
+ * and (if the stem is distinct and non-trivial) its stem.
+ * Stems shorter than 3 characters are dropped to avoid noise:
+ * "is" → "i" would match nearly every document.
+ */
+const MIN_STEM_LENGTH = 3;
+
+function expandToken(token: string): string[] {
+  const forms = [token];
+  const s = stem(token);
+  if (s !== token && s.length >= MIN_STEM_LENGTH) {
+    forms.push(s);
+  }
+  return forms;
+}
+
+// ─── Scoring ────────────────────────────────────────────────────────────────
+
+const FIELD_WEIGHTS: Record<SearchResult['matchType'], number> = {
+  title: 30,
+  heading: 20,
+  tag: 15,
+  content: 5,
+};
+
+const FIELD_RANK: Record<SearchResult['matchType'], number> = {
+  title: 0,
+  heading: 1,
+  tag: 2,
+  content: 3,
+};
+
+interface TokenHit {
+  token: string;
+  matchType: SearchResult['matchType'];
+}
+
+/**
+ * Determine the best matching field for a single form across all
+ * searchable fields. Returns the highest-ranked field that
+ * contains the form, or null if no field matches.
+ */
+function bestFieldForForm(
+  form: string,
+  lowerTitle: string,
+  lowerHeadings: string[],
+  lowerTags: string[],
+  lowerContent: string,
+): SearchResult['matchType'] | null {
+  if (lowerTitle.includes(form)) return 'title';
+  if (lowerHeadings.some((h) => h.includes(form))) return 'heading';
+  if (lowerTags.some((t) => t.includes(form))) return 'tag';
+  if (lowerContent.includes(form)) return 'content';
+  return null;
+}
+
+/**
+ * Score an entry against the original query tokens.
+ * Each original token scores exactly ONCE, earning the weight
+ * of its best matching field across all expanded forms (original + stem).
+ * This prevents double-counting: "trading" matching in both title
+ * and content gets title points only, and its stem "trad" does not
+ * earn a second score event.
+ */
+function scoreEntry(
+  entry: DocsIndexEntry,
+  originalTokens: string[],
+): { score: number; matchType: SearchResult['matchType']; hits: TokenHit[] } {
+  const lowerTitle = entry.title.toLowerCase();
+  const lowerContent = entry.content.toLowerCase();
+  const lowerHeadings = entry.headings.map((h) => h.toLowerCase());
+  const lowerTags = entry.tags.map((t) => t.toLowerCase());
+
+  const hits: TokenHit[] = [];
+  let score = 0;
+  let bestMatchType: SearchResult['matchType'] = 'content';
+
+  for (const token of originalTokens) {
+    const forms = expandToken(token);
+
+    // Find the best field any form of this token matches in
+    let bestField: SearchResult['matchType'] | null = null;
+    let bestForm: string | null = null;
+
+    for (const form of forms) {
+      const field = bestFieldForForm(form, lowerTitle, lowerHeadings, lowerTags, lowerContent);
+      if (field !== null && (bestField === null || FIELD_RANK[field] < FIELD_RANK[bestField])) {
+        bestField = field;
+        bestForm = form;
+      }
+    }
+
+    if (bestField !== null && bestForm !== null) {
+      score += FIELD_WEIGHTS[bestField];
+      hits.push({ token: bestForm, matchType: bestField });
+      if (FIELD_RANK[bestField] < FIELD_RANK[bestMatchType]) {
+        bestMatchType = bestField;
+      }
+    }
+  }
+
+  return { score, matchType: bestMatchType, hits };
+}
+
+// ─── Excerpt ────────────────────────────────────────────────────────────────
+
+/**
+ * Build an excerpt showing the region of the document with the
+ * highest density of matched tokens.
+ */
+function excerpt(content: string, hits: TokenHit[]): string {
+  if (hits.length === 0) {
     return content.slice(0, EXCERPT_MAX_LENGTH).trim() + '…';
   }
-  const start = Math.max(0, idx - 60);
-  const end = Math.min(content.length, idx + query.length + 60);
-  let snippet = content.slice(start, end).trim();
-  if (start > 0) snippet = '…' + snippet;
+
+  const lowerContent = content.toLowerCase();
+
+  // Find all hit positions in the content
+  const positions: number[] = [];
+  for (const hit of hits) {
+    let idx = lowerContent.indexOf(hit.token);
+    while (idx !== -1) {
+      positions.push(idx);
+      idx = lowerContent.indexOf(hit.token, idx + 1);
+    }
+  }
+
+  if (positions.length === 0) {
+    return content.slice(0, EXCERPT_MAX_LENGTH).trim() + '…';
+  }
+
+  // Find the densest window: the region of EXCERPT_MAX_LENGTH chars
+  // that contains the most hit positions
+  positions.sort((a, b) => a - b);
+  let bestStart = 0;
+  let bestCount = 0;
+
+  for (const pos of positions) {
+    const windowStart = Math.max(0, pos - 60);
+    const windowEnd = windowStart + EXCERPT_MAX_LENGTH;
+    const count = positions.filter((p) => p >= windowStart && p < windowEnd).length;
+    if (count > bestCount) {
+      bestCount = count;
+      bestStart = windowStart;
+    }
+  }
+
+  const end = Math.min(content.length, bestStart + EXCERPT_MAX_LENGTH);
+  let snippet = content.slice(bestStart, end).trim();
+  if (bestStart > 0) snippet = '…' + snippet;
   if (end < content.length) snippet = snippet + '…';
   return snippet;
 }
 
-function rank(results: SearchResult[]): SearchResult[] {
-  const order: Record<SearchResult['matchType'], number> = {
-    title: 0,
-    heading: 1,
-    tag: 2,
-    content: 3,
-  };
-  return results.sort((a, b) => order[a.matchType] - order[b.matchType]);
-}
+// ─── Search ─────────────────────────────────────────────────────────────────
 
 function searchDocs(query: string, kind?: string, maxResults = 10): SearchResult[] {
-  const lowerQuery = query.toLowerCase();
-  const results: SearchResult[] = [];
+  const tokens = tokenize(query);
+  if (tokens.length === 0) return [];
+
+  const scored: Array<SearchResult & { score: number }> = [];
 
   for (const entry of PLATFORM_DOCS_INDEX) {
     if (kind && entry.kind !== kind) continue;
 
-    const lowerTitle = entry.title.toLowerCase();
-    const lowerContent = entry.content.toLowerCase();
+    const { score, matchType, hits } = scoreEntry(entry, tokens);
+    if (score === 0) continue;
 
-    // Title match
-    if (lowerTitle.includes(lowerQuery)) {
-      results.push({
-        id: entry.id,
-        title: entry.title,
-        kind: entry.kind,
-        headings: entry.headings,
-        tags: entry.tags,
-        excerpt: excerpt(entry.content, query),
-        matchType: 'title',
-      });
-      continue;
-    }
-
-    // Heading match
-    const matchedHeading = entry.headings.find((h) => h.toLowerCase().includes(lowerQuery));
-    if (matchedHeading) {
-      results.push({
-        id: entry.id,
-        title: entry.title,
-        kind: entry.kind,
-        headings: entry.headings,
-        tags: entry.tags,
-        excerpt: excerpt(entry.content, query),
-        matchType: 'heading',
-      });
-      continue;
-    }
-
-    // Tag match
-    const matchedTag = entry.tags.find((t) => t.toLowerCase().includes(lowerQuery));
-    if (matchedTag) {
-      results.push({
-        id: entry.id,
-        title: entry.title,
-        kind: entry.kind,
-        headings: entry.headings,
-        tags: entry.tags,
-        excerpt: excerpt(entry.content, query),
-        matchType: 'tag',
-      });
-      continue;
-    }
-
-    // Content match
-    if (lowerContent.includes(lowerQuery)) {
-      results.push({
-        id: entry.id,
-        title: entry.title,
-        kind: entry.kind,
-        headings: entry.headings,
-        tags: entry.tags,
-        excerpt: excerpt(entry.content, query),
-        matchType: 'content',
-      });
-    }
+    scored.push({
+      id: entry.id,
+      title: entry.title,
+      kind: entry.kind,
+      headings: entry.headings,
+      tags: entry.tags,
+      excerpt: excerpt(entry.content, hits),
+      matchType,
+      score,
+    });
   }
 
-  return rank(results).slice(0, maxResults);
+  // Sort by score descending, then by title for stable ordering
+  scored.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+
+  return scored.slice(0, maxResults);
 }
 
 // ─── search_app_docs ────────────────────────────────────────────────────────
