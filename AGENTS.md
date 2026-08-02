@@ -166,7 +166,7 @@ Before making changes:
 - Do not bypass TypeScript strict checks (`any`, `@ts-ignore`, `as unknown as X`).
 - Do not swallow errors. If you catch, either handle meaningfully or re-throw/log.
 - Do not introduce circular package dependencies.
-- LLM thinking or reasoning text must never enter stored conversation history, tool parsing, or user-visible output. Strip provider-specific thinking blocks at the `@herobids/llm` boundary and only persist visible text.
+- LLM hidden reasoning or provider-supplied thinking content must never be persisted as conversation history, used for tool parsing, or shown to users. Strip provider-specific thinking blocks at the `@herobids/llm` boundary. Internal application state such as structured summaries, collected facts, and workflow metadata may be stored separately when needed, but it must not contain verbatim hidden reasoning or chain-of-thought. Persist only visible assistant text in conversation history.
 - Run `pnpm lint` before considering work complete — it must pass.
 - Test names describe behavior, not implementation (`"rejects order when notional exceeds limit"`).
 - Commits should be atomic and focused. One logical change per commit.
