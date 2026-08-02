@@ -200,8 +200,8 @@ Once the client helpers exist, switch `BlueprintDetailPage` off raw `fetch()` fo
 
 ## Implementation Order
 
-1. [PENDING] Add the internal agent-blueprint sync service and fingerprint comparison.
-2. [PENDING] Wire blueprint sync into `startAgent()` with loud-failure behavior.
+1. [DONE] Add the internal agent-blueprint sync service and fingerprint comparison.
+2. [IN PROGRESS] Wire blueprint sync into `startAgent()` with loud-failure behavior.
 3. [PENDING] Reuse/extract publish logic so start-path publishing matches the route contract.
 4. [PENDING] Add the missing `blueprints.*` methods to `apps/web/src/lib/api-client.ts`.
 5. [PENDING] Migrate `BlueprintDetailPage` lifecycle calls to the API client.
@@ -230,3 +230,13 @@ Once the client helpers exist, switch `BlueprintDetailPage` off raw `fetch()` fo
 | **LOW** | Concurrent-modification errors use `blueprint.internal_error` — a distinct code like `blueprint.concurrent_modification` would aid observability and retry logic | `agent-blueprint-sync-service.ts`, L456-460, L541-545 |
 | **LOW** | Local `SkillRef` interface is structurally identical to domain type `BlueprintSkillRef` from `@herobids/domain` — using the domain type directly would prevent drift | `agent-blueprint-sync-service.ts`, L19-22 |
 | **LOW** | `extractBlueprintFacets` returns `venueType: null as string \| null` with no `// TODO` explaining it's a placeholder | `agent-blueprint-sync-service.ts`, L80 |
+
+### [Item 2] Wire blueprint sync into `startAgent()` with loud-failure
+
+| Priority | Issue | Location |
+|----------|-------|----------|
+| **MEDIUM** | `blueprintId` re-set unnecessarily on unchanged path — creates an unnecessary DB write per start when nothing changed | `agent-blueprint-sync-service.ts` |
+| **MEDIUM** | Race window between claim commit and blueprint sync — worker could observe a session that gets reverted. Verify worker handles this case | `agent-lifecycle-service.ts` |
+| **LOW** | Inconsistent error response shape for `not_owned` vs other errors | `routes/agents.ts` |
+| **LOW** | `console.error` fallback diverges from structured logging pattern elsewhere | `agent-lifecycle-service.ts` |
+| **LOW** | `not_stopped` return inside transaction hardcodes `'starting'` status | `agent-lifecycle-service.ts` |

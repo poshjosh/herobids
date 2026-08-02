@@ -249,6 +249,7 @@ async function createAndPublishBlueprint(
       tags: facets.tags,
       venueType: facets.venueType,
       payload: projectedPayload,
+      changeSummary: 'Auto-generated from agent config on start',
       createdByUserId: userId,
       createdAt: now,
     });
@@ -557,6 +558,7 @@ async function createNewRevisionAndPublish(
       tags: facets.tags,
       venueType: facets.venueType,
       payload: projectedPayload,
+      changeSummary: 'Auto-generated from agent config on start',
       createdByUserId: userId,
       createdAt: now,
     });

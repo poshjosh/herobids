@@ -4,6 +4,7 @@ import type { Database } from '@herobids/db';
 import { agents, agentRuntimeSessions, users } from '@herobids/db';
 import { normalizePersistedAiModelConfig } from '@herobids/domain';
 import { ok, err, type Result } from '@herobids/domain';
+import { ensurePublishedBlueprintForAgent } from './agent-blueprint-sync-service.js';
 
 // ── Error types ───────────────────────────────────────────────────────────
 
@@ -12,6 +13,7 @@ export type AgentLifecycleError =
   | { code: 'agent.not_owned'; message: string }
   | { code: 'agent.invalid_status'; message: string; currentStatus: string }
   | { code: 'agent.model_selection_incomplete'; message: string }
+  | { code: 'agent.skill_portability'; message: string }
   | { code: 'agent.internal_error'; message: string };
 
 // ── Start ─────────────────────────────────────────────────────────────────
@@ -117,6 +119,47 @@ export async function startAgent(
       return err({
         code: 'agent.model_selection_incomplete',
         message: 'Agent cannot start — set provider, lightModel, and heavyModel in agent config or user AI settings',
+      });
+    }
+
+    // Ensure the agent has a published blueprint matching its current config.
+    // Loud failure: if sync fails, revert the agent claim and fail the start request.
+    const blueprintSyncResult = await ensurePublishedBlueprintForAgent(db, agentId, userId);
+    if (!blueprintSyncResult.ok) {
+      // Revert the agent claim and runtime session so we don't leave stale state.
+      // Use a transaction with status guards: if the worker already claimed the
+      // session (starting → launching), we must NOT overwrite that state.
+      try {
+        await db.transaction(async (tx) => {
+          await tx.update(agents)
+            .set({ status: 'stopped', updatedAt: new Date() })
+            .where(and(eq(agents.id, agentId), eq(agents.status, 'starting')));
+          await tx.update(agentRuntimeSessions)
+            .set({ status: 'stopped', stoppedAt: new Date() })
+            .where(and(eq(agentRuntimeSessions.id, sessionId), eq(agentRuntimeSessions.status, 'starting')));
+        });
+      } catch (revertErr) {
+        // Best-effort logging — don't mask the original blueprint sync failure.
+        // Use console.error as a fallback since startAgent() receives db but not a logger.
+        console.error(
+          'Failed to revert agent claim after blueprint sync failure',
+          { err: revertErr, agentId, sessionId },
+        );
+      }
+
+      const syncErr = blueprintSyncResult.error;
+      if (syncErr.code === 'agent.not_found') {
+        return err({ code: 'agent.not_found', message: syncErr.message });
+      }
+      if (syncErr.code === 'agent.not_owned') {
+        return err({ code: 'agent.not_owned', message: syncErr.message });
+      }
+      if (syncErr.code === 'blueprint.skill_portability') {
+        return err({ code: 'agent.skill_portability', message: syncErr.message });
+      }
+      return err({
+        code: 'agent.internal_error',
+        message: syncErr.message,
       });
     }
 

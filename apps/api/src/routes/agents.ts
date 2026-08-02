@@ -2129,6 +2129,15 @@ export async function agentRoutes(
           'Agent cannot start — set provider, lightModel, and heavyModel in agent config or user AI settings',
         ));
       }
+      if (result.error.code === 'agent.not_owned') {
+        return reply.status(403).send({ error: 'not_owned' });
+      }
+      if (result.error.code === 'agent.skill_portability') {
+        return reply.status(422).send(errorPayload(
+          'blueprint.skill_portability',
+          result.error.message,
+        ));
+      }
       return reply.status(500).send({ error: result.error.code, message: result.error.message });
     }
 
