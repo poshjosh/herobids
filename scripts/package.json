@@ -11,7 +11,8 @@
     "seed-usage-rate-card": "tsx ts/seed-usage-rate-card.ts",
     "rate-limit-load-test": "tsx ts/rate-limit-load-test.ts",
     "upsert-system-skills": "tsx ts/upsert-system-skills.ts",
-    "agent-trade-test": "tsx ts/agent-trade-test.ts"
+    "agent-trade-test": "tsx ts/agent-trade-test.ts",
+    "build-docs-index": "tsx ts/build-docs-index.ts"
   },
   "dependencies": {
     "@herobids/db": "workspace:*",

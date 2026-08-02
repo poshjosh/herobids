@@ -5,7 +5,7 @@
   "description": "AI first trading",
   "type": "module",
   "scripts": {
-    "build": "pnpm -r run build",
+    "build": "pnpm --filter @herobids/scripts run build-docs-index && pnpm -r run build",
     "test": "vitest run",
     "test:integration": "vitest run --fileParallelism=false --pool=forks --poolOptions.forks.singleFork packages/db/src/journal-pg.integration.test.ts packages/db/src/alert-delivery-repository.integration.test.ts apps/api/src/plugins/auth.integration.test.ts apps/api/src/routes/auth-oauth.integration.test.ts",
     "test:venues": "vitest run --config vitest.integration.config.ts",
