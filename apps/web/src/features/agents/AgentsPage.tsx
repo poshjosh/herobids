@@ -7,9 +7,8 @@ import { agents as agentsApi, capabilities as capabilitiesApi, connections as co
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Card, SectionLabel, MetricCard, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { BlueprintBrowse } from '../blueprints/BlueprintBrowse.js';
 import { BlueprintInstantiateFlow } from '../blueprints/BlueprintInstantiateFlow.js';
-import { SaveAsBlueprintModal } from '../blueprints/SaveAsBlueprintModal.js';
 import type { BlueprintSummary } from '../../lib/api-client.js';
-import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, type SkillPresetId } from './agent-display.js';
+import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, resolveGoalPlaceholderKey, type SkillPresetId } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
@@ -136,7 +135,6 @@ export function AgentsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [agentTab, setAgentTab] = useState<'my-agents' | 'marketplace'>('my-agents');
   const [selectedBlueprint, setSelectedBlueprint] = useState<BlueprintSummary | null>(null);
-  const [saveAsBlueprintTarget, setSaveAsBlueprintTarget] = useState<{ actorId: string; actorName: string } | null>(null);
   const intl = useIntl();
   const navigate = useNavigate();
   const location = useLocation();
@@ -325,33 +323,7 @@ export function AgentsPage() {
               {/* Left: Agent list */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {items.map((agent) => (
-                  <div key={agent.id} style={{ position: 'relative' }}>
-                    <AgentSummaryCard agent={agent} outcomes={outcomesByAgentId.get(agent.id)} />
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSaveAsBlueprintTarget({ actorId: agent.id, actorName: agent.name });
-                      }}
-                      style={{
-                        position: 'absolute',
-                        top: '8px',
-                        right: '8px',
-                        padding: '2px 8px',
-                        borderRadius: '6px',
-                        border: '1px solid var(--color-border)',
-                        background: 'var(--color-surface-1)',
-                        fontSize: '11px',
-                        color: 'var(--color-text-secondary)',
-                        cursor: 'pointer',
-                        opacity: 0.6,
-                      }}
-                      title="Save as Blueprint"
-                      onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.6'; }}
-                    >
-                      Save as Blueprint
-                    </button>
-                  </div>
+                  <AgentSummaryCard key={agent.id} agent={agent} outcomes={outcomesByAgentId.get(agent.id)} />
                 ))}
               </div>
 
@@ -462,18 +434,6 @@ export function AgentsPage() {
         />
       )}
 
-      {/* ── Save as Blueprint modal ───────────────────────────────── */}
-      {saveAsBlueprintTarget && (
-        <SaveAsBlueprintModal
-          actorKind="agent"
-          actorId={saveAsBlueprintTarget.actorId}
-          actorName={saveAsBlueprintTarget.actorName}
-          onClose={() => setSaveAsBlueprintTarget(null)}
-          onCreated={(_blueprintId) => {
-            // No navigation — user stays on agents page
-          }}
-        />
-      )}
     </PageShell>
   );
 }

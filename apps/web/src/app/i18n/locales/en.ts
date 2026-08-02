@@ -69,8 +69,7 @@ export const messages: Record<string, string> = {
   'skills.actions.copying': 'Copying...',
   'skills.actions.edit': 'Edit',
   'skills.actions.closeEditor': 'Close editor',
-  'skills.actions.showMetrics': 'Show metrics',
-  'skills.actions.hideMetrics': 'Hide metrics',
+
   'skills.actions.saveUpdate': 'Save update',
   'skills.actions.saving': 'Saving...',
   'skills.form.createTitle': 'Create skill',
@@ -102,9 +101,6 @@ export const messages: Record<string, string> = {
   'skills.capability.base': 'Base',
   'skills.metrics.loading': 'Loading metrics...',
   'skills.metrics.loadError': 'Unable to load metrics: {message}',
-  'skills.metrics.summary30d': '30d usage: {usage} · 30d likes: {likes} · 30d forks: {forks}',
-  'skills.metrics.summary90d': '90d usage: {usage} · 90d likes: {likes} · 90d forks: {forks}',
-  'skills.metrics.popularity': 'Popularity: {popularity} · Trending: {trending}',
 
   // Common
   'common.loading': 'Loading…',
@@ -410,6 +406,7 @@ export const messages: Record<string, string> = {
   'agents.title': 'AI Agents',
   'agents.subtitle': 'Low cost AI agents that trade, assist, research and more',
   'agents.newAgent': 'New AI agent',
+  'agents.marketplace.useAgent': 'Use this agent',
   'agents.createAgent': 'Create AI agent',
   'agents.empty.title': 'No AI agents yet',
   'agents.empty.message': 'Describe the goal, then add capabilities only when you need them.',

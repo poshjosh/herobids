@@ -101,6 +101,11 @@ export function BlueprintInstantiateFlow({
           editsPayload.risk = riskEdits;
         }
       }
+      // The backend discriminated union schema requires `kind` to discriminate
+      // between agent and bot partial payloads.
+      if (Object.keys(editsPayload).length > 0) {
+        editsPayload.kind = preview.kind;
+      }
 
       return blueprints.instantiate(
         blueprint.id,

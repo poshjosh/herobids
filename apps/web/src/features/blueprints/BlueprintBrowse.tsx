@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useIntl } from 'react-intl';
 import { useQuery } from '@tanstack/react-query';
 import {
   PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState,
@@ -196,6 +197,7 @@ function BlueprintCard({
   blueprint: BlueprintSummary;
   onUse?: (blueprint: BlueprintSummary) => void;
 }) {
+  const intl = useIntl();
   const isAgent = blueprint.kind === 'agent';
 
   return (
@@ -237,23 +239,24 @@ function BlueprintCard({
       {/* Stats */}
       <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
         <KV label="Likes" value={String(blueprint.likeCount)} />
-        <KV label="Forks" value={String(blueprint.forkCount)} />
+        <KV label="Copies" value={String(blueprint.forkCount)} />
         <KV label="Score" value={formatScore(blueprint.popularityScore)} />
       </div>
 
       {/* Action */}
       {isAgent && onUse && (
         <Button
-          variant="primary"
           size="sm"
-          style={{ marginTop: '4px' }}
+          variant="secondary"
+          style={{ marginTop: '4px', alignSelf: 'flex-start' }}
+          aria-label={intl.formatMessage({ id: 'agents.marketplace.useAgent', defaultMessage: 'Use this agent' })}
+          title={intl.formatMessage({ id: 'agents.marketplace.useAgent', defaultMessage: 'Use this agent' })}
           onClick={() => onUse(blueprint)}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <rect x="9" y="9" width="13" height="13" rx="2" />
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
           </svg>
-          Use this agent
         </Button>
       )}
     </Card>

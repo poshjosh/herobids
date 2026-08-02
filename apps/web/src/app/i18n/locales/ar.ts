@@ -132,8 +132,7 @@ export const messages: Record<string, string> = {
   'skills.actions.copying': 'جارٍ النسخ...',
   'skills.actions.edit': 'تحرير',
   'skills.actions.closeEditor': 'إغلاق المحرر',
-  'skills.actions.showMetrics': 'إظهار المقاييس',
-  'skills.actions.hideMetrics': 'إخفاء المقاييس',
+
   'skills.actions.saveUpdate': 'حفظ التحديث',
   'skills.actions.saving': 'جارٍ الحفظ...',
   'skills.form.createTitle': 'إنشاء مهارة',
@@ -165,9 +164,6 @@ export const messages: Record<string, string> = {
   'skills.capability.base': 'أساسي',
   'skills.metrics.loading': 'جارٍ تحميل المقاييس...',
   'skills.metrics.loadError': 'تعذر تحميل المقاييس: {message}',
-  'skills.metrics.summary30d': 'استخدام 30 يوماً: {usage} · إعجابات 30 يوماً: {likes} · نسخ 30 يوماً: {forks}',
-  'skills.metrics.summary90d': 'استخدام 90 يوماً: {usage} · إعجابات 90 يوماً: {likes} · نسخ 90 يوماً: {forks}',
-  'skills.metrics.popularity': 'الشعبية: {popularity} · الرائج: {trending}',
 
   // Activity feed page
   'activity.title': 'النشاط',
@@ -410,6 +406,7 @@ export const messages: Record<string, string> = {
   'agents.title': 'وكلاء الذكاء الاصطناعي',
   'agents.subtitle': 'وكلاء ذكاء اصطناعي منخفضة التكلفة تتداول وتساعد وتبحث والمزيد',
   'agents.newAgent': 'وكيل ذكاء اصطناعي جديد',
+  'agents.marketplace.useAgent': 'استخدم هذا الوكيل',
   'agents.createAgent': 'إنشاء وكيل ذكاء اصطناعي',
   'agents.empty.title': 'لا يوجد وكلاء ذكاء اصطناعي بعد',
   'agents.empty.message': 'صف الهدف ثم أضف القدرات فقط عند الحاجة.',

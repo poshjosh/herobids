@@ -132,8 +132,7 @@ export const messages: Record<string, string> = {
   'skills.actions.copying': 'कॉपी की जा रही है...',
   'skills.actions.edit': 'संपादित करें',
   'skills.actions.closeEditor': 'संपादक बंद करें',
-  'skills.actions.showMetrics': 'मेट्रिक्स दिखाएं',
-  'skills.actions.hideMetrics': 'मेट्रिक्स छिपाएं',
+
   'skills.actions.saveUpdate': 'अपडेट सहेजें',
   'skills.actions.saving': 'सहेजा जा रहा है...',
   'skills.form.createTitle': 'कौशल बनाएं',
@@ -165,9 +164,6 @@ export const messages: Record<string, string> = {
   'skills.capability.base': 'आधार',
   'skills.metrics.loading': 'मेट्रिक्स लोड हो रहे हैं...',
   'skills.metrics.loadError': 'मेट्रिक्स लोड नहीं हो सके: {message}',
-  'skills.metrics.summary30d': '30द उपयोग: {usage} · 30द पसंद: {likes} · 30द कॉपी: {forks}',
-  'skills.metrics.summary90d': '90द उपयोग: {usage} · 90द पसंद: {likes} · 90द कॉपी: {forks}',
-  'skills.metrics.popularity': 'लोकप्रियता: {popularity} · रुझान: {trending}',
 
   // Activity feed page
   'activity.title': 'गतिविधि',
@@ -410,6 +406,7 @@ export const messages: Record<string, string> = {
   'agents.title': 'AI एजेंट',
   'agents.subtitle': 'कम लागत वाले AI एजेंट जो ट्रेड करते हैं, सहायता करते हैं, शोध करते हैं और बहुत कुछ',
   'agents.newAgent': 'नया AI एजेंट',
+  'agents.marketplace.useAgent': 'इस एजेंट का उपयोग करें',
   'agents.createAgent': 'AI एजेंट बनाएं',
   'agents.empty.title': 'अभी तक कोई AI एजेंट नहीं',
   'agents.empty.message': 'पहले लक्ष्य बताइए, फिर केवल जरूरत पड़ने पर क्षमताएँ जोड़िए।',

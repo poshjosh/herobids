@@ -491,7 +491,6 @@ function SkillCard({
 }) {
   const intl = useIntl();
   const [actionError, setActionError] = useState<string | null>(null);
-  const [showMetrics, setShowMetrics] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [stagedRevisionId, setStagedRevisionId] = useState<string | null>(null);
   const [editedName, setEditedName] = useState(skill.name);
@@ -561,7 +560,6 @@ function SkillCard({
   const metricsQuery = useQuery({
     queryKey: ['skills', 'metrics', skill.id],
     queryFn: () => skillsApi.metrics(skill.id),
-    enabled: showMetrics,
   });
 
   const statusLabel = formatSkillStatusLabel(intl, skill.sourceKind, skill.publicationStatus);
@@ -715,23 +713,7 @@ function SkillCard({
             )}
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => setShowMetrics((previous) => !previous)}
-          aria-label={showMetrics
-            ? intl.formatMessage({ id: 'skills.actions.hideMetrics', defaultMessage: 'Hide metrics' })
-            : intl.formatMessage({ id: 'skills.actions.showMetrics', defaultMessage: 'Show metrics' })}
-          title={showMetrics
-            ? intl.formatMessage({ id: 'skills.actions.hideMetrics', defaultMessage: 'Hide metrics' })
-            : intl.formatMessage({ id: 'skills.actions.showMetrics', defaultMessage: 'Show metrics' })}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            <line x1="18" y1="20" x2="18" y2="10" />
-            <line x1="12" y1="20" x2="12" y2="4" />
-            <line x1="6"  y1="20" x2="6"  y2="14" />
-          </svg>
-        </Button>
+
       </div>
 
       {isEditing && canManage && (
@@ -875,60 +857,26 @@ function SkillCard({
         </div>
       )}
 
-      {showMetrics && (
-        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {metricsQuery.isLoading && (
-            <div>{intl.formatMessage({ id: 'skills.metrics.loading', defaultMessage: 'Loading metrics...' })}</div>
-          )}
-          {metricsQuery.isError && (
-            <div>
-              {intl.formatMessage(
-                { id: 'skills.metrics.loadError', defaultMessage: 'Unable to load metrics: {message}' },
-                { message: (metricsQuery.error as Error).message },
-              )}
-            </div>
-          )}
-          {metrics && (
-            <>
-              <div>
-                {intl.formatMessage(
-                  { id: 'skills.metrics.summary30d', defaultMessage: '30d usage: {usage} · 30d likes: {likes} · 30d forks: {forks}' },
-                  {
-                    usage: intl.formatNumber(metrics.usage30d),
-                    likes: intl.formatNumber(metrics.likes30d),
-                    forks: intl.formatNumber(metrics.forks30d),
-                  },
-                )}
-              </div>
-              <div>
-                {intl.formatMessage(
-                  { id: 'skills.metrics.summary90d', defaultMessage: '90d usage: {usage} · 90d likes: {likes} · 90d forks: {forks}' },
-                  {
-                    usage: intl.formatNumber(metrics.usage90d),
-                    likes: intl.formatNumber(metrics.likes90d),
-                    forks: intl.formatNumber(metrics.forks90d),
-                  },
-                )}
-              </div>
-              <div>
-                {intl.formatMessage(
-                  { id: 'skills.metrics.popularity', defaultMessage: 'Popularity: {popularity} · Trending: {trending}' },
-                  {
-                    popularity: intl.formatNumber(metrics.popularityScore, {
-                      minimumFractionDigits: 3,
-                      maximumFractionDigits: 3,
-                    }),
-                    trending: intl.formatNumber(metrics.trendingScore, {
-                      minimumFractionDigits: 3,
-                      maximumFractionDigits: 3,
-                    }),
-                  },
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      )}
+      <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {metricsQuery.isLoading && (
+          <div>{intl.formatMessage({ id: 'skills.metrics.loading', defaultMessage: 'Loading metrics...' })}</div>
+        )}
+        {metricsQuery.isError && (
+          <div>
+            {intl.formatMessage(
+              { id: 'skills.metrics.loadError', defaultMessage: 'Unable to load metrics: {message}' },
+              { message: (metricsQuery.error as Error).message },
+            )}
+          </div>
+        )}
+        {metrics && (
+          <div style={{ display: 'flex', gap: '20px' }}>
+            <span>usage: {intl.formatNumber(metrics.usage30d)}</span>
+            <span>likes: {intl.formatNumber(metrics.likes30d)}</span>
+            <span>copies: {intl.formatNumber(metrics.forks30d)}</span>
+          </div>
+        )}
+      </div>
 
       {actionError && <ErrorBanner message={actionError} />}
     </Card>
