@@ -22,6 +22,7 @@ import {
 import { authPlugin, createSessionToken } from '../plugins/auth.js';
 import { blueprintRoutes } from './blueprints.js';
 import { BlueprintExecutionCapabilityAdapter } from '../services/blueprint-execution-capability-adapter.js';
+import { refreshLikeCount } from '../services/blueprint-scoring.js';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1702,6 +1703,190 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
       });
       expect(r2.statusCode).toBe(200);
       expect(r2.json().likeCount).toBe(count1);
+    });
+
+    // D6: Browse response includes viewer like state (Case 4)
+    it('browse response includes viewer like state', async () => {
+      const { bpId: likedBpId } = await seedBlueprint(
+        { publicationStatus: 'published' },
+        makeAgentPayload({ name: 'Liked BP' }),
+        OWNER_ID,
+      );
+      const { bpId: unlikedBpId } = await seedBlueprint(
+        { publicationStatus: 'published' },
+        makeAgentPayload({ name: 'Not Liked BP' }),
+        OWNER_ID,
+      );
+
+      // Insert a direct like row for the viewer on the liked blueprint
+      await db.insert(blueprintLikes).values({
+        blueprintId: likedBpId,
+        userId: LIKER_ID,
+        createdAt: new Date(),
+      });
+      await refreshLikeCount(db, likedBpId);
+
+      const token = await getTokenForUser(LIKER_ID);
+      const res = await app.inject({
+        method: 'GET',
+        url: '/blueprints?sort=newest',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+
+      const likedBp = body.items.find((i: { id: string }) => i.id === likedBpId);
+      const unlikedBp = body.items.find((i: { id: string }) => i.id === unlikedBpId);
+      expect(likedBp).toBeDefined();
+      expect(unlikedBp).toBeDefined();
+      expect(likedBp.isLikedByViewer).toBe(true);
+      expect(unlikedBp.isLikedByViewer).toBe(false);
+    });
+
+    // D7: Detail response includes viewer like state (Case 5)
+    it('detail response includes viewer like state', async () => {
+      const { bpId } = await seedBlueprint(
+        { publicationStatus: 'published' },
+        makeAgentPayload({ name: 'Detail BP' }),
+        OWNER_ID,
+      );
+      const token = await getTokenForUser(LIKER_ID);
+
+      // Before liking — isLikedByViewer should be false
+      const res1 = await app.inject({
+        method: 'GET',
+        url: `/blueprints/${bpId}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res1.statusCode).toBe(200);
+      expect(res1.json().isLikedByViewer).toBe(false);
+
+      // Insert a like row directly
+      await db.insert(blueprintLikes).values({
+        blueprintId: bpId,
+        userId: LIKER_ID,
+        createdAt: new Date(),
+      });
+      await refreshLikeCount(db, bpId);
+
+      // After liking — isLikedByViewer should be true
+      const res2 = await app.inject({
+        method: 'GET',
+        url: `/blueprints/${bpId}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res2.statusCode).toBe(200);
+      expect(res2.json().isLikedByViewer).toBe(true);
+    });
+
+    // D8: Like action updates count and state when entitled (Case 6)
+    it('like action updates count and state when entitled', async () => {
+      const { bpId } = await seedBlueprint(
+        { publicationStatus: 'published' },
+        makeAgentPayload({ name: 'Like Me' }),
+        OWNER_ID,
+      );
+      const token = await getTokenForUser(LIKER_ID);
+
+      const [before] = await db
+        .select({ likeCount: blueprints.likeCount })
+        .from(blueprints)
+        .where(eq(blueprints.id, bpId));
+
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/blueprints/${bpId}/like`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.liked).toBe(true);
+      expect(body.likeCount).toBe((before!.likeCount ?? 0) + 1);
+
+      // Also verify browse reflects the new state
+      const browse = await app.inject({
+        method: 'GET',
+        url: '/blueprints?sort=newest',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(browse.statusCode).toBe(200);
+      const browseItem = browse.json().items.find((i: { id: string }) => i.id === bpId);
+      expect(browseItem).toBeDefined();
+      expect(browseItem.isLikedByViewer).toBe(true);
+    });
+
+    // D9: Unlike action updates count and state when entitled (Case 7)
+    it('unlike action updates count and state when entitled', async () => {
+      const { bpId } = await seedBlueprint(
+        { publicationStatus: 'published' },
+        makeAgentPayload({ name: 'Unlike Me' }),
+        OWNER_ID,
+      );
+      const token = await getTokenForUser(LIKER_ID);
+
+      // First like
+      await app.inject({
+        method: 'PUT',
+        url: `/blueprints/${bpId}/like`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      const [before] = await db
+        .select({ likeCount: blueprints.likeCount })
+        .from(blueprints)
+        .where(eq(blueprints.id, bpId));
+
+      // Then unlike
+      const res = await app.inject({
+        method: 'DELETE',
+        url: `/blueprints/${bpId}/like`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.liked).toBe(false);
+      expect(body.likeCount).toBe((before!.likeCount ?? 1) - 1);
+
+      // Also verify browse reflects the removed like
+      const browse = await app.inject({
+        method: 'GET',
+        url: '/blueprints?sort=newest',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(browse.statusCode).toBe(200);
+      const browseItem = browse.json().items.find((i: { id: string }) => i.id === bpId);
+      expect(browseItem).toBeDefined();
+      expect(browseItem.isLikedByViewer).toBe(false);
+    });
+
+    // D10: Author self-like remains rejected (Case 8)
+    it('author self-like remains rejected (403)', async () => {
+      const { bpId } = await seedBlueprint(
+        { publicationStatus: 'published' },
+        makeAgentPayload({ name: 'My BP' }),
+        OWNER_ID,
+      );
+      const token = await getTokenForUser(OWNER_ID);
+
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/blueprints/${bpId}/like`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toBe('blueprint.forbidden');
+
+      // Verify no like row was inserted
+      const likes = await db
+        .select()
+        .from(blueprintLikes)
+        .where(
+          and(
+            eq(blueprintLikes.blueprintId, bpId),
+            eq(blueprintLikes.userId, OWNER_ID),
+          ),
+        );
+      expect(likes).toHaveLength(0);
     });
   });
 
