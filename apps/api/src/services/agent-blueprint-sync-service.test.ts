@@ -259,6 +259,11 @@ describe('ensurePublishedBlueprintForAgent', () => {
     expect(bpInsert).toBeDefined();
     expect(bpInsert!.kind).toBe('agent');
 
+    // CRITICAL: currentRevisionId must NOT be in the INSERT — the composite FK
+    // fk_blueprints_current_revision requires the revision row to exist first.
+    // Setting it on the insert would cause a FK violation in a real database.
+    expect(bpInsert).not.toHaveProperty('currentRevisionId');
+
     const revInsert = tracker.inserted.find((r) => r.version === 1 && r.kind === 'agent');
     expect(revInsert).toBeDefined();
 
@@ -275,6 +280,11 @@ describe('ensurePublishedBlueprintForAgent', () => {
     );
     expect(bpPublishUpdate).toBeDefined();
     expect((bpPublishUpdate as Record<string, unknown>).publicationStatus).toBe('published');
+
+    // CRITICAL: currentRevisionId must be set in the UPDATE (not the INSERT)
+    // to satisfy the composite FK after the revision row has been created.
+    expect(bpPublishUpdate).toHaveProperty('currentRevisionId');
+    expect((bpPublishUpdate as Record<string, unknown>).currentRevisionId).toBe(result.data.blueprintRevisionId);
   });
 
   // ── Test 1b: With skills attached ──────────────────────────────────────────
