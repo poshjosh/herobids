@@ -850,6 +850,8 @@ plans:
           liveEnabled: true
       usage: # required
         includedCreditCents: 0
+        softCapCents: 0
+        hardCapCents: 0
         topUpPackIds: 
           - Topup5
           - Topup20
@@ -880,6 +882,8 @@ plans:
           liveEnabled: true
       usage: # required
         includedCreditCents: 2000
+        softCapCents: 0
+        hardCapCents: 0
         topUpPackIds: 
           - Topup5
           - Topup20
