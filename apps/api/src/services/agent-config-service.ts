@@ -336,7 +336,7 @@ export async function setExecutionMode(
 ): Promise<Result<{ mode: string }, AgentConfigError>> {
   try {
     const [agent] = await db
-      .select({ id: agents.id, status: agents.status })
+      .select({ id: agents.id, status: agents.status, executionDefaults: agents.executionDefaults })
       .from(agents)
       .where(and(eq(agents.id, agentId), eq(agents.userId, userId)));
 
@@ -357,10 +357,12 @@ export async function setExecutionMode(
     // 'test' → 'paper' (simulated), 'live' → 'live'
     const internalMode = mode === 'test' ? 'paper' : 'live';
 
+    const existingExecDefaults = (agent.executionDefaults as Record<string, unknown> | null) ?? {};
+
     await db
       .update(agents)
       .set({
-        executionMode: internalMode,
+        executionDefaults: { ...existingExecDefaults, mode: internalMode },
         updatedAt: new Date(),
       })
       .where(eq(agents.id, agentId));

@@ -1197,12 +1197,7 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const riskIssues = validateAgentRiskBounds(parsed.data, agentRiskDefaults);
-    if (riskIssues.length > 0) {
-      return reply.status(400).send({ error: 'validation_error', details: riskIssues });
-    }
-
-    // Validate canonical risk field against operator ceilings (in addition to legacy fields)
+    // Validate canonical risk field against operator ceilings
     if (parsed.data.risk) {
       const canonicalRiskIssues = validateAgentRiskBounds(parsed.data.risk, agentRiskDefaults);
       if (canonicalRiskIssues.length > 0) {
@@ -1390,7 +1385,6 @@ export async function agentRoutes(
     }
 
     const {
-      executionMode: _executionMode,
       provider: _provider,
       lightModel: _lightModel,
       heavyModel: _heavyModel,
@@ -1401,10 +1395,7 @@ export async function agentRoutes(
       skillIds: _skillIds,
       notificationPolicy: notificationPolicyInput,
       telegramChatId: rawTelegramChatId,
-      maxPositionSizePct: rawMaxPositionSizePct,
-      stopLossPct: rawStopLossPct,
       maxBots: rawMaxBots,
-      maxDrawdownPct: rawMaxDrawdownPct,
       technical: technicalUpdate,
       strategyPreset: strategyPresetUpdate,
       capabilityMode: capabilityModeUpdate,
@@ -1412,6 +1403,11 @@ export async function agentRoutes(
       ...agentUpdates
     } = parsed.data;
     void _skillIds;
+
+    // Legacy risk fields now sourced from canonical risk JSONB
+    const rawMaxDrawdownPct = parsed.data.risk?.maxDrawdownPct ?? undefined;
+    const rawStopLossPct = parsed.data.risk?.stopLossPct ?? undefined;
+    const rawMaxPositionSizePct = parsed.data.risk?.maxPositionSizePct ?? undefined;
 
     // Stamp adaptive reasoning flags from user's AI model settings into runtimePolicyOverrides.
     // This happens on every edit — the user's current adaptive preferences are always stamped.
@@ -1775,25 +1771,14 @@ export async function agentRoutes(
         finalMaxPositionSizePctUpdate !== undefined
           ? (finalMaxPositionSizePctUpdate != null ? Number(finalMaxPositionSizePctUpdate) : null)
           : (existingRisk['maxPositionSizePct'] != null ? Number(existingRisk['maxPositionSizePct']) : null);
-      const effectiveMaxOpenPositions =
-        agentUpdates.maxOpenPositions !== undefined
-          ? agentUpdates.maxOpenPositions
-          : (existingRisk['maxOpenPositions'] != null ? Number(existingRisk['maxOpenPositions']) : null);
       const effectiveStopLossPct =
         finalStopLossPctUpdate !== undefined
           ? (finalStopLossPctUpdate != null ? Number(finalStopLossPctUpdate) : null)
           : (existingRisk['stopLossPct'] != null ? Number(existingRisk['stopLossPct']) : null);
-      const effectiveStopLossCooldownMs =
-        agentUpdates.stopLossCooldownMs !== undefined
-          ? agentUpdates.stopLossCooldownMs
-          : (existingRisk['stopLossCooldownMs'] != null ? Number(existingRisk['stopLossCooldownMs']) : null);
-
       const riskPostureUpdate: Record<string, unknown> = { ...existingRisk };
       if (rawMaxDrawdownPct !== undefined) riskPostureUpdate['maxDrawdownPct'] = effectiveMaxDrawdownPct;
       if (finalMaxPositionSizePctUpdate !== undefined) riskPostureUpdate['maxPositionSizePct'] = effectiveMaxPositionSizePct;
-      if (agentUpdates.maxOpenPositions !== undefined) riskPostureUpdate['maxOpenPositions'] = effectiveMaxOpenPositions;
       if (finalStopLossPctUpdate !== undefined) riskPostureUpdate['stopLossPct'] = effectiveStopLossPct;
-      if (agentUpdates.stopLossCooldownMs !== undefined) riskPostureUpdate['stopLossCooldownMs'] = effectiveStopLossCooldownMs;
       riskUpdateJsonb = Object.keys(riskPostureUpdate).length > 0 ? riskPostureUpdate : undefined;
     }
 

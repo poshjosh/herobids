@@ -1574,8 +1574,8 @@ function buildAgentConfigOps(): ToolContext['agentConfigOps'] {
       return agentRepo!.getUnifiedConfig(AGENT_ID!);
     },
 
-    async persistConfig(newConfig, executionMode) {
-      await agentRepo!.updateUnifiedConfig(AGENT_ID!, newConfig, executionMode);
+    async persistConfig(newConfig) {
+      await agentRepo!.updateUnifiedConfig(AGENT_ID!, newConfig);
     },
 
     async appendJournal(type, payload) {
@@ -1724,11 +1724,10 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
           getAgent: async (agentId: string) => {
             const row = await agentRepo.getAgent(agentId);
             if (!row) return null;
+            const riskPosture = (row.risk as Record<string, unknown> | null) ?? null;
             return {
               capital: row.capital,
-              dailyLossLimit: row.dailyLossLimit,
-              maxDrawdownPct: row.maxDrawdownPct,
-              risk: (row.risk as Record<string, unknown> | null) ?? null,
+              risk: riskPosture as Record<string, unknown> | null,
             };
           },
         }

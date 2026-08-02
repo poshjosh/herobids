@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, or, sql, desc, asc, inArray, gte, lte } from 'drizzle-orm';
+import { eq, and, or, sql, desc, asc, inArray } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import {
@@ -30,7 +30,6 @@ import {
   BlueprintSummarySchema,
   BlueprintDetailSchema,
   BlueprintRevisionSummarySchema,
-  PublicationStatusSchema,
   CreateBlueprintSchema,
   CreateBlueprintRevisionSchema,
   encodeBlueprintCursor,
@@ -42,15 +41,12 @@ import type {
   BlueprintExecutionCapabilityInput,
   AgentBlueprintRevisionPayload,
   BotBlueprintRevisionPayload,
-  PlansConfig,
 } from '@herobids/domain';
 import { listPresets, getPreset } from '@herobids/domain/config/presets-loader';
 import { computeInstantiateRequestHash } from '../services/blueprint-idempotency.js';
 import { resolveEffectiveRisk } from '../services/blueprint-risk-resolver.js';
 import { validateSkillPortability } from '../services/blueprint-skill-validator.js';
 import {
-  scoreFromMetrics,
-  computeBlueprintMetrics,
   recomputeBlueprintScores,
   refreshLikeCount,
   refreshForkCount,
@@ -353,7 +349,6 @@ export async function blueprintRoutes(
   db: Database,
   agentRiskDefaults: AgentRiskDefaultsConfig,
   executionCapabilityResolver: BlueprintExecutionCapabilityResolver,
-  plansConfig?: PlansConfig,
 ): Promise<void> {
   // Periodic score recomputation (matches skills.ts pattern)
   const scoreRefreshTimer = setInterval(() => {
@@ -1649,10 +1644,11 @@ export async function blueprintRoutes(
       const agentPayload = rawPayload as AgentBlueprintRevisionPayload;
       const botPayload = rawPayload as BotBlueprintRevisionPayload;
 
+      const rawExecDefaults = agentPayload.executionDefaults ?? botPayload.executionDefaults ?? null;
       const capabilityInput: BlueprintExecutionCapabilityInput = {
         kind: bp.kind as 'agent' | 'bot',
         tradingCapable: isTrading,
-        executionDefaults: agentPayload.executionDefaults ?? botPayload.executionDefaults ?? null,
+        executionDefaults: rawExecDefaults ? { mode: rawExecDefaults.mode, slippageBps: rawExecDefaults.slippageBps ?? 0 } : null,
         venue: botPayload.venue ?? (rawPayload.venue as string | null) ?? null,
         venueType: bp.venueType as 'orderbook' | 'swap' | null,
         swapAssets: botPayload.swapAssets ?? null,
@@ -1952,10 +1948,11 @@ export async function blueprintRoutes(
         // 9. Resolve execution capability
         const agentPayload = rawPayload as AgentBlueprintRevisionPayload;
         const botPayload = rawPayload as BotBlueprintRevisionPayload;
+        const rawExecDefaults2 = agentPayload.executionDefaults ?? botPayload.executionDefaults ?? null;
         const capabilityInput: BlueprintExecutionCapabilityInput = {
           kind: bp.kind as 'agent' | 'bot',
           tradingCapable: isTrading,
-          executionDefaults: agentPayload.executionDefaults ?? botPayload.executionDefaults ?? null,
+          executionDefaults: rawExecDefaults2 ? { mode: rawExecDefaults2.mode, slippageBps: rawExecDefaults2.slippageBps ?? 0 } : null,
           venue: botPayload.venue ?? (rawPayload.venue as string | null) ?? null,
           venueType: bp.venueType as 'orderbook' | 'swap' | null,
           swapAssets: botPayload.swapAssets ?? null,
@@ -2005,7 +2002,7 @@ export async function blueprintRoutes(
         );
         // Reject if any user-provided risk value exceeds the operator ceiling
         for (const [fieldKey, fieldVal] of Object.entries(effectiveRisk)) {
-          const f = fieldVal as import('@herobids/domain').EffectiveRiskField;
+          const f = fieldVal as { enforced: boolean; rawValue?: number | null; effectiveValue: number | null; operatorCeiling?: number | null };
           if (f.enforced && f.rawValue != null && f.effectiveValue != null && f.rawValue > f.effectiveValue) {
             return {
               kind: 'error' as const,

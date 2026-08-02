@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm';
-import type { Database } from '../index.js';
-import { blueprints } from '../schema/blueprints.js';
-import { blueprintRevisions } from '../schema/blueprint-revisions.js';
-import { blueprintRevisionSkills } from '../schema/blueprint-revision-skills.js';
+import type { Database } from './index.js';
+import { blueprints } from './schema/blueprints.js';
+import { blueprintRevisions } from './schema/blueprint-revisions.js';
+import { blueprintRevisionSkills } from './schema/blueprint-revision-skills.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

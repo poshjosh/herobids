@@ -31,7 +31,7 @@ import { createFillFirstMarkSource } from '@herobids/engine';
 import type { IdGenerator } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
 import { MarkSelector } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, AGENT_STREAM_MAXLEN, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig, type TokenSafetyConfig, ok, err } from '@herobids/domain';
+import { BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, AGENT_STREAM_MAXLEN, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig, type TokenSafetyConfig, ok, err } from '@herobids/domain';
 
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
@@ -1831,7 +1831,7 @@ const runtime = new WorkerRuntime(
       credentialsPresent,
       signerPresent,
       driftAlertOnly: appConfig.reconciliation.driftAlertOnly,
-      instanceMaxOrderNotional: config.risk.maxOrderNotional,
+      instanceMaxOrderNotional: config.risk.maxOrderNotional != null ? String(config.risk.maxOrderNotional) : undefined,
     });
 
     // Stream config (shared between adapter construction and actor deps)
@@ -1953,9 +1953,7 @@ const runtime = new WorkerRuntime(
       balanceSnapshotRepo,
       reconciliationRepo,
       riskLimits: {
-        maxPositionSize: quantity(String(config.risk.maxPositionSize ?? '100')),
         maxOpenPositions: config.risk.maxOpenPositions ?? 5,
-        maxDrawdown: price(String(config.risk.maxDrawdown ?? '10000')),
         maxPositionSizePct: config.risk.maxPositionSizePct,
         dailyMaxLossPct: config.risk.dailyMaxLossPct,
         stopLossCooldownMs: config.risk.stopLossCooldownMs,
@@ -1997,13 +1995,6 @@ const runtime = new WorkerRuntime(
             minVolume24hUsd: config.tokenSafety!.minVolume24hUsd,
             minAgeHours: config.tokenSafety!.minAgeHours,
             allowOverrides: config.tokenSafety!.allowOverrides,
-          }
-        : (config.risk.minSwapTokenLiquidityUsd != null || config.risk.minSwapTokenVolume24hUsd != null || config.risk.minSwapTokenAgeHours != null || config.risk.allowSwapTokenSafetyOverride != null)
-        ? {
-            minLiquidityUsd: config.risk.minSwapTokenLiquidityUsd,
-            minVolume24hUsd: config.risk.minSwapTokenVolume24hUsd,
-            minAgeHours: config.risk.minSwapTokenAgeHours,
-            allowOverrides: config.risk.allowSwapTokenSafetyOverride,
           }
         : undefined,
       feeConfig: appConfig.simulation,
@@ -2184,6 +2175,7 @@ const manualReviewRuntime = new ManualReviewRuntime(
           id: agents.id,
           userId: agents.userId,
           unifiedConfig: agents.unifiedConfig,
+          strategy: agents.strategy,
           status: agents.status,
         })
         .from(agents)

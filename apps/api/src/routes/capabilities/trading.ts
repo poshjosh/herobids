@@ -716,7 +716,8 @@ export async function tradingCapabilityRoutes(
 
       if (action === 'start') {
         // Validate execution capability before starting
-        if (agent.executionMode) {
+        const agentExecMode = (agent.executionDefaults as Record<string, unknown> | null)?.['mode'] as string | undefined;
+        if (agentExecMode) {
           const assignmentRows = await selectAgentTradingAssignmentRows(db, agentId);
           const effectiveAssignment = findEffectiveAssignment(assignmentRows);
           if (effectiveAssignment?.provider) {
@@ -724,7 +725,7 @@ export async function tradingCapabilityRoutes(
             if (startVenueType) {
               const capResult = validateExecutionCapability({
                 actorType: 'agent',
-                executionMode: agent.executionMode as 'paper' | 'shadow' | 'live',
+                executionMode: agentExecMode as 'paper' | 'shadow' | 'live',
                 venueType: startVenueType,
               });
               if (!capResult.ok) {

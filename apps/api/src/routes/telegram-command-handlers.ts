@@ -215,16 +215,17 @@ export async function handleInfo(
     const strategyPreset = extractStrategyPreset(agent.unifiedConfig);
 
     // Only show capital for trading agents (executionMode set to any value)
-    const capitalDisplay = agent.executionMode
+    const agentExecMode = (agent.executionDefaults as Record<string, unknown> | null)?.['mode'] as string | undefined;
+    const capitalDisplay = agentExecMode
       ? fmtUsd(agent.capital)
       : 'n/a';
 
     const lines: string[] = [
       `${agent.name}:`,
       `Status: ${agent.status}`,
-      `Execution mode: ${agent.executionMode}`,
+      `Execution mode: ${agentExecMode ?? 'n/a'}`,
       `Capital: ${capitalDisplay}`,
-      `Daily loss limit: ${(agent.risk as Record<string, unknown> | null)?.['dailyMaxLossPct'] != null ? `${(agent.risk as Record<string, unknown>)?.['dailyMaxLossPct']}%` : fmtUsd(agent.dailyLossLimit)}`,
+      `Daily loss limit: ${(agent.risk as Record<string, unknown> | null)?.['dailyMaxLossPct'] != null ? `${(agent.risk as Record<string, unknown>)?.['dailyMaxLossPct']}%` : 'n/a'}`,
       `Max drawdown: ${fmtPct((agent.risk as Record<string, unknown> | null)?.['maxDrawdownPct'] != null ? String((agent.risk as Record<string, unknown>)?.['maxDrawdownPct']) : null)}`,
       `Max position size: ${fmtPct((agent.risk as Record<string, unknown> | null)?.['maxPositionSizePct'] != null ? String((agent.risk as Record<string, unknown>)?.['maxPositionSizePct']) : null)}`,
       `Stop loss: ${fmtPct((agent.risk as Record<string, unknown> | null)?.['stopLossPct'] != null ? String((agent.risk as Record<string, unknown>)?.['stopLossPct']) : null)}`,
@@ -858,7 +859,7 @@ export async function handleMode(
 
     // Read-only: show current execution mode
     if (args.length === 1) {
-      const mode = agent.executionMode;
+      const mode = (agent.executionDefaults as Record<string, unknown> | null)?.['mode'] as string | undefined;
       if (mode === 'shadow') {
         return `${agent.name} execution mode: live (shadow)`;
       }

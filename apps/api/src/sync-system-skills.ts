@@ -136,37 +136,16 @@ export async function syncSystemSkills(db: Database): Promise<void> {
       const nextVersion = (maxVersionResult[0]?.max ?? 0) + 1;
       const revisionId = `${skillId}:system:${nextVersion}`;
 
-      // 6. Insert immutable revision — NEVER update in place
-      await tx.insert(skillRevisions).values({
-        id: revisionId,
-        skillId,
-        version: nextVersion,
-        name: skill.name,
-        description: skill.description,
-        instructions: skill.instructions,
-        promptHint: skill.promptHint ?? null,
-        promptTemplate: skill.promptTemplate ?? null,
-        requiredTools: skill.requiredTools,
-        contextRequirements: skill.contextRequirements,
-        requiredGuardrails: skill.requiredGuardrails,
-        capabilityFamilies: skill.capabilityFamilies,
-        suggestedTickIntervalMs: skill.suggestedTickIntervalMs,
-        tags: [],
-        changeSummary: `system seed (hash: ${incomingHash.slice(0, 8)})`,
-        createdByUserId: null,
-        publishedAt: now,
-        createdAt: now,
-      });
-
-      // 7. Upsert skills table entry — update pointers and clear delisted/archived state
+      // 6. Upsert skills table entry FIRST (without FK columns to avoid circular dependency with skill_revisions)
+      //    skill_revisions.skill_id → skills.id AND skills.published_revision_id → skill_revisions.id
+      //    form a circular FK. We insert skills with null revision pointers, then insert the revision,
+      //    then update skills to set the revision pointers.
       if (existingSkill) {
         await tx
           .update(skillsTable)
           .set({
             publicationStatus: 'published',
             publishedAt: now,
-            currentRevisionId: revisionId,
-            publishedRevisionId: revisionId,
             priceCents: 0,
             name: skill.name,
             description: skill.description,
@@ -189,8 +168,9 @@ export async function syncSystemSkills(db: Database): Promise<void> {
           authorId: null,
           publicationStatus: 'published',
           publishedAt: now,
-          currentRevisionId: revisionId,
-          publishedRevisionId: revisionId,
+          // FK pointers set to null initially — patched in step 8 after revision is inserted
+          currentRevisionId: null,
+          publishedRevisionId: null,
           priceCents: 0,
           autoPublishedByPlan: false,
           name: skill.name,
@@ -210,6 +190,37 @@ export async function syncSystemSkills(db: Database): Promise<void> {
           updatedAt: now,
         });
       }
+
+      // 7. Insert immutable revision — now that the parent skills row exists
+      await tx.insert(skillRevisions).values({
+        id: revisionId,
+        skillId,
+        version: nextVersion,
+        name: skill.name,
+        description: skill.description,
+        instructions: skill.instructions,
+        promptHint: skill.promptHint ?? null,
+        promptTemplate: skill.promptTemplate ?? null,
+        requiredTools: skill.requiredTools,
+        contextRequirements: skill.contextRequirements,
+        requiredGuardrails: skill.requiredGuardrails,
+        capabilityFamilies: skill.capabilityFamilies,
+        suggestedTickIntervalMs: skill.suggestedTickIntervalMs,
+        tags: [],
+        changeSummary: `system seed (hash: ${incomingHash.slice(0, 8)})`,
+        createdByUserId: null,
+        publishedAt: now,
+        createdAt: now,
+      });
+
+      // 8. Patch skills revision pointers now that the revision row exists
+      await tx
+        .update(skillsTable)
+        .set({
+          currentRevisionId: revisionId,
+          publishedRevisionId: revisionId,
+        })
+        .where(eq(skillsTable.id, skillId));
     });
   }
 }

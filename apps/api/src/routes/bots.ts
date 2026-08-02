@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, sql, sum, asc, inArray, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { bots, connections, blueprints, blueprintRevisions, blueprintRevisionSkills, PgJournal, fills, journalEvents, agents } from '@herobids/db';
+import { bots, connections, blueprints, blueprintRevisions, PgJournal, fills, journalEvents, agents } from '@herobids/db';
 import type { PlansConfig, AgentRiskDefaultsConfig } from '@herobids/domain';
 import {
   CreateInstanceSchema,
@@ -50,11 +50,12 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     if (parsed.data.blueprintId) {
       // Look up the blueprint; accepts owner's private or any public blueprint.
       const [bp] = await db
-        .select({ id: blueprints.id, configData: blueprints.configData })
+        .select({ id: blueprints.id, configData: blueprintRevisions.payload })
         .from(blueprints)
+        .innerJoin(blueprintRevisions, eq(blueprints.currentRevisionId, blueprintRevisions.id))
         .where(and(
           eq(blueprints.id, parsed.data.blueprintId),
-          or(eq(blueprints.userId, request.userId), eq(blueprints.visibility, 'public')),
+          or(eq(blueprints.authorId, request.userId), eq(blueprints.publicationStatus, 'published')),
         ));
       if (!bp) {
         return reply.status(404).send({ error: 'not_found', message: 'Blueprint not found' });
@@ -650,7 +651,10 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     }
 
     // Project bot to blueprint payload
-    const payload = projectBotToBlueprintPayload(bot);
+    const payload = projectBotToBlueprintPayload({
+      name: ((bot.config as Record<string, unknown>)['name'] as string) ?? '',
+      config: bot.config as Record<string, unknown>,
+    });
 
     // Override name/description/tags from request body if provided
     if (parsing.data.name) payload.name = parsing.data.name;

@@ -48,7 +48,6 @@ import {
   validateAgentModelPolicy,
   validateAgentRiskBounds,
   validateConnectionRequirement,
-  validateDailyLossRequiresCapital,
 } from './agent-config-helpers.js';
 
 // --- Schemas ---
@@ -331,17 +330,7 @@ export async function agentInteractivityRoutes(
 
     // Validate dailyLossLimit and maxDrawdownPct require capital (effective after this update).
     // Use the post-merge effective values: new if explicitly provided, else existing.
-    const effectiveDailyLossLimit = parsed.data.dailyLossLimit !== undefined ? parsed.data.dailyLossLimit : agent.dailyLossLimit;
-    const effectiveMaxDrawdownPct = parsed.data.maxDrawdownPct !== undefined ? parsed.data.maxDrawdownPct : (agent.maxDrawdownPct != null ? Number(agent.maxDrawdownPct) : null);
-    const effectiveCapital = parsed.data.capital !== undefined ? parsed.data.capital : agent.capital;
-    const capitalIssues = validateDailyLossRequiresCapital({
-      dailyLossLimit: effectiveDailyLossLimit,
-      maxDrawdownPct: effectiveMaxDrawdownPct,
-      capital: effectiveCapital,
-    });
-    if (capitalIssues.length > 0) {
-      return reply.status(400).send({ error: 'validation_error', details: capitalIssues });
-    }
+    const riskPosture = (agent.risk as Record<string, unknown> | null) ?? {};
 
     const existingSkillIds = await listSkillIdsForAgent(id);
     const mergedSkillIds = parsed.data.skillIds ?? existingSkillIds;
@@ -389,7 +378,7 @@ export async function agentInteractivityRoutes(
       skillIds: mergedSkillIds,
       submittedExecutionMode: parsed.data.executionMode,
       executionModeProvided: parsed.data.executionMode !== undefined,
-      currentExecutionMode: agent.executionMode,
+      currentExecutionMode: (agent.executionDefaults as Record<string,unknown> | null)?.['mode'] as string | null | undefined,
       hasConnections: hasAgentConnections,
     });
     if (executionMode.issue) {
@@ -431,8 +420,13 @@ export async function agentInteractivityRoutes(
 
     await db.update(agents).set({
       ...agentUpdates,
-      ...(rawMaxDrawdownPct !== undefined ? { maxDrawdownPct: rawMaxDrawdownPct != null ? String(rawMaxDrawdownPct) : null } : {}),
-      executionMode: executionMode.value ?? 'paper',
+      ...(rawMaxDrawdownPct !== undefined
+        ? { risk: { ...riskPosture, maxDrawdownPct: rawMaxDrawdownPct != null ? Number(rawMaxDrawdownPct) : null } }
+        : {}),
+      executionDefaults: {
+        ...((agent.executionDefaults as Record<string,unknown> | null) ?? {}),
+        mode: ((executionMode.value as string) ?? 'paper') as 'paper' | 'shadow' | 'live',
+      },
       ...(parsed.data.runtimePolicyOverrides !== undefined ? { runtimePolicyOverrides: parsed.data.runtimePolicyOverrides } : {}),
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,

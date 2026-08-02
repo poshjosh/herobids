@@ -61,9 +61,7 @@ const DCA_ENTRY: StrategyParameterEntry = {
 };
 
 // Register DCA for all decision modes (params are empty regardless of mode)
-for (const mode of SUPPORTED_DECISION_MODES) {
-  registry.set(`dca:${mode}`, DCA_ENTRY);
-}
+registerAllModes('dca', DCA_ENTRY);
 
 /**
  * Initialise the registry with actual Zod schemas from schema.ts.

@@ -1,5 +1,9 @@
-import type { RiskPosture, EffectiveRiskProfile, EffectiveRiskField } from '@herobids/domain';
-import type { AgentRiskDefaultsConfig } from '@herobids/domain';
+import { z } from 'zod';
+import type { RiskPosture, AgentRiskDefaultsConfig } from '@herobids/domain';
+import { EffectiveRiskProfileSchema, EffectiveRiskFieldSchema } from '@herobids/domain';
+
+type EffectiveRiskProfile = z.infer<typeof EffectiveRiskProfileSchema>;
+type EffectiveRiskField = z.infer<typeof EffectiveRiskFieldSchema>;
 
 /**
  * Resolve the effective risk profile for an agent blueprint instantiation.

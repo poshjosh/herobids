@@ -1659,7 +1659,7 @@ export class AgentTradingActor implements ExecutionActor {
     try {
       const phaseResult = await runTechnicalPhase({
         config: technicalConfig,
-        riskConfig: { ...(this.deps.technicalRiskConfig ?? {}), maxOpenPositions: this.deps.riskLimits.maxOpenPositions },
+        riskConfig: { ...(this.deps.technicalRiskConfig ?? {}), maxOpenPositions: this.deps.riskLimits.maxOpenPositions ?? 0 },
         agentId,
         venueAccountId,
         advisoryMode: !!this.deps.isHybridMode,

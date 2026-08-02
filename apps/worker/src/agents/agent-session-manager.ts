@@ -376,10 +376,6 @@ export class AgentSessionManager {
           goal: agent.prompt,
           executionMode: executionDefaults['mode'] as string | undefined,
           toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
-          dailyLossLimit: null,
-          maxDrawdownPct: riskPosture['maxDrawdownPct'] != null
-            ? Number(riskPosture['maxDrawdownPct'])
-            : null,
           maxBots: agent.maxBots,
           maxOpenPositions: toGuardrailNumber(riskPosture['maxOpenPositions']),
           maxPositionSizePct: toGuardrailNumber(riskPosture['maxPositionSizePct']),
@@ -778,7 +774,8 @@ export class AgentSessionManager {
       if (this.config.onSessionActive) {
         const agent = await this.agentRepo.getAgent(session.agentId).catch(() => null);
         try {
-          activationEstablished = await this.config.onSessionActive(session.agentId, agent?.executionMode ?? null, session.id) !== false;
+          const execMode = (agent?.executionDefaults as Record<string, unknown> | null)?.['mode'] as string | undefined ?? null;
+          activationEstablished = await this.config.onSessionActive(session.agentId, execMode, session.id) !== false;
         } catch (err) {
           await this.handleActivationFailure(session.id, session.agentId, agent?.userId, err);
           return;

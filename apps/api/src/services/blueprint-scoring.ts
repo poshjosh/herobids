@@ -1,6 +1,6 @@
-import { sql, eq, and, gte } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { blueprints, blueprintLikes, blueprintUsageEvents } from '@herobids/db';
+import { blueprints } from '@herobids/db';
 
 /**
  * Score formula — mirrors skills scoring exactly.
@@ -26,7 +26,7 @@ export function scoreFromMetrics(metrics: {
 export async function computeBlueprintMetrics(
   db: Database,
   blueprintId: string,
-  authorId: string,
+  _authorId: string,
 ): Promise<{
   distinctUsers90d: number;
   likes90d: number;
