@@ -25,7 +25,7 @@ import { BlueprintExecutionCapabilityAdapter } from '../services/blueprint-execu
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AuthConfig, AgentRiskDefaultsConfig } from '@herobids/domain';
+import type { AuthConfig, AgentRiskDefaultsConfig, PlansConfig } from '@herobids/domain';
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -59,6 +59,113 @@ const agentRiskDefaults: AgentRiskDefaultsConfig = {
 };
 
 const executionCapabilityAdapter = new BlueprintExecutionCapabilityAdapter(providersYaml);
+
+const testPlansConfig: PlansConfig = {
+  defaultPlanId: 'free',
+  plans: {
+    free: {
+      entitlements: {
+        skills: {
+          canCreatePrivateSkills: true,
+          canViewMarketplaceSkills: false,
+          canPublishToMarketplace: false,
+          autoPublishNonDraftSkills: false,
+          canPriceSkills: false,
+          canLikeMarketplaceSkills: true,
+        },
+        agents: {
+          canViewOwnPrompts: true,
+        },
+        blueprints: {
+          canViewMarketplaceBlueprints: true,
+          canLikeMarketplaceBlueprints: true,
+        },
+        limits: {
+          maxAgents: 1,
+          maxBots: 1,
+          maxConnections: 1,
+          maxCredentials: 1,
+          maxBindings: 1,
+          maxVenueAccounts: 1,
+          maxConcurrentBacktests: 1,
+          liveEnabled: false,
+        },
+      },
+      usage: {
+        includedCreditCents: 0,
+        topUpPackIds: [],
+      },
+    },
+    // Plan with no marketplace access at all
+    'no-marketplace': {
+      entitlements: {
+        skills: {
+          canCreatePrivateSkills: true,
+          canViewMarketplaceSkills: false,
+          canPublishToMarketplace: false,
+          autoPublishNonDraftSkills: false,
+          canPriceSkills: false,
+          canLikeMarketplaceSkills: true,
+        },
+        agents: {
+          canViewOwnPrompts: true,
+        },
+        blueprints: {
+          canViewMarketplaceBlueprints: false,
+          canLikeMarketplaceBlueprints: false,
+        },
+        limits: {
+          maxAgents: 1,
+          maxBots: 1,
+          maxConnections: 1,
+          maxCredentials: 1,
+          maxBindings: 1,
+          maxVenueAccounts: 1,
+          maxConcurrentBacktests: 1,
+          liveEnabled: false,
+        },
+      },
+      usage: {
+        includedCreditCents: 0,
+        topUpPackIds: [],
+      },
+    },
+    // Plan with view but no like
+    'view-only': {
+      entitlements: {
+        skills: {
+          canCreatePrivateSkills: true,
+          canViewMarketplaceSkills: false,
+          canPublishToMarketplace: false,
+          autoPublishNonDraftSkills: false,
+          canPriceSkills: false,
+          canLikeMarketplaceSkills: true,
+        },
+        agents: {
+          canViewOwnPrompts: true,
+        },
+        blueprints: {
+          canViewMarketplaceBlueprints: true,
+          canLikeMarketplaceBlueprints: false,
+        },
+        limits: {
+          maxAgents: 1,
+          maxBots: 1,
+          maxConnections: 1,
+          maxCredentials: 1,
+          maxBindings: 1,
+          maxVenueAccounts: 1,
+          maxConcurrentBacktests: 1,
+          liveEnabled: false,
+        },
+      },
+      usage: {
+        includedCreditCents: 0,
+        topUpPackIds: [],
+      },
+    },
+  },
+};
 
 function makeAuthConfig(overrides: Partial<AuthConfig> = {}): AuthConfig {
   return {
@@ -153,7 +260,7 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
 
     app = Fastify({ logger: false });
     await authPlugin(app, { config: authCfg, db });
-    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityAdapter);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityAdapter, testPlansConfig);
     await app.ready();
   }, 30_000);
 
@@ -1991,6 +2098,178 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
       // Self-usage should not increment forkCount or affect scores
       expect(after!.forkCount).toBe(before!.forkCount);
       expect(after!.popularityScore).toBe(before!.popularityScore);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // I. Entitlement Enforcement (Negative-Path)
+  // ─────────────────────────────────────────────────────────────────────
+
+  describe('Blueprint Marketplace — Entitlement Enforcement', () => {
+    const OWNER_ID = 'ent-owner';
+    const NO_MARKETPLACE_ID = 'ent-no-mkt';
+    const VIEW_ONLY_ID = 'ent-view-only';
+
+    beforeEach(async () => {
+      await seedUser(OWNER_ID, 'ent_owner', 'ent-owner@test.local');
+      // User on 'no-marketplace' plan — neither view nor like
+      await db.insert(users).values({
+        id: NO_MARKETPLACE_ID,
+        username: 'ent_no_mkt',
+        displayName: 'No Marketplace',
+        email: 'ent-no-mkt@test.local',
+        planId: 'no-marketplace',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      // User on 'view-only' plan — can view but cannot like
+      await db.insert(users).values({
+        id: VIEW_ONLY_ID,
+        username: 'ent_view_only',
+        displayName: 'View Only',
+        email: 'ent-view-only@test.local',
+        planId: 'view-only',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    });
+
+    // I1: User without canViewMarketplaceBlueprints → 403 on browse
+    it('user without canViewMarketplaceBlueprints → 403 on browse', async () => {
+      const token = await getTokenForUser(NO_MARKETPLACE_ID);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/blueprints',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toBe('blueprint.forbidden');
+    });
+
+    // I2: User without canViewMarketplaceBlueprints → 403 on detail (published non-owned)
+    it('user without canViewMarketplaceBlueprints → 403 on detail (published non-owned)', async () => {
+      const { bpId } = await seedBlueprint(
+        { publicationStatus: 'published' },
+        makeAgentPayload({ name: 'Pub BP' }),
+        OWNER_ID,
+      );
+      const token = await getTokenForUser(NO_MARKETPLACE_ID);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/blueprints/${bpId}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toBe('blueprint.forbidden');
+    });
+
+    // I3: User without canViewMarketplaceBlueprints → 403 on fork
+    it('user without canViewMarketplaceBlueprints → 403 on fork', async () => {
+      const { bpId, revId } = await seedBlueprint(
+        { publicationStatus: 'published' },
+        makeAgentPayload({ name: 'Pub BP' }),
+        OWNER_ID,
+      );
+      const token = await getTokenForUser(NO_MARKETPLACE_ID);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/blueprints/${bpId}/fork`,
+        headers: {
+          authorization: `Bearer ${token}`,
+          'idempotency-key': `ent-fork-${crypto.randomUUID()}`,
+        },
+        payload: { revisionId: revId },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toBe('blueprint.forbidden');
+    });
+
+    // I4: User with view but without canLikeMarketplaceBlueprints → 403 on like
+    it('user with view but without canLikeMarketplaceBlueprints → 403 on like', async () => {
+      const { bpId } = await seedBlueprint(
+        { publicationStatus: 'published' },
+        makeAgentPayload({ name: 'Pub BP' }),
+        OWNER_ID,
+      );
+      const token = await getTokenForUser(VIEW_ONLY_ID);
+
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/blueprints/${bpId}/like`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toBe('blueprint.forbidden');
+    });
+
+    // I5: User with view but without canLikeMarketplaceBlueprints → 403 on unlike
+    it('user with view but without canLikeMarketplaceBlueprints → 403 on unlike', async () => {
+      const { bpId } = await seedBlueprint(
+        { publicationStatus: 'published' },
+        makeAgentPayload({ name: 'Pub BP' }),
+        OWNER_ID,
+      );
+      const token = await getTokenForUser(VIEW_ONLY_ID);
+
+      const res = await app.inject({
+        method: 'DELETE',
+        url: `/blueprints/${bpId}/like`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toBe('blueprint.forbidden');
+    });
+
+    // I6: User with both entitlements false → 403 on all five endpoints
+    it('user with no entitlements → 403 on browse, detail, fork, like, unlike', async () => {
+      const { bpId, revId } = await seedBlueprint(
+        { publicationStatus: 'published' },
+        makeAgentPayload({ name: 'Pub BP' }),
+        OWNER_ID,
+      );
+      const token = await getTokenForUser(NO_MARKETPLACE_ID);
+
+      const browse = await app.inject({
+        method: 'GET',
+        url: '/blueprints',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(browse.statusCode).toBe(403);
+
+      const detail = await app.inject({
+        method: 'GET',
+        url: `/blueprints/${bpId}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(detail.statusCode).toBe(403);
+
+      const fork = await app.inject({
+        method: 'POST',
+        url: `/blueprints/${bpId}/fork`,
+        headers: {
+          authorization: `Bearer ${token}`,
+          'idempotency-key': `ent-all-fork-${crypto.randomUUID()}`,
+        },
+        payload: { revisionId: revId },
+      });
+      expect(fork.statusCode).toBe(403);
+
+      const like = await app.inject({
+        method: 'PUT',
+        url: `/blueprints/${bpId}/like`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(like.statusCode).toBe(403);
+
+      const unlike = await app.inject({
+        method: 'DELETE',
+        url: `/blueprints/${bpId}/like`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(unlike.statusCode).toBe(403);
     });
   });
 });

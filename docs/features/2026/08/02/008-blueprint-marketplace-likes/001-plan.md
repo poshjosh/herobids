@@ -307,7 +307,7 @@ Capture pricing as a separate follow-up track covering both:
 
 ## Implementation Order
 
-1. **[PENDING]** Add `blueprints` plan entitlements in schema, config defaults, plan resolution, and auth client typing.
+1. **[DONE]** Add `blueprints` plan entitlements in schema, config defaults, plan resolution, and auth client typing.
 2. **[PENDING]** Enforce the Change 2 route/action matrix for public marketplace blueprint reads/actions.
 3. **[PENDING]** Extend blueprint response schemas and frontend types with `isLikedByViewer`.
 4. **[PENDING]** Update `GET /blueprints` to load viewer like state in batch.
@@ -352,3 +352,11 @@ Capture pricing as a separate follow-up track covering both:
 - **Medium 2:** Test assertions in `resolvePlanEntitlements` block don't cover `blueprints`. Should add assertions for `blueprints.canViewMarketplaceBlueprints` and `blueprints.canLikeMarketplaceBlueprints` for admin bypass (expect true/true) and fail-closed fallback (expect false/false).
 - **Low 1:** `api-client.ts` duplicates `PlanBlueprintsEntitlements` type rather than importing from `@herobids/domain`. Consistent with existing pattern but creates drift risk.
 - **Low 2:** Plan document changes were mixed with code changes in same diff — consider separate commits in future.
+
+### [Item 2 — Route/Action Matrix Enforcement]
+
+- **Medium 1:** `PUT /like` has a redundant `bp.authorId !== request.userId` condition in the entitlement guard — the preceding self-like check already returns 403. Harmless but slightly misleading.
+- **Low 1:** `testPlansConfig` in integration tests uses `canLikeMarketplaceSkills: true` for `no-marketplace` and `view-only` plans — plan names slightly misleading since skills marketplace features remain enabled.
+- **Low 2:** Unit test `executionCapabilityResolver` mock is never exercised — exists solely to satisfy the function signature.
+- **Low 3:** Unit test `decorateWithAuth` always sets `isAdmin: false` — no unit tests covering admin bypass path.
+- **Low 4:** Two patterns for creating users in integration tests (direct `db.insert` vs `seedUser` helper with hardcoded `planId: 'free'`). Consider adding optional `planId` param to `seedUser`.
