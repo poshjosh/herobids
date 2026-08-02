@@ -428,6 +428,13 @@
       "when": 1785608808871,
       "tag": "0060_fluffy_sprite",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1785609000000,
+      "tag": "0061_nice_abyss",
+      "breakpoints": true
     }
   ]
 }

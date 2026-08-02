@@ -12,7 +12,7 @@ export const marketAssessmentRequests = pgTable('market_assessment_requests', {
   id: text('id').primaryKey(),
 
   // ── Requester ──
-  agentId: text('agent_id').notNull().references(() => agents.id),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
   userId: text('user_id').notNull().references(() => users.id),
 
   // ── Billing context ──

@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
-import { agentRuntimeSessions, agentArtifacts, agentOutboundMessages } from '@herobids/db';
+import { agentRuntimeSessions, agentArtifacts, agentOutboundMessages, marketAssessmentRequests, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 
 describe.skipIf(SKIP)('Agents functional', () => {
@@ -265,7 +265,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
   });
 
   describe('DELETE /agents/:id', () => {
-    it('cascade-deletes dependent rows (sessions, artifacts, outbound messages) with the agent', async () => {
+    it('cascade-deletes dependent rows (sessions, artifacts, outbound messages, market assessment requests) with the agent', async () => {
       const createRes = await ctx.app.inject({
         method: 'POST',
         url: '/agents',
@@ -274,6 +274,10 @@ describe.skipIf(SKIP)('Agents functional', () => {
       });
       expect(createRes.statusCode).toBe(201);
       const { id } = createRes.json<{ id: string }>();
+
+      // Look up the agent's userId for seeding FK-dependent rows.
+      const [agentRow] = await ctx.db.select({ userId: agents.userId }).from(agents).where(eq(agents.id, id));
+      const userId = agentRow!.userId;
 
       // Seed one row in each cascade-target table.
       await ctx.db.insert(agentRuntimeSessions).values({
@@ -300,6 +304,22 @@ describe.skipIf(SKIP)('Agents functional', () => {
         deliveryStatus: 'pending',
       });
 
+      // Seed a market_assessment_requests row to verify ON DELETE CASCADE works
+      // (bug 2026-08-02-002: was NO ACTION, causing FK violation on agent delete).
+      await ctx.db.insert(marketAssessmentRequests).values({
+        id: 'mar-cascade-test',
+        agentId: id,
+        userId,
+        billingAccountId: 'ba-cascade-test',
+        instrumentKind: 'orderbook',
+        venueFamily: 'hyperliquid',
+        styleTier: 'standard',
+        symbol: 'BTC',
+        status: 'assessment_completed',
+        requestGroupKey: 'mar-cascade-test-grp',
+        requestedAt: new Date(),
+      });
+
       const deleteRes = await ctx.app.inject({
         method: 'DELETE',
         url: `/agents/${id}`,
@@ -314,6 +334,8 @@ describe.skipIf(SKIP)('Agents functional', () => {
       expect(artifacts).toHaveLength(0);
       const messages = await ctx.db.select().from(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, id));
       expect(messages).toHaveLength(0);
+      const marRows = await ctx.db.select().from(marketAssessmentRequests).where(eq(marketAssessmentRequests.agentId, id));
+      expect(marRows).toHaveLength(0);
     });
 
     it('deletes a stopped agent and returns 204', async () => {
