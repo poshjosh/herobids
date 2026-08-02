@@ -36,9 +36,22 @@ export function BlueprintDetailPage({ blueprintId }: BlueprintDetailPageProps) {
     staleTime: 5 * 60 * 1000,
   });
 
+  const canViewMarketplace = meQuery.data?.planEntitlements?.blueprints?.canViewMarketplaceBlueprints ?? true;
+
+  // If entitlements loaded and user lacks marketplace view, show a clean message
+  if (!meQuery.isLoading && meQuery.data && canViewMarketplace === false) {
+    return (
+      <PageShell>
+        <PageHeader title="Blueprint" subtitle="Access restricted" />
+        <ErrorState message="Your plan does not include marketplace access. Upgrade your plan to view blueprint details." />
+      </PageShell>
+    );
+  }
+
   const detailQuery = useQuery({
     queryKey: ['blueprints', blueprintId],
     queryFn: () => blueprints.get(blueprintId),
+    enabled: canViewMarketplace !== false,
   });
 
   // Lifecycle mutations

@@ -61,13 +61,25 @@ export function BlueprintBrowse({
     queryFn: () => auth.me(),
     staleTime: 5 * 60 * 1000,
   });
+  const canViewMarketplace = meQuery.data?.planEntitlements?.blueprints?.canViewMarketplaceBlueprints ?? true;
   const canLikeByPlan = meQuery.data?.planEntitlements?.blueprints.canLikeMarketplaceBlueprints ?? true;
   const currentUserId = meQuery.data?.id ?? '';
   const meLoading = meQuery.isLoading;
 
+  // If entitlements loaded and user lacks marketplace view, show a clean message
+  if (!meQuery.isLoading && meQuery.data && canViewMarketplace === false) {
+    const message = 'Your plan does not include marketplace access. Upgrade your plan to browse blueprints.';
+    return standalone ? (
+      <PageShell><PageHeader title="Blueprint Marketplace" subtitle="Access restricted" /><ErrorState message={message} /></PageShell>
+    ) : (
+      <ErrorState message={message} />
+    );
+  }
+
   const query = useQuery({
     queryKey: ['blueprints', 'browse', { kind, sort, cursor: currentCursor }],
     queryFn: () => blueprints.browse({ kind, sort, cursor: currentCursor ?? undefined, limit: 20 }),
+    enabled: canViewMarketplace !== false,
   });
 
   const items = query.data?.items ?? [];

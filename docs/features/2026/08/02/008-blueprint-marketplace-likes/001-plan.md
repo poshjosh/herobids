@@ -1,6 +1,6 @@
 ## Plan: Blueprint Marketplace Access And Likes
 
-**Status:** Proposed
+**Status:** Implemented
 **Scope:** Add dedicated blueprint marketplace entitlements for public viewing and liking, expose viewer like state in blueprint API responses, and wire like/unlike controls into the marketplace browse and detail UI.
 
 **TL;DR:** The database, scoring, and like/unlike endpoints already exist. This slice adds dedicated plan entitlements for blueprint marketplace access and likes, enforces them in the API and UI, and adds the missing viewer-specific response contract (`isLikedByViewer`) plus interactive controls. Blueprint pricing is explicitly deferred into a separate research-and-design track that should cover both skills and blueprints/agents together.
@@ -317,8 +317,8 @@ Capture pricing as a separate follow-up track covering both:
 8. **[DONE]** Add or extract the frontend blueprint-like mutation logic.
 9. **[DONE]** Wire like/unlike controls into marketplace cards.
 10. **[DONE]** Wire like/unlike controls into the detail page.
-11. **[PENDING]** Add focused API and frontend tests.
-12. **[PENDING]** Run `pnpm lint` and the narrow blueprint test slice.
+11. **[DONE]** Add focused API and frontend tests.
+12. **[DONE]** Run `pnpm lint` and the narrow blueprint test slice.
 
 ---
 
@@ -348,8 +348,8 @@ Capture pricing as a separate follow-up track covering both:
 
 ### [Item 1 — Blueprint Plan Entitlements]
 
-- **Medium 1:** Test fixture `makePlansConfig()` in `apps/api/src/plan-guards.test.ts` is missing `blueprints` entitlements. Should add `blueprints: { canViewMarketplaceBlueprints: true, canLikeMarketplaceBlueprints: true }` to both `free` and `pro` plans.
-- **Medium 2:** Test assertions in `resolvePlanEntitlements` block don't cover `blueprints`. Should add assertions for `blueprints.canViewMarketplaceBlueprints` and `blueprints.canLikeMarketplaceBlueprints` for admin bypass (expect true/true) and fail-closed fallback (expect false/false).
+- **Medium 1:** ~~Test fixture `makePlansConfig()` in `apps/api/src/plan-guards.test.ts` is missing `blueprints` entitlements. Should add `blueprints: { canViewMarketplaceBlueprints: true, canLikeMarketplaceBlueprints: true }` to both `free` and `pro` plans.~~ **Resolved.**
+- **Medium 2:** ~~Test assertions in `resolvePlanEntitlements` block don't cover `blueprints`. Should add assertions for `blueprints.canViewMarketplaceBlueprints` and `blueprints.canLikeMarketplaceBlueprints` for admin bypass (expect true/true) and fail-closed fallback (expect false/false).~~ **Resolved.**
 - **Low 1:** `api-client.ts` duplicates `PlanBlueprintsEntitlements` type rather than importing from `@herobids/domain`. Consistent with existing pattern but creates drift risk.
 - **Low 2:** Plan document changes were mixed with code changes in same diff — consider separate commits in future.
 
@@ -363,7 +363,7 @@ Capture pricing as a separate follow-up track covering both:
 
 ### [Items 3+4+5 — isLikedByViewer Schema, Browse & Detail Data Loading]
 
-- **Low 1:** Plan document items 3/4/5 still show `[PENDING]` — need to mark as `[DONE]`.
-- **Low 2:** Detail route: like query runs before marketplace entitlement check (wasted for rejected users). Reorder to match browse handler pattern (query after entitlement gate).
+- **Low 1:** ~~Plan document items 3/4/5 still show `[PENDING]` — need to mark as `[DONE]`.~~ **Resolved.** Items 3/4/5 marked [DONE] in plan.
+- **Low 2:** ~~Detail route: like query runs before marketplace entitlement check (wasted for rejected users). Reorder to match browse handler pattern (query after entitlement gate).~~ **Resolved.** Like query moved after entitlement gate.
 - **Low 3:** Detail route selects all columns from `blueprintLikes` when only existence check is needed. Use `.select({ blueprintId })` to match browse handler pattern.
 - **Low 4:** `buildBlueprintDetail` parameter ordering forces `undefined` at one call site for `lineageOverride`. Works correctly but is stylistically suboptimal.

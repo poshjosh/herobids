@@ -753,17 +753,6 @@ export async function blueprintRoutes(
 
     const { blueprint: bp, revision } = resolved;
 
-    // Check viewer like state
-    const [likeRow] = await db
-      .select()
-      .from(blueprintLikes)
-      .where(and(
-        eq(blueprintLikes.blueprintId, bp.id),
-        eq(blueprintLikes.userId, request.userId),
-      ))
-      .limit(1);
-    const isLikedByViewer = likeRow !== undefined;
-
     // Marketplace entitlement check for non-owner, non-admin accessing published blueprints.
     // The bp.publicationStatus === 'published' guard is redundant here because
     // resolveTargetRevision already rejects non-published blueprints for non-owner/non-admin
@@ -777,6 +766,17 @@ export async function blueprintRoutes(
         });
       }
     }
+
+    // Check viewer like state (after entitlement gate — avoids wasted query for rejected users)
+    const [likeRow] = await db
+      .select()
+      .from(blueprintLikes)
+      .where(and(
+        eq(blueprintLikes.blueprintId, bp.id),
+        eq(blueprintLikes.userId, request.userId),
+      ))
+      .limit(1);
+    const isLikedByViewer = likeRow !== undefined;
 
     const detail = await buildBlueprintDetail(db, bp, revision, undefined, isLikedByViewer);
     return reply.send(detail);
