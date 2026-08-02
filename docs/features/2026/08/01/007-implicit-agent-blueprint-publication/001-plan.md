@@ -1,6 +1,6 @@
 ## Plan: Implicit Agent Blueprint Publication On Start
 
-**Status:** Proposed
+**Status:** Implemented
 **Scope:** Automatically create/publish or refresh an agent-linked blueprint when an agent starts, and close the missing frontend blueprint API-client methods needed to call the existing blueprint lifecycle endpoints.
 
 **TL;DR:** Keep blueprint UX hidden. On `POST /agents/:id/start`, ensure the agent has a linked published blueprint that reflects its current authored config and skill set. Reuse the existing projection and publish flows, skip revision churn when nothing changed, and add the missing `blueprints.*` client helpers so existing and future internal callers stop using ad hoc `fetch` calls.
