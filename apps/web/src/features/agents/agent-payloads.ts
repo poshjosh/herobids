@@ -45,6 +45,28 @@ function buildPlatformAssessmentPayload(enabled?: boolean, reviewIntervalHours?:
   return payload;
 }
 
+/**
+ * Resolves a user-facing execution mode to the canonical
+ * wire/storage value ('paper' | 'shadow' | 'live').
+ *
+ * Resolution rules:
+ * - 'test' + has trading connections → 'shadow' (venue-backed simulation)
+ * - 'test' + no trading connections → 'paper' (pure simulation)
+ * - 'live' → 'live'
+ * - 'paper' / 'shadow' → pass through (already canonical)
+ * - '' (empty) → null (no execution mode)
+ */
+export function resolveCanonicalExecutionMode(
+  uiMode: 'test' | 'live' | 'paper' | 'shadow' | '',
+  hasConnections: boolean,
+): 'paper' | 'shadow' | 'live' | null {
+  if (uiMode === 'live') return 'live';
+  if (uiMode === 'paper') return 'paper';
+  if (uiMode === 'shadow') return 'shadow';
+  if (uiMode === 'test') return hasConnections ? 'shadow' : 'paper';
+  return null; // empty string
+}
+
 type AgentNotificationPolicy = {
   sendMessage: {
     email: {
@@ -122,7 +144,7 @@ export interface UpdateAgentPayloadInput {
   technical: TechnicalConfig | null;
   skillIds: string[];
   hasBotManagementSkill: boolean;
-  executionMode: string;
+  executionMode: 'test' | 'live' | 'paper' | 'shadow' | '';
   hasTradingCapability: boolean;
   connectionIds?: string[];
   telegramChatId: string;
@@ -172,7 +194,6 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   heavyModel?: string | null;
   costPreset?: 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd?: number;
-  executionMode?: string;
   telegramChatId?: string;
   risk?: Record<string, unknown>;
   executionDefaults?: Record<string, unknown>;
@@ -201,12 +222,12 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   if (input.stopLossCooldownSecs) risk.stopLossCooldownMs = parseCooldownMsOrNull(input.stopLossCooldownSecs) ?? undefined;
 
   // Build canonical execution defaults (WP4 shared value object)
+  const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'hybrid';
   const executionDefaults: Record<string, unknown> = {};
-  if (input.requiresTradingSetup) executionDefaults.mode = input.executionMode;
+  if (includeIntelligence && input.requiresTradingSetup) executionDefaults.mode = resolveCanonicalExecutionMode(input.executionMode, (input.connectionIds ?? []).length > 0);
   if (input.maxSlippageBps) executionDefaults.slippageBps = parseInt(input.maxSlippageBps, 10);
 
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
-  const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'hybrid';
   const includeTechnical = input.technicalPreFilterEnabled;
   const includeAuthorizationMode = includeIntelligence && input.requiresTradingSetup;
 
@@ -222,7 +243,6 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     skillIds: includeIntelligence ? [...input.skillIds] : [],
     ...((input.connectionIds ?? []).length > 0 ? { connectionIds: input.connectionIds } : {}),
     ...(input.executionVenue?.trim() ? { executionVenue: input.executionVenue.trim() } : {}),
-    ...(input.requiresTradingSetup ? { executionMode: input.executionMode } : {}),
     ...(includeIntelligence && !input.modelPayload.inherits && input.modelPayload.provider ? {
       provider: input.modelPayload.provider,
       ...(input.modelPayload.lightModel ? { lightModel: input.modelPayload.lightModel } : {}),
@@ -259,7 +279,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   prompt: string;
   skillIds: string[];
   connectionIds?: string[];
-  executionMode: string | null;
   telegramChatId: string | null;
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom' | null;
   dailySpendBudgetUsd: number | null;
@@ -303,7 +322,9 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
 
   // Build canonical execution defaults (WP4 shared value object)
   const executionDefaults: Record<string, unknown> = {
-    mode: includeIntelligence && input.hasTradingCapability ? (input.executionMode || null) : null,
+    mode: includeIntelligence && input.hasTradingCapability
+      ? resolveCanonicalExecutionMode(input.executionMode, (input.connectionIds ?? []).length > 0)
+      : null,
   };
   if (input.maxSlippageBps) executionDefaults.slippageBps = parseInt(input.maxSlippageBps, 10);
   else executionDefaults.slippageBps = null;
@@ -329,12 +350,11 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     ...(includeIntelligence ? { prompt: input.prompt.trim() } : { prompt: '' }),
     skillIds: includeIntelligence ? [...input.skillIds] : [],
     ...(input.connectionIds !== undefined ? { connectionIds: input.connectionIds } : {}),
-    executionMode: includeIntelligence && input.hasTradingCapability ? (input.executionMode || null) : null,
     telegramChatId: input.telegramChatId.trim() || null,
     costPreset: input.costPreset || null,
     dailySpendBudgetUsd: input.dailySpendBudgetUsd ? parseFloat(input.dailySpendBudgetUsd) : null,
     risk,
-    executionDefaults,
+    ...(executionDefaults.mode !== null ? { executionDefaults } : {}),
     tickIntervalMs,
     capital: input.capital.trim() || null,
     ...(normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) ? { openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) } : {}),

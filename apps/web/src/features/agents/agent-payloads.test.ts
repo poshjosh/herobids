@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateAgentPayload, buildUpdateAgentPayload, normalizeEscalationPolicy, resolveCreateAgentConnectionIds } from './agent-payloads.js';
+import { buildCreateAgentPayload, buildUpdateAgentPayload, normalizeEscalationPolicy, resolveCanonicalExecutionMode, resolveCreateAgentConnectionIds } from './agent-payloads.js';
 
 const TECHNICAL_CONFIG = {
   filters: {
@@ -43,7 +43,7 @@ describe('agent payload builders', () => {
       skillIds: ['bot-management', 'trading'],
       hasBotManagementSkill: true,
       requiresTradingSetup: true,
-      executionMode: 'paper',
+      executionMode: 'test',
       modelPayload: { inherits: true },
       costPreset: '',
       dailySpendBudgetUsd: '',
@@ -60,7 +60,6 @@ describe('agent payload builders', () => {
       name: 'market-watch-01',
       prompt: 'Trade BTC on breakouts',
       skillIds: ['bot-management', 'trading'],
-      executionMode: 'paper',
       capabilityMode: 'intelligence',
     });
   });
@@ -75,7 +74,7 @@ describe('agent payload builders', () => {
       skillIds: [],
       hasBotManagementSkill: false,
       requiresTradingSetup: false,
-      executionMode: 'paper',
+      executionMode: 'test',
       modelPayload: { inherits: false, provider: 'openai', lightModel: 'gpt-4.1-mini', heavyModel: 'gpt-4.1' },
       costPreset: 'custom',
       dailySpendBudgetUsd: '1.25',
@@ -149,6 +148,115 @@ describe('agent payload builders', () => {
     expect(payload).not.toHaveProperty('authorizationMode');
   });
 
+  it('resolves executionDefaults.mode to shadow when executionMode is test with connections', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'trade',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: true,
+      executionMode: 'test',
+      connectionIds: ['conn-1'],
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload.executionDefaults).toEqual({ mode: 'shadow' });
+  });
+
+  it('resolves executionDefaults.mode to paper when executionMode is test without connections', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'trade',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: true,
+      executionMode: 'test',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload.executionDefaults).toEqual({ mode: 'paper' });
+  });
+
+  it('resolves executionDefaults.mode to live when executionMode is live', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'trade',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: true,
+      executionMode: 'live',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload.executionDefaults).toEqual({ mode: 'live' });
+  });
+
+  it('omits executionDefaults when not a trading agent (requiresTradingSetup is false)', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'assistant',
+      goal: 'Read my Gmail.',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technical: null,
+      skillIds: ['email'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'test',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyMaxLossPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload).not.toHaveProperty('executionDefaults');
+  });
+
   it('buildCreateAgentPayload includes technical config and intelligence fields in hybrid mode', () => {
     expect(buildCreateAgentPayload({
       name: '  technical scout  ',
@@ -160,7 +268,7 @@ describe('agent payload builders', () => {
       skillIds: ['trading'],
       hasBotManagementSkill: false,
       requiresTradingSetup: false,
-      executionMode: 'paper',
+      executionMode: 'test',
       modelPayload: { inherits: false, provider: 'openai', lightModel: 'gpt-4.1-mini', heavyModel: 'gpt-4.1' },
       costPreset: '',
       dailySpendBudgetUsd: '',
@@ -226,7 +334,6 @@ describe('agent payload builders', () => {
       name: 'Momentum scout',
       prompt: 'Watch BTC and trade breakouts.',
       skillIds: ['trading'],
-      executionMode: 'paper',
       telegramChatId: null,
       costPreset: null,
       dailySpendBudgetUsd: null,
@@ -350,7 +457,6 @@ describe('agent payload builders', () => {
       name: 'agent',
       prompt: 'trade',
       skillIds: ['trading'],
-      executionMode: 'test',
       executionVenue: 'hyperliquid',
       connectionIds: ['conn-1', 'conn-2'],
     });
@@ -538,7 +644,67 @@ describe('agent payload builders', () => {
     expect(payload).not.toHaveProperty('authorizationMode');
   });
 
-  it('buildUpdateAgentPayload clears execution mode in hybrid mode when hasTradingCapability is false', () => {
+  it('resolves executionDefaults.mode to live when executionMode is live', () => {
+    const payload = buildUpdateAgentPayload({
+      name: 'agent',
+      prompt: 'trade',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      executionMode: 'live',
+      hasTradingCapability: true,
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyMaxLossPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      tickIntervalMins: '',
+      capital: '',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
+    });
+    expect(payload.executionDefaults).toEqual({ mode: 'live', slippageBps: null });
+  });
+
+  it('does not send executionDefaults when mode is null (non-trading agent)', () => {
+    const payload = buildUpdateAgentPayload({
+      name: 'assistant',
+      prompt: 'Read my Gmail.',
+      capabilityMode: 'intelligence',
+      hybridMode: 'mixed',
+      technical: null,
+      skillIds: ['email'],
+      hasBotManagementSkill: false,
+      executionMode: '',
+      hasTradingCapability: false,
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyMaxLossPct: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      tickIntervalMins: '',
+      capital: '',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      emailDelivery: 'inherit',
+    });
+    expect(payload).not.toHaveProperty('executionDefaults');
+  });
+
+  // executionMode 'paper' is vestigial here — hasTradingCapability is false so
+  // executionDefaults.mode resolves to null and executionDefaults is omitted.
+  it('omits executionDefaults for hybrid technical-only agent even when executionMode is paper', () => {
     expect(buildUpdateAgentPayload({
       name: '  Technical scout  ',
       prompt: 'legacy objective',
@@ -568,7 +734,6 @@ describe('agent payload builders', () => {
       name: 'Technical scout',
       prompt: 'legacy objective',
       skillIds: ['trading'],
-      executionMode: null,
       technical: TECHNICAL_CONFIG,
     });
   });
@@ -942,6 +1107,36 @@ const BASE_UPDATE_INPUT = {
   modelForm: { provider: '', lightModel: '', heavyModel: '' },
   emailDelivery: 'inherit' as const,
 };
+
+describe('resolveCanonicalExecutionMode', () => {
+  it('resolves test without connections to paper', () => {
+    expect(resolveCanonicalExecutionMode('test', false)).toBe('paper');
+  });
+
+  it('resolves test with connections to shadow', () => {
+    expect(resolveCanonicalExecutionMode('test', true)).toBe('shadow');
+  });
+
+  it('passes live through unchanged', () => {
+    expect(resolveCanonicalExecutionMode('live', false)).toBe('live');
+    expect(resolveCanonicalExecutionMode('live', true)).toBe('live');
+  });
+
+  it('passes paper through unchanged', () => {
+    expect(resolveCanonicalExecutionMode('paper', false)).toBe('paper');
+    expect(resolveCanonicalExecutionMode('paper', true)).toBe('paper');
+  });
+
+  it('passes shadow through unchanged', () => {
+    expect(resolveCanonicalExecutionMode('shadow', false)).toBe('shadow');
+    expect(resolveCanonicalExecutionMode('shadow', true)).toBe('shadow');
+  });
+
+  it('returns null for empty string', () => {
+    expect(resolveCanonicalExecutionMode('', false)).toBeNull();
+    expect(resolveCanonicalExecutionMode('', true)).toBeNull();
+  });
+});
 
 describe('buildCreateAgentPayload — emailDelivery mapping', () => {
   it('omits notificationPolicy when emailDelivery is "inherit"', () => {
