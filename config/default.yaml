@@ -839,6 +839,9 @@ plans:
           canLikeMarketplaceSkills: true
         agents:
           canViewOwnPrompts: false
+        blueprints:
+          canViewMarketplaceBlueprints: true
+          canLikeMarketplaceBlueprints: true
         limits:
           maxAgents: 1
           maxBots: 3
@@ -871,6 +874,9 @@ plans:
           canLikeMarketplaceSkills: true
         agents:
           canViewOwnPrompts: false
+        blueprints:
+          canViewMarketplaceBlueprints: true
+          canLikeMarketplaceBlueprints: true
         limits:
           maxAgents: 3
           maxBots: 9

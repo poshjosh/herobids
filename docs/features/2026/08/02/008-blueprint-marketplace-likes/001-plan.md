@@ -106,10 +106,19 @@ blueprints: {
 **What:**
 Use `canViewMarketplaceBlueprints` as the public-marketplace access gate for non-owner, non-admin blueprint interactions.
 
-**Minimum scope:**
-1. `GET /blueprints` browse
-2. `GET /blueprints/:id` for published non-owner access
-3. any public blueprint action reachable from marketplace context that should not remain callable by ID when marketplace viewing is disabled, including at minimum like routes and likely fork/preview/instantiate paths
+**Required route/action matrix:**
+
+| Route / action | Marketplace entitlement requirement for non-owner, non-admin access | Notes |
+|---|---|---|
+| `GET /blueprints` browse | `canViewMarketplaceBlueprints` | This is the primary marketplace listing surface. |
+| `GET /blueprints/:id` for published blueprint detail | `canViewMarketplaceBlueprints` | Direct-by-ID reads must not bypass marketplace access policy. |
+| `POST /blueprints/:id/fork` from a published marketplace blueprint | `canViewMarketplaceBlueprints` | Fork-by-ID must not remain callable when marketplace viewing is disabled. |
+| `PUT /blueprints/:id/like` | `canViewMarketplaceBlueprints` **and** `canLikeMarketplaceBlueprints` | A viewer cannot engage with a marketplace blueprint they are not entitled to view. |
+| `DELETE /blueprints/:id/like` | `canViewMarketplaceBlueprints` **and** `canLikeMarketplaceBlueprints` | Same rule as like. |
+
+**Out of scope for this slice unless already exposed as public marketplace actions in the blueprint routes:**
+1. owner-only revision-management and lifecycle routes such as publish, draft, private, delist, archive, delete, and create-revision flows
+2. preset/default helper routes that are not blueprint marketplace asset access paths
 
 **Why:**
 - Hiding the UI alone is insufficient; API access must enforce the same boundary.
@@ -117,6 +126,7 @@ Use `canViewMarketplaceBlueprints` as the public-marketplace access gate for non
 
 **Implementation note:**
 - Owner/admin reads of their own draft/private/published blueprints remain governed by existing lifecycle/ownership rules, not by marketplace-view entitlement.
+- Treat the table above as exhaustive for this slice. If implementation discovers another non-owner public marketplace blueprint action, update the plan first rather than inferring policy ad hoc.
 
 ### Change 3 — Add viewer like state to blueprint read models
 
@@ -218,6 +228,7 @@ Require `canLikeMarketplaceBlueprints` for `PUT /blueprints/:id/like` and `DELET
 
 **Implementation note:**
 - The self-like prohibition remains separate and continues to apply even when the viewer has like entitlement.
+- Like and unlike should fail closed when either required entitlement from the Change 2 route/action matrix is absent.
 
 ### Change 9 — Add focused tests
 
@@ -233,26 +244,32 @@ Require `canLikeMarketplaceBlueprints` for `PUT /blueprints/:id/like` and `DELET
 2. **Marketplace detail is plan-gated**
    - users without `canViewMarketplaceBlueprints` cannot read published blueprint detail as marketplace viewers
 
-3. **Browse response includes viewer like state**
+3. **Marketplace fork is plan-gated**
+   - users without `canViewMarketplaceBlueprints` cannot fork a published marketplace blueprint by ID
+
+4. **Browse response includes viewer like state**
    - a liked published blueprint returns `isLikedByViewer: true`
    - an unliked one returns `false`
 
-4. **Detail response includes viewer like state**
+5. **Detail response includes viewer like state**
    - the field matches the persisted like row
 
-5. **Like action is entitlement-gated and updates count/state when allowed**
+6. **Like action is entitlement-gated and updates count/state when allowed**
+   - users without `canViewMarketplaceBlueprints` are rejected
    - users without `canLikeMarketplaceBlueprints` are rejected
    - after `PUT /blueprints/:id/like`, response returns `liked: true`
    - `likeCount` increments authoritatively
 
-6. **Unlike action updates count and state**
+7. **Unlike action is entitlement-gated and updates count/state when allowed**
+   - users without `canViewMarketplaceBlueprints` are rejected
+   - users without `canLikeMarketplaceBlueprints` are rejected
    - after `DELETE /blueprints/:id/like`, response returns `liked: false`
    - `likeCount` decrements authoritatively
 
-7. **Author self-like remains rejected**
+8. **Author self-like remains rejected**
    - existing backend guard stays covered
 
-8. **Frontend interaction reflects toggled state**
+9. **Frontend interaction reflects toggled state**
    - clicking the control flips the visual state and count without requiring full-page reload
 
 ### Change 10 — Record the pricing follow-up explicitly
@@ -290,35 +307,48 @@ Capture pricing as a separate follow-up track covering both:
 
 ## Implementation Order
 
-1. Add `blueprints` plan entitlements in schema, config defaults, plan resolution, and auth client typing.
-2. Enforce `canViewMarketplaceBlueprints` on public marketplace blueprint reads/actions.
-3. Extend blueprint response schemas and frontend types with `isLikedByViewer`.
-4. Update `GET /blueprints` to load viewer like state in batch.
-5. Update `GET /blueprints/:id` to include viewer like state.
-6. Enforce `canLikeMarketplaceBlueprints` on like/unlike write routes.
-7. Add or extract the frontend blueprint-like mutation logic.
-8. Wire like/unlike controls into marketplace cards.
-9. Wire like/unlike controls into the detail page.
-10. Add focused API and frontend tests.
-11. Run `pnpm lint` and the narrow blueprint test slice.
+1. **[PENDING]** Add `blueprints` plan entitlements in schema, config defaults, plan resolution, and auth client typing.
+2. **[PENDING]** Enforce the Change 2 route/action matrix for public marketplace blueprint reads/actions.
+3. **[PENDING]** Extend blueprint response schemas and frontend types with `isLikedByViewer`.
+4. **[PENDING]** Update `GET /blueprints` to load viewer like state in batch.
+5. **[PENDING]** Update `GET /blueprints/:id` to include viewer like state.
+6. **[PENDING]** Enforce `canViewMarketplaceBlueprints` on `POST /blueprints/:id/fork` for published marketplace sources.
+7. **[PENDING]** Enforce both `canViewMarketplaceBlueprints` and `canLikeMarketplaceBlueprints` on like/unlike write routes.
+8. **[PENDING]** Add or extract the frontend blueprint-like mutation logic.
+9. **[PENDING]** Wire like/unlike controls into marketplace cards.
+10. **[PENDING]** Wire like/unlike controls into the detail page.
+11. **[PENDING]** Add focused API and frontend tests.
+12. **[PENDING]** Run `pnpm lint` and the narrow blueprint test slice.
 
 ---
 
 ## Acceptance Criteria
 
 1. Plans expose a dedicated `blueprints` entitlement block including `canViewMarketplaceBlueprints` and `canLikeMarketplaceBlueprints`.
-2. Users without `canViewMarketplaceBlueprints` cannot browse or read published marketplace blueprints as public viewers.
+2. Users without `canViewMarketplaceBlueprints` cannot browse, read, or fork published marketplace blueprints as public viewers.
 3. Published blueprint browse results include `isLikedByViewer` for the requesting user when view entitlement allows access.
 4. Blueprint detail responses include `isLikedByViewer` for the requesting user when view entitlement allows access.
 5. A non-author user with blueprint-like entitlement can like and unlike a published blueprint from the marketplace browse page.
 6. A non-author user with blueprint-like entitlement can like and unlike a published blueprint from the blueprint detail page.
 7. The UI reflects the correct heart state and like count immediately after a successful toggle.
 8. Users without `canLikeMarketplaceBlueprints` do not see an enabled blueprint like control and are rejected server-side if they attempt the write anyway.
-9. Existing ranking behavior continues to refresh from authoritative like counts.
-10. Blueprint pricing remains out of scope for this slice, with a separate follow-up required for skills and blueprints/agents.
+9. Users without `canViewMarketplaceBlueprints` are also rejected server-side if they attempt marketplace like/unlike or fork actions directly by blueprint ID.
+10. Existing ranking behavior continues to refresh from authoritative like counts.
+11. Blueprint pricing remains out of scope for this slice, with a separate follow-up required for skills and blueprints/agents.
 
 ---
 
 ## Follow-Up
 
 1. Create a separate pricing research-and-design plan that covers both skill pricing and blueprint/agent pricing together before introducing `canPriceBlueprints` or extending paid portability rules.
+
+---
+
+## Outstanding Issues
+
+### [Item 1 — Blueprint Plan Entitlements]
+
+- **Medium 1:** Test fixture `makePlansConfig()` in `apps/api/src/plan-guards.test.ts` is missing `blueprints` entitlements. Should add `blueprints: { canViewMarketplaceBlueprints: true, canLikeMarketplaceBlueprints: true }` to both `free` and `pro` plans.
+- **Medium 2:** Test assertions in `resolvePlanEntitlements` block don't cover `blueprints`. Should add assertions for `blueprints.canViewMarketplaceBlueprints` and `blueprints.canLikeMarketplaceBlueprints` for admin bypass (expect true/true) and fail-closed fallback (expect false/false).
+- **Low 1:** `api-client.ts` duplicates `PlanBlueprintsEntitlements` type rather than importing from `@herobids/domain`. Consistent with existing pattern but creates drift risk.
+- **Low 2:** Plan document changes were mixed with code changes in same diff — consider separate commits in future.
