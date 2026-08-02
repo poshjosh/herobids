@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Blueprint Marketplace Likes:** Interactive like/unlike controls on blueprint browse cards and detail pages with optimistic UI updates. Added dedicated `blueprints` plan entitlements (`canViewMarketplaceBlueprints`, `canLikeMarketplaceBlueprints`) in schema, config, plan resolution, and auth client. Marketplace browse, detail, fork, like, and unlike endpoints enforce entitlements server-side. Blueprint responses include `isLikedByViewer` field with batch-loaded viewer like state. Reusable `useBlueprintLike` hook with optimistic cache patching (detail + browse invalidation) and error rollback. 15 new tests (10 frontend hook, 5 integration). Proactive UI gating prevents API calls when marketplace access is not entitled.
+
 - **Implicit Agent Blueprint Publication:** Starting an agent now automatically creates or syncs a published blueprint representing its current authored config and skill set. Deterministic SHA-256 fingerprinting prevents duplicate revisions when config is unchanged. Failed blueprint sync reverts the agent claim (loud-failure). New `agent-blueprint-sync-service` with `ensurePublishedBlueprintForAgent()` and 10 unit tests covering first-publish, unchanged restart, changed-config revision, skill portability errors, and defensive edge cases.
 
 - **Blueprint API Client Methods:** Added `publish`, `delist`, `like`, `unlike`, `fork`, `archive`, `draft`, `private`, and `delete` methods to the frontend `blueprints.*` API client. `BlueprintDetailPage` migrated from raw `fetch()` calls to the shared API client for all lifecycle actions.

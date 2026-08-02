@@ -21,6 +21,10 @@ function makePlansConfig(overrides: Partial<PlansConfig> = {}): PlansConfig {
           agents: {
             canViewOwnPrompts: false,
           },
+          blueprints: {
+            canViewMarketplaceBlueprints: true,
+            canLikeMarketplaceBlueprints: true,
+          },
           limits: {
             maxAgents: 3,
             maxBots: 2,
@@ -46,6 +50,10 @@ function makePlansConfig(overrides: Partial<PlansConfig> = {}): PlansConfig {
           },
           agents: {
             canViewOwnPrompts: true,
+          },
+          blueprints: {
+            canViewMarketplaceBlueprints: true,
+            canLikeMarketplaceBlueprints: true,
           },
           limits: {
             maxAgents: 20,
@@ -84,6 +92,8 @@ describe('resolvePlanEntitlements', () => {
     expect(resolved.entitlements.skills.canPriceSkills).toBe(true);
     expect(resolved.entitlements.agents.canViewOwnPrompts).toBe(true);
     expect(resolved.entitlements.limits.liveEnabled).toBe(true);
+    expect(resolved.entitlements.blueprints.canViewMarketplaceBlueprints).toBe(true);
+    expect(resolved.entitlements.blueprints.canLikeMarketplaceBlueprints).toBe(true);
   });
 
   it('uses fail-closed marketplace defaults when plan definitions are missing', () => {
@@ -96,6 +106,8 @@ describe('resolvePlanEntitlements', () => {
 
     expect(resolved.entitlements.skills.canViewMarketplaceSkills).toBe(false);
     expect(resolved.entitlements.skills.canPublishToMarketplace).toBe(false);
+    expect(resolved.entitlements.blueprints.canViewMarketplaceBlueprints).toBe(false);
+    expect(resolved.entitlements.blueprints.canLikeMarketplaceBlueprints).toBe(false);
   });
 });
 

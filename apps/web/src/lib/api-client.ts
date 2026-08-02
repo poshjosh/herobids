@@ -220,9 +220,15 @@ export interface PlanLimitsEntitlements {
   liveEnabled: boolean;
 }
 
+export interface PlanBlueprintsEntitlements {
+  canViewMarketplaceBlueprints: boolean;
+  canLikeMarketplaceBlueprints: boolean;
+}
+
 export interface PlanEntitlements {
   skills: PlanSkillsEntitlements;
   agents: PlanAgentsEntitlements;
+  blueprints: PlanBlueprintsEntitlements;
   limits: PlanLimitsEntitlements;
 }
 

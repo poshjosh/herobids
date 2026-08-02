@@ -16,6 +16,7 @@ export interface BlueprintSummary {
   venueType: string | null;
   likeCount: number;
   forkCount: number;
+  isLikedByViewer: boolean;
   popularityScore: number;
   trendingScore: number;
   publishedAt: string | null;

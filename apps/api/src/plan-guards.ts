@@ -1,4 +1,4 @@
-import type { PlanAgentsEntitlements, PlanEntitlements, PlanLimitsEntitlements, PlanSkillsEntitlements, PlansConfig } from '@herobids/domain';
+import type { PlanAgentsEntitlements, PlanBlueprintsEntitlements, PlanEntitlements, PlanLimitsEntitlements, PlanSkillsEntitlements, PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { bots, venueAccounts, userCredentials, backtestRuns, agents, connections } from '@herobids/db';
 import { eq, and, inArray } from 'drizzle-orm';
@@ -22,6 +22,10 @@ const ABSOLUTE_FALLBACK_ENTITLEMENTS: PlanEntitlements = {
   },
   agents: {
     canViewOwnPrompts: true,
+  },
+  blueprints: {
+    canViewMarketplaceBlueprints: false,
+    canLikeMarketplaceBlueprints: false,
   },
   limits: {
     maxAgents: 0,
@@ -73,6 +77,10 @@ export function resolvePlanEntitlements(
         agents: {
           canViewOwnPrompts: true,
         },
+        blueprints: {
+          canViewMarketplaceBlueprints: true,
+          canLikeMarketplaceBlueprints: true,
+        },
         limits: {
           ...plan.entitlements.limits,
           liveEnabled: true,
@@ -98,6 +106,10 @@ export function resolvePlanAgentEntitlements(config: PlansConfig, planId: string
 
 export function resolvePlanLimitEntitlements(config: PlansConfig, planId: string, isAdmin = false): PlanLimitsEntitlements {
   return resolvePlanEntitlements(config, { planId, isAdmin }).entitlements.limits;
+}
+
+export function resolvePlanBlueprintEntitlements(config: PlansConfig, planId: string, isAdmin = false): PlanBlueprintsEntitlements {
+  return resolvePlanEntitlements(config, { planId, isAdmin }).entitlements.blueprints;
 }
 
 export type PlanCheckResult = Result<void, {

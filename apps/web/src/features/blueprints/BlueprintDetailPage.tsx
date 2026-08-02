@@ -1,11 +1,13 @@
 import { useState } from 'react';
+import { useIntl } from 'react-intl';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { blueprints, auth as authApi } from '../../lib/api-client.js';
 import {
   PageShell, PageHeader, Card, LoadingRows, ErrorState,
-  Button, SectionLabel, KV,
+  Button, SectionLabel, KV, ErrorBanner,
 } from '../../lib/ui.js';
 import { BlueprintEditModal } from './BlueprintEditModal.js';
+import { useBlueprintLike } from './hooks/useBlueprintLike.js';
 
 interface BlueprintDetailPageProps {
   blueprintId: string;
@@ -27,14 +29,29 @@ export function BlueprintDetailPage({ blueprintId }: BlueprintDetailPageProps) {
   const [editOpen, setEditOpen] = useState(false);
 
   // Current user for ownership check
+  const intl = useIntl();
   const meQuery = useQuery({
     queryKey: ['me'],
     queryFn: () => authApi.me(),
+    staleTime: 5 * 60 * 1000,
   });
+
+  const canViewMarketplace = meQuery.data?.planEntitlements?.blueprints?.canViewMarketplaceBlueprints ?? true;
+
+  // If entitlements loaded and user lacks marketplace view, show a clean message
+  if (!meQuery.isLoading && meQuery.data && canViewMarketplace === false) {
+    return (
+      <PageShell>
+        <PageHeader title="Blueprint" subtitle="Access restricted" />
+        <ErrorState message="Your plan does not include marketplace access. Upgrade your plan to view blueprint details." />
+      </PageShell>
+    );
+  }
 
   const detailQuery = useQuery({
     queryKey: ['blueprints', blueprintId],
     queryFn: () => blueprints.get(blueprintId),
+    enabled: canViewMarketplace !== false,
   });
 
   // Lifecycle mutations
@@ -69,6 +86,9 @@ export function BlueprintDetailPage({ blueprintId }: BlueprintDetailPageProps) {
     },
   });
 
+  // Must be called BEFORE any early returns — Rules of Hooks
+  const likeToggle = useBlueprintLike(blueprintId, detailQuery.data?.isLikedByViewer ?? false);
+
   if (detailQuery.isLoading || meQuery.isLoading) {
     return (
       <PageShell>
@@ -99,6 +119,9 @@ export function BlueprintDetailPage({ blueprintId }: BlueprintDetailPageProps) {
   const isPrivate = bp.publicationStatus === 'private';
   const isDelisted = bp.publicationStatus === 'delisted';
   const hasStagedEdits = bp.currentRevisionId !== bp.publishedRevisionId && isPublished;
+
+  const canLikeByPlan = meQuery.data?.planEntitlements?.blueprints.canLikeMarketplaceBlueprints ?? true;
+  const canLike = canLikeByPlan && !isOwner && !meQuery.isLoading;
 
   const handleLifecycle = (action: string) => {
     if (action === 'delete') {
@@ -196,9 +219,7 @@ export function BlueprintDetailPage({ blueprintId }: BlueprintDetailPageProps) {
             </div>
 
             {(lifecycleMutation.isError) && (
-              <div style={{ color: 'var(--color-danger, #dc3545)', fontSize: '12px', marginTop: '8px' }}>
-                {(lifecycleMutation.error as Error).message}
-              </div>
+              <ErrorBanner message={(lifecycleMutation.error as Error).message} />
             )}
           </Card>
         )}
@@ -213,7 +234,36 @@ export function BlueprintDetailPage({ blueprintId }: BlueprintDetailPageProps) {
             <KV label="Style" value={bp.style ?? '—'} />
             <KV label="Venue Type" value={bp.venueType ?? '—'} />
             <KV label="Tags" value={bp.tags.length > 0 ? bp.tags.join(', ') : '—'} />
-            <KV label="Likes" value={String(bp.likeCount)} />
+            {canLike ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginRight: '4px' }}>Likes</span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => likeToggle.toggle()}
+                    disabled={likeToggle.isPending}
+                    aria-label={bp.isLikedByViewer
+                      ? intl.formatMessage({ id: 'skills.actions.unlike', defaultMessage: 'Unlike' })
+                      : intl.formatMessage({ id: 'skills.actions.like', defaultMessage: 'Like' })}
+                    title={bp.isLikedByViewer
+                      ? intl.formatMessage({ id: 'skills.actions.unlike', defaultMessage: 'Unlike' })
+                      : intl.formatMessage({ id: 'skills.actions.like', defaultMessage: 'Like' })}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill={bp.isLikedByViewer ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                      <path d="M7 10v12" />
+                      <path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z" />
+                    </svg>
+                    <span style={{ marginLeft: '4px' }}>{bp.likeCount}</span>
+                  </Button>
+                </div>
+                {likeToggle.error && (
+                  <ErrorBanner message={(likeToggle.error as Error).message} />
+                )}
+              </div>
+            ) : (
+              <KV label="Likes" value={String(bp.likeCount)} />
+            )}
             <KV label="Forks" value={String(bp.forkCount)} />
             <KV label="Published" value={bp.publishedAt ?? '—'} />
             <KV label="Created" value={new Date(bp.createdAt).toLocaleString()} />

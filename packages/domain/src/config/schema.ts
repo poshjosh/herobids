@@ -650,6 +650,11 @@ export const PlanAgentsEntitlementsSchema = z.object({
   canViewOwnPrompts: z.boolean().default(true),
 });
 
+export const PlanBlueprintsEntitlementsSchema = z.object({
+  canViewMarketplaceBlueprints: z.boolean().default(true),
+  canLikeMarketplaceBlueprints: z.boolean().default(true),
+});
+
 export const PlanLimitsEntitlementsSchema = z.object({
   maxAgents: z.number().min(0).default(5),
   maxBots: z.number().min(1).default(5),
@@ -664,6 +669,7 @@ export const PlanLimitsEntitlementsSchema = z.object({
 export const PlanEntitlementsSchema = z.object({
   skills: PlanSkillsEntitlementsSchema.default({}),
   agents: PlanAgentsEntitlementsSchema.default({}),
+  blueprints: PlanBlueprintsEntitlementsSchema.default({}),
   limits: PlanLimitsEntitlementsSchema.default({}),
 });
 
@@ -689,6 +695,10 @@ export const PlansConfigSchema = z.object({
         },
         agents: {
           canViewOwnPrompts: true,
+        },
+        blueprints: {
+          canViewMarketplaceBlueprints: true,
+          canLikeMarketplaceBlueprints: true,
         },
         limits: {
           maxAgents: 5,
@@ -1819,6 +1829,7 @@ export type PlanUsagePackaging = z.infer<typeof PlanUsagePackagingSchema>;
 export type PlanEntitlements = z.infer<typeof PlanEntitlementsSchema>;
 export type PlanSkillsEntitlements = z.infer<typeof PlanSkillsEntitlementsSchema>;
 export type PlanAgentsEntitlements = z.infer<typeof PlanAgentsEntitlementsSchema>;
+export type PlanBlueprintsEntitlements = z.infer<typeof PlanBlueprintsEntitlementsSchema>;
 export type PlanLimitsEntitlements = z.infer<typeof PlanLimitsEntitlementsSchema>;
 
 // --- Trading Instance Config (stored in Postgres JSONB, per-instance) ---

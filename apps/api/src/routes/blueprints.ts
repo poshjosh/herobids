@@ -41,8 +41,10 @@ import type {
   BlueprintExecutionCapabilityInput,
   AgentBlueprintRevisionPayload,
   BotBlueprintRevisionPayload,
+  PlansConfig,
 } from '@herobids/domain';
 import { listPresets, getPreset } from '@herobids/domain/config/presets-loader';
+import { resolvePlanBlueprintEntitlements } from '../plan-guards.js';
 import { computeInstantiateRequestHash } from '../services/blueprint-idempotency.js';
 import { resolveEffectiveRisk } from '../services/blueprint-risk-resolver.js';
 import { validateSkillPortability } from '../services/blueprint-skill-validator.js';
@@ -275,6 +277,7 @@ export async function buildBlueprintDetail(
   bp: typeof blueprints.$inferSelect,
   revision: typeof blueprintRevisions.$inferSelect,
   lineageOverride?: BlueprintLineageInfo,
+  isLikedByViewer = false,
 ): Promise<z.infer<typeof BlueprintDetailSchema>> {
   const skillRefs = await getRevisionSkillRefs(db, revision.id);
 
@@ -297,6 +300,7 @@ export async function buildBlueprintDetail(
     venueType: revision.venueType,
     likeCount: bp.likeCount,
     forkCount: bp.forkCount,
+    isLikedByViewer,
     popularityScore: bp.popularityScore,
     trendingScore: bp.trendingScore,
     publishedAt: bp.publishedAt?.toISOString() ?? null,
@@ -349,6 +353,7 @@ export async function blueprintRoutes(
   db: Database,
   agentRiskDefaults: AgentRiskDefaultsConfig,
   executionCapabilityResolver: BlueprintExecutionCapabilityResolver,
+  plansConfig: PlansConfig,
 ): Promise<void> {
   // Periodic score recomputation (matches skills.ts pattern)
   const scoreRefreshTimer = setInterval(() => {
@@ -428,8 +433,21 @@ export async function blueprintRoutes(
     return reply.send(split);
   });
 
-  // GET /blueprints — browse published blueprints with cursor pagination
+  // GET /blueprints — browse published blueprints with cursor pagination.
+  // This is a pure marketplace surface: it returns ALL published blueprints
+  // (not owner-scoped), so every non-admin user must pass the entitlement gate.
   app.get<{ Querystring: unknown }>('/blueprints', async (request, reply) => {
+    // Marketplace entitlement check for non-admin users
+    if (!request.isAdmin) {
+      const entitlements = resolvePlanBlueprintEntitlements(plansConfig, request.userPlanId);
+      if (!entitlements.canViewMarketplaceBlueprints) {
+        return reply.status(403).send({
+          error: BlueprintErrorCodes.FORBIDDEN,
+          message: 'Your plan does not include marketplace access',
+        });
+      }
+    }
+
     const rawQuery = request.query as Record<string, unknown>;
 
     // Parse tags from comma-separated string if provided
@@ -559,6 +577,20 @@ export async function blueprintRoutes(
       : [];
     const revisionById = new Map(revisionRows.map((r) => [r.id, r]));
 
+    // Batch-load viewer likes for the current page
+    const pageIds = pageRows.map((r) => r.id);
+    let likedIds = new Set<string>();
+    if (pageIds.length > 0) {
+      const likeRows = await db
+        .select({ blueprintId: blueprintLikes.blueprintId })
+        .from(blueprintLikes)
+        .where(and(
+          eq(blueprintLikes.userId, request.userId),
+          inArray(blueprintLikes.blueprintId, pageIds),
+        ));
+      likedIds = new Set(likeRows.map((r) => r.blueprintId));
+    }
+
     const items = pageRows.map((bp) => {
       const rev = bp.publishedRevisionId ? revisionById.get(bp.publishedRevisionId) : null;
       return BlueprintSummarySchema.parse({
@@ -574,6 +606,7 @@ export async function blueprintRoutes(
         venueType: rev?.venueType ?? bp.venueType,
         likeCount: bp.likeCount,
         forkCount: bp.forkCount,
+        isLikedByViewer: likedIds.has(bp.id),
         popularityScore: bp.popularityScore,
         trendingScore: bp.trendingScore,
         publishedAt: bp.publishedAt?.toISOString() ?? null,
@@ -719,7 +752,33 @@ export async function blueprintRoutes(
     }
 
     const { blueprint: bp, revision } = resolved;
-    const detail = await buildBlueprintDetail(db, bp, revision);
+
+    // Marketplace entitlement check for non-owner, non-admin accessing published blueprints.
+    // The bp.publicationStatus === 'published' guard is redundant here because
+    // resolveTargetRevision already rejects non-published blueprints for non-owner/non-admin
+    // callers. It's kept as a belt-and-suspenders check for clarity.
+    if (!request.isAdmin && bp.authorId !== request.userId && bp.publicationStatus === 'published') {
+      const entitlements = resolvePlanBlueprintEntitlements(plansConfig, request.userPlanId);
+      if (!entitlements.canViewMarketplaceBlueprints) {
+        return reply.status(403).send({
+          error: BlueprintErrorCodes.FORBIDDEN,
+          message: 'Your plan does not include marketplace access',
+        });
+      }
+    }
+
+    // Check viewer like state (after entitlement gate — avoids wasted query for rejected users)
+    const [likeRow] = await db
+      .select()
+      .from(blueprintLikes)
+      .where(and(
+        eq(blueprintLikes.blueprintId, bp.id),
+        eq(blueprintLikes.userId, request.userId),
+      ))
+      .limit(1);
+    const isLikedByViewer = likeRow !== undefined;
+
+    const detail = await buildBlueprintDetail(db, bp, revision, undefined, isLikedByViewer);
     return reply.send(detail);
   });
 
@@ -1003,6 +1062,17 @@ export async function blueprintRoutes(
     }
 
     const { blueprint: sourceBp, revision: sourceRevision } = resolved;
+
+    // Marketplace entitlement check for non-owner, non-admin
+    if (!request.isAdmin && sourceBp.authorId !== request.userId) {
+      const entitlements = resolvePlanBlueprintEntitlements(plansConfig, request.userPlanId);
+      if (!entitlements.canViewMarketplaceBlueprints) {
+        return reply.status(403).send({
+          error: BlueprintErrorCodes.FORBIDDEN,
+          message: 'Your plan does not include marketplace access',
+        });
+      }
+    }
 
     // Compute fork request hash
     const forkHash = computeForkRequestHash({
@@ -1471,6 +1541,17 @@ export async function blueprintRoutes(
       });
     }
 
+    // Marketplace entitlement check for non-owner, non-admin
+    if (!request.isAdmin && bp.authorId !== request.userId) {
+      const entitlements = resolvePlanBlueprintEntitlements(plansConfig, request.userPlanId);
+      if (!entitlements.canViewMarketplaceBlueprints || !entitlements.canLikeMarketplaceBlueprints) {
+        return reply.status(403).send({
+          error: BlueprintErrorCodes.FORBIDDEN,
+          message: 'Your plan does not include marketplace like access',
+        });
+      }
+    }
+
     await db.insert(blueprintLikes).values({
       blueprintId: bp.id,
       userId: request.userId,
@@ -1487,6 +1568,25 @@ export async function blueprintRoutes(
     const [bp] = await db.select().from(blueprints).where(eq(blueprints.id, request.params.id)).limit(1);
     if (!bp) {
       return reply.status(404).send({ error: BlueprintErrorCodes.NOT_FOUND, message: 'Blueprint not found' });
+    }
+
+    // Must be published (likes are only allowed on published blueprints)
+    if (bp.publicationStatus !== 'published') {
+      return reply.status(409).send({
+        error: BlueprintErrorCodes.LIFECYCLE_CONFLICT,
+        message: 'Only published blueprints can be liked',
+      });
+    }
+
+    // Marketplace entitlement check for non-owner, non-admin
+    if (!request.isAdmin && bp.authorId !== request.userId) {
+      const entitlements = resolvePlanBlueprintEntitlements(plansConfig, request.userPlanId);
+      if (!entitlements.canViewMarketplaceBlueprints || !entitlements.canLikeMarketplaceBlueprints) {
+        return reply.status(403).send({
+          error: BlueprintErrorCodes.FORBIDDEN,
+          message: 'Your plan does not include marketplace like access',
+        });
+      }
     }
 
     await db.delete(blueprintLikes).where(and(
