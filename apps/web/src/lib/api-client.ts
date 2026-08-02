@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { config } from './config.js';
 import { getToken, clearToken } from './session.js';
 import type {
@@ -1641,6 +1642,13 @@ import type {
 export { type BlueprintSummary, type BlueprintDetail } from './blueprint-types.js';
 
 export const blueprints = {
+  /** Archive a blueprint (must be delisted first). */
+  archive: (id: string) =>
+    request<{ id: string; publicationStatus: string; archivedAt: string | null; delistedAt: string | null; updatedAt: string }>(
+      `/blueprints/${id}/archive`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
+
   /** Browse published blueprints with cursor pagination, filters, and sort. */
   browse: (params: BlueprintBrowseParams = {}) => {
     const qs = new URLSearchParams();
@@ -1656,22 +1664,9 @@ export const blueprints = {
     return request<BlueprintBrowseResponse>(`/blueprints${query}`);
   },
 
-  /** Get a single blueprint with its full revision payload. */
-  get: (id: string, revisionId?: string) => {
-    const qs = revisionId ? `?revisionId=${encodeURIComponent(revisionId)}` : '';
-    return request<BlueprintDetail>(`/blueprints/${id}${qs}`);
-  },
-
   /** Create a new blueprint from scratch. */
   create: (body: CreateBlueprintBody) =>
     request<BlueprintDetail>('/blueprints', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-
-  /** Create a new revision (edit) of an existing blueprint. */
-  createRevision: (blueprintId: string, body: CreateRevisionBody) =>
-    request<BlueprintDetail>(`/blueprints/${blueprintId}/revisions`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
@@ -1696,12 +1691,42 @@ export const blueprints = {
       body: JSON.stringify(body),
     }),
 
-  /** Preview what an instantiation will look like — read-only, writes nothing. */
-  previewInstantiation: (blueprintId: string, body: BlueprintInstantiatePreviewRequest) =>
-    request<BlueprintInstantiatePreviewResponse>(
-      `/blueprints/${blueprintId}/instantiate/preview`,
-      { method: 'POST', body: JSON.stringify(body) },
+  /** Create a new revision (edit) of an existing blueprint. */
+  createRevision: (blueprintId: string, body: CreateRevisionBody) =>
+    request<BlueprintDetail>(`/blueprints/${blueprintId}/revisions`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Delist a published blueprint — removes it from the marketplace. */
+  delist: (id: string) =>
+    request<{ id: string; publicationStatus: string; delistedAt: string | null; updatedAt: string }>(
+      `/blueprints/${id}/delist`,
+      { method: 'POST', body: JSON.stringify({}) },
     ),
+
+  /** Return an archived or delisted blueprint back to draft. */
+  draft: (id: string) =>
+    request<{ id: string; publicationStatus: string; updatedAt: string }>(
+      `/blueprints/${id}/draft`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
+
+  /** Fork a blueprint. Auto-generates an idempotency key if not provided. */
+  fork: (id: string, body?: { revisionId?: string; edits?: Record<string, unknown> }, idempotencyKey?: string) => {
+    const key = idempotencyKey ?? crypto.randomUUID();
+    return request<BlueprintDetail>(`/blueprints/${id}/fork`, {
+      method: 'POST',
+      body: JSON.stringify(body ?? {}),
+      headers: { 'Idempotency-Key': key },
+    });
+  },
+
+  /** Get a single blueprint with its full revision payload. */
+  get: (id: string, revisionId?: string) => {
+    const qs = revisionId ? `?revisionId=${encodeURIComponent(revisionId)}` : '';
+    return request<BlueprintDetail>(`/blueprints/${id}${qs}`);
+  },
 
   /** Confirm an instantiation — creates a stopped actor with attribution. Idempotent. */
   instantiate: (
@@ -1717,4 +1742,38 @@ export const blueprints = {
         headers: { 'Idempotency-Key': idempotencyKey },
       },
     ),
+
+  /** Like a blueprint. Uses PUT (idempotent). */
+  like: (id: string) =>
+    request<{ liked: boolean; likeCount: number }>(`/blueprints/${id}/like`, {
+      method: 'PUT',
+      body: JSON.stringify({}),
+    }),
+
+  /** Preview what an instantiation will look like — read-only, writes nothing. */
+  previewInstantiation: (blueprintId: string, body: BlueprintInstantiatePreviewRequest) =>
+    request<BlueprintInstantiatePreviewResponse>(
+      `/blueprints/${blueprintId}/instantiate/preview`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  /** Return a published blueprint back to private. */
+  private: (id: string) =>
+    request<{ id: string; publicationStatus: string; updatedAt: string }>(
+      `/blueprints/${id}/private`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
+
+  /** Publish a draft blueprint with optimistic concurrency control. */
+  publish: (id: string, body: { expectedCurrentRevisionId: string }) =>
+    request<BlueprintDetail>(`/blueprints/${id}/publish`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Unlike a blueprint. Uses DELETE. */
+  unlike: (id: string) =>
+    request<{ liked: boolean; likeCount: number }>(`/blueprints/${id}/like`, {
+      method: 'DELETE',
+    }),
 };

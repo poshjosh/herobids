@@ -201,9 +201,9 @@ Once the client helpers exist, switch `BlueprintDetailPage` off raw `fetch()` fo
 ## Implementation Order
 
 1. [DONE] Add the internal agent-blueprint sync service and fingerprint comparison.
-2. [IN PROGRESS] Wire blueprint sync into `startAgent()` with loud-failure behavior.
-3. [PENDING] Reuse/extract publish logic so start-path publishing matches the route contract.
-4. [PENDING] Add the missing `blueprints.*` methods to `apps/web/src/lib/api-client.ts`.
+2. [DONE] Wire blueprint sync into `startAgent()` with loud-failure behavior.
+3. [DONE] Reuse/extract publish logic so start-path publishing matches the route contract.
+4. [IN PROGRESS] Add the missing `blueprints.*` methods to `apps/web/src/lib/api-client.ts`.
 5. [PENDING] Migrate `BlueprintDetailPage` lifecycle calls to the API client.
 6. [PENDING] Add targeted tests for first publish, unchanged restart, changed restart, and client usage.
 7. [PENDING] Run `pnpm lint` and the narrow API/frontend tests that cover the touched areas.
@@ -240,3 +240,12 @@ Once the client helpers exist, switch `BlueprintDetailPage` off raw `fetch()` fo
 | **LOW** | Inconsistent error response shape for `not_owned` vs other errors | `routes/agents.ts` |
 | **LOW** | `console.error` fallback diverges from structured logging pattern elsewhere | `agent-lifecycle-service.ts` |
 | **LOW** | `not_stopped` return inside transaction hardcodes `'starting'` status | `agent-lifecycle-service.ts` |
+
+### [Item 4] Add missing `blueprints.*` methods to `api-client.ts`
+
+| Priority | Issue | Location |
+|----------|-------|----------|
+| **MEDIUM** | `fork` return type masks idempotent-replay response shape (200 vs 201) | `api-client.ts` |
+| **MEDIUM** | Lifecycle methods + `like` send unnecessary empty `JSON.stringify({})` bodies | `api-client.ts` |
+| **LOW** | Unused type imports: `BlueprintRevisionPayload` and `BlueprintSkillRef` | `api-client.ts` |
+| **LOW** | Inline return types for lifecycle methods could be DRYed into shared type | `api-client.ts` |
