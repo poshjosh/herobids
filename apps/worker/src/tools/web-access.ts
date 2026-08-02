@@ -205,7 +205,8 @@ async function isHostPrivate(hostname: string): Promise<boolean> {
 
 const WebSearchParamsSchema = z.object({
   query: z.string().min(1).max(400).describe('Search query string'),
-  maxResults: z.number().int().min(1).max(10).optional().describe('Maximum number of results to return (1-10)'),
+  // coerce: LLMs may send numbers as strings
+  maxResults: z.coerce.number().int().min(1).max(10).optional().describe('Maximum number of results to return (1-10)'),
 });
 
 const webSearchTool: AgentTool = {

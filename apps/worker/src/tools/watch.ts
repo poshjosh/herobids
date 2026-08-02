@@ -170,7 +170,8 @@ const WatchTokenParamsSchema = z.object({
     'Chain context: an explicit chain (e.g. "hyperliquid", "solana", "ethereum") or "any" for cross-chain discovery. ' +
     'When "any" is used, the best-matching token is resolved once and the watch is pinned to that concrete chain — it will not drift between chains later.',
   ),
-  thresholdPrice: z.number().positive().describe('Price level in USD that triggers the watch'),
+  // coerce: LLMs may send numbers as strings
+  thresholdPrice: z.coerce.number().positive().describe('Price level in USD that triggers the watch'),
   condition: z.enum(['above', 'below']).describe(
     '"above" triggers when price rises above threshold; "below" triggers when price falls below threshold',
   ),

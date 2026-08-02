@@ -5,7 +5,8 @@ import { convertZodToJsonSchema } from './registry.js';
 // --- get_analytics ---
 
 const GetAnalyticsParamsSchema = z.object({
-  days: z.number().int().positive().max(90).default(7).describe('Lookback period in days (1-90). Defaults to 7.'),
+  // coerce: LLMs may send numbers as strings
+  days: z.coerce.number().int().positive().max(90).default(7).describe('Lookback period in days (1-90). Defaults to 7.'),
 });
 
 const getAnalyticsTool: AgentTool = {

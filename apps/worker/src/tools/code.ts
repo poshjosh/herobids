@@ -48,7 +48,8 @@ const CodeExecuteParamsSchema = z.object({
   code: z.string().min(1).describe('Source code to execute'),
   language: z.enum(['javascript', 'python']).default('javascript').describe('Execution language: "javascript" (Node.js) or "python"'),
   dependencies: z.array(z.string().min(1)).default([]).describe('Package names to install before execution (e.g. ["axios", "lodash"])'),
-  timeoutMs: z.number().int().min(1_000).max(600_000).optional().describe('Execution timeout in milliseconds (1000-600000)'),
+  // coerce: LLMs may send numbers as strings
+  timeoutMs: z.coerce.number().int().min(1_000).max(600_000).optional().describe('Execution timeout in milliseconds (1000-600000)'),
   description: z.string().optional().describe('Brief description of what this code does. For audit/logging.'),
 });
 

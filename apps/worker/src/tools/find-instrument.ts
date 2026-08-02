@@ -7,7 +7,8 @@ import { convertZodToJsonSchema } from './registry.js';
 const FindInstrumentParamsSchema = z.object({
   query: z.string().min(1).describe('Instrument symbol or name to search for (e.g. "BTC", "SOL/USDC", "ETH-USD")'),
   venue: z.string().optional().describe('Filter by venue (e.g. "hyperliquid", "jupiter"). If omitted, searches all venues.'),
-  limit: z.number().int().positive().max(20).optional().describe('Maximum results (1-20, default 5)'),
+  // coerce: LLMs may send numbers as strings
+  limit: z.coerce.number().int().positive().max(20).optional().describe('Maximum results (1-20, default 5)'),
 });
 
 const findInstrumentTool: AgentTool = {

@@ -261,7 +261,8 @@ function searchDocs(query: string, kind?: string, maxResults = 10): SearchResult
 const SearchAppDocsParamsSchema = z.object({
   query: z.string().min(1).max(500).describe('Search query for platform docs, schemas, and mappings.'),
   kind: z.enum(['markdown', 'schema', 'mapping', 'faq', 'reference']).optional().describe('Filter by content type.'),
-  maxResults: z.number().int().min(1).max(50).optional().default(10).describe('Maximum number of results to return.'),
+  // coerce: LLMs may send numbers as strings (e.g. "10")
+  maxResults: z.coerce.number().int().min(1).max(50).optional().default(10).describe('Maximum number of results to return.'),
 });
 
 const searchAppDocsTool: AgentTool = {

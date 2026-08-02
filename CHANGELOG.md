@@ -8,9 +8,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **`search_app_docs` token-aware matching:** Replaced substring-only search with tokenization + token-coverage scoring + lightweight stemming. Queries are now split into individual words matched independently against the docs index, so multi-word queries like "crypto exchange venue connection" find relevant docs even when the exact phrase doesn't appear verbatim. Stemming handles common word variants (venues↔venue, trading↔trade, configuration↔configure) with zero external dependencies. Results are ranked by token coverage weighted by match field (title > heading > tag > content). Added unit tests for all three platform-docs tools.
+- **`search_app_docs` token-aware matching:** Replaced substring-only search with tokenization + token-coverage scoring + lightweight stemming. Queries are now split into individual words matched independently against the docs index; stemming handles common word variants (venues↔venue, trading↔trade, configuration↔configure) with zero external dependencies. Results are ranked by token coverage weighted by match field (title > heading > tag > content). Added unit tests for all three platform-docs tools.
 
-- **Auto-generated docs index:** New build script (`scripts/ts/build-docs-index.ts`) walks `apps/web/src/features/public-pages/content/en/` and regenerates `platform-docs-data.ts` from the live markdown files. Adding a new public page now automatically includes it in the docs index after running `pnpm --filter @herobids/scripts run build-docs-index`. Hardcoded entries (schemas, mappings, skill details) are preserved in the build script. The generated file is checked in so the worker builds without requiring the generation step in CI.
+- **Auto-generated docs index:** New build script (`scripts/ts/build-docs-index.ts`) walks public-pages markdown and regenerates `platform-docs-data.ts`. Wired into root `pnpm build` so adding a `.md` doc automatically includes it in the agent-searchable index on next build.
+
+- **Numeric param coercion:** All LLM-facing `z.number()` params changed to `z.coerce.number()` across 10 tool files so tools accept string-encoded numbers from LLMs (e.g. `"10"` → `10`). Nullable risk-limit params intentionally excluded.
 
 ### Added
 

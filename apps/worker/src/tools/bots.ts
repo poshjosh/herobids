@@ -29,7 +29,8 @@ const BotConfigInputSchema = z.object({
   strategy: StrategyInputSchema,
   execution: z.object({
     mode: z.enum(['paper', 'shadow', 'live']).optional(),
-    slippageBps: z.number().optional(),
+    // coerce: LLMs may send numbers as strings
+    slippageBps: z.coerce.number().optional(),
   }).optional(),
   risk: z.record(z.unknown()).optional(),
   // venue and venueType are omitted — injected from the trading connection by the broker
@@ -91,7 +92,8 @@ const createBotTool: AgentTool = {
 // --- list_bots ---
 
 const ListBotsParamsSchema = z.object({
-  days: z.number().int().positive().optional().describe('Only return bots created within this many days'),
+  // coerce: LLMs may send numbers as strings
+  days: z.coerce.number().int().positive().optional().describe('Only return bots created within this many days'),
 });
 
 const listBotsTool: AgentTool = {
@@ -284,7 +286,8 @@ const AdjustBotConfigParamsSchema = z.object({
     strategy: StrategyPartialInputSchema.optional().describe('Updated strategy fields (partial merge)'),
     execution: z.object({
       mode: z.enum(['paper', 'shadow', 'live']).optional(),
-      slippageBps: z.number().optional(),
+      // coerce: LLMs may send numbers as strings
+      slippageBps: z.coerce.number().optional(),
     }).optional(),
     risk: z.record(z.unknown()).optional(),
     symbol: z.string().optional(),

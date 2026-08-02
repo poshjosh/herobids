@@ -144,7 +144,8 @@ export const sendEmailTool: AgentTool = {
 
 const SearchEmailsParamsSchema = z.object({
   query: z.string().min(1).max(500).describe('Gmail search query syntax (e.g. "from:alice@example.com", "subject:invoice", "newer_than:7d")'),
-  maxResults: z.number().int().min(1).max(50).default(20),
+  // coerce: LLMs may send numbers as strings
+  maxResults: z.coerce.number().int().min(1).max(50).default(20),
 });
 
 export const searchEmailsTool: AgentTool = {

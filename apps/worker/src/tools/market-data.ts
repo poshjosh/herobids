@@ -118,11 +118,13 @@ function filterSearchResults(
 const SearchTokensParamsSchema = z.object({
   query: z.string().min(1).describe('Token name or symbol to search for (e.g. "BONK", "jupiter")'),
   network: z.string().optional().describe('Filter by blockchain network (e.g. "solana", "ethereum")'),
-  minLiquidityUsd: z.number().positive().optional().describe('Minimum liquidity in USD to include a token'),
-  minVolume24hUsd: z.number().positive().optional().describe('Minimum 24h volume in USD'),
-  minTokenAgeHours: z.number().positive().optional().describe('Minimum token age in hours. Tokens with unknown age pass through.'),
+  // coerce: LLMs may send numbers as strings
+  minLiquidityUsd: z.coerce.number().positive().optional().describe('Minimum liquidity in USD to include a token'),
+  minVolume24hUsd: z.coerce.number().positive().optional().describe('Minimum 24h volume in USD'),
+  minTokenAgeHours: z.coerce.number().positive().optional().describe('Minimum token age in hours. Tokens with unknown age pass through.'),
   includeBlocked: z.boolean().optional().describe('Include tokens flagged by safety policies. Default false.'),
-  limit: z.number().int().positive().max(50).optional().describe('Maximum number of results to return (1-50)'),
+  // coerce: LLMs may send numbers as strings
+  limit: z.coerce.number().int().positive().max(50).optional().describe('Maximum number of results to return (1-50)'),
 });
 
 const searchTokensTool: AgentTool = {
@@ -191,8 +193,9 @@ const searchTokensTool: AgentTool = {
 
 const DiscoverTokensParamsSchema = z.object({
   network: z.string().optional().describe('Filter discovery to a specific network (e.g. "solana")'),
-  limit: z.number().int().positive().max(100).optional().describe('Maximum number of tokens to return (1-100)'),
-  minLiquidityUsd: z.number().positive().optional().describe('Minimum liquidity in USD'),
+  // coerce: LLMs may send numbers as strings
+  limit: z.coerce.number().int().positive().max(100).optional().describe('Maximum number of tokens to return (1-100)'),
+  minLiquidityUsd: z.coerce.number().positive().optional().describe('Minimum liquidity in USD'),
 });
 
 const discoverTokensTool: AgentTool = {
@@ -243,10 +246,11 @@ const regimeCandleProvider = CANDLE_PROVIDERS.binance;
 
 const CheckRegimeParamsSchema = z.object({
   benchmarkSymbol: z.string().optional().transform(v => v === '' ? undefined : v).describe(`Benchmark symbol for regime evaluation. ${regimeCandleProvider.symbolFormatHint}. Defaults to "BTC".`),
-  emaFast: z.number().int().positive().optional().describe('Fast EMA period (default 20)'),
-  emaSlow: z.number().int().positive().optional().describe('Slow EMA period (default 50)'),
-  emaTrend: z.number().int().positive().optional().describe('Trend EMA period (default 200)'),
-  adxMin: z.number().positive().optional().describe('Minimum ADX threshold to confirm trend (default 20)'),
+  // coerce: LLMs may send numbers as strings
+  emaFast: z.coerce.number().int().positive().optional().describe('Fast EMA period (default 20)'),
+  emaSlow: z.coerce.number().int().positive().optional().describe('Slow EMA period (default 50)'),
+  emaTrend: z.coerce.number().int().positive().optional().describe('Trend EMA period (default 200)'),
+  adxMin: z.coerce.number().positive().optional().describe('Minimum ADX threshold to confirm trend (default 20)'),
   emaAlignment: z.enum(['bullish', 'bearish', 'any']).optional().describe('Required EMA alignment direction'),
   marketStructure: z.enum(['higherHighs', 'lowerHighs', 'any']).optional().describe('Required market structure pattern'),
   priceAboveVwap: z.boolean().optional().describe('Require price above VWAP'),
