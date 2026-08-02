@@ -1,6 +1,6 @@
 # Plan: Remove llm.catalog.locality
 
-**Status:** draft
+**Status:** Done
 **Created:** 2026-07-07
 
 ## Problem

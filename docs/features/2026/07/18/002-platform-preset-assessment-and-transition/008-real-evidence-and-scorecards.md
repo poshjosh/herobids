@@ -1,6 +1,6 @@
 # Implementation Plan: Evidence Contracts And Deterministic Preset Scorecards
 
-**Status:** Draft - rewritten after implementation review
+**Status:** Done - rewritten after implementation review
 **Depends on:** [005-implementation-checklist-per-symbol-on-demand.md](./005-implementation-checklist-per-symbol-on-demand.md)
 **Unblocks:** [009-llm-preset-ranking.md](./009-llm-preset-ranking.md)
 **Purpose:** Replace placeholder evidence and zero scorecards with auditable market evidence and deterministic dry-runs over one canonical assessment identity.

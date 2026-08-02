@@ -1,6 +1,6 @@
 # Graceful Agent Deployment — Zero/Low Downtime
 
-**Status:** Draft  
+**Status:** Done  
 **Date:** 2026-06-14  
 **Related:** [Bug 008 — 409 orphaned containers](../../../bug-reports/2026/06/14/008-agent-start-fails-409-orphaned-running-containers.md), [Orchestration notes](../orchestration.md)
 

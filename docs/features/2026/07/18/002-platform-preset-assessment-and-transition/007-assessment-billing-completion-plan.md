@@ -1,6 +1,6 @@
 # Implementation Plan: Authoritative Assessment Request, Cache, And Billing Service
 
-**Status:** Draft - rewritten after implementation review
+**Status:** Done - rewritten after implementation review
 **Depends on:** [008-real-evidence-and-scorecards.md](./008-real-evidence-and-scorecards.md) and [009-llm-preset-ranking.md](./009-llm-preset-ranking.md)
 **Companion:** [012-tool-context-wiring.md](./012-tool-context-wiring.md)
 **Purpose:** Make every public assessment request use one durable, billing-gated, cross-worker-safe service boundary.

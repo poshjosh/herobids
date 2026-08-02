@@ -1,6 +1,6 @@
 # API-Like E2E Scenario Matrix For Platform Preset Assessment
 
-**Status:** Draft
+**Status:** Done
 **Date:** 2026-07-19
 **Follows:** [014-corrected-gap-table.md](./014-corrected-gap-table.md), [015-implementation-plan-evidence-catalog-and-assessment-payload.md](./015-implementation-plan-evidence-catalog-and-assessment-payload.md)
 **Precedes:** [016-durable-execution-transition-reconciliation-and-release-evidence.md](./016-durable-execution-transition-reconciliation-and-release-evidence.md)

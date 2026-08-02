@@ -1,6 +1,6 @@
 # Implementation Plan: Active Preset State, Transition Execution, And Assessment Tools
 
-**Status:** Draft - rewritten after implementation review
+**Status:** Done - rewritten after implementation review
 **Depends on:** [007-assessment-billing-completion-plan.md](./007-assessment-billing-completion-plan.md), [008-real-evidence-and-scorecards.md](./008-real-evidence-and-scorecards.md), and [009-llm-preset-ranking.md](./009-llm-preset-ranking.md)
 **Purpose:** Replace assessment-tool stubs and audit-only transitions with authoritative preset bindings, exact-artifact recommendation, and risk-preserving transition execution.
 

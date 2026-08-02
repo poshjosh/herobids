@@ -1,6 +1,6 @@
 # Plan: Style-Based Strategy Presets (YAML) for Agents & Bots
 
-**Status:** Ready for implementation  
+**Status:** Done
 **Date:** 2026-07-01  
 **Prior art:**
 - `docs/features/2026/06/27/001-strategy-presets-mechanical-parity/001-plan.md` — MechanicalStrategy expansion (partially done)

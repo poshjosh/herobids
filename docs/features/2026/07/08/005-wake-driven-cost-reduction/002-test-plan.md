@@ -1,6 +1,6 @@
 # 005 — Wake-Driven Cost Reduction Test Plan
 
-**Status:** Draft  
+**Status:** Done  
 **Created:** 2026-07-08  
 **Implements:** `docs/features/2026/07/08/005-wake-driven-cost-reduction/001-plan.md`
 

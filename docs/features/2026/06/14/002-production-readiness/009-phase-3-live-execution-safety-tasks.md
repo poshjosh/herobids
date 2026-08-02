@@ -181,7 +181,7 @@ Scope:
 
 ### T9: Add bounded swap-live safety parity for pending confirmation recovery
 
-**Status:** in-progress
+**Status:** done
 **Approach:** Vertical slice
 **Effort:** Medium (1-2 sessions)
 **Depends on:** T3, T4, T6
@@ -203,7 +203,7 @@ Scope:
 
 ### T10: Extend crash policy and execution-quality alerting to confirmed swap exposure
 
-**Status:** in-progress
+**Status:** done
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** T7, T8, T9

@@ -1,6 +1,6 @@
 # Implementation Checklist: Per-Symbol On-Demand Assessment (Consolidated)
 
-**Status:** Draft — authoritative implementation checklist
+**Status:** Done — authoritative implementation checklist
 **Clarifies:** [003-plan-amendment-per-symbol-on-demand-assessment.md](./003-plan-amendment-per-symbol-on-demand-assessment.md) and [004-decision-amendment-per-symbol-on-demand-assessment.md](./004-decision-amendment-per-symbol-on-demand-assessment.md)
 **Retains:** [001-plan.md](./001-plan.md) and [002-decision-record.md](./002-decision-record.md), except where the amendments or this checklist explicitly replace them
 **Follow-up Enforcement Plan:** [006-followup-plan.md](./006-followup-plan.md) — gap register, coverage gate, and end-to-end acceptance scenario for closing the remaining implementation gaps

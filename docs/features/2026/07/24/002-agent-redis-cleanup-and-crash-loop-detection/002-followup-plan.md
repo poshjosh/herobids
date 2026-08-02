@@ -1,6 +1,6 @@
 # 003 — Follow-Up Plan: Unit Tests & Outstanding Fixes
 
-- **Status:** Draft
+- **Status:** Done
 - **Date:** 2026-07-25
 - **Author:** AI agent
 - **Trigger:** Code review of the initial implementation of [001-plan.md](./001-plan.md) identified four outstanding issues (2 MEDIUM, 2 LOW). This plan addresses them in priority order.

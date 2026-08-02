@@ -1,6 +1,6 @@
 # Agent Runtime Reliability
 
-**Status:** Draft
+**Status:** Done
 **Created:** 2026-07-05
 **Source:** Evaluation of agent session `8b94fa65` (thyper, 2026-07-03 to 2026-07-05)
 

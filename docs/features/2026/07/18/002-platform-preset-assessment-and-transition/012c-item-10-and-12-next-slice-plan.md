@@ -1,6 +1,6 @@
 # Next Implementation Slice: 012 Item 10 And Item 12
 
-**Status:** Draft (revised 2026-07-19 after critique — resolutions H1–H3, M1–M4, L1–L4 folded into the relevant sections and tagged inline)
+**Status:** Done (revised 2026-07-19 after critique — resolutions H1–H3, M1–M4, L1–L4 folded into the relevant sections and tagged inline)
 **Follows:** [012b-reconciliation-matrix.md](./012b-reconciliation-matrix.md)
 **Primary closure target:** [006-followup-plan.md](./006-followup-plan.md) C6 and C7
 **Purpose:** Convert the two deferred parts of the implemented `012` slice into one concrete, code-checked implementation plan.

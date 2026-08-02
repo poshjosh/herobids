@@ -1,6 +1,6 @@
 # 003 — Plan: Agent Crash-Path Redis Cleanup & Cross-Session Crash-Loop Guard
 
-- **Status:** Draft
+- **Status:** Done
 - **Date:** 2026-07-25
 - **Author:** AI agent
 - **Trigger:** Staging evaluation showed crashed agents (range, swing) leaving orphaned Redis state and repeatedly crashing with no cross-session guard.

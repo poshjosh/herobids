@@ -1,6 +1,6 @@
 # Implementation Plan: Frontend-Triggered Forced Strategy Review
 
-**Status:** Draft  
+**Status:** Done  
 **Date:** 2026-07-20  
 **Purpose:** Add a dedicated frontend control that lets a user trigger a strategy review on demand, end to end, without expanding the existing evaluation feature and without adding Telegram command support.
 

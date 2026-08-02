@@ -1,6 +1,6 @@
 # Plan: Agent Evaluation
 
-**Status:** draft  
+**Status:** Done  
 **Created:** 2026-06-28  
 **Feature ID:** 001-agent-evaluation
 

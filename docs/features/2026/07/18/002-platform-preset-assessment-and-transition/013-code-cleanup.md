@@ -1,6 +1,6 @@
 # Implementation Plan: Legacy Assessment Removal And Rollout Evidence
 
-**Status:** Draft - rewritten after implementation review
+**Status:** Done - rewritten after implementation review
 **Run only after:** [007-assessment-billing-completion-plan.md](./007-assessment-billing-completion-plan.md) through [012-tool-context-wiring.md](./012-tool-context-wiring.md) have executable proof
 **Purpose:** Remove superseded segment/scheduler compatibility code only after its replacement is live, and expose durable rollout evidence from real request, assessment, and transition records.
 

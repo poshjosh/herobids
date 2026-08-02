@@ -1,6 +1,6 @@
 ## Plan: Authorization Mode And Trade Approvals
 
-**Status:** Ready for implementation
+**Status:** Done
 **Scope:** Agent-direct trading only. Bot approval-gating is explicitly deferred.
 
 **TL;DR:** Add a user-configured `authorizationMode` to agent config, introduce a new creator-facing `trading-assistant` preset that includes trading skill but excludes bot management, make `submit_decision` return `pending_approval` instead of immediate execution when `authorizationMode = 'approval_required'`, persist first-class approval records with short human-safe codes, and let users resolve them through web UI and Telegram slash commands. All chat/help/docs should prefer `/yes <code>` and `/no <code>`; code-less `/yes` and `/no` are accepted only when the user has exactly one unresolved approval.

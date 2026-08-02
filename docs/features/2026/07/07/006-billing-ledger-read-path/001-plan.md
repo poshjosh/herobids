@@ -1,6 +1,6 @@
 # Billing Ledger Read Path
 
-**Status:** Draft  
+**Status:** Done  
 **Created:** 2026-07-07
 
 ---

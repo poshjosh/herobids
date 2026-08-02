@@ -1,6 +1,6 @@
 # Agent Evaluation — Narrative LLM Selection
 
-**Status:** draft  
+**Status:** Done  
 **Created:** 2026-06-29  
 **Feature ID:** 001-agent-evaluation
 

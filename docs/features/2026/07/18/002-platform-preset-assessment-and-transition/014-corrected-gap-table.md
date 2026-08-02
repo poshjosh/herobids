@@ -1,6 +1,6 @@
 # Corrected Gap Table: Platform Preset Assessment And Transition
 
-**Status:** Draft
+**Status:** Done
 **Date:** 2026-07-19
 **Purpose:** Replace the earlier gap table with a code-checked status record that distinguishes already-landed foundations, missing implementation, and missing verification.
 

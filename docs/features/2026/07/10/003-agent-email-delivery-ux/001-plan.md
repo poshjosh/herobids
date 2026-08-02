@@ -1,6 +1,6 @@
 # Agent Email Delivery UX
 
-**Status:** draft
+**Status:** Done
 **Created:** 2026-07-10
 **Related:** [Marketplace Discovery — Vision & Current State](../060-agent-blueprint-marketplace/000-vision-and-current-state.md)
 

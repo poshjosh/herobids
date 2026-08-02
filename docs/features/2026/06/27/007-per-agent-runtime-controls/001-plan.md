@@ -1,6 +1,6 @@
 # Plan: Per-Agent Runtime Controls
 
-**Status:** draft  
+**Status:** Done  
 **Created:** 2026-06-27  
 **Feature ID:** 007-per-agent-runtime-controls
 

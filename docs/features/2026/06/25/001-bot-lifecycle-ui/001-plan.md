@@ -1,6 +1,6 @@
 # Plan: Bot Lifecycle Controls in UI
 
-**Status:** draft  
+**Status:** Done  
 **Created:** 2026-06-25  
 **Feature ID:** 001-bot-lifecycle-ui
 

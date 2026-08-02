@@ -1,6 +1,6 @@
 ## Plan: Meaningful Strategy Review UX (Sync Assessment, Preset Rankings, Agent Action Tracking)
 
-**Status:** Ready for implementation
+**Status:** Done
 **Scope:** Forced/manual strategy review path only. The scheduled (timer-driven) review path is unchanged — see Non-Goals.
 
 **TL;DR:** Redesign the user-triggered ("forced") strategy review to run the billed platform assessment synchronously after the deterministic pre-check, surface preset rankings (not instrument flags) as the primary UX, share the resulting assessment artifact IDs with the agent so it can call `change_strategy_preset` directly (no second billed call), and let the user see whether the agent acted on the recommendation.

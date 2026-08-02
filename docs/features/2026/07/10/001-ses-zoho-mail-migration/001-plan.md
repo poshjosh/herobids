@@ -1,6 +1,6 @@
 # PLAN: Migrate Email from Resend to SES + Zoho Mail
 
-**Status:** Draft
+**Status:** Done
 **Created:** 2026-07-09
 
 ---

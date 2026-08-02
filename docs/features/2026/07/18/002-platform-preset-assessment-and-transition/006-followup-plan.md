@@ -1,6 +1,6 @@
 # Follow-up Plan: Executable Completion Matrix
 
-**Status:** Draft - mandatory completion gate
+**Status:** Done - mandatory completion gate
 **Follows:** [005-implementation-checklist-per-symbol-on-demand.md](./005-implementation-checklist-per-symbol-on-demand.md)
 **Companion plans:** [007-assessment-billing-completion-plan.md](./007-assessment-billing-completion-plan.md) through [013-code-cleanup.md](./013-code-cleanup.md)
 

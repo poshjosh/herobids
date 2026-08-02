@@ -1,6 +1,6 @@
 # 006 — Full Prompt Visibility
 
-**Status:** Draft  
+**Status:** Done  
 **Created:** 2026-06-12  
 **Goal:** Surface all four LLM prompt surfaces (scout system, scout user-context, judge system, judge user-context) in the frontend so prompt engineers can inspect exactly what the agent sees each tick.
 

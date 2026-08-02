@@ -1,6 +1,6 @@
 # Plan: Eliminate Static LLM Provider Pricing
 
-**Status:** draft
+**Status:** Done
 **Created:** 2026-07-06
 **Feature ID:** 002-eliminate-static-llm-pricing
 **ADR:** [001-eliminate-static-llm-pricing.md](../../../../tech/adrs/2026/07/001-eliminate-static-llm-pricing.md)

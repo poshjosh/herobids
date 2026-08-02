@@ -1,6 +1,6 @@
 # 020 — Wake-Driven Cost Reduction Plan
 
-**Status:** Draft  
+**Status:** Done  
 **Created:** 2026-07-08  
 **Source inputs:**
 - `docs/features/pending/020-wake-driven-cost-reduction/000-analysis.md`

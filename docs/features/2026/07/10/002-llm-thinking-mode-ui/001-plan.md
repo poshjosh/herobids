@@ -1,7 +1,7 @@
 # LLM Reasoning-Mode Controls — UI + Provider Modernisation
 
 **Created:** 2026-07-10
-**Status:** Draft
+**Status:** Done
 **Depends on:** none (provider-layer changes are self-contained)
 
 ## Problem

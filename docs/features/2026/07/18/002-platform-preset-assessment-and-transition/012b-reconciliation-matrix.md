@@ -1,6 +1,6 @@
 # Reconciliation Matrix: 012 Tool Context Wiring vs 005 / 006b
 
-**Status:** Draft
+**Status:** Done
 **Purpose:** Reconcile [012-tool-context-wiring.md](./012-tool-context-wiring.md) against the later controlling documents [005-implementation-checklist-per-symbol-on-demand.md](./005-implementation-checklist-per-symbol-on-demand.md) and [006b-followup-plan-2.md](./006b-followup-plan-2.md), and identify what remains as the two deferred items from the implemented 012 slice.
 
 ## 1. Precedence Rule

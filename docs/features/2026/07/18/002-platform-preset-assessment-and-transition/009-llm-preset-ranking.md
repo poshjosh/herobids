@@ -1,6 +1,6 @@
 # Implementation Plan: Platform LLM Ranking And Artifact Assembly
 
-**Status:** Draft - rewritten after implementation review
+**Status:** Done - rewritten after implementation review
 **Depends on:** [008-real-evidence-and-scorecards.md](./008-real-evidence-and-scorecards.md)
 **Companion:** [007-assessment-billing-completion-plan.md](./007-assessment-billing-completion-plan.md)
 **Purpose:** Replace placeholder ranking text with a platform-owned, bounded, validated LLM analysis over persisted deterministic evidence.

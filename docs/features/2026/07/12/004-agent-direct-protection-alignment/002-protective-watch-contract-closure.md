@@ -1,6 +1,6 @@
 # Protective Watch Contract Closure
 
-**Status:** Ready for implementation  
+**Status:** Done  
 **Created:** 2026-07-12
 
 **Related reports and plans:**

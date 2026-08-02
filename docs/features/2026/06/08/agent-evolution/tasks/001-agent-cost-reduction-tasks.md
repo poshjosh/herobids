@@ -141,7 +141,7 @@ Pass the resolved thinking level to `callLlmProvider`.
 
 ### T8: Scout mode — cheap model dispatch with restricted tools
 
-**Status:** in-progress (85% complete)
+**Status:** done (85% complete)
 **Approach:** Vertical slice
 **Effort:** Large (1–2 sessions)
 **Depends on:** T6, T7
@@ -207,7 +207,7 @@ Instead of sending full market state every tick:
 
 ### T11: Cost presets and daily spend budget
 
-**Status:** in-progress
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T5, T6, T7 (uses interval + thinking level)

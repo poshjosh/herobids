@@ -1,6 +1,6 @@
 # Plan: OpenAIdom Domain Rollout
 
-**Status:** Ready for implementation  
+**Status:** Done  
 **Created:** 2026-07-11  
 **Goal:** Make OpenAIdom the only public hostname set for staging and the first production launch, using the existing Hetzner infrastructure without preserving the old `herobids.com` domain.
 

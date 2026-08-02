@@ -1,6 +1,6 @@
 # 009 - Agent Blueprint Marketplace Phase 1 Implementation Plan
 
-**Status:** Ready for implementation after Plan 008  
+**Status:** Implemented
 **Created:** 2026-08-01  
 **Depends on:** [002-agent-bot-config-harmonization-closure.md](./002-agent-bot-config-harmonization-closure.md)  
 **Supersedes for implementation:** [006-phase-1-plan.md](../002-agent-blueprint-marketplace/006-phase-1-plan.md)  

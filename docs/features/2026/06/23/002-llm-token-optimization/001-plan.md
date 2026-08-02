@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-23  
 **Features:** `maxHistoryTokens`, stale tool result truncation, OpenRouter/Anthropic prompt caching  
-**Status:** Ready to implement
+**Status:** Implemented
 
 ---
 

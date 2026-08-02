@@ -1,6 +1,6 @@
 # Implementation Plan: Evidence Adapters, Preset Catalog, And Assessment Payload
 
-**Status:** Draft
+**Status:** Done
 **Date:** 2026-07-19
 **Depends on:** [014-corrected-gap-table.md](./014-corrected-gap-table.md)
 **Related plans:** [008-real-evidence-and-scorecards.md](./008-real-evidence-and-scorecards.md), [009-llm-preset-ranking.md](./009-llm-preset-ranking.md), [006b-followup-plan-2.md](./006b-followup-plan-2.md)

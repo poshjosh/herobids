@@ -1,6 +1,6 @@
 # Plan: Platform Preset Assessment and Agent Strategy Transition
 
-**Status:** Draft
+**Status:** Done
 **Scope:** Shared market assessment for strategy-preset ranking, platform-controlled review wakes, and actor-local preset transition decisions.
 
 > Update: See [003-plan-amendment-per-symbol-on-demand-assessment.md](./003-plan-amendment-per-symbol-on-demand-assessment.md). That amendment supersedes the original segment-based assessment identity and scheduled generation direction where they conflict.

@@ -11,7 +11,7 @@ strict sequencing, file-level edit targets, and validation order.
 
 ### T1: Add shared config and domain contract scaffolding
 
-**Status:** not-started
+
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** None
@@ -33,7 +33,7 @@ Scope:
 
 ### T2: Build the shared market-data token policy layer
 
-**Status:** not-started
+
 **Approach:** Vertical slice
 **Effort:** Large (1-2 sessions)
 **Depends on:** T1
@@ -57,7 +57,7 @@ Scope:
 
 ### T3: Add a provider-registry facade for token policy and remove duplicated thin filtering
 
-**Status:** not-started
+
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** T2
@@ -78,7 +78,7 @@ Scope:
 
 ### T4: Fix DEX enrichment identity to use network plus address
 
-**Status:** not-started
+
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** T2
@@ -100,7 +100,7 @@ Scope:
 
 ### T5: Add persisted token-safety override storage and repository
 
-**Status:** not-started
+
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T1
@@ -122,7 +122,7 @@ Scope:
 
 ### T6: Build the worker token-safety adapter and wire override issuance and consumption
 
-**Status:** not-started
+
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T2, T5
@@ -145,7 +145,7 @@ Scope:
 
 ### T7: Inject the hard swap guard into the shared execution path
 
-**Status:** not-started
+
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** T1, T6
@@ -169,7 +169,7 @@ Scope:
 
 ### T8: Extend the brokered decision and rejection flow for safety overrides
 
-**Status:** not-started
+
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** T6, T7
@@ -192,7 +192,7 @@ Scope:
 
 ### T9: Add focused market-data, worker, engine, and DB tests in dependency order
 
-**Status:** not-started
+
 **Approach:** End-to-end
 **Effort:** Large (1-2 sessions)
 **Depends on:** T3, T4, T5, T7, T8
@@ -214,7 +214,7 @@ Scope:
 
 ### T10: Final hardening and repo validation
 
-**Status:** not-started
+
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T9

@@ -1,7 +1,7 @@
 # Discovery Diversity Plan
 
 **Date:** 2026-06-17
-**Status:** Draft
+**Status:** Done
 
 ## Problem
 

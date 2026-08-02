@@ -1,7 +1,7 @@
 # Plan 3: Agent-First Experience
 
 **Phase:** 3
-**Status:** `in progress`
+**Status:** done
 **Depends on:** [Phase 1 — Foundation Cleanup](./001-plan-foundation-cleanup.md), [Phase 2 — Real Agent Runtime](./002-plan-real-agent-runtime.md)
 **Roadmap:** [000-roadmap.md](./000-roadmap.md)
 

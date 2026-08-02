@@ -1,6 +1,6 @@
 # Plan: Dynamic LLM Pricing — Database-Backed Provider Pricing
 
-**Status:** ready  
+**Status:** Done
 **Created:** 2026-06-27  
 **Feature ID:** 006-dynamic-llm-pricing  
 **ADR:** [010-llm-pricing-data-not-hardcoded.md](../../../../tech/adrs/2026/06/010-llm-pricing-data-not-hardcoded.md)  

@@ -1,6 +1,6 @@
 # Plan: Documents For Agents
 
-**Status:** draft  
+**Status:** Done  
 **Created:** 2026-07-13  
 **Feature ID:** 001-documents-for-agents
 

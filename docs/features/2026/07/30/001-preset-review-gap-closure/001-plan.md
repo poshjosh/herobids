@@ -1,6 +1,6 @@
 # Plan: Preset Review Gap Closure (Final — Authoritative)
 
-**Status:** Ready for implementation
+**Status:** IMPLEMENTED
 **Scope:** Close the real remaining gaps in the **active** preset-review pipeline for `capabilityMode = 'hybrid'` agents, surfaced by the 2026-07-29 staging evaluation.
 
 ## Companion Documents

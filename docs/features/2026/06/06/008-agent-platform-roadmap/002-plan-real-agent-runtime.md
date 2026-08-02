@@ -1,7 +1,7 @@
 # Plan 2: Real Agent Runtime
 
 **Phase:** 2
-**Status:** `in progress`
+**Status:** done
 **Depends on:** [Phase 1 — Foundation Cleanup](./001-plan-foundation-cleanup.md)
 **Roadmap:** [000-roadmap.md](./000-roadmap.md)
 

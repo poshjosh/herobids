@@ -1,6 +1,6 @@
 # 001 — Watch Token Discovery and Pin
 
-**Status:** Draft  
+**Status:** Done  
 **Created:** 2026-06-25  
 **Scope:** Allow `watch_token` to accept `chain: "any"` safely by resolving a concrete asset identity once at watch creation time and pinning all later repricing to that identity.
 
@@ -530,7 +530,7 @@ Specifically verify:
 - Focused tests pass for market-data and watch tools.
 - `pnpm lint` passes.# 001 — Watch Token Discovery and Pinning
 
-**Status:** Draft  
+**Status:** Done  
 **Created:** 2026-06-25  
 **Scope:** Preserve `get_price(chain="any")` for one-shot discovery while making `watch_token` stable over time by resolving once and pinning to a concrete asset identity.
 

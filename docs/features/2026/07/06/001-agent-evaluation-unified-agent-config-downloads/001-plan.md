@@ -1,6 +1,6 @@
 # 001 — Agent Evaluation Unified Agent Config Download
 
-**Status:** Draft  
+**Status:** Done  
 **Created:** 2026-07-03  
 **Scope:** Include the agent's current persisted unified config as a downloadable evaluation artifact via a dedicated `unified-agent-config.json` file.
 

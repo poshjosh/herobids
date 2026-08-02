@@ -1,6 +1,6 @@
 # Plan: Per-Agent Open Position Escalation To Judge Policy
 
-**Status:** draft  
+**Status:** Done  
 **Created:** 2026-06-25  
 **Feature ID:** 002-agent-open-position-judge-policy
 

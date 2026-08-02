@@ -255,9 +255,9 @@ Conversation history is a core requirement.
 - a user can have multiple chat threads
 - each thread persists until deleted
 - messages in a thread are ordered and replayable
-- only visible assistant text is stored in history
+- only user messages and visible assistant text are stored in history
 
-The final rule matters because the platform already has strong constraints around not storing hidden model reasoning in persisted conversation history.
+The final rule matters because the platform already has strong constraints around not storing hidden model reasoning in persisted conversation history. Structured summaries, collected facts, and workflow metadata may be stored separately when needed for application behavior, but they are not conversation history and must not contain verbatim hidden reasoning or chain-of-thought.
 
 ### Thread Lifecycle
 

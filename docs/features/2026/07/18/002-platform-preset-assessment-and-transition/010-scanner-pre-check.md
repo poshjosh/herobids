@@ -1,6 +1,6 @@
 # Implementation Plan: Persisted Scanner Candidates And Deterministic Review Advice
 
-**Status:** Draft - rewritten after implementation review
+**Status:** Done - rewritten after implementation review
 **Depends on:** active-preset state defined in [012-tool-context-wiring.md](./012-tool-context-wiring.md) and request/billing eligibility in [007-assessment-billing-completion-plan.md](./007-assessment-billing-completion-plan.md)
 **Purpose:** Make `ReviewScheduler` produce real, bounded, advice-only assessment-review wakes from persisted normal-scanner observations.
 

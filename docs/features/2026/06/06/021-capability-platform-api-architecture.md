@@ -1,7 +1,5 @@
 # Capability Platform API Architecture
 
-**Status:** proposed
-
 **Date:** 2026-06-07
 
 **Depends on:**

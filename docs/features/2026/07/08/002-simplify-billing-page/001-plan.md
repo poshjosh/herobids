@@ -1,6 +1,6 @@
 # Plan: Simplify Billing Page — AI Usage Credit View
 
-**Status:** Draft
+**Status:** Done
 **Created:** 2026-07-07
 
 ---

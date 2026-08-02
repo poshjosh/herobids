@@ -1,6 +1,6 @@
 ## Plan: Wire Preset Tool Ports into Agent Containers
 
-**Status:** Ready for implementation
+**Status:** Implemented
 **Scope:** Wire `AssessmentRequestPort` and `PresetTransitionPort` into agent containers so `assess_strategy_preset` and `change_strategy_preset` work end-to-end, plus tests to prevent regression.
 
 **TL;DR:** Both preset tools are fully implemented and wired in the worker process (`index.ts`) but return `"Assessment request port not available"` in agent containers (`agent.ts`) because the module-level ports are never set. Agents are actively calling these tools (13 calls observed, all failing). This plan wires the ports in the agent container and adds tests to verify the wiring stays intact.

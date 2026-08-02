@@ -16,7 +16,7 @@
 
 ### T1: Extend protocol for market events and wake requests
 
-**Status:** not-started
+
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** None
@@ -36,7 +36,7 @@ Scope:
 
 ### T2: Teach the agent scheduler to honor bounded wake requests
 
-**Status:** not-started
+
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** T1
@@ -56,7 +56,7 @@ Scope:
 
 ### T3: Move watch evaluation onto the event-driven path
 
-**Status:** not-started
+
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** T1, T2
@@ -77,7 +77,7 @@ Scope:
 
 ### T4: Add worker leader election and coordinator lifecycle
 
-**Status:** not-started
+
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** None
@@ -97,7 +97,7 @@ Scope:
 
 ### T5: Build shared discovery snapshots and freshness metadata
 
-**Status:** not-started
+
 **Approach:** End-to-end
 **Effort:** Large (1-2 sessions)
 **Depends on:** T4
@@ -117,7 +117,7 @@ Scope:
 
 ### T6: Add anti-staleness and shared monitor state storage
 
-**Status:** not-started
+
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T5
@@ -137,7 +137,7 @@ Scope:
 
 ### T7: Add discovery delta monitor events
 
-**Status:** not-started
+
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** T5, T6
@@ -157,7 +157,7 @@ Scope:
 
 ### T8: Add regime-change monitor events
 
-**Status:** not-started
+
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** T5, T6
@@ -177,7 +177,7 @@ Scope:
 
 ### T9: Add wake coalescing, rate limits, and overflow handling
 
-**Status:** not-started
+
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T2, T3, T6
@@ -197,7 +197,7 @@ Scope:
 
 ### T10: Add observability, degraded-mode behavior, and rollout controls
 
-**Status:** not-started
+
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T3, T4, T5, T9

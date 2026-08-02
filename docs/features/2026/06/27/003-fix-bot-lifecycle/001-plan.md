@@ -1,6 +1,6 @@
 # Plan: Fix Bot Lifecycle — Timestamps, DB State, UI Controls & Verification
 
-**Status:** draft  
+**Status:** Done  
 **Created:** 2026-06-27  
 **Feature ID:** 001-fix-bot-lifecycle
 

@@ -1,6 +1,6 @@
 # Agent Evaluation — Frontend Implementation Plan (Level 2)
 
-**Status:** draft  
+**Status:** Done  
 **Created:** 2026-06-29  
 **Feature ID:** 001-agent-evaluation  
 **Depends on:** Level 1 (operator-grade evaluation — complete)

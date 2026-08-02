@@ -1,6 +1,6 @@
 # Plan: Tool Autocomplete & Discovery in Skill Creation UI
 
-**Status:** draft  
+**Status:** Done  
 **Created:** 2026-06-27  
 **Feature ID:** 008-tool-autocomplete-skill-ui
 

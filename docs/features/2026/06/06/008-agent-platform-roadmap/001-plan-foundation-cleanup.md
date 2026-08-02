@@ -1,7 +1,7 @@
 # Plan 1: Foundation Cleanup
 
 **Phase:** 1
-**Status:** `in progress`
+**Status:** done
 **Depends on:** Nothing — this is the baseline.
 **Roadmap:** [000-roadmap.md](./000-roadmap.md)
 

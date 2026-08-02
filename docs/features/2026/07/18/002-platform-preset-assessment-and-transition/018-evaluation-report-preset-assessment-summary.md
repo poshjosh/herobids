@@ -1,6 +1,6 @@
 # Implementation Plan: Evaluation Report Preset-Assessment Summary
 
-**Status:** Draft
+**Status:** Done
 **Date:** 2026-07-19
 **Follows:** [014-corrected-gap-table.md](./014-corrected-gap-table.md), [015-implementation-plan-evidence-catalog-and-assessment-payload.md](./015-implementation-plan-evidence-catalog-and-assessment-payload.md), [017-api-like-e2e-scenario-matrix-for-platform-preset-assessment.md](./017-api-like-e2e-scenario-matrix-for-platform-preset-assessment.md)
 **Purpose:** Add a meaningful, non-scored preset-assessment appendix to agent evaluation reports and add companion raw artifacts to the existing evaluation bundle without changing the current evaluation score model.
