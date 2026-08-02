@@ -1695,6 +1695,12 @@ export const blueprints = {
       body: JSON.stringify(body),
     }),
 
+  /** Delete a draft blueprint. */
+  delete: (id: string) =>
+    request<{ ok: boolean }>(`/blueprints/${id}`, {
+      method: 'DELETE',
+    }),
+
   /** Delist a published blueprint — removes it from the marketplace. */
   delist: (id: string) =>
     request<{ id: string; publicationStatus: string; delistedAt: string | null; updatedAt: string }>(

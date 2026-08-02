@@ -61,21 +61,9 @@ export function BlueprintDetailPage({ blueprintId }: BlueprintDetailPageProps) {
     },
   });
 
-  // TODO: add blueprints.delete method to api-client so this can use the client
   // Delete mutation
   const deleteMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`/api/blueprints/${blueprintId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
-        },
-      });
-      if (!res.ok) {
-        const body = await res.json() as { message?: string };
-        throw new Error(body.message ?? 'Failed to delete');
-      }
-    },
+    mutationFn: () => blueprints.delete(blueprintId),
     onSuccess: () => {
       window.history.back();
     },
