@@ -5,9 +5,9 @@ We want our UI/UX to be AI first. We are thinking of making the entry point chat
 - The user is shown a chat box, with a default message e.g: 
 
 ```
-Hi, ask anything;
+Hi! I can help you create an AI agent.
 
-Or, I can help you create your own: 
+You can choose one of these:
 
 1. AI personal assistant
 
@@ -15,7 +15,7 @@ Or, I can help you create your own:
 
 3. Custom AI
 
-What do you prefer?
+What do you want to create?
 ```
 
 - The above list could be populated from our supported roles, from the frontend
@@ -65,6 +65,8 @@ Open questions
 
 8. **Chat is embedded on the onboarding/create-agent page.** For v1, there is no separate `/chat` route or sidebar item. The chat lives on the agent creation page: new users land on Guided Setup (chat), with a "Use the form instead" link. Returning users see a tab choice: "Guided (Chat)" | "Form" when they navigate to "New Agent."
 
+9. **Happy path defaults should decide most fields for the user.** In Guided Setup v1, the user must explicitly choose the agent type/preset and specify capital. The system should decide most other happy-path values automatically: generate the agent name using the existing create-agent form algorithm, default the goal/prompt to a configurable platform value (initial default: "Grow this portfolio"), default style to `balanced`, default execution mode to `test`, pick a strategy preset automatically, and auto-assign the first compatible existing active connection when one is available.
+
 ### Implementation Plans
 
 | Plan | File |
@@ -89,15 +91,15 @@ One ADR is needed: **ADR 005 — Onboarding Chat Agent Runtime Model** at `docs/
 
 5. **Landing page: new users only or everyone?** → New users (0 agents) land on Guided Setup (chat) on the create-agent page. Users with ≥1 agent land on `/agents`; they see "Guided (Chat)" | "Form" tabs when clicking "New Agent."
 
-6. **How much thread history goes into LLM context?** → Sliding window of last 20 messages + a structured thread summary injected as a system message (key facts: selected preset, venue, capital, connection IDs collected so far). The summary is updated after each tool call or key decision point.
+6. **How much thread history goes into LLM context?** → Sliding window of last 20 persisted user/assistant messages + a structured thread summary loaded from thread metadata or a separate internal state store (key facts: selected preset, venue, capital, connection IDs collected so far). The summary is updated after each tool call or key decision point, but it is not persisted as a chat message.
 
-7. **OAuth flows in chat — how does the thread resume after redirect?** → Use popup window OAuth where the provider supports it (no redirect needed). Fallback: include `?threadId=X` in the OAuth redirect URL so the frontend reopens the correct thread and injects a system message with the result. Needs a technical spike to confirm per-provider feasibility.
+7. **OAuth flows in chat — how does the thread resume after redirect?** → Redirect/resume is the baseline for v1 because that matches the current create-agent flow. Reuse the existing draft-preservation pattern and include thread/action correlation in the return URL so the frontend can reopen the thread, restore the in-progress state, and continue. Popup OAuth is an optional later optimization after provider-by-provider verification.
 
 8. **Telegram `/chat` command?** → Deferred. Out of scope for v1. Telegram bot commands remain agent-operational only.
 
 9. **Should `platform-docs` appear in the skill picker for regular agents?** → Yes, available in the skill picker (`visibility: 'public'`) but not auto-selected for any preset. Useful for agents that do self-configuration.
 
-10. **Can the user continue a thread after agent creation?** → Yes. The thread remains active after `create_agent` succeeds. The user can create multiple agents in the same thread. Thread metadata tracks `agentCreatedIds: [...]` so the sidebar can show linked agents.
+10. **Can the user continue a thread after agent creation?** → For v1, no multi-agent threads. One thread creates at most one agent. The completed thread remains viewable for confirmation and follow-up context, but "Create another agent" starts a new thread.
 
 11. **Public website chat widget (marketing site)?** → Out of scope for this feature. The onboarding chat is for authenticated users. A public chat widget is a separate product decision involving unauthenticated access, rate limiting, and lead capture.
 

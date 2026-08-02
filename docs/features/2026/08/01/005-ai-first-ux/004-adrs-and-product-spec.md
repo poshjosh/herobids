@@ -17,10 +17,10 @@ Two decisions rise to the level of an Architecture Decision Record:
 **Key decision to record:**
 - The onboarding chat agent is **invoked per-message** (stateless request/response), not continuously ticking
 - It does NOT consume AI Employee runtime billing
-- It has access to a restricted tool set (`*_app_docs`, `create_agent`, `list_connections`, `send_message`)
-- It does NOT have access to trading tools, memory persistence, or background execution
-- It shares the skill system but is not an "agent" in the runtime sense
-- Thread persistence is via `chat_threads`/`chat_messages` tables, not agent memory
+- It uses a narrow API-local onboarding runtime, not the one-shot `apps/api/src/routes/ai.ts` pattern and not the worker agent runtime
+- It has access only to restricted onboarding actions (`*_app_docs`, `list_user_connections`, `create_agent`)
+- It does NOT have access to trading tools, worker messaging/memory tools, or background execution
+- Thread persistence stores only replayable user/assistant messages; summaries and workflow state live in thread metadata or a separate internal store
 
 This is the most important ADR to write. Proposed location: `docs/tech/adrs/2026/08/005-onboarding-chat-agent-runtime-model.md`
 
@@ -64,7 +64,7 @@ The spec does not cover:
 
 1. **Agent onboarding as a primary use case** — the chat as the default entry point for new users creating their first agent
 2. **Embedded form rendering** — the `[FORM:...]` marker system for secrets
-3. **Tool-calling within chat** — the chat agent having access to `create_agent`, `*_app_docs`, `list_connections`
+3. **Tool-calling within chat** — the chat agent having access to chat-safe onboarding actions such as `create_agent`, `*_app_docs`, and `list_user_connections`
 4. **Quick-reply buttons** — structured UI elements in chat for preset/option selection
 5. **Chat → Agent conversion as a first-class flow** — not just "turn this into an AI Employee" as a future action, but as the primary onboarding path
 
@@ -178,19 +178,17 @@ Specifically:
 
 1. The chat agent is invoked synchronously per user message (request/response).
 2. It does NOT consume AI Employee runtime billing — it's billed per-token like other chat usage.
-3. It has access to a restricted tool set appropriate for onboarding:
+3. It uses a narrow API-local onboarding loop rather than the simple one-shot `apps/api/src/routes/ai.ts` pattern.
+4. It has access to a restricted onboarding action set appropriate for onboarding:
    - `search_app_docs`, `list_app_docs`, `read_app_docs` — platform documentation
+   - `list_user_connections` — read-only access to candidate existing connections for reuse
    - `create_agent` — agent creation (runs in API context, not worker)
-   - `list_connections` — read-only access to user's existing connections
-   - `send_message` — the chat response IS the message
-4. It does NOT have access to trading tools, bot management, memory persistence, 
+5. It does NOT have access to trading tools, bot management, worker `send_message`, worker memory persistence, 
    code execution, or any tool that implies continuous operation.
-5. Thread history is persisted in `chat_threads`/`chat_messages` tables, not in agent memory.
-6. The chat agent is NOT an agent row in the `agents` table — it has no `agents.id`,
+6. Thread history persists only replayable user/assistant messages in `chat_messages`; summaries and workflow state live in `chat_threads.metadata` or a separate internal store.
+7. The chat agent is NOT an agent row in the `agents` table — it has no `agents.id`,
    no runtime policy, no tick interval, and no skill binding requirements.
-7. The chat agent uses the same skill system for tool assignment (it carries the
-   `platform-docs` and `base` skills) but skill binding requirements are not enforced
-   since there is no persistent runtime.
+8. It may reuse skill-authored docs/context such as `platform-docs`, but it does not expose the worker runtime `base` skill or worker tool registry directly.
 
 ## Rationale
 
@@ -210,14 +208,14 @@ Specifically:
 1. Clear separation between "talking about agents" and "running agents."
 2. Chat onboarding costs are predictable and low (per-message, not per-hour).
 3. No risk of the onboarding agent accidentally trading or consuming resources.
-4. The tool access model (skills → tools) stays consistent across both surfaces.
+4. The onboarding surface can still reuse existing docs/context concepts without inheriting unsafe worker-runtime assumptions.
 
 ### Negative
 
 1. The chat agent cannot maintain persistent memory across threads (by design —
    each thread is self-contained).
-2. Tool implementations for chat (`create_agent`) must run in the API process,
-   not the worker — this means some tool logic is duplicated or relocated.
+2. The onboarding action implementations (`create_agent`, `list_user_connections`) must run in the API process,
+   not the worker — this means some logic is duplicated or relocated.
 3. The chat agent cannot use tools that require a running agent context
    (e.g., `get_account_summary` needs an agent ID). This is acceptable because
    the chat agent creates agents, it doesn't operate as one.
@@ -226,7 +224,7 @@ Specifically:
 
 1. The chat agent must never be given access to `submit_decision`, `create_bot`,
    or any `execute-trade` category tool.
-2. Any new tool added to the chat agent's allowlist must be explicitly reviewed
+2. Any new onboarding action added to the chat agent's allowlist must be explicitly reviewed
    for consistency with the per-message invocation model.
 3. If future requirements demand a chat agent with persistent state, that must
    be a new ADR that replaces or amends this one.

@@ -6,13 +6,13 @@
 
 ## Summary
 
-Implement a chat-based **Guided Setup** experience on the agent creation page. New users interact with an LLM agent that guides them conversationally through creating their first AI agent — asking follow-up questions, resolving presets, and calling `POST /agents` when ready. The chat is an **alternate (preferred) route** alongside the existing form; it does not replace the form. Embedded forms handle secrets (connections, wallets) so sensitive data never transits through the LLM.
+Implement a chat-based **Guided Setup** experience on the agent creation page. New users interact with an LLM agent that guides them conversationally through creating their first AI agent — asking follow-up questions, resolving presets, applying happy-path defaults for most fields, and calling `POST /agents` when ready. The chat is an **alternate (preferred) route** alongside the existing form; it does not replace the form. Embedded forms handle secrets (connections, wallets) so sensitive data never transits through the LLM.
 
 **v1 scope:** Single-purpose — guide users through the create-agent workflow. General chat ("ask anything," brainstorming, research) is deferred. The UI label is **Guided Setup**.
 
 ## Relationship to Existing Product Spec
 
-This plan delivers the **first step** toward the general-purpose Chat With AI surface defined in `docs/product/chat-with-ai/product-ux-spec.md`. It shares the same infrastructure (thread persistence, skills, tools, marker protocol) but is scoped to one workflow: agent creation. The product spec describes where we're going; v1 is the first delivery.
+This plan delivers the **first step** toward the general-purpose Chat With AI surface defined in `docs/product/chat-with-ai/product-ux-spec.md`. It reuses only the narrow pieces needed for onboarding (thread persistence, platform-docs access, secure form rendering, and a restricted API-local tool-calling loop) and is scoped to one workflow: agent creation. The product spec describes where we're going; v1 is the first delivery.
 
 In v1, the chat is:
 
@@ -33,17 +33,18 @@ In v1, the chat is:
                                                     │  Chat Agent │
                                                     │  Runtime    │
                                                     │             │
-                                                    │ Skills:     │
+                                                    │ Context:    │
                                                     │ - platform- │
                                                     │   docs      │
-                                                    │ - base      │
+                                                    │ - thread    │
+                                                    │   summary   │
                                                     │             │
-                                                    │ Tools:      │
+                                                    │ Actions:    │
                                                     │ - *_app_docs│
+                                                    │ - list_user_│
+                                                    │   connections│
                                                     │ - create_   │
                                                     │   agent     │
-                                                    │ - list_     │
-                                                    │   connections│
                                                     └─────────────┘
 ```
 
@@ -53,26 +54,30 @@ In v1, the chat is:
 
 2. **Chat threads are separate from agent runtimes.** The guided setup agent is not a persistent AI Employee — it's a stateless (or session-scoped) LLM agent invoked per message. This avoids continuous runtime billing for onboarding.
 
-3. **The chat agent has access to `create_agent` as a tool.** It collects information conversationally, validates it against the schema (read via `read_app_docs`), and submits `POST /agents` when ready. The API's Zod validation is the final safety net.
+3. **Guided Setup uses a narrow API-local tool-calling runtime.** It does NOT reuse the simple one-shot pattern from `apps/api/src/routes/ai.ts`, and it does NOT run on the worker agent runtime. The API hosts a restricted onboarding loop: provide context, expose a small allowlist of onboarding actions, execute them server-side, and return a final assistant response.
 
-4. **Secrets never transit through the LLM.** When the chat agent determines a connection is needed, it emits a structured marker `[FORM:connection:venue=X]`. The frontend renders the connection form inline. On success, the frontend sends the resulting `connectionId` back to the chat. The LLM never sees private keys, API secrets, or OAuth tokens.
+4. **The onboarding runtime exposes chat-safe actions, not worker runtime tools.** The chat runtime may expose API-local actions such as `search_app_docs`, `list_app_docs`, `read_app_docs`, `list_user_connections`, and `create_agent`. It must not pretend that worker-only tools like `send_message` or runtime `list_connections` are available.
 
-5. **Scoped to create-agent for v1.** General chat ("ask anything," brainstorming, research) is NOT in v1. The greeting is honest about scope. The UI label is **Guided Setup** — not "Chat With AI."
+5. **Secrets never transit through the LLM.** When the chat agent determines a connection is needed, it emits a structured marker `[FORM:connection:venue=X]`. The frontend renders the connection form inline. On success, the frontend sends the resulting `connectionId` back to the chat. The LLM never sees private keys, API secrets, or OAuth tokens.
 
-6. **Embedded on the agent creation page, not a separate route.** New users (0 agents) land on Guided Setup with a "Use the form instead" link. Returning users see a tab choice: "Guided (Chat)" | "Form" when they navigate to "New Agent." No sidebar item, no `/chat` route in v1.
+6. **Scoped to create-agent for v1.** General chat ("ask anything," brainstorming, research) is NOT in v1. The greeting is honest about scope. The UI label is **Guided Setup** — not "Chat With AI."
 
-7. **Thread history uses a sliding window + structured summary.** Each message invocation sends the last 20 messages plus a structured thread summary (key facts: selected preset, venue, capital, connection IDs collected). The summary is updated after each tool call or key decision point.
+7. **Embedded on the agent creation page, not a separate route.** New users (0 agents) land on Guided Setup with a "Use the form instead" link. Returning users see a tab choice: "Guided (Chat)" | "Form" when they navigate to "New Agent." No sidebar item, no `/chat` route in v1.
 
-8. **Threads stay active after agent creation.** The user can continue the thread and create multiple agents. Thread metadata tracks `agentCreatedIds: [...]`. No special "locked" state after creation.
+8. **Thread history uses persisted user/assistant messages plus separate internal summary state.** Each message invocation sends the last 20 persisted user/assistant messages plus a structured thread summary (key facts: selected preset, venue, capital, connection IDs collected) loaded from thread metadata or a separate internal state store. The summary is updated after each tool call or key decision point, but it is not persisted as a chat message.
 
-9. **OAuth connection flows use popup windows where possible.** For providers that support popup OAuth (most do), the connection form opens in a popup, completes in-window, and the chat never loses context. For providers that require full redirect, the OAuth redirect URL includes `?threadId=X`. A technical spike is needed.
+9. **One agent per thread in v1.** A Guided Setup thread creates at most one agent. After creation, the thread remains viewable for confirmation and follow-up context, but "Create another agent" starts a new thread.
+
+10. **Redirect/resume is the baseline OAuth model for v1.** Reuse the current create-agent draft preservation and `oauthReturn` resume pattern. Popup OAuth is optional later work after provider-specific validation.
+
+11. **Guided Setup offers a strong happy path with system-selected defaults.** In the default flow, the user must explicitly choose the agent type/preset and specify capital. The system decides most other fields unless the user overrides them: generate the name with the same algorithm used by the existing create-agent form, default the goal/prompt to a configurable platform value (initial default: "Grow this portfolio"), default style to `balanced`, default execution mode to `test`, choose a strategy preset automatically, and auto-assign the first compatible existing active connection when one is available.
 
 ## Scope
 
 ### In Scope
 
-- New API endpoints (minimal: create thread + send message; no listing, renaming, or deletion in v1)
-- Chat agent runtime (lightweight, invoked per-message, not continuously ticking)
+- New API endpoints (minimal: create thread, fetch thread, send message, submit action result; no listing, renaming, or deletion in v1)
+- Narrow API-local onboarding runtime (invoked per-message, not continuously ticking)
 - Frontend chat component embedded on the agent creation page with:
   - Message list (user + assistant)
   - Composer (text input, send button)
@@ -84,7 +89,7 @@ In v1, the chat is:
 - Post-creation follow-up messages (fund wallet reminder, test mode notice)
 - Agent creation via `create_agent` tool
 - Chat thread persistence (history survives page reload)
-- DB schema: `chat_threads` + `chat_messages` (forward-looking, but only core endpoints built)
+- DB schema: `chat_threads` + `chat_messages` (persist only replayable user/assistant messages; summaries live in metadata or separate internal state)
 
 ### Out of Scope (v1)
 
@@ -113,14 +118,14 @@ export const chatThreads = pgTable('chat_threads', {
   title: text('title'),  // auto-generated from first message
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-  metadata: jsonb('metadata'),  // { agentCreatedIds: string[], presetSelected: string, summary: { preset, venue, capital, connectionIds, ... } }
+  metadata: jsonb('metadata'),  // { createdAgentId?: string, completedAt?: string, presetSelected: string, summary: { preset, venue, capital, connectionIds, ... } }
 });
 
 // chat_messages
 export const chatMessages = pgTable('chat_messages', {
   id: text('id').primaryKey(),
   threadId: text('thread_id').notNull().references(() => chatThreads.id, { onDelete: 'cascade' }),
-  role: text('role').notNull(),  // 'user' | 'assistant' | 'system'
+  role: text('role').notNull(),  // 'user' | 'assistant'
   content: text('content').notNull(),
   /** Structured actions: form renders, agent creation confirmations, etc. */
   actions: jsonb('actions'),  // [{ type: 'form', form: 'connection', props: {...} }, ...]
@@ -128,18 +133,19 @@ export const chatMessages = pgTable('chat_messages', {
   usage: jsonb('usage'),  // { inputTokens, outputTokens, costUsd }
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+// Note: structured summaries and other hidden workflow state live in
+// chat_threads.metadata (or a separate internal store), not as chat_messages rows.
 ```
 
 ### Step 2: API Endpoints
 
-All routes in a new file `apps/api/src/routes/chat.ts`:
+Minimal routes in a new file `apps/api/src/routes/chat.ts`:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/chat/threads` | List user's chat threads |
-| `POST` | `/chat/threads` | Create a new thread (optionally with first message) |
-| `GET` | `/chat/threads/:id` | Get a thread with messages |
-| `DELETE` | `/chat/threads/:id` | Delete a thread |
+| `POST` | `/chat/threads` | Create a new thread and return the initial greeting |
+| `GET` | `/chat/threads/:id` | Get one onboarding thread with persisted messages |
 | `POST` | `/chat/threads/:id/messages` | Send a user message, get assistant response |
 | `POST` | `/chat/threads/:id/actions/:actionId` | Submit a form action result (e.g., connection created) |
 
@@ -147,15 +153,15 @@ All routes in a new file `apps/api/src/routes/chat.ts`:
 
 1. Validate the user message
 2. Load thread context:
-   - Last 20 messages (sliding window)
-   - Structured thread summary (auto-generated after each tool call or key decision: selected preset, venue, capital, connection IDs, created agent IDs)
-3. Invoke the chat LLM agent with:
-   - System prompt (onboarding-focused, includes schema constraints)
-   - Thread summary (injected as a system message)
-   - Last 20 messages
-   - Available tools: `search_app_docs`, `list_app_docs`, `read_app_docs`, `create_agent`, `list_connections`, `send_message`
-4. If the LLM returns a tool call, execute it server-side
-5. If the tool call is `create_agent`: validate the payload against `CreateAgentSchema`, create the agent, return success with the agent ID + post-creation context
+  - Last 20 persisted user/assistant messages (sliding window)
+  - Structured thread summary from metadata/internal state (selected preset, venue, capital, connection IDs, creation status)
+3. Invoke the narrow onboarding runtime with:
+  - System prompt (onboarding-focused, includes schema constraints)
+  - Non-persisted internal summary/context block
+  - Last 20 messages
+  - Available chat-safe actions: `search_app_docs`, `list_app_docs`, `read_app_docs`, `list_user_connections`, `create_agent`
+4. If the LLM returns an action call, execute it server-side
+5. If the action is `create_agent`: validate the payload against the guided-setup input schema, derive the full `CreateAgentSchema` payload server-side, create the agent, mark the thread completed, and return success with the agent ID + post-creation context
 6. If the LLM returns text with `[FORM:...]` markers, include them as structured `actions` in the response
 7. Return the assistant message with any actions
 
@@ -174,7 +180,19 @@ agent right now. Would you like to continue, or switch to the form?"
 You have access to platform documentation tools (search_app_docs, list_app_docs, read_app_docs) 
 to understand the available options. Use them before asking the user to make choices.
 
-You can create an agent directly using the create_agent tool when you have enough information.
+You run inside a restricted API-local onboarding runtime. You may use the onboarding actions when needed, but do not assume worker runtime tools like send_message, memory, or trading execution tools exist.
+
+You can create an agent directly using the create_agent action when you have enough information.
+
+Prefer the happy path unless the user asks for something specific. That means:
+- The user must choose the agent type/preset.
+- The user must specify capital.
+- If the user does not provide a custom goal, use the configurable default goal text.
+- If the user does not ask for a specific style, use `balanced`.
+- If the user does not ask for a specific execution mode, use `test`.
+- If the user does not ask for a specific strategy preset, choose one automatically.
+- If a compatible existing active connection already exists, use it automatically and avoid asking the user to create another connection.
+- Before creation, show a confirmation summary that includes the final goal/prompt, style, execution mode, strategy preset, and selected connection.
 
 ## Greeting
 
@@ -188,18 +206,26 @@ Do NOT say "ask anything" — you have a specific job.
 ## Conversation Flow
 
 ### If the user wants a trading agent:
-1. Ask what they want to trade (any specific tokens, sectors, or strategies?)
-2. Ask what chain they use (Ethereum, Solana, or any?)
-3. Ask about their risk comfort (careful, balanced, or bold?)
-4. Ask about capital (how much do they want to allocate?)
-5. Ask if they have an existing wallet/connection or need to create one
+1. Confirm they want a trading agent and, if needed, ask which trading type/preset they want
+2. Ask about capital (how much do they want to allocate?)
+3. Reuse the first compatible existing active connection if one exists; only ask the user to create/connect something if none exists or they want a different one
+4. Ask optional preference questions only when needed (e.g. chain, style, strategy, goal)
+5. Otherwise apply the happy-path defaults for goal, style, execution mode, and strategy preset
 6. Summarize and confirm before creating
 
 ### If the user wants a personal assistant:
-1. Ask what kind of help they need (tasks, email, research?)
-2. Determine which skills to enable
-3. Ask about notification preferences
-4. Summarize and confirm before creating
+1. Confirm they want a personal assistant and determine the preset/skill shape
+2. Ask only the minimum extra questions needed to create it successfully
+3. Reuse the first compatible existing active connection if one exists; only ask for a new connection when needed
+4. Otherwise apply the happy-path defaults for name, goal, and execution settings
+5. Summarize and confirm before creating
+
+## Prompt / Goal Handling
+
+- The current create-agent API still requires a prompt/goal shape, so Guided Setup must make this explicit.
+- If the user provides a custom goal, use it.
+- If the user does not provide one, the server synthesizes the final prompt deterministically from the configurable default goal text plus the collected onboarding facts.
+- The synthesized prompt/goal must appear in the confirmation summary before `create_agent` runs.
 
 ### Rules:
 - You are single-purpose: create agents. Nothing else.
@@ -218,16 +244,15 @@ New component tree under `apps/web/src/features/chat/`:
 
 ```
 chat/
-  ChatPage.tsx           # Main page with sidebar + thread view
-  ChatSidebar.tsx        # Thread list
-  ChatThread.tsx         # Message list + composer
-  ChatMessage.tsx        # Single message (user or assistant)
-  ChatComposer.tsx       # Text input + send
-  ChatQuickReplies.tsx   # Button row for preset/suggestion selection
-  EmbeddedForm.tsx       # Renders [FORM:...] actions inline
-  ChatGreeting.tsx       # Initial greeting message with preset buttons
-  useChat.ts             # Hook: thread management, send message, loading state
-  chat-renderer.ts       # Parses LLM responses for [FORM:...] markers
+  GuidedSetupPanel.tsx    # Embedded create-agent chat surface
+  GuidedSetupThread.tsx   # Message list + composer
+  ChatMessage.tsx         # Single message (user or assistant)
+  ChatComposer.tsx        # Text input + send
+  ChatQuickReplies.tsx    # Button row for preset/suggestion selection
+  EmbeddedForm.tsx        # Renders [FORM:...] actions inline
+  GuidedSetupGreeting.tsx # Initial greeting message with preset buttons
+  useGuidedSetup.ts       # Hook: thread fetch/send/resume state
+  guided-setup-renderer.ts # Parses assistant responses for [FORM:...] markers
 ```
 
 **Greeting message** (i18n key: `chat.onboarding.greeting`):
@@ -266,38 +291,70 @@ The frontend parses these from assistant messages and renders the appropriate fo
 - On success → the frontend sends back `[RESULT:connection:connectionId=abc123]` to the chat
 - The chat LLM receives this as context and continues
 
+Trading and wallet setup must reuse the existing secure setup orchestration via `POST /setup/provider-link`. Email setup must reuse the existing OAuth connection flow. Guided Setup must not invent a separate provisioning path.
+
 This is safer than the LLM trying to render HTML forms (which it would hallucinate). The LLM only decides *when* to show a form and *which type* — the frontend owns the actual form rendering and secret handling.
 
 **Form types to support in v1:**
 
 | Marker | Form Component | Purpose |
 |--------|---------------|---------|
-| `[FORM:connection:venue=hyperliquid]` | Hyperliquid connection form | API key + secret (or wallet) |
-| `[FORM:connection:venue=jupiter]` | Jupiter/Solana wallet connect | Wallet connection |
-| `[FORM:connection:type=email]` | Email OAuth connect | Gmail/Outlook OAuth |
+| `[FORM:connection:venue=hyperliquid]` | Reused trading setup form | Calls `POST /setup/provider-link` for trading setup |
+| `[FORM:connection:venue=jupiter]` | Reused trading setup form | Calls `POST /setup/provider-link` for wallet provisioning |
+| `[FORM:connection:type=email]` | Reused email OAuth flow | Calls existing `/connections/oauth/*` flow |
 
-### Step 6: create_agent Tool (Chat-Specific)
+### Step 6: create_agent Action (Chat-Specific)
 
-This is a **separate tool** from the worker's `create_bot` tool. It runs in the API context (not the worker), because:
+This is a **separate onboarding action** from worker tools like `create_bot`. It runs in the API context (not the worker), because:
 
 - It needs access to the HTTP request context (user auth)
 - It creates agents, not bots
 - It's only available to the onboarding chat agent
 
-The tool implementation in `apps/api/src/routes/chat.ts`:
+The action implementation in `apps/api/src/routes/chat.ts`:
 
 ```typescript
-const createAgentTool = {
+const GuidedSetupCreateAgentInput = z.object({
+  skillPresetId: z.enum(['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom']),
+  capital: z.string().min(1),
+  goal: z.string().optional(),
+  style: z.enum(['careful', 'balanced', 'bold']).optional(),
+  executionMode: z.enum(['test', 'live']).optional(),
+  strategyPreset: z.enum(['momentum', 'momentum-position', 'range', 'swing', 'scalper', 'contrarian']).optional(),
+  connectionId: z.string().optional(),
+});
+
+const createAgentAction = {
   name: 'create_agent',
   description: 'Create a new AI agent with the specified configuration.',
-  parametersSchema: CreateAgentSchema.omit({ /* fields the LLM shouldn't set directly */ }),
+  parametersSchema: GuidedSetupCreateAgentInput,
   async execute(params, ctx) {
-    // Validate against CreateAgentSchema
+    // Validate against GuidedSetupCreateAgentInput
+    // Derive the full CreateAgentSchema payload server-side
+    // Synthesize the final prompt deterministically when goal is omitted
     // Insert into agents table
     // Return agent ID + post-creation context
   }
 };
 ```
+
+#### Happy-path field ownership for v1
+
+| Field | Owner | Default / Rule |
+|------|-------|----------------|
+| `skillPresetId` | User | User must explicitly choose the agent type/preset |
+| `capital` | User | User must explicitly specify capital |
+| `name` | System | Generate with the same algorithm used by the current create-agent form |
+| `prompt` / goal | System | Use a configurable platform default when the user does not provide a custom goal; initial default: `Grow this portfolio` |
+| `style` | System | Default to `balanced` unless the user overrides it |
+| `executionMode` | System | Default to `test` unless the user overrides it |
+| `strategyPreset` | System | Auto-select one; preferred: market-regime aware, acceptable v1 fallback: deterministic platform default |
+| `connectionIds` | Frontend / Server | Reuse the first compatible existing active connection if available; otherwise collect it through secure setup UI |
+| `skillIds` | Server | Derive from `skillPresetId`; not directly LLM-owned in v1 |
+
+Server-owned / excluded from `GuidedSetupCreateAgentInput` in v1: `toolPolicy`, `modelPolicy`, `provider`, `lightModel`, `heavyModel`, `technical`, `runtimePolicyOverrides`, `wakePreferences`, `platformAssessment`, `tickIntervalMs`, `openPositionEscalationToJudgePolicy`, `notificationPolicy`, `authorizationMode`, `capabilityMode`, and `hybridMode`.
+
+All advanced or power-user fields remain out of the happy path and should stay form-only unless explicitly added later.
 
 ### Step 7: Post-Creation Follow-up
 
@@ -325,8 +382,8 @@ The system prompt instructs the LLM to generate contextual reminders:
 - **No separate `/chat` route or sidebar item in v1.** The chat is embedded on the agent creation page.
 - **New users (0 agents):** Landing page (`/`) → Guided Setup (chat) on the create-agent page, with a "Use the form instead" link to switch to the form.
 - **Returning users (≥1 agent):** Landing page stays at `/agents`. When they navigate to "New Agent," they see a tab choice: **Guided (Chat)** | **Form**. Guided is the default tab.
-- **Thread metadata:** `chat_threads.metadata` tracks `agentCreatedIds: string[]` so created agents can be linked.
-- **Post-creation continuity:** Threads remain active after agent creation. Users can create multiple agents in a single thread.
+- **Thread metadata:** `chat_threads.metadata` tracks summary state plus at most one `createdAgentId` for v1.
+- **Post-creation continuity:** Completed threads remain viewable, but "Create another agent" starts a new thread.
 - **Future:** When general Chat With AI ships, it gets its own `/chat` route and sidebar item. The Guided Setup chat is the first use of that infrastructure.
 
 ## Verification
@@ -334,10 +391,13 @@ The system prompt instructs the LLM to generate contextual reminders:
 - New user (0 agents) lands on the agent creation page, sees Guided Setup greeting with preset buttons
 - Greeting is honest about scope (no "ask anything" — it's "I can help you create an AI agent")
 - Clicking "AI crypto trader" starts a conversation about trading preferences
-- Chat asks about chains, risk, capital
+- Chat asks for the minimum required fields, especially preset and capital, and uses happy-path defaults for the rest unless the user overrides them
+- If a compatible existing active connection already exists, Guided Setup auto-selects it
+- OAuth return and resume works with the existing redirect-based draft restoration pattern
 - When connection needed, `[FORM:connection:venue=hyperliquid]` renders inline
 - After form completion, chat continues with the connection ID
-- Agent created successfully via `create_agent` tool
+- Agent created successfully via `create_agent` action
+- One thread produces at most one agent in v1
 - Post-creation message includes wallet address and test mode reminder
 - "Use the form instead" link switches to the existing Create Agent form
 - Returning user who clicks "New Agent" sees tab choice: Guided (Chat) | Form

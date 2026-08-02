@@ -20,7 +20,7 @@ The initial greeting message uses existing i18n display names for skill presets.
 
 ```typescript
 // New keys
-'chat.onboarding.greeting': 'Hi, ask anything!\n\nOr, I can help you create your own:\n\n{options}\n\nWhat do you prefer?',
+'chat.onboarding.greeting': 'Hi! I can help you create an AI agent. What kind of agent are you looking for?',
 'chat.onboarding.greeting.option': '{index}. {label}',
 'chat.onboarding.switchToForm': 'Prefer a form instead?',
 'chat.onboarding.stuck': 'Not sure? You can always use the guided form.',
@@ -97,7 +97,9 @@ function parseActions(content: string): { cleanContent: string; actions: ChatAct
 
 1. LLM emits `[FORM:connection:venue=hyperliquid]`
 2. Frontend parses and renders `<ConnectionForm venue="hyperliquid" />`
-3. User fills form and submits → POST directly to connections API (LLM never sees secrets)
+3. User fills form and submits using the existing secure setup flow (LLM never sees secrets):
+  - trading / wallet setup → `POST /setup/provider-link`
+  - email OAuth setup → existing `/connections/oauth/*` flow
 4. On success, frontend sends the result back to the chat:
 
 ```
@@ -105,16 +107,16 @@ POST /chat/threads/:id/actions/:actionId
 Body: { type: "form_result", form: "connection", result: { connectionId: "abc123", venue: "hyperliquid" } }
 ```
 
-5. The chat agent receives this as a system message in the thread context
+5. The chat runtime records this as internal action state / summary metadata, not as a persisted chat message
 6. LLM continues: "Great, your Hyperliquid connection is set up! Now, how much capital..."
 
 ### 2.4 Supported Forms
 
 | Form | Component Location | API |
 |------|-------------------|-----|
-| Hyperliquid connection | Reuse existing connection form from agents UI | `POST /connections` |
-| Jupiter/Solana wallet | Reuse existing wallet connect | `POST /connections` |
-| Email (Gmail) | Reuse existing OAuth flow | `POST /connections` |
+| Hyperliquid connection | Reuse existing trading setup form from agents UI | `POST /setup/provider-link` |
+| Jupiter/Solana wallet | Reuse existing trading setup form from agents UI | `POST /setup/provider-link` |
+| Email (Gmail) | Reuse existing OAuth flow | existing `/connections/oauth/*` endpoints |
 
 The chat component wraps existing connection forms — no new form logic needed. The only new code is the marker parser and the inline rendering container.
 
@@ -122,26 +124,19 @@ The chat component wraps existing connection forms — no new form logic needed.
 
 OAuth connections (e.g., Gmail) require the user to authorize with a third party. The chat must not lose context during this flow.
 
-**Primary approach: Popup window OAuth**
+**Primary approach for v1: Redirect and resume the existing create-agent flow**
 
-For providers that support popup-based OAuth (Google, most modern OAuth providers):
+For providers that require OAuth (for example Gmail):
 1. LLM emits `[FORM:connection:type=email]`
-2. Frontend renders a "Connect Gmail" button
-3. Click opens a popup window with the OAuth authorization URL
-4. User authorizes in the popup → popup closes → frontend receives the auth code via `postMessage` or callback
-5. Frontend completes the OAuth exchange (code → token) via `POST /connections`
-6. Frontend sends the result back to the chat via `POST /chat/threads/:id/actions/:actionId`
-7. Chat continues seamlessly — no page navigation occurred
+2. Frontend renders the existing connect button and preserves the current Guided Setup draft/thread state
+3. Click starts the existing OAuth redirect flow
+4. The return URL carries thread/action correlation so the frontend can reopen the correct thread and restore in-progress state
+5. After authorization, the frontend resumes the thread and submits the action result via `POST /chat/threads/:id/actions/:actionId`
+6. Chat continues without losing the collected onboarding state
 
-**Fallback: Redirect with threadId**
+**Optional later enhancement: Popup OAuth**
 
-For providers that require full-page redirect (no popup support):
-1. The OAuth redirect URL includes `?threadId=X&actionId=Y`
-2. After authorization, the provider redirects back to the app
-3. The frontend detects `threadId` in the URL, reopens that thread, and injects a system message with the connection result
-4. The chat LLM receives this as context and continues
-
-**Technical spike needed:** Verify per-provider popup OAuth support before implementation. Google and most OIDC providers support popup flows. Some enterprise providers may not.
+Popup OAuth may be added later for providers where it is explicitly verified to work with the same thread/action resume semantics.
 
 ## 3. Rapid Prototyping Strategy
 
@@ -170,7 +165,7 @@ Add a single endpoint `POST /chat/preview` that:
 - Takes a `{ message, history?, locale }` payload
 - Returns `{ message, actions }`
 - Does NOT persist to DB
-- Uses the same chat agent runtime as the final implementation
+- Uses the same narrow onboarding runtime as the final implementation
 
 **Goal:** Frontend can start building the chat component against a real (but stateless) backend.
 
