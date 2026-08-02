@@ -1381,7 +1381,7 @@ export class UsageBillingRepository {
  *
  * Caps represent maximum allowed net out-of-pocket beyond included credits.
  */
-function computeSpendStatus(period: {
+export function computeSpendStatus(period: {
   balanceMicrousd: number;
   hardCapMicrousd: number | null;
   softCapMicrousd: number | null;
@@ -1391,10 +1391,10 @@ function computeSpendStatus(period: {
   // Net out-of-pocket spend beyond included credits and top-ups
   const netOutOfPocket = Math.max(0, -period.balanceMicrousd);
 
-  if (period.hardCapMicrousd != null && netOutOfPocket >= period.hardCapMicrousd) {
+  if (period.hardCapMicrousd != null && netOutOfPocket > period.hardCapMicrousd) {
     return 'hard_limited';
   }
-  if (period.softCapMicrousd != null && netOutOfPocket >= period.softCapMicrousd) {
+  if (period.softCapMicrousd != null && netOutOfPocket > period.softCapMicrousd) {
     return 'soft_limited';
   }
   return 'active';

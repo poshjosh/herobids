@@ -29,6 +29,7 @@ import {
   users,
   venueAccounts,
   positions,
+  marketAssessmentRequests,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { DecisionApprovalRepository } from '@herobids/db';
@@ -2056,6 +2057,10 @@ export async function agentRoutes(
         }
       }
     }
+    // 7.5. DELETE market_assessment_requests (agent-scoped, ON DELETE NO ACTION FK)
+    //       Must precede agent delete — market_assessment_requests.agent_id → agents.id
+    //       has no ON DELETE clause so the agent delete would fail with a FK violation.
+    await db.delete(marketAssessmentRequests).where(eq(marketAssessmentRequests.agentId, id));
     // 8. DELETE agents (cascades: agent_skills, agent_connections, agent_connection_audit)
     await db.delete(agents).where(eq(agents.id, id));
 

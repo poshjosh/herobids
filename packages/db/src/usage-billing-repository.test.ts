@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { UsageBillingRepository } from './usage-billing-repository.js';
+import { UsageBillingRepository, computeSpendStatus } from './usage-billing-repository.js';
 import type { InsertUsageEvent } from './usage-billing-repository.js';
 import type { Database } from './index.js';
 import type { ProvidersYaml } from '@herobids/domain';
@@ -346,5 +346,140 @@ describe('computeCharge (via rateAndApplyUsageEvents)', () => {
     const charge = await repo.rateAndApplyUsageEvents([event], 'period_1', 'acc_1', items);
     // 1000 tokens × 90 µUSD/1000 = 90, not 50 (catch-all must lose to model-specific)
     expect(charge).toBe(90);
+  });
+});
+
+// ── computeSpendStatus tests ──────────────────────────────────────────────────
+
+function makePeriod(overrides: {
+  balanceMicrousd?: number;
+  hardCapMicrousd?: number | null;
+  softCapMicrousd?: number | null;
+  includedCreditMicrousd?: number;
+  usageChargeMicrousd?: number;
+} = {}) {
+  return {
+    balanceMicrousd: 20_000_000,     // $20.00 (starter plan included credit)
+    hardCapMicrousd: 0,               // $0.00 cap (starter plan default)
+    softCapMicrousd: 0,               // $0.00 cap (starter plan default)
+    includedCreditMicrousd: 20_000_000,
+    usageChargeMicrousd: 0,
+    ...overrides,
+  };
+}
+
+describe('computeSpendStatus', () => {
+  it('returns active when balance is positive and hardCap is 0', () => {
+    // Starter plan: $20 included, $0 spent → balance = $20
+    const status = computeSpendStatus(makePeriod({ balanceMicrousd: 20_000_000 }));
+    expect(status).toBe('active');
+  });
+
+  it('returns active when balance is exactly 0 and hardCap is 0', () => {
+    // User spent exactly their included credit + top-ups → balance = 0
+    const status = computeSpendStatus(makePeriod({ balanceMicrousd: 0 }));
+    expect(status).toBe('active');
+  });
+
+  it('returns hard_limited when balance is negative and hardCap is 0', () => {
+    // User overspent by $0.01 → balance = -$0.01 → netOutOfPocket = $0.01 > $0
+    const status = computeSpendStatus(makePeriod({ balanceMicrousd: -100 }));
+    expect(status).toBe('hard_limited');
+  });
+
+  it('returns hard_limited when netOutOfPocket exceeds a non-zero hardCap', () => {
+    // hardCap = $5.00 (500 cents), balance = -$6.00 → netOutOfPocket = $6.00 > $5.00
+    const status = computeSpendStatus(makePeriod({
+      balanceMicrousd: -60_000,
+      hardCapMicrousd: 50_000,
+    }));
+    expect(status).toBe('hard_limited');
+  });
+
+  it('returns active when netOutOfPocket equals a non-zero hardCap', () => {
+    // hardCap = $5.00, balance = -$5.00 → netOutOfPocket = $5.00, not > $5.00
+    const status = computeSpendStatus(makePeriod({
+      balanceMicrousd: -50_000,
+      softCapMicrousd: null,
+      hardCapMicrousd: 50_000,
+    }));
+    expect(status).toBe('active');
+  });
+
+  it('returns active when netOutOfPocket is below a non-zero hardCap', () => {
+    // hardCap = $5.00, balance = -$3.00 → netOutOfPocket = $3.00 < $5.00
+    const status = computeSpendStatus(makePeriod({
+      balanceMicrousd: -30_000,
+      softCapMicrousd: null,
+      hardCapMicrousd: 50_000,
+    }));
+    expect(status).toBe('active');
+  });
+
+  it('returns soft_limited when netOutOfPocket exceeds softCap but not hardCap', () => {
+    // softCap = $2.00, hardCap = $5.00, balance = -$3.00 → netOutOfPocket = $3.00
+    const status = computeSpendStatus(makePeriod({
+      balanceMicrousd: -30_000,
+      softCapMicrousd: 20_000,
+      hardCapMicrousd: 50_000,
+    }));
+    expect(status).toBe('soft_limited');
+  });
+
+  it('returns hard_limited when netOutOfPocket exceeds both caps (hard check wins)', () => {
+    // softCap = $2.00, hardCap = $5.00, balance = -$6.00 → netOutOfPocket = $6.00
+    const status = computeSpendStatus(makePeriod({
+      balanceMicrousd: -60_000,
+      softCapMicrousd: 20_000,
+      hardCapMicrousd: 50_000,
+    }));
+    expect(status).toBe('hard_limited');
+  });
+
+  it('returns active when hardCap is null (no cap set)', () => {
+    // hardCap null → no enforcement, even with negative balance
+    const status = computeSpendStatus(makePeriod({
+      balanceMicrousd: -100_000,
+      softCapMicrousd: null,
+      hardCapMicrousd: null,
+    }));
+    expect(status).toBe('active');
+  });
+
+  it('returns active when softCap is null (no soft cap set)', () => {
+    // softCap null → skip soft check, even with negative balance below hardCap threshold
+    const status = computeSpendStatus(makePeriod({
+      balanceMicrousd: -10_000,
+      softCapMicrousd: null,
+      hardCapMicrousd: 50_000,
+    }));
+    expect(status).toBe('active');
+  });
+
+  it('returns active when both caps are null (free plan pre-cap config)', () => {
+    // No caps configured → always active regardless of balance
+    const status = computeSpendStatus(makePeriod({
+      balanceMicrousd: -500_000,
+      hardCapMicrousd: null,
+      softCapMicrousd: null,
+    }));
+    expect(status).toBe('active');
+  });
+
+  it('top-up that restores positive balance unblocks a hard-limited account', () => {
+    // Before top-up: balance = -$1.00 → hard_limited
+    const before = computeSpendStatus(makePeriod({ balanceMicrousd: -10_000 }));
+    expect(before).toBe('hard_limited');
+
+    // After $5 top-up (adds 50,000 microusd): balance = $4.00 → active
+    const after = computeSpendStatus(makePeriod({ balanceMicrousd: 40_000 }));
+    expect(after).toBe('active');
+  });
+
+  it('top-up that partially restores balance but still negative keeps hard-limited', () => {
+    // Before top-up: balance = -$10.00 → hard_limited
+    // After $5 top-up: balance = -$5.00 → still negative → still hard_limited
+    const status = computeSpendStatus(makePeriod({ balanceMicrousd: -50_000 }));
+    expect(status).toBe('hard_limited');
   });
 });

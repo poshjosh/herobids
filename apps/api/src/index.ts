@@ -14,6 +14,7 @@ import { backtestRoutes, BACKTEST_QUEUE_NAME } from './routes/backtests.js';
 import { authRoutes } from './routes/auth.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { billingRoutes } from './routes/billing.js';
+import { registerGlobalErrorHandler } from './error-handler.js';
 import { agentRoutes } from './routes/agents.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { blueprintRoutes } from './routes/blueprints.js';
@@ -203,6 +204,10 @@ await app.register(cors, {
   credentials: true,
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 });
+
+// Global error handler — sanitises internal details (SQL, stack traces) from
+// client responses. See error-handler.ts for the full specification.
+registerGlobalErrorHandler(app);
 
 // Health endpoint (public — no auth required)
 app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));

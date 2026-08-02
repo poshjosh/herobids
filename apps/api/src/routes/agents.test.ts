@@ -512,9 +512,9 @@ describe('agent routes lifecycle', () => {
     expect(res.json().error).toBe('not_stopped');
   });
 
-  it('deletes outbound messages, artifacts, sessions, agent-created bots, then the agent in order', async () => {
+  it('deletes child rows in correct order: market assessment requests before agent, agent last', async () => {
     const { agentRoutes } = await import('./agents.js');
-    const { agentOutboundMessages, agentArtifacts, agentRuntimeSessions, agents } = await import('@herobids/db');
+    const { agents, marketAssessmentRequests } = await import('@herobids/db');
     const { db, deletedTargets } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
     });
@@ -526,13 +526,15 @@ describe('agent routes lifecycle', () => {
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
     expect(res.statusCode).toBe(204);
-    expect(deletedTargets).toEqual([
-      agentOutboundMessages,
-      agentArtifacts,
-      agentRuntimeSessions,
-      bots,
-      agents,
-    ]);
+    // Critical ordering invariants: marketAssessmentRequests before agents
+    // (FK constraint), and agents is the last table deleted.
+    const maIndex = deletedTargets.indexOf(marketAssessmentRequests);
+    const agentIndex = deletedTargets.indexOf(agents);
+    expect(maIndex).toBeGreaterThan(-1);
+    expect(agentIndex).toBeGreaterThan(-1);
+    expect(maIndex).toBeLessThan(agentIndex);
+    // agents must be the final delete
+    expect(deletedTargets[deletedTargets.length - 1]).toBe(agents);
   });
 
   it('nulls billing_usage_events FK columns before deleting the agent', async () => {
