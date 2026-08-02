@@ -101,10 +101,9 @@ style (enum, optional): Agent risk style. Values: "careful", "balanced", "bold".
 - balanced: costPreset=standard, tickInterval=30min, dailySpend=$10/day
 - bold: costPreset=premium, tickInterval=10min, dailySpend=$30/day
 
-executionMode (enum, optional): "paper" | "shadow" | "live" | "test".
-- test: simulated trading, no real money
-- paper: simulated with realistic fills
-- shadow: paper trading alongside live data
+executionMode (enum, optional): "paper" | "shadow" | "live".
+- paper: simulated trading, no real money (safe to experiment)
+- shadow: venue-backed paper trading (with real market data)
 - live: real trading with real funds
 
 executionVenue (string, optional): The venue to execute trades on. Examples: "hyperliquid", "jupiter", "bybit", "1inch".
@@ -422,9 +421,9 @@ live (Live mode):
   - Real P&L, real risk
   - Recommended for: production trading
 
-Note: Users should start with "test" mode and only switch to "live" after validating their strategy.
+Note: Users should start with "paper" mode for initial testing, move to "shadow" for venue-backed validation, and only switch to "live" after confirming their strategy.
 `,
-  headings: ['test', 'paper', 'shadow', 'live'],
+  headings: ['paper', 'shadow', 'live'],
   tags: ['execution', 'modes', 'trading', 'risk'],
 };
 
