@@ -313,7 +313,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
       select: vi.fn().mockImplementation(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
-        return makeChain([stubAgent({ status: 'active', executionMode: 'test' })]);
+        return makeChain([stubAgent({ status: 'active', executionDefaults: { mode: 'paper' } })]);
       }),
       execute: vi.fn().mockResolvedValue([{ count: 0 }]),
     } as unknown as Database;
@@ -328,7 +328,7 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     const text = sentText(fetchSpy);
     expect(text).toContain(AGENT_NAME);
     expect(text).toContain('Status:');
-    expect(text).toContain('Execution mode:');
+    expect(text).toContain('Execution mode: paper');
   });
 
   // ── H1: /start ───────────────────────────────────────────────────────

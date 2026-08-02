@@ -1124,6 +1124,32 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     });
   });
 
+  it('rejects creating a trading-capable agent without executionDefaults', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'no exec defaults',
+        prompt: 'trade',
+        skillIds: ['trading'],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json<{ error: string; details: Array<{ message: string }> }>();
+    expect(body.error).toBe('validation_error');
+    expect(body.details[0]?.message).toContain('executionDefaults is required for trading-capable agents');
+  });
+
   it('does not explicitly set executionMode when trading skills are removed on PATCH', async () => {
     const { agentRoutes } = await import('./agents.js');
     const updatedAgent = {
