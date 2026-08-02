@@ -232,4 +232,106 @@ describe('EditAgentModal rendering', () => {
     expect(html).toContain(messages['agents.create.noConnections']);
     expect(html).toContain(messages['agents.create.addConnection']);
   });
+
+  it('renders connection dropdown when active connections exist', () => {
+    const html = renderModal({
+      prompt: '',
+      technical: TECHNICAL_CONFIG,
+      availableConnections: [
+        { connectionId: 'conn-1', label: 'Hyperliquid Main', provider: 'hyperliquid', status: 'active' },
+      ],
+      allConnections: [
+        { id: 'conn-1', label: 'Hyperliquid Main', provider: 'hyperliquid', status: 'active' },
+      ],
+    });
+
+    expect(html).toContain(messages['agents.create.connections']);
+    expect(html).toContain(messages['agents.create.chooseConnection']);
+    // Should show trading group label
+    expect(html).toContain(messages['agents.create.connections.trading']);
+    // Should show the connection in the dropdown
+    expect(html).toContain('Hyperliquid Main');
+  });
+
+  it('renders secondary Add Connection link below the connection picker when connections exist', () => {
+    const html = renderModal({
+      prompt: '',
+      technical: TECHNICAL_CONFIG,
+      availableConnections: [
+        { connectionId: 'conn-1', label: 'My Gmail', provider: 'gmail', status: 'active' },
+      ],
+      allConnections: [
+        { id: 'conn-1', label: 'My Gmail', provider: 'gmail', status: 'active' },
+      ],
+    });
+
+    // The "Add Connection" text-link should appear below the dropdown
+    expect(html).toContain(messages['agents.create.addConnection']);
+    // Non-trading connections appear in the "Other" group
+    expect(html).toContain(messages['agents.create.connections.other']);
+  });
+
+  it('renders loading state when connections query is pending', () => {
+    // Simulate loading by not providing any query data
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    queryClient.setQueryData(['agents', 'risk-defaults'], {
+      maxOpenPositions: 10,
+      maxPositionSizePct: 100,
+      stopLossPct: 10,
+      stopLossCooldownMs: 300000,
+    });
+
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={queryClient}>
+        <IntlProvider locale="en" messages={messages}>
+          <EditAgentModal
+            agentId="agent-123"
+            onClose={() => undefined}
+            initialData={{
+              id: 'agent-123',
+              userId: 'user-1',
+              name: 'Momentum scout',
+              prompt: '',
+              skillIds: [],
+              status: 'stopped',
+              pauseState: null,
+              toolPolicy: null,
+              modelPolicy: null,
+              provider: null,
+              lightModel: null,
+              heavyModel: null,
+              costPreset: 'custom',
+              dailySpendBudgetUsd: 0.5,
+              dailyLlmTokenBudget: 45000,
+              telegramChatId: null,
+              executionMode: 'paper',
+              dailyTokenBudget: 45000,
+              dailyMaxLossPct: '250',
+              maxDrawdownPct: null,
+              maxSlippageBps: 25,
+              maxOpenPositions: 5,
+              maxBots: null,
+              maxPositionSizePct: '100',
+              stopLossPct: '10',
+              stopLossCooldownMs: 300000,
+              tickIntervalMs: null,
+              technical: TECHNICAL_CONFIG,
+              strategyPreset: null,
+              capital: '1500',
+              style: null,
+              openPositionEscalationToJudgePolicy: null,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            }}
+          />
+        </IntlProvider>
+      </QueryClientProvider>,
+    );
+
+    // When connections query is still loading (no data cached), show loading text
+    expect(html).toContain(messages['agents.create.loadingConnections']);
+  });
 });

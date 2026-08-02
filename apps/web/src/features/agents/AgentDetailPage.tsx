@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { ApiError, agents as agentsApi, skills as skillsApi, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness, type AgentActivityEntry } from '../../lib/api-client.js';
@@ -20,12 +20,24 @@ export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const intl = useIntl();
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   const { user } = useSession();
 
   const [isEditing, setIsEditing] = useState(false);
   const [activePromptTab, setActivePromptTab] = useState<'judgeSystem' | 'scoutSystem' | 'userContext' | 'judgeUserContext' | 'hybridSystem'>('judgeSystem');
   const [expandedArtifactId, setExpandedArtifactId] = useState<string | null>(null);
+
+  // Auto-open edit modal when returning from OAuth (detected via edit=1 URL param)
+  const handledEditParamRef = useRef(false);
+  useEffect(() => {
+    if (handledEditParamRef.current) return;
+    const params = new URLSearchParams(location.search);
+    if (params.get('edit') === '1') {
+      handledEditParamRef.current = true;
+      setIsEditing(true);
+    }
+  }, [location.search]);
 
   const handleEvent = useCallback((event: UserEvent) => {
     if (event.type === 'agent.status' && event.agentId === id) {

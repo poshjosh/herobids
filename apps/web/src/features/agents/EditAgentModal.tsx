@@ -26,6 +26,13 @@ import { PromptInputBlock } from './PromptInputBlock.js';
 import { AgentFormBody } from './AgentFormBody.js';
 import { type AgentFormState, agentToFormState } from './agent-form-state.js';
 import { RuntimePolicySection } from './RuntimePolicySection.js';
+import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
+import {
+  saveEditAgentOAuthDraft,
+  loadEditAgentOAuthDraft,
+  clearEditAgentOAuthDraft,
+  applyOAuthReturnToForm,
+} from './edit-agent-oauth-draft.js';
 
 interface EditAgentModalProps {
   agentId: string;
@@ -104,6 +111,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const [tickIntervalTouched, setTickIntervalTouched] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [showAddConnection, setShowAddConnection] = useState(false);
   const [modelOverrideEnabled, setModelOverrideEnabled] = useState(hasExplicitModelOverride);
   const [modelForm, setModelForm] = useState({
     provider: initialData.provider ?? '',
@@ -111,6 +119,51 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     heavyModel: initialData.heavyModel ?? '',
   });
   const inheritedModelSettings = aiSettingsQuery.data?.aiModelConfig ?? null;
+
+  // OAuth return handling — restore draft after redirect back from provider.
+  // Uses window.location directly (not useLocation) to avoid router context
+  // dependency in static/server-side render tests.
+  const handledOauthReturnRef = useRef(false);
+  useEffect(() => {
+    if (handledOauthReturnRef.current) return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('oauthReturn') !== '1') return;
+
+    handledOauthReturnRef.current = true;
+    const restoredDraft = loadEditAgentOAuthDraft();
+    const connectionId = params.get('connectionId');
+    const status = params.get('status');
+
+    const restored = applyOAuthReturnToForm(form, restoredDraft, connectionId, agentId);
+    if (restored) {
+      setForm(restored.form);
+      setStyle(restored.style);
+      setSkillPreset(restored.skillPreset);
+      setModelOverrideEnabled(restored.modelOverrideEnabled);
+      setModelForm(restored.modelForm);
+      setRuntimePolicyOverrides(restored.runtimePolicyOverrides);
+    }
+
+    if (status === 'ok') {
+      void qc.invalidateQueries({ queryKey: ['connections'] });
+      void qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'connections'] });
+    }
+
+    clearEditAgentOAuthDraft();
+
+    // Clean up OAuth return params from URL without a full navigation
+    params.delete('oauthReturn');
+    params.delete('edit');
+    params.delete('connectionId');
+    params.delete('status');
+    params.delete('error');
+    const nextSearch = params.toString();
+    const nextUrl = nextSearch
+      ? `${window.location.pathname}?${nextSearch}`
+      : window.location.pathname;
+    window.history.replaceState(null, '', nextUrl);
+  }, [agentId, qc]);
 
   // Resolve the effective reasoning levels for display in the model override section.
   // If the agent has an explicit override in runtimePolicyOverrides, use that.
@@ -1069,6 +1122,36 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         </div>
         )}
       </div>
+
+      {showAddConnection && (
+        <ProviderSetupForm
+          onClose={() => setShowAddConnection(false)}
+          onSuccess={(result) => {
+            void qc.invalidateQueries({ queryKey: ['connections'] });
+            void qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'connections'] });
+            setForm((prev) => ({
+              ...prev,
+              connectionIds: result.connection?.id
+                ? Array.from(new Set([...(prev.connectionIds ?? []), result.connection.id]))
+                : prev.connectionIds,
+            }));
+            setShowAddConnection(false);
+          }}
+          oauthReturnTo={`/agents/${agentId}?edit=1&oauthReturn=1`}
+          onBeforeOAuthRedirect={() => {
+            const { pendingFiles: _, ...serializableForm } = form;
+            saveEditAgentOAuthDraft({
+              agentId,
+              form: serializableForm,
+              style,
+              skillPreset,
+              modelOverrideEnabled,
+              modelForm,
+              runtimePolicyOverrides,
+            });
+          }}
+        />
+      )}
     </Modal>
   );
 }
