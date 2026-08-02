@@ -309,11 +309,11 @@ Capture pricing as a separate follow-up track covering both:
 
 1. **[DONE]** Add `blueprints` plan entitlements in schema, config defaults, plan resolution, and auth client typing.
 2. **[DONE]** Enforce the Change 2 route/action matrix for public marketplace blueprint reads/actions.
-3. **[PENDING]** Extend blueprint response schemas and frontend types with `isLikedByViewer`.
-4. **[PENDING]** Update `GET /blueprints` to load viewer like state in batch.
-5. **[PENDING]** Update `GET /blueprints/:id` to include viewer like state.
-6. **[PENDING]** Enforce `canViewMarketplaceBlueprints` on `POST /blueprints/:id/fork` for published marketplace sources.
-7. **[PENDING]** Enforce both `canViewMarketplaceBlueprints` and `canLikeMarketplaceBlueprints` on like/unlike write routes.
+3. **[DONE]** Extend blueprint response schemas and frontend types with `isLikedByViewer`.
+4. **[DONE]** Update `GET /blueprints` to load viewer like state in batch.
+5. **[DONE]** Update `GET /blueprints/:id` to include viewer like state.
+6. **[DONE]** Enforce `canViewMarketplaceBlueprints` on `POST /blueprints/:id/fork` for published marketplace sources.
+7. **[DONE]** Enforce both `canViewMarketplaceBlueprints` and `canLikeMarketplaceBlueprints` on like/unlike write routes.
 8. **[PENDING]** Add or extract the frontend blueprint-like mutation logic.
 9. **[PENDING]** Wire like/unlike controls into marketplace cards.
 10. **[PENDING]** Wire like/unlike controls into the detail page.
