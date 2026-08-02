@@ -294,7 +294,7 @@ export const BlueprintBrowseQuerySchema = z.object({
   tags: z.array(z.string()).optional(),
   sort: z.enum(['popular', 'trending', 'newest']).default('popular'),
   cursor: z.string().optional(),
-  limit: z.number().int().min(1).max(50).default(20),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
 // ── Response DTOs ────────────────────────────────────────────────────────────
