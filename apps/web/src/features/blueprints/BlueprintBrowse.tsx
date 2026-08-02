@@ -3,10 +3,11 @@ import { useIntl } from 'react-intl';
 import { useQuery } from '@tanstack/react-query';
 import {
   PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState,
-  Button, KV,
+  Button, KV, ErrorBanner,
 } from '../../lib/ui.js';
-import { blueprints, type BlueprintSummary } from '../../lib/api-client.js';
+import { blueprints, auth, type BlueprintSummary } from '../../lib/api-client.js';
 import type { BlueprintBrowseParams } from '../../lib/blueprint-types.js';
+import { useBlueprintLike } from './hooks/useBlueprintLike.js';
 
 interface BlueprintBrowseProps {
   /** Default kind filter. If not passed, shows "All". */
@@ -54,6 +55,15 @@ export function BlueprintBrowse({
   const [sort, setSort] = useState<BlueprintBrowseParams['sort']>('popular');
   const [cursorStack, setCursorStack] = useState<Array<string | null>>([null]);
   const currentCursor = cursorStack[cursorStack.length - 1] ?? null;
+
+  const meQuery = useQuery({
+    queryKey: ['me'],
+    queryFn: () => auth.me(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const canLikeByPlan = meQuery.data?.planEntitlements?.blueprints.canLikeMarketplaceBlueprints ?? true;
+  const currentUserId = meQuery.data?.id ?? '';
+  const meLoading = meQuery.isLoading;
 
   const query = useQuery({
     queryKey: ['blueprints', 'browse', { kind, sort, cursor: currentCursor }],
@@ -145,6 +155,9 @@ export function BlueprintBrowse({
               key={bp.id}
               blueprint={bp}
               onUse={onUseBlueprint}
+              canLikeByPlan={canLikeByPlan}
+              currentUserId={currentUserId}
+              meLoading={meLoading}
             />
           ))}
         </div>
@@ -193,12 +206,27 @@ export function BlueprintBrowse({
 function BlueprintCard({
   blueprint,
   onUse,
+  canLikeByPlan,
+  currentUserId,
+  meLoading,
 }: {
   blueprint: BlueprintSummary;
   onUse?: (blueprint: BlueprintSummary) => void;
+  canLikeByPlan: boolean;
+  currentUserId: string;
+  meLoading: boolean;
 }) {
   const intl = useIntl();
   const isAgent = blueprint.kind === 'agent';
+
+  const isOwner = currentUserId === blueprint.authorId;
+  const canLike = canLikeByPlan && !isOwner && !meLoading;
+
+  const likeToggle = useBlueprintLike(blueprint.id, blueprint.isLikedByViewer);
+
+  const likeLabel = blueprint.isLikedByViewer
+    ? intl.formatMessage({ id: 'skills.actions.unlike', defaultMessage: 'Unlike' })
+    : intl.formatMessage({ id: 'skills.actions.like', defaultMessage: 'Like' });
 
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -237,11 +265,33 @@ function BlueprintCard({
       )}
 
       {/* Stats */}
-      <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-        <KV label="Likes" value={String(blueprint.likeCount)} />
+      <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--color-text-muted)', alignItems: 'center' }}>
+        {canLike ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => likeToggle.toggle()}
+            disabled={likeToggle.isPending}
+            aria-label={likeLabel}
+            title={likeLabel}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill={blueprint.isLikedByViewer ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M7 10v12" />
+              <path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z" />
+            </svg>
+            <span style={{ marginLeft: '4px' }}>{blueprint.likeCount}</span>
+          </Button>
+        ) : (
+          <KV label="Likes" value={String(blueprint.likeCount)} />
+        )}
         <KV label="Copies" value={String(blueprint.forkCount)} />
         <KV label="Score" value={formatScore(blueprint.popularityScore)} />
       </div>
+
+      {/* Like error feedback */}
+      {likeToggle.error && (
+        <ErrorBanner message={(likeToggle.error as Error).message} />
+      )}
 
       {/* Action */}
       {isAgent && onUse && (
