@@ -412,3 +412,19 @@ After `db:generate`, review SQL, snapshot, and `packages/db/drizzle/meta/_journa
 4. public P&L/performance ranking
 5. reviews, ratings, and evaluation-derived reputation
 6. generic marketplace abstractions until duplication proves their shape
+
+## Milestone A Implementation — Outstanding Issues
+
+Recorded 2026-08-01 after completing Milestone A (A1–A5). These are non-blocking issues that should be addressed before or during Milestone B.
+
+### MEDIUM
+
+1. **`withVenueResolver` retains unnecessary `any` cast** — `apps/api/src/services/blueprint-execution-capability-adapter.ts`: `venueResolver` was changed from `readonly` to mutable, but the setter still uses `(this as any).venueResolver = resolver` with an `eslint-disable`. Simplify to `this.venueResolver = resolver`.
+
+2. **Risk provenance metadata not verified in integration tests** — `apps/api/src/routes/blueprints.integration.test.ts` (Test 6): Verifies risk value correctness but not the `source` / `mutable` / `enforced` provenance fields from `EffectiveRiskProfile`. The `resolveEffectiveRisk` function returns provenance metadata per-field that should be verified.
+
+### LOW
+
+3. **N+1 queries in skill portability validator** — `apps/api/src/services/blueprint-skill-validator.ts`: The `for` loop queries the DB once per skill ref. For Phase 1 with small skill counts this is acceptable. Consider batching with `inArray` for future scale.
+
+4. **Pre-existing unit test failures** — `apps/api/src/routes/blueprints.test.ts`: 23 of 32 unit tests fail due to the `blueprintRoutes()` function signature change from A4 (now accepts 4 parameters instead of 2). These legacy tests reference the old signature and need updating to match the new constructor-injected dependencies (`agentRiskDefaults`, `executionCapabilityResolver`). Does not block integration tests or runtime behavior.

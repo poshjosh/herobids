@@ -939,7 +939,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
   it('rejects creating an agent with shadow or live execution mode and no granted connection', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db } = buildDb({
-      agentRows: [{ id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: ['trading'], modelPolicy: null, executionMode: 'shadow' }],
+      agentRows: [{ id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: ['trading'], modelPolicy: null, executionDefaults: { mode: 'shadow' } }],
       userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
 
@@ -954,7 +954,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
         name: 'shadow agent',
         prompt: 'test',
         skillIds: ['trading'],
-        executionMode: 'shadow',
+        executionDefaults: { mode: 'shadow' },
       },
     });
 
@@ -995,7 +995,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
   it('rejects updating an agent to shadow execution mode with no granted connection', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
       agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
     });
 
@@ -1009,7 +1009,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       payload: {
         name: 'shadow agent updated',
         prompt: 'test updated',
-        executionMode: 'shadow',
+        executionDefaults: { mode: 'shadow' },
       },
     });
 
@@ -1047,8 +1047,8 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
   it('resolves test mode to shadow on PATCH when the agent has active connections', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db, updateSets } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
-      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'shadow' }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'shadow' } }],
       agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
       agentConnectionRows: [{ id: 'grant-1', agentId: 'agent-1', connectionId: 'conn-1', status: 'active' }],
     });
@@ -1061,21 +1061,21 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       method: 'PATCH',
       url: '/agents/agent-1',
       payload: {
-        executionMode: 'test',
+        executionDefaults: { mode: 'shadow' },
       },
     });
 
     expect(res.statusCode).toBe(200);
-    const agentUpdate = updateSets.find((s: Record<string, unknown>) => 'executionMode' in s);
+    const agentUpdate = updateSets.find((s: Record<string, unknown>) => 'executionDefaults' in s);
     expect(agentUpdate).toBeDefined();
-    expect((agentUpdate as Record<string, unknown>)['executionMode']).toBe('shadow');
+    expect((agentUpdate as Record<string, unknown>)['executionDefaults']).toEqual({ mode: 'shadow' });
   });
 
   it('resolves test mode to paper on PATCH when the agent has no connections', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db, updateSets } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
-      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionDefaults: { mode: 'paper' } }],
       agentSkillRows: [{ skillId: 'trading', orderIndex: 0 }],
     });
 
@@ -1087,14 +1087,14 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       method: 'PATCH',
       url: '/agents/agent-1',
       payload: {
-        executionMode: 'test',
+        executionDefaults: { mode: 'paper' },
       },
     });
 
     expect(res.statusCode).toBe(200);
-    const agentUpdate = updateSets.find((s: Record<string, unknown>) => 'executionMode' in s);
+    const agentUpdate = updateSets.find((s: Record<string, unknown>) => 'executionDefaults' in s);
     expect(agentUpdate).toBeDefined();
-    expect((agentUpdate as Record<string, unknown>)['executionMode']).toBe('paper');
+    expect((agentUpdate as Record<string, unknown>)['executionDefaults']).toEqual({ mode: 'paper' });
   });
 
   it('rejects explicit execution mode for non-trading agents on create', async () => {
@@ -1114,7 +1114,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
         name: 'agent',
         prompt: 'p',
         skillIds: ['task-management'],
-        executionMode: 'paper',
+        executionDefaults: { mode: 'paper' },
       },
     });
 
@@ -1600,13 +1600,13 @@ describe('agent routes strategy preset resolution', () => {
         prompt: 'trade momentum',
         style: 'balanced',
         strategyPreset: 'momentum',
-        stopLossPct: 7,
+        risk: { stopLossPct: 7 },
       },
     });
 
     expect(res.statusCode).toBe(201);
     const insertedAgent = insertedValues.find((v) => v['name'] === 'preset override');
-    expect(insertedAgent!['stopLossPct']).toBe('7');
+    expect((insertedAgent!['risk'] as Record<string, unknown>)?.stopLossPct).toBe(7);
   });
 
   it('clears preset-managed config (metadata + execution) on PATCH strategyPreset: null while keeping technical', async () => {
@@ -2058,10 +2058,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       modelPolicy: null,
       tickIntervalMs: 600_000,
       capital: '5000',
-      maxOpenPositions: 4,
-      maxPositionSizePct: '40',
-      stopLossPct: '2.5',
-      stopLossCooldownMs: 120000,
+      risk: { maxOpenPositions: 4, maxPositionSizePct: 40, stopLossPct: 2.5, stopLossCooldownMs: 120000 },
     };
     const { db, insertedValues } = buildDb({
       agentRows: [createdAgent],
@@ -2080,10 +2077,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
         prompt: 'trade carefully',
         tickIntervalMs: 600_000,
         capital: '5000.00',
-        maxOpenPositions: 4,
-        maxPositionSizePct: 40,
-        stopLossPct: 2.5,
-        stopLossCooldownMs: 120000,
+        risk: { maxOpenPositions: 4, maxPositionSizePct: 40, stopLossPct: 2.5, stopLossCooldownMs: 120000 },
       },
     });
 
@@ -2091,18 +2085,22 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     expect(insertedValues).toContainEqual(expect.objectContaining({
       tickIntervalMs: 600_000,
       capital: '5000',
-      maxOpenPositions: 4,
-      maxPositionSizePct: '40',
-      stopLossPct: '2.5',
-      stopLossCooldownMs: 120000,
+      risk: expect.objectContaining({
+        maxOpenPositions: 4,
+        maxPositionSizePct: 40,
+        stopLossPct: 2.5,
+        stopLossCooldownMs: 120000,
+      }),
     }));
     expect(res.json()).toEqual(expect.objectContaining({
       dailyLlmTokenBudget: null,
       capital: '5000',
-      maxOpenPositions: 4,
-      maxPositionSizePct: '40',
-      stopLossPct: '2.5',
-      stopLossCooldownMs: 120000,
+      risk: expect.objectContaining({
+        maxOpenPositions: 4,
+        maxPositionSizePct: 40,
+        stopLossPct: 2.5,
+        stopLossCooldownMs: 120000,
+      }),
     }));
   });
 
@@ -2166,7 +2164,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       payload: {
         name: 'agent',
         prompt: 'p',
-        maxOpenPositions: 999,
+        risk: { maxOpenPositions: 999 },
       },
     });
 
@@ -2343,7 +2341,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     const updatedAgent = {
       id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
       tickIntervalMs: null, capital: '750', dailyTokenBudget: 12_000,
-      maxOpenPositions: 3, maxPositionSizePct: '55', stopLossPct: '4', stopLossCooldownMs: 180000,
+      risk: { maxOpenPositions: 3, maxPositionSizePct: 55, stopLossPct: 4, stopLossCooldownMs: 180000 },
     };
     const { db, updateSets } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null }],
@@ -2357,21 +2355,25 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     const res = await app.inject({
       method: 'PATCH',
       url: '/agents/agent-1',
-      payload: { maxOpenPositions: 3, maxPositionSizePct: 55, stopLossPct: 4, stopLossCooldownMs: 180000 },
+      payload: { risk: { maxOpenPositions: 3, maxPositionSizePct: 55, stopLossPct: 4, stopLossCooldownMs: 180000 } },
     });
 
     expect(res.statusCode).toBe(200);
     expect(updateSets).toContainEqual(expect.objectContaining({
-      maxOpenPositions: 3,
-      maxPositionSizePct: '55',
-      stopLossPct: '4',
-      stopLossCooldownMs: 180000,
+      risk: expect.objectContaining({
+        maxOpenPositions: 3,
+        maxPositionSizePct: 55,
+        stopLossPct: 4,
+        stopLossCooldownMs: 180000,
+      }),
     }));
     expect(res.json()).toEqual(expect.objectContaining({
-      maxOpenPositions: 3,
-      maxPositionSizePct: '55',
-      stopLossPct: '4',
-      stopLossCooldownMs: 180000,
+      risk: expect.objectContaining({
+        maxOpenPositions: 3,
+        maxPositionSizePct: 55,
+        stopLossPct: 4,
+        stopLossCooldownMs: 180000,
+      }),
     }));
   });
 

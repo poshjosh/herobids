@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildAgentRiskLimits, resolveContract, extractCeilings, extractCreatorInput, type AgentRiskLimitSource } from './agent-risk-limits.js';
-import type { AgentRiskDefaultsConfig } from '@herobids/domain';
+import type { AgentRiskDefaultsConfig, RiskPosture } from '@herobids/domain';
 
 const DEFAULTS: AgentRiskDefaultsConfig = {
   maxOpenPositions: 10,
@@ -20,13 +20,12 @@ const DEFAULTS: AgentRiskDefaultsConfig = {
 
 const EMPTY_SOURCE: AgentRiskLimitSource = {
   capital: null,
-  dailyLossLimit: null,
-  maxDrawdownPct: null,
-  maxOpenPositions: null,
-  maxPositionSizePct: null,
-  stopLossPct: null,
-  stopLossCooldownMs: null,
+  riskPosture: null,
 };
+
+function riskPosture(overrides: Partial<RiskPosture> = {}): RiskPosture {
+  return { ...overrides };
+}
 
 describe('buildAgentRiskLimits()', () => {
   describe('maxPositionSizePct', () => {
@@ -40,7 +39,7 @@ describe('buildAgentRiskLimits()', () => {
     it('preserves user-configured maxPositionSizePct even when capital is null', () => {
       // Regression guard: previously this field was dropped when capital was null
       const limits = buildAgentRiskLimits(
-        { ...EMPTY_SOURCE, capital: null, maxPositionSizePct: 25 },
+        { ...EMPTY_SOURCE, capital: null, riskPosture: riskPosture({ maxPositionSizePct: 25 }) },
         DEFAULTS,
       );
       expect(limits.maxPositionSizePct).toBe(25);
@@ -48,15 +47,15 @@ describe('buildAgentRiskLimits()', () => {
 
     it('preserves user-configured maxPositionSizePct when capital is also provided', () => {
       const limits = buildAgentRiskLimits(
-        { ...EMPTY_SOURCE, capital: '10000', maxPositionSizePct: 15 },
+        { ...EMPTY_SOURCE, capital: '10000', riskPosture: riskPosture({ maxPositionSizePct: 15 }) },
         DEFAULTS,
       );
       expect(limits.maxPositionSizePct).toBe(15);
     });
 
-    it('accepts string-encoded percentage values', () => {
+    it('reads maxPositionSizePct from riskPosture (number)', () => {
       const limits = buildAgentRiskLimits(
-        { ...EMPTY_SOURCE, maxPositionSizePct: '30.5' },
+        { ...EMPTY_SOURCE, riskPosture: riskPosture({ maxPositionSizePct: 30.5 }) },
         DEFAULTS,
       );
       expect(limits.maxPositionSizePct).toBe(30.5);
@@ -64,9 +63,22 @@ describe('buildAgentRiskLimits()', () => {
   });
 
   describe('capital-dependent fields', () => {
-    it('does not include maxOrderNotional when capital is null', () => {
+    it('does not include maxOrderNotional when capital is null and riskPosture has no maxOrderNotional', () => {
       const limits = buildAgentRiskLimits(EMPTY_SOURCE, DEFAULTS);
       expect(limits.maxOrderNotional).toBeUndefined();
+    });
+
+    it('includes dailyMaxLossPct from operator default even when capital is null', () => {
+      const limits = buildAgentRiskLimits(EMPTY_SOURCE, DEFAULTS);
+      expect(limits.dailyMaxLossPct).toBe(DEFAULTS.dailyMaxLossPct);
+    });
+
+    it('includes creator-configured maxOrderNotional even when capital is null', () => {
+      const limits = buildAgentRiskLimits(
+        { ...EMPTY_SOURCE, riskPosture: riskPosture({ maxOrderNotional: 5000 }) },
+        DEFAULTS,
+      );
+      expect(limits.maxOrderNotional?.toString()).toBe('5000');
     });
 
     it('computes maxOrderNotional from capital × multiplier when capital is provided', () => {
@@ -87,7 +99,7 @@ describe('buildAgentRiskLimits()', () => {
 
     it('uses user-configured stopLossPct over default', () => {
       const limits = buildAgentRiskLimits(
-        { ...EMPTY_SOURCE, stopLossPct: 5 },
+        { ...EMPTY_SOURCE, riskPosture: riskPosture({ stopLossPct: 5 }) },
         DEFAULTS,
       );
       expect(limits.stopLossMaxUnrealizedLossPct).toBe(5);
@@ -102,7 +114,7 @@ describe('buildAgentRiskLimits()', () => {
 
     it('ignores override when creator value is present', () => {
       const limits = buildAgentRiskLimits(
-        { ...EMPTY_SOURCE, maxOpenPositions: 5 },
+        { ...EMPTY_SOURCE, riskPosture: riskPosture({ maxOpenPositions: 5 }) },
         DEFAULTS,
         { maxOpenPositions: 3 },
       );
@@ -130,11 +142,7 @@ describe('resolveContract()', () => {
   it('resolves full contract with correct source attribution', () => {
     const source: AgentRiskLimitSource = {
       capital: '10000',
-      dailyLossLimit: '500',
-      maxOpenPositions: 5,
-      maxPositionSizePct: null,
-      stopLossPct: null,
-      stopLossCooldownMs: null,
+      riskPosture: riskPosture({ maxOpenPositions: 5 }),
     };
     const overrides = { stopLossPct: 7 };
 
@@ -169,20 +177,31 @@ describe('extractCeilings()', () => {
 });
 
 describe('extractCreatorInput()', () => {
-  it('preserves non-null creator values and nulls null fields', () => {
+  it('reads creator values from riskPosture', () => {
     const input = extractCreatorInput({
       capital: '1000',
-      dailyLossLimit: '100',
-      maxDrawdownPct: 15,
-      maxOpenPositions: 5,
-      maxPositionSizePct: '25',
-      stopLossPct: null,
-      stopLossCooldownMs: null,
+      riskPosture: riskPosture({
+        maxOpenPositions: 5,
+        maxPositionSizePct: 25,
+        maxDrawdownPct: 15,
+      }),
     });
     expect(input.maxOpenPositions).toBe(5);
     expect(input.maxPositionSizePct).toBe(25);
     expect(input.stopLossPct).toBeNull();
     expect(input.stopLossCooldownMs).toBeNull();
     expect(input.maxDrawdownPct).toBe(15);
+  });
+
+  it('returns null for all fields when riskPosture is null', () => {
+    const input = extractCreatorInput({
+      capital: '1000',
+      riskPosture: null,
+    });
+    expect(input.maxOpenPositions).toBeNull();
+    expect(input.maxPositionSizePct).toBeNull();
+    expect(input.stopLossPct).toBeNull();
+    expect(input.stopLossCooldownMs).toBeNull();
+    expect(input.maxDrawdownPct).toBeNull();
   });
 });

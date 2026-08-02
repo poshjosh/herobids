@@ -115,11 +115,7 @@ export interface InsertAgent {
       email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update'; enabledAt?: string };
     };
   } | null;
-  executionMode?: string;
-  dailyLossLimit?: string;
-  maxDrawdown?: string;
   maxBots?: number;
-  maxSlippageBps?: number;
   openPositionEscalationToJudgePolicy?: string;
 }
 
@@ -136,11 +132,7 @@ export interface UpdateAgent {
       email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update'; enabledAt?: string };
     };
   } | null;
-  executionMode?: string;
-  dailyLossLimit?: string;
-  maxDrawdown?: string;
   maxBots?: number;
-  maxSlippageBps?: number;
   openPositionEscalationToJudgePolicy?: string;
 }
 
@@ -240,11 +232,7 @@ export class AgentRepository {
       modelPolicy: input.modelPolicy ?? null,
       telegramChatId: input.telegramChatId ?? null,
       notificationPolicy: input.notificationPolicy ?? null,
-      executionMode: input.executionMode ?? 'paper',
-      dailyLossLimit: input.dailyLossLimit ?? null,
-      maxDrawdown: input.maxDrawdown ?? null,
       maxBots: input.maxBots ?? null,
-      maxSlippageBps: input.maxSlippageBps ?? null,
       openPositionEscalationToJudgePolicy: input.openPositionEscalationToJudgePolicy ?? undefined,
     });
     return id;
@@ -322,7 +310,7 @@ export class AgentRepository {
     return withAllDefaults as UnifiedAgentConfig;
   }
 
-  async updateUnifiedConfig(agentId: string, config: UnifiedAgentConfig | null, executionMode?: string): Promise<void> {
+  async updateUnifiedConfig(agentId: string, config: UnifiedAgentConfig | null): Promise<void> {
     // 004: Default hybridMode to 'mixed' for hybrid agents (Zod can't do this
     // because .default() runs before .superRefine(), breaking intelligence agents).
     const toPersist = config && config.capabilityMode === 'hybrid' && !config.hybridMode
@@ -330,7 +318,6 @@ export class AgentRepository {
       : config;
     await this.db.update(agents).set({
       unifiedConfig: toPersist,
-      ...(executionMode !== undefined ? { executionMode } : {}),
       updatedAt: new Date(),
     }).where(eq(agents.id, agentId));
   }

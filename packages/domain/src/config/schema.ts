@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { AgentWakeSourceSchema } from '../agent-protocol.js';
 import { ok, err, type Result } from '../result.js';
+import {
+  getStrategyParameters,
+  initStrategyRegistry,
+  validateStrategyParams,
+} from './strategy-parameters.js';
 
 // Supported venues for live rollout
 export const SUPPORTED_LIVE_VENUES = ['hyperliquid', 'bybit', 'jupiter', '1inch'] as const;
@@ -2054,6 +2059,14 @@ export const HybridParamsSchema = z.object({
   { message: 'provider is required when lightModel or heavyModel is set', path: ['provider'] },
 );
 
+// Ensure strategy param validation is active in production imports.
+initStrategyRegistry({
+  mechanical: MechanicalParamsSchema,
+  hybrid: HybridParamsSchema,
+  llm: LlmParamsSchema,
+  empty: z.object({}).strict(),
+});
+
 /**
  * Strategy schema — splits trading style (type) from decision engine (decisionMode).
  * - type: what market logic (momentum, range, contrarian, swing, scalper, dca)
@@ -2132,8 +2145,30 @@ export const ExecutionConfigSchema = ExecutionDefaultsSchema;
 /**
  * Strategy identity — canonicalized from {@link StrategySchema}.
  * Required for bots; optional/absent for non-trading agents.
+ *
+ * Validates params through the {@link StrategyParameterRegistry} when a registry
+ * entry exists for the (type, decisionMode) combination. Falls back to the base
+ * schema's permissive `z.record(z.unknown())` when no registry entry is found
+ * (e.g. for strategy types not yet registered).
  */
-export const StrategyIdentitySchema = StrategySchema;
+export const StrategyIdentitySchema = StrategySchema.superRefine((data, ctx) => {
+  const entry = getStrategyParameters(data.type, data.decisionMode);
+  if (!entry) return; // No registry entry — let the base schema handle it
+
+  try {
+    validateStrategyParams(data.type, data.decisionMode, data.params);
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      for (const issue of e.issues) {
+        ctx.addIssue({ ...issue, path: ['params', ...issue.path] });
+      }
+    } else if (e instanceof Error && e.message.startsWith('Unsupported strategy')) {
+      // Unsupported type/decisionMode — let the base schema handle it
+    } else {
+      throw e;
+    }
+  }
+});
 export type StrategyIdentity = z.infer<typeof StrategyIdentitySchema>;
 
 /**
@@ -2164,10 +2199,30 @@ export const RiskPostureSchema = z.object({
 });
 export type RiskPosture = z.infer<typeof RiskPostureSchema>;
 
+/**
+ * Bot risk configuration — composed from canonical {@link RiskPostureSchema} fields.
+ * All fields are optional numbers: present means enforce, absent means disabled.
+ * Uses `.strict()` to reject unknown/legacy keys.
+ * Does NOT include: legacy stopLossMaxUnrealizedLossPct alias, deprecated minSwapToken*
+ * fields, allowSwapTokenSafetyOverride, absolute maxPositionSize/maxDrawdown strings.
+ */
+export const BotRiskSchema = z.object({
+  maxPositionSizePct: z.number().min(0).max(100).optional(),
+  maxOpenPositions: z.number().int().min(1).optional(),
+  stopLossPct: z.number().min(0).max(100).optional(),
+  stopLossCooldownMs: z.number().int().min(0).optional(),
+  dailyMaxLossPct: z.number().min(0).max(100).optional(),
+  maxDrawdownPct: z.number().min(0).max(100).optional(),
+  maxNewPositionsPerDay: z.number().int().min(0).optional(),
+  avoidParabolicMovePct: z.number().min(0).optional(),
+  maxOrderNotional: z.number().min(0).optional(),
+}).strict();
+export type BotRisk = z.infer<typeof BotRiskSchema>;
+
 export const BotConfigSchema = z.object({
   strategy: StrategySchema,
-  risk: RiskConfigSchema.default({}),
-  execution: ExecutionConfigSchema.default({}),
+  risk: BotRiskSchema.default({}),
+  execution: ExecutionDefaultsSchema.default({}),
   /** Token-safety guardrails for swap/DEX venues. Prefer this over the deprecated risk.* fields. */
   tokenSafety: TokenSafetySchema.optional(),
   venue: z.string().optional(),

@@ -369,20 +369,21 @@ export class AgentSessionManager {
 
         const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id);
         const riskPosture = (agent.risk as Record<string, unknown> | null) ?? {};
+        const executionDefaults = (agent.executionDefaults as Record<string, unknown> | null) ?? {};
         const runtimeDescriptor = buildRuntimeDescriptor({
           agentId: agent.id,
           name: agent.name,
           goal: agent.prompt,
-          executionMode: agent.executionMode,
+          executionMode: executionDefaults['mode'] as string | undefined,
           toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
-          dailyLossLimit: agent.dailyLossLimit,
-          maxDrawdownPct: (riskPosture['maxDrawdownPct'] ?? agent.maxDrawdownPct) != null
-            ? Number(riskPosture['maxDrawdownPct'] ?? agent.maxDrawdownPct)
+          dailyLossLimit: null,
+          maxDrawdownPct: riskPosture['maxDrawdownPct'] != null
+            ? Number(riskPosture['maxDrawdownPct'])
             : null,
           maxBots: agent.maxBots,
-          maxOpenPositions: toGuardrailNumber(riskPosture['maxOpenPositions'] ?? agent.maxOpenPositions),
-          maxPositionSizePct: toGuardrailNumber(riskPosture['maxPositionSizePct'] ?? agent.maxPositionSizePct),
-          stopLossPct: toGuardrailNumber(riskPosture['stopLossPct'] ?? agent.stopLossPct),
+          maxOpenPositions: toGuardrailNumber(riskPosture['maxOpenPositions']),
+          maxPositionSizePct: toGuardrailNumber(riskPosture['maxPositionSizePct']),
+          stopLossPct: toGuardrailNumber(riskPosture['stopLossPct']),
           capital: agent.capital ?? null,
           budgets: this.config.budgets,
           capabilityDescriptor,
@@ -485,19 +486,18 @@ export class AgentSessionManager {
             }
             : {}),
           prompt: agent.prompt,
-          ...(agent.executionMode != null && { executionMode: agent.executionMode }),
-          ...(agent.dailyLossLimit != null && { dailyLossLimit: agent.dailyLossLimit }),
+          ...((executionDefaults['mode'] as string) != null && { executionMode: executionDefaults['mode'] as string }),
           ...(agent.maxBots != null && { maxBots: agent.maxBots }),
-          ...(agent.maxSlippageBps != null && { maxSlippageBps: agent.maxSlippageBps }),
+          ...((executionDefaults['slippageBps'] as number | undefined) != null && { maxSlippageBps: executionDefaults['slippageBps'] }),
           ...(agent.tickIntervalMs != null && { tickIntervalMs: agent.tickIntervalMs }),
           ...(agent.capital != null && { capital: agent.capital }),
           // Risk contract fields — forwarded so the agent container can resolve the contract.
-          // Prefer the typed risk JSONB when available, falling back to legacy columns.
-          maxOpenPositions: riskPosture['maxOpenPositions'] ?? agent.maxOpenPositions ?? null,
-          maxPositionSizePct: riskPosture['maxPositionSizePct'] ?? agent.maxPositionSizePct ?? null,
-          stopLossPct: riskPosture['stopLossPct'] ?? agent.stopLossPct ?? null,
-          stopLossCooldownMs: riskPosture['stopLossCooldownMs'] ?? agent.stopLossCooldownMs ?? null,
-          // Canonical risk posture JSONB — takes precedence over legacy columns in the agent runtime
+          // Read exclusively from canonical risk JSONB (no legacy column fallbacks).
+          maxOpenPositions: riskPosture['maxOpenPositions'] ?? null,
+          maxPositionSizePct: riskPosture['maxPositionSizePct'] ?? null,
+          stopLossPct: riskPosture['stopLossPct'] ?? null,
+          stopLossCooldownMs: riskPosture['stopLossCooldownMs'] ?? null,
+          // Canonical risk posture JSONB — sole risk source in the agent runtime
           risk: agent.risk ?? null,
           agentRiskDefaults: this.config.agentRiskDefaults,
           runtimeDescriptor,

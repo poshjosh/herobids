@@ -14,6 +14,9 @@ import {
   agentRuntimeSessions,
   agentSkills,
   billingUsageEvents,
+  blueprints,
+  blueprintRevisions,
+  blueprintRevisionSkills,
   bots,
   connections,
   decisions,
@@ -33,8 +36,11 @@ import {
   AgentRiskDefaultsSchema,
   AgentRuntimePolicyOverridesSchema,
   CapabilityModeSchema,
+  ExecutionDefaultsSchema,
   HybridModeSchema,
+  RiskPostureSchema,
   RUNTIME_POLICY_CEILINGS,
+  StrategyIdentitySchema,
   normalizePersistedAiModelConfig,
   TechnicalConfigSchema,
   validateExecutionCapability,
@@ -49,12 +55,15 @@ import { getPreset } from '@herobids/domain/config/presets-loader';
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
+import { projectAgentToBlueprintPayload } from '../services/blueprint-projection.js';
+import { buildBlueprintDetail } from './blueprints.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import {
   CostPresetSchema,
   decorateAgentResponse,
   extractModelSelection,
   hasModelFieldsWithoutProvider,
+  hasSkillCapabilityFamily,
   mergeModelPolicy,
   nullablePositiveDecimalStringSchema,
   nullablePositiveIntegerSchema,
@@ -110,16 +119,8 @@ const CreateAgentSchema = z.object({
       }).optional(),
     }).optional(),
   }).nullable().optional(),
-  executionMode: z.enum(['paper', 'shadow', 'live', 'test']).optional(),
   executionVenue: z.string().min(1).optional(),
-  dailyLossLimit: optionalPositiveDecimalStringSchema,
-  maxDrawdownPct: z.number().min(0).max(100).optional(),
   maxBots: optionalPositiveIntegerSchema(),
-  maxSlippageBps: optionalPositiveIntegerSchema(0),
-  maxOpenPositions: optionalPositiveIntegerSchema(),
-  maxPositionSizePct: z.number().min(0).max(100).optional(),
-  stopLossPct: z.number().min(0).max(100).optional(),
-  stopLossCooldownMs: optionalPositiveIntegerSchema(0),
   tickIntervalMs: optionalPositiveIntegerSchema(1000),
   capital: optionalPositiveDecimalStringSchema,
   style: z.enum(['careful', 'balanced', 'bold']).optional(),
@@ -143,6 +144,12 @@ const CreateAgentSchema = z.object({
   }).optional(),
   authorizationMode: z.enum(['direct', 'approval_required']).optional(),
   skillPresetId: z.enum(['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom']).optional(),
+  // Canonical strategy identity (replaces strategyPreset)
+  strategy: StrategyIdentitySchema.nullable().optional(),
+  // Canonical creator risk posture (replaces legacy flat risk fields)
+  risk: RiskPostureSchema.nullable().optional(),
+  // Canonical execution defaults (replaces executionMode + maxSlippageBps)
+  executionDefaults: ExecutionDefaultsSchema.nullable().optional(),
 }).superRefine((data, ctx) => {
   if (!data.technical && !data.prompt) {
     ctx.addIssue({
@@ -165,6 +172,15 @@ const CreateAgentSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['hybridMode'],
       message: '"hybridMode" must not be set when capabilityMode is not "hybrid"',
+    });
+  }
+  // Canonical field cross-validation: strategy implies the agent is trading-capable
+  const isTradingCapable = hasSkillCapabilityFamily(data.skillIds, 'trading') || data.capabilityMode === 'hybrid';
+  if (data.strategy && isTradingCapable && !data.executionDefaults) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['executionDefaults'],
+      message: 'executionDefaults is required when strategy is configured for a trading-capable agent',
     });
   }
 });
@@ -193,16 +209,7 @@ const UpdateAgentSchema = z.object({
       }).optional(),
     }).optional(),
   }).nullable().optional(),
-  // nullable allows clearing a previously set value; undefined (omitted) leaves the field unchanged
-  executionMode: z.enum(['paper', 'shadow', 'live', 'test']).nullable().optional(),
-  dailyLossLimit: nullablePositiveDecimalStringSchema,
-  maxDrawdownPct: z.number().min(0).max(100).nullable().optional(),
   maxBots: nullablePositiveIntegerSchema(),
-  maxSlippageBps: nullablePositiveIntegerSchema(0),
-  maxOpenPositions: nullablePositiveIntegerSchema(),
-  maxPositionSizePct: z.number().min(0).max(100).nullable().optional(),
-  stopLossPct: z.number().min(0).max(100).nullable().optional(),
-  stopLossCooldownMs: nullablePositiveIntegerSchema(0),
   tickIntervalMs: nullablePositiveIntegerSchema(1000),
   capital: nullablePositiveDecimalStringSchema,
   technical: UpdateTechnicalConfigSchema.nullable().optional(),
@@ -226,6 +233,12 @@ const UpdateAgentSchema = z.object({
   }).nullable().optional(),
   authorizationMode: z.enum(['direct', 'approval_required']).nullable().optional(),
   skillPresetId: z.enum(['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom']).nullable().optional(),
+  // Canonical strategy identity (replaces strategyPreset)
+  strategy: StrategyIdentitySchema.nullable().optional(),
+  // Canonical creator risk posture (replaces legacy flat risk fields)
+  risk: RiskPostureSchema.nullable().optional(),
+  // Canonical execution defaults (replaces executionMode + maxSlippageBps)
+  executionDefaults: ExecutionDefaultsSchema.nullable().optional(),
 });
 
 function mergeTechnicalConfig(
@@ -595,18 +608,12 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const riskIssues = validateAgentRiskBounds(parsed.data, agentRiskDefaults);
-    if (riskIssues.length > 0) {
-      return reply.status(400).send({ error: 'validation_error', details: riskIssues });
-    }
-
-    const capitalIssues = validateDailyLossRequiresCapital({
-      dailyLossLimit: parsed.data.dailyLossLimit,
-      maxDrawdownPct: parsed.data.maxDrawdownPct,
-      capital: parsed.data.capital,
-    });
-    if (capitalIssues.length > 0) {
-      return reply.status(400).send({ error: 'validation_error', details: capitalIssues });
+    // Validate canonical risk field against operator ceilings
+    if (parsed.data.risk) {
+      const canonicalRiskIssues = validateAgentRiskBounds(parsed.data.risk, agentRiskDefaults);
+      if (canonicalRiskIssues.length > 0) {
+        return reply.status(400).send({ error: 'validation_error', details: canonicalRiskIssues });
+      }
     }
 
     if (hasModelFieldsWithoutProvider(parsed.data)) {
@@ -697,10 +704,12 @@ export async function agentRoutes(
 
     const connectionIds = parsed.data.connectionIds ?? [];
 
+    // Read execution mode from canonical executionDefaults; resolve for trading-capable agents
+    const rawExecutionMode = parsed.data.executionDefaults?.mode;
     const executionMode = resolveExecutionModeForSkills({
       skillIds: parsed.data.skillIds ?? [],
-      submittedExecutionMode: parsed.data.executionMode,
-      executionModeProvided: parsed.data.executionMode !== undefined,
+      submittedExecutionMode: rawExecutionMode as 'paper' | 'shadow' | 'live' | 'test' | undefined,
+      executionModeProvided: rawExecutionMode !== undefined,
       currentExecutionMode: null,
       hasConnections: connectionIds.length > 0,
       hasVenue: parsed.data.executionVenue !== undefined,
@@ -737,15 +746,11 @@ export async function agentRoutes(
 
     // Resolve style-based strategy preset into agent config
     let presetUnifiedConfig: Record<string, unknown> | null = null;
-    let presetRiskStopLossPct: string | null | undefined = undefined;
-    let presetRiskMaxPositionSizePct: string | null | undefined = undefined;
 
     if (parsed.data.strategyPreset) {
       const resolution = resolveAgentStrategyPreset({
         strategyPreset: parsed.data.strategyPreset,
         style: parsed.data.style,
-        explicitStopLossPct: parsed.data.stopLossPct,
-        explicitMaxPositionSizePct: parsed.data.maxPositionSizePct,
       });
 
       if (!resolution) {
@@ -756,8 +761,6 @@ export async function agentRoutes(
       }
 
       presetUnifiedConfig = resolution.unifiedConfigPatch;
-      presetRiskStopLossPct = resolution.riskOverrides.stopLossPct;
-      presetRiskMaxPositionSizePct = resolution.riskOverrides.maxPositionSizePct;
     }
 
     // Build final unifiedConfig: explicit technical wins over preset technical
@@ -848,17 +851,6 @@ export async function agentRoutes(
       }
     }
 
-    // Resolve final risk fields: explicit values win, then preset values, then null
-    const finalStopLossPct: string | null =
-      parsed.data.stopLossPct != null
-        ? String(parsed.data.stopLossPct)
-        : (presetRiskStopLossPct !== undefined ? presetRiskStopLossPct : null);
-
-    const finalMaxPositionSizePct: string | null =
-      parsed.data.maxPositionSizePct != null
-        ? String(parsed.data.maxPositionSizePct)
-        : (presetRiskMaxPositionSizePct !== undefined ? presetRiskMaxPositionSizePct : null);
-
     // Stamp adaptive reasoning flags from user's AI model settings into runtimePolicyOverrides.
     // If the user has set these preferences in Settings, they flow through to new agents
     // so the worker can apply the correct ceiling/fixed behavior.
@@ -882,45 +874,31 @@ export async function agentRoutes(
     }
 
     // Build risk JSONB (RiskPosture shape) from creator input.
+    // Only the canonical risk field is accepted — legacy flat fields have been removed.
     // Null means "use operator default" — preserved per-field.
-    const riskPosture: Record<string, unknown> = {
-      maxDrawdownPct: parsed.data.maxDrawdownPct ?? null,
-      maxPositionSizePct: finalMaxPositionSizePct != null ? Number(finalMaxPositionSizePct) : null,
-      maxOpenPositions: parsed.data.maxOpenPositions ?? null,
-      stopLossPct: finalStopLossPct != null ? Number(finalStopLossPct) : null,
-      stopLossCooldownMs: parsed.data.stopLossCooldownMs ?? null,
-      dailyMaxLossPct: null, // WP5 handles derivation from dailyLossLimit / capital
-      maxOrderNotional: null, // WP5 handles derivation from capital × multiplier
-      maxNewPositionsPerDay: null,
-      avoidParabolicMovePct: null,
-    };
-    // Strip null-valued keys to keep JSONB clean
-    for (const key of Object.keys(riskPosture)) {
-      if (riskPosture[key] === null) delete riskPosture[key];
-    }
-    const riskJsonb = Object.keys(riskPosture).length > 0 ? riskPosture : null;
+    const riskJsonb: import('@herobids/domain').RiskPosture | null = parsed.data.risk ?? null;
 
     // Build strategy JSONB (StrategyIdentity shape) — absent for non-trading agents.
-    const isTradingAgent = capabilityMode === 'hybrid';
-    let strategyJsonb: Record<string, unknown> | null = null;
-    if (isTradingAgent && parsed.data.strategyPreset) {
-      const strategyType = parsed.data.strategyPreset;
-      // decisionMode: hybrid if capabilityMode is hybrid, otherwise derive from preset
-      const decisionMode = capabilityMode === 'hybrid' ? 'hybrid' : undefined;
-      strategyJsonb = {
-        type: strategyType,
-        ...(decisionMode ? { decisionMode } : {}),
-      };
+    // Canonical strategy field takes precedence over legacy strategyPreset.
+    let strategyJsonb: import('@herobids/domain').StrategyIdentity | null = null;
+    if (parsed.data.strategy !== undefined) {
+      strategyJsonb = parsed.data.strategy ?? null;
+    } else {
+      const isTradingAgent = capabilityMode === 'hybrid';
+      if (isTradingAgent && parsed.data.strategyPreset) {
+        const strategyType = parsed.data.strategyPreset;
+        // decisionMode: hybrid if capabilityMode is hybrid, otherwise derive from preset
+        const decisionMode = capabilityMode === 'hybrid' ? 'hybrid' : undefined;
+        strategyJsonb = {
+          type: strategyType,
+          ...(decisionMode ? { decisionMode } : {}),
+        } as import('@herobids/domain').StrategyIdentity;
+      }
     }
 
     // Build executionDefaults JSONB (ExecutionDefaults shape).
-    let executionDefaultsJsonb: Record<string, unknown> | null = null;
-    if (executionMode.value != null || parsed.data.maxSlippageBps != null) {
-      executionDefaultsJsonb = {
-        mode: executionMode.value ?? 'paper',
-        ...(parsed.data.maxSlippageBps != null ? { slippageBps: parsed.data.maxSlippageBps } : {}),
-      };
-    }
+    // Only the canonical executionDefaults field is accepted — legacy fields have been removed.
+    const executionDefaultsJsonb: import('@herobids/domain').ExecutionDefaults | null = parsed.data.executionDefaults ?? null;
 
     const createTxResult = await db.transaction(async (tx): Promise<
       | { kind: 'ok' }
@@ -938,16 +916,7 @@ export async function agentRoutes(
           notificationPolicy: parsed.data.notificationPolicy !== undefined
             ? (parsed.data.notificationPolicy === null ? null : resolveNotificationPolicy(parsed.data.notificationPolicy, null))
             : null,
-          ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
-          dailyLossLimit: parsed.data.dailyLossLimit ?? null,
-          maxDrawdown: null,
-          maxDrawdownPct: parsed.data.maxDrawdownPct != null ? String(parsed.data.maxDrawdownPct) : null,
           maxBots: resolvedMaxBots,
-          maxSlippageBps: parsed.data.maxSlippageBps ?? null,
-          maxOpenPositions: parsed.data.maxOpenPositions ?? null,
-          maxPositionSizePct: finalMaxPositionSizePct,
-          stopLossPct: finalStopLossPct,
-          stopLossCooldownMs: parsed.data.stopLossCooldownMs ?? null,
           tickIntervalMs: parsed.data.tickIntervalMs ?? null,
           capital: parsed.data.capital ?? null,
           style: parsed.data.style ?? null,
@@ -955,10 +924,10 @@ export async function agentRoutes(
           openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
           ...(finalUnifiedConfig ? { unifiedConfig: finalUnifiedConfig } : {}),
           wakePreferences: parsed.data.wakePreferences ?? null,
-          // TODO: replace as never with proper Drizzle-typed values (RiskPosture, StrategyIdentity, ExecutionDefaults)
-          risk: riskJsonb as never,
-          strategy: strategyJsonb as never,
-          executionDefaults: executionDefaultsJsonb as never,
+          // Canonical JSONB fields (replacing legacy flat columns)
+          risk: riskJsonb,
+          strategy: strategyJsonb,
+          executionDefaults: executionDefaultsJsonb,
           createdAt: now,
           updatedAt: now,
         } as never);
@@ -1233,6 +1202,14 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: riskIssues });
     }
 
+    // Validate canonical risk field against operator ceilings (in addition to legacy fields)
+    if (parsed.data.risk) {
+      const canonicalRiskIssues = validateAgentRiskBounds(parsed.data.risk, agentRiskDefaults);
+      if (canonicalRiskIssues.length > 0) {
+        return reply.status(400).send({ error: 'validation_error', details: canonicalRiskIssues });
+      }
+    }
+
     if (hasModelFieldsWithoutProvider(parsed.data)) {
       return reply.status(400).send({
         error: 'validation_error',
@@ -1246,11 +1223,13 @@ export async function agentRoutes(
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    // Validate dailyLossLimit and maxDrawdownPct require capital (effective after PATCH merge)
+    // Validate dailyMaxLossPct and maxDrawdownPct require capital (effective after PATCH merge).
+    // Reads from canonical risk JSONB — flat columns have been removed (Plan 008).
     const effectiveCapitalForCheck = parsed.data.capital !== undefined ? parsed.data.capital : agent.capital;
+    const preMergeRisk = (parsed.data.risk ?? agent.risk ?? {}) as Record<string, unknown>;
     const capitalIssues = validateDailyLossRequiresCapital({
-      dailyLossLimit: parsed.data.dailyLossLimit !== undefined ? parsed.data.dailyLossLimit : agent.dailyLossLimit,
-      maxDrawdownPct: parsed.data.maxDrawdownPct !== undefined ? parsed.data.maxDrawdownPct : (agent.maxDrawdownPct != null ? Number(agent.maxDrawdownPct) : null),
+      dailyMaxLossPct: preMergeRisk['dailyMaxLossPct'] != null ? preMergeRisk['dailyMaxLossPct'] as string | number : undefined,
+      maxDrawdownPct: preMergeRisk['maxDrawdownPct'] != null ? Number(preMergeRisk['maxDrawdownPct']) : null,
       capital: effectiveCapitalForCheck,
     });
     if (capitalIssues.length > 0) {
@@ -1342,11 +1321,13 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: holdInvariantIssues });
     }
 
+    const submittedMode = parsed.data.executionDefaults?.mode as 'paper' | 'shadow' | 'live' | 'test' | undefined;
+    const currentMode = (agent.executionDefaults as Record<string, unknown> | null)?.mode as string | undefined;
     const executionMode = resolveExecutionModeForSkills({
       skillIds: mergedSkillIds,
-      submittedExecutionMode: parsed.data.executionMode,
-      executionModeProvided: parsed.data.executionMode !== undefined,
-      currentExecutionMode: agent.executionMode,
+      submittedExecutionMode: submittedMode !== undefined ? submittedMode : null,
+      executionModeProvided: parsed.data.executionDefaults !== undefined && submittedMode !== undefined,
+      currentExecutionMode: currentMode,
       hasConnections: hasAgentConnections,
     });
     if (executionMode.issue) {
@@ -1773,74 +1754,79 @@ export async function agentRoutes(
       : undefined;
 
     // Build risk JSONB (RiskPosture shape) from the effective update values.
-    // Resolve effective values: explicit update wins, then preset resolution, then existing agent value.
-    const effectiveMaxDrawdownPct =
-      rawMaxDrawdownPct !== undefined
-        ? rawMaxDrawdownPct
-        : (agent.maxDrawdownPct != null ? Number(agent.maxDrawdownPct) : null);
-    const effectiveMaxPositionSizePct =
-      finalMaxPositionSizePctUpdate !== undefined
-        ? (finalMaxPositionSizePctUpdate != null ? Number(finalMaxPositionSizePctUpdate) : null)
-        : (agent.maxPositionSizePct != null ? Number(agent.maxPositionSizePct) : null);
-    const effectiveMaxOpenPositions =
-      agentUpdates.maxOpenPositions !== undefined
-        ? agentUpdates.maxOpenPositions
-        : agent.maxOpenPositions;
-    const effectiveStopLossPct =
-      finalStopLossPctUpdate !== undefined
-        ? (finalStopLossPctUpdate != null ? Number(finalStopLossPctUpdate) : null)
-        : (agent.stopLossPct != null ? Number(agent.stopLossPct) : null);
-    const effectiveStopLossCooldownMs =
-      agentUpdates.stopLossCooldownMs !== undefined
-        ? agentUpdates.stopLossCooldownMs
-        : agent.stopLossCooldownMs;
+    // Canonical risk field takes full precedence — when provided, it replaces the entire column.
+    // When absent, build from legacy flat fields for backward compat.
+    let riskUpdateJsonb: Record<string, unknown> | null | undefined;
+    if (parsed.data.risk !== undefined) {
+      // Canonical risk provided — null clears it, value replaces entirely
+      riskUpdateJsonb = parsed.data.risk ?? null;
+    } else {
+      // Read existing risk JSONB and spread it so partial updates don't wipe other fields.
+      // Drizzle's jsonb.set() replaces the entire column — it does not deep-merge.
+      // Flat columns have been removed (Plan 008) — fall back to agent.risk JSONB exclusively.
+      const existingRisk = (agent.risk as Record<string, unknown> | null) ?? {};
 
-    // Read existing risk JSONB and spread it so partial updates don't wipe other fields.
-    // Drizzle's jsonb.set() replaces the entire column — it does not deep-merge.
-    const existingRisk = (agent.risk as Record<string, unknown> | null) ?? {};
-    const riskPostureUpdate: Record<string, unknown> = { ...existingRisk };
-    if (rawMaxDrawdownPct !== undefined) riskPostureUpdate['maxDrawdownPct'] = effectiveMaxDrawdownPct;
-    if (finalMaxPositionSizePctUpdate !== undefined) riskPostureUpdate['maxPositionSizePct'] = effectiveMaxPositionSizePct;
-    if (agentUpdates.maxOpenPositions !== undefined) riskPostureUpdate['maxOpenPositions'] = effectiveMaxOpenPositions;
-    if (finalStopLossPctUpdate !== undefined) riskPostureUpdate['stopLossPct'] = effectiveStopLossPct;
-    if (agentUpdates.stopLossCooldownMs !== undefined) riskPostureUpdate['stopLossCooldownMs'] = effectiveStopLossCooldownMs;
-    const riskUpdateJsonb = Object.keys(riskPostureUpdate).length > 0 ? riskPostureUpdate : undefined;
+      // Resolve effective values: explicit update wins, then preset resolution, then existing risk JSONB.
+      const effectiveMaxDrawdownPct =
+        rawMaxDrawdownPct !== undefined
+          ? rawMaxDrawdownPct
+          : (existingRisk['maxDrawdownPct'] != null ? Number(existingRisk['maxDrawdownPct']) : null);
+      const effectiveMaxPositionSizePct =
+        finalMaxPositionSizePctUpdate !== undefined
+          ? (finalMaxPositionSizePctUpdate != null ? Number(finalMaxPositionSizePctUpdate) : null)
+          : (existingRisk['maxPositionSizePct'] != null ? Number(existingRisk['maxPositionSizePct']) : null);
+      const effectiveMaxOpenPositions =
+        agentUpdates.maxOpenPositions !== undefined
+          ? agentUpdates.maxOpenPositions
+          : (existingRisk['maxOpenPositions'] != null ? Number(existingRisk['maxOpenPositions']) : null);
+      const effectiveStopLossPct =
+        finalStopLossPctUpdate !== undefined
+          ? (finalStopLossPctUpdate != null ? Number(finalStopLossPctUpdate) : null)
+          : (existingRisk['stopLossPct'] != null ? Number(existingRisk['stopLossPct']) : null);
+      const effectiveStopLossCooldownMs =
+        agentUpdates.stopLossCooldownMs !== undefined
+          ? agentUpdates.stopLossCooldownMs
+          : (existingRisk['stopLossCooldownMs'] != null ? Number(existingRisk['stopLossCooldownMs']) : null);
+
+      const riskPostureUpdate: Record<string, unknown> = { ...existingRisk };
+      if (rawMaxDrawdownPct !== undefined) riskPostureUpdate['maxDrawdownPct'] = effectiveMaxDrawdownPct;
+      if (finalMaxPositionSizePctUpdate !== undefined) riskPostureUpdate['maxPositionSizePct'] = effectiveMaxPositionSizePct;
+      if (agentUpdates.maxOpenPositions !== undefined) riskPostureUpdate['maxOpenPositions'] = effectiveMaxOpenPositions;
+      if (finalStopLossPctUpdate !== undefined) riskPostureUpdate['stopLossPct'] = effectiveStopLossPct;
+      if (agentUpdates.stopLossCooldownMs !== undefined) riskPostureUpdate['stopLossCooldownMs'] = effectiveStopLossCooldownMs;
+      riskUpdateJsonb = Object.keys(riskPostureUpdate).length > 0 ? riskPostureUpdate : undefined;
+    }
 
     // Build strategy JSONB (StrategyIdentity shape) — absent for non-trading agents.
-    const existingConfig = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
-    const effectiveCapabilityMode = capabilityModeUpdate !== undefined && capabilityModeUpdate !== null
-      ? capabilityModeUpdate
-      : existingConfig['capabilityMode'] as string | undefined;
-    const effectiveStrategyPreset = strategyPresetUpdate !== undefined
-      ? strategyPresetUpdate
-      : extractPresetMeta(agent.unifiedConfig).strategyPreset;
+    // Canonical strategy field takes full precedence — when provided, replaces entirely.
     let strategyUpdateJsonb: Record<string, unknown> | null | undefined;
-    if (strategyPresetUpdate !== undefined || capabilityModeUpdate !== undefined) {
-      if (effectiveCapabilityMode === 'hybrid' && effectiveStrategyPreset) {
-        strategyUpdateJsonb = {
-          type: effectiveStrategyPreset,
-          decisionMode: effectiveCapabilityMode === 'hybrid' ? 'hybrid' : undefined,
-        };
-      } else {
-        strategyUpdateJsonb = null;
+    if (parsed.data.strategy !== undefined) {
+      strategyUpdateJsonb = parsed.data.strategy ?? null;
+    } else {
+      const existingConfig = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
+      const effectiveCapabilityMode = capabilityModeUpdate !== undefined && capabilityModeUpdate !== null
+        ? capabilityModeUpdate
+        : existingConfig['capabilityMode'] as string | undefined;
+      const effectiveStrategyPreset = strategyPresetUpdate !== undefined
+        ? strategyPresetUpdate
+        : extractPresetMeta(agent.unifiedConfig).strategyPreset;
+      if (strategyPresetUpdate !== undefined || capabilityModeUpdate !== undefined) {
+        if (effectiveCapabilityMode === 'hybrid' && effectiveStrategyPreset) {
+          strategyUpdateJsonb = {
+            type: effectiveStrategyPreset,
+            decisionMode: effectiveCapabilityMode === 'hybrid' ? 'hybrid' : undefined,
+          };
+        } else {
+          strategyUpdateJsonb = null;
+        }
       }
     }
 
     // Build executionDefaults JSONB update.
+    // Canonical executionDefaults field takes full precedence — when provided, replaces entirely.
     let executionDefaultsUpdateJsonb: Record<string, unknown> | null | undefined;
-    if (parsed.data.executionMode !== undefined || parsed.data.maxSlippageBps !== undefined) {
-      const effectiveExecMode = executionMode.value ?? agent.executionMode;
-      const effectiveSlippageBps = parsed.data.maxSlippageBps !== undefined
-        ? parsed.data.maxSlippageBps
-        : agent.maxSlippageBps;
-      if (effectiveExecMode != null || effectiveSlippageBps != null) {
-        executionDefaultsUpdateJsonb = {
-          mode: effectiveExecMode ?? 'paper',
-          ...(effectiveSlippageBps != null ? { slippageBps: effectiveSlippageBps } : {}),
-        };
-      } else {
-        executionDefaultsUpdateJsonb = null;
-      }
+    if (parsed.data.executionDefaults !== undefined) {
+      executionDefaultsUpdateJsonb = parsed.data.executionDefaults ?? null;
     }
 
     const txResult = await db.transaction(async (tx): Promise<
@@ -1850,11 +1836,7 @@ export async function agentRoutes(
         await tx.update(agents).set({
           ...agentUpdates,
           ...(rawTelegramChatId !== undefined ? { telegramChatId: rawTelegramChatId?.trim() || null } : {}),
-          ...(finalMaxPositionSizePctUpdate !== undefined ? { maxPositionSizePct: finalMaxPositionSizePctUpdate } : {}),
-          ...(finalStopLossPctUpdate !== undefined ? { stopLossPct: finalStopLossPctUpdate } : {}),
-          ...(rawMaxDrawdownPct !== undefined ? { maxDrawdownPct: rawMaxDrawdownPct != null ? String(rawMaxDrawdownPct) : null } : {}),
           ...resolvedMaxBotsPatch,
-          ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
           ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
           ...(unifiedConfigPatch !== undefined ? { unifiedConfig: unifiedConfigPatch } : {}),
           // TODO: replace as never with proper Drizzle-typed values (RiskPosture, StrategyIdentity, ExecutionDefaults)
@@ -2641,5 +2623,113 @@ export async function agentRoutes(
       executionStatus: approval.executionStatus ?? null,
       message: 'Trade proposal rejected.',
     });
+  });
+
+  // POST /agents/:id/blueprints — create a draft blueprint from an existing agent
+  app.post<{ Params: { id: string }; Body: unknown }>('/agents/:id/blueprints', async (request, reply) => {
+    const parsing = z.object({
+      name: z.string().min(1).optional(),
+      description: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+    }).safeParse(request.body ?? {});
+    if (!parsing.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsing.error.issues });
+    }
+
+    // Find agent owned by user
+    const [agent] = await db.select().from(agents)
+      .where(and(eq(agents.id, request.params.id), eq(agents.userId, request.userId)))
+      .limit(1);
+    if (!agent) {
+      return reply.status(404).send({ error: 'not_found', message: 'Agent not found' });
+    }
+
+    // Project agent to blueprint payload
+    const payload = projectAgentToBlueprintPayload(agent);
+
+    // Override name/description/tags from request body if provided
+    if (parsing.data.name) payload.name = parsing.data.name;
+    if (parsing.data.description) payload.description = parsing.data.description;
+    if (parsing.data.tags) payload.tags = parsing.data.tags;
+
+    // Get agent's skill references
+    const skillRows = await db.select({
+      skillId: agentSkills.skillId,
+      skillRevisionId: agentSkills.skillRevisionId,
+    }).from(agentSkills)
+      .where(eq(agentSkills.agentId, agent.id))
+      .orderBy(agentSkills.orderIndex);
+
+    const skillRefs = skillRows.map((s) => ({
+      skillId: s.skillId,
+      skillRevisionId: s.skillRevisionId,
+    }));
+
+    const blueprintId = crypto.randomUUID();
+    const revisionId = crypto.randomUUID();
+    const now = new Date();
+
+    // Derive facets from payload
+    const bpName = payload.name;
+    const bpDescription = payload.description;
+    const bpTags = payload.tags;
+    const bpStrategyType = (payload.strategy?.type as string | undefined) ?? null;
+    const bpStyle = payload.style;
+
+    await db.transaction(async (tx) => {
+      // Insert blueprint (draft)
+      await tx.insert(blueprints).values({
+        id: blueprintId,
+        authorId: request.userId,
+        publicationStatus: 'draft',
+        kind: 'agent',
+        name: bpName,
+        description: bpDescription,
+        strategyType: bpStrategyType,
+        style: bpStyle,
+        tags: bpTags,
+        venueType: null,
+        currentRevisionId: revisionId,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Insert revision 1
+      await tx.insert(blueprintRevisions).values({
+        id: revisionId,
+        blueprintId,
+        version: 1,
+        kind: 'agent',
+        name: bpName,
+        description: bpDescription,
+        strategyType: bpStrategyType,
+        style: bpStyle,
+        tags: bpTags,
+        venueType: null,
+        payload,
+        createdByUserId: request.userId,
+        createdAt: now,
+      });
+
+      // Insert skill dependencies
+      if (skillRefs.length > 0) {
+        await tx.insert(blueprintRevisionSkills).values(
+          skillRefs.map((s, i) => ({
+            blueprintRevisionId: revisionId,
+            skillId: s.skillId,
+            skillRevisionId: s.skillRevisionId,
+            orderIndex: i,
+          })),
+        );
+      }
+    });
+
+    const [bp] = await db.select().from(blueprints).where(eq(blueprints.id, blueprintId)).limit(1);
+    const [rev] = await db.select().from(blueprintRevisions).where(eq(blueprintRevisions.id, revisionId)).limit(1);
+    if (!bp || !rev) {
+      return reply.status(500).send({ error: 'internal_error', message: 'Failed to create blueprint' });
+    }
+    const detail = await buildBlueprintDetail(db, bp, rev);
+    return reply.status(201).send(detail);
   });
 }

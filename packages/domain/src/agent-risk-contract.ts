@@ -8,7 +8,7 @@
  */
 
 /** Source of a resolved agent risk field value. */
-export type AgentRiskFieldSource = 'user' | 'default' | 'agent_override';
+export type AgentRiskFieldSource = 'user' | 'default' | 'agent_override' | 'derived' | 'disabled';
 
 /** A single resolved risk field with provenance and mutability metadata. */
 export interface AgentRiskField<T> {
@@ -183,4 +183,237 @@ export function validateRiskOverride(
   }
 
   return undefined;
+}
+
+// ─── ResolvedAgentRiskProfile (9-field read model) ───────────────────────────
+
+import type { RiskPosture } from './config/schema.js';
+
+/** Extended ceilings that include dailyMaxLossPct (not in the base 5-field contract). */
+export interface AgentRiskCeilingsExtended extends AgentRiskCeilings {
+  dailyMaxLossPct: number;
+}
+
+/** A single resolved risk profile field with full provenance metadata. */
+export interface AgentRiskProfileField {
+  /** The raw input value before resolution (creator value, override value, or null). */
+  rawValue: number | null;
+  /** The value currently in effect for enforcement (null when disabled). */
+  effectiveValue: number | null;
+  /** Where the effective value came from. */
+  source: AgentRiskFieldSource;
+  /** Whether the agent may adjust this field at runtime. */
+  mutable: boolean;
+  /** The operator-defined ceiling — null for fields without a general ceiling. */
+  operatorCeiling: number | null;
+  /** Whether the engine will actively enforce this limit. */
+  enforced: boolean;
+  /** The creator-configured value when present (source = 'user'). */
+  creatorValue?: number;
+  /** The agent's runtime override when present (source = 'agent_override'). */
+  overrideValue?: number;
+}
+
+/** Full 9-field read model of an agent's resolved risk profile. */
+export interface ResolvedAgentRiskProfile {
+  maxOpenPositions: AgentRiskProfileField;
+  maxPositionSizePct: AgentRiskProfileField;
+  stopLossPct: AgentRiskProfileField;
+  stopLossCooldownMs: AgentRiskProfileField;
+  maxDrawdownPct: AgentRiskProfileField;
+  dailyMaxLossPct: AgentRiskProfileField;
+  maxNewPositionsPerDay: AgentRiskProfileField;
+  avoidParabolicMovePct: AgentRiskProfileField;
+  maxOrderNotional: AgentRiskProfileField;
+}
+
+/** Adapt an AgentRiskField<number> to the read-model AgentRiskProfileField. */
+function toProfileField(field: AgentRiskField<number>): AgentRiskProfileField {
+  const rawValue =
+    field.source === 'agent_override'
+      ? (field.overrideValue ?? null)
+      : field.source === 'user'
+        ? (field.creatorValue ?? null)
+        : null;
+
+  return {
+    rawValue,
+    effectiveValue: field.effectiveValue,
+    source: field.source,
+    mutable: field.mutable,
+    operatorCeiling: field.operatorCeiling,
+    enforced: field.enforced ?? true,
+    creatorValue: field.creatorValue,
+    overrideValue: field.overrideValue,
+  };
+}
+
+/**
+ * Resolve the full 9-field agent risk profile from all sources.
+ *
+ * The 5 mutable fields follow the existing two-path contract (creator → default → override).
+ * The 4 new fields are immutable (creator-only or derived), with no agent override path.
+ *
+ * @param riskPosture - Agent's risk posture from the database (nullable fields).
+ * @param ceilings - Operator ceiling values for the 5 mutable fields.
+ * @param dailyMaxLossPctDefault - Operator default for dailyMaxLossPct (from AgentRiskDefaultsConfig).
+ * @param overrides - Persisted agent runtime overrides for the 5 mutable fields.
+ * @param options.hasCapital - When false, maxPositionSizePct from defaults is not enforced.
+ * @param options.capital - Capital base for deriving maxOrderNotional.
+ * @param options.maxOrderNotionalMultiplier - Multiplier applied to capital for derived maxOrderNotional (default 1).
+ */
+export function resolveAgentRiskProfile(
+  riskPosture: RiskPosture | null,
+  ceilings: AgentRiskCeilings,
+  dailyMaxLossPctDefault: number,
+  overrides: AgentRiskOverrides,
+  options?: { hasCapital?: boolean; capital?: number; maxOrderNotionalMultiplier?: number },
+): ResolvedAgentRiskProfile {
+  // ── 5 mutable fields: existing two-path contract ──────────────────────
+
+  const maxOpenPositionsField = resolveRiskField(
+    riskPosture?.maxOpenPositions ?? null,
+    ceilings.maxOpenPositions,
+    overrides.maxOpenPositions,
+  );
+  const maxPositionSizePctField = resolveRiskField(
+    riskPosture?.maxPositionSizePct ?? null,
+    ceilings.maxPositionSizePct,
+    overrides.maxPositionSizePct,
+  );
+  const stopLossPctField = resolveRiskField(
+    riskPosture?.stopLossPct ?? null,
+    ceilings.stopLossPct,
+    overrides.stopLossPct,
+  );
+  const stopLossCooldownMsField = resolveRiskField(
+    riskPosture?.stopLossCooldownMs ?? null,
+    ceilings.stopLossCooldownMs,
+    overrides.stopLossCooldownMs,
+  );
+  const maxDrawdownPctField = resolveRiskField(
+    riskPosture?.maxDrawdownPct ?? null,
+    ceilings.maxDrawdownPct,
+    overrides.maxDrawdownPct,
+  );
+
+  const hasCapital = options?.hasCapital ?? true;
+
+  // maxPositionSizePct: not enforced when capital absent and value is from defaults
+  if (!hasCapital && maxPositionSizePctField.source === 'default') {
+    maxPositionSizePctField.enforced = false;
+  }
+
+  // ── 4 immutable fields: creator-only or derived ───────────────────────
+
+  // dailyMaxLossPct: creator-configured → immutable; absent → operator default (also immutable)
+  const dailyMaxLossPctRaw = riskPosture?.dailyMaxLossPct ?? null;
+  const dailyMaxLossPctField: AgentRiskProfileField =
+    dailyMaxLossPctRaw != null
+      ? {
+          rawValue: dailyMaxLossPctRaw,
+          effectiveValue: dailyMaxLossPctRaw,
+          source: 'user',
+          mutable: false,
+          operatorCeiling: dailyMaxLossPctDefault,
+          enforced: true,
+          creatorValue: dailyMaxLossPctRaw,
+        }
+      : {
+          rawValue: null,
+          effectiveValue: dailyMaxLossPctDefault,
+          source: 'default',
+          mutable: false,
+          operatorCeiling: dailyMaxLossPctDefault,
+          enforced: true,
+        };
+
+  // maxNewPositionsPerDay: creator-configured → immutable; absent → disabled
+  const maxNewPositionsPerDayRaw = riskPosture?.maxNewPositionsPerDay ?? null;
+  const maxNewPositionsPerDayField: AgentRiskProfileField =
+    maxNewPositionsPerDayRaw != null
+      ? {
+          rawValue: maxNewPositionsPerDayRaw,
+          effectiveValue: maxNewPositionsPerDayRaw,
+          source: 'user',
+          mutable: false,
+          operatorCeiling: null,
+          enforced: true,
+          creatorValue: maxNewPositionsPerDayRaw,
+        }
+      : {
+          rawValue: null,
+          effectiveValue: null,
+          source: 'disabled',
+          mutable: false,
+          operatorCeiling: null,
+          enforced: false,
+        };
+
+  // avoidParabolicMovePct: same resolution as maxNewPositionsPerDay
+  const avoidParabolicMovePctRaw = riskPosture?.avoidParabolicMovePct ?? null;
+  const avoidParabolicMovePctField: AgentRiskProfileField =
+    avoidParabolicMovePctRaw != null
+      ? {
+          rawValue: avoidParabolicMovePctRaw,
+          effectiveValue: avoidParabolicMovePctRaw,
+          source: 'user',
+          mutable: false,
+          operatorCeiling: null,
+          enforced: true,
+          creatorValue: avoidParabolicMovePctRaw,
+        }
+      : {
+          rawValue: null,
+          effectiveValue: null,
+          source: 'disabled',
+          mutable: false,
+          operatorCeiling: null,
+          enforced: false,
+        };
+
+  // maxOrderNotional: creator-configured → immutable; absent → derived from capital, or disabled
+  const maxOrderNotionalRaw = riskPosture?.maxOrderNotional ?? null;
+  const capital = options?.capital;
+  const maxOrderNotionalMultiplier = options?.maxOrderNotionalMultiplier ?? 1;
+  const maxOrderNotionalField: AgentRiskProfileField =
+    maxOrderNotionalRaw != null
+      ? {
+          rawValue: maxOrderNotionalRaw,
+          effectiveValue: maxOrderNotionalRaw,
+          source: 'user',
+          mutable: false,
+          operatorCeiling: null,
+          enforced: true,
+          creatorValue: maxOrderNotionalRaw,
+        }
+      : capital != null
+        ? {
+            rawValue: null,
+            effectiveValue: capital * maxOrderNotionalMultiplier,
+            source: 'derived',
+            mutable: false,
+            operatorCeiling: null,
+            enforced: true,
+          }
+        : {
+            rawValue: null,
+            effectiveValue: null,
+            source: 'disabled',
+            mutable: false,
+            operatorCeiling: null,
+            enforced: false,
+          };
+
+  return {
+    maxOpenPositions: toProfileField(maxOpenPositionsField),
+    maxPositionSizePct: toProfileField(maxPositionSizePctField),
+    stopLossPct: toProfileField(stopLossPctField),
+    stopLossCooldownMs: toProfileField(stopLossCooldownMsField),
+    maxDrawdownPct: toProfileField(maxDrawdownPctField),
+    dailyMaxLossPct: dailyMaxLossPctField,
+    maxNewPositionsPerDay: maxNewPositionsPerDayField,
+    avoidParabolicMovePct: avoidParabolicMovePctField,
+    maxOrderNotional: maxOrderNotionalField,
+  };
 }

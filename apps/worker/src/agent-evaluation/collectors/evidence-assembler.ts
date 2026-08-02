@@ -140,10 +140,11 @@ export async function assembleEvidence(ctx: EvidenceAssemblyContext): Promise<Ev
         name: agent.name,
         status: agent.status,
         style: agent.style,
-        executionMode: agent.executionMode,
-        dailyLossLimit: agent.dailyLossLimit,
+        // Canonical JSONB fields (legacy flat columns removed)
+        executionMode: execDefaults['mode'] ?? null,
+        dailyLossLimit: null,
         maxBots: agent.maxBots,
-        maxSlippageBps: agent.maxSlippageBps,
+        maxSlippageBps: execDefaults['slippageBps'] ?? null,
         // Canonical JSONB fields
         dailyMaxLossPct: risk['dailyMaxLossPct'] ?? null,
         maxDrawdownPct: risk['maxDrawdownPct'] ?? null,

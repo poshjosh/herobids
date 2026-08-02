@@ -79,7 +79,7 @@ import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScou
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { createToolRegistry } from './tools/index.js';
 import { initEmailTools } from './tools/email.js';
-import { extractCeilings, extractCreatorInput } from './agent-risk-limits.js';
+import { extractCeilings, extractCreatorInput, resolveProfile } from './agent-risk-limits.js';
 import { getWorkspacePaths } from './tools/workspace.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults } from './llm-selection.js';
@@ -1486,12 +1486,6 @@ function buildRiskContractOps(): ToolContext['riskContractOps'] {
       const overrides = await agentRepo!.getRiskOverrides(AGENT_ID!);
       const creatorInput = extractCreatorInput({
         capital: agentConfig.capital ?? null,
-        dailyLossLimit: agentConfig.dailyLossLimit ?? null,
-        maxDrawdownPct: agentConfig.maxDrawdownPct ?? null,
-        maxOpenPositions: agentConfig.maxOpenPositions ?? null,
-        maxPositionSizePct: agentConfig.maxPositionSizePct ?? null,
-        stopLossPct: agentConfig.stopLossPct ?? null,
-        stopLossCooldownMs: agentConfig.stopLossCooldownMs ?? null,
         riskPosture: agentConfig.risk ?? null,
       });
       return resolveAgentRiskContract(creatorInput, ceilings, overrides, {
@@ -1503,12 +1497,6 @@ function buildRiskContractOps(): ToolContext['riskContractOps'] {
       const currentOverrides = await agentRepo!.getRiskOverrides(AGENT_ID!);
       const creatorInput = extractCreatorInput({
         capital: agentConfig.capital ?? null,
-        dailyLossLimit: agentConfig.dailyLossLimit ?? null,
-        maxDrawdownPct: agentConfig.maxDrawdownPct ?? null,
-        maxOpenPositions: agentConfig.maxOpenPositions ?? null,
-        maxPositionSizePct: agentConfig.maxPositionSizePct ?? null,
-        stopLossPct: agentConfig.stopLossPct ?? null,
-        stopLossCooldownMs: agentConfig.stopLossCooldownMs ?? null,
         riskPosture: agentConfig.risk ?? null,
       });
       const currentContract = resolveAgentRiskContract(creatorInput, ceilings, currentOverrides, {
@@ -1554,6 +1542,18 @@ function buildRiskContractOps(): ToolContext['riskContractOps'] {
         hasCapital: agentConfig.capital != null,
       });
       return { ok: true, contract: updatedContract };
+    },
+
+    async getProfile() {
+      const overrides = await agentRepo!.getRiskOverrides(AGENT_ID!);
+      return resolveProfile(
+        {
+          capital: agentConfig.capital ?? null,
+          riskPosture: agentConfig.risk ?? null,
+        },
+        defaults,
+        overrides,
+      );
     },
   };
 }

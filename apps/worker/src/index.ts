@@ -719,12 +719,6 @@ const intakeResolver: DecisionIntakeResolver = {
         if (agent) {
           const freshLimits = buildAgentRiskLimits({
             capital: agent.capital ?? null,
-            dailyLossLimit: agent.dailyLossLimit ?? null,
-            maxDrawdownPct: agent.maxDrawdownPct ?? null,
-            maxOpenPositions: agent.maxOpenPositions ?? null,
-            maxPositionSizePct: agent.maxPositionSizePct ?? null,
-            stopLossPct: agent.stopLossPct ?? null,
-            stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
             riskPosture: (agent.risk as RiskPosture | null) ?? null,
           }, appConfig.agentRiskDefaults, (agent.riskOverrides as Record<string, number> | null) ?? {});
           actor.updateRiskLimits(freshLimits);
@@ -1111,12 +1105,6 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           venueType,
           riskLimits: buildAgentRiskLimits({
             capital: agent?.capital ?? null,
-            dailyLossLimit: agent?.dailyLossLimit ?? null,
-            maxDrawdownPct: agent?.maxDrawdownPct ?? null,
-            maxOpenPositions: agent?.maxOpenPositions ?? null,
-            maxPositionSizePct: agent?.maxPositionSizePct ?? null,
-            stopLossPct: agent?.stopLossPct ?? null,
-            stopLossCooldownMs: agent?.stopLossCooldownMs ?? null,
             riskPosture: (agent?.risk as RiskPosture | null) ?? null,
           }, agentDefaults, (agent?.riskOverrides as Record<string, number> | null) ?? {}),
           venueAdapterFactory,
@@ -2227,7 +2215,7 @@ const manualReviewRuntime = new ManualReviewRuntime(
         ? platformAssessment['reviewIntervalMs']
         : appConfig.platformAssessor.minReviewIntervalMs;
 
-      const resolveActivePreset = () => resolveActivePresetState(db, { id: agentId, unifiedConfig: agent.unifiedConfig });
+      const resolveActivePreset = () => resolveActivePresetState(db, { id: agentId, unifiedConfig: agent.unifiedConfig, strategy: agent.strategy });
 
       // Billing preflight
       const checkBillingEligibility = async () => {
@@ -2522,7 +2510,7 @@ function startReviewSchedulerForAgent(agent: ReviewSchedulerAgentRow): void {
     ? platformAssessment['reviewIntervalMs']
     : appConfig.platformAssessor.minReviewIntervalMs;
 
-  const resolveActivePreset = () => resolveActivePresetState(db, { id: agent.id, unifiedConfig: agent.unifiedConfig });
+  const resolveActivePreset = () => resolveActivePresetState(db, { id: agent.id, unifiedConfig: agent.unifiedConfig, strategy: agent.strategy });
 
   // Read-only billing preflight — checks if the agent has an active billing account.
   const checkBillingEligibility = async () => {

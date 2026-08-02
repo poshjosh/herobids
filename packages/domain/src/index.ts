@@ -25,3 +25,4 @@ export * from './scanner-types.js';
 export * from './market-assessment.js';
 export * from './assessment-billing.js';
 export * from './review-pre-check.js';
+export * from './blueprint.js';

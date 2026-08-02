@@ -647,6 +647,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         publicationStatus: publication.publicationStatus,
         publishedAt: publication.publicationStatus === 'published' ? createdAt : null,
         currentRevisionId: revisionId,
+        publishedRevisionId: publication.publicationStatus === 'published' ? revisionId : null,
         priceCents: parsed.data.priceCents,
         autoPublishedByPlan: publication.autoPublishedByPlan,
         name: parsed.data.name,
@@ -681,6 +682,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         tags: parsed.data.tags,
         changeSummary: parsed.data.changeSummary ?? null,
         createdByUserId: request.userId,
+        publishedAt: publication.publicationStatus === 'published' ? createdAt : null,
         createdAt,
       });
     });
@@ -867,25 +869,35 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       return reply.status(409).send({ error: 'invalid_state', message: 'No revision available to publish' });
     }
 
-    await db.update(skills).set({
-      publicationStatus: 'published',
-      publishedAt: new Date(),
-      delistedAt: null,
-      archivedAt: null,
-      currentRevisionId: targetRevision.id,
-      name: targetRevision.name,
-      description: targetRevision.description,
-      instructions: targetRevision.instructions,
-      promptHint: targetRevision.promptHint,
-      promptTemplate: targetRevision.promptTemplate,
-      requiredTools: targetRevision.requiredTools,
-      contextRequirements: targetRevision.contextRequirements,
-      requiredGuardrails: targetRevision.requiredGuardrails,
-      capabilityFamilies: targetRevision.capabilityFamilies,
-      suggestedTickIntervalMs: targetRevision.suggestedTickIntervalMs,
-      tags: targetRevision.tags,
-      updatedAt: new Date(),
-    }).where(eq(skills.id, row.id));
+    const publishTime = new Date();
+
+    await db.transaction(async (tx) => {
+      // Set publishedRevisionId on the skill and mark the revision as published
+      await tx.update(skillRevisions).set({
+        publishedAt: publishTime,
+      }).where(eq(skillRevisions.id, targetRevision.id));
+
+      await tx.update(skills).set({
+        publicationStatus: 'published',
+        publishedAt: publishTime,
+        publishedRevisionId: targetRevision.id,
+        delistedAt: null,
+        archivedAt: null,
+        currentRevisionId: targetRevision.id,
+        name: targetRevision.name,
+        description: targetRevision.description,
+        instructions: targetRevision.instructions,
+        promptHint: targetRevision.promptHint,
+        promptTemplate: targetRevision.promptTemplate,
+        requiredTools: targetRevision.requiredTools,
+        contextRequirements: targetRevision.contextRequirements,
+        requiredGuardrails: targetRevision.requiredGuardrails,
+        capabilityFamilies: targetRevision.capabilityFamilies,
+        suggestedTickIntervalMs: targetRevision.suggestedTickIntervalMs,
+        tags: targetRevision.tags,
+        updatedAt: publishTime,
+      }).where(eq(skills.id, row.id));
+    });
 
     const [publishedRow] = await db.select().from(skills).where(eq(skills.id, row.id)).limit(1);
     const [view] = await buildSkillViews(db, [publishedRow!], request.userId, planPolicy);
@@ -1002,6 +1014,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         publicationStatus: publication.publicationStatus,
         publishedAt: publication.publicationStatus === 'published' ? now : null,
         currentRevisionId: forkRevisionId,
+        publishedRevisionId: publication.publicationStatus === 'published' ? forkRevisionId : null,
         priceCents: 0,
         autoPublishedByPlan: publication.autoPublishedByPlan,
         name: `${sourceRevision.name} (copy)`,
@@ -1037,6 +1050,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         tags: sourceRevision.tags,
         changeSummary: 'forked skill',
         createdByUserId: request.userId,
+        publishedAt: publication.publicationStatus === 'published' ? now : null,
         createdAt: now,
       });
 

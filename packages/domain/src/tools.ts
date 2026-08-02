@@ -196,6 +196,8 @@ export interface ToolContext {
   riskContractOps?: {
     getContract(): Promise<import('./agent-risk-contract.js').ResolvedAgentRiskContract>;
     adjustOverrides(overrides: Record<string, number | null>): Promise<{ ok: boolean; error?: string; contract?: import('./agent-risk-contract.js').ResolvedAgentRiskContract }>;
+    /** Resolve the full 9-field risk profile (read-only view including immutable fields). */
+    getProfile?(): Promise<import('./agent-risk-contract.js').ResolvedAgentRiskProfile>;
   };
   /** Agent config operations for reading and updating the agent's unified config at runtime. */
   agentConfigOps?: {
@@ -220,7 +222,7 @@ export interface ToolContext {
   };
   /** Agent repository for get_account_summary (capital, etc.). */
   agentRepo?: {
-    getAgent(agentId: string): Promise<{ capital: string | null; dailyLossLimit: string | null; maxDrawdownPct: string | null; risk: Record<string, unknown> | null } | null>;
+    getAgent(agentId: string): Promise<{ capital: string | null; risk: Record<string, unknown> | null } | null>;
   };
   /** Operator-configured risk defaults for the running agent (from agentRiskDefaults config). */
   operatorDefaults?: {

@@ -20,6 +20,7 @@ import {
   AuthorizationModeSchema,
   UnifiedAgentConfigSchema,
   RiskConfigSchema,
+  BotRiskSchema,
   type AgentStyleValue,
   type ReasoningLevel,
 } from './schema.js';
@@ -1593,5 +1594,73 @@ describe('RiskConfigSchema legacy field normalization', () => {
     if (result.success) {
       expect(result.data.stopLossPct).toBe(5);
     }
+  });
+});
+
+// ── BotRiskSchema ────────────────────────────────────────────────────────────
+
+describe('BotRiskSchema', () => {
+  it('accepts valid canonical risk fields', () => {
+    const result = BotRiskSchema.parse({
+      maxPositionSizePct: 50,
+      maxOpenPositions: 3,
+      stopLossPct: 5,
+      dailyMaxLossPct: 10,
+      maxDrawdownPct: 15,
+      maxOrderNotional: 1000,
+    });
+    expect(result.maxOrderNotional).toBe(1000); // number, not string
+    expect(result.maxPositionSizePct).toBe(50);
+  });
+
+  it('rejects unknown legacy keys', () => {
+    expect(() => BotRiskSchema.parse({
+      stopLossMaxUnrealizedLossPct: 5,
+    })).toThrow(); // strict mode
+  });
+
+  it('rejects deprecated token safety fields', () => {
+    expect(() => BotRiskSchema.parse({
+      minSwapTokenLiquidityUsd: 10000,
+    })).toThrow();
+    expect(() => BotRiskSchema.parse({
+      allowSwapTokenSafetyOverride: true,
+    })).toThrow();
+  });
+
+  it('rejects maxOrderNotional as string', () => {
+    expect(() => BotRiskSchema.parse({
+      maxOrderNotional: '1000',
+    })).toThrow();
+  });
+
+  it('rejects absolute maxPositionSize and maxDrawdown', () => {
+    expect(() => BotRiskSchema.parse({
+      maxPositionSize: '100',
+    })).toThrow();
+    expect(() => BotRiskSchema.parse({
+      maxDrawdown: '1000',
+    })).toThrow();
+  });
+
+  it('allows all fields to be omitted (optional)', () => {
+    const result = BotRiskSchema.parse({});
+    expect(result).toEqual({});
+  });
+
+  it('accepts all 9 risk posture fields', () => {
+    const result = BotRiskSchema.parse({
+      maxPositionSizePct: 50,
+      maxOpenPositions: 3,
+      stopLossPct: 5,
+      stopLossCooldownMs: 60000,
+      dailyMaxLossPct: 10,
+      maxDrawdownPct: 15,
+      maxNewPositionsPerDay: 5,
+      avoidParabolicMovePct: 30,
+      maxOrderNotional: 1000,
+    });
+    expect(result.maxNewPositionsPerDay).toBe(5);
+    expect(result.avoidParabolicMovePct).toBe(30);
   });
 });

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentTool, ToolResult, ToolContext, ResolvedAgentRiskContract } from '@herobids/domain';
+import type { AgentTool, ToolResult, ToolContext, ResolvedAgentRiskContract, ResolvedAgentRiskProfile, AgentRiskProfileField } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 
 // --- get_risk_limits ---
@@ -20,16 +20,38 @@ const getRiskLimitsTool: AgentTool = {
     const contract = await ctx.riskContractOps.getContract();
     const runtime = await buildRuntime(ctx, contract);
 
+    // Resolve the full 9-field profile for read-only fields (graceful degradation if unavailable)
+    let profile: ResolvedAgentRiskProfile | undefined;
+    if (ctx.riskContractOps.getProfile) {
+      try {
+        profile = await ctx.riskContractOps.getProfile();
+      } catch { /* Non-critical — proceed with 5-field contract only */ }
+    }
+
     return {
       success: true,
       data: {
         ok: true,
         limits: {
+          // 5 mutable fields from the contract
           maxOpenPositions: formatField(contract.maxOpenPositions),
           maxPositionSizePct: formatField(contract.maxPositionSizePct),
           stopLossPct: formatField(contract.stopLossPct),
           stopLossCooldownMs: formatField(contract.stopLossCooldownMs),
           maxDrawdownPct: formatField(contract.maxDrawdownPct),
+          // 4 read-only fields from the profile (informational only)
+          dailyMaxLossPct: profile
+            ? formatProfileField(profile.dailyMaxLossPct)
+            : { value: null, source: 'unavailable', mutable: false, ceiling: null },
+          maxNewPositionsPerDay: profile
+            ? formatProfileField(profile.maxNewPositionsPerDay)
+            : { value: null, source: 'unavailable', mutable: false, ceiling: null },
+          avoidParabolicMovePct: profile
+            ? formatProfileField(profile.avoidParabolicMovePct)
+            : { value: null, source: 'unavailable', mutable: false, ceiling: null },
+          maxOrderNotional: profile
+            ? formatProfileField(profile.maxOrderNotional)
+            : { value: null, source: 'unavailable', mutable: false, ceiling: null },
         },
         runtime,
       },
@@ -131,46 +153,21 @@ async function buildRuntime(ctx: ToolContext, contract: ResolvedAgentRiskContrac
 
   const openPositionsBlocked = openPositionsCurrent >= openPositionsLimit;
 
-  // Derive the daily loss limit: prefer agent.risk.dailyMaxLossPct (percent of equity),
-  // then fall back to the legacy dailyLossLimit USD column.
+  // Derive the daily loss limit from the canonical agents.risk.dailyMaxLossPct column.
+  // No legacy fallback to dailyLossLimit — that column is deprecated.
   let dailyLossLimitFromUser = false;
   if (ctx.agentRepo) {
     try {
       const agent = await ctx.agentRepo.getAgent(ctx.agentId);
       const risk = (agent?.risk ?? {}) as Record<string, unknown> | null;
       if (risk?.['dailyMaxLossPct'] != null) {
-        // Canonical percent-of-equity source
         dailyLossLimitPct = Number(risk['dailyMaxLossPct']);
-        if (agent?.capital) {
-          const capital = Number(agent.capital);
-          if (!Number.isNaN(capital) && capital > 0) {
-            dailyLossLimit = String(capital * dailyLossLimitPct / 100);
-          }
-        }
-      } else if (agent?.dailyLossLimit != null) {
-        // Legacy fallback: explicit dollar cap
-        const val = Number(agent.dailyLossLimit);
-        if (!Number.isNaN(val) && val > 0) {
-          dailyLossLimit = agent.dailyLossLimit;
-          dailyLossLimitFromUser = true;
-        }
-      } else if (agent?.capital) {
-        // Last fallback: compute from capital × dailyMaxLossPct via config
-        if (ctx.agentConfigOps) {
-          try {
-            const config = await ctx.agentConfigOps.getCurrentConfig();
-            if (config?.risk?.dailyMaxLossPct != null) {
-              dailyLossLimitPct = config.risk.dailyMaxLossPct;
-            }
-          } catch {
-            // Non-critical
-          }
-        }
-        if (dailyLossLimitPct != null) {
-          const capital = Number(agent.capital);
-          if (!Number.isNaN(capital) && capital > 0) {
-            dailyLossLimit = String(capital * dailyLossLimitPct / 100);
-          }
+        dailyLossLimitFromUser = true;
+      }
+      if (dailyLossLimitPct != null && dailyLossLimitPct > 0 && agent?.capital) {
+        const capital = Number(agent.capital);
+        if (!Number.isNaN(capital) && capital > 0) {
+          dailyLossLimit = String(capital * dailyLossLimitPct / 100);
         }
       }
     } catch {
@@ -223,6 +220,20 @@ async function buildRuntime(ctx: ToolContext, contract: ResolvedAgentRiskContrac
 }
 
 function formatField(field: { effectiveValue: number; source: string; mutable: boolean; operatorCeiling: number; enforced?: boolean }) {
+  return {
+    value: field.effectiveValue,
+    source: field.source,
+    mutable: field.mutable,
+    ceiling: field.operatorCeiling,
+    ...(field.enforced === false ? { enforced: false } : {}),
+  };
+}
+
+/**
+ * Format a read-only risk profile field for display in get_risk_limits.
+ * Differs from formatField in that effectiveValue and operatorCeiling can be null.
+ */
+function formatProfileField(field: AgentRiskProfileField) {
   return {
     value: field.effectiveValue,
     source: field.source,

@@ -7,7 +7,7 @@ import {
   buildRiskLimitsFromContract,
 } from './agent-risk-limits.js';
 import type { AgentRiskLimitSource } from './agent-risk-limits.js';
-import type { AgentRiskDefaultsConfig, AgentRiskOverrides } from '@herobids/domain';
+import type { AgentRiskDefaultsConfig, AgentRiskOverrides, RiskPosture } from '@herobids/domain';
 import type { RiskLimits } from '@herobids/engine';
 
 // ---------------------------------------------------------------------------
@@ -17,14 +17,13 @@ import type { RiskLimits } from '@herobids/engine';
 function source(overrides: Partial<AgentRiskLimitSource> = {}): AgentRiskLimitSource {
   return {
     capital: '10000',
-    dailyLossLimit: null,
-    maxDrawdownPct: null,
-    maxOpenPositions: null,
-    maxPositionSizePct: null,
-    stopLossPct: null,
-    stopLossCooldownMs: null,
+    riskPosture: null,
     ...overrides,
   };
+}
+
+function rp(overrides: Partial<RiskPosture> = {}): RiskPosture {
+  return { ...overrides };
 }
 
 function defaults(overrides: Partial<AgentRiskDefaultsConfig> = {}): AgentRiskDefaultsConfig {
@@ -83,9 +82,9 @@ describe('extractCeilings', () => {
 // ---------------------------------------------------------------------------
 
 describe('extractCreatorInput', () => {
-  it('parses string numeric fields', () => {
+  it('reads numeric fields from riskPosture', () => {
     const input = extractCreatorInput(
-      source({ maxPositionSizePct: '25', stopLossPct: '5', maxDrawdownPct: '10' }),
+      source({ riskPosture: rp({ maxPositionSizePct: 25, stopLossPct: 5, maxDrawdownPct: 10 }) }),
     );
     expect(input).toEqual({
       maxOpenPositions: null,
@@ -96,20 +95,7 @@ describe('extractCreatorInput', () => {
     });
   });
 
-  it('parses number fields directly', () => {
-    const input = extractCreatorInput(
-      source({ maxPositionSizePct: 25, stopLossPct: 5, maxDrawdownPct: 10 }),
-    );
-    expect(input).toEqual({
-      maxOpenPositions: null,
-      maxPositionSizePct: 25,
-      stopLossPct: 5,
-      stopLossCooldownMs: null,
-      maxDrawdownPct: 10,
-    });
-  });
-
-  it('returns null for null/absent fields', () => {
+  it('returns null for null/absent riskPosture', () => {
     const input = extractCreatorInput(source());
     expect(input).toEqual({
       maxOpenPositions: null,
@@ -120,23 +106,9 @@ describe('extractCreatorInput', () => {
     });
   });
 
-  it('returns null for non-finite string values', () => {
-    const input = extractCreatorInput(
-      source({ maxPositionSizePct: 'not-a-number' }),
-    );
-    expect(input.maxPositionSizePct).toBeNull();
-  });
-
-  it('returns null for NaN', () => {
-    const input = extractCreatorInput(
-      source({ maxPositionSizePct: NaN }),
-    );
-    expect(input.maxPositionSizePct).toBeNull();
-  });
-
   it('passes through non-risk integer fields (maxOpenPositions, stopLossCooldownMs)', () => {
     const input = extractCreatorInput(
-      source({ maxOpenPositions: 5, stopLossCooldownMs: 120_000 }),
+      source({ riskPosture: rp({ maxOpenPositions: 5, stopLossCooldownMs: 120_000 }) }),
     );
     expect(input.maxOpenPositions).toBe(5);
     expect(input.stopLossCooldownMs).toBe(120_000);
@@ -152,7 +124,7 @@ describe('resolveContract', () => {
 
   it('marks creator-set fields as immutable with source=user', () => {
     const contract = resolveContract(
-      source({ maxOpenPositions: 3, stopLossPct: '5' }),
+      source({ riskPosture: rp({ maxOpenPositions: 3, stopLossPct: 5 }) }),
       defaults({ maxOpenPositions: 10, stopLossPct: 10 }),
     );
 
@@ -169,7 +141,7 @@ describe('resolveContract', () => {
 
   it('sets operatorCeiling on creator-set fields', () => {
     const contract = resolveContract(
-      source({ maxOpenPositions: 3 }),
+      source({ riskPosture: rp({ maxOpenPositions: 3 }) }),
       defaults({ maxOpenPositions: 10 }),
     );
     expect(contract.maxOpenPositions.operatorCeiling).toBe(10);
@@ -222,7 +194,7 @@ describe('resolveContract', () => {
 
   it('ignores agent override when creator set the field (immutable)', () => {
     const contract = resolveContract(
-      source({ maxOpenPositions: 5 }), // creator-set
+      source({ riskPosture: rp({ maxOpenPositions: 5 }) }), // creator-set
       defaults({ maxOpenPositions: 10 }),
       overrides({ maxOpenPositions: 3 }), // agent tries to override
     );
@@ -248,7 +220,7 @@ describe('resolveContract', () => {
 
   it('keeps maxPositionSizePct enforced when source is user even without capital', () => {
     const contract = resolveContract(
-      source({ capital: null, maxPositionSizePct: '25' }),
+      source({ capital: null, riskPosture: rp({ maxPositionSizePct: 25 }) }),
       defaults({ maxPositionSizePct: 100 }),
     );
 
@@ -290,13 +262,12 @@ describe('buildRiskLimitsFromContract', () => {
   it('projects resolved contract fields into engine RiskLimits', () => {
     const d = defaults({ maxPositionSize: 500_000, maxDrawdown: 1_000_000 });
     const contract = resolveContract(
-      source({ capital: '10000', maxOpenPositions: 3 }),
+      source({ capital: '10000', riskPosture: rp({ maxOpenPositions: 3 }) }),
       d,
     );
 
     const limits = buildRiskLimitsFromContract(contract, source({ capital: '10000' }), d);
 
-    expect(limits.maxPositionSize.toString()).toBe('500000');
     expect(limits.maxOpenPositions).toBe(3);
     expect(limits.maxDrawdownPct).toBe(20); // from operator default
     expect(limits.stopLossMaxUnrealizedLossPct).toBe(10); // from operator default
@@ -304,37 +275,16 @@ describe('buildRiskLimitsFromContract', () => {
     expect(limits.maxPositionSizePct).toBe(100);
   });
 
-  it('returns dailyMaxLossPct derived from capital and daily loss limit', () => {
-    const d = defaults();
-    const contract = resolveContract(source({ capital: '10000', dailyLossLimit: '500' }), d);
+  it('reads dailyMaxLossPct from riskPosture when creator-configured', () => {
+    const d = defaults({ dailyMaxLossPct: 20 });
+    const contract = resolveContract(source({ capital: '10000', riskPosture: rp({ dailyMaxLossPct: 5 }) }), d);
 
-    const limits = buildRiskLimitsFromContract(contract, source({ capital: '10000', dailyLossLimit: '500' }), d);
+    const limits = buildRiskLimitsFromContract(contract, source({ capital: '10000', riskPosture: rp({ dailyMaxLossPct: 5 }) }), d);
 
-    // 500 / 10000 * 100 = 5%
     expect(limits.dailyMaxLossPct).toBe(5);
   });
 
-  it('returns dailyMaxLossPct as zero when dailyLossLimit is "0"', () => {
-    // Zero loss limit → derived percent is 0, meaning any non-zero daily loss will be rejected
-    const d = defaults();
-    const contract = resolveContract(source({ capital: '10000', dailyLossLimit: '0' }), d);
-
-    const limits = buildRiskLimitsFromContract(contract, source({ capital: '10000', dailyLossLimit: '0' }), d);
-
-    expect(limits.dailyMaxLossPct).toBe(0);
-  });
-
-  it('returns negative dailyMaxLossPct when dailyLossLimit is negative', () => {
-    const d = defaults();
-    const contract = resolveContract(source({ capital: '10000', dailyLossLimit: '-100' }), d);
-
-    const limits = buildRiskLimitsFromContract(contract, source({ capital: '10000', dailyLossLimit: '-100' }), d);
-
-    // -100 / 10000 * 100 = -1%
-    expect(limits.dailyMaxLossPct).toBe(-1);
-  });
-
-  it('falls back to operator default for dailyMaxLossPct when dailyLossLimit is absent', () => {
+  it('falls back to operator default for dailyMaxLossPct when not in riskPosture', () => {
     const d = defaults({ dailyMaxLossPct: 20 });
     const contract = resolveContract(source({ capital: '10000' }), d);
 
@@ -343,7 +293,7 @@ describe('buildRiskLimitsFromContract', () => {
     expect(limits.dailyMaxLossPct).toBe(20);
   });
 
-  it('derives maxOrderNotional from capital × maxOrderNotionalMultiplier', () => {
+  it('derives maxOrderNotional from capital × maxOrderNotionalMultiplier when not in riskPosture', () => {
     const d = defaults({ maxOrderNotionalMultiplier: 1 });
     const contract = resolveContract(source({ capital: '10000' }), d);
 
@@ -352,29 +302,46 @@ describe('buildRiskLimitsFromContract', () => {
     expect(limits.maxOrderNotional?.toString()).toBe('10000');
   });
 
-  it('omits maxOrderNotional and dailyMaxLossPct when capital is absent', () => {
+  it('reads maxOrderNotional from riskPosture when creator-configured (even without capital)', () => {
+    const d = defaults({ maxOrderNotionalMultiplier: 1 });
+    const contract = resolveContract(source({ capital: null, riskPosture: rp({ maxOrderNotional: 5000 }) }), d);
+
+    const limits = buildRiskLimitsFromContract(contract, source({ capital: null, riskPosture: rp({ maxOrderNotional: 5000 }) }), d);
+
+    expect(limits.maxOrderNotional?.toString()).toBe('5000');
+  });
+
+  it('omits maxOrderNotional when no capital and not in riskPosture', () => {
     const d = defaults();
     const contract = resolveContract(source({ capital: null }), d);
 
     const limits = buildRiskLimitsFromContract(contract, source({ capital: null }), d);
 
     expect(limits.maxOrderNotional).toBeUndefined();
-    expect(limits.dailyMaxLossPct).toBeUndefined();
   });
 
-  it('sets maxDrawdown from operator ceiling', () => {
-    const d = defaults({ maxDrawdown: 500_000 });
+  it('always includes dailyMaxLossPct (even without capital)', () => {
+    const d = defaults({ dailyMaxLossPct: 15 });
+    const contract = resolveContract(source({ capital: null }), d);
+
+    const limits = buildRiskLimitsFromContract(contract, source({ capital: null }), d);
+
+    expect(limits.dailyMaxLossPct).toBe(15);
+  });
+
+  it('sets maxDrawdownPct from operator default', () => {
+    const d = defaults({ maxDrawdown: 500_000, maxDrawdownPct: 15 });
     const contract = resolveContract(source({ capital: '10000' }), d);
 
     const limits = buildRiskLimitsFromContract(contract, source({ capital: '10000' }), d);
 
-    expect(limits.maxDrawdown.toString()).toBe('500000');
+    expect(limits.maxDrawdownPct).toBe(15);
   });
 
   it('includes maxPositionSizePct when source is user-set even without capital', () => {
     const d = defaults();
     const contract = resolveContract(
-      source({ capital: null, maxPositionSizePct: '30' }),
+      source({ capital: null, riskPosture: rp({ maxPositionSizePct: 30 }) }),
       d,
     );
 
@@ -400,13 +367,13 @@ describe('buildRiskLimitsFromContract', () => {
 describe('buildAgentRiskLimits', () => {
   it('returns full RiskLimits from source + defaults (no overrides)', () => {
     const result = buildAgentRiskLimits(
-      source({ capital: '10000', maxOpenPositions: 3 }),
+      source({ capital: '10000', riskPosture: rp({ maxOpenPositions: 3 }) }),
       defaults({ maxOpenPositions: 10, maxDrawdownPct: 15, maxPositionSize: 500_000 }),
     );
 
     expect(result.maxOpenPositions).toBe(3); // creator-set
     expect(result.maxDrawdownPct).toBe(15); // operator default
-    expect(result.maxPositionSize.toString()).toBe('500000');
+    expect(result.dailyMaxLossPct).toBe(20); // operator default
   });
 
   it('applies agent overrides when creator did not set the field', () => {
@@ -450,11 +417,13 @@ describe('buildAgentRiskLimits', () => {
   it('marks all five contract fields immutable when all are creator-set', () => {
     const contract = resolveContract(
       source({
-        maxOpenPositions: 3,
-        maxPositionSizePct: '25',
-        stopLossPct: '5',
-        stopLossCooldownMs: 120_000,
-        maxDrawdownPct: '10',
+        riskPosture: rp({
+          maxOpenPositions: 3,
+          maxPositionSizePct: 25,
+          stopLossPct: 5,
+          stopLossCooldownMs: 120_000,
+          maxDrawdownPct: 10,
+        }),
       }),
       defaults(),
     );
@@ -466,34 +435,50 @@ describe('buildAgentRiskLimits', () => {
     expect(contract.maxDrawdownPct.mutable).toBe(false);
   });
 
-  // --- Edge: capital present triggers dailyLoss/dailyMaxLossPct derivation ---
+  // --- Edge: dailyMaxLossPct from riskPosture ---
 
-  it('derives dailyMaxLossPct from dailyLossLimit when capital and dailyLossLimit present', () => {
+  it('reads dailyMaxLossPct from riskPosture when creator-configured', () => {
     const result = buildAgentRiskLimits(
-      source({ capital: '10000', dailyLossLimit: '200' }),
+      source({ capital: '10000', riskPosture: rp({ dailyMaxLossPct: 2 }) }),
       defaults({ dailyMaxLossPct: 20 }),
     );
 
-    // 200 / 10000 * 100 = 2%
     expect(result.dailyMaxLossPct).toBe(2);
   });
 
-  it('uses operator dailyMaxLossPct when dailyLossLimit is null', () => {
+  it('falls back to operator default for dailyMaxLossPct when not in riskPosture', () => {
     const result = buildAgentRiskLimits(
-      source({ capital: '10000', dailyLossLimit: null }),
+      source({ capital: '10000', riskPosture: null }),
       defaults({ dailyMaxLossPct: 20 }),
     );
 
     expect(result.dailyMaxLossPct).toBe(20);
   });
 
-  it('omits maxOrderNotional and dailyMaxLossPct from output when capital is null', () => {
+  it('includes dailyMaxLossPct from operator default even when capital is null', () => {
+    const result = buildAgentRiskLimits(
+      source({ capital: null }),
+      defaults({ dailyMaxLossPct: 15 }),
+    );
+
+    expect(result.dailyMaxLossPct).toBe(15);
+  });
+
+  it('omits maxOrderNotional when no capital and not in riskPosture', () => {
     const result = buildAgentRiskLimits(
       source({ capital: null }),
       defaults(),
     );
 
     expect(result.maxOrderNotional).toBeUndefined();
-    expect(result.dailyMaxLossPct).toBeUndefined();
+  });
+
+  it('includes creator-configured maxOrderNotional even when capital is null', () => {
+    const result = buildAgentRiskLimits(
+      source({ capital: null, riskPosture: rp({ maxOrderNotional: 5000 }) }),
+      defaults(),
+    );
+
+    expect(result.maxOrderNotional?.toString()).toBe('5000');
   });
 });

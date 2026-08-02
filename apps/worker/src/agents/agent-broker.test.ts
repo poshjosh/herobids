@@ -1482,7 +1482,7 @@ describe('AgentMessageBroker', () => {
             symbol: 'BTC-USD',
             strategy: { type: 'momentum', decisionMode: 'mechanical' },
             venueType: 'orderbook',
-            risk: { maxDrawdownPct: 10, maxOrderNotional: '2500' },
+            risk: { maxDrawdownPct: 10, maxOrderNotional: 2500 },
           },
         },
       }));
@@ -1493,7 +1493,7 @@ describe('AgentMessageBroker', () => {
       // maxOrderNotional (2500 → 1000) is what this test cares about.
       expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledWith(expect.objectContaining({
         config: expect.objectContaining({
-          risk: expect.objectContaining({ maxOrderNotional: '1000' }),
+          risk: expect.objectContaining({ maxOrderNotional: 1000 }),
         }),
       }));
       expect(botStart).toHaveBeenCalledWith(
@@ -1501,7 +1501,7 @@ describe('AgentMessageBroker', () => {
         'user-1',
         'binding-1',
         expect.objectContaining({
-          risk: expect.objectContaining({ maxOrderNotional: '1000' }),
+          risk: expect.objectContaining({ maxOrderNotional: 1000 }),
           venueAccountId: 'va-001',
         }),
       );
@@ -1608,7 +1608,7 @@ describe('AgentMessageBroker', () => {
           status: 'stopped',
           startedAt: null,
           stoppedAt: new Date('2026-06-01T00:00:00.000Z'),
-          config: { strategy: { type: 'dca' }, risk: { maxOrderNotional: '1500', maxDrawdownPct: 10 }, symbol: 'ETH/USDC' },
+          config: { strategy: { type: 'dca' }, risk: { maxOrderNotional: 1500, maxDrawdownPct: 10 }, symbol: 'ETH/USDC' },
           creatorType: 'agent',
           creatorId: 'agent-123',
         }),
@@ -1636,10 +1636,10 @@ describe('AgentMessageBroker', () => {
 
       expect(result.accepted).toBe(true);
       expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-start', {
-        strategy: { type: 'dca' }, risk: { maxOrderNotional: '750', maxDrawdownPct: 10 }, symbol: 'ETH/USDC',
+        strategy: { type: 'dca' }, risk: { maxOrderNotional: 750, maxDrawdownPct: 10 }, symbol: 'ETH/USDC',
       });
       expect(botStart).toHaveBeenCalledWith('bot-start', 'user-1', 'binding-1', {
-        strategy: { type: 'dca' }, risk: { maxOrderNotional: '750', maxDrawdownPct: 10 }, symbol: 'ETH/USDC',
+        strategy: { type: 'dca' }, risk: { maxOrderNotional: 750, maxDrawdownPct: 10 }, symbol: 'ETH/USDC',
       });
     });
 
@@ -1723,7 +1723,7 @@ describe('AgentMessageBroker', () => {
         payload: {
           action: 'adjust_config',
           botId: 'bot-run',
-          config: { strategy: { threshold: 5 }, executionMode: 'shadow' },
+          config: { strategy: { threshold: 5 }, execution: { mode: 'paper' } },
         },
       }));
 
@@ -1731,12 +1731,12 @@ describe('AgentMessageBroker', () => {
       expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', expect.objectContaining({
         strategy: expect.objectContaining({ type: 'momentum', threshold: 5 }),
         risk: expect.objectContaining({ maxDrawdownPct: 10 }),
-        executionMode: 'shadow',
+        execution: { mode: 'paper' },
       }));
       expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'binding-1', expect.objectContaining({
         strategy: expect.objectContaining({ type: 'momentum', threshold: 5 }),
         risk: expect.objectContaining({ maxDrawdownPct: 10 }),
-        executionMode: 'shadow',
+        execution: { mode: 'paper' },
       }));
     });
 
@@ -1759,7 +1759,7 @@ describe('AgentMessageBroker', () => {
           status: 'running',
           config: {
             strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
-            risk: { maxDrawdownPct: 10, maxOrderNotional: '2000' },
+            risk: { maxDrawdownPct: 10, maxOrderNotional: 2000 },
             symbol: 'BTC-USD',
             venue: 'hyperliquid',
             venueType: 'orderbook',
@@ -1790,18 +1790,18 @@ describe('AgentMessageBroker', () => {
         payload: {
           action: 'adjust_config',
           botId: 'bot-run',
-          config: { risk: { maxOrderNotional: '1500' } },
+          config: { risk: { maxOrderNotional: 1500 } },
         },
       }));
 
       expect(result.accepted).toBe(true);
       expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', expect.objectContaining({
         strategy: expect.objectContaining({ type: 'momentum', threshold: 2 }),
-        risk: expect.objectContaining({ maxDrawdownPct: 10, maxOrderNotional: '750' }),
+        risk: expect.objectContaining({ maxDrawdownPct: 10, maxOrderNotional: 750 }),
       }));
       expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'binding-1', expect.objectContaining({
         strategy: expect.objectContaining({ type: 'momentum', threshold: 2 }),
-        risk: expect.objectContaining({ maxDrawdownPct: 10, maxOrderNotional: '750' }),
+        risk: expect.objectContaining({ maxDrawdownPct: 10, maxOrderNotional: 750 }),
       }));
     });
 
@@ -2080,7 +2080,7 @@ describe('AgentMessageBroker', () => {
           status: 'active',
           maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-          executionMode: 'paper',
+          executionDefaults: { mode: 'paper' },
         });
         agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
         agentRepo.getRuntimeCapabilityDescriptor.mockResolvedValue(makeTradingCapabilityDescriptor());
@@ -2090,7 +2090,7 @@ describe('AgentMessageBroker', () => {
         agentRepo.getAgent.mockResolvedValue({
           id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-          executionMode: 'paper',
+          executionDefaults: { mode: 'paper' },
         });
 
         const botRepo = makeBotRepo();
@@ -2109,7 +2109,7 @@ describe('AgentMessageBroker', () => {
         agentRepo.getAgent.mockResolvedValue({
           id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-          executionMode: 'shadow',
+          executionDefaults: { mode: 'shadow' },
         });
 
         const botRepo = makeBotRepo();
@@ -2128,7 +2128,7 @@ describe('AgentMessageBroker', () => {
         agentRepo.getAgent.mockResolvedValue({
           id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-          executionMode: 'paper',
+          executionDefaults: { mode: 'paper' },
         });
 
         const botRepo = makeBotRepo();
@@ -2146,7 +2146,7 @@ describe('AgentMessageBroker', () => {
         agentRepo.getAgent.mockResolvedValue({
           id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-          executionMode: 'live',
+          executionDefaults: { mode: 'live' },
         });
 
         const botRepo = makeBotRepo();
@@ -2164,7 +2164,7 @@ describe('AgentMessageBroker', () => {
         agentRepo.getAgent.mockResolvedValue({
           id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-          executionMode: 'live',
+          executionDefaults: { mode: 'live' },
         });
 
         const botLiveCheck = vi.fn().mockRejectedValue(
@@ -2190,7 +2190,7 @@ describe('AgentMessageBroker', () => {
         agentRepo.getAgent.mockResolvedValue({
           id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-          executionMode: 'shadow',
+          executionDefaults: { mode: 'shadow' },
         });
 
         const botRepo = makeBotRepo();
@@ -2208,7 +2208,7 @@ describe('AgentMessageBroker', () => {
         agentRepo.getAgent.mockResolvedValue({
           id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-          executionMode: 'paper',
+          executionDefaults: { mode: 'paper' },
         });
 
         const botRepo = makeBotRepo();
@@ -2227,7 +2227,7 @@ describe('AgentMessageBroker', () => {
         agentRepo.getAgent.mockResolvedValue({
           id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-          executionMode: 'shadow',
+          executionDefaults: { mode: 'shadow' },
         });
 
         const botRepo = makeBotRepo();
@@ -2245,7 +2245,7 @@ describe('AgentMessageBroker', () => {
         agentRepo.getAgent.mockResolvedValue({
           id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-          executionMode: 'live',
+          executionDefaults: { mode: 'live' },
         });
 
         const botRepo = makeBotRepo();
@@ -2263,7 +2263,7 @@ describe('AgentMessageBroker', () => {
         agentRepo.getAgent.mockResolvedValue({
           id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
           toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-          executionMode: 'live',
+          executionDefaults: { mode: 'live' },
         });
 
         const botRepo = makeBotRepo();
@@ -2327,7 +2327,7 @@ describe('AgentMessageBroker', () => {
           agentRepo.getAgent.mockResolvedValue({
             id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
             toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-            executionMode: 'shadow',
+            executionDefaults: { mode: 'shadow' },
           });
 
           const botRepo = makeAdjustConfigBotRepo();
@@ -2346,7 +2346,7 @@ describe('AgentMessageBroker', () => {
           agentRepo.getAgent.mockResolvedValue({
             id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
             toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-            executionMode: 'paper',
+            executionDefaults: { mode: 'paper' },
           });
 
           const botRepo = makeAdjustConfigBotRepo();
@@ -2365,7 +2365,7 @@ describe('AgentMessageBroker', () => {
           agentRepo.getAgent.mockResolvedValue({
             id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
             toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-            executionMode: 'live',
+            executionDefaults: { mode: 'live' },
           });
 
           const botRepo = makeAdjustConfigBotRepo();
@@ -2384,7 +2384,7 @@ describe('AgentMessageBroker', () => {
           agentRepo.getAgent.mockResolvedValue({
             id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
             toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-            executionMode: 'paper',
+            executionDefaults: { mode: 'paper' },
           });
 
           const botRepo = makeAdjustConfigBotRepo();
@@ -2403,7 +2403,7 @@ describe('AgentMessageBroker', () => {
           agentRepo.getAgent.mockResolvedValue({
             id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
             toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-            executionMode: 'shadow',
+            executionDefaults: { mode: 'shadow' },
           });
 
           const botRepo = makeAdjustConfigBotRepo();
@@ -2421,7 +2421,7 @@ describe('AgentMessageBroker', () => {
           agentRepo.getAgent.mockResolvedValue({
             id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
             toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-            executionMode: 'paper',
+            executionDefaults: { mode: 'paper' },
           });
 
           const botRepo = makeAdjustConfigBotRepo();
@@ -2439,7 +2439,7 @@ describe('AgentMessageBroker', () => {
           agentRepo.getAgent.mockResolvedValue({
             id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
             toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
-            executionMode: 'live',
+            executionDefaults: { mode: 'live' },
           });
 
           const botRepo = makeAdjustConfigBotRepo();
@@ -2578,7 +2578,7 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
         heavyModel: 'openai/gpt-4o',
         lightModel: 'openai/gpt-4o-mini',
       },
-      executionMode: 'paper',
+      executionDefaults: { mode: 'paper' },
       ...overrides,
     });
     return base;

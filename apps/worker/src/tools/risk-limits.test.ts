@@ -155,15 +155,8 @@ describe('get_risk_limits tool', () => {
         restoreBotRuntimeState: vi.fn(),
         updateBotConfig: vi.fn(),
       },
-      agentConfigOps: {
-        getCurrentConfig: vi.fn().mockResolvedValue({ risk: { dailyMaxLossPct: 10 } }),
-        persistConfig: vi.fn(),
-        appendJournal: vi.fn(),
-        notifyActorConfigUpdate: vi.fn(),
-        getLlmTickCount: vi.fn(),
-      },
       agentRepo: {
-        getAgent: vi.fn().mockResolvedValue({ capital: '5000' }),
+        getAgent: vi.fn().mockResolvedValue({ capital: '5000', risk: { dailyMaxLossPct: 10 } }),
       },
     });
 
@@ -197,15 +190,8 @@ describe('get_risk_limits tool', () => {
         restoreBotRuntimeState: vi.fn(),
         updateBotConfig: vi.fn(),
       },
-      agentConfigOps: {
-        getCurrentConfig: vi.fn().mockResolvedValue({ risk: { dailyMaxLossPct: 10 } }),
-        persistConfig: vi.fn(),
-        appendJournal: vi.fn(),
-        notifyActorConfigUpdate: vi.fn(),
-        getLlmTickCount: vi.fn(),
-      },
       agentRepo: {
-        getAgent: vi.fn().mockResolvedValue({ capital: '5000' }),
+        getAgent: vi.fn().mockResolvedValue({ capital: '5000', risk: { dailyMaxLossPct: 10 } }),
       },
     });
 

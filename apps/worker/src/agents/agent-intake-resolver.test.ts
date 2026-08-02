@@ -175,10 +175,11 @@ describe('AgentIntakeResolver', () => {
 
       const result = await resolver.getIntakeDeps('agent-1', 'BTC/USD:USD');
 
-      expect(result?.riskLimits.maxPositionSize.toString()).toBe('1000000000');
+      // maxPositionSize is no longer synthesized — it is optional and omitted when not configured
+      expect(result?.riskLimits.maxPositionSize).toBeUndefined();
       expect(result?.riskLimits.maxOpenPositions).toBe(10);
-      // maxDrawdown is now always derived from operator defaults for agent flows.
-      expect(result?.riskLimits.maxDrawdown.toString()).toBe('1000000000');
+      // maxDrawdown is no longer synthesized — it is optional and omitted when not configured
+      expect(result?.riskLimits.maxDrawdown).toBeUndefined();
       expect(result?.riskLimits.maxOrderNotional?.toString()).toBe('250');
       expect(result?.riskLimits.maxPositionSizePct).toBe(100);
       expect(result?.riskLimits.stopLossMaxUnrealizedLossPct).toBe(10);
@@ -192,10 +193,12 @@ describe('AgentIntakeResolver', () => {
         id: 'agent-1',
         capital: '250',
         dailyLossLimit: '75',
-        maxOpenPositions: 3,
-        maxPositionSizePct: '40',
-        stopLossPct: '2.5',
-        stopLossCooldownMs: 120000,
+        risk: {
+          maxOpenPositions: 3,
+          maxPositionSizePct: 40,
+          stopLossPct: 2.5,
+          stopLossCooldownMs: 120000,
+        },
       });
       const resolver = new AgentIntakeResolver(deps);
 
@@ -231,7 +234,7 @@ describe('AgentIntakeResolver', () => {
 
     it('returns undefined when agent is in shadow mode (fail closed)', async () => {
       const { deps, mocks } = makeDeps();
-      mocks.agentRepo.getAgent.mockResolvedValue({ id: 'agent-1', capital: '100', dailyLossLimit: '50', executionMode: 'shadow' });
+      mocks.agentRepo.getAgent.mockResolvedValue({ id: 'agent-1', capital: '100', dailyLossLimit: '50', executionDefaults: { mode: 'shadow' } });
       const resolver = new AgentIntakeResolver(deps);
 
       const result = await resolver.getIntakeDeps('agent-1', 'BTC/USD:USD');
@@ -241,7 +244,7 @@ describe('AgentIntakeResolver', () => {
 
     it('returns undefined when agent is in live mode (fail closed)', async () => {
       const { deps, mocks } = makeDeps();
-      mocks.agentRepo.getAgent.mockResolvedValue({ id: 'agent-1', capital: '100', dailyLossLimit: '50', executionMode: 'live' });
+      mocks.agentRepo.getAgent.mockResolvedValue({ id: 'agent-1', capital: '100', dailyLossLimit: '50', executionDefaults: { mode: 'live' } });
       const resolver = new AgentIntakeResolver(deps);
 
       const result = await resolver.getIntakeDeps('agent-1', 'BTC/USD:USD');

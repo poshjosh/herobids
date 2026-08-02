@@ -1,0 +1,1 @@
+ALTER TABLE "skills" ADD CONSTRAINT "skills_published_revision_id_skill_revisions_id_fk" FOREIGN KEY ("published_revision_id") REFERENCES "public"."skill_revisions"("id") ON DELETE no action ON UPDATE no action;

@@ -42,22 +42,7 @@ export const agents = pgTable('agents', {
       };
     };
   } | null>(),
-  /** Execution mode for bots this agent creates: paper | shadow | live */
-  executionMode: text('execution_mode').notNull().default('paper'),
-  /** Guard rails — broker-enforced, user-configured */
-  dailyLossLimit: numeric('daily_loss_limit', { precision: 20, scale: 8 }), // max P&L loss/day (USD) — rolling 24h realized-loss hard cap
-  /** Peak-to-current equity drawdown hard cap (percentage 0–100).
-   *  This is the canonical agent drawdown control. The legacy max_drawdown column
-   *  (absolute USD) is preserved for non-agent trading flows. */
-  maxDrawdownPct: numeric('max_drawdown_pct', { precision: 5, scale: 2 }),
-  /** Max equity drawdown from session peak (USD). Separate from dailyLossLimit — independent enforcement. Default: effectively unlimited. */
-  maxDrawdown: numeric('max_drawdown', { precision: 20, scale: 8 }),
   maxBots: integer('max_bots'),                              // max concurrent bots (agent-level override)
-  maxSlippageBps: integer('max_slippage_bps'),               // max slippage in basis points
-  maxOpenPositions: integer('max_open_positions'),
-  maxPositionSizePct: numeric('max_position_size_pct', { precision: 5, scale: 2 }),
-  stopLossPct: numeric('stop_loss_pct', { precision: 5, scale: 2 }),
-  stopLossCooldownMs: integer('stop_loss_cooldown_ms'),
   /** User-configured base cadence in milliseconds. Runtime may still widen this when idle or after failures. */
   tickIntervalMs: integer('tick_interval_ms'),
   /** Deployable allocation cap in USD — the amount the agent may trade with, not the full wallet balance. */
@@ -76,6 +61,9 @@ export const agents = pgTable('agents', {
   wakePreferences: jsonb('wake_preferences').$type<WakePreferences | null>(),
   /** Per-agent open position escalation to judge policy: never | uncovered_or_triggered | always */
   openPositionEscalationToJudgePolicy: text('open_position_escalation_to_judge_policy').notNull().default('uncovered_or_triggered'),
+  /** Blueprint attribution — both null (not from blueprint) or both non-null (from blueprint revision) */
+  blueprintId: text('blueprint_id'),
+  blueprintRevisionId: text('blueprint_revision_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

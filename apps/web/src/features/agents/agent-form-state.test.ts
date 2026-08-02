@@ -20,15 +20,9 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     dailySpendBudgetUsd: null,
     dailyLlmTokenBudget: null,
     telegramChatId: null,
-    executionMode: 'paper',
-    dailyMaxLossPct: null,
-    maxDrawdownPct: null,
+    executionDefaults: { mode: 'paper' },
+    risk: null,
     maxBots: null,
-    maxSlippageBps: null,
-    maxOpenPositions: null,
-    maxPositionSizePct: null,
-    stopLossPct: null,
-    stopLossCooldownMs: null,
     tickIntervalMs: null,
     capital: null,
     style: null,
@@ -45,13 +39,13 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
 
 describe('agentToFormState — maxDrawdownPct hydration', () => {
   it('hydrates a numeric maxDrawdownPct into a string form field', () => {
-    const agent = makeAgent({ maxDrawdownPct: 15 });
+    const agent = makeAgent({ risk: { maxDrawdownPct: 15 } });
     const form = agentToFormState(agent);
     expect(form.maxDrawdownPct).toBe('15');
   });
 
   it('defaults maxDrawdownPct to empty string when null', () => {
-    const agent = makeAgent({ maxDrawdownPct: null });
+    const agent = makeAgent({ risk: null });
     const form = agentToFormState(agent);
     expect(form.maxDrawdownPct).toBe('');
   });
@@ -85,31 +79,31 @@ describe('agentToFormState — strategyPreset hydration', () => {
 
 describe('agentToFormState — executionMode canonicalization', () => {
   it('maps stored paper to test', () => {
-    const agent = makeAgent({ executionMode: 'paper' });
+    const agent = makeAgent({ executionDefaults: { mode: 'paper' } });
     const form = agentToFormState(agent);
     expect(form.executionMode).toBe('test');
   });
 
   it('maps stored shadow to test', () => {
-    const agent = makeAgent({ executionMode: 'shadow' });
+    const agent = makeAgent({ executionDefaults: { mode: 'shadow' } });
     const form = agentToFormState(agent);
     expect(form.executionMode).toBe('test');
   });
 
   it('maps stored live to live', () => {
-    const agent = makeAgent({ executionMode: 'live' });
+    const agent = makeAgent({ executionDefaults: { mode: 'live' } });
     const form = agentToFormState(agent);
     expect(form.executionMode).toBe('live');
   });
 
-  it('maps null executionMode to empty string', () => {
-    const agent = makeAgent({ executionMode: null });
+  it('maps null executionDefaults to empty string', () => {
+    const agent = makeAgent({ executionDefaults: null });
     const form = agentToFormState(agent);
     expect(form.executionMode).toBe('');
   });
 
-  it('maps undefined executionMode to empty string', () => {
-    const agent = makeAgent({ executionMode: undefined });
+  it('maps undefined executionDefaults to empty string', () => {
+    const agent = makeAgent({ executionDefaults: undefined });
     const form = agentToFormState(agent);
     expect(form.executionMode).toBe('');
   });

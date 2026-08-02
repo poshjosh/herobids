@@ -61,8 +61,10 @@ export class AgentIntakeResolver {
       logger.warn({ agentId }, 'Grant fallback rejected — agent row not found, cannot verify execution mode');
       return undefined;
     }
-    if (agent.executionMode && agent.executionMode !== 'paper') {
-      logger.warn({ agentId, mode: agent.executionMode }, 'Grant fallback rejected — agent is not in paper mode');
+    // Read execution mode from canonical executionDefaults.mode (no legacy column fallback)
+    const agentMode = agent.executionDefaults?.mode ?? null;
+    if (agentMode && agentMode !== 'paper') {
+      logger.warn({ agentId, mode: agentMode }, 'Grant fallback rejected — agent is not in paper mode');
       return undefined;
     }
 
@@ -134,12 +136,6 @@ export class AgentIntakeResolver {
       journal: this.deps.journal,
       riskLimits: buildAgentRiskLimits({
         capital: capitalStr,
-        dailyLossLimit: agent.dailyLossLimit ?? null,
-        maxDrawdownPct: agent.maxDrawdownPct ?? null,
-        maxOpenPositions: agent.maxOpenPositions ?? null,
-        maxPositionSizePct: agent.maxPositionSizePct ?? null,
-        stopLossPct: agent.stopLossPct ?? null,
-        stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
         riskPosture: (agent.risk as RiskPosture | null) ?? null,
       }, this.deps.agentRiskDefaults, overrides),
       markSource: this.deps.markSource,
