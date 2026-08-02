@@ -16,7 +16,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **`search_app_docs` token-aware matching:** Replaced substring-only search with tokenization + token-coverage scoring + lightweight stemming. Queries are now split into individual words matched independently against the docs index; stemming handles common word variants (venues↔venue, trading↔trade, configuration↔configure) with zero external dependencies. Results are ranked by token coverage weighted by match field (title > heading > tag > content). Added unit tests for all three platform-docs tools.
+- **Execution mode canonicalization:** `'test'` removed as a valid execution mode across the entire stack. Frontend payload builders now resolve the user-facing `'test'` abstraction to canonical `'paper'` (no connections) or `'shadow'` (has connections) before API submission. API schemas and routes reject non-canonical values loudly rather than silently converting. All trading-capable agents now require explicit `executionDefaults` on create/update; the API persists resolved canonical values and guards against regression to null. First-party scripts (`create-agents.sh`) include explicit `executionDefaults`. Added one-time data repair script (`repair-agent-execution-defaults.ts`) for existing agents with null execution mode. Platform docs and UI display labels updated to canonical-only values. 258 regression tests pass across frontend, API, and integration layers.
 
 - **Auto-generated docs index:** New build script (`scripts/ts/build-docs-index.ts`) walks public-pages markdown and regenerates `platform-docs-data.ts`. Wired into root `pnpm build` so adding a `.md` doc automatically includes it in the agent-searchable index on next build.
 
