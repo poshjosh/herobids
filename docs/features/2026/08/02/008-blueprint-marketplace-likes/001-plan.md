@@ -314,9 +314,9 @@ Capture pricing as a separate follow-up track covering both:
 5. **[DONE]** Update `GET /blueprints/:id` to include viewer like state.
 6. **[DONE]** Enforce `canViewMarketplaceBlueprints` on `POST /blueprints/:id/fork` for published marketplace sources.
 7. **[DONE]** Enforce both `canViewMarketplaceBlueprints` and `canLikeMarketplaceBlueprints` on like/unlike write routes.
-8. **[PENDING]** Add or extract the frontend blueprint-like mutation logic.
-9. **[PENDING]** Wire like/unlike controls into marketplace cards.
-10. **[PENDING]** Wire like/unlike controls into the detail page.
+8. **[DONE]** Add or extract the frontend blueprint-like mutation logic.
+9. **[DONE]** Wire like/unlike controls into marketplace cards.
+10. **[DONE]** Wire like/unlike controls into the detail page.
 11. **[PENDING]** Add focused API and frontend tests.
 12. **[PENDING]** Run `pnpm lint` and the narrow blueprint test slice.
 
