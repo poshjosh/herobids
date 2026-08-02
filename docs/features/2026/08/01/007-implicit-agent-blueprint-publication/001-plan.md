@@ -200,13 +200,13 @@ Once the client helpers exist, switch `BlueprintDetailPage` off raw `fetch()` fo
 
 ## Implementation Order
 
-1. Add the internal agent-blueprint sync service and fingerprint comparison.
-2. Wire blueprint sync into `startAgent()` with loud-failure behavior.
-3. Reuse/extract publish logic so start-path publishing matches the route contract.
-4. Add the missing `blueprints.*` methods to `apps/web/src/lib/api-client.ts`.
-5. Migrate `BlueprintDetailPage` lifecycle calls to the API client.
-6. Add targeted tests for first publish, unchanged restart, changed restart, and client usage.
-7. Run `pnpm lint` and the narrow API/frontend tests that cover the touched areas.
+1. [PENDING] Add the internal agent-blueprint sync service and fingerprint comparison.
+2. [PENDING] Wire blueprint sync into `startAgent()` with loud-failure behavior.
+3. [PENDING] Reuse/extract publish logic so start-path publishing matches the route contract.
+4. [PENDING] Add the missing `blueprints.*` methods to `apps/web/src/lib/api-client.ts`.
+5. [PENDING] Migrate `BlueprintDetailPage` lifecycle calls to the API client.
+6. [PENDING] Add targeted tests for first publish, unchanged restart, changed restart, and client usage.
+7. [PENDING] Run `pnpm lint` and the narrow API/frontend tests that cover the touched areas.
 
 ---
 
@@ -217,3 +217,16 @@ Once the client helpers exist, switch `BlueprintDetailPage` off raw `fetch()` fo
 3. Restarting after prompt/risk/strategy/skill changes creates exactly one new revision and republishes it.
 4. `apps/web/src/lib/api-client.ts` exposes publish, delist, like, unlike, and fork helpers aligned with the actual backend contract.
 5. Existing blueprint UI surfaces can use the shared client methods without raw lifecycle `fetch()` calls.
+
+---
+
+## Outstanding Issues
+
+### [Item 1] Add internal agent-blueprint sync service + fingerprint comparison
+
+| Priority | Issue | Location |
+|----------|-------|----------|
+| **MEDIUM** | `createNewRevisionAndPublish` bypasses lifecycle transition check — should call `isAllowedTransition(bp.publicationStatus, 'published')` before entering the transaction, matching the pattern in `republishBlueprint` | `agent-blueprint-sync-service.ts`, lines ~578-591 |
+| **LOW** | Concurrent-modification errors use `blueprint.internal_error` — a distinct code like `blueprint.concurrent_modification` would aid observability and retry logic | `agent-blueprint-sync-service.ts`, L456-460, L541-545 |
+| **LOW** | Local `SkillRef` interface is structurally identical to domain type `BlueprintSkillRef` from `@herobids/domain` — using the domain type directly would prevent drift | `agent-blueprint-sync-service.ts`, L19-22 |
+| **LOW** | `extractBlueprintFacets` returns `venueType: null as string \| null` with no `// TODO` explaining it's a placeholder | `agent-blueprint-sync-service.ts`, L80 |
