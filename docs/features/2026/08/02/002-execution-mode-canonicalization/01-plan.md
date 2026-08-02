@@ -130,7 +130,7 @@ This must be a one-time data repair step, not a permanent runtime crutch.
 
 ## Work Packages
 
-### WP1 — Inventory and classify execution-mode surfaces
+### WP1 — Inventory and classify execution-mode surfaces  **[DONE]**
 
 Audit and update all places that read, write, derive, or display execution mode:
 
@@ -148,7 +148,7 @@ Output of this step:
 - list of all callers that omit `executionDefaults`
 - list of all places that treat missing execution mode as acceptable for trading agents
 
-### WP2 — Canonicalize frontend payload building
+### WP2 — Canonicalize frontend payload building  **[DONE]**
 
 Update agent create/edit payload builders so that they send canonical execution modes only.
 
@@ -160,7 +160,7 @@ Expected behavior:
 
 Also update frontend tests to assert canonical payloads.
 
-### WP3 — Tighten API validation and persistence
+### WP3 — Tighten API validation and persistence  **[DONE]**
 
 Refactor create/update agent routes so trading-capable agents always persist a concrete canonical execution mode.
 
@@ -174,7 +174,7 @@ Specific goals:
 
 Because backward compatibility is not required, prefer deletion/simplification over carrying both old and new paths.
 
-### WP4 — Repair existing agent data
+### WP4 — Repair existing agent data  **[PENDING]**
 
 Add and run a repair path for existing agents with broken or missing execution defaults.
 
@@ -195,7 +195,7 @@ Requirements:
 - logs before/after counts
 - is idempotent
 
-### WP5 — Update first-party scripts and fixtures
+### WP5 — Update first-party scripts and fixtures  **[PENDING]**
 
 Update `scripts/shell/run/create-agents.sh` so all created trading agents send explicit canonical `executionDefaults.mode`.
 
@@ -205,7 +205,7 @@ Expected result:
 
 - no first-party agent creation path can create a trading agent with unset execution mode
 
-### WP6 — Align UI display semantics
+### WP6 — Align UI display semantics  **[PENDING]**
 
 Ensure display code treats persisted canonical values consistently:
 
@@ -215,7 +215,7 @@ Ensure display code treats persisted canonical values consistently:
 
 This is a presentation cleanup, not a contract change.
 
-### WP7 — Test coverage and regression guards
+### WP7 — Test coverage and regression guards  **[PENDING]**
 
 Add regression coverage for:
 
@@ -267,3 +267,40 @@ Because backward compatibility is not required, prefer a short, clean transition
 - If a 2-option UI remains desirable, keep that abstraction in the UI only.
 - Prefer simplifying the write contract over adding more alias-aware server logic.
 - Any code path that can create a trading agent should be considered incomplete unless it writes explicit canonical execution defaults.
+
+---
+
+## Outstanding Issues
+
+### WP2 — Canonicalize frontend payload building
+
+| # | Priority | Description |
+|---|----------|-------------|
+| M1 | MEDIUM | Asymmetric gating between create/update — create uses `includeIntelligence && requiresTradingSetup`, update uses `includeIntelligence && hasTradingCapability`. Unified already in current implementation. |
+| M2 | MEDIUM | `executionDefaults` object always created on update path, even when mode is null. Fixed: now conditionally included when mode is non-null. |
+| M3 | LOW | `UpdateAgentPayloadInput.executionMode` typed as `string` → narrowed to `'test' | 'live' | 'paper' | 'shadow' | ''` |
+
+### WP3 — Tighten API validation and persistence
+
+| # | Priority | Description |
+|---|----------|-------------|
+| H1 | HIGH | `agent-interactivity.ts` PATCH always persisted `executionDefaults.mode: 'paper'` even for non-trading agents. **FIXED** — now preserves existing executionDefaults. |
+| M1 | MEDIUM | Stale `executionMode: 'test'` in integration test stub — weak assertion masks the stale data. |
+| M2 | MEDIUM | Stale `'test'` references in agent-facing docs (`platform-docs-data.ts`, `build-docs-index.ts`) — agents reading this may attempt to send `'test'` which is now rejected. Deferred to WP4/WP5. |
+| M3 | MEDIUM | Missing test coverage for UPDATE guard injection (trading agent updated without executionDefaults → mode injected). |
+| M4 | MEDIUM | `canonicalizeExecutionMode` return type is overly broad (`string \| null \| undefined` vs `AgentExecutionMode \| null \| undefined`). |
+| L1 | LOW | Stale comment in `agent-interactivity.ts` referencing `'test'` alias — **FIXED**. |
+| L2 | LOW | Unused `_opts` parameter retained in `canonicalizeExecutionMode`/`normalizeExecutionMode` — still used by `bots.ts` callers. |
+| L3 | LOW | `bots.ts` passes ignored `hasConnections` opt to `canonicalizeExecutionMode` — harmless but misleading. |
+
+### WP4 — Repair existing agent data
+
+| # | Priority | Description |
+|---|----------|-------------|
+| M1 | MEDIUM | N+1 query pattern — each affected agent triggers a separate connection check query. Could be batched into a single query. |
+| M2 | MEDIUM | No transaction wrapping — partial repair on crash is recoverable via idempotency, but no atomicity guarantee. |
+| M3 | MEDIUM | `TRADING_PROVIDERS` hardcoded list duplicates `@herobids/domain` provider catalog — should import `getProviderIdsForRuntimeFamily('trading')`. |
+| M4 | MEDIUM | Type cast `as NonNullable<typeof agent.executionDefaults>` bypasses shape checking — could silently break if ExecutionDefaults gains new required fields. |
+| L1 | LOW | No `--dry-run` mode for production safety. |
+| L2 | LOW | Minor convention: no explicit `process.exit(0)` — diverges from `audit-orphaned-connections.ts`. |
+| L3 | LOW | Comment typo: `capability_families` (DB column name) used in JSDoc alongside camelCase code references. |
