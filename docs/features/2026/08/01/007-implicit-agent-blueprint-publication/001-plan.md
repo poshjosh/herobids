@@ -204,8 +204,8 @@ Once the client helpers exist, switch `BlueprintDetailPage` off raw `fetch()` fo
 2. [DONE] Wire blueprint sync into `startAgent()` with loud-failure behavior.
 3. [DONE] Reuse/extract publish logic so start-path publishing matches the route contract.
 4. [DONE] Add the missing `blueprints.*` methods to `apps/web/src/lib/api-client.ts`.
-5. [IN PROGRESS] Migrate `BlueprintDetailPage` lifecycle calls to the API client.
-6. [PENDING] Add targeted tests for first publish, unchanged restart, changed restart, and client usage.
+5. [DONE] Migrate `BlueprintDetailPage` lifecycle calls to the API client.
+6. [IN PROGRESS] Add targeted tests for first publish, unchanged restart, changed restart, and client usage.
 7. [PENDING] Run `pnpm lint` and the narrow API/frontend tests that cover the touched areas.
 
 ---
