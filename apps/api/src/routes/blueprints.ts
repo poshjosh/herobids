@@ -277,6 +277,7 @@ export async function buildBlueprintDetail(
   bp: typeof blueprints.$inferSelect,
   revision: typeof blueprintRevisions.$inferSelect,
   lineageOverride?: BlueprintLineageInfo,
+  isLikedByViewer = false,
 ): Promise<z.infer<typeof BlueprintDetailSchema>> {
   const skillRefs = await getRevisionSkillRefs(db, revision.id);
 
@@ -299,6 +300,7 @@ export async function buildBlueprintDetail(
     venueType: revision.venueType,
     likeCount: bp.likeCount,
     forkCount: bp.forkCount,
+    isLikedByViewer,
     popularityScore: bp.popularityScore,
     trendingScore: bp.trendingScore,
     publishedAt: bp.publishedAt?.toISOString() ?? null,
@@ -575,6 +577,20 @@ export async function blueprintRoutes(
       : [];
     const revisionById = new Map(revisionRows.map((r) => [r.id, r]));
 
+    // Batch-load viewer likes for the current page
+    const pageIds = pageRows.map((r) => r.id);
+    let likedIds = new Set<string>();
+    if (pageIds.length > 0) {
+      const likeRows = await db
+        .select({ blueprintId: blueprintLikes.blueprintId })
+        .from(blueprintLikes)
+        .where(and(
+          eq(blueprintLikes.userId, request.userId),
+          inArray(blueprintLikes.blueprintId, pageIds),
+        ));
+      likedIds = new Set(likeRows.map((r) => r.blueprintId));
+    }
+
     const items = pageRows.map((bp) => {
       const rev = bp.publishedRevisionId ? revisionById.get(bp.publishedRevisionId) : null;
       return BlueprintSummarySchema.parse({
@@ -590,6 +606,7 @@ export async function blueprintRoutes(
         venueType: rev?.venueType ?? bp.venueType,
         likeCount: bp.likeCount,
         forkCount: bp.forkCount,
+        isLikedByViewer: likedIds.has(bp.id),
         popularityScore: bp.popularityScore,
         trendingScore: bp.trendingScore,
         publishedAt: bp.publishedAt?.toISOString() ?? null,
@@ -736,6 +753,17 @@ export async function blueprintRoutes(
 
     const { blueprint: bp, revision } = resolved;
 
+    // Check viewer like state
+    const [likeRow] = await db
+      .select()
+      .from(blueprintLikes)
+      .where(and(
+        eq(blueprintLikes.blueprintId, bp.id),
+        eq(blueprintLikes.userId, request.userId),
+      ))
+      .limit(1);
+    const isLikedByViewer = likeRow !== undefined;
+
     // Marketplace entitlement check for non-owner, non-admin accessing published blueprints.
     // The bp.publicationStatus === 'published' guard is redundant here because
     // resolveTargetRevision already rejects non-published blueprints for non-owner/non-admin
@@ -750,7 +778,7 @@ export async function blueprintRoutes(
       }
     }
 
-    const detail = await buildBlueprintDetail(db, bp, revision);
+    const detail = await buildBlueprintDetail(db, bp, revision, undefined, isLikedByViewer);
     return reply.send(detail);
   });
 

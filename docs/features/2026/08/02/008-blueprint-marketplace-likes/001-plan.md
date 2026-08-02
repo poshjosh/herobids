@@ -308,7 +308,7 @@ Capture pricing as a separate follow-up track covering both:
 ## Implementation Order
 
 1. **[DONE]** Add `blueprints` plan entitlements in schema, config defaults, plan resolution, and auth client typing.
-2. **[PENDING]** Enforce the Change 2 route/action matrix for public marketplace blueprint reads/actions.
+2. **[DONE]** Enforce the Change 2 route/action matrix for public marketplace blueprint reads/actions.
 3. **[PENDING]** Extend blueprint response schemas and frontend types with `isLikedByViewer`.
 4. **[PENDING]** Update `GET /blueprints` to load viewer like state in batch.
 5. **[PENDING]** Update `GET /blueprints/:id` to include viewer like state.
@@ -360,3 +360,10 @@ Capture pricing as a separate follow-up track covering both:
 - **Low 2:** Unit test `executionCapabilityResolver` mock is never exercised — exists solely to satisfy the function signature.
 - **Low 3:** Unit test `decorateWithAuth` always sets `isAdmin: false` — no unit tests covering admin bypass path.
 - **Low 4:** Two patterns for creating users in integration tests (direct `db.insert` vs `seedUser` helper with hardcoded `planId: 'free'`). Consider adding optional `planId` param to `seedUser`.
+
+### [Items 3+4+5 — isLikedByViewer Schema, Browse & Detail Data Loading]
+
+- **Low 1:** Plan document items 3/4/5 still show `[PENDING]` — need to mark as `[DONE]`.
+- **Low 2:** Detail route: like query runs before marketplace entitlement check (wasted for rejected users). Reorder to match browse handler pattern (query after entitlement gate).
+- **Low 3:** Detail route selects all columns from `blueprintLikes` when only existence check is needed. Use `.select({ blueprintId })` to match browse handler pattern.
+- **Low 4:** `buildBlueprintDetail` parameter ordering forces `undefined` at one call site for `lineageOverride`. Works correctly but is stylistically suboptimal.

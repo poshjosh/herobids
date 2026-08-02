@@ -312,6 +312,7 @@ export const BlueprintSummarySchema = z.object({
   venueType: z.string().nullable(),
   likeCount: z.number(),
   forkCount: z.number(),
+  isLikedByViewer: z.boolean(),
   popularityScore: z.number(),
   trendingScore: z.number(),
   publishedAt: z.string().nullable(),
