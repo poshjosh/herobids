@@ -9,7 +9,6 @@ const GENERATED_OPERATOR_CONTEXT_LINE = /^- (Selected skills:|Trading capability
 export const EXECUTION_MODE_LABELS: Record<string, string> = {
   paper: 'Test',
   shadow: 'Test',
-  test: 'Test',
   live: 'Live',
 };
 
