@@ -40,25 +40,28 @@ export function BlueprintDetailPage({ blueprintId }: BlueprintDetailPageProps) {
   // Lifecycle mutations
   const lifecycleMutation = useMutation({
     mutationFn: async (action: string) => {
-      const res = await fetch(`/api/blueprints/${blueprintId}/${action}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
-        },
-        ...(action === 'publish' ? { body: JSON.stringify({ expectedCurrentRevisionId: detailQuery.data?.currentRevisionId }) } : {}),
-      });
-      if (!res.ok) {
-        const body = await res.json() as { message?: string };
-        throw new Error(body.message ?? `Failed to ${action}`);
+      const bpId = blueprintId;
+      switch (action) {
+        case 'publish':
+          return blueprints.publish(bpId, { expectedCurrentRevisionId: detailQuery.data?.currentRevisionId! });
+        case 'delist':
+          return blueprints.delist(bpId);
+        case 'archive':
+          return blueprints.archive(bpId);
+        case 'draft':
+          return blueprints.draft(bpId);
+        case 'private':
+          return blueprints.private(bpId);
+        default:
+          throw new Error(`Unknown lifecycle action: ${action}`);
       }
-      return res.json();
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['blueprints', blueprintId] });
     },
   });
 
+  // TODO: add blueprints.delete method to api-client so this can use the client
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async () => {

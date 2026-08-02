@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { config } from './config.js';
 import { getToken, clearToken } from './session.js';
 import type {
@@ -1633,8 +1632,6 @@ import type {
   BlueprintInstantiatePreviewResponse,
   BlueprintInstantiateRequest,
   BlueprintInstantiateResponse,
-  BlueprintRevisionPayload,
-  BlueprintSkillRef,
   CreateBlueprintBody,
   CreateRevisionBody,
 } from './blueprint-types.js';
