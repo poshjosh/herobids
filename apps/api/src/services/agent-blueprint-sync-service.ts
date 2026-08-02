@@ -218,82 +218,91 @@ async function createAndPublishBlueprint(
   const now = new Date();
   const facets = extractBlueprintFacets(projectedPayload);
 
-  await db.transaction(async (tx) => {
-    // Insert blueprint as draft
-    await tx.insert(blueprints).values({
-      id: blueprintId,
-      authorId: userId,
-      publicationStatus: 'draft',
-      kind: 'agent',
-      name: facets.name,
-      description: facets.description,
-      strategyType: facets.strategyType,
-      style: facets.style,
-      tags: facets.tags,
-      venueType: facets.venueType,
-      currentRevisionId: revisionId,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Insert revision 1
-    await tx.insert(blueprintRevisions).values({
-      id: revisionId,
-      blueprintId,
-      version: 1,
-      kind: 'agent',
-      name: facets.name,
-      description: facets.description,
-      strategyType: facets.strategyType,
-      style: facets.style,
-      tags: facets.tags,
-      venueType: facets.venueType,
-      payload: projectedPayload,
-      changeSummary: 'Auto-generated from agent config on start',
-      createdByUserId: userId,
-      createdAt: now,
-    });
-
-    // Insert skill dependencies
-    if (skillRefs.length > 0) {
-      await tx.insert(blueprintRevisionSkills).values(
-        skillRefs.map((s, i) => ({
-          blueprintRevisionId: revisionId,
-          skillId: s.skillId,
-          skillRevisionId: s.skillRevisionId,
-          orderIndex: i,
-        })),
-      );
-    }
-
-    // Publish immediately in the same transaction
-    await tx
-      .update(blueprints)
-      .set({
-        publicationStatus: 'published',
-        publishedAt: now,
-        publishedRevisionId: revisionId,
-        delistedAt: null,
+  try {
+    await db.transaction(async (tx) => {
+      // Insert blueprint WITHOUT currentRevisionId — the composite FK
+      // fk_blueprints_current_revision requires the revision row to exist first.
+      await tx.insert(blueprints).values({
+        id: blueprintId,
+        authorId: userId,
+        publicationStatus: 'draft',
+        kind: 'agent',
         name: facets.name,
         description: facets.description,
-        tags: facets.tags,
         strategyType: facets.strategyType,
         style: facets.style,
+        tags: facets.tags,
         venueType: facets.venueType,
+        createdAt: now,
         updatedAt: now,
-      })
-      .where(eq(blueprints.id, blueprintId));
+      });
 
-    // Persist blueprint linkage on the agent row
-    await tx
-      .update(agents)
-      .set({
+      // Insert revision 1 — satisfies blueprint_revisions.blueprint_id → blueprints.id FK
+      await tx.insert(blueprintRevisions).values({
+        id: revisionId,
         blueprintId,
-        blueprintRevisionId: revisionId,
-        updatedAt: now,
-      })
-      .where(eq(agents.id, agentId));
-  });
+        version: 1,
+        kind: 'agent',
+        name: facets.name,
+        description: facets.description,
+        strategyType: facets.strategyType,
+        style: facets.style,
+        tags: facets.tags,
+        venueType: facets.venueType,
+        payload: projectedPayload,
+        changeSummary: 'Auto-generated from agent config on start',
+        createdByUserId: userId,
+        createdAt: now,
+      });
+
+      // Insert skill dependencies
+      if (skillRefs.length > 0) {
+        await tx.insert(blueprintRevisionSkills).values(
+          skillRefs.map((s, i) => ({
+            blueprintRevisionId: revisionId,
+            skillId: s.skillId,
+            skillRevisionId: s.skillRevisionId,
+            orderIndex: i,
+          })),
+        );
+      }
+
+      // Now that the revision exists, set currentRevisionId and publish.
+      // This satisfies fk_blueprints_current_revision and fk_blueprints_published_revision.
+      await tx
+        .update(blueprints)
+        .set({
+          currentRevisionId: revisionId,
+          publicationStatus: 'published',
+          publishedAt: now,
+          publishedRevisionId: revisionId,
+          delistedAt: null,
+          name: facets.name,
+          description: facets.description,
+          tags: facets.tags,
+          strategyType: facets.strategyType,
+          style: facets.style,
+          venueType: facets.venueType,
+          updatedAt: now,
+        })
+        .where(eq(blueprints.id, blueprintId));
+
+      // Persist blueprint linkage on the agent row
+      await tx
+        .update(agents)
+        .set({
+          blueprintId,
+          blueprintRevisionId: revisionId,
+          updatedAt: now,
+        })
+        .where(eq(agents.id, agentId));
+    });
+  } catch (cause) {
+    return err({
+      code: 'blueprint.internal_error',
+      message: cause instanceof Error ? cause.message : 'Failed to create blueprint',
+    });
+  }
 
   return ok({ blueprintId, blueprintRevisionId: revisionId, action: 'created' });
 }
@@ -530,79 +539,87 @@ async function createNewRevisionAndPublish(
   const facets = extractBlueprintFacets(projectedPayload);
   const expectedCurrentRevisionId = bp.currentRevisionId;
 
-  await db.transaction(async (tx) => {
-    // Guard: re-read current revision pointer and assert it hasn't changed
-    const [locked] = await tx
-      .select({ currentRevisionId: blueprints.currentRevisionId })
-      .from(blueprints)
-      .where(eq(blueprints.id, bp.id))
-      .limit(1);
+  try {
+    await db.transaction(async (tx) => {
+      // Guard: re-read current revision pointer and assert it hasn't changed
+      const [locked] = await tx
+        .select({ currentRevisionId: blueprints.currentRevisionId })
+        .from(blueprints)
+        .where(eq(blueprints.id, bp.id))
+        .limit(1);
 
-    if (!locked || locked.currentRevisionId !== expectedCurrentRevisionId) {
-      throw new Error(
-        `Blueprint ${bp.id} current revision changed unexpectedly: ` +
-          `expected ${expectedCurrentRevisionId}, got ${locked?.currentRevisionId ?? 'null'}`,
-      );
-    }
+      if (!locked || locked.currentRevisionId !== expectedCurrentRevisionId) {
+        throw new Error(
+          `Blueprint ${bp.id} current revision changed unexpectedly: ` +
+            `expected ${expectedCurrentRevisionId}, got ${locked?.currentRevisionId ?? 'null'}`,
+        );
+      }
 
-    // Insert new revision
-    await tx.insert(blueprintRevisions).values({
-      id: newRevisionId,
-      blueprintId: bp.id,
-      version: newVersion,
-      kind: 'agent',
-      name: facets.name,
-      description: facets.description,
-      strategyType: facets.strategyType,
-      style: facets.style,
-      tags: facets.tags,
-      venueType: facets.venueType,
-      payload: projectedPayload,
-      changeSummary: 'Auto-generated from agent config on start',
-      createdByUserId: userId,
-      createdAt: now,
-    });
-
-    // Copy skill refs to the new revision
-    if (skillRefs.length > 0) {
-      await tx.insert(blueprintRevisionSkills).values(
-        skillRefs.map((s, i) => ({
-          blueprintRevisionId: newRevisionId,
-          skillId: s.skillId,
-          skillRevisionId: s.skillRevisionId,
-          orderIndex: i,
-        })),
-      );
-    }
-
-    // Update blueprint: advance current revision pointer + publish in one write
-    await tx
-      .update(blueprints)
-      .set({
-        currentRevisionId: newRevisionId,
-        publicationStatus: 'published',
-        publishedAt: now,
-        publishedRevisionId: newRevisionId,
-        delistedAt: null,
+      // Insert new revision — satisfies blueprint_revisions.blueprint_id → blueprints.id FK
+      await tx.insert(blueprintRevisions).values({
+        id: newRevisionId,
+        blueprintId: bp.id,
+        version: newVersion,
+        kind: 'agent',
         name: facets.name,
         description: facets.description,
-        tags: facets.tags,
         strategyType: facets.strategyType,
         style: facets.style,
+        tags: facets.tags,
         venueType: facets.venueType,
-        updatedAt: now,
-      })
-      .where(eq(blueprints.id, bp.id));
+        payload: projectedPayload,
+        changeSummary: 'Auto-generated from agent config on start',
+        createdByUserId: userId,
+        createdAt: now,
+      });
 
-    // Update agent blueprint revision pointer
-    await tx
-      .update(agents)
-      .set({
-        blueprintRevisionId: newRevisionId,
-        updatedAt: now,
-      })
-      .where(eq(agents.id, agentId));
-  });
+      // Copy skill refs to the new revision
+      if (skillRefs.length > 0) {
+        await tx.insert(blueprintRevisionSkills).values(
+          skillRefs.map((s, i) => ({
+            blueprintRevisionId: newRevisionId,
+            skillId: s.skillId,
+            skillRevisionId: s.skillRevisionId,
+            orderIndex: i,
+          })),
+        );
+      }
+
+      // Now that the revision exists, advance current revision pointer + publish.
+      // This satisfies fk_blueprints_current_revision and fk_blueprints_published_revision.
+      await tx
+        .update(blueprints)
+        .set({
+          currentRevisionId: newRevisionId,
+          publicationStatus: 'published',
+          publishedAt: now,
+          publishedRevisionId: newRevisionId,
+          delistedAt: null,
+          name: facets.name,
+          description: facets.description,
+          tags: facets.tags,
+          strategyType: facets.strategyType,
+          style: facets.style,
+          venueType: facets.venueType,
+          updatedAt: now,
+        })
+        .where(eq(blueprints.id, bp.id));
+
+      // Update agent blueprint revision pointer
+      await tx
+        .update(agents)
+        .set({
+          blueprintRevisionId: newRevisionId,
+          updatedAt: now,
+        })
+        .where(eq(agents.id, agentId));
+    });
+  } catch (cause) {
+    return err({
+      code: 'blueprint.internal_error',
+      message: cause instanceof Error ? cause.message : 'Failed to create revision',
+    });
+  }
 
   return ok({
     blueprintId: bp.id,
