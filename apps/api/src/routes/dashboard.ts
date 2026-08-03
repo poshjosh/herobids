@@ -403,8 +403,8 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
       const sessionWithReason = {
         ...session,
         stopReason: sessionStopReasons.get(session.id) ?? null,
-      };
-      const sessionEntries = mapRuntimeSession(sessionWithReason as Parameters<typeof mapRuntimeSession>[0]);
+      } as Parameters<typeof mapRuntimeSession>[0];
+      const sessionEntries = mapRuntimeSession(sessionWithReason);
       entries.push(...sessionEntries);
     }
 

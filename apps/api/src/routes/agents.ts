@@ -2451,8 +2451,8 @@ export async function agentRoutes(
       const sessionWithReason = {
         ...session,
         stopReason: sessionStopReasons.get(session.id) ?? null,
-      };
-      const sessionEntries = mapRuntimeSession(sessionWithReason as Parameters<typeof mapRuntimeSession>[0]);
+      } as Parameters<typeof mapRuntimeSession>[0];
+      const sessionEntries = mapRuntimeSession(sessionWithReason);
       for (const entry of sessionEntries) {
         if (!beforeFilter || new Date(entry.timestamp) < beforeFilter) {
           entries.push(entry);

@@ -33,7 +33,8 @@ export type AgentActivityEventType =
   | 'llm.dispatch'
   | 'llm.completed'
   | 'tool.called'
-  | 'tool.result';
+  | 'tool.result'
+  | 'guardrail.triggered';
 
 export interface AgentActivityEntry {
   id: string;

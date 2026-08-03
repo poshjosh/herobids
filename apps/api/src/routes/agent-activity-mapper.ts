@@ -163,14 +163,16 @@ const MESSAGE_CLASSIFICATIONS: Record<string, ActivityClassification> = {
     summaryFn: (row) => {
       if (row.errorDetail?.message) return row.errorDetail.message;
       const p = row.payload as Record<string, unknown> | null;
-      if (typeof p?.['message'] === 'string') return p['message'];
+      const payloadMessage = typeof p?.['message'] === 'string' ? p['message'] : null;
+      if (payloadMessage) return payloadMessage;
       if (typeof p?.['code'] === 'string') {
         const codeMessages: Record<string, string> = {
           'billing.limit_exceeded': 'Daily spend limit reached — top up your account to resume.',
           'billing.top_up_required': 'Usage limit reached — top-up required before agent can start.',
           'billing.account_suspended': 'Account suspended — agent session start blocked.',
         };
-        if (codeMessages[p['code']]) return codeMessages[p['code']];
+        const mapped = codeMessages[p['code']];
+        if (mapped) return mapped;
       }
       return 'A platform guardrail blocked or constrained agent activity.';
     },
@@ -564,7 +566,7 @@ const STOP_REASON_MESSAGE_TYPES = [
  */
 export function resolveSessionStopReasons(
   protocolRows: ReadonlyArray<RawAgentMessage>,
-  sessionRows: ReadonlyArray<RawRuntimeSession>,
+  sessionRows: ReadonlyArray<{ id: string; agentId: string; stoppedAt: Date | null }>,
 ): Map<string, string> {
   const reasons = new Map<string, string>();
   const STOP_REASON_WINDOW_MS = 5_000;
