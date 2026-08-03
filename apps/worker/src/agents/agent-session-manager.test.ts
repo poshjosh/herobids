@@ -37,7 +37,7 @@ describe('AgentSessionManager', () => {
       skillIds: [],
       toolPolicy: null,
       modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' },
-      executionMode: null,
+      executionDefaults: null,
       dailyTokenBudget: null,
       dailyLossLimit: null,
       maxBots: null,
@@ -148,7 +148,7 @@ describe('AgentSessionManager', () => {
       skillIds: ['bot-management'],
       toolPolicy: { manage_bot: { capability: 'manage_bot', tier: 'brokered', enabled: true } },
       modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' },
-      executionMode: 'paper',
+      executionDefaults: { mode: 'paper' },
       dailyTokenBudget: 1000,
       dailyLossLimit: '50',
       maxBots: 2,
@@ -225,7 +225,7 @@ describe('AgentSessionManager', () => {
       skillIds: ['trading'],
       toolPolicy: null,
       modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5', dexWatchlistSymbols: ['BONK', 'WIF'] },
-      executionMode: 'paper',
+      executionDefaults: { mode: 'paper' },
       dailyTokenBudget: null,
       dailyLossLimit: null,
       maxBots: null,
@@ -253,7 +253,7 @@ describe('AgentSessionManager', () => {
       skillIds: [],
       toolPolicy: null,
       modelPolicy: { lightModel: 'gpt-4o-mini' },
-      executionMode: 'paper',
+      executionDefaults: { mode: 'paper' },
       dailyTokenBudget: null,
       dailyLossLimit: null,
       maxBots: null,
@@ -303,7 +303,7 @@ describe('AgentSessionManager', () => {
       skillIds: [],
       toolPolicy: null,
       modelPolicy: null, // No model policy set
-      executionMode: null,
+      executionDefaults: null,
       dailyTokenBudget: null,
       dailyLossLimit: null,
       maxBots: null,
@@ -511,8 +511,8 @@ describe('AgentSessionManager', () => {
       { id: 'sess-b', agentId: 'agent-b', botId: 'inst-b' },
     ]);
     (agentRepo.getAgent as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ id: 'agent-a', userId: 'user-1', prompt: 'goal-a', skillIds: [], toolPolicy: null, modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' }, executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null })
-      .mockResolvedValueOnce({ id: 'agent-b', userId: 'user-1', prompt: 'goal-b', skillIds: [], toolPolicy: null, modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' }, executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null });
+      .mockResolvedValueOnce({ id: 'agent-a', userId: 'user-1', prompt: 'goal-a', skillIds: [], toolPolicy: null, modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' }, executionDefaults: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null })
+      .mockResolvedValueOnce({ id: 'agent-b', userId: 'user-1', prompt: 'goal-b', skillIds: [], toolPolicy: null, modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' }, executionDefaults: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null });
 
     await manager.reconcileStartingSessions();
 
@@ -628,7 +628,7 @@ describe('AgentSessionManager', () => {
       (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'agent-active-1',
         userId: 'user-1',
-        executionMode: 'shadow',
+        executionDefaults: { mode: 'shadow' },
         prompt: 'Test',
         toolPolicy: null,
         modelPolicy: null,
@@ -674,7 +674,7 @@ describe('AgentSessionManager', () => {
       (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'agent-active-2',
         userId: 'user-1',
-        executionMode: null,
+        executionDefaults: null,
         prompt: 'Test',
         toolPolicy: null,
         modelPolicy: null,
@@ -717,10 +717,10 @@ describe('AgentSessionManager', () => {
         .mockResolvedValueOnce({ id: 'sess-first', agentId: 'agent-first', status: 'starting' })
         .mockResolvedValueOnce({ id: 'sess-recovery', agentId: 'agent-recovery', status: 'running' });
       (agentRepo.getAgent as ReturnType<typeof vi.fn>)
-        .mockResolvedValueOnce({ id: 'agent-first', userId: 'user-1', executionMode: 'paper' })
-        .mockResolvedValueOnce({ id: 'agent-first', userId: 'user-1', executionMode: 'paper' })
-        .mockResolvedValueOnce({ id: 'agent-recovery', userId: 'user-1', executionMode: 'paper' })
-        .mockResolvedValueOnce({ id: 'agent-recovery', userId: 'user-1', executionMode: 'paper' });
+        .mockResolvedValueOnce({ id: 'agent-first', userId: 'user-1', executionDefaults: { mode: 'paper' } })
+        .mockResolvedValueOnce({ id: 'agent-first', userId: 'user-1', executionDefaults: { mode: 'paper' } })
+        .mockResolvedValueOnce({ id: 'agent-recovery', userId: 'user-1', executionDefaults: { mode: 'paper' } })
+        .mockResolvedValueOnce({ id: 'agent-recovery', userId: 'user-1', executionDefaults: { mode: 'paper' } });
 
       await manager.handleHeartbeat(
         {
@@ -774,7 +774,7 @@ describe('AgentSessionManager', () => {
       (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'agent-existing',
         userId: 'user-1',
-        executionMode: null,
+        executionDefaults: null,
         prompt: 'Test',
         toolPolicy: null,
         modelPolicy: null,
@@ -837,7 +837,7 @@ describe('AgentSessionManager', () => {
       (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'agent-recovery',
         userId: 'user-1',
-        executionMode: 'live',
+        executionDefaults: { mode: 'live' },
         prompt: 'Test',
         toolPolicy: null,
         modelPolicy: null,
@@ -887,7 +887,7 @@ describe('AgentSessionManager', () => {
       (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'agent-survived',
         userId: 'user-1',
-        executionMode: 'paper',
+        executionDefaults: { mode: 'paper' },
         prompt: 'Test',
         toolPolicy: null,
         modelPolicy: null,
@@ -934,7 +934,7 @@ describe('AgentSessionManager', () => {
       (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'agent-dup',
         userId: 'user-1',
-        executionMode: 'paper',
+        executionDefaults: { mode: 'paper' },
         prompt: 'Test',
         toolPolicy: null,
         modelPolicy: null,
@@ -986,7 +986,7 @@ describe('AgentSessionManager', () => {
       (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'agent-bind-later',
         userId: 'user-1',
-        executionMode: 'paper',
+        executionDefaults: { mode: 'paper' },
         prompt: 'Test',
         toolPolicy: null,
         modelPolicy: null,
@@ -1039,7 +1039,7 @@ describe('AgentSessionManager', () => {
       (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'agent-failed-actor',
         userId: 'user-1',
-        executionMode: 'shadow',
+        executionDefaults: { mode: 'shadow' },
         prompt: 'Test',
         toolPolicy: null,
         modelPolicy: null,
@@ -1103,7 +1103,7 @@ describe('AgentSessionManager', () => {
       (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'agent-stop-won',
         userId: 'user-1',
-        executionMode: 'shadow',
+        executionDefaults: { mode: 'shadow' },
         prompt: 'Test',
         toolPolicy: null,
         modelPolicy: null,
@@ -1687,7 +1687,7 @@ describe('AgentSessionManager', () => {
       skillIds: [],
       toolPolicy: null,
       modelPolicy: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
-      executionMode: 'paper',
+      executionDefaults: { mode: 'paper' },
       dailyTokenBudget: null,
       dailyLossLimit: null,
       maxBots: null,

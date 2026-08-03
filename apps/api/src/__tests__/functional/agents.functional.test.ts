@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
-import { agentRuntimeSessions, agentArtifacts, agentOutboundMessages, marketAssessmentRequests, agents } from '@herobids/db';
+import { agentRuntimeSessions, agentArtifacts, agentOutboundMessages, marketAssessmentRequests, billingAccounts, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 
 describe.skipIf(SKIP)('Agents functional', () => {
@@ -63,7 +63,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
       expect(res.statusCode).toBe(400);
     });
 
-    it('rejects explicit execution mode for a non-trading agent', async () => {
+    it('accepts a non-trading agent without executionDefaults', async () => {
       const res = await ctx.app.inject({
         method: 'POST',
         url: '/agents',
@@ -72,15 +72,14 @@ describe.skipIf(SKIP)('Agents functional', () => {
           name: 'Personal Assistant Agent',
           prompt: 'Remind me to pray at 07:45 Berlin time.',
           skillIds: ['task-management', 'web-access'],
-          executionMode: 'paper',
         },
       });
 
-      expect(res.statusCode).toBe(400);
-      expect(res.json()).toMatchObject({
-        error: 'validation_error',
-        details: [expect.objectContaining({ path: ['executionMode'] })],
-      });
+      // Non-trading agents don't require executionDefaults.
+      expect(res.statusCode).toBe(201);
+      const body = res.json<{ executionDefaults: { mode: string } | null }>();
+      // executionDefaults is null for non-trading agents (not required).
+      expect(body.executionDefaults).toBeNull();
     });
 
     it('returns 401 without auth', async () => {
@@ -302,6 +301,16 @@ describe.skipIf(SKIP)('Agents functional', () => {
         authoredBy: 'platform',
         body: 'cascade test message',
         deliveryStatus: 'pending',
+      });
+
+      // Seed a billing account first (required FK for market_assessment_requests).
+      await ctx.db.insert(billingAccounts).values({
+        id: 'ba-cascade-test',
+        ownerUserId: userId,
+        status: 'active',
+        activePlanId: 'free',
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
 
       // Seed a market_assessment_requests row to verify ON DELETE CASCADE works
@@ -563,7 +572,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
           name: 'Paper To Live Agent',
           prompt: 'Trade SOL.',
           skillIds: ['trading'],
-          executionMode: 'paper',
+          executionDefaults: { mode: 'paper' },
         },
       });
       expect(createRes.statusCode).toBe(201);
@@ -596,7 +605,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
         url: `/agents/${agentId}`,
         headers: authHeader(),
         payload: {
-          executionMode: 'live',
+          executionDefaults: { mode: 'live' },
           connectionIds: [connectionId],
         },
       });

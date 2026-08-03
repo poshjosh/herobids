@@ -90,7 +90,7 @@ function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID
 // Builds a chainable DB mock that resolves to a fixed value when awaited.
 function makeChain(value: unknown[]) {
   const chain: Record<string, unknown> = {};
-  for (const m of ['from', 'where', 'orderBy', 'limit', 'offset']) {
+  for (const m of ['from', 'where', 'orderBy', 'limit', 'offset', '$dynamic', 'innerJoin', 'leftJoin', 'groupBy', 'having']) {
     chain[m] = vi.fn(() => chain);
   }
   (chain as { then: unknown }).then = (
@@ -102,15 +102,46 @@ function makeChain(value: unknown[]) {
 
 const stubBlueprint = {
   id: BLUEPRINT_ID,
-  userId: TEST_USER_ID,
+  authorId: TEST_USER_ID,
+  publicationStatus: 'draft',
+  publishedAt: null,
+  delistedAt: null,
+  archivedAt: null,
+  currentRevisionId: 'rev-1',
+  publishedRevisionId: null,
+  kind: 'agent',
   name: 'My Blueprint',
-  description: null,
-  configData: { strategy: { type: 'momentum', decisionMode: 'mechanical' }, execution: { mode: 'paper' } },
-  configVersion: 1,
-  visibility: 'private',
-  strategyPreset: null,
+  description: 'A test blueprint',
+  strategyType: 'momentum',
+  style: 'balanced',
+  tags: ['test'],
+  venueType: null,
+  sourceBlueprintId: null,
+  sourceBlueprintRevisionId: null,
+  likeCount: 0,
+  forkCount: 0,
+  popularityScore: 0,
+  trendingScore: 0,
   createdAt: new Date(),
   updatedAt: new Date(),
+};
+
+const stubRevision = {
+  id: 'rev-1',
+  blueprintId: BLUEPRINT_ID,
+  version: 1,
+  kind: 'agent',
+  name: 'My Blueprint',
+  description: 'A test blueprint',
+  strategyType: 'momentum',
+  style: 'balanced',
+  tags: ['test'],
+  venueType: null,
+  payload: { strategy: { type: 'momentum', decisionMode: 'mechanical' }, executionDefaults: { mode: 'paper' } },
+  createdByUserId: TEST_USER_ID,
+  changeSummary: null,
+  publishedAt: null,
+  createdAt: new Date(),
 };
 
 function buildDb(
@@ -118,7 +149,7 @@ function buildDb(
   subsequentRows: unknown[] = [],
 ): Database {
   let selectCallCount = 0;
-  return {
+  const db = {
     select: vi.fn().mockImplementation(() => {
       selectCallCount++;
       return makeChain(selectCallCount === 1 ? selectRows : subsequentRows);
@@ -126,7 +157,9 @@ function buildDb(
     insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
     update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
     delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+    transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(db)),
   } as unknown as Database;
+  return db;
 }
 
 // ─── GET /blueprints/presets ───────────────────────────────────────────────
@@ -199,18 +232,11 @@ describe('GET /blueprints/defaults', () => {
 });
 
 // ─── POST /blueprints/from-preset ────────────────────────────────────────
+// Stubbed — endpoint returns 501 until Phase 1 Milestone B.
 
 describe('POST /blueprints/from-preset', () => {
-  it('creates a blueprint from a known preset and returns 201', async () => {
-    // select after insert returns the new blueprint row
-    let selectCallCount = 0;
-    const db = {
-      select: vi.fn().mockImplementation(() => {
-        selectCallCount++;
-        return makeChain(selectCallCount === 1 ? [stubBlueprint] : []);
-      }),
-      insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
-    } as unknown as Database;
+  it('returns 501 (not implemented) for from-preset', async () => {
+    const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
@@ -220,12 +246,11 @@ describe('POST /blueprints/from-preset', () => {
       url: '/blueprints/from-preset',
       payload: { preset: 'momentum' },
     });
-    expect(res.statusCode).toBe(201);
-    const body = res.json();
-    expect(body.id).toBe(BLUEPRINT_ID);
+    expect(res.statusCode).toBe(501);
+    expect(res.json().error).toBe('not_implemented');
   });
 
-  it('returns 404 for nonexistent preset', async () => {
+  it('returns 501 for nonexistent preset as well', async () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
@@ -236,78 +261,38 @@ describe('POST /blueprints/from-preset', () => {
       url: '/blueprints/from-preset',
       payload: { preset: 'nonexistent' },
     });
-    expect(res.statusCode).toBe(404);
-    expect(res.json().error).toBe('preset_not_found');
+    expect(res.statusCode).toBe(501);
+    expect(res.json().error).toBe('not_implemented');
   });
 
-  it('merges overrides on top of preset configData', async () => {
-    let capturedValues: Record<string, unknown> | null = null;
-    const db = {
-      select: vi.fn().mockImplementation(() => makeChain([stubBlueprint])),
-      insert: vi.fn().mockReturnValue({
-        values: vi.fn().mockImplementation((vals: Record<string, unknown>) => {
-          capturedValues = vals;
-          return Promise.resolve(undefined);
-        }),
-      }),
-    } as unknown as Database;
+  it('returns 501 for merge overrides', async () => {
+    const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
 
-    await app.inject({
+    const res = await app.inject({
       method: 'POST',
       url: '/blueprints/from-preset',
       payload: { preset: 'momentum', overrides: { myOverride: true } },
     });
-
-    const configData = capturedValues?.['configData'] as Record<string, unknown> | undefined;
-    expect(configData?.['myOverride']).toBe(true);
-    // Base preset strategy should still be present
-    expect((configData?.['strategy'] as Record<string, unknown> | undefined)?.['type']).toBe('momentum');
+    expect(res.statusCode).toBe(501);
+    expect(res.json().error).toBe('not_implemented');
   });
 
-  it('nested override merges into the section rather than replacing it', async () => {
-    let capturedValues2: Record<string, unknown> | null = null;
-    const db2 = {
-      select: vi.fn().mockImplementation(() => makeChain([stubBlueprint])),
-      insert: vi.fn().mockReturnValue({
-        values: vi.fn().mockImplementation((vals: Record<string, unknown>) => {
-          capturedValues2 = vals;
-          return Promise.resolve(undefined);
-        }),
-      }),
-    } as unknown as Database;
-    const app2 = Fastify();
-    decorateWithAuth(app2);
-    await blueprintRoutes(app2, db2, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+  it('returns 501 for nested override merge', async () => {
+    const db = buildDb();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
 
-    // Override only one field inside the strategy section.
-    await app2.inject({
+    const res = await app.inject({
       method: 'POST',
       url: '/blueprints/from-preset',
       payload: { preset: 'momentum', overrides: { strategy: { params: { candleLimit: 60 } } } },
     });
-
-    const configData2 = capturedValues2?.['configData'] as Record<string, unknown> | undefined;
-    const strategy = configData2?.['strategy'] as Record<string, unknown> | undefined;
-    const params = strategy?.['params'] as Record<string, unknown> | undefined;
-    // The override updates params.candleLimit
-    expect(params?.['candleLimit']).toBe(60);
-    // But must NOT drop sibling fields from the strategy level
-    expect(strategy?.['type']).toBe('momentum');
-    expect(strategy?.['decisionMode']).toBeDefined();
-    // And must NOT drop sibling fields within params
-    expect(params?.['candleInterval']).toBeDefined();
-    expect(params?.['stopLossPct']).toBeDefined();
-    expect(params?.['takeProfitPct']).toBeDefined();
-    expect(params?.['signalBias']).toBeDefined();
-    // Nested indicators object must be preserved entirely
-    const indicators = params?.['indicators'] as Record<string, unknown> | undefined;
-    expect(indicators).toBeDefined();
-    const rsi = indicators?.['rsi'] as Record<string, unknown> | undefined;
-    expect(rsi?.['enabled']).toBe(true);
-    expect(rsi?.['period']).toBe(14);
+    expect(res.statusCode).toBe(501);
+    expect(res.json().error).toBe('not_implemented');
   });
 });
 

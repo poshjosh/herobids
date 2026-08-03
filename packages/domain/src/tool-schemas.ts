@@ -24,8 +24,8 @@ export const AssessStrategyPresetParamsSchema = z.object({
     .describe('Trading symbols to assess (e.g. ["BTC", "ETH", "SOL"]). All symbols share the same venueFamily and instrumentKind.'),
   venueFamily: z.string().min(1)
     .describe('Venue family to scope the assessment (e.g. "hyperliquid", "bybit", "jupiter"). Required.'),
-  instrumentKind: z.enum(['orderbook', 'perp', 'swap', 'dex'])
-    .describe('Instrument kind shared across all requested symbols.'),
+  instrumentKind: z.enum(['orderbook', 'perp', 'swap', 'dex']).optional()
+    .describe('Instrument kind shared across all requested symbols. Defaults to "orderbook" when omitted.'),
   idempotencyKey: z.string().optional()
     .describe('Client-provided idempotency key. Reuses cached results without new charges.'),
 });

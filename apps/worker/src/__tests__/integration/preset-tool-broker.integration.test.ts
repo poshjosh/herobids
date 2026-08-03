@@ -450,7 +450,7 @@ describe.skipIf(SKIP)('Preset tool broker integration', () => {
     // Execute the tool — port is null, so it enters broker-mediation path:
     // publishToInbound → BLPOP reply
     const result = await assessStrategyPresetTool.execute(
-      { symbols: ['BTC'], venueFamily: 'hyperliquid' },
+      { symbols: ['BTC'], venueFamily: 'hyperliquid', instrumentKind: 'perp' },
       ctx,
     );
 

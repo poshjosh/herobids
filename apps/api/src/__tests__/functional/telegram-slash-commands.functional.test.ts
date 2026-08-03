@@ -135,9 +135,10 @@ async function seedUser(chatId: string, extra: Partial<typeof users.$inferInsert
 async function seedAgent(userId: string, extra: Partial<typeof agents.$inferInsert> = {}) {
   const [a] = await ctx.db.insert(agents).values({
     id: crypto.randomUUID(), userId, name: 'TestAgent', prompt: 'Test goal',
-    status: 'stopped', executionMode: 'paper', capital: '5000',
-    dailyLossLimit: '250', maxDrawdownPct: '15', maxPositionSizePct: '10',
-    stopLossPct: '5', style: 'balanced', ...extra,
+    status: 'stopped', capital: '5000',
+    executionDefaults: { mode: 'paper' },
+    risk: { dailyMaxLossPct: 25, maxDrawdownPct: 15, maxPositionSizePct: 10, stopLossPct: 5 },
+    style: 'balanced', ...extra,
   }).returning();
   return a!;
 }
@@ -240,8 +241,8 @@ describe.skipIf(SKIP)('Telegram Slash Commands — Functional E2E', () => {
       expect(lastSentText().toLowerCase()).toContain('have any agent');
     });
 
-    it('/info shows capital for paper (test) mode agents', async () => {
-      await seedAgent(uid, { name: 'Momentum', status: 'active', executionMode: 'paper', capital: '5000' });
+    it('/info shows capital for paper mode agents', async () => {
+      await seedAgent(uid, { name: 'Momentum', status: 'active' });
       await send(CHAT, '/info Momentum');
       const text = lastSentText();
       expect(text).toContain('Capital: $5000');
@@ -386,9 +387,9 @@ describe.skipIf(SKIP)('Telegram Slash Commands — Functional E2E', () => {
     beforeEach(async () => { uid = (await seedUser(CHAT)).id; });
 
     it('/mode read-only shows execution mode', async () => {
-      await seedAgent(uid, { name: 'Trader', executionMode: 'paper' });
+      await seedAgent(uid, { name: 'Trader' });
       await send(CHAT, '/mode Trader');
-      expect(lastSentText()).toContain('test');
+      expect(lastSentText()).toContain('paper');
     });
 
     it('/mode set rejects non-stopped agent', async () => {
