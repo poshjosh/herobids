@@ -4,6 +4,7 @@ import { BillingConfigSchema, PlansConfigSchema, UsageBillingConfigSchema } from
 import { UsageBillingRepository, BillingRepository } from '@herobids/db';
 import { PaymentProviderManager } from '../billing/provider-manager.js';
 import { ProviderUnavailableError } from '../billing/provider-port.js';
+import { EntitlementSync } from '../billing/entitlement-sync.js';
 import { billingRoutes } from './billing.js';
 
 describe('billing routes', () => {
@@ -422,6 +423,83 @@ describe('billing routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().warnings).toEqual([
       { thresholdPct: 50, reached: false },
+      { thresholdPct: 80, reached: false },
+      { thresholdPct: 100, reached: false },
+    ]);
+  });
+
+  it('usage-summary warning thresholds are not reached when hard cap is zero', async () => {
+    // Regression: hardCap=0 must NOT cause all warnings to show permanently.
+    // Before the fix, hardCap != null passed for 0, and netOutOfPocket >= 0
+    // was always true, so every warning chip displayed regardless of balance.
+    const billingConfig = BillingConfigSchema.parse({});
+    const usageBillingConfig = UsageBillingConfigSchema.parse({
+      enabled: true,
+      warningThresholdsPct: [80, 100],
+    });
+    const plansConfig = PlansConfigSchema.parse({
+      defaultPlanId: 'pro',
+      plans: {
+        pro: {
+          usage: {
+            includedCreditCents: 500,
+            hardCapCents: 0, // zero hard cap
+          },
+        },
+      },
+    });
+
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([])),
+    };
+
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue({
+      ...billingAccount('user-1'),
+      activePlanId: 'pro',
+    });
+    // Simulate a user who has overspent: balance is negative but hard cap is 0.
+    vi.spyOn(UsageBillingRepository.prototype, 'getUsageSummary').mockResolvedValue({
+      account: { ...billingAccount('user-1'), activePlanId: 'pro' },
+      period: {
+        id: 'period_1',
+        accountId: 'acc_user-1',
+        planIdSnapshot: 'pro',
+        rateCardId: 'rc_default_v1',
+        periodStart: new Date('2026-06-01T00:00:00.000Z'),
+        periodEnd: new Date('2026-06-30T23:59:59.999Z'),
+        includedCreditMicrousd: 5_000_000,
+        softCapMicrousd: null,
+        hardCapMicrousd: 0, // zero hard cap
+        usageChargeMicrousd: 8_000_000,
+        creditAppliedMicrousd: 5_000_000,
+        reservedMicrousd: 0,
+        balanceMicrousd: -3_000_000, // overspent by $3
+        status: 'open',
+        externalInvoiceId: null,
+        createdAt: new Date('2026-06-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-06-01T00:00:00.000Z'),
+      },
+    });
+    vi.spyOn(UsageBillingRepository.prototype, 'getByMeterBreakdown').mockResolvedValue([]);
+
+    const app = Fastify();
+    app.decorateRequest('userId', '');
+    app.addHook('onRequest', async (request) => {
+      request.userId = 'user-1';
+    });
+    await billingRoutes(
+      app,
+      billingConfig,
+      plansConfig,
+      db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
+      usageBillingConfig,
+    );
+
+    const res = await app.inject({ method: 'GET', url: '/billing/usage-summary' });
+    expect(res.statusCode).toBe(200);
+    // All warnings must be NOT reached because hardCap=0 means no effective cap.
+    expect(res.json().warnings).toEqual([
       { thresholdPct: 80, reached: false },
       { thresholdPct: 100, reached: false },
     ]);
@@ -968,5 +1046,72 @@ describe('billing routes', () => {
     expect(body).toHaveProperty('url');
     // The response must NOT expose the provider name
     expect(body).not.toHaveProperty('provider');
+  });
+
+  it('mock top-up returns 500 when synthetic event processing fails', async () => {
+    // Regression: before the fix, the mock provider top-up flow ignored the
+    // return value of entitlementSync.processEvent(). If processing failed,
+    // the route still returned a 200 success URL — the user was redirected
+    // believing the top-up succeeded, but the balance was never updated.
+    const billingConfig = BillingConfigSchema.parse({
+      primaryProvider: 'mock',
+    });
+    const usageBillingConfig = UsageBillingConfigSchema.parse({
+      enabled: true,
+      creditTopUpsEnabled: true,
+      topUpProductsByProvider: {
+        mock: [
+          { packId: 'Topup5', externalId: 'Topup5', cents: 500 },
+        ],
+      },
+    });
+    const plansConfig = PlansConfigSchema.parse({
+      defaultPlanId: 'pro',
+      plans: {
+        pro: {
+          usage: {
+            topUpPackIds: ['Topup5'],
+          },
+        },
+      },
+    });
+
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{ email: 'user-1@example.com', displayName: 'User One' }])),
+    };
+
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue({
+      ...billingAccount('user-1'),
+      activePlanId: 'pro',
+    });
+
+    // Simulate processEvent failing (e.g. account not found, plan mismatch)
+    vi.spyOn(EntitlementSync.prototype, 'processEvent').mockResolvedValue({
+      processed: false,
+      error: 'No billing account for user',
+    });
+
+    const app = Fastify();
+    app.decorateRequest('userId', '');
+    app.addHook('onRequest', async (request) => {
+      request.userId = 'user-1';
+    });
+    await billingRoutes(
+      app,
+      billingConfig,
+      plansConfig,
+      db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
+      usageBillingConfig,
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/billing/top-up-checkout-session',
+      payload: { packId: 'Topup5' },
+    });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json().error).toBe('billing.top_up.processing_failed');
   });
 });

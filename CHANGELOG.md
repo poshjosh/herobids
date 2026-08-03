@@ -30,6 +30,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Edit Agent "Add Connection" regression:** Restored provider setup / OAuth flow in the edit-agent modal. Clicking "Add Connection" now opens the provider setup form; OAuth providers save full edit state to sessionStorage before redirect and restore all unsaved edits on return. `AgentDetailPage` auto-reopens the edit modal after OAuth redirect.
 
+- **Billing threshold warnings persist after top-up:** Fixed two bugs causing "80% threshold reached" / "100% threshold reached" chips to display incorrectly. (A) Mock provider top-up flow now checks `entitlementSync.processEvent()` return value — returns 500 instead of a success redirect when processing fails. (B) Warning computation treats `hardCap = 0` as no effective cap (was always showing all warnings because `netOutOfPocket >= 0` is always true).
+
 ## v0.0.39 - 2026-08-01
 
 ### Added

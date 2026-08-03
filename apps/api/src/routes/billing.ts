@@ -614,9 +614,11 @@ export async function billingRoutes(
     const netOutOfPocket = period ? Math.max(0, -period.balanceMicrousd) : 0;
     const hardCap = period?.hardCapMicrousd;
     const topUpPacks = resolveTopUpPacks(account.activePlanId, plansConfig, usageBillingConfig, providerManager, topUpProvider);
+    // A hard cap of 0 (or null/undefined) means no effective cap — skip warnings.
+    const effectiveHardCap = hardCap != null && hardCap > 0 ? hardCap : null;
     const warnings = warningThresholds.map((pct) => ({
       thresholdPct: pct,
-      reached: hardCap != null ? netOutOfPocket >= (hardCap * pct) / 100 : false,
+      reached: effectiveHardCap != null ? netOutOfPocket >= (effectiveHardCap * pct) / 100 : false,
     }));
 
     return reply.send({
@@ -1137,7 +1139,13 @@ export async function billingRoutes(
           packId,
           cents: effectivePack.cents,
         });
-        await entitlementSync.processEvent(syntheticTopUpEvent);
+        const result = await entitlementSync.processEvent(syntheticTopUpEvent);
+        if (!result.processed) {
+          return reply.status(500).send(errorPayload(
+            'billing.top_up.processing_failed',
+            result.error ?? 'Failed to process top-up credit',
+          ));
+        }
       }
 
       return reply.send({ url });
