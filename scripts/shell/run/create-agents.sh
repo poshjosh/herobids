@@ -35,7 +35,7 @@ DRY_RUN=0
 AGENT_PROVIDER="ollama"
 AGENT_LIGHT_MODEL="qwen3:8b"
 AGENT_HEAVY_MODEL="qwen3.6:35b-a3b-q4_K_M"
-PLATFORM_ASSESSMENT_15M='{"enabled":true,"reviewIntervalMs":900000}'
+PLATFORM_ASSESSMENT_15M='{"enabled":true,"reviewIntervalMs":301000}'
 
 # thyper — Hyperliquid contrarian mean-reversion
 THYPER_AGENT_NAME="thyper"
