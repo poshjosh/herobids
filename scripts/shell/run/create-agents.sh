@@ -35,7 +35,7 @@ DRY_RUN=0
 AGENT_PROVIDER="ollama"
 AGENT_LIGHT_MODEL="qwen3:8b"
 AGENT_HEAVY_MODEL="qwen3.6:35b-a3b-q4_K_M"
-PLATFORM_ASSESSMENT_3H='{"enabled":true,"reviewIntervalMs":10800000}'
+PLATFORM_ASSESSMENT_15M='{"enabled":true,"reviewIntervalMs":900000}'
 
 # thyper — Hyperliquid contrarian mean-reversion
 THYPER_AGENT_NAME="thyper"
@@ -252,7 +252,7 @@ build_thyper_agent_payload() {
     --arg strategyPreset "contrarian" \
     --arg executionVenue "hyperliquid" \
     --arg authorizationMode "direct" \
-    --argjson platformAssessment "$PLATFORM_ASSESSMENT_3H" \
+    --argjson platformAssessment "$PLATFORM_ASSESSMENT_15M" \
     --arg connectionId "$connection_id" \
     --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
     '{
@@ -288,7 +288,7 @@ build_t1inch_agent_payload() {
     --arg strategyPreset "range" \
     --arg executionVenue "1inch" \
     --arg authorizationMode "approval_required" \
-    --argjson platformAssessment "$PLATFORM_ASSESSMENT_3H" \
+    --argjson platformAssessment "$PLATFORM_ASSESSMENT_15M" \
     --arg connectionId "$connection_id" \
     --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
     '{
