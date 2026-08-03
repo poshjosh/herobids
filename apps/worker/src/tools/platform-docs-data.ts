@@ -105,6 +105,7 @@ executionMode (enum, optional): "paper" | "shadow" | "live".
 - paper: simulated trading, no real money (safe to experiment)
 - shadow: venue-backed paper trading (with real market data)
 - live: real trading with real funds
+- live: real trading with real funds
 
 executionVenue (string, optional): The venue to execute trades on. Examples: "hyperliquid", "jupiter", "bybit", "1inch".
 
@@ -397,23 +398,16 @@ const EXECUTION_MODES_ENTRY: DocsIndexEntry = {
   content: `
 Execution modes control whether trading is simulated or real:
 
-test (Test mode):
-  - Simulated trading, no real money
-  - Safe to experiment with
-  - No real orders sent to venues
+paper (Paper mode):
+  - Simulated trading, no real money at risk
+  - Safe to experiment with, no real orders sent to venues
   - Recommended for: learning, testing strategies, onboarding
 
-paper (Paper mode):
-  - Simulated trading with realistic fills
-  - No real money at risk
-  - Orders are simulated with real market data
-  - Recommended for: strategy validation before going live
-
 shadow (Shadow mode):
-  - Paper trading alongside live data
+  - Venue-backed paper trading with real market data
   - Tracks what would have happened if orders were real
   - No real money at risk
-  - Recommended for: comparing strategy performance against live
+  - Recommended for: strategy validation before going live
 
 live (Live mode):
   - Real trading with real funds

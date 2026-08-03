@@ -174,7 +174,7 @@ Specific goals:
 
 Because backward compatibility is not required, prefer deletion/simplification over carrying both old and new paths.
 
-### WP4 — Repair existing agent data  **[PENDING]**
+### WP4 — Repair existing agent data  **[DONE]**
 
 Add and run a repair path for existing agents with broken or missing execution defaults.
 
@@ -195,7 +195,7 @@ Requirements:
 - logs before/after counts
 - is idempotent
 
-### WP5 — Update first-party scripts and fixtures  **[PENDING]**
+### WP5 — Update first-party scripts and fixtures  **[DONE]**
 
 Update `scripts/shell/run/create-agents.sh` so all created trading agents send explicit canonical `executionDefaults.mode`.
 
@@ -205,7 +205,7 @@ Expected result:
 
 - no first-party agent creation path can create a trading agent with unset execution mode
 
-### WP6 — Align UI display semantics  **[PENDING]**
+### WP6 — Align UI display semantics  **[DONE]**
 
 Ensure display code treats persisted canonical values consistently:
 
@@ -215,7 +215,7 @@ Ensure display code treats persisted canonical values consistently:
 
 This is a presentation cleanup, not a contract change.
 
-### WP7 — Test coverage and regression guards  **[PENDING]**
+### WP7 — Test coverage and regression guards  **[DONE]**
 
 Add regression coverage for:
 
