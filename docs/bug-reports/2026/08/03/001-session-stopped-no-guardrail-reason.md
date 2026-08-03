@@ -1,7 +1,8 @@
 # 001 — Session stopped without visible stop reason
 
-**Status:** Open  
+**Status:** Fixed  
 **Created:** 2026-08-03  
+**Fixed:** 2026-08-03 (commit `99efbba8`)  
 **Severity:** Medium  
 **Category:** UX / Activity Feed
 
