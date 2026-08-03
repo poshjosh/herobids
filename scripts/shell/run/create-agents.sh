@@ -267,7 +267,8 @@ build_thyper_agent_payload() {
       executionVenue: $executionVenue,
       authorizationMode: $authorizationMode,
       platformAssessment: $platformAssessment,
-      connectionIds: [$connectionId]
+      connectionIds: [$connectionId],
+      executionDefaults: { mode: "shadow" }
     }'
 }
 
