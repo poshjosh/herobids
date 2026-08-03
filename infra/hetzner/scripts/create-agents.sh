@@ -346,7 +346,7 @@ build_thyper_agent_payload() {
       platformAssessment: $platformAssessment,
       connectionIds: [$connectionId],
       executionDefaults: { mode: "shadow" },
-      telegramChatId: $telegramChatId
+      telegramChatId: $telegramChatId,
       capital: "1000"
     }'
 }
@@ -382,7 +382,7 @@ build_t1inch_agent_payload() {
       platformAssessment: $platformAssessment,
       connectionIds: [$connectionId],
       executionDefaults: { mode: "shadow" },
-      telegramChatId: $telegramChatId
+      telegramChatId: $telegramChatId,
       capital: "1000"
     }'
 }
@@ -417,7 +417,7 @@ build_tplaybook_agent_payload() {
         connectionIds: [$connectionId],
         skillIds: ["trading", $skillId1, $skillId2],
         executionDefaults: { mode: "shadow" },
-        telegramChatId: $telegramChatId
+        telegramChatId: $telegramChatId,
       capital: "1000"
       }'
   else
@@ -444,7 +444,7 @@ build_tplaybook_agent_payload() {
         connectionIds: [$connectionId],
         skillIds: ["trading"],
         executionDefaults: { mode: "shadow" },
-        telegramChatId: $telegramChatId
+        telegramChatId: $telegramChatId,
       capital: "1000"
       }'
   fi
