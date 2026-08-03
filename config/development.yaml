@@ -7,5 +7,10 @@ llm:
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
   email:
-    brandImageUrl: http://localhost:5173/brand/wordmark-dark.png                  
+    brandImageUrl: http://localhost:5173/brand/wordmark-dark.png     
+
+platformAssessor:
+  minReviewIntervalMs: 300000  # 5 min — operator floor for agent reviewIntervalMs
+  cacheFreshnessMs: 300000  # 5 min — lookup and artifact expiry
+
 
