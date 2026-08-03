@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
+import { eq, and, desc, gte, lt, lte, sql } from 'drizzle-orm';
 import { getLlmModelRateCardItems, type ModelPricing, type ProvidersYaml } from '@herobids/domain';
 import type { Database } from './index.js';
 import {
@@ -342,6 +342,84 @@ export class UsageBillingRepository {
             .set({ status: 'closed', updatedAt: new Date() })
             .where(eq(billingPeriods.id, existing.id));
         } else {
+          // Reconcile includedCreditMicrousd when the current plan grants more
+          // than the period was opened with (e.g. user upgraded free → starter
+          // mid-period). Only increases — downgrades take effect next period.
+          // planIdSnapshot is NOT updated — it remains a frozen snapshot of the
+          // plan active at period-open time. The plan_change_adjustment ledger
+          // entry records the full upgrade detail (old plan → new plan).
+          // See docs/bug-reports/2026/08/03/001-billing-period-not-updated-on-plan-change.md.
+          if (includedCreditMicrousd > existing.includedCreditMicrousd) {
+            const deltaCredit = includedCreditMicrousd - existing.includedCreditMicrousd;
+            const reconciledAt = new Date();
+
+            // Conditional update makes the reconciliation idempotent under
+            // concurrent callers: only the first stale reader can advance the
+            // stored included credit, and later callers re-read the reconciled
+            // row instead of applying the delta again.
+            const [updatedPeriod] = await tx
+              .update(billingPeriods)
+              .set({
+                includedCreditMicrousd,
+                balanceMicrousd: sql`${billingPeriods.balanceMicrousd} + ${deltaCredit}`,
+                updatedAt: reconciledAt,
+              })
+              .where(
+                and(
+                  eq(billingPeriods.id, existing.id),
+                  lt(billingPeriods.includedCreditMicrousd, includedCreditMicrousd),
+                ),
+              )
+              .returning();
+
+            if (!updatedPeriod) {
+              const [refetched] = await tx
+                .select()
+                .from(billingPeriods)
+                .where(eq(billingPeriods.id, existing.id))
+                .limit(1);
+
+              if (!refetched) {
+                throw new Error(`Failed to re-read billing period ${existing.id} after reconciliation race`);
+              }
+
+              return refetched;
+            }
+
+            // Recompute account spend status — the balance increase from the
+            // upgrade may have moved the account out of hard_limited/soft_limited.
+            const newStatus = computeSpendStatus(updatedPeriod);
+            await tx
+              .update(billingAccounts)
+              .set({ status: newStatus, lastEvaluatedAt: reconciledAt, updatedAt: reconciledAt })
+              .where(eq(billingAccounts.id, accountId));
+
+            // Unique sourceId per upgrade so multiple upgrades in one period
+            // each produce their own audit entry — includes credit amount so
+            // even same-plan credit changes (operator config update) are distinct.
+            const adjSourceId = `${existing.id}_${planIdSnapshot}_${includedCreditMicrousd}`;
+            const adjId = `led_plan_change_${adjSourceId}`;
+            await tx
+              .insert(billingLedgerEntries)
+              .values({
+                id: adjId,
+                accountId,
+                periodId: existing.id,
+                entryType: 'plan_change_adjustment',
+                direction: 'credit',
+                amountMicrousd: deltaCredit,
+                currency: 'USD',
+                sourceType: 'plan_change',
+                sourceId: adjSourceId,
+                description: `Plan upgrade: included credit adjusted from ${existing.includedCreditMicrousd} → ${includedCreditMicrousd} µUSD (${existing.planIdSnapshot} → ${planIdSnapshot})`,
+              })
+              .onConflictDoNothing();
+
+            // planIdSnapshot is intentionally NOT updated — it stays frozen
+            // as the plan that opened the period.
+            return updatedPeriod;
+          }
+
           return existing;
         }
       }

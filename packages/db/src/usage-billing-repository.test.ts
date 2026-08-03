@@ -25,7 +25,9 @@ function makeSelectChain(rows: unknown[]) {
 function makeUpdateChain() {
   const chain: Record<string, unknown> = {};
   chain['set'] = vi.fn(() => chain);
-  chain['where'] = vi.fn(() => Promise.resolve(undefined));
+  chain['where'] = vi.fn(() => ({
+    returning: vi.fn().mockResolvedValue([]),
+  }));
   return chain;
 }
 
@@ -481,5 +483,261 @@ describe('computeSpendStatus', () => {
     // After $5 top-up: balance = -$5.00 → still negative → still hard_limited
     const status = computeSpendStatus(makePeriod({ balanceMicrousd: -50_000 }));
     expect(status).toBe('hard_limited');
+  });
+});
+
+// ── getOrCreateOpenPeriod plan-change reconciliation tests ────────────────────
+
+describe('getOrCreateOpenPeriod plan-change reconciliation', () => {
+  type BillingPeriodRow = Awaited<ReturnType<UsageBillingRepository['getOrCreateOpenPeriod']>>;
+
+  function makeExistingPeriod(overrides: Partial<BillingPeriodRow> = {}): BillingPeriodRow {
+    return {
+      id: 'period_acc_test_2026-08',
+      accountId: 'acc_test',
+      planIdSnapshot: 'free',
+      rateCardId: 'rc_default_v1',
+      periodStart: new Date('2026-08-01T00:00:00.000Z'),
+      periodEnd: new Date('2026-08-31T23:59:59.999Z'),
+      includedCreditMicrousd: 0,
+      softCapMicrousd: 0,
+      hardCapMicrousd: 0,
+      usageChargeMicrousd: 0,
+      creditAppliedMicrousd: 0,
+      reservedMicrousd: 0,
+      balanceMicrousd: 0,
+      status: 'open',
+      externalInvoiceId: null,
+      createdAt: new Date('2026-08-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+      ...overrides,
+    };
+  }
+
+  /**
+   * Build a mock DB + tx where the SELECT returns `existing` (if provided),
+   * and all UPDATE/INSERT calls are captured for assertions.
+   */
+  function makeDbWithPeriod(existing: BillingPeriodRow | null = null) {
+    const ledgerInserts: Array<Record<string, unknown>> = [];
+    const periodUpdates: Array<{ set: Record<string, unknown>; whereId: string }> = [];
+
+    const tx = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockReturnValue(makeSelectChain(existing ? [existing] : [])),
+            }),
+          }),
+        }),
+      }),
+      update: vi.fn().mockImplementation((_table: unknown) => ({
+        set: vi.fn().mockImplementation((setVals: Record<string, unknown>) => ({
+          where: vi.fn().mockImplementation((_whereClause: unknown) => {
+            periodUpdates.push({ set: setVals, whereId: 'captured' });
+            const nextIncludedCredit = Number(setVals['includedCreditMicrousd']);
+            const nextBalance = existing
+              ? existing.balanceMicrousd + (nextIncludedCredit - existing.includedCreditMicrousd)
+              : nextIncludedCredit;
+            return {
+              returning: vi.fn().mockResolvedValue([
+                {
+                  ...existing,
+                  includedCreditMicrousd: nextIncludedCredit,
+                  balanceMicrousd: nextBalance,
+                  updatedAt: new Date(),
+                },
+              ]),
+            };
+          }),
+        })),
+      })),
+      insert: vi.fn().mockImplementation((_table: unknown) => ({
+        values: vi.fn().mockImplementation((vals: unknown) => {
+          ledgerInserts.push(vals as Record<string, unknown>);
+          return {
+            onConflictDoNothing: vi.fn().mockReturnValue({
+              returning: vi.fn().mockReturnValue(makeSelectChain([])),
+            }),
+          };
+        }),
+      })),
+    };
+
+    const db = {
+      transaction: vi.fn().mockImplementation(
+        async (cb: (tx: unknown) => Promise<unknown>) => cb(tx),
+      ),
+    } as unknown as Database;
+
+    return { db, tx, ledgerInserts, periodUpdates };
+  }
+
+  it('increases includedCreditMicrousd and balance when upgrading free → starter', async () => {
+    const existing = makeExistingPeriod({
+      planIdSnapshot: 'free',
+      includedCreditMicrousd: 0,
+      balanceMicrousd: 0,
+    });
+    const { db, ledgerInserts, periodUpdates } = makeDbWithPeriod(existing);
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.getOrCreateOpenPeriod(
+      'acc_test',
+      new Date('2026-08-03T12:00:00.000Z'),
+      'starter',
+      'rc_default_v1',
+      20_000_000, // $20.00 included credit for starter
+      null,
+      null,
+    );
+
+    // Returned object has updated credit and balance, but planIdSnapshot stays frozen
+    expect(result.includedCreditMicrousd).toBe(20_000_000);
+    expect(result.balanceMicrousd).toBe(20_000_000); // 0 + 20_000_000
+    expect(result.planIdSnapshot).toBe('free'); // frozen — snapshot of the plan at period-open
+
+    // Two UPDATEs issued: period (credit + balance) then account (spend status)
+    expect(periodUpdates.length).toBe(2);
+    // Period UPDATE only touches includedCreditMicrousd and balanceMicrousd
+    expect(periodUpdates[0]!.set['planIdSnapshot']).toBeUndefined();
+    expect(periodUpdates[0]!.set['includedCreditMicrousd']).toBe(20_000_000);
+    // Account status recomputed after balance increase
+    expect(periodUpdates[1]!.set['status']).toBe('active');
+
+    // Ledger adjustment entry was inserted with unique sourceId per upgrade
+    expect(ledgerInserts.length).toBe(1);
+    const ledgerEntry = ledgerInserts[0]!;
+    expect(ledgerEntry['entryType']).toBe('plan_change_adjustment');
+    expect(ledgerEntry['direction']).toBe('credit');
+    expect(ledgerEntry['amountMicrousd']).toBe(20_000_000);
+    expect(ledgerEntry['sourceType']).toBe('plan_change');
+    expect(ledgerEntry['sourceId']).toBe('period_acc_test_2026-08_starter_20000000');
+  });
+
+  it('does NOT decrease includedCreditMicrousd on downgrade starter → free', async () => {
+    const existing = makeExistingPeriod({
+      planIdSnapshot: 'starter',
+      includedCreditMicrousd: 20_000_000,
+      balanceMicrousd: 15_000_000, // $5 used
+    });
+    const { db, ledgerInserts, periodUpdates } = makeDbWithPeriod(existing);
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.getOrCreateOpenPeriod(
+      'acc_test',
+      new Date('2026-08-03T12:00:00.000Z'),
+      'free',
+      'rc_default_v1',
+      0, // $0 included credit for free plan
+      null,
+      null,
+    );
+
+    // Returned object preserves the higher included credit and original plan snapshot
+    expect(result.includedCreditMicrousd).toBe(20_000_000);
+    expect(result.balanceMicrousd).toBe(15_000_000); // unchanged
+    expect(result.planIdSnapshot).toBe('starter'); // preserved — credit came from starter
+
+    // No UPDATE, no INSERT — downgrade takes effect next period
+    expect(periodUpdates.length).toBe(0);
+    expect(ledgerInserts.length).toBe(0);
+  });
+
+  it('no-op when plan and included credit are unchanged', async () => {
+    const existing = makeExistingPeriod({
+      planIdSnapshot: 'starter',
+      includedCreditMicrousd: 20_000_000,
+      balanceMicrousd: 18_000_000,
+    });
+    const { db, ledgerInserts, periodUpdates } = makeDbWithPeriod(existing);
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.getOrCreateOpenPeriod(
+      'acc_test',
+      new Date('2026-08-03T12:00:00.000Z'),
+      'starter',
+      'rc_default_v1',
+      20_000_000,
+      null,
+      null,
+    );
+
+    // Unchanged
+    expect(result.includedCreditMicrousd).toBe(20_000_000);
+    expect(result.balanceMicrousd).toBe(18_000_000);
+    expect(result.planIdSnapshot).toBe('starter');
+
+    // No UPDATE, no INSERT
+    expect(periodUpdates.length).toBe(0);
+    expect(ledgerInserts.length).toBe(0);
+  });
+
+  it('no-op when plan changes but included credit is unchanged', async () => {
+    const existing = makeExistingPeriod({
+      planIdSnapshot: 'starter',
+      includedCreditMicrousd: 20_000_000,
+      balanceMicrousd: 20_000_000,
+    });
+    const { db, ledgerInserts, periodUpdates } = makeDbWithPeriod(existing);
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.getOrCreateOpenPeriod(
+      'acc_test',
+      new Date('2026-08-03T12:00:00.000Z'),
+      'enterprise', // different plan, same credit amount
+      'rc_default_v1',
+      20_000_000,
+      null,
+      null,
+    );
+
+    // Credit, balance, and planIdSnapshot unchanged — no-op
+    expect(result.includedCreditMicrousd).toBe(20_000_000);
+    expect(result.balanceMicrousd).toBe(20_000_000);
+    expect(result.planIdSnapshot).toBe('starter');
+
+    // No UPDATE, no INSERT
+    expect(periodUpdates.length).toBe(0);
+    expect(ledgerInserts.length).toBe(0);
+  });
+
+  it('multiple upgrades within a period accumulate included credit correctly', async () => {
+    // First upgrade: free → starter (+$20)
+    const existing1 = makeExistingPeriod({
+      planIdSnapshot: 'free',
+      includedCreditMicrousd: 0,
+      balanceMicrousd: 0,
+    });
+    const { db: db1, ledgerInserts: ledger1 } = makeDbWithPeriod(existing1);
+    const repo1 = new UsageBillingRepository(db1);
+    const result1 = await repo1.getOrCreateOpenPeriod(
+      'acc_test', new Date('2026-08-03T12:00:00.000Z'),
+      'starter', 'rc_default_v1', 20_000_000, null, null,
+    );
+    expect(result1.includedCreditMicrousd).toBe(20_000_000);
+    expect(result1.balanceMicrousd).toBe(20_000_000);
+    expect(ledger1.length).toBe(1);
+    expect(ledger1[0]!['sourceId']).toBe('period_acc_test_2026-08_starter_20000000');
+
+    // Second upgrade: starter → enterprise (+$80, now total $100)
+    const existing2 = makeExistingPeriod({
+      planIdSnapshot: 'starter',
+      includedCreditMicrousd: 20_000_000,
+      balanceMicrousd: 20_000_000,
+    });
+    const { db: db2, ledgerInserts: ledger2 } = makeDbWithPeriod(existing2);
+    const repo2 = new UsageBillingRepository(db2);
+    const result2 = await repo2.getOrCreateOpenPeriod(
+      'acc_test', new Date('2026-08-03T12:00:00.000Z'),
+      'enterprise', 'rc_default_v1', 100_000_000, null, null,
+    );
+    expect(result2.includedCreditMicrousd).toBe(100_000_000);
+    expect(result2.balanceMicrousd).toBe(100_000_000); // 20M + 80M
+    expect(ledger2.length).toBe(1);
+    const entry = ledger2[0]!;
+    expect(entry['amountMicrousd']).toBe(80_000_000); // delta only
+    expect(entry['sourceId']).toBe('period_acc_test_2026-08_enterprise_100000000'); // unique per upgrade
   });
 });
