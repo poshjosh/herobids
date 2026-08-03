@@ -39,12 +39,18 @@ export function canRouteToHybridEvaluator(params: {
 
   // preset_review scanner wakes must NOT route into the single-shot hybrid entry evaluator.
   // These wakes carry platform assessment recommendations, not trading signals.
+  // They require multi-turn tool calls (assess → review results → decide → change)
+  // which the single-shot hybrid evaluator cannot support. Falls through to scout/judge.
   if (params.isScannerWake && params.latestScannerContext?.scannerKind === 'preset_review') {
     return false;
   }
 
   // assessment_review scanner wakes must NOT route into the hybrid entry evaluator.
   // These wakes carry deterministic scanner pre-check advice, not trading signals.
+  // They require multi-turn tool calls (assess_strategy_preset → review rankings →
+  // change_strategy_preset) which the single-shot hybrid evaluator cannot support.
+  // The scout/judge loop injects the assessment message into the LLM context and
+  // supports the multi-turn workflow needed for preset assessment and transition.
   if (params.isScannerWake && params.latestScannerContext?.scannerKind === 'assessment_review') {
     return false;
   }

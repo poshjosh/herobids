@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Assessment wake routing documentation:** Improved code comments relating assessment review wake routing.
+
 ### Added
 
 - **Blueprint Marketplace Likes:** Interactive like/unlike controls on blueprint browse cards and detail pages with optimistic UI updates. Added dedicated `blueprints` plan entitlements (`canViewMarketplaceBlueprints`, `canLikeMarketplaceBlueprints`) in schema, config, plan resolution, and auth client. Marketplace browse, detail, fork, like, and unlike endpoints enforce entitlements server-side. Blueprint responses include `isLikedByViewer` field with batch-loaded viewer like state. Reusable `useBlueprintLike` hook with optimistic cache patching (detail + browse invalidation) and error rollback. 15 new tests (10 frontend hook, 5 integration). Proactive UI gating prevents API calls when marketplace access is not entitled.

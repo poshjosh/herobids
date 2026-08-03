@@ -2491,6 +2491,14 @@ async function runTick(): Promise<void> {
     // tools to request a full platform assessment, evaluate, and apply preset
     // changes. The wake is advice-only — no billing, no assessor run, no artifact
     // creation occurs solely because of the wake.
+    //
+    // DESIGN NOTE: We intentionally fall through to the scout/judge loop rather
+    // than using the single-shot hybrid evaluator. The assessment workflow
+    // (assess_strategy_preset → review rankings → change_strategy_preset)
+    // requires multi-turn tool calls that only the scout/judge loop supports.
+    // The hybrid evaluator can only submit_decision — it cannot run assessments.
+    // canRouteToHybridEvaluator() also excludes assessment_review wakes to
+    // ensure this fall-through is structurally enforced.
     const isAssessmentReviewWake = isScannerWake && latestScannerContext?.scannerKind === 'assessment_review';
 
     if (isAssessmentReviewWake && tradingTickWorkPlan.hasTradingCapability) {
