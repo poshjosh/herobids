@@ -32,6 +32,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Billing threshold warnings persist after top-up:** Fixed two bugs causing "80% threshold reached" / "100% threshold reached" chips to display incorrectly. (A) Mock provider top-up flow now checks `entitlementSync.processEvent()` return value — returns 500 instead of a success redirect when processing fails. (B) Warning computation treats `hardCap = 0` as no effective cap (was always showing all warnings because `netOutOfPocket >= 0` is always true).
 
+- **Billing period not updated on plan change (included credit shows $0 after upgrade):** `getOrCreateOpenPeriod` now reconciles `includedCreditMicrousd` when returning an existing open period. On upgrade (new plan has higher included credit than the period was opened with), the period is updated in-place: `includedCreditMicrousd` and `balanceMicrousd` are increased by the delta, and a `plan_change_adjustment` ledger entry records the adjustment with frozen `planIdSnapshot` for auditability. On downgrade or same-credit plan change, no update occurs — included credit is preserved (downgrade takes effect next period). 5 new unit tests. See `docs/bug-reports/2026/08/03/001-billing-period-not-updated-on-plan-change.md`.
+
 ## v0.0.39 - 2026-08-01
 
 ### Added

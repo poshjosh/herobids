@@ -328,45 +328,6 @@ export class AgentSessionManager {
         const resolvedPlanIdForEnforcement = userPlanIdForEnforcement ?? this.config.plansConfig?.defaultPlanId ?? 'free';
         const planUsageForEnforcement = this.config.plansConfig?.plans[resolvedPlanIdForEnforcement]?.usage;
 
-        // Session-start billing enforcement: block hard-limited or suspended accounts.
-        if (this.config.usageBillingRepo) {
-          try {
-            const billingAccount = await this.config.usageBillingRepo.getAccountByUserId(agent.userId);
-            if (billingAccount && (billingAccount.status === 'hard_limited' || billingAccount.status === 'suspended')) {
-              const topUpsEnabled = Boolean(this.config.usageBillingConfig?.creditTopUpsEnabled) && (planUsageForEnforcement?.topUpPackIds?.length ?? 0) > 0;
-              const code = billingAccount.status === 'suspended'
-                ? 'billing.account_suspended'
-                : (topUpsEnabled ? 'billing.top_up_required' : 'billing.limit_exceeded');
-              const message = billingAccount.status === 'suspended'
-                ? 'Account suspended — agent session start blocked'
-                : (topUpsEnabled
-                  ? 'Usage limit reached — top-up required before agent can start'
-                  : 'Usage limit reached — agent session start blocked');
-
-              logger.warn({ agentId: agent.id, userId: agent.userId, billingStatus: billingAccount.status }, 'Session launch blocked by billing spend state');
-              await this.agentRepo.updateAgent(agent.id, { status: 'stopped' });
-              await this.agentRepo.markSessionStopped(session.id, new Date());
-              await this.eventPublisher.emitGuardrailTriggered(agent.id, {
-                scope: 'agent_guardrail',
-                code,
-                message,
-                details: {
-                  sessionId: session.id,
-                  billingStatus: billingAccount.status,
-                },
-              });
-              await this.eventPublisher.emitInstanceStatus(agent.id, {
-                status: 'stopped',
-                reason: code,
-                updatedAt: new Date().toISOString(),
-              });
-              continue;
-            }
-          } catch (err) {
-            logger.warn({ err }, 'Failed to check billing spend state before session launch — proceeding');
-          }
-        }
-
         const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id);
         const riskPosture = (agent.risk as Record<string, unknown> | null) ?? {};
         const executionDefaults = (agent.executionDefaults as Record<string, unknown> | null) ?? {};
@@ -390,6 +351,9 @@ export class AgentSessionManager {
         const resolvedPlanId = userPlanId ?? this.config.plansConfig?.defaultPlanId ?? 'free';
         const planUsage = this.config.plansConfig?.plans[resolvedPlanId]?.usage;
 
+        // Reconcile billing account and period FIRST — the period reconciliation
+        // may increase included credit and recompute spend state (e.g. after a
+        // plan upgrade), which can move the account out of hard_limited.
         if (this.config.usageBillingRepo) {
           const includedCreditMicrousd = (planUsage?.includedCreditCents ?? 0) * 10_000;
           const softCapMicrousd = planUsage?.softCapCents != null ? planUsage.softCapCents * 10_000 : null;
@@ -413,6 +377,40 @@ export class AgentSessionManager {
             softCapMicrousd,
             hardCapMicrousd,
           );
+
+          // Gate check AFTER reconciliation — spend state is now fresh.
+          // getOrCreateOpenPeriod recomputes account status when credit increases.
+          const spendState = await this.config.usageBillingRepo.getSpendState(billingAccount.id);
+          if (spendState && (spendState.status === 'hard_limited' || spendState.status === 'suspended')) {
+            const topUpsEnabled = Boolean(this.config.usageBillingConfig?.creditTopUpsEnabled) && (planUsageForEnforcement?.topUpPackIds?.length ?? 0) > 0;
+            const code = spendState.status === 'suspended'
+              ? 'billing.account_suspended'
+              : (topUpsEnabled ? 'billing.top_up_required' : 'billing.limit_exceeded');
+            const message = spendState.status === 'suspended'
+              ? 'Account suspended — agent session start blocked'
+              : (topUpsEnabled
+                ? 'Usage limit reached — top-up required before agent can start'
+                : 'Usage limit reached — agent session start blocked');
+
+            logger.warn({ agentId: agent.id, userId: agent.userId, billingStatus: spendState.status }, 'Session launch blocked by billing spend state');
+            await this.agentRepo.updateAgent(agent.id, { status: 'stopped' });
+            await this.agentRepo.markSessionStopped(session.id, new Date());
+            await this.eventPublisher.emitGuardrailTriggered(agent.id, {
+              scope: 'agent_guardrail',
+              code,
+              message,
+              details: {
+                sessionId: session.id,
+                billingStatus: spendState.status,
+              },
+            });
+            await this.eventPublisher.emitInstanceStatus(agent.id, {
+              status: 'stopped',
+              reason: code,
+              updatedAt: new Date().toISOString(),
+            });
+            continue;
+          }
         }
 
         const provider = typeof modelPolicy?.['provider'] === 'string' ? modelPolicy['provider'] : undefined;
