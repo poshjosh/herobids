@@ -254,6 +254,7 @@ build_thyper_agent_payload() {
     --arg authorizationMode "direct" \
     --argjson platformAssessment "$PLATFORM_ASSESSMENT_3H" \
     --arg connectionId "$connection_id" \
+    --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
     '{
       name: $name,
       prompt: $prompt,
@@ -268,7 +269,8 @@ build_thyper_agent_payload() {
       authorizationMode: $authorizationMode,
       platformAssessment: $platformAssessment,
       connectionIds: [$connectionId],
-      executionDefaults: { mode: "shadow" }
+      executionDefaults: { mode: "shadow" },
+      telegramChatId: $telegramChatId
     }'
 }
 
@@ -287,6 +289,7 @@ build_t1inch_agent_payload() {
     --arg authorizationMode "approval_required" \
     --argjson platformAssessment "$PLATFORM_ASSESSMENT_3H" \
     --arg connectionId "$connection_id" \
+    --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
     '{
       name: $name,
       prompt: $prompt,
@@ -301,7 +304,8 @@ build_t1inch_agent_payload() {
       authorizationMode: $authorizationMode,
       platformAssessment: $platformAssessment,
       connectionIds: [$connectionId],
-      executionDefaults: { mode: "shadow" }
+      executionDefaults: { mode: "shadow" },
+      telegramChatId: $telegramChatId
     }'
 }
 
@@ -322,6 +326,7 @@ build_tplaybook_agent_payload() {
       --arg connectionId "$connection_id" \
       --arg skillId1 "$skill_id1" \
       --arg skillId2 "$skill_id2" \
+      --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
       '{
         name: $name,
         prompt: $prompt,
@@ -333,7 +338,8 @@ build_tplaybook_agent_payload() {
         authorizationMode: $authorizationMode,
         connectionIds: [$connectionId],
         skillIds: ["trading", $skillId1, $skillId2],
-        executionDefaults: { mode: "shadow" }
+        executionDefaults: { mode: "shadow" },
+        telegramChatId: $telegramChatId
       }'
   else
     jq -n \
@@ -346,6 +352,7 @@ build_tplaybook_agent_payload() {
       --arg executionVenue "hyperliquid" \
       --arg authorizationMode "direct" \
       --arg connectionId "$connection_id" \
+      --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
       '{
         name: $name,
         prompt: $prompt,
@@ -357,7 +364,8 @@ build_tplaybook_agent_payload() {
         authorizationMode: $authorizationMode,
         connectionIds: [$connectionId],
         skillIds: ["trading"],
-        executionDefaults: { mode: "shadow" }
+        executionDefaults: { mode: "shadow" },
+        telegramChatId: $telegramChatId
       }'
   fi
 }
@@ -414,6 +422,7 @@ build_non_trading_agent_payload() {
     --arg lightModel "$AGENT_LIGHT_MODEL" \
     --arg heavyModel "$AGENT_HEAVY_MODEL" \
     --arg tickIntervalMs "$tick_interval_ms" \
+    --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
     --argjson skillIds "$skill_ids_json" \
     '{
       name: $name,
@@ -423,7 +432,8 @@ build_non_trading_agent_payload() {
       heavyModel: $heavyModel,
       skillIds: $skillIds,
       tickIntervalMs: ($tickIntervalMs | tonumber),
-      runtimePolicyOverrides: { maxHoldDurationMs: 0 }
+      runtimePolicyOverrides: { maxHoldDurationMs: 0 },
+      telegramChatId: $telegramChatId
     }'
 }
 
