@@ -343,7 +343,8 @@ build_thyper_agent_payload() {
       executionVenue: $executionVenue,
       authorizationMode: $authorizationMode,
       platformAssessment: $platformAssessment,
-      connectionIds: [$connectionId]
+      connectionIds: [$connectionId],
+      executionDefaults: { mode: "shadow" }
     }'
 }
 
@@ -375,7 +376,8 @@ build_t1inch_agent_payload() {
       executionVenue: $executionVenue,
       authorizationMode: $authorizationMode,
       platformAssessment: $platformAssessment,
-      connectionIds: [$connectionId]
+      connectionIds: [$connectionId],
+      executionDefaults: { mode: "shadow" }
     }'
 }
 
@@ -406,7 +408,8 @@ build_tplaybook_agent_payload() {
         executionVenue: $executionVenue,
         authorizationMode: $authorizationMode,
         connectionIds: [$connectionId],
-        skillIds: ["trading", $skillId1, $skillId2]
+        skillIds: ["trading", $skillId1, $skillId2],
+        executionDefaults: { mode: "shadow" }
       }'
   else
     jq -n \
@@ -429,7 +432,8 @@ build_tplaybook_agent_payload() {
         executionVenue: $executionVenue,
         authorizationMode: $authorizationMode,
         connectionIds: [$connectionId],
-        skillIds: ["trading"]
+        skillIds: ["trading"],
+        executionDefaults: { mode: "shadow" }
       }'
   fi
 }
