@@ -64,6 +64,8 @@ export interface RawRuntimeSession {
   memoryBytes: number | null;
   startedAt: Date;
   stoppedAt: Date | null;
+  /** Human-readable reason the session stopped (guardrail, crash, timeout, etc.). null = graceful / user-initiated. */
+  stopReason: string | null;
 }
 
 export interface RawOutboundMessage {
@@ -156,9 +158,22 @@ const MESSAGE_CLASSIFICATIONS: Record<string, ActivityClassification> = {
   [INSTANCE_MESSAGE_TYPES.GUARDRAIL_TRIGGERED]: {
     category: 'risk',
     severity: 'warn',
-    eventType: 'decision.rejected',
+    eventType: 'guardrail.triggered',
     title: 'Guardrail triggered',
-    summaryFn: (row) => row.errorDetail?.message ?? 'A platform guardrail blocked or constrained agent activity.',
+    summaryFn: (row) => {
+      if (row.errorDetail?.message) return row.errorDetail.message;
+      const p = row.payload as Record<string, unknown> | null;
+      if (typeof p?.['message'] === 'string') return p['message'];
+      if (typeof p?.['code'] === 'string') {
+        const codeMessages: Record<string, string> = {
+          'billing.limit_exceeded': 'Daily spend limit reached — top up your account to resume.',
+          'billing.top_up_required': 'Usage limit reached — top-up required before agent can start.',
+          'billing.account_suspended': 'Account suspended — agent session start blocked.',
+        };
+        if (codeMessages[p['code']]) return codeMessages[p['code']];
+      }
+      return 'A platform guardrail blocked or constrained agent activity.';
+    },
   },
   [INSTANCE_MESSAGE_TYPES.TOOL_RESULT]: {
     category: 'tool',
@@ -450,17 +465,18 @@ export function mapRuntimeSession(session: RawRuntimeSession): AgentActivityEntr
     });
   }
 
-  // Session stopped normally
+  // Session stopped
   if (session.status === 'stopped' && session.stoppedAt) {
+    const hasStopReason = session.stopReason !== null;
     entries.push({
       id: `session-stopped-${session.id}`,
       agentId: session.agentId,
       timestamp: session.stoppedAt.toISOString(),
       category: 'runtime',
-      severity: 'info',
+      severity: hasStopReason ? 'warn' : 'info',
       eventType: 'runtime.started',
       title: 'Session stopped',
-      summary: 'Agent runtime shut down gracefully.',
+      summary: session.stopReason ?? 'Agent runtime shut down gracefully.',
       detail: { sessionStatus: session.status },
       sessionId: session.id,
       direction: null,
@@ -525,4 +541,50 @@ export function mapArtifact(artifact: RawArtifact): AgentActivityEntry {
     correlationId: null,
     traceId: null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Helper: resolve stop reasons from protocol messages for runtime sessions
+// ---------------------------------------------------------------------------
+
+/** Message types that indicate a non-graceful session stop. */
+const STOP_REASON_MESSAGE_TYPES = [
+  INSTANCE_MESSAGE_TYPES.GUARDRAIL_TRIGGERED,
+  AGENT_MESSAGE_TYPES.RUNTIME_SESSION_ENDED,
+] as const;
+
+/**
+ * Matches protocol messages to runtime sessions by timestamp proximity and agent ID.
+ * Returns a Map of sessionId → stopReason string.
+ *
+ * A message is matched to a session if:
+ * - The message's agentId matches the session's agentId
+ * - The message was created within ±5 seconds of the session's stoppedAt
+ * - The message has an errorDetail with a message
+ */
+export function resolveSessionStopReasons(
+  protocolRows: ReadonlyArray<RawAgentMessage>,
+  sessionRows: ReadonlyArray<RawRuntimeSession>,
+): Map<string, string> {
+  const reasons = new Map<string, string>();
+  const STOP_REASON_WINDOW_MS = 5_000;
+
+  for (const session of sessionRows) {
+    if (!session.stoppedAt) continue;
+    const stoppedAtMs = session.stoppedAt.getTime();
+
+    for (const msg of protocolRows) {
+      if (msg.agentId !== session.agentId) continue;
+      if (!STOP_REASON_MESSAGE_TYPES.includes(msg.type as typeof STOP_REASON_MESSAGE_TYPES[number])) continue;
+      if (!msg.errorDetail?.message) continue;
+
+      const msgTimeMs = msg.createdAt.getTime();
+      if (Math.abs(msgTimeMs - stoppedAtMs) <= STOP_REASON_WINDOW_MS) {
+        reasons.set(session.id, msg.errorDetail.message);
+        break; // first match wins
+      }
+    }
+  }
+
+  return reasons;
 }

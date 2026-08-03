@@ -19,6 +19,7 @@ import {
   mapRuntimeSession,
   isSuppressedProtocolMessageType,
   SUPPRESSED_PROTOCOL_MESSAGE_TYPES,
+  resolveSessionStopReasons,
 } from './agent-activity-mapper.js';
 import type { AgentActivityEntry } from './agent-activity-types.js';
 
@@ -393,8 +394,17 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
       entries.push(mapProtocolMessage(row as Parameters<typeof mapProtocolMessage>[0]));
     }
 
+    const sessionStopReasons = resolveSessionStopReasons(
+      protocolRows as Parameters<typeof resolveSessionStopReasons>[0],
+      sessionRows as Parameters<typeof resolveSessionStopReasons>[1],
+    );
+
     for (const session of sessionRows) {
-      const sessionEntries = mapRuntimeSession(session as Parameters<typeof mapRuntimeSession>[0]);
+      const sessionWithReason = {
+        ...session,
+        stopReason: sessionStopReasons.get(session.id) ?? null,
+      };
+      const sessionEntries = mapRuntimeSession(sessionWithReason as Parameters<typeof mapRuntimeSession>[0]);
       entries.push(...sessionEntries);
     }
 

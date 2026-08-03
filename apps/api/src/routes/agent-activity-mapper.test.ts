@@ -94,6 +94,7 @@ describe('mapRuntimeSession', () => {
       memoryBytes: 1024,
       startedAt: new Date('2026-06-11T12:00:00Z'),
       stoppedAt: null,
+      stopReason: null,
     };
     const entries = mapRuntimeSession(session);
     expect(entries.length).toBe(1);
@@ -111,6 +112,7 @@ describe('mapRuntimeSession', () => {
       memoryBytes: null,
       startedAt: new Date('2026-06-11T12:00:00Z'),
       stoppedAt: null,
+      stopReason: null,
     };
     const entries = mapRuntimeSession(session);
     expect(entries.length).toBe(2);
@@ -128,6 +130,7 @@ describe('mapRuntimeSession', () => {
       memoryBytes: null,
       startedAt: new Date('2026-06-11T12:00:00Z'),
       stoppedAt: new Date('2026-06-11T12:06:00Z'),
+      stopReason: null,
     };
     const entries = mapRuntimeSession(session);
     expect(entries.length).toBe(2);
@@ -146,6 +149,7 @@ describe('mapRuntimeSession', () => {
       memoryBytes: null,
       startedAt: new Date('2026-06-11T12:00:00Z'),
       stoppedAt: new Date('2026-06-11T12:10:00Z'),
+      stopReason: null,
     };
     const entries = mapRuntimeSession(session);
     expect(entries.length).toBe(2);
@@ -167,6 +171,7 @@ describe('mapRuntimeSession', () => {
       memoryBytes: null,
       startedAt: new Date('2026-06-11T12:00:00Z'),
       stoppedAt: new Date('2026-06-11T12:10:00Z'),
+      stopReason: null,
     });
 
     const stoppedEntries = mapRuntimeSession(makeSession('stopped'));
