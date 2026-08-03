@@ -427,6 +427,7 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
   strategy: unknown;
   risk: unknown;
   executionDefaults: unknown;
+  executionMode: string | null;
 } {
   const modelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
   const result: Record<string, unknown> = {
@@ -447,6 +448,10 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
     strategy: (agent as Record<string, unknown>)['strategy'] ?? null,
     risk: (agent as Record<string, unknown>)['risk'] ?? null,
     executionDefaults: (agent as Record<string, unknown>)['executionDefaults'] ?? null,
+    executionMode: typeof (agent as Record<string, unknown>)['executionDefaults'] === 'object'
+      && (agent as Record<string, unknown>)['executionDefaults'] !== null
+      ? ((agent as Record<string, unknown>)['executionDefaults'] as Record<string, unknown>)['mode'] as string ?? null
+      : null,
   };
   delete result['maxDrawdown'];
   return result as Omit<T, 'maxDrawdown'> & {
@@ -461,6 +466,7 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
     strategy: unknown;
     risk: unknown;
     executionDefaults: unknown;
+    executionMode: string | null;
   };
 }
 

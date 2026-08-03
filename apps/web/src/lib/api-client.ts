@@ -1054,7 +1054,7 @@ export interface Agent {
   /** WP4 canonical: shared ExecutionDefaults JSONB. */
   executionDefaults?: Record<string, unknown> | null;
   telegramChatId: string | null;
-  /** @deprecated Use risk JSONB (risk.dailyMaxLossPct) instead. */
+  /** Derived from executionDefaults.mode in API response. Prefer reading executionDefaults directly. */
   executionMode: string | null;
   /** @deprecated Use risk JSONB (risk.dailyMaxLossPct) instead. */
   dailyLossLimit: string | null;
