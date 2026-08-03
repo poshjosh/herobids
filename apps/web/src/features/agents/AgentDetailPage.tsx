@@ -318,6 +318,10 @@ export function AgentDetailPage() {
           </div>
         </Card>
 
+        {hasTradingCapability && (
+          <ApprovalsPanel agentId={id!} />
+        )}
+
         <Card>
           <details>
             <summary
@@ -431,10 +435,6 @@ export function AgentDetailPage() {
               </div>
             </details>
           </Card>
-        )}
-
-        {hasTradingCapability && (
-          <ApprovalsPanel agentId={id!} />
         )}
 
         {agent.activeSession && (

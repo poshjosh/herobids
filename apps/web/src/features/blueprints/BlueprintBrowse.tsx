@@ -41,11 +41,6 @@ const pillStyle: React.CSSProperties = {
   fontWeight: '500',
 };
 
-function formatScore(score: number): string {
-  if (score >= 1000) return `${(score / 1000).toFixed(1)}k`;
-  return String(score);
-}
-
 export function BlueprintBrowse({
   defaultKind,
   onUseBlueprint,
@@ -62,7 +57,7 @@ export function BlueprintBrowse({
     staleTime: 5 * 60 * 1000,
   });
   const canViewMarketplace = meQuery.data?.planEntitlements?.blueprints?.canViewMarketplaceBlueprints ?? true;
-  const canLikeByPlan = meQuery.data?.planEntitlements?.blueprints.canLikeMarketplaceBlueprints ?? true;
+  const canLikeByPlan = meQuery.data?.planEntitlements?.blueprints?.canLikeMarketplaceBlueprints ?? true;
   const currentUserId = meQuery.data?.id ?? '';
   const meLoading = meQuery.isLoading;
 
@@ -297,7 +292,6 @@ function BlueprintCard({
           <KV label="Likes" value={String(blueprint.likeCount)} />
         )}
         <KV label="Copies" value={String(blueprint.forkCount)} />
-        <KV label="Score" value={formatScore(blueprint.popularityScore)} />
       </div>
 
       {/* Like error feedback */}

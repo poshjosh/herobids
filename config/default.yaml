@@ -522,7 +522,7 @@ agentRuntime:
   #   when master switch is on; false = explicitly disabled).
   scanner:
     swap:
-      enabled: false            # DEFAULT: false — safe rollout. Set to true to enable DEX scanning.
+      enabled: true            # DEFAULT: false — safe rollout. Set to true to enable DEX scanning.
       venues:
         jupiter: true           # Enable Jupiter (Solana) scanning when master switch is on.
         1inch: true             # Enable 1inch (Base) scanning when master switch is on.
