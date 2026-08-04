@@ -1,4 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
+import crypto from 'node:crypto';
 import Fastify from 'fastify';
 import { BillingConfigSchema, PlansConfigSchema, UsageBillingConfigSchema } from '@herobids/domain';
 import { UsageBillingRepository, BillingRepository } from '@herobids/db';
@@ -1113,5 +1114,67 @@ describe('billing routes', () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.json().error).toBe('billing.top_up.processing_failed');
+  });
+
+  it('POST /billing/webhook/creem ignores non-top-up checkout.completed and does not run entitlement sync', async () => {
+    const webhookSecret = 'whsec_creem';
+    const billingConfig = BillingConfigSchema.parse({
+      primaryProvider: 'creem',
+      creem: {
+        apiKey: 'creem_test_xxx',
+        webhookSecret,
+        planProducts: {
+          starter: [
+            { creemProductId: 'prod_starter_monthly', interval: 'month', displayLabel: 'Starter Monthly', amountCents: 2000 },
+          ],
+        },
+      },
+    });
+    const plansConfig = PlansConfigSchema.parse({ defaultPlanId: 'free' });
+
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([])),
+    };
+
+    const processEventSpy = vi.spyOn(EntitlementSync.prototype, 'processEvent');
+
+    const app = Fastify();
+    app.decorateRequest('userId', '');
+    app.addHook('onRequest', async (request) => {
+      request.userId = 'user-1';
+    });
+    await billingRoutes(
+      app,
+      billingConfig,
+      plansConfig,
+      db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
+    );
+
+    // Non-top-up checkout.completed: a checkout object without checkoutKind='top_up'.
+    const payload = JSON.stringify({
+      id: 'evt_checkout_completed_1',
+      event_type: 'checkout.completed',
+      object: {
+        id: 'chk_123',
+        customer_id: 'cus_300',
+        product_id: 'prod_starter_monthly',
+        status: 'completed',
+      },
+    });
+    const signature = crypto.createHmac('sha256', webhookSecret).update(payload).digest('hex');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/billing/webhook/creem',
+      headers: { 'content-type': 'application/json', 'creem-signature': signature },
+      payload,
+    });
+
+    // Route must swallow the unsupported event type and never reach entitlement sync,
+    // so no spurious plan downgrade can be written.
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ received: true });
+    expect(processEventSpy).not.toHaveBeenCalled();
   });
 });

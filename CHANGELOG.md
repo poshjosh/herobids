@@ -8,6 +8,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## v0.0.42 - 2026-08-04
 
+### Fixed
+
+- **Creem checkout webhook entitlement regression:** Non-top-up `checkout.completed` events are no longer normalized as subscription entitlement events. This prevents false plan downgrades and checkout-ID subscription artifacts when Creem also sends authoritative subscription lifecycle webhooks. Top-up checkout flows remain supported via `top_up.completed` normalization. Added regression tests in `creem-provider.test.ts` and an endpoint-level test in `billing.test.ts` asserting `/billing/webhook/creem` returns 200 and skips entitlement sync for such events.
+
 ## v0.0.41 - 2026-08-04
 
 ## v0.0.40 - 2026-08-04

@@ -183,7 +183,6 @@ export class CreemProvider implements PaymentProvider {
 function mapCreemEventType(eventType: string): NormalizedWebhookEvent['type'] {
   switch (eventType) {
     case 'subscription.active':
-    case 'checkout.completed':
       return 'subscription.created';
     case 'subscription.paid':
     case 'subscription.update':
