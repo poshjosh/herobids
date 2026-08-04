@@ -1786,3 +1786,80 @@ export const blueprints = {
       method: 'DELETE',
     }),
 };
+
+// ── Chat (Guided Setup / Onboarding) ──────────────────────────────────────
+
+export interface ChatThread {
+  id: string;
+  title: string | null;
+  metadata: {
+    createdAgentId?: string;
+    completedAt?: string;
+    summary?: {
+      preset?: string;
+      venue?: string;
+      capital?: string;
+      connectionIds?: string[];
+      step?: string;
+    };
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  actions?: Array<{
+    id: string;
+    type: 'quick_replies' | 'form' | 'confirm';
+    options?: Array<{ label: string; value: string }>;
+    form?: string;
+    props?: Record<string, unknown>;
+  }> | null;
+  createdAt: string;
+}
+
+export interface CreateThreadResponse {
+  thread: Pick<ChatThread, 'id' | 'title' | 'createdAt'>;
+  message: ChatMessage;
+}
+
+export interface GetThreadResponse {
+  thread: ChatThread;
+  messages: ChatMessage[];
+}
+
+export interface SendMessageResponse {
+  message: ChatMessage;
+}
+
+export interface ActionResultResponse {
+  acknowledged: boolean;
+  message: ChatMessage;
+}
+
+export const chat = {
+  /** Create a new Guided Setup chat thread with initial greeting. */
+  createThread: () =>
+    request<CreateThreadResponse>('/chat/threads', { method: 'POST' }),
+
+  /** Get one chat thread with all persisted messages. */
+  getThread: (threadId: string) =>
+    request<GetThreadResponse>(`/chat/threads/${threadId}`),
+
+  /** Send a user message and get the assistant response. */
+  sendMessage: (threadId: string, content: string) =>
+    request<SendMessageResponse>(`/chat/threads/${threadId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    }),
+
+  /** Submit a form action result (e.g., connection created). */
+  submitActionResult: (threadId: string, actionId: string, result: unknown) =>
+    request<ActionResultResponse>(`/chat/threads/${threadId}/actions/${actionId}`, {
+      method: 'POST',
+      body: JSON.stringify({ result }),
+    }),
+};
