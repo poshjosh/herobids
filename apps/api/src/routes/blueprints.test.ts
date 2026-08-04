@@ -7,7 +7,7 @@ import type { Database } from '@herobids/db';
 import type { AgentRiskDefaultsConfig, BlueprintExecutionCapabilityResolver, PlansConfig } from '@herobids/domain';
 import { createTableAwareDb } from '../__tests__/helpers/table-aware-db-mock.js';
 import { buildBlueprint, buildPublishedBlueprint, buildDraftBlueprint, buildRevision, buildRevisionSkill, buildLike, buildAgentPayload, buildBotPayload, BP_ID, REV_ID, USER_ID, OTHER_USER_ID } from '../__tests__/helpers/blueprint-fixtures.js';
-import { blueprints, blueprintRevisions, blueprintRevisionSkills, blueprintLikes, blueprintForkRequests, skills, skillRevisions } from '@herobids/db';
+import { blueprints, blueprintRevisions, blueprintRevisionSkills, blueprintLikes, blueprintForkRequests, skills, skillRevisions, bots, connections } from '@herobids/db';
 import { computeInstantiateRequestHash } from '../services/blueprint-idempotency.js';
 
 // Strategy preset YAML files are resolved relative to HEROBIDS_CONFIG_DIR or cwd.
@@ -1441,56 +1441,31 @@ describe('POST /blueprints/:id/publish', () => {
 });
 
 // ─── POST /bots with blueprintId ─────────────────────────────────────────
-// TODO (006-blueprint-unit-tests-schema-migration-debt): Rewrite tests against
-// the new blueprint schema (no configData/configSnapshot, revision-based payload).
 
-describe.skip('POST /bots with blueprintId', () => {
+describe('POST /bots with blueprintId', () => {
   const mockRedis = {
     xadd: vi.fn().mockResolvedValue(undefined),
   } as unknown as import('ioredis').Redis;
 
-  it('creates bot from blueprint and stores configSnapshot', async () => {
+  it('creates bot from blueprint and returns 201', async () => {
     const { botRoutes } = await import('./bots.js');
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
-    let capturedBotValues: Record<string, unknown> | null = null;
-    let selectCallCount = 0;
-    const db = {
-      // Blueprint lookup outside transaction
-      select: vi.fn().mockImplementation(() => {
-        selectCallCount++;
-        if (selectCallCount === 1) {
-          // Blueprint lookup: return stubBlueprint
-          return makeChain([{ id: BLUEPRINT_ID, configData: stubBlueprint.configData }]);
-        }
-        // Final select to fetch inserted bot
-        return makeChain([{
-          id: 'new-bot',
-          userId: TEST_USER_ID,
-          blueprintId: BLUEPRINT_ID,
-          configSnapshot: stubBlueprint.configData,
-          config: stubBlueprint.configData,
-          status: 'stopped',
-        }]);
-      }),
-      transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-        const tx = {
-          execute: vi.fn().mockResolvedValue({ rows: [] }),
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue([{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active', resolvedVenueAccountId: 'va-1' }]),
-            }),
-          }),
-          insert: vi.fn().mockReturnValue({
-            values: vi.fn().mockImplementation((vals: Record<string, unknown>) => {
-              capturedBotValues = vals;
-              return Promise.resolve(undefined);
-            }),
-          }),
-        };
-        return callback(tx);
-      }),
-    } as unknown as Database;
+    const dbMock = createTableAwareDb();
+    // First select: blueprint lookup via innerJoin — dispatches on the blueprints table.
+    // Drizzle aliases blueprintRevisions.payload as configData, so the row key is "configData".
+    // Use buildBotPayload() — BotConfigSchema requires risk to be an object, not null.
+    dbMock.setTableRows(blueprints, [[{ id: BP_ID, configData: buildBotPayload() }]]);
+    // Transaction: connection lookup for ownership verification
+    dbMock.setTableRows(connections, [[{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active', resolvedVenueAccountId: 'va-1' }]]);
+    // Transaction: checkBotLimit queries bots (returns empty — no bots yet)
+    // Post-tx: fetch the inserted bot
+    dbMock.setTableRows(bots, [
+      [],
+      [{ id: 'new-bot', userId: TEST_USER_ID, blueprintId: BP_ID, status: 'stopped' }],
+    ]);
+
+    const db = dbMock.build();
 
     const { PlansConfigSchema } = await import('@herobids/domain');
     const plansConfig = PlansConfigSchema.parse({});
@@ -1511,13 +1486,11 @@ describe.skip('POST /bots with blueprintId', () => {
         connectionId: 'tb-1',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
-        blueprintId: BLUEPRINT_ID,
+        blueprintId: BP_ID,
       },
     });
 
     expect(res.statusCode).toBe(201);
-    expect(capturedBotValues?.['blueprintId']).toBe(BLUEPRINT_ID);
-    expect(capturedBotValues?.['configSnapshot']).toBeDefined();
     // Deprecation header should NOT be set when using blueprintId
     expect(res.headers['deprecation']).toBeUndefined();
   });
@@ -1526,10 +1499,11 @@ describe.skip('POST /bots with blueprintId', () => {
     const { botRoutes } = await import('./bots.js');
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
-    const db = {
-      // Blueprint lookup returns nothing
-      select: vi.fn().mockImplementation(() => makeChain([])),
-    } as unknown as Database;
+    const dbMock = createTableAwareDb();
+    // Blueprint lookup returns nothing — dispatches on blueprints table
+    dbMock.setTableRows(blueprints, [[]]);
+
+    const db = dbMock.build();
 
     const { PlansConfigSchema } = await import('@herobids/domain');
     const plansConfig = PlansConfigSchema.parse({});
@@ -1562,19 +1536,17 @@ describe.skip('POST /bots with blueprintId', () => {
     const { botRoutes } = await import('./bots.js');
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
-    const db = {
-      select: vi.fn().mockImplementation(() => makeChain([{ id: 'new-bot', userId: TEST_USER_ID, status: 'stopped' }])),
-      transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-        const tx = {
-          execute: vi.fn().mockResolvedValue({ rows: [] }),
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active', resolvedVenueAccountId: 'va-1' }]) }),
-          }),
-          insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
-        };
-        return callback(tx);
-      }),
-    } as unknown as Database;
+    const dbMock = createTableAwareDb();
+    // Transaction: connection lookup for ownership verification
+    dbMock.setTableRows(connections, [[{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active', resolvedVenueAccountId: 'va-1' }]]);
+    // Transaction: checkBotLimit queries bots (returns empty — no bots yet)
+    // Post-tx: fetch the inserted bot
+    dbMock.setTableRows(bots, [
+      [],
+      [{ id: 'new-bot', userId: TEST_USER_ID, status: 'stopped' }],
+    ]);
+
+    const db = dbMock.build();
 
     const { PlansConfigSchema } = await import('@herobids/domain');
     const plansConfig = PlansConfigSchema.parse({});
@@ -1606,7 +1578,8 @@ describe.skip('POST /bots with blueprintId', () => {
   it('returns 400 when configOverrides is supplied without blueprintId', async () => {
     const { botRoutes } = await import('./bots.js');
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
-    const db = {} as unknown as Database;
+
+    const db = createTableAwareDb().build();
 
     const { PlansConfigSchema } = await import('@herobids/domain');
     const plansConfig = PlansConfigSchema.parse({});
@@ -1643,25 +1616,29 @@ describe.skip('POST /bots with blueprintId', () => {
     const { PlansConfigSchema } = await import('@herobids/domain');
     const plansConfig = PlansConfigSchema.parse({});
 
-    const db = {
-      // Blueprint lookup returns the blueprint (it exists at pre-transaction check time).
-      select: vi.fn().mockImplementation(() =>
-        makeChain([{ id: BLUEPRINT_ID, configData: stubBlueprint.configData }]),
-      ),
-      transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-        const tx = {
-          execute: vi.fn().mockResolvedValue({ rows: [] }),
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active', resolvedVenueAccountId: 'va-1' }]) }),
+    const dbMock = createTableAwareDb();
+    // Blueprint lookup (pre-tx) returns the blueprint — it exists at check time.
+    // Drizzle aliases blueprintRevisions.payload as configData.
+    // Use buildBotPayload() — BotConfigSchema requires risk to be an object, not null.
+    dbMock.setTableRows(blueprints, [[{ id: BP_ID, configData: buildBotPayload() }]]);
+
+    const db = dbMock.build();
+
+    // Override transaction to simulate FK violation on insert inside the tx
+    db.transaction = vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        execute: vi.fn().mockResolvedValue({ rows: [] }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active', resolvedVenueAccountId: 'va-1' }]),
           }),
-          insert: vi.fn().mockReturnValue({
-            // Simulate the FK violation thrown when blueprint is deleted concurrently.
-            values: vi.fn().mockRejectedValue(Object.assign(new Error('FK violation'), { code: '23503' })),
-          }),
-        };
-        return callback(tx);
-      }),
-    } as unknown as Database;
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockRejectedValue(Object.assign(new Error('FK violation'), { code: '23503' })),
+        }),
+      };
+      return callback(tx);
+    });
 
     const app = Fastify();
     app.decorateRequest('userId', '');
@@ -1679,11 +1656,44 @@ describe.skip('POST /bots with blueprintId', () => {
         connectionId: 'tb-1',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
-        blueprintId: BLUEPRINT_ID,
+        blueprintId: BP_ID,
       },
     });
 
     expect(res.statusCode).toBe(404);
     expect(res.json().message).toMatch(/blueprint/i);
+  });
+
+  it('returns 400 when both blueprintId and config are supplied', async () => {
+    const { botRoutes } = await import('./bots.js');
+    const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
+    const { PlansConfigSchema } = await import('@herobids/domain');
+    const plansConfig = PlansConfigSchema.parse({});
+
+    const db = createTableAwareDb().build();
+
+    const app = Fastify();
+    app.decorateRequest('userId', '');
+    app.decorateRequest('userPlanId', '');
+    app.addHook('onRequest', async (request) => {
+      request.userId = TEST_USER_ID;
+      request.userPlanId = 'free';
+    });
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, plansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/bots',
+      payload: {
+        connectionId: 'tb-1',
+        venue: 'hyperliquid',
+        symbol: 'BTC-PERP',
+        blueprintId: BP_ID,
+        config: { strategy: { type: 'momentum' }, symbol: 'BTC-PERP' },
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
   });
 });
