@@ -5,6 +5,9 @@ import { dirname, resolve } from 'node:path';
 import { blueprintRoutes } from './blueprints.js';
 import type { Database } from '@herobids/db';
 import type { AgentRiskDefaultsConfig, BlueprintExecutionCapabilityResolver, PlansConfig } from '@herobids/domain';
+import { createTableAwareDb } from '../__tests__/helpers/table-aware-db-mock.js';
+import { buildBlueprint, buildPublishedBlueprint, buildDraftBlueprint, buildRevision, buildRevisionSkill, buildLike, BP_ID, REV_ID, USER_ID, OTHER_USER_ID } from '../__tests__/helpers/blueprint-fixtures.js';
+import { blueprints, blueprintRevisions, blueprintRevisionSkills, blueprintLikes } from '@herobids/db';
 
 // Strategy preset YAML files are resolved relative to HEROBIDS_CONFIG_DIR or cwd.
 // In test, cwd is the package dir (apps/api), so we must point to the repo root.
@@ -304,13 +307,22 @@ describe('POST /blueprints/from-preset', () => {
 });
 
 // ─── GET /blueprints ───────────────────────────────────────────────────────
-// TODO (006-blueprint-unit-tests-schema-migration-debt): Rewrite tests against
-// the new revision-based blueprint API (BlueprintSummarySchema, cursor pagination,
-// published-only filtering).
 
-describe.skip('GET /blueprints', () => {
-  it('returns 200 with user blueprints', async () => {
-    const db = buildDb([stubBlueprint]);
+describe('GET /blueprints', () => {
+  // NOTE: SQL-level WHERE clause filtering (publicationStatus, kind, etc.) is NOT
+  // tested here — it's owned by blueprints.integration.test.ts. These tests cover
+  // routing-layer behavior: response shape, auth gates, and entitlement checks.
+
+  it('returns published blueprints with items and nextCursor', async () => {
+    const publishedBp = buildPublishedBlueprint();
+    const publishedRev = buildRevision();
+
+    const dbMock = createTableAwareDb();
+    dbMock.setTableRows(blueprints, [[publishedBp]]);
+    dbMock.setTableRows(blueprintRevisions, [[publishedRev]]);
+    dbMock.setTableRows(blueprintLikes, [[]]);
+    const db = dbMock.build();
+
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
@@ -318,7 +330,103 @@ describe.skip('GET /blueprints', () => {
     const res = await app.inject({ method: 'GET', url: '/blueprints' });
     expect(res.statusCode).toBe(200);
     const body = res.json();
+    expect(body).toHaveProperty('items');
+    expect(body).toHaveProperty('nextCursor');
+    expect(body.nextCursor).toBeNull();
     expect(Array.isArray(body.items)).toBe(true);
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0].id).toBe(BP_ID);
+    expect(body.items[0].kind).toBe('agent');
+  });
+
+  it('accepts kind query param without error', async () => {
+    const publishedBp = buildPublishedBlueprint({ kind: 'agent' });
+    const publishedRev = buildRevision({ kind: 'agent' });
+
+    // kind=agent — matching blueprint exists
+    {
+      const dbMock = createTableAwareDb();
+      dbMock.setTableRows(blueprints, [[publishedBp]]);
+      dbMock.setTableRows(blueprintRevisions, [[publishedRev]]);
+      dbMock.setTableRows(blueprintLikes, [[]]);
+      const db = dbMock.build();
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+      const res = await app.inject({ method: 'GET', url: '/blueprints?kind=agent' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().items).toHaveLength(1);
+      expect(res.json().items[0].id).toBe(BP_ID);
+    }
+
+    // kind=bot — no matching blueprints
+    {
+      const dbMock = createTableAwareDb();
+      dbMock.setTableRows(blueprints, [[]]);
+      dbMock.setTableRows(blueprintRevisions, [[]]);
+      dbMock.setTableRows(blueprintLikes, [[]]);
+      const db = dbMock.build();
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+      const res = await app.inject({ method: 'GET', url: '/blueprints?kind=bot' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().items).toHaveLength(0);
+    }
+  });
+
+  it('returns 403 for plan without marketplace access', async () => {
+    const publishedBp = buildPublishedBlueprint();
+    const publishedRev = buildRevision();
+
+    const dbMock = createTableAwareDb();
+    dbMock.setTableRows(blueprints, [[publishedBp]]);
+    dbMock.setTableRows(blueprintRevisions, [[publishedRev]]);
+    dbMock.setTableRows(blueprintLikes, [[]]);
+    const db = dbMock.build();
+
+    const restrictedPlansConfig: PlansConfig = {
+      defaultPlanId: 'free',
+      plans: {
+        free: {
+          ...testPlansConfig.plans.free,
+          entitlements: {
+            ...testPlansConfig.plans.free.entitlements,
+            blueprints: {
+              canViewMarketplaceBlueprints: false,
+              canLikeMarketplaceBlueprints: true,
+            },
+          },
+        },
+      },
+    };
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, restrictedPlansConfig);
+
+    const res = await app.inject({ method: 'GET', url: '/blueprints' });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('returns empty items when no published blueprints exist', async () => {
+    const dbMock = createTableAwareDb();
+    dbMock.setTableRows(blueprints, [[]]);
+    dbMock.setTableRows(blueprintRevisions, [[]]);
+    dbMock.setTableRows(blueprintLikes, [[]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({ method: 'GET', url: '/blueprints' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().items).toHaveLength(0);
   });
 });
 
@@ -373,39 +481,93 @@ describe.skip('POST /blueprints', () => {
 });
 
 // ─── GET /blueprints/:id ──────────────────────────────────────────────────
-// TODO (006-blueprint-unit-tests-schema-migration-debt): Rewrite tests against
-// the new resolveTargetRevision-based lookup (blueprints + blueprintRevisions join).
 
-describe.skip('GET /blueprints/:id', () => {
-  it('returns 200 for owned blueprint', async () => {
-    const db = buildDb([stubBlueprint]);
+describe('GET /blueprints/:id', () => {
+  it('returns 200 for owned draft blueprint', async () => {
+    const draftBp = buildDraftBlueprint({ authorId: TEST_USER_ID });
+    const draftRev = buildRevision({ blueprintId: BP_ID, createdByUserId: TEST_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    dbMock.setTableRows(blueprints, [[draftBp]]);
+    dbMock.setTableRows(blueprintRevisions, [[draftRev]]);
+    dbMock.setTableRows(blueprintLikes, [[]]);
+    dbMock.setTableRows(blueprintRevisionSkills, [[]]);
+    const db = dbMock.build();
+
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
 
-    const res = await app.inject({ method: 'GET', url: `/blueprints/${BLUEPRINT_ID}` });
+    const res = await app.inject({ method: 'GET', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(200);
-    expect(res.json().id).toBe(BLUEPRINT_ID);
+    expect(res.json().id).toBe(BP_ID);
   });
 
-  it('returns 200 for public blueprint owned by another user', async () => {
-    const publicBlueprint = { ...stubBlueprint, authorId: 'other-user', publicationStatus: 'published' };
-    const db = buildDb([publicBlueprint]);
+  it('returns 200 for published blueprint owned by another user', async () => {
+    const publishedBp = buildPublishedBlueprint({ authorId: OTHER_USER_ID });
+    const publishedRev = buildRevision({ blueprintId: BP_ID, createdByUserId: OTHER_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    dbMock.setTableRows(blueprints, [[publishedBp]]);
+    dbMock.setTableRows(blueprintRevisions, [[publishedRev]]);
+    dbMock.setTableRows(blueprintLikes, [[]]);
+    dbMock.setTableRows(blueprintRevisionSkills, [[]]);
+    const db = dbMock.build();
+
     const app = Fastify();
-    decorateWithAuth(app, TEST_USER_ID);
+    decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
 
-    const res = await app.inject({ method: 'GET', url: `/blueprints/${BLUEPRINT_ID}` });
+    const res = await app.inject({ method: 'GET', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(200);
   });
 
-  it('returns 404 for private blueprint owned by another user', async () => {
-    const db = buildDb([]); // DB returns nothing (query excludes private other-user rows)
+  it('returns 404 for draft blueprint owned by another user', async () => {
+    const draftBp = buildDraftBlueprint({ authorId: OTHER_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    // resolveTargetRevision queries blueprints first; non-owner + draft → NOT_FOUND before revision select
+    dbMock.setTableRows(blueprints, [[draftBp]]);
+    const db = dbMock.build();
+
     const app = Fastify();
-    decorateWithAuth(app, TEST_USER_ID);
+    decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
 
-    const res = await app.inject({ method: 'GET', url: `/blueprints/${BLUEPRINT_ID}` });
+    const res = await app.inject({ method: 'GET', url: `/blueprints/${BP_ID}` });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 409 for delisted blueprint accessed by owner', async () => {
+    const delistedBp = buildBlueprint({ publicationStatus: 'delisted', authorId: TEST_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    // resolveTargetRevision: owner + delisted → LIFECYCLE_CONFLICT before revision select
+    dbMock.setTableRows(blueprints, [[delistedBp]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({ method: 'GET', url: `/blueprints/${BP_ID}` });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('blueprint.lifecycle_conflict');
+  });
+
+  it('returns 404 for delisted blueprint accessed by non-owner', async () => {
+    const delistedBp = buildBlueprint({ publicationStatus: 'delisted', authorId: OTHER_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    // resolveTargetRevision: non-owner + delisted → NOT_FOUND before revision select
+    dbMock.setTableRows(blueprints, [[delistedBp]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({ method: 'GET', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(404);
   });
 });
