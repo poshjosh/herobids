@@ -1,6 +1,6 @@
 ## Plan: Rewrite Blueprint Unit Tests For The Revision-Based API
 
-**Status:** Proposed
+**Status:** Implemented (2026-08-04)
 **Scope:** Rewrite `apps/api/src/routes/blueprints.test.ts` so it matches the current revision-based blueprint API, diagnose (not assume) the three currently-skipped preset/default failures, and re-enable the legacy CRUD groups that were skipped during the schema migration. Net-new lifecycle/like endpoints that never had unit coverage are explicitly out of scope for this pass (see "Out Of Scope").
 
 **Depends on:**
@@ -165,3 +165,35 @@ Then run the full file and `pnpm lint`.
 
 - Step 1 is complete (see step 1 above for the full diagnosis and fix). No separate bug report was filed since the fixes were small and made directly as part of this plan; file one retroactively if that traceability is needed.
 - The fork and publish flows both call `refreshForkCount`/`refreshLikeCount`/`recomputeBlueprintScores` post-commit, which run additional raw `sql` queries against `db`. Confirm the table-aware mock's default zero-count behavior doesn't mask a real assertion — tests that care about the resulting `likeCount`/`forkCount`/scores should override those specific `execute` responses explicitly.
+
+---
+
+## Outstanding Issues (Post-Implementation)
+
+### Step 5 — Listing and Detail Tests
+- **M2 (MEDIUM):** Missing "private" and "archived" status tests for `GET /blueprints/:id`. The plan says "non-owner 404 for draft/private/delisted/archived" but only draft and delisted are covered.
+- **M3 (MEDIUM):** `buildAgentPayload` uses `as AgentBlueprintRevisionPayload` cast. If schema changes, cast could hide mismatches. Tests catch this at `BlueprintDetailSchema.parse()` time.
+- **L1 (LOW):** `db.execute` and `tx.execute` have inconsistent result spreading in `table-aware-db-mock.ts`.
+
+### Step 7 — Delete Tests
+- **M5 (MEDIUM):** Missing admin bypass of ownership check test.
+- **L1 (LOW):** Test 1 doesn't verify `db.transaction` was called (happy path could pass without transaction).
+- **L2 (LOW):** `BP_ID` differs from legacy `BLUEPRINT_ID` — two blueprint ID constants in the file.
+
+### Step 8 — Fork Tests
+- **L1 (LOW):** Happy path doesn't assert fork name.
+- **L2 (LOW):** 404 test doesn't assert error code in body.
+- **L3 (LOW):** No boundary test for Idempotency-Key at max 200 chars.
+
+### Step 9 — Publish Tests
+- **M1 (MEDIUM):** Missing test for `currentRevisionId` pointing to nonexistent revision → 409.
+- **M2 (MEDIUM):** Handler dead code: null `currentRevisionId` check unreachable (step 6 fires after step 5 mismatch). Handler bug, not test bug.
+- **M3 (MEDIUM):** No TODO/skip comment documenting `DEPENDENCY_UNAVAILABLE` gap.
+- **L1 (LOW):** Comment typo: "step 12" should be "step 10".
+- **L2 (LOW):** Only covers agent kind; bot publish path not tested.
+
+### Step 10 — Bot-with-Blueprint Tests
+- **M1 (MEDIUM):** Test 1 doesn't verify `blueprintId` in response body.
+- **M2 (MEDIUM):** Missing `configOverrides` merge behavior test.
+- **M3 (MEDIUM):** Missing non-owner accessing private/draft blueprint → 404.
+- **L1–L4 (LOW):** Mock fidelity/documentation nits.
