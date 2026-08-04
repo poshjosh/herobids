@@ -34,12 +34,8 @@ export function LandingPagePlaceholder() {
       <div style={{ marginBottom: '16px' }}>
         <BrandLogo display="full" variant="auto" size="lg" />
       </div>
-      <div style={{ fontSize: '18px', color: 'var(--color-text-secondary)', marginBottom: '8px', maxWidth: '480px' }}>
-        AI agents as a service. Describe what you want, and an agent gets it for you.
-      </div>
-      {/* TODO: i18n */}
-      <div style={{ fontSize: '14px', color: 'var(--color-text-muted)', marginBottom: '32px' }}>
-        Crypto trading • Personal assistance • And more
+      <div style={{ fontSize: '18px', color: 'var(--color-text-secondary)', marginBottom: '32px', maxWidth: '480px' }}>
+        Low cost AI agents that trade, assist, research and more
       </div>
       <div style={{ display: 'flex', gap: '12px' }}>
         <Link
