@@ -1300,65 +1300,142 @@ describe('POST /blueprints/:id/fork', () => {
   });
 });
 
-// ─── POST /blueprints/:id/publish and /unpublish ──────────────────────────
-// TODO (006-blueprint-unit-tests-schema-migration-debt): Rewrite tests against
-// the new PublishBlueprintSchema (expectedCurrentRevisionId) and revision-based
-// lifecycle.
+// ─── POST /blueprints/:id/publish ─────────────────────────────────────────
 
-describe.skip('POST /blueprints/:id/publish and /unpublish', () => {
-  it('publish returns 200 with visibility=public', async () => {
-    const tx = {
-      execute: vi.fn().mockResolvedValue({ rows: [] }),
-      select: vi.fn().mockImplementation(() => makeChain([stubBlueprint])),
-      update: vi.fn().mockReturnValue({
-        set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
-      }),
-    };
-    const db = {
-      transaction: vi.fn().mockImplementation(async (callback: (innerTx: typeof tx) => Promise<unknown>) => callback(tx)),
-    } as unknown as Database;
+describe('POST /blueprints/:id/publish', () => {
+  it('returns 200 with published status for a draft blueprint', async () => {
+    const draftBp = buildDraftBlueprint({ id: BP_ID, authorId: TEST_USER_ID, currentRevisionId: REV_ID });
+    const revision = buildRevision({ id: REV_ID, blueprintId: BP_ID });
+    const publishedBp = buildPublishedBlueprint({
+      id: BP_ID,
+      authorId: TEST_USER_ID,
+      publishedRevisionId: REV_ID,
+      currentRevisionId: REV_ID,
+    });
+
+    const dbMock = createTableAwareDb();
+    // Pre-tx blueprints select (step 2) + post-tx blueprints select (step 10)
+    dbMock.setTableRows(blueprints, [[draftBp], [publishedBp]]);
+    // Revision select (step 7)
+    dbMock.setTableRows(blueprintRevisions, [[revision]]);
+    // getRevisionSkillRefs (step 8) + buildBlueprintDetail getRevisionSkillRefs (step 12)
+    dbMock.setTableRows(blueprintRevisionSkills, [[], []]);
+    const db = dbMock.build();
+
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
 
-    const res = await app.inject({ method: 'POST', url: `/blueprints/${BLUEPRINT_ID}/publish` });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/publish`,
+      payload: { expectedCurrentRevisionId: REV_ID },
+    });
     expect(res.statusCode).toBe(200);
-    expect(res.json().visibility).toBe('public');
+    const body = res.json();
+    expect(body.publicationStatus).toBe('published');
+    expect(body.publishedAt).not.toBeNull();
+    expect(body.publishedRevisionId).toBe(REV_ID);
   });
 
-  it('unpublish returns 200 with visibility=private', async () => {
-    const tx = {
-      execute: vi.fn().mockResolvedValue({ rows: [] }),
-      select: vi.fn().mockImplementation(() => makeChain([{ ...stubBlueprint, visibility: 'public' }])),
-      update: vi.fn().mockReturnValue({
-        set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
-      }),
-    };
-    const db = {
-      transaction: vi.fn().mockImplementation(async (callback: (innerTx: typeof tx) => Promise<unknown>) => callback(tx)),
-    } as unknown as Database;
+  it('returns 409 when expectedCurrentRevisionId does not match', async () => {
+    const draftBp = buildDraftBlueprint({ id: BP_ID, authorId: TEST_USER_ID, currentRevisionId: REV_ID });
+
+    const dbMock = createTableAwareDb();
+    // Only 1 blueprints select needed (rejects before transaction)
+    dbMock.setTableRows(blueprints, [[draftBp]]);
+    const db = dbMock.build();
+
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
 
-    const res = await app.inject({ method: 'POST', url: `/blueprints/${BLUEPRINT_ID}/unpublish` });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().visibility).toBe('private');
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/publish`,
+      payload: { expectedCurrentRevisionId: 'wrong-rev-id' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('blueprint.revision_stale');
   });
 
-  it('publish returns 404 for blueprint not owned by the user', async () => {
-    const tx = {
-      execute: vi.fn().mockResolvedValue({ rows: [] }),
-      select: vi.fn().mockImplementation(() => makeChain([])),
-    };
-    const db = {
-      transaction: vi.fn().mockImplementation(async (callback: (innerTx: typeof tx) => Promise<unknown>) => callback(tx)),
-    } as unknown as Database;
+  it('returns 409 for disallowed transition (archived → published)', async () => {
+    const archivedBp = buildBlueprint({
+      id: BP_ID,
+      authorId: TEST_USER_ID,
+      publicationStatus: 'archived',
+      archivedAt: new Date(),
+      currentRevisionId: REV_ID,
+    });
+
+    const dbMock = createTableAwareDb();
+    dbMock.setTableRows(blueprints, [[archivedBp]]);
+    const db = dbMock.build();
+
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
 
-    const res = await app.inject({ method: 'POST', url: `/blueprints/${BLUEPRINT_ID}/publish` });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/publish`,
+      payload: { expectedCurrentRevisionId: REV_ID },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('blueprint.lifecycle_conflict');
+  });
+
+  it('returns 400 when body is missing expectedCurrentRevisionId', async () => {
+    const dbMock = createTableAwareDb();
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/publish`,
+      payload: {},
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
+
+  it('returns 403 for non-owner caller', async () => {
+    const draftBp = buildDraftBlueprint({ id: BP_ID, authorId: OTHER_USER_ID, currentRevisionId: REV_ID });
+
+    const dbMock = createTableAwareDb();
+    dbMock.setTableRows(blueprints, [[draftBp]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/publish`,
+      payload: { expectedCurrentRevisionId: REV_ID },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('blueprint.forbidden');
+  });
+
+  it('returns 404 for nonexistent blueprint', async () => {
+    const dbMock = createTableAwareDb();
+    dbMock.setTableRows(blueprints, [[]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/publish`,
+      payload: { expectedCurrentRevisionId: REV_ID },
+    });
     expect(res.statusCode).toBe(404);
   });
 });
