@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and, asc, desc, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
-import { chatThreads, chatMessages, connections, agentConnections, agents } from '@herobids/db';
+import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skillRevisions } from '@herobids/db';
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml } from '@herobids/domain';
@@ -221,7 +221,35 @@ function now(): Date {
   return new Date();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+/**
+ * Resolve skill IDs from a skill preset ID.
+ * Mirrors the logic in apps/web/src/features/agents/agent-display.ts
+ * to keep the chat-created agents consistent with form-created agents.
+ */
+function resolveSkillPresetSkillIds(skillPresetId: string): string[] {
+  // System skill IDs — these are seeded by syncSystemSkills at API startup.
+  // The IDs must match what the existing form uses.
+  const PRESET_SKILL_MAP: Record<string, string[]> = {
+    trading: ['skill-trading', 'skill-market-data', 'skill-portfolio'],
+    'direct-trading': ['skill-trading', 'skill-market-data'],
+    'trading-assistant': ['skill-trading-assistant', 'skill-market-data'],
+    'personal-assistant': ['skill-personal-assistant'],
+    custom: [],
+  };
+  return PRESET_SKILL_MAP[skillPresetId] ?? [];
+}
+
+/**
+ * Derive capabilityMode from skillPresetId.
+ * 'trading' presets → 'hybrid', others → 'intelligence'.
+ */
+function deriveCapabilityMode(skillPresetId: string): 'intelligence' | 'hybrid' {
+  if (['trading', 'direct-trading', 'trading-assistant'].includes(skillPresetId)) {
+    return 'hybrid';
+  }
+  return 'intelligence';
+}
+
 function generateAgentName(preset: string): string {
   const prefix = preset === 'personal-assistant' ? 'PA' : preset === 'trading' ? 'TX' : 'AG';
   const suffix = crypto.randomBytes(2).toString('hex').toUpperCase();
@@ -250,6 +278,7 @@ function mapExecutionMode(requestedMode: string | undefined): { mode: 'paper' | 
 
 /**
  * Build the full CreateAgentSchema payload from the guided setup input + server-side defaults.
+ * Includes skillIds derived from skillPresetId, capabilityMode, and strategy identity.
  */
 function buildCreateAgentPayload(
   input: z.infer<typeof GuidedSetupCreateAgentInput>,
@@ -260,8 +289,15 @@ function buildCreateAgentPayload(
   const name = generateAgentName(input.skillPresetId);
   const style = input.style ?? 'balanced';
   const strategyPreset = input.strategyPreset ?? 'momentum';
+  const capabilityMode = deriveCapabilityMode(input.skillPresetId);
+  const skillIds = resolveSkillPresetSkillIds(input.skillPresetId);
 
   const connectionIds = input.selectedConnectionId ? [input.selectedConnectionId] : [];
+
+  const strategy = capabilityMode === 'hybrid' ? {
+    type: strategyPreset,
+    decisionMode: capabilityMode === 'hybrid' ? 'hybrid' : undefined,
+  } : null;
 
   return {
     name,
@@ -269,7 +305,10 @@ function buildCreateAgentPayload(
     style,
     capital: input.capital,
     skillPresetId: input.skillPresetId,
+    skillIds,
+    capabilityMode,
     strategyPreset,
+    strategy,
     executionDefaults,
     connectionIds,
     userId,
@@ -417,39 +456,125 @@ async function executeChatAction(
       }
 
       const payload = buildCreateAgentPayload(parsed.data, userId);
+      const agentId = uuid();
+      const timestamp = now();
+      const connectionIds = (payload.connectionIds as string[]) ?? [];
 
       try {
-        // Insert agent
-        const agentId = uuid();
-        const timestamp = now();
+        await db.transaction(async (tx) => {
+          // Validate connection ownership if connection IDs are provided
+          if (connectionIds.length > 0) {
+            const connRows = await tx
+              .select({ id: connections.id, status: connections.status })
+              .from(connections)
+              .where(
+                and(
+                  eq(connections.userId, userId),
+                  eq(connections.status, 'active'),
+                ),
+              );
 
-        await db.insert(agents).values({
-          id: agentId,
-          userId,
-          name: payload.name as string,
-          prompt: payload.prompt as string,
-          style: payload.style as 'careful' | 'balanced' | 'bold',
-          capital: payload.capital as string,
-          strategy: payload.strategyPreset ? {
-            preset: payload.strategyPreset as string,
-            params: {},
-            source: 'guided_setup',
-          } : null,
-          executionDefaults: payload.executionDefaults as { mode: string; slippageBps: number } | null,
-          status: 'stopped',
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        } as never);
+            const validConnIds = new Set(connRows.map((r) => r.id));
+            for (const cid of connectionIds) {
+              if (!validConnIds.has(cid)) {
+                throw new Error(`Connection ${cid} is not valid or does not belong to you`);
+              }
+            }
+          }
 
-        // Create agent_connections rows
-        const connectionIds = payload.connectionIds as string[];
-        for (const connId of connectionIds) {
-          await db.insert(agentConnections).values({
-            id: uuid(),
-            agentId,
-            connectionId: connId,
-            grantedAt: timestamp,
+          // Insert the agent with all required fields
+          await tx.insert(agents).values({
+            id: agentId,
+            userId,
+            name: payload.name as string,
+            prompt: payload.prompt as string,
+            status: 'stopped',
+            style: payload.style as 'careful' | 'balanced' | 'bold' | null,
+            capital: payload.capital as string,
+            // Canonical strategy identity for trading agents
+            strategy: payload.strategy as Record<string, unknown> | null,
+            // Canonical execution defaults
+            executionDefaults: payload.executionDefaults as { mode: string; slippageBps: number } | null,
+            // Empty tool/model policy — the worker will populate from skillIds on start
+            toolPolicy: {},
+            modelPolicy: {},
+            // Capability mode: hybrid for trading presets, intelligence for assistants
+            ...(payload.capabilityMode ? {} : {}),
+            createdAt: timestamp,
+            updatedAt: timestamp,
           } as never);
+
+          // Create agent_connections rows
+          for (const cid of connectionIds) {
+            await tx.insert(agentConnections).values({
+              id: uuid(),
+              agentId,
+              connectionId: cid,
+              status: 'active',
+              grantedBy: userId,
+              grantedAt: timestamp,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            } as never);
+          }
+
+          // Assign skills to the agent — resolve latest revision IDs
+          const skillIds = (payload.skillIds as string[]) ?? [];
+          if (skillIds.length > 0) {
+            const revisions = await tx
+              .select({
+                skillId: skillRevisions.skillId,
+                revisionId: skillRevisions.id,
+              })
+              .from(skillRevisions)
+              .where(inArray(skillRevisions.skillId, skillIds))
+              .orderBy(desc(skillRevisions.createdAt));
+
+            // Build a map of skillId → latest revisionId
+            const latestRevisionBySkillId = new Map<string, string>();
+            for (const row of revisions) {
+              if (!latestRevisionBySkillId.has(row.skillId)) {
+                latestRevisionBySkillId.set(row.skillId, row.revisionId);
+              }
+            }
+
+            for (let i = 0; i < skillIds.length; i++) {
+              const skillId = skillIds[i];
+              if (!skillId) continue;
+              const revisionId = latestRevisionBySkillId.get(skillId);
+              if (!revisionId) continue; // Skip skills without revisions
+
+              await tx.insert(agentSkills).values({
+                agentId,
+                skillId,
+                skillRevisionId: revisionId,
+                orderIndex: i,
+                assignedAt: timestamp,
+                assignedByUserId: userId,
+                assignmentSource: 'guided_setup',
+              } as never).onConflictDoNothing();
+            }
+          }
+        });
+
+        // Look up the agent's wallet address for funding reminder
+        let walletAddress: string | undefined;
+        let venue: string | undefined;
+        try {
+          const venueRows = await db
+            .select({
+              address: connections.providerRef,
+              provider: connections.provider,
+            })
+            .from(agentConnections)
+            .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
+            .where(eq(agentConnections.agentId, agentId))
+            .limit(1);
+
+          walletAddress = venueRows[0]?.address ?? undefined;
+          venue = venueRows[0]?.provider ?? undefined;
+        } catch {
+          // Non-critical — proceed without wallet info
         }
 
         return JSON.stringify({
@@ -460,6 +585,8 @@ async function executeChatAction(
           executionDefaults: payload.executionDefaults,
           capital: parsed.data.capital,
           preset: parsed.data.skillPresetId,
+          venue,
+          walletAddress,
         });
       } catch (err) {
         return JSON.stringify({
@@ -474,6 +601,24 @@ async function executeChatAction(
   }
 }
 
+interface LlmInvocationResult {
+  content: string;
+  actions?: ChatAction[];
+  toolCallsProcessed: number;
+  /** Set when an agent was successfully created during this invocation */
+  createdAgent?: {
+    agentId: string;
+    name: string;
+    displayExecutionMode: string;
+    capital: string;
+    preset: string;
+    venue?: string;
+    walletAddress?: string;
+  };
+  /** Enriched summary facts extracted from tool results */
+  summaryFacts?: Partial<NonNullable<ThreadMetadata['summary']>>;
+}
+
 // ── LLM Invocation ───────────────────────────────────────────────────────────
 
 async function invokeOnboardingLlm(
@@ -483,7 +628,7 @@ async function invokeOnboardingLlm(
   userId: string,
   threadMessages: PersistedChatMessage[],
   threadMetadata: ThreadMetadata | null,
-): Promise<{ content: string; actions?: ChatAction[]; toolCallsProcessed: number }> {
+): Promise<LlmInvocationResult> {
   const systemPrompt = buildSystemPrompt();
 
   // Build the summary block from metadata
@@ -510,6 +655,8 @@ async function invokeOnboardingLlm(
 
   let toolCallsProcessed = 0;
   const MAX_TOOL_ROUNDS = 5;
+  let createdAgent: LlmInvocationResult['createdAgent'];
+  const summaryFacts: Partial<NonNullable<ThreadMetadata['summary']>> = {};
 
   // Tool calling loop
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -533,6 +680,7 @@ async function invokeOnboardingLlm(
       return {
         content: `I'm having trouble processing your request right now. Please try again or use the form instead. (Error: ${result.error.message})`,
         toolCallsProcessed,
+        summaryFacts,
       };
     }
 
@@ -540,7 +688,7 @@ async function invokeOnboardingLlm(
 
     // If no tool calls, return the assistant response
     if (!toolCalls || toolCalls.length === 0) {
-      return { content: content || 'I understand. How can I help you further with setting up your agent?', toolCallsProcessed };
+      return { content: content || 'I understand. How can I help you further with setting up your agent?', toolCallsProcessed, summaryFacts };
     }
 
     // Process tool calls
@@ -555,6 +703,30 @@ async function invokeOnboardingLlm(
         addedAtTurn: round,
       });
       toolCallsProcessed++;
+
+      // Extract structured facts from tool results
+      try {
+        const parsed = JSON.parse(toolResult) as Record<string, unknown>;
+        if (tc.name === 'list_compatible_connections' && parsed.recommended && typeof parsed.recommended === 'object') {
+          const rec = parsed.recommended as Record<string, unknown>;
+          if (rec.id) summaryFacts.connectionIds = [rec.id as string];
+        }
+        if (tc.name === 'create_agent' && parsed.success && parsed.agentId) {
+          createdAgent = {
+            agentId: parsed.agentId as string,
+            name: parsed.name as string,
+            displayExecutionMode: (parsed.displayExecutionMode as string) ?? 'test',
+            capital: (parsed.capital as string) ?? '',
+            preset: (parsed.preset as string) ?? 'trading',
+            venue: parsed.venue as string | undefined,
+            walletAddress: parsed.walletAddress as string | undefined,
+          };
+          summaryFacts.preset = createdAgent.preset;
+          summaryFacts.capital = createdAgent.capital;
+        }
+      } catch {
+        // Non-JSON tool result — skip extraction
+      }
     }
 
     // Add assistant message with tool calls
@@ -588,10 +760,11 @@ async function invokeOnboardingLlm(
     return {
       content: 'I\'ve gathered the information needed. Let me summarize what we have before creating your agent.',
       toolCallsProcessed,
+      summaryFacts,
     };
   }
 
-  return { content: finalResult.data.content, toolCallsProcessed };
+  return { content: finalResult.data.content, toolCallsProcessed, createdAgent, summaryFacts };
 }
 
 // ── Route Registration ───────────────────────────────────────────────────────
@@ -706,31 +879,36 @@ export async function chatRoutes(
         metadata,
       );
 
-      // Detect if agent was created from tool results (check the last tool result)
+      // Build structured actions from agent creation result
       let actions: ChatAction[] | undefined;
-      let updatedMetadata = metadata;
-
-      // If the LLM response mentions agent creation success, extract agent ID
-      // and add post-creation actions
-      if (llmResponse.content.toLowerCase().includes('created') && llmResponse.toolCallsProcessed > 0) {
-        // Try to extract agent creation confirmation
+      if (llmResponse.createdAgent) {
+        const agent = llmResponse.createdAgent;
         actions = [
           {
             id: 'post-creation',
             type: 'confirm',
             props: {
-              message: 'Your agent has been created! You can view it on the Agents page.',
+              message: `Agent "${agent.name}" created successfully in ${agent.displayExecutionMode} mode!`,
+              agentId: agent.agentId,
+              name: agent.name,
+              mode: agent.displayExecutionMode,
+              capital: agent.capital,
             },
           },
         ];
       }
 
-      // Update thread metadata
+      // Update thread metadata with enriched summary and createdAgentId
       const metadataUpdate: ThreadMetadata = {
-        ...(updatedMetadata ?? {}),
+        ...(metadata ?? {}),
+        ...(llmResponse.createdAgent ? {
+          createdAgentId: llmResponse.createdAgent.agentId,
+          completedAt: new Date().toISOString(),
+        } : {}),
         summary: {
-          ...(updatedMetadata?.summary ?? {}),
-          step: 'conversation',
+          ...(metadata?.summary ?? {}),
+          ...(llmResponse.summaryFacts ?? {}),
+          step: llmResponse.createdAgent ? 'completed' : 'conversation',
         },
       };
 
