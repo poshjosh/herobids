@@ -1,11 +1,11 @@
 import { useRef, useEffect } from 'react';
-import type { ChatMessage } from '../../lib/api-client.js';
+import type { ChatMessage as ChatMessageType } from '../../lib/api-client.js';
 import { ChatMessage } from './ChatMessage.js';
 import { ChatComposer } from './ChatComposer.js';
 import { GuidedSetupActionRenderer } from './GuidedSetupActionRenderer.js';
 
 interface GuidedSetupThreadProps {
-  messages: ChatMessage[];
+  messages: ChatMessageType[];
   onSend: (content: string) => void;
   onQuickReply: (value: string) => void;
   onFormSubmit: (actionId: string, result: unknown) => void;
