@@ -1,8 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { blueprintRoutes } from './blueprints.js';
 import type { Database } from '@herobids/db';
 import type { AgentRiskDefaultsConfig, BlueprintExecutionCapabilityResolver, PlansConfig } from '@herobids/domain';
+
+// Strategy preset YAML files are resolved relative to HEROBIDS_CONFIG_DIR or cwd.
+// In test, cwd is the package dir (apps/api), so we must point to the repo root.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+process.env['HEROBIDS_CONFIG_DIR'] = resolve(__dirname, '../../../..');
 
 const TEST_USER_ID = 'user-1';
 const BLUEPRINT_ID = 'bp-1';
@@ -163,11 +170,8 @@ function buildDb(
 }
 
 // ─── GET /blueprints/presets ───────────────────────────────────────────────
-// FIXME: These tests return 500. The scoreRefreshTimer in blueprintRoutes()
-// calls db.select().from(blueprints) at registration time, which the mock
-// buildDb() may not fully support. Tracked in 006-blueprint-unit-tests-*.
 
-describe.skip('GET /blueprints/presets', () => {
+describe('GET /blueprints/presets', () => {
   it('returns list of all 7 presets', async () => {
     const db = buildDb();
     const app = Fastify();
@@ -188,9 +192,7 @@ describe.skip('GET /blueprints/presets', () => {
 
 // ─── GET /presets/for-agent ───────────────────────────────────────────────
 
-// FIXME: Returns 404. Tracked in 006-blueprint-unit-tests-*.
-
-describe.skip('GET /presets/for-agent', () => {
+describe('GET /presets/for-agent', () => {
   it('returns an agent-consumable split for a technical strategy', async () => {
     const db = buildDb();
     const app = Fastify();
@@ -221,9 +223,7 @@ describe.skip('GET /presets/for-agent', () => {
 
 // ─── GET /blueprints/defaults ─────────────────────────────────────────────
 
-// FIXME: Returns 500. Tracked in 006-blueprint-unit-tests-*.
-
-describe.skip('GET /blueprints/defaults', () => {
+describe('GET /blueprints/defaults', () => {
   it('returns default config fields', async () => {
     const db = buildDb();
     const app = Fastify();

@@ -91,6 +91,11 @@ export async function buildApp() {
   // Dummy key only for OpenRouter — enough for provider discovery, not for real LLM calls.
   process.env['LLM_API_KEY_OPENROUTER'] = 'test-functional-key';
 
+  // Dummy credential encryption key so /setup/provider-link and /credentials
+  // can encrypt without a real production key. Must be exactly 64 hex chars (32 bytes).
+  const savedCredentialKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
+  process.env['CREDENTIAL_ENCRYPTION_KEY'] = '0000000000000000000000000000000000000000000000000000000000000001';
+
   const db = createDatabase(DB_URL);
   const redisConn = parseRedisUrl(REDIS_URL);
   const lifecycleQueue = new Queue('trading-instance-lifecycle', { connection: redisConn });
@@ -236,6 +241,13 @@ export async function buildApp() {
     }
   }
   process.env['LLM_API_KEY_OPENROUTER'] = 'test-functional-key';
+
+  // Restore credential encryption key to its original value.
+  if (savedCredentialKey === undefined) {
+    delete process.env['CREDENTIAL_ENCRYPTION_KEY'];
+  } else {
+    process.env['CREDENTIAL_ENCRYPTION_KEY'] = savedCredentialKey;
+  }
 
   return { app, db, redisClient, lifecycleQueue };
 }

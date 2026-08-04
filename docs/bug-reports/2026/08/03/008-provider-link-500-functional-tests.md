@@ -1,27 +1,22 @@
 # Agent Execution Mode Lifecycle Functional Tests — Provider Link 500
 
 **Date**: 2026-08-03
-**Severity**: MEDIUM (functional test only; may indicate a real API issue with `/setup/provider-link`)
+**Severity**: MEDIUM (functional test only — missing env var)
+**Status**: FIXED
 **Found during**: test-and-fix validation run
 
 ## Summary
 
-Two functional tests in `apps/api/src/__tests__/functional/agents.functional.test.ts` fail at the connection creation step — `POST /setup/provider-link` returns 500 instead of 201:
-- "resolves paper mode to shadow after granting a connection"
-- "transitions from paper to live without mode leak"
+Two functional tests in `apps/api/src/__tests__/functional/agents.functional.test.ts` failed at the connection creation step — `POST /setup/provider-link` returned 500 instead of 201.
 
-## Details
+## Root Cause
 
-Both tests:
-1. Create an agent with `executionDefaults: { mode: 'paper' }` — succeeds (201)
-2. Create a Hyperliquid connection via `POST /setup/provider-link` — fails (500)
+`buildApp()` in the functional test helpers did not set `CREDENTIAL_ENCRYPTION_KEY`. When `POST /setup/provider-link` called `getEncryptionKey()`, it threw an unhandled exception → Fastify returned 500. No other functional test exercised credential creation, so the gap was never hit until the agents execution-mode lifecycle tests were added.
 
-The agent creation step now works correctly after updating the payload from `executionMode: 'paper'` to `executionDefaults: { mode: 'paper' }`.
+## Fix
 
-## Investigation Needed
+Added a dummy 64-char hex `CREDENTIAL_ENCRYPTION_KEY` in `buildApp()`, following the same save/set/restore pattern already used for LLM API keys.
 
-The `/setup/provider-link` endpoint may have changed its expected payload format or has a dependency not available in the test environment (e.g., a queue worker for credential encryption, or a missing provider configuration). The 500 is likely an unhandled exception in the route handler.
+## Files Changed
 
-## Workaround
-
-The tests that don't require connection creation (basic CRUD, cascade-deletes, notification policy) all pass now.
+- `apps/api/src/__tests__/functional/helpers.ts`: save, set dummy key, restore in `buildApp()`.

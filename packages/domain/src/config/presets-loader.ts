@@ -47,13 +47,19 @@ export function resetPresetCache(): void {
  */
 export function loadPresets(): Map<StyleKey, Record<string, PresetEntry>> {
   if (cache) return cache;
-  cache = new Map();
-  for (const [style, relativePath] of Object.entries(STYLE_FILES)) {
-    const path = resolveConfigPath(relativePath);
-    const raw = readFileSync(path, 'utf-8');
-    const parsed = PresetFileSchema.parse(parseYaml(raw));
-    cache.set(style as StyleKey, parsed.presets);
+  const loading = new Map<StyleKey, Record<string, PresetEntry>>();
+  try {
+    for (const [style, relativePath] of Object.entries(STYLE_FILES)) {
+      const path = resolveConfigPath(relativePath);
+      const raw = readFileSync(path, 'utf-8');
+      const parsed = PresetFileSchema.parse(parseYaml(raw));
+      loading.set(style as StyleKey, parsed.presets);
+    }
+  } catch (error) {
+    cache = null;
+    throw error;
   }
+  cache = loading;
   return cache;
 }
 

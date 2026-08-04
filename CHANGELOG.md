@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Functional test credential encryption env:** `buildApp()` now sets a dummy `CREDENTIAL_ENCRYPTION_KEY` so `/setup/provider-link` and other credential-creation endpoints don't throw 500 in the functional test suite.
+
 ### Changed
 
 - **Assessment wake routing documentation:** Improved code comments relating assessment review wake routing.
