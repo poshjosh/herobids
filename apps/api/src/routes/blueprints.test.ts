@@ -6,8 +6,8 @@ import { blueprintRoutes } from './blueprints.js';
 import type { Database } from '@herobids/db';
 import type { AgentRiskDefaultsConfig, BlueprintExecutionCapabilityResolver, PlansConfig } from '@herobids/domain';
 import { createTableAwareDb } from '../__tests__/helpers/table-aware-db-mock.js';
-import { buildBlueprint, buildPublishedBlueprint, buildDraftBlueprint, buildRevision, buildRevisionSkill, buildLike, BP_ID, REV_ID, USER_ID, OTHER_USER_ID } from '../__tests__/helpers/blueprint-fixtures.js';
-import { blueprints, blueprintRevisions, blueprintRevisionSkills, blueprintLikes } from '@herobids/db';
+import { buildBlueprint, buildPublishedBlueprint, buildDraftBlueprint, buildRevision, buildRevisionSkill, buildLike, buildAgentPayload, buildBotPayload, BP_ID, REV_ID, USER_ID, OTHER_USER_ID } from '../__tests__/helpers/blueprint-fixtures.js';
+import { blueprints, blueprintRevisions, blueprintRevisionSkills, blueprintLikes, skills, skillRevisions } from '@herobids/db';
 
 // Strategy preset YAML files are resolved relative to HEROBIDS_CONFIG_DIR or cwd.
 // In test, cwd is the package dir (apps/api), so we must point to the repo root.
@@ -431,16 +431,22 @@ describe('GET /blueprints', () => {
 });
 
 // ─── POST /blueprints ─────────────────────────────────────────────────────
-// TODO (006-blueprint-unit-tests-schema-migration-debt): Rewrite tests against
-// the new CreateBlueprintSchema (payload: { kind, name, ... }) and revision-based
-// blueprint insertion.
 
-describe.skip('POST /blueprints', () => {
-  it('creates a blueprint and returns 201', async () => {
-    const db = {
-      select: vi.fn().mockImplementation(() => makeChain([stubBlueprint])),
-      insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
-    } as unknown as Database;
+describe('POST /blueprints', () => {
+  it('creates an agent blueprint and returns 201 with revision detail', async () => {
+    // buildBlueprintDetail re-selects the created blueprint and revision,
+    // then queries blueprintRevisionSkills for the detail shape.
+    const createdBp = buildDraftBlueprint();
+    const createdRev = buildRevision({ payload: buildAgentPayload() });
+
+    const dbMock = createTableAwareDb();
+    // Post-transaction re-selects (db, not tx)
+    dbMock.setTableRows(blueprints, [[createdBp]]);
+    dbMock.setTableRows(blueprintRevisions, [[createdRev]]);
+    // getRevisionSkillRefs inside buildBlueprintDetail
+    dbMock.setTableRows(blueprintRevisionSkills, [[]]);
+    const db = dbMock.build();
+
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
@@ -448,23 +454,20 @@ describe.skip('POST /blueprints', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/blueprints',
-      payload: {
-        payload: {
-          kind: 'agent',
-          name: 'My Blueprint',
-          description: 'A test blueprint',
-          tags: ['test'],
-          prompt: 'Do something useful.',
-          capabilityMode: 'intelligence',
-          openPositionEscalationToJudgePolicy: 'never',
-        },
-      },
+      payload: { payload: buildAgentPayload() },
     });
     expect(res.statusCode).toBe(201);
-    expect(res.json().id).toBe(BLUEPRINT_ID);
+    const body = res.json();
+    expect(body.id).toBeTruthy();
+    expect(typeof body.id).toBe('string');
+    expect(body.publicationStatus).toBe('draft');
+    expect(body.revision).toBeDefined();
+    expect(body.revision.payload).toBeDefined();
+    expect(body.revision.skills).toEqual([]);
+    expect(body.revision.version).toBe(1);
   });
 
-  it('returns 400 when name is missing', async () => {
+  it('returns 400 when name is missing from payload', async () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
@@ -477,6 +480,48 @@ describe.skip('POST /blueprints', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('validation_error');
+  });
+
+  it('returns 400 when skills are provided for bot blueprint', async () => {
+    const db = buildDb();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/blueprints',
+      payload: {
+        payload: buildBotPayload(),
+        skills: [{ skillId: 's1', skillRevisionId: 'sr1' }],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
+
+  it('returns 400 when agent blueprint has non-portable skill dependency', async () => {
+    // validateSkillPortability queries skills innerJoin skillRevisions;
+    // table-aware mock dispatches on the table passed to .from() (skills).
+    const dbMock = createTableAwareDb();
+    // Empty → skill not found → portability fails
+    dbMock.setTableRows(skills, [[]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/blueprints',
+      payload: {
+        payload: buildAgentPayload(),
+        skills: [{ skillId: 'bad-skill', skillRevisionId: 'bad-rev' }],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('blueprint.dependency_unavailable');
   });
 });
 
