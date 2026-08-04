@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.40 - 2026-08-04
+
 ### Fixed
 
 - **Blueprint unit tests rewritten for revision-based API:** All legacy `describe.skip` blocks removed and replaced with 53 passing tests against the current revision-based blueprint API. Added table-aware DB mock and fixture builders. Coverage spans listing/detail, create, delete (5 reference checks + TOCTOU guards), fork (idempotency + lineage), publish (optimistic concurrency), and bot-with-blueprint config resolution.
