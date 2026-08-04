@@ -1,6 +1,6 @@
 # 001 — Creem webhooks silently dropped due to `eventType` vs `event_type` field name mismatch
 
-- **Status:** OPEN
+- **Status:** FIXED (code fix applied; pending deploy to staging)
 - **Severity:** HIGH
 - **Date:** 2026-08-04
 - **Discovered:** Agent evaluation session — user subscribed to starter plan + topped up $5 via Creem; billing page showed no change

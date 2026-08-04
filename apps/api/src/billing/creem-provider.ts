@@ -90,7 +90,13 @@ export class CreemProvider implements PaymentProvider {
       throw new CreemSignatureError('Creem webhook signature verification failed');
     }
 
-    const event = JSON.parse(payload) as CreemWebhookPayload;
+    const raw = JSON.parse(payload);
+    // Creem sends "eventType" (camelCase) in production; older docs referenced
+    // "event_type" (snake_case). Accept either so the provider works regardless.
+    const event: CreemWebhookPayload = {
+      ...raw,
+      event_type: raw.event_type ?? raw.eventType ?? '',
+    };
     return this.normalizeEvent(event);
   }
 
@@ -126,7 +132,9 @@ export class CreemProvider implements PaymentProvider {
         createdAt: event.created_at ? new Date(event.created_at) : new Date(),
       };
     }
-    const type = mapCreemEventType(event.event_type);
+    // event.event_type is always a string at runtime (normalized at L96 with ?? ''),
+    // but the TS interface types it as optional. Assert non-null.
+    const type = mapCreemEventType(event.event_type!);
 
     return {
       id: event.id ?? crypto.randomUUID(),
@@ -135,7 +143,7 @@ export class CreemProvider implements PaymentProvider {
       subscriptionId: sub.id ?? '',
       customerId: sub.customer_id ?? '',
       productOrPriceId: sub.product_id ?? '',
-      status: sub.status ?? event.event_type,
+      status: sub.status ?? event.event_type!,
       currentPeriodStart: sub.current_period_start_date ? new Date(sub.current_period_start_date) : null,
       currentPeriodEnd: sub.current_period_end_date ? new Date(sub.current_period_end_date) : null,
       cancelAtPeriodEnd: sub.status === 'scheduled_cancel',
@@ -234,7 +242,8 @@ interface CreemSubscriptionObject {
 
 interface CreemWebhookPayload {
   id?: string;
-  event_type: string;
+  event_type?: string;
+  eventType?: string;   // Creem sends camelCase in production webhooks
   object?: CreemSubscriptionObject;
   created_at?: string;
 }

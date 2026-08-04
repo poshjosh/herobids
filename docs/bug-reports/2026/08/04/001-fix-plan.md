@@ -1,7 +1,7 @@
 # Fix Plan — 001: Billing webhook Caddy routing gap
 
 - **Parent Bug:** `docs/bug-reports/2026/08/04/001-billing-subscription-topup-not-persisted.md`
-- **Status:** IMPLEMENTED (Steps 1, 3a, 3b, 3c complete; Step 2 not needed — Creem URL already uses `/api` prefix)
+- **Status:** ALL STEPS COMPLETE (Fix applied, tests pass, pending deploy)
 - **Date:** 2026-08-04
 
 ## Overview

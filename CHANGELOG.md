@@ -14,6 +14,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Functional test credential encryption env:** `buildApp()` now sets a dummy `CREDENTIAL_ENCRYPTION_KEY` so `/setup/provider-link` and other credential-creation endpoints don't throw 500 in the functional test suite.
 
+- **Creem webhook field-name mismatch:** Creem sends `eventType` (camelCase) in production webhooks but the `CreemWebhookPayload` interface expected `event_type` (snake_case). All Creem webhooks (subscription, top-up, cancellation, payment failure) were silently dropped — the unknown event type returned `200 {"received": true}` without processing. Fixed by normalizing both field names at parse time in `creem-provider.ts`. Added Caddy route blocks for `/billing/*` and `/telegram/*` (defense-in-depth) plus tests in `caddy-routing-smoke-test.sh`, `staging-config-validation.test.ts`, and `smoke-test.sh`.
+
 ### Changed
 
 - **Assessment wake routing documentation:** Improved code comments relating assessment review wake routing.
