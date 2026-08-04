@@ -1,27 +1,29 @@
-# 001 — Billing subscription and top-up not persisted despite successful payment
+# 001 — Billing webhook requests routed to SPA instead of API (subscription/top-up silently lost)
 
 - **Status:** OPEN
 - **Severity:** HIGH
 - **Date:** 2026-08-04
-- **Discovered:** Agent evaluation session — user attempted subscribe + top-up, billing page showed no change
+- **Discovered:** Agent evaluation session — user subscribed to starter plan + topped up $5 via Creem; billing page showed no change
 - **Environment:** staging (Hetzner, `staging.openaidom.com`)
 
 ## Summary
 
-User subscribed to the **starter** plan and added a **$5 top-up** via Creem checkout. Both payments showed "successful" (Creem redirect with `?session=success`). However, the billing page continued to show the account as "over budget" on the `free` plan with `$0.00` hard cap. Investigation revealed **zero database changes** — no subscription record, no plan change, no top-up credit, no webhook event record.
+User completed a Creem checkout for a **starter** plan subscription and a **$5 top-up**. Both showed "payment successful" (`?session=success` redirect). The billing page continued to show `free` plan with `$0.00` hard cap and "over budget."
+
+The root cause is a **Caddy reverse-proxy routing gap**: webhook POSTs to `/billing/webhook/creem` are routed to the `web` (nginx/SPA) container instead of the `api` (Fastify) container, because neither `Caddyfile.staging` nor `Caddyfile.prod` contains a `handle /billing/*` block. The SPA's nginx `try_files` fallback returns `200 OK` with `index.html` for any unmatched path, so the webhook is silently acknowledged without ever reaching application code.
+
+The plan document `docs/features/2026/07/12/001-openaidom-domain-rollout/001-plan.md` explicitly instructs registering webhooks at `https://staging.openaidom.com/api/billing/webhook` (with the `/api` prefix), but this requirement was not enforced by configuration.
 
 ## Symptoms
 
 ### User Experience
-1. Navigated to `/billing`, clicked **Subscribe** for the starter plan → Creem checkout opened
-2. Completed checkout → redirected back to `/billing?session=success&subscription_id=sub_...&product_id=prod_2muSl3xna4UWLN6O9nJcjR`
-3. Navigated to `/billing`, clicked a **$5 top-up pack** → Creem checkout opened  
-4. Completed top-up → redirected back to `/billing?session=success&order_id=ord_...&product_id=prod_13TZZ9AsdyFtGoY2BqVYAy`
-5. Billing page still showed: plan `free`, hard cap `$0.00`, "over budget" warning
+1. Clicked **Subscribe** for starter plan → completed Creem checkout → redirected to `/billing?session=success&subscription_id=sub_5YG1a0Mhnb4JbJ8PN2TUUa&product_id=prod_2muSl3xna4UWLN6O9nJcjR`
+2. Clicked **$5 top-up** → completed Creem checkout → redirected to `/billing?session=success&order_id=ord_3FXbtreerVChkYHyhMb5Hk&product_id=prod_13TZZ9AsdyFtGoY2BqVYAy`
+3. Billing page still showed `free` plan, `$0.00` hard cap, "over budget"
 
-### Database State (unchanged)
+### Database — Zero Changes
 
-| Table | Before | After (observed) |
+| Table | Before | After |
 |---|---|---|
 | `billing_webhook_events` | 0 rows | **0 rows** |
 | `billing_subscriptions` | 0 rows | **0 rows** |
@@ -29,102 +31,111 @@ User subscribed to the **starter** plan and added a **$5 top-up** via Creem chec
 | `users.plan_id` | `free` | **`free`** |
 | `billing_accounts.active_plan_id` | `free` | **`free`** |
 | `billing_accounts.hard_cap_microusd` | 0 | **0** |
-| `billing_accounts.status` | `hard_limited` | **`hard_limited`** |
 | `billing_periods.included_credit_microusd` | 0 | **0** |
 | `billing_periods.credit_applied_microusd` | 0 | **0** |
-| `billing_periods.plan_id_snapshot` | `free` | **`free`** |
-| `billing_ledger_entries` (by type) | `usage_charge` only | **`usage_charge` only** |
 
-No `top_up_credit`, `plan_change_adjustment`, or `subscription.*` entries appeared in the ledger.
+### API Logs — Three Observed Requests, All Returned 200
 
-### API Logs — Webhook Endpoint
+| # | responseTime | Notes |
+|---|---|---|
+| 1 | ~5.7ms | `content-length: 2482` |
+| 2 | ~1.9ms | `content-length: 2403` |
+| 3 | ~1.5ms | `content-length: 1948` |
 
-Three POST requests to `/billing/webhook/creem` were observed, all returning `statusCode: 200`:
+### Application Logs — Complete Absence
 
-| # | content-length | responseTime | creem-signature present |
-|---|---|---|---|
-| 1 | 2482 | ~5.7ms | yes |
-| 2 | 2403 | ~1.9ms | yes |
-| 3 | 1948 | ~1.5ms | yes |
+**Zero** application-level logs (`warn`, `error`, `debug`, `info`) from the webhook handler, `EntitlementSync`, or any billing-related code for the entire evaluation window. This is the key signal: the requests never reached the Fastify process.
 
-**Request characteristics:**
-- `user-agent: axios/1.13.1` (not typical of a payment provider webhook)
-- `x-forwarded-for: 3.74.66.138`
-- `baggage` header contains `sentry-transaction=POST%20%2Fwebhook%2Fyuno`
-- `content-type: application/json`
-- `via: 1.1 Caddy`
+## Root Cause
 
-**Application-level logs:** Zero `warn`, `error`, or `debug` logs from the webhook handler were found for the entire evaluation window. The handler produced no observable application-level output.
+### Caddy routes `/billing/webhook/creem` to the SPA, not the API
 
-### What Was NOT Observed
+`Caddyfile.staging` (and `Caddyfile.prod` — identical routing structure):
 
-- No rows in `billing_webhook_events` (neither `processed` nor `failed`)
-- No `app.log.warn("Creem webhook signature verification failed")` entries
-- No `app.log.debug("Ignoring unsupported Creem event type")` entries  
-- No `app.log.error("Creem webhook processing failed")` entries
-- No worker-side billing/entitlement logs at all
-
-## Configuration Context
-
-`config/staging.yaml`:
-```yaml
-billing:
-  primaryProvider: creem
-  fallbackProvider: mock
-  creem:
-    planProducts:
-      starter:
-        - creemProductId: "prod_2muSl3xna4UWLN6O9nJcjR"
-          interval: month
-          displayLabel: "Starter (Monthly)"
-          amountCents: 2000
+```caddy
+handle /health           { reverse_proxy api:3000 }
+handle_path /api/*       { reverse_proxy api:3000 }
+handle /auth/callback    { reverse_proxy web:80 }
+handle /auth/*           { reverse_proxy api:3000 }
+handle /connections/oauth/* { reverse_proxy api:3000 }
+handle                   { reverse_proxy web:80 }  # ← catch-all
 ```
 
-Environment variables (verified in both `api` and `worker` containers):
-- `CREEM_API_KEY=creem_test_24UpbvzB4ll1clU3sHSGdc` (present)
-- `CREEM_WEBHOOK_SECRET=whsec_xV7FXfnN2MJ1DEa93X4Py` (present)
+There is **no `handle /billing/*`** block. The path `/billing/webhook/creem` does not match `/health`, `/api/*`, `/auth/callback`, `/auth/*`, or `/connections/oauth/*`. It falls through to the final catch-all `handle { reverse_proxy web:80 }` — the SPA container.
 
-The Creem provider IS configured and the API key IS set.
+### nginx SPA fallback returns 200 for all unmatched paths
 
-## Code Paths Checked
+`docker/nginx.conf`:
+```nginx
+location / {
+    try_files $uri $uri/ /index.html;
+    add_header Cache-Control "no-cache" always;
+}
+```
 
-The webhook route handler (`apps/api/src/routes/billing.ts:430-470`):
-1. Gets the Creem provider from `providerManager` → should succeed (Creem configured)
-2. Reads `request.body` as raw string → unknown if this succeeds (no 400 "missing body" log)
-3. Calls `creemProvider.verifyWebhook()` to validate HMAC signature → unknown result
-4. Calls `entitlementSync.processEvent()` → unknown result
-5. If `result.error` → returns 500 (not observed)
-6. Otherwise → returns 200 `{ received: true }` (observed)
+The webhook POST to `/billing/webhook/creem` doesn't match any static file, so nginx serves `/index.html` with `200 OK`. The webhook body is discarded. The Creem webhook delivery system sees `200` and marks the event as delivered — but it was delivered to an SPA, not to the billing handler.
 
-The `EntitlementSync.processEvent()` method (`apps/api/src/billing/entitlement-sync.ts:29-52`):
-1. Checks deduplication via `billingRepo.isEventProcessed(dedupeKey)` → if duplicate, returns `{ processed: false }` (no DB write)
-2. Calls `handleEvent()` which dispatches to `handleSubscriptionChange()` or `handleTopUpCompleted()`
-3. If `handleEvent` returns `false` (unhandled type) → returns `{ processed: false }` (no DB write)
-4. If `handleEvent` throws → calls `recordEventFailed()` → row in `billing_webhook_events` (NOT observed)
-5. If `handleEvent` returns `true` → calls `recordEventProcessed()` → row in `billing_webhook_events` (NOT observed)
+### Why response times were 1.5–5.7ms
 
-Given that `billing_webhook_events` has **zero rows**, none of paths 4 or 5 were reached. The only path consistent with zero DB writes + 200 response is path 1 or 3: the event was either treated as a duplicate or returned `false` from `handleEvent`.
+nginx serving a static `index.html` from disk is extremely fast — consistent with the SPA fallback, inconsistent with a handler that does HMAC verification + multiple DB queries.
 
-## Prior Fixes Ruled Out
+### Why `user-agent` was `axios/1.13.1`
 
-- **Bug 002** (`docs/bug-reports/2026/08/03/002-*.md`): Fixes threshold warning display logic and mock top-up error handling. Operates on data already persisted — not reached here because no data was ever persisted.
-- **Bug 003** (`docs/bug-reports/2026/08/03/003-*.md`): Fixes `getOrCreateOpenPeriod` to update `includedCreditMicrousd` on plan change. This method is called downstream of `handleSubscriptionChange()` → `getOrCreateBillingAccountForUser()` → runtime billing — none of which were reached.
+The `user-agent: axios/1.13.1` and `sentry-transaction=POST /webhook/yuno` baggage header are properties of the requesting client. These are forwarded transparently by Caddy/nginx and have no bearing on the routing failure — they would have been present regardless of which upstream served the request.
 
-## Open Questions (for further investigation)
+### Why the `?session=success` redirect didn't help
 
-1. Why does `billing_webhook_events` have zero rows despite the webhook route returning 200 three times?
-2. What exact Creem event types were sent in those three webhook payloads? (The raw body was not captured in accessible logs.)
-3. Why is `user-agent: axios/1.13.1` instead of a Creem-identifying user agent?
-4. What is the `POST /webhook/yuno` transaction referenced in the Sentry baggage header?
-5. Does the HMAC signature verification pass for these relayed requests? If not, why is there no `warn` log ("Creem webhook signature verification failed")?
-6. Is `request.body` arriving as a raw string (required for HMAC verification) or as a parsed JSON object (which would fail the `typeof rawBody !== 'string'` check and return 400)?
+The redirect is decorative only — there is no synchronous reconciliation on page load. Persistence depends **entirely** on the webhook arriving at the correct Fastify handler. A routing miss is a total, silent failure with no fallback.
+
+### Documented webhook URL format (not followed)
+
+`docs/features/2026/07/12/001-openaidom-domain-rollout/001-plan.md:125`:
+
+> Add or switch webhook endpoints to `https://staging.openaidom.com/api/billing/webhook` or provider-specific equivalents.
+
+The documented URL uses the `/api` prefix. The Creem dashboard's registered webhook URL for the staging test-mode account should be `https://staging.openaidom.com/api/billing/webhook/creem` — not `/billing/webhook/creem`.
+
+### Why prior fix 002 and 003 are not relevant
+
+Both fixes operate on data that is only persisted after a webhook successfully reaches `EntitlementSync.processEvent()` in the Fastify process. Since the webhook never reaches Fastify, neither fix's code path is executed.
+
+### Why the original investigation's "duplicate" and "unhandled event type" hypotheses were wrong
+
+- **Duplicate:** `isEventProcessed` queries `billing_webhook_events` for `WHERE id = eventId AND status = 'processed'`. With 0 rows in the table, this can never return true.
+- **Unhandled event type:** `NormalizedEventType` has exactly 5 literal values (`provider-port.ts:40-45`). `EntitlementSync.handleEvent` explicitly handles all 5 in its switch statement (`entitlement-sync.ts:56-67`). The `default: return false` branch is unreachable from a real Creem webhook after normalization.
+
+## Fix
+
+**Option A — Add explicit Caddy route (defense-in-depth, recommended as primary fix):**
+
+Add to `Caddyfile.staging` AND `Caddyfile.prod`, before the catch-all `handle` block:
+```caddy
+handle /billing/* {
+    reverse_proxy api:3000
+}
+```
+
+**Option B — Fix the Creem webhook URL (also needed):**
+
+In the Creem dashboard (test mode for staging), update the registered webhook URL from `https://staging.openaidom.com/billing/webhook/creem` to `https://staging.openaidom.com/api/billing/webhook/creem`.
+
+**Both A and B should be applied** — Option A protects against future routing gaps for any `/billing/*` path, and Option B ensures the webhook URL matches the documented format.
+
+The same check should be performed for the Stripe webhook if configured.
+
+## Additional Consideration
+
+The `?session=success` redirect on the billing page is purely cosmetic. If webhook delivery fails (e.g., routing gap, network issue, Creem outage), there is no fallback reconciliation. Consider adding a synchronous check on page load: if the URL contains `?session=success` with a `subscription_id` or `order_id`, query the Creem API directly to confirm the subscription/payment status and reconcile if the webhook was missed.
 
 ## Evidence References
 
-- Staging DB snapshots in `.ignore/eval/2026/08/04/*/db/`
-- API access logs in `.ignore/eval/2026/08/04/*/logs/api.log`
-- Agent evaluation reports in `.ignore/eval/2026/08/04/*/REPORT.md`
-- Staging config: `config/staging.yaml` (billing section)
-- Webhook handler: `apps/api/src/routes/billing.ts:430-470`
-- Entitlement sync: `apps/api/src/billing/entitlement-sync.ts`
-- Creem provider: `apps/api/src/billing/creem-provider.ts`
+- `Caddyfile.staging` (lines 1–28): No `/billing/*` handle block
+- `Caddyfile.prod` (lines 1–28): Same gap
+- `docker/nginx.conf` (lines 38–42): SPA `try_files` fallback returns 200
+- `docs/features/2026/07/12/001-openaidom-domain-rollout/001-plan.md:125`: Documents correct webhook URL with `/api` prefix
+- `apps/api/src/billing/provider-port.ts:40-45`: `NormalizedEventType` has exactly 5 values, all handled
+- `apps/api/src/billing/entitlement-sync.ts:56-67`: `handleEvent` switch handles all 5 types
+- `apps/api/src/routes/billing.ts:430-470`: Webhook route handler
+- `packages/db/src/billing-repository.ts:234-270`: `isEventProcessed`/`recordEventProcessed`/`recordEventFailed`
+- Staging DB evidence: `.ignore/eval/2026/08/04/*/db/`
+- API access logs: `.ignore/eval/2026/08/04/*/logs/api.log`
