@@ -799,68 +799,178 @@ describe.skip('PUT /blueprints/:id', () => {
 });
 
 // ─── DELETE /blueprints/:id ───────────────────────────────────────────────
-// TODO (006-blueprint-unit-tests-schema-migration-debt): Rewrite tests against
-// the new lifecycle-aware delete (draft-only, reference checks, FK cycle breaking).
+// Lifecycle-aware delete: draft-only, 5 ref checks, FK cycle breaking.
 
-describe.skip('DELETE /blueprints/:id', () => {
-  it('returns 204 when no running bot references the blueprint', async () => {
-    let selectCallCount = 0;
-    const tx = {
-      execute: vi.fn().mockResolvedValue({ rows: [] }),
-      select: vi.fn().mockImplementation(() => {
-        selectCallCount++;
-        // call 1: ownership check → found; call 2: running bot check → none
-        return makeChain(selectCallCount === 1 ? [stubBlueprint] : []);
-      }),
-      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
-    };
-    const db = {
-      transaction: vi.fn().mockImplementation(async (callback: (innerTx: typeof tx) => Promise<unknown>) => callback(tx)),
-    } as unknown as Database;
+describe('DELETE /blueprints/:id', () => {
+  it('returns 204 for unreferenced draft blueprint', async () => {
+    const draftBp = buildDraftBlueprint({ authorId: TEST_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    // Two selects from blueprints: pre-tx lookup + tx FOR UPDATE lock
+    dbMock.setTableRows(blueprints, [[draftBp], [draftBp]]);
+    // No revisions — handler skips revision-skill deletes
+    dbMock.setTableRows(blueprintRevisions, [[]]);
+    const db = dbMock.build();
+
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
 
-    const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BLUEPRINT_ID}` });
+    const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(204);
+    expect(res.body).toBe('');
   });
 
-  it('returns 409 when a running bot references the blueprint', async () => {
-    let selectCallCount = 0;
-    const tx = {
-      execute: vi.fn().mockResolvedValue({ rows: [] }),
-      select: vi.fn().mockImplementation(() => {
-        selectCallCount++;
-        // call 1: ownership check → found; call 2: running bot → found
-        return makeChain(selectCallCount === 1 ? [stubBlueprint] : [{ id: 'bot-1' }]);
-      }),
-    };
-    const db = {
-      transaction: vi.fn().mockImplementation(async (callback: (innerTx: typeof tx) => Promise<unknown>) => callback(tx)),
-    } as unknown as Database;
+  it('returns 409 for non-draft blueprint (published)', async () => {
+    const publishedBp = buildPublishedBlueprint({ authorId: TEST_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    // Only pre-tx select — handler rejects before entering transaction
+    dbMock.setTableRows(blueprints, [[publishedBp]]);
+    const db = dbMock.build();
+
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
 
-    const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BLUEPRINT_ID}` });
+    const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toBe('blueprint_in_use');
+    expect(res.json().error).toBe('blueprint.lifecycle_conflict');
   });
 
-  it('returns 404 for blueprint not owned by the user', async () => {
-    const tx = {
-      execute: vi.fn().mockResolvedValue({ rows: [] }),
-      select: vi.fn().mockImplementation(() => makeChain([])),
-    };
-    const db = {
-      transaction: vi.fn().mockImplementation(async (callback: (innerTx: typeof tx) => Promise<unknown>) => callback(tx)),
-    } as unknown as Database;
+  it('returns 409 for draft blueprint with active bot reference', async () => {
+    const draftBp = buildDraftBlueprint({ authorId: TEST_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    // Two selects from blueprints: pre-tx + tx FOR UPDATE
+    dbMock.setTableRows(blueprints, [[draftBp], [draftBp]]);
+    // 5 reference checks run in order: likes, usage events, fork requests,
+    // agents, bots. Only the 5th (bots) returns cnt=1 to prove the bots check
+    // is the one that fires — not an earlier check.
+    dbMock.setExecuteResults([
+      [{ cnt: 0 }], // likes
+      [{ cnt: 0 }], // usage events
+      [{ cnt: 0 }], // fork requests
+      [{ cnt: 0 }], // agents
+      [{ cnt: 1 }], // bots ← only this one fires
+    ]);
+    const db = dbMock.build();
+
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
 
-    const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BLUEPRINT_ID}` });
+    const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('blueprint.lifecycle_conflict');
+  });
+
+  it('returns 409 for draft blueprint with publishedRevisionId set (previously published)', async () => {
+    const draftBp = buildBlueprint({
+      publicationStatus: 'draft',
+      publishedRevisionId: REV_ID,
+      publishedAt: new Date('2026-01-01'),
+      authorId: TEST_USER_ID,
+    });
+
+    const dbMock = createTableAwareDb();
+    // Only pre-tx select — handler rejects before entering transaction
+    dbMock.setTableRows(blueprints, [[draftBp]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('blueprint.lifecycle_conflict');
+  });
+
+  it('returns 409 when blueprint was concurrently published (TOCTOU guard)', async () => {
+    const draftBp = buildDraftBlueprint({ authorId: TEST_USER_ID });
+    const publishedBp = buildPublishedBlueprint({ authorId: TEST_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    // Pre-tx select returns draft, FOR UPDATE returns published
+    dbMock.setTableRows(blueprints, [[draftBp], [publishedBp]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('blueprint.lifecycle_conflict');
+  });
+
+  it('returns 404 when blueprint was concurrently deleted (TOCTOU guard)', async () => {
+    const draftBp = buildDraftBlueprint({ authorId: TEST_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    // Pre-tx select returns draft, FOR UPDATE returns empty (race delete)
+    dbMock.setTableRows(blueprints, [[draftBp], []]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 204 when blueprint has revisions (exercises revision-skills deletion)', async () => {
+    const draftBp = buildDraftBlueprint({ authorId: TEST_USER_ID });
+    const revision = buildRevision({ blueprintId: BP_ID });
+
+    const dbMock = createTableAwareDb();
+    // Two selects from blueprints: pre-tx + tx FOR UPDATE
+    dbMock.setTableRows(blueprints, [[draftBp], [draftBp]]);
+    // Non-empty revisions — handler selects revision IDs, deletes revision
+    // skills, then deletes revisions
+    dbMock.setTableRows(blueprintRevisions, [[revision]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
+    expect(res.statusCode).toBe(204);
+    expect(res.body).toBe('');
+  });
+
+  it('returns 404 for nonexistent blueprint', async () => {
+    const dbMock = createTableAwareDb();
+    // Empty — pre-tx select returns nothing
+    dbMock.setTableRows(blueprints, [[]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 403 for blueprint owned by another user', async () => {
+    const draftBp = buildDraftBlueprint({ authorId: OTHER_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    // Only pre-tx select — handler rejects before entering transaction
+    dbMock.setTableRows(blueprints, [[draftBp]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({ method: 'DELETE', url: `/blueprints/${BP_ID}` });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('blueprint.forbidden');
   });
 });
 
