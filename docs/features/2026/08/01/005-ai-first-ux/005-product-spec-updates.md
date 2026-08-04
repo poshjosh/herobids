@@ -28,7 +28,7 @@ guides them through agent creation conversationally.
 
 Characteristics:
 - the chat agent asks follow-up questions based on the selected preset (trading, personal assistant, custom)
-- connection forms appear inline for wallet and exchange setup — secrets never reach the LLM
+- connection forms appear inline for wallet and exchange setup via backend-owned structured actions — secrets never reach the LLM
 - the agent is created directly from chat when enough information is gathered
 - post-creation follow-up messages remind the user of next steps (fund wallet, test mode status)
 - the existing form-based Create Agent flow remains fully available as a fallback
@@ -55,14 +55,14 @@ setup, agent confirmation) without leaving the chat surface.
 Supported action types in v1:
 - **Quick-reply buttons** — for preset selection and guided choices (e.g., "AI crypto trader",
   "AI personal assistant", "Custom AI")
-- **Connection forms** — secure inline forms for wallet and exchange connections; the LLM
-  requests the form type, the frontend renders it, and secrets are handled entirely by the
-  frontend
+- **Connection forms** — secure inline forms for wallet and exchange connections; the onboarding
+  runtime requests the form type via structured `actions`, the frontend renders it, and secrets
+  are handled entirely by the frontend
 - **Agent confirmation cards** — a summary card shown before the agent is created,
   with an explicit "Create Agent" confirmation button
 
-The LLM emits structured markers that the frontend parses. The LLM determines *when* and
-*which type* of action to show; the frontend owns rendering and data handling.
+The onboarding runtime returns structured `actions` payloads that the frontend renders. Assistant
+text remains display-only; the frontend does not parse raw assistant text for commands.
 ```
 
 ---
@@ -121,7 +121,7 @@ The conversion must be opt-in and reviewable. Chat never silently creates an AI 
 
 - the onboarding chat agent has access to platform documentation tools
 - it can create agents directly from chat when sufficient information is gathered
-- it requests connection forms via structured markers when secrets are needed
+- it requests connection forms via structured `actions` when secrets are needed
 - it provides post-creation follow-up: wallet funding reminder, test mode notice
 - the onboarding experience is the default for users with no agents
 ```

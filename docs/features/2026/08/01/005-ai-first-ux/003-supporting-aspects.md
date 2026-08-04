@@ -43,60 +43,73 @@ The LLM can handle multilingual conversation naturally. No translation layer nee
 
 The docs index (`platform-docs` skill) is English-only in v1. Non-English users will still receive English docs when the LLM reads them, but the LLM can summarize/translate on the fly. Full multi-language docs indexing is deferred.
 
-## 2. Embedded Form Injection System
+## 2. Embedded Action System
 
-### 2.1 Marker Protocol
+### 2.1 Backend-Owned Structured Actions
 
-The LLM emits structured markers that the frontend parses and renders as components.
+The onboarding API returns structured actions that the frontend renders as components.
+
+Assistant `content` is display-only. The frontend must never parse raw assistant text for commands, markers, or JSON blobs.
 
 **Format:**
 
-```
-[COMPONENT:type:key1=value1:key2=value2]
+```typescript
+interface ChatActionBase {
+  id: string;
+  type: 'form' | 'confirm' | 'button' | 'quick_replies';
+}
+
+interface FormAction extends ChatActionBase {
+  type: 'form';
+  form: 'connection';
+  props: Record<string, string>;
+}
 ```
 
 **Examples:**
 
-| Marker | Behavior |
+| Action | Behavior |
 |--------|----------|
-| `[FORM:connection:venue=hyperliquid]` | Render Hyperliquid connection form inline |
-| `[FORM:connection:venue=jupiter]` | Render Jupiter wallet connect inline |
-| `[FORM:connection:type=email]` | Render email OAuth connect inline |
-| `[CONFIRM:agent:summary={json}]` | Render agent creation confirmation card |
-| `[BUTTON:label=Choose for me:action=auto_select]` | Render a single action button |
-| `[QUICK_REPLIES:options=preset:trading,preset:personal-assistant,preset:custom]` | Render quick-reply button row |
+| `{ type: 'form', form: 'connection', props: { venue: 'hyperliquid' } }` | Render Hyperliquid connection form inline |
+| `{ type: 'form', form: 'connection', props: { venue: 'jupiter' } }` | Render Jupiter wallet connect inline |
+| `{ type: 'form', form: 'connection', props: { type: 'email' } }` | Render email OAuth connect inline |
+| `{ type: 'confirm', props: { summaryId: 'agent-summary-1' } }` | Render agent creation confirmation card |
+| `{ type: 'button', props: { label: 'Choose for me', action: 'auto_select' } }` | Render a single action button |
+| `{ type: 'quick_replies', options: [...] }` | Render quick-reply button row |
 
-### 2.2 Frontend Parser
+The runtime may use any internal prompting convention it wants, but the API must normalize the model output into the structured `actions` array before persistence or frontend delivery.
+
+### 2.2 Frontend Action Renderer
 
 ```typescript
-// apps/web/src/features/chat/chat-renderer.ts
+// apps/web/src/features/chat/GuidedSetupActionRenderer.tsx
 
 interface ChatAction {
   type: 'form' | 'confirm' | 'button' | 'quick_replies';
-  props: Record<string, string>;
+  props?: Record<string, string>;
+  options?: Array<{ label: string; value: string }>;
 }
 
-function parseActions(content: string): { cleanContent: string; actions: ChatAction[] } {
-  const actions: ChatAction[] = [];
-  const cleanContent = content.replace(/\[(\w+):(.+?)\]/g, (match, type, paramsStr) => {
-    const props: Record<string, string> = {};
-    for (const part of paramsStr.split(':')) {
-      const [key, ...valueParts] = part.split('=');
-      if (key && valueParts.length > 0) {
-        props[key] = valueParts.join('=');
-      }
+function GuidedSetupActionRenderer({ actions }: { actions: ChatAction[] }) {
+  return actions.map((action) => {
+    switch (action.type) {
+      case 'form':
+        return <ConnectionForm key={action.props?.venue ?? action.props?.type} {...action.props} />;
+      case 'quick_replies':
+        return <ChatQuickReplies key={JSON.stringify(action.options)} options={action.options ?? []} />;
+      case 'confirm':
+        return <AgentConfirmationCard key={action.props?.summaryId} {...action.props} />;
+      case 'button':
+        return <ActionButton key={`${action.props?.label}:${action.props?.action}`} {...action.props} />;
     }
-    actions.push({ type: type.toLowerCase() as ChatAction['type'], props });
-    return ''; // Remove marker from displayed text
   });
-  return { cleanContent: cleanContent.trim(), actions };
 }
 ```
 
 ### 2.3 Form Result Flow
 
-1. LLM emits `[FORM:connection:venue=hyperliquid]`
-2. Frontend parses and renders `<ConnectionForm venue="hyperliquid" />`
+1. The onboarding runtime returns `{ type: 'form', form: 'connection', props: { venue: 'hyperliquid' } }`
+2. Frontend renders `<ConnectionForm venue="hyperliquid" />`
 3. User fills form and submits using the existing secure setup flow (LLM never sees secrets):
   - trading / wallet setup → `POST /setup/provider-link`
   - email OAuth setup → existing `/connections/oauth/*` flow
@@ -118,7 +131,7 @@ Body: { type: "form_result", form: "connection", result: { connectionId: "abc123
 | Jupiter/Solana wallet | Reuse existing trading setup form from agents UI | `POST /setup/provider-link` |
 | Email (Gmail) | Reuse existing OAuth flow | existing `/connections/oauth/*` endpoints |
 
-The chat component wraps existing connection forms — no new form logic needed. The only new code is the marker parser and the inline rendering container.
+The chat component wraps existing connection forms — no new form logic needed. The only new code is the structured action renderer and the inline rendering container.
 
 ### 2.5 OAuth Flow Handling in Chat
 
@@ -127,7 +140,7 @@ OAuth connections (e.g., Gmail) require the user to authorize with a third party
 **Primary approach for v1: Redirect and resume the existing create-agent flow**
 
 For providers that require OAuth (for example Gmail):
-1. LLM emits `[FORM:connection:type=email]`
+1. The onboarding runtime returns a `form` action for the email connection flow
 2. Frontend renders the existing connect button and preserves the current Guided Setup draft/thread state
 3. Click starts the existing OAuth redirect flow
 4. The return URL carries thread/action correlation so the frontend can reopen the correct thread and restore in-progress state
@@ -182,7 +195,7 @@ Build the complete system per Plan 002 with thread persistence, history, and for
 | Scenario | Handling |
 |----------|----------|
 | LLM hallucinates invalid field | `create_agent` returns Zod validation error → LLM sees error + schema and retries |
-| LLM gets stuck in a loop | Max turns per thread (20). After turn 15, frontend shows "Taking too long? Use the form." |
+| LLM gets stuck in a loop | Use operator-configured turn caps. After the configured warning threshold, frontend shows "Taking too long? Use the form." |
 | LLM returns nonsense | Frontend shows "I'm having trouble understanding. Let me connect you to the guided form." with a button |
 | Rate limit / timeout | Frontend shows error state with retry button + "use the form" fallback |
 
@@ -190,22 +203,23 @@ Build the complete system per Plan 002 with thread persistence, history, and for
 
 - **"Use the form" button** — always visible in the chat header. Navigates to existing Create Agent flow.
 - **"Skip" keyword** — user can type "skip" to skip the current question. LLM is prompted to respect this.
-- **"Start over"** — resets the thread to the greeting state.
+- **"Start over"** — creates a brand-new Guided Setup thread and returns the user to the greeting state. The previous thread remains viewable; v1 does not mutate saved thread history.
 
 ### 4.3 Sensitive Data Protection
 
 - The chat system prompt explicitly forbids asking for private keys, API secrets, passwords
-- If the user accidentally pastes a key, the chat message is stored (encrypted at rest per existing DB policy) but the LLM is prompted to respond: "I see you shared sensitive information. Please never share private keys in chat. Use the secure connection form instead."
-- A server-side regex scan for common secret patterns (ETH private key format, AWS key format) triggers a warning before the message reaches the LLM
+- If the user accidentally pastes a key, the system warns them not to paste secrets in chat and tells them to rotate any secrets already pasted or entered, because they may already be compromised.
+- A server-side regex scan for common secret patterns (ETH private key format, AWS key format) triggers the warning before the message reaches the LLM.
+- v1 does **not** promise chat-message redaction or message-level encryption beyond normal chat persistence. The safety measure for this phase is warning + rotate guidance, not a storage guarantee.
 
 ## 5. Cost & Billing
 
 ### 5.1 Model Selection
 
-Use a cheap model for onboarding chat:
-- **Primary:** DeepSeek V4 Flash (~$0.20/M input, $0.80/M output)
-- Reasoning/planning is minimal in a guided conversation
-- Fallback to V4 Pro only if Flash quality is insufficient
+Use an operator-configured low-cost onboarding model tier:
+- The configured onboarding model should come from the existing provider registry / operator config, not from a hard-coded product constant
+- Reasoning/planning is minimal in a guided conversation, so the default should prefer a low-cost flash-tier model when available
+- A higher-cost fallback tier may be configured if quality proves insufficient
 
 ### 5.2 Cost Tracking
 
@@ -216,8 +230,8 @@ Use a cheap model for onboarding chat:
 
 ### 5.3 Rate Limiting
 
-- Per-user: max 50 chat messages per hour (generous, prevents abuse)
-- Per-thread: max 100 messages (auto-archive with "start new chat" prompt)
+- Per-user and per-thread chat limits should be operator-configured rate-limit settings
+- Recommended initial defaults can be documented separately, but the implementation must not hard-code them in product logic
 
 ## 6. Analytics & Improvement
 
@@ -236,6 +250,6 @@ Track these events for future optimization:
 | Risk | Mitigation |
 |------|-----------|
 | i18n keys not covering all languages | Start with en, ar, hi (existing locale files); add others on demand |
-| FORM markers break if LLM hallucinates format | Parser is lenient; unknown markers are silently stripped; validate with regex test suite |
+| Runtime emits malformed action payloads | Validate the structured `actions` payload server-side before persisting or returning it; reject malformed actions and fall back to plain assistant text + form escape hatch |
 | Prototype creates expectation of full chat | Clearly label phases; Phase 1 endpoint marked as `/preview` |
-| Users share secrets in chat despite warnings | Server-side regex scan + automatic warning response + never echo secrets back |
+| Users share secrets in chat despite warnings | Server-side regex scan + automatic warning response + tell the user to rotate anything already pasted or entered + never echo secrets back |

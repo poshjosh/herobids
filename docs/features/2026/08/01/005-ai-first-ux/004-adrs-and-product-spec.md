@@ -18,19 +18,19 @@ Two decisions rise to the level of an Architecture Decision Record:
 - The onboarding chat agent is **invoked per-message** (stateless request/response), not continuously ticking
 - It does NOT consume AI Employee runtime billing
 - It uses a narrow API-local onboarding runtime, not the one-shot `apps/api/src/routes/ai.ts` pattern and not the worker agent runtime
-- It has access only to restricted onboarding actions (`*_app_docs`, `list_user_connections`, `create_agent`)
+- It has access only to restricted onboarding actions (`*_app_docs`, `list_compatible_connections`, `create_agent`)
 - It does NOT have access to trading tools, worker messaging/memory tools, or background execution
 - Thread persistence stores only replayable user/assistant messages; summaries and workflow state live in thread metadata or a separate internal store
 
 This is the most important ADR to write. Proposed location: `docs/tech/adrs/2026/08/005-onboarding-chat-agent-runtime-model.md`
 
-#### ADR 006: FORM Marker Protocol for LLM-Initiated UI Components (Optional)
+#### ADR 006: Structured Actions Contract For LLM-Initiated UI Components (Optional)
 
-**Why this might be an ADR:** The `[FORM:...]` / `[COMPONENT:...]` marker protocol is a new cross-cutting contract between the LLM, API, and frontend. It establishes a pattern for how LLMs request UI rendering without generating HTML or handling secrets.
+**Why this might be an ADR:** The structured `actions` payload is a new cross-cutting contract between the LLM runtime, API, and frontend. It establishes a pattern for how the onboarding runtime requests UI rendering without generating HTML or handling secrets.
 
-**Alternatively:** Document this in the plan and in a tech spec under `docs/tech/agents/`. It's more of a protocol design than an architectural tradeoff. I lean toward **no ADR** — document it in `docs/tech/agents/chat-marker-protocol.md` instead.
+**Alternatively:** Document this in the plan and in a tech spec under `docs/tech/agents/`. It's more of a protocol design than an architectural tradeoff. I lean toward **no ADR** — document it in `docs/tech/agents/chat-action-contract.md` instead.
 
-**Decision:** Skip ADR 006. The FORM marker protocol is adequately covered in Plan 003 and can have a standalone tech doc if needed.
+**Decision:** Skip ADR 006. The structured actions contract is adequately covered in Plan 003 and can have a standalone tech doc if needed.
 
 ### ADRs NOT Needed
 
@@ -63,8 +63,8 @@ Write **ADR 005** only. See template below.
 The spec does not cover:
 
 1. **Agent onboarding as a primary use case** — the chat as the default entry point for new users creating their first agent
-2. **Embedded form rendering** — the `[FORM:...]` marker system for secrets
-3. **Tool-calling within chat** — the chat agent having access to chat-safe onboarding actions such as `create_agent`, `*_app_docs`, and `list_user_connections`
+2. **Embedded action rendering** — backend-owned structured actions for secure inline UI
+3. **Tool-calling within chat** — the chat agent having access to chat-safe onboarding actions such as `create_agent`, `*_app_docs`, and `list_compatible_connections`
 4. **Quick-reply buttons** — structured UI elements in chat for preset/option selection
 5. **Chat → Agent conversion as a first-class flow** — not just "turn this into an AI Employee" as a future action, but as the primary onboarding path
 
@@ -97,15 +97,15 @@ the form available as an escape hatch.
 ```markdown
 ### Embedded Actions
 
-Chat messages may contain embedded actions that render UI components inline.
+Chat messages may contain structured actions that render UI components inline.
 
 Supported action types in v1:
 - Quick-reply buttons — for preset selection and guided choices
 - Connection forms — secure inline forms for wallet and exchange connections
 - Agent confirmation cards — summary before creation
 
-The LLM emits structured markers (e.g. `[FORM:connection:venue=hyperliquid]`) that the
-frontend parses and renders. This keeps secrets out of LLM context while allowing the
+The onboarding runtime returns structured `actions` payloads that the frontend renders.
+Assistant text remains display-only. This keeps secrets out of LLM context while allowing the
 conversation to guide users through multi-step setup.
 ```
 
@@ -181,7 +181,7 @@ Specifically:
 3. It uses a narrow API-local onboarding loop rather than the simple one-shot `apps/api/src/routes/ai.ts` pattern.
 4. It has access to a restricted onboarding action set appropriate for onboarding:
    - `search_app_docs`, `list_app_docs`, `read_app_docs` — platform documentation
-   - `list_user_connections` — read-only access to candidate existing connections for reuse
+   - `list_compatible_connections` — server-filtered candidate existing connections for reuse
    - `create_agent` — agent creation (runs in API context, not worker)
 5. It does NOT have access to trading tools, bot management, worker `send_message`, worker memory persistence, 
    code execution, or any tool that implies continuous operation.
@@ -214,7 +214,7 @@ Specifically:
 
 1. The chat agent cannot maintain persistent memory across threads (by design —
    each thread is self-contained).
-2. The onboarding action implementations (`create_agent`, `list_user_connections`) must run in the API process,
+2. The onboarding action implementations (`create_agent`, `list_compatible_connections`) must run in the API process,
    not the worker — this means some logic is duplicated or relocated.
 3. The chat agent cannot use tools that require a running agent context
    (e.g., `get_account_summary` needs an agent ID). This is acceptable because

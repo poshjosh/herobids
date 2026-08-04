@@ -51,7 +51,7 @@ Open questions
 
 ### Design Decisions
 
-3. **Secrets handling** → Rather than asking users to click/navigate to a form, the chat displays embedded forms inline using a `[FORM:connection:venue=X]` marker protocol. The LLM decides *when* and *which type* of form — the frontend owns rendering and secret handling. See Plan 003.
+3. **Secrets handling** → Rather than asking users to click/navigate to a form, the onboarding runtime returns structured `actions` so the chat can display embedded forms inline. The runtime decides *when* and *which type* of form to request; the frontend owns rendering and secret handling. See Plan 003.
 
 4. **Chain vs platform** → The chat agent asks users about chains they use (Ethereum, Solana, etc.) and maps to venues internally using the venue/chain mapping. Users shouldn't need to know venue names.
 

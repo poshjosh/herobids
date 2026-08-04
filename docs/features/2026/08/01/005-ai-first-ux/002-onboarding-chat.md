@@ -56,9 +56,9 @@ In v1, the chat is:
 
 3. **Guided Setup uses a narrow API-local tool-calling runtime.** It does NOT reuse the simple one-shot pattern from `apps/api/src/routes/ai.ts`, and it does NOT run on the worker agent runtime. The API hosts a restricted onboarding loop: provide context, expose a small allowlist of onboarding actions, execute them server-side, and return a final assistant response.
 
-4. **The onboarding runtime exposes chat-safe actions, not worker runtime tools.** The chat runtime may expose API-local actions such as `search_app_docs`, `list_app_docs`, `read_app_docs`, `list_user_connections`, and `create_agent`. It must not pretend that worker-only tools like `send_message` or runtime `list_connections` are available.
+4. **The onboarding runtime exposes chat-safe actions, not worker runtime tools.** The chat runtime may expose API-local actions such as `search_app_docs`, `list_app_docs`, `read_app_docs`, `list_compatible_connections`, and `create_agent`. It must not pretend that worker-only tools like `send_message` or runtime `list_connections` are available.
 
-5. **Secrets never transit through the LLM.** When the chat agent determines a connection is needed, it emits a structured marker `[FORM:connection:venue=X]`. The frontend renders the connection form inline. On success, the frontend sends the resulting `connectionId` back to the chat. The LLM never sees private keys, API secrets, or OAuth tokens.
+5. **Secure setup is rendered via backend-owned structured actions.** When the chat agent determines a connection is needed, the onboarding runtime returns a structured `actions` payload for the frontend to render inline. On success, the frontend sends the resulting `connectionId` back to the chat via the action-result endpoint. The LLM never sees private keys, API secrets, or OAuth tokens.
 
 6. **Scoped to create-agent for v1.** General chat ("ask anything," brainstorming, research) is NOT in v1. The greeting is honest about scope. The UI label is **Guided Setup** — not "Chat With AI."
 
@@ -70,7 +70,7 @@ In v1, the chat is:
 
 10. **Redirect/resume is the baseline OAuth model for v1.** Reuse the current create-agent draft preservation and `oauthReturn` resume pattern. Popup OAuth is optional later work after provider-specific validation.
 
-11. **Guided Setup offers a strong happy path with system-selected defaults.** In the default flow, the user must explicitly choose the agent type/preset and specify capital. The system decides most other fields unless the user overrides them: generate the name with the same algorithm used by the existing create-agent form, default the goal/prompt to a configurable platform value (initial default: "Grow this portfolio"), default style to `balanced`, default execution mode to `test`, choose a strategy preset automatically, and auto-assign the first compatible existing active connection when one is available.
+11. **Guided Setup offers a strong happy path with system-selected defaults.** In the default flow, the user must explicitly choose the agent type/preset and specify capital. The system decides most other fields unless the user overrides them: generate the name with the same algorithm used by the existing create-agent form, default the goal/prompt to a configurable platform value (initial default: "Grow this portfolio"), default style to `balanced`, default the user-facing execution choice to `test` and map it server-side to canonical `executionDefaults`, choose a strategy preset automatically, and auto-assign a server-resolved compatible existing active connection when one is available.
 
 ## Scope
 
@@ -126,6 +126,8 @@ export const chatMessages = pgTable('chat_messages', {
   id: text('id').primaryKey(),
   threadId: text('thread_id').notNull().references(() => chatThreads.id, { onDelete: 'cascade' }),
   role: text('role').notNull(),  // 'user' | 'assistant'
+  // Plain persisted visible chat text. v1 must warn users not to paste secrets;
+  // it does not promise automatic redaction or message-level encryption.
   content: text('content').notNull(),
   /** Structured actions: form renders, agent creation confirmations, etc. */
   actions: jsonb('actions'),  // [{ type: 'form', form: 'connection', props: {...} }, ...]
@@ -159,10 +161,10 @@ Minimal routes in a new file `apps/api/src/routes/chat.ts`:
   - System prompt (onboarding-focused, includes schema constraints)
   - Non-persisted internal summary/context block
   - Last 20 messages
-  - Available chat-safe actions: `search_app_docs`, `list_app_docs`, `read_app_docs`, `list_user_connections`, `create_agent`
+  - Available chat-safe actions: `search_app_docs`, `list_app_docs`, `read_app_docs`, `list_compatible_connections`, `create_agent`
 4. If the LLM returns an action call, execute it server-side
 5. If the action is `create_agent`: validate the payload against the guided-setup input schema, derive the full `CreateAgentSchema` payload server-side, create the agent, mark the thread completed, and return success with the agent ID + post-creation context
-6. If the LLM returns text with `[FORM:...]` markers, include them as structured `actions` in the response
+6. If the runtime determines the UI must render a form, quick replies, or a confirmation card, normalize that into structured `actions` in the response
 7. Return the assistant message with any actions
 
 ### Step 3: Chat Agent System Prompt
@@ -189,10 +191,10 @@ Prefer the happy path unless the user asks for something specific. That means:
 - The user must specify capital.
 - If the user does not provide a custom goal, use the configurable default goal text.
 - If the user does not ask for a specific style, use `balanced`.
-- If the user does not ask for a specific execution mode, use `test`.
+- If the user does not ask for a specific execution mode, use the user-facing `test` choice. The server maps that to canonical `executionDefaults.mode`.
 - If the user does not ask for a specific strategy preset, choose one automatically.
-- If a compatible existing active connection already exists, use it automatically and avoid asking the user to create another connection.
-- Before creation, show a confirmation summary that includes the final goal/prompt, style, execution mode, strategy preset, and selected connection.
+- If the server returns a recommended compatible active connection, use it automatically and avoid asking the user to create another connection.
+- Before creation, show a confirmation summary that includes the final goal/prompt, style, user-facing execution mode, strategy preset, and selected connection.
 
 ## Greeting
 
@@ -208,15 +210,15 @@ Do NOT say "ask anything" — you have a specific job.
 ### If the user wants a trading agent:
 1. Confirm they want a trading agent and, if needed, ask which trading type/preset they want
 2. Ask about capital (how much do they want to allocate?)
-3. Reuse the first compatible existing active connection if one exists; only ask the user to create/connect something if none exists or they want a different one
+3. Reuse the server-recommended compatible existing active connection if one exists; only ask the user to create/connect something if none exists or they want a different one
 4. Ask optional preference questions only when needed (e.g. chain, style, strategy, goal)
-5. Otherwise apply the happy-path defaults for goal, style, execution mode, and strategy preset
+5. Otherwise apply the happy-path defaults for goal, style, user-facing execution mode, and strategy preset
 6. Summarize and confirm before creating
 
 ### If the user wants a personal assistant:
 1. Confirm they want a personal assistant and determine the preset/skill shape
 2. Ask only the minimum extra questions needed to create it successfully
-3. Reuse the first compatible existing active connection if one exists; only ask for a new connection when needed
+3. Reuse the server-recommended compatible existing active connection if one exists; only ask for a new connection when needed
 4. Otherwise apply the happy-path defaults for name, goal, and execution settings
 5. Summarize and confirm before creating
 
@@ -230,8 +232,7 @@ Do NOT say "ask anything" — you have a specific job.
 ### Rules:
 - You are single-purpose: create agents. Nothing else.
 - Never ask for private keys, API secrets, or passwords.
-- When the user needs to connect a wallet or exchange, emit [FORM:connection:venue=X] 
-  so the frontend renders the secure connection form.
+- When the user needs to connect a wallet or exchange, request the secure connection form action so the frontend renders the appropriate setup UI.
 - Always validate your understanding before calling create_agent.
 - After creating, remind the user of important next steps.
 - The user can always say "skip" or "use the form" to switch to the form-based flow.
@@ -249,10 +250,9 @@ chat/
   ChatMessage.tsx         # Single message (user or assistant)
   ChatComposer.tsx        # Text input + send
   ChatQuickReplies.tsx    # Button row for preset/suggestion selection
-  EmbeddedForm.tsx        # Renders [FORM:...] actions inline
+  GuidedSetupActionRenderer.tsx # Renders structured chat actions inline
   GuidedSetupGreeting.tsx # Initial greeting message with preset buttons
   useGuidedSetup.ts       # Hook: thread fetch/send/resume state
-  guided-setup-renderer.ts # Parses assistant responses for [FORM:...] markers
 ```
 
 **Greeting message** (i18n key: `chat.onboarding.greeting`):
@@ -275,33 +275,52 @@ The greeting is NOT hardcoded in the frontend. It's sent as the first assistant 
 
 The preset labels come from existing i18n keys (e.g., `agents.skillPresetId.trading`, `agents.skillPresetId.personal-assistant`).
 
-### Step 5: Embedded Form System
+### Step 5: Embedded Action System
 
-The `[FORM:...]` marker protocol:
+The backend returns structured chat actions alongside assistant text. Assistant `content` is display-only; the frontend must not parse assistant text for commands.
 
+```json
+{
+  "role": "assistant",
+  "content": "I found a compatible trading connection. Want to use it, or connect a different one?",
+  "actions": [
+    {
+      "id": "action-1",
+      "type": "quick_replies",
+      "options": [
+        { "label": "Use recommended connection", "value": "use_connection:conn_123" },
+        { "label": "Connect a different account", "value": "open_connection_form" }
+      ]
+    },
+    {
+      "id": "action-2",
+      "type": "form",
+      "form": "connection",
+      "props": { "venue": "hyperliquid" }
+    }
+  ]
+}
 ```
-[FORM:connection:venue=hyperliquid]
-[FORM:connection:venue=jupiter]
-[FORM:connection:type=email]
-```
 
-The frontend parses these from assistant messages and renders the appropriate form inline:
+The frontend renders these actions inline:
 
-- `[FORM:connection:venue=X]` → renders `<ConnectionForm venue={X} />` inline in the chat
-- On success → the frontend sends back `[RESULT:connection:connectionId=abc123]` to the chat
-- The chat LLM receives this as context and continues
+- `form` → renders the appropriate secure setup UI inline in the chat
+- `quick_replies` → renders button choices
+- `confirm` → renders the agent creation confirmation card
+- On success → the frontend posts the result to `/chat/threads/:id/actions/:actionId`
+- The chat runtime records the result in internal summary state and continues
 
 Trading and wallet setup must reuse the existing secure setup orchestration via `POST /setup/provider-link`. Email setup must reuse the existing OAuth connection flow. Guided Setup must not invent a separate provisioning path.
 
-This is safer than the LLM trying to render HTML forms (which it would hallucinate). The LLM only decides *when* to show a form and *which type* — the frontend owns the actual form rendering and secret handling.
+This is safer than the LLM trying to render HTML forms (which it would hallucinate). The runtime decides *when* to show a form and *which type*; the frontend owns the actual form rendering and secret handling.
 
 **Form types to support in v1:**
 
-| Marker | Form Component | Purpose |
+| Action payload | Form Component | Purpose |
 |--------|---------------|---------|
-| `[FORM:connection:venue=hyperliquid]` | Reused trading setup form | Calls `POST /setup/provider-link` for trading setup |
-| `[FORM:connection:venue=jupiter]` | Reused trading setup form | Calls `POST /setup/provider-link` for wallet provisioning |
-| `[FORM:connection:type=email]` | Reused email OAuth flow | Calls existing `/connections/oauth/*` flow |
+| `{ type: 'form', form: 'connection', props: { venue: 'hyperliquid' } }` | Reused trading setup form | Calls `POST /setup/provider-link` for trading setup |
+| `{ type: 'form', form: 'connection', props: { venue: 'jupiter' } }` | Reused trading setup form | Calls `POST /setup/provider-link` for wallet provisioning |
+| `{ type: 'form', form: 'connection', props: { type: 'email' } }` | Reused email OAuth flow | Calls existing `/connections/oauth/*` flow |
 
 ### Step 6: create_agent Action (Chat-Specific)
 
@@ -319,9 +338,9 @@ const GuidedSetupCreateAgentInput = z.object({
   capital: z.string().min(1),
   goal: z.string().optional(),
   style: z.enum(['careful', 'balanced', 'bold']).optional(),
-  executionMode: z.enum(['test', 'live']).optional(),
+  requestedExecutionMode: z.enum(['test', 'live']).optional(),
   strategyPreset: z.enum(['momentum', 'momentum-position', 'range', 'swing', 'scalper', 'contrarian']).optional(),
-  connectionId: z.string().optional(),
+  selectedConnectionId: z.string().optional(),
 });
 
 const createAgentAction = {
@@ -331,6 +350,8 @@ const createAgentAction = {
   async execute(params, ctx) {
     // Validate against GuidedSetupCreateAgentInput
     // Derive the full CreateAgentSchema payload server-side
+    // Map requestedExecutionMode -> canonical executionDefaults.mode using
+    // the same resolver as the existing create-agent form
     // Synthesize the final prompt deterministically when goal is omitted
     // Insert into agents table
     // Return agent ID + post-creation context
@@ -347,12 +368,13 @@ const createAgentAction = {
 | `name` | System | Generate with the same algorithm used by the current create-agent form |
 | `prompt` / goal | System | Use a configurable platform default when the user does not provide a custom goal; initial default: `Grow this portfolio` |
 | `style` | System | Default to `balanced` unless the user overrides it |
-| `executionMode` | System | Default to `test` unless the user overrides it |
+| `requestedExecutionMode` | System | Default to user-facing `test` unless the user overrides it; server maps it to canonical `executionDefaults.mode` |
 | `strategyPreset` | System | Auto-select one; preferred: market-regime aware, acceptable v1 fallback: deterministic platform default |
-| `connectionIds` | Frontend / Server | Reuse the first compatible existing active connection if available; otherwise collect it through secure setup UI |
+| `selectedConnectionId` | Server / User | Use the server-recommended compatible active connection when available; otherwise collect a different one through secure setup UI |
+| `connectionIds` | Server | Derived from `selectedConnectionId` when building `CreateAgentSchema` |
 | `skillIds` | Server | Derive from `skillPresetId`; not directly LLM-owned in v1 |
 
-Server-owned / excluded from `GuidedSetupCreateAgentInput` in v1: `toolPolicy`, `modelPolicy`, `provider`, `lightModel`, `heavyModel`, `technical`, `runtimePolicyOverrides`, `wakePreferences`, `platformAssessment`, `tickIntervalMs`, `openPositionEscalationToJudgePolicy`, `notificationPolicy`, `authorizationMode`, `capabilityMode`, and `hybridMode`.
+Server-owned / excluded from `GuidedSetupCreateAgentInput` in v1: `toolPolicy`, `modelPolicy`, `provider`, `lightModel`, `heavyModel`, `technical`, `runtimePolicyOverrides`, `wakePreferences`, `platformAssessment`, `tickIntervalMs`, `openPositionEscalationToJudgePolicy`, `notificationPolicy`, `authorizationMode`, `capabilityMode`, `hybridMode`, `executionDefaults`, and the final compatible-connection resolution rules.
 
 All advanced or power-user fields remain out of the happy path and should stay form-only unless explicitly added later.
 
@@ -364,7 +386,8 @@ After `create_agent` succeeds, the chat agent receives the created agent's state
 {
   "agentId": "uuid",
   "name": "My Trading Agent",
-  "executionMode": "test",
+  "displayExecutionMode": "test",
+  "executionDefaults": { "mode": "shadow" },
   "capital": "500",
   "venue": "hyperliquid",
   "walletAddress": "0x..."
@@ -384,6 +407,7 @@ The system prompt instructs the LLM to generate contextual reminders:
 - **Returning users (≥1 agent):** Landing page stays at `/agents`. When they navigate to "New Agent," they see a tab choice: **Guided (Chat)** | **Form**. Guided is the default tab.
 - **Thread metadata:** `chat_threads.metadata` tracks summary state plus at most one `createdAgentId` for v1.
 - **Post-creation continuity:** Completed threads remain viewable, but "Create another agent" starts a new thread.
+- **Start over semantics:** "Start over" always creates a fresh thread with the greeting state. v1 does not mutate or truncate the current thread's persisted history.
 - **Future:** When general Chat With AI ships, it gets its own `/chat` route and sidebar item. The Guided Setup chat is the first use of that infrastructure.
 
 ## Verification
@@ -392,9 +416,9 @@ The system prompt instructs the LLM to generate contextual reminders:
 - Greeting is honest about scope (no "ask anything" — it's "I can help you create an AI agent")
 - Clicking "AI crypto trader" starts a conversation about trading preferences
 - Chat asks for the minimum required fields, especially preset and capital, and uses happy-path defaults for the rest unless the user overrides them
-- If a compatible existing active connection already exists, Guided Setup auto-selects it
+- If a compatible existing active connection already exists, the server recommends it and Guided Setup auto-selects it
 - OAuth return and resume works with the existing redirect-based draft restoration pattern
-- When connection needed, `[FORM:connection:venue=hyperliquid]` renders inline
+- When connection needed, the backend returns a structured `form` action that renders inline
 - After form completion, chat continues with the connection ID
 - Agent created successfully via `create_agent` action
 - One thread produces at most one agent in v1
@@ -402,13 +426,14 @@ The system prompt instructs the LLM to generate contextual reminders:
 - "Use the form instead" link switches to the existing Create Agent form
 - Returning user who clicks "New Agent" sees tab choice: Guided (Chat) | Form
 - Guided is the default tab
+- "Start over" creates a new thread and leaves the prior thread viewable
 
 ## Risks
 
 | Risk | Mitigation |
 |------|-----------|
 | LLM creates agent with wrong/incomplete config | Zod validation on `create_agent` rejects bad payloads; LLM gets error and retries |
-| Chat loops forever asking questions | Max turns per thread (e.g., 20); frontend shows "stuck? use the form" after N turns |
-| LLM cost for onboarding | Use a cheap model (e.g., V4 Flash); track as separate cost bucket; show "powered by AI" disclosure |
+| Chat loops forever asking questions | Use operator-configured turn caps and frontend fallback thresholds; show "stuck? use the form" after the configured threshold |
+| LLM cost for onboarding | Use an operator-configured low-cost onboarding model tier; track as separate cost bucket; show "powered by AI" disclosure |
 | Chat not accessible without JS | Graceful fallback: the existing form-based flow remains available |
 | Users confused between chat and agent messaging | Clear labeling per product spec; chat is "Chat With AI", agent comms are within agent detail pages |
