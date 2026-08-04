@@ -7,7 +7,8 @@ import type { Database } from '@herobids/db';
 import type { AgentRiskDefaultsConfig, BlueprintExecutionCapabilityResolver, PlansConfig } from '@herobids/domain';
 import { createTableAwareDb } from '../__tests__/helpers/table-aware-db-mock.js';
 import { buildBlueprint, buildPublishedBlueprint, buildDraftBlueprint, buildRevision, buildRevisionSkill, buildLike, buildAgentPayload, buildBotPayload, BP_ID, REV_ID, USER_ID, OTHER_USER_ID } from '../__tests__/helpers/blueprint-fixtures.js';
-import { blueprints, blueprintRevisions, blueprintRevisionSkills, blueprintLikes, skills, skillRevisions } from '@herobids/db';
+import { blueprints, blueprintRevisions, blueprintRevisionSkills, blueprintLikes, blueprintForkRequests, skills, skillRevisions } from '@herobids/db';
+import { computeInstantiateRequestHash } from '../services/blueprint-idempotency.js';
 
 // Strategy preset YAML files are resolved relative to HEROBIDS_CONFIG_DIR or cwd.
 // In test, cwd is the package dir (apps/api), so we must point to the repo root.
@@ -974,39 +975,328 @@ describe('DELETE /blueprints/:id', () => {
   });
 });
 
-// ─── POST /blueprints/:id/clone ───────────────────────────────────────────
-// TODO (006-blueprint-unit-tests-schema-migration-debt): Rewrite tests against
-// the new fork-based clone (BlueprintForkRequestSchema, idempotency, revision copy).
+// ─── POST /blueprints/:id/fork ──────────────────────────────────────────
 
-describe.skip('POST /blueprints/:id/clone', () => {
-  it('returns 201 with cloned blueprint owned by the caller', async () => {
-    const clonedBlueprint = { ...stubBlueprint, id: 'bp-cloned', name: 'My Blueprint (copy)' };
-    let selectCallCount = 0;
-    const db = {
-      select: vi.fn().mockImplementation(() => {
-        selectCallCount++;
-        // call 1: source lookup; call 2: fetch clone after insert
-        return makeChain(selectCallCount === 1 ? [stubBlueprint] : [clonedBlueprint]);
-      }),
-      insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
-    } as unknown as Database;
+describe('POST /blueprints/:id/fork', () => {
+  it('returns 201 with forked draft blueprint carrying lineage', async () => {
+    const sourceBp = buildPublishedBlueprint({ authorId: TEST_USER_ID });
+    const sourceRev = buildRevision({ blueprintId: BP_ID, createdByUserId: TEST_USER_ID });
+    const forkBpCreated = buildDraftBlueprint({
+      id: 'fork-bp-id',
+      sourceBlueprintId: BP_ID,
+      sourceBlueprintRevisionId: REV_ID,
+      authorId: TEST_USER_ID,
+      name: 'Test Blueprint (fork)',
+    });
+    const forkRevCreated = buildRevision({
+      id: 'fork-rev-id',
+      blueprintId: 'fork-bp-id',
+      version: 1,
+    });
+
+    const dbMock = createTableAwareDb();
+    // resolveTargetRevision: blueprints[0] → sourceBp
+    // tx FOR UPDATE lock: blueprints[1] → sourceBp
+    // post-tx select fork: blueprints[2] → forkBpCreated
+    dbMock.setTableRows(blueprints, [[sourceBp], [sourceBp], [forkBpCreated]]);
+    // resolveTargetRevision: blueprintRevisions[0] → sourceRev
+    // post-tx select fork revision: blueprintRevisions[1] → forkRevCreated
+    dbMock.setTableRows(blueprintRevisions, [[sourceRev], [forkRevCreated]]);
+    // tx check existing fork request: empty
+    dbMock.setTableRows(blueprintForkRequests, [[]]);
+    // tx copy skills (getRevisionSkillRefs): empty
+    // post-tx buildBlueprintDetail: empty
+    dbMock.setTableRows(blueprintRevisionSkills, [[], []]);
+    const db = dbMock.build();
+
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
 
-    const res = await app.inject({ method: 'POST', url: `/blueprints/${BLUEPRINT_ID}/clone` });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/fork`,
+      headers: { 'idempotency-key': 'test-key-1' },
+    });
     expect(res.statusCode).toBe(201);
-    expect(res.json().name).toBe('My Blueprint (copy)');
+    const body = res.json();
+    expect(body.id).toBe('fork-bp-id');
+    expect(body.lineage.sourceBlueprintId).toBe(BP_ID);
+    expect(body.publicationStatus).toBe('draft');
   });
 
-  it('returns 404 when source blueprint does not exist', async () => {
-    const db = buildDb([]);
+  it('returns 400 when Idempotency-Key header is missing', async () => {
+    const dbMock = createTableAwareDb();
+    const db = dbMock.build();
+
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
 
-    const res = await app.inject({ method: 'POST', url: `/blueprints/${BLUEPRINT_ID}/clone` });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/fork`,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('blueprint.validation');
+  });
+
+  it('returns 400 when Idempotency-Key contains non-ASCII characters', async () => {
+    const dbMock = createTableAwareDb();
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/fork`,
+      headers: { 'idempotency-key': 'café' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('blueprint.validation');
+  });
+
+  it('returns 200 on idempotent replay with same body', async () => {
+    const sourceBp = buildPublishedBlueprint({ authorId: TEST_USER_ID });
+    const sourceRev = buildRevision({ blueprintId: BP_ID, createdByUserId: TEST_USER_ID });
+
+    // Compute the expected hash matching the handler's computation
+    const expectedHash = computeInstantiateRequestHash({
+      operation: 'fork',
+      blueprintId: BP_ID,
+      revisionId: REV_ID,
+      kind: 'fork',
+      edits: null,
+    });
+
+    const responsePayload = {
+      forkBlueprintId: 'fork-bp-id',
+      sourceBlueprintId: BP_ID,
+      sourceBlueprintRevisionId: REV_ID,
+      createdAt: new Date().toISOString(),
+    };
+
+    const dbMock = createTableAwareDb();
+    // resolveTargetRevision: blueprint + revision
+    dbMock.setTableRows(blueprints, [[sourceBp]]);
+    dbMock.setTableRows(blueprintRevisions, [[sourceRev]]);
+    // tx check existing fork request: returns existing record with matching hash
+    dbMock.setTableRows(blueprintForkRequests, [[{
+      id: 'existing-fork-req-id',
+      userId: TEST_USER_ID,
+      idempotencyKey: 'test-key-1',
+      requestHash: expectedHash,
+      sourceBlueprintId: BP_ID,
+      sourceBlueprintRevisionId: REV_ID,
+      forkBlueprintId: 'fork-bp-id',
+      responsePayload,
+    }]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/fork`,
+      headers: { 'idempotency-key': 'test-key-1' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().forkBlueprintId).toBe('fork-bp-id');
+  });
+
+  it('returns 409 on idempotency conflict with different body', async () => {
+    const sourceBp = buildPublishedBlueprint({ authorId: TEST_USER_ID });
+    const sourceRev = buildRevision({ blueprintId: BP_ID, createdByUserId: TEST_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    // resolveTargetRevision: blueprint + revision
+    dbMock.setTableRows(blueprints, [[sourceBp]]);
+    dbMock.setTableRows(blueprintRevisions, [[sourceRev]]);
+    // tx check existing fork request: returns record with non-matching hash
+    dbMock.setTableRows(blueprintForkRequests, [[{
+      id: 'existing-fork-req-id',
+      userId: TEST_USER_ID,
+      idempotencyKey: 'test-key-1',
+      requestHash: 'different-hash',
+      sourceBlueprintId: BP_ID,
+      sourceBlueprintRevisionId: REV_ID,
+      forkBlueprintId: 'fork-bp-id',
+      responsePayload: {},
+    }]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/fork`,
+      headers: { 'idempotency-key': 'test-key-1' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('blueprint.idempotency_conflict');
+  });
+
+  it('returns 404 when source blueprint not found', async () => {
+    const dbMock = createTableAwareDb();
+    // Empty blueprints → resolveTargetRevision returns 404
+    dbMock.setTableRows(blueprints, [[]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/fork`,
+      headers: { 'idempotency-key': 'test-key-1' },
+    });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 403 for non-owner without marketplace entitlement', async () => {
+    const sourceBp = buildPublishedBlueprint({ authorId: OTHER_USER_ID });
+    const sourceRev = buildRevision({ blueprintId: BP_ID, createdByUserId: OTHER_USER_ID });
+
+    const dbMock = createTableAwareDb();
+    // resolveTargetRevision: blueprint + revision (published=public access OK)
+    dbMock.setTableRows(blueprints, [[sourceBp]]);
+    dbMock.setTableRows(blueprintRevisions, [[sourceRev]]);
+    const db = dbMock.build();
+
+    const restrictedPlansConfig: PlansConfig = {
+      defaultPlanId: 'free',
+      plans: {
+        free: {
+          ...testPlansConfig.plans.free,
+          entitlements: {
+            ...testPlansConfig.plans.free.entitlements,
+            blueprints: {
+              canViewMarketplaceBlueprints: false,
+              canLikeMarketplaceBlueprints: true,
+            },
+          },
+        },
+      },
+    };
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, restrictedPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/fork`,
+      headers: { 'idempotency-key': 'test-key-1' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('blueprint.forbidden');
+  });
+
+  // H1: non-owner forking a non-published source → 404
+  it('returns 404 for non-owner forking a draft blueprint', async () => {
+    const draftBp = buildDraftBlueprint({ authorId: OTHER_USER_ID });
+    const dbMock = createTableAwareDb();
+    dbMock.setTableRows(blueprints, [[draftBp]]);
+    const db = dbMock.build();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/fork`,
+      headers: { 'idempotency-key': 'test-key-h1' },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe('blueprint.not_found');
+  });
+
+  // M1: invalid fork body → 400
+  it('returns 400 for invalid fork body', async () => {
+    const db = createTableAwareDb().build();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/fork`,
+      headers: { 'idempotency-key': 'test-key-m1' },
+      payload: { edits: 'not-an-object' }, // edits must be object per schema
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
+
+  // M2: fork with edits (deep merge) → 201
+  it('returns 201 with merged edits in the forked blueprint', async () => {
+    const sourceBp = buildPublishedBlueprint({ authorId: TEST_USER_ID });
+    const sourceRev = buildRevision({ blueprintId: BP_ID, payload: buildAgentPayload({ name: 'Original' }) });
+    const forkBpCreated = buildDraftBlueprint({
+      id: 'fork-bp-id-2',
+      sourceBlueprintId: BP_ID,
+      sourceBlueprintRevisionId: REV_ID,
+      authorId: TEST_USER_ID,
+      name: 'Original (fork)',
+    });
+    const forkRevCreated = buildRevision({
+      id: 'fork-rev-id-2',
+      blueprintId: 'fork-bp-id-2',
+      version: 1,
+      payload: buildAgentPayload({ name: 'Original', description: 'Custom forked description' }),
+    });
+
+    const dbMock = createTableAwareDb();
+    // resolveTargetRevision selects, FOR UPDATE lock, post-tx fork select
+    dbMock.setTableRows(blueprints, [[sourceBp], [sourceBp], [forkBpCreated]]);
+    dbMock.setTableRows(blueprintRevisions, [[sourceRev], [forkRevCreated]]);
+    dbMock.setTableRows(blueprintForkRequests, [[]]);
+    dbMock.setTableRows(blueprintRevisionSkills, [[], []]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/fork`,
+      headers: { 'idempotency-key': 'test-key-edits' },
+      payload: { edits: { kind: 'agent', description: 'Custom forked description' } },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().id).toBe('fork-bp-id-2');
+  });
+
+  // M3: delisted/archived source → 409 LIFECYCLE_CONFLICT
+  it('returns 409 for delisted source blueprint', async () => {
+    const delistedBp = buildBlueprint({
+      publicationStatus: 'delisted',
+      delistedAt: new Date(),
+      authorId: TEST_USER_ID,
+    });
+    const dbMock = createTableAwareDb();
+    dbMock.setTableRows(blueprints, [[delistedBp]]);
+    const db = dbMock.build();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityResolver, testPlansConfig);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${BP_ID}/fork`,
+      headers: { 'idempotency-key': 'test-key-m3' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('blueprint.lifecycle_conflict');
   });
 });
 
