@@ -641,13 +641,16 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     const createdAt = new Date();
 
     await db.transaction(async (tx) => {
+      // Step 1: Insert skills row with null FK pointers to avoid circular FK
+      // (published_revision_id → skill_revisions.id). Revision inserted next,
+      // then the FK pointers are patched in step 3.
       await tx.insert(skills).values({
         id,
         authorId: request.userId,
         publicationStatus: publication.publicationStatus,
         publishedAt: publication.publicationStatus === 'published' ? createdAt : null,
-        currentRevisionId: revisionId,
-        publishedRevisionId: publication.publicationStatus === 'published' ? revisionId : null,
+        currentRevisionId: null,
+        publishedRevisionId: null,
         priceCents: parsed.data.priceCents,
         autoPublishedByPlan: publication.autoPublishedByPlan,
         name: parsed.data.name,
@@ -665,6 +668,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         updatedAt: createdAt,
       });
 
+      // Step 2: Insert the revision — now that the parent skills row exists
       await tx.insert(skillRevisions).values({
         id: revisionId,
         skillId: id,
@@ -685,6 +689,15 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         publishedAt: publication.publicationStatus === 'published' ? createdAt : null,
         createdAt,
       });
+
+      // Step 3: Patch FK pointers now that the revision exists
+      await tx.update(skills)
+        .set({
+          currentRevisionId: revisionId,
+          publishedRevisionId: publication.publicationStatus === 'published' ? revisionId : null,
+          updatedAt: createdAt,
+        })
+        .where(eq(skills.id, id));
     });
 
     const [createdSkill] = await db.select().from(skills).where(eq(skills.id, id));
@@ -1008,13 +1021,14 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     const forkRevisionId = crypto.randomUUID();
     const now = new Date();
     await db.transaction(async (tx) => {
+      // Step 1: Insert skills row with null FK pointers (published_revision_id → skill_revisions.id)
       await tx.insert(skills).values({
         id: forkId,
         authorId: request.userId,
         publicationStatus: publication.publicationStatus,
         publishedAt: publication.publicationStatus === 'published' ? now : null,
-        currentRevisionId: forkRevisionId,
-        publishedRevisionId: publication.publicationStatus === 'published' ? forkRevisionId : null,
+        currentRevisionId: null,
+        publishedRevisionId: null,
         priceCents: 0,
         autoPublishedByPlan: publication.autoPublishedByPlan,
         name: `${sourceRevision.name} (copy)`,
@@ -1033,6 +1047,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         updatedAt: now,
       });
 
+      // Step 2: Insert the revision
       await tx.insert(skillRevisions).values({
         id: forkRevisionId,
         skillId: forkId,
@@ -1053,6 +1068,15 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         publishedAt: publication.publicationStatus === 'published' ? now : null,
         createdAt: now,
       });
+
+      // Step 3: Patch FK pointers now that the revision exists
+      await tx.update(skills)
+        .set({
+          currentRevisionId: forkRevisionId,
+          publishedRevisionId: publication.publicationStatus === 'published' ? forkRevisionId : null,
+          updatedAt: now,
+        })
+        .where(eq(skills.id, forkId));
 
       await tx.update(skills).set({
         forkCount: sql`${skills.forkCount} + 1`,
