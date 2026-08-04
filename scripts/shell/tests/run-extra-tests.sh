@@ -183,6 +183,7 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   tier_enabled 2 && echo -e "  ${BLUE}Tier 2${RESET} (redis-only)         → agent-watch-invariants.sh --smoke"
   tier_enabled 3 && echo -e "  ${BLUE}Tier 3${RESET} (api+db)             → agent-config-matrix-test.sh"
   tier_enabled 3 && echo -e "                                          → agent-config-persistence-test.sh"
+  tier_enabled 3 && echo -e "                                          → billing-webhook-smoke-test.sh"
   tier_enabled 4 && echo -e "  ${BLUE}Tier 4${RESET} (full stack, no keys) → agent-document-handling-test.sh"
   tier_enabled 5 && echo -e "  ${BLUE}Tier 5${RESET} (full stack + venue)  → agent-trade-test.sh"
   tier_enabled 5 && echo -e "                                          → bot-trade-test.sh"
@@ -444,6 +445,9 @@ if tier_enabled 3; then
 
   run_script "agent-config-persistence (DB write + reject)" \
     "${TESTS_DIR}/agent-config-persistence-test.sh"
+
+  run_script "billing-webhook-smoke (subscription + top-up persistence)" \
+    "${TESTS_DIR}/billing-webhook-smoke-test.sh"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════

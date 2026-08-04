@@ -120,8 +120,8 @@ export class CreemProvider implements PaymentProvider {
         type: 'top_up.completed',
         provider: 'creem',
         subscriptionId: '',
-        customerId: sub.customer_id ?? '',
-        productOrPriceId: sub.product_id ?? '',
+        customerId: sub.customer_id ?? sub.customer?.id ?? '',
+        productOrPriceId: sub.product_id ?? sub.product?.id ?? '',
         status: 'paid',
         currentPeriodStart: null,
         currentPeriodEnd: null,
@@ -141,8 +141,8 @@ export class CreemProvider implements PaymentProvider {
       type,
       provider: 'creem',
       subscriptionId: sub.id ?? '',
-      customerId: sub.customer_id ?? '',
-      productOrPriceId: sub.product_id ?? '',
+      customerId: sub.customer_id ?? sub.customer?.id ?? '',
+      productOrPriceId: sub.product_id ?? sub.product?.id ?? '',
       status: sub.status ?? event.event_type!,
       currentPeriodStart: sub.current_period_start_date ? new Date(sub.current_period_start_date) : null,
       currentPeriodEnd: sub.current_period_end_date ? new Date(sub.current_period_end_date) : null,
@@ -231,7 +231,9 @@ export class CreemSignatureError extends Error {
 interface CreemSubscriptionObject {
   id?: string;
   customer_id?: string;
+  customer?: { id?: string; email?: string; name?: string; metadata?: Record<string, string> };
   product_id?: string;
+  product?: { id?: string; name?: string };
   status?: string;
   current_period_start_date?: string;
   current_period_end_date?: string;
