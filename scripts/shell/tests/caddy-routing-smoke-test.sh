@@ -123,6 +123,26 @@ check "/auth/google/callback returns HTTP 400 (API CSRF check, not SPA 200)" \
     [[ \"\$http_code\" == \"400\" ]]
   "
 
+# ── Test 5: /billing/webhook/* → reaches API (returns JSON, not SPA HTML) ──
+# A misconfigured Caddyfile sends these to web:80 (SPA), which returns
+# 200 with index.html. The API returns a JSON error for an empty body.
+
+check "/billing/webhook/creem reaches API (returns JSON, not SPA HTML)" \
+  bash -c "curl -s -X POST '${BASE_URL}/billing/webhook/creem' \
+    -H 'content-type: application/json' -d '{}' 2>&1 | head -c 200 | grep -qE 'error|invalid|missing|provider'"
+
+check "/billing/webhook/creem does NOT return SPA HTML" \
+  bash -c "! curl -s -X POST '${BASE_URL}/billing/webhook/creem' \
+    -H 'content-type: application/json' -d '{}' 2>&1 | head -c 200 | grep -qE '<!DOCTYPE|<html'"
+
+check "/billing/webhook/stripe reaches API (returns JSON, not SPA HTML)" \
+  bash -c "curl -s -X POST '${BASE_URL}/billing/webhook/stripe' \
+    -H 'content-type: application/json' -d '{}' 2>&1 | head -c 200 | grep -qE 'error|invalid|missing|provider'"
+
+check "/billing/webhook/stripe does NOT return SPA HTML" \
+  bash -c "! curl -s -X POST '${BASE_URL}/billing/webhook/stripe' \
+    -H 'content-type: application/json' -d '{}' 2>&1 | head -c 200 | grep -qE '<!DOCTYPE|<html'"
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 echo ""

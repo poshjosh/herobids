@@ -190,6 +190,25 @@ else
   pass "DB migrations — completed"
 fi
 
+# ─── Check 6: Webhook Routing ──────────────────────────────────────────────
+
+echo "── 6. Webhook Routing ──"
+
+# POST to billing webhook endpoints — must hit the API (JSON error response),
+# not the SPA (HTML). A Caddy routing gap sends these to web:80.
+for wh in /billing/webhook/creem /billing/webhook/stripe; do
+  WH_RESP=$(ssh ${SSH_OPTS} "root@${SERVER_IP}" \
+    "curl -s -X POST 'http://localhost:3000${wh}' -H 'content-type: application/json' -d '{}' 2>&1 | head -c 200" || true)
+
+  if echo "${WH_RESP}" | grep -qE '<!DOCTYPE|<html'; then
+    fail "Webhook ${wh}" "returned HTML — routed to SPA, not API (Caddy route block missing)"
+  elif echo "${WH_RESP}" | grep -qE '"error"|"message"'; then
+    pass "Webhook ${wh} — reaches API (JSON response)"
+  else
+    fail "Webhook ${wh}" "unexpected response: ${WH_RESP:0:80}"
+  fi
+done
+
 # ─── Skipped checks ──────────────────────────────────────────────────────────
 
 echo ""

@@ -147,7 +147,35 @@ describe('staging/production environment invariants', () => {
     });
   });
 
-  // ── 6. Auth origin consistency ─────────────────────────────────────────
+  // ── 6. Caddyfile required route blocks ────────────────────────────────
+  // Every path that does NOT use the /api prefix MUST have an explicit
+  // handle block in the Caddyfile — otherwise it falls through to the
+  // SPA catch-all. If you add a new public endpoint without /api/*, add
+  // it to this list.
+
+  describe('Caddyfile required route blocks', () => {
+    const requiredApiBlocks = [
+      '/health',
+      '/auth/*',
+      '/billing/*',
+      '/connections/oauth/*',
+      '/telegram/*',
+    ];
+
+    for (const block of requiredApiBlocks) {
+      it(`Caddyfile.staging has handle for ${block}`, () => {
+        const escaped = block.replace(/\*/g, '\\*');
+        expect(stagingCaddy).toMatch(new RegExp(`handle\\s+${escaped}`));
+      });
+
+      it(`Caddyfile.prod has handle for ${block}`, () => {
+        const escaped = block.replace(/\*/g, '\\*');
+        expect(prodCaddy).toMatch(new RegExp(`handle\\s+${escaped}`));
+      });
+    }
+  });
+
+  // ── 7. Auth origin consistency ─────────────────────────────────────────
 
   describe('auth origin consistency in compose overlays', () => {
     it('staging auth origins point to staging domain', () => {

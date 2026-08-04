@@ -27,6 +27,12 @@ staging.openaidom.com {
     handle /connections/oauth/* {
         reverse_proxy api:3000
     }
+    handle /billing/* {
+        reverse_proxy api:3000
+    }
+    handle /telegram/* {
+        reverse_proxy api:3000
+    }
     handle {
         reverse_proxy web:80
     }
