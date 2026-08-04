@@ -1,9 +1,12 @@
-import type { ChatMessage } from '../../lib/api-client.js';
+import type { ChatMessage, ProviderSetupResult } from '../../lib/api-client.js';
 import { ChatQuickReplies } from './ChatQuickReplies.js';
+import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 
 interface GuidedSetupActionRendererProps {
   actions: NonNullable<ChatMessage['actions']>;
   onQuickReply: (value: string) => void;
+  /** Called when an inline form (e.g. connection setup) completes successfully. */
+  onFormSubmit: (actionId: string, result: unknown) => void;
   disabled?: boolean;
 }
 
@@ -15,7 +18,7 @@ interface GuidedSetupActionRendererProps {
  * - form: Secure setup UI rendered inline (connection, wallet, etc.)
  * - confirm: Agent creation confirmation card
  */
-export function GuidedSetupActionRenderer({ actions, onQuickReply, disabled = false }: GuidedSetupActionRendererProps) {
+export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit, disabled = false }: GuidedSetupActionRendererProps) {
   return (
     <div style={{ marginTop: 8 }}>
       {actions.map((action) => {
@@ -50,6 +53,32 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, disabled = fa
             );
 
           case 'form':
+            if (action.form === 'connection') {
+              return (
+                <div
+                  key={action.id}
+                  style={{
+                    padding: '12px 16px',
+                    borderRadius: 8,
+                    backgroundColor: 'var(--color-surface-2)',
+                    border: '1px solid var(--color-border)',
+                    marginTop: 8,
+                  }}
+                >
+                  <ProviderSetupForm
+                    inline
+                    defaultCapability="trading"
+                    onClose={() => {
+                      // User dismissed the inline form — send a cancel signal
+                      onFormSubmit(action.id, { cancelled: true });
+                    }}
+                    onSuccess={(result: ProviderSetupResult) => {
+                      onFormSubmit(action.id, { connectionId: result.connection.id });
+                    }}
+                  />
+                </div>
+              );
+            }
             return (
               <div
                 key={action.id}
@@ -62,9 +91,7 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, disabled = fa
                   color: 'var(--color-text-muted)',
                 }}
               >
-                {action.form === 'connection'
-                  ? '🔗 Secure connection form — use the setup UI to connect your account.'
-                  : `📋 Form: ${action.form ?? 'unknown'}`}
+                {`📋 Form: ${action.form ?? 'unknown'}`}
               </div>
             );
 

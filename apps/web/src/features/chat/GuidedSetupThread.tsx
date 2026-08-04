@@ -8,11 +8,12 @@ interface GuidedSetupThreadProps {
   messages: ChatMessage[];
   onSend: (content: string) => void;
   onQuickReply: (value: string) => void;
+  onFormSubmit: (actionId: string, result: unknown) => void;
   sending: boolean;
   disabled?: boolean;
 }
 
-export function GuidedSetupThread({ messages, onSend, onQuickReply, sending, disabled = false }: GuidedSetupThreadProps) {
+export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit, sending, disabled = false }: GuidedSetupThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
@@ -63,6 +64,7 @@ export function GuidedSetupThread({ messages, onSend, onQuickReply, sending, dis
                 <GuidedSetupActionRenderer
                   actions={msg.actions!}
                   onQuickReply={onQuickReply}
+                  onFormSubmit={onFormSubmit}
                   disabled={disabled || sending}
                 />
               )}

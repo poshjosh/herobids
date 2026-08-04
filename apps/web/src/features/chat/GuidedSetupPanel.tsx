@@ -22,6 +22,7 @@ export function GuidedSetupPanel({ onSwitchToForm, onAgentCreated }: GuidedSetup
     error,
     sending,
     sendMessage,
+    submitActionResult,
     startOver,
   } = useGuidedSetup();
 
@@ -32,6 +33,10 @@ export function GuidedSetupPanel({ onSwitchToForm, onAgentCreated }: GuidedSetup
     }
     // Treat quick-reply selections as user messages
     sendMessage(value);
+  };
+
+  const handleFormSubmit = (actionId: string, result: unknown) => {
+    submitActionResult(actionId, result);
   };
 
   // Show loading state
@@ -182,6 +187,7 @@ export function GuidedSetupPanel({ onSwitchToForm, onAgentCreated }: GuidedSetup
         messages={messages}
         onSend={sendMessage}
         onQuickReply={handleQuickReply}
+        onFormSubmit={handleFormSubmit}
         sending={sending}
       />
     </div>
