@@ -15,7 +15,11 @@ Two scanner-gated (hybrid) trading agents on staging executed **zero trades** an
 
 1. **thyper — wake message consumed by the wrong consumer group (race condition).** The `agent.wake` message is published to the same `agent:outbound:<id>` stream that has two consumer groups. The `agent-market-wake` group (polled continuously) and the `agent-runtime` group (drained once per tick) race to consume the same wake message. When the wake group wins, the runtime group never sees it → `currentMarketWake` is null when the tick runs → "timer tick without wake signal" → the hybrid evaluator never routes to the LLM. This also causes the `agent-runtime` group to lag (149 for thyper), so `lastTechnicalScan` is stale → `stale_scan` abort.
 
-2. **t1inch — base discovery suppressed by antistaleness.** The t1inch swap scanner (network `base`) calls `registry.discovery.discover({ networks: ['base'] })`, which returns **zero base tokens**. The discovery providers return base tokens when queried directly, but the **antistaleness cooldown (4h)** marks all base tokens as "stale" (recently seen) and they get sliced off when 47 solana tokens fill the 50-slot `maxResults` limit. Without candidates, no scanner wake is emitted, so t1inch never activates.
+2. **t1inch — base discovery returns zero tokens (two contributing causes).** The t1inch swap scanner (network `base`) calls `registry.discovery.discover({ networks: ['base'] })`, which returns **zero base tokens**. Investigation (see `docs/bug-reports/2026/08/05/002-investigation-t1inch-base-discovery.md`) confirmed two contributing causes:
+   - **Antistaleness suppression (confirmed):** base tokens ARE discovered (seen:base zset has 62 entries) but are continuously re-marked-seen, so they're always within the 4h cooldown → moved to the end by `applyAntiStaleness()` → sliced off when solana fills the `maxResults` limit.
+   - **Silent provider-failure swallowing (contributing):** `discoverTokens()` uses `Promise.allSettled` and silently drops rejected provider results. Geckoterminal (the primary per-network provider for base) returns 429 when rate-limited, and those base results are silently dropped. Dexscreener works but is predominantly solana.
+
+   Without candidates, no scanner wake is emitted, so t1inch never activates.
 
 Historical data shows this is a **latent design weakness, not a recent code regression** — the scanner-gated path has traded successfully many times before (07/22, 07/23, 07/25, 07/29, 08/01, 08/03).
 
@@ -213,7 +217,8 @@ The root causes are now **confirmed** (see §Root Cause Hypothesis). The followi
 **To validate the fix:**
 - Inspect `discoverTokens()` (`packages/market-data/src/discovery.ts:210`) — `sliced = reordered.slice(0, maxResults)` after `applyAntiStaleness` reorders stale tokens to the end.
 - Inspect `RedisDiscoverySeenTracker.applyAntiStaleness()` (`packages/market-data/src/discovery-seen-tracker.ts:44-70`).
-- The fix should ensure base tokens are not permanently suppressed (e.g., per-network maxResults, or not applying antistaleness to swap-scan discovery).
+- The fix should ensure base tokens are not permanently suppressed. **Preferred: per-network `maxResults`** (reserve base slots so solana cannot starve base to zero), which keeps antistaleness consistent across all scanners.
+- **Discouraged: "skip antistaleness for swap-scan discovery."** This would make swap-scan discovery inconsistent with orderbook-scan discovery, and antistaleness is a deliberate, shared diversity feature. Disabling it would re-surface the same top base tokens every scan. See `docs/bug-reports/2026/08/05/002-investigation-t1inch-base-discovery.md` for the full rationale.
 
 ## Impact
 
