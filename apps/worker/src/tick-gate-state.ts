@@ -140,6 +140,12 @@ function extractTickSignals(
 
 export function buildTickGateState(params: BuildTickGateStateParams): TickGateState {
   const tickSignals = extractTickSignals(params.incomingMessages, params.lastKnownPositionSide);
+  // hasWakeSignal gates hybrid LLM dispatch. It is normally derived from the
+  // runtime group's incomingMessages, but in the two-consumer-group race the
+  // wake group may consume an `agent.wake` before the runtime group sees it.
+  // In that case the wake is buffered and drained into currentMarketWake, and
+  // runTick passes hasBufferedWake=true so the gate still unblocks.
+  // See docs/tech/agents/wake-signal-and-technical-scan.md.
   const hasWakeSignal = params.incomingMessages.some((message) => message['type'] === 'agent.wake')
     || params.hasBufferedWake === true;
 

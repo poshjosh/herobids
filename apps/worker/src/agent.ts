@@ -1356,7 +1356,16 @@ async function drainStalePendingEntries(): Promise<void> {
   }
 }
 
-// Read pending messages from the outbound stream (platform → agent)
+// Read pending messages from the outbound stream (platform → agent).
+//
+// IMPORTANT — two-consumer-group semantics: this drains the `agent-runtime`
+// consumer group on the SAME `agent:outbound:<id>` stream that the
+// `agent-market-wake` group polls continuously (see pollWakeSignals). Redis
+// Streams delivers each message to only ONE consumer group. When the wake
+// group consumes an `agent.wake` first, this group never sees it — so the
+// wake context must be buffered by the wake group and drained into
+// `currentMarketWake` at tick start (see runTick), not re-read here.
+// See docs/tech/agents/wake-signal-and-technical-scan.md.
 async function readOutboundMessages(): Promise<Array<Record<string, unknown>>> {
   return readAgentOutboundMessages(redis, {
     outboundStream: OUTBOUND_STREAM,
@@ -1391,6 +1400,16 @@ function requestWakeDrivenTick(reason: string): void {
   }
 }
 
+// Polls the `agent-market-wake` consumer group on the outbound stream.
+//
+// IMPORTANT — two-consumer-group semantics: this group polls continuously and
+// races the `agent-runtime` group (drained once per tick by readOutboundMessages)
+// for the same `agent.wake` messages. Redis Streams delivers each message to
+// only ONE consumer group. When this group wins the race, the runtime group
+// never sees the wake — so we MUST buffer the full wake envelope here and drain
+// it into `currentMarketWake` at tick start (see runTick). The wake context is
+// never re-read from the stream; it is carried in `pendingWakeSignalBuffer`.
+// See docs/tech/agents/wake-signal-and-technical-scan.md.
 async function pollWakeSignals(): Promise<void> {
   if (!running || wakePollInFlight) {
     return;

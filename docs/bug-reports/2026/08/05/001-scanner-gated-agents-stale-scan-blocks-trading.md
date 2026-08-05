@@ -227,3 +227,9 @@ The root causes are now **confirmed** (see §Root Cause Hypothesis). The followi
 - **The 08/04 staging run masked the issue** because the account was hard-limited (low message volume → no lag).
 - **Birdeye/Binance 400s** on candle fetch (HYPE, CASHCAT, FARTCOIN) are a separate, lower-severity issue — the stack trace points to `fetchBinanceCandles`, not Birdeye.
 - **No security breaches, data leaks, or unauthorized access** were detected.
+
+## References
+
+- **Tech doc (canonical architecture reference):** `docs/tech/agents/wake-signal-and-technical-scan.md` — grounds the two-consumer-group race, the wake lifecycle, and the technical-scan lifecycle in deterministic language.
+- **Implementation plan:** `docs/features/2026/08/05/001-fix-wake-consumer-group-race/001-plan.md`
+- **Eval report:** `.ignore/eval/2026/08/05/REPORT.md` (§3.9)

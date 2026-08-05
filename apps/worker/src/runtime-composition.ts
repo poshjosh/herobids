@@ -86,6 +86,13 @@ export interface PendingWakeSignalBufferEntry {
  * group may consume an `agent.wake` before the runtime group ever sees it, so
  * the wake context must be buffered here (not re-read) to be visible to the
  * tick. Safe defaults are used for missing fields.
+ *
+ * NOTE: `source` is not validated against the known union here (unlike the
+ * runtime-group path, which validates via AgentWakePayloadSchema). A malformed
+ * envelope with an unknown source degrades gracefully — isScannerWake is false
+ * and the scanner-gated suppression gate handles non-scanner sources — but
+ * validating `source` here would be more robust. See the plan's Outstanding
+ * Issues.
  */
 export function bufferWakeEnvelope(
   envelope: Record<string, unknown>,
