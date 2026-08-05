@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.44 - 2026-08-05
+
+### Fixed
+
+- docs/bug-reports/2026/08/05/003-nginx-websocket-events-404.md
+- docs/features/2026/08/05/001-fix-wake-consumer-group-race/001-plan.md
+
 ## v0.0.43 - 2026-08-05
 
 ### Fixed
