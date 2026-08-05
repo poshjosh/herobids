@@ -69,11 +69,11 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
 | MC-01 | Summary metrics render | Open Mission Control | Shows agent-state metric cards for Active, Paused, Unhealthy, and Stopped | ✅ | 2026-07-07: Shows Active 0/1, Paused 0, Unhealthy 0, Stopped 1 (after creating one agent) |
-| MC-02 | Header CTA renders | Open Mission Control | "Create agent" button shown in the page header | ✅ | 2026-07-07: "Create AI agent" button shown in page header |
+| MC-02 | Header CTA renders | Open Mission Control | No "Create agent" button in the page header — the create flow is a persistent panel below the tabs | ✅ | 2026-08-05: Header CTA removed; create flow panel is always present below the tabs |
 | MC-03 | Agent overview cards | Open Mission Control with agents | One card per agent under "Your agents"; shows status, execution mode, objective, and capability readiness; clicking the card navigates to the agent detail page | ✅ | 2026-07-07: Card shows agent name, "stopped" badge, "Paper mode" pill, goal text, "Trading: Unconfigured" capability readiness; card is clickable |
-| MC-04 | Recent activity feed | Open Mission Control | "Recent Activity" section on right; empty state if no events | ✅ | 2026-07-07: "Recent activity" section shown; "No activity yet" empty state on fresh account |
-| MC-05 | Empty state — no agents | Open Mission Control with fresh account | "No agents yet" empty state with "Create agent" CTA; metrics show zeros | ✅ | 2026-07-07: "No AI agents yet" empty state; all metrics 0 on fresh account |
-| MC-06 | "Create agent" button navigates | Click "Create agent" | Navigates to `/agents?create=1` or opens the create flow from the agents page | ✅ | 2026-07-07: "Create AI agent" button navigated to /agents?create=1 with create form dialog open |
+| MC-04 | Recent activity feed | Open Mission Control | Activity feed moved to the sidebar ("Activity" nav item below Connections) and the `/activity` page; no right-panel feed on the agents page | ✅ | 2026-08-05: Right activity panel removed from agents page; activity lives on `/activity` via the sidebar |
+| MC-05 | Empty state — no agents | Open Mission Control with fresh account | No "No agents yet" empty state; guided chat is the default entry point for new users; metrics show zeros | ✅ | 2026-08-05: Empty state removed — new users land on the guided chat instead; metrics show 0 on fresh account |
+| MC-06 | "Create agent" button navigates | Click the create-flow title | Expands the create flow panel (guided chat by default); `?create=1` forces it open | ✅ | 2026-08-05: Clicking the "Create AI agent" title expands the flow; `?create=1` forces expansion |
 | MC-07 | Clicking an agent card navigates | Click anywhere on an agent card | Navigates to `/agents/:id` | ✅ | 2026-07-07: Card click navigated to /agents/172b77b6-... |
 | MC-08 | Capability CTA opens agent capability page | Open agent detail, expand Capabilities section, click capability button | Navigates to `/agents/:id/capabilities/trading` | — | Capability CTA moved from summary card to agent detail page |
 | MC-09 | Data staleness | Leave page for >30 s; return | Data refetches and reflects current agent state | — | |
@@ -130,8 +130,11 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
 | AG-01 | Agents list renders | Navigate to `/agents` | Page titled "AI Agents"; subtitle "Low cost AI agents that trade, assist, research and more" | ✅ | Title "AI Agents"; subtitle "Low cost AI agents that trade, assist, research and more" |
-| AG-02 | Empty state | Open with no agents | "No agents yet" empty state; "Create agent" CTA | ✅ | "No AI agents yet" with "Create AI agent" CTA |
+| AG-02 | Empty state | Open with no agents | No "No agents yet" empty state; guided chat is the default entry point for new users | ✅ | 2026-08-05: Empty state removed — new users land on the guided chat instead |
 | AG-03 | Create agent — happy path | Click "New agent"; fill goal, preset, and execution mode; submit | Agent detail page opens for the new agent | ✅ | Created test-agent-01; navigated to /agents/:id |
+| AG-03a | Create flow panel — new user | Open `/agents` with 0 agents | Create flow is expanded by default showing guided chat; no header CTA button | ✅ | 2026-08-05: New user sees guided chat expanded; no "New AI agent" button |
+| AG-03b | Create flow panel — returning user | Open `/agents` with ≥1 agent | Create flow is collapsed; "Create AI agent" title still visible; clicking it expands | ✅ | 2026-08-05: Collapsed with title visible; click expands to guided chat |
+| AG-03c | Create flow — switch forms | Expand the flow; click the header switch | Toggles between guided chat and the plain form; switch label updates | ✅ | 2026-08-05: "Use the form" ↔ "Use guided chat" toggles correctly |
 | AG-04 | Create agent — validation | Submit with missing required fields | Error banner shown; form not dismissed | ✅ | "Review →" button disabled when goal is empty; no submission possible |
 | AG-05 | Start agent | Open agent detail; click "Start" | Status transitions `stopped` → `starting` → `active`; worker picks up within ~2 s | ✅ | stopped → starting → active observed; Stop button appeared immediately |
 | AG-06 | Agent detail page renders | Click agent name | Navigates to `/agents/:id`; shows Status, Execution mode, Objective, Capabilities, Prompt Surfaces, Runtime Health (if active), Messages to User, Protocol Activity, and Artifacts | ✅ | Status label now shows "Status" after adding `common.status` i18n key; Execution mode only shown when agent has trading capability (intentional) |
@@ -234,7 +237,7 @@ Route: `/skills` — capability bundles that tell agents what they can do.
 | O-03 | Total P&L sign coloring | Inspect positive vs negative total P&L | Green for profit, red for loss | — | |
 | O-04 | Total P&L 2 decimal places | Inspect total P&L display | Always shows exactly 2 decimal places | — | |
 | O-05 | No positions | View agent with no open positions | Positions section hidden or empty state shown | — | |
-| O-06 | Empty state — no agents or positions | Open with fresh account | Empty state shown, not a crash | ✅ | "No AI agents yet" empty state with explanatory copy |
+| O-06 | Empty state — no agents or positions | Open with fresh account | Page renders without crashing; no "No AI agents yet" empty state (guided chat is the default entry point) | ✅ | 2026-08-05: Empty state removed — page renders cleanly with guided chat as the default |
 
 ---
 
@@ -255,10 +258,11 @@ Route: `/skills` — capability bundles that tell agents what they can do.
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| AF-01 | Activity feed renders | Navigate to `/activity` | Page loads with event list or empty state | ✅ | "Activity" heading with subtitle "What your AI agents have been doing"; All/Agents/Bots filter tabs shown |
+| AF-01 | Activity feed renders | Navigate to `/activity` | Page loads with event list or empty state | ✅ | "Activity" heading with subtitle "What your AI agents have been doing"; All/Agents/Bots filter tabs shown; agent summary metrics (Active/Paused/Unhealthy/Stopped/Total P&L) shown at top |
 | AF-02 | Pagination / infinite scroll | Scroll to bottom of activity list | Next page of events loads (or "Load more") | — | "Load older events" button appears; clicking it loads next page (fixed bug 017: Date object passed to SQL query caused 500) |
-| AF-03 | Empty state | Fresh account with no activity | Empty state shown | ✅ | "No activity yet" with explanatory copy |
+| AF-03 | Empty state | Fresh account with no activity | Empty state shown | ✅ | "No activity yet" with explanatory copy; agent summary metrics still shown above |
 | AF-04 | Timestamps | Inspect event timestamps | Dates formatted readably; no epoch numbers | ✅ | All timestamps show relative format ("13 sec. ago", "1 min. ago"); no raw epoch or ISO strings |
+| AF-05 | Sidebar nav | Open sidebar | "Activity" nav item appears below "Connections" under Manage | ✅ | 2026-08-05: "◈ Activity" nav item added below Connections |
 
 ---
 

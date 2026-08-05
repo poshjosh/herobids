@@ -283,47 +283,107 @@ body {
 
 .metrics-summary-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 12px;
   margin-bottom: 24px;
 }
 
-/* On smaller screens switch to a horizontally scrollable row */
+/* Two compact metric cards fit comfortably on small screens — no horizontal
+ * scroll needed. */
 @media (max-width: 768px) {
   .metrics-summary-row {
-    display: flex;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;          /* Firefox */
-    -ms-overflow-style: none;       /* IE/Edge */
-  }
-  .metrics-summary-row::-webkit-scrollbar {
-    display: none;                  /* Chrome/Safari */
-  }
-
-  .metrics-summary-card {
-    min-width: 150px;
-    flex-shrink: 0;
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
-/* ─── Agents page: responsive two-column layout ─────────────────────────── */
-
-.agents-content-grid {
-  display: grid;
-  grid-template-columns: 1fr 360px;
-  gap: 24px;
-  align-items: start;
+/* ─── Agents page: create flow ─────────────────────────────────────────────
+ * The create-agent form renders on a dedicated /agents/new page. These shared
+ * styles cover the form card and the guided/form mode switch.
+ * ─────────────────────────────────────────────────────────────────────────── */
+.create-flow-switch {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  border-radius: 6px;
 }
 
-/* Hide the recent-activity sidebar and stack to single column on narrow screens */
+.create-flow-switch:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+}
+
+/* Refresh icon shown next to the guided/form switch while in guided mode.
+ * Resets the guided chat thread (same as the old "Start over" action). */
+.create-flow-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  color: var(--color-text-muted);
+}
+
+.create-flow-refresh:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+}
+
+/* Content below the create flow (setup card + agent rows) is constrained to
+ * the same width as the create-agent form space so the page reads as one
+ * consistent column. */
+.agents-content {
+  width: 100%;
+  max-width: 752px;
+}
+
 @media (max-width: 900px) {
-  .agents-content-grid {
-    grid-template-columns: 1fr;
+  .agents-content {
+    max-width: 100%;
   }
+}
 
-  .recent-activity-panel {
-    display: none;
-  }
+/* Inline card used by the create-agent form (intent + review steps).
+ * Mirrors the guided setup panel's visual treatment so both fill the same
+ * space and look consistent. */
+.create-flow-card {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.create-flow-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-1);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.create-flow-card-body {
+  padding: 20px;
+}
+
+.create-flow-card-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }

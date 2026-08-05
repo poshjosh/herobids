@@ -26,11 +26,12 @@ test.describe('Journey 16: Strategy preset propagation', () => {
     await registerUser(page, EMAIL, PASSWORD, 'E2E User J16');
 
     // ── Open create agent form ────────────────────────────────────────────
-    await page.goto('/agents');
-    await page
-      .getByRole('button', { name: /new.*agent|create agent/i })
-      .first()
-      .click();
+    await page.goto('/agents/new');
+
+    // The create page defaults to Guided Setup (chat). Switch to the form.
+    const switchToForm = page.getByRole('button', { name: /^Use the form$/i });
+    await switchToForm.waitFor({ state: 'visible', timeout: 15_000 });
+    await switchToForm.click();
 
     // Fill name and goal
     await page.locator('input[type="text"]').first().fill('Preset Test J16');

@@ -3,20 +3,16 @@ import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
-import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, skills as skillsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, dashboard, type AgentOutcomes, type ProviderSetupResult, type Skill } from '../../lib/api-client.js';
-import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Card, SectionLabel, MetricCard, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, dashboard, type AgentOutcomes, type ProviderSetupResult, type Skill } from '../../lib/api-client.js';
+import { PageShell, PageHeader, LoadingRows, ErrorState, Button, Card, MetricCard, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { BlueprintBrowse } from '../blueprints/BlueprintBrowse.js';
 import { BlueprintInstantiateFlow } from '../blueprints/BlueprintInstantiateFlow.js';
-import { GuidedSetupPanel } from '../chat/GuidedSetupPanel.js';
 import type { BlueprintSummary } from '../../lib/api-client.js';
-import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, resolveGoalPlaceholderKey, type SkillPresetId } from './agent-display.js';
+import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, resolveGoalPlaceholderKey, type SkillPresetId } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { formatPnl, pnlColor } from '../../lib/formatting.js';
-import { ActivityItem } from '../activity/ActivityItem.js';
-import { AgentActivityItem } from '../activity/AgentActivityItem.js';
-import { mergeActivityFeedItems } from '../activity/activity-feed-items.js';
 import { AgentAssignmentStep } from '../setup/AgentAssignmentStep.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
@@ -133,21 +129,11 @@ function clearCreateAgentOAuthDraft(): void {
 }
 
 export function AgentsPage() {
-  const [showCreate, setShowCreate] = useState(false);
-  const [createMode, setCreateMode] = useState<'guided' | 'form'>('guided');
   const [agentTab, setAgentTab] = useState<'my-agents' | 'marketplace'>('my-agents');
   const [selectedBlueprint, setSelectedBlueprint] = useState<BlueprintSummary | null>(null);
   const intl = useIntl();
   const navigate = useNavigate();
-  const location = useLocation();
   const qc = useQueryClient();
-
-  useEffect(() => {
-    const createRequested = new URLSearchParams(location.search).get('create') === '1';
-    if (createRequested) {
-      setShowCreate(true);
-    }
-  }, [location.search]);
 
   const query = useQuery({
     queryKey: ['agents'],
@@ -167,35 +153,13 @@ export function AgentsPage() {
     return map;
   }, [outcomesQuery.data]);
 
-  const skillsQuery = useQuery({
-    queryKey: ['skills'],
-    queryFn: () => skillsApi.list({ scope: 'selectable' }),
-  });
-
   // ── Dashboard data (from Mission Control) ──────────────────────
   const handleEvent = useCallback((event: UserEvent) => {
     if (event.type === 'agent.status') {
       void qc.invalidateQueries({ queryKey: ['agents'] });
-      void qc.invalidateQueries({ queryKey: ['dashboard', 'agent-activity'] });
-    } else if (event.type === 'decision.accepted' || event.type === 'decision.rejected') {
-      void qc.invalidateQueries({ queryKey: ['dashboard', 'agent-activity'] });
-      void qc.invalidateQueries({ queryKey: ['dashboard', 'activity'] });
-    } else if (event.type === 'risk.guardrail') {
-      void qc.invalidateQueries({ queryKey: ['dashboard', 'activity'] });
     }
   }, [qc]);
   useEventStream(handleEvent);
-
-  const activityQuery = useQuery({
-    queryKey: ['dashboard', 'activity', { limit: 8 }],
-    queryFn: () => dashboard.activity({ limit: 8 }),
-  });
-
-  const agentActivityQuery = useQuery({
-    queryKey: ['dashboard', 'agent-activity', { limit: 8 }],
-    queryFn: () => dashboard.agentActivity({ limit: 8 }),
-    refetchInterval: 30_000,
-  });
 
   const overviewQuery = useQuery({
     queryKey: ['dashboard', 'overview'],
@@ -209,29 +173,17 @@ export function AgentsPage() {
   const [setupSuccess, setSetupSuccess] = useState<{ label: string; provider: string } | null>(null);
 
   const items = query.data ?? [];
-  const mergedRecentActivity = mergeActivityFeedItems(
-    agentActivityQuery.data?.entries ?? [],
-    activityQuery.data?.events ?? []
-  );
 
-  const counts = {
-    active: items.filter((agent) => agent.status === 'active' || agent.status === 'starting').length,
-    paused: items.filter((agent) => agent.status === 'paused').length,
-    unhealthy: items.filter((agent) => agent.status === 'crashed' || agent.status === 'unhealthy').length,
-    stopped: items.filter((agent) => agent.status === 'stopped').length,
-  };
-  const selectableSkills = listSelectableSkills(skillsQuery.data?.skills ?? []);
+  // New users (0 agents) are sent straight to the dedicated create page so
+  // they can build their first agent without an empty list in the way.
+  useEffect(() => {
+    if (query.isSuccess && items.length === 0) {
+      navigate('/agents/new', { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query.isSuccess, items.length]);
 
-  const openCreate = () => {
-    setShowCreate(true);
-    setCreateMode('guided');
-    navigate('/agents?create=1', { replace: true });
-  };
-
-  const closeCreate = () => {
-    setShowCreate(false);
-    navigate('/agents', { replace: true });
-  };
+  const activeCount = items.filter((agent) => agent.status === 'active' || agent.status === 'starting').length;
 
   return (
     <PageShell>
@@ -239,10 +191,12 @@ export function AgentsPage() {
         title={intl.formatMessage({ id: 'agents.title' })}
         subtitle={agentTab === 'marketplace'
           ? 'Discover and deploy AI agents from the community marketplace'
-          : intl.formatMessage({ id: 'agents.subtitle' })}
-        action={agentTab === 'my-agents'
-          ? <Button variant="primary" onClick={openCreate}>{intl.formatMessage({ id: 'agents.newAgent' })}</Button>
           : undefined}
+        action={
+          <Button variant="primary" size="sm" onClick={() => navigate('/agents/new')}>
+            {intl.formatMessage({ id: 'agents.create.title' })}
+          </Button>
+        }
       />
 
       {/* ── Tab bar ─────────────────────────────────────────────── */}
@@ -266,13 +220,14 @@ export function AgentsPage() {
       {/* ── My Agents tab ───────────────────────────────────────── */}
       {agentTab === 'my-agents' && (
         <>
+          {query.isLoading && <LoadingRows count={3} />}
+          {query.isError && <ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} />}
+
+          <div className="agents-content">
           {/* ── Summary metrics ─────────────────────────────────────── */}
           {query.isSuccess && items.length > 0 && (
             <div className="metrics-summary-row">
-              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.active' })} value={counts.active} total={items.length} />
-              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.paused' })} value={counts.paused} />
-              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.unhealthy' })} value={counts.unhealthy} />
-              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.stopped' })} value={counts.stopped} />
+              <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.active' })} value={activeCount} total={items.length} />
               <MetricCard
                 className="metrics-summary-card"
                 label={intl.formatMessage({ id: 'missionControl.metric.totalPnl' })}
@@ -280,17 +235,6 @@ export function AgentsPage() {
                 color={overviewQuery.isLoading ? undefined : pnlColor(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
               />
             </div>
-          )}
-
-          {query.isLoading && <LoadingRows count={3} />}
-          {query.isError && <ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} />}
-
-          {query.isSuccess && items.length === 0 && (
-            <EmptyState
-              title={intl.formatMessage({ id: 'agents.empty.title' })}
-              message={intl.formatMessage({ id: 'agents.empty.message' })}
-              action={<Button variant="primary" onClick={openCreate}>{intl.formatMessage({ id: 'agents.createAgent' })}</Button>}
-            />
           )}
 
           {/* ── Quick trading setup card ─────────────────────────────── */}
@@ -322,54 +266,13 @@ export function AgentsPage() {
           )}
 
           {query.isSuccess && items.length > 0 && (
-            <div className="agents-content-grid">
-              {/* Left: Agent list */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {items.map((agent) => (
-                  <AgentSummaryCard key={agent.id} agent={agent} outcomes={outcomesByAgentId.get(agent.id)} />
-                ))}
-              </div>
-
-              {/* Right: Recent activity */}
-              <section className="recent-activity-panel" aria-label={intl.formatMessage({ id: 'missionControl.section.recentActivity' })}>
-                <SectionLabel>{intl.formatMessage({ id: 'missionControl.section.recentActivity' })}</SectionLabel>
-                <Card style={{ padding: '0' }}>
-                  {(activityQuery.isLoading || agentActivityQuery.isLoading) && (
-                    <div style={{ padding: '20px' }}><LoadingRows count={4} /></div>
-                  )}
-                  {(activityQuery.isError || agentActivityQuery.isError) && (
-                    <ErrorState
-                      message={intl.formatMessage({ id: 'common.errorTitle', defaultMessage: 'Something went wrong' })}
-                      onRetry={() => { void activityQuery.refetch(); void agentActivityQuery.refetch(); }}
-                    />
-                  )}
-                  {activityQuery.isSuccess && agentActivityQuery.isSuccess &&
-                   (activityQuery.data?.events.length ?? 0) === 0 &&
-                   (agentActivityQuery.data?.entries.length ?? 0) === 0 && (
-                    <EmptyState
-                      title={intl.formatMessage({ id: 'missionControl.noActivityYet.title' })}
-                      message={intl.formatMessage({ id: 'missionControl.noActivityYet.message' })}
-                    />
-                  )}
-                  {activityQuery.isSuccess && agentActivityQuery.isSuccess &&
-                   ((activityQuery.data?.events.length ?? 0) > 0 || (agentActivityQuery.data?.entries.length ?? 0) > 0) && (
-                    <div>
-                      {mergedRecentActivity.map((item, index) => (
-                        item.kind === 'agent'
-                          ? <AgentActivityItem key={`agent-${item.id}`} entry={item.entry} isLast={index === mergedRecentActivity.length - 1} />
-                          : <ActivityItem key={`bot-${item.id}`} event={item.event} isLast={index === mergedRecentActivity.length - 1} />
-                      ))}
-                      <div style={{ padding: '12px 20px', borderTop: '1px solid var(--color-border-subtle)' }}>
-                        <Button variant="ghost" size="sm" onClick={() => navigate('/activity')} style={{ width: '100%', justifyContent: 'center' }}>
-                          {intl.formatMessage({ id: 'missionControl.viewAllActivity' })}
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </Card>
-              </section>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {items.map((agent) => (
+                <AgentSummaryCard key={agent.id} agent={agent} outcomes={outcomesByAgentId.get(agent.id)} />
+              ))}
             </div>
           )}
+          </div>
         </>
       )}
 
@@ -379,55 +282,6 @@ export function AgentsPage() {
           defaultKind="agent"
           onUseBlueprint={setSelectedBlueprint}
         />
-      )}
-
-      {showCreate && (
-        <>
-          {/* Tab choice for returning users (≥1 agent); new users see only Guided */}
-          {query.isSuccess && items.length > 0 && (
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-              <Button
-                variant={createMode === 'guided' ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setCreateMode('guided')}
-              >
-                Guided (Chat)
-              </Button>
-              <Button
-                variant={createMode === 'form' ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setCreateMode('form')}
-              >
-                Form
-              </Button>
-            </div>
-          )}
-
-          {createMode === 'guided' ? (
-            <div style={{ minHeight: 500 }}>
-              <GuidedSetupPanel
-                onSwitchToForm={() => setCreateMode('form')}
-                onAgentCreated={(id) => {
-                  setShowCreate(false);
-                  void qc.invalidateQueries({ queryKey: ['agents'] });
-                  navigate(`/agents/${id}`);
-                }}
-              />
-            </div>
-          ) : (
-            <CreateAgentFlow
-              skills={selectableSkills}
-              skillsLoading={skillsQuery.isLoading}
-              skillsError={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
-              onClose={closeCreate}
-              onCreated={(id) => {
-                setShowCreate(false);
-                void qc.invalidateQueries({ queryKey: ['agents'] });
-                navigate(`/agents/${id}`);
-              }}
-            />
-          )}
-        </>
       )}
 
       {/* ── Setup modals ──────────────────────────────────────────── */}
@@ -476,7 +330,7 @@ export function AgentsPage() {
   );
 }
 
-function CreateAgentFlow({
+export function CreateAgentFlow({
   skills,
   skillsLoading,
   skillsError,
@@ -1005,8 +859,12 @@ function CreateAgentFlow({
 
   if (step === 'intent') {
     return (
-      <Modal title={intl.formatMessage({ id: 'agents.create.title' })} onClose={onClose} closeOnBackdropClick={false}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="create-flow-card">
+        <div className="create-flow-card-header">
+          <span>{intl.formatMessage({ id: 'agents.create.title' })}</span>
+          <button type="button" onClick={onClose} aria-label="Close" className="create-flow-card-close">✕</button>
+        </div>
+        <div className="create-flow-card-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
           {/* 1. Skill Preset — first, sets context for everything else */}
           <div style={{ marginBottom: '20px' }}>
@@ -1665,13 +1523,17 @@ function CreateAgentFlow({
           </div>
           )}
         </div>
-      </Modal>
+      </div>
     );
   }
 
   return (
-    <Modal title={intl.formatMessage({ id: 'agents.review.title' })} onClose={onClose} closeOnBackdropClick={false}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="create-flow-card">
+      <div className="create-flow-card-header">
+        <span>{intl.formatMessage({ id: 'agents.review.title' })}</span>
+        <button type="button" onClick={onClose} aria-label="Close" className="create-flow-card-close">✕</button>
+      </div>
+      <div className="create-flow-card-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
           <tbody>
             <ReviewRow label={intl.formatMessage({ id: 'agents.create.name' })} value={intent.name.trim()} />
@@ -1807,7 +1669,7 @@ function CreateAgentFlow({
           </div>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 }
 

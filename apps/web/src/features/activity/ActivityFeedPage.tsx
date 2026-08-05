@@ -1,17 +1,36 @@
 import { useState } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { dashboard } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, EmptyState, ErrorState, LoadingRows, Button } from '../../lib/ui.js';
+import { agents as agentsApi, dashboard } from '../../lib/api-client.js';
+import { PageShell, PageHeader, Card, EmptyState, ErrorState, LoadingRows, Button, MetricCard } from '../../lib/ui.js';
 import { ActivityItem } from './ActivityItem.js';
 import { AgentActivityItem } from './AgentActivityItem.js';
 import { mergeActivityFeedItems } from './activity-feed-items.js';
+import { formatPnl, pnlColor } from '../../lib/formatting.js';
 
 type FeedMode = 'all' | 'bots' | 'agents';
 
 export function ActivityFeedPage() {
   const intl = useIntl();
   const [mode, setMode] = useState<FeedMode>('all');
+
+  const agentsQuery = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => agentsApi.list(),
+  });
+
+  const overviewQuery = useQuery({
+    queryKey: ['dashboard', 'overview'],
+    queryFn: () => dashboard.overview(),
+  });
+
+  const items = agentsQuery.data ?? [];
+  const counts = {
+    active: items.filter((agent) => agent.status === 'active' || agent.status === 'starting').length,
+    paused: items.filter((agent) => agent.status === 'paused').length,
+    unhealthy: items.filter((agent) => agent.status === 'crashed' || agent.status === 'unhealthy').length,
+    stopped: items.filter((agent) => agent.status === 'stopped').length,
+  };
 
   const botQuery = useInfiniteQuery({
     queryKey: ['dashboard', 'activity'],
@@ -56,6 +75,22 @@ export function ActivityFeedPage() {
         title={intl.formatMessage({ id: 'activity.title' })}
         subtitle={intl.formatMessage({ id: 'activity.subtitle' })}
       />
+
+      {/* Agent summary metrics */}
+      {agentsQuery.isSuccess && items.length > 0 && (
+        <div className="metrics-summary-row">
+          <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.active' })} value={counts.active} total={items.length} />
+          <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.paused' })} value={counts.paused} />
+          <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.unhealthy' })} value={counts.unhealthy} />
+          <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.stopped' })} value={counts.stopped} />
+          <MetricCard
+            className="metrics-summary-card"
+            label={intl.formatMessage({ id: 'missionControl.metric.totalPnl' })}
+            value={overviewQuery.isLoading ? '—' : formatPnl(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
+            color={overviewQuery.isLoading ? undefined : pnlColor(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
+          />
+        </div>
+      )}
 
       {/* Mode tabs */}
       <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>

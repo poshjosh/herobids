@@ -17,8 +17,12 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
   test('user with no bindings can set up trading inline while creating an agent', async ({ page }) => {
     await registerUser(page, EMAIL, PASSWORD, 'E2E User J14');
 
-    await page.goto('/agents');
-    await page.getByRole('button', { name: /new.*agent|create agent/i }).first().click();
+    await page.goto('/agents/new');
+
+    // The create page defaults to Guided Setup (chat). Switch to the form.
+    const switchToForm = page.getByRole('button', { name: /^Use the form$/i });
+    await switchToForm.waitFor({ state: 'visible', timeout: 15_000 });
+    await switchToForm.click();
 
     // Fill name (required field) and goal
     await page.locator('input[type="text"]').first().fill('Crypto Trading Agent J14');

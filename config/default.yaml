@@ -853,8 +853,8 @@ plans:
           liveEnabled: true
       usage: # required
         includedCreditCents: 0
-        softCapCents: 0
-        hardCapCents: 0
+        softCapCents: 0    # at zero, warn the user
+        hardCapCents: 100  # at $-1, block the user
         topUpPackIds: 
           - Topup5
           - Topup20
@@ -888,8 +888,8 @@ plans:
           liveEnabled: true
       usage: # required
         includedCreditCents: 2000
-        softCapCents: 0
-        hardCapCents: 0
+        softCapCents: 0    # at zero, warn the user
+        hardCapCents: 200  # at $-2, block the user
         topUpPackIds: 
           - Topup5
           - Topup20

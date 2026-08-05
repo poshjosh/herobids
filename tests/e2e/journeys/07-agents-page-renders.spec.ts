@@ -22,12 +22,15 @@ function readinessCard(page: Page) {
 }
 
 test.describe('Journey 7: Capability setup and readiness', () => {
-  test('new user lands on AI Agents page with the empty state instead of a crash', async ({ page }) => {
+  test('new user lands on AI Agents page without crashing', async ({ page }) => {
     await registerUser(page, EMPTY_STATE_EMAIL, PASSWORD, 'E2E User J7 Empty');
 
     await expect(page).toHaveURL(/\/agents/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: /AI Agents/i })).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText(/No AI agents yet/i)).toBeVisible({ timeout: 5_000 });
+    // The "No AI agents yet" empty state was removed — the page should render
+    // cleanly with the "Create AI agent" CTA.
+    await expect(page.getByText(/No AI agents yet/i)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Create AI agent$/i })).toBeVisible({ timeout: 5_000 });
   });
 
   test('agent capability readiness moves from unconfigured to ready', async ({ page, request }) => {

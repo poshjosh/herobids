@@ -14,11 +14,17 @@ interface GuidedSetupThreadProps {
 }
 
 export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit, sending, disabled = false }: GuidedSetupThreadProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll the message list to the bottom when new messages arrive.
+  // We scroll the internal list container directly (scrollTop) rather than
+  // using scrollIntoView, which would also scroll the whole page and make the
+  // composer appear to jump.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages]);
 
   return (
@@ -26,14 +32,17 @@ export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: '100%',
+        flex: 1,
+        minHeight: 0,
         overflow: 'hidden',
       }}
     >
       {/* Message list */}
       <div
+        ref={scrollRef}
         style={{
           flex: 1,
+          minHeight: 0,
           overflowY: 'auto',
           padding: '16px',
         }}
@@ -53,8 +62,7 @@ export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit
           </div>
         )}
 
-        {messages.map((msg, idx) => {
-          const isLastAssistant = msg.role === 'assistant' && idx === messages.length - 1;
+        {messages.map((msg) => {
           const hasActions = msg.actions && msg.actions.length > 0;
 
           return (
@@ -68,22 +76,6 @@ export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit
                   disabled={disabled || sending}
                 />
               )}
-              {/* Show "Use the form instead" link after the first greeting */}
-              {isLastAssistant && idx === 0 && (
-                <div style={{ padding: '0 16px 16px', fontSize: 12, color: 'var(--color-text-muted)' }}>
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      // The parent handles switching to form
-                      onQuickReply('action:use_form');
-                    }}
-                    style={{ color: 'var(--color-text-muted)', textDecoration: 'underline' }}
-                  >
-                    Use the form instead
-                  </a>
-                </div>
-              )}
             </div>
           );
         })}
@@ -92,11 +84,9 @@ export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit
         {sending && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', color: 'var(--color-text-muted)', fontSize: 13 }}>
             <span style={{ animation: 'pulse 1.5s infinite' }}>●</span>
-            Guided Setup is thinking...
+            Assistant is thinking...
           </div>
         )}
-
-        <div ref={bottomRef} />
       </div>
 
       {/* Composer */}

@@ -1,3 +1,5 @@
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { ChatMessage } from '../../lib/api-client.js';
 
 interface ChatMessageProps {
@@ -25,22 +27,17 @@ export function ChatMessage({ message }: ChatMessageProps) {
           color: isUser ? 'var(--color-on-primary)' : 'var(--color-text)',
           fontSize: 15,
           lineHeight: 1.5,
-          whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}
       >
-        {message.content}
+        {isUser ? (
+          <span style={{ whiteSpace: 'pre-wrap' }}>{message.content}</span>
+        ) : (
+          <div className="prose prose-invert" style={{ maxWidth: 'none' }}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+          </div>
+        )}
       </div>
-      <span
-        style={{
-          fontSize: 11,
-          color: 'var(--color-text-muted)',
-          marginTop: 4,
-          paddingInline: 4,
-        }}
-      >
-        {isUser ? 'You' : 'Guided Setup'}
-      </span>
     </div>
   );
 }

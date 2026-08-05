@@ -1,0 +1,52 @@
+/**
+ * Journey 18: Create AI Agent flow behavior.
+ *
+ * Verifies the dedicated create-agent page:
+ *   1. The agents page has a "Create AI agent" button that navigates to
+ *      /agents/new.
+ *   2. The create page defaults to guided chat.
+ *   3. The header switch toggles between guided chat and the plain form.
+ */
+
+import { test, expect } from '@playwright/test';
+import { registerUser } from '../helpers.js';
+
+const EMAIL = `j18-${Date.now()}@e2e.local`;
+const PASSWORD = 'E2ePassword18!';
+const EMAIL_SWITCH = `j18s-${Date.now()}@e2e.local`;
+
+test.describe('Journey 18: Create AI Agent flow', () => {
+  test('agents page has a Create AI agent button that navigates to the create page', async ({ page }) => {
+    await registerUser(page, EMAIL, PASSWORD, 'E2E User J18');
+
+    await expect(page).toHaveURL(/\/agents/, { timeout: 15_000 });
+
+    // The header CTA navigates to the dedicated create page.
+    const createButton = page.getByRole('button', { name: /^Create AI agent$/i });
+    await expect(createButton).toBeVisible({ timeout: 5_000 });
+    await createButton.click();
+    await expect(page).toHaveURL(/\/agents\/new/, { timeout: 5_000 });
+
+    // Guided chat greeting is visible on the create page.
+    await expect(page.getByText(/Hi! I can help you create an AI agent/i)).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('header switch toggles between guided chat and the plain form', async ({ page }) => {
+    await registerUser(page, EMAIL_SWITCH, PASSWORD, 'E2E User J18S');
+
+    await page.goto('/agents/new');
+    await expect(page).toHaveURL(/\/agents\/new/, { timeout: 15_000 });
+
+    // Guided chat greeting is visible by default.
+    await expect(page.getByText(/Hi! I can help you create an AI agent/i)).toBeVisible({ timeout: 10_000 });
+
+    // Switch to the plain form.
+    await page.getByRole('button', { name: /^Use the form$/i }).click();
+    await expect(page.locator('.create-flow-card')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/What type of AI agent\?/i)).toBeVisible({ timeout: 5_000 });
+
+    // Switch back to guided chat.
+    await page.getByRole('button', { name: /^Use guided chat$/i }).click();
+    await expect(page.getByText(/Hi! I can help you create an AI agent/i)).toBeVisible({ timeout: 10_000 });
+  });
+});

@@ -15,11 +15,8 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
   const NAV_ITEMS = useMemo(() => [
     { path: '/agents', label: intl.formatMessage({ id: 'nav.agents' }), icon: '⊡' },
     { path: '/skills', label: intl.formatMessage({ id: 'nav.skills' }), icon: '✦' },
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [locale]);
-
-  const MANAGE_ITEMS = useMemo(() => [
     { path: '/connections', label: intl.formatMessage({ id: 'nav.connections' }), icon: '⊟' },
+    { path: '/activity', label: intl.formatMessage({ id: 'nav.activity' }), icon: '◈' },
     { path: '/billing', label: intl.formatMessage({ id: 'nav.billing' }), icon: '⊘' },
     { path: '/settings', label: intl.formatMessage({ id: 'nav.settings' }), icon: '⊙' },
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,13 +80,6 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
       <div style={{ padding: '12px 8px 8px', flex: 1 }}>
         <NavGroup>
           {NAV_ITEMS.map((item) => (
-            <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
-          ))}
-        </NavGroup>
-
-        <SectionLabel>{intl.formatMessage({ id: 'nav.manage' })}</SectionLabel>
-        <NavGroup>
-          {MANAGE_ITEMS.map((item) => (
             <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
           ))}
         </NavGroup>

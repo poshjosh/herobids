@@ -88,8 +88,13 @@ export async function createAgent(
   goal: string,
   options: { skillIds?: string[]; preset?: string } = {},
 ): Promise<string> {
-  await page.goto('/agents');
-  await page.getByRole('button', { name: /new.*agent|create agent/i }).first().click();
+  await page.goto('/agents/new');
+
+  // The create page defaults to Guided Setup (chat). Switch to the form so the
+  // form-based selectors below work.
+  const switchToForm = page.getByRole('button', { name: /^Use the form$/i });
+  await switchToForm.waitFor({ state: 'visible', timeout: 15_000 });
+  await switchToForm.click();
 
   // Fill name (required) — derive a short name from the goal
   const nameField = page.locator('input[type="text"]').first();

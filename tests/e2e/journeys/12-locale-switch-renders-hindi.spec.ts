@@ -17,6 +17,7 @@ test.describe('Journey 12: locale switch', () => {
     await page.goto('/agents');
 
     await expect(page.getByRole('heading', { name: 'AI एजेंट' })).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByRole('button', { name: 'नया AI एजेंट' })).toBeVisible({ timeout: 5_000 });
+    // The "Create AI agent" header button navigates to the create page.
+    await expect(page.getByRole('button', { name: 'AI एजेंट बनाएं' })).toBeVisible({ timeout: 5_000 });
   });
 });

@@ -1,20 +1,24 @@
+import { useEffect } from 'react';
+import type { MutableRefObject } from 'react';
 import { useGuidedSetup } from './useGuidedSetup.js';
 import { GuidedSetupThread } from './GuidedSetupThread.js';
 
 interface GuidedSetupPanelProps {
-  /** Called when the user wants to switch to the form-based flow */
-  onSwitchToForm: () => void;
   /** Called when an agent is successfully created */
   onAgentCreated?: (agentId: string) => void;
+  /**
+   * Receives the startOver callback so a parent (e.g. the create-flow header)
+   * can trigger a fresh guided thread from outside the panel.
+   */
+  startOverRef?: MutableRefObject<(() => void) | null>;
 }
 
 /**
  * Embedded Guided Setup chat surface for the agent creation page.
  *
  * v1 scope: Single-purpose — guide users through the create-agent workflow.
- * The UI label is "Guided Setup" — not "Chat With AI."
  */
-export function GuidedSetupPanel({ onSwitchToForm, onAgentCreated }: GuidedSetupPanelProps) {
+export function GuidedSetupPanel({ onAgentCreated, startOverRef }: GuidedSetupPanelProps) {
   const {
     thread,
     messages,
@@ -26,11 +30,14 @@ export function GuidedSetupPanel({ onSwitchToForm, onAgentCreated }: GuidedSetup
     startOver,
   } = useGuidedSetup();
 
-  const handleQuickReply = (value: string) => {
-    if (value === 'action:use_form') {
-      onSwitchToForm();
-      return;
+  // Expose startOver to the parent so the header refresh icon can reset the thread.
+  useEffect(() => {
+    if (startOverRef) {
+      startOverRef.current = startOver;
     }
+  }, [startOver, startOverRef]);
+
+  const handleQuickReply = (value: string) => {
     // Treat quick-reply selections as user messages
     sendMessage(value);
   };
@@ -53,7 +60,7 @@ export function GuidedSetupPanel({ onSwitchToForm, onAgentCreated }: GuidedSetup
         }}
       >
         <span style={{ animation: 'pulse 1.5s infinite' }}>●</span>
-        &nbsp;Starting Guided Setup...
+        &nbsp;Starting chat...
       </div>
     );
   }
@@ -90,20 +97,6 @@ export function GuidedSetupPanel({ onSwitchToForm, onAgentCreated }: GuidedSetup
         >
           Try Again
         </button>
-        <button
-          onClick={onSwitchToForm}
-          style={{
-            padding: '8px 16px',
-            borderRadius: 8,
-            border: '1px solid var(--color-border)',
-            backgroundColor: 'transparent',
-            color: 'var(--color-text)',
-            fontSize: 14,
-            cursor: 'pointer',
-          }}
-        >
-          Use the form instead
-        </button>
       </div>
     );
   }
@@ -113,75 +106,13 @@ export function GuidedSetupPanel({ onSwitchToForm, onAgentCreated }: GuidedSetup
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: '100%',
+        height: 'min(520px, 60vh)',
         borderRadius: 10,
         overflow: 'hidden',
         border: '1px solid var(--color-border)',
         backgroundColor: 'var(--color-surface-1)',
       }}
     >
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '12px 20px',
-          borderBottom: '1px solid var(--color-border)',
-          backgroundColor: 'var(--color-surface-1)',
-        }}
-      >
-        <div>
-          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text)' }}>
-            Guided Setup
-          </span>
-          <span
-            style={{
-              marginLeft: 8,
-              fontSize: 11,
-              color: 'var(--color-text-muted)',
-              backgroundColor: 'var(--color-surface-2)',
-              padding: '2px 8px',
-              borderRadius: 10,
-            }}
-          >
-            powered by AI
-          </span>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={startOver}
-            title="Start over"
-            style={{
-              padding: '6px 12px',
-              fontSize: 13,
-              borderRadius: 6,
-              border: '1px solid var(--color-border)',
-              backgroundColor: 'transparent',
-              color: 'var(--color-text)',
-              cursor: 'pointer',
-            }}
-          >
-            Start over
-          </button>
-          <button
-            onClick={onSwitchToForm}
-            title="Use the form instead"
-            style={{
-              padding: '6px 12px',
-              fontSize: 13,
-              borderRadius: 6,
-              border: '1px solid var(--color-border)',
-              backgroundColor: 'transparent',
-              color: 'var(--color-text-muted)',
-              cursor: 'pointer',
-            }}
-          >
-            Use form
-          </button>
-        </div>
-      </div>
-
       {/* Chat thread */}
       <GuidedSetupThread
         messages={messages}
