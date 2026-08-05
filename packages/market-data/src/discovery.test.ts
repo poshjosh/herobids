@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { discoverTokens } from './discovery.js';
 import type { DiscoverySeenTracker } from './discovery-seen-tracker.js';
 import { TokenBucketRateLimiter } from './rate-limiter.js';
@@ -1239,6 +1239,68 @@ describe('discoverTokens', () => {
     expect(dexscreenerReturned).toBe(true);
     // The DexScreener boost token should still appear even though Birdeye failed
     expect(result.some((t) => t.address === 'survivor-addr')).toBe(true);
+  });
+
+  it('logs rejected provider results via console.warn instead of silently dropping them', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      // Birdeye trending — simulate a 429 rate-limit failure
+      if (url.includes('birdeye.so') && url.includes('token_trending')) {
+        return makeErrorResponse(429);
+      }
+      // GeckoTerminal base — simulate a 500 failure
+      if (url.includes('geckoterminal.com') && url.includes('/networks/base/')) {
+        return makeErrorResponse(500);
+      }
+      // DexScreener — return a valid token so discovery still succeeds
+      if (url.includes('token-boosts/top')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => [{ chainId: 'solana', tokenAddress: 'survivor-addr', amount: 200 }],
+        } as Response;
+      }
+      if (url.includes('/tokens/v1/')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            pairs: [{
+              chainId: 'solana',
+              baseToken: { address: 'survivor-addr', symbol: 'SURV', name: 'Survivor' },
+              priceUsd: '2.0',
+              volume: { h24: 50000 },
+              liquidity: { usd: 25000 },
+            }],
+          }),
+        } as Response;
+      }
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      birdeye: {
+        baseUrl: 'https://public-api.birdeye.so',
+        apiKey: 'test-key',
+        rateLimiter,
+        timeoutMs: 5_000,
+      },
+      networks: ['solana', 'base'],
+      minLiquidityUsd: 0,
+    });
+
+    // The Birdeye 429 and GeckoTerminal base 500 failures must be surfaced.
+    const warnCalls = warnSpy.mock.calls.map((call) => String(call[0]));
+    expect(warnCalls.some((msg) => msg.includes('HTTP error: 429'))).toBe(true);
+    expect(warnCalls.some((msg) => msg.includes('HTTP error: 500'))).toBe(true);
+
+    warnSpy.mockRestore();
   });
 
   it('Birdeye discovery only runs when explicitly configured', async () => {

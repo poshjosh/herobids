@@ -159,6 +159,17 @@ export async function discoverTokens(config: DiscoveryConfig): Promise<Discovere
     ...birdeyeFanOut,
   ]);
 
+  // Surface rejected provider results instead of silently dropping them.
+  // Promise.allSettled swallows rejections; without this logging, provider
+  // failures (rate limits, timeouts, auth errors) are invisible and can cause
+  // a network to silently return zero tokens (e.g. base). Log each rejection
+  // with a stable label so operators can see which provider/network failed.
+  const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+  for (const result of rejected) {
+    const err = result.reason instanceof Error ? result.reason : new Error(String(result.reason));
+    console.warn(`[Discovery] provider request rejected: ${err.message}`, { name: err.name });
+  }
+
   const fulfilled = results
     .filter((result): result is PromiseFulfilledResult<DiscoveredToken[]> => result.status === 'fulfilled')
     .flatMap((result) => result.value);
