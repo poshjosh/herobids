@@ -22,6 +22,7 @@ import { BlueprintExecutionCapabilityAdapter } from './services/blueprint-execut
 import { agentInteractivityRoutes, telegramWebhookHandler } from './routes/agent-interactivity.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { aiRoutes } from './routes/ai.js';
+import { chatRoutes } from './routes/chat.js';
 import { skillsRoutes } from './routes/skills.js';
 import { datasetRoutes } from './routes/datasets.js';
 import { agentDocumentRoutes } from './routes/agent-documents.js';
@@ -256,6 +257,7 @@ await blueprintRoutes(app, db, appConfig.agentRiskDefaults, new BlueprintExecuti
 await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults);
 await analyticsRoutes(app, db);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
+await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient);
 await skillsRoutes(app, db, appConfig.plans);
 await datasetRoutes(app, db, redisClient);
 await agentDocumentRoutes(app, db);

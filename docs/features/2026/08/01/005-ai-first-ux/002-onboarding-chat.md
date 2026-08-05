@@ -437,3 +437,41 @@ The system prompt instructs the LLM to generate contextual reminders:
 | LLM cost for onboarding | Use an operator-configured low-cost onboarding model tier; track as separate cost bucket; show "powered by AI" disclosure |
 | Chat not accessible without JS | Graceful fallback: the existing form-based flow remains available |
 | Users confused between chat and agent messaging | Clear labeling per product spec; chat is "Chat With AI", agent comms are within agent detail pages |
+
+## Outstanding Issues (post-implementation review, 2026-08-04)
+
+### MEDIUM (should fix before production launch)
+
+| # | Issue | Area | Detail |
+|---|-------|------|--------|
+| 1 | Thread not resumable across page reloads | Frontend | `useGuidedSetup` unconditionally calls `initThread()` on mount, creating a fresh thread every time. No mechanism to store the active thread ID in `sessionStorage` and resume. |
+| 2 | Inline form rendering is stub/placeholder | Frontend + Backend | When the LLM returns `{ type: 'form', form: 'connection', ... }` actions, the frontend renders static advisory text instead of the actual `ProviderSetupForm` component inline. Users cannot connect wallets/exchanges through the chat. |
+| 3 | No turn cap / stuck-detection fallback | API | No configurable message-count threshold per thread. If the LLM loops or gets stuck, the user has no automatic "stuck? use the form" escape. |
+| 4 | Agent creation bypasses canonical `POST /agents` route | API | The `create_agent` action inserts directly into `agents`/`agentConnections`/`agentSkills` tables. Plan checks, `unifiedConfig` construction, and capability readiness resolution from the canonical route are not executed. |
+| 5 | Missing cost tracking on chat messages | API | `chat_messages.usage` column (`{ inputTokens, outputTokens, costUsd }`) is never populated from `callLlmProvider` results. |
+| 6 | Thread title hardcoded to `'Guided Setup'` | API | The plan specifies "auto-generated from first message." The DB schema comment also states this. Title is never updated after the first user message. |
+| 7 | No `thread_completed` UI handling | Frontend | If a user sends a message to a completed thread, the API returns a 400 with `error: 'thread_completed'`. The frontend shows a generic error instead of a clear "Agent already created — start a new thread" message with a "Start New" button. |
+| 8 | `provider` field not derived from selected connection | API | `buildCreateAgentPayload` does not include a `provider` field. The `agents.provider` column will be null, which may cause issues downstream. |
+
+### LOW (nice to have)
+
+| # | Issue | Area | Detail |
+|---|-------|------|--------|
+| 9 | All components use inline styles | Frontend | `GuidedSetupPanel`, `GuidedSetupThread`, `ChatMessage`, `ChatComposer`, `ChatQuickReplies`, and `GuidedSetupActionRenderer` use raw inline `style={{…}}` objects. Acceptable for v1 but creates a maintenance burden. |
+| 10 | Hardcoded English strings | Frontend | All UI labels ("Guided Setup", "powered by AI", "Start over", "Use form", "Type your message…", "You", "Guided Setup", etc.) are hardcoded. The plan mentions i18n keys. |
+| 11 | `generateAgentName` prefix mapping consistency | API | The chat route uses `'trading' → 'TX'`, `'personal-assistant' → 'PA'`, `'custom' → 'AG'`. Verify this matches the form-based `generateAgentName` in `apps/web/src/features/agents/agent-name.ts`. |
+| 12 | `as never` casts on Drizzle inserts | API | Multiple insert calls use `as never` to bypass type checking. If the `agents` schema changes, these will fail silently at runtime rather than at compile time. |
+
+### Resolved (fixed in initial implementation)
+
+| # | Issue | Fix |
+|---|-------|-----|
+| R1 | Zero `skillIds` on created agents | Resolve `skillIds` from `skillPresetId` via `resolveSkillPresetSkillIds()` |
+| R2 | `createdAgentId` never persisted | Now set in `chat_threads.metadata` after successful `create_agent` |
+| R3 | "One thread = one agent" guard always bypassed | Guard now correctly checks `metadata.createdAgentId` which is properly persisted |
+| R4 | Post-creation follow-up context lost | Structured `createdAgent` data returned from tool loop; injected into LLM for contextual follow-up |
+| R5 | Thread metadata summary never enriched | Summary facts (preset, capital, connectionIds) extracted from tool results and persisted |
+| R6 | Fragile "is agent created?" detection | Replaced `content.toLowerCase().includes('created')` with structured `createdAgent` object from tool result parsing |
+| R7 | Connection ownership not validated | Connection IDs validated against user's active connections before insert |
+| R8 | Skill revision IDs were placeholder strings | Latest revision IDs resolved from `skillRevisions` table |
+| R9 | `capabilityMode` not set | Derived from `skillPresetId` (trading → `hybrid`, others → `intelligence`) |

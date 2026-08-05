@@ -7,6 +7,7 @@ import { agents as agentsApi, capabilities as capabilitiesApi, connections as co
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Card, SectionLabel, MetricCard, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { BlueprintBrowse } from '../blueprints/BlueprintBrowse.js';
 import { BlueprintInstantiateFlow } from '../blueprints/BlueprintInstantiateFlow.js';
+import { GuidedSetupPanel } from '../chat/GuidedSetupPanel.js';
 import type { BlueprintSummary } from '../../lib/api-client.js';
 import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, resolveGoalPlaceholderKey, type SkillPresetId } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
@@ -133,6 +134,7 @@ function clearCreateAgentOAuthDraft(): void {
 
 export function AgentsPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const [createMode, setCreateMode] = useState<'guided' | 'form'>('guided');
   const [agentTab, setAgentTab] = useState<'my-agents' | 'marketplace'>('my-agents');
   const [selectedBlueprint, setSelectedBlueprint] = useState<BlueprintSummary | null>(null);
   const intl = useIntl();
@@ -222,6 +224,7 @@ export function AgentsPage() {
 
   const openCreate = () => {
     setShowCreate(true);
+    setCreateMode('guided');
     navigate('/agents?create=1', { replace: true });
   };
 
@@ -379,17 +382,52 @@ export function AgentsPage() {
       )}
 
       {showCreate && (
-        <CreateAgentFlow
-          skills={selectableSkills}
-          skillsLoading={skillsQuery.isLoading}
-          skillsError={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
-          onClose={closeCreate}
-          onCreated={(id) => {
-            setShowCreate(false);
-            void qc.invalidateQueries({ queryKey: ['agents'] });
-            navigate(`/agents/${id}`);
-          }}
-        />
+        <>
+          {/* Tab choice for returning users (≥1 agent); new users see only Guided */}
+          {query.isSuccess && items.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <Button
+                variant={createMode === 'guided' ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => setCreateMode('guided')}
+              >
+                Guided (Chat)
+              </Button>
+              <Button
+                variant={createMode === 'form' ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => setCreateMode('form')}
+              >
+                Form
+              </Button>
+            </div>
+          )}
+
+          {createMode === 'guided' ? (
+            <div style={{ minHeight: 500 }}>
+              <GuidedSetupPanel
+                onSwitchToForm={() => setCreateMode('form')}
+                onAgentCreated={(id) => {
+                  setShowCreate(false);
+                  void qc.invalidateQueries({ queryKey: ['agents'] });
+                  navigate(`/agents/${id}`);
+                }}
+              />
+            </div>
+          ) : (
+            <CreateAgentFlow
+              skills={selectableSkills}
+              skillsLoading={skillsQuery.isLoading}
+              skillsError={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
+              onClose={closeCreate}
+              onCreated={(id) => {
+                setShowCreate(false);
+                void qc.invalidateQueries({ queryKey: ['agents'] });
+                navigate(`/agents/${id}`);
+              }}
+            />
+          )}
+        </>
       )}
 
       {/* ── Setup modals ──────────────────────────────────────────── */}
