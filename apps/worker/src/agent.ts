@@ -59,6 +59,8 @@ import {
   summarizeActiveWatches,
   recordPositionCoverage,
   computeMarketEventDigest,
+  bufferWakeEnvelope,
+  drainNewestWakeIntoMarketWake,
   type RuntimeActiveWatch,
   type RuntimeActiveWatchSummary,
   type RuntimeCompositionState,
@@ -1431,11 +1433,16 @@ async function pollWakeSignals(): Promise<void> {
                 continue;
               }
 
-              // Phase 5: only buffer when prompt enrichment is active; classic mode is strict no-op.
-              if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.queuedSignals.enabled) {
-                const source = String(envelope['source'] ?? 'unknown');
-                const reason = String(envelope['reason'] ?? 'wake signal received');
-                pendingWakeSignalBuffer.push({ source, reason, receivedAt: Date.now() });
+              // Redis Streams delivers each message to only ONE consumer group.
+              // The wake group may consume an `agent.wake` before the runtime
+              // group ever sees it, so the wake context must be buffered here
+              // (not re-read) to be visible to the tick. Always buffer the full
+              // wake envelope regardless of promptStyle — the enrichment gating
+              // below applies only to how it is rendered in the prompt, not to
+              // whether currentMarketWake is set.
+              const buffered = bufferWakeEnvelope(envelope, Date.now());
+              if (buffered) {
+                pendingWakeSignalBuffer.push(buffered);
               }
               requestWakeDrivenTick('Received market wake signal between ticks');
             }
@@ -1854,8 +1861,11 @@ const judgeResponseHistory: string[] = [];
 
 /** Wake signals received between ticks. Drained into metrics at tick start. */
 const pendingWakeSignalBuffer: Array<{
+  wakeId: string;
   source: string;
   reason: string;
+  requestedAt: string | null;
+  context: unknown; // WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext | ScannerWakeContext
   receivedAt: number;
 }> = [];
 
@@ -2183,6 +2193,26 @@ async function runTick(): Promise<void> {
       pendingWakeSignalBuffer.length > 0 ? pendingWakeSignalBuffer.slice() : null,
     );
 
+    // ── Drain buffered wake into currentMarketWake ────────────────────────
+    // Redis Streams delivers each message to only ONE consumer group. When the
+    // wake group consumed the `agent.wake`, the runtime group never sees it, so
+    // `currentMarketWake` would otherwise stay null and the tick would log
+    // "timer tick without wake signal" and skip LLM dispatch. Drain the newest
+    // buffered wake envelope here (if the runtime group did not already set
+    // currentMarketWake) so wake-driven ticks always see their wake context.
+    // Must run AFTER the wakeSignalDigest snapshot above (so the gate still
+    // sees the pending signals) and BEFORE the prompt-enrichment splice below
+    // (which empties the buffer).
+    let hasBufferedWake = false;
+    if (runtimeState.metrics.currentMarketWake === null) {
+      const drained = drainNewestWakeIntoMarketWake(pendingWakeSignalBuffer, null);
+      pendingWakeSignalBuffer.splice(0, pendingWakeSignalBuffer.length, ...drained.buffer);
+      if (drained.wake) {
+        runtimeState.metrics.currentMarketWake = drained.wake;
+        hasBufferedWake = true;
+      }
+    }
+
     // ── Prompt context enrichment: drain queued wake signals ──────────────
     if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.queuedSignals.enabled) {
       const max = agentRuntimePolicy.promptEnrichment.queuedSignals.max;
@@ -2285,6 +2315,7 @@ async function runTick(): Promise<void> {
       tickNumber: tickCount,
       incomingMessages,
       hasOpenPositions,
+      hasBufferedWake,
       lastKnownPositionSide: sessionMetrics.lastPositionSide,
       tradingHours,
       now: new Date(),

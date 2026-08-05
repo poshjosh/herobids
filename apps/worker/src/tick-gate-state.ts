@@ -24,6 +24,8 @@ export interface BuildTickGateStateParams {
    *  `"__none__"` when the buffer is empty.
    *  `undefined` means context events are not incorporated (backward compat). */
   marketEventDigest?: string;
+  /** True when a wake was drained from the wake-signal buffer (wake group consumed it, runtime group did not). */
+  hasBufferedWake?: boolean;
   previousContextHash?: string | null;
   baseTickIntervalMs?: number;
   currentTickIntervalMs?: number;
@@ -138,7 +140,8 @@ function extractTickSignals(
 
 export function buildTickGateState(params: BuildTickGateStateParams): TickGateState {
   const tickSignals = extractTickSignals(params.incomingMessages, params.lastKnownPositionSide);
-  const hasWakeSignal = params.incomingMessages.some((message) => message['type'] === 'agent.wake');
+  const hasWakeSignal = params.incomingMessages.some((message) => message['type'] === 'agent.wake')
+    || params.hasBufferedWake === true;
 
   return {
     tickNumber: params.tickNumber,

@@ -346,4 +346,59 @@ describe('buildTickGateState', () => {
     expect(state.wakeSignalDigest).toBe('wake-hash');
     expect(state.riskPlaybookDigest).toBe('risk-hash');
   });
+
+  it('sets hasWakeSignal true when hasBufferedWake is true even with no agent.wake in incomingMessages', () => {
+    const state = buildTickGateState({
+      tickNumber: 2,
+      incomingMessages: [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            price: '100.5 USD',
+            pnl: '-12.25',
+            position: null,
+          },
+        },
+      ],
+      hasOpenPositions: false,
+      lastKnownPositionSide: 'long',
+      hasBufferedWake: true,
+    });
+
+    // The wake group consumed the agent.wake, so incomingMessages has none,
+    // but a wake was drained from the buffer → hasWakeSignal must be true.
+    expect(state.hasWakeSignal).toBe(true);
+  });
+
+  it('keeps hasWakeSignal false when hasBufferedWake is false and no agent.wake is present', () => {
+    const state = buildTickGateState({
+      tickNumber: 2,
+      incomingMessages: [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            price: '100.5 USD',
+            pnl: '-12.25',
+            position: null,
+          },
+        },
+      ],
+      hasOpenPositions: false,
+      lastKnownPositionSide: 'long',
+      hasBufferedWake: false,
+    });
+
+    expect(state.hasWakeSignal).toBe(false);
+  });
+
+  it('keeps hasWakeSignal true when hasBufferedWake is false but an agent.wake is present', () => {
+    const state = buildTickGateState({
+      tickNumber: 2,
+      incomingMessages: [{ type: 'agent.wake' }],
+      hasOpenPositions: false,
+      hasBufferedWake: false,
+    });
+
+    expect(state.hasWakeSignal).toBe(true);
+  });
 });

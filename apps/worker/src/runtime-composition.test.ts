@@ -18,6 +18,8 @@ import {
   recordActiveWatchSummary,
   trimDynamicBlocks,
   updateRuntimeDescriptor,
+  bufferWakeEnvelope,
+  drainNewestWakeIntoMarketWake,
   type PromptEnrichmentPolicy,
   type ActivityTimelineEvent,
   type RuntimeContextProvider,
@@ -3209,5 +3211,142 @@ describe('runtime composition helpers', () => {
       const promptAfter = buildSystemPrompt(state, timing);
       expect(promptAfter).toContain('Trade aggressively with momentum');
       expect(promptAfter).not.toContain('Trade carefully');
+    });
+  });
+
+  describe('wake-context buffering and drain (consumer-group race fix)', () => {
+    const scannerEnvelope = {
+      type: 'agent.wake',
+      wakeId: 'wake-s-001',
+      source: 'scanner',
+      reason: '2 ranked scanner signals ready',
+      requestedAt: '2026-06-11T00:00:00.000Z',
+      context: {
+        scannerKind: 'signal_scoring',
+        signalCount: 2,
+        topSymbol: 'BTC',
+        topConfidence: 0.91,
+        regimePass: true,
+      },
+    };
+
+    it('bufferWakeEnvelope captures the full wake envelope for an agent.wake', () => {
+      const entry = bufferWakeEnvelope(scannerEnvelope, 1234);
+
+      expect(entry).not.toBeNull();
+      expect(entry!.wakeId).toBe('wake-s-001');
+      expect(entry!.source).toBe('scanner');
+      expect(entry!.reason).toBe('2 ranked scanner signals ready');
+      expect(entry!.requestedAt).toBe('2026-06-11T00:00:00.000Z');
+      expect(entry!.context).toMatchObject({ scannerKind: 'signal_scoring', signalCount: 2 });
+      expect(entry!.receivedAt).toBe(1234);
+    });
+
+    it('bufferWakeEnvelope returns null for non-wake envelopes', () => {
+      expect(bufferWakeEnvelope({ type: 'agent.technical.scan_completed' }, 1)).toBeNull();
+    });
+
+    it('bufferWakeEnvelope applies safe defaults for missing fields', () => {
+      const entry = bufferWakeEnvelope({ type: 'agent.wake' }, 5);
+
+      expect(entry).not.toBeNull();
+      expect(entry!.wakeId).toBe('');
+      expect(entry!.source).toBe('unknown');
+      expect(entry!.reason).toBe('wake signal received');
+      expect(entry!.requestedAt).toBeNull();
+      expect(entry!.context).toBeNull();
+    });
+
+    it('drainNewestWakeIntoMarketWake sets currentMarketWake from the newest buffered wake', () => {
+      const buffer = [
+        bufferWakeEnvelope({ ...scannerEnvelope, wakeId: 'older', reason: 'older signal' }, 100)!,
+        bufferWakeEnvelope(scannerEnvelope, 200)!,
+      ];
+
+      const { buffer: remaining, wake } = drainNewestWakeIntoMarketWake(buffer, null);
+
+      expect(wake).not.toBeNull();
+      expect(wake!.wakeId).toBe('wake-s-001');
+      expect(wake!.source).toBe('scanner');
+      expect(wake!.reason).toBe('2 ranked scanner signals ready');
+      expect(wake!.requestedAt).toBe('2026-06-11T00:00:00.000Z');
+      expect(wake!.context).toMatchObject({ scannerKind: 'signal_scoring' });
+      // The drained entry is removed; the older one remains.
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]!.wakeId).toBe('older');
+    });
+
+    it('drainNewestWakeIntoMarketWake leaves currentMarketWake untouched when already set', () => {
+      const buffer = [bufferWakeEnvelope(scannerEnvelope, 100)!];
+      const existing = {
+        wakeId: 'already-set',
+        source: 'scanner' as const,
+        reason: 'already consumed by runtime group',
+        requestedAt: null,
+        context: { scannerKind: 'signal_scoring' as const, signalCount: 1 },
+      };
+
+      const { buffer: remaining, wake } = drainNewestWakeIntoMarketWake(buffer, existing);
+
+      expect(wake).toBeNull();
+      expect(remaining).toHaveLength(1); // nothing drained
+    });
+
+    it('drainNewestWakeIntoMarketWake returns null wake when buffer is empty', () => {
+      const { buffer: remaining, wake } = drainNewestWakeIntoMarketWake([], null);
+
+      expect(wake).toBeNull();
+      expect(remaining).toHaveLength(0);
+    });
+
+    it('race-condition regression: buffered wake drains into currentMarketWake when runtime group did not consume it', () => {
+      // Simulate the wake group consuming the agent.wake (so the runtime group
+      // never sees it): currentMarketWake is null, but the buffer holds the wake.
+      const state = createRuntimeCompositionState(baseDescriptor);
+      expect(state.metrics.currentMarketWake).toBeNull();
+
+      const buffer = [bufferWakeEnvelope(scannerEnvelope, Date.now())!];
+      const { buffer: remaining, wake } = drainNewestWakeIntoMarketWake(buffer, state.metrics.currentMarketWake);
+
+      expect(wake).not.toBeNull();
+      expect(wake!.source).toBe('scanner');
+      expect(remaining).toHaveLength(0);
+
+      // The hybrid-routing discriminator evaluates correctly from the drained wake.
+      expect(wake!.source === 'scanner').toBe(true);
+
+      // The drained wake is a scanner wake → isScannerWake is true, so a
+      // scanner-gated agent would route to the single-shot hybrid evaluator
+      // (not "timer tick without wake signal").
+      const isScannerWake = wake!.source === 'scanner';
+      expect(isScannerWake).toBe(true);
+      expect(wake!.context).toMatchObject({ scannerKind: 'signal_scoring' });
+    });
+
+    it('race-condition regression: drained wake yields hasBufferedWake so hasWakeSignal is true', () => {
+      // The full chain: wake group consumes agent.wake → buffer holds it →
+      // drain sets currentMarketWake AND signals hasBufferedWake → the tick
+      // gate computes hasWakeSignal = true (unblocking hybrid routing).
+      const state = createRuntimeCompositionState(baseDescriptor);
+      const buffer = [bufferWakeEnvelope(scannerEnvelope, Date.now())!];
+
+      let hasBufferedWake = false;
+      if (state.metrics.currentMarketWake === null) {
+        const drained = drainNewestWakeIntoMarketWake(buffer, null);
+        if (drained.wake) {
+          state.metrics.currentMarketWake = drained.wake;
+          hasBufferedWake = true;
+        }
+      }
+
+      // The wake was drained from the buffer (runtime group did not consume it).
+      expect(hasBufferedWake).toBe(true);
+      expect(state.metrics.currentMarketWake).not.toBeNull();
+      expect(state.metrics.currentMarketWake!.source).toBe('scanner');
+
+      // buildTickGateState would compute hasWakeSignal = true via hasBufferedWake.
+      // (buildTickGateState is unit-tested separately in tick-gate-state.test.ts;
+      // here we assert the flag that drives it is correctly set.)
+      expect(hasBufferedWake).toBe(true);
     });
   });

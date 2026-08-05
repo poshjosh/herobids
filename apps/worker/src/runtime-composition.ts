@@ -63,6 +63,74 @@ export interface RuntimeMarketWakeContext {
   context: WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext | ScannerWakeContext;
 }
 
+/**
+ * A buffered `agent.wake` envelope captured by the wake consumer group
+ * (`agent-market-wake`). Carries the full wake payload so the tick can
+ * reconstruct `currentMarketWake` even when the runtime consumer group
+ * (`agent-runtime`) never sees the message.
+ */
+export interface PendingWakeSignalBufferEntry {
+  wakeId: string;
+  source: string;
+  reason: string;
+  requestedAt: string | null;
+  context: unknown;
+  receivedAt: number;
+}
+
+/**
+ * Extract a full wake-envelope buffer entry from a parsed `agent.wake` message
+ * payload. Returns null when the envelope is not an `agent.wake`.
+ *
+ * Redis Streams delivers each message to only ONE consumer group. The wake
+ * group may consume an `agent.wake` before the runtime group ever sees it, so
+ * the wake context must be buffered here (not re-read) to be visible to the
+ * tick. Safe defaults are used for missing fields.
+ */
+export function bufferWakeEnvelope(
+  envelope: Record<string, unknown>,
+  receivedAt: number,
+): PendingWakeSignalBufferEntry | null {
+  if (envelope['type'] !== 'agent.wake') {
+    return null;
+  }
+  return {
+    wakeId: String(envelope['wakeId'] ?? ''),
+    source: String(envelope['source'] ?? 'unknown'),
+    reason: String(envelope['reason'] ?? 'wake signal received'),
+    requestedAt: envelope['requestedAt'] ? String(envelope['requestedAt']) : null,
+    context: envelope['context'] ?? null,
+    receivedAt,
+  };
+}
+
+/**
+ * Drain the newest buffered wake envelope into `currentMarketWake` when it is
+ * not already set (e.g. the runtime consumer group did not consume the wake).
+ *
+ * Returns the updated buffer (with the drained entry removed) and the
+ * reconstructed `RuntimeMarketWakeContext` (or null when there is nothing to
+ * drain or the current wake is already set).
+ */
+export function drainNewestWakeIntoMarketWake(
+  buffer: PendingWakeSignalBufferEntry[],
+  currentMarketWake: RuntimeMarketWakeContext | null,
+): { buffer: PendingWakeSignalBufferEntry[]; wake: RuntimeMarketWakeContext | null } {
+  if (currentMarketWake !== null || buffer.length === 0) {
+    return { buffer, wake: null };
+  }
+  const newest = buffer[buffer.length - 1]!;
+  const remaining = buffer.slice(0, -1);
+  const wake: RuntimeMarketWakeContext = {
+    wakeId: newest.wakeId,
+    source: newest.source as RuntimeMarketWakeContext['source'],
+    reason: newest.reason,
+    requestedAt: newest.requestedAt,
+    context: newest.context as RuntimeMarketWakeContext['context'],
+  };
+  return { buffer: remaining, wake };
+}
+
 export interface RuntimeVenueSignal {
   kind: 'perps' | 'dex';
   instrument: string;
