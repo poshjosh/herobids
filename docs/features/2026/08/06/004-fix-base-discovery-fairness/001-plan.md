@@ -401,3 +401,18 @@ The `SwapDiscoveryPort` interface returns only `{ data: [] }` — no structured 
 
 ### [Step 3] Medium — Missing DexScreener token assertion in mixed-failure test
 The "returns usable results when one provider fails but others succeed" test verifies GeckoTerminal Solana token but not the DexScreener boost token (`mixed-addr`). Adding an explicit assertion would guard against accidental exclusion of DexScreener-sourced tokens.
+
+### [Step 1] Low — String-replace URL path transformation is fragile
+`buildGeckoUrl()` in `geckoterminal.ts` uses `v2Path.replace('/api/v2/networks/', '/api/v3/onchain/networks/')` which assumes all future v2 paths match this prefix. Works for all current call sites and covered by tests. Refactor if a future path variant doesn't match.
+
+### [Gap Analysis] Medium — validateApiKey AbortError not caught
+`validateApiKey()` doesn't catch `AbortError` from timeout — throws raw `DOMException` instead of a descriptive message. Startup-edge-case polish item.
+
+### [Gap Analysis] Low — Slug tests only cover solana/base
+Add concrete-slug test when third network enters production.
+
+### [Gap Analysis] Low — proBaseUrl not in default.yaml
+Add commented-out entry for discoverability.
+
+### [Gap Analysis] Low — No topPools pro-URL test
+Optional: add when test file is next touched.
