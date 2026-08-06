@@ -91,7 +91,13 @@ export async function discoverSwapScannerCandidates(
 
     if (discoveredTokens.length === 0) {
       logger.info(
-        { venue, network: swapNetwork, event: 'scanner.swap_discovery_empty' },
+        {
+          venue,
+          network: swapNetwork,
+          event: 'scanner.swap_discovery_empty',
+          message:
+            'No tokens in discovery result — possible provider supply failure (rate limits, timeouts) or no qualifying tokens on this network',
+        },
         'Swap scanner discovery returned no tokens',
       );
       return [];

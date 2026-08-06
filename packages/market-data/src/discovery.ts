@@ -132,50 +132,69 @@ function mergeDiscoveredTokens(tokens: DiscoveredToken[]): DiscoveredToken[] {
   return Array.from(merged.values());
 }
 
+interface RejectionLabel {
+  provider: string;
+  network?: string;
+  vector: string;
+}
+
 export async function discoverTokens(config: DiscoveryConfig): Promise<DiscoveredToken[]> {
   const networks = (config.networks.length > 0 ? config.networks : ['solana', 'base']).map((n) => n.toLowerCase());
   const normalizedNetworks = new Set(networks);
   const maxResults = config.maxResults ?? 20;
   const minLiquidityUsd = config.minLiquidityUsd ?? 10_000;
 
-  const cmcFanOut = config.coinmarketcap
-    ? [
-        fetchCmcTrending(networks, config.coinmarketcap),
-        fetchCmcNewListings(networks, config.coinmarketcap),
-      ]
-    : [];
-
-  // Birdeye is Solana-only and opt-in — only fan out when enabled and solana
-  // is in the network list.
-  const birdeyeFanOut = config.birdeye && networks.includes('solana')
-    ? [fetchBirdeyeTrending('solana', config.birdeye)]
-    : [];
-
   const extraPages = config.extraGeckoTerminalPages ?? 0;
   const pageNumbers = [1, ...Array.from({ length: extraPages }, (_, i) => i + 2)];
 
-  const results = await Promise.allSettled([
-    fetchDexScreenerTrending(config.dexscreener),
-    fetchDexScreenerBoostsLatest(config.dexscreener),
-    fetchDexScreenerProfilesLatest(config.dexscreener),
-    ...networks.flatMap((network) => [
-      ...pageNumbers.map((page) => fetchGeckoTerminalTrendingPools(network, config.geckoterminal, page)),
-      ...pageNumbers.map((page) => fetchGeckoTerminalTopPools(network, config.geckoterminal, page)),
-      fetchGeckoTerminalNewPools(network, config.geckoterminal),
-    ]),
-    ...cmcFanOut,
-    ...birdeyeFanOut,
-  ]);
+  // Build a labeled fanout array so rejected provider results can be attributed
+  // to a specific provider / network / endpoint vector.
+  const labeled: Array<{ promise: Promise<DiscoveredToken[]>; label: RejectionLabel }> = [];
+
+  // DexScreener — global vectors (no per-network fanout)
+  labeled.push({ promise: fetchDexScreenerTrending(config.dexscreener), label: { provider: 'dexscreener', vector: 'trending' } });
+  labeled.push({ promise: fetchDexScreenerBoostsLatest(config.dexscreener), label: { provider: 'dexscreener', vector: 'boosts-latest' } });
+  labeled.push({ promise: fetchDexScreenerProfilesLatest(config.dexscreener), label: { provider: 'dexscreener', vector: 'profiles-latest' } });
+
+  // GeckoTerminal — per-network vectors
+  for (const network of networks) {
+    for (const page of pageNumbers) {
+      const pageSuffix = page > 1 ? `_p${page}` : '';
+      labeled.push({ promise: fetchGeckoTerminalTrendingPools(network, config.geckoterminal, page), label: { provider: 'geckoterminal', network, vector: `trending_pools${pageSuffix}` } });
+      labeled.push({ promise: fetchGeckoTerminalTopPools(network, config.geckoterminal, page), label: { provider: 'geckoterminal', network, vector: `top_pools${pageSuffix}` } });
+    }
+    labeled.push({ promise: fetchGeckoTerminalNewPools(network, config.geckoterminal), label: { provider: 'geckoterminal', network, vector: 'new_pools' } });
+  }
+
+  // CoinMarketCap — optional, global vectors
+  if (config.coinmarketcap) {
+    labeled.push({ promise: fetchCmcTrending(networks, config.coinmarketcap), label: { provider: 'coinmarketcap', vector: 'trending' } });
+    labeled.push({ promise: fetchCmcNewListings(networks, config.coinmarketcap), label: { provider: 'coinmarketcap', vector: 'new-listings' } });
+  }
+
+  // Birdeye — Solana-only, opt-in
+  if (config.birdeye && networks.includes('solana')) {
+    labeled.push({ promise: fetchBirdeyeTrending('solana', config.birdeye), label: { provider: 'birdeye', network: 'solana', vector: 'trending' } });
+  }
+
+  const results = await Promise.allSettled(labeled.map((l) => l.promise));
 
   // Surface rejected provider results instead of silently dropping them.
   // Promise.allSettled swallows rejections; without this logging, provider
   // failures (rate limits, timeouts, auth errors) are invisible and can cause
   // a network to silently return zero tokens (e.g. base). Log each rejection
-  // with a stable label so operators can see which provider/network failed.
-  const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
-  for (const result of rejected) {
-    const err = result.reason instanceof Error ? result.reason : new Error(String(result.reason));
-    console.warn(`[Discovery] provider request rejected: ${err.message}`, { name: err.name });
+  // with a stable provider/network/vector label so operators can see exactly
+  // which provider endpoint failed.
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i]!;
+    if (result.status === 'rejected') {
+      const entry = labeled[i]!;
+      const err = result.reason instanceof Error ? result.reason : new Error(String(result.reason));
+      console.warn(
+        `[Discovery] provider request rejected: ${entry.label.provider}/${entry.label.network ?? 'global'}/${entry.label.vector}: ${err.message}`,
+        { provider: entry.label.provider, network: entry.label.network, vector: entry.label.vector, name: err.name },
+      );
+    }
   }
 
   const fulfilled = results

@@ -70,7 +70,7 @@ describe('discoverSwapScannerCandidates', () => {
 
   // ── Empty discovery ───────────────────────────────────────────────────────
 
-  it('returns empty result and logs swap_discovery_empty when discovery returns no tokens', async () => {
+  it('returns empty result and logs swap_discovery_empty with attribution context when discovery returns no tokens', async () => {
     const logger = makeLogger();
     const discovery = makeDiscovery({
       discover: vi.fn().mockResolvedValue({ data: [] }),
@@ -84,7 +84,12 @@ describe('discoverSwapScannerCandidates', () => {
 
     expect(result).toEqual([]);
     expect(logger.info).toHaveBeenCalledWith(
-      expect.objectContaining({ event: 'scanner.swap_discovery_empty' }),
+      expect.objectContaining({
+        event: 'scanner.swap_discovery_empty',
+        venue: 'jupiter',
+        network: 'solana',
+        message: expect.stringContaining('provider supply failure'),
+      }),
       expect.any(String),
     );
   });

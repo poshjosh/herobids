@@ -281,7 +281,7 @@ Tests:
   returns them.
 - Concrete-slug test guarding against silent drop from slug divergence.
 
-### Step 3 (Phase 3) — Labeled rejection reporting + scanner attribution [PENDING]
+### Step 3 (Phase 3) — Labeled rejection reporting + scanner attribution [DONE]
 
 Files:
 
@@ -396,5 +396,8 @@ Changes:
 ### [Step 1] Medium — proBaseUrl config wiring (RESOLVED)
 Fixed: `proBaseUrl` was added to `MarketDataConfig.geckoterminal` and wired through `provider-registry.ts`.
 
-### [Step 1] Low — String-replace URL path transformation is fragile
-`buildGeckoUrl()` in `geckoterminal.ts` uses `v2Path.replace('/api/v2/networks/', '/api/v3/onchain/networks/')` which assumes all future v2 paths match this prefix. Works for all current call sites and covered by tests. Refactor if a future path variant doesn't match.
+### [Step 3] Medium — Scanner attribution is a static hint, not threaded cause
+The `SwapDiscoveryPort` interface returns only `{ data: [] }` — no structured rejection metadata. The enhanced scanner log mentions both possible causes in one message. To truly distinguish provider failure from no qualifying tokens, `SwapDiscoveryPort` would need to carry `rejectionSummary`. Accepted as scope limitation. Follow-up task filed.
+
+### [Step 3] Medium — Missing DexScreener token assertion in mixed-failure test
+The "returns usable results when one provider fails but others succeed" test verifies GeckoTerminal Solana token but not the DexScreener boost token (`mixed-addr`). Adding an explicit assertion would guard against accidental exclusion of DexScreener-sourced tokens.
