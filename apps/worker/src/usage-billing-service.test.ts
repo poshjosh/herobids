@@ -173,6 +173,165 @@ describe('UsageBillingService', () => {
     expect(service).toBeDefined();
   });
 
+  // ── isHardLimited backward compat: only checks account status, not available credit ──
+
+  it('isHardLimited returns false when account is active even if canSpendNow would block on no_available_credit', async () => {
+    const account = makeAccount();
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateBillingAccountForUser').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'ensureActiveRateCard').mockResolvedValue({ id: 'rc_default_v1' });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateOpenPeriod').mockResolvedValue({ id: 'period_1' } as never);
+    // Account status is active — isHardLimited should return false regardless of credit
+    vi.spyOn(UsageBillingRepository.prototype, 'getSpendState').mockResolvedValue({ status: 'active' });
+
+    const service = createService();
+    await expect(service.isHardLimited()).resolves.toBe(false);
+  });
+
+  // ── canSpendNow: zero-balance enforcement ─────────────────────────────────
+
+  it('canSpendNow returns canSpend: false when repo reports no_available_credit', async () => {
+    const account = makeAccount();
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateBillingAccountForUser').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'ensureActiveRateCard').mockResolvedValue({ id: 'rc_default_v1' });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateOpenPeriod').mockResolvedValue({ id: 'period_1' } as never);
+    const canSpendNowSpy = vi.spyOn(UsageBillingRepository.prototype, 'canSpendNow').mockResolvedValue({
+      canSpend: false,
+      availableMicrousd: -100,
+      status: 'active',
+      reason: 'no_available_credit',
+    });
+
+    const service = createService();
+    const result = await service.canSpendNow();
+    expect(canSpendNowSpy).toHaveBeenCalledWith('acc_user_1');
+    expect(result).toEqual({
+      canSpend: false,
+      availableMicrousd: -100,
+      status: 'active',
+      reason: 'no_available_credit',
+    });
+  });
+
+  it('canSpendNow returns canSpend: true when repo reports ok', async () => {
+    const account = makeAccount();
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateBillingAccountForUser').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'ensureActiveRateCard').mockResolvedValue({ id: 'rc_default_v1' });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateOpenPeriod').mockResolvedValue({ id: 'period_1' } as never);
+    const canSpendNowSpy = vi.spyOn(UsageBillingRepository.prototype, 'canSpendNow').mockResolvedValue({
+      canSpend: true,
+      availableMicrousd: 5000,
+      status: 'active',
+      reason: 'ok',
+    });
+
+    const service = createService();
+    const result = await service.canSpendNow();
+    expect(canSpendNowSpy).toHaveBeenCalledWith('acc_user_1');
+    expect(result).toEqual({
+      canSpend: true,
+      availableMicrousd: 5000,
+      status: 'active',
+      reason: 'ok',
+    });
+  });
+
+  it('canSpendNow fails open when billing is disabled', async () => {
+    const service = new UsageBillingService({} as import('@herobids/db').Database, {
+      userId: 'user-1',
+      agentId: 'agent-1',
+      sessionId: 'session-1',
+      defaultRateCardName: 'default',
+      runtimeChargeWindowMs: 60_000,
+      enabled: false,
+    });
+
+    const result = await service.canSpendNow();
+    expect(result).toEqual({
+      canSpend: true,
+      availableMicrousd: 0,
+      status: 'active',
+      reason: 'ok',
+    });
+  });
+
+  it('canSpendNow fails open when account resolution fails', async () => {
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateBillingAccountForUser')
+      .mockRejectedValue(new Error('database unavailable'));
+
+    const service = createService();
+    const result = await service.canSpendNow();
+    expect(result).toEqual({
+      canSpend: true,
+      availableMicrousd: 0,
+      status: 'active',
+      reason: 'ok',
+    });
+  });
+
+  it('canSpendNow fails open when repo.canSpendNow throws after successful account resolution', async () => {
+    const account = makeAccount();
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateBillingAccountForUser').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'ensureActiveRateCard').mockResolvedValue({ id: 'rc_default_v1' });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateOpenPeriod').mockResolvedValue({ id: 'period_1' } as never);
+    // ensureAccount succeeds, but the actual repo call throws
+    vi.spyOn(UsageBillingRepository.prototype, 'canSpendNow').mockRejectedValue(new Error('DB connection lost'));
+
+    const service = createService();
+    const result = await service.canSpendNow();
+    expect(result).toEqual({
+      canSpend: true,
+      availableMicrousd: 0,
+      status: 'active',
+      reason: 'ok',
+    });
+  });
+
+  it('canSpendNow returns hard_limited reason when repo reports hard_limited', async () => {
+    const account = makeAccount();
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateBillingAccountForUser').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'ensureActiveRateCard').mockResolvedValue({ id: 'rc_default_v1' });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateOpenPeriod').mockResolvedValue({ id: 'period_1' } as never);
+    const canSpendNowSpy = vi.spyOn(UsageBillingRepository.prototype, 'canSpendNow').mockResolvedValue({
+      canSpend: false,
+      availableMicrousd: 0,
+      status: 'hard_limited',
+      reason: 'hard_limited',
+    });
+
+    const service = createService();
+    const result = await service.canSpendNow();
+    expect(canSpendNowSpy).toHaveBeenCalledWith('acc_user_1');
+    expect(result.canSpend).toBe(false);
+    expect(result.reason).toBe('hard_limited');
+    expect(result.status).toBe('hard_limited');
+  });
+
+  it('canSpendNow returns suspended reason when repo reports suspended', async () => {
+    const account = makeAccount();
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateBillingAccountForUser').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'ensureActiveRateCard').mockResolvedValue({ id: 'rc_default_v1' });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateOpenPeriod').mockResolvedValue({ id: 'period_1' } as never);
+    const canSpendNowSpy = vi.spyOn(UsageBillingRepository.prototype, 'canSpendNow').mockResolvedValue({
+      canSpend: false,
+      availableMicrousd: 0,
+      status: 'suspended',
+      reason: 'suspended',
+    });
+
+    const service = createService();
+    const result = await service.canSpendNow();
+    expect(canSpendNowSpy).toHaveBeenCalledWith('acc_user_1');
+    expect(result.canSpend).toBe(false);
+    expect(result.reason).toBe('suspended');
+    expect(result.status).toBe('suspended');
+  });
+
   // ── LLM usage event splitting: cached vs non-cached tokens ───────────────
   // These tests lock in the recording semantics introduced with cached-token
   // billing.  inputTokens is always the non-cached count (normalised in

@@ -267,6 +267,120 @@ describe('AgentMessageBroker billing notifications', () => {
     });
   });
 
+  describe('Insufficient funds (billing.insufficient_funds)', () => {
+    it('emits Telegram notification with insufficient credit message', async () => {
+      const agentRepo = makeAgentRepo({ name: 'MomentumBot' });
+      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      const redis = makeRedis();
+      const { client: telegram, sendTextSpy } = makeTelegramClient();
+      const broker = makeBroker(agentRepo, redis, telegram);
+
+      await broker.processInbound(makeTickSkippedEnvelope({
+        reason: 'billing.insufficient_funds',
+      }));
+
+      expect(sendTextSpy).toHaveBeenCalledTimes(1);
+      const message: string = sendTextSpy.mock.calls[0]![1];
+      expect(message).toContain('insufficient billing credit');
+      expect(message).toContain('MomentumBot');
+      expect(message).toContain('stopped');
+    });
+
+    it('emits email notification with insufficient credit content', async () => {
+      const agentRepo = makeAgentRepo({ name: 'MomentumBot' });
+      agentRepo.getUserEmailByAgentId.mockResolvedValue('user@example.com');
+      const redis = makeRedis();
+      const { client: emailClient, sendSpy } = makeEmailClient();
+      const broker = makeBroker(agentRepo, redis, undefined, emailClient);
+
+      await broker.processInbound(makeTickSkippedEnvelope({
+        reason: 'billing.insufficient_funds',
+      }));
+
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      const emailMsg = sendSpy.mock.calls[0]![0];
+      expect(emailMsg.to).toBe('user@example.com');
+      expect(emailMsg.subject).toContain('insufficient billing credit');
+    });
+
+    it('dedup key maps to no_available_credit status', async () => {
+      const agentRepo = makeAgentRepo();
+      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      const redis = makeRedis();
+      redis.get.mockResolvedValue(null);
+      const { client: telegram } = makeTelegramClient();
+      const broker = makeBroker(agentRepo, redis, telegram);
+
+      await broker.processInbound(makeTickSkippedEnvelope({
+        reason: 'billing.insufficient_funds',
+      }));
+
+      expect(redis.set).toHaveBeenCalledWith(
+        'agent:billing:notified:agent-123',
+        'no_available_credit',
+        'EX',
+        86400,
+      );
+    });
+  });
+
+  describe('Account suspended (billing.account_suspended)', () => {
+    it('emits Telegram notification with account suspended message', async () => {
+      const agentRepo = makeAgentRepo({ name: 'MomentumBot' });
+      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      const redis = makeRedis();
+      const { client: telegram, sendTextSpy } = makeTelegramClient();
+      const broker = makeBroker(agentRepo, redis, telegram);
+
+      await broker.processInbound(makeTickSkippedEnvelope({
+        reason: 'billing.account_suspended',
+      }));
+
+      expect(sendTextSpy).toHaveBeenCalledTimes(1);
+      const message: string = sendTextSpy.mock.calls[0]![1];
+      expect(message).toContain('account suspended');
+      expect(message).toContain('MomentumBot');
+      expect(message).toContain('stopped');
+    });
+
+    it('emits email notification with account suspended content', async () => {
+      const agentRepo = makeAgentRepo({ name: 'MomentumBot' });
+      agentRepo.getUserEmailByAgentId.mockResolvedValue('user@example.com');
+      const redis = makeRedis();
+      const { client: emailClient, sendSpy } = makeEmailClient();
+      const broker = makeBroker(agentRepo, redis, undefined, emailClient);
+
+      await broker.processInbound(makeTickSkippedEnvelope({
+        reason: 'billing.account_suspended',
+      }));
+
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      const emailMsg = sendSpy.mock.calls[0]![0];
+      expect(emailMsg.to).toBe('user@example.com');
+      expect(emailMsg.subject).toContain('suspended');
+    });
+
+    it('dedup key maps to suspended status', async () => {
+      const agentRepo = makeAgentRepo();
+      agentRepo.getEffectiveTelegramChatId.mockResolvedValue('111111');
+      const redis = makeRedis();
+      redis.get.mockResolvedValue(null);
+      const { client: telegram } = makeTelegramClient();
+      const broker = makeBroker(agentRepo, redis, telegram);
+
+      await broker.processInbound(makeTickSkippedEnvelope({
+        reason: 'billing.account_suspended',
+      }));
+
+      expect(redis.set).toHaveBeenCalledWith(
+        'agent:billing:notified:agent-123',
+        'suspended',
+        'EX',
+        86400,
+      );
+    });
+  });
+
   describe('Deduplication', () => {
     it('suppresses second hard-limit tick for same agent', async () => {
       const agentRepo = makeAgentRepo();
