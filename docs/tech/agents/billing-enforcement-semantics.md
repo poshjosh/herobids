@@ -46,7 +46,7 @@ It must not:
 
 ## Zero-Balance (No Available Credit) Enforcement
 
-Zero-balance enforcement is independent from cap-derived status. It blocks paid runtime work when `availableMicrousd <= 0`, even if the account status is still `active`.
+Zero-balance enforcement is independent from cap-derived status. It blocks paid work (agent runtime and Guided Setup chat) when `availableMicrousd <= 0`, even if the account status is still `active`.
 
 **Rule**: `availableMicrousd = balanceMicrousd - reservedMicrousd`. When this value is `<= 0`, all paid LLM dispatch is blocked regardless of cap status.
 
@@ -72,6 +72,9 @@ interface CanSpendNowResult {
 | Session start | `AgentSessionManager` (after reconciliation) | Session launch is blocked; agent does not begin reasoning. Emits `guardrail_triggered` (not `TICK_SKIPPED`) with the appropriate reason code. |
 | Scout/Judge LLM dispatch | `agent.ts` scout loop (before scout; judge is skipped if blocked) | Tick skipped before any LLM call |
 | Hybrid evaluator LLM dispatch | `agent.ts` hybrid path | Tick skipped before any LLM call |
+| Guided Setup chat (message send) | `apps/api/src/routes/chat.ts` `POST /chat/threads/:id/messages` | Message rejected with HTTP 402 `billing.top_up_required` before LLM call |
+| Guided Setup chat (action result) | `apps/api/src/routes/chat.ts` `POST /chat/threads/:id/actions/:actionId` | Action rejected with HTTP 402 `billing.top_up_required` before LLM resume |
+| Guided Setup `create_agent` tool | `apps/api/src/routes/chat.ts` `executeChatAction` | Tool returns `billing.top_up_required` error (defense-in-depth) |
 
 ### Reason code
 
@@ -89,6 +92,39 @@ An agent blocked by zero-balance enforcement remains in its current status. It d
 - Transition to a different account status
 
 The agent resumes normally on the next tick once the user adds credit and `availableMicrousd > 0`.
+
+## Guided Setup Chat Enforcement
+
+The `canSpendNow()` guard also applies to the Guided Setup (AI-assisted agent creation) chat. The product rule is "no money, no form": a user with no available billing credit must not consume paid platform resources (LLM calls) through the chat.
+
+### Enforcement points (chat)
+
+`canSpendNow()` is checked before every paid LLM call in the Guided Setup chat:
+
+| Enforcement point | Location | Behavior when blocked |
+|-------------------|----------|----------------------|
+| Message send | `POST /chat/threads/:id/messages` | Returns HTTP 402 with error code `billing.top_up_required`. User message is **not** persisted, LLM is **not** invoked. |
+| Action result (e.g. OAuth callback) | `POST /chat/threads/:id/actions/:actionId` | Returns HTTP 402 with error code `billing.top_up_required`. Connection-link metadata updates are still persisted (not a paid action), but the LLM resume is blocked. |
+| `create_agent` tool call | `executeChatAction` (tool loop) | Returns a `billing.top_up_required` error as the tool result (defense-in-depth — the message-send gate is the primary block). |
+
+### Frontend gate
+
+The frontend (`GuidedSetupPanel`) fetches `GET /billing/usage-summary` on mount and renders a top-up gate (instead of the chat) when:
+
+- The billing account status is `hard_limited` or `suspended`, OR
+- (Frontend-only, approximate) available credit appears exhausted
+
+The frontend gate is **approximate** (balance-based, does not account for reservations). The backend guard (`402` with `billing.top_up_required`) is the **authoritative** enforcement.
+
+### Fresh users
+
+Users with no billing account (new signups) are **never blocked** by the chat. The billing account is created lazily on first activity. The guard allows through when no account exists or no open period is found.
+
+### HTTP contract
+
+| Status | Error code | When |
+|--------|------------|------|
+| 402 | `billing.top_up_required` | `canSpendNow()` returns `canSpend: false` for any reason |
 
 ## Open Positions at Hard Cap
 
