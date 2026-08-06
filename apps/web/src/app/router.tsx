@@ -20,6 +20,7 @@ import { CreateAgentPage } from '../features/agents/CreateAgentPage.js';
 import { AgentDetailPage } from '../features/agents/AgentDetailPage.js';
 import { AgentCapabilityPage } from '../features/agents/AgentCapabilityPage.js';
 import { SkillsPage } from '../features/skills/SkillsPage.js';
+import { TryPage } from '../features/try/TryPage.js';
 import { SettingsPage } from '../features/settings/SettingsPage.js';
 import { AdminPage } from '../features/admin/AdminPage.js';
 
@@ -41,6 +42,10 @@ export const router = createBrowserRouter([
   {
     path: '/setup/provider-link',
     element: <SetupProviderLinkPage />,
+  },
+  {
+    path: '/try',
+    element: <TryPage />,
   },
   // ── Authenticated routes (RootLayout enforces auth) ───────────
   {
