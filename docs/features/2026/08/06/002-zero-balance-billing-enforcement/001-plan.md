@@ -1,5 +1,8 @@
 # Zero-Balance Billing Enforcement
 
+**Status: ✅ Implemented** (2026-08-06)
+
+
 ## Summary
 
 Prevent agents from consuming paid platform resources when the user has no available billing credit.
@@ -191,3 +194,54 @@ Add tests for these cases:
 1. Should runtime block at `available <= 0`, or only when available credit is less than a minimum reserve amount for the next unit of work?
 2. Should `agent.runtime_ms` also move to a reservation model, or is pre-dispatch gating sufficient for the first slice?
 3. Do we want one common user-facing reason code for all no-funds cases, or separate codes for `no_available_credit` and `cap_exceeded`?
+---
+
+## Outstanding Issues (from implementation review)
+
+These are medium/low-severity findings from the implementation code reviews. None block the feature; all are tracked for future cleanup.
+
+### Item 1 — `canSpendNow` shared guard
+
+- **Medium**: Missing test for unknown-status safety net (M2 fallback path). Add a test injecting an unrecognized status string and asserting conservative block.
+- **Medium**: `reserveCharge` lacks the same unknown-status safety net as `canSpendNow` — consistency gap across the billing repository.
+
+### Item 2 — Session start enforcement
+
+- **Medium**: Unknown billing status mapped as `hard_limited` → guardrail says "limit exceeded" when the real problem is an unrecognized/unknown status. Consider adding an `unknown_status` reason to `CanSpendNowResult` or a distinct code.
+- **Low**: Nested ternary chains for reason→code mapping could be refactored to a `switch` statement for readability and extensibility.
+- **Low**: Test coverage gap — blocked-launch path not tested at integration level (session manager unit tests don't exercise the billing gate).
+
+### Item 3 — LLM dispatch enforcement
+
+- **Medium**: Duplicate reason→code mapping in hybrid and scout paths. Extract to a shared helper function (e.g. `billingBlockReason(reason)`) to avoid drift when new reasons are added.
+- **Medium**: `resolveForcedPreScoutBillingOutcome` has a dead `reason` field (`'billing.limit_exceeded'`) that the caller never reads; and the parameter name `isHardLimited` is misleading (it's actually `!canSpendResult.canSpend`, conflating three distinct states). Rename to `isBlocked` and remove or wire through the reason.
+- **Medium**: No billing re-check between scout and judge LLM dispatch within the same tick — if the scout exhausts the remaining credit, the judge runs un-gated. Pre-existing behavior; file as Phase 2 follow-up.
+
+### Item 4 — Billing notification reason codes
+
+- **Medium**: New blocking-message builders (`buildInsufficientFundsMessage`, `buildAccountSuspendedMessage`) omit open-position warnings that `buildHardLimitMessage` includes — consistency gap for users with open positions.
+- **Low**: `isHard` computation includes dead-code reasons (`insufficient_funds`, `account_suspended`) already caught by explicit checks above — can be simplified to only check `billing.limit_exceeded`.
+- **Low**: Pre-existing 24h dedup TTL causes re-notification for agents blocked >24 hours.
+
+### Item 5 — Billing enforcement docs
+
+- **Low**: `guardrail_triggered` event missing from the Activity Events table — only `TICK_SKIPPED` entries are documented, but session-start blocking emits `guardrail_triggered`.
+
+### Final review gaps
+
+- **Low**: `UsageBillingService.isHardLimited()` legacy method retained as public API even though all production paths migrated to `canSpendNow()`. Mark as `@deprecated` or remove.
+- **Low**: Free plan `hardCapCents: 100` in `config/default.yaml` is now a redundant safety net. Add a comment noting that primary enforcement is balance-based via `canSpendNow()`.
+
+### Commits (9 on top of `origin/main`)
+
+```
+187c0348 docs: add zero-balance billing enforcement to CHANGELOG
+715c9437 test: fix assessment-request-service mock for canSpendNow
+a0d459a2 fix: address 3 gaps from zero-balance enforcement final review
+5531a764 test: add verification tests for zero-balance billing enforcement
+a8f95e57 docs: update billing enforcement semantics for zero-balance enforcement
+3538cc02 feat: add billing notification handling for insufficient_funds and account_suspended
+ee989541 feat(worker): apply canSpendNow billing gate before LLM dispatch
+7eb5aa0a feat(worker): apply canSpendNow billing gate at agent session start
+bcf65d81 feat(db): add canSpendNow shared billing guard
+```
