@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { eq, and, asc, desc, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
-import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skillRevisions, UsageBillingRepository } from '@herobids/db';
+import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skills, skillRevisions, UsageBillingRepository } from '@herobids/db';
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml } from '@herobids/domain';
@@ -274,6 +274,14 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
           description: 'Optional provider ID to preselect when the setup target is known, e.g. gmail.',
         },
       },
+    },
+  },
+  {
+    name: 'list_available_skills',
+    description: 'List skills available for agent assignment. Use this to discover valid skill IDs before calling create_agent with a custom preset.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
     },
   },
   {
@@ -606,6 +614,31 @@ export async function executeChatAction(
         preferredProvider,
         message: 'Connection form requested.',
       });
+    }
+
+    case 'list_available_skills': {
+      try {
+        const availableSkills = await db
+          .select({
+            id: skills.id,
+            name: skills.name,
+            description: skills.description,
+            capabilityFamilies: skills.capabilityFamilies,
+          })
+          .from(skills)
+          .where(eq(skills.publicationStatus, 'published'))
+          .orderBy(asc(skills.name))
+          .limit(50);
+
+        return JSON.stringify({
+          skills: availableSkills,
+          message: availableSkills.length > 0
+            ? `${availableSkills.length} skills available for agent assignment.`
+            : 'No skills currently available.',
+        });
+      } catch {
+        return JSON.stringify({ skills: [], message: 'Could not retrieve available skills.' });
+      }
     }
 
     case 'create_agent': {

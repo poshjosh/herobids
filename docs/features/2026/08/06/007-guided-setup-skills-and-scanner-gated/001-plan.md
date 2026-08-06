@@ -264,15 +264,15 @@ Add to the existing happy-path defaults:
 
 ## Implementation Steps
 
-### Step 1: Add `list_available_skills` tool
+### Step 1: Add `list_available_skills` tool — DONE ✅
 
 **File:** `apps/api/src/routes/chat.ts`
 
 - Add a new entry to `CHAT_TOOLS` for `list_available_skills`.
-- Add a new case in `executeChatAction` that queries `skillRevisions` joined with the skills table, filters to `selectable = true` and `visibility = 'public'`, and returns `[{ id, name, description, capabilityFamilies }]`.
+- Add a new case in `executeChatAction` that queries the `skills` table directly (no join needed — `name`, `description`, and `capabilityFamilies` are already columns on `skills`). Filters to `publicationStatus = 'published'` and returns `[{ id, name, description, capabilityFamilies }]`. The columns `selectable` and `visibility` do not exist in the actual schema, so the simpler direct query is used instead.
 - This is a prerequisite for Step 3 (the LLM needs valid IDs before it can call `create_agent` with `skillIds`).
 
-### Step 2: Extend `create_agent` tool schema
+### Step 2: Extend `create_agent` tool schema — PENDING
 
 **File:** `apps/api/src/routes/chat.ts` — `CHAT_TOOLS` array
 
@@ -282,13 +282,13 @@ Add to the `create_agent` tool's `inputSchema.properties`:
 - `platformAssessmentEnabled` (boolean, optional)
 - `platformAssessmentReviewIntervalHours` (enum: `'6' | '12' | '24' | '48' | '96'`, optional)
 
-### Step 3: Extend `GuidedSetupCreateAgentInput`
+### Step 3: Extend `GuidedSetupCreateAgentInput` — PENDING
 
 **File:** `apps/api/src/routes/chat.ts` — Zod schema
 
 Add the same four fields with appropriate validation.
 
-### Step 4: Update `buildCreateAgentPayload`
+### Step 4: Update `buildCreateAgentPayload` — PENDING
 
 **File:** `apps/api/src/routes/chat.ts` — `buildCreateAgentPayload` function
 
@@ -298,7 +298,7 @@ Add the same four fields with appropriate validation.
 - Ensure `hybridMode` is set in the payload (currently always absent).
 - Ensure `platformAssessment` is set in the payload when enabled.
 
-### Step 5: Update system prompt
+### Step 5: Update system prompt — PENDING
 
 **File:** `apps/api/src/routes/chat.ts` — `buildSystemPrompt` function
 
@@ -307,7 +307,7 @@ Add the same four fields with appropriate validation.
 - Update the happy-path defaults to include the cost-saving question.
 - Add mention of `list_available_skills` as an available tool.
 
-### Step 6: Extend tests
+### Step 6: Extend tests — PENDING
 
 **File:** `apps/api/src/routes/chat.test.ts`
 
@@ -327,7 +327,7 @@ Add test cases for:
 | `create_agent` with invalid `skillIds` | Graceful handling (skip unknown IDs, don't crash) |
 | `filterTrades` ignored for personal-assistant | `capabilityMode` stays `'intelligence'` |
 
-### Step 7: Lint & verify
+### Step 7: Lint & verify — PENDING
 
 ```bash
 pnpm lint
@@ -340,7 +340,7 @@ pnpm --filter @herobids/api run test
 |---|----------|------------------|-------------|
 | 1 | Skill ID format discrepancy: `PRESET_SKILL_MAP` uses prefixed IDs (`'skill-trading'`) but the DB stores unprefixed IDs (`'trading'`). Which does `list_available_skills` return? | Return DB-native (unprefixed) IDs. Fix `PRESET_SKILL_MAP` to match as a separate cleanup — it may be using IDs that don't resolve against `skillRevisions`. | Tech lead |
 | 2 | Default review interval: this plan proposes 12h, but the form defaults to 24h. Which should the chat use? | 12h as proposed. The operator floor is 3h, so 12h is safe. The form can be updated to 12h later for consistency. | Product |
-| 3 | Should `list_available_skills` be a separate tool or reuse the platform-docs tools? | Separate tool. The platform-docs tools return markdown that the LLM must parse — fragile for extracting exact skill IDs. A dedicated tool returns structured JSON. | Tech lead |
+| 3 | Should `list_available_skills` be a separate tool or reuse the platform-docs tools? | Separate tool. The platform-docs tools return markdown that the LLM must parse — fragile for extracting exact skill IDs. A dedicated tool returns structured JSON. **Resolved: Query `skills` table directly, filter by `publicationStatus = 'published'`. No join with `skillRevisions` needed — the `skills` table already has `name`, `description`, and `capabilityFamilies`. The columns `selectable` and `visibility` do not exist in the actual schema.** | Tech lead |
 | 4 | Should the cost-saving question be asked for ALL trading agents or only when the user hasn't expressed a preference? | Ask it consistently for trading agents. The user can always say "I don't care, just use defaults." | Product |
 | 5 | When `filterTrades` is omitted for a trading preset, should the default be `'mixed'` (form parity) or `'scanner_gated'` (cost-saving bias)? | `'mixed'` for backward compatibility with existing chat behavior. The cost-saving question is the mechanism to steer users toward `'scanner_gated'`. | Tech lead |
 
@@ -358,3 +358,13 @@ All changes are additive and backward-compatible:
 - New fields on `create_agent` are all optional — existing chat flows that omit them get the current defaults.
 - If the `list_available_skills` tool call fails or returns empty, the LLM can still create a custom agent with no skills (current behavior).
 - The `PRESET_SKILL_MAP` is unchanged.
+
+## Outstanding Issues
+
+### [Step 1] list_available_skills
+
+| # | Severity | Issue |
+|---|----------|-------|
+| 1 | LOW | Hard `LIMIT 50` on skills query — no pagination. If the skill library grows beyond 50 published skills, some will be silently excluded. Consider removing the limit or documenting why 50 is sufficient. |
+| 2 | LOW | No `description` field truncation — long descriptions could bloat tool result JSON. Consider truncating to ~200 characters if token costs become an issue. |
+| 3 | MEDIUM | `PRESET_SKILL_MAP` uses prefixed IDs (`'skill-trading'`) while the `skills` table stores unprefixed IDs (`'trading'`). The preset-based path may silently fail to assign skills. This is pre-existing but made more visible by `list_available_skills`. Plan flags this as Open Question 1 — resolve before full feature ship. |
