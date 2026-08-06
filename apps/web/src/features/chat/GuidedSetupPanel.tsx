@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import { useGuidedSetup } from './useGuidedSetup.js';
 import { GuidedSetupThread } from './GuidedSetupThread.js';
+import { loadGuidedSetupOAuthDraft, clearGuidedSetupOAuthDraft } from './guidedSetupOAuthDraft.js';
 
 interface GuidedSetupPanelProps {
   /** Called when an agent is successfully created */
@@ -27,8 +29,13 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef }: GuidedSetupPa
     sending,
     sendMessage,
     submitActionResult,
+    loadThread,
     startOver,
   } = useGuidedSetup();
+
+  const location = useLocation();
+  const navigate = useNavigate();
+  const handledOauthReturnRef = useRef(false);
 
   // Expose startOver to the parent so the header refresh icon can reset the thread.
   useEffect(() => {
@@ -36,6 +43,43 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef }: GuidedSetupPa
       startOverRef.current = startOver;
     }
   }, [startOver, startOverRef]);
+
+  // Handle OAuth return: restore the thread and auto-submit the returned
+  // connectionId exactly once (guarded ref + draft clear prevent double-submit
+  // on refresh/back/strict-mode).
+  useEffect(() => {
+    if (handledOauthReturnRef.current) return;
+
+    const params = new URLSearchParams(location.search);
+    if (params.get('oauthReturn') !== '1') return;
+
+    handledOauthReturnRef.current = true;
+    const draft = loadGuidedSetupOAuthDraft();
+    const connectionId = params.get('connectionId');
+    const status = params.get('status');
+
+    if (draft && status === 'ok' && connectionId) {
+      void loadThread(draft.threadId).then(() => {
+        void submitActionResult(draft.actionId, { connectionId });
+      });
+    } else if (draft) {
+      // No connection returned (e.g. error or cancelled) — still restore the thread.
+      void loadThread(draft.threadId);
+    }
+
+    clearGuidedSetupOAuthDraft();
+
+    params.delete('oauthReturn');
+    params.delete('setup');
+    params.delete('status');
+    params.delete('error');
+    params.delete('connectionId');
+    params.delete('guided');
+    params.delete('threadId');
+    params.delete('actionId');
+    const nextSearch = params.toString();
+    navigate(nextSearch ? `/agents/new?${nextSearch}` : '/agents/new', { replace: true });
+  }, [location.search, navigate, loadThread, submitActionResult]);
 
   const handleQuickReply = (value: string) => {
     // Treat quick-reply selections as user messages
@@ -119,6 +163,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef }: GuidedSetupPa
         onSend={sendMessage}
         onQuickReply={handleQuickReply}
         onFormSubmit={handleFormSubmit}
+        threadId={thread?.id}
         sending={sending}
       />
     </div>

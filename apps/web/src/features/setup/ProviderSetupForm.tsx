@@ -65,7 +65,9 @@ interface Props {
   onClose: () => void;
   onSuccess: (result: ProviderSetupResult) => void;
   /** Passed to the API; does not filter providers. */
-  defaultCapability?: 'trading';
+  defaultCapability?: 'trading' | 'email' | 'other';
+  /** When set and present in the catalog, preselects this provider ahead of the capability default. */
+  initialProviderId?: string;
   /** When true, render as a standalone page card instead of inside a Modal. */
   standalone?: boolean;
   /** When true, render just the form content without any wrapper (Modal or page card). For inline embedding (e.g. chat). */
@@ -76,7 +78,7 @@ interface Props {
   onBeforeOAuthRedirect?: () => void;
 }
 
-export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, standalone, inline, oauthReturnTo, onBeforeOAuthRedirect }: Props) {
+export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initialProviderId, standalone, inline, oauthReturnTo, onBeforeOAuthRedirect }: Props) {
   const intl = useIntl();
   const [providerChoice, setProviderChoice] = useState('');  // '' = not yet initialised; see defaultProviderChoice below
   const [label, setLabel] = useState('');
@@ -107,13 +109,27 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, stand
 
   // Default provider selection:
   //  - Trading setups (Create AI Agent) default to the first trading provider once the catalog loads.
+  //  - Email/other setups default to the first provider in that group.
   //  - General setups (Mission Control) default to the custom provider entry form.
+  //  - An explicit initialProviderId (when present in the catalog) wins over the capability default.
   // Derived synchronously so the very first render (including server-side/static rendering,
   // before any effect can run) already reflects the default — never overrides an explicit
   // user selection once providerChoice has been set.
-  const defaultProviderChoice = defaultCapability === 'trading'
-    ? (tradingProviders[0]?.id ?? (!catalogQuery.isLoading && allProviders.length === 0 ? CUSTOM_PROVIDER_OPTION : ''))
-    : CUSTOM_PROVIDER_OPTION;
+  const capabilityGroup =
+    defaultCapability === 'trading' ? tradingProviders
+    : defaultCapability === 'email' ? emailProviders
+    : defaultCapability === 'other' ? otherProviders
+    : [];
+  // When a capability is specified but its group is empty, fall back to the
+  // custom entry once the catalog has loaded (mirroring the trading branch's
+  // empty-group fallback). While the catalog is still loading we leave the
+  // choice empty so the effect does not commit prematurely.
+  const capabilityDefault = capabilityGroup[0]?.id
+    ?? (!catalogQuery.isLoading ? CUSTOM_PROVIDER_OPTION : '');
+  const initialProvider = initialProviderId && allProviders.some((p) => p.id === initialProviderId)
+    ? initialProviderId
+    : '';
+  const defaultProviderChoice = initialProvider || (defaultCapability ? capabilityDefault : CUSTOM_PROVIDER_OPTION);
   const effectiveProviderChoice = providerChoice === '' ? defaultProviderChoice : providerChoice;
 
   // Commit the derived default into state once known, so the <select> becomes a normal

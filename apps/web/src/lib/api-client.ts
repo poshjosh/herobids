@@ -1837,7 +1837,9 @@ export interface SendMessageResponse {
 
 export interface ActionResultResponse {
   acknowledged: boolean;
-  message: ChatMessage;
+  /** True when the action was already processed (idempotent re-submit). */
+  alreadyProcessed?: boolean;
+  message: ChatMessage | null;
 }
 
 export const chat = {

@@ -118,7 +118,9 @@ export function useGuidedSetup() {
       const res = await api.chat.submitActionResult(threadId, actionId, result);
       setState((s) => ({
         ...s,
-        messages: [...s.messages, res.message],
+        // The server may return no new message when the action was already
+        // processed (idempotent re-submit) — only append when present.
+        messages: res.message ? [...s.messages, res.message] : s.messages,
         sending: false,
       }));
     } catch (err) {

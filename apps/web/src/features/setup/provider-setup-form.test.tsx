@@ -94,7 +94,7 @@ const TEST_PROVIDER_CATALOG = {
   },
 };
 
-function renderForm(defaultCapability?: 'trading'): string {
+function renderForm(defaultCapability?: 'trading' | 'email' | 'other', initialProviderId?: string): string {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -102,7 +102,7 @@ function renderForm(defaultCapability?: 'trading'): string {
   return renderToStaticMarkup(
     <QueryClientProvider client={qc}>
       <IntlProvider locale="en" messages={messages}>
-        <ProviderSetupForm onClose={() => undefined} onSuccess={() => undefined} defaultCapability={defaultCapability} />
+        <ProviderSetupForm onClose={() => undefined} onSuccess={() => undefined} defaultCapability={defaultCapability} initialProviderId={initialProviderId} />
       </IntlProvider>
     </QueryClientProvider>,
   );
@@ -179,6 +179,45 @@ describe('ProviderSetupForm rendering', () => {
     // React serialises disabled={true} as the presence of the disabled attribute.
     // The submit button must carry it since provider/label/secrets are all blank.
     expect(html).toContain('disabled');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Capability / provider preselect
+// ---------------------------------------------------------------------------
+
+describe('ProviderSetupForm — capability and provider preselect', () => {
+  it('defaults to the first email provider for email capability', () => {
+    const html = renderForm('email');
+    // Gmail is the only email (messaging) provider in the test catalog.
+    expect(html).toContain('value="gmail" selected');
+  });
+
+  it('defaults to the first trading provider for trading capability', () => {
+    const html = renderForm('trading');
+    expect(html).toContain('value="hyperliquid" selected');
+  });
+
+  it('defaults to the custom entry when the capability group is empty', () => {
+    // 'other' has no providers in the test catalog → falls back to custom.
+    const html = renderForm('other');
+    expect(html).toContain('value="__custom__" selected');
+  });
+
+  it('preselects initialProviderId ahead of the capability default', () => {
+    const html = renderForm('trading', 'gmail');
+    expect(html).toContain('value="gmail" selected');
+  });
+
+  it('ignores an initialProviderId not present in the catalog', () => {
+    const html = renderForm('trading', 'not-a-provider');
+    // Falls back to the trading capability default.
+    expect(html).toContain('value="hyperliquid" selected');
+  });
+
+  it('does not break existing trading call sites without initialProviderId', () => {
+    const html = renderForm('trading');
+    expect(html).toContain('value="hyperliquid" selected');
   });
 });
 

@@ -1,12 +1,15 @@
 import type { ChatMessage, ProviderSetupResult } from '../../lib/api-client.js';
 import { ChatQuickReplies } from './ChatQuickReplies.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
+import { saveGuidedSetupOAuthDraft } from './guidedSetupOAuthDraft.js';
 
 interface GuidedSetupActionRendererProps {
   actions: NonNullable<ChatMessage['actions']>;
   onQuickReply: (value: string) => void;
   /** Called when an inline form (e.g. connection setup) completes successfully. */
   onFormSubmit: (actionId: string, result: unknown) => void;
+  /** Current thread id, used to build the OAuth return URL for provider redirects. */
+  threadId?: string;
   disabled?: boolean;
 }
 
@@ -18,7 +21,7 @@ interface GuidedSetupActionRendererProps {
  * - form: Secure setup UI rendered inline (connection, wallet, etc.)
  * - confirm: Agent creation confirmation card
  */
-export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit, disabled = false }: GuidedSetupActionRendererProps) {
+export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit, threadId, disabled = false }: GuidedSetupActionRendererProps) {
   return (
     <div style={{ marginTop: 8 }}>
       {actions.map((action) => {
@@ -54,6 +57,15 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
 
           case 'form':
             if (action.form === 'connection') {
+              const props = (action.props ?? {}) as Record<string, unknown>;
+              const preferredCapability = props.preferredCapability === 'trading' || props.preferredCapability === 'email' || props.preferredCapability === 'other'
+                ? props.preferredCapability
+                : undefined;
+              const preferredProvider = typeof props.preferredProvider === 'string' ? props.preferredProvider : undefined;
+              const oauthReturnTo = threadId
+                ? `/agents/new?guided=1&oauthReturn=1&threadId=${encodeURIComponent(threadId)}&actionId=${encodeURIComponent(action.id)}`
+                : undefined;
+
               return (
                 <div
                   key={action.id}
@@ -67,7 +79,14 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
                 >
                   <ProviderSetupForm
                     inline
-                    defaultCapability="trading"
+                    defaultCapability={preferredCapability ?? 'trading'}
+                    initialProviderId={preferredProvider}
+                    oauthReturnTo={oauthReturnTo}
+                    onBeforeOAuthRedirect={() => {
+                      if (threadId) {
+                        saveGuidedSetupOAuthDraft({ threadId, actionId: action.id });
+                      }
+                    }}
                     onClose={() => {
                       // User dismissed the inline form — send a cancel signal
                       onFormSubmit(action.id, { cancelled: true });

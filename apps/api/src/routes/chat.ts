@@ -9,6 +9,7 @@ import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml } from '@herobids/domain';
 import { errorPayload } from '../error-payload.js';
+import { listProviderRegistry } from '../providers/registry.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,8 @@ interface ThreadMetadata {
     connectionIds?: string[];
     step?: string;
   };
+  /** Action IDs already processed by the action-result endpoint (idempotency backstop). */
+  processedActionIds?: string[];
 }
 
 interface PersistedChatMessage {
@@ -91,7 +94,7 @@ You can create an agent directly using the create_agent action when you have eno
 
 Prefer the happy path unless the user asks for something specific. That means:
 - The user must choose the agent type/preset.
-- The user must specify capital.
+- The user must specify capital for trading agents.
 - If the user does not provide a custom goal, use the configurable default goal text.
 - If the user does not ask for a specific style, use \`balanced\`.
 - If the user does not ask for a specific execution mode, use the user-facing \`test\` choice. The server maps that to canonical \`executionDefaults.mode\`.
@@ -124,6 +127,13 @@ Do NOT say "ask anything" — you have a specific job.
 4. Otherwise apply the happy-path defaults for name, goal, and execution settings
 5. Summarize and confirm before creating
 
+### If the user wants a custom agent:
+1. Confirm they want a custom agent and determine the skill shape
+2. Ask only the minimum extra questions needed to create it successfully
+3. Do not ask for capital unless the flow has explicitly become trading-capable
+4. Otherwise apply the happy-path defaults for name, goal, and execution settings
+5. Summarize and confirm before creating
+
 ## Prompt / Goal Handling
 
 - The current create-agent API still requires a prompt/goal shape, so Guided Setup must make this explicit.
@@ -134,7 +144,8 @@ Do NOT say "ask anything" — you have a specific job.
 ### Rules:
 - You are single-purpose: create agents. Nothing else.
 - Never ask for private keys, API secrets, or passwords.
-- When the user needs to connect a wallet or exchange, request the secure connection form action so the frontend renders the appropriate setup UI.
+- When the user needs to connect a provider, call \`list_compatible_connections\` first. If an existing active compatible connection works, reuse it. If the user needs a new provider connection, call \`request_connection_form\` with the best available hint, such as \`preferredCapability\` or \`preferredProvider\`. Never ask the user to type secrets, API keys, OAuth codes, or passwords into the chat.
+- After the user completes or dismisses the connection form, the server resumes you automatically. If the connection was linked (\`step: 'connection_linked'\`), acknowledge it and continue. If the user dismissed the form (\`step: 'connection_form_cancelled'\`), acknowledge their choice and offer alternatives (reuse an existing connection, switch to the form, or continue without) — do NOT immediately call \`request_connection_form\` again for the same need.
 - Always validate your understanding before calling create_agent.
 - After creating, remind the user of important next steps.
 - The user can always say "skip" or "use the form" to switch to the form-based flow.
@@ -183,6 +194,24 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
     },
   },
   {
+    name: 'request_connection_form',
+    description: 'Request that the frontend render the secure connection setup form inline in the chat. Call this when the user needs to connect a provider and the guided flow should continue after setup.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        preferredCapability: {
+          type: 'string',
+          enum: ['trading', 'email', 'other'],
+          description: 'Optional hint for which provider family the form should open with.',
+        },
+        preferredProvider: {
+          type: 'string',
+          description: 'Optional provider ID to preselect when the setup target is known, e.g. gmail.',
+        },
+      },
+    },
+  },
+  {
     name: 'create_agent',
     description: 'Create a new AI agent with the specified configuration. Only call this when you have enough information from the user.',
     inputSchema: {
@@ -196,14 +225,14 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
         strategyPreset: { type: 'string', enum: ['momentum', 'momentum-position', 'range', 'swing', 'scalper', 'contrarian'], description: 'Strategy preset (auto-selected if omitted)' },
         selectedConnectionId: { type: 'string', description: 'Connection ID to use (auto-selected from recommended if omitted)' },
       },
-      required: ['skillPresetId', 'capital'],
+      required: ['skillPresetId'],
     },
   },
 ];
 
 const GuidedSetupCreateAgentInput = z.object({
   skillPresetId: z.enum(['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom']),
-  capital: z.string().min(1),
+  capital: z.string().min(1).optional(),
   goal: z.string().optional(),
   style: z.enum(['careful', 'balanced', 'bold']).optional(),
   requestedExecutionMode: z.enum(['test', 'live']).optional(),
@@ -259,12 +288,18 @@ function generateAgentName(preset: string): string {
 /**
  * Synthesize the final agent prompt from the configurable default goal text
  * plus collected onboarding facts when the user does not provide a custom goal.
+ * `capital` is optional — for non-trading presets (or when absent) the trading
+ * allocation clause is omitted so it never renders `undefined`.
  */
-function synthesizePrompt(goal: string | undefined, preset: string, capital: string): string {
+export function synthesizePrompt(goal: string | undefined, preset: string, capital: string | undefined): string {
   if (goal && goal.trim().length > 0) return goal.trim();
   // Configurable default — initial v1 default: "Grow this portfolio"
   if (preset === 'personal-assistant') return 'Assist with daily tasks and information retrieval';
-  return `Grow this portfolio with ${capital} USDC allocation`;
+  if (preset === 'custom') return 'Assist with the user\'s custom goals and tasks';
+  if (capital && capital.trim().length > 0) {
+    return `Grow this portfolio with ${capital} USDC allocation`;
+  }
+  return 'Grow this portfolio';
 }
 
 /**
@@ -280,7 +315,7 @@ function mapExecutionMode(requestedMode: string | undefined): { mode: 'paper' | 
  * Build the full CreateAgentSchema payload from the guided setup input + server-side defaults.
  * Includes skillIds derived from skillPresetId, capabilityMode, and strategy identity.
  */
-function buildCreateAgentPayload(
+export function buildCreateAgentPayload(
   input: z.infer<typeof GuidedSetupCreateAgentInput>,
   userId: string,
 ): Record<string, unknown> {
@@ -294,25 +329,38 @@ function buildCreateAgentPayload(
 
   const connectionIds = input.selectedConnectionId ? [input.selectedConnectionId] : [];
 
-  const strategy = capabilityMode === 'hybrid' ? {
+  const isTradingCapable = capabilityMode === 'hybrid';
+
+  const strategy = isTradingCapable ? {
     type: strategyPreset,
-    decisionMode: capabilityMode === 'hybrid' ? 'hybrid' : undefined,
+    decisionMode: 'hybrid',
   } : null;
 
-  return {
+  const payload: Record<string, unknown> = {
     name,
     prompt,
     style,
-    capital: input.capital,
     skillPresetId: input.skillPresetId,
     skillIds,
     capabilityMode,
-    strategyPreset,
-    strategy,
-    executionDefaults,
-    connectionIds,
     userId,
   };
+
+  // Trading-only fields are only included for trading-capable presets.
+  if (isTradingCapable) {
+    payload.capital = input.capital;
+    payload.strategyPreset = strategyPreset;
+    payload.strategy = strategy;
+    payload.executionDefaults = executionDefaults;
+  }
+
+  // Include the selected connection only when a compatible provider is actually
+  // required or chosen.
+  if (connectionIds.length > 0) {
+    payload.connectionIds = connectionIds;
+  }
+
+  return payload;
 }
 
 // ── Thread Operations ────────────────────────────────────────────────────────
@@ -395,7 +443,7 @@ async function getThreadWithMessages(
 
 // ── Action Execution ─────────────────────────────────────────────────────────
 
-async function executeChatAction(
+export async function executeChatAction(
   toolCall: LlmToolCall,
   db: Database,
   userId: string,
@@ -445,6 +493,29 @@ async function executeChatAction(
       }
     }
 
+    case 'request_connection_form': {
+      const args = (toolCall.args ?? {}) as Record<string, unknown>;
+      const preferredCapability = typeof args.preferredCapability === 'string' ? args.preferredCapability : null;
+      const rawPreferredProvider = typeof args.preferredProvider === 'string' ? args.preferredProvider : null;
+
+      // Normalize the provider hint against the provider catalog so a
+      // hallucinated provider ID never reaches the frontend preselect.
+      let preferredProvider: string | null = null;
+      if (rawPreferredProvider) {
+        const known = listProviderRegistry().find((entry) => entry.id === rawPreferredProvider);
+        if (known && known.status !== 'deprecated') {
+          preferredProvider = known.id;
+        }
+      }
+
+      return JSON.stringify({
+        form: 'connection',
+        preferredCapability,
+        preferredProvider,
+        message: 'Connection form requested.',
+      });
+    }
+
     case 'create_agent': {
       const parsed = GuidedSetupCreateAgentInput.safeParse(toolCall.args);
       if (!parsed.success) {
@@ -490,7 +561,7 @@ async function executeChatAction(
             prompt: payload.prompt as string,
             status: 'stopped',
             style: payload.style as 'careful' | 'balanced' | 'bold' | null,
-            capital: payload.capital as string,
+            capital: (payload.capital as string | undefined) ?? null,
             // Canonical strategy identity for trading agents
             strategy: payload.strategy as Record<string, unknown> | null,
             // Canonical execution defaults
@@ -498,8 +569,6 @@ async function executeChatAction(
             // Empty tool/model policy — the worker will populate from skillIds on start
             toolPolicy: {},
             modelPolicy: {},
-            // Capability mode: hybrid for trading presets, intelligence for assistants
-            ...(payload.capabilityMode ? {} : {}),
             createdAt: timestamp,
             updatedAt: timestamp,
           } as never);
@@ -621,7 +690,7 @@ interface LlmInvocationResult {
 
 // ── LLM Invocation ───────────────────────────────────────────────────────────
 
-async function invokeOnboardingLlm(
+export async function invokeOnboardingLlm(
   llmConfig: LlmConfig,
   providersYaml: ProvidersYaml,
   db: Database,
@@ -657,6 +726,7 @@ async function invokeOnboardingLlm(
   const MAX_TOOL_ROUNDS = 5;
   let createdAgent: LlmInvocationResult['createdAgent'];
   const summaryFacts: Partial<NonNullable<ThreadMetadata['summary']>> = {};
+  const pendingActions: ChatAction[] = [];
 
   // Tool calling loop
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -681,6 +751,7 @@ async function invokeOnboardingLlm(
         content: `I'm having trouble processing your request right now. Please try again or use the form instead. (Error: ${result.error.message})`,
         toolCallsProcessed,
         summaryFacts,
+        actions: pendingActions,
       };
     }
 
@@ -688,7 +759,7 @@ async function invokeOnboardingLlm(
 
     // If no tool calls, return the assistant response
     if (!toolCalls || toolCalls.length === 0) {
-      return { content: content || 'I understand. How can I help you further with setting up your agent?', toolCallsProcessed, summaryFacts };
+      return { content: content || 'I understand. How can I help you further with setting up your agent?', toolCallsProcessed, summaryFacts, actions: pendingActions };
     }
 
     // Process tool calls
@@ -703,6 +774,31 @@ async function invokeOnboardingLlm(
         addedAtTurn: round,
       });
       toolCallsProcessed++;
+
+      // Emit a form action only from an explicit request_connection_form call.
+      // Deduplicate so multiple calls in the same turn yield one rendered form.
+      if (tc.name === 'request_connection_form') {
+        if (!pendingActions.some((a) => a.type === 'form' && a.form === 'connection')) {
+          let preferredCapability: string | null = null;
+          let preferredProvider: string | null = null;
+          try {
+            const parsed = JSON.parse(toolResult) as Record<string, unknown>;
+            if (typeof parsed.preferredCapability === 'string') preferredCapability = parsed.preferredCapability;
+            if (typeof parsed.preferredProvider === 'string') preferredProvider = parsed.preferredProvider;
+          } catch {
+            // Non-JSON tool result — no hints
+          }
+          pendingActions.push({
+            id: `connection-form-${round}`,
+            type: 'form',
+            form: 'connection',
+            props: {
+              ...(preferredCapability ? { preferredCapability } : {}),
+              ...(preferredProvider ? { preferredProvider } : {}),
+            },
+          });
+        }
+      }
 
       // Extract structured facts from tool results
       try {
@@ -761,10 +857,11 @@ async function invokeOnboardingLlm(
       content: 'I\'ve gathered the information needed. Let me summarize what we have before creating your agent.',
       toolCallsProcessed,
       summaryFacts,
+      actions: pendingActions,
     };
   }
 
-  return { content: finalResult.data.content, toolCallsProcessed, createdAgent, summaryFacts };
+  return { content: finalResult.data.content, toolCallsProcessed, createdAgent, summaryFacts, actions: pendingActions };
 }
 
 // ── Route Registration ───────────────────────────────────────────────────────
@@ -879,24 +976,22 @@ export async function chatRoutes(
         metadata,
       );
 
-      // Build structured actions from agent creation result
-      let actions: ChatAction[] | undefined;
-      if (llmResponse.createdAgent) {
-        const agent = llmResponse.createdAgent;
-        actions = [
-          {
-            id: 'post-creation',
-            type: 'confirm',
-            props: {
-              message: `Agent "${agent.name}" created successfully in ${agent.displayExecutionMode} mode!`,
-              agentId: agent.agentId,
-              name: agent.name,
-              mode: agent.displayExecutionMode,
-              capital: agent.capital,
-            },
+      // Build structured actions from agent creation result, merging any
+      // form/quick-reply actions emitted by the LLM with the post-creation confirm.
+      const actions: ChatAction[] = [
+        ...(llmResponse.actions ?? []),
+        ...(llmResponse.createdAgent ? [{
+          id: 'post-creation',
+          type: 'confirm' as const,
+          props: {
+            message: `Agent "${llmResponse.createdAgent.name}" created successfully in ${llmResponse.createdAgent.displayExecutionMode} mode!`,
+            agentId: llmResponse.createdAgent.agentId,
+            name: llmResponse.createdAgent.name,
+            mode: llmResponse.createdAgent.displayExecutionMode,
+            capital: llmResponse.createdAgent.capital,
           },
-        ];
-      }
+        }] : []),
+      ];
 
       // Update thread metadata with enriched summary and createdAgentId
       const metadataUpdate: ThreadMetadata = {
@@ -927,7 +1022,7 @@ export async function chatRoutes(
         threadId: request.params.id,
         role: 'assistant',
         content: llmResponse.content,
-        actions: actions ?? null,
+        actions: actions.length > 0 ? actions : null,
         createdAt: assistantMsgTimestamp,
       } as never);
 
@@ -936,7 +1031,7 @@ export async function chatRoutes(
           id: assistantMsgId,
           role: 'assistant',
           content: llmResponse.content,
-          actions: actions ?? null,
+          actions: actions.length > 0 ? actions : null,
           createdAt: assistantMsgTimestamp.toISOString(),
         },
       });
@@ -948,7 +1043,8 @@ export async function chatRoutes(
 
   /**
    * POST /chat/threads/:id/actions/:actionId
-   * Submit a form action result (e.g., connection created).
+   * Submit a form action result (e.g., connection created or cancelled).
+   * Validates the result, updates thread state, and resumes the onboarding LLM.
    */
   app.post<{ Params: { id: string; actionId: string }; Body: unknown }>(
     '/chat/threads/:id/actions/:actionId',
@@ -964,56 +1060,115 @@ export async function chatRoutes(
       }
 
       const result = parsed.data.result as Record<string, unknown> | undefined;
+      if (!result || typeof result !== 'object') {
+        return reply.status(400).send(errorPayload('invalid_action_result', 'Unsupported action result type'));
+      }
 
-      // Handle connection form submission result
-      if (result && typeof result === 'object' && 'connectionId' in result) {
-        const metadata = threadResult.thread.metadata as ThreadMetadata | null;
-        const connectionId = result.connectionId as string;
+      const metadata = threadResult.thread.metadata as ThreadMetadata | null;
+      const actionId = request.params.actionId;
 
-        // Update thread metadata with the new connection
-        const updatedMetadata: ThreadMetadata = {
-          ...(metadata ?? {}),
-          summary: {
-            ...(metadata?.summary ?? {}),
-            connectionIds: [
-              ...(metadata?.summary?.connectionIds ?? []),
-              connectionId,
-            ],
-            step: 'connection_linked',
-          },
-        };
-
-        await db.update(chatThreads)
-          .set({
-            metadata: updatedMetadata as Record<string, unknown>,
-            updatedAt: now(),
-          })
-          .where(eq(chatThreads.id, request.params.id));
-
-        // Persist a system-style message acknowledging the action
-        const ackMsgId = uuid();
-        const ackTimestamp = now();
-        await db.insert(chatMessages).values({
-          id: ackMsgId,
-          threadId: request.params.id,
-          role: 'assistant',
-          content: `Connection linked successfully. Let me continue setting up your agent.`,
-          createdAt: ackTimestamp,
-        } as never);
-
+      // Idempotency backstop: if this action was already processed, no-op with
+      // the current thread state (no duplicate resume, no duplicate message).
+      const processedActionIds = metadata?.processedActionIds ?? [];
+      if (processedActionIds.includes(actionId)) {
         return reply.send({
           acknowledged: true,
-          message: {
-            id: ackMsgId,
-            role: 'assistant' as const,
-            content: 'Connection linked successfully. Let me continue setting up your agent.',
-            actions: null,
-            createdAt: ackTimestamp.toISOString(),
-          },
+          alreadyProcessed: true,
+          message: null,
         });
       }
 
-      return reply.status(400).send(errorPayload('invalid_action_result', 'Unsupported action result type'));
+      const isCancellation = result.cancelled === true;
+      const connectionId = typeof result.connectionId === 'string' ? result.connectionId : undefined;
+
+      if (!isCancellation && !connectionId) {
+        return reply.status(400).send(errorPayload('invalid_action_result', 'Unsupported action result type'));
+      }
+
+      // Validate the connection belongs to the user and is active before linking.
+      if (connectionId) {
+        const [conn] = await db
+          .select({ id: connections.id, status: connections.status })
+          .from(connections)
+          .where(and(eq(connections.id, connectionId), eq(connections.userId, request.userId)))
+          .limit(1);
+
+        if (!conn || conn.status !== 'active') {
+          return reply.status(400).send(errorPayload('invalid_connection', 'Connection is not valid or is not active'));
+        }
+      }
+
+      // Build updated thread metadata.
+      const existingConnectionIds = metadata?.summary?.connectionIds ?? [];
+      const nextConnectionIds = connectionId
+        ? Array.from(new Set([...existingConnectionIds, connectionId]))
+        : existingConnectionIds;
+
+      const updatedMetadata: ThreadMetadata = {
+        ...(metadata ?? {}),
+        processedActionIds: [...processedActionIds, actionId],
+        summary: {
+          ...(metadata?.summary ?? {}),
+          connectionIds: nextConnectionIds,
+          step: isCancellation ? 'connection_form_cancelled' : 'connection_linked',
+        },
+      };
+
+      await db.update(chatThreads)
+        .set({
+          metadata: updatedMetadata as Record<string, unknown>,
+          updatedAt: now(),
+        })
+        .where(eq(chatThreads.id, request.params.id));
+
+      // Resume the onboarding LLM with the updated metadata so the conversation
+      // continues automatically after linking or dismissing the form.
+      const llmResponse = await invokeOnboardingLlm(
+        llmConfig,
+        providersYaml,
+        db,
+        request.userId,
+        threadResult.messages,
+        updatedMetadata,
+      );
+
+      const resumeActions: ChatAction[] = [
+        ...(llmResponse.actions ?? []),
+        ...(llmResponse.createdAgent ? [{
+          id: 'post-creation',
+          type: 'confirm' as const,
+          props: {
+            message: `Agent "${llmResponse.createdAgent.name}" created successfully in ${llmResponse.createdAgent.displayExecutionMode} mode!`,
+            agentId: llmResponse.createdAgent.agentId,
+            name: llmResponse.createdAgent.name,
+            mode: llmResponse.createdAgent.displayExecutionMode,
+            capital: llmResponse.createdAgent.capital,
+          },
+        }] : []),
+      ];
+
+      // Persist exactly one assistant message — the resumed LLM output.
+      const assistantMsgId = uuid();
+      const assistantMsgTimestamp = now();
+      await db.insert(chatMessages).values({
+        id: assistantMsgId,
+        threadId: request.params.id,
+        role: 'assistant',
+        content: llmResponse.content,
+        actions: resumeActions.length > 0 ? resumeActions : null,
+        createdAt: assistantMsgTimestamp,
+      } as never);
+
+      return reply.send({
+        acknowledged: true,
+        message: {
+          id: assistantMsgId,
+          role: 'assistant' as const,
+          content: llmResponse.content,
+          actions: resumeActions.length > 0 ? resumeActions : null,
+          createdAt: assistantMsgTimestamp.toISOString(),
+        },
+      });
     },
   );
 }

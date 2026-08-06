@@ -9,11 +9,12 @@ interface GuidedSetupThreadProps {
   onSend: (content: string) => void;
   onQuickReply: (value: string) => void;
   onFormSubmit: (actionId: string, result: unknown) => void;
+  threadId?: string;
   sending: boolean;
   disabled?: boolean;
 }
 
-export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit, sending, disabled = false }: GuidedSetupThreadProps) {
+export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit, threadId, sending, disabled = false }: GuidedSetupThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll the message list to the bottom when new messages arrive.
@@ -73,6 +74,7 @@ export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit
                   actions={msg.actions!}
                   onQuickReply={onQuickReply}
                   onFormSubmit={onFormSubmit}
+                  threadId={threadId}
                   disabled={disabled || sending}
                 />
               )}
