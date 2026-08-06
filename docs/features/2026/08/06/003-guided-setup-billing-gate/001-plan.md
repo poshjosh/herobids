@@ -2,7 +2,7 @@
 
 **Feature:** Guided Setup billing enforcement (003)
 **Date:** 2026-08-06
-**Status:** Draft
+**Status:** Implemented
 
 ## Summary
 
@@ -207,3 +207,69 @@ Update `docs/tech/agents/billing-enforcement-semantics.md` to note that the no-a
 - Gating the plain create-agent form (decision 1).
 - Direct inline top-up checkout in the gate (decision 5) — the gate links to `/billing`.
 - Agent runtime enforcement (Plan 002).
+
+---
+
+## Outstanding Issues (Post-Implementation)
+
+Issues identified during code review and gap analysis that were not addressed in the initial implementation slice.
+
+### HIGH Severity
+
+#### H1. Frontend gate is status-only, not balance-based (intentional divergence from Decision 2)
+
+**Plan says:** Gate on available credit (`availableCredit <= 0`), not just `hard_limited` status.
+
+**What was implemented:** The frontend gate (`canUseGuidedSetup`) checks only `account.status === 'hard_limited'` and `account.status === 'suspended'`. It does NOT check `balanceMicrousd`.
+
+**Why not addressed:** A balance-based gate (`balanceMicrousd <= 0`) incorrectly blocks free-plan users whose balance is `0` by default (`includedCreditCents: 0`). The plan's own "Current Code Truth" (item 5) notes that free-plan users are allowed up to their `$1` hard cap — they go `hard_limited` only when they exceed it. Blocking at `balanceMicrousd = 0` would prevent free-plan users from ever using Guided Setup, contradicting the product intent. The frontend gate also cannot account for `reservedMicrousd` (not exposed in `UsageSummaryResponse`), making any balance-based gate inherently approximate.
+
+**Mitigation:** The backend `canSpendNow` guard (via HTTP 402) is the **authoritative** enforcement for the available-credit rule. The frontend gate is status-only UX sugar — a user with `active` status but exhausted credit will be blocked by the backend 402 when they try to send a message. This is a known and intentional tradeoff.
+
+**Remediation options:**
+- (a) Expose `reservedMicrousd` in `GET /billing/usage-summary` so the frontend can compute true available credit, then re-add a balance-based check. This is the plan's original recommendation.
+- (b) Keep the status-only frontend gate and ensure the 402 error path provides a clear top-up gate.
+
+#### H2. Missing component and integration tests
+
+Verification items from the plan that lack test coverage:
+
+| # | Item | Status |
+|---|------|--------|
+| 3 | Action-result endpoint returns 402 when `canSpendNow` returns `false` | Untested |
+| 11 | `GuidedSetupPanel` renders top-up gate (not chat) when gate is active | Untested |
+| 12 | A `402` response transitions the panel to the gate | Untested |
+
+**Why not addressed:** Component rendering tests (11, 12) require a React testing setup (e.g. `@testing-library/react`) that is not yet configured for the `GuidedSetupPanel` component. The action-result endpoint test (3) was deferred due to the complexity of mocking the full request/response cycle through Fastify — the existing tests call `executeChatAction` and `invokeOnboardingLlm` directly rather than going through HTTP. Adding HTTP-level tests for the action-result endpoint requires a test infrastructure extension (e.g. `light-my-request` or Fastify's `inject`).
+
+**Remediation:** Add React Testing Library setup for chat components, then implement tests 11 and 12. For test 3, either extend the existing direct-function test pattern (pass a mock `usageBillingRepo` to `invokeOnboardingLlm` with a resume event) or add an HTTP-level integration test via Fastify's `inject`.
+
+### MEDIUM Severity
+
+#### M1. Duplicated billing gate logic (DRY)
+
+The same `getAccountByUserId` → `canSpendNow` → check `canSpend` pattern is repeated in 3 locations: message-send endpoint, action-result endpoint, and `create_agent` tool case. Extract a `checkBillingGate(usageBillingRepo, userId)` helper.
+
+#### M2. Action-result handler lacks try/catch
+
+`POST /chat/threads/:id/actions/:actionId` has no `try/catch` wrapper. The message-send endpoint does. The new billing DB calls (`getAccountByUserId`, `canSpendNow`) add more unprotected surface. If the billing DB is temporarily unavailable, the user gets a raw 500 instead of a clean error. This is a pre-existing issue that the billing gate changes exacerbate.
+
+#### M3. i18n strings not wired to BillingGate component
+
+The locale files (`en.ts`, `ar.ts`, `hi.ts`) have 7 `guidedSetup.billingGate.*` keys, but the `BillingGate` component in `GuidedSetupPanel.tsx` renders hardcoded English strings. The component does not use `react-intl`'s `FormattedMessage` or `useIntl`. Arabic and Hindi users always see English text in the billing gate.
+
+**Remediation:** Wire `useIntl` / `FormattedMessage` into the `BillingGate` component, or at minimum use the `t()` function with the defined keys.
+
+### LOW Severity
+
+#### L1. JSON.stringify vs errorPayload shape inconsistency
+
+The HTTP 402 responses use `errorPayload()` which wraps billing details in a `params` key: `{ error, message, params: { reason, availableMicrousd } }`. The `create_agent` tool result uses raw `JSON.stringify()` with flat keys: `{ error, message, reason, availableMicrousd }`. These are consumed by different systems (frontend via HTTP vs LLM via tool result) so the inconsistency has no practical impact, but it's worth noting for future uniformity.
+
+#### L2. Thread creation races with billing preflight
+
+`useGuidedSetup` auto-initializes a thread on mount (its own `useEffect`), while the billing preflight check also fires on mount. Both run concurrently. If the preflight blocks, a thread was already created on the backend unnecessarily. For v1 this is an acceptable tradeoff (no latency penalty for unblocked users).
+
+#### L3. canUseGuidedSetup type union includes `no_available_credit` that the function never returns
+
+The `BillingGateResult.reason` union type includes `'no_available_credit'`, but `canUseGuidedSetup` only returns `'ok'`, `'hard_limited'`, or `'suspended'`. The `'no_available_credit'` value only appears from runtime 402 catches in `useGuidedSetup.ts`. The shared type is intentional (one type for both gating sources) but deserves a comment for clarity.
