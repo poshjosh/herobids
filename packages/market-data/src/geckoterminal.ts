@@ -211,3 +211,44 @@ export async function fetchGeckoTerminalNewPools(
     config,
   );
 }
+
+/**
+ * Validate that the GeckoTerminal Pro API key is usable by making a lightweight
+ * health-check call to the Pro on-chain endpoint. Throws if the key is invalid
+ * or the endpoint is unreachable, matching the CMC/Birdeye pattern of failing
+ * loudly at startup when a paid provider is misconfigured.
+ */
+export async function validateApiKey(config: {
+  apiKey: string;
+  proBaseUrl?: string;
+  timeoutMs: number;
+  fetchFn?: typeof fetch;
+}): Promise<void> {
+  const baseUrl = config.proBaseUrl ?? 'https://pro-api.coingecko.com';
+  const url = `${baseUrl}/api/v3/onchain/networks/solana/trending_pools`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+
+  try {
+    const response = await (config.fetchFn ?? fetch)(url, {
+      headers: {
+        Accept: 'application/json',
+        'x-cg-pro-api-key': config.apiKey,
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `GeckoTerminal Pro API key is invalid or the endpoint is unreachable (HTTP ${response.status}). ` +
+        `Verify the apiKey in your config.`,
+      );
+    }
+
+    // Consume the body to avoid leaking connections
+    await response.text().catch(() => {});
+  } finally {
+    clearTimeout(timeout);
+  }
+}

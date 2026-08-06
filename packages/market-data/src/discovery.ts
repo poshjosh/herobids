@@ -24,6 +24,10 @@ import {
 import type { DiscoveredToken } from './types.js';
 import type { DiscoverySeenTracker } from './discovery-seen-tracker.js';
 
+export interface DiscoveryLogger {
+  warn: (message: string, meta?: Record<string, unknown>) => void;
+}
+
 export interface DiscoveryConfig {
   dexscreener: DexScreenerConfig;
   geckoterminal: GeckoTerminalConfig;
@@ -35,6 +39,7 @@ export interface DiscoveryConfig {
   extraGeckoTerminalPages?: number;
   antistalenessCooldownHours?: number;
   seenTracker?: DiscoverySeenTracker;
+  logger?: DiscoveryLogger;
 }
 
 function tokenKey(token: DiscoveredToken): string {
@@ -190,7 +195,7 @@ export async function discoverTokens(config: DiscoveryConfig): Promise<Discovere
     if (result.status === 'rejected') {
       const entry = labeled[i]!;
       const err = result.reason instanceof Error ? result.reason : new Error(String(result.reason));
-      console.warn(
+      (config.logger ?? console).warn(
         `[Discovery] provider request rejected: ${entry.label.provider}/${entry.label.network ?? 'global'}/${entry.label.vector}: ${err.message}`,
         { provider: entry.label.provider, network: entry.label.network, vector: entry.label.vector, name: err.name },
       );

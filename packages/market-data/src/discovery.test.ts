@@ -1701,4 +1701,79 @@ describe('discoverTokens', () => {
     expect(addresses).toContain('sol-ci');
     expect(addresses).toContain('base-ci');
   });
+
+  it('uses the provided DiscoveryLogger instead of console.warn when logger is configured', async () => {
+    const warnCalls: Array<{ message: string; meta?: Record<string, unknown> }> = [];
+    const customLogger = {
+      warn: (message: string, meta?: Record<string, unknown>) => {
+        warnCalls.push({ message, meta });
+      },
+    };
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      // Birdeye — simulate failure so we get a rejection log
+      if (url.includes('birdeye.so') && url.includes('token_trending')) {
+        return makeErrorResponse(429);
+      }
+      // DexScreener — return a valid token so discovery still succeeds
+      if (url.includes('token-boosts/top')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => [{ chainId: 'solana', tokenAddress: 'log-addr', amount: 100 }],
+        } as Response;
+      }
+      if (url.includes('/tokens/v1/')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            pairs: [{
+              chainId: 'solana',
+              baseToken: { address: 'log-addr', symbol: 'LOG', name: 'LogToken' },
+              priceUsd: '1.0',
+              volume: { h24: 50000 },
+              liquidity: { usd: 25000 },
+            }],
+          }),
+        } as Response;
+      }
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      birdeye: {
+        baseUrl: 'https://public-api.birdeye.so',
+        apiKey: 'test-key',
+        rateLimiter,
+        timeoutMs: 5_000,
+      },
+      networks: ['solana'],
+      minLiquidityUsd: 0,
+      logger: customLogger,
+    });
+
+    // The custom logger should have captured the Birdeye rejection
+    expect(warnCalls.length).toBeGreaterThan(0);
+    const birdeyeWarn = warnCalls.find((call) => call.meta?.provider === 'birdeye');
+    expect(birdeyeWarn).toBeDefined();
+    expect(birdeyeWarn!.meta!.vector).toBe('trending');
+
+    // console.warn should NOT have been called for the provider rejection
+    // (but may have been called for other reasons — we only assert it was NOT
+    // called for the labeled rejection pattern)
+    const consoleBirdeyeCalls = consoleWarnSpy.mock.calls.filter((call) => {
+      const label = call[1];
+      return label?.provider === 'birdeye';
+    });
+    expect(consoleBirdeyeCalls).toHaveLength(0);
+
+    consoleWarnSpy.mockRestore();
+  });
 });

@@ -19,6 +19,7 @@ import {
   fetchGeckoTerminalNewPools,
   fetchGeckoTerminalTopPools,
   fetchGeckoTerminalTrendingPools,
+  validateApiKey as validateGeckoTerminalApiKey,
   type GeckoTerminalConfig,
 } from './geckoterminal.js';
 import { fetchHyperliquidAssetContexts, type HyperliquidInfoConfig } from './hyperliquid-info.js';
@@ -104,13 +105,26 @@ function createLimiter(
   return new CoordinatedRateLimiter(coordinator, { provider, requestClass, budget });
 }
 
-export function createProviderRegistry(
+export async function createProviderRegistry(
   config: MarketDataConfig,
   options: ProviderRegistryOptions = {},
-): ProviderRegistry {
+): Promise<ProviderRegistry> {
   const coordinator = options.coordinator ?? createSharedRateBudgetCoordinator({ redisClient: options.redisClient });
   const cache = options.cache ?? new InMemoryProviderResponseCache();
   const fetchFn = options.fetchFn;
+
+  // Validate GeckoTerminal Pro API key at startup when one is configured.
+  // An invalid/expired key would cause ALL requests to fail with 401/403
+  // instead of falling back to the free tier — fail loudly at startup so
+  // operators catch the misconfiguration immediately.
+  if (config.geckoterminal.apiKey) {
+    await validateGeckoTerminalApiKey({
+      apiKey: config.geckoterminal.apiKey,
+      proBaseUrl: config.geckoterminal.proBaseUrl,
+      timeoutMs: config.timeoutMs,
+      fetchFn,
+    });
+  }
 
   const seenTracker: DiscoverySeenTracker =
     options.discoverySeenClient && config.discovery.antistalenessCooldownHours > 0

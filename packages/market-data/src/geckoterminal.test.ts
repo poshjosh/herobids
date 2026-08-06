@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fetchGeckoTerminalTrendingPools, fetchGeckoTerminalTopPools, fetchGeckoTerminalCandles, fetchGeckoTerminalNewPools } from './geckoterminal.js';
+import { fetchGeckoTerminalTrendingPools, fetchGeckoTerminalTopPools, fetchGeckoTerminalCandles, fetchGeckoTerminalNewPools, validateApiKey } from './geckoterminal.js';
 import { TokenBucketRateLimiter } from './rate-limiter.js';
 
 function makePoolResponse() {
@@ -169,5 +169,81 @@ describe('fetchGeckoTerminalTopPools', () => {
 
     expect(capturedUrl).toBe('https://api.geckoterminal.com/api/v2/networks/solana/pools?sort=h24_volume_usd_desc&page=2');
     expect(result[0]?.discoveryVectors).toEqual(['top_pools_p2']);
+  });
+});
+
+describe('validateApiKey', () => {
+  it('resolves when the Pro endpoint returns 200', async () => {
+    const call = validateApiKey({
+      apiKey: 'valid-key',
+      timeoutMs: 5_000,
+      fetchFn: async () => ({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => '{}',
+      } as Response),
+    });
+
+    await expect(call).resolves.toBeUndefined();
+  });
+
+  it('throws when the Pro endpoint returns 401', async () => {
+    const call = validateApiKey({
+      apiKey: 'invalid-key',
+      timeoutMs: 5_000,
+      fetchFn: async () => ({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        text: async () => 'Unauthorized',
+      } as Response),
+    });
+
+    await expect(call).rejects.toThrow('GeckoTerminal Pro API key is invalid or the endpoint is unreachable (HTTP 401)');
+  });
+
+  it('throws when the Pro endpoint returns 403', async () => {
+    const call = validateApiKey({
+      apiKey: 'forbidden-key',
+      timeoutMs: 5_000,
+      fetchFn: async () => ({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        text: async () => 'Forbidden',
+      } as Response),
+    });
+
+    await expect(call).rejects.toThrow('GeckoTerminal Pro API key is invalid or the endpoint is unreachable (HTTP 403)');
+  });
+
+  it('uses the provided proBaseUrl when specified', async () => {
+    let capturedUrl = '';
+    await validateApiKey({
+      apiKey: 'test-key',
+      proBaseUrl: 'https://custom-proxy.example.com',
+      timeoutMs: 5_000,
+      fetchFn: async (input) => {
+        capturedUrl = String(input);
+        return { ok: true, status: 200, statusText: 'OK', text: async () => '{}' } as Response;
+      },
+    });
+
+    expect(capturedUrl).toBe('https://custom-proxy.example.com/api/v3/onchain/networks/solana/trending_pools');
+  });
+
+  it('uses default pro-api.coingecko.com when proBaseUrl is not provided', async () => {
+    let capturedUrl = '';
+    await validateApiKey({
+      apiKey: 'test-key',
+      timeoutMs: 5_000,
+      fetchFn: async (input) => {
+        capturedUrl = String(input);
+        return { ok: true, status: 200, statusText: 'OK', text: async () => '{}' } as Response;
+      },
+    });
+
+    expect(capturedUrl).toBe('https://pro-api.coingecko.com/api/v3/onchain/networks/solana/trending_pools');
   });
 });
