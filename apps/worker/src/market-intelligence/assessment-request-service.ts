@@ -405,31 +405,31 @@ export class AssessmentRequestService {
       quantity: 1,
     });
 
-    // ── 10. Check account status ──────────────────────────────────────
-    const spendState = await this.billingRepo.getSpendState(billingCtx.billingAccountId);
-    if (spendState?.status === 'hard_limited') {
+    // ── 10. Check spend state via shared canSpendNow ──────────────────
+    // Uses the same shared billing guard as the runtime tick path so
+    // assessment and runtime behaviour are consistent.
+    const spendResult = await this.billingRepo.canSpendNow(billingCtx.billingAccountId);
+    if (!spendResult.canSpend) {
+      const reasonCode = spendResult.reason === 'suspended'
+        ? 'billing.account_suspended'
+        : spendResult.reason === 'no_available_credit'
+          ? 'billing.insufficient_funds'
+          : 'billing.limit_exceeded';
+      const reasonMessage = spendResult.reason === 'suspended'
+        ? 'Account is suspended'
+        : spendResult.reason === 'no_available_credit'
+          ? 'Insufficient billing credit'
+          : 'Account is hard-limited';
       const requestId = await this.persistTerminalRequest(params, identity, now, {
         status: 'billing_blocked',
         billingOutcome: 'none',
         billingAccountId: billingCtx.billingAccountId,
         billingPeriodId: billingCtx.billingPeriodId,
         rateCardId: billingCtx.rateCardId,
-        failureCode: 'billing.limit_exceeded',
-        failureMessage: 'Account is hard-limited',
+        failureCode: reasonCode,
+        failureMessage: reasonMessage,
       });
-      return ok({ kind: 'billing_blocked', reason: 'Account is hard-limited', requestId });
-    }
-    if (spendState?.status === 'suspended') {
-      const requestId = await this.persistTerminalRequest(params, identity, now, {
-        status: 'billing_blocked',
-        billingOutcome: 'none',
-        billingAccountId: billingCtx.billingAccountId,
-        billingPeriodId: billingCtx.billingPeriodId,
-        rateCardId: billingCtx.rateCardId,
-        failureCode: 'billing.account_suspended',
-        failureMessage: 'Account is suspended',
-      });
-      return ok({ kind: 'billing_blocked', reason: 'Account is suspended', requestId });
+      return ok({ kind: 'billing_blocked', reason: reasonMessage, requestId });
     }
 
     // ── 11. Create the request row (cross-worker dedup) ───────────────

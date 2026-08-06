@@ -380,7 +380,15 @@ export class AgentSessionManager {
 
           // Gate check AFTER reconciliation — spend state is now fresh.
           // getOrCreateOpenPeriod recomputes account status when credit increases.
-          const canSpendResult = await this.config.usageBillingRepo.canSpendNow(billingAccount.id);
+          // Fail-open: if the billing DB is unreachable, allow the session to
+          // launch rather than crashing the reconciliation loop.
+          let canSpendResult: import('@herobids/db').CanSpendNowResult;
+          try {
+            canSpendResult = await this.config.usageBillingRepo.canSpendNow(billingAccount.id);
+          } catch (err) {
+            logger.error({ agentId: agent.id, userId: agent.userId, err }, 'Failed to check canSpendNow — allowing session launch (fail-open)');
+            canSpendResult = { canSpend: true, availableMicrousd: 0, status: 'active', reason: 'ok' };
+          }
           if (!canSpendResult.canSpend) {
             const topUpsEnabled = Boolean(this.config.usageBillingConfig?.creditTopUpsEnabled) && (planUsageForEnforcement?.topUpPackIds?.length ?? 0) > 0;
             const code = canSpendResult.reason === 'suspended'
@@ -412,6 +420,21 @@ export class AgentSessionManager {
               status: 'stopped',
               reason: code,
               updatedAt: new Date().toISOString(),
+            });
+            // Notify the user via real-time channel (Telegram/email) so they
+            // know why their agent was blocked, consistent with the tick-level path.
+            this.eventPublisher.publishUserNotification(agent.userId, {
+              type: code,
+              payload: {
+                agentId: agent.id,
+                agentName: agent.name,
+                sessionId: session.id,
+                billingStatus: canSpendResult.reason,
+                availableMicrousd: canSpendResult.availableMicrousd,
+                message,
+              },
+            }).catch((err: unknown) => {
+              logger.warn({ err, agentId: agent.id, userId: agent.userId }, 'Failed to publish billing-block user notification');
             });
             continue;
           }
