@@ -30,6 +30,8 @@ Plan 002 enforces a no-funds gate for **agent runtime** paid work (session start
 This plan (003) applies the **same guard** to the **Guided Setup chat** (an API-local, per-message LLM runtime). It does not duplicate billing math — it calls the same shared helper.
 
 > **Dependency:** Plan 003 depends on the shared `canSpendNow` helper from Plan 002. If 002 is not yet merged, 003 must add the helper itself (in the same location) so both plans converge on it. The helper is small and self-contained; adding it in 003 does not conflict with 002 as long as both use the same name and location.
+>
+> **Shared signature (already aligned):** Both plans now specify the SAME `CanSpendNowResult` shape (`canSpend`, `availableMicrousd`, `status`, `reason`). Implement it once, in one place (Plan 002), and have 003 consume it. Do not redefine it in 003.
 
 ## Current Code Truth
 
@@ -143,6 +145,8 @@ The action-result endpoint also resumes the LLM (`invokeOnboardingLlm`). Apply t
 
 **Recommendation: Option A for the chat flow.** Since the chat is already gated at message-send time, a user who reaches the gate cannot get far enough to call `create_agent` anyway. But for defense-in-depth, `executeChatAction`'s `create_agent` case should also check `canSpendNow` and return a `billing.top_up_required` tool result if blocked. This keeps the backend authoritative even if the frontend gate is bypassed.
 
+> **LLM handling of the blocked tool result:** `create_agent` is the terminal action in the tool loop. When it returns a `billing.top_up_required` tool result, confirm the LLM prompt instructs the model to stop and surface the top-up message rather than retrying `create_agent` or looping. Add a short prompt note so the blocked result is handled gracefully.
+
 ### 5. Frontend top-up gate
 
 **Location:** `apps/web/src/features/chat/GuidedSetupPanel.tsx` (+ `useGuidedSetup.ts`)
@@ -156,6 +160,8 @@ The action-result endpoint also resumes the LLM (`invokeOnboardingLlm`). Apply t
 - Add i18n strings for the gate (en/ar/hi, matching existing locale files).
 
 **Frontend helper:** Add a small `canUseGuidedSetup(summary)` util that computes the gate from `UsageSummaryResponse` (account status + `balanceMicrousd`), mirroring the backend rule. Keep it in `apps/web/src/features/chat/` and unit-test it.
+
+> **`reservedMicrousd` is NOT exposed in `UsageSummaryResponse`.** The backend `canSpendNow` computes `available = balance - reserved`, but the frontend summary only exposes `balanceMicrousd` (no `reservedMicrousd`). So the frontend gate is necessarily **approximate** (balance-based, ignoring reservations). This is acceptable because the backend guard is authoritative — but the plan must NOT claim the frontend mirrors the backend rule exactly. Either (a) expose `reservedMicrousd` in `GET /billing/usage-summary` so the frontend can compute true available credit, or (b) explicitly document the frontend gate as balance-based UX sugar and rely on the backend `402` as the guarantee. Recommend (a) for consistency, but (b) is acceptable for the first slice.
 
 ### 6. Update billing semantics documentation
 

@@ -22,8 +22,9 @@ These points are confirmed from current code.
    - `computeSpendStatus(...)` in `packages/db/src/usage-billing-repository.ts` derives status from `netOutOfPocket` versus `softCapMicrousd` and `hardCapMicrousd`.
    - Negative balance alone does not force `hard_limited`.
 
-4. The repo default `free` plan has no spend caps.
-   - In `config/default.yaml`, `plans.free.usage` sets `includedCreditCents: 0` and does not set `softCapCents` or `hardCapCents`.
+4. The repo default `free` plan DOES set spend caps.
+   - In `config/default.yaml`, `plans.free.usage` sets `includedCreditCents: 0`, `softCapCents: 0`, and `hardCapCents: 100`.
+   - So status-based enforcement partially protects free users (they go `hard_limited` at $1 over zero credit). But this is a cap-derived block, not a balance-based one — a user with negative available credit but a raised/removed cap (or a plan with no cap) can still consume paid runtime while `active`.
 
 5. Assessment requests already use pre-authorization.
    - `reserveCharge(...)` in `packages/db/src/usage-billing-repository.ts` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` before allowing an assessment request.
@@ -67,7 +68,24 @@ Recommended rule:
 Recommended location:
 
 - `packages/db/src/usage-billing-repository.ts`
-- expose a read method such as `getAvailableCreditState(accountId)` or `canReserveAmount(accountId, amountMicrousd)`
+- expose a single read method `canSpendNow(accountId)` returning a structured result (below)
+
+> **Shared helper contract (align with Plan 003):** Both this plan and Plan 003 must converge on ONE helper signature. Use the richer shape below (includes `status` and `reason`), which Plan 003 already specifies. Implement it once, here in Plan 002; Plan 003 consumes it.
+
+```ts
+export interface CanSpendNowResult {
+  canSpend: boolean;
+  availableMicrousd: number;
+  status: AccountStatus;
+  reason: 'ok' | 'no_available_credit' | 'hard_limited' | 'suspended';
+}
+
+async canSpendNow(accountId: string): Promise<CanSpendNowResult> {
+  // Load the open period + account status (same query shape as reserveCharge).
+  // availableMicrousd = balanceMicrousd - reservedMicrousd
+  // canSpend = status not in (hard_limited, suspended) AND availableMicrousd > 0
+}
+```
 
 Why:
 
@@ -77,6 +95,8 @@ Why:
 ### 2. Enforce the guard at session start
 
 Update `apps/worker/src/agents/agent-session-manager.ts` so session launch is blocked not only for `hard_limited` and `suspended`, but also when there is no available credit for paid runtime.
+
+> **Ordering:** The gate must run AFTER the existing period reconciliation in `agent-session-manager.ts` (lines ~356-395), which calls `getOrCreateOpenPeriod` + `getSpendState`. That reconciliation refreshes credit/caps (e.g. after a plan upgrade) and recomputes status, so gating on stale pre-reconciliation state would be wrong. Read `canSpendNow` after the reconciliation.
 
 Behavior:
 
@@ -128,11 +148,11 @@ Instead:
 
 ### 6. Update plan/config semantics for staging and free
 
-The current `free` plan has no caps, which means status-based enforcement alone will not protect against zero-balance spending.
+The `free` plan's caps (`softCapCents: 0`, `hardCapCents: 100`) are cap-derived and only block once the user is $1 over zero credit. A user with negative available credit but a raised/removed cap (or a plan with no cap) can still consume paid runtime while `active`.
 
 Recommended change:
 
-- do not rely on `hardCapCents = 0` as the main fix
+- do not rely on `hardCapCents` as the main fix
 - keep explicit config for plan caps if desired,
 - but make runtime enforcement depend on available credit regardless of cap presence
 
@@ -152,7 +172,7 @@ Update `docs/tech/agents/billing-enforcement-semantics.md` to reflect:
 2. Apply it at session start.
 3. Apply it before scout/judge/hybrid LLM dispatch.
 4. Add billing-specific blocked reason and notifications.
-5. Update documentation.
+5. Update documentation (`docs/tech/agents/billing-enforcement-semantics.md`) — do this ONCE here, in Plan 002. Plan 003 adds only its chat-surface note on top; do not have both plans edit the file independently (merge-conflict risk).
 6. Add follow-up slice for runtime reservation/pre-authorization.
 
 ## Verification
