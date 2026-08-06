@@ -15,7 +15,7 @@ type CallbackState = 'loading' | 'error';
  * - Normalizes via `new URL(value, origin)` and verifies same-origin
  * - Falls back to `/agents` on invalid/missing
  */
-function sanitizeNextParam(value: string | null): string {
+export function sanitizeNextParam(value: string | null): string {
   if (!value || !value.startsWith('/') || value.startsWith('//')) {
     return '/agents';
   }

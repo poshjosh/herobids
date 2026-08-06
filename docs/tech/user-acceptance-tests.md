@@ -347,3 +347,19 @@ Route: `/skills` — capability bundles that tell agents what they can do.
 | SC-03 | Re-login same tab clears cache | Let session expire; log in again | Fresh data loaded; no cross-session leakage | — | |
 | SC-04 | Mutations invalidate related queries | Start/stop an agent | Instances list and Mission Control both reflect updated state | ✅ | Starting/stopping agent updated status via 5s polling; MC page reflected stopped state |
 | SC-05 | 30 s stale time | Stay on Mission Control for 31 s without navigating away; refocus window | Data automatically refetches | — | |
+
+---
+
+## 17. Try-It Email-First Onboarding
+
+| ID | Test Case | Steps | Expected | Status | Notes |
+|----|-----------|-------|----------|--------|-------|
+| TRY-01 | Landing page shows "Try it" button | Visit `/` as unauthenticated user | "Try it" CTA links to `/try` | — | |
+| TRY-02 | `/try` page loads for unauthenticated users | Visit `/try` without being logged in | Chat-like UI with typing animation, messages appear in sequence | — | |
+| TRY-03 | Email validation on `/try` | Enter invalid email (e.g., "not-an-email") and submit | "Enter a valid email address" error shown | — | |
+| TRY-04 | Email submission sends login link | Enter valid email and submit | "An email has been sent to..." message appears, check inbox for link | — | |
+| TRY-05 | Login link redirects to agent creation | Click login link from email | Redirects to `/agents/new` after authentication | — | Landing on `/agents/new` may show Guided Setup chat, billing gate, or plain form — all are acceptable per plan Decision 7. |
+| TRY-06 | `/try` resend button works | After link sent, click "Resend link" | Another email sent, rate-limit message if clicked too quickly | — | |
+| TRY-07 | Authenticated user visiting `/try` | Log in, then navigate to `/try` | Redirected to `/agents/new` | — | |
+| TRY-08 | `/try` page works on mobile | Visit `/try` on a mobile viewport (or resize browser) | Layout adjusts, inputs are full-width, messages readable | — | |
+| TRY-09 | Post-auth experience after `/try` | Complete flow: `/try` → email → click link → authenticate | User lands at `/agents/new` and can create an agent | — | |

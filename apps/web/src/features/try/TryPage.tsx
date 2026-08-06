@@ -13,7 +13,7 @@ const MESSAGE_2 =
 const MESSAGE_3 = (email: string) =>
   `An email has been sent to ${email}. Check your inbox — the link will set you up for a new AI agent.`;
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ---------------------------------------------------------------------------
 // Timing (ms)

@@ -1173,6 +1173,98 @@ describe('auth routes', () => {
       const payload = JSON.parse(tokenSetCall[1]);
       expect(payload.username).toBeUndefined();
     });
+
+    // ── next param ─────────────────────────────────────────────────────────
+
+    it('accepts and stores a valid next path in the Redis token payload', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+
+      await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com', next: '/agents/new' },
+      });
+
+      const tokenSetCall = redis.set.mock.calls.find(
+        (call: any[]) => typeof call[0] === 'string' && (call[0] as string).startsWith('auth:login-link:token:'),
+      );
+      expect(tokenSetCall).toBeDefined();
+      const payload = JSON.parse(tokenSetCall[1]);
+      expect(payload.next).toBe('/agents/new');
+    });
+
+    it('sanitizes protocol-relative next (//evil.com) to /agents', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+
+      await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com', next: '//evil.com' },
+      });
+
+      const tokenSetCall = redis.set.mock.calls.find(
+        (call: any[]) => typeof call[0] === 'string' && (call[0] as string).startsWith('auth:login-link:token:'),
+      );
+      expect(tokenSetCall).toBeDefined();
+      const payload = JSON.parse(tokenSetCall[1]);
+      // Protocol-relative URLs are treated as invalid and fall back to /agents
+      expect(payload.next).toBe('/agents');
+    });
+
+    it('sanitizes absolute external URL (https://evil.com) to /agents', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+
+      await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com', next: 'https://evil.com' },
+      });
+
+      const tokenSetCall = redis.set.mock.calls.find(
+        (call: any[]) => typeof call[0] === 'string' && (call[0] as string).startsWith('auth:login-link:token:'),
+      );
+      expect(tokenSetCall).toBeDefined();
+      const payload = JSON.parse(tokenSetCall[1]);
+      // Absolute external URLs don't start with '/' so they fall back to /agents
+      expect(payload.next).toBe('/agents');
+    });
+
+    it('accepts and stores a valid relative path as-is', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const redis = makeRedisMock();
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+
+      await app.inject({
+        method: 'POST',
+        url: '/auth/send-login-link',
+        payload: { email: 'user@example.com', next: '/valid/path' },
+      });
+
+      const tokenSetCall = redis.set.mock.calls.find(
+        (call: any[]) => typeof call[0] === 'string' && (call[0] as string).startsWith('auth:login-link:token:'),
+      );
+      expect(tokenSetCall).toBeDefined();
+      const payload = JSON.parse(tokenSetCall[1]);
+      expect(payload.next).toBe('/valid/path');
+    });
   });
 
   describe('GET /auth/login-link/callback', () => {
@@ -1313,6 +1405,88 @@ describe('auth routes', () => {
       expect(userInsert!['displayName']).toBe('Newuser');
       const location = res.headers['location'] as string;
       expect(location).toContain('/auth/callback?code=');
+    });
+
+    // ── next param forwarding ──────────────────────────────────────────────
+
+    it('forwards stored next to /auth/callback redirect', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const existingUserId = 'existing-user-id';
+      const redis = {
+        set: vi.fn().mockResolvedValue('OK'),
+        getdel: vi.fn().mockResolvedValue(JSON.stringify({
+          email: 'test@example.com',
+          next: '/agents/new',
+        })),
+        incr: vi.fn().mockResolvedValue(1),
+        expire: vi.fn().mockResolvedValue(1),
+      };
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ id: existingUserId }]),
+            }),
+          }),
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/auth/login-link/callback?token=valid-token',
+      });
+
+      expect(res.statusCode).toBe(302);
+      const location = res.headers['location'] as string;
+      expect(location).toContain('/auth/callback?code=');
+      expect(location).toContain('next=%2Fagents%2Fnew');
+    });
+
+    it('defaults missing next to /agents in redirect', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const existingUserId = 'existing-user-id';
+      const redis = {
+        set: vi.fn().mockResolvedValue('OK'),
+        getdel: vi.fn().mockResolvedValue(JSON.stringify({
+          email: 'test@example.com',
+          // no next
+        })),
+        incr: vi.fn().mockResolvedValue(1),
+        expire: vi.fn().mockResolvedValue(1),
+      };
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ id: existingUserId }]),
+            }),
+          }),
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as any, redis as any);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/auth/login-link/callback?token=valid-token',
+      });
+
+      expect(res.statusCode).toBe(302);
+      const location = res.headers['location'] as string;
+      expect(location).toContain('/auth/callback?code=');
+      expect(location).toContain('next=%2Fagents');
     });
   });
 
