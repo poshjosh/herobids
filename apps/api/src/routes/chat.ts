@@ -446,12 +446,59 @@ export function buildCreateAgentPayload(
   const name = generateAgentName(input.skillPresetId);
   const style = input.style ?? 'balanced';
   const strategyPreset = input.strategyPreset ?? 'momentum';
-  const capabilityMode = deriveCapabilityMode(input.skillPresetId);
-  const skillIds = resolveSkillPresetSkillIds(input.skillPresetId);
+
+  // Use caller-provided skillIds for custom preset; derive from preset map otherwise
+  const skillIds = input.skillPresetId === 'custom' && input.skillIds?.length
+    ? input.skillIds
+    : resolveSkillPresetSkillIds(input.skillPresetId);
 
   const connectionIds = input.selectedConnectionId ? [input.selectedConnectionId] : [];
 
+  // Determine if this preset is inherently trading-capable
+  const isTradingPreset = ['trading', 'direct-trading', 'trading-assistant'].includes(input.skillPresetId);
+
+  // Derive capabilityMode and hybridMode from filterTrades when provided for trading presets.
+  // When filterTrades is omitted, fall back to preset-derived defaults.
+  let capabilityMode: 'intelligence' | 'hybrid';
+  let hybridMode: 'mixed' | 'scanner_gated' | undefined;
+
+  if (isTradingPreset && input.filterTrades) {
+    switch (input.filterTrades) {
+      case 'off':
+        capabilityMode = 'intelligence';
+        break;
+      case 'mixed':
+        capabilityMode = 'hybrid';
+        hybridMode = 'mixed';
+        break;
+      case 'scanner_gated':
+        capabilityMode = 'hybrid';
+        hybridMode = 'scanner_gated';
+        break;
+      default:
+        capabilityMode = deriveCapabilityMode(input.skillPresetId);
+        break;
+    }
+  } else {
+    // Non-trading presets or filterTrades omitted: use preset-derived defaults
+    capabilityMode = deriveCapabilityMode(input.skillPresetId);
+    // Default hybridMode for trading presets when filterTrades is omitted
+    if (isTradingPreset) {
+      hybridMode = 'mixed'; // backward-compatible default
+    }
+  }
+
   const isTradingCapable = capabilityMode === 'hybrid';
+
+  // Platform assessment (strategy review) — only meaningful for trading presets
+  // and only allowed when filterTrades is 'scanner_gated'.
+  let platformAssessment: { enabled: boolean; reviewIntervalMs: number } | undefined;
+  if (isTradingPreset && input.platformAssessmentEnabled && hybridMode === 'scanner_gated') {
+    platformAssessment = {
+      enabled: true,
+      reviewIntervalMs: (Number(input.platformAssessmentReviewIntervalHours) || 12) * 3_600_000,
+    };
+  }
 
   const strategy = isTradingCapable ? {
     type: strategyPreset,
@@ -468,12 +515,19 @@ export function buildCreateAgentPayload(
     userId,
   };
 
-  // Trading-only fields are only included for trading-capable presets.
-  if (isTradingCapable) {
+  // Include trading-only fields for any trading preset, regardless of capabilityMode.
+  // strategy and hybridMode are only set when capabilityMode is hybrid.
+  if (isTradingPreset) {
     payload.capital = input.capital;
     payload.strategyPreset = strategyPreset;
-    payload.strategy = strategy;
     payload.executionDefaults = executionDefaults;
+    if (isTradingCapable) {
+      payload.strategy = strategy;
+      payload.hybridMode = hybridMode;
+      if (platformAssessment) {
+        payload.platformAssessment = platformAssessment;
+      }
+    }
   }
 
   // Include the selected connection only when a compatible provider is actually
@@ -718,6 +772,16 @@ export async function executeChatAction(
           }
 
           // Insert the agent with all required fields
+          const unifiedConfig: Record<string, unknown> = {
+            capabilityMode: payload.capabilityMode,
+          };
+          if (payload.hybridMode) {
+            unifiedConfig.hybridMode = payload.hybridMode;
+          }
+          if (payload.platformAssessment) {
+            unifiedConfig.platformAssessment = payload.platformAssessment;
+          }
+
           await tx.insert(agents).values({
             id: agentId,
             userId,
@@ -733,6 +797,7 @@ export async function executeChatAction(
             // Empty tool/model policy — the worker will populate from skillIds on start
             toolPolicy: {},
             modelPolicy: {},
+            unifiedConfig: unifiedConfig as never,
             createdAt: timestamp,
             updatedAt: timestamp,
           } as never);

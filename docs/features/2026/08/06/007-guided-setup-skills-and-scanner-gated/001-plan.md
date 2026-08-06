@@ -377,3 +377,11 @@ All changes are additive and backward-compatible:
 | 2 | MEDIUM | `filterTrades` / `platformAssessment*` accepted unconditionally across all presets. Zod-level refinement to reject non-trading presets with `filterTrades` would give earlier error feedback to LLM. Deferred to Step 4. |
 | 3 | LOW | `platformAssessmentReviewIntervalHours` uses string enum (`"6"`, `"12"`) rather than number — functional but unusual for LLM tool schemas. |
 | 4 | LOW | JSON Schema descriptions for `platformAssessmentEnabled` and `platformAssessmentReviewIntervalHours` don't mention trading scope — LLM might offer scanner-gated to non-trading users. System prompt (Step 5) mitigates. |
+
+### [Step 4] buildCreateAgentPayload
+
+| # | Severity | Issue |
+|---|----------|-------|
+| 1 | LOW | `payload.platformAssessment` set but never used in the DB insert — only read from `unifiedConfig`. Harmless but misleading. |
+| 2 | LOW | `payload.strategyPreset` has no corresponding DB column (pre-existing). Dead data on the payload object. |
+| 3 | LOW | Dead `default` case in `filterTrades` switch — unreachable due to Zod validation. |
