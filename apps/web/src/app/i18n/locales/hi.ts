@@ -727,6 +727,15 @@ export const messages: Record<string, string> = {
   'setup.agentAssignment.noAgents': 'अभी कोई एजेंट नहीं। एक एजेंट बनाएं और वह यहाँ दिखाई देगा।',
   'setup.agentAssignment.connectionCreated': '{label} ({provider}) सफलतापूर्वक कनेक्ट हुआ।',
 
+  // Guided Setup billing gate
+  'guidedSetup.billingGate.title': 'क्रेडिट आवश्यक',
+  'guidedSetup.billingGate.hardLimited': 'आप अपनी उपयोग सीमा तक पहुँच चुके हैं। जारी रखने के लिए क्रेडिट जोड़ें।',
+  'guidedSetup.billingGate.suspended': 'आपका खाता निलंबित है। कृपया सहायता से संपर्क करें।',
+  'guidedSetup.billingGate.addCredit': 'क्रेडिट जोड़ें',
+  'guidedSetup.billingGate.useFormInstead': 'इसके बजाय मानक फ़ॉर्म का उपयोग करें',
+  'guidedSetup.billingGate.tryAgain': 'पुनः प्रयास करें',
+  'guidedSetup.billingGate.checking': 'खाते की जाँच हो रही है…',
+
   // Status labels
   'status.running': 'चल रहा है',
   'status.stopped': 'बंद',

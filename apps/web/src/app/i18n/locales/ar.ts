@@ -727,6 +727,15 @@ export const messages: Record<string, string> = {
   'setup.agentAssignment.noAgents': 'لا يوجد وكلاء بعد. أنشئ وكيلاً وسيظهر هنا.',
   'setup.agentAssignment.connectionCreated': 'تم توصيل {label} ({provider}) بنجاح.',
 
+  // Guided Setup billing gate
+  'guidedSetup.billingGate.title': 'الرصيد مطلوب',
+  'guidedSetup.billingGate.hardLimited': 'لقد وصلت إلى حد الاستخدام. أضف رصيدًا للمتابعة.',
+  'guidedSetup.billingGate.suspended': 'تم تعليق حسابك. يرجى الاتصال بالدعم.',
+  'guidedSetup.billingGate.addCredit': 'إضافة رصيد',
+  'guidedSetup.billingGate.useFormInstead': 'استخدم النموذج العادي بدلاً من ذلك',
+  'guidedSetup.billingGate.tryAgain': 'حاول مرة أخرى',
+  'guidedSetup.billingGate.checking': 'جارٍ التحقق من الحساب…',
+
   // Status labels
   'status.running': 'يعمل',
   'status.stopped': 'متوقف',

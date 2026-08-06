@@ -841,6 +841,15 @@ export const messages: Record<string, string> = {
   'setup.agentAssignment.noAgents': 'No agents yet. Create an agent and it will appear here.',
   'setup.agentAssignment.connectionCreated': '{label} ({provider}) connected successfully.',
 
+  // Guided Setup billing gate
+  'guidedSetup.billingGate.title': 'Credit Required',
+  'guidedSetup.billingGate.hardLimited': "You've reached your usage limit. Add credit to continue using Guided Setup.",
+  'guidedSetup.billingGate.suspended': 'Your account is suspended. Please contact support.',
+  'guidedSetup.billingGate.addCredit': 'Add Credit',
+  'guidedSetup.billingGate.useFormInstead': 'Use standard form instead',
+  'guidedSetup.billingGate.tryAgain': 'Try Again',
+  'guidedSetup.billingGate.checking': 'Checking account…',
+
   // Status labels
   'status.running': 'running',
   'status.stopped': 'stopped',
