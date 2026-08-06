@@ -188,17 +188,40 @@ export async function authRoutes(
     return url.toString();
   }
 
-  async function createAndStoreLoginLinkToken(email: string, username?: string): Promise<string> {
+  /**
+   * Sanitize a frontend-relative `next` path for redirect-after-auth flows.
+   * Same-origin only; rejects protocol-relative (`//`) and absolute URLs.
+   * Falls back to `/agents` when the input is absent, invalid, or cross-origin.
+   */
+  function sanitizeNextParam(value: string | undefined): string {
+    if (!value || !value.startsWith('/') || value.startsWith('//')) {
+      return '/agents';
+    }
+    try {
+      const url = new URL(value, config.frontendOrigin);
+      if (url.origin !== config.frontendOrigin) {
+        return '/agents';
+      }
+      return `${url.pathname}${url.search}${url.hash}`;
+    } catch {
+      return '/agents';
+    }
+  }
+
+  async function createAndStoreLoginLinkToken(email: string, username?: string, next?: string): Promise<string> {
     const token = crypto.randomBytes(32).toString('base64url');
-    const payload: { email: string; username?: string } = { email };
+    const payload: { email: string; username?: string; next?: string } = { email };
     if (username) {
       payload.username = username;
+    }
+    if (next) {
+      payload.next = next;
     }
     await redis.set(`auth:login-link:token:${token}`, JSON.stringify(payload), 'EX', config.loginLinkTtlSecs);
     return token;
   }
 
-  async function consumeLoginLinkToken(token: string): Promise<{ email: string; username?: string } | null> {
+  async function consumeLoginLinkToken(token: string): Promise<{ email: string; username?: string; next?: string } | null> {
     const raw = await redis.getdel(`auth:login-link:token:${token}`);
     if (!raw) return null;
     try {
@@ -330,6 +353,8 @@ export async function authRoutes(
     const body = request.body as Record<string, unknown> | undefined;
     const email = typeof body?.['email'] === 'string' ? normalizeEmail(body['email']) : undefined;
     const rawUsername = typeof body?.['username'] === 'string' ? body['username'] : undefined;
+    const rawNext = typeof body?.['next'] === 'string' ? body['next'] : undefined;
+    const sanitizedNext = sanitizeNextParam(rawNext);
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return reply.status(400).send(
@@ -370,8 +395,8 @@ export async function authRoutes(
       );
     }
 
-    // Create token with optional username
-    const token = await createAndStoreLoginLinkToken(email, normalizedUsername);
+    // Create token with optional username and next path
+    const token = await createAndStoreLoginLinkToken(email, normalizedUsername, sanitizedNext);
 
     // Reserve username in Redis if provided
     if (normalizedUsername) {
@@ -431,7 +456,7 @@ export async function authRoutes(
       );
     }
 
-    const { email, username: tokenUsername } = payload;
+    const { email, username: tokenUsername, next: nextPath } = payload;
 
     // Trust the username only if the reservation key still maps to this exact token.
     // This guards against stale payloads from failed prior flows and satisfies the plan's
@@ -454,6 +479,8 @@ export async function authRoutes(
 
     const callbackUrl = new URL('/auth/callback', config.frontendOrigin);
     callbackUrl.searchParams.set('code', exchangeCode);
+    const resolvedNext = sanitizeNextParam(nextPath);
+    callbackUrl.searchParams.set('next', resolvedNext);
     return reply.redirect(callbackUrl.toString());
   });
 
