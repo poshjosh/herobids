@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - **Guided Setup Gmail resume after OAuth:** The post-OAuth resume invocation now carries an explicit resume-event channel (`connection_linked` / `connection_form_cancelled`) rendered as a transient prompt block, plus a transient user-like continuation message, so the model continues the agent-creation flow deterministically instead of emitting the generic "How can I help you further?" fallback. The empty-content fallback is now resume-aware, `buildSystemPrompt` guides resume-after-connection behavior, and `summary.preset` is persisted from quick-reply selections (whitelisted) for resume context. Idempotency (`processedActionIds`) is preserved. See `docs/features/2026/08/06/001-guided-setup-gmail-resume-after-oauth/001-plan.md`.
 
 ### Fixed
@@ -47,6 +49,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - **Blueprint Marketplace Likes:** Interactive like/unlike controls on blueprint browse cards and detail pages with optimistic UI updates. Added dedicated `blueprints` plan entitlements (`canViewMarketplaceBlueprints`, `canLikeMarketplaceBlueprints`) in schema, config, plan resolution, and auth client. Marketplace browse, detail, fork, like, and unlike endpoints enforce entitlements server-side. Blueprint responses include `isLikedByViewer` field with batch-loaded viewer like state. Reusable `useBlueprintLike` hook with optimistic cache patching (detail + browse invalidation) and error rollback. 15 new tests (10 frontend hook, 5 integration). Proactive UI gating prevents API calls when marketplace access is not entitled.
 
 - **Implicit Agent Blueprint Publication:** Starting an agent now automatically creates or syncs a published blueprint representing its current authored config and skill set. Deterministic SHA-256 fingerprinting prevents duplicate revisions when config is unchanged. Failed blueprint sync reverts the agent claim (loud-failure). New `agent-blueprint-sync-service` with `ensurePublishedBlueprintForAgent()` and 10 unit tests covering first-publish, unchanged restart, changed-config revision, skill portability errors, and defensive edge cases.
@@ -63,6 +67,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - **Local Telegram Webhook Test Toolkit:** Two-level local testing workflow for inbound Telegram messaging. Tunnel setup script (`scripts/shell/tests/setup-local-telegram-webhook.sh`) establishes an ngrok tunnel to localhost:3000, registers the webhook with Telegram, and verifies registration. Mock webhook helper (`scripts/test-slash-commands.sh`) formalized with CLI flags (`--message-text`, `--chat-id`, `--webhook-secret`, `--wrong-secret`, `--env-file`) for fast local ingress testing with response code interpretation and async routing guidance. Reference doc (`docs/tech/telegram-local-testing.md`) covers both levels, the webhook contract, and troubleshooting.
 
 ### Fixed
@@ -77,6 +83,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - **Platform Docs Skill & Tools:** New `platform-docs` skill with three tools (`search_app_docs`, `list_app_docs`, `read_app_docs`) that give LLM agents the ability to read the platform's own documentation, forms, and configuration schemas. The docs index covers all public markdown pages, CreateAgentSchema/UpdateAgentSchema fields, skill preset mappings, venue/chain mappings, agent style defaults, connection types, execution modes, agent lifecycle, billing model, UI terminology reference, and per-skill detail entries. Skill is auto-seeded via `syncSystemSkills` and is `visibility: public` but NOT added to any `SKILL_PRESET_MAP` — it's assigned directly to the onboarding chat agent.
 
 - **Preset Tool Broker Mediation:** `assess_strategy_preset` and `change_strategy_preset` now work end-to-end in agent containers via broker-mediated execution. When tool ports are not wired (agent container context), the tools publish requests to Redis and wait for broker responses via BLPOP on reply lists. The broker handlers execute the tools against wired ports in the worker process and publish results back. Previously, agent calls to these tools returned `service_unavailable` (13 observed calls, all failing). Includes canary tests and integration tests.
@@ -85,6 +93,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - **Agent-Bot Config Harmonization (Closure):** Shared domain value objects (`RiskPosture`, `StrategyIdentity`, `ExecutionDefaults`) are now the sole authoritative vocabulary for agent and bot configuration. Nine superseded flat columns removed from `agents` table (`executionMode`, `dailyLossLimit`, `maxDrawdownPct`, `maxDrawdown`, `maxSlippageBps`, `maxOpenPositions`, `maxPositionSizePct`, `stopLossPct`, `stopLossCooldownMs`). Canonical `risk` JSONB (null-means-default), `strategy` JSONB (absent for non-trading), and `executionDefaults` JSONB are the only persisted risk/strategy/execution sources. `stopLossPct` renamed from `stopLossMaxUnrealizedLossPct` in operator config; `dailyLossLimit` (USD) → `dailyMaxLossPct` (%) at config layer. New 9-field `ResolvedAgentRiskProfile` read model with provenance (user/default/agent_override/derived/disabled), mutability, and enforcement metadata. Canonical `BotRiskSchema` with strict validation replaces legacy `RiskConfigSchema` aliases and deprecated token-safety fields. `StrategyParameterRegistry` validates params per (type, decisionMode). Engine `RiskLimits` absolute members (`maxPositionSize`, `maxDrawdown`, `maxOpenPositions`) made optional — percentage-based guards are the canonical path. Migration `0056_naive_rocket_racer`. Agent-only columns `capital`, `maxBots`, `tickIntervalMs` retained. `unifiedConfig` branches classified in 007-field-classification.md with explicit destinations. 251 domain + engine tests, 118 agent route tests, 84 worker bridge + tools tests pass.
 
 - **Agent Scanner DEX Venue Completion:** Hybrid and scanner-gated agents bound to Jupiter (Solana) or 1inch (Base) now receive technically scored DEX swap signals with exact, address-qualified instrument IDs (`BASE:ADDR/QUOTE:ADDR`). Full pipeline: pool discovery → OHLCV via GeckoTerminal → technical scoring → completed scan → hybrid prompt → exact decision intake → swap execution. Operator-controlled via `agentRuntime.scanner.swap.enabled` and per-venue flags. Includes exact swap instrument ID parsing, venue-specific trade validation, atomic pool identity preservation, swap candle routing, candidate discovery gating, and schema regression guard tests.
@@ -92,6 +102,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## v0.0.37 - 2026-07-31
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - **Authorization Mode & Trade Approvals:** New `authorizationMode` on agent config (`direct` | `approval_required`). In approval mode, `submit_decision` records trade proposals for human review. Approve/reject via web UI or Telegram `/yes <code>` / `/no <code>`. New `trading-assistant` skill preset, `decision_approvals` table with 6-char human-safe codes, approval lifecycle with worker-gated status transitions, web `ApprovalsPanel`, operator `agentApprovals` config, platform-authored Telegram notifications, and full documentation.
 - **Meaningful strategy review UX:** User-triggered ("forced") strategy reviews now run the billed platform assessment synchronously. The frontend shows a two-phase UX: per-instrument pre-check table → assessment progress → preset ranking results (current vs. recommended, scores, pros/cons). The agent receives artifact IDs in the wake message and can call `change_strategy_preset` directly — no duplicate billing.
@@ -114,6 +126,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - **Preset review tools for trading agents:** `assess_strategy_preset` and `change_strategy_preset` added to the `trading` skill's `requiredTools`, enabling hybrid agents to act on `assessment_review` wake advice.
 - **`assessment_requested_at` column on `review_advice`:** New nullable timestamp tracks when advice was acted on (agent requested a platform assessment), separate from `consumed_at` (wake delivered). Enables distinguishing delivered-but-ignored from delivered-and-acted-on advice.
 - **Active-preset resolution helper (`resolveActivePresetState`):** Centralized, three-step resolution (authoritative binding → `metadata.strategyPreset` → loud `'momentum'` fallback). Replaces broken `tech.type`/`intelligence.type` logic that always returned `'momentum'`.
@@ -130,6 +144,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## v0.0.35 - 2026-07-24
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - **Post-evaluation fixes (Plan 002):** Deterministic scan candidate ordering with reasons.length tiebreaker; `agent_scan_metrics` persistence for every scan (including overlap-skipped); `LlmDecisionArtifact` persistence for hybrid evaluator (nullable decisionId, decisionIds array, onArtifact callback on all LLM outcomes); bounded candle-fetch retry with full jitter and cross-scan Redis circuit breaker (scan-cycle units); evaluate-agent SKILL.md Redis key-type guidance.
 
@@ -151,6 +167,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - **Frontend-Triggered Forced Strategy Review:** New user-triggered control to run a deterministic strategy review on demand. Adds `agent_assessment_review_runs` table for durable request lifecycle, `AssessmentReviewRunner` (extracted shared review executor), `ManualReviewRuntime` (BullMQ consumer), API routes (`POST/GET`), and a "Run Strategy Review" button in the agent detail Evaluations card with polling and result summary. The manual path reuses the same pre-check/wake/persistence logic as the scheduled path, bypassing only the due-interval gate. See [001-frontend-force-strategy-review/001-plan.md](docs/features/2026/07/20/001-frontend-force-strategy-review/001-plan.md).
 
 ## v0.0.33 - 2026-07-21
@@ -163,6 +181,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 ## v0.0.32 - 2026-07-19
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - **Evaluation Report Preset-Assessment Summary:** Added a non-scored `## Preset Assessment Summary` appendix to agent evaluation `REPORT.md` with companion JSON artifacts (`preset-assessment-summary.json`, `preset-assessment-events.json`). Answers four agent-local questions: feature enablement, review advice consumption, assessment request reuse, and preset change auditability. Includes best-effort evidence collector with scope-filtered queries across `review_advice`, `market_assessment_requests`, `agent_preset_transitions`, and `agent_preset_bindings` tables. Appendix appears conditionally only when the agent is opted in or has in-scope preset-assessment activity. See [018-evaluation-report-preset-assessment-summary.md](docs/features/2026/07/18/002-platform-preset-assessment-and-transition/018-evaluation-report-preset-assessment-summary.md).
 
@@ -258,6 +278,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - **Platform Preset Assessment & Agent Strategy Transition:** Shared market assessment pipeline that ranks strategy presets per market segment, enabling agents to switch presets based on market conditions. Key components:
   - **Data model:** 5 new DB tables (`market_assessment_runs`, `market_assessment_artifacts`, `market_assessment_wake_decisions`, `agent_scan_metrics`, `agent_preset_transitions`) with foreign keys, unique constraints, and denormalized segment keys
   - **Domain types:** `MarketAssessmentSegmentKey`, `MarketAssessmentArtifact`, `PresetScorecardEntry`, transition state machine, freshness/staleness validation
@@ -274,6 +296,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 ## v0.0.31 - 2026-07-18
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - **Hybrid prompt data enrichment:** The hybrid evaluator prompt now includes venue intelligence, richer exit-review context, scanner rejection breakdowns, and optional decision reasons. Trading-capable scout prompts now enumerate concrete escalation triggers. See [docs/features/2026/07/17/005-hybrid-prompt-data-enrichment/001-plan.md](docs/features/2026/07/17/005-hybrid-prompt-data-enrichment/001-plan.md).
 
@@ -296,6 +320,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - **Agent Scanner Multi-Venue Signal Support (Part 1 — Orderbook Venues):** Hybrid/scanner-gated agents can now receive technical scanner signals for Bybit in addition to Hyperliquid. Includes venue-aware candidate discovery, Bybit tickers provider with execution-price resolution (fail-closed, no oracle fallback), explicit orderbook candle routing, scanner health classification (healthy_no_signal, healthy_signals, data_path_failure, overlap_skipped, no_candidates), and pricing identity preservation through scan completion. 490+ new tests across 6 test files. See [docs/features/2026/07/17/004-agent-scanner-multi-venue-signal-support/001-plan.md](docs/features/2026/07/17/004-agent-scanner-multi-venue-signal-support/001-plan.md).
 
 - **Gmail OAuth Connection for Agents:** Users can connect their Gmail account via OAuth and agents can send email with the `send_email` tool. Includes OAuth endpoints, lazy token refresh, daily rate limiter, `gmail` system skill, and generic connection picker. (Originally shipped with a `search_emails` tool and `gmail.readonly` scope; both were removed the same day — see Unreleased.) See [docs/features/2026/07/17/003-gmail-oauth-connection/001-plan.md](docs/features/2026/07/17/003-gmail-oauth-connection/001-plan.md).
@@ -314,6 +340,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 ## v0.0.29 - 2026-07-16
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - **Hybrid system prompt in Prompt Surfaces:** The scanner-gated hybrid evaluator prompt is now persisted to Redis (`agent:prompt:hybrid:{id}`) and displayed as a "Hybrid System" tab alongside Judge/Scout prompts on the agent detail page.
 - **Scanner-gated runtime hardening:** Strict persisted-config validation prevents malformed hybrid agents from starting scan loops. `StrictTechnicalConfigSchema` rejects missing `scanBatchSize`/`scanIntervalMs` at worker startup. Bounded candidate selection (volume-sorted, capped), 4-way provider eligibility classification, single-flight scan guard, global concurrency gate, and structured scan health matrix. Deterministic integration coverage proves the scanner-gated event chain (scan-completed → wake → evaluator → decision intake). 4909 tests pass. See [docs/features/2026/07/16/003-scanner_gated-must-be-working/005-scanner-gated-hardening-plan.md](docs/features/2026/07/16/003-scanner_gated-must-be-working/005-scanner-gated-hardening-plan.md).
@@ -344,6 +372,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - **Technical Scanner Data Inputs for Agents:** Wired market data sources (Hyperliquid asset contexts via `discoverCandidates`, Binance candles via `fetchCandles`) and per-agent `TechnicalConfig` into `AgentTradingActor`. Hybrid/scanner_gated agents now receive pre-scored signals from the technical scanner loop. Zero new files, zero schema changes — pure integration wiring in `apps/worker/src/index.ts`.
 - **Scrapfly Proxy for Forex Factory (Cloudflare Bypass):** Route the Forex Factory economic-calendar scrape through Scrapfly's Scrape API with Anti-Scraping Protection (ASP) to bypass Cloudflare blocks on cloud/datacenter IPs. Generic `createScrapflyFetch()` helper in `@herobids/market-data` for future scrapers. Config at `marketData.scrapfly` (non-secret knobs only; API key follows `TAVILY_API_KEY` pattern — raw env passthrough). Bumped `forexFactory.requestTimeoutMs` from 15s to 60s to accommodate ASP latency.
 - **Background Economic Calendar Refresh:** Decouple the economic calendar fetch from the agent tick loop. The worker process now runs a background interval (`refreshIntervalMs`, default 6h) that fetches via Scrapfly and writes to a shared Redis cache. Agent ticks read exclusively from cache (`cacheOnly` mode, sub-millisecond) — they never block on a network call for economic calendar data. Extracted `createLlmCalendarParser()` to `@herobids/market-data`. Removed `fetchHttp1` and Scrapfly wiring from the agent container.
@@ -352,6 +382,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 ## v0.0.25 - 2026-07-14
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - **Telegram Agent Slash Commands:** Full command surface for agent discovery, status, and lifecycle control via Telegram. 16 commands across 5 categories: Help (`/help`), Discovery (`/agents`, `/status`, `/info`, `/skills`, `/log`, `/connections`), Lifecycle (`/start`, `/pause`, `/resume`, `/stop`, `/restart`), Config (`/mode`, `/connect`, `/disconnect`), and Messaging (`/to`). Includes one-time setup link flow for secure connection creation without secrets in chat. Commands register via Bot API `setMyCommands` at startup. 54 new tests.
 
@@ -364,6 +396,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 ## v0.0.24 - 2026-07-13
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - **Documents for Agents (v1):** Text-first document support for agents — upload documents via web UI or Telegram, automatically extracted and materialized into agent workspace. New `@herobids/documents` shared package, `agent_documents` DB schema, API endpoints, runtime materialization, Telegram document ingest, and shared PDF extraction. (10 of 11 rollout items complete; UI wiring pending.)
 
@@ -390,6 +424,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - **OpenAIdom Brand Rollout (9 slices):** Introduced OpenAIdom as the customer-facing brand across the web app, platform-authored email, and public documentation while keeping internal engineering names unchanged.
   - Slice 1: Asset intake and brand contract (`apps/web/public/brand/`, `apps/web/src/brand/tokens.ts`)
   - Slice 2: Shared `BrandLogo` component (`apps/web/src/brand/BrandLogo.tsx`) — mark, wordmark, mark+wordmark, typographic fallback, light/dark variants
@@ -408,6 +444,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 ## v0.0.21 - 2026-07-13
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 - Agent-direct protection alignment: native per-trade exit levels now count as active-session coverage, preventing repeated `open_position_uncovered` judge escalations.
 - Canonical `instrumentId` preservation across agent-direct private-stream updates, restart rehydration, and decision intake.
 - Truthful `list_positions` payload with separate `symbol`, `instrumentId`, `venue`, `stopLoss`, and `takeProfit` fields.
@@ -434,6 +472,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 ## v0.0.19 - 2026-07-11
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 - **Hybrid Mode Split (`capabilityMode` / `hybridMode`):** Replaced implicit hybrid derivation with explicit `capabilityMode` (`'intelligence'` | `'hybrid'`) and `hybridMode` (`'mixed'` | `'scanner_gated'`) fields on agents.
   - **Domain:** `CapabilityModeSchema`, `HybridModeSchema` with cross-field validation (hybrid requires technical config; intelligence rejects hybridMode).
   - **DB:** Migration 0040 stamps correct defaults on existing agents; repository applies `'mixed'` default at read/write time.
@@ -457,6 +497,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 ## v0.0.18 - 2026-07-11
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 - **Login-Link-First Auth UX:** Replaced the login/register toggle with a single email-first screen. Email login links are now the primary auth path, with password sign-in available as an inline fallback. New `POST /auth/send-login-link` and `GET /auth/login-link/callback` endpoints with Redis-backed one-time tokens, resend cooldown, and rate limiting. Google OAuth unchanged.
 - **Agent Email Delivery UX:** Users can now control whether their agents email them
   - Account-level default in Settings (Agent Email Delivery card)
@@ -489,6 +531,8 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 - **Orchestration follow-up fixes (006-followup):** Removed duplicate termination listener from `AgentRuntimeLauncher` (already registered by `DockerRuntimeAdapter`). Added `NodeClass == "agent"` filter to `list_eligible_agent_nodes()` so the control-plane client node is never a scale-in candidate. Replaced last remaining `||` resource fallback with `??` in `nomad-runtime-adapter.ts` to preserve `0` as a valid value. Added test coverage for `buildAgentEnv` sharedServices URL construction path. Deprecated legacy `terraform.tfvars.example` in favor of per-environment templates.
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - **Terraform workspaces (007-terraform-workspaces):** Multi-environment state isolation via Terraform workspaces. `provision.sh` and all deploy scripts (`deploy.sh`, `push.sh`, `setup-env.sh`, `logs.sh`, `seed-admin.sh`, `reset.sh`, `reset-and-run.sh`, `maintenance-restart-from-local.sh`) are now workspace-aware — `--env staging|production` automatically selects the correct Terraform workspace and resolves the matching server IP. SSH key auto-detection falls back to `${HEROBIDS_ENV}.tfvars` when `terraform.tfvars` is absent. Includes a one-time migration procedure for existing staging state, `.gitignore` for workspace state files, and updated README/smoke-test documentation.
 
@@ -529,6 +573,8 @@ Removed links to the following from the sidebar: Trading Setup, Exposure, Activi
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - **Billing Ledger read path:** New `GET /billing/ledger-entries` API endpoint, repository method, API client, and "Billing Ledger" card in the billing page. Shows every financial movement (credits, debits) in chronological order with direction filtering and pagination.
 
 - **LLM Cost Reduction — Complete Tick Gate Fingerprint:** Expanded `shouldSkipTick` context-hash gate with watch summary, wake signal, and risk/playbook digests. Uses `__unknown__` sentinel for unavailable data. Zero additional I/O. Preserves all safety valves.
@@ -541,6 +587,8 @@ Removed links to the following from the sidebar: Trading Setup, Exposure, Activi
 ## v0.0.11 - 2026-07-07
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - coinmarketcap env key egistry arity and documentation
 - **Per-trade stop-loss and take-profit (complete):** Agents can now set `stopLoss` and `takeProfit` price levels on every `submit_decision` that opens or increases a position. Levels are validated against mark price at intake, stored in decisions metadata, and monitored via a 5-second periodic loop. Post-implementation gaps resolved: reminder messages now surface in the tool reply, `stopLossPct` removed from agent-visible surfaces, market feeds bootstrapped for paper-mode rehydrated positions on restart, exit-level rehydration lifecycle-bounded by `position.openedAt` to prevent stale levels from prior positions.
@@ -582,6 +630,8 @@ Removed links to the following from the sidebar: Trading Setup, Exposure, Activi
 ## v0.0.9 - 2026-07-06
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 - Bot strategy error circuit breaker: consecutive `strategy.config_invalid` (1 failure) or `strategy.execution_error` (5 failures) auto-halts bot, emits `strategy.fatal`, notifies agent.
 - `agentRiskDefaults.maxDrawdown` operator config field, split from `dailyLossLimit`.
 - `agentRiskDefaults.botConfigInvalidHaltThreshold` and `botExecutionErrorHaltThreshold` config fields.
@@ -629,6 +679,8 @@ Removed links to the following from the sidebar: Trading Setup, Exposure, Activi
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - **Prompt Context Enrichment** — Operator-configurable prompt enrichment system (`promptStyle: 'enriched'`) that injects additional context into agent LLM prompts:
   - Auto-injected agent memory in both tick and hybrid evaluator prompts (configurable inline key limit)
   - Judge response history displayed in hybrid evaluator prompts for decision continuity
@@ -658,6 +710,8 @@ Removed links to the following from the sidebar: Trading Setup, Exposure, Activi
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - Improved ux for connecting agents to external platforms
 
 ## v0.0.4 - 2026-06-31
@@ -675,6 +729,8 @@ Removed links to the following from the sidebar: Trading Setup, Exposure, Activi
 ## v0.0.2 - 2026-06-30
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 - **Agent Evaluation (Level 2 — Frontend)** — User-facing UI for evaluation history and triggers
   - Added evaluation API methods to `apps/web/src/lib/api-client.ts` (`list`, `get`, `trigger`, `listArtifacts`, `getArtifactUrl`)
   - Created `AgentEvaluations` component with collapsible `<details>` section, run list with status/scores, inline scorecard, findings table, and artifact downloads
@@ -802,11 +858,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - UX improvement - agent capability filter (intelligence/hybrid) for trading agents
 
 ## 0.0.1-2026.06.26-a
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - **Unified agent form (004-unified-agent-form)**: extracted shared `AgentFormBody` component and `AgentFormState` type consumed by both create and edit flows. Field changes happen once; both screens get them. Differences injected as `ReactNode` slots (modelSlot, skillsSlot, tradingBindingSlot, tradingSetupSlot, capabilityWarning, nameAutoHint) — no mode flags in the body. Includes `agentToFormState()` converter with runtime-validated union literal fields and `intentToFormState()` for the create shell. Added UAT cases AG-E01 through AG-E10 for the unified edit form.
 
@@ -815,6 +875,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## 0.0.1-2026.06.25-a
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - Improve agent creation UX
 - Improve bot management UX
@@ -826,6 +888,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## 0.0.1-2026.06.24-a
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - **Crash telemetry**: agent runtime now writes crash records to `/workspace/crash.log` on `uncaughtException`/`unhandledRejection` with best-effort Redis publish. Includes heap usage, error stack, and agent/session IDs for post-mortem analysis.
 - **Runtime block visibility in `get_risk_limits`**: the tool now returns a `runtime` object showing current state against limits — open position count/blocked, daily P&L vs loss limit, and drawdown placeholder. Eliminates the broken "call get_risk_limits → submit → rejected → call get_analytics" pattern.
@@ -867,6 +931,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## 0.0.1-2026.06.22-a
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - **Agent tool schema discovery** (`get_schema`): agents can now fetch JSON Schema Draft 7 definitions for config parameters and tool sub-schemas at runtime. A domain-level registry (`packages/domain/src/tool-schemas.ts`) provides versioned schemas with examples for `update_own_config.*`, `create_bot.config.*`, and `adjust_bot_config.config.*`. Call `get_schema("all")` to list available schemas, then `get_schema("<name>")` to fetch a specific one.
 - **Instrument lookup tool** (`find_instrument`): resolves trading symbols to instrument IDs across venues. Accepts an optional `venue` filter (e.g. `"jupiter"` for Solana tokens, `"hyperliquid"` for perpetuals). Backed by a new `InstrumentRepository` with LIKE-based search across symbol, base, and ID columns.
@@ -917,6 +983,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - `extractStrategyFromConfig()` domain helper — type-safe strategy extraction from bot configs
 - `decisionMode` and `executionModes` filters on analytics endpoints with Zod enum validation
 - Agent tool schemas for `create_bot` and `adjust_bot_config` (`BotConfigInputSchema`, `StrategyInputSchema`)
@@ -945,6 +1013,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
+
 - Deepseek models
 
 ### Fixed
@@ -964,6 +1034,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## 0.0.1-2026.06.19-a
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - Discovery diversity (2026-06-18): removes the hardcoded 20-token ceiling from `discoverTokens`. `marketData.discovery.maxResults` (default 50) now controls the limit; agents may request 1–100 per call. GeckoTerminal page-2 support added (opt-in via `geckoTerminalExtraPages: 1`, off by default) expands the raw candidate pool by ~35 tokens per run. Anti-staleness Redis tracking (`antistalenessCooldownHours: 4`, `antistalenessTokenTtlHours: 24`) reorders fresh tokens to the top of each discovery run, preventing the same narrow set from dominating every tick. Redis failure is fail-soft: discovery completes normally with the standard sorted list. See `docs/features/2026/06/18/001-discovery-diversity/`.
 
@@ -1053,6 +1125,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Hyperliquid venue accounts (2026-06-09): account creation now caches the unauthenticated probe result instead of overstating authenticated/live capability when a credential is merely linked
 
 ### Added
+
+- **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
 
 - Agent evolution epics (2026-06-08):
   - **Epic A — Cost reduction:** prompt reordering for cache hits; regime gate; context-hash gate; scout/judge split with cost-profile budgets; incremental context diffing
