@@ -324,7 +324,9 @@ export class AgentMessageBroker {
         case AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED:
           // Billing events trigger user notification
           if (envelope.payload.reason === 'billing.soft_limit_reached'
-              || envelope.payload.reason === 'billing.limit_exceeded') {
+              || envelope.payload.reason === 'billing.limit_exceeded'
+              || envelope.payload.reason === 'billing.insufficient_funds'
+              || envelope.payload.reason === 'billing.account_suspended') {
             await this.handleBillingNotification(effectiveAgentId, envelope.payload);
           }
           // Audit-only otherwise — persisted with payload, no other business side effects.
@@ -1263,6 +1265,8 @@ export class AgentMessageBroker {
     const DEDUP_STATUS: Record<string, string> = {
       'billing.soft_limit_reached': 'soft_limited',
       'billing.limit_exceeded': 'hard_limited',
+      'billing.insufficient_funds': 'no_available_credit',
+      'billing.account_suspended': 'suspended',
     };
     const dedupStatus = DEDUP_STATUS[reason];
     if (!dedupStatus) {
@@ -1277,10 +1281,16 @@ export class AgentMessageBroker {
     }
 
     // 3. Build the message text
-    const isHard = reason === 'billing.limit_exceeded';
-    const message = isHard
-      ? this.buildHardLimitMessage(agent.name, openPositions)
-      : this.buildSoftLimitMessage(agent.name);
+    const isHard = reason === 'billing.limit_exceeded'
+      || reason === 'billing.insufficient_funds'
+      || reason === 'billing.account_suspended';
+    const message = reason === 'billing.insufficient_funds'
+      ? this.buildInsufficientFundsMessage(agent.name)
+      : reason === 'billing.account_suspended'
+        ? this.buildAccountSuspendedMessage(agent.name)
+        : isHard
+          ? this.buildHardLimitMessage(agent.name, openPositions)
+          : this.buildSoftLimitMessage(agent.name);
 
     let anyDelivered = false;
 
@@ -1300,9 +1310,13 @@ export class AgentMessageBroker {
     if (this.emailClient) {
       const recipientEmail = await this.agentRepo.getUserEmailByAgentId(agentId);
       if (recipientEmail) {
-        const emailContent = isHard
-          ? this.buildHardLimitEmailContent(agent.name, openPositions)
-          : this.buildSoftLimitEmailContent(agent.name);
+        const emailContent = reason === 'billing.insufficient_funds'
+          ? this.buildInsufficientFundsEmailContent(agent.name)
+          : reason === 'billing.account_suspended'
+            ? this.buildAccountSuspendedEmailContent(agent.name)
+            : isHard
+              ? this.buildHardLimitEmailContent(agent.name, openPositions)
+              : this.buildSoftLimitEmailContent(agent.name);
         const rendered = renderEmail({
           ...emailContent,
           ...(this.brandImageUrl ? { brandImageUrl: this.brandImageUrl } : {}),
@@ -1383,6 +1397,62 @@ export class AgentMessageBroker {
         'Your agent is still running and trading normally. No behavior has changed.',
         '',
         'To raise or remove the cap, visit <strong>Billing → Spend Controls</strong>.',
+      ].join('\n'),
+      footerNote: 'This is an automated notification from your agent platform.',
+    };
+  }
+
+  /** Build the insufficient-funds notification message (HTML for Telegram). */
+  private buildInsufficientFundsMessage(agentName: string): string {
+    return [
+      `⚠️ Agent "<b>${escapeHtml(agentName)}</b>" has stopped — insufficient billing credit.`,
+      '',
+      'No further LLM calls will be made until you add credit to your account.',
+      '',
+      'Visit Billing → Spend Controls to add credit and resume your agent.',
+    ].join('\n');
+  }
+
+  /** Build the account-suspended notification message (HTML for Telegram). */
+  private buildAccountSuspendedMessage(agentName: string): string {
+    return [
+      `🚫 Agent "<b>${escapeHtml(agentName)}</b>" has stopped — account suspended.`,
+      '',
+      'No further LLM calls will be made until your account is reactivated.',
+      '',
+      'Please contact support or visit Billing to resolve your account status.',
+    ].join('\n');
+  }
+
+  /** Build branded email content for insufficient-funds notification. */
+  private buildInsufficientFundsEmailContent(agentName: string) {
+    return {
+      subject: `⚠️ ${agentName} stopped — insufficient billing credit`,
+      preheader: 'Your agent needs credit to resume',
+      title: 'Agent Stopped',
+      body: [
+        `Agent <strong>${escapeHtml(agentName)}</strong> has stopped because of insufficient billing credit.`,
+        '',
+        'No further LLM calls will be made until you add credit to your account.',
+        '',
+        'Visit <strong>Billing → Spend Controls</strong> to add credit and resume your agent.',
+      ].join('\n'),
+      footerNote: 'This is an automated notification from your agent platform.',
+    };
+  }
+
+  /** Build branded email content for account-suspended notification. */
+  private buildAccountSuspendedEmailContent(agentName: string) {
+    return {
+      subject: `🚫 ${agentName} stopped — account suspended`,
+      preheader: 'Your account has been suspended',
+      title: 'Agent Stopped',
+      body: [
+        `Agent <strong>${escapeHtml(agentName)}</strong> has stopped because your account is suspended.`,
+        '',
+        'No further LLM calls will be made until your account is reactivated.',
+        '',
+        'Please contact support or visit <strong>Billing</strong> to resolve your account status.',
       ].join('\n'),
       footerNote: 'This is an automated notification from your agent platform.',
     };

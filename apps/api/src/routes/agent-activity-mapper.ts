@@ -170,6 +170,7 @@ const MESSAGE_CLASSIFICATIONS: Record<string, ActivityClassification> = {
           'billing.limit_exceeded': 'Daily spend limit reached — top up your account to resume.',
           'billing.top_up_required': 'Usage limit reached — top-up required before agent can start.',
           'billing.account_suspended': 'Account suspended — agent session start blocked.',
+          'billing.insufficient_funds': 'Insufficient billing credit — add credit to your account to continue.',
         };
         const mapped = codeMessages[p['code']];
         if (mapped) return mapped;
