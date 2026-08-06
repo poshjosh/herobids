@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Guided Setup Gmail resume after OAuth:** The post-OAuth resume invocation now carries an explicit resume-event channel (`connection_linked` / `connection_form_cancelled`) rendered as a transient prompt block, plus a transient user-like continuation message, so the model continues the agent-creation flow deterministically instead of emitting the generic "How can I help you further?" fallback. The empty-content fallback is now resume-aware, `buildSystemPrompt` guides resume-after-connection behavior, and `summary.preset` is persisted from quick-reply selections (whitelisted) for resume context. Idempotency (`processedActionIds`) is preserved. See `docs/features/2026/08/06/001-guided-setup-gmail-resume-after-oauth/001-plan.md`.
+
 ## v0.0.44 - 2026-08-05
 
 ### Fixed
