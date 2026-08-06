@@ -750,3 +750,84 @@ describe('POST /chat/threads/:id/actions/:actionId', () => {
     expect(systemMessage.content).toContain('connection_linked');
   });
 });
+
+// ── POST /chat/threads/:id/messages — preset persistence ────────────────────
+
+describe('POST /chat/threads/:id/messages — preset persistence', () => {
+  async function buildAppWithThread(overrides: Partial<Record<string, unknown>> = {}) {
+    const { db, state } = buildMockDb(overrides);
+    const app = Fastify({ logger: false });
+    decorateWithAuth(app);
+    await chatRoutes(app, db, LLM_CONFIG, EMPTY_PROVIDERS_YAML, {} as Redis);
+    await app.ready();
+    return { app, db, state };
+  }
+
+  function mockPlainResponse() {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Got it — let\'s set up your personal assistant.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+  }
+
+  function threadRow(metadata: Record<string, unknown>) {
+    return [{
+      id: 'thread-1',
+      userId: TEST_USER_ID,
+      title: 'Guided Setup',
+      metadata,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }];
+  }
+
+  it('persists summary.preset when the user selects a known quick-reply preset', async () => {
+    const { app, state } = await buildAppWithThread({
+      threadRows: threadRow({ summary: { step: 'conversation' } }),
+      messageRows: [],
+    });
+
+    mockPlainResponse();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'preset:personal-assistant' },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const updateSet = state.updateSets[0] as Record<string, unknown>;
+    const metadata = updateSet['metadata'] as { summary?: { preset?: string } };
+    expect(metadata.summary?.preset).toBe('personal-assistant');
+  });
+
+  it('does not persist a preset when free text merely mentions a preset token', async () => {
+    const { app, state } = await buildAppWithThread({
+      threadRows: threadRow({ summary: { step: 'conversation' } }),
+      messageRows: [],
+    });
+
+    mockPlainResponse();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'I don\'t want the preset:custom option' },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const updateSet = state.updateSets[0] as Record<string, unknown>;
+    const metadata = updateSet['metadata'] as { summary?: { preset?: string } };
+    expect(metadata.summary?.preset).toBeUndefined();
+  });
+});

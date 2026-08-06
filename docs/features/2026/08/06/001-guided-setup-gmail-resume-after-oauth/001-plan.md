@@ -77,7 +77,7 @@ As a result, the model can legitimately produce an empty or bland continuation, 
 
 ## Implementation Steps
 
-### Step 1: Add an explicit resume-event prompt channel to `invokeOnboardingLlm` — **PENDING**
+### Step 1: Add an explicit resume-event prompt channel to `invokeOnboardingLlm` — **DONE**
 
 Extend `invokeOnboardingLlm(...)` in `apps/api/src/routes/chat.ts` to accept an optional resume-event input, for example:
 
@@ -100,7 +100,7 @@ For cancellation:
 
 > Resume event: The user dismissed the provider connection form during Guided Setup. Acknowledge that and offer alternatives. Do not immediately request the same form again.
 
-### Step 2: Ensure the resumed prompt ends with actionable continuation context — **PENDING**
+### Step 2: Ensure the resumed prompt ends with actionable continuation context — **DONE**
 
 Do not rely only on replaying prior persisted messages. When resuming after OAuth or form completion, append a transient user-like event message or equivalent final instruction so the model is responding to a fresh event, not to its own earlier assistant text.
 
@@ -111,7 +111,7 @@ Two acceptable implementations:
 
 Whichever shape is chosen, keep it out of persisted message history.
 
-### Step 3: Pass the resume event from the action-result endpoint — **PENDING**
+### Step 3: Pass the resume event from the action-result endpoint — **DONE**
 
 In `POST /chat/threads/:id/actions/:actionId`, after validating and updating metadata:
 
@@ -120,7 +120,7 @@ In `POST /chat/threads/:id/actions/:actionId`, after validating and updating met
 
 If practical, derive `providerHint` from the linked connection row so the event can say “Gmail” rather than a raw connection ID.
 
-### Step 4: Strengthen structured setup state used on resume — **PENDING**
+### Step 4: Strengthen structured setup state used on resume — **DONE**
 
 The resumed model call should not have to reconstruct the entire setup intent from plain-text history.
 
@@ -135,7 +135,7 @@ At minimum for this fix, ensure the prompt presented during resume clearly refle
 - current step (`connection_linked`)
 - available linked connection(s)
 
-### Step 5: Make the generic fallback resume-aware — **PENDING**
+### Step 5: Make the generic fallback resume-aware — **DONE**
 
 The current fallback in `invokeOnboardingLlm(...)` is too generic for resumed onboarding turns:
 
@@ -153,7 +153,7 @@ Replace this with a resume-aware fallback path:
 
 The fallback should still be deterministic and safe even if the model returns empty content.
 
-### Step 6: Tighten the system prompt for resumed turns — **PENDING**
+### Step 6: Tighten the system prompt for resumed turns — **DONE**
 
 Update `buildSystemPrompt()` so the prompt explicitly tells the model how to behave after resume events, not just after summary `step` values.
 
@@ -163,7 +163,7 @@ Example addition:
 
 Also specify that for personal-assistant email-management flows, once Gmail is linked, the assistant should proceed to the next missing setup field or summarize for creation rather than switching to generic conversation.
 
-### Step 7: Keep resume loop-safe and idempotent — **PENDING**
+### Step 7: Keep resume loop-safe and idempotent — **DONE**
 
 Preserve the existing `processedActionIds` idempotency backstop and ensure the new resume-event prompt does not cause repeat form emission.
 
@@ -173,7 +173,7 @@ In particular:
 - a cancellation must not instantly re-open the same form
 - duplicate OAuth returns must not generate duplicate assistant messages
 
-### Step 8: Consider a narrow local abstraction instead of over-generalizing — **PENDING**
+### Step 8: Consider a narrow local abstraction instead of over-generalizing — **DONE**
 
 If the code starts to branch awkwardly around success/cancellation resume cases, extract a small local helper in `apps/api/src/routes/chat.ts`, such as:
 
@@ -229,8 +229,8 @@ None at the moment. The feature target is clear enough to draft and execute this
 Issues from the code review of the implemented changes (no CRITICAL/HIGH issues were found). Grouped by item.
 
 ### [Step 4 — Structured setup state / preset persistence]
-- **MEDIUM (M1):** `detectPresetFromContent` (`apps/api/src/routes/chat.ts:382`) matches any `preset:xxx` token in free text, not just genuine quick-reply selections. A user message like "I don't want the preset:custom option" could persist a false `summary.preset` that misleads resumed reasoning. Whitelist against the known preset set (`trading`, `personal-assistant`, `custom`) and only persist on a genuine quick-reply selection.
-- **MEDIUM (M2):** No direct unit test for `detectPresetFromContent` extraction/persistence. The existing test only verifies a preset already in metadata survives into the system prompt; it does not test that a `preset:personal-assistant` user message persists `summary.preset`, nor the negative free-text case. Add positive + negative unit tests.
+- **MEDIUM (M1):** ~~`detectPresetFromContent` matches any `preset:xxx` token in free text.~~ **RESOLVED** — `detectPresetFromContent` now whitelists known presets (`trading`, `personal-assistant`, `custom`) and only persists on a genuine short quick-reply selection (exactly one known token, ≤30 chars).
+- **MEDIUM (M2):** ~~No direct unit test for `detectPresetFromContent` extraction/persistence.~~ **RESOLVED** — added positive (`preset:personal-assistant` persists `summary.preset`) and negative (free text mentioning `preset:custom` does not persist) unit tests.
 
 ### [Step 5 — Resume-aware fallback]
 - **LOW (L1):** `buildResumeFallback` (`apps/api/src/routes/chat.ts:208`) renders the provider hint lowercase (e.g. "Your gmail connection is linked and ready."). Cosmetic but user-facing on the happy path; consider capitalizing the provider name or rephrasing to avoid the interpolated provider.
@@ -239,7 +239,8 @@ Issues from the code review of the implemented changes (no CRITICAL/HIGH issues 
 - **LOW (L2):** `OnboardingResumeEvent.actionContext` is populated but never read. Either use it or drop it (KISS / avoid over-engineering).
 
 ### [Plan document]
-- **LOW (L3):** Step status markers in this plan still read `PENDING`; update to reflect completion.
+- **LOW (L3):** ~~Step status markers still read `PENDING`.~~ **RESOLVED** — all steps marked `DONE`.
 
 ### [Tests]
 - **LOW (L4):** Test assertions couple to exact prompt wording (e.g. `toContain('linked successfully during Guided Setup')`), which is brittle to prompt copy edits. Acceptable for this scope.
+- **MEDIUM (M5):** The plan's Testing section lists 3 E2E tests (OAuth return continuation, page-reload no-duplicate, cancellation loop-safety) that are not implemented as browser E2E journeys. **DEFERRED** — E2E OAuth tests require a real provider and are impractical in CI; unit coverage is strong. Documented here as a known deferral rather than silently dropped.

@@ -378,13 +378,27 @@ function mapExecutionMode(requestedMode: string | undefined): { mode: 'paper' | 
 /**
  * Detect a preset selection from a user message (e.g. a quick-reply choice like
  * `preset:personal-assistant`). Returns undefined when no preset is determinable.
+ *
+ * Only a genuine quick-reply selection persists a preset: the message must be
+ * short and contain exactly one known preset token. Free text that merely
+ * mentions a preset token in passing (e.g. "I don't want the preset:custom
+ * option") must not persist a preset.
  */
+const KNOWN_PRESETS: string[] = ['trading', 'personal-assistant', 'custom'];
+
+// A quick-reply selection is a short message naming exactly one known preset.
+// Longer free text that mentions a preset token in passing is not a selection.
+const MAX_PRESET_SELECTION_LENGTH = 30;
+
 function detectPresetFromContent(content: string): string | undefined {
-  const match = /preset:([a-z-]+)/.exec(content);
-  if (!match) return undefined;
-  const preset = match[1];
-  if (!preset) return undefined;
-  return preset;
+  const trimmed = content.trim();
+  if (trimmed.length > MAX_PRESET_SELECTION_LENGTH) return undefined;
+  const matches = trimmed.match(/preset:([a-z-]+)/g) ?? [];
+  const known = matches
+    .map((token) => token.slice('preset:'.length))
+    .filter((preset) => KNOWN_PRESETS.includes(preset));
+  if (known.length !== 1) return undefined;
+  return known[0];
 }
 
 /**
