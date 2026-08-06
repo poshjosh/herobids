@@ -261,7 +261,7 @@ Tests:
 - Without a key, requests target the free public endpoint unchanged (no
   regression for local dev).
 
-### Step 2 (Phase 1) — Tighten network filtering in shared discovery [PENDING]
+### Step 2 (Phase 1) — Tighten network filtering in shared discovery [DONE]
 
 Files:
 

@@ -41,6 +41,13 @@ function tokenKey(token: DiscoveredToken): string {
   return `${token.network}:${token.address}`;
 }
 
+function filterByRequestedNetworks(
+  tokens: DiscoveredToken[],
+  normalizedNetworks: ReadonlySet<string>,
+): DiscoveredToken[] {
+  return tokens.filter((token) => normalizedNetworks.has(token.network.toLowerCase()));
+}
+
 function passesDiscoveryThreshold(token: DiscoveredToken, minLiquidityUsd: number): boolean {
   // minLiquidityUsd is a hard floor for regular discovery sources.
   // CMC-only tokens can still enter when the caller explicitly uses a zero floor.
@@ -126,7 +133,8 @@ function mergeDiscoveredTokens(tokens: DiscoveredToken[]): DiscoveredToken[] {
 }
 
 export async function discoverTokens(config: DiscoveryConfig): Promise<DiscoveredToken[]> {
-  const networks = config.networks.length > 0 ? config.networks : ['solana', 'base'];
+  const networks = (config.networks.length > 0 ? config.networks : ['solana', 'base']).map((n) => n.toLowerCase());
+  const normalizedNetworks = new Set(networks);
   const maxResults = config.maxResults ?? 20;
   const minLiquidityUsd = config.minLiquidityUsd ?? 10_000;
 
@@ -179,7 +187,13 @@ export async function discoverTokens(config: DiscoveryConfig): Promise<Discovere
     throw rejected?.reason instanceof Error ? rejected.reason : new Error('No discovery providers returned data');
   }
 
-  const merged = mergeDiscoveredTokens(fulfilled);
+  // Post-fanout network filter — DexScreener's global vectors can return tokens
+  // from any network, so we must drop tokens whose network is not in the
+  // requested set before merging (e.g. a base-only discovery call should not
+  // include Solana tokens that DexScreener returned).
+  const networkFiltered = filterByRequestedNetworks(fulfilled, normalizedNetworks);
+
+  const merged = mergeDiscoveredTokens(networkFiltered);
 
   // Enrich DexScreener boost/profile tokens that have no liquidity yet.
   // This runs before the threshold filter so enriched tokens can enter the pool.
