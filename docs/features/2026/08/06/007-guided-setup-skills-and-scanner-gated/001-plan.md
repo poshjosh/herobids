@@ -2,7 +2,7 @@
 
 **Feature:** Guided Setup — skill assignment and cost-aware trading defaults (007)
 **Date:** 2026-08-06
-**Status:** Draft
+**Status:** Implemented ✅
 
 ## Summary
 
@@ -327,12 +327,14 @@ Add test cases for:
 | `create_agent` with invalid `skillIds` | Graceful handling (skip unknown IDs, don't crash) |
 | `filterTrades` ignored for personal-assistant | `capabilityMode` stays `'intelligence'` |
 
-### Step 7: Lint & verify — PENDING
+### Step 7: Lint & verify — DONE ✅
 
 ```bash
 pnpm lint
 pnpm --filter @herobids/api run test
 ```
+
+**Results:** `pnpm lint` passes (0 errors). All 995 tests pass (53 test files), 250 skipped (functional tests requiring DB).
 
 ## Open Questions
 
