@@ -66,7 +66,7 @@ export function RootLayout() {
   );
 }
 
-function LoadingSpinner() {
+export function LoadingSpinner() {
   return (
     <div
       style={{
