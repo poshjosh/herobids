@@ -14,6 +14,7 @@ Define the exact semantics of soft-cap and hard-cap enforcement in the agent run
 |-----|----------------------|--------------|------------|
 | **Soft cap** | **None** — agent continues reasoning and trading as normal | Yes — warning sent via Telegram and/or email | Yes — user may raise/remove cap, top up, or ignore |
 | **Hard cap** | **Tick stop** — agent halts on the next tick; no further LLM calls | Yes — stop notification sent with open-position context | Yes — user may top up, raise cap, or wait for next billing period |
+| **Zero balance / no available credit** | **Tick stop** — agent halts before any paid LLM call (independent of cap-derived status) | Yes — stop notification sent | Yes — user may add credit |
 
 ### Soft cap: warn, do not mutate
 
@@ -43,6 +44,52 @@ It must not:
 - Change the agent's config
 - Prevent the user from raising the cap or topping up
 
+## Zero-Balance (No Available Credit) Enforcement
+
+Zero-balance enforcement is independent from cap-derived status. It blocks paid runtime work when `availableMicrousd <= 0`, even if the account status is still `active`.
+
+**Rule**: `availableMicrousd = balanceMicrousd - reservedMicrousd`. When this value is `<= 0`, all paid LLM dispatch is blocked regardless of cap status.
+
+This uses the shared `canSpendNow()` guard in `packages/db/src/usage-billing-repository.ts`, which checks both account status AND available credit in a single call. The guard returns:
+
+> **Fail-open**: The service layer (`UsageBillingService.canSpendNow()`) fails open on infrastructure errors — billing infra issues never block agent operations.
+
+```typescript
+interface CanSpendNowResult {
+  canSpend: boolean;
+  availableMicrousd: number;
+  status: AccountStatus;        // 'active' | 'soft_limited' | 'hard_limited' | 'suspended'
+  reason: 'ok' | 'no_available_credit' | 'hard_limited' | 'suspended';
+}
+```
+
+### Enforcement points
+
+`canSpendNow()` is applied at every point where the agent would incur a paid LLM cost:
+
+| Enforcement point | Location | Behavior when blocked |
+|-------------------|----------|----------------------|
+| Session start | `AgentSessionManager` (after reconciliation) | Session launch is blocked; agent does not begin reasoning. Emits `guardrail_triggered` (not `TICK_SKIPPED`) with the appropriate reason code. |
+| Scout/Judge LLM dispatch | `agent.ts` scout loop (before scout; judge is skipped if blocked) | Tick skipped before any LLM call |
+| Hybrid evaluator LLM dispatch | `agent.ts` hybrid path | Tick skipped before any LLM call |
+
+### Reason code
+
+Blocked operations emit `TICK_SKIPPED` with reason `billing.insufficient_funds` (see activity events table below).
+
+This is consistent with assessment request reservations, which already check available credit before reserving spend.
+
+### Inactivity when blocked
+
+An agent blocked by zero-balance enforcement remains in its current status. It does not:
+
+- Close or modify open positions
+- Submit orders
+- Change its config or tick schedule
+- Transition to a different account status
+
+The agent resumes normally on the next tick once the user adds credit and `availableMicrousd > 0`.
+
 ## Open Positions at Hard Cap
 
 When the hard cap stops an agent with open positions, those positions become unmanaged. This is a user-visible event, not a silent side effect.
@@ -70,7 +117,7 @@ The distinction matters because constraints that change how an agent trades — 
 
 In `apps/worker/src/agent.ts`, billing checks run before any LLM dispatch:
 
-1. `isHardLimited()` — if true, skip the tick entirely (emit event, notify user, return)
+1. `canSpendNow()` — if `canSpend === false`, skip the tick entirely (emit `TICK_SKIPPED` with the appropriate reason code, notify user, return). This single guard checks both account status (`hard_limited` / `suspended`) AND available credit (`balanceMicrousd - reservedMicrousd <= 0`), replacing the previous separate `isHardLimited()` check.
 2. `isSoftLimited()` — if true, emit event and notify user; **do not alter the tick flow**
 
 ### Activity events
@@ -78,6 +125,8 @@ In `apps/worker/src/agent.ts`, billing checks run before any LLM dispatch:
 | Event | Reason code | When |
 |-------|------------|------|
 | `TICK_SKIPPED` | `billing.limit_exceeded` | Hard cap reached — tick halted |
+| `TICK_SKIPPED` | `billing.insufficient_funds` | No available credit (`balanceMicrousd - reservedMicrousd <= 0`) — tick halted |
+| `TICK_SKIPPED` | `billing.account_suspended` | Account suspended — tick halted |
 | `TICK_SKIPPED` | `billing.soft_limit_reached` | Soft cap reached — notification only; tick proceeds normally |
 
 ### User notification contract
@@ -103,6 +152,8 @@ Notifications are dispatched through the alert delivery system (Telegram, email,
 | Hard cap | Plan config (`plans.<id>.usage.hardCapCents`) → billing account | Yes — Billing page |
 
 If neither the plan nor the user sets a cap, the value is `null` and no enforcement occurs.
+
+Zero-balance enforcement is always active — it requires no config toggle. The `canSpendNow()` guard runs unconditionally before any paid LLM dispatch, regardless of cap configuration. Available credit is derived from the billing period's `balanceMicrousd` and `reservedMicrousd` columns, which are always present.
 
 ## Testing
 
