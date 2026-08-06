@@ -1,4 +1,3 @@
-
 For background read these documents:
 
 - docs/tech/architecture/market-data.md
@@ -12,4 +11,12 @@ Then read these documents:
 - docs/bug-reports/2026/08/05/001-scanner-gated-agents-stale-scan-blocks-trading.md
 
 - docs/bug-reports/2026/08/05/002-investigation-t1inch-base-discovery.md
+
+---
+
+Draft a plan to fix the base data problem.
+
+Save the plan to docs/features/2026/08/06/001-<feature-title>/001-plan.md
+
+Ask clarifying questions if any.
 
