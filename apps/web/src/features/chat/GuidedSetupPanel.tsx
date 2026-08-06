@@ -1,9 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useGuidedSetup } from './useGuidedSetup.js';
 import { GuidedSetupThread } from './GuidedSetupThread.js';
 import { loadGuidedSetupOAuthDraft, clearGuidedSetupOAuthDraft } from './guidedSetupOAuthDraft.js';
+import { canUseGuidedSetup } from './canUseGuidedSetup.js';
+import type { BillingGateResult } from './canUseGuidedSetup.js';
+import * as api from '../../lib/api-client.js';
 
 interface GuidedSetupPanelProps {
   /** Called when an agent is successfully created */
@@ -13,6 +16,8 @@ interface GuidedSetupPanelProps {
    * can trigger a fresh guided thread from outside the panel.
    */
   startOverRef?: MutableRefObject<(() => void) | null>;
+  /** Called when the user chooses to switch to the form-based creation flow */
+  onSwitchToForm?: () => void;
 }
 
 /**
@@ -20,22 +25,28 @@ interface GuidedSetupPanelProps {
  *
  * v1 scope: Single-purpose — guide users through the create-agent workflow.
  */
-export function GuidedSetupPanel({ onAgentCreated, startOverRef }: GuidedSetupPanelProps) {
+export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm }: GuidedSetupPanelProps) {
   const {
     thread,
     messages,
     loading,
     error,
     sending,
+    billingBlocked,
     sendMessage,
     submitActionResult,
     loadThread,
     startOver,
+    clearBillingBlocked,
   } = useGuidedSetup();
 
   const location = useLocation();
   const navigate = useNavigate();
   const handledOauthReturnRef = useRef(false);
+
+  // Frontend billing gate: fetch usage summary on mount to check credit
+  const [billingCheckDone, setBillingCheckDone] = useState(false);
+  const [preflightBillingBlocked, setPreflightBillingBlocked] = useState<BillingGateResult | null>(null);
 
   // Expose startOver to the parent so the header refresh icon can reset the thread.
   useEffect(() => {
@@ -81,6 +92,27 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef }: GuidedSetupPa
     navigate(nextSearch ? `/agents/new?${nextSearch}` : '/agents/new', { replace: true });
   }, [location.search, navigate, loadThread, submitActionResult]);
 
+  // Check billing status on mount — frontend gate is approximate, backend 402 is authoritative
+  useEffect(() => {
+    let cancelled = false;
+    api.billing.usageSummary().then((summary) => {
+      if (cancelled) return;
+      const result = canUseGuidedSetup(summary);
+      if (result.blocked) {
+        setPreflightBillingBlocked(result);
+      }
+      setBillingCheckDone(true);
+    }).catch(() => {
+      // If billing check fails (network error, etc.), allow through — the backend guard is authoritative
+      if (!cancelled) setBillingCheckDone(true);
+    });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  // Merge billing blocked sources: preflight check wins over runtime 402
+  const effectiveBillingBlocked = preflightBillingBlocked ?? billingBlocked;
+
   const handleQuickReply = (value: string) => {
     // Treat quick-reply selections as user messages
     sendMessage(value);
@@ -89,6 +121,37 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef }: GuidedSetupPa
   const handleFormSubmit = (actionId: string, result: unknown) => {
     submitActionResult(actionId, result);
   };
+
+  // Render billing gate when blocked (either preflight check or runtime 402)
+  if (effectiveBillingBlocked?.blocked) {
+    return (
+      <BillingGate
+        reason={effectiveBillingBlocked.reason}
+        message={effectiveBillingBlocked.message}
+        onSwitchToForm={onSwitchToForm}
+        clearBillingBlocked={clearBillingBlocked}
+      />
+    );
+  }
+
+  // If billing check not done yet, show loading
+  if (!billingCheckDone) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100%',
+          color: 'var(--color-text-muted)',
+          fontSize: 15,
+        }}
+      >
+        <span style={{ animation: 'pulse 1.5s infinite' }}>●</span>
+        &nbsp;Checking account...
+      </div>
+    );
+  }
 
   // Show loading state
   if (loading && messages.length === 0) {
@@ -166,6 +229,117 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef }: GuidedSetupPa
         threadId={thread?.id}
         sending={sending}
       />
+    </div>
+  );
+}
+
+/** Billing gate rendered when user lacks available credit for Guided Setup. */
+function BillingGate({
+  reason,
+  message,
+  onSwitchToForm,
+  clearBillingBlocked,
+}: {
+  reason: BillingGateResult['reason'];
+  message: string;
+  onSwitchToForm?: () => void;
+  clearBillingBlocked?: () => void;
+}) {
+  const navigate = useNavigate();
+  const isSuspended = reason === 'suspended';
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100%',
+        gap: 20,
+        padding: 32,
+      }}
+    >
+      <div style={{ fontSize: 48 }}>💳</div>
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 600,
+          color: 'var(--color-text)',
+          textAlign: 'center',
+        }}
+      >
+        Credit Required
+      </div>
+      <div
+        style={{
+          fontSize: 14,
+          color: 'var(--color-text-muted)',
+          textAlign: 'center',
+          maxWidth: 320,
+        }}
+      >
+        {message}
+      </div>
+      <div style={{ display: 'flex', gap: 12 }}>
+        {/* Adding credit is irrelevant when suspended — contact support instead */}
+        {!isSuspended && (
+          <button
+            onClick={() => navigate('/billing')}
+            style={{
+              padding: '10px 24px',
+              borderRadius: 8,
+              border: 'none',
+              backgroundColor: 'var(--color-primary)',
+              color: 'var(--color-on-primary)',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Add Credit
+          </button>
+        )}
+        {onSwitchToForm && (
+          <button
+            onClick={() => onSwitchToForm()}
+            style={{
+              padding: '10px 24px',
+              borderRadius: 8,
+              border: '1px solid var(--color-border)',
+              backgroundColor: 'transparent',
+              color: 'var(--color-text)',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Use standard form
+          </button>
+        )}
+        {clearBillingBlocked && (
+          <button
+            onClick={() => clearBillingBlocked()}
+            style={{
+              padding: '10px 24px',
+              borderRadius: 8,
+              border: '1px solid var(--color-border)',
+              backgroundColor: 'transparent',
+              color: 'var(--color-text)',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Try Again
+          </button>
+        )}
+      </div>
+      {!isSuspended && (
+        <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+          After adding credit, click Try Again to continue.
+        </div>
+      )}
     </div>
   );
 }

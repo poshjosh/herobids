@@ -80,6 +80,7 @@ export function CreateAgentPage() {
         <GuidedSetupPanel
           startOverRef={guidedStartOverRef}
           onAgentCreated={handleCreated}
+          onSwitchToForm={() => setMode('form')}
         />
       ) : (
         <CreateAgentFlow

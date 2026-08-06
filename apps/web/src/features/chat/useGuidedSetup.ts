@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { ChatMessage, ChatThread } from '../../lib/api-client.js';
 import * as api from '../../lib/api-client.js';
+import type { BillingGateResult } from './canUseGuidedSetup.js';
 
 export interface GuidedSetupState {
   thread: ChatThread | null;
@@ -8,6 +9,7 @@ export interface GuidedSetupState {
   loading: boolean;
   error: string | null;
   sending: boolean;
+  billingBlocked: BillingGateResult | null;
 }
 
 export function useGuidedSetup() {
@@ -17,6 +19,7 @@ export function useGuidedSetup() {
     loading: false,
     error: null,
     sending: false,
+    billingBlocked: null,
   });
 
   const threadIdRef = useRef<string | null>(null);
@@ -33,6 +36,7 @@ export function useGuidedSetup() {
         loading: false,
         error: null,
         sending: false,
+        billingBlocked: null,
       });
     } catch (err) {
       setState((s) => ({
@@ -55,6 +59,7 @@ export function useGuidedSetup() {
         loading: false,
         error: null,
         sending: false,
+        billingBlocked: null,
       });
     } catch (err) {
       setState((s) => ({
@@ -99,6 +104,19 @@ export function useGuidedSetup() {
         sending: false,
       }));
     } catch (err) {
+      if (err instanceof api.ApiError && err.code === 'billing.top_up_required') {
+        setState((s) => ({
+          ...s,
+          messages: s.messages.filter((m) => m.id !== optimisticMsg.id),
+          sending: false,
+          billingBlocked: {
+            blocked: true,
+            reason: (err.params?.reason as string) ?? 'no_available_credit',
+            message: err.message,
+          },
+        }));
+        return;
+      }
       setState((s) => ({
         ...s,
         messages: s.messages.filter((m) => m.id !== optimisticMsg.id),
@@ -124,6 +142,18 @@ export function useGuidedSetup() {
         sending: false,
       }));
     } catch (err) {
+      if (err instanceof api.ApiError && err.code === 'billing.top_up_required') {
+        setState((s) => ({
+          ...s,
+          sending: false,
+          billingBlocked: {
+            blocked: true,
+            reason: (err.params?.reason as string) ?? 'no_available_credit',
+            message: err.message,
+          },
+        }));
+        return;
+      }
       setState((s) => ({
         ...s,
         sending: false,
@@ -141,9 +171,15 @@ export function useGuidedSetup() {
       loading: false,
       error: null,
       sending: false,
+      billingBlocked: null,
     });
     initThread();
   }, [initThread]);
+
+  /** Clear billing blocked state (e.g. after user adds credit and returns) */
+  const clearBillingBlocked = useCallback(() => {
+    setState((s) => ({ ...s, billingBlocked: null }));
+  }, []);
 
   // Auto-initialize thread on mount
   const initializedRef = useRef(false);
@@ -160,5 +196,6 @@ export function useGuidedSetup() {
     submitActionResult,
     startOver,
     loadThread,
+    clearBillingBlocked,
   };
 }
