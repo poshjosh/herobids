@@ -793,4 +793,160 @@ describe('discoverSwapScannerCandidates', () => {
 
     expect(result).toHaveLength(1);
   });
+
+  // ── Base network regression tests (Phase 4+1+3 validation) ─────────────────
+
+  const baseUsdc = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+
+  /**
+   * Test (a): Regression — swap scanner obtains Base candidates when discovery
+   * returns both noisy Solana DexScreener results and valid Base pool-backed tokens.
+   * Validates the end-to-end pipeline after Phase 4 (supply) + Phase 1 (network filter).
+   */
+  it('filters out Solana tokens and returns only Base candidates when discovery returns mixed networks', async () => {
+    const logger = makeLogger();
+    const discovery = makeDiscovery({
+      discover: vi.fn().mockResolvedValue({
+        data: [
+          // Solana noise — should be filtered as incoherent_pool (network mismatch)
+          {
+            symbol: 'BONK',
+            network: 'solana',
+            address: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+            volume24hUsd: 5_000_000,
+            liquidityUsd: 1_000_000,
+            pool: {
+              network: 'solana',
+              poolAddress: 'sol-pool-bonk',
+              baseToken: { symbol: 'BONK', address: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263' },
+              quoteToken: { symbol: 'USDC', address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
+            },
+          },
+          // Valid Base pool-backed token
+          {
+            symbol: 'DEGEN',
+            network: 'base',
+            address: '0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed',
+            volume24hUsd: 1_200_000,
+            liquidityUsd: 300_000,
+            pool: {
+              network: 'base',
+              poolAddress: '0xpool-degen-base-001',
+              baseToken: { symbol: 'DEGEN', address: '0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed' },
+              quoteToken: { symbol: 'USDC', address: baseUsdc },
+            },
+          },
+        ],
+      }),
+    });
+
+    const result = await discoverSwapScannerCandidates({
+      ...baseParams,
+      venue: '1inch',
+      swapNetwork: 'base',
+      quoteAssetAddress: baseUsdc,
+      discovery,
+      logger,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!.symbol).toBe('DEGEN');
+    expect(result[0]!.swapExecutionIdentity?.network).toBe('base');
+    // Solana token should be warned as incoherent_pool
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasons: expect.arrayContaining(['incoherent_pool']),
+        token: 'BONK',
+        event: 'scanner.swap_candidate_skipped',
+      }),
+      expect.any(String),
+    );
+  });
+
+  /**
+   * Test (b): Reproduce-the-bug — with GeckoTerminal Base 429'd (empty discovery),
+   * the scanner logs an attributed empty result. Validates Phase 3 scanner attribution.
+   */
+  it('logs attributed swap_discovery_empty when Base discovery returns no tokens (simulated GeckoTerminal 429)', async () => {
+    const logger = makeLogger();
+    const discovery = makeDiscovery({
+      discover: vi.fn().mockResolvedValue({ data: [] }),
+    });
+
+    const result = await discoverSwapScannerCandidates({
+      ...baseParams,
+      venue: '1inch',
+      swapNetwork: 'base',
+      quoteAssetAddress: baseUsdc,
+      discovery,
+      logger,
+    });
+
+    expect(result).toEqual([]);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'scanner.swap_discovery_empty',
+        venue: '1inch',
+        network: 'base',
+        message: expect.stringContaining('provider supply failure'),
+      }),
+      expect.any(String),
+    );
+  });
+
+  /**
+   * Test (c): Positive path — with valid Base pool-backed tokens in discovery,
+   * the scanner obtains non-empty Base candidates.
+   */
+  it('returns non-empty Base candidates when discovery provides valid Base pool-backed tokens', async () => {
+    const logger = makeLogger();
+    const discovery = makeDiscovery({
+      discover: vi.fn().mockResolvedValue({
+        data: [
+          {
+            symbol: 'DEGEN',
+            network: 'base',
+            address: '0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed',
+            volume24hUsd: 1_200_000,
+            liquidityUsd: 300_000,
+            pool: {
+              network: 'base',
+              poolAddress: '0xpool-degen-base-001',
+              baseToken: { symbol: 'DEGEN', address: '0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed' },
+              quoteToken: { symbol: 'USDC', address: baseUsdc },
+            },
+          },
+          {
+            symbol: 'AERO',
+            network: 'base',
+            address: '0x940181a94A35A4569E4529A3CDfB74e38FD98631',
+            volume24hUsd: 3_500_000,
+            liquidityUsd: 800_000,
+            pool: {
+              network: 'base',
+              poolAddress: '0xpool-aero-base-002',
+              baseToken: { symbol: 'AERO', address: '0x940181a94A35A4569E4529A3CDfB74e38FD98631' },
+              quoteToken: { symbol: 'USDC', address: baseUsdc },
+            },
+          },
+        ],
+      }),
+    });
+
+    const result = await discoverSwapScannerCandidates({
+      ...baseParams,
+      venue: '1inch',
+      swapNetwork: 'base',
+      quoteAssetAddress: baseUsdc,
+      discovery,
+      logger,
+    });
+
+    expect(result).toHaveLength(2);
+    // Sorted by volume descending
+    expect(result[0]!.symbol).toBe('AERO');
+    expect(result[0]!.swapExecutionIdentity?.network).toBe('base');
+    expect(result[1]!.symbol).toBe('DEGEN');
+    expect(result[1]!.swapExecutionIdentity?.network).toBe('base');
+  });
 });

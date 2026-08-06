@@ -305,7 +305,7 @@ Tests:
 - Mixed fulfilled/rejected fanout still returns usable discovery results.
 - `scanner.swap_discovery_empty` carries provider-cause context.
 
-### Step 4 — Validate downstream consumers [PENDING]
+### Step 4 — Validate downstream consumers [DONE]
 
 Files:
 
