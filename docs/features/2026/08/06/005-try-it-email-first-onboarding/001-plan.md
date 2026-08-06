@@ -318,3 +318,51 @@ Add focused coverage for the new and changed behavior:
 6. **[DONE]** Landing page redesign — "Try it" button linking to `/try`, background image, tagline
 7. **[DONE]** Scoped responsive/mobile CSS — landing and `/try` only
 8. **[DONE]** Tests and UAT updates — cover redirect safety, `/try` flow, and post-auth outcomes
+
+---
+
+## Outstanding Issues
+
+### [Item 1] Wire `next` param through login-link flow
+
+**MEDIUM**
+- **DRY — duplicate sanitizer implementation**: `sanitizeNextParam` in `auth.ts` is structurally identical to `sanitizeFrontendReturnTo` in `connections-oauth.ts`. Extract shared `sanitizeFrontendPath(value, fallback)` utility.
+- **Stale `as` cast in `consumeLoginLinkToken`**: Cast omits `next?: string`. Should match declared return type.
+
+**LOW**
+- **Always stores `next`**: When `next` omitted, `/agents` default is stored in every token. Consider only storing when explicitly provided.
+- **Missing JSDoc**: `sanitizeNextParam` does not document path-normalization behavior (`..` segment resolution).
+
+### [Item 2] Auth callback sanitization update
+
+**MEDIUM**
+- **Silent catch when `window.location.origin` is `"null"`**: In sandboxed iframe contexts, `new URL(value, "null")` always throws. Add `console.warn` in dev mode for debuggability.
+
+**LOW**
+- **Duplicated logic with API-side `sanitizeNextParam`**: Drift risk if API rule changes. Extract to shared package if a third use appears.
+- **JSDoc accuracy nit**: Comment says "Matches the API-side sanitizeNextParam rule" but origin source differs (`config.frontendOrigin` vs `window.location.origin`).
+
+### [Item 4] New `/try` page
+
+**MEDIUM**
+- **`isResending` in `handleResend` deps but not read**: Unnecessary callback recreation on every phase toggle.
+- **`hasLinkBeenSent` never cleared**: If the component ever needed to reset (e.g., user changes email), the flag prevents returning to email input state.
+
+**LOW**
+- **No ARIA roles on chat messages**: Missing `role="log"` and `aria-label` attributes for assistive technologies.
+- **Hardcoded animation name `'pulse'`**: Fragile — depends on `@keyframes pulse` in `styles.css`.
+
+### [Item 6] Landing page redesign
+
+**MEDIUM**
+- **`LoadingSpinner` exported from `RootLayout.tsx`**: Shared UI primitive living in a layout file is architecturally unusual. Should be in `apps/web/src/components/LoadingSpinner.tsx`.
+
+**LOW**
+- **Both CTAs visually identical**: No action hierarchy between "Sign in" and "Try it". Consider differentiating primary vs secondary.
+- **File still named `LandingPagePlaceholder.tsx`**: The "Placeholder" suffix is misleading since this is now the real landing page.
+
+### [Item 8] Tests and UAT updates
+
+**LOW**
+- **`renderToStaticMarkup` limitation**: Cannot test `useEffect`/`useState` behavior. TryPage state machine not testable without a DOM testing library.
+- **No DOM interaction tests**: Email input submission, resend button click, Enter-key behavior — all untestable with current infrastructure. Consider `@testing-library/react` for future test improvements.
