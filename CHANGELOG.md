@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Guided Setup billing gate:** The AI-assisted agent-creation chat now enforces a "no money, no form" billing gate. `canSpendNow` is checked before every paid LLM call in the chat (`POST /chat/threads/:id/messages`, `POST /chat/threads/:id/actions/:actionId`) and returns HTTP 402 with `billing.top_up_required` when the user has no available credit. The `create_agent` tool case also checks as defense-in-depth. Fresh users (no billing account) are never blocked. The frontend renders a top-up gate (status-based) with an "Add Credit" button linking to `/billing` and a "Use standard form" escape hatch. i18n strings added for en/ar/hi. See `docs/features/2026/08/06/003-guided-setup-billing-gate/001-plan.md`.
+
 ## v0.0.45 - 2026-08-06
 
 ### Added
