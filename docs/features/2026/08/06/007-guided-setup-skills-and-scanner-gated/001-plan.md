@@ -385,3 +385,11 @@ All changes are additive and backward-compatible:
 | 1 | LOW | `payload.platformAssessment` set but never used in the DB insert — only read from `unifiedConfig`. Harmless but misleading. |
 | 2 | LOW | `payload.strategyPreset` has no corresponding DB column (pre-existing). Dead data on the payload object. |
 | 3 | LOW | Dead `default` case in `filterTrades` switch — unreachable due to Zod validation. |
+
+### [Step 5] System prompt updates
+
+| # | Severity | Issue |
+|---|----------|-------|
+| 1 | MEDIUM | Inconsistent `PRESET_SKILL_MAP` ordering across codebase — domain, chat.ts, and frontend all order `trading` skill IDs differently (`['trading', 'bot-management']` vs `['bot-management', 'trading']`). No behavioral impact but maintainability concern. |
+| 2 | LOW | Review interval default 12h (chat) vs 24h (form) — intentional per plan but deserves a comment in code for future readers. |
+| 3 | LOW | Missing prompt guidance for when user proactively asks about review interval — LLM should be told available options (6h, 12h, 24h, 48h, 96h). |
