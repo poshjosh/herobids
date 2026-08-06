@@ -167,15 +167,82 @@ export class EntitlementSync {
 
     // Ensure a usage billing account exists so top-up packs and spend controls
     // are immediately available in the UI without waiting for agent activity.
-    // Caps are not passed here — existing user-set caps must be preserved.
+    // The new plan's caps are applied to the account so the effective caps
+    // reflect the upgrade (matching the worker's session-start reconciliation).
+    // User-set caps are preserved: getOrCreateBillingAccountForUser only
+    // overwrites when the caller passes a value, and we pass the plan caps only
+    // when the account has no cap set (null).
     if (this.usageBillingRepo) {
-      await this.usageBillingRepo.getOrCreateBillingAccountForUser(
+      const planUsage = this.plansConfig?.plans[targetPlanId]?.usage;
+      const planSoftCapMicrousd = planUsage?.softCapCents != null ? planUsage.softCapCents * 10_000 : null;
+      const planHardCapMicrousd = planUsage?.hardCapCents != null ? planUsage.hardCapCents * 10_000 : null;
+
+      const existingAccount = await this.usageBillingRepo.getAccountByUserId(resolvedCustomer.userId);
+
+      const account = await this.usageBillingRepo.getOrCreateBillingAccountForUser(
         resolvedCustomer.userId,
         targetPlanId,
+        {
+          softCapMicrousd: this.resolveCapForUpgrade(existingAccount, 'softCapMicrousd', planSoftCapMicrousd),
+          hardCapMicrousd: this.resolveCapForUpgrade(existingAccount, 'hardCapMicrousd', planHardCapMicrousd),
+        },
       );
+
+      // Reconcile the open billing period for the new plan so spend state
+      // reflects the upgrade immediately (e.g. a free → starter upgrade adds
+      // the starter included credit and moves the account out of hard_limited).
+      // getOrCreateOpenPeriod only increases included credit (downgrades take
+      // effect next period) and recomputes account status when credit increases.
+      const accountPlanUsage = this.plansConfig?.plans[account.activePlanId]?.usage;
+      const includedCreditMicrousd = (accountPlanUsage?.includedCreditCents ?? 0) * 10_000;
+      const softCapMicrousd = account.softCapMicrousd
+        ?? (accountPlanUsage?.softCapCents != null ? accountPlanUsage.softCapCents * 10_000 : null);
+      const hardCapMicrousd = account.hardCapMicrousd
+        ?? (accountPlanUsage?.hardCapCents != null ? accountPlanUsage.hardCapCents * 10_000 : null);
+
+      const rateCardName = this.defaultRateCardName ?? 'default';
+      const activeRateCard = await this.usageBillingRepo.ensureActiveRateCard(rateCardName);
+
+      await this.usageBillingRepo.getOrCreateOpenPeriod(
+        account.id,
+        new Date(),
+        account.activePlanId,
+        activeRateCard.id,
+        includedCreditMicrousd,
+        softCapMicrousd,
+        hardCapMicrousd,
+      );
+      await this.usageBillingRepo.recomputeSpendState(account.id);
     }
 
     return true;
+  }
+
+  /**
+   * Decide the cap value to apply to the account on a plan change.
+   *
+   * There is no provenance field distinguishing user-set caps from plan-derived
+   * caps, so we infer it: if the account's current cap is null or matches the
+   * OLD plan's configured cap, it is treated as plan-derived and refreshed to
+   * the new plan's cap. Otherwise it is treated as user-set and preserved
+   * (returns undefined so getOrCreateBillingAccountForUser leaves it unchanged).
+   */
+  private resolveCapForUpgrade(
+    existingAccount: { activePlanId?: string | null; softCapMicrousd?: number | null; hardCapMicrousd?: number | null } | null,
+    capField: 'softCapMicrousd' | 'hardCapMicrousd',
+    newPlanCapMicrousd: number | null,
+  ): number | null | undefined {
+    if (!existingAccount) {
+      return newPlanCapMicrousd;
+    }
+    const oldPlanUsage = existingAccount.activePlanId
+      ? this.plansConfig?.plans[existingAccount.activePlanId]?.usage
+      : undefined;
+    const centsField = capField === 'softCapMicrousd' ? 'softCapCents' : 'hardCapCents';
+    const oldPlanCapMicrousd = oldPlanUsage?.[centsField] != null ? oldPlanUsage[centsField] * 10_000 : null;
+    const currentCap = existingAccount[capField] ?? null;
+    const isPlanDerived = currentCap == null || currentCap === oldPlanCapMicrousd;
+    return isPlanDerived ? newPlanCapMicrousd : undefined;
   }
 
   /**

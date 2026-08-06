@@ -10,6 +10,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Guided Setup Gmail resume after OAuth:** The post-OAuth resume invocation now carries an explicit resume-event channel (`connection_linked` / `connection_form_cancelled`) rendered as a transient prompt block, plus a transient user-like continuation message, so the model continues the agent-creation flow deterministically instead of emitting the generic "How can I help you further?" fallback. The empty-content fallback is now resume-aware, `buildSystemPrompt` guides resume-after-connection behavior, and `summary.preset` is persisted from quick-reply selections (whitelisted) for resume context. Idempotency (`processedActionIds`) is preserved. See `docs/features/2026/08/06/001-guided-setup-gmail-resume-after-oauth/001-plan.md`.
 
+### Fixed
+
+- **Subscription upgrade leaves account hard_limited (billing period not reconciled):** The subscription webhook updated plan entitlements (`users.plan_id`, `billing_subscriptions`, `billing_accounts.active_plan_id`) but never reconciled the open usage billing period, so an upgraded account kept the old plan's caps and negative balance and stayed `hard_limited` — the billing page kept showing "Usage limit reached" and "$X over limit" after a successful paid upgrade. `handleSubscriptionChange` now refreshes plan-derived caps to the new plan (preserving user-set caps via a `resolveCapForUpgrade` helper), and `getOrCreateOpenPeriod` reconciles the open period's included credit and cap fields independently (credit increase-only; caps refreshed whenever they differ), then recomputes spend state — mirroring the top-up and worker session-launch paths. Added regression tests in `entitlement-sync.test.ts` and `usage-billing-repository.test.ts`. See `docs/bug-reports/2026/08/06/001-subscription-upgrade-not-reconciling-billing-period.md`.
+
 ## v0.0.44 - 2026-08-05
 
 ### Fixed

@@ -206,12 +206,16 @@ describe('EntitlementSync top-up events', () => {
     } as unknown as BillingRepository;
 
     const usageBillingRepo = {
+      getAccountByUserId: vi.fn().mockResolvedValue(null),
       getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue({
         id: 'acc_user_1',
         activePlanId: 'pro',
         softCapMicrousd: null,
         hardCapMicrousd: null,
       }),
+      ensureActiveRateCard: vi.fn().mockResolvedValue({ id: 'rc_default_v1' }),
+      getOrCreateOpenPeriod: vi.fn().mockResolvedValue({ id: 'period_1' }),
+      recomputeSpendState: vi.fn().mockResolvedValue('active'),
     } as unknown as UsageBillingRepository;
 
     const config = makeBillingConfig();
@@ -241,8 +245,11 @@ describe('EntitlementSync top-up events', () => {
       expect.objectContaining({ userId: 'user-1', planId: 'pro' }),
       'pro',
     );
-    // Caps are NOT passed — only userId and planId to ensure existence
-    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'pro');
+    // No existing account → plan caps are applied (pro plan has no usage caps in this config, so null)
+    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'pro', {
+      softCapMicrousd: null,
+      hardCapMicrousd: null,
+    });
     expect(billingRepo.recordEventProcessed).toHaveBeenCalledWith('stripe:evt_sub_1', 'stripe.subscription.created');
   });
 
@@ -257,12 +264,16 @@ describe('EntitlementSync top-up events', () => {
     } as unknown as BillingRepository;
 
     const usageBillingRepo = {
+      getAccountByUserId: vi.fn().mockResolvedValue(null),
       getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue({
         id: 'acc_user_1',
         activePlanId: 'free',
         softCapMicrousd: null,
         hardCapMicrousd: null,
       }),
+      ensureActiveRateCard: vi.fn().mockResolvedValue({ id: 'rc_default_v1' }),
+      getOrCreateOpenPeriod: vi.fn().mockResolvedValue({ id: 'period_1' }),
+      recomputeSpendState: vi.fn().mockResolvedValue('active'),
     } as unknown as UsageBillingRepository;
 
     const config = makeBillingConfig();
@@ -293,7 +304,10 @@ describe('EntitlementSync top-up events', () => {
       'free',
     );
     // Account is still ensured to exist (for top-up packs / spend controls)
-    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'free');
+    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'free', {
+      softCapMicrousd: null,
+      hardCapMicrousd: null,
+    });
     expect(billingRepo.recordEventProcessed).toHaveBeenCalledWith('stripe:evt_sub_cancel', 'stripe.subscription.canceled');
   });
 
@@ -308,12 +322,21 @@ describe('EntitlementSync top-up events', () => {
     } as unknown as BillingRepository;
 
     const usageBillingRepo = {
+      getAccountByUserId: vi.fn().mockResolvedValue({
+        id: 'acc_user_1',
+        activePlanId: 'pro',
+        softCapMicrousd: 1_000_000,
+        hardCapMicrousd: 2_000_000,
+      }),
       getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue({
         id: 'acc_user_1',
         activePlanId: 'pro',
         softCapMicrousd: 1_000_000,
         hardCapMicrousd: 2_000_000,
       }),
+      ensureActiveRateCard: vi.fn().mockResolvedValue({ id: 'rc_default_v1' }),
+      getOrCreateOpenPeriod: vi.fn().mockResolvedValue({ id: 'period_1' }),
+      recomputeSpendState: vi.fn().mockResolvedValue('active'),
     } as unknown as UsageBillingRepository;
 
     const config = makeBillingConfig();
@@ -339,8 +362,189 @@ describe('EntitlementSync top-up events', () => {
     const result = await sync.processEvent(event);
 
     expect(result).toEqual({ processed: true });
-    // Caps are NOT passed — user-set values (1M / 2M) must survive the webhook
-    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'pro');
+    // User-set caps (1M / 2M) are preserved — plan caps are NOT passed because the account already has caps
+    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'pro', {
+      softCapMicrousd: undefined,
+      hardCapMicrousd: undefined,
+    });
+    // The open period is reconciled with the account's (user-set) caps preserved
+    expect(usageBillingRepo.getOrCreateOpenPeriod).toHaveBeenCalledWith(
+      'acc_user_1',
+      expect.any(Date),
+      'pro',
+      'rc_default_v1',
+      0, // pro plan has no included credit in makeBillingConfig's plansConfig (not passed)
+      1_000_000,
+      2_000_000,
+    );
+    expect(usageBillingRepo.recomputeSpendState).toHaveBeenCalledWith('acc_user_1');
+  });
+
+  it('reconciles the open period with the upgraded plan included credit and caps', async () => {
+    const billingRepo = {
+      isEventProcessed: vi.fn().mockResolvedValue(false),
+      recordEventProcessed: vi.fn().mockResolvedValue(undefined),
+      recordEventFailed: vi.fn().mockResolvedValue(undefined),
+      findCustomerByExternalId: vi.fn().mockResolvedValue({ userId: 'user-1', externalCustomerId: 'cus_1', provider: 'stripe' }),
+      findSubscriptionByExternalId: vi.fn().mockResolvedValue(null),
+      upsertSubscriptionAndSyncPlan: vi.fn().mockResolvedValue(undefined),
+    } as unknown as BillingRepository;
+
+    const usageBillingRepo = {
+      getAccountByUserId: vi.fn().mockResolvedValue(null),
+      getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue({
+        id: 'acc_user_1',
+        activePlanId: 'pro',
+        softCapMicrousd: 3_000_000,
+        hardCapMicrousd: 5_000_000,
+      }),
+      ensureActiveRateCard: vi.fn().mockResolvedValue({ id: 'rc_default_v1' }),
+      getOrCreateOpenPeriod: vi.fn().mockResolvedValue({ id: 'period_1' }),
+      recomputeSpendState: vi.fn().mockResolvedValue('active'),
+    } as unknown as UsageBillingRepository;
+
+    const plansConfig = PlansConfigSchema.parse({
+      defaultPlanId: 'free',
+      plans: {
+        pro: {
+          usage: {
+            includedCreditCents: 250,
+            softCapCents: 300,
+            hardCapCents: 500,
+          },
+        },
+      },
+    });
+
+    const config = makeBillingConfig();
+    const sync = new EntitlementSync(billingRepo, config, 'free', usageBillingRepo, 'default', plansConfig);
+
+    const event: NormalizedWebhookEvent = {
+      id: 'evt_sub_upgrade',
+      type: 'subscription.updated',
+      provider: 'stripe',
+      subscriptionId: 'sub_1',
+      customerId: 'cus_1',
+      productOrPriceId: 'price_pro_monthly',
+      status: 'active',
+      currentPeriodStart: new Date('2026-07-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-07-31T23:59:59.999Z'),
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      trialEnd: null,
+      metadata: {},
+      createdAt: new Date('2026-07-07T00:00:00.000Z'),
+    };
+
+    const result = await sync.processEvent(event);
+
+    expect(result).toEqual({ processed: true });
+    // No existing account → plan caps are applied to the account
+    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'pro', {
+      softCapMicrousd: 3_000_000, // 300 cents * 10_000
+      hardCapMicrousd: 5_000_000, // 500 cents * 10_000
+    });
+    // The open period is reconciled with the upgraded plan's included credit and caps
+    expect(usageBillingRepo.getOrCreateOpenPeriod).toHaveBeenCalledWith(
+      'acc_user_1',
+      expect.any(Date),
+      'pro',
+      'rc_default_v1',
+      2_500_000, // 250 cents * 10_000
+      3_000_000, // 300 cents * 10_000
+      5_000_000, // 500 cents * 10_000
+    );
+    expect(usageBillingRepo.recomputeSpendState).toHaveBeenCalledWith('acc_user_1');
+  });
+
+  it('refreshes stale plan-derived caps to the upgraded plan caps on subscription upgrade', async () => {
+    const billingRepo = {
+      isEventProcessed: vi.fn().mockResolvedValue(false),
+      recordEventProcessed: vi.fn().mockResolvedValue(undefined),
+      recordEventFailed: vi.fn().mockResolvedValue(undefined),
+      findCustomerByExternalId: vi.fn().mockResolvedValue({ userId: 'user-1', externalCustomerId: 'cus_1', provider: 'stripe' }),
+      findSubscriptionByExternalId: vi.fn().mockResolvedValue(null),
+      upsertSubscriptionAndSyncPlan: vi.fn().mockResolvedValue(undefined),
+    } as unknown as BillingRepository;
+
+    const usageBillingRepo = {
+      // Existing account on the OLD plan (free) with plan-derived caps (soft $0, hard $1)
+      getAccountByUserId: vi.fn().mockResolvedValue({
+        id: 'acc_user_1',
+        activePlanId: 'free',
+        softCapMicrousd: 0,
+        hardCapMicrousd: 1_000_000,
+      }),
+      getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue({
+        id: 'acc_user_1',
+        activePlanId: 'pro',
+        softCapMicrousd: 3_000_000,
+        hardCapMicrousd: 5_000_000,
+      }),
+      ensureActiveRateCard: vi.fn().mockResolvedValue({ id: 'rc_default_v1' }),
+      getOrCreateOpenPeriod: vi.fn().mockResolvedValue({ id: 'period_1' }),
+      recomputeSpendState: vi.fn().mockResolvedValue('active'),
+    } as unknown as UsageBillingRepository;
+
+    const plansConfig = PlansConfigSchema.parse({
+      defaultPlanId: 'free',
+      plans: {
+        free: {
+          usage: {
+            includedCreditCents: 0,
+            softCapCents: 0,
+            hardCapCents: 100, // $1
+          },
+        },
+        pro: {
+          usage: {
+            includedCreditCents: 250,
+            softCapCents: 300,
+            hardCapCents: 500, // $5
+          },
+        },
+      },
+    });
+
+    const config = makeBillingConfig();
+    const sync = new EntitlementSync(billingRepo, config, 'free', usageBillingRepo, 'default', plansConfig);
+
+    const event: NormalizedWebhookEvent = {
+      id: 'evt_sub_upgrade',
+      type: 'subscription.updated',
+      provider: 'stripe',
+      subscriptionId: 'sub_1',
+      customerId: 'cus_1',
+      productOrPriceId: 'price_pro_monthly',
+      status: 'active',
+      currentPeriodStart: new Date('2026-07-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-07-31T23:59:59.999Z'),
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      trialEnd: null,
+      metadata: {},
+      createdAt: new Date('2026-07-07T00:00:00.000Z'),
+    };
+
+    const result = await sync.processEvent(event);
+
+    expect(result).toEqual({ processed: true });
+    // Old plan-derived caps (free: 0 / $1) match the old plan config → refreshed to pro caps
+    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'pro', {
+      softCapMicrousd: 3_000_000, // 300 cents * 10_000
+      hardCapMicrousd: 5_000_000, // 500 cents * 10_000
+    });
+    // The open period is reconciled with the upgraded plan's included credit and caps
+    expect(usageBillingRepo.getOrCreateOpenPeriod).toHaveBeenCalledWith(
+      'acc_user_1',
+      expect.any(Date),
+      'pro',
+      'rc_default_v1',
+      2_500_000, // 250 cents * 10_000
+      3_000_000, // 300 cents * 10_000
+      5_000_000, // 500 cents * 10_000
+    );
+    expect(usageBillingRepo.recomputeSpendState).toHaveBeenCalledWith('acc_user_1');
   });
 
   it('skips usage billing account creation when usageBillingRepo is not configured', async () => {

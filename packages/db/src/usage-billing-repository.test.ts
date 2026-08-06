@@ -536,7 +536,7 @@ describe('getOrCreateOpenPeriod plan-change reconciliation', () => {
         set: vi.fn().mockImplementation((setVals: Record<string, unknown>) => ({
           where: vi.fn().mockImplementation((_whereClause: unknown) => {
             periodUpdates.push({ set: setVals, whereId: 'captured' });
-            const nextIncludedCredit = Number(setVals['includedCreditMicrousd']);
+            const nextIncludedCredit = Number(setVals['includedCreditMicrousd'] ?? existing?.includedCreditMicrousd ?? 0);
             const nextBalance = existing
               ? existing.balanceMicrousd + (nextIncludedCredit - existing.includedCreditMicrousd)
               : nextIncludedCredit;
@@ -546,6 +546,8 @@ describe('getOrCreateOpenPeriod plan-change reconciliation', () => {
                   ...existing,
                   includedCreditMicrousd: nextIncludedCredit,
                   balanceMicrousd: nextBalance,
+                  softCapMicrousd: setVals['softCapMicrousd'] !== undefined ? setVals['softCapMicrousd'] : existing?.softCapMicrousd ?? null,
+                  hardCapMicrousd: setVals['hardCapMicrousd'] !== undefined ? setVals['hardCapMicrousd'] : existing?.hardCapMicrousd ?? null,
                   updatedAt: new Date(),
                 },
               ]),
@@ -631,8 +633,8 @@ describe('getOrCreateOpenPeriod plan-change reconciliation', () => {
       'free',
       'rc_default_v1',
       0, // $0 included credit for free plan
-      null,
-      null,
+      0, // caps unchanged (match existing period)
+      0,
     );
 
     // Returned object preserves the higher included credit and original plan snapshot
@@ -660,8 +662,8 @@ describe('getOrCreateOpenPeriod plan-change reconciliation', () => {
       'starter',
       'rc_default_v1',
       20_000_000,
-      null,
-      null,
+      0, // caps unchanged (match existing period)
+      0,
     );
 
     // Unchanged
@@ -689,8 +691,8 @@ describe('getOrCreateOpenPeriod plan-change reconciliation', () => {
       'enterprise', // different plan, same credit amount
       'rc_default_v1',
       20_000_000,
-      null,
-      null,
+      0, // caps unchanged (match existing period)
+      0,
     );
 
     // Credit, balance, and planIdSnapshot unchanged — no-op
@@ -739,5 +741,95 @@ describe('getOrCreateOpenPeriod plan-change reconciliation', () => {
     const entry = ledger2[0]!;
     expect(entry['amountMicrousd']).toBe(80_000_000); // delta only
     expect(entry['sourceId']).toBe('period_acc_test_2026-08_enterprise_100000000'); // unique per upgrade
+  });
+
+  it('refreshes the open period caps to the upgraded plan caps on upgrade', async () => {
+    const existing = makeExistingPeriod({
+      planIdSnapshot: 'free',
+      includedCreditMicrousd: 0,
+      balanceMicrousd: 0,
+      softCapMicrousd: 0,
+      hardCapMicrousd: 1_000_000, // free plan hard cap $1
+    });
+    const { db, periodUpdates } = makeDbWithPeriod(existing);
+
+    const repo = new UsageBillingRepository(db);
+    await repo.getOrCreateOpenPeriod(
+      'acc_test',
+      new Date('2026-08-03T12:00:00.000Z'),
+      'starter',
+      'rc_default_v1',
+      20_000_000, // $20 included credit
+      0, // starter soft cap $0
+      2_000_000, // starter hard cap $2
+    );
+
+    // Period UPDATE now also refreshes the cap fields to the new plan's caps
+    expect(periodUpdates.length).toBe(2);
+    expect(periodUpdates[0]!.set['includedCreditMicrousd']).toBe(20_000_000);
+    expect(periodUpdates[0]!.set['softCapMicrousd']).toBe(0);
+    expect(periodUpdates[0]!.set['hardCapMicrousd']).toBe(2_000_000);
+  });
+
+  it('refreshes the open period caps even when included credit is unchanged', async () => {
+    const existing = makeExistingPeriod({
+      planIdSnapshot: 'starter',
+      includedCreditMicrousd: 20_000_000,
+      balanceMicrousd: 18_000_000,
+      softCapMicrousd: 0,
+      hardCapMicrousd: 1_000_000, // stale old cap
+    });
+    const { db, ledgerInserts, periodUpdates } = makeDbWithPeriod(existing);
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.getOrCreateOpenPeriod(
+      'acc_test',
+      new Date('2026-08-03T12:00:00.000Z'),
+      'starter',
+      'rc_default_v1',
+      20_000_000, // same included credit
+      0, // new soft cap
+      2_000_000, // new hard cap $2
+    );
+
+    // Caps refreshed even though credit is unchanged
+    expect(result.softCapMicrousd).toBe(0);
+    expect(result.hardCapMicrousd).toBe(2_000_000);
+    expect(result.includedCreditMicrousd).toBe(20_000_000);
+    expect(result.balanceMicrousd).toBe(18_000_000); // unchanged — no credit delta
+
+    // Period UPDATE + account status UPDATE; no ledger entry (cap-only refresh)
+    expect(periodUpdates.length).toBe(2);
+    expect(periodUpdates[0]!.set['includedCreditMicrousd']).toBeUndefined();
+    expect(periodUpdates[0]!.set['softCapMicrousd']).toBe(0);
+    expect(periodUpdates[0]!.set['hardCapMicrousd']).toBe(2_000_000);
+    expect(ledgerInserts.length).toBe(0);
+  });
+
+  it('no-op when neither credit nor caps change', async () => {
+    const existing = makeExistingPeriod({
+      planIdSnapshot: 'starter',
+      includedCreditMicrousd: 20_000_000,
+      balanceMicrousd: 18_000_000,
+      softCapMicrousd: 0,
+      hardCapMicrousd: 2_000_000,
+    });
+    const { db, ledgerInserts, periodUpdates } = makeDbWithPeriod(existing);
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.getOrCreateOpenPeriod(
+      'acc_test',
+      new Date('2026-08-03T12:00:00.000Z'),
+      'starter',
+      'rc_default_v1',
+      20_000_000,
+      0,
+      2_000_000,
+    );
+
+    expect(result.hardCapMicrousd).toBe(2_000_000);
+    // No UPDATE, no INSERT
+    expect(periodUpdates.length).toBe(0);
+    expect(ledgerInserts.length).toBe(0);
   });
 });

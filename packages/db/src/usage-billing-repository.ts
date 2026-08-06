@@ -342,16 +342,40 @@ export class UsageBillingRepository {
             .set({ status: 'closed', updatedAt: new Date() })
             .where(eq(billingPeriods.id, existing.id));
         } else {
-          // Reconcile includedCreditMicrousd when the current plan grants more
-          // than the period was opened with (e.g. user upgraded free → starter
-          // mid-period). Only increases — downgrades take effect next period.
-          // planIdSnapshot is NOT updated — it remains a frozen snapshot of the
-          // plan active at period-open time. The plan_change_adjustment ledger
-          // entry records the full upgrade detail (old plan → new plan).
+          // Reconcile the existing open period against the caller's intent.
+          //
+          // Included credit is reconciled "increase only": when the current plan
+          // grants more than the period was opened with (e.g. free → starter
+          // mid-period), the period is updated in-place with a delta ledger entry.
+          // Downgrades take effect next period. planIdSnapshot is NOT updated —
+          // it stays frozen as the plan that opened the period.
+          //
+          // Caps are reconciled independently of credit: the period's cap fields
+          // are refreshed to the caller's effective caps whenever they differ, so
+          // spend-state enforcement reflects the current plan even on a cap-only
+          // change (computeSpendStatus reads caps from the period, not the account).
           // See docs/bug-reports/2026/08/03/001-billing-period-not-updated-on-plan-change.md.
-          if (includedCreditMicrousd > existing.includedCreditMicrousd) {
-            const deltaCredit = includedCreditMicrousd - existing.includedCreditMicrousd;
+          const creditIncreased = includedCreditMicrousd > existing.includedCreditMicrousd;
+          const capsChanged = (softCapMicrousd ?? null) !== (existing.softCapMicrousd ?? null)
+            || (hardCapMicrousd ?? null) !== (existing.hardCapMicrousd ?? null);
+
+          if (creditIncreased || capsChanged) {
+            const deltaCredit = creditIncreased
+              ? includedCreditMicrousd - existing.includedCreditMicrousd
+              : 0;
             const reconciledAt = new Date();
+
+            const setClause: Record<string, unknown> = {
+              updatedAt: reconciledAt,
+            };
+            if (creditIncreased) {
+              setClause['includedCreditMicrousd'] = includedCreditMicrousd;
+              setClause['balanceMicrousd'] = sql`${billingPeriods.balanceMicrousd} + ${deltaCredit}`;
+            }
+            if (capsChanged) {
+              setClause['softCapMicrousd'] = softCapMicrousd ?? null;
+              setClause['hardCapMicrousd'] = hardCapMicrousd ?? null;
+            }
 
             // Conditional update makes the reconciliation idempotent under
             // concurrent callers: only the first stale reader can advance the
@@ -359,15 +383,13 @@ export class UsageBillingRepository {
             // row instead of applying the delta again.
             const [updatedPeriod] = await tx
               .update(billingPeriods)
-              .set({
-                includedCreditMicrousd,
-                balanceMicrousd: sql`${billingPeriods.balanceMicrousd} + ${deltaCredit}`,
-                updatedAt: reconciledAt,
-              })
+              .set(setClause)
               .where(
                 and(
                   eq(billingPeriods.id, existing.id),
-                  lt(billingPeriods.includedCreditMicrousd, includedCreditMicrousd),
+                  creditIncreased
+                    ? lt(billingPeriods.includedCreditMicrousd, includedCreditMicrousd)
+                    : eq(billingPeriods.id, existing.id),
                 ),
               )
               .returning();
@@ -394,26 +416,30 @@ export class UsageBillingRepository {
               .set({ status: newStatus, lastEvaluatedAt: reconciledAt, updatedAt: reconciledAt })
               .where(eq(billingAccounts.id, accountId));
 
-            // Unique sourceId per upgrade so multiple upgrades in one period
-            // each produce their own audit entry — includes credit amount so
-            // even same-plan credit changes (operator config update) are distinct.
-            const adjSourceId = `${existing.id}_${planIdSnapshot}_${includedCreditMicrousd}`;
-            const adjId = `led_plan_change_${adjSourceId}`;
-            await tx
-              .insert(billingLedgerEntries)
-              .values({
-                id: adjId,
-                accountId,
-                periodId: existing.id,
-                entryType: 'plan_change_adjustment',
-                direction: 'credit',
-                amountMicrousd: deltaCredit,
-                currency: 'USD',
-                sourceType: 'plan_change',
-                sourceId: adjSourceId,
-                description: `Plan upgrade: included credit adjusted from ${existing.includedCreditMicrousd} → ${includedCreditMicrousd} µUSD (${existing.planIdSnapshot} → ${planIdSnapshot})`,
-              })
-              .onConflictDoNothing();
+            // Only credit increases produce an audit entry; cap-only refreshes
+            // are idempotent and need no ledger record.
+            if (creditIncreased) {
+              // Unique sourceId per upgrade so multiple upgrades in one period
+              // each produce their own audit entry — includes credit amount so
+              // even same-plan credit changes (operator config update) are distinct.
+              const adjSourceId = `${existing.id}_${planIdSnapshot}_${includedCreditMicrousd}`;
+              const adjId = `led_plan_change_${adjSourceId}`;
+              await tx
+                .insert(billingLedgerEntries)
+                .values({
+                  id: adjId,
+                  accountId,
+                  periodId: existing.id,
+                  entryType: 'plan_change_adjustment',
+                  direction: 'credit',
+                  amountMicrousd: deltaCredit,
+                  currency: 'USD',
+                  sourceType: 'plan_change',
+                  sourceId: adjSourceId,
+                  description: `Plan upgrade: included credit adjusted from ${existing.includedCreditMicrousd} → ${includedCreditMicrousd} µUSD (${existing.planIdSnapshot} → ${planIdSnapshot})`,
+                })
+                .onConflictDoNothing();
+            }
 
             // planIdSnapshot is intentionally NOT updated — it stays frozen
             // as the plan that opened the period.
