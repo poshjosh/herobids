@@ -3,6 +3,8 @@ import { fetchJson } from './http.js';
 
 export interface GeckoTerminalConfig {
   baseUrl: string;
+  proBaseUrl?: string;
+  apiKey?: string;
   rateLimiter: RequestGate;
   timeoutMs: number;
   fetchFn?: typeof fetch;
@@ -98,6 +100,24 @@ function mapPoolsToTokens(pools: DiscoveredPool[], vector: string): DiscoveredTo
   }));
 }
 
+function buildGeckoUrl(config: GeckoTerminalConfig, v2Path: string): string {
+  const baseUrl = config.apiKey
+    ? (config.proBaseUrl ?? 'https://pro-api.coingecko.com')
+    : config.baseUrl;
+  const path = config.apiKey
+    ? v2Path.replace('/api/v2/networks/', '/api/v3/onchain/networks/')
+    : v2Path;
+  return `${baseUrl}${path}`;
+}
+
+function buildGeckoHeaders(config: GeckoTerminalConfig): Record<string, string> {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (config.apiKey) {
+    headers['x-cg-pro-api-key'] = config.apiKey;
+  }
+  return headers;
+}
+
 async function fetchPools(
   network: string,
   path: string,
@@ -107,9 +127,9 @@ async function fetchPools(
   await config.rateLimiter.acquire();
 
   const response = await fetchJson<GeckoTerminalPoolResponse>({
-    url: `${config.baseUrl}${path}`,
+    url: buildGeckoUrl(config, path),
     timeoutMs: config.timeoutMs,
-    headers: { Accept: 'application/json' },
+    headers: buildGeckoHeaders(config),
     fetchFn: config.fetchFn,
   });
 
@@ -132,12 +152,12 @@ export async function fetchGeckoTerminalCandles(
   const timeframe = options?.timeframe ?? 'hour';
   const limit = options?.limit ?? 100;
 
-  const url = `${config.baseUrl}/api/v2/networks/${encodeURIComponent(network)}/pools/${encodeURIComponent(poolAddress)}/ohlcv/${timeframe}?limit=${limit}`;
+  const v2Path = `/api/v2/networks/${encodeURIComponent(network)}/pools/${encodeURIComponent(poolAddress)}/ohlcv/${timeframe}?limit=${limit}`;
 
   const data = await fetchJson<GeckoTerminalResponse>({
-    url,
+    url: buildGeckoUrl(config, v2Path),
     timeoutMs: config.timeoutMs,
-    headers: { Accept: 'application/json' },
+    headers: buildGeckoHeaders(config),
     fetchFn: config.fetchFn,
   });
   const ohlcvList = data.data?.attributes?.ohlcv_list ?? [];
@@ -190,4 +210,45 @@ export async function fetchGeckoTerminalNewPools(
     'new_pools',
     config,
   );
+}
+
+/**
+ * Validate that the GeckoTerminal Pro API key is usable by making a lightweight
+ * health-check call to the Pro on-chain endpoint. Throws if the key is invalid
+ * or the endpoint is unreachable, matching the CMC/Birdeye pattern of failing
+ * loudly at startup when a paid provider is misconfigured.
+ */
+export async function validateApiKey(config: {
+  apiKey: string;
+  proBaseUrl?: string;
+  timeoutMs: number;
+  fetchFn?: typeof fetch;
+}): Promise<void> {
+  const baseUrl = config.proBaseUrl ?? 'https://pro-api.coingecko.com';
+  const url = `${baseUrl}/api/v3/onchain/networks/solana/trending_pools`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+
+  try {
+    const response = await (config.fetchFn ?? fetch)(url, {
+      headers: {
+        Accept: 'application/json',
+        'x-cg-pro-api-key': config.apiKey,
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `GeckoTerminal Pro API key is invalid or the endpoint is unreachable (HTTP ${response.status}). ` +
+        `Verify the apiKey in your config.`,
+      );
+    }
+
+    // Consume the body to avoid leaking connections
+    await response.text().catch(() => {});
+  } finally {
+    clearTimeout(timeout);
+  }
 }

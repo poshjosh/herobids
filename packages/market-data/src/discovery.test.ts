@@ -1295,12 +1295,154 @@ describe('discoverTokens', () => {
       minLiquidityUsd: 0,
     });
 
-    // The Birdeye 429 and GeckoTerminal base 500 failures must be surfaced.
+    // The Birdeye 429 and GeckoTerminal base 500 failures must be surfaced with attributed labels.
     const warnCalls = warnSpy.mock.calls.map((call) => String(call[0]));
     expect(warnCalls.some((msg) => msg.includes('HTTP error: 429'))).toBe(true);
     expect(warnCalls.some((msg) => msg.includes('HTTP error: 500'))).toBe(true);
 
+    // Verify the Birdeye 429 carries provider/network/vector attribution.
+    // Search by the labeled pattern rather than bare "429" to avoid matching
+    // other console.warn calls (e.g. DexScreener enrichment failures).
+    const birdeyeCall = warnSpy.mock.calls.find((call) => {
+      const label = call[1];
+      return label?.provider === 'birdeye' && label?.vector === 'trending';
+    });
+    expect(birdeyeCall).toBeDefined();
+    expect(birdeyeCall![1].provider).toBe('birdeye');
+    expect(birdeyeCall![1].network).toBe('solana');
+    expect(birdeyeCall![1].vector).toBe('trending');
+
+    // Verify GeckoTerminal base warnings carry the base network label
+    const geckoBaseCalls = warnSpy.mock.calls.filter((call) => {
+      const label = call[1];
+      return label?.provider === 'geckoterminal' && label?.network === 'base';
+    });
+    expect(geckoBaseCalls.length).toBeGreaterThan(0);
+    // Every GeckoTerminal base warning should include the network and vector fields
+    for (const call of geckoBaseCalls) {
+      expect(call[1].provider).toBe('geckoterminal');
+      expect(call[1].network).toBe('base');
+      expect(typeof call[1].vector).toBe('string');
+    }
+
     warnSpy.mockRestore();
+  });
+
+  it('attributes a rejected GeckoTerminal Base trending_pools request with provider/network/vector', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      // Only GeckoTerminal base trending_pools rejects — everything else succeeds
+      if (url.includes('geckoterminal.com') && url.includes('/networks/base/trending_pools')) {
+        return makeErrorResponse(429);
+      }
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      // Return valid pools for other calls so discovery succeeds
+      return {
+        ok: true, status: 200, statusText: 'OK',
+        json: async () => ({
+          data: [{
+            id: 'pool-ok',
+            attributes: { address: 'pool-ok', base_token_price_usd: '1.0', volume_usd: { h24: '10000' }, reserve_in_usd: '20000' },
+            relationships: { base_token: { data: { id: 'bt-ok' } }, quote_token: { data: { id: 'qt-ok' } } },
+          }],
+          included: [
+            { id: 'bt-ok', attributes: { address: 'ok-addr', symbol: 'OK', name: 'OkToken' } },
+            { id: 'qt-ok', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } },
+          ],
+        }),
+      } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      networks: ['solana', 'base'],
+      minLiquidityUsd: 0,
+    });
+
+    // The Base trending_pools 429 should be logged with clear provider/network/vector attribution
+    const baseTrendingWarn = warnSpy.mock.calls.find((call) => {
+      const label = call[1];
+      return label?.provider === 'geckoterminal' && label?.network === 'base' && label?.vector === 'trending_pools';
+    });
+    expect(baseTrendingWarn).toBeDefined();
+    // The message should follow the labeled pattern
+    expect(String(baseTrendingWarn![0])).toMatch(/geckoterminal\/base\/trending_pools: HTTP error: 429/);
+
+    warnSpy.mockRestore();
+  });
+
+  it('returns usable results when one provider fails but others succeed (mixed fulfilled/rejected)', async () => {
+    // All GeckoTerminal base calls fail, but solana GeckoTerminal + DexScreener succeed
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      // GeckoTerminal base — all fail
+      if (url.includes('geckoterminal.com') && url.includes('/networks/base/')) {
+        return makeErrorResponse(429);
+      }
+      // DexScreener boost — return a solana token
+      if (url.includes('token-boosts/top')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => [{ chainId: 'solana', tokenAddress: 'mixed-addr', amount: 100 }],
+        } as Response;
+      }
+      if (url.includes('/tokens/v1/')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            pairs: [{
+              chainId: 'solana',
+              baseToken: { address: 'mixed-addr', symbol: 'MIX', name: 'MixedToken' },
+              priceUsd: '1.0',
+              volume: { h24: 50000 },
+              liquidity: { usd: 25000 },
+            }],
+          }),
+        } as Response;
+      }
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      // GeckoTerminal solana — succeed
+      return {
+        ok: true, status: 200, statusText: 'OK',
+        json: async () => ({
+          data: [{
+            id: 'pool-sol',
+            attributes: { address: 'pool-sol', base_token_price_usd: '2.0', volume_usd: { h24: '100000' }, reserve_in_usd: '50000' },
+            relationships: { base_token: { data: { id: 'bt-sol' } }, quote_token: { data: { id: 'qt-sol' } } },
+          }],
+          included: [
+            { id: 'bt-sol', attributes: { address: 'sol-addr', symbol: 'SOLA', name: 'SolToken' } },
+            { id: 'qt-sol', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } },
+          ],
+        }),
+      } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const result = await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      networks: ['solana', 'base'],
+      minLiquidityUsd: 0,
+    });
+
+    // Discovery must still return Solana results even though all Base provider calls failed
+    expect(result.length).toBeGreaterThan(0);
+    const solToken = result.find((t) => t.address === 'sol-addr');
+    expect(solToken).toBeDefined();
+
+    // No Base-only tokens should appear since all Base calls failed (and DexScreener boost
+    // returned a Solana token, not a Base token).
+    const baseTokens = result.filter((t) => t.network.toLowerCase() === 'base');
+    expect(baseTokens).toEqual([]);
   });
 
   it('Birdeye discovery only runs when explicitly configured', async () => {
@@ -1364,5 +1506,274 @@ describe('discoverTokens', () => {
     })).rejects.toThrow('No discovery providers returned data');
 
     expect(birdeyeCalled).toBe(false);
+  });
+
+  it('filters out DexScreener Solana tokens on a base-only discovery call', async () => {
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      // DexScreener global vectors — returns tokens from multiple networks
+      if (url.includes('token-boosts/top')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => [
+            { chainId: 'solana', tokenAddress: 'sol-token', amount: 500 },
+            { chainId: 'base', tokenAddress: 'base-token', amount: 300 },
+          ],
+        } as Response;
+      }
+      if (url.includes('token-boosts/latest')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => [{ chainId: 'solana', tokenAddress: 'sol-token-2', totalAmount: 200 }],
+        } as Response;
+      }
+      if (url.includes('token-profiles/latest')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      // GeckoTerminal base — returns base tokens
+      if (url.includes('/networks/base/trending_pools')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            data: [{
+              id: 'pool-base',
+              attributes: { address: 'pool-base', base_token_price_usd: '1.0', volume_usd: { h24: '100000' }, reserve_in_usd: '200000' },
+              relationships: { base_token: { data: { id: 'bt-base' } }, quote_token: { data: { id: 'qt-base' } } },
+            }],
+            included: [
+              { id: 'bt-base', attributes: { address: 'base-token', symbol: 'BASE', name: 'BaseToken' } },
+              { id: 'qt-base', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } },
+            ],
+          }),
+        } as Response;
+      }
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const result = await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      networks: ['base'],
+      minLiquidityUsd: 0,
+    });
+
+    // Only base tokens should be present; Solana tokens from DexScreener global
+    // vectors must be filtered out before the merge.
+    const addresses = result.map((t) => t.address);
+    expect(addresses).toContain('base-token');
+    expect(addresses).not.toContain('sol-token');
+    expect(addresses).not.toContain('sol-token-2');
+  });
+
+  it('network filter matches exact adapter slug values (base, solana)', async () => {
+    // DexScreener emits lowercase chainId: 'solana', 'base'.
+    // GeckoTerminal receives the network from the fanout parameter, which is
+    // lowercased from config.networks. Both adapters use the same slug format.
+    // This test guards against silent drops from slug divergence by verifying
+    // that the filter compares case-insensitively on the token.network side.
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      // DexScreener returns tokens with exact lowercase slugs
+      if (url.includes('token-boosts/top')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => [
+            { chainId: 'solana', tokenAddress: 'sol-exact', amount: 100 },
+            { chainId: 'base', tokenAddress: 'base-exact', amount: 200 },
+          ],
+        } as Response;
+      }
+      if (url.includes('token-boosts/latest')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      if (url.includes('token-profiles/latest')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      // GeckoTerminal solana returns a token with network='solana'
+      if (url.includes('/networks/solana/trending_pools')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            data: [{
+              id: 'pool-sol',
+              attributes: { address: 'pool-sol', base_token_price_usd: '1.0', volume_usd: { h24: '50000' }, reserve_in_usd: '100000' },
+              relationships: { base_token: { data: { id: 'bt-sol' } }, quote_token: { data: { id: 'qt-sol' } } },
+            }],
+            included: [
+              { id: 'bt-sol', attributes: { address: 'sol-exact', symbol: 'SOL', name: 'SolToken' } },
+              { id: 'qt-sol', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } },
+            ],
+          }),
+        } as Response;
+      }
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const result = await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      networks: ['solana'],
+      minLiquidityUsd: 0,
+    });
+
+    // base-exact should be filtered out; sol-exact should survive and be merged
+    // with the GeckoTerminal entry for the same token.
+    const addresses = result.map((t) => t.address);
+    expect(addresses).toContain('sol-exact');
+    expect(addresses).not.toContain('base-exact');
+  });
+
+  it('normalizes network casing so mixed-case input still matches adapter slugs', async () => {
+    // Request networks with unusual casing — the implementation must
+    // lowercase them before fanout and filtering so GeckoTerminal and
+    // DexScreener adapters (which use lowercase slugs) still match.
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      // DexScreener returns tokens with lowercase slugs
+      if (url.includes('token-boosts/top')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => [
+            { chainId: 'solana', tokenAddress: 'sol-ci', amount: 100 },
+            { chainId: 'base', tokenAddress: 'base-ci', amount: 200 },
+          ],
+        } as Response;
+      }
+      if (url.includes('token-boosts/latest') || url.includes('token-profiles/latest')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      // Expect ONLY lowercase networks in GeckoTerminal URLs because
+      // discoverTokens lowercases the array before fanout.
+      if (url.includes('/networks/solana/trending_pools')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            data: [{
+              id: 'pool-sol-ci',
+              attributes: { address: 'pool-sol-ci', base_token_price_usd: '1.0', volume_usd: { h24: '50000' }, reserve_in_usd: '100000' },
+              relationships: { base_token: { data: { id: 'bt-sol-ci' } }, quote_token: { data: { id: 'qt-sol-ci' } } },
+            }],
+            included: [
+              { id: 'bt-sol-ci', attributes: { address: 'sol-ci', symbol: 'SOL', name: 'SolToken' } },
+              { id: 'qt-sol-ci', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } },
+            ],
+          }),
+        } as Response;
+      }
+      if (url.includes('/networks/base/trending_pools')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            data: [{
+              id: 'pool-base-ci',
+              attributes: { address: 'pool-base-ci', base_token_price_usd: '2.0', volume_usd: { h24: '40000' }, reserve_in_usd: '80000' },
+              relationships: { base_token: { data: { id: 'bt-base-ci' } }, quote_token: { data: { id: 'qt-base-ci' } } },
+            }],
+            included: [
+              { id: 'bt-base-ci', attributes: { address: 'base-ci', symbol: 'BASE', name: 'BaseToken' } },
+              { id: 'qt-base-ci', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } },
+            ],
+          }),
+        } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    // Request networks with UPPER and Mixed casing — should be normalized internally
+    const result = await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      networks: ['SOLANA', 'Base'],
+      minLiquidityUsd: 0,
+    });
+
+    // Both tokens should pass through — no tokens from networks outside ['solana','base']
+    const addresses = result.map((t) => t.address);
+    expect(addresses).toContain('sol-ci');
+    expect(addresses).toContain('base-ci');
+  });
+
+  it('uses the provided DiscoveryLogger instead of console.warn when logger is configured', async () => {
+    const warnCalls: Array<{ message: string; meta?: Record<string, unknown> }> = [];
+    const customLogger = {
+      warn: (message: string, meta?: Record<string, unknown>) => {
+        warnCalls.push({ message, meta });
+      },
+    };
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      // Birdeye — simulate failure so we get a rejection log
+      if (url.includes('birdeye.so') && url.includes('token_trending')) {
+        return makeErrorResponse(429);
+      }
+      // DexScreener — return a valid token so discovery still succeeds
+      if (url.includes('token-boosts/top')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => [{ chainId: 'solana', tokenAddress: 'log-addr', amount: 100 }],
+        } as Response;
+      }
+      if (url.includes('/tokens/v1/')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            pairs: [{
+              chainId: 'solana',
+              baseToken: { address: 'log-addr', symbol: 'LOG', name: 'LogToken' },
+              priceUsd: '1.0',
+              volume: { h24: 50000 },
+              liquidity: { usd: 25000 },
+            }],
+          }),
+        } as Response;
+      }
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      birdeye: {
+        baseUrl: 'https://public-api.birdeye.so',
+        apiKey: 'test-key',
+        rateLimiter,
+        timeoutMs: 5_000,
+      },
+      networks: ['solana'],
+      minLiquidityUsd: 0,
+      logger: customLogger,
+    });
+
+    // The custom logger should have captured the Birdeye rejection
+    expect(warnCalls.length).toBeGreaterThan(0);
+    const birdeyeWarn = warnCalls.find((call) => call.meta?.provider === 'birdeye');
+    expect(birdeyeWarn).toBeDefined();
+    expect(birdeyeWarn!.meta!.vector).toBe('trending');
+
+    // console.warn should NOT have been called for the provider rejection
+    // (but may have been called for other reasons — we only assert it was NOT
+    // called for the labeled rejection pattern)
+    const consoleBirdeyeCalls = consoleWarnSpy.mock.calls.filter((call) => {
+      const label = call[1];
+      return label?.provider === 'birdeye';
+    });
+    expect(consoleBirdeyeCalls).toHaveLength(0);
+
+    consoleWarnSpy.mockRestore();
   });
 });

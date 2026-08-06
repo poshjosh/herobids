@@ -53,7 +53,7 @@ describe('createProviderRegistry', () => {
   it('returns cached provider responses with freshness metadata', async () => {
     let now = 0;
     let fetchCalls = 0;
-    const registry = createProviderRegistry(createConfig(), {
+    const registry = await createProviderRegistry(createConfig(), {
       fetchFn: async () => {
         fetchCalls += 1;
         return {
@@ -108,7 +108,7 @@ describe('createProviderRegistry', () => {
       ...createConfig(),
       discovery: { maxResults: 3, geckoTerminalExtraPages: 0, antistalenessCooldownHours: 0, antistalenessTokenTtlHours: 24 },
     };
-    const registry = createProviderRegistry(config, {
+    const registry = await createProviderRegistry(config, {
       fetchFn: async (input) => {
         const url = String(input);
         if (url.includes('token-boosts') || url.includes('token-profiles')) {
@@ -138,7 +138,7 @@ describe('createProviderRegistry', () => {
   });
 
   it('uses discoveryOptions.maxResults when explicitly provided, overriding the config default', async () => {
-    const registry = createProviderRegistry(createConfig(), {
+    const registry = await createProviderRegistry(createConfig(), {
       fetchFn: async (input) => {
         const url = String(input);
         if (url.includes('token-boosts') || url.includes('token-profiles')) {
@@ -175,7 +175,7 @@ describe('createProviderRegistry', () => {
       ...createConfig(),
       discovery: { maxResults: 50, geckoTerminalExtraPages: 0, antistalenessCooldownHours: 1, antistalenessTokenTtlHours: 24 },
     };
-    const registry = createProviderRegistry(config, {
+    const registry = await createProviderRegistry(config, {
       discoverySeenClient: { zadd, zrangebyscore, zremrangebyscore },
       fetchFn: async (input) => {
         const url = String(input);
@@ -206,7 +206,7 @@ describe('createProviderRegistry', () => {
       ...createConfig(),
       discovery: { maxResults: 50, geckoTerminalExtraPages: 0, antistalenessCooldownHours: 0, antistalenessTokenTtlHours: 24 },
     };
-    const registry = createProviderRegistry(config, {
+    const registry = await createProviderRegistry(config, {
       discoverySeenClient: { zadd, zrangebyscore, zremrangebyscore },
       fetchFn: async (input) => {
         const url = String(input);
@@ -372,7 +372,7 @@ describe('createProviderRegistry — CMC disabled-provider skipping', () => {
   it('does not call CMC when coinMarketCap.enabled is false', async () => {
     let cmcCalled = false;
 
-    const registry = createProviderRegistry(createConfig(), {
+    const registry = await createProviderRegistry(createConfig(), {
       fetchFn: async (input) => {
         const url = String(input);
         if (url.includes('coinmarketcap.com')) {
@@ -405,8 +405,8 @@ describe('createProviderRegistry — CMC disabled-provider skipping', () => {
     expect(cmcCalled).toBe(false);
   });
 
-  it('throws when coinMarketCap.enabled is true and apiKey is empty', () => {
-    expect(() => createProviderRegistry({
+  it('throws when coinMarketCap.enabled is true and apiKey is empty', async () => {
+    await expect(createProviderRegistry({
       ...createConfig(),
       coinMarketCap: {
         enabled: true,
@@ -415,7 +415,7 @@ describe('createProviderRegistry — CMC disabled-provider skipping', () => {
         apiKey: '',
         cacheTtlMs: 3_600_000,
       },
-    })).toThrow('CoinMarketCap is enabled but no API key is configured');
+    })).rejects.toThrow('CoinMarketCap is enabled but no API key is configured');
   });
 });
 
@@ -429,7 +429,7 @@ describe('createProviderRegistry — CMC shared budget', () => {
       },
     };
 
-    const registry = createProviderRegistry({
+    const registry = await createProviderRegistry({
       ...createConfig(),
       coinMarketCap: {
         enabled: true,

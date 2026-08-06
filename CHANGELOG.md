@@ -8,7 +8,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Try-It — Email-First Onboarding:** Unauthenticated visitors can now start the agent creation journey from the landing page. A new `/try` page mimics the guided setup chat with static messages and typing animation (zero LLM cost), collects email, and sends a login link via the existing `POST /auth/send-login-link` endpoint. The login-link flow now supports a `next` query param, enabling post-auth redirect to `/agents/new`. The landing page has been redesigned with a background image, encouraging copy, and "Try it" CTA. Both the API and frontend enforce strict same-origin redirect sanitization. See `docs/features/2026/08/06/005-try-it-email-first-onboarding/001-plan.md`.
+- **Paid CoinGecko on-chain tier for GeckoTerminal:** The GeckoTerminal adapter now supports an optional `apiKey` that routes requests to the paid CoinGecko Pro on-chain API (`pro-api.coingecko.com`) with higher rate limits, restoring Base supply that was dropping due to free-tier 429s. The key is sourced from the `COINGECKO_API_KEY` env var and validated at startup (fails loud on invalid key, matching the CMC/Birdeye pattern). Discovery rate limit raised from 10→60 requests/min to clear 2-network × 3-endpoint demand.
+
+### Changed
+
+- **Discovery network filtering:** `discoverTokens()` now filters provider results to only the requested networks. A Base-only call (`networks: ['base']`) no longer returns Solana DexScreener tokens. Networks are normalized to lowercase at the top of the function to prevent casing mismatches.
+
+- **Labeled provider/network rejection observability:** Discovery fanout promises now carry `{ provider, network, vector }` metadata. Rejected requests are logged with structured attribution (e.g., `geckoterminal/base/trending_pools: HTTP error: 429`) instead of a generic warning. The swap scanner's `swap_discovery_empty` log includes possible cause context.
+
+### Fixed
+
+- **Base discovery supply failure:** The t1inch swap scanner was returning zero Base candidates because GeckoTerminal free-tier rate limits silently dropped all Base pool requests. The paid CoinGecko on-chain tier restores Base supply, and the labeled rejection logging makes future provider degradations diagnosable. See `docs/features/2026/08/06/004-fix-base-discovery-fairness/001-plan.md`. Unauthenticated visitors can now start the agent creation journey from the landing page. A new `/try` page mimics the guided setup chat with static messages and typing animation (zero LLM cost), collects email, and sends a login link via the existing `POST /auth/send-login-link` endpoint. The login-link flow now supports a `next` query param, enabling post-auth redirect to `/agents/new`. The landing page has been redesigned with a background image, encouraging copy, and "Try it" CTA. Both the API and frontend enforce strict same-origin redirect sanitization. See `docs/features/2026/08/06/005-try-it-email-first-onboarding/001-plan.md`.
 
 - **Guided Setup billing gate:** The AI-assisted agent-creation chat now enforces a "no money, no form" billing gate. `canSpendNow` is checked before every paid LLM call in the chat (`POST /chat/threads/:id/messages`, `POST /chat/threads/:id/actions/:actionId`) and returns HTTP 402 with `billing.top_up_required` when the user has no available credit. The `create_agent` tool case also checks as defense-in-depth. Fresh users (no billing account) are never blocked. The frontend renders a top-up gate (status-based) with an "Add Credit" button linking to `/billing` and a "Use standard form" escape hatch. i18n strings added for en/ar/hi. See `docs/features/2026/08/06/003-guided-setup-billing-gate/001-plan.md`.
 

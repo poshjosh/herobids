@@ -225,7 +225,7 @@ const documentsRepo = new AgentDocumentsRepository(db);
 const documentStore = new LocalDocumentStore(agentDocumentsRootDir);
 
 const sharedMarketDataRegistry = appConfig.marketData
-  ? createProviderRegistry(appConfig.marketData, { redisClient: redisClient as unknown as RedisEvalClient, discoverySeenClient: redisClient })
+  ? await createProviderRegistry(appConfig.marketData, { redisClient: redisClient as unknown as RedisEvalClient, discoverySeenClient: redisClient })
   : undefined;
 
 // The outer guard (appConfig.marketData && sharedMarketDataRegistry) prevents

@@ -189,13 +189,14 @@ marketData:
       cacheTtlMs: 300000
   geckoterminal:
     baseUrl: "https://api.geckoterminal.com"
+    apiKey: ""                # override: COINGECKO_API_KEY — optional, enables Pro on-chain tier when set
     candles:
       requestsPerMinute: 15      # regime / active-watchlist OHLCV
       burstCapacity: 15
       maxWaitMs: 5000
       cacheTtlMs: 60000
     discovery:
-      requestsPerMinute: 10      # trending / top / new pools
+      requestsPerMinute: 60      # Raised from 10 to support paid tier; monitor CoinGecko credit consumption after rollout. 5-min discovery cache keeps upstream calls within the 100k-credit/mo Basic plan budget.
       burstCapacity: 5
       maxWaitMs: 5000
       cacheTtlMs: 300000

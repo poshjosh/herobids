@@ -173,6 +173,8 @@ export interface MarketDataConfig {
   };
   geckoterminal: {
     baseUrl: string;
+    proBaseUrl?: string;
+    apiKey?: string;
     candles: MarketDataBudgetSettings;
     discovery: MarketDataBudgetSettings;
   };
