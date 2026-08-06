@@ -475,6 +475,270 @@ describe('synthesizePrompt — capital handling', () => {
   });
 });
 
+// ── buildCreateAgentPayload: skillIds for custom preset ─────────────────────
+
+describe('buildCreateAgentPayload — skillIds for custom preset', () => {
+  it('includes caller-provided skillIds for custom preset', () => {
+    const payload = buildCreateAgentPayload(
+      { skillPresetId: 'custom', skillIds: ['trading', 'email'] },
+      TEST_USER_ID,
+    );
+    expect(payload.skillIds).toEqual(['trading', 'email']);
+  });
+
+  it('has empty skillIds for custom preset when skillIds omitted', () => {
+    const payload = buildCreateAgentPayload({ skillPresetId: 'custom' }, TEST_USER_ID);
+    expect(payload.skillIds).toEqual([]);
+  });
+
+  it('ignores skillIds for non-custom preset (uses preset-derived)', () => {
+    const payload = buildCreateAgentPayload(
+      { skillPresetId: 'trading', skillIds: ['email'] },
+      TEST_USER_ID,
+    );
+    // Preset-derived skills take precedence; caller-provided skillIds ignored
+    expect(payload.skillIds).toEqual(['trading', 'bot-management']);
+  });
+
+  it('does not crash when skillIds contain unknown IDs', () => {
+    const payload = buildCreateAgentPayload(
+      { skillPresetId: 'custom', skillIds: ['nonexistent-skill', 'trading'] },
+      TEST_USER_ID,
+    );
+    // Should not throw; unknown IDs pass through to downstream validation
+    expect(payload.skillIds).toContain('trading');
+    expect(payload.skillIds).toContain('nonexistent-skill');
+  });
+});
+
+// ── buildCreateAgentPayload: filterTrades → capabilityMode + hybridMode ─────
+
+describe('buildCreateAgentPayload — filterTrades', () => {
+  it('sets capabilityMode=intelligence and no hybridMode for filterTrades=off', () => {
+    const payload = buildCreateAgentPayload(
+      { skillPresetId: 'trading', capital: '1000', filterTrades: 'off' },
+      TEST_USER_ID,
+    );
+    expect(payload.capabilityMode).toBe('intelligence');
+    expect(payload.hybridMode).toBeUndefined();
+    // Trading preset still gets capital and executionDefaults
+    expect(payload.capital).toBe('1000');
+    expect(payload.executionDefaults).toBeDefined();
+    // strategy and hybridMode omitted (intelligence mode)
+    expect(payload.strategy).toBeUndefined();
+  });
+
+  it('sets capabilityMode=hybrid and hybridMode=mixed for filterTrades=mixed', () => {
+    const payload = buildCreateAgentPayload(
+      { skillPresetId: 'trading', capital: '1000', filterTrades: 'mixed' },
+      TEST_USER_ID,
+    );
+    expect(payload.capabilityMode).toBe('hybrid');
+    expect(payload.hybridMode).toBe('mixed');
+    expect(payload.strategy).toBeDefined();
+  });
+
+  it('sets capabilityMode=hybrid and hybridMode=scanner_gated for filterTrades=scanner_gated', () => {
+    const payload = buildCreateAgentPayload(
+      { skillPresetId: 'trading', capital: '1000', filterTrades: 'scanner_gated' },
+      TEST_USER_ID,
+    );
+    expect(payload.capabilityMode).toBe('hybrid');
+    expect(payload.hybridMode).toBe('scanner_gated');
+    expect(payload.strategy).toBeDefined();
+  });
+
+  it('ignores filterTrades for non-trading preset (personal-assistant)', () => {
+    const payload = buildCreateAgentPayload(
+      { skillPresetId: 'personal-assistant', filterTrades: 'scanner_gated' },
+      TEST_USER_ID,
+    );
+    expect(payload.capabilityMode).toBe('intelligence');
+    expect(payload.hybridMode).toBeUndefined();
+    expect(payload.capital).toBeUndefined();
+  });
+
+  it('defaults hybridMode to mixed for trading preset when filterTrades omitted', () => {
+    const payload = buildCreateAgentPayload(
+      { skillPresetId: 'trading', capital: '1000' },
+      TEST_USER_ID,
+    );
+    expect(payload.capabilityMode).toBe('hybrid');
+    expect(payload.hybridMode).toBe('mixed');
+  });
+});
+
+// ── buildCreateAgentPayload: platformAssessment ─────────────────────────────
+
+describe('buildCreateAgentPayload — platformAssessment', () => {
+  it('sets platformAssessment when enabled with scanner_gated', () => {
+    const payload = buildCreateAgentPayload(
+      {
+        skillPresetId: 'trading',
+        capital: '1000',
+        filterTrades: 'scanner_gated',
+        platformAssessmentEnabled: true,
+        platformAssessmentReviewIntervalHours: '12',
+      },
+      TEST_USER_ID,
+    );
+    expect(payload.platformAssessment).toEqual({
+      enabled: true,
+      reviewIntervalMs: 43_200_000,
+    });
+  });
+
+  it('defaults reviewIntervalMs to 12h when interval omitted', () => {
+    const payload = buildCreateAgentPayload(
+      {
+        skillPresetId: 'trading',
+        capital: '1000',
+        filterTrades: 'scanner_gated',
+        platformAssessmentEnabled: true,
+      },
+      TEST_USER_ID,
+    );
+    expect(payload.platformAssessment).toEqual({
+      enabled: true,
+      reviewIntervalMs: 43_200_000,
+    });
+  });
+
+  it('does not set platformAssessment when filterTrades is mixed (not scanner_gated)', () => {
+    const payload = buildCreateAgentPayload(
+      {
+        skillPresetId: 'trading',
+        capital: '1000',
+        filterTrades: 'mixed',
+        platformAssessmentEnabled: true,
+      },
+      TEST_USER_ID,
+    );
+    expect(payload.platformAssessment).toBeUndefined();
+  });
+
+  it('does not set platformAssessment when platformAssessmentEnabled is false', () => {
+    const payload = buildCreateAgentPayload(
+      {
+        skillPresetId: 'trading',
+        capital: '1000',
+        filterTrades: 'scanner_gated',
+        platformAssessmentEnabled: false,
+      },
+      TEST_USER_ID,
+    );
+    expect(payload.platformAssessment).toBeUndefined();
+  });
+
+  it('does not set platformAssessment for non-trading presets', () => {
+    const payload = buildCreateAgentPayload(
+      {
+        skillPresetId: 'personal-assistant',
+        platformAssessmentEnabled: true,
+      },
+      TEST_USER_ID,
+    );
+    expect(payload.platformAssessment).toBeUndefined();
+  });
+
+  it('does not set platformAssessment when filterTrades is off, even if enabled', () => {
+    const payload = buildCreateAgentPayload(
+      {
+        skillPresetId: 'trading',
+        capital: '1000',
+        filterTrades: 'off',
+        platformAssessmentEnabled: true,
+      },
+      TEST_USER_ID,
+    );
+    expect(payload.platformAssessment).toBeUndefined();
+  });
+});
+
+// ── executeChatAction: list_available_skills ────────────────────────────────
+
+describe('executeChatAction — list_available_skills', () => {
+  it('returns skills from the database when published skills exist', async () => {
+    const { db } = buildMockDb();
+
+    // Override the select mock to handle the skills query chain:
+    // db.select(...).from(skills).where(...).orderBy(...).limit(50)
+    db.select = vi.fn().mockImplementation((_cols?: unknown) => {
+      const chain: Record<string, unknown> = {};
+      chain.from = vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              { id: 'trading', name: 'Trading', description: 'Trade crypto', capabilityFamilies: ['trading'] },
+              { id: 'email', name: 'Email', description: 'Send emails', capabilityFamilies: ['communication'] },
+            ]),
+          }),
+        }),
+      });
+      return chain;
+    });
+
+    const result = await executeChatAction(
+      makeToolCall('list_available_skills'),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+    );
+
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed.skills).toBeDefined();
+    expect(Array.isArray(parsed.skills)).toBe(true);
+    expect((parsed.skills as Array<Record<string, unknown>>).length).toBe(2);
+    expect((parsed.skills as Array<Record<string, unknown>>)[0]!.id).toBe('trading');
+    expect((parsed.skills as Array<Record<string, unknown>>)[0]!.name).toBe('Trading');
+    expect((parsed.skills as Array<Record<string, unknown>>)[0]!.capabilityFamilies).toEqual(['trading']);
+  });
+
+  it('returns empty skills array on error', async () => {
+    const { db } = buildMockDb();
+    db.select = vi.fn().mockImplementation(() => {
+      throw new Error('DB error');
+    });
+
+    const result = await executeChatAction(
+      makeToolCall('list_available_skills'),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+    );
+
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed.skills).toEqual([]);
+    expect(parsed.message).toBe('Could not retrieve available skills.');
+  });
+
+  it('returns empty skills array when no published skills exist', async () => {
+    const { db } = buildMockDb();
+    db.select = vi.fn().mockImplementation(() => {
+      const chain: Record<string, unknown> = {};
+      chain.from = vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      });
+      return chain;
+    });
+
+    const result = await executeChatAction(
+      makeToolCall('list_available_skills'),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+    );
+
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed.skills).toEqual([]);
+    expect(parsed.message).toContain('No skills');
+  });
+});
+
 // ── POST /chat/threads/:id/actions/:actionId ────────────────────────────────
 
 describe('POST /chat/threads/:id/actions/:actionId', () => {

@@ -393,3 +393,11 @@ All changes are additive and backward-compatible:
 | 1 | MEDIUM | Inconsistent `PRESET_SKILL_MAP` ordering across codebase — domain, chat.ts, and frontend all order `trading` skill IDs differently (`['trading', 'bot-management']` vs `['bot-management', 'trading']`). No behavioral impact but maintainability concern. |
 | 2 | LOW | Review interval default 12h (chat) vs 24h (form) — intentional per plan but deserves a comment in code for future readers. |
 | 3 | LOW | Missing prompt guidance for when user proactively asks about review interval — LLM should be told available options (6h, 12h, 24h, 48h, 96h). |
+
+### [Step 6] Tests
+
+| # | Severity | Issue |
+|---|----------|-------|
+| 1 | MEDIUM | No `direct-trading`/`trading-assistant` filterTrades test coverage — only `trading` preset tested. Logic is shared so risk is low, but at least one smoke test per trading variant would catch regressions. |
+| 2 | LOW | Test names reference implementation details (`capabilityMode=intelligence`) rather than behavior — acceptable for payload builder tests but not ideal per AGENTS.md. |
+| 3 | LOW | `toBe(count)` used instead of `toHaveLength(count)` for array length assertions — more descriptive failure output available with `toHaveLength`. |
