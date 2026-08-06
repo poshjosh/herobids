@@ -184,9 +184,11 @@ export async function createAgent(
   // interception checks from the modal overlay.
   await page.getByRole('button', { name: /^Create AI agent$/i }).last().click({ force: true });
 
-  await page.waitForURL(/\/(agents)\/[^/?#]+$/, { timeout: 15_000 });
+  // Match only UUID-style agent IDs, not /agents/new.
+  const agentUrlPattern = /\/agents\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+  await page.waitForURL(agentUrlPattern, { timeout: 15_000 });
 
-  const match = page.url().match(/\/agents\/([^/?#]+)$/);
+  const match = page.url().match(agentUrlPattern);
   if (!match?.[1]) {
     throw new Error(`Could not determine agent id from URL: ${page.url()}`);
   }

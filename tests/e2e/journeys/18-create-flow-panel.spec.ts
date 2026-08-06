@@ -19,7 +19,19 @@ test.describe('Journey 18: Create AI Agent flow', () => {
   test('agents page has a Create AI agent button that navigates to the create page', async ({ page }) => {
     await registerUser(page, EMAIL, PASSWORD, 'E2E User J18');
 
-    await expect(page).toHaveURL(/\/agents/, { timeout: 15_000 });
+    // New users with 0 agents are auto-redirected to /agents/new.
+    // Create a minimal agent via API so the list page is accessible.
+    const token = await page.evaluate(() => localStorage.getItem('hb_session_token'));
+    const createRes = await page.request.post('/api/agents', {
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      data: { name: 'List View Agent', prompt: 'Minimal agent to access the list page.', provider: 'ollama', lightModel: 'qwen3:8b', heavyModel: 'qwen3.6:35b-a3b-q4_K_M' },
+    });
+    if (!createRes.ok()) {
+      throw new Error(`Failed to create agent for list view: ${createRes.status()} ${await createRes.text()}`);
+    }
+
+    await page.goto('/agents');
+    await expect(page).toHaveURL(/\/agents$/, { timeout: 15_000 });
 
     // The header CTA navigates to the dedicated create page.
     const createButton = page.getByRole('button', { name: /^Create AI agent$/i });
