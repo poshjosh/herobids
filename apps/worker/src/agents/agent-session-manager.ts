@@ -380,19 +380,23 @@ export class AgentSessionManager {
 
           // Gate check AFTER reconciliation — spend state is now fresh.
           // getOrCreateOpenPeriod recomputes account status when credit increases.
-          const spendState = await this.config.usageBillingRepo.getSpendState(billingAccount.id);
-          if (spendState && (spendState.status === 'hard_limited' || spendState.status === 'suspended')) {
+          const canSpendResult = await this.config.usageBillingRepo.canSpendNow(billingAccount.id);
+          if (!canSpendResult.canSpend) {
             const topUpsEnabled = Boolean(this.config.usageBillingConfig?.creditTopUpsEnabled) && (planUsageForEnforcement?.topUpPackIds?.length ?? 0) > 0;
-            const code = spendState.status === 'suspended'
+            const code = canSpendResult.reason === 'suspended'
               ? 'billing.account_suspended'
-              : (topUpsEnabled ? 'billing.top_up_required' : 'billing.limit_exceeded');
-            const message = spendState.status === 'suspended'
+              : canSpendResult.reason === 'no_available_credit'
+                ? 'billing.insufficient_funds'
+                : (topUpsEnabled ? 'billing.top_up_required' : 'billing.limit_exceeded');
+            const message = canSpendResult.reason === 'suspended'
               ? 'Account suspended — agent session start blocked'
-              : (topUpsEnabled
-                ? 'Usage limit reached — top-up required before agent can start'
-                : 'Usage limit reached — agent session start blocked');
+              : canSpendResult.reason === 'no_available_credit'
+                ? 'Insufficient billing credit — agent session start blocked'
+                : (topUpsEnabled
+                  ? 'Usage limit reached — top-up required before agent can start'
+                  : 'Usage limit reached — agent session start blocked');
 
-            logger.warn({ agentId: agent.id, userId: agent.userId, billingStatus: spendState.status }, 'Session launch blocked by billing spend state');
+            logger.warn({ agentId: agent.id, userId: agent.userId, billingStatus: canSpendResult.reason, availableMicrousd: canSpendResult.availableMicrousd }, 'Session launch blocked by billing spend state');
             await this.agentRepo.updateAgent(agent.id, { status: 'stopped' });
             await this.agentRepo.markSessionStopped(session.id, new Date());
             await this.eventPublisher.emitGuardrailTriggered(agent.id, {
@@ -401,7 +405,7 @@ export class AgentSessionManager {
               message,
               details: {
                 sessionId: session.id,
-                billingStatus: spendState.status,
+                billingStatus: canSpendResult.reason,
               },
             });
             await this.eventPublisher.emitInstanceStatus(agent.id, {
