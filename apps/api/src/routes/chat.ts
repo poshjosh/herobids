@@ -37,6 +37,19 @@ interface ThreadMetadata {
   processedActionIds?: string[];
 }
 
+/**
+ * Transient context describing a post-action resume (e.g. after Gmail OAuth
+ * returns to Guided Setup). This is NOT persisted as a chat message row — it is
+ * invocation-only context rendered into the LLM prompt so the resumed call is
+ * explicit about what just happened instead of relying on summary.step alone.
+ */
+interface OnboardingResumeEvent {
+  kind: 'connection_linked' | 'connection_form_cancelled';
+  connectionId?: string;
+  providerHint?: string;
+  actionContext?: 'guided_setup_connection';
+}
+
 interface PersistedChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -149,7 +162,58 @@ Do NOT say "ask anything" — you have a specific job.
 - Always validate your understanding before calling create_agent.
 - After creating, remind the user of important next steps.
 - The user can always say "skip" or "use the form" to switch to the form-based flow.
-- Cover the happy path (~6-8 key fields). Advanced settings are in the form.`;
+- Cover the happy path (~6-8 key fields). Advanced settings are in the form.
+
+## Resume After Connection Actions
+
+When the runtime resumes you after a connection action, you will receive an explicit resume event describing what just happened. Treat it as the latest user-visible state change — it is the most recent thing that occurred, even though it is not a normal chat message.
+
+- If the resume event says a connection was linked successfully, continue the setup flow from that point and do NOT ask the user to reconnect the provider.
+- If the resume event says the connection form was dismissed, acknowledge the user's choice and offer alternatives (reuse an existing connection, switch to the form, or continue without). Do NOT immediately request the same connection form again.
+- For personal-assistant email-management flows, once Gmail is linked, proceed to the next missing setup field or summarize the collected information for creation rather than switching to generic conversation.`;
+}
+
+/**
+ * Render a resume event into an explicit natural-language prompt block.
+ * Returns an empty string when there is no resume event.
+ */
+function buildResumePromptBlock(event: OnboardingResumeEvent | null): string {
+  if (!event) return '';
+  if (event.kind === 'connection_linked') {
+    const provider = event.providerHint ? ` (${event.providerHint})` : '';
+    return `\n\n## Resume Event\nA provider connection${provider} was linked successfully during Guided Setup. The connection is now available for the agent. Continue creating the agent from the current setup state. Do not ask the user to reconnect the provider.`;
+  }
+  return `\n\n## Resume Event\nThe user dismissed the provider connection form during Guided Setup. Acknowledge their choice and offer alternatives (reuse an existing connection, switch to the form, or continue without). Do not immediately request the same connection form again.`;
+}
+
+/**
+ * Build a transient user-like event message so the resumed model responds to a
+ * fresh event rather than its own earlier assistant text. Kept out of persisted
+ * message history. Returns null when there is no resume event.
+ */
+function buildResumeEventMessage(event: OnboardingResumeEvent | null): LlmMessage | null {
+  if (!event) return null;
+  if (event.kind === 'connection_linked') {
+    const provider = event.providerHint ? ` (${event.providerHint})` : '';
+    return { role: 'user', content: `System event: the provider connection${provider} was linked successfully. Continue the Guided Setup flow.` };
+  }
+  return { role: 'user', content: 'System event: the provider connection form was dismissed. Continue the Guided Setup flow without re-opening the form.' };
+}
+
+/**
+ * Resume-aware fallback used when the provider returns empty content with no
+ * tool calls. Keeps onboarding momentum instead of degrading to a generic
+ * open-ended chat response. Deterministic and safe on empty content.
+ */
+function buildResumeFallback(event: OnboardingResumeEvent | null): string {
+  if (event?.kind === 'connection_linked') {
+    const provider = event.providerHint ? ` ${event.providerHint}` : '';
+    return `Your${provider} connection is linked and ready. Let's continue setting up your agent. What would you like to do next?`;
+  }
+  if (event?.kind === 'connection_form_cancelled') {
+    return 'No problem — we can continue without a new connection, reuse an existing one, or switch to the form. How would you like to proceed?';
+  }
+  return 'I understand. How can I help you further with setting up your agent?';
 }
 
 // ── Tool Definitions ─────────────────────────────────────────────────────────
@@ -309,6 +373,18 @@ export function synthesizePrompt(goal: string | undefined, preset: string, capit
 function mapExecutionMode(requestedMode: string | undefined): { mode: 'paper' | 'shadow' | 'live'; slippageBps: number } {
   if (requestedMode === 'live') return { mode: 'live', slippageBps: 50 };
   return { mode: 'shadow', slippageBps: 50 };
+}
+
+/**
+ * Detect a preset selection from a user message (e.g. a quick-reply choice like
+ * `preset:personal-assistant`). Returns undefined when no preset is determinable.
+ */
+function detectPresetFromContent(content: string): string | undefined {
+  const match = /preset:([a-z-]+)/.exec(content);
+  if (!match) return undefined;
+  const preset = match[1];
+  if (!preset) return undefined;
+  return preset;
 }
 
 /**
@@ -697,6 +773,7 @@ export async function invokeOnboardingLlm(
   userId: string,
   threadMessages: PersistedChatMessage[],
   threadMetadata: ThreadMetadata | null,
+  resumeEvent?: OnboardingResumeEvent,
 ): Promise<LlmInvocationResult> {
   const systemPrompt = buildSystemPrompt();
 
@@ -705,7 +782,12 @@ export async function invokeOnboardingLlm(
     ? `\n\n## Current Setup Progress\n${JSON.stringify(threadMetadata.summary, null, 2)}`
     : '';
 
-  const fullSystemPrompt = systemPrompt + summaryBlock;
+  // Explicit resume-event block — the primary signal for post-action resumes.
+  // The summary block alone is insufficient because the model must not have to
+  // infer state transitions from metadata JSON.
+  const resumeBlock = buildResumePromptBlock(resumeEvent ?? null);
+
+  const fullSystemPrompt = systemPrompt + summaryBlock + resumeBlock;
 
   // Build messages array for LLM
   const messages: LlmMessage[] = [
@@ -720,6 +802,13 @@ export async function invokeOnboardingLlm(
     } else {
       messages.push({ role: 'assistant', content: msg.content });
     }
+  }
+
+  // Append a transient user-like event message so the model responds to a fresh
+  // event rather than its own earlier assistant text. Not persisted.
+  const resumeEventMessage = buildResumeEventMessage(resumeEvent ?? null);
+  if (resumeEventMessage) {
+    messages.push(resumeEventMessage);
   }
 
   let toolCallsProcessed = 0;
@@ -759,7 +848,7 @@ export async function invokeOnboardingLlm(
 
     // If no tool calls, return the assistant response
     if (!toolCalls || toolCalls.length === 0) {
-      return { content: content || 'I understand. How can I help you further with setting up your agent?', toolCallsProcessed, summaryFacts, actions: pendingActions };
+      return { content: content || buildResumeFallback(resumeEvent ?? null), toolCallsProcessed, summaryFacts, actions: pendingActions };
     }
 
     // Process tool calls
@@ -994,6 +1083,7 @@ export async function chatRoutes(
       ];
 
       // Update thread metadata with enriched summary and createdAgentId
+      const detectedPreset = detectPresetFromContent(content);
       const metadataUpdate: ThreadMetadata = {
         ...(metadata ?? {}),
         ...(llmResponse.createdAgent ? {
@@ -1003,6 +1093,9 @@ export async function chatRoutes(
         summary: {
           ...(metadata?.summary ?? {}),
           ...(llmResponse.summaryFacts ?? {}),
+          // Persist the preset when determinable so resumed turns (e.g. after
+          // Gmail OAuth) retain the active setup type without re-deriving it.
+          ...(detectedPreset ? { preset: detectedPreset } : {}),
           step: llmResponse.createdAgent ? 'completed' : 'conversation',
         },
       };
@@ -1086,9 +1179,10 @@ export async function chatRoutes(
       }
 
       // Validate the connection belongs to the user and is active before linking.
+      let providerHint: string | undefined;
       if (connectionId) {
         const [conn] = await db
-          .select({ id: connections.id, status: connections.status })
+          .select({ id: connections.id, status: connections.status, provider: connections.provider })
           .from(connections)
           .where(and(eq(connections.id, connectionId), eq(connections.userId, request.userId)))
           .limit(1);
@@ -1096,6 +1190,7 @@ export async function chatRoutes(
         if (!conn || conn.status !== 'active') {
           return reply.status(400).send(errorPayload('invalid_connection', 'Connection is not valid or is not active'));
         }
+        providerHint = conn.provider;
       }
 
       // Build updated thread metadata.
@@ -1122,7 +1217,13 @@ export async function chatRoutes(
         .where(eq(chatThreads.id, request.params.id));
 
       // Resume the onboarding LLM with the updated metadata so the conversation
-      // continues automatically after linking or dismissing the form.
+      // continues automatically after linking or dismissing the form. Pass an
+      // explicit resume event so the resumed call is unambiguous about what
+      // just happened (not just summary.step).
+      const resumeEvent: OnboardingResumeEvent = isCancellation
+        ? { kind: 'connection_form_cancelled', actionContext: 'guided_setup_connection' }
+        : { kind: 'connection_linked', connectionId, providerHint, actionContext: 'guided_setup_connection' };
+
       const llmResponse = await invokeOnboardingLlm(
         llmConfig,
         providersYaml,
@@ -1130,6 +1231,7 @@ export async function chatRoutes(
         request.userId,
         threadResult.messages,
         updatedMetadata,
+        resumeEvent,
       );
 
       const resumeActions: ChatAction[] = [

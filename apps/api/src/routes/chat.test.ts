@@ -256,6 +256,160 @@ describe('invokeOnboardingLlm — form action emission', () => {
   });
 });
 
+// ── invokeOnboardingLlm: resume events ──────────────────────────────────────
+
+describe('invokeOnboardingLlm — resume events', () => {
+  it('appends explicit resume instructions and a transient event message for connection_linked', async () => {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Your Gmail is linked. What should your assistant do?',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+    const result = await invokeOnboardingLlm(
+      LLM_CONFIG,
+      EMPTY_PROVIDERS_YAML,
+      db,
+      TEST_USER_ID,
+      [],
+      { summary: { step: 'connection_linked', connectionIds: ['conn-1'] } },
+      { kind: 'connection_linked', connectionId: 'conn-1', providerHint: 'gmail', actionContext: 'guided_setup_connection' },
+    );
+
+    expect(result.content).toContain('Gmail is linked');
+
+    // The system prompt must contain the explicit resume-event block, not just
+    // the summary.step value.
+    const systemMessage = callMock.mock.calls[0]![1]!.messages[0] as { role: string; content: string };
+    expect(systemMessage.role).toBe('system');
+    expect(systemMessage.content).toContain('## Resume Event');
+    expect(systemMessage.content).toContain('linked successfully during Guided Setup');
+    expect(systemMessage.content).toContain('gmail');
+
+    // A transient user-like event message must be appended so the model responds
+    // to a fresh event rather than its own earlier assistant text.
+    const lastMessage = callMock.mock.calls[0]![1]!.messages.at(-1) as { role: string; content: string };
+    expect(lastMessage.role).toBe('user');
+    expect(lastMessage.content).toContain('System event:');
+    expect(lastMessage.content).toContain('Continue the Guided Setup flow');
+  });
+
+  it('emits a Guided Setup-specific fallback on empty content during connection_linked resume', async () => {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: '',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+    const result = await invokeOnboardingLlm(
+      LLM_CONFIG,
+      EMPTY_PROVIDERS_YAML,
+      db,
+      TEST_USER_ID,
+      [],
+      { summary: { step: 'connection_linked' } },
+      { kind: 'connection_linked', connectionId: 'conn-1', providerHint: 'gmail' },
+    );
+
+    expect(result.content).not.toContain('I understand. How can I help you further');
+    expect(result.content).toContain('connection is linked and ready');
+  });
+
+  it('keeps the generic fallback for a normal non-resume turn with empty content', async () => {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: '',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+    const result = await invokeOnboardingLlm(LLM_CONFIG, EMPTY_PROVIDERS_YAML, db, TEST_USER_ID, [], null);
+
+    expect(result.content).toBe('I understand. How can I help you further with setting up your agent?');
+  });
+
+  it('emits a cancellation-aware fallback on empty content during connection_form_cancelled resume', async () => {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: '',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+    const result = await invokeOnboardingLlm(
+      LLM_CONFIG,
+      EMPTY_PROVIDERS_YAML,
+      db,
+      TEST_USER_ID,
+      [],
+      { summary: { step: 'connection_form_cancelled' } },
+      { kind: 'connection_form_cancelled' },
+    );
+
+    expect(result.content).not.toContain('I understand. How can I help you further');
+    expect(result.content).toContain('continue without a new connection');
+  });
+
+  it('does not emit a connection-form action on a connection_linked resume', async () => {
+    // The model returns no tool calls — it should not re-request the form.
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Your connection is ready. What next?',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+    const result = await invokeOnboardingLlm(
+      LLM_CONFIG,
+      EMPTY_PROVIDERS_YAML,
+      db,
+      TEST_USER_ID,
+      [],
+      { summary: { step: 'connection_linked', connectionIds: ['conn-1'] } },
+      { kind: 'connection_linked', connectionId: 'conn-1', providerHint: 'gmail' },
+    );
+
+    expect(result.actions).toEqual([]);
+  });
+});
+
 // ── buildCreateAgentPayload: non-trading payload contract ───────────────────
 
 describe('buildCreateAgentPayload — non-trading payload contract', () => {
@@ -470,5 +624,129 @@ describe('POST /chat/threads/:id/actions/:actionId', () => {
     // No LLM call, no new message persisted.
     expect(callMock).not.toHaveBeenCalled();
     expect(state.insertedMessages.length).toBe(0);
+  });
+
+  it('passes a connection_linked resume event after a valid linked connection', async () => {
+    const { app } = await buildAppWithThread({
+      threadRows: [{
+        id: 'thread-1',
+        userId: TEST_USER_ID,
+        title: 'Guided Setup',
+        metadata: { summary: { step: 'conversation' } },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }],
+      messageRows: [],
+      connectionRows: [{ id: 'conn-1', userId: TEST_USER_ID, status: 'active', provider: 'gmail' }],
+    });
+
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Your Gmail is linked. What should your assistant do?',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/actions/action-1',
+      payload: { result: { connectionId: 'conn-1' } },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().message.content).toContain('Gmail is linked');
+
+    // The resumed LLM call must carry the explicit connection_linked resume event.
+    const systemMessage = callMock.mock.calls[0]![1]!.messages[0] as { role: string; content: string };
+    expect(systemMessage.content).toContain('## Resume Event');
+    expect(systemMessage.content).toContain('linked successfully during Guided Setup');
+    expect(systemMessage.content).toContain('gmail');
+  });
+
+  it('passes a connection_form_cancelled resume event after { cancelled: true }', async () => {
+    const { app } = await buildAppWithThread({
+      threadRows: [{
+        id: 'thread-1',
+        userId: TEST_USER_ID,
+        title: 'Guided Setup',
+        metadata: { summary: { step: 'conversation' } },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }],
+      messageRows: [],
+    });
+
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'No problem — we can continue without a connection.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/actions/action-1',
+      payload: { result: { cancelled: true } },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().message.content).toContain('No problem');
+
+    const systemMessage = callMock.mock.calls[0]![1]!.messages[0] as { role: string; content: string };
+    expect(systemMessage.content).toContain('## Resume Event');
+    expect(systemMessage.content).toContain('dismissed the provider connection form');
+  });
+
+  it('preserves preset context across a personal-assistant resume', async () => {
+    const { app } = await buildAppWithThread({
+      threadRows: [{
+        id: 'thread-1',
+        userId: TEST_USER_ID,
+        title: 'Guided Setup',
+        metadata: { summary: { step: 'connection_linked', preset: 'personal-assistant', connectionIds: ['conn-1'] } },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }],
+      messageRows: [],
+      connectionRows: [{ id: 'conn-1', userId: TEST_USER_ID, status: 'active', provider: 'gmail' }],
+    });
+
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Your Gmail is linked. What should your assistant do?',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/actions/action-1',
+      payload: { result: { connectionId: 'conn-1' } },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    // The summary block must retain the personal-assistant preset across resume.
+    const systemMessage = callMock.mock.calls[0]![1]!.messages[0] as { role: string; content: string };
+    expect(systemMessage.content).toContain('personal-assistant');
+    expect(systemMessage.content).toContain('connection_linked');
   });
 });
