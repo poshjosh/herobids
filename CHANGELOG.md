@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.45 - 2026-08-06
+
 ### Added
 
 - **Zero-balance billing enforcement:** Agents can no longer consume paid platform resources when available credit is exhausted. A new shared `canSpendNow` guard in `UsageBillingRepository` checks `availableMicrousd = balanceMicrousd - reservedMicrousd` and blocks paid work when `<= 0`, even if account status is still `active`. Enforcement points: agent session start (`AgentSessionManager`), scout/judge LLM dispatch, and hybrid evaluator LLM dispatch. New reason codes: `billing.insufficient_funds` and `billing.account_suspended`. Assessment pre-check now also uses the shared `canSpendNow` guard. See `docs/features/2026/08/06/002-zero-balance-billing-enforcement/001-plan.md`.
