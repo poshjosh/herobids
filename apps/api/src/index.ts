@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import fastifyMultipart from '@fastify/multipart';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { createDatabase, EVALUATION_QUEUE_NAME, MANUAL_REVIEW_QUEUE_NAME } from '@herobids/db';
+import { createDatabase, EVALUATION_QUEUE_NAME, MANUAL_REVIEW_QUEUE_NAME, UsageBillingRepository } from '@herobids/db';
 import type { EvaluationJobData, ManualReviewJobData } from '@herobids/db';
 import { botRoutes } from './routes/bots.js';
 import { venueAccountRoutes } from './routes/accounts.js';
@@ -257,7 +257,8 @@ await blueprintRoutes(app, db, appConfig.agentRiskDefaults, new BlueprintExecuti
 await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans, appConfig.agentRiskDefaults);
 await analyticsRoutes(app, db);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
-await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient);
+const chatUsageBillingRepo = new UsageBillingRepository(db, appConfig.usageBilling?.defaultRateCardItems, providersYaml);
+await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo);
 await skillsRoutes(app, db, appConfig.plans);
 await datasetRoutes(app, db, redisClient);
 await agentDocumentRoutes(app, db);

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { eq, and, asc, desc, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
-import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skillRevisions } from '@herobids/db';
+import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skillRevisions, UsageBillingRepository } from '@herobids/db';
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml } from '@herobids/domain';
@@ -538,6 +538,7 @@ export async function executeChatAction(
   db: Database,
   userId: string,
   _providersYaml: ProvidersYaml,
+  usageBillingRepo?: UsageBillingRepository,
 ): Promise<string> {
   switch (toolCall.name) {
     case 'search_app_docs':
@@ -607,6 +608,22 @@ export async function executeChatAction(
     }
 
     case 'create_agent': {
+      // Billing gate: defense-in-depth for agent creation
+      if (usageBillingRepo) {
+        const account = await usageBillingRepo.getAccountByUserId(userId);
+        const canSpendResult = account
+          ? await usageBillingRepo.canSpendNow(account.id)
+          : null;
+        if (canSpendResult && !canSpendResult.canSpend) {
+          return JSON.stringify({
+            error: 'billing.top_up_required',
+            message: 'You need to add credit before creating an agent.',
+            reason: canSpendResult.reason,
+            availableMicrousd: canSpendResult.availableMicrousd,
+          });
+        }
+      }
+
       const parsed = GuidedSetupCreateAgentInput.safeParse(toolCall.args);
       if (!parsed.success) {
         return JSON.stringify({
@@ -788,6 +805,7 @@ export async function invokeOnboardingLlm(
   threadMessages: PersistedChatMessage[],
   threadMetadata: ThreadMetadata | null,
   resumeEvent?: OnboardingResumeEvent,
+  usageBillingRepo?: UsageBillingRepository,
 ): Promise<LlmInvocationResult> {
   const systemPrompt = buildSystemPrompt();
 
@@ -868,7 +886,7 @@ export async function invokeOnboardingLlm(
     // Process tool calls
     const toolResults: LlmMessage[] = [];
     for (const tc of toolCalls) {
-      const toolResult = await executeChatAction(tc, db, userId, providersYaml);
+      const toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo);
       toolResults.push({
         role: 'tool',
         content: toolResult,
@@ -975,6 +993,7 @@ export async function chatRoutes(
   llmConfig: LlmConfig,
   providersYaml: ProvidersYaml,
   _redisClient: Redis,
+  usageBillingRepo?: UsageBillingRepository,
 ): Promise<void> {
   /**
    * POST /chat/threads
@@ -1045,6 +1064,22 @@ export async function chatRoutes(
 
     const { content } = parsed.data;
 
+    // Billing gate: block paid LLM calls when user has no available credit
+    if (usageBillingRepo) {
+      const account = await usageBillingRepo.getAccountByUserId(request.userId);
+      const canSpendResult = account
+        ? await usageBillingRepo.canSpendNow(account.id)
+        : null;
+      // Fresh user (no billing account) = allow spending
+      if (canSpendResult && !canSpendResult.canSpend) {
+        return reply.status(402).send(errorPayload(
+          'billing.top_up_required',
+          'You need to add credit to continue using Guided Setup.',
+          { reason: canSpendResult.reason, availableMicrousd: canSpendResult.availableMicrousd },
+        ));
+      }
+    }
+
     try {
       // Persist user message
       const userMsgId = uuid();
@@ -1077,6 +1112,8 @@ export async function chatRoutes(
         request.userId,
         allMessages,
         metadata,
+        undefined,
+        usageBillingRepo,
       );
 
       // Build structured actions from agent creation result, merging any
@@ -1238,6 +1275,22 @@ export async function chatRoutes(
         ? { kind: 'connection_form_cancelled', actionContext: 'guided_setup_connection' }
         : { kind: 'connection_linked', connectionId, providerHint, actionContext: 'guided_setup_connection' };
 
+      // Billing gate: block paid LLM call when user has no available credit.
+      // Connection-link metadata updates are not paid actions and persist regardless.
+      if (usageBillingRepo) {
+        const account = await usageBillingRepo.getAccountByUserId(request.userId);
+        const canSpendResult = account
+          ? await usageBillingRepo.canSpendNow(account.id)
+          : null;
+        if (canSpendResult && !canSpendResult.canSpend) {
+          return reply.status(402).send(errorPayload(
+            'billing.top_up_required',
+            'You need to add credit to continue using Guided Setup.',
+            { reason: canSpendResult.reason, availableMicrousd: canSpendResult.availableMicrousd },
+          ));
+        }
+      }
+
       const llmResponse = await invokeOnboardingLlm(
         llmConfig,
         providersYaml,
@@ -1246,6 +1299,7 @@ export async function chatRoutes(
         threadResult.messages,
         updatedMetadata,
         resumeEvent,
+        usageBillingRepo,
       );
 
       const resumeActions: ChatAction[] = [
