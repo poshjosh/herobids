@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
-import type { Database } from '@herobids/db';
+import type { Database, UsageBillingRepository } from '@herobids/db';
 import type { Redis } from 'ioredis';
 import type { ProvidersYaml } from '@herobids/domain';
 import { chatRoutes, executeChatAction, invokeOnboardingLlm, buildCreateAgentPayload, synthesizePrompt } from './chat.js';
@@ -829,5 +829,149 @@ describe('POST /chat/threads/:id/messages — preset persistence', () => {
     const updateSet = state.updateSets[0] as Record<string, unknown>;
     const metadata = updateSet['metadata'] as { summary?: { preset?: string } };
     expect(metadata.summary?.preset).toBeUndefined();
+  });
+});
+
+// ── executeChatAction: create_agent billing gate ────────────────────────────
+
+describe('executeChatAction — create_agent billing gate', () => {
+  it('returns billing.top_up_required when canSpendNow returns canSpend: false', async () => {
+    const { db } = buildMockDb();
+    const mockGetAccountByUserId = vi.fn().mockResolvedValue({
+      id: 'acct-1', ownerUserId: TEST_USER_ID, status: 'active', currency: 'USD',
+      activePlanId: 'free', softCapMicrousd: null, hardCapMicrousd: 10000,
+      lastEvaluatedAt: null, createdAt: new Date(), updatedAt: new Date(),
+    });
+    const mockCanSpendNow = vi.fn().mockResolvedValue({
+      canSpend: false, availableMicrousd: 0, status: 'hard_limited', reason: 'hard_limited',
+    });
+    const mockUsageBillingRepo = {
+      getAccountByUserId: mockGetAccountByUserId,
+      canSpendNow: mockCanSpendNow,
+    } as unknown as UsageBillingRepository;
+
+    const result = await executeChatAction(
+      makeToolCall('create_agent', { skillPresetId: 'custom' }),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+      mockUsageBillingRepo,
+    );
+
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed.error).toBe('billing.top_up_required');
+    expect(mockGetAccountByUserId).toHaveBeenCalledWith(TEST_USER_ID);
+    expect(mockCanSpendNow).toHaveBeenCalledWith('acct-1');
+  });
+
+  it('does not return billing error when canSpendNow returns canSpend: true', async () => {
+    const { db } = buildMockDb();
+    const mockUsageBillingRepo = {
+      getAccountByUserId: vi.fn().mockResolvedValue({
+        id: 'acct-1', ownerUserId: TEST_USER_ID, status: 'active', currency: 'USD',
+        activePlanId: 'free', softCapMicrousd: null, hardCapMicrousd: 10000,
+        lastEvaluatedAt: null, createdAt: new Date(), updatedAt: new Date(),
+      }),
+      canSpendNow: vi.fn().mockResolvedValue({
+        canSpend: true, availableMicrousd: 5000, status: 'active', reason: 'ok',
+      }),
+    } as unknown as UsageBillingRepository;
+
+    const result = await executeChatAction(
+      makeToolCall('create_agent', { skillPresetId: 'custom' }),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+      mockUsageBillingRepo,
+    );
+
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    // Must NOT be blocked by billing — the code proceeds past the gate.
+    // The agent creation may fail on mock DB limitations, but the error
+    // must not be billing.top_up_required.
+    expect(parsed.error).not.toBe('billing.top_up_required');
+  });
+
+  it('does not block when getAccountByUserId returns null (fresh user, no billing account)', async () => {
+    const { db } = buildMockDb();
+    const mockUsageBillingRepo = {
+      getAccountByUserId: vi.fn().mockResolvedValue(null),
+      canSpendNow: vi.fn(),
+    } as unknown as UsageBillingRepository;
+
+    const result = await executeChatAction(
+      makeToolCall('create_agent', { skillPresetId: 'custom' }),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+      mockUsageBillingRepo,
+    );
+
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed.error).not.toBe('billing.top_up_required');
+    // canSpendNow must not be called when there is no billing account
+    expect(mockUsageBillingRepo.canSpendNow).not.toHaveBeenCalled();
+  });
+});
+
+// ── invokeOnboardingLlm: billing repo plumbing ──────────────────────────────
+
+describe('invokeOnboardingLlm — billing repo plumbing', () => {
+  it('passes usageBillingRepo through to executeChatAction (create_agent gate triggers)', async () => {
+    const mockGetAccountByUserId = vi.fn().mockResolvedValue({
+      id: 'acct-1', ownerUserId: TEST_USER_ID, status: 'active', currency: 'USD',
+      activePlanId: 'free', softCapMicrousd: null, hardCapMicrousd: 10000,
+      lastEvaluatedAt: null, createdAt: new Date(), updatedAt: new Date(),
+    });
+    const mockCanSpendNow = vi.fn().mockResolvedValue({
+      canSpend: false, availableMicrousd: 0, status: 'hard_limited', reason: 'hard_limited',
+    });
+    const mockUsageBillingRepo = {
+      getAccountByUserId: mockGetAccountByUserId,
+      canSpendNow: mockCanSpendNow,
+    } as unknown as UsageBillingRepository;
+
+    // LLM returns create_agent, then a plain response.
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: '',
+        toolCalls: [makeToolCall('create_agent', { skillPresetId: 'custom' })],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'You need to add credit first.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+    const result = await invokeOnboardingLlm(
+      LLM_CONFIG,
+      EMPTY_PROVIDERS_YAML,
+      db,
+      TEST_USER_ID,
+      [],
+      null,
+      undefined,
+      mockUsageBillingRepo,
+    );
+
+    // The billing gate should have been checked (plumbing works).
+    expect(mockGetAccountByUserId).toHaveBeenCalledWith(TEST_USER_ID);
+    expect(mockCanSpendNow).toHaveBeenCalledWith('acct-1');
+    // The LLM response includes the fallback content from the second mock call.
+    expect(result.content).toBe('You need to add credit first.');
   });
 });
