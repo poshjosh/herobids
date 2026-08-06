@@ -174,6 +174,13 @@ export interface ReleaseReservedChargeResult {
 
 export type AccountStatus = 'active' | 'soft_limited' | 'hard_limited' | 'suspended';
 
+export interface CanSpendNowResult {
+  canSpend: boolean;
+  availableMicrousd: number;
+  status: AccountStatus;
+  reason: 'ok' | 'no_available_credit' | 'hard_limited' | 'suspended';
+}
+
 export interface BillingAccountRow {
   id: string;
   ownerUserId: string;
@@ -306,6 +313,65 @@ export class UsageBillingRepository {
       .limit(1);
 
     return row ?? null;
+  }
+
+  /**
+   * Check whether paid work is allowed right now for this billing account.
+   *
+   * Rule: paid work is blocked when:
+   * - account status is hard_limited or suspended, OR
+   * - available credit (balanceMicrousd - reservedMicrousd) is <= 0,
+   *   even if account status is still active.
+   *
+   * If no open period exists (fresh user), treat as canSpend: true.
+   */
+  async canSpendNow(accountId: string): Promise<CanSpendNowResult> {
+    const [period] = await this.db
+      .select({
+        status: billingAccounts.status,
+        balanceMicrousd: billingPeriods.balanceMicrousd,
+        reservedMicrousd: billingPeriods.reservedMicrousd,
+      })
+      .from(billingPeriods)
+      .innerJoin(billingAccounts, eq(billingPeriods.accountId, billingAccounts.id))
+      .where(
+        and(
+          eq(billingPeriods.accountId, accountId),
+          eq(billingPeriods.status, 'open'),
+        ),
+      )
+      .orderBy(desc(billingPeriods.periodStart))
+      .limit(1);
+
+    // No open period = fresh user, allow spending
+    if (!period) {
+      return {
+        canSpend: true,
+        availableMicrousd: 0,
+        status: 'active',
+        reason: 'ok',
+      };
+    }
+
+    const availableMicrousd = period.balanceMicrousd - period.reservedMicrousd;
+
+    if (period.status === 'hard_limited') {
+      return { canSpend: false, availableMicrousd, status: 'hard_limited', reason: 'hard_limited' };
+    }
+    if (period.status === 'suspended') {
+      return { canSpend: false, availableMicrousd, status: 'suspended', reason: 'suspended' };
+    }
+    if (period.status !== 'active' && period.status !== 'soft_limited') {
+      console.warn(
+        `[canSpendNow] Unknown account status "${period.status}" for account ${accountId}, blocking conservatively`,
+      );
+      return { canSpend: false, availableMicrousd, status: 'hard_limited', reason: 'hard_limited' };
+    }
+    if (availableMicrousd <= 0) {
+      return { canSpend: false, availableMicrousd, status: period.status as AccountStatus, reason: 'no_available_credit' };
+    }
+
+    return { canSpend: true, availableMicrousd, status: period.status as AccountStatus, reason: 'ok' };
   }
 
   async getOrCreateOpenPeriod(

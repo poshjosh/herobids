@@ -12,7 +12,7 @@ import type { ProvidersYaml } from '@herobids/domain';
  */
 function makeSelectChain(rows: unknown[]) {
   const chain: Record<string, unknown> = {};
-  for (const m of ['from', 'where', 'orderBy', 'limit', 'offset']) {
+  for (const m of ['from', 'innerJoin', 'where', 'orderBy', 'limit', 'offset']) {
     chain[m] = vi.fn(() => chain);
   }
   (chain as { then: unknown }).then = (
@@ -831,5 +831,172 @@ describe('getOrCreateOpenPeriod plan-change reconciliation', () => {
     // No UPDATE, no INSERT
     expect(periodUpdates.length).toBe(0);
     expect(ledgerInserts.length).toBe(0);
+  });
+});
+
+// ── canSpendNow tests ────────────────────────────────────────────────────────
+
+describe('canSpendNow', () => {
+  it('returns canSpend: true when no open period exists (fresh user)', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() => makeSelectChain([])),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(true);
+    expect(result.availableMicrousd).toBe(0);
+    expect(result.status).toBe('active');
+    expect(result.reason).toBe('ok');
+  });
+
+  it('returns canSpend: false, reason: hard_limited when account status is hard_limited', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'hard_limited',
+          balanceMicrousd: 500,
+          reservedMicrousd: 100,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(false);
+    expect(result.availableMicrousd).toBe(400);
+    expect(result.status).toBe('hard_limited');
+    expect(result.reason).toBe('hard_limited');
+  });
+
+  it('returns canSpend: false, reason: suspended when account status is suspended', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'suspended',
+          balanceMicrousd: 500,
+          reservedMicrousd: 100,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(false);
+    expect(result.availableMicrousd).toBe(400);
+    expect(result.status).toBe('suspended');
+    expect(result.reason).toBe('suspended');
+  });
+
+  it('returns canSpend: false, reason: no_available_credit when availableMicrousd <= 0 and status is active', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'active',
+          balanceMicrousd: 100,
+          reservedMicrousd: 100,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(false);
+    expect(result.availableMicrousd).toBe(0);
+    expect(result.status).toBe('active');
+    expect(result.reason).toBe('no_available_credit');
+  });
+
+  it('returns canSpend: false when availableMicrousd is negative (overspent)', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'active',
+          balanceMicrousd: -100,
+          reservedMicrousd: 200,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(false);
+    expect(result.availableMicrousd).toBe(-300);
+    expect(result.status).toBe('active');
+    expect(result.reason).toBe('no_available_credit');
+  });
+
+  it('returns canSpend: true, reason: ok when available credit is positive and status is active', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'active',
+          balanceMicrousd: 20_000_000,
+          reservedMicrousd: 0,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(true);
+    expect(result.availableMicrousd).toBe(20_000_000);
+    expect(result.status).toBe('active');
+    expect(result.reason).toBe('ok');
+  });
+
+  it('returns canSpend: true, reason: ok when available credit is positive and status is soft_limited', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'soft_limited',
+          balanceMicrousd: 20_000_000,
+          reservedMicrousd: 0,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(true);
+    expect(result.availableMicrousd).toBe(20_000_000);
+    expect(result.status).toBe('soft_limited');
+    expect(result.reason).toBe('ok');
+  });
+
+  it('returns canSpend: false, reason: no_available_credit when soft_limited with zero available credit', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'soft_limited',
+          balanceMicrousd: 100,
+          reservedMicrousd: 100,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(false);
+    expect(result.availableMicrousd).toBe(0);
+    expect(result.status).toBe('soft_limited');
+    expect(result.reason).toBe('no_available_credit');
+  });
+
+  it('status check wins over credit check: hard_limited blocks even with positive available credit', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'hard_limited',
+          balanceMicrousd: 20_000_000,
+          reservedMicrousd: 0,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(false);
+    expect(result.reason).toBe('hard_limited');
   });
 });
