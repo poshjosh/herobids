@@ -7,6 +7,29 @@ import { localizeApiError } from '../../lib/localize-api-error.js';
 
 type CallbackState = 'loading' | 'error';
 
+/**
+ * Sanitize a frontend `next` path for redirect-after-auth flows.
+ * Matches the API-side `sanitizeNextParam` rule:
+ * - Requires a single-leading-slash relative path
+ * - Rejects protocol-relative (`//evil.com`) and absolute URLs
+ * - Normalizes via `new URL(value, origin)` and verifies same-origin
+ * - Falls back to `/agents` on invalid/missing
+ */
+function sanitizeNextParam(value: string | null): string {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) {
+    return '/agents';
+  }
+  try {
+    const normalized = new URL(value, window.location.origin);
+    if (normalized.origin !== window.location.origin) {
+      return '/agents';
+    }
+    return `${normalized.pathname}${normalized.search}${normalized.hash}`;
+  } catch {
+    return '/agents';
+  }
+}
+
 export function AuthCallbackPage() {
   const navigate = useNavigate();
   const { login } = useSession();
@@ -30,7 +53,9 @@ export function AuthCallbackPage() {
     }
 
     const next = url.searchParams.get('next');
-    const safeNext = next && next.startsWith('/') ? next : '/agents';
+    // Same-origin sanitizer matching the API-side sanitizeNextParam rule:
+    // rejects protocol-relative (`//evil.com`), absolute URLs, and cross-origin.
+    const safeNext = sanitizeNextParam(next);
 
     auth.exchange(code)
       .then(({ token }) => login(token))
