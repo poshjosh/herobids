@@ -1,6 +1,27 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* ─── Global background ──────────────────────────────────────────────────────
+ * The brand background image is used on every page except documentation
+ * (public-pages). Documentation pages override this via PublicLayout's
+ * solid background. The landing page has its own layered treatment.
+ * Blurred on all pages except / where the landing page layers take over. */
+
+body {
+  background-color: #0a0a1a;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.35)),
+    url('/openaidom-background-1.avif') center / cover no-repeat;
+  filter: blur(6px);
+  z-index: -1;
+}
+
 @theme {
   /* ─── OpenAIdom Brand Palette ────────────────────────────────────────────
    * Derived from docs/product/brand/brand-palette.md.
@@ -60,7 +81,6 @@ body,
 }
 
 body {
-  background-color: var(--color-surface-0);
   color: var(--color-text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -102,7 +122,7 @@ body {
 .layout-root {
   display: flex;
   min-height: 100vh;
-  background: var(--color-surface-0);
+  background: transparent;
 }
 
 .layout-sidebar {
@@ -123,6 +143,9 @@ body {
   flex: 1;
   overflow-y: auto;
   min-width: 0;
+  background: rgba(11, 18, 32, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 /* Mobile top bar */
@@ -394,50 +417,64 @@ body {
   min-height: 100vh;
   display: flex;
   align-items: center;
-  background: var(--color-surface-0);
-  overflow: hidden;
-}
-
-.landing-page-image {
-  flex: 1;
-  display: flex;
-  align-items: center;
   justify-content: center;
-  min-width: 0;
+  overflow: hidden;
+  position: relative;
 }
 
-.landing-page-image img {
-  width: 100%;
-  height: auto;
-  max-height: 100vh;
-  object-fit: contain;
-  object-position: center;
+/* ── Variant: full-bleed image (Option 3) ─────────────────────────────────── */
+
+.landing-page--image {
+  background: url('/openaidom-background-1.avif') center / cover no-repeat;
 }
 
-.landing-page-content {
-  flex: 1;
+/* Heavily blur only the center of the image (where the figure is) */
+.landing-page--image::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('/openaidom-background-1.avif') center / cover no-repeat;
+  filter: blur(16px) brightness(0.5);
+  mask-image: radial-gradient(ellipse 35% 45% at 50% 45%, black 70%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 35% 45% at 50% 45%, black 70%, transparent 100%);
+  z-index: 0;
+}
+
+/* Dark overlay for text readability */
+.landing-page--image::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ── Content card ─────────────────────────────────────────────────────────── */
+
+.landing-page-card {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 48px 56px;
+  align-items: center;
+  text-align: center;
+  padding: 48px 40px;
   gap: 20px;
-  max-width: 540px;
+  max-width: 520px;
+  width: 100%;
+  background: rgba(15, 15, 26, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
 }
 
 .landing-page-tagline {
   font-size: 18px;
-  color: var(--color-text-secondary);
+  color: rgba(255, 255, 255, 0.85);
   margin: 0;
   line-height: 1.5;
-}
-
-.landing-page-copy {
-  font-size: 15px;
-  color: var(--color-text-muted);
-  margin: 0;
-  line-height: 1.6;
-  max-width: 440px;
 }
 
 .landing-page-ctas {
@@ -455,40 +492,32 @@ body {
   text-decoration: none;
   font-size: 14px;
   font-weight: 600;
+  transition: opacity 0.15s;
 }
+
+.landing-page-cta:hover {
+  opacity: 0.9;
+}
+
+/* ── Mobile ───────────────────────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
   .landing-page {
-    flex-direction: column;
-    justify-content: flex-start;
-    padding-top: 48px;
+    padding: 24px;
   }
 
-  .landing-page-image {
-    flex: none;
-    width: 100%;
-    max-width: 400px;
-    margin: 0 auto;
-    padding: 0 24px;
-  }
-
-  .landing-page-image img {
-    max-height: 45vh;
-  }
-
-  .landing-page-content {
-    align-items: center;
-    text-align: center;
+  .landing-page-card {
     padding: 32px 24px;
     max-width: 100%;
   }
 
-  .landing-page-copy {
-    max-width: 100%;
+  .landing-page-ctas {
+    flex-direction: column;
+    width: 100%;
   }
 
-  .landing-page-ctas {
-    justify-content: center;
+  .landing-page-cta {
+    text-align: center;
   }
 }
 
@@ -498,7 +527,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background-color: var(--color-surface-0);
+  background-color: transparent;
 }
 
 .try-page-header {
@@ -508,12 +537,6 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.try-page-header-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--color-text-primary);
 }
 
 .try-page-scroll {

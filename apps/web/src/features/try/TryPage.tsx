@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { isAuthenticated } from '../../lib/session.js';
 import { auth, ApiError } from '../../lib/api-client.js';
+import { BrandLogo } from '../../brand/BrandLogo.js';
 
 // ---------------------------------------------------------------------------
 // Static copy
@@ -203,7 +204,7 @@ export function TryPage() {
     <div className="try-page">
       {/* Header */}
       <div className="try-page-header">
-        <span className="try-page-header-title">OpenAIdom</span>
+        <BrandLogo display="full" variant="dark" size="md" linkTo="/" />
       </div>
 
       {/* Scrollable message area */}

@@ -21,23 +21,11 @@ export function LandingPagePlaceholder() {
 
   // Unauthenticated visitors see the landing page
   return (
-    <div className="landing-page">
-      <div className="landing-page-image">
-        <img
-          src="/openaidom-background.avif"
-          alt="OpenAIdom — AI agent illustration with speech bubble"
-          width={1536}
-          height={1024}
-          fetchPriority="high"
-        />
-      </div>
-      <div className="landing-page-content">
-        <BrandLogo display="full" variant="auto" size="lg" />
+    <div className="landing-page landing-page--image">
+      <div className="landing-page-card">
+        <BrandLogo display="full" variant="dark" size="lg" />
         <p className="landing-page-tagline">
           Low cost AI agents that trade, assist, research and more
-        </p>
-        <p className="landing-page-copy">
-          Describe what you want, and an AI agent gets it for you.
         </p>
         <div className="landing-page-ctas">
           <Link to="/login" className="landing-page-cta">
@@ -47,6 +35,7 @@ export function LandingPagePlaceholder() {
             Try it
           </Link>
         </div>
+
       </div>
     </div>
   );

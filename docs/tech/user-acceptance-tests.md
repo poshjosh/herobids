@@ -20,7 +20,7 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| A-01 | Login page renders unauthenticated | Navigate to `/` without a token | Redirected to `/login`; email-first login-link form shown by default; "Continue with Google" button below; no register mode toggle | ✅ | 2026-07-11: Updated — now defaults to email-link flow with `Send login link` button + `Sign in with password` link; Google button still below |
+| A-01 | Landing page renders for unauthenticated users | Navigate to `/` without a token | Landing page shown with brand logo, tagline ("Low cost AI agents…"), "Sign in" CTA linking to `/login`, and "Try it" CTA linking to `/try`; background image visible | — | 2026-08-06: Updated — `/` now renders a landing page (not a redirect to `/login`) |
 | A-02 | Google OAuth login | Click "Continue with Google"; complete Google auth flow | Redirected to `/auth/callback`, then to `/mission-control`; user authenticated; nav shown | — | Requires real Google creds |
 | A-02b | Email-first login page layout | Open login page | Email field shown; `Send login link` button on the left; `Sign in with password` link on the right; Google button below divider | ✅ | 2026-07-11: Updated — login/register toggle removed; email-link is primary CTA; password is inline expansion |
 | A-02c | Send login link — valid email | Enter a valid email; click `Send login link` | Generic success screen shown: "Check your email" with mail icon and message; `Send another link` button visible | ✅ | 2026-08-05: "Check your email" + "A login link has been sent…" + `Send another link` button shown |
@@ -58,7 +58,7 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 |----|-----------|-------|----------|--------|-------|
 | N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Mission Control, AI Agents, Skills. Under "Manage": Connections, Billing, Settings. Under "Advanced" (collapsible, collapsed by default): Bots. Click "▸ Advanced" to expand. | ✅ | 2026-07-08: Spec updated — nav simplified; Credentials removed from Manage; Trading setup, Exposure, Activity, Outcomes removed from Advanced (pages still accessible via direct URL) |
 | N-02 | Active link highlighted | Click each nav link | Current page link is visually active | ✅ | 2026-07-07: Active link shows green background + green text (verified on AI Agents page screenshot) |
-| N-03 | Root redirect | Navigate to `/` | Redirected to `/mission-control` | ✅ | 2026-07-07: Confirmed |
+| N-03 | Root redirect (authenticated) | Navigate to `/` as authenticated user | Redirected to `/agents` | — | 2026-08-06: Updated — redirect target changed from `/mission-control` to `/agents` |
 | N-04 | Unknown route | Navigate to `/does-not-exist` | React Router error boundary shown (404 Not Found); does not crash | ✅ | 2026-07-07: Shows "Page not found" with "← Back to Mission Control" button; no crash |
 | N-05 | Page titles / headings | Visit each page | Each page has a visible `PageHeader` with title and subtitle | ✅ | 2026-07-07: Verified Mission Control, AI Agents, Connections, Billing, Settings, Credentials, Trading setup, Outcomes, 404 — all have h1 + subtitle |
 

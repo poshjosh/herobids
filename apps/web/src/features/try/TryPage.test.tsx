@@ -65,11 +65,11 @@ describe('TryPage', () => {
     expect(html.length).toBeGreaterThan(0);
   });
 
-  it('renders the page header with title "OpenAIdom"', () => {
+  it('renders the page header with the brand logo', () => {
     const html = renderPage();
     expect(html).toContain('OpenAIdom');
     expect(html).toContain('try-page-header');
-    expect(html).toContain('try-page-header-title');
+    expect(html).toContain('compact-mark.png');
   });
 
   it('renders the scrollable message area', () => {

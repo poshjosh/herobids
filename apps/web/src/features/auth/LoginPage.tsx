@@ -400,7 +400,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'var(--color-surface-0)',
+        background: 'transparent',
         padding: '24px',
       }}
     >
