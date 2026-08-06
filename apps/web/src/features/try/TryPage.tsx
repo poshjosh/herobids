@@ -40,119 +40,6 @@ type Phase =
   | 'ERROR';
 
 // ---------------------------------------------------------------------------
-// Styles (mirror ChatMessage / ChatComposer inline patterns)
-// ---------------------------------------------------------------------------
-
-const pageStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  height: '100vh',
-  backgroundColor: 'var(--color-surface-0)',
-};
-
-const headerStyle: React.CSSProperties = {
-  padding: '16px 24px',
-  borderBottom: '1px solid var(--color-border)',
-  backgroundColor: 'var(--color-surface-1)',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 12,
-};
-
-const headerTitleStyle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  color: 'var(--color-text-primary)',
-};
-
-const scrollAreaStyle: React.CSSProperties = {
-  flex: 1,
-  minHeight: 0,
-  overflowY: 'auto',
-  padding: '24px 16px',
-};
-
-const messageRowStyle = (isUser: boolean): React.CSSProperties => ({
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: isUser ? 'flex-end' : 'flex-start',
-  marginBottom: 16,
-});
-
-const bubbleStyle = (isUser: boolean): React.CSSProperties => ({
-  maxWidth: '80%',
-  padding: '10px 16px',
-  borderRadius: 12,
-  backgroundColor: isUser ? 'var(--color-primary)' : 'var(--color-surface-2)',
-  color: isUser ? 'var(--color-on-primary)' : 'var(--color-text)',
-  fontSize: 15,
-  lineHeight: 1.5,
-  wordBreak: 'break-word',
-});
-
-const typingStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  padding: '8px 0',
-  color: 'var(--color-text-muted)',
-  fontSize: 13,
-  marginBottom: 16,
-};
-
-const inputRowStyle: React.CSSProperties = {
-  display: 'flex',
-  gap: 8,
-  maxWidth: '80%',
-  width: '100%',
-};
-
-const inputStyle: React.CSSProperties = {
-  flex: 1,
-  padding: '10px 14px',
-  borderRadius: 8,
-  border: '1px solid var(--color-border)',
-  backgroundColor: 'var(--color-surface-2)',
-  color: 'var(--color-text)',
-  fontSize: 15,
-  lineHeight: 1.4,
-  fontFamily: 'inherit',
-};
-
-const sendButtonStyle = (disabled: boolean): React.CSSProperties => ({
-  padding: '10px 20px',
-  borderRadius: 8,
-  border: 'none',
-  backgroundColor: disabled ? 'var(--color-surface-2)' : 'var(--color-primary)',
-  color: disabled ? 'var(--color-text-muted)' : 'var(--color-on-primary)',
-  fontSize: 15,
-  fontWeight: 600,
-  cursor: disabled ? 'not-allowed' : 'pointer',
-  whiteSpace: 'nowrap',
-});
-
-const errorStyle: React.CSSProperties = {
-  color: 'var(--color-danger)',
-  fontSize: 13,
-  marginTop: 6,
-};
-
-const resendRowStyle: React.CSSProperties = {
-  marginTop: 8,
-};
-
-const resendButtonStyle = (disabled: boolean): React.CSSProperties => ({
-  padding: '8px 16px',
-  borderRadius: 8,
-  border: '1px solid var(--color-border)',
-  backgroundColor: 'transparent',
-  color: disabled ? 'var(--color-text-muted)' : 'var(--color-text)',
-  fontSize: 14,
-  fontFamily: 'inherit',
-  cursor: disabled ? 'not-allowed' : 'pointer',
-});
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -313,48 +200,48 @@ export function TryPage() {
   const showResend = phase === 'LINK_SENT' || phase === 'RESENDING' || (phase === 'ERROR' && hasLinkBeenSent);
 
   return (
-    <div style={pageStyle}>
+    <div className="try-page">
       {/* Header */}
-      <div style={headerStyle}>
-        <span style={headerTitleStyle}>OpenAIdom</span>
+      <div className="try-page-header">
+        <span className="try-page-header-title">OpenAIdom</span>
       </div>
 
       {/* Scrollable message area */}
-      <div ref={scrollRef} style={scrollAreaStyle}>
+      <div ref={scrollRef} className="try-page-scroll">
         {/* Typing indicator 1 */}
         {showTyping1 && (
-          <div style={typingStyle}>
-            <span style={{ animation: 'pulse 1.5s infinite' }}>●</span>
+          <div className="try-page-typing">
+            <span className="try-page-typing-dot">●</span>
             Assistant is typing...
           </div>
         )}
 
         {/* Message 1 */}
         {showMessage1 && (
-          <div style={messageRowStyle(false)}>
-            <div style={bubbleStyle(false)}>{MESSAGE_1}</div>
+          <div className="try-page-message-row">
+            <div className="try-page-bubble">{MESSAGE_1}</div>
           </div>
         )}
 
         {/* Typing indicator 2 */}
         {showTyping2 && (
-          <div style={typingStyle}>
-            <span style={{ animation: 'pulse 1.5s infinite' }}>●</span>
+          <div className="try-page-typing">
+            <span className="try-page-typing-dot">●</span>
             Assistant is typing...
           </div>
         )}
 
         {/* Message 2 */}
         {showMessage2 && (
-          <div style={messageRowStyle(false)}>
-            <div style={bubbleStyle(false)}>{MESSAGE_2}</div>
+          <div className="try-page-message-row">
+            <div className="try-page-bubble">{MESSAGE_2}</div>
           </div>
         )}
 
         {/* Email input (below message 2) */}
         {showEmailInput && (
-          <div style={{ ...messageRowStyle(false), maxWidth: '80%' }}>
-            <div style={inputRowStyle}>
+          <div className="try-page-input-wrapper">
+            <div className="try-page-input-row">
               <input
                 ref={emailInputRef}
                 type="email"
@@ -363,40 +250,40 @@ export function TryPage() {
                 onKeyDown={handleKeyDown}
                 placeholder="you@example.com"
                 disabled={isEmailSubmitting}
-                style={inputStyle}
+                className="try-page-input"
                 autoComplete="email"
               />
               <button
                 onClick={() => void handleSubmit()}
                 disabled={isEmailSubmitting || !email.trim()}
-                style={sendButtonStyle(isEmailSubmitting || !email.trim())}
+                className="try-page-send-btn"
               >
                 {isEmailSubmitting ? '...' : 'Send'}
               </button>
             </div>
-            {validationError && <div style={errorStyle}>{validationError}</div>}
-            {serverError && !validationError && <div style={errorStyle}>{serverError}</div>}
+            {validationError && <div className="try-page-error">{validationError}</div>}
+            {serverError && !validationError && <div className="try-page-error">{serverError}</div>}
           </div>
         )}
 
         {/* Message 3 (after link sent) */}
         {showMessage3 && (
-          <div style={messageRowStyle(false)}>
-            <div style={bubbleStyle(false)}>{MESSAGE_3(email)}</div>
+          <div className="try-page-message-row">
+            <div className="try-page-bubble">{MESSAGE_3(email)}</div>
           </div>
         )}
 
         {/* Resend button */}
         {showResend && (
-          <div style={{ ...messageRowStyle(false), maxWidth: '80%' }}>
-            <div style={resendRowStyle}>
+          <div className="try-page-resend-wrapper">
+            <div className="try-page-resend-row">
               {serverError && phase === 'ERROR' && (
-                <div style={{ ...errorStyle, marginBottom: 8 }}>{serverError}</div>
+                <div className="try-page-error try-page-resend-error">{serverError}</div>
               )}
               <button
                 onClick={() => void handleResend()}
                 disabled={isResending}
-                style={resendButtonStyle(isResending)}
+                className="try-page-resend-btn"
               >
                 {isResending ? 'Resending...' : 'Resend link'}
               </button>

@@ -315,6 +315,6 @@ Add focused coverage for the new and changed behavior:
 3. **[DONE]** API client update — add `next` param to `sendLoginLink`
 4. **[DONE]** New `/try` page — static messages, typing animation, email input, resend
 5. **[DONE]** Add `/try` route — public, outside `RootLayout`, with auth redirect
-6. **[IN PROGRESS]** Landing page redesign — "Try it" button linking to `/try`, background image, tagline
-7. **[PENDING]** Scoped responsive/mobile CSS — landing and `/try` only
+6. **[DONE]** Landing page redesign — "Try it" button linking to `/try`, background image, tagline
+7. **[IN PROGRESS]** Scoped responsive/mobile CSS — landing and `/try` only
 8. **[PENDING]** Tests and UAT updates — cover redirect safety, `/try` flow, and post-auth outcomes
