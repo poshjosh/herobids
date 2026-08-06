@@ -2595,29 +2595,35 @@ async function runTick(): Promise<void> {
 
       // Enforce the same commercial spend gates as the normal scout/judge path
       // so hard-limited accounts cannot leak LLM usage through the hybrid evaluator.
-      if (usageBillingService && await usageBillingService.isHardLimited()) {
-        logger.warn({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is hard-limited — skipping hybrid tick');
-        // Collect open-position context for the stop notification.
-        let hybridHardLimitPositions: string[] = [];
-        if (botRepo) {
-          try {
-            const openPositions = await botRepo.getOpenPositionsByCreator('agent', AGENT_ID!);
-            hybridHardLimitPositions = openPositions.map((p) => p.symbol);
-          } catch (err) {
-            logger.warn({ err }, 'Failed to resolve open positions for hard-limit notification in hybrid path');
+      if (usageBillingService) {
+        const hybridCanSpend = await usageBillingService.canSpendNow();
+        if (!hybridCanSpend.canSpend) {
+          const hybridBlockReason = hybridCanSpend.reason === 'no_available_credit' ? 'billing.insufficient_funds'
+            : hybridCanSpend.reason === 'suspended' ? 'billing.account_suspended'
+            : 'billing.limit_exceeded';
+          logger.warn({ agentId: AGENT_ID, sessionId: SESSION_ID, billingReason: hybridCanSpend.reason, availableMicrousd: hybridCanSpend.availableMicrousd }, 'Billing gate blocked — skipping hybrid tick');
+          // Collect open-position context for the stop notification.
+          let hybridHardLimitPositions: string[] = [];
+          if (botRepo) {
+            try {
+              const openPositions = await botRepo.getOpenPositionsByCreator('agent', AGENT_ID!);
+              hybridHardLimitPositions = openPositions.map((p) => p.symbol);
+            } catch (err) {
+              logger.warn({ err }, 'Failed to resolve open positions for hard-limit notification in hybrid path');
+            }
           }
+          emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
+            tickId,
+            reason: hybridBlockReason,
+            gate: 'billing',
+            trigger: 'wake',
+            positionSide: sessionMetrics.lastPositionSide ?? undefined,
+            openPositions: hybridHardLimitPositions.length > 0 ? hybridHardLimitPositions : undefined,
+          });
+          handleTickSuccess();
+          await sendHeartbeat('ready');
+          return;
         }
-        emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
-          tickId,
-          reason: 'billing.limit_exceeded',
-          gate: 'billing',
-          trigger: 'wake',
-          positionSide: sessionMetrics.lastPositionSide ?? undefined,
-          openPositions: hybridHardLimitPositions.length > 0 ? hybridHardLimitPositions : undefined,
-        });
-        handleTickSuccess();
-        await sendHeartbeat('ready');
-        return;
       }
 
       if (usageBillingService && await usageBillingService.isSoftLimited()) {
@@ -3033,19 +3039,22 @@ async function runTick(): Promise<void> {
     });
 
     let resolvedScoutDecision: ScoutDecision;
-    const isHardLimited = usageBillingService ? await usageBillingService.isHardLimited() : false;
+    const canSpendResult = usageBillingService ? await usageBillingService.canSpendNow() : { canSpend: true, availableMicrousd: 0, status: 'active' as const, reason: 'ok' as const };
     const forcedPreScoutBillingOutcome = preScoutResolution.decision
       ? resolveForcedPreScoutBillingOutcome({
         preScoutDecision: preScoutResolution.decision,
-        isHardLimited,
+        isHardLimited: !canSpendResult.canSpend,
       })
       : null;
 
-    if (forcedPreScoutBillingOutcome?.action === 'skip_tick' || (isHardLimited && !preScoutResolution.decision)) {
-      logger.warn({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is hard-limited — skipping tick');
+    if (forcedPreScoutBillingOutcome?.action === 'skip_tick' || (!canSpendResult.canSpend && !preScoutResolution.decision)) {
+      const blockReason = canSpendResult.reason === 'no_available_credit' ? 'billing.insufficient_funds'
+        : canSpendResult.reason === 'suspended' ? 'billing.account_suspended'
+        : 'billing.limit_exceeded';
+      logger.warn({ agentId: AGENT_ID, sessionId: SESSION_ID, billingReason: canSpendResult.reason, availableMicrousd: canSpendResult.availableMicrousd }, 'Billing gate blocked — skipping tick');
       emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
         tickId,
-        reason: 'billing.limit_exceeded',
+        reason: blockReason,
         gate: 'billing',
         trigger: tickCount === 1 ? 'initial' : tickGateState.hasWakeSignal ? 'wake' : 'scheduled',
         positionSide: sessionMetrics.lastPositionSide ?? undefined,

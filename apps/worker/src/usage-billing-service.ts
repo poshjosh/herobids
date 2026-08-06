@@ -147,6 +147,27 @@ export class UsageBillingService {
     }
   }
 
+  /**
+   * Check whether paid work is allowed right now.
+   * Delegates to UsageBillingRepository.canSpendNow.
+   * Returns { canSpend: true, ... } on error (fail-open for billing) after logging.
+   */
+  async canSpendNow(): Promise<import('@herobids/db').CanSpendNowResult> {
+    if (!this.config.enabled) {
+      return { canSpend: true, availableMicrousd: 0, status: 'active', reason: 'ok' };
+    }
+    try {
+      const ok = await this.ensureAccount();
+      if (!ok || !this.accountId) {
+        return { canSpend: true, availableMicrousd: 0, status: 'active', reason: 'ok' };
+      }
+      return await this.repo.canSpendNow(this.accountId);
+    } catch (err) {
+      logger.warn({ err }, 'Failed to check canSpendNow — allowing spend (fail-open)');
+      return { canSpend: true, availableMicrousd: 0, status: 'active', reason: 'ok' };
+    }
+  }
+
   /** Record LLM usage events from a provider response. Fire-and-forget. */
   recordLlmUsage(input: LlmUsageInput): void {
     if (!this.config.enabled) return;
