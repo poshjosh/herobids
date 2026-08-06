@@ -915,6 +915,8 @@ export const MarketDataConfigSchema = z.object({
   }).default({}),
   geckoterminal: z.object({
     baseUrl: z.string().url().default('https://api.geckoterminal.com'),
+    proBaseUrl: z.string().url().default('https://pro-api.coingecko.com').optional(),
+    apiKey: z.string().optional(),
     candles: MarketDataBudgetSchema.default({
       requestsPerMinute: 15,
       burstCapacity: 15,
@@ -922,7 +924,7 @@ export const MarketDataConfigSchema = z.object({
       cacheTtlMs: 60_000,
     }),
     discovery: MarketDataBudgetSchema.default({
-      requestsPerMinute: 10,
+      requestsPerMinute: 60,
       burstCapacity: 5,
       maxWaitMs: 5_000,
       cacheTtlMs: 300_000,

@@ -233,7 +233,7 @@ snapshot still starves Base to zero when Base has qualifying tokens.
 
 Ordered by the agreed scope: supply first, then correctness, then observability.
 
-### Step 1 (Phase 4) — Paid CoinGecko on-chain tier for GeckoTerminal
+### Step 1 (Phase 4) — Paid CoinGecko on-chain tier for GeckoTerminal [DONE]
 
 Files:
 
@@ -261,7 +261,7 @@ Tests:
 - Without a key, requests target the free public endpoint unchanged (no
   regression for local dev).
 
-### Step 2 (Phase 1) — Tighten network filtering in shared discovery
+### Step 2 (Phase 1) — Tighten network filtering in shared discovery [PENDING]
 
 Files:
 
@@ -281,7 +281,7 @@ Tests:
   returns them.
 - Concrete-slug test guarding against silent drop from slug divergence.
 
-### Step 3 (Phase 3) — Labeled rejection reporting + scanner attribution
+### Step 3 (Phase 3) — Labeled rejection reporting + scanner attribution [PENDING]
 
 Files:
 
@@ -305,7 +305,7 @@ Tests:
 - Mixed fulfilled/rejected fanout still returns usable discovery results.
 - `scanner.swap_discovery_empty` carries provider-cause context.
 
-### Step 4 — Validate downstream consumers
+### Step 4 — Validate downstream consumers [PENDING]
 
 Files:
 
@@ -390,3 +390,11 @@ Changes:
 - `docs/bug-reports/2026/08/05/000-base-data-provision.md`
 - `docs/bug-reports/2026/08/05/001-scanner-gated-agents-stale-scan-blocks-trading.md`
 - `docs/bug-reports/2026/08/05/002-investigation-t1inch-base-discovery.md`
+
+## Outstanding Issues
+
+### [Step 1] Medium — proBaseUrl config wiring (RESOLVED)
+Fixed: `proBaseUrl` was added to `MarketDataConfig.geckoterminal` and wired through `provider-registry.ts`.
+
+### [Step 1] Low — String-replace URL path transformation is fragile
+`buildGeckoUrl()` in `geckoterminal.ts` uses `v2Path.replace('/api/v2/networks/', '/api/v3/onchain/networks/')` which assumes all future v2 paths match this prefix. Works for all current call sites and covered by tests. Refactor if a future path variant doesn't match.

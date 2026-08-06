@@ -171,12 +171,16 @@ export function createProviderRegistry(
   };
   const geckoCandleConfig: GeckoTerminalConfig = {
     baseUrl: config.geckoterminal.baseUrl,
+    proBaseUrl: config.geckoterminal.proBaseUrl,
+    apiKey: config.geckoterminal.apiKey,
     timeoutMs: config.timeoutMs,
     rateLimiter: createLimiter(coordinator, 'geckoterminal', 'regime', geckoBudget),
     fetchFn,
   };
   const geckoDiscoveryConfig: GeckoTerminalConfig = {
     baseUrl: config.geckoterminal.baseUrl,
+    proBaseUrl: config.geckoterminal.proBaseUrl,
+    apiKey: config.geckoterminal.apiKey,
     timeoutMs: config.timeoutMs,
     rateLimiter: createLimiter(coordinator, 'geckoterminal', 'discovery', geckoBudget),
     fetchFn,

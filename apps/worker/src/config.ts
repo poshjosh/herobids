@@ -66,6 +66,7 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   SES_CONFIGURATION_SET_NAME: { path: 'alerts.email.ses.configurationSetName', type: 'string' },
   // Market data providers
   BIRDEYE_API_KEY: { path: 'marketData.birdeye.apiKey', type: 'string' },
+  COINGECKO_API_KEY: { path: 'marketData.geckoterminal.apiKey', type: 'string' },
   COINMARKETCAP_API_KEY: { path: 'marketData.coinMarketCap.apiKey', type: 'string' },
   // LLM runtime
   LLM_PROVIDER: { path: 'llm.provider', type: 'string' },
