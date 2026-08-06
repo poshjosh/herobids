@@ -48,6 +48,11 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
   const [billingCheckDone, setBillingCheckDone] = useState(false);
   const [preflightBillingBlocked, setPreflightBillingBlocked] = useState<BillingGateResult | null>(null);
 
+  // Track OAuth resume phase — show a transition message while the thread is
+  // being restored and the connection result is submitted, so the user isn't
+  // confused by stale pre-OAuth conversation state.
+  const [oauthResuming, setOauthResuming] = useState(false);
+
   // Expose startOver to the parent so the header refresh icon can reset the thread.
   useEffect(() => {
     if (startOverRef) {
@@ -70,12 +75,18 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
     const status = params.get('status');
 
     if (draft && status === 'ok' && connectionId) {
+      setOauthResuming(true);
       void loadThread(draft.threadId).then(() => {
-        void submitActionResult(draft.actionId, { connectionId });
+        void submitActionResult(draft.actionId, { connectionId }).finally(() => {
+          setOauthResuming(false);
+        });
       });
     } else if (draft) {
       // No connection returned (e.g. error or cancelled) — still restore the thread.
-      void loadThread(draft.threadId);
+      setOauthResuming(true);
+      void loadThread(draft.threadId).finally(() => {
+        setOauthResuming(false);
+      });
     }
 
     clearGuidedSetupOAuthDraft();
@@ -220,6 +231,27 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
         backgroundColor: 'var(--color-surface-1)',
       }}
     >
+      {/* OAuth resume transition — reassures the user while the thread
+          is being restored and the connection result is processed. */}
+      {oauthResuming && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            padding: '12px 16px',
+            backgroundColor: 'var(--color-primary)',
+            color: 'var(--color-on-primary)',
+            fontSize: 14,
+            fontWeight: 500,
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ animation: 'pulse 1.5s infinite' }}>●</span>
+          Processing your connection…
+        </div>
+      )}
       {/* Chat thread */}
       <GuidedSetupThread
         messages={messages}
@@ -228,6 +260,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
         onFormSubmit={handleFormSubmit}
         threadId={thread?.id}
         sending={sending}
+        hideForms={oauthResuming}
       />
     </div>
   );

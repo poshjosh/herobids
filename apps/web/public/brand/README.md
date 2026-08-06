@@ -18,6 +18,7 @@ Always use the copies in this directory (or their `/brand/...` URL paths).
 |------|---------|---------|
 | `compact-mark.png` | Square mark (silhouette-only — CSS filter handles dark/light) | Sidebar, login, app icon |
 | `banner.png` | Horizontal banner artwork | Login hero, public landing |
+| `wordmark-dark.png` | Dark brand mark for light backgrounds (no CSS filter needed) | Email headers |
 | `favicon.ico` | Multi-size ICO (legacy) | Browser tabs (root of public/) |
 | `favicon-96x96.png` | PNG favicon | Browser tabs |
 | `favicon.svg` | SVG favicon | Browser tabs |
@@ -35,6 +36,7 @@ use this table to determine the correct destination filename.
 |---------------------------------------|-------------------------------------|-------|
 | `openaidom-icon-light-no-bg.png` | `compact-mark.png` | Silhouette-only; CSS filter in BrandLogo handles dark/light rendering |
 | `openaidom-banner.png` | `banner.png` | Horizontal banner artwork |
+| `openaidom-icon-dark-no-bg.png` | `wordmark-dark.png` | Dark mark for light backgrounds; used in email headers (no CSS filter available) |
 
 Favicon files are generated separately — see `apps/web/public/` for `favicon.ico`, `favicon-96x96.png`, `favicon.svg`, `apple-touch-icon.png`, and `site.webmanifest`.
 

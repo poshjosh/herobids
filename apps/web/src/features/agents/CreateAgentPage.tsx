@@ -39,6 +39,15 @@ export function CreateAgentPage() {
         title={intl.formatMessage({ id: 'agents.create.title' })}
         action={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              className="create-flow-switch"
+              onClick={() => setMode(mode === 'guided' ? 'form' : 'guided')}
+            >
+              {mode === 'guided'
+                ? intl.formatMessage({ id: 'agents.create.switchToForm' })
+                : intl.formatMessage({ id: 'agents.create.switchToGuided' })}
+            </button>
             {mode === 'guided' && (
               <button
                 type="button"
@@ -63,15 +72,6 @@ export function CreateAgentPage() {
                 </svg>
               </button>
             )}
-            <button
-              type="button"
-              className="create-flow-switch"
-              onClick={() => setMode(mode === 'guided' ? 'form' : 'guided')}
-            >
-              {mode === 'guided'
-                ? intl.formatMessage({ id: 'agents.create.switchToForm' })
-                : intl.formatMessage({ id: 'agents.create.switchToGuided' })}
-            </button>
           </div>
         }
       />

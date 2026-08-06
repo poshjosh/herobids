@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ChatMessage, ProviderSetupResult } from '../../lib/api-client.js';
 import { ChatQuickReplies } from './ChatQuickReplies.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
@@ -11,6 +12,8 @@ interface GuidedSetupActionRendererProps {
   /** Current thread id, used to build the OAuth return URL for provider redirects. */
   threadId?: string;
   disabled?: boolean;
+  /** When true, suppress rendering of form-type actions. */
+  hideForms?: boolean;
 }
 
 /**
@@ -21,7 +24,12 @@ interface GuidedSetupActionRendererProps {
  * - form: Secure setup UI rendered inline (connection, wallet, etc.)
  * - confirm: Agent creation confirmation card
  */
-export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit, threadId, disabled = false }: GuidedSetupActionRendererProps) {
+export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit, threadId, disabled = false, hideForms = false }: GuidedSetupActionRendererProps) {
+  // Track locally dismissed form action IDs so the form disappears instantly
+  // on cancel, before the API round-trip completes. This also prevents
+  // double-clicks since there is no longer a visible target.
+  const [dismissedActionIds, setDismissedActionIds] = useState<Set<string>>(new Set());
+
   return (
     <div style={{ marginTop: 8 }}>
       {actions.map((action) => {
@@ -56,6 +64,8 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
             );
 
           case 'form':
+            if (hideForms) return null;
+            if (dismissedActionIds.has(action.id)) return null;
             if (action.form === 'connection') {
               const props = (action.props ?? {}) as Record<string, unknown>;
               const preferredCapability = props.preferredCapability === 'trading' || props.preferredCapability === 'email' || props.preferredCapability === 'other'
@@ -88,10 +98,14 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
                       }
                     }}
                     onClose={() => {
-                      // User dismissed the inline form — send a cancel signal
+                      // Dismiss the form instantly so the user sees immediate
+                      // feedback and cannot double-click. The cancellation
+                      // signal is still sent to the backend asynchronously.
+                      setDismissedActionIds((prev) => new Set(prev).add(action.id));
                       onFormSubmit(action.id, { cancelled: true });
                     }}
                     onSuccess={(result: ProviderSetupResult) => {
+                      setDismissedActionIds((prev) => new Set(prev).add(action.id));
                       onFormSubmit(action.id, { connectionId: result.connection.id });
                     }}
                   />

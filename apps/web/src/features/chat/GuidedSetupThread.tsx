@@ -12,9 +12,11 @@ interface GuidedSetupThreadProps {
   threadId?: string;
   sending: boolean;
   disabled?: boolean;
+  /** When true, suppress rendering of form-type actions (e.g. during OAuth resume). */
+  hideForms?: boolean;
 }
 
-export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit, threadId, sending, disabled = false }: GuidedSetupThreadProps) {
+export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit, threadId, sending, disabled = false, hideForms = false }: GuidedSetupThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll the message list to the bottom when new messages arrive.
@@ -76,6 +78,7 @@ export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit
                   onFormSubmit={onFormSubmit}
                   threadId={threadId}
                   disabled={disabled || sending}
+                  hideForms={hideForms}
                 />
               )}
             </div>
