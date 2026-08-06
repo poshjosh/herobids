@@ -368,3 +368,12 @@ All changes are additive and backward-compatible:
 | 1 | LOW | Hard `LIMIT 50` on skills query — no pagination. If the skill library grows beyond 50 published skills, some will be silently excluded. Consider removing the limit or documenting why 50 is sufficient. |
 | 2 | LOW | No `description` field truncation — long descriptions could bloat tool result JSON. Consider truncating to ~200 characters if token costs become an issue. |
 | 3 | MEDIUM | `PRESET_SKILL_MAP` uses prefixed IDs (`'skill-trading'`) while the `skills` table stores unprefixed IDs (`'trading'`). The preset-based path may silently fail to assign skills. This is pre-existing but made more visible by `list_available_skills`. Plan flags this as Open Question 1 — resolve before full feature ship. |
+
+### [Step 2-3] create_agent schema extensions
+
+| # | Severity | Issue |
+|---|----------|-------|
+| 1 | MEDIUM | JSON Schema `skillIds.items` missing `minLength: 1` constraint — Zod uses `z.string().min(1)` but JSON Schema allows empty strings. Minor mismatch, pre-existing pattern in the file. |
+| 2 | MEDIUM | `filterTrades` / `platformAssessment*` accepted unconditionally across all presets. Zod-level refinement to reject non-trading presets with `filterTrades` would give earlier error feedback to LLM. Deferred to Step 4. |
+| 3 | LOW | `platformAssessmentReviewIntervalHours` uses string enum (`"6"`, `"12"`) rather than number — functional but unusual for LLM tool schemas. |
+| 4 | LOW | JSON Schema descriptions for `platformAssessmentEnabled` and `platformAssessmentReviewIntervalHours` don't mention trading scope — LLM might offer scanner-gated to non-trading users. System prompt (Step 5) mitigates. |

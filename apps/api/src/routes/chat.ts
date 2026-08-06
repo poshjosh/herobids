@@ -297,6 +297,25 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
         requestedExecutionMode: { type: 'string', enum: ['test', 'live'], description: 'User-facing execution mode (default: test)' },
         strategyPreset: { type: 'string', enum: ['momentum', 'momentum-position', 'range', 'swing', 'scalper', 'contrarian'], description: 'Strategy preset (auto-selected if omitted)' },
         selectedConnectionId: { type: 'string', description: 'Connection ID to use (auto-selected from recommended if omitted)' },
+        skillIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: "Skill IDs to assign. Use list_available_skills to discover valid IDs. Only meaningful when skillPresetId is 'custom'.",
+        },
+        filterTrades: {
+          type: 'string',
+          enum: ['off', 'mixed', 'scanner_gated'],
+          description: "Pre-filtering mode. 'scanner_gated' saves LLM cost by only showing the agent candidates our scanner discovers. 'mixed' lets the agent also find its own opportunities. 'off' means no pre-filtering (most expensive). Default for trading agents: 'scanner_gated' when the user wants to save cost, otherwise 'mixed'.",
+        },
+        platformAssessmentEnabled: {
+          type: 'boolean',
+          description: "Enable periodic strategy assessment reviews. Recommended when filterTrades is 'scanner_gated'. Default: true when scanner_gated.",
+        },
+        platformAssessmentReviewIntervalHours: {
+          type: 'string',
+          enum: ['6', '12', '24', '48', '96'],
+          description: "How often to review the strategy preset. Default: '12'.",
+        },
       },
       required: ['skillPresetId'],
     },
@@ -311,6 +330,10 @@ const GuidedSetupCreateAgentInput = z.object({
   requestedExecutionMode: z.enum(['test', 'live']).optional(),
   strategyPreset: z.enum(['momentum', 'momentum-position', 'range', 'swing', 'scalper', 'contrarian']).optional(),
   selectedConnectionId: z.string().optional(),
+  skillIds: z.array(z.string().min(1)).optional(),
+  filterTrades: z.enum(['off', 'mixed', 'scanner_gated']).optional(),
+  platformAssessmentEnabled: z.boolean().optional(),
+  platformAssessmentReviewIntervalHours: z.enum(['6', '12', '24', '48', '96']).optional(),
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
