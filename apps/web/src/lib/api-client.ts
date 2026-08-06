@@ -248,10 +248,10 @@ export const auth = {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
-  sendLoginLink: (email: string, username?: string) =>
+  sendLoginLink: (email: string, username?: string, next?: string) =>
     request<{ ok: boolean }>('/auth/send-login-link', {
       method: 'POST',
-      body: JSON.stringify({ email, ...(username ? { username } : {}) }),
+      body: JSON.stringify({ email, ...(username ? { username } : {}), ...(next ? { next } : {}) }),
     }),
   me: () => request<MeResponse>('/auth/me'),
   updateMe: (data: { preferredLocale?: string | null; telegramChatId?: string | null; notificationPreferences?: { sendMessage?: { email?: { enabled: boolean } } } | null }) =>

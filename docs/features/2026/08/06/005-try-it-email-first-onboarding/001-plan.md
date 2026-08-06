@@ -311,8 +311,8 @@ Add focused coverage for the new and changed behavior:
 ## Implementation Order
 
 1. **[DONE]** Wire `next` param through login-link flow — use one server-stored redirect target and strict sanitization
-2. **[IN PROGRESS]** Auth callback sanitization update — replace the weak frontend `next` check to match the API rule
-3. **[PENDING]** API client update — add `next` param to `sendLoginLink`
+2. **[DONE]** Auth callback sanitization update — replace the weak frontend `next` check to match the API rule
+3. **[IN PROGRESS]** API client update — add `next` param to `sendLoginLink`
 4. **[PENDING]** New `/try` page — static messages, typing animation, email input, resend
 5. **[PENDING]** Add `/try` route — public, outside `RootLayout`, with auth redirect
 6. **[PENDING]** Landing page redesign — "Try it" button linking to `/try`, background image, tagline
