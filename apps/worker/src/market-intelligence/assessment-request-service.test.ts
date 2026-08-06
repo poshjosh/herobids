@@ -76,6 +76,12 @@ function makeMockBillingRepo(overrides?: Partial<Record<string, unknown>>) {
       status: 'open',
     }),
     quoteMeterCharge: vi.fn().mockResolvedValue(200000),
+    canSpendNow: vi.fn().mockResolvedValue({
+      canSpend: true,
+      availableMicrousd: 1000000,
+      status: 'active',
+      reason: 'ok',
+    }),
     getSpendState: vi.fn().mockResolvedValue({ status: 'active' }),
     reserveCharge: vi.fn().mockResolvedValue({
       reservationLedgerEntryId: 'led_res_1',
@@ -285,7 +291,7 @@ describe('AssessmentRequestService', () => {
 
   describe('billing gate', () => {
     it('returns billing_blocked when account is hard_limited', async () => {
-      billingRepo.getSpendState = vi.fn().mockResolvedValue({ status: 'hard_limited' });
+      billingRepo.canSpendNow = vi.fn().mockResolvedValue({ canSpend: false, availableMicrousd: 0, status: 'hard_limited', reason: 'hard_limited' });
 
       const service = createService([
         ...agentFoundSelectQueue(),
@@ -308,7 +314,7 @@ describe('AssessmentRequestService', () => {
     });
 
     it('returns billing_blocked when account is suspended', async () => {
-      billingRepo.getSpendState = vi.fn().mockResolvedValue({ status: 'suspended' });
+      billingRepo.canSpendNow = vi.fn().mockResolvedValue({ canSpend: false, availableMicrousd: 0, status: 'suspended', reason: 'suspended' });
 
       const service = createService([
         ...agentFoundSelectQueue(),
