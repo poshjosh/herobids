@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Guided Setup — Custom AI skills & scanner-gated cost-saving path:** The AI-assisted agent-creation chat now supports skill assignment for custom agents via a new `list_available_skills` tool that discovers published skills from the database. The `create_agent` tool accepts `skillIds` for the `custom` preset, enabling chat-parity with the form-based `SkillPicker`. Trading agents now get a cost-saving question offering scanner-gated pre-filtering (`filterTrades`) which maps to `hybridMode` and optional `platformAssessment` (periodic strategy reviews). The `PRESET_SKILL_MAP` was fixed to use correct unprefixed skill IDs matching the frontend. See `docs/features/2026/08/06/007-guided-setup-skills-and-scanner-gated/001-plan.md`.
+
 - **Paid CoinGecko on-chain tier for GeckoTerminal:** The GeckoTerminal adapter now supports an optional `apiKey` that routes requests to the paid CoinGecko Pro on-chain API (`pro-api.coingecko.com`) with higher rate limits, restoring Base supply that was dropping due to free-tier 429s. The key is sourced from the `COINGECKO_API_KEY` env var and validated at startup (fails loud on invalid key, matching the CMC/Birdeye pattern). Discovery rate limit raised from 10→60 requests/min to clear 2-network × 3-endpoint demand.
 
 ### Changed
