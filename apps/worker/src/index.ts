@@ -75,7 +75,7 @@ import { createEvidencePorts } from './market-intelligence/evidence-adapters.js'
 import { AssessmentRequestService } from './market-intelligence/assessment-request-service.js';
 import { setAssessmentRequestPort } from './tools/assess-strategy-preset.js';
 import { setPresetTransitionPort } from './tools/change-strategy-preset.js';
-import { createProviderRegistry, createPriceService, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
+import { createProviderRegistry, createPriceService, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type ProviderRegistry, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
 import { resolveSwapTokenData, type DexScreenerProvider, type CanonicalResolver } from './swap-token-resolver.js';
@@ -85,7 +85,7 @@ import type { DiscoveredInstrument, FilterConfig } from './technical-phase.js';
 import { populateInstrumentsFromVenues } from './instrument-population.js';
 
 async function enrichTokenWithDiscovery(
-  registry: ReturnType<typeof createProviderRegistry>,
+  registry: ProviderRegistry,
   network: string,
   resolvedAddress: string,
   match: TokenInfo,
