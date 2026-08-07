@@ -1029,6 +1029,16 @@ export async function executeChatAction(
   }
 }
 
+interface AggregateChatLlmUsage {
+  provider: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  thinkingTokens: number;
+  cachedInputTokens: number;
+  tokensUsed: number;
+}
+
 interface LlmInvocationResult {
   content: string;
   actions?: ChatAction[];
@@ -1045,6 +1055,8 @@ interface LlmInvocationResult {
   };
   /** Enriched summary facts extracted from tool results */
   summaryFacts?: Partial<NonNullable<ThreadMetadata['summary']>>;
+  /** Aggregate LLM usage across all invocations in this onboarding call */
+  billingUsage?: AggregateChatLlmUsage;
 }
 
 // ── LLM Invocation ───────────────────────────────────────────────────────────
@@ -1102,6 +1114,16 @@ export async function invokeOnboardingLlm(
   const summaryFacts: Partial<NonNullable<ThreadMetadata['summary']>> = {};
   const pendingActions: ChatAction[] = [];
 
+  const usageAcc: AggregateChatLlmUsage = {
+    provider: llmConfig.provider,
+    model: llmConfig.model,
+    inputTokens: 0,
+    outputTokens: 0,
+    thinkingTokens: 0,
+    cachedInputTokens: 0,
+    tokensUsed: 0,
+  };
+
   // Tool calling loop
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const result = await callLlmProvider(
@@ -1126,14 +1148,24 @@ export async function invokeOnboardingLlm(
         toolCallsProcessed,
         summaryFacts,
         actions: pendingActions,
+        billingUsage: usageAcc.tokensUsed > 0 ? usageAcc : undefined,
       };
     }
 
     const { content, toolCalls } = result.data;
 
+    // Accumulate usage from this successful call
+    usageAcc.provider = result.data.provider;
+    usageAcc.model = result.data.model;
+    usageAcc.inputTokens += result.data.inputTokens ?? 0;
+    usageAcc.outputTokens += result.data.outputTokens ?? 0;
+    usageAcc.thinkingTokens += result.data.thinkingTokens ?? 0;
+    usageAcc.cachedInputTokens += result.data.cachedInputTokens ?? 0;
+    usageAcc.tokensUsed += result.data.tokensUsed ?? 0;
+
     // If no tool calls, return the assistant response
     if (!toolCalls || toolCalls.length === 0) {
-      return { content: content || buildResumeFallback(resumeEvent ?? null), toolCallsProcessed, summaryFacts, actions: pendingActions };
+      return { content: content || buildResumeFallback(resumeEvent ?? null), toolCallsProcessed, summaryFacts, actions: pendingActions, billingUsage: usageAcc.tokensUsed > 0 ? usageAcc : undefined };
     }
 
     // Process tool calls
@@ -1232,10 +1264,20 @@ export async function invokeOnboardingLlm(
       toolCallsProcessed,
       summaryFacts,
       actions: pendingActions,
+      billingUsage: usageAcc.tokensUsed > 0 ? usageAcc : undefined,
     };
   }
 
-  return { content: finalResult.data.content, toolCallsProcessed, createdAgent, summaryFacts, actions: pendingActions };
+  // Accumulate usage from the final successful call
+  usageAcc.provider = finalResult.data.provider;
+  usageAcc.model = finalResult.data.model;
+  usageAcc.inputTokens += finalResult.data.inputTokens ?? 0;
+  usageAcc.outputTokens += finalResult.data.outputTokens ?? 0;
+  usageAcc.thinkingTokens += finalResult.data.thinkingTokens ?? 0;
+  usageAcc.cachedInputTokens += finalResult.data.cachedInputTokens ?? 0;
+  usageAcc.tokensUsed += finalResult.data.tokensUsed ?? 0;
+
+  return { content: finalResult.data.content, toolCallsProcessed, createdAgent, summaryFacts, actions: pendingActions, billingUsage: usageAcc.tokensUsed > 0 ? usageAcc : undefined };
 }
 
 // ── Route Registration ───────────────────────────────────────────────────────
