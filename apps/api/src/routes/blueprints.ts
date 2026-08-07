@@ -53,6 +53,7 @@ import {
   refreshLikeCount,
   refreshForkCount,
 } from '../services/blueprint-scoring.js';
+import { recomputeBlueprintPerformanceScore } from '../services/blueprint-performance-scorer.js';
 
 // --- Request schemas ---
 
@@ -373,6 +374,30 @@ export async function blueprintRoutes(
   app.addHook('onClose', async () => {
     clearInterval(scoreRefreshTimer);
   });
+
+  // Periodic performance score recomputation (nightly cadence — every 6 hours).
+  // Performance scores are based on trading data which changes slowly.
+  // Recompute for published blueprints only.
+  const performanceRefreshTimer = setInterval(() => {
+    void (async () => {
+      try {
+        const rows = await db
+          .select({ id: blueprints.id })
+          .from(blueprints)
+          .where(eq(blueprints.publicationStatus, 'published'));
+        for (const row of rows) {
+          await recomputeBlueprintPerformanceScore(db, row.id);
+        }
+      } catch (error: unknown) {
+        app.log.error({ err: error }, '[blueprints] failed periodic performance score recomputation');
+      }
+    })();
+  }, 6 * 60 * 60 * 1000); // every 6 hours
+
+  app.addHook('onClose', async () => {
+    clearInterval(performanceRefreshTimer);
+  });
+
   // GET /blueprints/presets — list available strategy presets for a style
   // Registered before /:id so Fastify doesn't swallow it as a param.
   app.get('/blueprints/presets', async (req, reply) => {
