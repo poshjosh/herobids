@@ -36,6 +36,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   settings before starting. Rejection still occurs when neither user settings
   nor operator defaults are configured.
 
+- **Guided Setup prompt contract and connection autowiring:** Backend-first
+  reliability hardening for the onboarding chat. Connections auto-wired
+  server-side when LLM omits `selectedConnectionId` — same-turn created,
+  same-turn recommended, and thread-surfaced connections resolved in
+  precedence order (never from unsurfaced DB rows). `create_connection` tool
+  schema simplified (`label`/`capability` no longer required; label
+  auto-derived from provider registry). System prompt cleaned of stale
+  docs-tool references, misleading auto-selection claims, and unsupported
+  quick-reply instructions. Three placeholder docs tools removed from
+  API-local runtime. Connection disambiguation: structured `quick_replies`
+  buttons (venue-filtered connections + generate wallet + enter keys) let
+  the user pick with one tap.
+
 ### Fixed
 
 - **Jupiter manual connection missing venueAccountRef:** Manual Jupiter connections created via `/setup/provider-link` (or guided setup) no longer crash agents on startup with `CredentialResolutionError`. The setup route now derives the Solana wallet address from the base58-encoded private key and persists it as `venueAccountRef`. As defense-in-depth, `buildSwapAdapter` also falls back to deriving the address from the linked credential at runtime when `venueAccountRef` is missing (handles pre-existing broken data). Added `deriveSolanaAddress()` utility to `@herobids/venues`. Regression tests in `setup.test.ts` (setup-route persistence) and `venue-adapter-factory.test.ts` (worker defensive fallback + fail-closed path). See `docs/bug-reports/2026/08/07/001-jupiter-manual-connection-missing-venueAccountRef.md`.
