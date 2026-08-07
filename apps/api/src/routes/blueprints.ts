@@ -304,6 +304,7 @@ export async function buildBlueprintDetail(
     isLikedByViewer,
     popularityScore: bp.popularityScore,
     trendingScore: bp.trendingScore,
+    performanceScore: bp.performanceScore,
     publishedAt: bp.publishedAt?.toISOString() ?? null,
     currentRevisionId: bp.currentRevisionId,
     publishedRevisionId: bp.publishedRevisionId,
