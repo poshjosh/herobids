@@ -14,9 +14,11 @@ interface GuidedSetupThreadProps {
   disabled?: boolean;
   /** When true, suppress rendering of form-type actions (e.g. during OAuth resume). */
   hideForms?: boolean;
+  /** When true, show an inline assistant-style status bubble in the thread (e.g. OAuth resume). */
+  oauthResuming?: boolean;
 }
 
-export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit, threadId, sending, disabled = false, hideForms = false }: GuidedSetupThreadProps) {
+export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit, threadId, sending, disabled = false, hideForms = false, oauthResuming = false }: GuidedSetupThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll the message list to the bottom when new messages arrive.
@@ -84,6 +86,42 @@ export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit
             </div>
           );
         })}
+
+        {/* OAuth resume indicator — inline assistant-style bubble so the user
+            sees the status where they're already looking (the message thread). */}
+        {oauthResuming && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              marginBottom: 16,
+            }}
+          >
+            <div
+              style={{
+                maxWidth: '80%',
+                padding: '12px 18px',
+                borderRadius: 12,
+                backgroundColor: 'var(--color-surface-2)',
+                color: 'var(--color-text)',
+                fontSize: 15,
+                lineHeight: 1.5,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}>
+                <span style={{ animation: 'pulse 1.5s infinite', color: 'var(--color-primary)' }}>●</span>
+                Processing your connection…
+              </span>
+              <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+                One moment while we complete the setup.
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Sending indicator */}
         {sending && (

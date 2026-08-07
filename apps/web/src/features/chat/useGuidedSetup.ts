@@ -12,7 +12,7 @@ export interface GuidedSetupState {
   billingBlocked: BillingGateResult | null;
 }
 
-export function useGuidedSetup() {
+export function useGuidedSetup({ skipAutoInit = false }: { skipAutoInit?: boolean } = {}) {
   const [state, setState] = useState<GuidedSetupState>({
     thread: null,
     messages: [],
@@ -181,14 +181,16 @@ export function useGuidedSetup() {
     setState((s) => ({ ...s, billingBlocked: null }));
   }, []);
 
-  // Auto-initialize thread on mount
+  // Auto-initialize thread on mount (skipped during OAuth resume — the
+  // caller will restore the existing thread via loadThread instead).
   const initializedRef = useRef(false);
   useEffect(() => {
+    if (skipAutoInit) return;
     if (!initializedRef.current) {
       initializedRef.current = true;
       initThread();
     }
-  }, [initThread]);
+  }, [skipAutoInit, initThread]);
 
   return {
     ...state,

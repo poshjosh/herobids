@@ -26,6 +26,13 @@ interface GuidedSetupPanelProps {
  * v1 scope: Single-purpose — guide users through the create-agent workflow.
  */
 export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm }: GuidedSetupPanelProps) {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Detect OAuth return synchronously so we can skip auto-init before the
+  // initThread / loadThread race begins (see useGuidedSetup skipAutoInit).
+  const isOauthReturn = new URLSearchParams(location.search).get('oauthReturn') === '1';
+
   const {
     thread,
     messages,
@@ -38,10 +45,8 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
     loadThread,
     startOver,
     clearBillingBlocked,
-  } = useGuidedSetup();
+  } = useGuidedSetup({ skipAutoInit: isOauthReturn });
 
-  const location = useLocation();
-  const navigate = useNavigate();
   const handledOauthReturnRef = useRef(false);
 
   // Frontend billing gate: fetch usage summary on mount to check credit
@@ -261,6 +266,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
         threadId={thread?.id}
         sending={sending}
         hideForms={oauthResuming}
+        oauthResuming={oauthResuming}
       />
     </div>
   );

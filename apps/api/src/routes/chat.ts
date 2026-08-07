@@ -4,10 +4,11 @@ import { z } from 'zod';
 import { eq, and, asc, desc, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
-import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skills, skillRevisions, UsageBillingRepository } from '@herobids/db';
+import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skills, skillRevisions, users, UsageBillingRepository } from '@herobids/db';
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml } from '@herobids/domain';
+import { normalizePersistedAiModelConfig } from '@herobids/domain';
 import { errorPayload } from '../error-payload.js';
 import { listProviderRegistry } from '../providers/registry.js';
 
@@ -791,6 +792,25 @@ export async function executeChatAction(
       }
 
       const payload = buildCreateAgentPayload(parsed.data, userId);
+
+      // Validate that AI model settings are configured before allowing creation.
+      // Mirrors the POST /agents guard: if neither the agent payload nor the
+      // user's saved AI defaults have models, the agent would fail to start.
+      // The guided setup never sets agent-level models, so only the user-level
+      // aiModelConfig can satisfy this check.
+      const [userRow] = await db
+        .select({ aiModelConfig: users.aiModelConfig })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
+      if (!userAiConfig) {
+        return JSON.stringify({
+          error: 'config.model_settings_required',
+          message: 'Before I can create an agent, you need to configure your AI model settings. Go to Settings → AI Models and choose a provider and models, then come back and try again.',
+        });
+      }
+
       const agentId = uuid();
       const timestamp = now();
       const connectionIds = (payload.connectionIds as string[]) ?? [];
