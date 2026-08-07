@@ -102,8 +102,12 @@ describe('sendLoginLink — email body rendering', () => {
     expect(htmlBody).toContain('>Sign In<');
     // Fallback link below CTA
     expect(htmlBody).toContain("If the button doesn't work");
-    // OpenAIdom branding
-    expect(htmlBody).toContain('>OpenAIdom<');
+    // OpenAIdom branding — split-color wordmark: only "AI" is accent-colored
+    expect(htmlBody).toContain('>Open<');
+    expect(htmlBody).toContain('>AI<');
+    expect(htmlBody).toContain('>dom<');
+    expect(htmlBody).toContain('color:#635BFF;');
+    expect(htmlBody).toContain('color:#101828;');
 
     // Plain-text assertions
     expect(textBody).toContain('This link expires in 5 minutes.');

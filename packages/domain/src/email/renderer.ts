@@ -161,7 +161,7 @@ function renderHtml(content: EmailContent): string {
           <!-- Header -->
           <tr>
             <td align="center" style="padding:32px 40px 0 40px;">${brandImage}
-              <span style="font-family:${FONT_STACK};font-size:24px;font-weight:700;color:${BRAND.headerText};letter-spacing:-0.5px;">OpenAIdom</span>
+              <span style="font-family:${FONT_STACK};font-size:24px;font-weight:700;letter-spacing:-0.5px;"><span style="color:${BRAND.bodyText};">Open</span><span style="color:${BRAND.headerText};">AI</span><span style="color:${BRAND.bodyText};">dom</span></span>
             </td>
           </tr>
           <!-- Title -->

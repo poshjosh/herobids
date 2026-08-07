@@ -87,9 +87,14 @@ describe('renderEmail', () => {
       expect(result.html).toContain('#101828');
     });
 
-    it('renders the typographic OpenAIdom header', () => {
+    it('renders the typographic OpenAIdom header with AI in accent color', () => {
       const result = renderEmail(makeContent());
-      expect(result.html).toContain('>OpenAIdom<');
+      // Split-color wordmark: Open + AI + dom, only AI is accent-colored
+      expect(result.html).toContain('>Open<');
+      expect(result.html).toContain('>AI<');
+      expect(result.html).toContain('>dom<');
+      expect(result.html).toContain('color:#635BFF;');
+      expect(result.html).toContain('color:#101828;');
     });
 
     it('renders title as an h1', () => {
@@ -170,8 +175,10 @@ describe('renderEmail', () => {
         makeContent({ brandImageUrl: 'https://cdn.example.com/logo.png' }),
       );
       const imgIdx = result.html.indexOf('<img');
-      const headerIdx = result.html.indexOf('>OpenAIdom<');
-      expect(imgIdx).toBeLessThan(headerIdx);
+      const openIdx = result.html.indexOf('>Open<');
+      expect(imgIdx).toBeGreaterThan(0);
+      expect(openIdx).toBeGreaterThan(0);
+      expect(imgIdx).toBeLessThan(openIdx);
     });
 
     it('omits img tag when brandImageUrl is not provided', () => {
