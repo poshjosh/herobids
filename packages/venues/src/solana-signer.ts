@@ -236,6 +236,27 @@ export class SolanaSigner implements SolanaSignerPort {
 }
 
 // Minimal base58 encode/decode utilities to avoid an extra dependency
+
+/**
+ * Derive a Solana wallet address (base58 public key) from a base58-encoded
+ * private key. Supports 64-byte keypair format (private + public key).
+ * 32-byte seeds are not supported (requires Ed25519 derivation).
+ *
+ * Returns null when the key cannot be decoded or is an unrecognised length.
+ */
+export function deriveSolanaAddress(base58PrivateKey: string): string | null {
+  try {
+    const secretKey = base58Decode(base58PrivateKey);
+    if (secretKey.length === 64) {
+      // Standard Solana keypair: bytes 32-63 are the Ed25519 public key
+      return base58Encode(secretKey.slice(32));
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 const BASE58_CHARS = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
 function base58Encode(bytes: Uint8Array): string {

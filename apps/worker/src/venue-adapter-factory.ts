@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { venueAccounts, userCredentials } from '@herobids/db';
 import type { OrderbookVenuePort, SwapVenuePort } from '@herobids/domain';
-import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter, SolanaSigner, JupiterConfirmationPoller, EvmConfirmationPoller } from '@herobids/venues';
+import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter, SolanaSigner, JupiterConfirmationPoller, EvmConfirmationPoller, deriveSolanaAddress } from '@herobids/venues';
 import type { SwapConfirmationPoller } from '@herobids/venues';
 import { credentialDecryptedEvent } from '@herobids/engine';
 import type { Journal } from '@herobids/engine';
@@ -272,25 +272,32 @@ export class VenueAdapterFactory {
       throw new CredentialResolutionError(`Unsupported swap venue ${venue}`);
     }
 
-    // Jupiter requires a wallet address on the venue account
+    // Jupiter requires a wallet address. Resolve from venueAccountRef first,
+    // then fall back to deriving from the linked credential's private key.
     const [swapAccount] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
-    if (!swapAccount?.venueAccountRef) {
-      throw new CredentialResolutionError(
-        `Venue account ${venueAccountId} has no venueAccountRef — cannot resolve wallet address for swap venue ${actorType} ${actorId}`,
-      );
-    }
-    const walletAddress = swapAccount.venueAccountRef;
+    let walletAddress: string | null = swapAccount?.venueAccountRef ?? null;
+    let derivedFromCredential = false;
 
     // Resolve Solana signer for live execution (optional — shadow/paper don't need it)
     let signer: InstanceType<typeof SolanaSigner> | undefined;
     let resolvedCredentialId: string | undefined;
-    if (swapAccount.credentialId) {
+    if (swapAccount?.credentialId) {
       const [cred] = await db.select().from(userCredentials).where(eq(userCredentials.id, swapAccount.credentialId)).limit(1);
       const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
       if (cred && encryptionKey) {
         try {
           const decrypted = JSON.parse(decryptCredential(cred.encryptedData, encryptionKey)) as { privateKey: string };
           if (decrypted.privateKey) {
+            // Derive wallet address from the private key if venueAccountRef is missing
+            if (!walletAddress) {
+              walletAddress = deriveSolanaAddress(decrypted.privateKey);
+              if (walletAddress) {
+                derivedFromCredential = true;
+                logger.info({ venueAccountId, venue, actorType, actorId },
+                  'Derived Jupiter wallet address from credential — venueAccountRef was missing');
+              }
+            }
+
             const jupiterRpcUrl = venues['jupiter']?.rpcUrl ?? 'https://api.mainnet-beta.solana.com';
             signer = new SolanaSigner({
               privateKey: decrypted.privateKey,
@@ -318,6 +325,12 @@ export class VenueAdapterFactory {
           logger.warn({ venueAccountId, venue, err: decryptErr }, 'Failed to decrypt Jupiter credentials — signing unavailable');
         }
       }
+    }
+
+    if (!walletAddress) {
+      throw new CredentialResolutionError(
+        `Venue account ${venueAccountId} has no venueAccountRef and no derivable wallet address — cannot resolve wallet address for swap venue ${actorType} ${actorId}`,
+      );
     }
 
     const jupiterConfig = venues['jupiter'];

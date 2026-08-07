@@ -10,6 +10,8 @@ The Guided Setup chat currently throws the full `ProviderSetupForm` at users the
 
 This plan restructures the connection flow around **progressive disclosure**: start with intent, narrow with simple choices, and only present the form as a last resort. It also introduces a **programmatic connection creation** path that generates wallets server-side with zero user input — no form, no secrets, no crypto knowledge required.
 
+It also simplifies the guided trading entry point itself: Guided Setup should expose a single user-facing `Trading` choice, not a confusing list of internal trading presets. The guided flow treats `trading` as direct trading by default, keeps `bot-management` out of scope, and asks one explicit approval-policy question instead: **"Should this agent execute trades automatically, or ask for approval before each trade?"**
+
 ## The Three Personas
 
 | Persona | Knows crypto? | Wants control? | Path |
@@ -48,18 +50,25 @@ Q0: New to crypto, or know what you want?
 
 ### Position in the Conversation Flow
 
-The progressive connection flow replaces **step 4** of the existing trading-agent conversation flow (see `buildSystemPrompt()` in `apps/api/src/routes/chat.ts`). The rest of the flow is unchanged:
+The progressive connection flow replaces **step 5** of the guided trading conversation flow. Step 1 is also simplified so the user does not see internal trading preset names:
 
-1. Preset selection (unchanged)
-2. Capital (unchanged)
-3. Cost-saving question (unchanged)
-4. **Connections** ← Q0 + decision tree replaces this step
-5. Optional preferences (unchanged)
-6. Confirmation + create_agent (unchanged)
+1. Top-level preset selection: `Trading`, `Personal assistant`, `Custom`
+2. For `Trading` only: ask **"Should this agent execute trades automatically, or ask for approval before each trade?"**
+3. Capital (unchanged)
+4. Cost-saving question (unchanged)
+5. **Connections** ← Q0 + decision tree replaces this step
+6. Optional preferences (unchanged)
+7. Confirmation + create_agent (unchanged)
+
+Guided Setup must not ask the user to choose among `trading`, `direct-trading`, and `trading-assistant`. Those are internal implementation details.
 
 ### Existing Connection Gate (Runs Before Q0)
 
-Before entering the decision tree, the LLM must call `list_compatible_connections` with `preferredCapability: "trading"` (existing behavior). If a compatible active connection exists, **skip the entire decision tree** and reuse it — same as today. Only enter Q0 when no compatible trading connection exists.
+Before entering the decision tree, the LLM must call `list_compatible_connections` with `preferredCapability: "trading"` (existing behavior).
+
+- If the user has **not** expressed a venue/provider preference and a compatible active connection exists, skip the decision tree and reuse it.
+- If the user **has** expressed a venue/provider preference, only auto-reuse an existing connection for that same provider. Do **not** silently substitute a different trading venue just because it is active.
+- Only enter Q0 when no suitable trading connection exists for the current path.
 
 ## Key Design Decisions
 
@@ -67,9 +76,34 @@ Before entering the decision tree, the LLM must call `list_compatible_connection
 
 One question ("New to crypto?" vs "I know what I want") splits the entire flow. Neither path is presented as superior — they're different starting points for different users.
 
-### 2. The Fast Track asks ONE question
+### 2. Guided Setup exposes one user-facing trading option
 
-For newbies, the only question is "what asset interests you?" (Bitcoin / Ethereum / Memecoins / Not sure). From that single answer, the LLM infers: venue, strategy preset, and watchlist. All other fields use safe defaults (`style: 'balanced'`, `executionDefaults.mode: 'test'`, `filterTrades: 'scanner_gated'`). The wallet is always generated. Zero forms. Zero secrets.
+For Guided Setup, `Trading` is the only user-facing trading preset. The legacy internal distinction between `trading`, `direct-trading`, and `trading-assistant` must not appear in the chat.
+
+- Guided Setup does **not** concern itself with `bot-management`.
+- The internal `trading` preset (which currently bundles `trading` + `bot-management`) is not offered as a guided choice.
+- Guided `Trading` means direct trading capability by default.
+
+Immediately after the user selects `Trading`, ask:
+
+> "Should this agent execute trades automatically, or ask for approval before each trade?"
+
+The answer determines execution policy, not marketing copy.
+
+Internal mapping for Guided Setup:
+
+| User answer | Internal outcome |
+|---|---|
+| Execute trades automatically | `skillPresetId = 'direct-trading'`, `authorizationMode = 'direct'` |
+| Ask for approval before each trade | `skillPresetId = 'direct-trading'`, `authorizationMode = 'approval_required'` |
+
+Backward-compatibility note: if any downstream code path still depends on `trading-assistant`, derive that alias at the API boundary and keep it hidden from the user. The guided UX should still present this only as an approval policy.
+
+### 3. The Fast Track asks ONE additional connection-routing question
+
+For newbies, Fast Track asks one additional question inside the connection step: "what asset interests you?" (Bitcoin / Ethereum / Memecoins / Not sure). It is **not** one question for the entire onboarding. Preset selection, capital, cost-saving, and confirmation still remain in the flow.
+
+From that single connection-routing answer, the LLM infers: venue, strategy preset, and watchlist. All other fields use safe defaults (`style: 'balanced'`, `executionDefaults.mode: 'test'`, `filterTrades: 'scanner_gated'`). The wallet is always generated. Zero forms. Zero secrets.
 
 Fast Track inference table:
 
@@ -120,9 +154,30 @@ The chat agent needs a tool to create connections programmatically (bypassing th
 }
 ```
 
+The tool result must include enough data for the chat to continue without an additional lookup. At minimum:
+
+```typescript
+{
+  success: true,
+  connectionId: string,
+  provider: string,
+  label: string,
+  wallet?: {
+    address: string,
+    network: string,
+    fundingInstructionId: string,
+    custodyMode: 'direct',
+  },
+}
+```
+
+If a generated wallet is created, the assistant response must surface the wallet address plus funding guidance in the same turn, reusing the same guidance semantics as the existing generated-wallet UX.
+
 ### 7. System prompt restructuring
 
 The `buildSystemPrompt()` function in `apps/api/src/routes/chat.ts` needs a new **Progressive Disclosure** section that encodes the decision tree, the Q0 fork, the existing-connection gate, and the rule that `request_connection_form` is a **last resort** — never the first response to a connection need.
+
+For v1, the prompt must carry the venue-routing and generated-wallet guidance directly. The current `search_app_docs` path is still stubbed, so the core routing logic must **not** depend on documentation lookup.
 
 ## Edge Cases & Unresolvable Combinations
 
@@ -156,7 +211,7 @@ When the user picks "Not sure" for asset interest → Jupiter + momentum. Jupite
 
 ### Programmatic create_connection: resume behavior
 
-When `create_connection` succeeds (server-side wallet generation), the connection is created synchronously within the LLM tool call. Unlike `request_connection_form`, there is no redirect, no form, and no `OnboardingResumeEvent`. The tool returns the `connectionId` directly. The LLM continues the conversation turn immediately — no resume infrastructure needed.
+When `create_connection` succeeds (server-side wallet generation), the connection is created synchronously within the LLM tool call. Unlike `request_connection_form`, there is no redirect, no form, and no `OnboardingResumeEvent`. The tool returns the `connectionId` directly, plus wallet metadata when a generated wallet exists. The LLM continues the conversation turn immediately and can show funding instructions in the same response — no resume infrastructure needed.
 
 ## What Already Exists (No New Infrastructure Needed)
 
@@ -165,7 +220,8 @@ When `create_connection` succeeds (server-side wallet generation), the connectio
 | `credentialMode: 'generated'` wallet creation | `apps/api/src/routes/setup.ts:63-83` |
 | `generateWallet()` for Jupiter, Hyperliquid, 1inch | `packages/venues/src/wallet-generation.ts:38` |
 | `request_connection_form` tool with provider hints | `apps/api/src/routes/chat.ts:290-305` |
-| `search_app_docs` tool (venue lookup) | `apps/api/src/routes/chat.ts:240-250` |
+| Existing authorization policy concept (`direct` vs `approval_required`) already exists in the product model | `apps/api/src/routes/chat.ts`, `apps/web/src/features/agents/agent-form-state.ts` |
+| `search_app_docs` tool interface exists, but real docs retrieval is still stubbed | `apps/api/src/routes/chat.ts:240-250` |
 | `quick_replies` action type for choice questions | `chat.ts:88-98` (greeting pattern) |
 | `ProviderSetupForm` inline rendering | `apps/web/src/features/chat/GuidedSetupActionRenderer.tsx` |
 
@@ -173,9 +229,12 @@ When `create_connection` succeeds (server-side wallet generation), the connectio
 
 | Item | Priority |
 |---|---|
+| Remove the three-way trading sub-preset choice from Guided Setup and replace it with the approval-policy question | HIGH |
+| Guided Setup `create_agent` path needs to accept or derive `authorizationMode` from the approval answer | HIGH |
 | `create_connection` chat tool (calls `/setup/provider-link` with generated mode) | HIGH |
-| Updated `buildSystemPrompt()` with Progressive Disclosure section + Q0 fork | HIGH |
-| Platform docs entry explaining generated wallets to the LLM | MEDIUM |
+| Updated `buildSystemPrompt()` with Progressive Disclosure section + Q0 fork + prompt-local venue/generation guidance | HIGH |
+| `create_connection` result contract that returns wallet metadata for funding guidance | HIGH |
+| Real platform docs search/indexing if docs-based explanations are desired beyond prompt-local guidance | MEDIUM |
 | Post-creation summary showing generated wallet address + funding instructions | MEDIUM |
 
 ## When the Connection Form Appears (Conditional Summary)
@@ -203,10 +262,13 @@ create_connection fails → "I can't auto-create a wallet for Hyperliquid right 
 ## Implementation Order
 
 1. **Add `create_connection` tool** to `CHAT_TOOLS` and implement its handler
-2. **Update `buildSystemPrompt()`** with the Progressive Disclosure section and decision tree
-3. **Test the three paths** end-to-end: Fast Track, Guided, Direct
-4. **Add platform docs** page explaining generated wallets so the LLM can use `search_app_docs` to explain them to users
+2. **Remove the trading sub-preset prompt from Guided Setup** and replace it with: "Should this agent execute trades automatically, or ask for approval before each trade?"
+3. **Add `authorizationMode` handling to Guided Setup** so the approval answer maps to `direct` vs `approval_required` without exposing `trading-assistant`
+4. **Update `buildSystemPrompt()`** with the Progressive Disclosure section, decision tree, explicit same-provider reuse rule, guided-trading simplification, and prompt-local venue/generation guidance
+5. **Test the three paths** end-to-end: Fast Track, Guided, Direct, plus both approval-policy answers on the trading path
+6. **Add or reuse generated-wallet funding guidance rendering** so successful `create_connection` calls can show wallet address + funding instructions immediately
+7. **Optional follow-up:** implement real platform docs search/indexing and then add generated-wallet docs content for richer LLM explanations
 
 ## Relationship to Existing Work
 
-This plan extends `docs/features/2026/08/05/002-guided-setup-inline-connection-form/001-plan.md` — that plan connected the inline form to the LLM. This plan adds the **progressive questioning** that happens before the form is ever opened, and the **programmatic path** that avoids the form entirely.
+This plan extends `docs/features/2026/08/05/002-guided-setup-inline-connection-form/001-plan.md` — that plan connected the inline form to the LLM. This plan adds the **progressive questioning** that happens before the form is ever opened, the **programmatic path** that avoids the form entirely, and the **guided trading simplification** that hides internal preset taxonomy behind one approval-policy question.

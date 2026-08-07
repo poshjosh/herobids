@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { userCredentials, connections } from '@herobids/db';
 import type { AppConfig, PlansConfig } from '@herobids/domain';
-import { generateWallet } from '@herobids/venues';
+import { generateWallet, deriveSolanaAddress } from '@herobids/venues';
 import type { WalletGenerationRequest, WalletGenerationResult } from '@herobids/venues';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { canonicalizeVenueSecrets, validateVenueSecrets } from './credentials.js';
@@ -172,13 +172,24 @@ export async function setupRoutes(
 
         let tradingResult: { venueAccountId: string } | null = null;
         if (capability === 'trading') {
+          // Resolve venueAccountRef:
+          // - generated wallet → use the generated address
+          // - manual Hyperliquid → walletAddress from secrets
+          // - manual Jupiter → derive Solana address from private key
+          // - other manual → null (venue-specific resolution downstream)
+          const resolvedVenueAccountRef: string | null = generated?.wallet.address
+            ?? (provider === 'hyperliquid' ? normalizedSecrets['walletAddress'] ?? null : null)
+            ?? (provider === 'jupiter' && normalizedSecrets['privateKey']
+              ? deriveSolanaAddress(normalizedSecrets['privateKey'])
+              : null);
+
           tradingResult = await provisionTradingTarget(tx, {
             userId: request.userId,
             connectionId,
             provider,
             label,
             credentialId,
-            venueAccountRef: generated?.wallet.address ?? (provider === 'hyperliquid' ? normalizedSecrets['walletAddress'] ?? null : null),
+            venueAccountRef: resolvedVenueAccountRef,
             now,
           });
         }
