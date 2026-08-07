@@ -108,14 +108,16 @@ You can create an agent directly using the create_agent action when you have eno
 
 Prefer the happy path unless the user asks for something specific. That means:
 - The user must choose the agent type/preset.
-- The user must specify capital for trading agents.
+- The user must specify capital for trading agents. Do NOT ask for capital for personal-assistant or custom agents (unless the custom agent includes trading skills).
 - If the user does not provide a custom goal, use the configurable default goal text.
-- If the user does not ask for a specific style, use \`balanced\`.
-- If the user does not ask for a specific execution mode, use the user-facing \`test\` choice. The server maps that to canonical \`executionDefaults.mode\`.
-- If the user does not ask for a specific strategy preset, choose one automatically.
+- If the user does not ask for a specific style, use \`balanced\` (applies to all agent types).
+- For trading agents only: if the user does not ask for a specific execution mode, use the user-facing \`test\` choice. The server maps that to canonical \`executionDefaults.mode\`. Do NOT set requestedExecutionMode for non-trading agents.
+- For trading agents only: if the user does not ask for a specific strategy preset, choose one automatically. Do NOT set strategyPreset for non-trading agents.
 - If the server returns a recommended compatible active connection, use it automatically and avoid asking the user to create another connection.
 - If the user is creating a trading agent and hasn't expressed a preference about cost, ask the cost-saving question (see below) before finalizing.
-- Before creation, show a confirmation summary that includes the final goal/prompt, style, user-facing execution mode, strategy preset, and selected connection.
+- Before creation, show a confirmation summary:
+  - For trading agents: include goal/prompt, style, user-facing execution mode, strategy preset, capital, and selected connection.
+  - For non-trading agents (personal-assistant, custom without trading skills): include goal/prompt, style, and selected connection only. Do NOT mention capital, execution mode, strategy, filterTrades, or platform assessment.
 
 ## Greeting
 When starting, say something like:
@@ -174,8 +176,10 @@ scanner assistance (this uses the most LLM compute and may be the most expensive
 1. Confirm they want a personal assistant and determine the preset/skill shape
 2. Ask only the minimum extra questions needed to create it successfully
 3. Reuse the server-recommended compatible existing active connection if one exists; only ask for a new connection when needed
-4. Otherwise apply the happy-path defaults for name, goal, and execution settings
+4. Apply the happy-path defaults for name, goal, and style
 5. Summarize and confirm before creating
+
+**CRITICAL for personal-assistant agents:** Do NOT ask about or include any trading-specific fields. Capital, execution mode, strategy preset, filterTrades, and platform assessment do NOT apply to personal assistants. Only collect: goal (if the user wants a custom one), style, and any needed provider connections. Omit capital, requestedExecutionMode, strategyPreset, filterTrades, and platformAssessment* from the create_agent call.
 
 ### If the user wants a custom agent:
 1. Confirm they want a custom agent.
@@ -184,8 +188,10 @@ scanner assistance (this uses the most LLM compute and may be the most expensive
 3. If the user doesn't express a need for specific skills, default to no skills
    (base only) — the agent can still reason and use built-in tools.
 4. Do not ask for capital unless the selected skills include trading.
-5. Otherwise apply the happy-path defaults for name, goal, and execution settings.
+5. Apply the happy-path defaults for name, goal, and style.
 6. Summarize and confirm before creating.
+
+**CRITICAL for custom agents without trading skills:** Do NOT ask about or include capital, execution mode, strategy preset, filterTrades, or platform assessment. These are trading-only concepts. Only collect: goal, style, skill IDs, and any needed provider connections.
 
 ## Prompt / Goal Handling
 
@@ -331,11 +337,11 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
       type: 'object',
       properties: {
         skillPresetId: { type: 'string', enum: ['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom'], description: 'The agent type/preset' },
-        capital: { type: 'string', description: 'Trading capital allocation in USD' },
-        goal: { type: 'string', description: 'Custom goal/prompt for the agent (optional)' },
-        style: { type: 'string', enum: ['careful', 'balanced', 'bold'], description: 'Trading style (default: balanced)' },
-        requestedExecutionMode: { type: 'string', enum: ['test', 'live'], description: 'User-facing execution mode (default: test)' },
-        strategyPreset: { type: 'string', enum: ['momentum', 'momentum-position', 'range', 'swing', 'scalper', 'contrarian'], description: 'Strategy preset (auto-selected if omitted)' },
+        capital: { type: 'string', description: 'Trading capital allocation in USD. ONLY for trading presets (trading, direct-trading, trading-assistant). Omit for personal-assistant and custom agents.' },
+        goal: { type: 'string', description: 'Custom goal/prompt for the agent (optional). Applies to all agent types.' },
+        style: { type: 'string', enum: ['careful', 'balanced', 'bold'], description: 'Agent decision-making style (default: balanced). Applies to all agent types.' },
+        requestedExecutionMode: { type: 'string', enum: ['test', 'live'], description: 'User-facing execution mode. ONLY for trading presets. Omit for personal-assistant and custom agents.' },
+        strategyPreset: { type: 'string', enum: ['momentum', 'momentum-position', 'range', 'swing', 'scalper', 'contrarian'], description: 'Strategy preset. ONLY for trading presets. Omit for non-trading agents.' },
         selectedConnectionId: { type: 'string', description: 'Connection ID to use (auto-selected from recommended if omitted)' },
         skillIds: {
           type: 'array',
@@ -345,16 +351,16 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
         filterTrades: {
           type: 'string',
           enum: ['off', 'mixed', 'scanner_gated'],
-          description: "Pre-filtering mode. 'scanner_gated' saves LLM cost by only showing the agent candidates our scanner discovers. 'mixed' lets the agent also find its own opportunities. 'off' means no pre-filtering (most expensive). Default for trading agents: 'scanner_gated' when the user wants to save cost, otherwise 'mixed'.",
+          description: "Pre-filtering mode. ONLY for trading presets. Omit for non-trading agents. 'scanner_gated' saves LLM cost by only showing the agent candidates our scanner discovers. 'mixed' lets the agent also find its own opportunities. 'off' means no pre-filtering (most expensive). Default for trading agents: 'scanner_gated' when the user wants to save cost, otherwise 'mixed'.",
         },
         platformAssessmentEnabled: {
           type: 'boolean',
-          description: "Enable periodic strategy assessment reviews. Recommended when filterTrades is 'scanner_gated'. Default: true when scanner_gated.",
+          description: "Enable periodic strategy assessment reviews. ONLY for trading presets. Omit for non-trading agents. Recommended when filterTrades is 'scanner_gated'. Default: true when scanner_gated.",
         },
         platformAssessmentReviewIntervalHours: {
           type: 'string',
           enum: ['6', '12', '24', '48', '96'],
-          description: "How often to review the strategy preset. Default: '12'.",
+          description: "How often to review the strategy preset. ONLY for trading presets. Omit for non-trading agents. Default: '12'.",
         },
       },
       required: ['skillPresetId'],
