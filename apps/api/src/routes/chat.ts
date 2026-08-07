@@ -107,7 +107,7 @@ const GREETING_ACTIONS: ChatAction[] = [
 
 // ── System Prompt ────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(): string {
+export function buildSystemPrompt(): string {
   return `You are the Guided Setup assistant for OpenAIdom, a platform for creating and running AI agents.
 
 Your ONLY job: help the user create an AI agent through conversation.
@@ -116,9 +116,7 @@ You are NOT a general-purpose chat assistant. Do not answer questions unrelated 
 something outside agent creation, gently redirect: "I'm focused on helping you create an
 agent right now. Would you like to continue, or switch to the form?"
 
-You have access to platform documentation tools (search_app_docs, list_app_docs, read_app_docs)
-and skill discovery (list_available_skills — use only for Custom AI or when the user asks about specific skills) to understand the available options. Use them before
-asking the user to make choices.
+You have access to skill discovery (list_available_skills — use only for Custom AI or when the user asks about specific skills) to understand the available options.
 
 You run inside a restricted API-local onboarding runtime. You may use the onboarding actions when needed, but do not assume worker runtime tools like send_message, memory, or trading execution tools exist.
 
@@ -196,7 +194,9 @@ Before entering the decision tree, call \`list_compatible_connections\` with \`p
 
 ### Q0 — The Fork Point (already asked in step 1, do NOT ask again)
 
-Q0 was already answered in step 1 of the trading flow. Do NOT re-ask. Proceed directly to the relevant sub-path below based on whether the user chose Fast Track or Guided/Direct. Use quick_replies only if Q0 was somehow not answered yet.
+Q0 was already answered in step 1 of the trading flow. Do NOT re-ask. Proceed directly to the relevant sub-path below based on whether the user chose Fast Track or Guided/Direct.
+
+Note on structured choices: The initial preset buttons are UI-provided in the greeting only — do NOT attempt to emit quick_replies actions; the runtime does not support model-driven quick replies after the greeting. All follow-up choices should be asked in plain natural language. If the user answers with free text, continue naturally.
 
 Do NOT present either path as superior — they are different starting points for different users.
 
@@ -263,7 +263,7 @@ Once venue is locked, ask wallet choice (same as Direct path):
 
 - \`request_connection_form\` is a LAST RESORT. Never call it as the first response to a connection need. Always try the existing-connection gate, then the decision tree, then \`create_connection\` (for generated wallets), and only fall back to the form when the user has existing keys or generation fails.
 - When opening the form, always pass \`preferredProvider\` scoped to the determined venue. Never show a blank "pick a provider" dropdown.
-- The \`create_connection\` tool creates the connection synchronously — no redirect, no form, no resume event. Continue the conversation immediately.
+- The \`create_connection\` tool creates the connection synchronously — no redirect, no form, no resume event. Continue the conversation immediately. When \`create_connection\` returns a \`connectionId\`, the backend auto-assigns it in the next \`create_agent\` call — you do not need to pass \`selectedConnectionId\`.
 - Generated wallets (via \`create_connection\`) are the default for Fast Track and available as a choice for Guided/Direct paths.
 - If \`create_connection\` returns an error, catch it and fall back to \`request_connection_form\` with the venue hint. Do not retry \`create_connection\` for the same provider in the same turn.
 - Venue-to-provider mapping: hyperliquid → Hyperliquid perps, jupiter → Jupiter DEX (Solana), 1inch → 1inch DEX (EVM).
@@ -462,7 +462,7 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
   },
   {
     name: 'create_connection',
-    description: 'Create a provider connection with auto-generated credentials. The result includes a connectionId that can be used for agent assignment — when you call create_agent after this, the connection will be auto-wired. Use for the simplified path when the user has agreed to a specific venue and wants a generated wallet. Do NOT use if the user wants to provide their own API keys — use request_connection_form instead. The label is optional and will be auto-derived if omitted.',
+    description: 'Create a provider connection with auto-generated credentials. The result includes a connectionId that the backend auto-assigns when create_agent follows immediately. If you want a specific existing connection instead of the auto-resolved one, pass selectedConnectionId explicitly on create_agent. Use for the simplified path when the user has agreed to a specific venue and wants a generated wallet. Do NOT use if the user wants to provide their own API keys — use request_connection_form instead. The label is optional and will be auto-derived if omitted.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -494,7 +494,7 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
         style: { type: 'string', enum: ['careful', 'balanced', 'bold'], description: 'Agent decision-making style (default: balanced). Applies to all agent types.' },
         requestedExecutionMode: { type: 'string', enum: ['test', 'live'], description: 'User-facing execution mode. ONLY for trading presets. Omit for personal-assistant and custom agents.' },
         strategyPreset: { type: 'string', enum: ['momentum', 'momentum-position', 'range', 'swing', 'scalper', 'contrarian'], description: 'Strategy preset. ONLY for trading presets. Omit for non-trading agents.' },
-        selectedConnectionId: { type: 'string', description: 'Connection ID to use (auto-selected from recommended if omitted)' },
+        selectedConnectionId: { type: 'string', description: 'Connection ID to assign to the agent. Omission is safe only when the backend can resolve a single compatible connection deterministically from surfaced context (same-turn created or recommended connection, or a single compatible connection from the current thread). When the user is choosing among multiple compatible connections, ask which one to use rather than guessing.' },
         skillIds: {
           type: 'array',
           items: { type: 'string' },

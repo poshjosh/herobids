@@ -4,7 +4,7 @@ import type { Database, UsageBillingRepository } from '@herobids/db';
 import { ChatUsageBillingRecorder } from '../billing/chat-usage-billing-recorder.js';
 import type { Redis } from 'ioredis';
 import type { ProvidersYaml } from '@herobids/domain';
-import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt, resolveCreateAgentConnection } from './chat.js';
+import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt, resolveCreateAgentConnection, buildSystemPrompt } from './chat.js';
 import type { LlmToolCall } from '@herobids/llm';
 
 // Mock createProviderLink to avoid needing CREDENTIAL_ENCRYPTION_KEY in tests
@@ -1970,5 +1970,50 @@ describe('invokeOnboardingLlm — connection autowiring', () => {
     // in summaryFacts, confirming that the connection was created and tracked
     // for subsequent autowiring to create_agent.
     expect(result.summaryFacts?.connectionIds).toContain('conn-created');
+  });
+});
+
+// ── buildSystemPrompt: prompt contract tests ────────────────────────────────
+
+describe('buildSystemPrompt — prompt contract', () => {
+  const prompt = buildSystemPrompt();
+
+  it('does not instruct the model to use docs tools proactively', () => {
+    // The prompt must not reference the platform documentation tool names
+    // or imply they should be actively used.
+    expect(prompt).not.toContain('search_app_docs');
+    expect(prompt).not.toContain('list_app_docs');
+    expect(prompt).not.toContain('read_app_docs');
+    expect(prompt).not.toContain('platform documentation tools');
+    expect(prompt).not.toContain('docs tools');
+  });
+
+  it('does not instruct the model to emit arbitrary quick_replies after the greeting', () => {
+    // The prompt must not contain instructions to emit quick_replies in contexts
+    // beyond the initial greeting (which is UI-provided).
+    // "Use quick_replies" as a directive to the model must be absent.
+    expect(prompt).not.toMatch(/Use quick_replies/i);
+    // The only references to quick_replies should describe them as
+    // runtime-emitted, UI-provided, or explicitly NOT model-emitted.
+    expect(prompt).toMatch(/quick_replies/);
+    // After the "Note on structured choices" paragraph, there must not be any
+    // affirmative instruction that implies the model can emit quick_replies.
+    // "do NOT attempt" is fine — that's the corrective note.
+    expect(prompt).toContain('Note on structured choices');
+    const afterNote = prompt.split('Note on structured choices')[1];
+    expect(afterNote).toBeDefined();
+    // Check that after the note, there's no directive to USE quick_replies
+    // (but "do NOT attempt" is a negative statement, not a directive)
+    expect(afterNote).not.toMatch(/Use quick_replies|you can emit|emit quick_replies as|send quick_replies|present quick_replies/i);
+  });
+
+  it('does not claim unconditional auto-selection for selectedConnectionId', () => {
+    // The tool description in CHAT_TOOLS is not embedded in the prompt,
+    // but the prompt text itself must not contain false claims about
+    // unconditional auto-selection.
+    expect(prompt).not.toContain('auto-selected');
+    // The prompt should describe autowiring as context-dependent, not automatic.
+    // Verify the prompt mentions the autowiring behavior (General Connection Rules).
+    expect(prompt).toContain('auto-assigns');
   });
 });
