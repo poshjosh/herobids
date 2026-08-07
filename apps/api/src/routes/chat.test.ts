@@ -7,6 +7,14 @@ import type { ProvidersYaml } from '@herobids/domain';
 import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt } from './chat.js';
 import type { LlmToolCall } from '@herobids/llm';
 
+// Mock createProviderLink to avoid needing CREDENTIAL_ENCRYPTION_KEY in tests
+vi.mock('./setup.js', () => ({
+  createProviderLink: vi.fn(),
+}));
+
+const { createProviderLink } = await import('./setup.js');
+const createProviderLinkMock = vi.mocked(createProviderLink);
+
 const TEST_USER_ID = 'user-1';
 
 // Mock @herobids/llm so the module can be imported in the test environment.
@@ -1262,5 +1270,241 @@ describe('Chat LLM Usage Metering', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().message.content).toBe('Got it!');
     expect(record).toHaveBeenCalledTimes(1); // attempted, but failed
+  });
+});
+
+// ── executeChatAction: create_connection ────────────────────────────────────
+
+describe('executeChatAction — create_connection', () => {
+  it('validates provider and label are required', async () => {
+    const { db } = buildMockDb();
+    const result = await executeChatAction(
+      makeToolCall('create_connection', { label: 'test' }),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+    );
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed.error).toBe('validation_error');
+  });
+
+  it('rejects non-generated credentialMode', async () => {
+    const { db } = buildMockDb();
+    const result = await executeChatAction(
+      makeToolCall('create_connection', { provider: 'hyperliquid', label: 'test', credentialMode: 'manual' }),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+    );
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed.error).toBe('validation_error');
+    expect(parsed.message).toContain('only supports credentialMode: generated');
+  });
+
+  it('rejects unknown provider', async () => {
+    const { db } = buildMockDb();
+    const result = await executeChatAction(
+      makeToolCall('create_connection', { provider: 'unknown-venue', label: 'test', capability: 'trading', credentialMode: 'generated' }),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+    );
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed.error).toBe('validation_error');
+    expect(parsed.message).toContain('Unknown or deprecated provider');
+  });
+});
+
+// ── executeChatAction: authorizationMode ────────────────────────────────────
+
+describe('executeChatAction — authorizationMode', () => {
+  it('accepts authorizationMode in create_agent Zod schema', async () => {
+    // Import the schema directly to test validation without the full handler
+    const { GuidedSetupCreateAgentInput } = await import('./chat.js');
+    const parsed = GuidedSetupCreateAgentInput.safeParse({
+      skillPresetId: 'direct-trading',
+      capital: '1000',
+      authorizationMode: 'approval_required',
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.authorizationMode).toBe('approval_required');
+    }
+  });
+
+  it('rejects invalid authorizationMode value', async () => {
+    const { GuidedSetupCreateAgentInput } = await import('./chat.js');
+    const parsed = GuidedSetupCreateAgentInput.safeParse({
+      skillPresetId: 'direct-trading',
+      authorizationMode: 'invalid_mode',
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('allows authorizationMode to be omitted', async () => {
+    const { GuidedSetupCreateAgentInput } = await import('./chat.js');
+    const parsed = GuidedSetupCreateAgentInput.safeParse({
+      skillPresetId: 'direct-trading',
+      capital: '500',
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.authorizationMode).toBeUndefined();
+    }
+  });
+});
+
+// ── invokeOnboardingLlm: wallet_created action emission ─────────────────────
+
+describe('invokeOnboardingLlm — wallet_created action', () => {
+  it('emits a wallet_created confirm action when create_connection returns wallet', async () => {
+    createProviderLinkMock.mockResolvedValueOnce({
+      kind: 'ok',
+      credentialId: 'cred-1',
+      connectionId: 'conn-1',
+      provider: 'hyperliquid',
+      label: 'My Trading Wallet',
+      venueAccountId: 'va-1',
+      wallet: {
+        address: '0x1234abcd',
+        network: 'Hyperliquid',
+      },
+    } as never);
+
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: '',
+        toolCalls: [makeToolCall('create_connection', {
+          provider: 'hyperliquid',
+          label: 'My Trading Wallet',
+          capability: 'trading',
+          credentialMode: 'generated',
+        })],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Your Hyperliquid wallet has been created.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+
+    // Mock DB for user lookup in create_connection handler
+    db.select = vi.fn().mockImplementation((_cols?: unknown) => {
+      const chain: Record<string, unknown> = {};
+      chain.from = vi.fn(() => {
+        const fromChain: Record<string, unknown> = {};
+        fromChain.where = vi.fn(() => ({
+          limit: vi.fn().mockResolvedValue([{ planId: 'free', isAdmin: false }]),
+        }));
+        return fromChain;
+      });
+      return chain;
+    });
+
+    const result = await invokeOnboardingLlm(
+      LLM_CONFIG,
+      EMPTY_PROVIDERS_YAML,
+      db,
+      TEST_USER_ID,
+      [],
+      null,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { hyperliquid: { walletGeneration: { enabled: true } }, jupiter: {}, '1inch': {} },
+    );
+
+    const walletActions = (result.actions ?? []).filter(
+      (a) => a.type === 'confirm' && a.props && typeof a.props === 'object' && 'type' in a.props && a.props.type === 'wallet_created',
+    );
+    expect(walletActions.length).toBeGreaterThanOrEqual(1);
+    expect(createProviderLinkMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not emit wallet_created action when create_connection fails', async () => {
+    createProviderLinkMock.mockResolvedValueOnce({
+      kind: 'error',
+      code: 'wallet_generation.disabled',
+      message: 'Generated wallets are not currently available for provider hyperliquid.',
+      params: { provider: 'hyperliquid' },
+    } as never);
+
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: '',
+        toolCalls: [makeToolCall('create_connection', {
+          provider: 'hyperliquid',
+          label: 'Test',
+          capability: 'trading',
+          credentialMode: 'generated',
+        })],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Sorry, wallet generation is disabled.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+    db.select = vi.fn().mockImplementation((_cols?: unknown) => {
+      const chain: Record<string, unknown> = {};
+      chain.from = vi.fn(() => {
+        const fromChain: Record<string, unknown> = {};
+        fromChain.where = vi.fn(() => ({
+          limit: vi.fn().mockResolvedValue([{ planId: 'free', isAdmin: false }]),
+        }));
+        return fromChain;
+      });
+      return chain;
+    });
+
+    const result = await invokeOnboardingLlm(
+      LLM_CONFIG,
+      EMPTY_PROVIDERS_YAML,
+      db,
+      TEST_USER_ID,
+      [],
+      null,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { hyperliquid: { walletGeneration: { enabled: false } }, jupiter: {}, '1inch': {} },
+    );
+
+    const walletActions = (result.actions ?? []).filter(
+      (a) => a.type === 'confirm' && a.props && typeof a.props === 'object' && 'type' in a.props && a.props.type === 'wallet_created',
+    );
+    expect(walletActions.length).toBe(0);
   });
 });

@@ -496,7 +496,7 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
   },
 ];
 
-const GuidedSetupCreateAgentInput = z.object({
+export const GuidedSetupCreateAgentInput = z.object({
   skillPresetId: z.enum(['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom']),
   capital: z.string().min(1).optional(),
   goal: z.string().optional(),
