@@ -387,7 +387,7 @@ export class AgentSessionManager {
             canSpendResult = await this.config.usageBillingRepo.canSpendNow(billingAccount.id);
           } catch (err) {
             logger.error({ agentId: agent.id, userId: agent.userId, err }, 'Failed to check canSpendNow — allowing session launch (fail-open)');
-            canSpendResult = { canSpend: true, availableMicrousd: 0, status: 'active', reason: 'ok' };
+            canSpendResult = { canSpend: true, availableMicrousd: 0, hardCapMicrousd: null, status: 'active', reason: 'ok' };
           }
           if (!canSpendResult.canSpend) {
             const topUpsEnabled = Boolean(this.config.usageBillingConfig?.creditTopUpsEnabled) && (planUsageForEnforcement?.topUpPackIds?.length ?? 0) > 0;

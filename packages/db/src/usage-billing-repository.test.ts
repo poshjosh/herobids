@@ -40,6 +40,65 @@ function makeInsertChain(onInsert?: (values: unknown) => void) {
   return chain;
 }
 
+/**
+ * Minimal mock transaction for reserveCharge / capture / release tests.
+ * Supports: select().from().innerJoin().where().for().limit() → rows
+ *           insert().values() → onConflictDoNothing
+ *           update().set().where()
+ */
+class MockTransaction {
+  private selectRows: unknown[] = [];
+
+  addSelectRow(row: unknown) {
+    this.selectRows.push(row);
+  }
+
+  select() {
+    return this;
+  }
+
+  from() {
+    return this;
+  }
+
+  innerJoin() {
+    return this;
+  }
+
+  where() {
+    return this;
+  }
+
+  for() {
+    return this;
+  }
+
+  limit() {
+    return this;
+  }
+
+  insert() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { values: (_v: any) => ({ onConflictDoNothing: vi.fn().mockResolvedValue(undefined) }) };
+  }
+
+  update() {
+    return {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      set: (_v: any) => ({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+    };
+  }
+
+  get then() {
+    // Makes the select chain await-able to return the queued rows.
+    const rows = [...this.selectRows];
+    this.selectRows = [];
+    return Promise.resolve(rows).then.bind(Promise.resolve(rows));
+  }
+}
+
 // ── LLM pricing snapshot tests ────────────────────────────────────────────────
 
 const MOCK_SNAPSHOT = {
@@ -371,16 +430,17 @@ function makePeriod(overrides: {
 }
 
 describe('computeSpendStatus', () => {
-  it('returns active when balance is positive and hardCap is 0', () => {
-    // Starter plan: $20 included, $0 spent → balance = $20
+  it('returns hard_limited when balance is positive but hardCap is 0 (exact boundary — block at $0.00)', () => {
+    // hardCap = $0.00 → netOutOfPocket (0) >= 0 → hard_limited
     const status = computeSpendStatus(makePeriod({ balanceMicrousd: 20_000_000 }));
-    expect(status).toBe('active');
+    expect(status).toBe('hard_limited');
   });
 
-  it('returns active when balance is exactly 0 and hardCap is 0', () => {
+  it('returns hard_limited when balance is exactly 0 and hardCap is 0 (exact boundary)', () => {
     // User spent exactly their included credit + top-ups → balance = 0
+    // With hardCap 0, netOutOfPocket (0) >= 0 → hard_limited
     const status = computeSpendStatus(makePeriod({ balanceMicrousd: 0 }));
-    expect(status).toBe('active');
+    expect(status).toBe('hard_limited');
   });
 
   it('returns hard_limited when balance is negative and hardCap is 0', () => {
@@ -398,14 +458,14 @@ describe('computeSpendStatus', () => {
     expect(status).toBe('hard_limited');
   });
 
-  it('returns active when netOutOfPocket equals a non-zero hardCap', () => {
-    // hardCap = $5.00, balance = -$5.00 → netOutOfPocket = $5.00, not > $5.00
+  it('returns hard_limited when netOutOfPocket equals a non-zero hardCap (exact boundary)', () => {
+    // hardCap = $5.00, balance = -$5.00 → netOutOfPocket = $5.00 >= $5.00 → hard_limited
     const status = computeSpendStatus(makePeriod({
       balanceMicrousd: -50_000,
       softCapMicrousd: null,
       hardCapMicrousd: 50_000,
     }));
-    expect(status).toBe('active');
+    expect(status).toBe('hard_limited');
   });
 
   it('returns active when netOutOfPocket is below a non-zero hardCap', () => {
@@ -468,14 +528,16 @@ describe('computeSpendStatus', () => {
     expect(status).toBe('active');
   });
 
-  it('top-up that restores positive balance unblocks a hard-limited account', () => {
-    // Before top-up: balance = -$1.00 → hard_limited
+  it('top-up alone does not unblock when hardCap is 0 (exact boundary)', () => {
+    // hardCap = $0.00 means block at $0.00.  Even after topping up,
+    // netOutOfPocket = 0 >= 0 → hard_limited.  User must raise the cap
+    // above 0 to unblock.
     const before = computeSpendStatus(makePeriod({ balanceMicrousd: -10_000 }));
     expect(before).toBe('hard_limited');
 
-    // After $5 top-up (adds 50,000 microusd): balance = $4.00 → active
+    // After $5 top-up (adds 50,000 microusd): balance = $4.00 → still blocked
     const after = computeSpendStatus(makePeriod({ balanceMicrousd: 40_000 }));
-    expect(after).toBe('active');
+    expect(after).toBe('hard_limited');
   });
 
   it('top-up that partially restores balance but still negative keeps hard-limited', () => {
@@ -846,6 +908,7 @@ describe('canSpendNow', () => {
     const result = await repo.canSpendNow('acc_test');
     expect(result.canSpend).toBe(true);
     expect(result.availableMicrousd).toBe(0);
+    expect(result.hardCapMicrousd).toBeNull();
     expect(result.status).toBe('active');
     expect(result.reason).toBe('ok');
   });
@@ -857,6 +920,7 @@ describe('canSpendNow', () => {
           status: 'hard_limited',
           balanceMicrousd: 500,
           reservedMicrousd: 100,
+          hardCapMicrousd: 5000,
         }]),
       ),
     } as unknown as Database;
@@ -865,6 +929,7 @@ describe('canSpendNow', () => {
     const result = await repo.canSpendNow('acc_test');
     expect(result.canSpend).toBe(false);
     expect(result.availableMicrousd).toBe(400);
+    expect(result.hardCapMicrousd).toBe(5000);
     expect(result.status).toBe('hard_limited');
     expect(result.reason).toBe('hard_limited');
   });
@@ -876,6 +941,7 @@ describe('canSpendNow', () => {
           status: 'suspended',
           balanceMicrousd: 500,
           reservedMicrousd: 100,
+          hardCapMicrousd: null,
         }]),
       ),
     } as unknown as Database;
@@ -884,46 +950,53 @@ describe('canSpendNow', () => {
     const result = await repo.canSpendNow('acc_test');
     expect(result.canSpend).toBe(false);
     expect(result.availableMicrousd).toBe(400);
+    expect(result.hardCapMicrousd).toBeNull();
     expect(result.status).toBe('suspended');
     expect(result.reason).toBe('suspended');
   });
 
-  it('returns canSpend: false, reason: no_available_credit when availableMicrousd <= 0 and status is active', async () => {
+  it('returns canSpend: true when available credit is positive, hardCap is null, and status is active (unlimited)', async () => {
     const db = {
       select: vi.fn().mockImplementation(() =>
         makeSelectChain([{
           status: 'active',
           balanceMicrousd: 100,
           reservedMicrousd: 100,
+          hardCapMicrousd: null,
         }]),
       ),
     } as unknown as Database;
 
     const repo = new UsageBillingRepository(db);
     const result = await repo.canSpendNow('acc_test');
-    expect(result.canSpend).toBe(false);
+    // hardCap null → unlimited, even with zero available credit
+    expect(result.canSpend).toBe(true);
     expect(result.availableMicrousd).toBe(0);
+    expect(result.hardCapMicrousd).toBeNull();
     expect(result.status).toBe('active');
-    expect(result.reason).toBe('no_available_credit');
+    expect(result.reason).toBe('ok');
   });
 
-  it('returns canSpend: false when availableMicrousd is negative (overspent)', async () => {
+  it('returns canSpend: true when available credit is negative but hardCap is null (unlimited)', async () => {
     const db = {
       select: vi.fn().mockImplementation(() =>
         makeSelectChain([{
           status: 'active',
           balanceMicrousd: -100,
           reservedMicrousd: 200,
+          hardCapMicrousd: null,
         }]),
       ),
     } as unknown as Database;
 
     const repo = new UsageBillingRepository(db);
     const result = await repo.canSpendNow('acc_test');
-    expect(result.canSpend).toBe(false);
+    // hardCap null → unlimited, even deep negative
+    expect(result.canSpend).toBe(true);
     expect(result.availableMicrousd).toBe(-300);
+    expect(result.hardCapMicrousd).toBeNull();
     expect(result.status).toBe('active');
-    expect(result.reason).toBe('no_available_credit');
+    expect(result.reason).toBe('ok');
   });
 
   it('returns canSpend: true, reason: ok when available credit is positive and status is active', async () => {
@@ -933,6 +1006,7 @@ describe('canSpendNow', () => {
           status: 'active',
           balanceMicrousd: 20_000_000,
           reservedMicrousd: 0,
+          hardCapMicrousd: null,
         }]),
       ),
     } as unknown as Database;
@@ -941,6 +1015,7 @@ describe('canSpendNow', () => {
     const result = await repo.canSpendNow('acc_test');
     expect(result.canSpend).toBe(true);
     expect(result.availableMicrousd).toBe(20_000_000);
+    expect(result.hardCapMicrousd).toBeNull();
     expect(result.status).toBe('active');
     expect(result.reason).toBe('ok');
   });
@@ -952,6 +1027,7 @@ describe('canSpendNow', () => {
           status: 'soft_limited',
           balanceMicrousd: 20_000_000,
           reservedMicrousd: 0,
+          hardCapMicrousd: null,
         }]),
       ),
     } as unknown as Database;
@@ -960,27 +1036,31 @@ describe('canSpendNow', () => {
     const result = await repo.canSpendNow('acc_test');
     expect(result.canSpend).toBe(true);
     expect(result.availableMicrousd).toBe(20_000_000);
+    expect(result.hardCapMicrousd).toBeNull();
     expect(result.status).toBe('soft_limited');
     expect(result.reason).toBe('ok');
   });
 
-  it('returns canSpend: false, reason: no_available_credit when soft_limited with zero available credit', async () => {
+  it('returns canSpend: true when soft_limited with zero available but no hard cap (unlimited — credit check only applies with cap)', async () => {
     const db = {
       select: vi.fn().mockImplementation(() =>
         makeSelectChain([{
           status: 'soft_limited',
           balanceMicrousd: 100,
           reservedMicrousd: 100,
+          hardCapMicrousd: null,
         }]),
       ),
     } as unknown as Database;
 
     const repo = new UsageBillingRepository(db);
     const result = await repo.canSpendNow('acc_test');
-    expect(result.canSpend).toBe(false);
+    // hardCap null → unlimited; soft_limited does not block
+    expect(result.canSpend).toBe(true);
     expect(result.availableMicrousd).toBe(0);
+    expect(result.hardCapMicrousd).toBeNull();
     expect(result.status).toBe('soft_limited');
-    expect(result.reason).toBe('no_available_credit');
+    expect(result.reason).toBe('ok');
   });
 
   it('status check wins over credit check: hard_limited blocks even with positive available credit', async () => {
@@ -990,6 +1070,7 @@ describe('canSpendNow', () => {
           status: 'hard_limited',
           balanceMicrousd: 20_000_000,
           reservedMicrousd: 0,
+          hardCapMicrousd: null,
         }]),
       ),
     } as unknown as Database;
@@ -998,5 +1079,257 @@ describe('canSpendNow', () => {
     const result = await repo.canSpendNow('acc_test');
     expect(result.canSpend).toBe(false);
     expect(result.reason).toBe('hard_limited');
+  });
+
+  // ── New hard-cap-aware tests ──────────────────────────────────────────
+
+  it('blocks when available credit hits exact hard-cap boundary', async () => {
+    // hardCap = $5.00 (50,000 microusd), available = -$5.00 → exactly at boundary
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'active',
+          balanceMicrousd: -50_000,
+          reservedMicrousd: 0,
+          hardCapMicrousd: 50_000,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(false);
+    expect(result.availableMicrousd).toBe(-50_000);
+    expect(result.hardCapMicrousd).toBe(50_000);
+    expect(result.reason).toBe('no_available_credit');
+  });
+
+  it('blocks when available credit is beyond hard-cap boundary', async () => {
+    // hardCap = $5.00, available = -$6.00 → beyond boundary
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'active',
+          balanceMicrousd: -60_000,
+          reservedMicrousd: 0,
+          hardCapMicrousd: 50_000,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(false);
+    expect(result.availableMicrousd).toBe(-60_000);
+    expect(result.reason).toBe('no_available_credit');
+  });
+
+  it('allows when balance is negative but still above hard-cap boundary', async () => {
+    // hardCap = $5.00, available = -$3.00 → still above boundary (not yet reached)
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'active',
+          balanceMicrousd: -30_000,
+          reservedMicrousd: 0,
+          hardCapMicrousd: 50_000,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(true);
+    expect(result.availableMicrousd).toBe(-30_000);
+    expect(result.reason).toBe('ok');
+  });
+
+  it('blocks at $0.00 when hardCap is 0 and available credit is 0', async () => {
+    // hardCap = 0 → block at exactly $0.00
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'active',
+          balanceMicrousd: 0,
+          reservedMicrousd: 0,
+          hardCapMicrousd: 0,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(false);
+    expect(result.availableMicrousd).toBe(0);
+    expect(result.hardCapMicrousd).toBe(0);
+    expect(result.reason).toBe('no_available_credit');
+  });
+
+  it('blocks at $0.00 when hardCap is 0 and available credit is negative', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'active',
+          balanceMicrousd: -100,
+          reservedMicrousd: 0,
+          hardCapMicrousd: 0,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(false);
+    expect(result.availableMicrousd).toBe(-100);
+    expect(result.reason).toBe('no_available_credit');
+  });
+
+  it('accounts for reservations: blocked when balance minus reserved hits boundary', async () => {
+    // hardCap = $5.00, balance = -$4.00, reserved = $2.00 → available = -$6.00 → blocked
+    const db = {
+      select: vi.fn().mockImplementation(() =>
+        makeSelectChain([{
+          status: 'active',
+          balanceMicrousd: -40_000,
+          reservedMicrousd: 20_000,
+          hardCapMicrousd: 50_000,
+        }]),
+      ),
+    } as unknown as Database;
+
+    const repo = new UsageBillingRepository(db);
+    const result = await repo.canSpendNow('acc_test');
+    expect(result.canSpend).toBe(false);
+    expect(result.availableMicrousd).toBe(-60_000);
+    expect(result.reason).toBe('no_available_credit');
+  });
+});
+
+// ── reserveCharge tests ──────────────────────────────────────────────────────
+
+describe('reserveCharge', () => {
+  it('blocks reservation when post-reservation available credit hits exact hard-cap boundary', async () => {
+    // hardCap = $5.00, available = -$3.00, reserve $2.00 → post-reservation = -$5.00 = boundary → blocked
+    const tx = new MockTransaction();
+    const db = {
+      transaction: vi.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    } as unknown as Database;
+
+    tx.addSelectRow({
+      status: 'active',
+      balanceMicrousd: -30_000,
+      reservedMicrousd: 0,
+      hardCapMicrousd: 50_000,
+    });
+
+    const repo = new UsageBillingRepository(db);
+    await expect(
+      repo.reserveCharge({
+        accountId: 'acc_test',
+        periodId: 'period_1',
+        amountMicrousd: 20_000,
+        reservationId: 'resv_1',
+      }),
+    ).rejects.toThrow(/hardCap 50000/);
+  });
+
+  it('blocks reservation when post-reservation available credit goes beyond hard-cap boundary', async () => {
+    // hardCap = $5.00, available = -$4.00, reserve $2.00 → post-reservation = -$6.00 > $5.00 → blocked
+    const tx = new MockTransaction();
+    const db = {
+      transaction: vi.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    } as unknown as Database;
+
+    tx.addSelectRow({
+      status: 'active',
+      balanceMicrousd: -40_000,
+      reservedMicrousd: 0,
+      hardCapMicrousd: 50_000,
+    });
+
+    const repo = new UsageBillingRepository(db);
+    await expect(
+      repo.reserveCharge({
+        accountId: 'acc_test',
+        periodId: 'period_1',
+        amountMicrousd: 20_000,
+        reservationId: 'resv_2',
+      }),
+    ).rejects.toThrow(/hardCap 50000/);
+  });
+
+  it('allows reservation when post-reservation available credit stays above boundary', async () => {
+    // hardCap = $5.00, available = -$2.00, reserve $1.00 → post-reservation = -$3.00 < $5.00 → allowed
+    const tx = new MockTransaction();
+    const db = {
+      transaction: vi.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    } as unknown as Database;
+
+    tx.addSelectRow({
+      status: 'active',
+      balanceMicrousd: -20_000,
+      reservedMicrousd: 0,
+      hardCapMicrousd: 50_000,
+    });
+
+    const repo = new UsageBillingRepository(db);
+    // Should not throw
+    await expect(
+      repo.reserveCharge({
+        accountId: 'acc_test',
+        periodId: 'period_1',
+        amountMicrousd: 10_000,
+        reservationId: 'resv_3',
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it('allows reservation when hardCap is null (unlimited)', async () => {
+    // hardCap null → no credit-dimension blocking
+    const tx = new MockTransaction();
+    const db = {
+      transaction: vi.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    } as unknown as Database;
+
+    tx.addSelectRow({
+      status: 'active',
+      balanceMicrousd: -100_000,
+      reservedMicrousd: 0,
+      hardCapMicrousd: null,
+    });
+
+    const repo = new UsageBillingRepository(db);
+    await expect(
+      repo.reserveCharge({
+        accountId: 'acc_test',
+        periodId: 'period_1',
+        amountMicrousd: 200_000,
+        reservationId: 'resv_4',
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it('blocks reservation at $0.00 when hardCap is 0 and post-reservation available is 0', async () => {
+    const tx = new MockTransaction();
+    const db = {
+      transaction: vi.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    } as unknown as Database;
+
+    tx.addSelectRow({
+      status: 'active',
+      balanceMicrousd: 0,
+      reservedMicrousd: 0,
+      hardCapMicrousd: 0,
+    });
+
+    const repo = new UsageBillingRepository(db);
+    await expect(
+      repo.reserveCharge({
+        accountId: 'acc_test',
+        periodId: 'period_1',
+        amountMicrousd: 0,
+        reservationId: 'resv_5',
+      }),
+    ).rejects.toThrow(/hardCap 0/);
   });
 });

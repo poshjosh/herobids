@@ -26,6 +26,12 @@ When spending reaches the hard cap:
 
 The agent does **not** automatically close positions, submit orders, or change your trading state at the hard cap. It simply stops reasoning.
 
+The hard-cap boundary is exact. For example:
+
+- If your hard cap is **$1.00**, paid usage stops once your balance reaches exactly **-$1.00** — not -$0.99, not after the next tick.
+- If your hard cap is **$0.00**, paid usage stops at exactly $0.00 (i.e. once your included credits are exhausted).
+- If you **do not set a hard cap**, no hard cap is enforced — your agent can continue spending until stopped manually.
+
 ## What to do when a cap is reached
 
 - **Top up** — Purchase additional credits from the Billing page.

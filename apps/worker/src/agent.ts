@@ -3039,7 +3039,7 @@ async function runTick(): Promise<void> {
     });
 
     let resolvedScoutDecision: ScoutDecision;
-    const canSpendResult = usageBillingService ? await usageBillingService.canSpendNow() : { canSpend: true, availableMicrousd: 0, status: 'active' as const, reason: 'ok' as const };
+    const canSpendResult = usageBillingService ? await usageBillingService.canSpendNow() : { canSpend: true, availableMicrousd: 0, hardCapMicrousd: null, status: 'active' as const, reason: 'ok' as const };
     const forcedPreScoutBillingOutcome = preScoutResolution.decision
       ? resolveForcedPreScoutBillingOutcome({
         preScoutDecision: preScoutResolution.decision,

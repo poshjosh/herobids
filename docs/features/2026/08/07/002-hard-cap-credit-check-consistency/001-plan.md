@@ -94,7 +94,7 @@ Conversion: `hardCapCents × 10_000 = hardCapMicrousd`
 
 ## Implementation Changes
 
-### 1. Change `computeSpendStatus()` to exact-boundary blocking
+### 1. Change `computeSpendStatus()` to exact-boundary blocking — **DONE**
 
 **File:** `packages/db/src/usage-billing-repository.ts`
 
@@ -120,7 +120,7 @@ Result:
 - `hardCapMicrousd = 0`, `balanceMicrousd = 0` → `hard_limited`
 - `hardCapMicrousd = 1_000_000`, `balanceMicrousd = -1_000_000` → `hard_limited`
 
-### 2. Change `canSpendNow()` to exact-boundary, cap-aware blocking
+### 2. Change `canSpendNow()` to exact-boundary, cap-aware blocking — **DONE**
 
 **File:** `packages/db/src/usage-billing-repository.ts`
 
@@ -179,7 +179,7 @@ if (period.hardCapMicrousd != null && availableMicrousd <= -period.hardCapMicrou
 
 The current comment still says paid work is blocked at `available credit <= 0`. Rewrite it so it matches the canonical rule.
 
-### 3. Change `reserveCharge()` to exact-boundary, cap-aware blocking
+### 3. Change `reserveCharge()` to exact-boundary, cap-aware blocking — **DONE**
 
 **File:** `packages/db/src/usage-billing-repository.ts`
 
@@ -213,7 +213,7 @@ if (period.hardCapMicrousd != null && postReservationAvailableMicrousd <= -perio
 
 Also update the method comment above `reserveCharge()` so it no longer says it just checks available credit in the old zero-balance sense.
 
-### 4. Update result-shape construction sites
+### 4. Update result-shape construction sites — **DONE**
 
 Add `hardCapMicrousd` to all inline / mocked `CanSpendNowResult` objects:
 
@@ -225,7 +225,7 @@ Add `hardCapMicrousd` to all inline / mocked `CanSpendNowResult` objects:
 - `apps/worker/src/market-intelligence/assessment-request-service.test.ts:294`, `317`
 - `apps/worker/src/usage-billing-service.test.ts` mocked results
 
-### 5. Update billing warning semantics for `hardCapMicrousd = 0`
+### 5. Update billing warning semantics for `hardCapMicrousd = 0` — **DONE**
 
 **File:** `apps/api/src/routes/billing.ts`
 
@@ -248,7 +248,7 @@ Implementation decision for warnings:
 
 This keeps the billing page semantically consistent without producing nonsense threshold chips.
 
-### 6. Update authoritative documentation surfaces
+### 6. Update authoritative documentation surfaces — **DONE**
 
 #### Public doc
 
@@ -281,7 +281,7 @@ Document:
 - `0` means block at $0.00
 - `100` means block at exactly `-$1.00`
 
-### 7. Update tests
+### 7. Update tests — **DONE**
 
 #### A. Repository unit tests: `computeSpendStatus()`
 

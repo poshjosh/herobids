@@ -199,6 +199,7 @@ describe('UsageBillingService', () => {
     const canSpendNowSpy = vi.spyOn(UsageBillingRepository.prototype, 'canSpendNow').mockResolvedValue({
       canSpend: false,
       availableMicrousd: -100,
+      hardCapMicrousd: null,
       status: 'active',
       reason: 'no_available_credit',
     });
@@ -209,6 +210,7 @@ describe('UsageBillingService', () => {
     expect(result).toEqual({
       canSpend: false,
       availableMicrousd: -100,
+      hardCapMicrousd: null,
       status: 'active',
       reason: 'no_available_credit',
     });
@@ -223,6 +225,7 @@ describe('UsageBillingService', () => {
     const canSpendNowSpy = vi.spyOn(UsageBillingRepository.prototype, 'canSpendNow').mockResolvedValue({
       canSpend: true,
       availableMicrousd: 5000,
+      hardCapMicrousd: null,
       status: 'active',
       reason: 'ok',
     });
@@ -233,6 +236,7 @@ describe('UsageBillingService', () => {
     expect(result).toEqual({
       canSpend: true,
       availableMicrousd: 5000,
+      hardCapMicrousd: null,
       status: 'active',
       reason: 'ok',
     });
@@ -252,6 +256,7 @@ describe('UsageBillingService', () => {
     expect(result).toEqual({
       canSpend: true,
       availableMicrousd: 0,
+      hardCapMicrousd: null,
       status: 'active',
       reason: 'ok',
     });
@@ -266,6 +271,7 @@ describe('UsageBillingService', () => {
     expect(result).toEqual({
       canSpend: true,
       availableMicrousd: 0,
+      hardCapMicrousd: null,
       status: 'active',
       reason: 'ok',
     });
@@ -285,6 +291,7 @@ describe('UsageBillingService', () => {
     expect(result).toEqual({
       canSpend: true,
       availableMicrousd: 0,
+      hardCapMicrousd: null,
       status: 'active',
       reason: 'ok',
     });
@@ -299,6 +306,7 @@ describe('UsageBillingService', () => {
     const canSpendNowSpy = vi.spyOn(UsageBillingRepository.prototype, 'canSpendNow').mockResolvedValue({
       canSpend: false,
       availableMicrousd: 0,
+      hardCapMicrousd: null,
       status: 'hard_limited',
       reason: 'hard_limited',
     });
@@ -320,6 +328,7 @@ describe('UsageBillingService', () => {
     const canSpendNowSpy = vi.spyOn(UsageBillingRepository.prototype, 'canSpendNow').mockResolvedValue({
       canSpend: false,
       availableMicrousd: 0,
+      hardCapMicrousd: null,
       status: 'suspended',
       reason: 'suspended',
     });

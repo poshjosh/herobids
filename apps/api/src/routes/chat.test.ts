@@ -1107,7 +1107,7 @@ describe('executeChatAction — create_agent billing gate', () => {
       lastEvaluatedAt: null, createdAt: new Date(), updatedAt: new Date(),
     });
     const mockCanSpendNow = vi.fn().mockResolvedValue({
-      canSpend: false, availableMicrousd: 0, status: 'hard_limited', reason: 'hard_limited',
+      canSpend: false, availableMicrousd: 0, hardCapMicrousd: 10000, status: 'hard_limited', reason: 'hard_limited',
     });
     const mockUsageBillingRepo = {
       getAccountByUserId: mockGetAccountByUserId,
@@ -1137,7 +1137,7 @@ describe('executeChatAction — create_agent billing gate', () => {
         lastEvaluatedAt: null, createdAt: new Date(), updatedAt: new Date(),
       }),
       canSpendNow: vi.fn().mockResolvedValue({
-        canSpend: true, availableMicrousd: 5000, status: 'active', reason: 'ok',
+        canSpend: true, availableMicrousd: 5000, hardCapMicrousd: 10000, status: 'active', reason: 'ok',
       }),
     } as unknown as UsageBillingRepository;
 
@@ -1188,7 +1188,7 @@ describe('invokeOnboardingLlm — billing repo plumbing', () => {
       lastEvaluatedAt: null, createdAt: new Date(), updatedAt: new Date(),
     });
     const mockCanSpendNow = vi.fn().mockResolvedValue({
-      canSpend: false, availableMicrousd: 0, status: 'hard_limited', reason: 'hard_limited',
+      canSpend: false, availableMicrousd: 0, hardCapMicrousd: 10000, status: 'hard_limited', reason: 'hard_limited',
     });
     const mockUsageBillingRepo = {
       getAccountByUserId: mockGetAccountByUserId,

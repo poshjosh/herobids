@@ -177,6 +177,7 @@ export type AccountStatus = 'active' | 'soft_limited' | 'hard_limited' | 'suspen
 export interface CanSpendNowResult {
   canSpend: boolean;
   availableMicrousd: number;
+  hardCapMicrousd: number | null;
   status: AccountStatus;
   reason: 'ok' | 'no_available_credit' | 'hard_limited' | 'suspended';
 }
@@ -318,10 +319,11 @@ export class UsageBillingRepository {
   /**
    * Check whether paid work is allowed right now for this billing account.
    *
-   * Rule: paid work is blocked when:
-   * - account status is hard_limited or suspended, OR
-   * - available credit (balanceMicrousd - reservedMicrousd) is <= 0,
-   *   even if account status is still active.
+   * Hard-cap rule: null cap = unlimited on the credit dimension.  When a
+   * hard cap is set, paid work is blocked as soon as available credit
+   * (balanceMicrousd - reservedMicrousd) reaches or goes below the cap
+   * boundary (availableMicrousd <= -hardCapMicrousd).  In addition, the
+   * account status check blocks hard_limited and suspended accounts.
    *
    * If no open period exists (fresh user), treat as canSpend: true.
    */
@@ -331,6 +333,7 @@ export class UsageBillingRepository {
         status: billingAccounts.status,
         balanceMicrousd: billingPeriods.balanceMicrousd,
         reservedMicrousd: billingPeriods.reservedMicrousd,
+        hardCapMicrousd: billingPeriods.hardCapMicrousd,
       })
       .from(billingPeriods)
       .innerJoin(billingAccounts, eq(billingPeriods.accountId, billingAccounts.id))
@@ -348,6 +351,7 @@ export class UsageBillingRepository {
       return {
         canSpend: true,
         availableMicrousd: 0,
+        hardCapMicrousd: null,
         status: 'active',
         reason: 'ok',
       };
@@ -356,22 +360,24 @@ export class UsageBillingRepository {
     const availableMicrousd = period.balanceMicrousd - period.reservedMicrousd;
 
     if (period.status === 'hard_limited') {
-      return { canSpend: false, availableMicrousd, status: 'hard_limited', reason: 'hard_limited' };
+      return { canSpend: false, availableMicrousd, hardCapMicrousd: period.hardCapMicrousd, status: 'hard_limited', reason: 'hard_limited' };
     }
     if (period.status === 'suspended') {
-      return { canSpend: false, availableMicrousd, status: 'suspended', reason: 'suspended' };
+      return { canSpend: false, availableMicrousd, hardCapMicrousd: period.hardCapMicrousd, status: 'suspended', reason: 'suspended' };
     }
     if (period.status !== 'active' && period.status !== 'soft_limited') {
       console.warn(
         `[canSpendNow] Unknown account status "${period.status}" for account ${accountId}, blocking conservatively`,
       );
-      return { canSpend: false, availableMicrousd, status: 'hard_limited', reason: 'hard_limited' };
+      return { canSpend: false, availableMicrousd, hardCapMicrousd: period.hardCapMicrousd, status: 'hard_limited', reason: 'hard_limited' };
     }
-    if (availableMicrousd <= 0) {
-      return { canSpend: false, availableMicrousd, status: period.status as AccountStatus, reason: 'no_available_credit' };
+    // null cap → unlimited on the credit dimension.
+    // set cap → block as soon as available credit hits or goes below the cap boundary.
+    if (period.hardCapMicrousd != null && availableMicrousd <= -period.hardCapMicrousd) {
+      return { canSpend: false, availableMicrousd, hardCapMicrousd: period.hardCapMicrousd, status: period.status as AccountStatus, reason: 'no_available_credit' };
     }
 
-    return { canSpend: true, availableMicrousd, status: period.status as AccountStatus, reason: 'ok' };
+    return { canSpend: true, availableMicrousd, hardCapMicrousd: period.hardCapMicrousd, status: period.status as AccountStatus, reason: 'ok' };
   }
 
   async getOrCreateOpenPeriod(
@@ -1279,8 +1285,11 @@ export class UsageBillingRepository {
    * Reserve credit for an assessment request.
    *
    * Locks the open period row with SELECT FOR UPDATE (R6), validates account
-   * status (blocks hard_limited/suspended), checks available credit, creates
-   * a reservation ledger entry, and increments reserved_microusd.
+   * status (blocks hard_limited/suspended), checks available credit against
+   * the hard-cap boundary (null cap = unlimited, set cap = blocks when
+   * post-reservation available credit reaches or goes below the cap
+   * boundary), creates a reservation ledger entry, and increments
+   * reserved_microusd.
    */
   async reserveCharge(input: ReserveChargeInput): Promise<ReserveChargeResult> {
     return this.db.transaction(async (tx) => {
@@ -1315,11 +1324,18 @@ export class UsageBillingRepository {
         throw Object.assign(new Error('Account is suspended'), { code: 'billing.account_suspended' });
       }
 
-      // Check available credit: available = balance - reserved (R6)
+      // Check available credit against hard-cap boundary
       const availableMicrousd = period.balanceMicrousd - period.reservedMicrousd;
-      if (availableMicrousd < input.amountMicrousd) {
+      const postReservationAvailableMicrousd = availableMicrousd - input.amountMicrousd;
+
+      if (
+        period.hardCapMicrousd != null &&
+        postReservationAvailableMicrousd <= -period.hardCapMicrousd
+      ) {
         throw Object.assign(
-          new Error(`Insufficient credit: available ${availableMicrousd}, required ${input.amountMicrousd}`),
+          new Error(
+            `Insufficient credit: available ${availableMicrousd}, required ${input.amountMicrousd}, hardCap ${period.hardCapMicrousd}`,
+          ),
           { code: 'billing.insufficient_credit' },
         );
       }
@@ -1561,10 +1577,10 @@ export function computeSpendStatus(period: {
   // Net out-of-pocket spend beyond included credits and top-ups
   const netOutOfPocket = Math.max(0, -period.balanceMicrousd);
 
-  if (period.hardCapMicrousd != null && netOutOfPocket > period.hardCapMicrousd) {
+  if (period.hardCapMicrousd != null && netOutOfPocket >= period.hardCapMicrousd) {
     return 'hard_limited';
   }
-  if (period.softCapMicrousd != null && netOutOfPocket > period.softCapMicrousd) {
+  if (period.softCapMicrousd != null && netOutOfPocket >= period.softCapMicrousd) {
     return 'soft_limited';
   }
   return 'active';

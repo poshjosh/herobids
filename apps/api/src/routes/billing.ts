@@ -614,12 +614,19 @@ export async function billingRoutes(
     const netOutOfPocket = period ? Math.max(0, -period.balanceMicrousd) : 0;
     const hardCap = period?.hardCapMicrousd;
     const topUpPacks = resolveTopUpPacks(account.activePlanId, plansConfig, usageBillingConfig, providerManager, topUpProvider);
-    // A hard cap of 0 (or null/undefined) means no effective cap — skip warnings.
-    const effectiveHardCap = hardCap != null && hardCap > 0 ? hardCap : null;
-    const warnings = warningThresholds.map((pct) => ({
-      thresholdPct: pct,
-      reached: effectiveHardCap != null ? netOutOfPocket >= (effectiveHardCap * pct) / 100 : false,
-    }));
+    // null = no cap → skip warnings.
+    // 0 = block at $0.00 → don't reuse percentage thresholds (all would read as reached);
+    //     instead surface a single "hard cap reached" state when netOutOfPocket >= 0.
+    // > 0 = use percentage thresholds as normal.
+    const warnings: Array<{ thresholdPct: number; reached: boolean }> =
+      hardCap == null
+        ? []
+        : hardCap === 0
+          ? [{ thresholdPct: 100, reached: netOutOfPocket >= 0 }]
+          : warningThresholds.map((pct) => ({
+              thresholdPct: pct,
+              reached: netOutOfPocket >= (hardCap * pct) / 100,
+            }));
 
     return reply.send({
       account: {

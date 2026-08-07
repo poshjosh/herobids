@@ -154,17 +154,17 @@ export class UsageBillingService {
    */
   async canSpendNow(): Promise<import('@herobids/db').CanSpendNowResult> {
     if (!this.config.enabled) {
-      return { canSpend: true, availableMicrousd: 0, status: 'active', reason: 'ok' };
+      return { canSpend: true, availableMicrousd: 0, hardCapMicrousd: null, status: 'active', reason: 'ok' };
     }
     try {
       const ok = await this.ensureAccount();
       if (!ok || !this.accountId) {
-        return { canSpend: true, availableMicrousd: 0, status: 'active', reason: 'ok' };
+        return { canSpend: true, availableMicrousd: 0, hardCapMicrousd: null, status: 'active', reason: 'ok' };
       }
       return await this.repo.canSpendNow(this.accountId);
     } catch (err) {
       logger.warn({ err }, 'Failed to check canSpendNow — allowing spend (fail-open)');
-      return { canSpend: true, availableMicrousd: 0, status: 'active', reason: 'ok' };
+      return { canSpend: true, availableMicrousd: 0, hardCapMicrousd: null, status: 'active', reason: 'ok' };
     }
   }
 

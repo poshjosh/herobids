@@ -14,7 +14,21 @@ Define the exact semantics of soft-cap and hard-cap enforcement in the agent run
 |-----|----------------------|--------------|------------|
 | **Soft cap** | **None** — agent continues reasoning and trading as normal | Yes — warning sent via Telegram and/or email | Yes — user may raise/remove cap, top up, or ignore |
 | **Hard cap** | **Tick stop** — agent halts on the next tick; no further LLM calls | Yes — stop notification sent with open-position context | Yes — user may top up, raise cap, or wait for next billing period |
-| **Zero balance / no available credit** | **Tick stop** — agent halts before any paid LLM call (independent of cap-derived status) | Yes — stop notification sent | Yes — user may add credit |
+| **No available credit (hard-cap-boundary)** | **Tick stop** — agent halts before any paid LLM call when available credit hits or goes below the hard-cap boundary | Yes — stop notification sent | Yes — user may add credit |
+
+### Hard-cap boundary rule
+
+The hard-cap boundary is exact and consistent across all enforcement methods:
+
+- `hardCapMicrousd = null` → **no hard cap** is enforced. Unlimited spending.
+- `hardCapMicrousd` is set → paid work is blocked **as soon as** available credit reaches or goes below the cap boundary.
+
+Example: `hardCapCents: 100` ($1.00) means the user can spend down to just above `-$1.00`; once they hit exactly `-$1.00`, further paid work is blocked.
+
+This rule applies identically in all three enforcement methods:
+- `computeSpendStatus()`: hard-limited when `netOutOfPocket >= hardCapMicrousd`
+- `canSpendNow()`: blocked when `availableMicrousd <= -hardCapMicrousd`
+- `reserveCharge()`: blocked when `post-reservation availableMicrousd <= -hardCapMicrousd`
 
 ### Soft cap: warn, do not mutate
 
@@ -44,13 +58,15 @@ It must not:
 - Change the agent's config
 - Prevent the user from raising the cap or topping up
 
-## Zero-Balance (No Available Credit) Enforcement
+## Hard-Cap-Boundary (No Available Credit) Enforcement
 
-Zero-balance enforcement is independent from cap-derived status. It blocks paid work (agent runtime and Guided Setup chat) when `availableMicrousd <= 0`, even if the account status is still `active`.
+Hard-cap-boundary enforcement is the primary credit check. It blocks paid work (agent runtime and Guided Setup chat) when available credit hits or falls below the hard-cap boundary. When no hard cap is set (`hardCapMicrousd = null`), paid work is **not** blocked on the credit dimension.
 
-**Rule**: `availableMicrousd = balanceMicrousd - reservedMicrousd`. When this value is `<= 0`, all paid LLM dispatch is blocked regardless of cap status.
+**Rule**: `availableMicrousd = balanceMicrousd - reservedMicrousd`. When `hardCapMicrousd` is set and `availableMicrousd <= -hardCapMicrousd`, all paid LLM dispatch is blocked regardless of account status.
 
-This uses the shared `canSpendNow()` guard in `packages/db/src/usage-billing-repository.ts`, which checks both account status AND available credit in a single call. The guard returns:
+Note: `hardCapMicrousd = 0` is a **real cap** — it means paid work is blocked at $0.00 (once included credits are exhausted). It is distinct from `hardCapMicrousd = null`, which means no cap at all.
+
+This uses the shared `canSpendNow()` guard in `packages/db/src/usage-billing-repository.ts`, which checks account status, available credit, and the hard-cap boundary in a single call. The guard returns:
 
 > **Fail-open**: The service layer (`UsageBillingService.canSpendNow()`) fails open on infrastructure errors — billing infra issues never block agent operations.
 
@@ -58,10 +74,22 @@ This uses the shared `canSpendNow()` guard in `packages/db/src/usage-billing-rep
 interface CanSpendNowResult {
   canSpend: boolean;
   availableMicrousd: number;
-  status: AccountStatus;        // 'active' | 'soft_limited' | 'hard_limited' | 'suspended'
+  hardCapMicrousd: number | null;   // null = no hard cap; set = exact boundary
+  status: AccountStatus;            // 'active' | 'soft_limited' | 'hard_limited' | 'suspended'
   reason: 'ok' | 'no_available_credit' | 'hard_limited' | 'suspended';
 }
 ```
+
+### Reserve-charge enforcement
+
+The `reserveCharge()` method applies the same hard-cap boundary rule. A reservation is blocked when the post-reservation available credit would be at or below the cap boundary:
+
+```
+postReservationAvailable = balanceMicrousd - reservedMicrousd - amountMicrousd
+blocked when hardCapMicrousd != null && postReservationAvailable <= -hardCapMicrousd
+```
+
+When `hardCapMicrousd = null`, reservations are not blocked on the credit dimension.
 
 ### Enforcement points
 
@@ -84,14 +112,14 @@ This is consistent with assessment request reservations, which already check ava
 
 ### Inactivity when blocked
 
-An agent blocked by zero-balance enforcement remains in its current status. It does not:
+An agent blocked by hard-cap-boundary enforcement remains in its current status. It does not:
 
 - Close or modify open positions
 - Submit orders
 - Change its config or tick schedule
 - Transition to a different account status
 
-The agent resumes normally on the next tick once the user adds credit and `availableMicrousd > 0`.
+The agent resumes normally on the next tick once the user adds credit and the available credit moves back above the hard-cap boundary.
 
 ## Guided Setup Chat Enforcement
 
@@ -189,7 +217,7 @@ Notifications are dispatched through the alert delivery system (Telegram, email,
 
 If neither the plan nor the user sets a cap, the value is `null` and no enforcement occurs.
 
-Zero-balance enforcement is always active — it requires no config toggle. The `canSpendNow()` guard runs unconditionally before any paid LLM dispatch, regardless of cap configuration. Available credit is derived from the billing period's `balanceMicrousd` and `reservedMicrousd` columns, which are always present.
+Hard-cap-boundary enforcement is always active — it requires no config toggle. The `canSpendNow()` guard runs unconditionally before any paid LLM dispatch, regardless of cap configuration. Available credit is derived from the billing period's `balanceMicrousd` and `reservedMicrousd` columns, which are always present. When `hardCapMicrousd = null`, no credit limit is enforced (unlimited spending).
 
 ## Testing
 

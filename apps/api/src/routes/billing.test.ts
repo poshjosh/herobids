@@ -429,10 +429,9 @@ describe('billing routes', () => {
     ]);
   });
 
-  it('usage-summary warning thresholds are not reached when hard cap is zero', async () => {
-    // Regression: hardCap=0 must NOT cause all warnings to show permanently.
-    // Before the fix, hardCap != null passed for 0, and netOutOfPocket >= 0
-    // was always true, so every warning chip displayed regardless of balance.
+  it('usage-summary shows hard-cap reached when hard cap is zero and balance is negative', async () => {
+    // hardCap=0 means block at $0.00 — when netOutOfPocket >= 0,
+    // a single "hard cap reached" warning is surfaced.
     const billingConfig = BillingConfigSchema.parse({});
     const usageBillingConfig = UsageBillingConfigSchema.parse({
       enabled: true,
@@ -499,10 +498,11 @@ describe('billing routes', () => {
 
     const res = await app.inject({ method: 'GET', url: '/billing/usage-summary' });
     expect(res.statusCode).toBe(200);
-    // All warnings must be NOT reached because hardCap=0 means no effective cap.
+    // hardCap=0 blocks at $0.00 — since netOutOfPocket >= 0, the single
+    // "hard cap reached" warning is surfaced.  Percentage thresholds from
+    // config are NOT used because 50%/80%/100% of zero are meaningless.
     expect(res.json().warnings).toEqual([
-      { thresholdPct: 80, reached: false },
-      { thresholdPct: 100, reached: false },
+      { thresholdPct: 100, reached: true },
     ]);
   });
 
