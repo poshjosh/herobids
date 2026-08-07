@@ -185,6 +185,7 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   tier_enabled 3 && echo -e "                                          → agent-config-persistence-test.sh"
   tier_enabled 3 && echo -e "                                          → billing-webhook-smoke-test.sh"
   tier_enabled 4 && echo -e "  ${BLUE}Tier 4${RESET} (full stack, no keys) → agent-document-handling-test.sh"
+  tier_enabled 4 && echo -e "                                          → agent-scanner-gated-lifecycle-test.sh"
   tier_enabled 5 && echo -e "  ${BLUE}Tier 5${RESET} (full stack + venue)  → agent-trade-test.sh"
   tier_enabled 5 && echo -e "                                          → bot-trade-test.sh"
   tier_enabled 5 && echo -e "                                          → platform-preset-assessment-test.sh"
@@ -459,6 +460,9 @@ if tier_enabled 4; then
 
   run_script "agent-document-handling (PDF+DOCX upload, artifact verify)" \
     "${TESTS_DIR}/agent-document-handling-test.sh"
+
+  run_script "agent-scanner-gated-lifecycle (create → start → running)" \
+    "${TESTS_DIR}/agent-scanner-gated-lifecycle-test.sh"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════

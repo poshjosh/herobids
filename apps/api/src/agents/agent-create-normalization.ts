@@ -199,6 +199,21 @@ export async function resolveUnifiedConfig(params: {
     }
   }
 
+  // 9. Guard: scanner_gated agents MUST have a technical config.
+  // Without it the worker will reject the agent at startup with a cryptic
+  // Zod error ("expected object, received undefined"). Fail fast here with
+  // a clear message so the caller can fix the setup.
+  if (
+    finalUnifiedConfig &&
+    finalUnifiedConfig['hybridMode'] === 'scanner_gated' &&
+    !finalUnifiedConfig['technical']
+  ) {
+    throw new Error(
+      'Cannot create a scanner-gated agent without a technical configuration. ' +
+      'Provide a strategy preset or an explicit technical config.',
+    );
+  }
+
   return finalUnifiedConfig;
 }
 

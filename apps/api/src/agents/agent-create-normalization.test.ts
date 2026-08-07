@@ -1,0 +1,199 @@
+/**
+ * Tests for resolveUnifiedConfig — the shared normalization function used by
+ * both the form route and the chat route to build unifiedConfig from creation
+ * inputs.
+ *
+ * Focus: the step-9 guard that rejects scanner-gated agents without technical
+ * config, and the happy path where a strategy preset fills the technical config.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// ── Mocks ────────────────────────────────────────────────────────────────────
+
+// Mock resolveAgentStrategyPreset so we control whether a preset is resolved.
+vi.mock('./strategy-preset-resolver.js', () => ({
+  resolveAgentStrategyPreset: vi.fn(),
+}));
+
+// Mock plan-guards to avoid DB dependencies.
+vi.mock('../plan-guards.js', () => ({
+  resolvePlanLimitEntitlements: vi.fn().mockReturnValue({ maxBots: 5 }),
+}));
+
+// Mock agent-config-helpers to avoid DB dependencies.
+vi.mock('../routes/agent-config-helpers.js', () => ({
+  resolveNotificationPolicy: vi.fn().mockReturnValue(null),
+}));
+
+import { resolveAgentStrategyPreset } from './strategy-preset-resolver.js';
+import { resolveUnifiedConfig } from './agent-create-normalization.js';
+import type { Database } from '@herobids/db';
+
+const resolvePresetMock = vi.mocked(resolveAgentStrategyPreset);
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Minimal mock DB — only needs to support connection lookups in step 7. */
+function mockDb(): Database {
+  return {
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    }),
+  } as unknown as Database;
+}
+
+/** A valid technical config from the momentum preset (real shape from YAML). */
+const VALID_TECHNICAL: Record<string, unknown> = {
+  filters: { venue: 'hyperliquid', venueType: 'orderbook' },
+  indicators: {
+    trend: { enabled: true, emaFast: 9, emaSlow: 21 },
+    momentum: { enabled: true, rsiPeriod: 14, rsiOversold: 30, rsiOverbought: 70 },
+    volume: { enabled: true, volumeSmaPeriod: 20 },
+    supportResistance: { enabled: false },
+    choch: { enabled: false },
+    confidenceWeights: { trend: 0.4, momentum: 0.3, volume: 0.2, supportResistance: 0.05, choch: 0.05 },
+  },
+  candles: { interval: '15m', limit: 100 },
+  signalBias: 'trend-following',
+  scanIntervalMs: 30000,
+  scanBatchSize: 20,
+  autonomousExit: true,
+};
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+describe('resolveUnifiedConfig', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // ── Step-9 guard: reject scanner-gated without technical ────────────────
+
+  it('throws when hybridMode is scanner_gated but no technical config is present', async () => {
+    // No strategy preset → no technical from preset
+    resolvePresetMock.mockReturnValue(null);
+
+    const db = mockDb();
+
+    await expect(
+      resolveUnifiedConfig({
+        capabilityMode: 'hybrid',
+        hybridMode: 'scanner_gated',
+        // NO strategyPreset
+        // NO technical
+        db,
+      }),
+    ).rejects.toThrow(/Cannot create a scanner-gated agent without a technical configuration/);
+  });
+
+  it('throws when hybridMode is scanner_gated and preset resolution returns null', async () => {
+    // Strategy preset is provided but preset loader fails
+    resolvePresetMock.mockReturnValue(null);
+
+    const db = mockDb();
+
+    await expect(
+      resolveUnifiedConfig({
+        strategyPreset: 'momentum',
+        style: 'balanced',
+        capabilityMode: 'hybrid',
+        hybridMode: 'scanner_gated',
+        // NO explicit technical
+        db,
+      }),
+    ).rejects.toThrow(/Cannot create a scanner-gated agent without a technical configuration/);
+  });
+
+  // ── Happy path: preset fills technical ──────────────────────────────────
+
+  it('produces unifiedConfig.technical when strategy preset is resolved', async () => {
+    resolvePresetMock.mockReturnValue({
+      unifiedConfigPatch: { technical: { ...VALID_TECHNICAL } },
+      riskOverrides: {},
+    });
+
+    const db = mockDb();
+
+    const result = await resolveUnifiedConfig({
+      strategyPreset: 'momentum',
+      style: 'balanced',
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+      db,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!['technical']).toBeDefined();
+    expect(result!['capabilityMode']).toBe('hybrid');
+    expect(result!['hybridMode']).toBe('scanner_gated');
+
+    // Verify technical has the expected shape (was parsed through TechnicalConfigSchema)
+    const tech = result!['technical'] as Record<string, unknown>;
+    expect(tech.filters).toBeDefined();
+    expect(tech.indicators).toBeDefined();
+    expect(tech.signalBias).toBe('trend-following');
+    expect(tech.scanIntervalMs).toBe(30000);
+    expect(tech.autonomousExit).toBe(true);
+  });
+
+  // ── Mixed mode: no technical required ───────────────────────────────────
+
+  it('does NOT throw for hybridMode=mixed without technical (lenient)', async () => {
+    resolvePresetMock.mockReturnValue(null);
+
+    const db = mockDb();
+
+    const result = await resolveUnifiedConfig({
+      capabilityMode: 'hybrid',
+      hybridMode: 'mixed',
+      db,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!['capabilityMode']).toBe('hybrid');
+    expect(result!['hybridMode']).toBe('mixed');
+    // No technical key — worker handles this gracefully
+    expect(result!['technical']).toBeUndefined();
+  });
+
+  // ── Explicit technical wins over preset ─────────────────────────────────
+
+  it('uses explicit technical config when provided, even with scanner-gated', async () => {
+    // Even if preset resolution fails, explicit technical satisfies the guard
+    resolvePresetMock.mockReturnValue(null);
+
+    const db = mockDb();
+
+    const result = await resolveUnifiedConfig({
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+      technical: { ...VALID_TECHNICAL },
+      db,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!['technical']).toBeDefined();
+    expect(result!['hybridMode']).toBe('scanner_gated');
+  });
+
+  // ── Intelligence mode: no technical required ────────────────────────────
+
+  it('does NOT throw for intelligence mode without technical', async () => {
+    resolvePresetMock.mockReturnValue(null);
+
+    const db = mockDb();
+
+    const result = await resolveUnifiedConfig({
+      capabilityMode: 'intelligence',
+      db,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!['capabilityMode']).toBe('intelligence');
+    expect(result!['technical']).toBeUndefined();
+  });
+});

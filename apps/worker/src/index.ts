@@ -1017,6 +1017,11 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           // Strict: reject incomplete scanner-gated configs entirely.
           // The strict parse throws on missing required fields; the full parse
           // then applies inner defaults (candles.interval, indicator sub-fields).
+          if (!rawTechnical) {
+            throw new CredentialResolutionError(
+              `Scanner-gated agent ${agentId} is missing technical configuration — the agent must be recreated with a strategy preset or explicit technical config`,
+            );
+          }
           const strictParsed = StrictTechnicalConfigSchema.parse(rawTechnical);
           technicalConfig = TechnicalConfigSchema.parse(strictParsed);
         } else if (capabilityMode === 'hybrid' && hybridMode === 'mixed') {
