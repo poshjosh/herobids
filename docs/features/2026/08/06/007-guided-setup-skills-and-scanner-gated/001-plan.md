@@ -392,7 +392,7 @@ All changes are additive and backward-compatible:
 
 | # | Severity | Issue |
 |---|----------|-------|
-| 1 | MEDIUM | Inconsistent `PRESET_SKILL_MAP` ordering across codebase — domain, chat.ts, and frontend all order `trading` skill IDs differently (`['trading', 'bot-management']` vs `['bot-management', 'trading']`). No behavioral impact but maintainability concern. |
+| 1 | ~~MEDIUM~~ **RESOLVED** | ~~Inconsistent `PRESET_SKILL_MAP` ordering across codebase~~ — standardized to `['trading', 'bot-management']` everywhere (domain, chat.ts, frontend source, frontend tests). |
 | 2 | LOW | Review interval default 12h (chat) vs 24h (form) — intentional per plan but deserves a comment in code for future readers. |
 | 3 | LOW | Missing prompt guidance for when user proactively asks about review interval — LLM should be told available options (6h, 12h, 24h, 48h, 96h). |
 

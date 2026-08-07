@@ -359,7 +359,7 @@ Use these tools to answer user questions about platform capabilities, guide them
  * When a user selects a preset in the UI, this is what gets stored as skillIds.
  */
 export const SKILL_PRESET_MAP: Record<string, string[]> = {
-  trading: ['bot-management', 'trading'],
+  trading: ['trading', 'bot-management'],
   'direct-trading': ['trading'],
   'trading-assistant': ['trading'],
   'personal-assistant': ['task-management', 'web-access', 'email'],

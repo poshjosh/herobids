@@ -42,7 +42,7 @@ interface EditAgentModalProps {
 }
 
 /** Fixed skill sets matching SKILL_PRESET_SKILL_IDS in agent-display.ts. */
-const TRADING_SKILL_IDS = ['bot-management', 'trading'];
+const TRADING_SKILL_IDS = ['trading', 'bot-management'];
 const DIRECT_TRADING_SKILL_IDS = ['trading'];
 const ASSISTANT_SKILL_IDS = ['task-management', 'web-access'];
 
