@@ -172,7 +172,7 @@ export function BlueprintBrowse({
             <BlueprintCard
               key={bp.id}
               blueprint={bp}
-              rank={idx + 1}
+              rank={(cursorStack.length - 1) * 20 + idx + 1}
               onUse={onUseBlueprint}
               canLikeByPlan={canLikeByPlan}
               currentUserId={currentUserId}
