@@ -462,16 +462,16 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
   },
   {
     name: 'create_connection',
-    description: 'Create a provider connection with auto-generated credentials. Use for the simplified path when the user has agreed to a specific venue and wants a generated wallet. Do NOT use if the user wants to provide their own API keys — use request_connection_form instead.',
+    description: 'Create a provider connection with auto-generated credentials. The result includes a connectionId that can be used for agent assignment — when you call create_agent after this, the connection will be auto-wired. Use for the simplified path when the user has agreed to a specific venue and wants a generated wallet. Do NOT use if the user wants to provide their own API keys — use request_connection_form instead. The label is optional and will be auto-derived if omitted.',
     inputSchema: {
       type: 'object',
       properties: {
         provider: { type: 'string', description: 'Provider ID: hyperliquid, jupiter, 1inch.' },
-        label: { type: 'string', description: 'Human-readable label for this connection.' },
+        label: { type: 'string', description: 'Human-readable label for this connection. Optional — server derives a default if omitted.' },
         capability: { type: 'string', enum: ['trading'] },
         credentialMode: { type: 'string', enum: ['generated'] },
       },
-      required: ['provider', 'label', 'capability', 'credentialMode'],
+      required: ['provider', 'credentialMode'],
     },
   },
   {
@@ -939,10 +939,10 @@ export async function executeChatAction(
       const capability = typeof args.capability === 'string' ? args.capability : null;
       const credentialMode = typeof args.credentialMode === 'string' ? args.credentialMode : null;
 
-      if (!provider || !label) {
+      if (!provider) {
         return JSON.stringify({
           error: 'validation_error',
-          message: 'provider and label are required.',
+          message: 'provider is required.',
         });
       }
 
@@ -962,6 +962,9 @@ export async function executeChatAction(
         });
       }
 
+      // Derive label server-side when the model omits it
+      const effectiveLabel = label ?? `${known.displayName} Wallet`;
+
       // Look up user plan and admin status for plan-limit enforcement
       const [userRow] = await db
         .select({ planId: users.planId, isAdmin: users.isAdmin })
@@ -974,7 +977,7 @@ export async function executeChatAction(
         userPlanId: userRow?.planId ?? 'free',
         isAdmin: userRow?.isAdmin ?? false,
         provider,
-        label,
+        label: effectiveLabel,
         capability: capability === 'trading' ? 'trading' : undefined,
         credentialMode: 'generated',
         secrets: undefined,

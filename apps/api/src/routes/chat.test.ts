@@ -1277,7 +1277,7 @@ describe('Chat LLM Usage Metering', () => {
 // ── executeChatAction: create_connection ────────────────────────────────────
 
 describe('executeChatAction — create_connection', () => {
-  it('validates provider and label are required', async () => {
+  it('validates provider is required, label is optional', async () => {
     const { db } = buildMockDb();
     const result = await executeChatAction(
       makeToolCall('create_connection', { label: 'test' }),
@@ -1287,6 +1287,7 @@ describe('executeChatAction — create_connection', () => {
     );
     const parsed = JSON.parse(result) as Record<string, unknown>;
     expect(parsed.error).toBe('validation_error');
+    expect(parsed.message).toBe('provider is required.');
   });
 
   it('rejects non-generated credentialMode', async () => {
@@ -1313,6 +1314,56 @@ describe('executeChatAction — create_connection', () => {
     const parsed = JSON.parse(result) as Record<string, unknown>;
     expect(parsed.error).toBe('validation_error');
     expect(parsed.message).toContain('Unknown or deprecated provider');
+  });
+
+  it('accepts minimal payload and derives label from provider registry', async () => {
+    createProviderLinkMock.mockResolvedValueOnce({
+      kind: 'ok',
+      credentialId: 'cred-1',
+      connectionId: 'conn-1',
+      provider: 'hyperliquid',
+      label: 'Hyperliquid Wallet',
+      venueAccountId: 'va-1',
+      wallet: null,
+    } as never);
+
+    const { db } = buildMockDb();
+
+    // Override select to handle the user lookup query in create_connection
+    db.select = vi.fn().mockImplementation((_cols?: unknown) => {
+      const chain: Record<string, unknown> = {};
+      chain.from = vi.fn(() => {
+        const fromChain: Record<string, unknown> = {};
+        fromChain.where = vi.fn(() => ({
+          limit: vi.fn().mockResolvedValue([{ planId: 'free', isAdmin: false }]),
+        }));
+        return fromChain;
+      });
+      return chain;
+    });
+
+    const result = await executeChatAction(
+      makeToolCall('create_connection', { provider: 'hyperliquid', credentialMode: 'generated' }),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+      undefined, // usageBillingRepo
+      undefined, // modelDefaults
+      undefined, // plansConfig
+      undefined, // agentRiskDefaults
+      { hyperliquid: { walletGeneration: { enabled: true } }, jupiter: {}, '1inch': {} },
+    );
+
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed.success).toBe(true);
+    expect(parsed.connectionId).toBe('conn-1');
+    expect(parsed.label).toBe('Hyperliquid Wallet');
+
+    // Verify the label was derived by the handler and passed to createProviderLink,
+    // not just echoed back from the mock.
+    expect(createProviderLinkMock).toHaveBeenCalledTimes(1);
+    const callArgs = createProviderLinkMock.mock.calls[0]!;
+    expect(callArgs[3]).toMatchObject({ label: 'Hyperliquid Wallet' });
   });
 });
 
