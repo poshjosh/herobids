@@ -154,3 +154,11 @@ The system that powers a bot behind the scenes. Handles planning, risk checks, e
 ## Venue Account
 
 Your connection to a specific exchange (e.g. a Hyperliquid API key, a Solana wallet). Each bot blueprint references one venue account.
+
+---
+
+**See also:**
+
+- [Crypto Ecosystem](/docs/reference/crypto-ecosystem) — Overview of blockchains, exchanges, and aggregators.
+- [Crypto Ecosystem: Categories & Concepts](/docs/reference/crypto-ecosystem-aspects) — Deeper breakdown of each category.
+- [Trading Venues](/docs/trading-venues) — OpenAIdom's supported venues.

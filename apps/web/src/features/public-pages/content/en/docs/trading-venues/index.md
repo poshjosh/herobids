@@ -2,6 +2,8 @@
 
 We support four venues for your agents to trade on. Each one is suited to different needs — pick what fits your strategy.
 
+New to the crypto ecosystem? Start with [Crypto Ecosystem](/docs/reference/crypto-ecosystem) for an overview of blockchains, exchanges, and aggregators.
+
 ## Quick comparison
 
 | Venue | What it does | Best for | Anonymity |
