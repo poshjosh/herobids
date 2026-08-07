@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import type { Database, UsageBillingRepository } from '@herobids/db';
+import { ChatUsageBillingRecorder } from '../billing/chat-usage-billing-recorder.js';
 import type { Redis } from 'ioredis';
 import type { ProvidersYaml } from '@herobids/domain';
 import { chatRoutes, executeChatAction, invokeOnboardingLlm, buildCreateAgentPayload, synthesizePrompt } from './chat.js';
@@ -102,6 +103,26 @@ function buildMockDb(overrides: Partial<Record<string, unknown>> = {}) {
 
 function makeToolCall(name: string, args: Record<string, unknown> = {}): LlmToolCall {
   return { id: `tc-${name}`, name, args };
+}
+
+function makeMockRecorder() {
+  const record = vi.fn().mockResolvedValue(undefined);
+  const recorder = { record } as unknown as ChatUsageBillingRecorder;
+  return { recorder, record };
+}
+
+async function buildAppWithRecorder(overrides: Partial<Record<string, unknown>> = {}) {
+  const { db, state } = buildMockDb(overrides);
+  const app = Fastify({ logger: false });
+  decorateWithAuth(app);
+  const { recorder, record } = makeMockRecorder();
+  await chatRoutes(
+    app, db, LLM_CONFIG, EMPTY_PROVIDERS_YAML, {} as Redis,
+    undefined, // usageBillingRepo (not needed for metering tests)
+    recorder,  // chatUsageBillingRecorder
+  );
+  await app.ready();
+  return { app, db, state, recorder, record };
 }
 
 beforeEach(() => {
@@ -1237,5 +1258,228 @@ describe('invokeOnboardingLlm — billing repo plumbing', () => {
     expect(mockCanSpendNow).toHaveBeenCalledWith('acct-1');
     // The LLM response includes the fallback content from the second mock call.
     expect(result.content).toBe('You need to add credit first.');
+  });
+});
+
+// ── Chat LLM Usage Metering ──────────────────────────────────────────────────
+
+describe('Chat LLM Usage Metering', () => {
+  it('records billing on message-send using userMsgId as anchor', async () => {
+    const { app, record } = await buildAppWithRecorder({
+      threadRows: [{
+        id: 'thread-1', userId: TEST_USER_ID, title: 'Guided Setup',
+        metadata: { summary: { step: 'conversation' } },
+        createdAt: new Date(), updatedAt: new Date(),
+      }],
+      messageRows: [],
+    });
+
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Got it!', toolCalls: [],
+        model: 'gpt-4o', provider: 'openai',
+        inputTokens: 100, outputTokens: 50, thinkingTokens: 0,
+        cachedInputTokens: 0, tokensUsed: 150,
+        latencyMs: 10, cached: false,
+      },
+    } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'Hello' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(record).toHaveBeenCalledTimes(1);
+    const call = record.mock.calls[0]![0];
+    expect(call.phase).toBe('message_send');
+    expect(call.threadId).toBe('thread-1');
+    expect(typeof call.billingAnchorId).toBe('string');
+    expect(call.billingAnchorId).toBeTruthy();
+    expect(call.usage.tokensUsed).toBe(150);
+    expect(call.usage.inputTokens).toBe(100);
+    expect(call.usage.outputTokens).toBe(50);
+  });
+
+  it('records billing on action-result using actionId as anchor', async () => {
+    const { app, record } = await buildAppWithRecorder({
+      threadRows: [{
+        id: 'thread-1', userId: TEST_USER_ID, title: 'Guided Setup',
+        metadata: { summary: { step: 'conversation' } },
+        createdAt: new Date(), updatedAt: new Date(),
+      }],
+      messageRows: [],
+      connectionRows: [{ id: 'conn-1', userId: TEST_USER_ID, status: 'active', provider: 'gmail' }],
+    });
+
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Your Gmail is linked!', toolCalls: [],
+        model: 'gpt-4o', provider: 'openai',
+        inputTokens: 200, outputTokens: 80, thinkingTokens: 0,
+        cachedInputTokens: 0, tokensUsed: 280,
+        latencyMs: 10, cached: false,
+      },
+    } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/actions/action-1',
+      payload: { result: { connectionId: 'conn-1' } },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(record).toHaveBeenCalledTimes(1);
+    const call = record.mock.calls[0]![0];
+    expect(call.phase).toBe('action_result');
+    expect(call.billingAnchorId).toBe('action-1');
+    expect(call.usage.tokensUsed).toBe(280);
+  });
+
+  it('records billing on the common no-tool-calls path', async () => {
+    const { app, record } = await buildAppWithRecorder({
+      threadRows: [{
+        id: 'thread-1', userId: TEST_USER_ID, title: 'Guided Setup',
+        metadata: { summary: { step: 'conversation' } },
+        createdAt: new Date(), updatedAt: new Date(),
+      }],
+      messageRows: [],
+    });
+
+    // LLM responds with content but NO tool calls — this is the common path
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Sure, what kind of agent?', toolCalls: [],
+        model: 'gpt-4o', provider: 'openai',
+        inputTokens: 50, outputTokens: 30, thinkingTokens: 0,
+        cachedInputTokens: 0, tokensUsed: 80,
+        latencyMs: 10, cached: false,
+      },
+    } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'I want a trading agent' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Should still record billing even on no-tool-calls path
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record.mock.calls[0]![0].usage.tokensUsed).toBe(80);
+  });
+
+  it('records billing on exhausted-tool-loop final fallback path', async () => {
+    const { app, record } = await buildAppWithRecorder({
+      threadRows: [{
+        id: 'thread-1', userId: TEST_USER_ID, title: 'Guided Setup',
+        metadata: { summary: { step: 'conversation' } },
+        createdAt: new Date(), updatedAt: new Date(),
+      }],
+      messageRows: [],
+    });
+
+    // First 5 calls (MAX_TOOL_ROUNDS) return tool calls
+    for (let i = 0; i < 5; i++) {
+      callMock.mockResolvedValueOnce({
+        ok: true,
+        data: {
+          content: '', toolCalls: [makeToolCall('search_app_docs', { query: 'test' })],
+          model: 'gpt-4o', provider: 'openai',
+          inputTokens: 10, outputTokens: 5, thinkingTokens: 0,
+          cachedInputTokens: 0, tokensUsed: 15,
+          latencyMs: 10, cached: false,
+        },
+      } as never);
+    }
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Final summary after exhausting tool rounds.',
+        toolCalls: [],
+        model: 'gpt-4o', provider: 'openai',
+        inputTokens: 10, outputTokens: 20, thinkingTokens: 0,
+        cachedInputTokens: 0, tokensUsed: 30,
+        latencyMs: 10, cached: false,
+      },
+    } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'Help me' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(record).toHaveBeenCalledTimes(1);
+    // 5 tool rounds × 15 tokensUsed + 1 final call × 30 tokensUsed = 105
+    expect(record.mock.calls[0]![0].usage.tokensUsed).toBe(105);
+  });
+
+  it('does not record billing when provider fails with no successful usage', async () => {
+    const { app, record } = await buildAppWithRecorder({
+      threadRows: [{
+        id: 'thread-1', userId: TEST_USER_ID, title: 'Guided Setup',
+        metadata: { summary: { step: 'conversation' } },
+        createdAt: new Date(), updatedAt: new Date(),
+      }],
+      messageRows: [],
+    });
+
+    // Provider fails on first call — no successful usage accumulated
+    callMock.mockResolvedValueOnce({
+      ok: false,
+      error: new Error('Provider timeout'),
+    } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'Hello' },
+    });
+
+    expect(res.statusCode).toBe(200); // still returns a response
+    // No billing because tokensUsed = 0
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it('does not block chat response when billing recorder fails', async () => {
+    const { app, record } = await buildAppWithRecorder({
+      threadRows: [{
+        id: 'thread-1', userId: TEST_USER_ID, title: 'Guided Setup',
+        metadata: { summary: { step: 'conversation' } },
+        createdAt: new Date(), updatedAt: new Date(),
+      }],
+      messageRows: [],
+    });
+
+    // Make the recorder throw
+    record.mockRejectedValue(new Error('DB connection lost'));
+
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Got it!', toolCalls: [],
+        model: 'gpt-4o', provider: 'openai',
+        inputTokens: 100, outputTokens: 50, thinkingTokens: 0,
+        cachedInputTokens: 0, tokensUsed: 150,
+        latencyMs: 10, cached: false,
+      },
+    } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'Hello' },
+    });
+
+    // Response still succeeds despite billing failure
+    expect(res.statusCode).toBe(200);
+    expect(res.json().message.content).toBe('Got it!');
+    expect(record).toHaveBeenCalledTimes(1); // attempted, but failed
   });
 });
