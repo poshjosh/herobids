@@ -52,7 +52,7 @@ interface ThreadMetadata {
  * explicit about what just happened instead of relying on summary.step alone.
  */
 interface OnboardingResumeEvent {
-  kind: 'connection_linked' | 'connection_form_cancelled';
+  kind: 'connection_linked' | 'connection_form_cancelled' | 'connection_selected';
   connectionId?: string;
   providerHint?: string;
   actionContext?: 'guided_setup_connection';
@@ -90,6 +90,9 @@ const ActionResultSchema = z.object({
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const MAX_MESSAGE_HISTORY = 20;
+
+/** Matches structured button-reply values sent by the frontend for connection-choice quick_replies. */
+const BUTTON_VALUE_RE = /^(connection:[a-zA-Z0-9-]+|action:(create_connection|request_connection_form))$/;
 
 const GREETING_CONTENT = "Hi! I can help you create an AI agent. What kind of agent are you looking for?";
 
@@ -362,6 +365,10 @@ function buildResumePromptBlock(event: OnboardingResumeEvent | null): string {
     const provider = event.providerHint ? ` (${event.providerHint})` : '';
     return `\n\n## Resume Event\nA provider connection${provider} was linked successfully during Guided Setup. The connection is now available for the agent. Continue creating the agent from the current setup state. Do not ask the user to reconnect the provider.`;
   }
+  if (event.kind === 'connection_selected') {
+    const provider = event.providerHint ? ` (${event.providerHint})` : '';
+    return `\n\n## Resume Event\nThe user selected connection ${event.connectionId}${provider} from the connection-choice buttons. Use this connection for the agent. Continue the Guided Setup flow from the current state.`;
+  }
   return `\n\n## Resume Event\nThe user dismissed the provider connection form during Guided Setup. Acknowledge their choice and offer alternatives (reuse an existing connection, switch to the form, or continue without). Do not immediately request the same connection form again.`;
 }
 
@@ -375,6 +382,10 @@ function buildResumeEventMessage(event: OnboardingResumeEvent | null): LlmMessag
   if (event.kind === 'connection_linked') {
     const provider = event.providerHint ? ` (${event.providerHint})` : '';
     return { role: 'user', content: `System event: the provider connection${provider} was linked successfully. Continue the Guided Setup flow.` };
+  }
+  if (event.kind === 'connection_selected') {
+    const provider = event.providerHint ? ` (${event.providerHint})` : '';
+    return { role: 'user', content: `System event: the user selected connection ${event.connectionId}${provider}. Continue the Guided Setup flow with this connection.` };
   }
   return { role: 'user', content: 'System event: the provider connection form was dismissed. Continue the Guided Setup flow without re-opening the form.' };
 }
@@ -392,7 +403,36 @@ function buildResumeFallback(event: OnboardingResumeEvent | null): string {
   if (event?.kind === 'connection_form_cancelled') {
     return 'No problem — we can continue without a new connection, reuse an existing one, or switch to the form. How would you like to proceed?';
   }
+  if (event?.kind === 'connection_selected') {
+    return `Connection selected. Let's continue setting up your agent with this connection.`;
+  }
   return 'I understand. How can I help you further with setting up your agent?';
+}
+
+/**
+ * Build a connection-choice quick_replies ChatAction listing venue-filtered
+ * compatible connections plus "generate new wallet" and "enter my own keys".
+ *
+ * When venueHint is provided, only connections whose provider matches the hint
+ * are listed as buttons. When absent, all provided connections are listed.
+ */
+export function buildConnectionChoiceActions(
+  connections: Array<{ id: string; provider: string; label: string }>,
+  venueHint?: string,
+): ChatAction[] {
+  const filtered = venueHint
+    ? connections.filter((c) => c.provider === venueHint)
+    : connections;
+
+  const options: Array<{ label: string; value: string }> = filtered.map((c) => ({
+    label: `${c.provider}: ${c.label}`,
+    value: `connection:${c.id}`,
+  }));
+
+  options.push({ label: 'Generate a new wallet', value: 'action:create_connection' });
+  options.push({ label: 'Enter my own keys', value: 'action:request_connection_form' });
+
+  return [{ id: 'connection-choice', type: 'quick_replies', options }];
 }
 
 // ── Tool Definitions ─────────────────────────────────────────────────────────
@@ -1518,6 +1558,27 @@ export async function invokeOnboardingLlm(
             addedAtTurn: round,
           });
           toolCallsProcessed++;
+
+          // ── Connection disambiguation buttons ──────────────────────────
+          // When multiple compatible connections exist and the model omitted
+          // selectedConnectionId, emit rendered quick_replies buttons so the
+          // user can tap a connection instead of typing a label.
+          try {
+            const errParsed = JSON.parse(resolution.error) as Record<string, unknown>;
+            if (errParsed.error === 'connection_ambiguous' && Array.isArray(errParsed.connections)) {
+              const conns = errParsed.connections as Array<{ id: string; provider: string; label: string }>;
+              const venueHint = threadMetadata?.summary?.venue;
+              const choiceActions = buildConnectionChoiceActions(conns, venueHint);
+              // Make the action id unique per round
+              for (const a of choiceActions) {
+                a.id = `connection-choice-${round}`;
+              }
+              pendingActions.push(...choiceActions);
+            }
+          } catch {
+            // Non-JSON error content — skip button emission
+          }
+
           continue;
         }
 
@@ -1807,6 +1868,82 @@ export async function chatRoutes(
         },
       ];
 
+      // ── Detect connection-choice button replies ────────────────────────
+      // When the user taps a connection-choice quick_reply button, the
+      // frontend sends the structured value as the message content.
+      // Process it before invoking the LLM so we can update thread metadata
+      // and resume with the right context.
+      let effectiveMetadata = metadata;
+      let effectiveResumeEvent: OnboardingResumeEvent | undefined;
+
+      const trimmedContent = content.trim();
+      if (BUTTON_VALUE_RE.test(trimmedContent)) {
+        if (trimmedContent.startsWith('connection:')) {
+          const connectionId = trimmedContent.slice('connection:'.length);
+          // Look up the connection's provider for venue re-derivation
+          let providerHint: string | undefined;
+          try {
+            const [conn] = await db
+              .select({ provider: connections.provider })
+              .from(connections)
+              .where(and(eq(connections.id, connectionId), eq(connections.userId, request.userId)))
+              .limit(1);
+            providerHint = conn?.provider;
+          } catch {
+            // Non-critical — proceed without provider hint
+          }
+
+          // Re-derive venue-coupled config: if the selected connection's
+          // provider differs from the previously assumed venue, update venue
+          // and clear the preset so the LLM re-derives it.
+          const existingVenue = metadata?.summary?.venue;
+          const venueChanged = providerHint && existingVenue && providerHint !== existingVenue;
+
+          effectiveMetadata = {
+            ...(metadata ?? {}),
+            summary: {
+              ...(metadata?.summary ?? {}),
+              connectionIds: [connectionId],
+              step: 'connection_selected',
+              ...(venueChanged ? { venue: providerHint, preset: undefined } : {}),
+            },
+          };
+
+          effectiveResumeEvent = {
+            kind: 'connection_selected',
+            connectionId,
+            providerHint,
+            actionContext: 'guided_setup_connection',
+          };
+        } else if (trimmedContent === 'action:create_connection') {
+          effectiveMetadata = {
+            ...(metadata ?? {}),
+            summary: {
+              ...(metadata?.summary ?? {}),
+              step: 'create_connection_requested',
+            },
+          };
+          // No special resume event — the LLM has full context and knows it
+          // needs to call create_connection for the venue in play.
+        } else if (trimmedContent === 'action:request_connection_form') {
+          effectiveMetadata = {
+            ...(metadata ?? {}),
+            summary: {
+              ...(metadata?.summary ?? {}),
+              step: 'connection_form_requested',
+            },
+          };
+        }
+
+        // Persist updated metadata immediately so the resumed LLM sees it.
+        await db.update(chatThreads)
+          .set({
+            metadata: effectiveMetadata as Record<string, unknown>,
+            updatedAt: now(),
+          })
+          .where(eq(chatThreads.id, request.params.id));
+      }
+
       // Invoke onboarding LLM
       const llmResponse = await invokeOnboardingLlm(
         llmConfig,
@@ -1814,8 +1951,8 @@ export async function chatRoutes(
         db,
         request.userId,
         allMessages,
-        metadata,
-        undefined,
+        effectiveMetadata,
+        effectiveResumeEvent,
         usageBillingRepo,
         modelDefaults,
         plansConfig,
@@ -1857,18 +1994,18 @@ export async function chatRoutes(
       // Update thread metadata with enriched summary and createdAgentId
       const detectedPreset = detectPresetFromContent(content);
       const metadataUpdate: ThreadMetadata = {
-        ...(metadata ?? {}),
+        ...(effectiveMetadata ?? {}),
         ...(llmResponse.createdAgent ? {
           createdAgentId: llmResponse.createdAgent.agentId,
           completedAt: new Date().toISOString(),
         } : {}),
         summary: {
-          ...(metadata?.summary ?? {}),
+          ...(effectiveMetadata?.summary ?? {}),
           ...(llmResponse.summaryFacts ?? {}),
           // Persist the preset when determinable so resumed turns (e.g. after
           // Gmail OAuth) retain the active setup type without re-deriving it.
           ...(detectedPreset ? { preset: detectedPreset } : {}),
-          step: llmResponse.createdAgent ? 'completed' : 'conversation',
+          step: llmResponse.createdAgent ? 'completed' : (effectiveMetadata?.summary?.step ?? 'conversation'),
         },
       };
 

@@ -4,7 +4,7 @@ import type { Database, UsageBillingRepository } from '@herobids/db';
 import { ChatUsageBillingRecorder } from '../billing/chat-usage-billing-recorder.js';
 import type { Redis } from 'ioredis';
 import type { ProvidersYaml } from '@herobids/domain';
-import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt, resolveCreateAgentConnection, buildSystemPrompt } from './chat.js';
+import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt, resolveCreateAgentConnection, buildSystemPrompt, buildConnectionChoiceActions } from './chat.js';
 import type { LlmToolCall } from '@herobids/llm';
 
 // Mock createProviderLink to avoid needing CREDENTIAL_ENCRYPTION_KEY in tests
@@ -2015,5 +2015,412 @@ describe('buildSystemPrompt — prompt contract', () => {
     // The prompt should describe autowiring as context-dependent, not automatic.
     // Verify the prompt mentions the autowiring behavior (General Connection Rules).
     expect(prompt).toContain('auto-assigns');
+  });
+});
+
+// ── buildConnectionChoiceActions: unit tests ────────────────────────────────
+
+describe('buildConnectionChoiceActions', () => {
+  const SAMPLE_CONNECTIONS = [
+    { id: 'conn-1', provider: 'hyperliquid', label: 'HL Wallet' },
+    { id: 'conn-2', provider: 'jupiter', label: 'JUP Wallet' },
+    { id: 'conn-3', provider: 'hyperliquid', label: 'HL Perps' },
+  ];
+
+  it('returns a correctly shaped ChatAction with connection options and action buttons', () => {
+    const actions = buildConnectionChoiceActions(SAMPLE_CONNECTIONS);
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0]!.id).toBe('connection-choice');
+    expect(actions[0]!.type).toBe('quick_replies');
+    expect(actions[0]!.options).toBeDefined();
+
+    const options = actions[0]!.options!;
+    // 3 connections + "generate new wallet" + "enter my own keys" = 5 options
+    expect(options).toHaveLength(5);
+
+    // Connection options
+    expect(options[0]!.label).toBe('hyperliquid: HL Wallet');
+    expect(options[0]!.value).toBe('connection:conn-1');
+    expect(options[1]!.label).toBe('jupiter: JUP Wallet');
+    expect(options[1]!.value).toBe('connection:conn-2');
+    expect(options[2]!.label).toBe('hyperliquid: HL Perps');
+    expect(options[2]!.value).toBe('connection:conn-3');
+
+    // Action buttons
+    expect(options[3]!.label).toBe('Generate a new wallet');
+    expect(options[3]!.value).toBe('action:create_connection');
+    expect(options[4]!.label).toBe('Enter my own keys');
+    expect(options[4]!.value).toBe('action:request_connection_form');
+  });
+
+  it('venue-filters connections when venueHint is provided', () => {
+    const actions = buildConnectionChoiceActions(SAMPLE_CONNECTIONS, 'hyperliquid');
+
+    const options = actions[0]!.options!;
+    // 2 hyperliquid connections + 2 action buttons = 4 options
+    expect(options).toHaveLength(4);
+    expect(options[0]!.label).toBe('hyperliquid: HL Wallet');
+    expect(options[0]!.value).toBe('connection:conn-1');
+    expect(options[1]!.label).toBe('hyperliquid: HL Perps');
+    expect(options[1]!.value).toBe('connection:conn-3');
+    // Action buttons still present
+    expect(options[2]!.label).toBe('Generate a new wallet');
+    expect(options[3]!.label).toBe('Enter my own keys');
+  });
+
+  it('returns only action buttons when venueHint filters out all connections', () => {
+    const actions = buildConnectionChoiceActions(SAMPLE_CONNECTIONS, '1inch');
+
+    const options = actions[0]!.options!;
+    // No 1inch connections → only 2 action buttons
+    expect(options).toHaveLength(2);
+    expect(options[0]!.label).toBe('Generate a new wallet');
+    expect(options[1]!.label).toBe('Enter my own keys');
+  });
+
+  it('returns only action buttons for empty connections array', () => {
+    const actions = buildConnectionChoiceActions([]);
+
+    const options = actions[0]!.options!;
+    expect(options).toHaveLength(2);
+    expect(options[0]!.label).toBe('Generate a new wallet');
+    expect(options[1]!.label).toBe('Enter my own keys');
+  });
+});
+
+// ── POST /chat/threads/:id/messages — connection-choice button replies ──────
+
+describe('POST /chat/threads/:id/messages — button replies', () => {
+  async function buildAppWithThread(overrides: Partial<Record<string, unknown>> = {}) {
+    const { db, state } = buildMockDb(overrides);
+    const app = Fastify({ logger: false });
+    decorateWithAuth(app);
+    await chatRoutes(app, db, LLM_CONFIG, EMPTY_PROVIDERS_YAML, {} as Redis);
+    await app.ready();
+    return { app, db, state };
+  }
+
+  function threadRow(metadata: Record<string, unknown>) {
+    return [{
+      id: 'thread-1',
+      userId: TEST_USER_ID,
+      title: 'Guided Setup',
+      metadata,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }];
+  }
+
+  function mockPlainResponse(content = 'Got it — continuing setup.') {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content,
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+  }
+
+  it('detects connection:<id> button reply, updates metadata, and resumes with connection_selected event', async () => {
+    const { app, state } = await buildAppWithThread({
+      threadRows: threadRow({ summary: { step: 'conversation', preset: 'direct-trading' } }),
+      messageRows: [],
+      connectionRows: [{ id: 'conn-hl', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid' }],
+    });
+
+    mockPlainResponse('Hyperliquid wallet selected. How much capital?');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'connection:conn-hl' },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    // Metadata update should have connectionIds set and step = connection_selected
+    // The first updateSet is from the button-reply handling, the second from after LLM.
+    const firstUpdate = state.updateSets[0] as Record<string, unknown>;
+    const firstMeta = firstUpdate['metadata'] as { summary?: { connectionIds?: string[]; step?: string } };
+    expect(firstMeta.summary?.connectionIds).toEqual(['conn-hl']);
+    expect(firstMeta.summary?.step).toBe('connection_selected');
+
+    // The resumed LLM call must carry the connection_selected resume event.
+    expect(callMock).toHaveBeenCalledTimes(1);
+    const systemMessage = callMock.mock.calls[0]![1]!.messages[0] as { role: string; content: string };
+    expect(systemMessage.content).toContain('## Resume Event');
+    expect(systemMessage.content).toContain('selected connection conn-hl');
+    expect(systemMessage.content).toContain('hyperliquid');
+
+    // A transient event message must be present
+    const lastMessage = callMock.mock.calls[0]![1]!.messages.at(-1) as { role: string; content: string };
+    expect(lastMessage.role).toBe('user');
+    expect(lastMessage.content).toContain('System event:');
+    expect(lastMessage.content).toContain('selected connection conn-hl');
+  });
+
+  it('re-derives venue-coupled config when connection provider differs from summary.venue', async () => {
+    const { app, state } = await buildAppWithThread({
+      threadRows: threadRow({
+        summary: { step: 'conversation', preset: 'direct-trading', venue: 'jupiter' },
+      }),
+      messageRows: [],
+      connectionRows: [{ id: 'conn-hl', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid' }],
+    });
+
+    mockPlainResponse('Switched to Hyperliquid. Let me re-derive the strategy.');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'connection:conn-hl' },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    // Venue should be updated and preset cleared since provider changed.
+    const firstUpdate = state.updateSets[0] as Record<string, unknown>;
+    const firstMeta = firstUpdate['metadata'] as { summary?: { venue?: string; preset?: string; step?: string } };
+    expect(firstMeta.summary?.venue).toBe('hyperliquid');
+    expect(firstMeta.summary?.preset).toBeUndefined();
+    expect(firstMeta.summary?.step).toBe('connection_selected');
+  });
+
+  it('does NOT clear preset when connection provider matches summary.venue', async () => {
+    const { app, state } = await buildAppWithThread({
+      threadRows: threadRow({
+        summary: { step: 'conversation', preset: 'direct-trading', venue: 'hyperliquid' },
+      }),
+      messageRows: [],
+      connectionRows: [{ id: 'conn-hl', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid' }],
+    });
+
+    mockPlainResponse('Using your existing Hyperliquid wallet.');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'connection:conn-hl' },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    // Same venue → preset should be preserved (not cleared).
+    const firstUpdate = state.updateSets[0] as Record<string, unknown>;
+    const firstMeta = firstUpdate['metadata'] as { summary?: { venue?: string; preset?: string; step?: string } };
+    expect(firstMeta.summary?.step).toBe('connection_selected');
+    // Preset is preserved because venue didn't change and the spread carries
+    // the existing summary fields forward.
+    expect(firstMeta.summary?.preset).toBe('direct-trading');
+    // Venue is unchanged
+    expect(firstMeta.summary?.venue).toBe('hyperliquid');
+  });
+
+  it('detects action:create_connection button reply and updates metadata step', async () => {
+    const { app, state } = await buildAppWithThread({
+      threadRows: threadRow({ summary: { step: 'conversation', preset: 'direct-trading' } }),
+      messageRows: [],
+    });
+
+    mockPlainResponse('Let\'s create a new wallet. Which provider?');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'action:create_connection' },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const firstUpdate = state.updateSets[0] as Record<string, unknown>;
+    const firstMeta = firstUpdate['metadata'] as { summary?: { step?: string } };
+    expect(firstMeta.summary?.step).toBe('create_connection_requested');
+
+    // No resume event for action buttons — just normal resume
+    expect(callMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('detects action:request_connection_form button reply and updates metadata step', async () => {
+    const { app, state } = await buildAppWithThread({
+      threadRows: threadRow({ summary: { step: 'conversation', preset: 'direct-trading' } }),
+      messageRows: [],
+    });
+
+    mockPlainResponse('Opening the connection form for you.');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'action:request_connection_form' },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const firstUpdate = state.updateSets[0] as Record<string, unknown>;
+    const firstMeta = firstUpdate['metadata'] as { summary?: { step?: string } };
+    expect(firstMeta.summary?.step).toBe('connection_form_requested');
+  });
+
+  it('does NOT trigger button-reply handling for normal free-text messages', async () => {
+    const { app, state } = await buildAppWithThread({
+      threadRows: threadRow({ summary: { step: 'conversation' } }),
+      messageRows: [],
+    });
+
+    mockPlainResponse('Sure, what kind of agent?');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/chat/threads/thread-1/messages',
+      payload: { content: 'I want to use my Hyperliquid wallet' },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    // No extra metadata update before LLM — only the post-LLM update.
+    // The first updateSet should be the final metadata update (after LLM),
+    // not a button-reply update. With our mock, the after-LLM update also
+    // produces one updateSet, so we should have exactly 1 updateSet total.
+    expect(state.updateSets.length).toBe(1);
+    // Step should be 'conversation', not any button-related step.
+    const updateMeta = state.updateSets[0]!['metadata'] as { summary?: { step?: string } };
+    expect(updateMeta.summary?.step).toBe('conversation');
+  });
+});
+
+// ── invokeOnboardingLlm: connection disambiguation quick_replies ────────────
+
+describe('invokeOnboardingLlm — connection disambiguation buttons', () => {
+  it('emits quick_replies action when create_agent hits connection_ambiguous for a trading preset', async () => {
+    // LLM: round 1 = create_agent without selectedConnectionId → ambiguous.
+    // The thread metadata has two connectionIds, so resolveCreateAgentConnection
+    // will find them at tier 4 and return a connection_ambiguous error.
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: '',
+        toolCalls: [makeToolCall('create_agent', {
+          skillPresetId: 'direct-trading',
+          capital: '1000',
+        })],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'You have multiple trading connections. Please pick one.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    // DB responses:
+    // 0. resolveCreateAgentConnection tier 4: validateSurfacedConnections
+    //    queries all active connections and matches against threadConnectionIds.
+    const db = buildSelectMock([
+      [
+        { id: 'conn-a', resolvedVenueAccountId: 'va-a', label: 'Wallet A', provider: 'hyperliquid' },
+        { id: 'conn-b', resolvedVenueAccountId: 'va-b', label: 'Wallet B', provider: 'jupiter' },
+      ],
+      [], [], [], [], [], [], [], [], [], // extra slots
+    ]);
+
+    const result = await invokeOnboardingLlm(
+      LLM_CONFIG,
+      EMPTY_PROVIDERS_YAML,
+      db,
+      TEST_USER_ID,
+      [],
+      { summary: { step: 'conversation', preset: 'direct-trading', connectionIds: ['conn-a', 'conn-b'] } },
+    );
+
+    // Should have a quick_replies action for connection choice
+    const choiceActions = (result.actions ?? []).filter(
+      (a) => a.type === 'quick_replies' && a.id?.startsWith('connection-choice'),
+    );
+    expect(choiceActions.length).toBeGreaterThanOrEqual(1);
+
+    const options = choiceActions[0]!.options!;
+    // Two connections + "generate new wallet" + "enter my own keys" = 4
+    expect(options.length).toBeGreaterThanOrEqual(3);
+
+    // Verify the connection options are present
+    const connValues = options.filter((o) => o.value.startsWith('connection:'));
+    expect(connValues.length).toBe(2);
+    expect(connValues[0]!.value).toBe('connection:conn-a');
+    expect(connValues[1]!.value).toBe('connection:conn-b');
+
+    // Verify action buttons are present
+    const actionValues = options.filter((o) => o.value.startsWith('action:'));
+    expect(actionValues.length).toBe(2);
+    expect(actionValues.map((o) => o.value)).toContain('action:create_connection');
+    expect(actionValues.map((o) => o.value)).toContain('action:request_connection_form');
+
+    // The LLM still sees the ambiguity error as a tool result (the content
+    // from round 2 tells the user about the ambiguity).
+    expect(result.content).toContain('multiple trading connections');
+  });
+
+  it('does NOT emit quick_replies when error is not connection_ambiguous', async () => {
+    // LLM calls create_agent with an invalid connection ID → connection_not_found
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: '',
+        toolCalls: [makeToolCall('create_agent', {
+          skillPresetId: 'direct-trading',
+          capital: '500',
+          selectedConnectionId: 'conn-missing',
+        })],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'That connection does not exist.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    // DB returns empty for the explicit connection lookup
+    const db = buildSelectMock([[]]);
+
+    const result = await invokeOnboardingLlm(
+      LLM_CONFIG,
+      EMPTY_PROVIDERS_YAML,
+      db,
+      TEST_USER_ID,
+      [],
+      null,
+    );
+
+    // No quick_replies should be emitted for non-ambiguous errors
+    const choiceActions = (result.actions ?? []).filter(
+      (a) => a.type === 'quick_replies' && a.id?.startsWith('connection-choice'),
+    );
+    expect(choiceActions.length).toBe(0);
   });
 });
