@@ -20,10 +20,7 @@ export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Timing (ms)
 // ---------------------------------------------------------------------------
 
-const TYPING_DELAY_1 = 0;       // typing starts immediately, runs for TYPING_DURATION ms
-const TYPING_DURATION = 500;    // typing indicator visible for 500 ms before message appears
-const DELAY_BETWEEN_MESSAGES = 2000; // wait 2000 ms after msg1, then typing2 runs for TYPING_DURATION ms
-// Total msg1→msg2 = DELAY_BETWEEN_MESSAGES + TYPING_DURATION = 2500 ms (matches plan)
+const MESSAGE_1_TYPING_DURATION = 2000; // typing indicator visible for 2 s alongside message 1, then message 2 appears
 
 // ---------------------------------------------------------------------------
 // State machine phases
@@ -31,9 +28,7 @@ const DELAY_BETWEEN_MESSAGES = 2000; // wait 2000 ms after msg1, then typing2 ru
 
 type Phase =
   | 'IDLE'
-  | 'TYPING_1'
   | 'MESSAGE_1'
-  | 'TYPING_2'
   | 'MESSAGE_2'
   | 'SENDING_LINK'
   | 'LINK_SENT'
@@ -67,32 +62,18 @@ export function TryPage() {
   useEffect(() => {
     if (phase !== 'IDLE') return;
 
-    const t1 = setTimeout(() => setPhase('TYPING_1'), TYPING_DELAY_1);
-    return () => clearTimeout(t1);
-  }, [phase]);
-
-  useEffect(() => {
-    if (phase !== 'TYPING_1') return;
-
-    const t = setTimeout(() => setPhase('MESSAGE_1'), TYPING_DURATION);
-    return () => clearTimeout(t);
+    // Message 1 appears immediately; typing indicator shows alongside it.
+    setPhase('MESSAGE_1');
   }, [phase]);
 
   useEffect(() => {
     if (phase !== 'MESSAGE_1') return;
 
-    const t = setTimeout(() => setPhase('TYPING_2'), DELAY_BETWEEN_MESSAGES);
-    return () => clearTimeout(t);
-  }, [phase]);
-
-  useEffect(() => {
-    if (phase !== 'TYPING_2') return;
-
     const t = setTimeout(() => {
       setPhase('MESSAGE_2');
       // Focus the email input after it appears
       setTimeout(() => emailInputRef.current?.focus(), 50);
-    }, TYPING_DURATION);
+    }, MESSAGE_1_TYPING_DURATION);
     return () => clearTimeout(t);
   }, [phase]);
 
@@ -187,12 +168,8 @@ export function TryPage() {
     }
   }, [email, sendLink, isResending]);
 
-  const showTyping1 = phase === 'TYPING_1';
-  const showMessage1 =
-    phase === 'MESSAGE_1' || phase === 'TYPING_2' || phase === 'MESSAGE_2' ||
-    phase === 'SENDING_LINK' || phase === 'LINK_SENT' || phase === 'RESENDING' ||
-    phase === 'ERROR';
-  const showTyping2 = phase === 'TYPING_2';
+  const showMessage1 = phase !== 'IDLE';
+  const showTyping = phase === 'MESSAGE_1';
   const showMessage2 =
     phase === 'MESSAGE_2' || phase === 'SENDING_LINK' || phase === 'LINK_SENT' ||
     phase === 'RESENDING' || phase === 'ERROR';
@@ -209,14 +186,6 @@ export function TryPage() {
 
       {/* Scrollable message area */}
       <div ref={scrollRef} className="try-page-scroll">
-        {/* Typing indicator 1 */}
-        {showTyping1 && (
-          <div className="try-page-typing">
-            <span className="try-page-typing-dot">●</span>
-            Assistant is typing...
-          </div>
-        )}
-
         {/* Message 1 */}
         {showMessage1 && (
           <div className="try-page-message-row">
@@ -224,8 +193,8 @@ export function TryPage() {
           </div>
         )}
 
-        {/* Typing indicator 2 */}
-        {showTyping2 && (
+        {/* Typing indicator — shown alongside message 1 while composing message 2 */}
+        {showTyping && (
           <div className="try-page-typing">
             <span className="try-page-typing-dot">●</span>
             Assistant is typing...

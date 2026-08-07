@@ -276,7 +276,6 @@ export class VenueAdapterFactory {
     // then fall back to deriving from the linked credential's private key.
     const [swapAccount] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
     let walletAddress: string | null = swapAccount?.venueAccountRef ?? null;
-    let derivedFromCredential = false;
 
     // Resolve Solana signer for live execution (optional — shadow/paper don't need it)
     let signer: InstanceType<typeof SolanaSigner> | undefined;
@@ -292,7 +291,6 @@ export class VenueAdapterFactory {
             if (!walletAddress) {
               walletAddress = deriveSolanaAddress(decrypted.privateKey);
               if (walletAddress) {
-                derivedFromCredential = true;
                 logger.info({ venueAccountId, venue, actorType, actorId },
                   'Derived Jupiter wallet address from credential — venueAccountRef was missing');
               }
