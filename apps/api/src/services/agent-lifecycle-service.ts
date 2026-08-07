@@ -336,11 +336,17 @@ export async function stopAgent(
 
     // Fire-and-forget: recompute blueprint performance score after agent stop.
     // The blueprintId is captured from the transaction result above.
+    // Isolated in its own try/catch to prevent synchronous throw from
+    // corrupting the stop result (matches pattern in startAgent).
     const stoppedBlueprintId = result.kind === 'stopped' ? result.blueprintId : undefined;
     if (stoppedBlueprintId) {
-      recomputeBlueprintPerformanceScore(db, stoppedBlueprintId).catch((err) => {
-        console.error('Failed to recompute blueprint performance score on agent stop', { err, agentId });
-      });
+      try {
+        recomputeBlueprintPerformanceScore(db, stoppedBlueprintId).catch((err) => {
+          console.error('Failed to recompute blueprint performance score on agent stop', { err, agentId });
+        });
+      } catch {
+        // noop
+      }
     }
 
     return ok({ status: 'stopped' });

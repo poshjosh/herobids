@@ -306,9 +306,13 @@ async function createAndPublishBlueprint(
   }
 
   // Fire-and-forget: recompute blueprint performance score on new blueprint creation.
-  recomputeBlueprintPerformanceScore(db, blueprintId).catch((err) => {
-    console.error('Failed to recompute blueprint performance score on blueprint create', { err, blueprintId });
-  });
+  try {
+    recomputeBlueprintPerformanceScore(db, blueprintId).catch((err) => {
+      console.error('Failed to recompute blueprint performance score on blueprint create', { err, blueprintId });
+    });
+  } catch {
+    // noop
+  }
 
   return ok({ blueprintId, blueprintRevisionId: revisionId, action: 'created' });
 }
@@ -421,9 +425,13 @@ async function syncExistingBlueprint(
         .where(eq(agents.id, agentId));
     }
     // Fire-and-forget: recompute blueprint performance score on unchanged blueprint re-publish.
-    recomputeBlueprintPerformanceScore(db, bp.id).catch((err) => {
-      console.error('Failed to recompute blueprint performance score on blueprint sync (unchanged)', { err, blueprintId: bp.id });
-    });
+    try {
+      recomputeBlueprintPerformanceScore(db, bp.id).catch((err) => {
+        console.error('Failed to recompute blueprint performance score on blueprint sync (unchanged)', { err, blueprintId: bp.id });
+      });
+    } catch {
+      // noop
+    }
 
     return ok({
       blueprintId: bp.id,
@@ -633,9 +641,13 @@ async function createNewRevisionAndPublish(
   }
 
   // Fire-and-forget: recompute blueprint performance score on blueprint revision.
-  recomputeBlueprintPerformanceScore(db, bp.id).catch((err) => {
-    console.error('Failed to recompute blueprint performance score on blueprint revision', { err, blueprintId: bp.id });
-  });
+  try {
+    recomputeBlueprintPerformanceScore(db, bp.id).catch((err) => {
+      console.error('Failed to recompute blueprint performance score on blueprint revision', { err, blueprintId: bp.id });
+    });
+  } catch {
+    // noop
+  }
 
   return ok({
     blueprintId: bp.id,

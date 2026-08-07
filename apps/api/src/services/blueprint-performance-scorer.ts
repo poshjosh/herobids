@@ -1,4 +1,4 @@
-import { eq, and, or, inArray, sql } from 'drizzle-orm';
+import { eq, and, or, inArray, sql, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { blueprints, agents, bots, positions } from '@herobids/db';
 
@@ -38,11 +38,14 @@ export async function recomputeBlueprintPerformanceScore(
     .limit(1);
   if (!bp) return;
 
-  // 2. Look up the original author's agent for this blueprint
+  // 2. Look up the original author's agent for this blueprint.
+  //    Pick the oldest agent (by createdAt) when multiple agents exist
+  //    for the same blueprint — deterministic tie-breaking.
   const [agent] = await db
     .select()
     .from(agents)
     .where(and(eq(agents.userId, bp.authorId), eq(agents.blueprintId, blueprintId)))
+    .orderBy(asc(agents.createdAt))
     .limit(1);
 
   if (!agent) {
