@@ -127,7 +127,7 @@ const enrichedCreate = await prepareAgentCreateFields({
 
 Key rule: chat-determined values such as `capabilityMode`, `hybridMode`, and `platformAssessment` should flow through the same merge/normalization contract as form create, not a parallel merge scheme.
 
-### 4. Reuse form-create skill validation and assignment logic **[PENDING]**
+### 4. Reuse form-create skill validation and assignment logic **[DONE]**
 
 Guided Setup should stop doing direct latest-revision inserts without the form route's selectability checks.
 
@@ -198,6 +198,14 @@ This should remain one shared enrichment path, not a special-case patch in chat.
 - **Manual smoke test:** Create a Guided Setup agent with `bot-management` and confirm bot-management tools are actually available at runtime.
 
 ## Outstanding Issues
+
+### From GAP fix review (2026-08-07)
+
+#### LOW
+1. **Comment incompleteness** — GAP-2 fix comment mentions `capabilityMode` change but is silent about removal of `hybridMode = 'mixed'`.
+2. **`deriveCapabilityMode` unreachable for trading presets in else-branch** — By design, but if `deriveCapabilityMode` is refactored, this branch would need updating.
+
+---
 
 ### From code review of Item 4 implementation (2026-08-07)
 

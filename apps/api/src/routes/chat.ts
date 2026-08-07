@@ -12,7 +12,7 @@ import { normalizePersistedAiModelConfig, type AgentRiskDefaultsConfig } from '@
 import { errorPayload } from '../error-payload.js';
 import { listProviderRegistry } from '../providers/registry.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
-import { resolveExecutionModeForSkills, validateConnectionRequirement } from './agent-config-helpers.js';
+import { resolveExecutionModeForSkills, validateConnectionRequirement, resolveAuthorizationMode } from './agent-config-helpers.js';
 import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from './agents.js';
 
@@ -795,8 +795,12 @@ export async function executeChatAction(
             break;
         }
       } else {
-        capabilityMode = deriveCapabilityMode(parsed.data.skillPresetId);
-        if (isTradingPreset) hybridMode = 'mixed';
+        if (isTradingPreset) {
+          // Align with form route: when filterTrades is not set, default to 'intelligence'
+          capabilityMode = 'intelligence';
+        } else {
+          capabilityMode = deriveCapabilityMode(parsed.data.skillPresetId);
+        }
       }
 
       // Platform assessment — only for scanner-gated trading agents
@@ -835,6 +839,13 @@ export async function executeChatAction(
         }
       }
 
+      // ── Resolve authorization mode (matching form route pattern) ────────
+      const authorizationMode = resolveAuthorizationMode({
+        skillIds,
+        submittedAuthorizationMode: undefined,
+        authorizationModeProvided: false,
+      });
+
       // ── Shared create-time normalization ────────────────────────────────
       const createFields = await prepareAgentCreateFields({
         name,
@@ -847,9 +858,12 @@ export async function executeChatAction(
         capital: parsed.data.capital ?? null,
         skillPresetId: parsed.data.skillPresetId,
         connectionIds,
+        toolPolicy: null,
         platformAssessment,
+        authorizationMode: authorizationMode.value,
         executionDefaults: executionDefaults as import('@herobids/domain').ExecutionDefaults | null,
         strategy: strategy as import('@herobids/domain').StrategyIdentity | null,
+        runtimePolicyOverrides: null,
         db,
         userId,
         plansConfig,
@@ -945,8 +959,11 @@ export async function executeChatAction(
             modelPolicy: effectiveModelPolicy,
             unifiedConfig: createFields.unifiedConfig as never,
             maxBots: createFields.maxBots,
+            risk: createFields.risk,
             runtimePolicyOverrides: createFields.runtimePolicyOverrides,
             notificationPolicy: createFields.notificationPolicy,
+            wakePreferences: null,
+            telegramChatId: null,
             createdAt: timestamp,
             updatedAt: timestamp,
           } as never);
