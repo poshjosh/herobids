@@ -450,6 +450,41 @@ describe('POST /setup/provider-link', () => {
     const body = res.json<Record<string, unknown>>();
     expect(body['credential']).toBeDefined();
     expect(body['connection']).toBeDefined();
+  });
+
+  it('persists a derived venueAccountRef for manual Jupiter trading setup', async () => {
+    const { provisionTradingTarget } = await import('../trading-provisioner.js');
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDb());
+
+    // Valid base58-encoded 64-byte Solana keypair (all 0xAB bytes — test-only)
+    const testPrivateKey = '4S55ApgNWn8YKQL5J2uuxtfZrYXQZqBs8BUJTqGv3us4cAefggxxMLavbor7u47x4BfUhDRkfFBpW2rJTU6YMxux';
+    const expectedAddress = 'CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t';
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      payload: {
+        provider: 'jupiter',
+        label: 'My Jupiter Manual Setup',
+        secrets: { privateKey: testPrivateKey },
+        capability: 'trading',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(provisionTradingTarget).toHaveBeenCalledOnce();
+
+    // Verify that venueAccountRef was derived from the private key
+    const provisionCall = (provisionTradingTarget as ReturnType<typeof vi.fn>).mock.calls[0];
+    // provisionTradingTarget(tx, opts) — second argument is opts
+    const opts = provisionCall[1] as { venueAccountRef: string | null };
+    expect(opts.venueAccountRef).toBe(expectedAddress);
+    expect(opts.venueAccountRef).not.toBeNull();
+
+    const body = res.json<Record<string, unknown>>();
+    expect(body['credential']).toBeDefined();
     expect(body['connection']).toBeDefined();
   });
 

@@ -293,9 +293,48 @@ describe('VenueAdapterFactory', () => {
   });
 
   describe('buildSwapAdapter', () => {
-    it('throws when Jupiter venue account has no venueAccountRef', async () => {
+    it('derives Jupiter wallet address from credential when venueAccountRef is null', async () => {
+      // Valid base58-encoded 64-byte Solana keypair (all 0xAB bytes — test-only)
+      const credData = JSON.stringify({ privateKey: '4S55ApgNWn8YKQL5J2uuxtfZrYXQZqBs8BUJTqGv3us4cAefggxxMLavbor7u47x4BfUhDRkfFBpW2rJTU6YMxux' });
+      const encryptedData = encryptForTest(credData, TEST_KEY);
+
+      const db: any = {};
+      db.select = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockImplementation(() => {
+              const callCount = (db.select as ReturnType<typeof vi.fn>).mock.calls.length;
+              if (callCount === 1) {
+                return Promise.resolve([{ id: 'va-jup', venueAccountRef: null, credentialId: 'cred-jup' }]);
+              }
+              return Promise.resolve([{ id: 'cred-jup', encryptedData }]);
+            }),
+          }),
+        }),
+      });
+      process.env['CREDENTIAL_ENCRYPTION_KEY'] = TEST_KEY;
+
+      const factory = makeFactory(db);
+      const result = await factory.buildSwapAdapter({
+        venueAccountId: 'va-jup',
+        venue: 'jupiter',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        actorType: 'agent',
+        actorId: 'agent-1',
+      });
+
+      // Derived address from the 64-byte all-0xAB keypair (last 32 bytes = public key)
+      const expectedAddress = 'CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t';
+      expect(result.walletAddress).toBe(expectedAddress);
+      expect(result.swapVenue).toBeDefined();
+      expect(result.swapVenue.constructor.name).toBe('JupiterSwapAdapter');
+      expect(result.signerPresent).toBe(true);
+      expect(result.credentialId).toBe('cred-jup');
+    });
+
+    it('throws when Jupiter venueAccountRef is null and no credential exists', async () => {
       const db = makeDb({
-        venueAccount: { id: 'va-jup', venueAccountRef: null },
+        venueAccount: { id: 'va-jup', venueAccountRef: null, credentialId: null },
       });
       const factory = makeFactory(db);
 
@@ -305,7 +344,7 @@ describe('VenueAdapterFactory', () => {
         swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
         actorType: 'agent',
         actorId: 'agent-1',
-      })).rejects.toThrow('has no venueAccountRef');
+      })).rejects.toThrow('has no venueAccountRef and no derivable wallet address');
     });
 
     it('returns JupiterSwapAdapter with wallet address for jupiter venue', async () => {

@@ -36,6 +36,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Jupiter manual connection missing venueAccountRef:** Manual Jupiter connections created via `/setup/provider-link` (or guided setup) no longer crash agents on startup with `CredentialResolutionError`. The setup route now derives the Solana wallet address from the base58-encoded private key and persists it as `venueAccountRef`. As defense-in-depth, `buildSwapAdapter` also falls back to deriving the address from the linked credential at runtime when `venueAccountRef` is missing (handles pre-existing broken data). Added `deriveSolanaAddress()` utility to `@herobids/venues`. Regression tests in `setup.test.ts` (setup-route persistence) and `venue-adapter-factory.test.ts` (worker defensive fallback + fail-closed path). See `docs/bug-reports/2026/08/07/001-jupiter-manual-connection-missing-venueAccountRef.md`.
+
 - **Guided Setup thread persistence across navigation:** Navigating away from
   `/agents/new` and returning no longer loses all chat progress. The active
   thread ID is now persisted to `sessionStorage` and restored on mount so the
