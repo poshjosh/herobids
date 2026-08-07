@@ -135,7 +135,7 @@ on each score recomputation.
 
 ## Phase 1 Implementation Plan
 
-### Step 1: Add `performanceScore` column to `blueprints` table
+### Step 1: Add `performanceScore` column to `blueprints` table — **DONE**
 
 **File:** `packages/db/src/schema/blueprints.ts`
 - Add `performanceScore: doublePrecision('performance_score').notNull().default(0)`
@@ -143,7 +143,7 @@ on each score recomputation.
 
 **File:** New migration (e.g., `0032_add_blueprint_performance_score`)
 
-### Step 2: Create a scoring function
+### Step 2: Create a scoring function — **DONE**
 
 **New file or location:** `apps/api/src/services/blueprint-performance-scorer.ts`
 (or in `agent-blueprint-sync-service.ts`)
@@ -165,7 +165,7 @@ Edge cases:
 - Agent has no capital set → `pnlScore = 0.5` (neutral)
 - Agent has < 2 closed positions → `winRateScore = 0.5` (neutral)
 
-### Step 3: Trigger score computation
+### Step 3: Trigger score computation — **DONE**
 
 All triggers only compute scores for the **original author's agent** (the agent
 owned by `blueprints.authorId` whose `blueprintId` matches this blueprint).
@@ -181,7 +181,7 @@ blueprint's marketplace ranking.
 Stop/start catches the common case (positions close, agent stops). The nightly
 job catches agents that have bot-closed positions without being restarted.
 
-### Step 4: Add `ranking` sort to browse API
+### Step 4: Add `ranking` sort to browse API — **DONE**
 
 **File:** `packages/domain/src/blueprint.ts`
 - Add `'ranking'` to `BlueprintBrowseQuerySchema.sort` enum
@@ -193,12 +193,12 @@ job catches agents that have bot-closed positions without being restarted.
   - Cursor key: `{ score: performanceScore, id: blueprintId }`
   - WHERE clause: score < cursor OR (score = cursor AND id > cursor)
 
-### Step 5: Add `performanceScore` to response schema
+### Step 5: Add `performanceScore` to response schema — **DONE**
 
 **File:** `packages/domain/src/blueprint.ts`
 - Add `performanceScore: z.number()` to `BlueprintSummarySchema`
 
-### Step 6: Update frontend
+### Step 6: Update frontend — **DONE**
 
 **File:** `apps/web/src/features/blueprints/BlueprintBrowse.tsx`
 - Add `{ value: 'ranking', label: 'Ranking' }` to `SORT_OPTIONS`
@@ -220,7 +220,7 @@ job catches agents that have bot-closed positions without being restarted.
 **File:** `apps/web/src/lib/api-client.ts`
 - Add `performanceScore: number` to the `BlueprintSummary` type
 
-### Step 6a: Skills-based filter (new work)
+### Step 6a: Skills-based filter (new work) — **DONE**
 
 To gate the Ranking sort on trading context, add a skills-based filter to the
 marketplace browse UI. This is **new work** — the current `BlueprintBrowse`
@@ -240,7 +240,7 @@ skill list used in agent creation.
 reasonable proxy: any agent blueprint with a strategy type is a trading agent.
 A proper skills filter can be added later as separate work.
 
-### Step 7: Lint, test, verify
+### Step 7: Lint, test, verify — **DONE**
 
 - `pnpm lint`
 - Run existing blueprint browse tests
@@ -288,3 +288,39 @@ A proper skills filter can be added later as separate work.
    trading context. Phase 1 uses the simpler proxy of `kind = 'agent' AND
    strategyType IS NOT NULL`. A full skills filter for the marketplace can be
    added later. See Step 6a for details.
+
+---
+
+## Outstanding Issues
+
+### [Step 1] Add performanceScore column to blueprints
+
+- **MEDIUM** — Missing migration snapshot file (`0063_snapshot.json`). Several other migrations in the codebase also lack snapshots (0012, 0013, 0014, 0018, 0025, 0029, 0040), so this is a pre-existing practice. Not blocking but worth addressing before merge.
+- **MEDIUM** — Plan document references `"0032_add_blueprint_performance_score"` as example migration name; actual migration is 0063. Cosmetic discrepancy, the plan example was never meant to be literal.
+- **LOW** — Missing trailing newlines in migration SQL and journal (fixed).
+
+### [Step 2] Create scoring function
+
+- **MEDIUM** — `Number(p.realizedPnl ?? 0)` has dead `?? 0` fallback (field is `NOT NULL DEFAULT '0'`). Pre-existing pattern from `repositories.ts`, harmless but misleading.
+- **LOW** — `clamp` helper lacks JSDoc comment.
+- **LOW** — No transaction wrapping read→write (acceptable for periodically-recomputed score).
+- **LOW** — Full-table scan on positions for agents with many closed positions (acceptable for Phase 1, called on triggers + cron, not request path).
+
+### [Step 3] Trigger score computation
+
+- **MEDIUM** — Double recomputation on every agent start: `startAgent` fires recompute after `ensurePublishedBlueprintForAgent`, but the sync service already fires its own recompute in all 3 internal paths (create/unchanged/revised). Wasteful but idempotent.
+- **MEDIUM** — Periodic cron rescans ALL published blueprints without the plan's "position activity since last update" filter. Acceptable for Phase 1.
+- **LOW** — Plan says "nightly" but cron interval is every 6 hours.
+- **LOW** — `console.error` used instead of structured logger in lifecycle/sync services.
+- **LOW** — Dead `?? 0` fallback on `realizedPnl` (NOT NULL column).
+
+### [Steps 4+5] Ranking sort + performanceScore schema
+
+- **LOW** — Cross-sort cursor reuse: cursor `score` key is shared across all sort types. Switching sorts with a stale cursor produces silently wrong pagination (pre-existing pattern, not a regression).
+- **LOW** — `performanceScore = 0` at cursor boundary produces valid but degenerate pagination (all 0-score agents sort by UUID within the group). Mitigated by frontend hiding ranking for non-trading contexts.
+- **LOW** — Plan doc uses camelCase cursor key `{ score, id }` — implementation is consistent.
+
+### [Step 6] Frontend + skills filter
+
+- **MEDIUM** — Rank badge hidden for `performanceScore === 0`, which excludes agents with no positions even when sorted by ranking. Every item has a position in a ranked list regardless of score.
+- **LOW** — `strategyType` gate may hide badge for non-trading agents. Phase 1 proxy is acceptable.

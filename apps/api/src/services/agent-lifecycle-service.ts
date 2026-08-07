@@ -5,6 +5,7 @@ import { agents, agentRuntimeSessions, users } from '@herobids/db';
 import { normalizePersistedAiModelConfig } from '@herobids/domain';
 import { ok, err, type Result } from '@herobids/domain';
 import { ensurePublishedBlueprintForAgent } from './agent-blueprint-sync-service.js';
+import { recomputeBlueprintPerformanceScore } from './blueprint-performance-scorer.js';
 
 // ── Error types ───────────────────────────────────────────────────────────
 
@@ -163,6 +164,18 @@ export async function startAgent(
       });
     }
 
+    // Fire-and-forget: recompute blueprint performance score after agent start.
+    // All non-ok blueprint sync paths return early above, so blueprintSyncResult is
+    // guaranteed ok here. Isolated in its own try/catch to prevent synchronous
+    // throw from corrupting the start result.
+    try {
+      recomputeBlueprintPerformanceScore(db, blueprintSyncResult.data.blueprintId).catch((err) => {
+        console.error('Failed to recompute blueprint performance score on agent start', { err, agentId });
+      });
+    } catch {
+      // noop
+    }
+
     return ok({ status: 'starting', sessionId });
   } catch (cause) {
     return err({
@@ -292,7 +305,7 @@ export async function stopAgent(
   try {
     const result = await db.transaction(async (tx) => {
       const [agent] = await tx
-        .select({ status: agents.status })
+        .select({ status: agents.status, blueprintId: agents.blueprintId })
         .from(agents)
         .where(and(eq(agents.id, agentId), eq(agents.userId, userId)));
 
@@ -314,11 +327,26 @@ export async function stopAgent(
           ),
         );
 
-      return { kind: 'stopped' as const };
+      return { kind: 'stopped' as const, blueprintId: agent.blueprintId };
     });
 
     if (result.kind === 'not_found') {
       return err({ code: 'agent.not_found', message: 'Agent not found' });
+    }
+
+    // Fire-and-forget: recompute blueprint performance score after agent stop.
+    // The blueprintId is captured from the transaction result above.
+    // Isolated in its own try/catch to prevent synchronous throw from
+    // corrupting the stop result (matches pattern in startAgent).
+    const stoppedBlueprintId = result.kind === 'stopped' ? result.blueprintId : undefined;
+    if (stoppedBlueprintId) {
+      try {
+        recomputeBlueprintPerformanceScore(db, stoppedBlueprintId).catch((err) => {
+          console.error('Failed to recompute blueprint performance score on agent stop', { err, agentId });
+        });
+      } catch {
+        // noop
+      }
     }
 
     return ok({ status: 'stopped' });

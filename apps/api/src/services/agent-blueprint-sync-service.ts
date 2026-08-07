@@ -5,6 +5,7 @@ import { agents, agentSkills, blueprints, blueprintRevisions, blueprintRevisionS
 import { ok, err, type Result } from '@herobids/domain';
 import { projectAgentToBlueprintPayload } from './blueprint-projection.js';
 import { validateSkillPortability } from './blueprint-skill-validator.js';
+import { recomputeBlueprintPerformanceScore } from './blueprint-performance-scorer.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -304,6 +305,15 @@ async function createAndPublishBlueprint(
     });
   }
 
+  // Fire-and-forget: recompute blueprint performance score on new blueprint creation.
+  try {
+    recomputeBlueprintPerformanceScore(db, blueprintId).catch((err) => {
+      console.error('Failed to recompute blueprint performance score on blueprint create', { err, blueprintId });
+    });
+  } catch {
+    // noop
+  }
+
   return ok({ blueprintId, blueprintRevisionId: revisionId, action: 'created' });
 }
 
@@ -414,6 +424,15 @@ async function syncExistingBlueprint(
         })
         .where(eq(agents.id, agentId));
     }
+    // Fire-and-forget: recompute blueprint performance score on unchanged blueprint re-publish.
+    try {
+      recomputeBlueprintPerformanceScore(db, bp.id).catch((err) => {
+        console.error('Failed to recompute blueprint performance score on blueprint sync (unchanged)', { err, blueprintId: bp.id });
+      });
+    } catch {
+      // noop
+    }
+
     return ok({
       blueprintId: bp.id,
       blueprintRevisionId: currentRevId,
@@ -619,6 +638,15 @@ async function createNewRevisionAndPublish(
       code: 'blueprint.internal_error',
       message: cause instanceof Error ? cause.message : 'Failed to create revision',
     });
+  }
+
+  // Fire-and-forget: recompute blueprint performance score on blueprint revision.
+  try {
+    recomputeBlueprintPerformanceScore(db, bp.id).catch((err) => {
+      console.error('Failed to recompute blueprint performance score on blueprint revision', { err, blueprintId: bp.id });
+    });
+  } catch {
+    // noop
   }
 
   return ok({

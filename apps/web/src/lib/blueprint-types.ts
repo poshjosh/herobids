@@ -19,6 +19,7 @@ export interface BlueprintSummary {
   isLikedByViewer: boolean;
   popularityScore: number;
   trendingScore: number;
+  performanceScore: number;
   publishedAt: string | null;
   currentRevisionId: string;
   publishedRevisionId: string | null;
@@ -145,7 +146,7 @@ export interface BlueprintBrowseParams {
   style?: 'careful' | 'balanced' | 'bold';
   venueType?: 'orderbook' | 'swap';
   tags?: string[];
-  sort?: 'popular' | 'trending' | 'newest';
+  sort?: 'popular' | 'trending' | 'newest' | 'ranking';
   cursor?: string;
   limit?: number;
 }

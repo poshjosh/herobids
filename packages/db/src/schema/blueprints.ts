@@ -42,11 +42,13 @@ export const blueprints = pgTable('blueprints', {
   forkCount: integer('fork_count').notNull().default(0),
   popularityScore: doublePrecision('popularity_score').notNull().default(0),
   trendingScore: doublePrecision('trending_score').notNull().default(0),
+  performanceScore: doublePrecision('performance_score').notNull().default(0),
 }, (t) => [
   index('idx_blueprints_author_id').on(t.authorId),
   index('idx_blueprints_publication_status').on(t.publicationStatus),
   index('idx_blueprints_kind').on(t.kind),
   index('idx_blueprints_popularity').on(t.popularityScore),
   index('idx_blueprints_trending').on(t.trendingScore),
+  index('idx_blueprints_performance').on(t.performanceScore),
   index('idx_blueprints_published_at').on(t.publishedAt),
 ]);

@@ -53,6 +53,7 @@ import {
   refreshLikeCount,
   refreshForkCount,
 } from '../services/blueprint-scoring.js';
+import { recomputeBlueprintPerformanceScore } from '../services/blueprint-performance-scorer.js';
 
 // --- Request schemas ---
 
@@ -303,6 +304,7 @@ export async function buildBlueprintDetail(
     isLikedByViewer,
     popularityScore: bp.popularityScore,
     trendingScore: bp.trendingScore,
+    performanceScore: bp.performanceScore,
     publishedAt: bp.publishedAt?.toISOString() ?? null,
     currentRevisionId: bp.currentRevisionId,
     publishedRevisionId: bp.publishedRevisionId,
@@ -373,6 +375,30 @@ export async function blueprintRoutes(
   app.addHook('onClose', async () => {
     clearInterval(scoreRefreshTimer);
   });
+
+  // Periodic performance score recomputation (nightly cadence — every 6 hours).
+  // Performance scores are based on trading data which changes slowly.
+  // Recompute for published blueprints only.
+  const performanceRefreshTimer = setInterval(() => {
+    void (async () => {
+      try {
+        const rows = await db
+          .select({ id: blueprints.id })
+          .from(blueprints)
+          .where(eq(blueprints.publicationStatus, 'published'));
+        for (const row of rows) {
+          await recomputeBlueprintPerformanceScore(db, row.id);
+        }
+      } catch (error: unknown) {
+        app.log.error({ err: error }, '[blueprints] failed periodic performance score recomputation');
+      }
+    })();
+  }, 6 * 60 * 60 * 1000); // every 6 hours
+
+  app.addHook('onClose', async () => {
+    clearInterval(performanceRefreshTimer);
+  });
+
   // GET /blueprints/presets — list available strategy presets for a style
   // Registered before /:id so Fastify doesn't swallow it as a param.
   app.get('/blueprints/presets', async (req, reply) => {
@@ -527,6 +553,19 @@ export async function blueprintRoutes(
             )!,
           );
         }
+      } else if (query.sort === 'ranking') {
+        // performanceScore DESC, id ASC
+        if (lastScore !== undefined) {
+          whereClauses.push(
+            or(
+              sql`${blueprints.performanceScore} < ${lastScore}`,
+              and(
+                sql`${blueprints.performanceScore} = ${lastScore}`,
+                sql`${blueprints.id} > ${lastId}`,
+              )!,
+            )!,
+          );
+        }
       } else {
         // 'popular' (default): popularityScore DESC, id ASC
         if (lastScore !== undefined) {
@@ -556,6 +595,8 @@ export async function blueprintRoutes(
       rowsQuery = rowsQuery.orderBy(desc(blueprints.trendingScore), desc(blueprints.popularityScore), asc(blueprints.id));
     } else if (query.sort === 'newest') {
       rowsQuery = rowsQuery.orderBy(desc(blueprints.publishedAt), asc(blueprints.id));
+    } else if (query.sort === 'ranking') {
+      rowsQuery = rowsQuery.orderBy(desc(blueprints.performanceScore), asc(blueprints.id));
     } else {
       // 'popular' (default)
       rowsQuery = rowsQuery.orderBy(desc(blueprints.popularityScore), asc(blueprints.id));
@@ -609,6 +650,7 @@ export async function blueprintRoutes(
         isLikedByViewer: likedIds.has(bp.id),
         popularityScore: bp.popularityScore,
         trendingScore: bp.trendingScore,
+        performanceScore: bp.performanceScore,
         publishedAt: bp.publishedAt?.toISOString() ?? null,
         currentRevisionId: bp.currentRevisionId!,
         publishedRevisionId: bp.publishedRevisionId,
@@ -629,6 +671,8 @@ export async function blueprintRoutes(
       } else if (query.sort === 'trending') {
         cursorPayload.score = last.trendingScore;
         cursorPayload.popularityScore = last.popularityScore;
+      } else if (query.sort === 'ranking') {
+        cursorPayload.score = last.performanceScore;
       } else {
         cursorPayload.score = last.popularityScore;
       }
