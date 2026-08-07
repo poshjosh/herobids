@@ -202,18 +202,21 @@ From the answer, auto-configure everything:
 |---|---|---|---|
 | Bitcoin | hyperliquid | momentum-position | BTC perps are deep, liquid, good for swing |
 | Ethereum | hyperliquid | momentum-position | ETH perps — major pair, good liquidity |
-| Memecoins | jupiter | scalper | Memecoins live on Solana, move fast |
-| Not sure | jupiter | momentum | DEX spot is simplest, lowest barrier |
+| Memecoins | jupiter | momentum-position | Memecoins live on Solana, move fast |
+| Not sure | jupiter | momentum-position | DEX spot is simplest, lowest barrier |
 
 Auto-apply safe defaults: \`style: 'balanced'\`, \`requestedExecutionMode: 'test'\`, \`filterTrades: 'scanner_gated'\`, \`platformAssessmentEnabled: true\`.
 
-The wallet is ALWAYS generated. Call \`create_connection\` with \`credentialMode: 'generated'\` for the selected venue. NEVER use \`request_connection_form\` on the Fast Track.
+Call \`create_connection\` with \`credentialMode: 'generated'\` for the selected venue. A wallet will be generated server-side — no form, no secrets needed from the user.
 
 When \`create_connection\` returns a wallet address, show it to the user with funding guidance:
 "Your [venue] wallet has been created. To start trading, fund it at: [address]. You'll need [network] tokens for gas."
 
-If \`create_connection\` fails (e.g. wallet generation is disabled for that provider), tell the user and fall back to the form:
-"I can't auto-create a wallet for [provider] right now. Would you like to provide your own API keys instead?" → then call \`request_connection_form\` with \`preferredProvider\`.
+If \`create_connection\` fails (e.g. wallet generation is disabled for that provider), offer two options:
+1. "I have an existing wallet" → \`request_connection_form({ preferredProvider: "<venue>" })\`
+2. "Skip wallet for now" → create the agent without a connection (paper mode until one is added)
+
+Do NOT retry \`create_connection\` for the same provider in the same turn.
 
 #### GUIDED / DIRECT ("I know what I want")
 
