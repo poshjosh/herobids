@@ -1642,6 +1642,10 @@ export async function invokeOnboardingLlm(
             resolvedConnections.createdConnectionIds.push(parsed.connectionId as string);
             summaryFacts.connectionIds = [...(summaryFacts.connectionIds ?? []), parsed.connectionId as string];
           }
+          // Capture the venue (provider) for venue-filtered disambiguation buttons
+          if (parsed.success && parsed.provider && typeof parsed.provider === 'string') {
+            summaryFacts.venue = parsed.provider;
+          }
           if (parsed.success && parsed.wallet && typeof parsed.wallet === 'object') {
             const wallet = parsed.wallet as Record<string, unknown>;
             pendingActions.push({
@@ -1671,6 +1675,11 @@ export async function invokeOnboardingLlm(
           if (rec.id) {
             resolvedConnections.recommendedConnectionIds.push(rec.id as string);
             summaryFacts.connectionIds = [...(summaryFacts.connectionIds ?? []), rec.id as string];
+          }
+          // Capture the venue (provider) from the recommended connection so
+          // disambiguation buttons can be venue-filtered.
+          if (rec.provider && !summaryFacts.venue) {
+            summaryFacts.venue = rec.provider as string;
           }
         }
         if (tc.name === 'create_agent' && parsed.success && parsed.agentId) {

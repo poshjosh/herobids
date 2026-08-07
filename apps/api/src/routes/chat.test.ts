@@ -1971,6 +1971,61 @@ describe('invokeOnboardingLlm — connection autowiring', () => {
     // for subsequent autowiring to create_agent.
     expect(result.summaryFacts?.connectionIds).toContain('conn-created');
   });
+
+  // Gap 1: Loop-level test for tier-3 autowiring (list_compatible_connections → create_agent)
+  // Verifies that when list_compatible_connections returns a recommended connection,
+  // its ID and provider are captured in summaryFacts for subsequent tier-3 autowiring
+  // when create_agent omits selectedConnectionId.
+  it('captures recommended connection and venue from list_compatible_connections for tier-3 autowiring', async () => {
+    // LLM: round 1 = list_compatible_connections returns a recommended trading connection.
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'I found your trading connection.',
+        toolCalls: [makeToolCall('list_compatible_connections', {
+          preferredCapability: 'trading',
+        })],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Agent created with your existing connection.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    // DB response: list_compatible_connections → a single trading connection.
+    // All subsequent empty slots handle any extra queries in the response path.
+    const db = buildSelectMock([
+      [{ id: 'conn-rec', resolvedVenueAccountId: 'va-1', label: 'HL Wallet', provider: 'hyperliquid', status: 'active' }],
+      [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+    ]);
+
+    const result = await invokeOnboardingLlm(
+      LLM_CONFIG,
+      EMPTY_PROVIDERS_YAML,
+      db,
+      TEST_USER_ID,
+      [],
+      null,
+    );
+
+    // The recommended connection should be captured in summaryFacts,
+    // confirming it is available for tier-3 autowiring.
+    expect(result.summaryFacts?.connectionIds).toContain('conn-rec');
+    // Gap 3: venue is captured from the recommended connection's provider.
+    expect(result.summaryFacts?.venue).toBe('hyperliquid');
+  });
 });
 
 // ── buildSystemPrompt: prompt contract tests ────────────────────────────────
@@ -2369,6 +2424,27 @@ describe('invokeOnboardingLlm — connection disambiguation buttons', () => {
     expect(actionValues.length).toBe(2);
     expect(actionValues.map((o) => o.value)).toContain('action:create_connection');
     expect(actionValues.map((o) => o.value)).toContain('action:request_connection_form');
+
+    // Gap 5: Verify the connection_ambiguous structured error was surfaced as
+    // a tool result to the LLM. The second callLlmProvider call should include
+    // a tool-role message with the connection_ambiguous JSON.
+    expect(callMock).toHaveBeenCalledTimes(2);
+    const secondCallMessages = callMock.mock.calls[1]?.[1]?.messages as Array<{ role: string; content: string }> | undefined;
+    expect(secondCallMessages).toBeDefined();
+    const toolMessages = (secondCallMessages ?? []).filter((m) => m.role === 'tool');
+    expect(toolMessages.length).toBeGreaterThanOrEqual(1);
+    const ambiguityToolMsg = toolMessages.find((m) => {
+      try {
+        const parsed = JSON.parse(m.content) as Record<string, unknown>;
+        return parsed.error === 'connection_ambiguous';
+      } catch {
+        return false;
+      }
+    });
+    expect(ambiguityToolMsg).toBeDefined();
+    const ambiguityParsed = JSON.parse(ambiguityToolMsg!.content) as Record<string, unknown>;
+    expect(ambiguityParsed.error).toBe('connection_ambiguous');
+    expect(ambiguityParsed.connections).toBeDefined();
 
     // The LLM still sees the ambiguity error as a tool result (the content
     // from round 2 tells the user about the ambiguity).
