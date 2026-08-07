@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, asc, desc, inArray } from 'drizzle-orm';
+import { eq, and, asc } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
-import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skills, skillRevisions, users, UsageBillingRepository } from '@herobids/db';
+import { chatThreads, chatMessages, connections, agentConnections, agents, skills, users, UsageBillingRepository } from '@herobids/db';
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml, ModelDefaults, PlansConfig } from '@herobids/domain';
@@ -13,7 +13,8 @@ import { errorPayload } from '../error-payload.js';
 import { listProviderRegistry } from '../providers/registry.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
 import { resolveExecutionModeForSkills, validateConnectionRequirement } from './agent-config-helpers.js';
-import { checkAgentLimit } from '../plan-guards.js';
+import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
+import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from './agents.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -873,6 +874,25 @@ export async function executeChatAction(
       const agentId = uuid();
       const timestamp = now();
 
+      // ── Validate and resolve skill assignments (before transaction) ───
+      const skillPlanPolicy = plansConfig
+        ? resolvePlanSkillEntitlements(plansConfig, userPlanId, isAdmin)
+        : { canViewMarketplaceSkills: true };
+      const assignmentResolution = await resolveSkillAssignmentsForUser(
+        db,
+        userId,
+        skillIds,
+        new Set(),
+        skillPlanPolicy.canViewMarketplaceSkills,
+      );
+      if (assignmentResolution.error) {
+        return JSON.stringify({
+          error: assignmentResolution.error.code,
+          message: assignmentResolution.error.message,
+          details: assignmentResolution.error.details,
+        });
+      }
+
       try {
         await db.transaction(async (tx) => {
           // Validate connection ownership and type compatibility.
@@ -944,43 +964,12 @@ export async function executeChatAction(
               updatedAt: timestamp,
             } as never);
           }
-
-          // Assign skills to the agent — resolve latest revision IDs
-          if (skillIds.length > 0) {
-            const revisions = await tx
-              .select({
-                skillId: skillRevisions.skillId,
-                revisionId: skillRevisions.id,
-              })
-              .from(skillRevisions)
-              .where(inArray(skillRevisions.skillId, skillIds))
-              .orderBy(desc(skillRevisions.createdAt));
-
-            const latestRevisionBySkillId = new Map<string, string>();
-            for (const row of revisions) {
-              if (!latestRevisionBySkillId.has(row.skillId)) {
-                latestRevisionBySkillId.set(row.skillId, row.revisionId);
-              }
-            }
-
-            for (let i = 0; i < skillIds.length; i++) {
-              const skillId = skillIds[i];
-              if (!skillId) continue;
-              const revisionId = latestRevisionBySkillId.get(skillId);
-              if (!revisionId) continue;
-
-              await tx.insert(agentSkills).values({
-                agentId,
-                skillId,
-                skillRevisionId: revisionId,
-                orderIndex: i,
-                assignedAt: timestamp,
-                assignedByUserId: userId,
-                assignmentSource: 'guided_setup',
-              } as never).onConflictDoNothing();
-            }
-          }
         });
+
+        // ── Sync skill assignments (after transaction, matching form route) ──
+        if (assignmentResolution.assignments && assignmentResolution.assignments.length > 0) {
+          await syncAgentSkillAssignments(db, agentId, userId, assignmentResolution.assignments, 'guided_setup');
+        }
 
         // Look up the agent's connected provider for the response summary.
         let walletAddress: string | undefined;

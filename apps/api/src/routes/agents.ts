@@ -296,7 +296,7 @@ function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: st
   };
 }
 
-type SkillAssignmentResolution = {
+export type SkillAssignmentResolution = {
   skillId: string;
   skillRevisionId: string;
 };
@@ -317,7 +317,7 @@ function isSkillSelectableForUser(input: {
   return input.canViewMarketplaceSkills && input.skill.publicationStatus === 'published' && input.skill.priceCents === 0;
 }
 
-async function resolveSkillAssignmentsForUser(
+export async function resolveSkillAssignmentsForUser(
   db: Database,
   userId: string,
   skillIds: string[],
@@ -403,11 +403,12 @@ async function resolveSkillAssignmentsForUser(
   return { assignments };
 }
 
-async function syncAgentSkillAssignments(
+export async function syncAgentSkillAssignments(
   db: Database,
   agentId: string,
   userId: string,
   assignments: SkillAssignmentResolution[],
+  assignmentSource: 'user_select' | 'guided_setup' = 'user_select',
 ): Promise<void> {
   const now = new Date();
   await db.transaction(async (tx) => {
@@ -437,7 +438,7 @@ async function syncAgentSkillAssignments(
         orderIndex,
         assignedAt: now,
         assignedByUserId: userId,
-        assignmentSource: 'user_select',
+        assignmentSource,
       }).onConflictDoUpdate({
         target: [agentSkills.agentId, agentSkills.skillId],
         set: {
@@ -445,7 +446,7 @@ async function syncAgentSkillAssignments(
           orderIndex,
           assignedAt: now,
           assignedByUserId: userId,
-          assignmentSource: 'user_select',
+          assignmentSource,
         },
       });
 
