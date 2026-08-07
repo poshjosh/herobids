@@ -264,7 +264,7 @@ const chatUsageBillingRecorder = new ChatUsageBillingRecorder(
   appConfig.plans,
   appConfig.usageBilling?.defaultRateCardName ?? 'default',
 );
-await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.agentRiskDefaults);
+await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.agentRiskDefaults, appConfig.venues);
 await skillsRoutes(app, db, appConfig.plans);
 await datasetRoutes(app, db, redisClient);
 await agentDocumentRoutes(app, db);

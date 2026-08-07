@@ -11,11 +11,13 @@ import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml, ModelDefaults, PlansConfig } from '@herobids/domain';
 import { normalizePersistedAiModelConfig, type AgentRiskDefaultsConfig } from '@herobids/domain';
 import { errorPayload } from '../error-payload.js';
-import { listProviderRegistry } from '../providers/registry.js';
+import { listProviderRegistry, getProviderWalletGenerationCapability } from '../providers/registry.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
 import { resolveExecutionModeForSkills, validateConnectionRequirement, resolveAuthorizationMode } from './agent-config-helpers.js';
 import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from './agents.js';
+import { createProviderLink } from './setup.js';
+import { generateWallet } from '@herobids/venues';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -335,6 +337,20 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
     },
   },
   {
+    name: 'create_connection',
+    description: 'Create a provider connection with auto-generated credentials. Use for the simplified path when the user has agreed to a specific venue and wants a generated wallet. Do NOT use if the user wants to provide their own API keys — use request_connection_form instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        provider: { type: 'string', description: 'Provider ID: hyperliquid, jupiter, 1inch.' },
+        label: { type: 'string', description: 'Human-readable label for this connection.' },
+        capability: { type: 'string', enum: ['trading'] },
+        credentialMode: { type: 'string', enum: ['generated'] },
+      },
+      required: ['provider', 'label', 'capability', 'credentialMode'],
+    },
+  },
+  {
     name: 'list_available_skills',
     description: 'List skills available for agent assignment. Use this to discover valid skill IDs before calling create_agent with a custom preset.',
     inputSchema: {
@@ -578,10 +594,11 @@ export async function executeChatAction(
   db: Database,
   userId: string,
   _providersYaml: ProvidersYaml,
-  usageBillingRepo?: UsageBillingRepository,
-  modelDefaults?: ModelDefaults,
-  plansConfig?: PlansConfig,
-  agentRiskDefaults?: AgentRiskDefaultsConfig,
+  usageBillingRepo: UsageBillingRepository | undefined = undefined,
+  modelDefaults: ModelDefaults | undefined = undefined,
+  plansConfig: PlansConfig | undefined = undefined,
+  agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
+  venues: AppConfig['venues'] = {},
 ): Promise<string> {
   switch (toolCall.name) {
     case 'search_app_docs':
@@ -670,6 +687,95 @@ export async function executeChatAction(
         preferredCapability,
         preferredProvider,
         message: 'Connection form requested.',
+      });
+    }
+
+    case 'create_connection': {
+      const args = (toolCall.args ?? {}) as Record<string, unknown>;
+      const provider = typeof args.provider === 'string' ? args.provider : null;
+      const label = typeof args.label === 'string' ? args.label : null;
+      const capability = typeof args.capability === 'string' ? args.capability : null;
+      const credentialMode = typeof args.credentialMode === 'string' ? args.credentialMode : null;
+
+      if (!provider || !label) {
+        return JSON.stringify({
+          error: 'validation_error',
+          message: 'provider and label are required.',
+        });
+      }
+
+      if (credentialMode !== 'generated') {
+        return JSON.stringify({
+          error: 'validation_error',
+          message: 'create_connection only supports credentialMode: generated. Use request_connection_form for manual credentials.',
+        });
+      }
+
+      // Validate provider is known and not deprecated
+      const known = listProviderRegistry().find((entry) => entry.id === provider);
+      if (!known || known.status === 'deprecated') {
+        return JSON.stringify({
+          error: 'validation_error',
+          message: `Unknown or deprecated provider: ${provider}`,
+        });
+      }
+
+      // Look up user plan and admin status for plan-limit enforcement
+      const [userRow] = await db
+        .select({ planId: users.planId, isAdmin: users.isAdmin })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      const result = await createProviderLink(db, plansConfig, { venues, generateWallet }, {
+        userId,
+        userPlanId: userRow?.planId ?? 'free',
+        isAdmin: userRow?.isAdmin ?? false,
+        provider,
+        label,
+        capability: capability === 'trading' ? 'trading' : undefined,
+        credentialMode: 'generated',
+        secrets: undefined,
+      });
+
+      if (result.kind === 'ok') {
+        const response: Record<string, unknown> = {
+          success: true,
+          connectionId: result.connectionId,
+          provider: result.provider,
+          label: result.label,
+        };
+        if (result.wallet) {
+          const walletCap = getProviderWalletGenerationCapability(provider, venues);
+          response.wallet = {
+            address: result.wallet.address,
+            network: result.wallet.network,
+            fundingInstructionId: walletCap?.fundingInstructionId ?? `${provider}-mainnet`,
+            custodyMode: 'direct' as const,
+          };
+        }
+        return JSON.stringify(response);
+      }
+
+      if (result.kind === 'limit') {
+        return JSON.stringify({
+          error: result.error.code,
+          message: result.error.message,
+        });
+      }
+
+      if (result.kind === 'validation') {
+        const primary = result.errors[0];
+        return JSON.stringify({
+          error: 'validation_error',
+          message: primary ? `${primary.field}: ${primary.message}` : 'Invalid connection configuration.',
+          details: result.errors,
+        });
+      }
+
+      return JSON.stringify({
+        error: result.kind === 'error' || result.kind === 'fault' ? result.code : 'setup.provider_link_failed',
+        message: result.kind === 'error' || result.kind === 'fault' ? result.message : 'Failed to create connection. Please try the manual form instead.',
       });
     }
 
@@ -1067,11 +1173,12 @@ export async function invokeOnboardingLlm(
   userId: string,
   threadMessages: PersistedChatMessage[],
   threadMetadata: ThreadMetadata | null,
-  resumeEvent?: OnboardingResumeEvent,
-  usageBillingRepo?: UsageBillingRepository,
-  modelDefaults?: ModelDefaults,
-  plansConfig?: PlansConfig,
-  agentRiskDefaults?: AgentRiskDefaultsConfig,
+  resumeEvent: OnboardingResumeEvent | undefined = undefined,
+  usageBillingRepo: UsageBillingRepository | undefined = undefined,
+  modelDefaults: ModelDefaults | undefined = undefined,
+  plansConfig: PlansConfig | undefined = undefined,
+  agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
+  venues: AppConfig['venues'] = {},
 ): Promise<LlmInvocationResult> {
   const systemPrompt = buildSystemPrompt();
 
@@ -1172,7 +1279,7 @@ export async function invokeOnboardingLlm(
     // Process tool calls
     const toolResults: LlmMessage[] = [];
     for (const tc of toolCalls) {
-      const toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults);
+      const toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults, venues);
       toolResults.push({
         role: 'tool',
         content: toolResult,
@@ -1289,11 +1396,12 @@ export async function chatRoutes(
   llmConfig: LlmConfig,
   providersYaml: ProvidersYaml,
   _redisClient: Redis,
-  usageBillingRepo?: UsageBillingRepository,
-  chatUsageBillingRecorder?: ChatUsageBillingRecorder,
-  modelDefaults?: ModelDefaults,
-  plansConfig?: PlansConfig,
-  agentRiskDefaults?: AgentRiskDefaultsConfig,
+  usageBillingRepo: UsageBillingRepository | undefined = undefined,
+  chatUsageBillingRecorder: ChatUsageBillingRecorder | undefined = undefined,
+  modelDefaults: ModelDefaults | undefined = undefined,
+  plansConfig: PlansConfig | undefined = undefined,
+  agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
+  venues: AppConfig['venues'] = {},
 ): Promise<void> {
   /**
    * POST /chat/threads
@@ -1417,6 +1525,7 @@ export async function chatRoutes(
         modelDefaults,
         plansConfig,
         agentRiskDefaults,
+        venues,
       );
 
       // Record chat LLM usage for billing (fire-and-forget)
@@ -1620,6 +1729,7 @@ export async function chatRoutes(
         modelDefaults,
         plansConfig,
         agentRiskDefaults,
+        venues,
       );
 
       // Record chat LLM usage for billing (fire-and-forget)

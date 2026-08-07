@@ -26,6 +26,210 @@ export interface SetupRouteDeps {
   generateWallet: (request: WalletGenerationRequest) => WalletGenerationResult;
 }
 
+export interface CreateProviderLinkInput {
+  userId: string;
+  userPlanId?: string;
+  isAdmin?: boolean;
+  provider: string;
+  label: string;
+  capability?: 'trading';
+  credentialMode: 'manual' | 'generated';
+  secrets?: Record<string, string>;
+}
+
+export type CreateProviderLinkResult =
+  | { kind: 'ok'; credentialId: string; connectionId: string; provider: string; label: string; venueAccountId: string | null; wallet: WalletGenerationResult['wallet'] | null }
+  | { kind: 'limit'; error: { code: string; message: string; params?: Record<string, unknown> } }
+  | { kind: 'validation'; errors: ReturnType<typeof validateVenueSecrets> }
+  | { kind: 'error'; code: string; message: string; params?: Record<string, unknown> }
+  | { kind: 'fault'; code: string; message: string; params?: Record<string, unknown> };
+
+/**
+ * Shared provider-link creation logic used by both the HTTP route and the
+ * Guided Setup `create_connection` chat tool. Creates a credential, a
+ * connection, and — when capability = "trading" — a companion venue account
+ * (writing resolvedVenueAccountId), all in a single transaction.
+ */
+export async function createProviderLink(
+  db: Database,
+  plansConfig: PlansConfig | undefined,
+  deps: SetupRouteDeps,
+  input: CreateProviderLinkInput,
+): Promise<CreateProviderLinkResult> {
+  const { userId, userPlanId, isAdmin, provider, label, capability, credentialMode, secrets } = input;
+  const planId = userPlanId || 'free';
+  const admin = isAdmin ?? false;
+
+  if (capability === 'trading' && !providerAllowsTradingSetup(provider)) {
+    return {
+      kind: 'error',
+      code: 'capability.unsupported_provider',
+      message: `Provider ${provider} is not supported for trading setup.`,
+      params: { provider, capability },
+    };
+  }
+
+  const walletCapability = credentialMode === 'generated'
+    ? getProviderWalletGenerationCapability(provider, deps.venues)
+    : undefined;
+  if (credentialMode === 'generated') {
+    if (!walletCapability) {
+      return {
+        kind: 'error',
+        code: 'wallet_generation.unsupported_provider',
+        message: `Provider ${provider} does not support generated wallets.`,
+        params: { provider },
+      };
+    }
+    if (!walletCapability.available) {
+      return {
+        kind: 'error',
+        code: 'wallet_generation.disabled',
+        message: `Generated wallets are not currently available for provider ${provider}.`,
+        params: { provider },
+      };
+    }
+  }
+
+  const manualSecrets = credentialMode === 'manual'
+    ? canonicalizeVenueSecrets(provider, secrets ?? {})
+    : undefined;
+  if (manualSecrets) {
+    const venueErrors = validateVenueSecrets(provider, manualSecrets);
+    if (venueErrors.length > 0) {
+      return { kind: 'validation', errors: venueErrors };
+    }
+  }
+
+  const encryptionKey = getEncryptionKey();
+  const credentialId = crypto.randomUUID();
+  const connectionId = crypto.randomUUID();
+  const now = new Date();
+
+  let txResult: {
+    kind: 'limit';
+    error: { code: string; message: string; params?: Record<string, unknown> };
+  } | {
+    kind: 'validation';
+    errors: ReturnType<typeof validateVenueSecrets>;
+  } | {
+    kind: 'ok';
+    tradingResult: { venueAccountId: string } | null;
+    wallet: WalletGenerationResult['wallet'] | null;
+  };
+  try {
+    txResult = await db.transaction(async (tx) => {
+      if (plansConfig) {
+        // Serialise setup quota checks per user to avoid over-limit races.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(14, hashtext(${userId}))`);
+
+        const credentialCheck = await checkCredentialLimit(tx as unknown as Database, plansConfig, userId, planId, admin);
+        if (!credentialCheck.ok) {
+          return { kind: 'limit' as const, error: credentialCheck.error };
+        }
+
+        const connectionCheck = await checkConnectionLimit(tx as unknown as Database, plansConfig, userId, planId, admin);
+        if (!connectionCheck.ok) {
+          return { kind: 'limit' as const, error: connectionCheck.error };
+        }
+
+        if (capability === 'trading') {
+          const venueAccountCheck = await checkVenueAccountLimit(tx as unknown as Database, plansConfig, userId, planId, admin);
+          if (!venueAccountCheck.ok) {
+            return { kind: 'limit' as const, error: venueAccountCheck.error };
+          }
+        }
+      }
+
+      const generated = credentialMode === 'generated'
+        ? deps.generateWallet({ provider, enabled: walletCapability!.available, network: walletCapability!.network })
+        : undefined;
+      const normalizedSecrets = generated
+        ? canonicalizeVenueSecrets(provider, generated.secrets)
+        : manualSecrets!;
+      const venueErrors = validateVenueSecrets(provider, normalizedSecrets);
+      if (venueErrors.length > 0) {
+        return { kind: 'validation' as const, errors: venueErrors };
+      }
+      const { encryptedData, encryptionMeta } = encryptCredential(JSON.stringify(normalizedSecrets), encryptionKey);
+
+      await tx.insert(userCredentials).values({
+        id: credentialId,
+        userId,
+        provider,
+        label,
+        encryptedData,
+        encryptionMeta,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await tx.insert(connections).values({
+        id: connectionId,
+        userId,
+        credentialId,
+        provider,
+        label,
+        status: 'active',
+        meta: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      let tradingResult: { venueAccountId: string } | null = null;
+      if (capability === 'trading') {
+        // Resolve venueAccountRef:
+        // - generated wallet → use the generated address
+        // - manual Hyperliquid → walletAddress from secrets
+        // - manual Jupiter → derive Solana address from private key
+        // - other manual → null (venue-specific resolution downstream)
+        const resolvedVenueAccountRef: string | null = generated?.wallet.address
+          ?? (provider === 'hyperliquid' ? normalizedSecrets['walletAddress'] ?? null : null)
+          ?? (provider === 'jupiter' && normalizedSecrets['privateKey']
+            ? deriveSolanaAddress(normalizedSecrets['privateKey'])
+            : null);
+
+        tradingResult = await provisionTradingTarget(tx, {
+          userId,
+          connectionId,
+          provider,
+          label,
+          credentialId,
+          venueAccountRef: resolvedVenueAccountRef,
+          now,
+        });
+      }
+
+      return { kind: 'ok' as const, tradingResult, wallet: generated?.wallet ?? null };
+    });
+  } catch (err) {
+    console.error('createProviderLink: unexpected error', { err, provider, credentialMode, userId });
+    return {
+      kind: 'fault',
+      code: 'setup.provider_link_failed',
+      message: 'Failed to set up provider connection. Please try again.',
+      params: { provider, credentialMode },
+    };
+  }
+
+  if (txResult.kind === 'limit') {
+    return { kind: 'limit', error: txResult.error };
+  }
+  if (txResult.kind === 'validation') {
+    return { kind: 'validation', errors: txResult.errors };
+  }
+
+  return {
+    kind: 'ok',
+    credentialId,
+    connectionId,
+    provider,
+    label,
+    venueAccountId: txResult.tradingResult?.venueAccountId ?? null,
+    wallet: txResult.wallet,
+  };
+}
+
 export async function setupRoutes(
   app: FastifyInstance,
   db: Database,
@@ -49,205 +253,81 @@ export async function setupRoutes(
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const { provider, label, capability, credentialMode } = parsed.data;
-
-    if (capability === 'trading' && !providerAllowsTradingSetup(provider)) {
-      return reply.status(400).send(
-        errorPayload(
-          'capability.unsupported_provider',
-          `Provider ${provider} is not supported for trading setup.`,
-          { provider, capability },
-        ),
-      );
-    }
-
-    const walletCapability = credentialMode === 'generated'
-      ? getProviderWalletGenerationCapability(provider, deps.venues)
-      : undefined;
-    if (credentialMode === 'generated') {
-      if (!walletCapability) {
-        return reply.status(400).send(
-          errorPayload(
-            'wallet_generation.unsupported_provider',
-            `Provider ${provider} does not support generated wallets.`,
-            { provider },
-          ),
-        );
-      }
-      if (!walletCapability.available) {
-        return reply.status(400).send(
-          errorPayload(
-            'wallet_generation.disabled',
-            `Generated wallets are not currently available for provider ${provider}.`,
-            { provider },
-          ),
-        );
-      }
-    }
-
-    const manualSecrets = credentialMode === 'manual'
-      ? canonicalizeVenueSecrets(provider, parsed.data.secrets!)
-      : undefined;
-    if (manualSecrets) {
-      const venueErrors = validateVenueSecrets(provider, manualSecrets);
-      if (venueErrors.length > 0) {
-        return reply.status(400).send(credentialValidationPayload(venueErrors));
-      }
-    }
-
-    const encryptionKey = getEncryptionKey();
-    const credentialId = crypto.randomUUID();
-    const connectionId = crypto.randomUUID();
+    const { provider, label, capability, credentialMode, secrets } = parsed.data;
     const now = new Date();
 
-    let txResult: {
-      kind: 'limit';
-      error: { code: string; message: string; params?: Record<string, unknown> };
-    } | {
-      kind: 'validation';
-      errors: ReturnType<typeof validateVenueSecrets>;
-    } | {
-      kind: 'ok';
-      tradingResult: { venueAccountId: string } | null;
-      wallet: WalletGenerationResult['wallet'] | null;
-    };
-    try {
-      txResult = await db.transaction(async (tx) => {
-        if (plansConfig) {
-          // Serialise setup quota checks per user to avoid over-limit races.
-          await tx.execute(sql`SELECT pg_advisory_xact_lock(14, hashtext(${request.userId}))`);
+    const result = await createProviderLink(db, plansConfig, deps, {
+      userId: request.userId,
+      userPlanId: request.userPlanId || 'free',
+      isAdmin: request.isAdmin,
+      provider,
+      label,
+      capability,
+      credentialMode,
+      secrets,
+    });
 
-          const credentialCheck = await checkCredentialLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
-          if (!credentialCheck.ok) {
-            return { kind: 'limit' as const, error: credentialCheck.error };
-          }
-
-          const connectionCheck = await checkConnectionLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
-          if (!connectionCheck.ok) {
-            return { kind: 'limit' as const, error: connectionCheck.error };
-          }
-
-          if (capability === 'trading') {
-            const venueAccountCheck = await checkVenueAccountLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
-            if (!venueAccountCheck.ok) {
-              return { kind: 'limit' as const, error: venueAccountCheck.error };
-            }
-          }
-        }
-
-        const generated = credentialMode === 'generated'
-          ? deps.generateWallet({ provider, enabled: walletCapability!.available, network: walletCapability!.network })
-          : undefined;
-        const normalizedSecrets = generated
-          ? canonicalizeVenueSecrets(provider, generated.secrets)
-          : manualSecrets!;
-        const venueErrors = validateVenueSecrets(provider, normalizedSecrets);
-        if (venueErrors.length > 0) {
-          return { kind: 'validation' as const, errors: venueErrors };
-        }
-        const { encryptedData, encryptionMeta } = encryptCredential(JSON.stringify(normalizedSecrets), encryptionKey);
-
-        await tx.insert(userCredentials).values({
-          id: credentialId,
-          userId: request.userId,
-          provider,
-          label,
-          encryptedData,
-          encryptionMeta,
+    if (result.kind === 'ok') {
+      const response: Record<string, unknown> = {
+        credential: {
+          id: result.credentialId,
+          provider: result.provider,
+          label: result.label,
           createdAt: now,
-          updatedAt: now,
-        });
-
-        await tx.insert(connections).values({
-          id: connectionId,
-          userId: request.userId,
-          credentialId,
-          provider,
-          label,
+        },
+        connection: {
+          id: result.connectionId,
+          provider: result.provider,
+          label: result.label,
           status: 'active',
-          meta: null,
+          credentialId: result.credentialId,
+          resolvedVenueAccountId: result.venueAccountId,
           createdAt: now,
-          updatedAt: now,
-        });
+        },
+      };
 
-        let tradingResult: { venueAccountId: string } | null = null;
-        if (capability === 'trading') {
-          // Resolve venueAccountRef:
-          // - generated wallet → use the generated address
-          // - manual Hyperliquid → walletAddress from secrets
-          // - manual Jupiter → derive Solana address from private key
-          // - other manual → null (venue-specific resolution downstream)
-          const resolvedVenueAccountRef: string | null = generated?.wallet.address
-            ?? (provider === 'hyperliquid' ? normalizedSecrets['walletAddress'] ?? null : null)
-            ?? (provider === 'jupiter' && normalizedSecrets['privateKey']
-              ? deriveSolanaAddress(normalizedSecrets['privateKey'])
-              : null);
+      if (result.venueAccountId) {
+        response.venueAccount = {
+          id: result.venueAccountId,
+          venue: result.provider,
+          label: result.label,
+          createdAt: now,
+        };
+      }
 
-          tradingResult = await provisionTradingTarget(tx, {
-            userId: request.userId,
-            connectionId,
-            provider,
-            label,
-            credentialId,
-            venueAccountRef: resolvedVenueAccountRef,
-            now,
-          });
-        }
+      if (result.wallet && walletCapabilityFor(result.provider, credentialMode, deps)) {
+        response.wallet = {
+          address: result.wallet.address,
+          network: result.wallet.network,
+          fundingInstructionId: walletCapabilityFor(result.provider, credentialMode, deps)!.fundingInstructionId,
+          custodyMode: 'direct',
+        };
+      }
 
-        return { kind: 'ok' as const, tradingResult, wallet: generated?.wallet ?? null };
-      });
-    } catch (err) {
-      request.log.error({ err, provider, credentialMode }, 'Unhandled error in provider-link transaction');
-      return reply.status(500).send(
-        errorPayload('setup.provider_link_failed', 'Failed to set up provider connection. Please try again.'),
-      );
+      return reply.status(201).send(response);
     }
 
-    if (txResult.kind === 'limit') {
+    if (result.kind === 'limit') {
       return reply.status(403).send(
-        errorPayload(txResult.error.code, txResult.error.message, txResult.error.params),
+        errorPayload(result.error.code, result.error.message, result.error.params),
       );
     }
-    if (txResult.kind === 'validation') {
-      return reply.status(400).send(credentialValidationPayload(txResult.errors));
+    if (result.kind === 'validation') {
+      return reply.status(400).send(credentialValidationPayload(result.errors));
     }
-
-    const response: Record<string, unknown> = {
-      credential: {
-        id: credentialId,
-        provider,
-        label,
-        createdAt: now,
-      },
-      connection: {
-        id: connectionId,
-        provider,
-        label,
-        status: 'active',
-        credentialId,
-        resolvedVenueAccountId: txResult.tradingResult?.venueAccountId ?? null,
-        createdAt: now,
-      },
-    };
-
-    if (txResult.tradingResult) {
-      response.venueAccount = {
-        id: txResult.tradingResult.venueAccountId,
-        venue: provider,
-        label,
-        createdAt: now,
-      };
+    if (result.kind === 'fault') {
+      return reply.status(500).send(
+        errorPayload(result.code, result.message, result.params),
+      );
     }
-
-    if (txResult.wallet && walletCapability) {
-      response.wallet = {
-        address: txResult.wallet.address,
-        network: txResult.wallet.network,
-        fundingInstructionId: walletCapability.fundingInstructionId,
-        custodyMode: 'direct',
-      };
-    }
-
-    return reply.status(201).send(response);
+    return reply.status(400).send(
+      errorPayload(result.code, result.message, result.params),
+    );
   });
+}
+
+function walletCapabilityFor(provider: string, credentialMode: 'manual' | 'generated', deps: SetupRouteDeps) {
+  return credentialMode === 'generated'
+    ? getProviderWalletGenerationCapability(provider, deps.venues)
+    : undefined;
 }
