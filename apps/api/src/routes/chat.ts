@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { eq, and, asc, desc, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
-import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skillRevisions, UsageBillingRepository } from '@herobids/db';
+import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skills, skillRevisions, UsageBillingRepository } from '@herobids/db';
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml } from '@herobids/domain';
@@ -98,8 +98,9 @@ research topics, or engage in conversation unrelated to agent creation. If the u
 something outside agent creation, gently redirect: "I'm focused on helping you create an
 agent right now. Would you like to continue, or switch to the form?"
 
-You have access to platform documentation tools (search_app_docs, list_app_docs, read_app_docs) 
-to understand the available options. Use them before asking the user to make choices.
+You have access to platform documentation tools (search_app_docs, list_app_docs, read_app_docs)
+and skill discovery (list_available_skills — use only for Custom AI or when the user asks about specific skills) to understand the available options. Use them before
+asking the user to make choices.
 
 You run inside a restricted API-local onboarding runtime. You may use the onboarding actions when needed, but do not assume worker runtime tools like send_message, memory, or trading execution tools exist.
 
@@ -113,6 +114,7 @@ Prefer the happy path unless the user asks for something specific. That means:
 - If the user does not ask for a specific execution mode, use the user-facing \`test\` choice. The server maps that to canonical \`executionDefaults.mode\`.
 - If the user does not ask for a specific strategy preset, choose one automatically.
 - If the server returns a recommended compatible active connection, use it automatically and avoid asking the user to create another connection.
+- If the user is creating a trading agent and hasn't expressed a preference about cost, ask the cost-saving question (see below) before finalizing.
 - Before creation, show a confirmation summary that includes the final goal/prompt, style, user-facing execution mode, strategy preset, and selected connection.
 
 ## Greeting
@@ -120,18 +122,53 @@ When starting, say something like:
 
 "Hi! I can help you create an AI agent. What kind of agent are you looking for?"
 
-Then offer the available presets as quick-reply buttons (trading, personal assistant, custom).
+Then present the available presets (trading, personal assistant, custom) as choices.
 Do NOT say "ask anything" — you have a specific job.
 
 ## Conversation Flow
 
 ### If the user wants a trading agent:
 1. Confirm they want a trading agent and, if needed, ask which trading type/preset they want
-2. Ask about capital (how much do they want to allocate?)
-3. Reuse the server-recommended compatible existing active connection if one exists; only ask the user to create/connect something if none exists or they want a different one
-4. Ask optional preference questions only when needed (e.g. chain, style, strategy, goal)
-5. Otherwise apply the happy-path defaults for goal, style, user-facing execution mode, and strategy preset
-6. Summarize and confirm before creating
+2. Ask the cost-saving question (see section below) before discussing capital
+3. Ask about capital (how much do they want to allocate?)
+4. Reuse the server-recommended compatible existing active connection if one exists; only ask the user to create/connect something if none exists or they want a different one
+5. Ask optional preference questions only when needed (e.g. chain, style, strategy, goal)
+6. Otherwise apply the happy-path defaults for goal, style, user-facing execution mode, and strategy preset
+7. Summarize and confirm before creating
+
+### Cost-saving question for trading agents
+
+After confirming the user wants a trading agent and before asking about capital,
+ask:
+
+"To help you save on AI costs, our platform can pre-filter trading opportunities
+before your agent reviews them. This means your agent only evaluates promising
+candidates instead of scanning the entire market. Would you like to enable this?"
+
+Ask the user to choose:
+- If they want to save costs: set filterTrades to 'scanner_gated' and
+  platformAssessmentEnabled to true.
+- If they want their agent to explore freely: set filterTrades to 'mixed'.
+
+When the user chooses to save costs (scanner_gated):
+- Set filterTrades to 'scanner_gated'.
+- Enable platform assessment (strategy review) so the agent's preset stays
+  effective as markets change.
+- Do NOT ask the user about review interval — default to 12 hours.
+- Explain briefly: "Your agent will only trade when our scanner finds
+  promising setups. This keeps LLM costs down. I'll also enable periodic
+  strategy reviews so your preset stays tuned to market conditions."
+
+When the user says no:
+- Set filterTrades to 'mixed'.
+- Do not enable platform assessment (the agent isn't scanner-gated, so
+  periodic preset reviews are less critical).
+- Explain: "Your agent will see scanner candidates AND explore on its own.
+  This gives it more freedom but uses more AI compute."
+
+If the user explicitly asks to disable all pre-filtering, set filterTrades to
+'off' and explain that the agent will rely purely on its own reasoning without
+scanner assistance (this uses the most LLM compute and may be the most expensive option).
 
 ### If the user wants a personal assistant:
 1. Confirm they want a personal assistant and determine the preset/skill shape
@@ -141,11 +178,14 @@ Do NOT say "ask anything" — you have a specific job.
 5. Summarize and confirm before creating
 
 ### If the user wants a custom agent:
-1. Confirm they want a custom agent and determine the skill shape
-2. Ask only the minimum extra questions needed to create it successfully
-3. Do not ask for capital unless the flow has explicitly become trading-capable
-4. Otherwise apply the happy-path defaults for name, goal, and execution settings
-5. Summarize and confirm before creating
+1. Confirm they want a custom agent.
+2. Ask what they want the agent to do. Use list_available_skills to discover
+   available skills, then suggest relevant ones based on their goal.
+3. If the user doesn't express a need for specific skills, default to no skills
+   (base only) — the agent can still reason and use built-in tools.
+4. Do not ask for capital unless the selected skills include trading.
+5. Otherwise apply the happy-path defaults for name, goal, and execution settings.
+6. Summarize and confirm before creating.
 
 ## Prompt / Goal Handling
 
@@ -277,6 +317,14 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
     },
   },
   {
+    name: 'list_available_skills',
+    description: 'List skills available for agent assignment. Use this to discover valid skill IDs before calling create_agent with a custom preset.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
     name: 'create_agent',
     description: 'Create a new AI agent with the specified configuration. Only call this when you have enough information from the user.',
     inputSchema: {
@@ -289,6 +337,25 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
         requestedExecutionMode: { type: 'string', enum: ['test', 'live'], description: 'User-facing execution mode (default: test)' },
         strategyPreset: { type: 'string', enum: ['momentum', 'momentum-position', 'range', 'swing', 'scalper', 'contrarian'], description: 'Strategy preset (auto-selected if omitted)' },
         selectedConnectionId: { type: 'string', description: 'Connection ID to use (auto-selected from recommended if omitted)' },
+        skillIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: "Skill IDs to assign. Use list_available_skills to discover valid IDs. Only meaningful when skillPresetId is 'custom'.",
+        },
+        filterTrades: {
+          type: 'string',
+          enum: ['off', 'mixed', 'scanner_gated'],
+          description: "Pre-filtering mode. 'scanner_gated' saves LLM cost by only showing the agent candidates our scanner discovers. 'mixed' lets the agent also find its own opportunities. 'off' means no pre-filtering (most expensive). Default for trading agents: 'scanner_gated' when the user wants to save cost, otherwise 'mixed'.",
+        },
+        platformAssessmentEnabled: {
+          type: 'boolean',
+          description: "Enable periodic strategy assessment reviews. Recommended when filterTrades is 'scanner_gated'. Default: true when scanner_gated.",
+        },
+        platformAssessmentReviewIntervalHours: {
+          type: 'string',
+          enum: ['6', '12', '24', '48', '96'],
+          description: "How often to review the strategy preset. Default: '12'.",
+        },
       },
       required: ['skillPresetId'],
     },
@@ -303,6 +370,10 @@ const GuidedSetupCreateAgentInput = z.object({
   requestedExecutionMode: z.enum(['test', 'live']).optional(),
   strategyPreset: z.enum(['momentum', 'momentum-position', 'range', 'swing', 'scalper', 'contrarian']).optional(),
   selectedConnectionId: z.string().optional(),
+  skillIds: z.array(z.string().min(1)).optional(),
+  filterTrades: z.enum(['off', 'mixed', 'scanner_gated']).optional(),
+  platformAssessmentEnabled: z.boolean().optional(),
+  platformAssessmentReviewIntervalHours: z.enum(['6', '12', '24', '48', '96']).optional(),
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -324,10 +395,10 @@ function resolveSkillPresetSkillIds(skillPresetId: string): string[] {
   // System skill IDs — these are seeded by syncSystemSkills at API startup.
   // The IDs must match what the existing form uses.
   const PRESET_SKILL_MAP: Record<string, string[]> = {
-    trading: ['skill-trading', 'skill-market-data', 'skill-portfolio'],
-    'direct-trading': ['skill-trading', 'skill-market-data'],
-    'trading-assistant': ['skill-trading-assistant', 'skill-market-data'],
-    'personal-assistant': ['skill-personal-assistant'],
+    trading: ['trading', 'bot-management'],
+    'direct-trading': ['trading'],
+    'trading-assistant': ['trading'],
+    'personal-assistant': ['task-management', 'web-access', 'email'],
     custom: [],
   };
   return PRESET_SKILL_MAP[skillPresetId] ?? [];
@@ -415,12 +486,59 @@ export function buildCreateAgentPayload(
   const name = generateAgentName(input.skillPresetId);
   const style = input.style ?? 'balanced';
   const strategyPreset = input.strategyPreset ?? 'momentum';
-  const capabilityMode = deriveCapabilityMode(input.skillPresetId);
-  const skillIds = resolveSkillPresetSkillIds(input.skillPresetId);
+
+  // Use caller-provided skillIds for custom preset; derive from preset map otherwise
+  const skillIds = input.skillPresetId === 'custom' && input.skillIds?.length
+    ? input.skillIds
+    : resolveSkillPresetSkillIds(input.skillPresetId);
 
   const connectionIds = input.selectedConnectionId ? [input.selectedConnectionId] : [];
 
+  // Determine if this preset is inherently trading-capable
+  const isTradingPreset = ['trading', 'direct-trading', 'trading-assistant'].includes(input.skillPresetId);
+
+  // Derive capabilityMode and hybridMode from filterTrades when provided for trading presets.
+  // When filterTrades is omitted, fall back to preset-derived defaults.
+  let capabilityMode: 'intelligence' | 'hybrid';
+  let hybridMode: 'mixed' | 'scanner_gated' | undefined;
+
+  if (isTradingPreset && input.filterTrades) {
+    switch (input.filterTrades) {
+      case 'off':
+        capabilityMode = 'intelligence';
+        break;
+      case 'mixed':
+        capabilityMode = 'hybrid';
+        hybridMode = 'mixed';
+        break;
+      case 'scanner_gated':
+        capabilityMode = 'hybrid';
+        hybridMode = 'scanner_gated';
+        break;
+      default:
+        capabilityMode = deriveCapabilityMode(input.skillPresetId);
+        break;
+    }
+  } else {
+    // Non-trading presets or filterTrades omitted: use preset-derived defaults
+    capabilityMode = deriveCapabilityMode(input.skillPresetId);
+    // Default hybridMode for trading presets when filterTrades is omitted
+    if (isTradingPreset) {
+      hybridMode = 'mixed'; // backward-compatible default
+    }
+  }
+
   const isTradingCapable = capabilityMode === 'hybrid';
+
+  // Platform assessment (strategy review) — only meaningful for trading presets
+  // and only allowed when filterTrades is 'scanner_gated'.
+  let platformAssessment: { enabled: boolean; reviewIntervalMs: number } | undefined;
+  if (isTradingPreset && input.platformAssessmentEnabled && hybridMode === 'scanner_gated') {
+    platformAssessment = {
+      enabled: true,
+      reviewIntervalMs: (Number(input.platformAssessmentReviewIntervalHours) || 12) * 3_600_000,
+    };
+  }
 
   const strategy = isTradingCapable ? {
     type: strategyPreset,
@@ -437,12 +555,19 @@ export function buildCreateAgentPayload(
     userId,
   };
 
-  // Trading-only fields are only included for trading-capable presets.
-  if (isTradingCapable) {
+  // Include trading-only fields for any trading preset, regardless of capabilityMode.
+  // strategy and hybridMode are only set when capabilityMode is hybrid.
+  if (isTradingPreset) {
     payload.capital = input.capital;
     payload.strategyPreset = strategyPreset;
-    payload.strategy = strategy;
     payload.executionDefaults = executionDefaults;
+    if (isTradingCapable) {
+      payload.strategy = strategy;
+      payload.hybridMode = hybridMode;
+      if (platformAssessment) {
+        payload.platformAssessment = platformAssessment;
+      }
+    }
   }
 
   // Include the selected connection only when a compatible provider is actually
@@ -608,6 +733,31 @@ export async function executeChatAction(
       });
     }
 
+    case 'list_available_skills': {
+      try {
+        const availableSkills = await db
+          .select({
+            id: skills.id,
+            name: skills.name,
+            description: skills.description,
+            capabilityFamilies: skills.capabilityFamilies,
+          })
+          .from(skills)
+          .where(eq(skills.publicationStatus, 'published'))
+          .orderBy(asc(skills.name))
+          .limit(50);
+
+        return JSON.stringify({
+          skills: availableSkills,
+          message: availableSkills.length > 0
+            ? `${availableSkills.length} skills available for agent assignment.`
+            : 'No skills currently available.',
+        });
+      } catch {
+        return JSON.stringify({ skills: [], message: 'Could not retrieve available skills.' });
+      }
+    }
+
     case 'create_agent': {
       // Billing gate: defense-in-depth for agent creation
       if (usageBillingRepo) {
@@ -662,6 +812,16 @@ export async function executeChatAction(
           }
 
           // Insert the agent with all required fields
+          const unifiedConfig: Record<string, unknown> = {
+            capabilityMode: payload.capabilityMode,
+          };
+          if (payload.hybridMode) {
+            unifiedConfig.hybridMode = payload.hybridMode;
+          }
+          if (payload.platformAssessment) {
+            unifiedConfig.platformAssessment = payload.platformAssessment;
+          }
+
           await tx.insert(agents).values({
             id: agentId,
             userId,
@@ -677,6 +837,7 @@ export async function executeChatAction(
             // Empty tool/model policy — the worker will populate from skillIds on start
             toolPolicy: {},
             modelPolicy: {},
+            unifiedConfig: unifiedConfig as never,
             createdAt: timestamp,
             updatedAt: timestamp,
           } as never);

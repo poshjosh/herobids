@@ -40,7 +40,7 @@ describe('agent payload builders', () => {
       capabilityMode: 'intelligence',
       hybridMode: 'mixed',
       technical: null,
-      skillIds: ['bot-management', 'trading'],
+      skillIds: ['trading', 'bot-management'],
       hasBotManagementSkill: true,
       requiresTradingSetup: true,
       executionMode: 'test',
@@ -59,7 +59,7 @@ describe('agent payload builders', () => {
     })).toMatchObject({
       name: 'market-watch-01',
       prompt: 'Trade BTC on breakouts',
-      skillIds: ['bot-management', 'trading'],
+      skillIds: ['trading', 'bot-management'],
       capabilityMode: 'intelligence',
     });
   });
