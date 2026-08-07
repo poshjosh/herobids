@@ -5,6 +5,7 @@ import { eq, and, asc, desc, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
 import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skills, skillRevisions, users, UsageBillingRepository } from '@herobids/db';
+import { ChatUsageBillingRecorder } from '../billing/chat-usage-billing-recorder.js';
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml, ModelDefaults } from '@herobids/domain';
@@ -1289,6 +1290,7 @@ export async function chatRoutes(
   providersYaml: ProvidersYaml,
   _redisClient: Redis,
   usageBillingRepo?: UsageBillingRepository,
+  chatUsageBillingRecorder?: ChatUsageBillingRecorder,
   modelDefaults?: ModelDefaults,
 ): Promise<void> {
   /**
@@ -1412,6 +1414,19 @@ export async function chatRoutes(
         usageBillingRepo,
         modelDefaults,
       );
+
+      // Record chat LLM usage for billing (fire-and-forget)
+      if (chatUsageBillingRecorder && llmResponse.billingUsage?.tokensUsed > 0) {
+        void chatUsageBillingRecorder.record({
+          userId: request.userId,
+          threadId: request.params.id,
+          billingAnchorId: userMsgId,
+          phase: 'message_send',
+          usage: llmResponse.billingUsage,
+        }).catch((err) => {
+          request.log.warn({ err, threadId: request.params.id, userMsgId }, 'Failed to record chat LLM usage');
+        });
+      }
 
       // Build structured actions from agent creation result, merging any
       // form/quick-reply actions emitted by the LLM with the post-creation confirm.
@@ -1599,6 +1614,19 @@ export async function chatRoutes(
         usageBillingRepo,
         modelDefaults,
       );
+
+      // Record chat LLM usage for billing (fire-and-forget)
+      if (chatUsageBillingRecorder && llmResponse.billingUsage?.tokensUsed > 0) {
+        void chatUsageBillingRecorder.record({
+          userId: request.userId,
+          threadId: request.params.id,
+          billingAnchorId: actionId,
+          phase: 'action_result',
+          usage: llmResponse.billingUsage,
+        }).catch((err) => {
+          request.log.warn({ err, threadId: request.params.id, actionId }, 'Failed to record chat LLM usage');
+        });
+      }
 
       const resumeActions: ChatAction[] = [
         ...(llmResponse.actions ?? []),

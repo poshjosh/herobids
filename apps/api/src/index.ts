@@ -23,6 +23,7 @@ import { agentInteractivityRoutes, telegramWebhookHandler } from './routes/agent
 import { analyticsRoutes } from './routes/analytics.js';
 import { aiRoutes } from './routes/ai.js';
 import { chatRoutes } from './routes/chat.js';
+import { ChatUsageBillingRecorder } from './billing/chat-usage-billing-recorder.js';
 import { skillsRoutes } from './routes/skills.js';
 import { datasetRoutes } from './routes/datasets.js';
 import { agentDocumentRoutes } from './routes/agent-documents.js';
@@ -258,7 +259,12 @@ await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, pro
 await analyticsRoutes(app, db);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 const chatUsageBillingRepo = new UsageBillingRepository(db, appConfig.usageBilling?.defaultRateCardItems, providersYaml);
-await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, appConfig.agentRuntime?.llm?.modelDefaults);
+const chatUsageBillingRecorder = new ChatUsageBillingRecorder(
+  chatUsageBillingRepo,
+  appConfig.plans,
+  appConfig.usageBilling?.defaultRateCardName ?? 'default',
+);
+await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults);
 await skillsRoutes(app, db, appConfig.plans);
 await datasetRoutes(app, db, redisClient);
 await agentDocumentRoutes(app, db);
