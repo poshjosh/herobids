@@ -7,7 +7,7 @@ import type { Database } from '@herobids/db';
 import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skills, skillRevisions, users, UsageBillingRepository } from '@herobids/db';
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
-import type { AppConfig, ProvidersYaml } from '@herobids/domain';
+import type { AppConfig, ProvidersYaml, ModelDefaults } from '@herobids/domain';
 import { normalizePersistedAiModelConfig } from '@herobids/domain';
 import { errorPayload } from '../error-payload.js';
 import { listProviderRegistry } from '../providers/registry.js';
@@ -678,6 +678,7 @@ export async function executeChatAction(
   userId: string,
   _providersYaml: ProvidersYaml,
   usageBillingRepo?: UsageBillingRepository,
+  modelDefaults?: ModelDefaults,
 ): Promise<string> {
   switch (toolCall.name) {
     case 'search_app_docs':
@@ -822,23 +823,27 @@ export async function executeChatAction(
 
       const payload = buildCreateAgentPayload(parsed.data, userId);
 
-      // Validate that AI model settings are configured before allowing creation.
-      // Mirrors the POST /agents guard: if neither the agent payload nor the
-      // user's saved AI defaults have models, the agent would fail to start.
-      // The guided setup never sets agent-level models, so only the user-level
-      // aiModelConfig can satisfy this check.
+      // Resolve model configuration for the agent.
+      // Priority: user's saved AI defaults > operator modelDefaults > reject.
+      // When the user has configured models, the worker resolves them at runtime
+      // from user aiModelConfig (modelPolicy stays empty). When only operator
+      // defaults are available, stamp them into modelPolicy so the worker can start.
       const [userRow] = await db
         .select({ aiModelConfig: users.aiModelConfig })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
       const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
-      if (!userAiConfig) {
+      const operatorDefaults = modelDefaults?.provider && modelDefaults?.lightModel && modelDefaults?.heavyModel
+        ? { provider: modelDefaults.provider, lightModel: modelDefaults.lightModel, heavyModel: modelDefaults.heavyModel }
+        : null;
+      if (!userAiConfig && !operatorDefaults) {
         return JSON.stringify({
           error: 'config.model_settings_required',
           message: 'Before I can create an agent, you need to configure your AI model settings. Go to Settings → AI Models and choose a provider and models, then come back and try again.',
         });
       }
+      const effectiveModelPolicy: Record<string, unknown> = userAiConfig ? {} : operatorDefaults!;
 
       const agentId = uuid();
       const timestamp = now();
@@ -908,9 +913,11 @@ export async function executeChatAction(
             strategy: payload.strategy as Record<string, unknown> | null,
             // Canonical execution defaults
             executionDefaults: payload.executionDefaults as { mode: string; slippageBps: number } | null,
-            // Empty tool/model policy — the worker will populate from skillIds on start
+            // Empty tool policy — the worker will populate from skillIds on start.
+            // Model policy comes from user AI settings (empty = runtime-resolved) or
+            // operator modelDefaults (explicit fallback).
             toolPolicy: {},
-            modelPolicy: {},
+            modelPolicy: effectiveModelPolicy,
             unifiedConfig: unifiedConfig as never,
             createdAt: timestamp,
             updatedAt: timestamp,
@@ -1051,6 +1058,7 @@ export async function invokeOnboardingLlm(
   threadMetadata: ThreadMetadata | null,
   resumeEvent?: OnboardingResumeEvent,
   usageBillingRepo?: UsageBillingRepository,
+  modelDefaults?: ModelDefaults,
 ): Promise<LlmInvocationResult> {
   const systemPrompt = buildSystemPrompt();
 
@@ -1131,7 +1139,7 @@ export async function invokeOnboardingLlm(
     // Process tool calls
     const toolResults: LlmMessage[] = [];
     for (const tc of toolCalls) {
-      const toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo);
+      const toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults);
       toolResults.push({
         role: 'tool',
         content: toolResult,
@@ -1239,6 +1247,7 @@ export async function chatRoutes(
   providersYaml: ProvidersYaml,
   _redisClient: Redis,
   usageBillingRepo?: UsageBillingRepository,
+  modelDefaults?: ModelDefaults,
 ): Promise<void> {
   /**
    * POST /chat/threads
@@ -1359,6 +1368,7 @@ export async function chatRoutes(
         metadata,
         undefined,
         usageBillingRepo,
+        modelDefaults,
       );
 
       // Build structured actions from agent creation result, merging any
@@ -1545,6 +1555,7 @@ export async function chatRoutes(
         updatedMetadata,
         resumeEvent,
         usageBillingRepo,
+        modelDefaults,
       );
 
       const resumeActions: ChatAction[] = [

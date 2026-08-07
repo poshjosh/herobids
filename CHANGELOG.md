@@ -20,6 +20,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Labeled provider/network rejection observability:** Discovery fanout promises now carry `{ provider, network, vector }` metadata. Rejected requests are logged with structured attribution (e.g., `geckoterminal/base/trending_pools: HTTP error: 429`) instead of a generic warning. The swap scanner's `swap_discovery_empty` log includes possible cause context.
 
+- **Guided Setup — operator model defaults as fallback:** When a user creates
+  an agent via the AI-assisted chat but hasn't configured personal AI model
+  settings, the system now automatically applies the operator's model defaults
+  from `agentRuntime.llm.modelDefaults` (provider, lightModel, heavyModel)
+  instead of rejecting creation. The user can edit these defaults in the agent
+  settings before starting. Rejection still occurs when neither user settings
+  nor operator defaults are configured.
+
 ### Fixed
 
 - **Base discovery supply failure:** The t1inch swap scanner was returning zero Base candidates because GeckoTerminal free-tier rate limits silently dropped all Base pool requests. The paid CoinGecko on-chain tier restores Base supply, and the labeled rejection logging makes future provider degradations diagnosable. See `docs/features/2026/08/06/004-fix-base-discovery-fairness/001-plan.md`. Unauthenticated visitors can now start the agent creation journey from the landing page. A new `/try` page mimics the guided setup chat with static messages and typing animation (zero LLM cost), collects email, and sends a login link via the existing `POST /auth/send-login-link` endpoint. The login-link flow now supports a `next` query param, enabling post-auth redirect to `/agents/new`. The landing page has been redesigned with a background image, encouraging copy, and "Try it" CTA. Both the API and frontend enforce strict same-origin redirect sanitization. See `docs/features/2026/08/06/005-try-it-email-first-onboarding/001-plan.md`.

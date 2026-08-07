@@ -258,7 +258,7 @@ await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, pro
 await analyticsRoutes(app, db);
 await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml, appConfig.agentRuntime);
 const chatUsageBillingRepo = new UsageBillingRepository(db, appConfig.usageBilling?.defaultRateCardItems, providersYaml);
-await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo);
+await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, appConfig.agentRuntime?.llm?.modelDefaults);
 await skillsRoutes(app, db, appConfig.plans);
 await datasetRoutes(app, db, redisClient);
 await agentDocumentRoutes(app, db);
