@@ -115,10 +115,11 @@ Prefer the happy path unless the user asks for something specific. That means:
 - For trading agents only: if the user does not ask for a specific execution mode, use the user-facing \`test\` choice. The server maps that to canonical \`executionDefaults.mode\`. Do NOT set requestedExecutionMode for non-trading agents.
 - For trading agents only: if the user does not ask for a specific strategy preset, choose one automatically. Do NOT set strategyPreset for non-trading agents.
 - If the server returns a recommended compatible active connection, use it automatically and avoid asking the user to create another connection.
+- When calling list_compatible_connections for a trading agent, always pass preferredCapability: "trading". For non-trading agents, pass preferredCapability: "email" or "other" depending on the agent's needs. Never auto-use a trading connection for a non-trading agent or vice versa.
 - If the user is creating a trading agent and hasn't expressed a preference about cost, ask the cost-saving question (see below) before finalizing.
 - Before creation, show a confirmation summary:
-  - For trading agents: include goal/prompt, style, user-facing execution mode, strategy preset, capital, and selected connection.
-  - For non-trading agents (personal-assistant, custom without trading skills): include goal/prompt, style, and selected connection only. Do NOT mention capital, execution mode, strategy, filterTrades, or platform assessment.
+  - For trading agents: include goal/prompt, style, user-facing execution mode, strategy preset, capital, and selected connection. If the connection is a trading venue, you may mention the venue name.
+  - For non-trading agents (personal-assistant, custom without trading skills): include goal/prompt, style, and selected connection only. Do NOT mention capital, execution mode, strategy, filterTrades, platform assessment, or "venue" (non-trading connections like Gmail are services, not venues — say "Connected to Gmail" not "Venue: Gmail").
 
 ## Greeting
 When starting, say something like:
@@ -131,21 +132,20 @@ Do NOT say "ask anything" — you have a specific job.
 ## Conversation Flow
 
 ### If the user wants a trading agent:
-1. Confirm they want a trading agent and, if needed, ask which trading type/preset they want
-2. Ask the cost-saving question (see section below) before discussing capital
-3. Ask about capital (how much do they want to allocate?)
-4. Reuse the server-recommended compatible existing active connection if one exists; only ask the user to create/connect something if none exists or they want a different one
+1. If applicable, ask which trading type/preset they want
+2. Ask about capital (how much do they want to allocate?)
+3. Ask the cost-saving question (see section below)
+4. Call list_compatible_connections with preferredCapability: "trading" to find trading-venue connections (exchanges, DEXs). Reuse the server-recommended compatible active connection if one exists; if multiple trading connections exist, ask the user which one to use. Only ask the user to create/connect something if no trading connections exist or they want a different one. Never auto-select a non-trading connection (Gmail, Telegram) for a trading agent.
 5. Ask optional preference questions only when needed (e.g. chain, style, strategy, goal)
 6. Otherwise apply the happy-path defaults for goal, style, user-facing execution mode, and strategy preset
 7. Summarize and confirm before creating
 
 ### Cost-saving question for trading agents
 
-After confirming the user wants a trading agent and before asking about capital,
-ask:
+After confirming the user wants a trading agent, ask:
 
-"To help you save on AI costs, our platform can pre-filter trading opportunities
-before your agent reviews them. This means your agent only evaluates promising
+"To help you save on AI costs, our platform can filter trading opportunities
+for your AI agent. This means your agent only evaluates promising
 candidates instead of scanning the entire market. Would you like to enable this?"
 
 Ask the user to choose:
@@ -160,14 +160,14 @@ When the user chooses to save costs (scanner_gated):
 - Do NOT ask the user about review interval — default to 12 hours.
 - Explain briefly: "Your agent will only trade when our scanner finds
   promising setups. This keeps LLM costs down. I'll also enable periodic
-  strategy reviews so your preset stays tuned to market conditions."
+  strategy reviews so your trading strategy stays tuned to market conditions."
 
 When the user says no:
 - Set filterTrades to 'mixed'.
 - Do not enable platform assessment (the agent isn't scanner-gated, so
   periodic preset reviews are less critical).
 - Explain: "Your agent will see scanner candidates AND explore on its own.
-  This gives it more freedom but uses more AI compute."
+  This gives it more freedom but costs more AI tokens."
 
 If the user explicitly asks to disable all pre-filtering, set filterTrades to
 'off' and explain that the agent will rely purely on its own reasoning without
@@ -176,7 +176,7 @@ scanner assistance (this uses the most LLM compute and may be the most expensive
 ### If the user wants a personal assistant:
 1. Confirm they want a personal assistant and determine the preset/skill shape
 2. Ask only the minimum extra questions needed to create it successfully
-3. Reuse the server-recommended compatible existing active connection if one exists; only ask for a new connection when needed
+3. Call list_compatible_connections with preferredCapability: "email" (or "other" as appropriate) to find non-trading connections (Gmail, etc.). Reuse the server-recommended compatible active connection if one exists; if multiple non-trading connections exist, ask the user which one to use. Only ask for a new connection when needed. Never suggest or auto-select a trading connection (exchanges, DEXs) for a personal assistant.
 4. Apply the happy-path defaults for name, goal, and style
 5. Summarize and confirm before creating
 
@@ -204,7 +204,7 @@ scanner assistance (this uses the most LLM compute and may be the most expensive
 ### Rules:
 - You are single-purpose: create agents. Nothing else.
 - Never ask for private keys, API secrets, or passwords.
-- When the user needs to connect a provider, call \`list_compatible_connections\` first. If an existing active compatible connection works, reuse it. If the user needs a new provider connection, call \`request_connection_form\` with the best available hint, such as \`preferredCapability\` or \`preferredProvider\`. Never ask the user to type secrets, API keys, OAuth codes, or passwords into the chat.
+- When the user needs to connect a provider, call \`list_compatible_connections\` first with the appropriate \`preferredCapability\` ("trading" for exchanges/DEXs, "email" for Gmail, "other" for everything else). If an existing active compatible connection works, reuse it. If the user needs a new provider connection, call \`request_connection_form\` with the best available hint, such as \`preferredCapability\` or \`preferredProvider\`. Never ask the user to type secrets, API keys, OAuth codes, or passwords into the chat.
 - After the user completes or dismisses the connection form, the server resumes you automatically. If the connection was linked (\`step: 'connection_linked'\`), acknowledge it and continue. If the user dismissed the form (\`step: 'connection_form_cancelled'\`), acknowledge their choice and offer alternatives (reuse an existing connection, switch to the form, or continue without) — do NOT immediately call \`request_connection_form\` again for the same need.
 - Always validate your understanding before calling create_agent.
 - If a \`create_agent\` tool call returns a \`billing.top_up_required\` error, surface the top-up message to the user and do NOT retry \`create_agent\`. Tell the user to visit the billing page to add credit, or mention the standard form as an alternative.
@@ -299,10 +299,16 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
   },
   {
     name: 'list_compatible_connections',
-    description: 'List the user\'s existing active connections that are compatible with agent creation. Returns recommended connections if available.',
+    description: 'List the user\'s existing active connections that are compatible with agent creation. Use preferredCapability to filter by connection type (trading vs non-trading). Returns recommended connections if available.',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        preferredCapability: {
+          type: 'string',
+          enum: ['trading', 'email', 'other'],
+          description: 'Filter connections by capability. "trading" returns only trading-venue connections (exchanges, DEXs). "email" or "other" returns non-trading connections (Gmail, Telegram, etc.). Omit to see all connections.',
+        },
+      },
     },
   },
   {
@@ -690,28 +696,51 @@ export async function executeChatAction(
 
     case 'list_compatible_connections': {
       try {
-        const userConnections = await db
+        const args = (toolCall.args ?? {}) as Record<string, unknown>;
+        const preferredCapability = typeof args.preferredCapability === 'string' ? args.preferredCapability : null;
+
+        const rows = await db
           .select({
             id: connections.id,
             provider: connections.provider,
             label: connections.label,
             status: connections.status,
+            resolvedVenueAccountId: connections.resolvedVenueAccountId,
           })
           .from(connections)
           .where(and(eq(connections.userId, userId), eq(connections.status, 'active')))
           .limit(10);
 
-        if (userConnections.length === 0) {
-          return JSON.stringify({ connections: [], message: 'No active connections found. The user will need to set one up.' });
+        // Annotate each connection with its capability and filter if requested.
+        const annotated = rows.map((r) => ({
+          id: r.id,
+          provider: r.provider,
+          label: r.label,
+          status: r.status,
+          capability: r.resolvedVenueAccountId ? 'trading' as const : 'non-trading' as const,
+        }));
+
+        const filtered = preferredCapability === 'trading'
+          ? annotated.filter((c) => c.capability === 'trading')
+          : (preferredCapability === 'email' || preferredCapability === 'other')
+            ? annotated.filter((c) => c.capability === 'non-trading')
+            : annotated;
+
+        if (filtered.length === 0) {
+          const hint = preferredCapability === 'trading'
+            ? 'No trading connections found. The user will need to connect an exchange or DEX.'
+            : 'No compatible connections found. The user will need to set one up.';
+          return JSON.stringify({ connections: [], message: hint });
         }
 
-        return JSON.stringify({
-          connections: userConnections,
-          recommended: userConnections[0] ?? null,
-          message: userConnections.length === 1
-            ? 'One active connection found. Recommend using it.'
-            : `${userConnections.length} active connections found. The first one is recommended.`,
-        });
+        // Recommended: first matching connection of the requested capability.
+        const recommended = filtered[0] ?? null;
+
+        const message = preferredCapability
+          ? `${filtered.length} ${preferredCapability} connection(s) found.`
+          : `${filtered.length} active connection(s) found.`;
+
+        return JSON.stringify({ connections: filtered, recommended, message });
       } catch {
         return JSON.stringify({ connections: [], message: 'Could not retrieve connections.' });
       }
@@ -817,10 +846,17 @@ export async function executeChatAction(
 
       try {
         await db.transaction(async (tx) => {
-          // Validate connection ownership if connection IDs are provided
+          // Validate connection ownership and type compatibility.
+          // A trading agent must use a trading-venue connection (resolvedVenueAccountId
+          // is non-null); a non-trading agent must use a non-trading connection.
+          const isTradingPreset = ['trading', 'direct-trading', 'trading-assistant'].includes(parsed.data.skillPresetId);
           if (connectionIds.length > 0) {
             const connRows = await tx
-              .select({ id: connections.id, status: connections.status })
+              .select({
+                id: connections.id,
+                status: connections.status,
+                resolvedVenueAccountId: connections.resolvedVenueAccountId,
+              })
               .from(connections)
               .where(
                 and(
@@ -833,6 +869,18 @@ export async function executeChatAction(
             for (const cid of connectionIds) {
               if (!validConnIds.has(cid)) {
                 throw new Error(`Connection ${cid} is not valid or does not belong to you`);
+              }
+            }
+
+            // Type-compatibility check: trading presets need trading connections.
+            const selectedRows = connRows.filter((r) => connectionIds.includes(r.id));
+            for (const row of selectedRows) {
+              const isTradingConn = row.resolvedVenueAccountId !== null;
+              if (isTradingPreset && !isTradingConn) {
+                throw new Error(`Connection ${row.id} is not a trading venue — trading agents require an exchange or DEX connection.`);
+              }
+              if (!isTradingPreset && isTradingConn) {
+                throw new Error(`Connection ${row.id} is a trading venue — non-trading agents should use a service connection (e.g. Gmail).`);
               }
             }
           }
@@ -921,37 +969,46 @@ export async function executeChatAction(
           }
         });
 
-        // Look up the agent's wallet address for funding reminder
+        // Look up the agent's connected provider for the response summary.
+        // Only trading agents get venue/walletAddress fields — for non-trading
+        // agents the connection is just a linked service (e.g. Gmail).
+        const isTradingPreset = ['trading', 'direct-trading', 'trading-assistant'].includes(parsed.data.skillPresetId);
         let walletAddress: string | undefined;
         let venue: string | undefined;
-        try {
-          const venueRows = await db
-            .select({
-              address: connections.providerRef,
-              provider: connections.provider,
-            })
-            .from(agentConnections)
-            .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
-            .where(eq(agentConnections.agentId, agentId))
-            .limit(1);
+        if (isTradingPreset) {
+          try {
+            const venueRows = await db
+              .select({
+                address: connections.providerRef,
+                provider: connections.provider,
+              })
+              .from(agentConnections)
+              .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
+              .where(eq(agentConnections.agentId, agentId))
+              .limit(1);
 
-          walletAddress = venueRows[0]?.address ?? undefined;
-          venue = venueRows[0]?.provider ?? undefined;
-        } catch {
-          // Non-critical — proceed without wallet info
+            walletAddress = venueRows[0]?.address ?? undefined;
+            venue = venueRows[0]?.provider ?? undefined;
+          } catch {
+            // Non-critical — proceed without wallet info
+          }
         }
 
-        return JSON.stringify({
+        const result: Record<string, unknown> = {
           success: true,
           agentId,
           name: payload.name,
-          displayExecutionMode: parsed.data.requestedExecutionMode ?? 'test',
-          executionDefaults: payload.executionDefaults,
-          capital: parsed.data.capital,
           preset: parsed.data.skillPresetId,
-          venue,
-          walletAddress,
-        });
+        };
+        // Only include trading-specific fields for trading presets.
+        if (isTradingPreset) {
+          result.displayExecutionMode = parsed.data.requestedExecutionMode ?? 'test';
+          result.executionDefaults = payload.executionDefaults;
+          result.capital = parsed.data.capital;
+          if (venue) result.venue = venue;
+          if (walletAddress) result.walletAddress = walletAddress;
+        }
+        return JSON.stringify(result);
       } catch (err) {
         return JSON.stringify({
           error: 'agent_creation_failed',
