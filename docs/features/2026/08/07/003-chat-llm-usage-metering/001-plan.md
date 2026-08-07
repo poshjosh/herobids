@@ -2,7 +2,7 @@
 
 **Feature:** Chat LLM usage metering (003)
 **Date:** 2026-08-07
-**Status:** Draft — Pending Clarification
+**Status:** Draft — Ready for Implementation
 
 ## Summary
 
@@ -10,7 +10,7 @@ Plan 003 (`docs/features/2026/08/06/003-guided-setup-billing-gate/001-plan.md`) 
 
 This means the platform currently absorbs all LLM costs for Guided Setup chat usage. Every `callLlmProvider()` call in `invokeOnboardingLlm()` in `apps/api/src/routes/chat.ts` consumes paid LLM tokens without recording any usage event, ledger entry, or cost against the user's billing account.
 
-This plan adds per-token billing metering to the Guided Setup chat, consistent with ADR 005 (`docs/tech/adrs/2026/08/005-onboarding-chat-agent-runtime-model.md`) which states: **"It is billed per-token like other Chat With AI usage. No hourly/daily runtime cost."**
+This plan adds per-token billing metering to all chat surfaces (Guided Setup today, general Chat With AI in the future), consistent with ADR 005 (`docs/tech/adrs/2026/08/005-onboarding-chat-agent-runtime-model.md`) which states: **"It is billed per-token like other Chat With AI usage. No hourly/daily runtime cost."**
 
 ## Current Code Truth
 
@@ -37,13 +37,11 @@ Confirmed from current code:
    ```
    This is exactly the data needed to construct `LlmUsageInput` for the worker's `recordLlmUsage` pattern.
 
-5. **The repo supports two usage-recording paths:**
-   - `recordUsageEvents(events)` — insert raw events (idempotent), does NOT rate them
-   - `recordAndRateUsageBatch(events, periodId, accountId, rateCardItems)` — insert, rate, apply ledger, recompute spend — all in one transaction
+5. **Only `recordAndRateUsageBatch` produces billable costs.** `recordUsageEvents(...)` inserts raw events but does NOT rate them, create ledger entries, update period balance, or recompute spend status. There is no background reconciler for unrated events — raw events would sit in the DB indefinitely with zero effect on billing. The worker uses `recordAndRateUsageBatch` exclusively. This plan must use it too.
 
-6. **`UsageBillingRepository` already has `getOrCreateOpenPeriod(...)`** which creates/returns an open billing period. But it requires plan-level parameters (`planIdSnapshot`, `rateCardId`, `includedCreditMicrousd`, `softCapMicrousd`, `hardCapMicrousd`) that the chat route doesn't currently have access to.
+6. **`UsageBillingRepository` already has `getOrCreateOpenPeriod(...)`** which creates/returns an open billing period. It requires plan-level parameters (`planIdSnapshot`, `rateCardId`, `includedCreditMicrousd`, `softCapMicrousd`, `hardCapMicrousd`). These are available from the `billingAccounts` row — the account already stores `activePlanId`, `softCapMicrousd`, `hardCapMicrousd`, and `includedCreditMicrousd`.
 
-7. **The API's `appConfig` has plan information.** `appConfig.plans` contains plan definitions with `usage.includedCreditCents`, `usage.softCapCents`, `usage.hardCapCents`. `appConfig.usageBilling` has billing configuration. These are available at route registration time but would need to be threaded through to the per-request handler.
+7. **No billing `enabled` flag needed for the chat.** The repo is always constructed and the gate already runs. An explicit toggle would be redundant. The `usageBillingRepo` parameter being present is sufficient signal that billing is active.
 
 ## Problem Statement
 
@@ -70,58 +68,38 @@ Record LLM token usage as billable events for every Guided Setup chat LLM call, 
 - Do not add runtime billing (the chat is per-message, not continuous)
 - Do not change the rate card or pricing model
 
-## Key Design Decisions (to be confirmed)
+## Decisions (confirmed)
 
-### D1. Recording granularity: per-call vs per-message aggregate
+### D1. Recording granularity: per-message aggregate
 
-**Option A (per-call):** Record usage after each `callLlmProvider()` call in the tool loop. This gives fine-grained billing but creates 1–6 usage records per message.
+**Confirmed: Aggregate.** Accumulate token counts across all `callLlmProvider()` calls in `invokeOnboardingLlm()` (up to 5 tool-loop rounds + 1 final call) and record a single batch at the end. The chat is a single user action → single billing event. Per-turn attribution is not useful for chat (unlike agent ticks where scout vs judge cost matters). One DB transaction per message instead of up to 6.
 
-**Option B (per-message aggregate):** Accumulate token counts across all calls in `invokeOnboardingLlm()` and record a single batch at the end. Simpler but loses per-turn attribution.
+### D2. Rating approach: full rating via `recordAndRateUsageBatch`
 
-**Recommendation: Option B** for the first slice. The chat is a single user action → single billing event. Per-turn attribution is not useful for chat (unlike agent ticks where scout vs judge cost matters). Aggregate recording also means only one DB transaction per message instead of up to 6.
+**Confirmed: Full rating.** `recordUsageEvents` (raw events) is not viable — it inserts rows that are never rated, never create ledger entries, never update period balance, and never affect spend status. There is no background reconciler. The worker exclusively uses `recordAndRateUsageBatch`; the chat must do the same.
 
-### D2. Rating approach: full (rate + ledger) vs raw events only
+### D3. Account/period resolution: repo method reads from `billingAccounts` row
 
-**Option A (full rating):** Use `recordAndRateUsageBatch(...)` — rate events against the rate card, apply ledger debits, recompute spend state. This immediately reflects costs in the user's billing dashboard and the `canSpendNow` gate.
+**Confirmed: Read from account row.** Add a `recordChatLlmUsage(accountId, userId, threadId, usage)` convenience method to `UsageBillingRepository` that:
+1. Reads the billing account row to get `activePlanId`, `softCapMicrousd`, `hardCapMicrousd`, `includedCreditMicrousd`
+2. Gets or creates the open period via `getOrCreateOpenPeriod(...)`
+3. Gets rate card items from `this.rateCardItems` (constructor-provided)
+4. Builds `InsertUsageEvent[]` from the aggregate token counts
+5. Calls `recordAndRateUsageBatch(events, periodId, accountId, rateCardItems)`
 
-**Option B (raw events):** Use `recordUsageEvents(...)` — insert raw events only. Costs are picked up by the next period reconciliation. Simpler but costs don't appear immediately.
+No plan config needs to be threaded from the API layer — the account row already stores everything needed.
 
-**Recommendation: Option A** for correctness. Users should see their chat costs reflected immediately, and the `canSpendNow` gate should account for recent chat spend. However, Option B is acceptable as a first slice if Option A requires too much plumbing (period/rateCard resolution).
+### D4. Session/agent context: `threadId` → `sessionId`, `sourceType: 'chat_llm'`
 
-### D3. Account/period resolution
+**Confirmed.** Use `threadId` in the `sessionId` field for useful grouping in billing queries. Set `sourceType: 'chat_llm'` (generic, works for Guided Setup and future Chat With AI). `agentId` and `skillId` are `null` — chat is not agent-scoped.
 
-The chat route already resolves the billing account for the gate check. To record usage with rating, we also need:
-- An open billing period (`periodId`)
-- Rate card items
-- Plan-level parameters (included credit, caps)
+### D5. Error handling: fail-open (fire-and-forget)
 
-**Options:**
-- (a) Resolve everything in the route handler, pass to a recording helper
-- (b) Add a convenience method to `UsageBillingRepository` that encapsulates the full flow: `recordChatLlmUsage(accountId, userId, llmUsageData)`
-- (c) Create a lightweight `ChatBillingService` that wraps the repo with plan config
+**Confirmed: Fail-open.** Consistent with the worker's `void this.doRecordLlmUsage(input).catch(...)`. Billing recording failures must not block the chat response. The gate already confirmed the user can spend.
 
-**Recommendation: (b)** — a single repo method that takes the user/account context and LLM usage data, and handles period creation, rate card lookup, event construction, and recording. This keeps the chat route simple and follows the existing pattern of keeping billing logic in the repo.
+### D6. No explicit `enabled` toggle needed
 
-### D4. Session/agent context for usage events
-
-The worker's usage events include `agentId`, `sessionId`, and `skillId`. The chat has none of these — it's a per-message LLM call, not an agent runtime.
-
-**Options:**
-- (a) Leave `agentId`, `sessionId`, `skillId` as `null` — chat is not agent-scoped
-- (b) Use the chat `threadId` as a `sessionId`-like identifier
-- (c) Create a synthetic "chat agent" identity
-
-**Recommendation: (b).** Use `threadId` in the `sessionId` field and set `sourceType: 'chat_llm'`. This gives useful grouping in billing queries without inventing fake agent identities.
-
-### D5. Error handling: fail-open or fail-closed
-
-If the billing recording fails (DB error, network issue), should the chat response still be delivered?
-
-**Option A (fail-open):** Log the error, deliver the chat response. The user gets their agent created; billing catches up later.
-
-**Option B (fail-closed):** Return an error to the user. No free LLM consumption.
-
-**Recommendation: Option A.** Consistent with the worker's fire-and-forget pattern (`void this.doRecordLlmUsage(input).catch(...)`). Billing infra issues should not block the user from creating an agent they have credit for. The gate already confirmed they can spend.
+**Confirmed: No toggle.** The `usageBillingRepo` parameter being present is sufficient signal. The worker's `enabled` flag exists because `UsageBillingService` is a long-lived singleton that may be reconfigured; the chat's per-request model doesn't need this.
 
 ## Proposed Changes
 
@@ -129,81 +107,58 @@ If the billing recording fails (DB error, network issue), should the chat respon
 
 **Location:** `packages/db/src/usage-billing-repository.ts`
 
-Add a method that encapsulates the full chat LLM usage recording flow:
+Add a method that encapsulates the full chat LLM usage recording flow. It receives aggregate token counts (summed across all tool-loop calls for one message) and handles period creation, rate card lookup, event construction, and rating internally:
 
 ```typescript
 export interface ChatLlmUsageInput {
   accountId: string;
   userId: string;
   threadId: string;
+  /** Aggregate input tokens across all LLM calls in this message (non-cached). */
+  inputTokens: number;
+  /** Aggregate output tokens across all LLM calls in this message. */
+  outputTokens: number;
+  /** Aggregate thinking/reasoning tokens. */
+  thinkingTokens: number;
+  /** Aggregate cached input tokens (billed at lower rate). */
+  cachedInputTokens: number;
+  /** Provider used (from the first call; all calls in a message use the same provider). */
   provider: string;
+  /** Model used (from the first call). */
   model: string;
-  responseId?: string | null;
-  inputTokens?: number | null;
-  outputTokens?: number | null;
-  thinkingTokens?: number | null;
-  cachedInputTokens?: number | null;
-  tokensUsed?: number;
-  phase: string; // 'chat_message' | 'chat_action_result'
-  turnIndex?: number;
 }
 
 async recordChatLlmUsage(input: ChatLlmUsageInput): Promise<void> {
-  // 1. Get or create open period for the account
-  //    - Resolve user's planId from users table
-  //    - Get plan defaults (included credit, caps) from ??? (see D6)
-  //    - Get or create open period via getOrCreateOpenPeriod(...)
+  // 1. Read billing account row to get plan context
+  //    SELECT activePlanId, softCapMicrousd, hardCapMicrousd, includedCreditMicrousd
+  //    FROM billingAccounts WHERE id = input.accountId
+  //    If no account → return (no-op)
   //
-  // 2. Get rate card items
-  //    - Use this.rateCardItems (constructor-provided defaults)
+  // 2. Get or create open period
+  //    const period = await this.getOrCreateOpenPeriod(
+  //      accountId, new Date(), account.activePlanId,
+  //      rateCardId, account.includedCreditMicrousd,
+  //      account.softCapMicrousd, account.hardCapMicrousd,
+  //    );
   //
-  // 3. Build InsertUsageEvent[] from input (same pattern as worker's doRecordLlmUsage)
-  //    - llm.input_tokens, llm.output_tokens, llm.cached_input_tokens
-  //    - sourceType: 'chat_llm', sessionId: input.threadId
+  // 3. Get rate card items from this.rateCardItems
   //
-  // 4. Call recordAndRateUsageBatch(events, periodId, accountId, rateCardItems)
+  // 4. Build InsertUsageEvent[] (same pattern as worker's doRecordLlmUsage):
+  //    - llm.input_tokens  (meterKey) for input.inputTokens
+  //    - llm.output_tokens (meterKey) for input.outputTokens
+  //    - llm.cached_input_tokens (meterKey) for input.cachedInputTokens
+  //    - sourceType: 'chat_llm'
+  //    - sessionId: input.threadId
+  //    - agentId: null, skillId: null
+  //    - idempotencyKey: `chat_llm_${threadId}_${messageId}`
+  //
+  // 5. Call recordAndRateUsageBatch(events, period.id, accountId, rateCardItems)
 }
 ```
 
-> **Open question (D6):** Where does plan config come from? The repo doesn't have access to plan definitions. Options:
-> - (a) Pass plan defaults as constructor args to `UsageBillingRepository` (already partially done — `rateCardItems` are passed)
-> - (b) Accept plan defaults as parameters to `recordChatLlmUsage`
-> - (c) The repo queries the `billingAccounts` table for the account's current caps/planId (they're already stored there)
->
-> **Recommendation: (c).** The `billingAccounts` row already stores `activePlanId`, `softCapMicrousd`, `hardCapMicrousd`, and `includedCreditMicrousd`. The `getOrCreateOpenPeriod` method already reads these. The repo method can read the account row to get plan context.
+Plan context (included credit, caps, planId) is read from the `billingAccounts` row — the account already stores these values. No plan config needs to be threaded from the API layer.
 
-### 2. Record usage after each chat LLM invocation
-
-**Location:** `apps/api/src/routes/chat.ts` — `invokeOnboardingLlm()`
-
-After each successful `callLlmProvider()` call (in the tool loop and the final call), record usage:
-
-```typescript
-// After a successful callLlmProvider() in invokeOnboardingLlm():
-if (result.ok && usageBillingRepo && accountId) {
-  void usageBillingRepo.recordChatLlmUsage({
-    accountId,
-    userId,
-    threadId: threadMetadata?.threadId, // need to thread through
-    provider: result.data.provider,
-    model: result.data.model,
-    responseId: result.data.responseId,
-    inputTokens: result.data.inputTokens,
-    outputTokens: result.data.outputTokens,
-    thinkingTokens: result.data.thinkingTokens,
-    cachedInputTokens: result.data.cachedInputTokens,
-    tokensUsed: result.data.tokensUsed,
-    phase: 'chat_message',
-    turnIndex: round,
-  }).catch((err) => {
-    request.log?.warn?.({ err }, 'Failed to record chat LLM usage');
-  });
-}
-```
-
-Fire-and-forget (don't await) — consistent with the worker pattern. The chat response is not delayed by billing recording.
-
-### 3. Thread `accountId` and `threadId` through `invokeOnboardingLlm()`
+### 2. Thread `accountId` and `threadId` through `invokeOnboardingLlm()`
 
 **Location:** `apps/api/src/routes/chat.ts`
 
@@ -211,31 +166,54 @@ Fire-and-forget (don't await) — consistent with the worker pattern. The chat r
 
 Add `accountId?: string` and `threadId: string` parameters to `invokeOnboardingLlm()`.
 
-### 4. Aggregate recording (if D1 Option B is chosen)
+### 3. Accumulate and record usage once per message
 
-Instead of recording after each individual LLM call, accumulate token counts in a local accumulator and record once after `invokeOnboardingLlm()` completes (before returning the response). This reduces DB writes from up to 6 per message to 1.
+**Location:** `apps/api/src/routes/chat.ts` — `invokeOnboardingLlm()`
+
+Accumulate token counts across all `callLlmProvider()` calls in the tool-calling loop (up to 5 rounds + 1 final call), then record a single aggregate batch after the loop completes — before returning the response. This produces one DB transaction per message instead of up to 6.
 
 ```typescript
-const llmUsageAccumulator = { inputTokens: 0, outputTokens: 0, thinkingTokens: 0, cachedInputTokens: 0, tokensUsed: 0 };
+// At the top of invokeOnboardingLlm():
+const usageAcc = { inputTokens: 0, outputTokens: 0, thinkingTokens: 0, cachedInputTokens: 0 };
+let provider = '';
+let model = '';
 
-// In the tool loop, after each successful call:
-llmUsageAccumulator.inputTokens += result.data.inputTokens ?? 0;
-llmUsageAccumulator.outputTokens += result.data.outputTokens ?? 0;
-// ... etc.
+// In the tool loop, after each successful callLlmProvider():
+if (result.ok) {
+  usageAcc.inputTokens += result.data.inputTokens ?? 0;
+  usageAcc.outputTokens += result.data.outputTokens ?? 0;
+  usageAcc.thinkingTokens += result.data.thinkingTokens ?? 0;
+  usageAcc.cachedInputTokens += result.data.cachedInputTokens ?? 0;
+  if (!provider) provider = result.data.provider;
+  if (!model) model = result.data.model;
+}
 
-// After the loop (before return):
+// After the loop, before returning the response:
+const totalTokens = usageAcc.inputTokens + usageAcc.outputTokens;
 if (usageBillingRepo && accountId && totalTokens > 0) {
-  void usageBillingRepo.recordChatLlmUsage({ ...llmUsageAccumulator, phase: 'chat_message' }).catch(...);
+  void usageBillingRepo.recordChatLlmUsage({
+    accountId,
+    userId,
+    threadId,
+    provider,
+    model,
+    ...usageAcc,
+  }).catch((err) => {
+    // Log but don't block — fail-open (D5)
+    console.warn({ err, threadId }, 'Failed to record chat LLM usage');
+  });
 }
 ```
 
-### 5. Update billing enforcement semantics documentation
+Fire-and-forget (don't await) — consistent with the worker pattern. The chat response is not delayed by billing recording.
+
+### 4. Update billing enforcement semantics documentation
 
 **Location:** `docs/tech/agents/billing-enforcement-semantics.md`
 
 Add a section documenting that Guided Setup chat LLM usage is metered per-message (not per-call), using the same rate card as agent runtime LLM usage. Document the `sourceType: 'chat_llm'` usage event type and the `sessionId: threadId` mapping.
 
-### 6. Tests
+### 5. Tests
 
 **Repository tests** (`packages/db/src/usage-billing-repository.test.ts`):
 - `recordChatLlmUsage` inserts usage events with correct meter keys
@@ -249,62 +227,35 @@ Add a section documenting that Guided Setup chat LLM usage is metered per-messag
 - Chat response is delivered even if usage recording fails (fail-open)
 - Aggregate recording accumulates across tool-calling rounds
 
-### 7. Expose chat usage in billing UI (optional, future slice)
+### 6. Expose chat usage in billing UI (optional, future slice)
 
 Once usage events are recorded with `sourceType: 'chat_llm'`, the billing dashboard can filter/display chat costs separately from agent runtime costs. This is a frontend-only change and out of scope for this plan.
 
 ## Implementation Order
 
-1. Add `recordChatLlmUsage` method to `UsageBillingRepository` (with unit tests)
+1. Add `recordChatLlmUsage` method to `UsageBillingRepository` (+ unit tests: items 1–5 below)
 2. Thread `accountId` and `threadId` through `invokeOnboardingLlm()`
-3. Add usage recording after LLM calls in `invokeOnboardingLlm()` (aggregate or per-call)
-4. Update `billing-enforcement-semantics.md`
-5. API tests for recording behavior
+3. Add aggregate usage accumulation + fire-and-forget recording in `invokeOnboardingLlm()`
+4. Update `docs/tech/agents/billing-enforcement-semantics.md`
+5. API tests for recording behavior (items 6–10 below)
 
 ## Verification
 
 ### Repository tests (`packages/db/src/usage-billing-repository.test.ts`)
 
-1. `recordChatLlmUsage` creates `llm.input_tokens`, `llm.output_tokens`, `llm.cached_input_tokens` events
+1. `recordChatLlmUsage` creates `llm.input_tokens`, `llm.output_tokens`, `llm.cached_input_tokens` events with `sourceType: 'chat_llm'` and `sessionId` set to `threadId`
 2. Events are rated against the rate card and debited from the period balance
 3. Idempotency key prevents duplicate charges on retry
 4. Missing account → no-op (no crash)
-5. No open period → period is created, then events recorded
+5. No open period → period is created from account row defaults, then events recorded
 
 ### API tests (`apps/api/src/routes/chat.test.ts`)
 
-6. Sending a message that results in LLM calls records usage events via `usageBillingRepo`
-7. Aggregate token counts match the sum of individual `callLlmProvider` results
-8. When `usageBillingRepo` is not provided (billing disabled), no crash
-9. When usage recording throws, chat response is still delivered
-10. Failed LLM calls (provider error) do NOT record usage
-
-## Clarifying Questions
-
-Before proceeding with implementation, the following decisions need confirmation:
-
-### Q1. Aggregate vs per-call recording (D1)
-
-Should we record usage once per message (aggregate all tool-loop calls), or once per individual LLM call? Aggregate is simpler and produces cleaner billing records. Per-call gives more granular cost attribution but adds DB overhead.
-
-### Q2. Full rating vs raw events (D2)
-
-Should we use `recordAndRateUsageBatch` (immediate rating + ledger) or `recordUsageEvents` (raw events, rated later by reconciliation)? Full rating is more correct but requires period/plan resolution plumbing.
-
-### Q3. Plan config source for the repo method (D6)
-
-How should the new `recordChatLlmUsage` repo method get plan-level parameters (included credit, caps)?
-- (a) Read from `billingAccounts` row (already stores `activePlanId`, caps)
-- (b) Pass as parameters from the API handler
-- (c) Store plan config in the repo at construction time
-
-### Q4. Billing enable/disable toggle
-
-The chat route currently passes `usageBillingRepo` (always constructed). Should we add an explicit `enabled` flag to skip recording when billing is disabled, mirroring the worker's `UsageBillingServiceConfig.enabled`? Or is the repo being `null`/`undefined` sufficient?
-
-### Q5. Scope: other chat surfaces
-
-This plan covers Guided Setup chat only. Should we also plan for metering general "Chat With AI" usage (future phase), or is Guided Setup the only chat surface that makes LLM calls today?
+6. Sending a message that results in LLM calls records a single aggregate usage batch via `usageBillingRepo`
+7. Aggregate token counts match the sum of individual `callLlmProvider` results across all tool-loop rounds
+8. When `usageBillingRepo` is not provided, no crash and chat proceeds normally
+9. When usage recording throws, chat response is still delivered (fail-open)
+10. Failed LLM calls (provider error) do NOT contribute to the aggregate
 
 ---
 
