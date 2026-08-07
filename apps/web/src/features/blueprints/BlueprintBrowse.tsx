@@ -22,6 +22,7 @@ const SORT_OPTIONS: Array<{ value: BlueprintBrowseParams['sort']; label: string 
   { value: 'popular', label: 'Popular' },
   { value: 'trending', label: 'Trending' },
   { value: 'newest', label: 'Newest' },
+  { value: 'ranking', label: 'Ranking' },
 ];
 
 const KIND_TABS: Array<{ value: BlueprintBrowseParams['kind']; label: string }> = [
@@ -50,6 +51,12 @@ export function BlueprintBrowse({
   const [sort, setSort] = useState<BlueprintBrowseParams['sort']>('popular');
   const [cursorStack, setCursorStack] = useState<Array<string | null>>([null]);
   const currentCursor = cursorStack[cursorStack.length - 1] ?? null;
+
+  // Show "Ranking" sort only when kind is 'agent' or when browsing All (which may include agents).
+  // Per Step 6a: Phase 1 proxy for trading context gating.
+  const visibleSortOptions = SORT_OPTIONS.filter(
+    (opt) => opt.value !== 'ranking' || kind === 'agent' || kind === undefined
+  );
 
   const meQuery = useQuery({
     queryKey: ['me'],
@@ -94,6 +101,10 @@ export function BlueprintBrowse({
 
   const handleKindChange = (newKind: BlueprintBrowseParams['kind']) => {
     setKind(newKind);
+    // Reset sort if switching away from a trading-relevant context while ranking
+    if (sort === 'ranking' && newKind !== 'agent' && newKind !== undefined) {
+      setSort('popular');
+    }
     setCursorStack([null]);
   };
 
@@ -119,7 +130,7 @@ export function BlueprintBrowse({
           ))}
         </div>
         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-          {SORT_OPTIONS.map((opt) => (
+          {visibleSortOptions.map((opt) => (
             <Button
               key={opt.value}
               variant={sort === opt.value ? 'primary' : 'secondary'}
@@ -157,10 +168,11 @@ export function BlueprintBrowse({
             alignItems: 'start',
           }}
         >
-          {items.map((bp) => (
+          {items.map((bp, idx) => (
             <BlueprintCard
               key={bp.id}
               blueprint={bp}
+              rank={idx + 1}
               onUse={onUseBlueprint}
               canLikeByPlan={canLikeByPlan}
               currentUserId={currentUserId}
@@ -212,12 +224,14 @@ export function BlueprintBrowse({
 
 function BlueprintCard({
   blueprint,
+  rank,
   onUse,
   canLikeByPlan,
   currentUserId,
   meLoading,
 }: {
   blueprint: BlueprintSummary;
+  rank?: number;
   onUse?: (blueprint: BlueprintSummary) => void;
   canLikeByPlan: boolean;
   currentUserId: string;
@@ -240,8 +254,25 @@ function BlueprintCard({
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {blueprint.name}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {blueprint.name}
+            </span>
+            {/* Rank badge — only for trading agents with a score */}
+            {isAgent && blueprint.strategyType && blueprint.performanceScore > 0 && rank !== undefined && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '1px 6px',
+                borderRadius: '10px',
+                background: 'var(--color-accent-subtle)',
+                fontSize: '11px',
+                fontWeight: '700',
+                color: 'var(--color-accent)',
+              }}>
+                #{rank}
+              </span>
+            )}
           </div>
           <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
             {blueprint.kind === 'agent' ? '🤖 Agent' : '📈 Bot'}
