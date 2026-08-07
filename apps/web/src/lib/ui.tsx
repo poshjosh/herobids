@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { CSSProperties, ReactNode } from 'react';
 import { useIntl } from 'react-intl';
 
@@ -490,7 +491,7 @@ export function Modal({
   placement?: 'center' | 'top';
   children: React.ReactNode;
 }) {
-  return (
+  return createPortal(
     <div
       onClick={closeOnBackdropClick ? onClose : undefined}
       style={{
@@ -546,7 +547,8 @@ export function Modal({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

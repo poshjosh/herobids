@@ -962,6 +962,235 @@ Reply-threading still takes priority. If you reply directly to an OpenAIdom Tele
     tags: ['docs', 'messaging', 'slash-commands', 'telegram'],
   },
   {
+    id: 'docs/reference/crypto-ecosystem-aspects',
+    title: 'Crypto Ecosystem: Categories & Concepts',
+    kind: 'markdown',
+    content: `# Crypto Ecosystem: Categories & Concepts
+
+A deeper breakdown of each layer in the crypto ecosystem. For a high-level overview, see [Crypto Ecosystem](/docs/reference/crypto-ecosystem).
+
+---
+
+## 1. Blockchain / Network
+
+This is where transactions actually happen.
+
+Think of a blockchain as the **country** where financial applications live. It executes smart contracts, stores assets, and processes transactions. Everything else is built on top.
+
+Examples: Base, Ethereum, Solana, Arbitrum.
+
+Without a blockchain, nothing else exists.
+
+---
+
+## 2. Centralized Exchanges (CEX)
+
+Think of these as the **traditional stock exchanges** of crypto — run by companies.
+
+Characteristics:
+
+- The company controls custody of your funds (unless using special self-custody products)
+- Order book matching engine for fast execution
+- Login with email and password
+- KYC (identity verification) usually required
+- Trade spot and derivatives (futures, options)
+
+Examples: Bybit, Binance, Coinbase, Kraken, OKX.
+
+OpenAIdom supports **[Bybit](/docs/trading-venues/bybit)** for both spot and futures trading.
+
+---
+
+## 3. Decentralized Exchanges (DEX)
+
+Instead of a company matching buyers and sellers, smart contracts perform the trades automatically on-chain.
+
+Characteristics:
+
+- You keep custody of your funds in your own wallet
+- No account or KYC required
+- Runs on a blockchain (on-chain)
+- Usually for token swaps (spot trading)
+
+Examples: Uniswap (Ethereum), Raydium (Solana), Orca (Solana), PancakeSwap (BNB Chain).
+
+"DEX" is a **category**, not one specific platform. There are hundreds of DEXs across different blockchains.
+
+---
+
+## 4. Perpetual Futures (Perps)
+
+"Perps" aren't a different technology — they're a different **type of trading product**.
+
+Instead of buying an asset, you trade leveraged contracts that track its price. Key features:
+
+- **Long or short** — Profit from prices going up or down
+- **Leverage** — Trade with 2x, 5x, 10x, or more exposure
+- **No expiry** — Hold positions indefinitely (unlike traditional futures)
+
+Perps exist on both CEXs and DEXs:
+
+| Type | Examples |
+|---|---|
+| CEX Perps | Bybit Futures, Binance Futures |
+| DEX Perps | Hyperliquid, dYdX, GMX |
+
+OpenAIdom supports **[Hyperliquid](/docs/trading-venues/hyperliquid)** for decentralized perpetual futures, and Bybit for centralized futures.
+
+Hyperliquid is **not just a DEX** — it specializes in perpetual futures trading on its own high-performance chain.
+
+---
+
+## 5. DEX Aggregators
+
+Aggregators don't execute trades themselves. Instead, they ask:
+
+> "Which DEX currently offers the best price?"
+
+Then they route your order there automatically.
+
+Think of them like comparison sites:
+- Google Flights → airlines
+- Booking.com → hotels
+- Jupiter → Solana DEXs
+- 1inch → Ethereum / EVM DEXs
+
+Examples:
+
+| Aggregator | Ecosystem | OpenAIdom |
+|---|---|---|
+| [1inch](/docs/trading-venues/1inch) | EVM chains (Ethereum, Base, Arbitrum, etc.) | Supported |
+| [Jupiter](/docs/trading-venues/jupiter) | Solana | Supported |
+
+---
+
+## One important distinction
+
+Many people confuse **DEX** and **Aggregator**.
+
+Imagine you want to buy a token:
+
+- A **DEX** is like a single supermarket — you go there and buy at whatever price they offer.
+- An **aggregator** drives around all the supermarkets, finds the cheapest price, and buys there for you automatically.
+
+So:
+- **Hyperliquid** is a venue where you trade perpetual futures.
+- **Bybit** is a centralized exchange for spot and derivatives.
+- **Jupiter** doesn't sell tokens — it finds the best Solana DEX to execute your swap.
+- **1inch** does the same across Ethereum-compatible networks.
+- **Base** is the blockchain those applications run on.
+
+---
+
+## See also
+
+- [Crypto Ecosystem](/docs/reference/crypto-ecosystem) — High-level overview with the full picture.
+- [Trading Venues](/docs/trading-venues) — OpenAIdom's supported venues and how to pick one.
+- [Glossary](/docs/reference/glossary) — Platform terminology reference.`,
+    headings: ['1. Blockchain / Network', '2. Centralized Exchanges (CEX)', '3. Decentralized Exchanges (DEX)', '4. Perpetual Futures (Perps)', '5. DEX Aggregators', 'One important distinction', 'See also'],
+    tags: ['crypto-ecosystem-aspects', 'docs', 'reference'],
+  },
+  {
+    id: 'docs/reference/crypto-ecosystem',
+    title: 'Crypto Ecosystem',
+    kind: 'markdown',
+    content: `# Crypto Ecosystem
+
+The crypto ecosystem is made up of layers — blockchains, exchanges, and aggregators — each doing a different job. Understanding these layers helps you pick the right venues for your agents to trade on.
+
+## Two worlds: CeFi and DeFi
+
+Crypto finance runs in two parallel systems:
+
+- **Centralized finance (CeFi)** — Companies own the trading infrastructure. You create an account, they hold your funds, and you trade on their platform.
+- **Decentralized finance (DeFi)** — Smart contracts on blockchains provide the infrastructure. You keep custody of your funds in your own wallet.
+
+Most traders use both.
+
+## The layers
+
+\`\`\`
+                         CRYPTO ECOSYSTEM
+
+                    ┌────────────────────────┐
+                    │      BLOCKCHAINS       │
+                    │  Ethereum, Solana      │
+                    │  Base, Arbitrum, etc.  │
+                    └───────────┬────────────┘
+                                │
+               ┌────────────────┴────────────────┐
+               │                                 │
+         CENTRALIZED (CeFi)                 DECENTRALIZED (DeFi)
+               │                                 │
+         ┌─────┴─────┐                   ┌───────┴────────┐
+         │           │                   │                │
+      Spot CEX    Perps CEX          Spot DEX       Perps DEX
+         │           │                   │                │
+      Bybit      Bybit Futures      Uniswap        Hyperliquid
+      Binance    Binance Futures    Raydium
+      Coinbase                     PancakeSwap
+                                          │
+                                          │
+                              ┌───────────┴───────────┐
+                              │    DEX Aggregators    │
+                              │                       │
+                       1inch (EVM chains)     Jupiter (Solana)
+\`\`\`
+
+### Blockchain
+
+The network where everything runs. Think of it as the roads — applications are built on top. Examples: Base, Ethereum, Solana.
+
+### Centralized Exchange (CEX)
+
+A company-run trading platform. You create an account, deposit funds, and trade on their orderbook. Most require identity verification (KYC). Example: Bybit.
+
+### Decentralized Exchange (DEX)
+
+A smart-contract-based exchange on a blockchain. No account needed — you trade directly from your wallet. Example: Uniswap.
+
+### Perpetual Futures (Perps)
+
+Not a venue type, but a **trading product**. Perps let you trade with leverage (2x, 5x, 10x or more), go long or short, and hold positions indefinitely with no expiry. Available on both CEXs (Bybit Futures) and DEXs (Hyperliquid).
+
+### DEX Aggregator
+
+A service that scans multiple DEXs to find the best price for your trade, then routes your order there automatically. Think Google Maps for exchanges. Examples: 1inch (EVM chains), Jupiter (Solana).
+
+## Where OpenAIdom fits
+
+OpenAIdom connects your agents to venues across these layers:
+
+| Venue | Category | What you can do |
+|---|---|---|
+| [Hyperliquid](/docs/trading-venues/hyperliquid) | Perpetual DEX | Leveraged long/short trades |
+| [Bybit](/docs/trading-venues/bybit) | Centralized Exchange (CEX) | Spot and futures trading |
+| [Jupiter](/docs/trading-venues/jupiter) | DEX Aggregator (Solana) | Token swaps at best prices |
+| [1inch](/docs/trading-venues/1inch) | DEX Aggregator (EVM) | Multi-chain token swaps |
+
+## Key insight
+
+These aren't competing products — they're different layers:
+
+- **Base** provides the **roads** (the blockchain).
+- **DEXs** are the **shops** on those roads.
+- **1inch** and **Jupiter** are **Google Maps** for those shops — they find the best route.
+- **Bybit** is a **private shopping mall** with its own internal infrastructure (a centralized exchange).
+- **Hyperliquid** is a specialized decentralized marketplace for **perpetual futures**.
+
+The only direct overlaps:
+- **Bybit** and **Hyperliquid** both offer perpetual futures, but one is centralized and the other decentralized.
+- **1inch** and **Jupiter** are both DEX aggregators, but 1inch serves EVM chains (Ethereum, Base, Arbitrum…) while Jupiter serves Solana.
+
+## Learn more
+
+- [Crypto Ecosystem: Categories & Concepts](/docs/reference/crypto-ecosystem-aspects) — A deeper breakdown of each category with analogies.
+- [Trading Venues](/docs/trading-venues) — OpenAIdom's supported venues and when to use each.
+- [Glossary](/docs/reference/glossary) — Definitions of terms used across the platform.`,
+    headings: ['Two worlds: CeFi and DeFi', 'The layers', 'Blockchain', 'Centralized Exchange (CEX)', 'Decentralized Exchange (DEX)', 'Perpetual Futures (Perps)', 'DEX Aggregator', 'Where OpenAIdom fits', 'Key insight', 'Learn more'],
+    tags: ['crypto-ecosystem', 'docs', 'reference'],
+  },
+  {
     id: 'docs/reference/glossary',
     title: 'Glossary',
     kind: 'markdown',
@@ -1120,7 +1349,15 @@ The system that powers a bot behind the scenes. Handles planning, risk checks, e
 
 ## Venue Account
 
-Your connection to a specific exchange (e.g. a Hyperliquid API key, a Solana wallet). Each bot blueprint references one venue account.`,
+Your connection to a specific exchange (e.g. a Hyperliquid API key, a Solana wallet). Each bot blueprint references one venue account.
+
+---
+
+**See also:**
+
+- [Crypto Ecosystem](/docs/reference/crypto-ecosystem) — Overview of blockchains, exchanges, and aggregators.
+- [Crypto Ecosystem: Categories & Concepts](/docs/reference/crypto-ecosystem-aspects) — Deeper breakdown of each category.
+- [Trading Venues](/docs/trading-venues) — OpenAIdom's supported venues.`,
     headings: ['Actor', 'Agent', 'Agent Guardrail', 'Agent Mode Purity', 'Approval', 'Approval Code', 'Authorization Mode', 'Binding', 'Blueprint', 'Bot', 'Bot Run', 'BPS (Basis Point)', 'Connection', 'Credential', 'dailyLossLimit', 'Decision', 'Execution Mode', 'globalMaxDrawdownPct', 'maxDrawdown', 'maxDrawdownPct', 'maxOpenPositions', 'Platform Safety Alert', 'Reconciliation', 'Skill Preset', 'Slippage', 'stopLossCooldownMs', 'Strategic Intent', 'Strategy Preset', 'targetSize', 'Tick', 'Trading Instance', 'Venue Account'],
     tags: ['docs', 'glossary', 'reference'],
   },
@@ -1248,6 +1485,8 @@ Pick Hyperliquid if you want leverage, shorting, or perpetual futures trading. I
     content: `# Trading Venues
 
 We support four venues for your agents to trade on. Each one is suited to different needs — pick what fits your strategy.
+
+New to the crypto ecosystem? Start with [Crypto Ecosystem](/docs/reference/crypto-ecosystem) for an overview of blockchains, exchanges, and aggregators.
 
 ## Quick comparison
 
