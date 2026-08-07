@@ -219,6 +219,62 @@ If neither the plan nor the user sets a cap, the value is `null` and no enforcem
 
 Hard-cap-boundary enforcement is always active — it requires no config toggle. The `canSpendNow()` guard runs unconditionally before any paid LLM dispatch, regardless of cap configuration. Available credit is derived from the billing period's `balanceMicrousd` and `reservedMicrousd` columns, which are always present. When `hardCapMicrousd = null`, no credit limit is enforced (unlimited spending).
 
+## Chat LLM Metering
+
+Chat LLM usage is metered per user action — not per individual tool round inside the LLM loop. A single user message (or action-result resume) may trigger multiple `callLlmProvider()` invocations (tool-calling loop). All usage from those calls is **accumulated** and recorded as **one aggregate batch** per user action.
+
+### Source type
+
+Chat usage events use `sourceType: 'chat_llm'`, distinct from the worker runtime's `'llm_call'`. This keeps chat spend traceable separately from agent runtime spend, even though both flow through the same billing infrastructure.
+
+### Meter keys
+
+Chat metering reuses the **same rate card and meter keys** as worker LLM billing:
+
+| Meter key | Chat source field | Notes |
+|-----------|-------------------|-------|
+| `llm.input_tokens` | `inputTokens` (non-cached) | Prompt tokens not served from cache |
+| `llm.cached_input_tokens` | `cachedInputTokens` | Prompt tokens served from provider cache |
+| `llm.output_tokens` | `outputTokens` | Completion tokens |
+| `llm.reasoning_tokens` | `thinkingTokens` | Reasoning/thinking tokens (e.g. extended thinking models) |
+
+**Fallback**: when the provider only exposes a total token count (`tokensUsed`) without granular breakdowns, a single `llm.output_tokens` event is recorded with `metadata: { granularity: 'total_only' }`. This matches the worker's fallback behavior.
+
+### Idempotency anchors
+
+Billing idempotency is anchored on **persisted trigger ids** from the route layer, not on assistant message ids:
+
+| Chat phase | Idempotency anchor | Reason |
+|------------|-------------------|--------|
+| `message_send` | `userMsgId` | Persisted before the LLM call; stable across retries |
+| `action_result` | `actionId` | Already treated as the stable processed-action identity by the route |
+
+Assistant message ids (`assistantMsgId`) are **not** used for billing idempotency because they are created later and are not available inside the LLM invocation scope.
+
+### Fail-open
+
+Billing recording runs **fire-and-forget** after the LLM response is ready. If recording fails (e.g. DB transient error, rate-card resolution failure), the error is logged as a warning and the chat response is returned normally. Billing infrastructure failures **never block** the chat response.
+
+### Billing context resolution
+
+Chat metering needs to resolve several billing context values that are not directly available from the account row:
+
+- **Included credit** comes from **plan config** (`plans.<planId>.usage.includedCreditCents`), not from the `billing_accounts` table. The account row stores `activePlanId` but not `includedCreditMicrousd`.
+- **Fresh users with no billing account** get one **created lazily** on first billable chat usage. The billing gate already allows users without an account through; metering must handle the same case by calling `getOrCreateBillingAccountForUser(...)` before recording.
+- **Rate card items** are loaded from the DB via `getRateCardItems(rateCardId)` after `ensureActiveRateCard(defaultRateCardName)` runs. Constructor seed data is not sufficient for rating.
+- **Default caps** (soft/hard) are resolved from plan config when creating the billing account for a fresh user.
+
+This context resolution is owned by an API-local `ChatUsageBillingRecorder` — the repository layer does not have access to plan config or rate-card names.
+
+### Relationship to the billing gate
+
+Metering is **independent** of the billing gate:
+
+- The gate (`canSpendNow()`) runs **before** the LLM call and blocks when credit is exhausted.
+- Metering runs **after** a successful LLM call and records what was spent.
+
+Both are necessary: the gate prevents unbilled spend, and metering ensures that allowed spend is actually recorded.
+
 ## Testing
 
 - Unit: `scout-gating.test.ts` covers the pure decision logic
