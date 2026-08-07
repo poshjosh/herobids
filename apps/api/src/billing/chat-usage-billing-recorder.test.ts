@@ -334,9 +334,11 @@ describe('ChatUsageBillingRecorder', () => {
       },
     });
 
-    // The events array will be empty, so recordAndRateUsageBatch returns
-    // early with { totalChargeMicrousd: 0, status: 'active' }.
-    expect(mockRepo.recordAndRateUsageBatch).toHaveBeenCalledWith([], 'period-1', 'acct-1', []);
+    // All token fields are zero, so the recorder skips billing resolution
+    // entirely. No billing methods are called.
+    expect(mockRepo.getUserPlanId).not.toHaveBeenCalled();
+    expect(mockRepo.ensureActiveRateCard).not.toHaveBeenCalled();
+    expect(mockRepo.recordAndRateUsageBatch).not.toHaveBeenCalled();
   });
 
   // -----------------------------------------------------------------------

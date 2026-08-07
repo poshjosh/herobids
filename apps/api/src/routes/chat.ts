@@ -5,7 +5,7 @@ import { eq, and, asc, desc, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
 import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skills, skillRevisions, users, UsageBillingRepository } from '@herobids/db';
-import { ChatUsageBillingRecorder } from '../billing/chat-usage-billing-recorder.js';
+import { ChatUsageBillingRecorder, type AggregateChatLlmUsage } from '../billing/chat-usage-billing-recorder.js';
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml, ModelDefaults } from '@herobids/domain';
@@ -1028,16 +1028,6 @@ export async function executeChatAction(
     default:
       return JSON.stringify({ error: 'unknown_action', message: `Unknown action: ${toolCall.name}` });
   }
-}
-
-interface AggregateChatLlmUsage {
-  provider: string;
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  thinkingTokens: number;
-  cachedInputTokens: number;
-  tokensUsed: number;
 }
 
 interface LlmInvocationResult {

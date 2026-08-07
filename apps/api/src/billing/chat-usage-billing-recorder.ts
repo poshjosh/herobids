@@ -36,6 +36,9 @@ export class ChatUsageBillingRecorder {
   ) {}
 
   async record(input: RecordChatLlmUsageInput): Promise<void> {
+
+    // Early return when there is no billable usage to record
+    if (input.usage.tokensUsed <= 0) return;
     const planId = (await this.repo.getUserPlanId(input.userId)) ?? 'free';
 
     const planUsage = this.plans.plans[planId]?.usage ?? this.plans.plans['free']?.usage;

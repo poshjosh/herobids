@@ -336,14 +336,14 @@ Document that chat metering:
 
 ## Implementation Order
 
-1. [PENDING] Extend `LlmInvocationResult` with `billingUsage` and add accumulator logic inside `invokeOnboardingLlm()`.
-2. [PENDING] Ensure every `invokeOnboardingLlm()` return path carries the aggregate usage when present.
-3. [PENDING] Add `ChatUsageBillingRecorder` and its tests.
-4. [PENDING] Wire the recorder into `chatRoutes(...)`.
-5. [PENDING] Call the recorder from the message-send route using `userMsgId` as the anchor.
-6. [PENDING] Call the recorder from the action-result route using `actionId` as the anchor.
-7. [PENDING] Update billing semantics docs.
-8. [PENDING] Add / update route tests.
+1. [DONE] Extend `LlmInvocationResult` with `billingUsage` and add accumulator logic inside `invokeOnboardingLlm()`.
+2. [DONE] Ensure every `invokeOnboardingLlm()` return path carries the aggregate usage when present.
+3. [DONE] Add `ChatUsageBillingRecorder` and its tests.
+4. [DONE] Wire the recorder into `chatRoutes(...)`.
+5. [DONE] Call the recorder from the message-send route using `userMsgId` as the anchor.
+6. [DONE] Call the recorder from the action-result route using `actionId` as the anchor.
+7. [DONE] Update billing semantics docs.
+8. [DONE] Add / update route tests.
 
 ## Verification
 
