@@ -301,7 +301,6 @@ A proper skills filter can be added later as separate work.
 
 ### [Step 2] Create scoring function
 
-- **MEDIUM** — Agent lookup uses `.limit(1)` without ORDER BY. If author has multiple agents for the same blueprint, which agent is scored is non-deterministic. Suggested fix: add `ORDER BY agents.createdAt ASC` to pick oldest agent.
 - **MEDIUM** — `Number(p.realizedPnl ?? 0)` has dead `?? 0` fallback (field is `NOT NULL DEFAULT '0'`). Pre-existing pattern from `repositories.ts`, harmless but misleading.
 - **LOW** — `clamp` helper lacks JSDoc comment.
 - **LOW** — No transaction wrapping read→write (acceptable for periodically-recomputed score).
@@ -310,9 +309,7 @@ A proper skills filter can be added later as separate work.
 ### [Step 3] Trigger score computation
 
 - **MEDIUM** — Double recomputation on every agent start: `startAgent` fires recompute after `ensurePublishedBlueprintForAgent`, but the sync service already fires its own recompute in all 3 internal paths (create/unchanged/revised). Wasteful but idempotent.
-- **MEDIUM** — Inconsistent fire-and-forget error handling: `startAgent` uses `try/catch` wrapper but `stopAgent` and sync service use only `.catch()`. If scorer ever throws synchronously, stopAgent/sync could crash.
 - **MEDIUM** — Periodic cron rescans ALL published blueprints without the plan's "position activity since last update" filter. Acceptable for Phase 1.
-- **MEDIUM** — [Pre-existing] Non-deterministic agent selection in scorer (`.limit(1)` without `ORDER BY`).
 - **LOW** — Plan says "nightly" but cron interval is every 6 hours.
 - **LOW** — `console.error` used instead of structured logger in lifecycle/sync services.
 - **LOW** — Dead `?? 0` fallback on `realizedPnl` (NOT NULL column).
@@ -325,6 +322,5 @@ A proper skills filter can be added later as separate work.
 
 ### [Step 6] Frontend + skills filter
 
-- **MEDIUM** — Rank numbering is page-relative, not absolute (e.g., page 2 shows `#1`–`#20` instead of `#21`–`#40`). Acceptable for Phase 1; absolute ranking would require API support or page tracking.
 - **MEDIUM** — Rank badge hidden for `performanceScore === 0`, which excludes agents with no positions even when sorted by ranking. Every item has a position in a ranked list regardless of score.
 - **LOW** — `strategyType` gate may hide badge for non-trading agents. Phase 1 proxy is acceptable.
