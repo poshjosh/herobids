@@ -449,6 +449,13 @@
       "when": 1786083194668,
       "tag": "0063_add_blueprint_performance_score",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1786108951349,
+      "tag": "0064_drop_billing_usage_events_session_fk",
+      "breakpoints": true
     }
   ]
 }

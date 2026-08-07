@@ -1420,13 +1420,14 @@ export async function chatRoutes(
       );
 
       // Record chat LLM usage for billing (fire-and-forget)
-      if (chatUsageBillingRecorder && llmResponse.billingUsage?.tokensUsed > 0) {
+      const billingUsage = llmResponse.billingUsage;
+      if (chatUsageBillingRecorder && billingUsage && billingUsage.tokensUsed > 0) {
         void chatUsageBillingRecorder.record({
           userId: request.userId,
           threadId: request.params.id,
           billingAnchorId: userMsgId,
           phase: 'message_send',
-          usage: llmResponse.billingUsage,
+          usage: billingUsage,
         }).catch((err) => {
           request.log.warn({ err, threadId: request.params.id, userMsgId }, 'Failed to record chat LLM usage');
         });
@@ -1622,13 +1623,14 @@ export async function chatRoutes(
       );
 
       // Record chat LLM usage for billing (fire-and-forget)
-      if (chatUsageBillingRecorder && llmResponse.billingUsage?.tokensUsed > 0) {
+      const billingUsage = llmResponse.billingUsage;
+      if (chatUsageBillingRecorder && billingUsage && billingUsage.tokensUsed > 0) {
         void chatUsageBillingRecorder.record({
           userId: request.userId,
           threadId: request.params.id,
           billingAnchorId: actionId,
           phase: 'action_result',
-          usage: llmResponse.billingUsage,
+          usage: billingUsage,
         }).catch((err) => {
           request.log.warn({ err, threadId: request.params.id, actionId }, 'Failed to record chat LLM usage');
         });

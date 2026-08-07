@@ -45,6 +45,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
     loadThread,
     startOver,
     clearBillingBlocked,
+    clearSavedThreadId,
   } = useGuidedSetup({ skipAutoInit: isOauthReturn });
 
   const handledOauthReturnRef = useRef(false);
@@ -125,6 +126,36 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
 
     return () => { cancelled = true; };
   }, []);
+
+  // When an agent is created via the chat (confirm action with agentId in
+  // props), notify the parent and clear the saved thread so returning later
+  // starts fresh instead of re-displaying a completed thread.
+  const agentCreatedRef = useRef(false);
+  useEffect(() => {
+    if (agentCreatedRef.current || !onAgentCreated) return;
+    for (const msg of messages) {
+      if (msg.actions) {
+        for (const action of msg.actions) {
+          if (action.type === 'confirm' && action.props && typeof action.props.agentId === 'string') {
+            agentCreatedRef.current = true;
+            clearSavedThreadId();
+            onAgentCreated(action.props.agentId);
+            return;
+          }
+        }
+      }
+    }
+  }, [messages, onAgentCreated, clearSavedThreadId]);
+
+  // When loading a thread that was already completed (agent created in a prior
+  // session), clear the saved thread and redirect so the user doesn't see a
+  // stale completed conversation.
+  useEffect(() => {
+    if (thread?.metadata?.createdAgentId && onAgentCreated) {
+      clearSavedThreadId();
+      onAgentCreated(thread.metadata.createdAgentId);
+    }
+  }, [thread, onAgentCreated, clearSavedThreadId]);
 
   // Merge billing blocked sources: preflight check wins over runtime 402
   const effectiveBillingBlocked = preflightBillingBlocked ?? billingBlocked;

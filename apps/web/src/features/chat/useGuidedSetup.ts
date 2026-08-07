@@ -3,6 +3,32 @@ import type { ChatMessage, ChatThread } from '../../lib/api-client.js';
 import * as api from '../../lib/api-client.js';
 import type { BillingGateResult } from './canUseGuidedSetup.js';
 
+const GUIDED_SETUP_THREAD_KEY = 'guided-setup-thread-id-v1';
+
+function saveThreadId(threadId: string): void {
+  try {
+    window.sessionStorage.setItem(GUIDED_SETUP_THREAD_KEY, threadId);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function loadSavedThreadId(): string | null {
+  try {
+    return window.sessionStorage.getItem(GUIDED_SETUP_THREAD_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function clearSavedThreadId(): void {
+  try {
+    window.sessionStorage.removeItem(GUIDED_SETUP_THREAD_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 export interface GuidedSetupState {
   thread: ChatThread | null;
   messages: ChatMessage[];
@@ -30,6 +56,7 @@ export function useGuidedSetup({ skipAutoInit = false }: { skipAutoInit?: boolea
     try {
       const res = await api.chat.createThread();
       threadIdRef.current = res.thread.id;
+      saveThreadId(res.thread.id);
       setState({
         thread: res.thread as ChatThread,
         messages: [res.message],
@@ -53,6 +80,7 @@ export function useGuidedSetup({ skipAutoInit = false }: { skipAutoInit?: boolea
     try {
       const res = await api.chat.getThread(threadId);
       threadIdRef.current = res.thread.id;
+      saveThreadId(res.thread.id);
       setState({
         thread: res.thread,
         messages: res.messages,
@@ -164,6 +192,7 @@ export function useGuidedSetup({ skipAutoInit = false }: { skipAutoInit?: boolea
 
   /** Start over — create a new thread */
   const startOver = useCallback(() => {
+    clearSavedThreadId();
     threadIdRef.current = null;
     setState({
       thread: null,
@@ -183,14 +212,21 @@ export function useGuidedSetup({ skipAutoInit = false }: { skipAutoInit?: boolea
 
   // Auto-initialize thread on mount (skipped during OAuth resume — the
   // caller will restore the existing thread via loadThread instead).
+  // If a saved thread ID exists in sessionStorage, restore it instead of
+  // creating a new one so the user can resume after navigating away.
   const initializedRef = useRef(false);
   useEffect(() => {
     if (skipAutoInit) return;
     if (!initializedRef.current) {
       initializedRef.current = true;
-      initThread();
+      const savedId = loadSavedThreadId();
+      if (savedId) {
+        loadThread(savedId);
+      } else {
+        initThread();
+      }
     }
-  }, [skipAutoInit, initThread]);
+  }, [skipAutoInit, initThread, loadThread]);
 
   return {
     ...state,
@@ -199,5 +235,6 @@ export function useGuidedSetup({ skipAutoInit = false }: { skipAutoInit?: boolea
     startOver,
     loadThread,
     clearBillingBlocked,
+    clearSavedThreadId,
   };
 }

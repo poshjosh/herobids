@@ -36,6 +36,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Guided Setup thread persistence across navigation:** Navigating away from
+  `/agents/new` and returning no longer loses all chat progress. The active
+  thread ID is now persisted to `sessionStorage` and restored on mount so the
+  user resumes their existing conversation instead of starting over. The saved
+  thread is cleared when the user explicitly starts over or when an agent is
+  created (via confirm action or completed thread metadata). Frontend-only
+  change — the backend already persisted threads.
+
 - **Base discovery supply failure:** The t1inch swap scanner was returning zero Base candidates because GeckoTerminal free-tier rate limits silently dropped all Base pool requests. The paid CoinGecko on-chain tier restores Base supply, and the labeled rejection logging makes future provider degradations diagnosable. See `docs/features/2026/08/06/004-fix-base-discovery-fairness/001-plan.md`. Unauthenticated visitors can now start the agent creation journey from the landing page. A new `/try` page mimics the guided setup chat with static messages and typing animation (zero LLM cost), collects email, and sends a login link via the existing `POST /auth/send-login-link` endpoint. The login-link flow now supports a `next` query param, enabling post-auth redirect to `/agents/new`. The landing page has been redesigned with a background image, encouraging copy, and "Try it" CTA. Both the API and frontend enforce strict same-origin redirect sanitization. See `docs/features/2026/08/06/005-try-it-email-first-onboarding/001-plan.md`.
 
 - **Guided Setup billing gate:** The AI-assisted agent-creation chat now enforces a "no money, no form" billing gate. `canSpendNow` is checked before every paid LLM call in the chat (`POST /chat/threads/:id/messages`, `POST /chat/threads/:id/actions/:actionId`) and returns HTTP 402 with `billing.top_up_required` when the user has no available credit. The `create_agent` tool case also checks as defense-in-depth. Fresh users (no billing account) are never blocked. The frontend renders a top-up gate (status-based) with an "Add Credit" button linking to `/billing` and a "Use standard form" escape hatch. i18n strings added for en/ar/hi. See `docs/features/2026/08/06/003-guided-setup-billing-gate/001-plan.md`.

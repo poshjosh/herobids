@@ -1,7 +1,6 @@
 import { pgTable, text, timestamp, bigint, jsonb, index, unique } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 import { agents } from './agents.js';
-import { agentRuntimeSessions } from './agent-runtime-sessions.js';
 import { billingAccounts } from './billing-accounts.js';
 
 export const billingUsageEvents = pgTable(
@@ -16,8 +15,11 @@ export const billingUsageEvents = pgTable(
       .references(() => users.id),
     agentId: text('agent_id')
       .references(() => agents.id),
-    sessionId: text('session_id')
-      .references(() => agentRuntimeSessions.id),
+    // sessionId is a generic session identifier — it can reference an
+    // agent_runtime_session, a chat_thread, or any other session type.
+    // No FK constraint is applied here; referential integrity is
+    // enforced at the application level.
+    sessionId: text('session_id'),
     skillId: text('skill_id'),
     /** llm_call | agent_runtime | manual_adjustment */
     sourceType: text('source_type').notNull(),
