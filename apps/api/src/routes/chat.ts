@@ -1,17 +1,21 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, asc, desc, inArray } from 'drizzle-orm';
+import { eq, and, asc } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
-import { chatThreads, chatMessages, connections, agentConnections, agents, agentSkills, skills, skillRevisions, users, UsageBillingRepository } from '@herobids/db';
+import { chatThreads, chatMessages, connections, agentConnections, agents, skills, users, UsageBillingRepository } from '@herobids/db';
 import { ChatUsageBillingRecorder, type AggregateChatLlmUsage } from '../billing/chat-usage-billing-recorder.js';
 import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
-import type { AppConfig, ProvidersYaml, ModelDefaults } from '@herobids/domain';
-import { normalizePersistedAiModelConfig } from '@herobids/domain';
+import type { AppConfig, ProvidersYaml, ModelDefaults, PlansConfig } from '@herobids/domain';
+import { normalizePersistedAiModelConfig, type AgentRiskDefaultsConfig } from '@herobids/domain';
 import { errorPayload } from '../error-payload.js';
 import { listProviderRegistry } from '../providers/registry.js';
+import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
+import { resolveExecutionModeForSkills, validateConnectionRequirement, resolveAuthorizationMode } from './agent-config-helpers.js';
+import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
+import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from './agents.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -454,11 +458,13 @@ export function synthesizePrompt(goal: string | undefined, preset: string, capit
 
 /**
  * Map user-facing execution mode to canonical execution defaults.
- * 'test' → shadow mode, 'live' → live mode.
+ * 'test' → paper when no connections exist, shadow when they do.
+ * 'live' → live mode.
  */
-function mapExecutionMode(requestedMode: string | undefined): { mode: 'paper' | 'shadow' | 'live'; slippageBps: number } {
+function mapExecutionMode(requestedMode: string | undefined, hasConnections: boolean): { mode: 'paper' | 'shadow' | 'live'; slippageBps: number } {
   if (requestedMode === 'live') return { mode: 'live', slippageBps: 50 };
-  return { mode: 'shadow', slippageBps: 50 };
+  // 'test' (or omitted): paper when no connections, shadow when connections exist
+  return { mode: hasConnections ? 'shadow' : 'paper', slippageBps: 50 };
 }
 
 /**
@@ -485,112 +491,6 @@ function detectPresetFromContent(content: string): string | undefined {
     .filter((preset) => KNOWN_PRESETS.includes(preset));
   if (known.length !== 1) return undefined;
   return known[0];
-}
-
-/**
- * Build the full CreateAgentSchema payload from the guided setup input + server-side defaults.
- * Includes skillIds derived from skillPresetId, capabilityMode, and strategy identity.
- */
-export function buildCreateAgentPayload(
-  input: z.infer<typeof GuidedSetupCreateAgentInput>,
-  userId: string,
-): Record<string, unknown> {
-  const executionDefaults = mapExecutionMode(input.requestedExecutionMode);
-  const prompt = synthesizePrompt(input.goal, input.skillPresetId, input.capital);
-  const name = generateAgentName(input.skillPresetId);
-  const style = input.style ?? 'balanced';
-  const strategyPreset = input.strategyPreset ?? 'momentum';
-
-  // Use caller-provided skillIds for custom preset; derive from preset map otherwise
-  const skillIds = input.skillPresetId === 'custom' && input.skillIds?.length
-    ? input.skillIds
-    : resolveSkillPresetSkillIds(input.skillPresetId);
-
-  const connectionIds = input.selectedConnectionId ? [input.selectedConnectionId] : [];
-
-  // Determine if this preset is inherently trading-capable
-  const isTradingPreset = ['trading', 'direct-trading', 'trading-assistant'].includes(input.skillPresetId);
-
-  // Derive capabilityMode and hybridMode from filterTrades when provided for trading presets.
-  // When filterTrades is omitted, fall back to preset-derived defaults.
-  let capabilityMode: 'intelligence' | 'hybrid';
-  let hybridMode: 'mixed' | 'scanner_gated' | undefined;
-
-  if (isTradingPreset && input.filterTrades) {
-    switch (input.filterTrades) {
-      case 'off':
-        capabilityMode = 'intelligence';
-        break;
-      case 'mixed':
-        capabilityMode = 'hybrid';
-        hybridMode = 'mixed';
-        break;
-      case 'scanner_gated':
-        capabilityMode = 'hybrid';
-        hybridMode = 'scanner_gated';
-        break;
-      default:
-        capabilityMode = deriveCapabilityMode(input.skillPresetId);
-        break;
-    }
-  } else {
-    // Non-trading presets or filterTrades omitted: use preset-derived defaults
-    capabilityMode = deriveCapabilityMode(input.skillPresetId);
-    // Default hybridMode for trading presets when filterTrades is omitted
-    if (isTradingPreset) {
-      hybridMode = 'mixed'; // backward-compatible default
-    }
-  }
-
-  const isTradingCapable = capabilityMode === 'hybrid';
-
-  // Platform assessment (strategy review) — only meaningful for trading presets
-  // and only allowed when filterTrades is 'scanner_gated'.
-  let platformAssessment: { enabled: boolean; reviewIntervalMs: number } | undefined;
-  if (isTradingPreset && input.platformAssessmentEnabled && hybridMode === 'scanner_gated') {
-    platformAssessment = {
-      enabled: true,
-      reviewIntervalMs: (Number(input.platformAssessmentReviewIntervalHours) || 12) * 3_600_000,
-    };
-  }
-
-  const strategy = isTradingCapable ? {
-    type: strategyPreset,
-    decisionMode: 'hybrid',
-  } : null;
-
-  const payload: Record<string, unknown> = {
-    name,
-    prompt,
-    style,
-    skillPresetId: input.skillPresetId,
-    skillIds,
-    capabilityMode,
-    userId,
-  };
-
-  // Include trading-only fields for any trading preset, regardless of capabilityMode.
-  // strategy and hybridMode are only set when capabilityMode is hybrid.
-  if (isTradingPreset) {
-    payload.capital = input.capital;
-    payload.strategyPreset = strategyPreset;
-    payload.executionDefaults = executionDefaults;
-    if (isTradingCapable) {
-      payload.strategy = strategy;
-      payload.hybridMode = hybridMode;
-      if (platformAssessment) {
-        payload.platformAssessment = platformAssessment;
-      }
-    }
-  }
-
-  // Include the selected connection only when a compatible provider is actually
-  // required or chosen.
-  if (connectionIds.length > 0) {
-    payload.connectionIds = connectionIds;
-  }
-
-  return payload;
 }
 
 // ── Thread Operations ────────────────────────────────────────────────────────
@@ -680,6 +580,8 @@ export async function executeChatAction(
   _providersYaml: ProvidersYaml,
   usageBillingRepo?: UsageBillingRepository,
   modelDefaults?: ModelDefaults,
+  plansConfig?: PlansConfig,
+  agentRiskDefaults?: AgentRiskDefaultsConfig,
 ): Promise<string> {
   switch (toolCall.name) {
     case 'search_app_docs':
@@ -822,18 +724,156 @@ export async function executeChatAction(
         });
       }
 
-      const payload = buildCreateAgentPayload(parsed.data, userId);
+      // ── Translate chat input to canonical create params ─────────────────
+      const isTradingPreset = ['trading', 'direct-trading', 'trading-assistant'].includes(parsed.data.skillPresetId);
+      const skillIds = parsed.data.skillPresetId === 'custom' && parsed.data.skillIds?.length
+        ? parsed.data.skillIds
+        : resolveSkillPresetSkillIds(parsed.data.skillPresetId);
+      const prompt = synthesizePrompt(parsed.data.goal, parsed.data.skillPresetId, parsed.data.capital);
+      const name = generateAgentName(parsed.data.skillPresetId);
+      const style = parsed.data.style ?? 'balanced';
+      const strategyPreset = parsed.data.strategyPreset ?? (isTradingPreset ? 'momentum' : undefined);
+      const connectionIds = parsed.data.selectedConnectionId ? [parsed.data.selectedConnectionId] : [];
+      const hasConnections = connectionIds.length > 0;
 
-      // Resolve model configuration for the agent.
-      // Priority: user's saved AI defaults > operator modelDefaults > reject.
-      // When the user has configured models, the worker resolves them at runtime
-      // from user aiModelConfig (modelPolicy stays empty). When only operator
-      // defaults are available, stamp them into modelPolicy so the worker can start.
+      // Map user-facing execution mode to an initial canonical mode.
+      // 'test' → 'paper' when no connections exist, 'shadow' when connections are present.
+      // Then resolveExecutionModeForSkills validates and may adjust further.
+      const rawExecutionDefaults = isTradingPreset
+        ? mapExecutionMode(parsed.data.requestedExecutionMode, hasConnections)
+        : null;
+
+      // Resolve canonical execution mode for trading-capable agents
+      let executionDefaults: { mode: string; slippageBps: number } | null = rawExecutionDefaults;
+      if (isTradingPreset && rawExecutionDefaults) {
+        const executionMode = resolveExecutionModeForSkills({
+          skillIds,
+          submittedExecutionMode: rawExecutionDefaults.mode as 'paper' | 'shadow' | 'live' | undefined,
+          executionModeProvided: true,
+          currentExecutionMode: null,
+          hasConnections,
+        });
+        if (executionMode.issue) {
+          return JSON.stringify({
+            error: 'validation_error',
+            message: executionMode.issue.message,
+          });
+        }
+
+        const connectionIssue = validateConnectionRequirement(executionMode.value, hasConnections);
+        if (connectionIssue) {
+          return JSON.stringify({
+            error: 'validation_error',
+            message: connectionIssue.message,
+          });
+        }
+
+        // Persist the resolved canonical mode
+        executionDefaults = {
+          mode: executionMode.value ?? 'paper',
+          slippageBps: rawExecutionDefaults.slippageBps,
+        };
+      }
+
+      // Derive capabilityMode and hybridMode from filterTrades
+      let capabilityMode: string;
+      let hybridMode: string | undefined;
+      if (isTradingPreset && parsed.data.filterTrades) {
+        switch (parsed.data.filterTrades) {
+          case 'off':
+            capabilityMode = 'intelligence';
+            break;
+          case 'mixed':
+            capabilityMode = 'hybrid';
+            hybridMode = 'mixed';
+            break;
+          case 'scanner_gated':
+            capabilityMode = 'hybrid';
+            hybridMode = 'scanner_gated';
+            break;
+          default:
+            capabilityMode = deriveCapabilityMode(parsed.data.skillPresetId);
+            break;
+        }
+      } else {
+        if (isTradingPreset) {
+          // Align with form route: when filterTrades is not set, default to 'intelligence'
+          capabilityMode = 'intelligence';
+        } else {
+          capabilityMode = deriveCapabilityMode(parsed.data.skillPresetId);
+        }
+      }
+
+      // Platform assessment — only for scanner-gated trading agents
+      let platformAssessment: { enabled: boolean; reviewIntervalMs: number } | undefined;
+      if (isTradingPreset && parsed.data.platformAssessmentEnabled && hybridMode === 'scanner_gated') {
+        platformAssessment = {
+          enabled: true,
+          reviewIntervalMs: (Number(parsed.data.platformAssessmentReviewIntervalHours) || 12) * 3_600_000,
+        };
+      }
+
+      // Strategy identity for trading-capable agents
+      const strategy = capabilityMode === 'hybrid' && strategyPreset
+        ? { type: strategyPreset, decisionMode: 'hybrid' } as Record<string, unknown>
+        : null;
+
+      // ── Look up user plan and AI config ─────────────────────────────────
       const [userRow] = await db
-        .select({ aiModelConfig: users.aiModelConfig })
+        .select({ planId: users.planId, isAdmin: users.isAdmin, aiModelConfig: users.aiModelConfig })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
+      const userPlanId = userRow?.planId ?? 'free';
+      const isAdmin = userRow?.isAdmin ?? false;
+
+      // ── Plan enforcement: check agent-count limit ───────────────────────
+      if (plansConfig) {
+        const planCheck = await checkAgentLimit(db, plansConfig, userId, userPlanId, isAdmin);
+        if (!planCheck.ok) {
+          return JSON.stringify({
+            error: 'plan.limit_exceeded',
+            message: planCheck.error.message,
+            limit: planCheck.error.limit,
+            current: planCheck.error.current,
+          });
+        }
+      }
+
+      // ── Resolve authorization mode (matching form route pattern) ────────
+      const authorizationMode = resolveAuthorizationMode({
+        skillIds,
+        submittedAuthorizationMode: undefined,
+        authorizationModeProvided: false,
+      });
+
+      // ── Shared create-time normalization ────────────────────────────────
+      const createFields = await prepareAgentCreateFields({
+        name,
+        prompt,
+        skillIds,
+        style,
+        capabilityMode,
+        hybridMode,
+        strategyPreset,
+        capital: parsed.data.capital ?? null,
+        skillPresetId: parsed.data.skillPresetId,
+        connectionIds,
+        toolPolicy: null,
+        platformAssessment,
+        authorizationMode: authorizationMode.value,
+        executionDefaults: executionDefaults as import('@herobids/domain').ExecutionDefaults | null,
+        strategy: strategy as import('@herobids/domain').StrategyIdentity | null,
+        runtimePolicyOverrides: null,
+        db,
+        userId,
+        plansConfig,
+        userPlanId,
+        isAdmin,
+        agentRiskDefaults,
+      });
+
+      // ── Resolve model configuration ────────────────────────────────────
       const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
       const operatorDefaults = modelDefaults?.provider && modelDefaults?.lightModel && modelDefaults?.heavyModel
         ? { provider: modelDefaults.provider, lightModel: modelDefaults.lightModel, heavyModel: modelDefaults.heavyModel }
@@ -848,14 +888,29 @@ export async function executeChatAction(
 
       const agentId = uuid();
       const timestamp = now();
-      const connectionIds = (payload.connectionIds as string[]) ?? [];
+
+      // ── Validate and resolve skill assignments (before transaction) ───
+      const skillPlanPolicy = plansConfig
+        ? resolvePlanSkillEntitlements(plansConfig, userPlanId, isAdmin)
+        : { canViewMarketplaceSkills: true };
+      const assignmentResolution = await resolveSkillAssignmentsForUser(
+        db,
+        userId,
+        skillIds,
+        new Set(),
+        skillPlanPolicy.canViewMarketplaceSkills,
+      );
+      if (assignmentResolution.error) {
+        return JSON.stringify({
+          error: assignmentResolution.error.code,
+          message: assignmentResolution.error.message,
+          details: assignmentResolution.error.details,
+        });
+      }
 
       try {
         await db.transaction(async (tx) => {
           // Validate connection ownership and type compatibility.
-          // A trading agent must use a trading-venue connection (resolvedVenueAccountId
-          // is non-null); a non-trading agent must use a non-trading connection.
-          const isTradingPreset = ['trading', 'direct-trading', 'trading-assistant'].includes(parsed.data.skillPresetId);
           if (connectionIds.length > 0) {
             const connRows = await tx
               .select({
@@ -891,35 +946,25 @@ export async function executeChatAction(
             }
           }
 
-          // Insert the agent with all required fields
-          const unifiedConfig: Record<string, unknown> = {
-            capabilityMode: payload.capabilityMode,
-          };
-          if (payload.hybridMode) {
-            unifiedConfig.hybridMode = payload.hybridMode;
-          }
-          if (payload.platformAssessment) {
-            unifiedConfig.platformAssessment = payload.platformAssessment;
-          }
-
           await tx.insert(agents).values({
             id: agentId,
             userId,
-            name: payload.name as string,
-            prompt: payload.prompt as string,
+            name,
+            prompt,
             status: 'stopped',
-            style: payload.style as 'careful' | 'balanced' | 'bold' | null,
-            capital: (payload.capital as string | undefined) ?? null,
-            // Canonical strategy identity for trading agents
-            strategy: payload.strategy as Record<string, unknown> | null,
-            // Canonical execution defaults
-            executionDefaults: payload.executionDefaults as { mode: string; slippageBps: number } | null,
-            // Empty tool policy — the worker will populate from skillIds on start.
-            // Model policy comes from user AI settings (empty = runtime-resolved) or
-            // operator modelDefaults (explicit fallback).
-            toolPolicy: {},
+            style: style as 'careful' | 'balanced' | 'bold' | null,
+            capital: parsed.data.capital ?? null,
+            strategy: createFields.strategy as Record<string, unknown> | null,
+            executionDefaults: createFields.executionDefaults as { mode: string; slippageBps: number } | null,
+            toolPolicy: createFields.toolPolicy,
             modelPolicy: effectiveModelPolicy,
-            unifiedConfig: unifiedConfig as never,
+            unifiedConfig: createFields.unifiedConfig as never,
+            maxBots: createFields.maxBots,
+            risk: createFields.risk,
+            runtimePolicyOverrides: createFields.runtimePolicyOverrides,
+            notificationPolicy: createFields.notificationPolicy,
+            wakePreferences: null,
+            telegramChatId: null,
             createdAt: timestamp,
             updatedAt: timestamp,
           } as never);
@@ -937,50 +982,14 @@ export async function executeChatAction(
               updatedAt: timestamp,
             } as never);
           }
-
-          // Assign skills to the agent — resolve latest revision IDs
-          const skillIds = (payload.skillIds as string[]) ?? [];
-          if (skillIds.length > 0) {
-            const revisions = await tx
-              .select({
-                skillId: skillRevisions.skillId,
-                revisionId: skillRevisions.id,
-              })
-              .from(skillRevisions)
-              .where(inArray(skillRevisions.skillId, skillIds))
-              .orderBy(desc(skillRevisions.createdAt));
-
-            // Build a map of skillId → latest revisionId
-            const latestRevisionBySkillId = new Map<string, string>();
-            for (const row of revisions) {
-              if (!latestRevisionBySkillId.has(row.skillId)) {
-                latestRevisionBySkillId.set(row.skillId, row.revisionId);
-              }
-            }
-
-            for (let i = 0; i < skillIds.length; i++) {
-              const skillId = skillIds[i];
-              if (!skillId) continue;
-              const revisionId = latestRevisionBySkillId.get(skillId);
-              if (!revisionId) continue; // Skip skills without revisions
-
-              await tx.insert(agentSkills).values({
-                agentId,
-                skillId,
-                skillRevisionId: revisionId,
-                orderIndex: i,
-                assignedAt: timestamp,
-                assignedByUserId: userId,
-                assignmentSource: 'guided_setup',
-              } as never).onConflictDoNothing();
-            }
-          }
         });
 
+        // ── Sync skill assignments (after transaction, matching form route) ──
+        if (assignmentResolution.assignments && assignmentResolution.assignments.length > 0) {
+          await syncAgentSkillAssignments(db, agentId, userId, assignmentResolution.assignments, 'guided_setup');
+        }
+
         // Look up the agent's connected provider for the response summary.
-        // Only trading agents get venue/walletAddress fields — for non-trading
-        // agents the connection is just a linked service (e.g. Gmail).
-        const isTradingPreset = ['trading', 'direct-trading', 'trading-assistant'].includes(parsed.data.skillPresetId);
         let walletAddress: string | undefined;
         let venue: string | undefined;
         if (isTradingPreset) {
@@ -1005,13 +1014,12 @@ export async function executeChatAction(
         const result: Record<string, unknown> = {
           success: true,
           agentId,
-          name: payload.name,
+          name,
           preset: parsed.data.skillPresetId,
         };
-        // Only include trading-specific fields for trading presets.
         if (isTradingPreset) {
           result.displayExecutionMode = parsed.data.requestedExecutionMode ?? 'test';
-          result.executionDefaults = payload.executionDefaults;
+          result.executionDefaults = createFields.executionDefaults;
           result.capital = parsed.data.capital;
           if (venue) result.venue = venue;
           if (walletAddress) result.walletAddress = walletAddress;
@@ -1062,6 +1070,8 @@ export async function invokeOnboardingLlm(
   resumeEvent?: OnboardingResumeEvent,
   usageBillingRepo?: UsageBillingRepository,
   modelDefaults?: ModelDefaults,
+  plansConfig?: PlansConfig,
+  agentRiskDefaults?: AgentRiskDefaultsConfig,
 ): Promise<LlmInvocationResult> {
   const systemPrompt = buildSystemPrompt();
 
@@ -1162,7 +1172,7 @@ export async function invokeOnboardingLlm(
     // Process tool calls
     const toolResults: LlmMessage[] = [];
     for (const tc of toolCalls) {
-      const toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults);
+      const toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults);
       toolResults.push({
         role: 'tool',
         content: toolResult,
@@ -1282,6 +1292,8 @@ export async function chatRoutes(
   usageBillingRepo?: UsageBillingRepository,
   chatUsageBillingRecorder?: ChatUsageBillingRecorder,
   modelDefaults?: ModelDefaults,
+  plansConfig?: PlansConfig,
+  agentRiskDefaults?: AgentRiskDefaultsConfig,
 ): Promise<void> {
   /**
    * POST /chat/threads
@@ -1403,6 +1415,8 @@ export async function chatRoutes(
         undefined,
         usageBillingRepo,
         modelDefaults,
+        plansConfig,
+        agentRiskDefaults,
       );
 
       // Record chat LLM usage for billing (fire-and-forget)
@@ -1603,6 +1617,8 @@ export async function chatRoutes(
         resumeEvent,
         usageBillingRepo,
         modelDefaults,
+        plansConfig,
+        agentRiskDefaults,
       );
 
       // Record chat LLM usage for billing (fire-and-forget)

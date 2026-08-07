@@ -41,18 +41,17 @@ import {
   RiskPostureSchema,
   RUNTIME_POLICY_CEILINGS,
   StrategyIdentitySchema,
-  normalizePersistedAiModelConfig,
   TechnicalConfigSchema,
+  normalizePersistedAiModelConfig,
   validateExecutionCapability,
   venueTypeFromProvider,
   WakePreferencesSchema,
   type AgentRiskDefaultsConfig,
   type AgentCostEstimatesConfig,
-  agentStyleToPresetStyle,
-  applyPresetToAgent,
 } from '@herobids/domain';
-import { getPreset } from '@herobids/domain/config/presets-loader';
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
+import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
+import { resolveAgentStrategyPreset } from '../agents/strategy-preset-resolver.js';
 import { errorPayload } from '../error-payload.js';
 import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
 import { projectAgentToBlueprintPayload } from '../services/blueprint-projection.js';
@@ -297,77 +296,7 @@ function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: st
   };
 }
 
-/**
- * Resolve a style-based strategy preset into agent config fields.
- *
- * Returns the unifiedConfig patch and risk column overrides to persist.
- * Explicit user-supplied risk values take precedence over preset defaults.
- */
-function resolveAgentStrategyPreset(params: {
-  strategyPreset: string;
-  style: string | null | undefined;
-  explicitStopLossPct?: number | null;
-  explicitMaxPositionSizePct?: number | null;
-}): {
-  unifiedConfigPatch: Record<string, unknown>;
-  riskOverrides: { stopLossPct?: string | null; maxPositionSizePct?: string | null };
-} | null {
-  const { strategyPreset, style, explicitStopLossPct, explicitMaxPositionSizePct } = params;
-
-  const presetStyle = agentStyleToPresetStyle(style ?? 'balanced');
-  const preset = getPreset(strategyPreset, presetStyle);
-  if (!preset) {
-    return null;
-  }
-
-  const split = applyPresetToAgent(strategyPreset, preset, presetStyle, 'llm');
-
-  // Build unifiedConfig with technical, execution, and metadata
-  const unifiedConfigPatch: Record<string, unknown> = {
-    technical: split.technical,
-    execution: {
-      mode: split.execution.positionSizeMode === 'percent_equity' ? undefined : undefined,
-      positionSizeMode: (split.execution.positionSizeMode as 'fixed' | 'percent_equity' | undefined) ?? undefined,
-      fixedPositionSize: split.execution.fixedPositionSize,
-    },
-    metadata: {
-      strategyPreset,
-      strategyPresetName: preset.name,
-      strategyPresetStyle: presetStyle,
-      strategyPresetSource: 'agent-style',
-      presetBehaviorVersion: split.presetBehaviorVersion,
-    },
-  };
-
-  // Remove undefined keys from execution to keep config clean
-  const exec = unifiedConfigPatch['execution'] as Record<string, unknown>;
-  if (exec['positionSizeMode'] === undefined && exec['fixedPositionSize'] === undefined) {
-    delete unifiedConfigPatch['execution'];
-  } else {
-    // Clean individual undefined values
-    for (const key of Object.keys(exec)) {
-      if (exec[key] === undefined) delete exec[key];
-    }
-  }
-
-  // Risk overrides: explicit user values win, otherwise use preset defaults
-  const stopLossPct =
-    explicitStopLossPct !== undefined
-      ? (explicitStopLossPct != null ? String(explicitStopLossPct) : null)
-      : (split.risk.stopLossPct != null ? String(split.risk.stopLossPct) : undefined);
-
-  const maxPositionSizePct =
-    explicitMaxPositionSizePct !== undefined
-      ? (explicitMaxPositionSizePct != null ? String(explicitMaxPositionSizePct) : null)
-      : (split.risk.maxPositionSizePct != null ? String(split.risk.maxPositionSizePct) : undefined);
-
-  return {
-    unifiedConfigPatch,
-    riskOverrides: { stopLossPct, maxPositionSizePct },
-  };
-}
-
-type SkillAssignmentResolution = {
+export type SkillAssignmentResolution = {
   skillId: string;
   skillRevisionId: string;
 };
@@ -388,7 +317,7 @@ function isSkillSelectableForUser(input: {
   return input.canViewMarketplaceSkills && input.skill.publicationStatus === 'published' && input.skill.priceCents === 0;
 }
 
-async function resolveSkillAssignmentsForUser(
+export async function resolveSkillAssignmentsForUser(
   db: Database,
   userId: string,
   skillIds: string[],
@@ -474,11 +403,12 @@ async function resolveSkillAssignmentsForUser(
   return { assignments };
 }
 
-async function syncAgentSkillAssignments(
+export async function syncAgentSkillAssignments(
   db: Database,
   agentId: string,
   userId: string,
   assignments: SkillAssignmentResolution[],
+  assignmentSource: 'user_select' | 'guided_setup' = 'user_select',
 ): Promise<void> {
   const now = new Date();
   await db.transaction(async (tx) => {
@@ -508,7 +438,7 @@ async function syncAgentSkillAssignments(
         orderIndex,
         assignedAt: now,
         assignedByUserId: userId,
-        assignmentSource: 'user_select',
+        assignmentSource,
       }).onConflictDoUpdate({
         target: [agentSkills.agentId, agentSkills.skillId],
         set: {
@@ -516,7 +446,7 @@ async function syncAgentSkillAssignments(
           orderIndex,
           assignedAt: now,
           assignedByUserId: userId,
-          assignmentSource: 'user_select',
+          assignmentSource,
         },
       });
 
@@ -655,19 +585,6 @@ export async function agentRoutes(
     const agentId = crypto.randomUUID();
     const now = new Date();
 
-    // Auto-populate toolPolicy from skillIds so the broker enforces the right capability grants
-    // without requiring the caller to supply raw CapabilityGrant objects.
-    const basePolicy: Record<string, unknown> = { ...(parsed.data.toolPolicy ?? {}) };
-    if ((parsed.data.skillIds ?? []).includes('bot-management') && !basePolicy['manage_bot']) {
-      basePolicy['manage_bot'] = {
-        capability: 'manage_bot',
-        tier: 'brokered',
-        enabled: true,
-        limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 },
-      };
-    }
-    const effectiveToolPolicy = Object.keys(basePolicy).length > 0 ? basePolicy : null;
-
     const effectiveModelPolicy = mergeModelPolicy(parsed.data.modelPolicy ?? null, parsed.data);
     const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogDeps);
     if (modelIssues.length > 0) {
@@ -755,139 +672,41 @@ export async function agentRoutes(
       return reply.status(400).send({ error: assignmentResolution.error.code, details: assignmentResolution.error.details ?? [], message: assignmentResolution.error.message });
     }
 
-    // Resolve style-based strategy preset into agent config
-    let presetUnifiedConfig: Record<string, unknown> | null = null;
+    // ── Shared create-time normalization ──────────────────────────────────
+    const createFields = await prepareAgentCreateFields({
+      name: parsed.data.name,
+      prompt: parsed.data.prompt ?? '',
+      skillIds: parsed.data.skillIds ?? [],
+      style: parsed.data.style,
+      capabilityMode: parsed.data.capabilityMode,
+      hybridMode: parsed.data.hybridMode,
+      strategyPreset: parsed.data.strategyPreset,
+      capital: parsed.data.capital ?? null,
+      skillPresetId: parsed.data.skillPresetId ?? null,
+      connectionIds,
+      toolPolicy: parsed.data.toolPolicy ?? null,
+      platformAssessment: parsed.data.platformAssessment,
+      authorizationMode: authorizationMode.value,
+      maxBots: resolvedMaxBots,
+      technical: parsed.data.technical ?? null,
+      executionDefaults: parsed.data.executionDefaults ?? null,
+      risk: parsed.data.risk ?? null,
+      strategy: parsed.data.strategy,
+      executionVenue: parsed.data.executionVenue,
+      runtimePolicyOverrides: parsed.data.runtimePolicyOverrides ?? null,
+      notificationPolicy: parsed.data.notificationPolicy !== undefined
+        ? (parsed.data.notificationPolicy === null ? null : parsed.data.notificationPolicy)
+        : null,
+      db,
+      userId: request.userId,
+    });
 
-    if (parsed.data.strategyPreset) {
-      const resolution = resolveAgentStrategyPreset({
-        strategyPreset: parsed.data.strategyPreset,
-        style: parsed.data.style,
-      });
-
-      if (!resolution) {
-        return reply.status(400).send({
-          error: 'preset_not_found',
-          message: `Preset "${parsed.data.strategyPreset}" not found for the resolved style tier.`,
-        });
-      }
-
-      presetUnifiedConfig = resolution.unifiedConfigPatch;
-    }
-
-    // Build final unifiedConfig: explicit technical wins over preset technical
-    let finalUnifiedConfig: Record<string, unknown> | null = null;
-    if (parsed.data.technical) {
-      // Explicit technical provided — use it, but preserve preset metadata if present
-      finalUnifiedConfig = {
-        ...(presetUnifiedConfig ?? {}),
-        technical: parsed.data.technical,
-      };
-    } else if (presetUnifiedConfig) {
-      finalUnifiedConfig = { ...presetUnifiedConfig };
-    }
-
-    // 004: Stamp capabilityMode and hybridMode into unifiedConfig.
-    // Default hybridMode to 'mixed' when capabilityMode is 'hybrid' and hybridMode is not explicitly set.
+    // ── Build canonical JSONB fields ─────────────────────────────────────
+    // Resolve capabilityMode for strategy derivation
     const capabilityMode = parsed.data.capabilityMode ?? 'intelligence';
-    const hybridMode = parsed.data.hybridMode ?? (capabilityMode === 'hybrid' ? 'mixed' : undefined);
-
-    if (finalUnifiedConfig) {
-      finalUnifiedConfig.capabilityMode = capabilityMode;
-      if (hybridMode !== undefined) {
-        finalUnifiedConfig.hybridMode = hybridMode;
-      }
-    } else {
-      // No technical or preset — still need to persist capabilityMode/hybridMode
-      finalUnifiedConfig = {
-        capabilityMode,
-        ...(hybridMode !== undefined ? { hybridMode } : {}),
-      };
-    }
-
-    // 002: Stamp platformAssessment into unifiedConfig if provided.
-    if (parsed.data.platformAssessment) {
-      if (!finalUnifiedConfig) {
-        finalUnifiedConfig = {};
-      }
-      finalUnifiedConfig.platformAssessment = parsed.data.platformAssessment;
-    }
-
-    // 002: Stamp authorizationMode into unifiedConfig.
-    if (authorizationMode.value) {
-      if (!finalUnifiedConfig) {
-        finalUnifiedConfig = {};
-      }
-      finalUnifiedConfig.authorizationMode = authorizationMode.value;
-    }
-
-    // 002: Stamp skillPresetId into unifiedConfig.metadata.
-    const resolvedSkillPresetId = parsed.data.skillPresetId ?? null;
-    if (resolvedSkillPresetId) {
-      if (!finalUnifiedConfig) {
-        finalUnifiedConfig = {};
-      }
-      const meta = (finalUnifiedConfig['metadata'] as Record<string, unknown>) ?? {};
-      meta['skillPresetId'] = resolvedSkillPresetId;
-      finalUnifiedConfig['metadata'] = meta;
-    }
-
-    // Populate technical.filters from the agent's selected connections.
-    // The strategy preset defines HOW to trade (indicators, sizing) but not
-    // WHERE to trade — venue/venueType come from the connection's provider.
-    if (finalUnifiedConfig?.technical && connectionIds.length > 0) {
-      const providerRows = await db
-        .select({ provider: connections.provider })
-        .from(connections)
-        .where(and(inArray(connections.id, connectionIds), eq(connections.status, 'active')))
-        .limit(1);
-      if (providerRows.length > 0) {
-        const venueType = venueTypeFromProvider(providerRows[0]!.provider) ?? 'orderbook';
-        (finalUnifiedConfig.technical as Record<string, unknown>).filters = {
-          venue: providerRows[0]!.provider,
-          venueType,
-        };
-      }
-    }
-
-    // Apply TechnicalConfigSchema defaults so the stored JSONB is self-describing.
-    // Presets and explicit input may omit fields that have Zod defaults
-    // (scanBatchSize, autonomousExit, etc.). Parsing through the schema fills them in
-    // so that direct DB reads (e.g. smoke tests) see the complete config.
-    if (finalUnifiedConfig?.technical) {
-      try {
-        finalUnifiedConfig.technical = TechnicalConfigSchema.parse(finalUnifiedConfig.technical);
-      } catch {
-        // If parse fails, leave as-is — UnifiedAgentConfigSchema superRefine
-        // catches validation issues downstream.
-      }
-    }
-
-    // Stamp adaptive reasoning flags from user's AI model settings into runtimePolicyOverrides.
-    // If the user has set these preferences in Settings, they flow through to new agents
-    // so the worker can apply the correct ceiling/fixed behavior.
-    let stampedRuntimePolicyOverrides = parsed.data.runtimePolicyOverrides ?? null;
-    const [userRow] = await db.select({ aiModelConfig: users.aiModelConfig })
-      .from(users)
-      .where(eq(users.id, request.userId))
-      .limit(1);
-    const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
-    if (userAiConfig) {
-      const current = (stampedRuntimePolicyOverrides ?? {}) as Record<string, unknown>;
-      if (userAiConfig.adaptScoutReasoning !== undefined && current['adaptScoutReasoning'] === undefined) {
-        current['adaptScoutReasoning'] = userAiConfig.adaptScoutReasoning;
-      }
-      if (userAiConfig.adaptJudgeReasoning !== undefined && current['adaptJudgeReasoning'] === undefined) {
-        current['adaptJudgeReasoning'] = userAiConfig.adaptJudgeReasoning;
-      }
-      if (Object.keys(current).length > 0) {
-        stampedRuntimePolicyOverrides = (current as typeof parsed.data.runtimePolicyOverrides) ?? null;
-      }
-    }
 
     // Build risk JSONB (RiskPosture shape) from creator input.
-    // Only the canonical risk field is accepted — legacy flat fields have been removed.
-    // Null means "use operator default" — preserved per-field.
-    const riskJsonb: import('@herobids/domain').RiskPosture | null = parsed.data.risk ?? null;
+    const riskJsonb: import('@herobids/domain').RiskPosture | null = createFields.risk;
 
     // Build strategy JSONB (StrategyIdentity shape) — absent for non-trading agents.
     // Canonical strategy field takes precedence over legacy strategyPreset.
@@ -898,7 +717,6 @@ export async function agentRoutes(
       const isTradingAgent = capabilityMode === 'hybrid';
       if (isTradingAgent && parsed.data.strategyPreset) {
         const strategyType = parsed.data.strategyPreset;
-        // decisionMode: hybrid if capabilityMode is hybrid, otherwise derive from preset
         const decisionMode = capabilityMode === 'hybrid' ? 'hybrid' : undefined;
         strategyJsonb = {
           type: strategyType,
@@ -908,8 +726,7 @@ export async function agentRoutes(
     }
 
     // Build executionDefaults JSONB (ExecutionDefaults shape).
-    // Only the canonical executionDefaults field is accepted — legacy fields have been removed.
-    const executionDefaultsJsonb: import('@herobids/domain').ExecutionDefaults | null = parsed.data.executionDefaults ?? null;
+    const executionDefaultsJsonb: import('@herobids/domain').ExecutionDefaults | null = createFields.executionDefaults;
 
     const createTxResult = await db.transaction(async (tx): Promise<
       | { kind: 'ok' }
@@ -921,19 +738,17 @@ export async function agentRoutes(
           name: parsed.data.name,
           prompt: parsed.data.prompt ?? '',
           status: 'stopped',
-          toolPolicy: effectiveToolPolicy,
+          toolPolicy: createFields.toolPolicy,
           modelPolicy: effectiveModelPolicy,
           telegramChatId: parsed.data.telegramChatId?.trim() || null,
-          notificationPolicy: parsed.data.notificationPolicy !== undefined
-            ? (parsed.data.notificationPolicy === null ? null : resolveNotificationPolicy(parsed.data.notificationPolicy, null))
-            : null,
-          maxBots: resolvedMaxBots,
+          notificationPolicy: createFields.notificationPolicy,
+          maxBots: createFields.maxBots,
           tickIntervalMs: parsed.data.tickIntervalMs ?? null,
           capital: parsed.data.capital ?? null,
           style: parsed.data.style ?? null,
-          runtimePolicyOverrides: stampedRuntimePolicyOverrides ?? null,
+          runtimePolicyOverrides: createFields.runtimePolicyOverrides,
           openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
-          ...(finalUnifiedConfig ? { unifiedConfig: finalUnifiedConfig } : {}),
+          ...(createFields.unifiedConfig ? { unifiedConfig: createFields.unifiedConfig } : {}),
           wakePreferences: parsed.data.wakePreferences ?? null,
           // Canonical JSONB fields (replacing legacy flat columns)
           risk: riskJsonb,

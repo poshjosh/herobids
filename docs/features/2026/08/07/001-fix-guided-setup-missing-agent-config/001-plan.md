@@ -2,7 +2,7 @@
 
 **Feature:** Align Guided Setup agent creation with form create
 **Date:** 2026-08-07
-**Status: Draft**
+**Status: Complete**
 
 ## Summary
 
@@ -74,7 +74,7 @@ Parity means:
 
 ## Proposed Changes
 
-### 1. Extract shared create-time normalization helpers
+### 1. Extract shared create-time normalization helpers **[DONE]**
 
 **New modules:** under `apps/api/src/agents/`
 
@@ -94,7 +94,7 @@ These helpers should be invoked by both `POST /agents` and Guided Setup create. 
 **Update:** `apps/api/src/routes/chat.ts`
 - Replace ad hoc create-time logic with the same shared helpers.
 
-### 2. Bring Guided Setup onto shared execution-mode and connection semantics
+### 2. Bring Guided Setup onto shared execution-mode and connection semantics **[DONE]**
 
 Guided Setup should stop mapping the user-facing `test` choice directly to canonical `shadow` in isolation.
 
@@ -106,7 +106,7 @@ Instead, the chat path should translate the user-facing choice into the same can
 
 This shared path should be applied before persistence and before any confirmation summary is returned to the user.
 
-### 3. Bring Guided Setup onto shared strategy-preset materialization
+### 3. Bring Guided Setup onto shared strategy-preset materialization **[DONE]**
 
 **Update:** `apps/api/src/routes/chat.ts` — the `create_agent` case (~line 896)
 
@@ -127,7 +127,7 @@ const enrichedCreate = await prepareAgentCreateFields({
 
 Key rule: chat-determined values such as `capabilityMode`, `hybridMode`, and `platformAssessment` should flow through the same merge/normalization contract as form create, not a parallel merge scheme.
 
-### 4. Reuse form-create skill validation and assignment logic
+### 4. Reuse form-create skill validation and assignment logic **[DONE]**
 
 Guided Setup should stop doing direct latest-revision inserts without the form route's selectability checks.
 
@@ -142,13 +142,13 @@ const assignmentResolution = await resolveSkillAssignmentsForUser(...);
 await syncAgentSkillAssignments(...);
 ```
 
-### 5. Reuse form-create tool-policy derivation
+### 5. Reuse form-create tool-policy derivation **[DONE]**
 
 Guided Setup should stop persisting `{}` for `toolPolicy` unconditionally.
 
 Use the same helper that form create uses to derive tool grants from selected skills, including enabling `manage_bot` when `bot-management` is present.
 
-### 6. Reuse form-create plan enforcement and resolved defaults
+### 6. Reuse form-create plan enforcement and resolved defaults **[DONE]**
 
 Guided Setup should use the same create-time server-side derivations as form create for overlapping fields:
 - agent-count / plan-limit enforcement
@@ -161,13 +161,13 @@ Guided Setup should use the same create-time server-side derivations as form cre
 
 This logic should be shared, not copied.
 
-### 7. Keep `risk` create semantics aligned across both paths
+### 7. Keep `risk` create semantics aligned across both paths **[DONE]**
 
 Do **not** add chat-only preset risk overrides.
 
 If create-time risk semantics are meant to change, do it via the shared create helper and apply it to both form and chat. Otherwise, preserve the existing form-create behavior and leave `risk` sourced only from explicit creator input.
 
-### 8. Stamp metadata and filters through shared `unifiedConfig` enrichment
+### 8. Stamp metadata and filters through shared `unifiedConfig` enrichment **[DONE]**
 
 Ensure Guided Setup gets the same post-resolution enrichment as form create:
 - `skillPresetId` in metadata
@@ -196,6 +196,39 @@ This should remain one shared enrichment path, not a special-case patch in chat.
 - **Integration test:** Create paired chat/form agents with omitted optional fields and verify the persisted default/null state matches for `notificationPolicy`, `wakePreferences`, and `telegramChatId`.
 - **Manual smoke test:** Create trading agents via chat for each filterTrades option (off, mixed, scanner_gated), start them, and verify behavior matches form-created equivalents.
 - **Manual smoke test:** Create a Guided Setup agent with `bot-management` and confirm bot-management tools are actually available at runtime.
+
+## Outstanding Issues
+
+### From GAP fix review (2026-08-07)
+
+#### LOW
+1. **Comment incompleteness** — GAP-2 fix comment mentions `capabilityMode` change but is silent about removal of `hybridMode = 'mixed'`.
+2. **`deriveCapabilityMode` unreachable for trading presets in else-branch** — By design, but if `deriveCapabilityMode` is refactored, this branch would need updating.
+
+---
+
+### From code review of Item 4 implementation (2026-08-07)
+
+#### MEDIUM
+1. **Route-to-route import** — `chat.ts` imports `resolveSkillAssignmentsForUser` and `syncAgentSkillAssignments` from `./agents.js`. The plan says "Avoid route-to-route imports." Should extract both functions into `apps/api/src/agents/skill-assignment.ts`.
+2. **Duplicated plan-policy resolution** — Chat route inlines `resolvePlanSkillEntitlements(...)` while form route wraps in `resolveSkillPlanPolicy` helper. If fallback changes, chat could drift.
+3. **`assignmentSource` type narrower than DB column** — Function signature uses `'user_select' | 'guided_setup'` but DB column is freeform `text`.
+
+#### LOW
+4. **`skillUsageEvents.metadata.source` hardcoded** — Always records `'agent_update'` regardless of `assignmentSource`. Audit trail doesn't distinguish chat vs form assignments.
+5. **`new Set()` lacks explanatory comment** — The empty set for `preservedSkillIds` in chat's create path could use a comment.
+
+### From code review of Item 1 implementation (2026-08-07)
+
+#### MEDIUM
+1. **`agentRiskDefaults` accepted but unused in `prepareAgentCreateFields`** — The `PrepareAgentCreateFieldsParams` interface declares `agentRiskDefaults`, and chat route passes it, but the function body never reads it. Either remove or implement operator-default risk stamping.
+2. **`prepareAgentCreateFields` silently clamps `maxBots` exceeding plan limits** — The code silently clamps `requestedMaxBots` to `planLimits.maxBots` instead of erroring. The "trust the caller" comment contradicts the silent clamp behavior.
+
+#### LOW
+3. **Form route bypasses shared helper's `maxBots`/plan logic** — Form route doesn't pass `plansConfig`/`userPlanId`/`isAdmin` to `prepareAgentCreateFields`, making the plan-enforcement branch in the shared helper dead code for the form path. Two different code paths exist depending on which route calls it.
+4. **Form route doesn't use `createFields.strategy` from shared helper** — Form route recomputes `strategyJsonb` independently instead of using `createFields.strategy`. Latent maintenance hazard if the shared helper ever enriches strategy.
+
+---
 
 ## Rollback
 
