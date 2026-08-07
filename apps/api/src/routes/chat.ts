@@ -115,7 +115,7 @@ You run inside a restricted API-local onboarding runtime. You may use the onboar
 You can create an agent directly using the create_agent action when you have enough information.
 
 Prefer the happy path unless the user asks for something specific. That means:
-- The user must choose the agent type/preset.
+- The user must choose the agent type/preset (Trading, Personal Assistant, or Custom AI). Do NOT offer internal preset sub-types (e.g. direct-trading, trading-assistant, bot-management) — these are implementation details.
 - The user must specify capital for trading agents. Do NOT ask for capital for personal-assistant or custom agents (unless the custom agent includes trading skills).
 - If the user does not provide a custom goal, use the configurable default goal text.
 - If the user does not ask for a specific style, use \`balanced\` (applies to all agent types).
@@ -139,13 +139,24 @@ Do NOT say "ask anything" — you have a specific job.
 ## Conversation Flow
 
 ### If the user wants a trading agent:
-1. If applicable, ask which trading type/preset they want
+1. Ask: "Should this agent execute trades automatically, or ask for approval before each trade?" (see Trading Approval Policy section below)
 2. Ask about capital (how much do they want to allocate?)
 3. Ask the cost-saving question (see section below)
 4. Call list_compatible_connections with preferredCapability: "trading" to find trading-venue connections (exchanges, DEXs). Reuse the server-recommended compatible active connection if one exists; if multiple trading connections exist, ask the user which one to use. Only ask the user to create/connect something if no trading connections exist or they want a different one. Never auto-select a non-trading connection (Gmail, Telegram) for a trading agent.
 5. Ask optional preference questions only when needed (e.g. chain, style, strategy, goal)
 6. Otherwise apply the happy-path defaults for goal, style, user-facing execution mode, and strategy preset
 7. Summarize and confirm before creating
+
+### Trading Approval Policy
+
+For ALL guided trading agent creation, internally use \`skillPresetId: "direct-trading"\`. Do NOT use \`"trading"\` (which bundles bot-management) or \`"trading-assistant"\`. The approval answer determines the \`authorizationMode\`:
+
+| User answer | skillPresetId | authorizationMode |
+|---|---|---|
+| Execute trades automatically | "direct-trading" | "direct" |
+| Ask for approval before each trade | "direct-trading" | "approval_required" |
+
+Set \`authorizationMode\` on the \`create_agent\` call to match the user's answer. Do NOT expose legacy preset names (trading, trading-assistant, direct-trading) to the user — just ask the approval question in natural language.
 
 ### Cost-saving question for trading agents
 
@@ -364,7 +375,7 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        skillPresetId: { type: 'string', enum: ['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom'], description: 'The agent type/preset' },
+        skillPresetId: { type: 'string', enum: ['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom'], description: 'The agent type/preset. For guided trading setup, use "direct-trading". "trading" bundles bot-management (not for guided flow). "trading-assistant" is a legacy approval-required preset — prefer "direct-trading" + authorizationMode instead.' },
         capital: { type: 'string', description: 'Trading capital allocation in USD. ONLY for trading presets (trading, direct-trading, trading-assistant). Omit for personal-assistant and custom agents.' },
         goal: { type: 'string', description: 'Custom goal/prompt for the agent (optional). Applies to all agent types.' },
         style: { type: 'string', enum: ['careful', 'balanced', 'bold'], description: 'Agent decision-making style (default: balanced). Applies to all agent types.' },
@@ -390,6 +401,11 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
           enum: ['6', '12', '24', '48', '96'],
           description: "How often to review the strategy preset. ONLY for trading presets. Omit for non-trading agents. Default: '12'.",
         },
+        authorizationMode: {
+          type: 'string',
+          enum: ['direct', 'approval_required'],
+          description: "Trade execution authorization policy. ONLY for trading presets. Omit for non-trading agents. 'direct' means the agent executes trades automatically. 'approval_required' means the agent asks for approval before each trade. Default: 'direct'.",
+        },
       },
       required: ['skillPresetId'],
     },
@@ -408,6 +424,7 @@ const GuidedSetupCreateAgentInput = z.object({
   filterTrades: z.enum(['off', 'mixed', 'scanner_gated']).optional(),
   platformAssessmentEnabled: z.boolean().optional(),
   platformAssessmentReviewIntervalHours: z.enum(['6', '12', '24', '48', '96']).optional(),
+  authorizationMode: z.enum(['direct', 'approval_required']).optional(),
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -947,10 +964,16 @@ export async function executeChatAction(
       }
 
       // ── Resolve authorization mode (matching form route pattern) ────────
+      // Backward-compat: legacy trading-assistant preset defaults to approval_required
+      // when no explicit authorizationMode is provided.
+      const effectiveAuthorizationMode = parsed.data.authorizationMode
+        ?? (parsed.data.skillPresetId === 'trading-assistant' ? 'approval_required' : undefined);
+      const authorizationModeProvided = parsed.data.authorizationMode !== undefined
+        || parsed.data.skillPresetId === 'trading-assistant';
       const authorizationMode = resolveAuthorizationMode({
         skillIds,
-        submittedAuthorizationMode: undefined,
-        authorizationModeProvided: false,
+        submittedAuthorizationMode: effectiveAuthorizationMode,
+        authorizationModeProvided,
       });
 
       // ── Shared create-time normalization ────────────────────────────────
