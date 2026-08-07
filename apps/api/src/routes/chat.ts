@@ -399,36 +399,6 @@ function buildResumeFallback(event: OnboardingResumeEvent | null): string {
 
 const CHAT_TOOLS: LlmToolDefinition[] = [
   {
-    name: 'search_app_docs',
-    description: 'Search platform documentation for relevant information about agent types, presets, venues, strategies, and capabilities.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search query for platform docs' },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'list_app_docs',
-    description: 'List available platform documentation topics.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
-    name: 'read_app_docs',
-    description: 'Read a specific platform documentation page.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        path: { type: 'string', description: 'Documentation page path or identifier' },
-      },
-      required: ['path'],
-    },
-  },
-  {
     name: 'list_compatible_connections',
     description: 'List the user\'s existing active connections that are compatible with agent creation. Use preferredCapability to filter by connection type (trading vs non-trading). Returns recommended connections if available.',
     inputSchema: {
@@ -843,20 +813,6 @@ export async function executeChatAction(
   venues: AppConfig['venues'] = {},
 ): Promise<string> {
   switch (toolCall.name) {
-    case 'search_app_docs':
-    case 'list_app_docs':
-    case 'read_app_docs': {
-      // v1: return a helpful but scoped response — docs tooling is deferred
-      return JSON.stringify({
-        message: 'Platform documentation is available in the Help section. For now, I can help you choose from the available agent types: trading, personal assistant, or custom.',
-        availablePresets: [
-          { id: 'trading', label: 'AI Crypto Trader', description: 'Autonomous trading agent with strategy execution' },
-          { id: 'personal-assistant', label: 'AI Personal Assistant', description: 'General-purpose assistant for tasks and information' },
-          { id: 'custom', label: 'Custom AI', description: 'Build your own agent from scratch' },
-        ],
-      });
-    }
-
     case 'list_compatible_connections': {
       try {
         const args = (toolCall.args ?? {}) as Record<string, unknown>;

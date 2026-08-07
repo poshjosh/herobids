@@ -1178,7 +1178,7 @@ describe('Chat LLM Usage Metering', () => {
       callMock.mockResolvedValueOnce({
         ok: true,
         data: {
-          content: '', toolCalls: [makeToolCall('search_app_docs', { query: 'test' })],
+          content: '', toolCalls: [makeToolCall('list_available_skills', {})],
           model: 'gpt-4o', provider: 'openai',
           inputTokens: 10, outputTokens: 5, thinkingTokens: 0,
           cachedInputTokens: 0, tokensUsed: 15,
