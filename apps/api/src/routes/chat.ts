@@ -1421,6 +1421,32 @@ export async function invokeOnboardingLlm(
         }
       }
 
+      // Emit a wallet funding guidance card when create_connection succeeds
+      // with a generated wallet, so the frontend can render it prominently.
+      if (tc.name === 'create_connection') {
+        try {
+          const parsed = JSON.parse(toolResult) as Record<string, unknown>;
+          if (parsed.success && parsed.wallet && typeof parsed.wallet === 'object') {
+            const wallet = parsed.wallet as Record<string, unknown>;
+            pendingActions.push({
+              id: `wallet-funding-${round}`,
+              type: 'confirm',
+              props: {
+                type: 'wallet_created',
+                provider: parsed.provider,
+                connectionId: parsed.connectionId,
+                walletAddress: wallet.address,
+                network: wallet.network,
+                fundingInstructionId: wallet.fundingInstructionId,
+                custodyMode: wallet.custodyMode,
+              },
+            });
+          }
+        } catch {
+          // Non-JSON tool result — no wallet to render
+        }
+      }
+
       // Extract structured facts from tool results
       try {
         const parsed = JSON.parse(toolResult) as Record<string, unknown>;

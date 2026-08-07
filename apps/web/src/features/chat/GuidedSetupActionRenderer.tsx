@@ -44,7 +44,61 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
               />
             );
 
-          case 'confirm':
+          case 'confirm': {
+            const confirmProps = (action.props ?? {}) as Record<string, unknown>;
+            // Wallet-created card: show funding guidance prominently
+            if (confirmProps.type === 'wallet_created') {
+              const providerName = String(confirmProps.provider ?? '');
+              const displayName = providerName === 'hyperliquid' ? 'Hyperliquid'
+                : providerName === 'jupiter' ? 'Jupiter'
+                : providerName === '1inch' ? '1inch'
+                : providerName;
+              const walletAddress = String(confirmProps.walletAddress ?? '');
+              const network = String(confirmProps.network ?? '');
+              const fundingId = String(confirmProps.fundingInstructionId ?? '');
+
+              const fundingInstructionText = fundingId === 'hyperliquid-mainnet'
+                ? `Fund this wallet by sending USDC to the address on ${network}.`
+                : fundingId === 'solana-mainnet'
+                  ? `Fund this wallet by sending SOL or USDC to the address on Solana.`
+                  : `Fund this wallet by sending tokens to the address on ${network}.`;
+
+              return (
+                <div
+                  key={action.id}
+                  style={{
+                    padding: '16px',
+                    borderRadius: 8,
+                    backgroundColor: 'var(--color-success-bg, #e6f7ed)',
+                    border: '1px solid var(--color-success, #2da44e)',
+                    fontSize: 14,
+                    color: 'var(--color-text)',
+                    marginTop: 8,
+                  }}
+                >
+                  <div style={{ fontWeight: 600, marginBottom: 8 }}>
+                    ✅ {displayName} wallet created
+                  </div>
+                  <div style={{
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    padding: '8px',
+                    backgroundColor: 'var(--color-surface-1, #f6f8fa)',
+                    borderRadius: 4,
+                    wordBreak: 'break-all',
+                    marginBottom: 8,
+                  }}>
+                    {walletAddress}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+                    Network: {network}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                    {fundingInstructionText}
+                  </div>
+                </div>
+              );
+            }
             return (
               <div
                 key={action.id}
@@ -57,11 +111,12 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
                   color: 'var(--color-text)',
                 }}
               >
-                {action.props && typeof action.props === 'object' && 'message' in action.props
-                  ? String(action.props.message)
+                {'message' in confirmProps
+                  ? String(confirmProps.message)
                   : '✓ Confirmed'}
               </div>
             );
+          }
 
           case 'form':
             if (hideForms) return null;
