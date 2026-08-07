@@ -292,7 +292,7 @@ export const BlueprintBrowseQuerySchema = z.object({
   style: AgentStyleSchema.optional(),
   venueType: z.enum(['orderbook', 'swap']).optional(),
   tags: z.array(z.string()).optional(),
-  sort: z.enum(['popular', 'trending', 'newest']).default('popular'),
+  sort: z.enum(['popular', 'trending', 'newest', 'ranking']).default('popular'),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
@@ -315,6 +315,7 @@ export const BlueprintSummarySchema = z.object({
   isLikedByViewer: z.boolean(),
   popularityScore: z.number(),
   trendingScore: z.number(),
+  performanceScore: z.number(),
   publishedAt: z.string().nullable(),
   currentRevisionId: z.string(),
   publishedRevisionId: z.string().nullable(),

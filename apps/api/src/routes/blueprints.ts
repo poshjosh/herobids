@@ -552,6 +552,19 @@ export async function blueprintRoutes(
             )!,
           );
         }
+      } else if (query.sort === 'ranking') {
+        // performanceScore DESC, id ASC
+        if (lastScore !== undefined) {
+          whereClauses.push(
+            or(
+              sql`${blueprints.performanceScore} < ${lastScore}`,
+              and(
+                sql`${blueprints.performanceScore} = ${lastScore}`,
+                sql`${blueprints.id} > ${lastId}`,
+              )!,
+            )!,
+          );
+        }
       } else {
         // 'popular' (default): popularityScore DESC, id ASC
         if (lastScore !== undefined) {
@@ -581,6 +594,8 @@ export async function blueprintRoutes(
       rowsQuery = rowsQuery.orderBy(desc(blueprints.trendingScore), desc(blueprints.popularityScore), asc(blueprints.id));
     } else if (query.sort === 'newest') {
       rowsQuery = rowsQuery.orderBy(desc(blueprints.publishedAt), asc(blueprints.id));
+    } else if (query.sort === 'ranking') {
+      rowsQuery = rowsQuery.orderBy(desc(blueprints.performanceScore), asc(blueprints.id));
     } else {
       // 'popular' (default)
       rowsQuery = rowsQuery.orderBy(desc(blueprints.popularityScore), asc(blueprints.id));
@@ -634,6 +649,7 @@ export async function blueprintRoutes(
         isLikedByViewer: likedIds.has(bp.id),
         popularityScore: bp.popularityScore,
         trendingScore: bp.trendingScore,
+        performanceScore: bp.performanceScore,
         publishedAt: bp.publishedAt?.toISOString() ?? null,
         currentRevisionId: bp.currentRevisionId!,
         publishedRevisionId: bp.publishedRevisionId,
@@ -654,6 +670,8 @@ export async function blueprintRoutes(
       } else if (query.sort === 'trending') {
         cursorPayload.score = last.trendingScore;
         cursorPayload.popularityScore = last.popularityScore;
+      } else if (query.sort === 'ranking') {
+        cursorPayload.score = last.performanceScore;
       } else {
         cursorPayload.score = last.popularityScore;
       }
