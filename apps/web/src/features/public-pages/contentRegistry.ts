@@ -80,6 +80,8 @@ export const PUBLIC_PAGE_REGISTRY: Record<string, SectionMeta> = {
       reference: {
         title: 'Reference',
         pages: {
+          'reference/crypto-ecosystem': { title: 'Crypto Ecosystem' },
+          'reference/crypto-ecosystem-aspects': { title: 'Crypto Ecosystem: Categories & Concepts' },
           'reference/glossary': { title: 'Glossary' },
         },
       },
