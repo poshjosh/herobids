@@ -100,83 +100,97 @@ export async function setupRoutes(
     const connectionId = crypto.randomUUID();
     const now = new Date();
 
-    const txResult = await db.transaction(async (tx): Promise<
-      | { kind: 'limit'; error: { code: string; message: string; params?: Record<string, unknown> } }
-      | { kind: 'validation'; errors: ReturnType<typeof validateVenueSecrets> }
-      | { kind: 'ok'; tradingResult: { venueAccountId: string } | null; wallet: WalletGenerationResult['wallet'] | null }
-    > => {
-      if (plansConfig) {
-        // Serialise setup quota checks per user to avoid over-limit races.
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(14, hashtext(${request.userId}))`);
+    let txResult: {
+      kind: 'limit';
+      error: { code: string; message: string; params?: Record<string, unknown> };
+    } | {
+      kind: 'validation';
+      errors: ReturnType<typeof validateVenueSecrets>;
+    } | {
+      kind: 'ok';
+      tradingResult: { venueAccountId: string } | null;
+      wallet: WalletGenerationResult['wallet'] | null;
+    };
+    try {
+      txResult = await db.transaction(async (tx) => {
+        if (plansConfig) {
+          // Serialise setup quota checks per user to avoid over-limit races.
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(14, hashtext(${request.userId}))`);
 
-        const credentialCheck = await checkCredentialLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
-        if (!credentialCheck.ok) {
-          return { kind: 'limit' as const, error: credentialCheck.error };
-        }
+          const credentialCheck = await checkCredentialLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
+          if (!credentialCheck.ok) {
+            return { kind: 'limit' as const, error: credentialCheck.error };
+          }
 
-        const connectionCheck = await checkConnectionLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
-        if (!connectionCheck.ok) {
-          return { kind: 'limit' as const, error: connectionCheck.error };
-        }
+          const connectionCheck = await checkConnectionLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
+          if (!connectionCheck.ok) {
+            return { kind: 'limit' as const, error: connectionCheck.error };
+          }
 
-        if (capability === 'trading') {
-          const venueAccountCheck = await checkVenueAccountLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
-          if (!venueAccountCheck.ok) {
-            return { kind: 'limit' as const, error: venueAccountCheck.error };
+          if (capability === 'trading') {
+            const venueAccountCheck = await checkVenueAccountLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
+            if (!venueAccountCheck.ok) {
+              return { kind: 'limit' as const, error: venueAccountCheck.error };
+            }
           }
         }
-      }
 
-      const generated = credentialMode === 'generated'
-        ? deps.generateWallet({ provider, enabled: walletCapability!.available, network: walletCapability!.network })
-        : undefined;
-      const normalizedSecrets = generated
-        ? canonicalizeVenueSecrets(provider, generated.secrets)
-        : manualSecrets!;
-      const venueErrors = validateVenueSecrets(provider, normalizedSecrets);
-      if (venueErrors.length > 0) {
-        return { kind: 'validation' as const, errors: venueErrors };
-      }
-      const { encryptedData, encryptionMeta } = encryptCredential(JSON.stringify(normalizedSecrets), encryptionKey);
+        const generated = credentialMode === 'generated'
+          ? deps.generateWallet({ provider, enabled: walletCapability!.available, network: walletCapability!.network })
+          : undefined;
+        const normalizedSecrets = generated
+          ? canonicalizeVenueSecrets(provider, generated.secrets)
+          : manualSecrets!;
+        const venueErrors = validateVenueSecrets(provider, normalizedSecrets);
+        if (venueErrors.length > 0) {
+          return { kind: 'validation' as const, errors: venueErrors };
+        }
+        const { encryptedData, encryptionMeta } = encryptCredential(JSON.stringify(normalizedSecrets), encryptionKey);
 
-      await tx.insert(userCredentials).values({
-        id: credentialId,
-        userId: request.userId,
-        provider,
-        label,
-        encryptedData,
-        encryptionMeta,
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      await tx.insert(connections).values({
-        id: connectionId,
-        userId: request.userId,
-        credentialId,
-        provider,
-        label,
-        status: 'active',
-        meta: null,
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      let tradingResult: { venueAccountId: string } | null = null;
-      if (capability === 'trading') {
-        tradingResult = await provisionTradingTarget(tx, {
+        await tx.insert(userCredentials).values({
+          id: credentialId,
           userId: request.userId,
-          connectionId,
           provider,
           label,
-          credentialId,
-          venueAccountRef: generated?.wallet.address ?? (provider === 'hyperliquid' ? normalizedSecrets['walletAddress'] ?? null : null),
-          now,
+          encryptedData,
+          encryptionMeta,
+          createdAt: now,
+          updatedAt: now,
         });
-      }
 
-      return { kind: 'ok' as const, tradingResult, wallet: generated?.wallet ?? null };
-    });
+        await tx.insert(connections).values({
+          id: connectionId,
+          userId: request.userId,
+          credentialId,
+          provider,
+          label,
+          status: 'active',
+          meta: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        let tradingResult: { venueAccountId: string } | null = null;
+        if (capability === 'trading') {
+          tradingResult = await provisionTradingTarget(tx, {
+            userId: request.userId,
+            connectionId,
+            provider,
+            label,
+            credentialId,
+            venueAccountRef: generated?.wallet.address ?? (provider === 'hyperliquid' ? normalizedSecrets['walletAddress'] ?? null : null),
+            now,
+          });
+        }
+
+        return { kind: 'ok' as const, tradingResult, wallet: generated?.wallet ?? null };
+      });
+    } catch (err) {
+      request.log.error({ err, provider, credentialMode }, 'Unhandled error in provider-link transaction');
+      return reply.status(500).send(
+        errorPayload('setup.provider_link_failed', 'Failed to set up provider connection. Please try again.'),
+      );
+    }
 
     if (txResult.kind === 'limit') {
       return reply.status(403).send(
