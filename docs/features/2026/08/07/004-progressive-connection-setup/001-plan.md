@@ -261,13 +261,19 @@ create_connection fails → "I can't auto-create a wallet for Hyperliquid right 
 
 ## Implementation Order
 
-1. **Add `create_connection` tool** to `CHAT_TOOLS` and implement its handler
-2. **Remove the trading sub-preset prompt from Guided Setup** and replace it with: "Should this agent execute trades automatically, or ask for approval before each trade?"
-3. **Add `authorizationMode` handling to Guided Setup** so the approval answer maps to `direct` vs `approval_required` without exposing `trading-assistant`
-4. **Update `buildSystemPrompt()`** with the Progressive Disclosure section, decision tree, explicit same-provider reuse rule, guided-trading simplification, and prompt-local venue/generation guidance
-5. **Test the three paths** end-to-end: Fast Track, Guided, Direct, plus both approval-policy answers on the trading path
-6. **Add or reuse generated-wallet funding guidance rendering** so successful `create_connection` calls can show wallet address + funding instructions immediately
-7. **Optional follow-up:** implement real platform docs search/indexing and then add generated-wallet docs content for richer LLM explanations
+1. **Add `create_connection` tool** to `CHAT_TOOLS` and implement its handler — DONE
+2. **Remove the trading sub-preset prompt from Guided Setup** and replace it with: "Should this agent execute trades automatically, or ask for approval before each trade?" — DONE
+3. **Add `authorizationMode` handling to Guided Setup** so the approval answer maps to `direct` vs `approval_required` without exposing `trading-assistant` — DONE
+4. **Update `buildSystemPrompt()`** with the Progressive Disclosure section, decision tree, explicit same-provider reuse rule, guided-trading simplification, and prompt-local venue/generation guidance — DONE
+5. **Test the three paths** end-to-end: Fast Track, Guided, Direct, plus both approval-policy answers on the trading path — DONE
+6. **Add or reuse generated-wallet funding guidance rendering** so successful `create_connection` calls can show wallet address + funding instructions immediately — DONE
+7. **Optional follow-up:** implement real platform docs search/indexing and then add generated-wallet docs content for richer LLM explanations — DEFERRED
+
+## Outstanding Issues
+
+- (Low) Fast Track `platformAssessmentEnabled: true` not explicit in plan but internally consistent with cost-saving rules
+- (Low) Guided path Q3 not explicitly labeled in prompt — current wording ("same as Direct path") is clearer for LLMs
+- (Deferred) Real platform docs search/indexing for richer LLM explanations (Item 7)
 
 ## Relationship to Existing Work
 
