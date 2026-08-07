@@ -58,6 +58,17 @@ interface OnboardingResumeEvent {
   actionContext?: 'guided_setup_connection';
 }
 
+/**
+ * Invocation-local connection resolution context for the Guided Setup tool loop.
+ * Tracks connections surfaced during this LLM invocation so create_agent can
+ * auto-wire a compatible connection when the model omits selectedConnectionId.
+ */
+interface GuidedSetupResolvedConnectionContext {
+  createdConnectionIds: string[];
+  recommendedConnectionIds: string[];
+  threadConnectionIds: string[];
+}
+
 interface PersistedChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -706,6 +717,118 @@ async function getThreadWithMessages(
   };
 }
 
+// ── Connection Resolution ────────────────────────────────────────────────────
+
+/**
+ * Resolve the effective connection ID for a create_agent call when the model
+ * omitted selectedConnectionId. Only resolves from surfaced context — never
+ * performs a blind database lookup for unsurfaced connections.
+ *
+ * Resolution precedence:
+ * 1. explicit selectedConnectionId from the model
+ * 2. same-turn create_connection result
+ * 3. same-turn list_compatible_connections.recommended
+ * 4. thread metadata summary.connectionIds
+ *
+ * Each resolution tier also validates compatibility (trading agent → trading
+ * connection, non-trading agent → non-trading connection).
+ */
+export async function resolveCreateAgentConnection(
+  selectedConnectionId: string | undefined,
+  preset: string,
+  context: GuidedSetupResolvedConnectionContext,
+  db: Database,
+  userId: string,
+): Promise<{ connectionId: string | undefined; error: string | undefined }> {
+  const isTradingPreset = ['trading', 'direct-trading', 'trading-assistant'].includes(preset);
+
+  // Tier 1: explicit selectedConnectionId from the model
+  if (selectedConnectionId) {
+    // Validate compatibility: query the DB to confirm the explicit connection
+    // matches the agent type expectation.
+    const [conn] = await db
+      .select({
+        id: connections.id,
+        resolvedVenueAccountId: connections.resolvedVenueAccountId,
+      })
+      .from(connections)
+      .where(and(eq(connections.id, selectedConnectionId), eq(connections.userId, userId), eq(connections.status, 'active')))
+      .limit(1);
+    if (!conn) {
+      return { connectionId: undefined, error: JSON.stringify({ error: 'connection_not_found', message: `Connection ${selectedConnectionId} not found or not active.` }) };
+    }
+    const isTradingConn = conn.resolvedVenueAccountId !== null;
+    if (isTradingPreset && !isTradingConn) {
+      return { connectionId: undefined, error: JSON.stringify({ error: 'connection_incompatible', message: `Connection ${selectedConnectionId} is not a trading venue — trading agents require an exchange or DEX connection.` }) };
+    }
+    if (!isTradingPreset && isTradingConn) {
+      return { connectionId: undefined, error: JSON.stringify({ error: 'connection_incompatible', message: `Connection ${selectedConnectionId} is a trading venue — non-trading agents should use a service connection (e.g. Gmail).` }) };
+    }
+    return { connectionId: selectedConnectionId, error: undefined };
+  }
+
+  // Helper: validate a surfaced connection ID against the agent type expectation.
+  const validateSurfacedConnections = async (candidateIds: string[]): Promise<{ connectionId: string | undefined; error: string | undefined }> => {
+    if (candidateIds.length === 0) return { connectionId: undefined, error: undefined };
+
+    const connRows = await db
+      .select({
+        id: connections.id,
+        resolvedVenueAccountId: connections.resolvedVenueAccountId,
+        label: connections.label,
+        provider: connections.provider,
+      })
+      .from(connections)
+      .where(and(eq(connections.userId, userId), eq(connections.status, 'active')));
+
+    const compatible = connRows.filter((r) => {
+      const isTradingConn = r.resolvedVenueAccountId !== null;
+      return isTradingPreset ? isTradingConn : !isTradingConn;
+    });
+
+    const matchingIds = candidateIds.filter((id) => compatible.some((c) => c.id === id));
+
+    if (matchingIds.length === 1) {
+      return { connectionId: matchingIds[0], error: undefined };
+    }
+    if (matchingIds.length > 1) {
+      return {
+        connectionId: undefined,
+        error: JSON.stringify({
+          error: 'connection_ambiguous',
+          message: 'Multiple compatible connections are available. Please specify which one to use.',
+          connections: compatible.filter((c) => matchingIds.includes(c.id)).map((c) => ({
+            id: c.id,
+            label: c.label,
+            provider: c.provider,
+          })),
+        }),
+      };
+    }
+    return { connectionId: undefined, error: undefined };
+  };
+
+  // Tier 2: same-turn create_connection result (last created)
+  const tier2Result = await validateSurfacedConnections(
+    context.createdConnectionIds.length > 0 ? [context.createdConnectionIds[context.createdConnectionIds.length - 1]!] : [],
+  );
+  if (tier2Result.connectionId || tier2Result.error) return tier2Result;
+
+  // Tier 3: same-turn list_compatible_connections.recommended (last recommended)
+  const tier3Result = await validateSurfacedConnections(
+    context.recommendedConnectionIds.length > 0 ? [context.recommendedConnectionIds[context.recommendedConnectionIds.length - 1]!] : [],
+  );
+  if (tier3Result.connectionId || tier3Result.error) return tier3Result;
+
+  // Tier 4: thread metadata summary.connectionIds
+  const threadConnectionIds = context.threadConnectionIds;
+  const tier4Result = await validateSurfacedConnections(threadConnectionIds);
+  if (tier4Result.connectionId || tier4Result.error) return tier4Result;
+
+  // No connection resolvable — not an error, just no autowiring
+  return { connectionId: undefined, error: undefined };
+}
+
 // ── Action Execution ─────────────────────────────────────────────────────────
 
 export async function executeChatAction(
@@ -1248,6 +1371,9 @@ export async function executeChatAction(
           name,
           preset: parsed.data.skillPresetId,
         };
+        if (connectionIds.length > 0) {
+          result.assignedConnectionId = connectionIds[0];
+        }
         if (isTradingPreset) {
           result.displayExecutionMode = parsed.data.requestedExecutionMode ?? 'test';
           result.executionDefaults = createFields.executionDefaults;
@@ -1346,6 +1472,11 @@ export async function invokeOnboardingLlm(
   let createdAgent: LlmInvocationResult['createdAgent'];
   const summaryFacts: Partial<NonNullable<ThreadMetadata['summary']>> = {};
   const pendingActions: ChatAction[] = [];
+  const resolvedConnections: GuidedSetupResolvedConnectionContext = {
+    createdConnectionIds: [],
+    recommendedConnectionIds: [],
+    threadConnectionIds: threadMetadata?.summary?.connectionIds ?? [],
+  };
 
   const usageAcc: AggregateChatLlmUsage = {
     provider: llmConfig.provider,
@@ -1404,7 +1535,50 @@ export async function invokeOnboardingLlm(
     // Process tool calls
     const toolResults: LlmMessage[] = [];
     for (const tc of toolCalls) {
-      const toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults, venues);
+      // ── Connection autowiring: resolve before dispatching create_agent ──
+      if (tc.name === 'create_agent') {
+        const args = (tc.args ?? {}) as Record<string, unknown>;
+        const preset = typeof args.skillPresetId === 'string' ? args.skillPresetId : '';
+        const existingSelectedId = typeof args.selectedConnectionId === 'string' ? args.selectedConnectionId : undefined;
+
+        const resolution = await resolveCreateAgentConnection(
+          existingSelectedId,
+          preset,
+          resolvedConnections,
+          db,
+          userId,
+        );
+
+        if (resolution.error) {
+          // Return the resolution error as a tool result so the LLM can handle it.
+          toolResults.push({
+            role: 'tool',
+            content: resolution.error,
+            toolCallId: tc.id,
+            toolName: tc.name,
+            addedAtTurn: round,
+          });
+          toolCallsProcessed++;
+          continue;
+        }
+
+        // If we resolved a connection that the model omitted, rewrite tc.args
+        // so executeChatAction sees it.
+        if (!existingSelectedId && resolution.connectionId) {
+          tc.args = { ...tc.args, selectedConnectionId: resolution.connectionId };
+        }
+      }
+
+      // ── Dispatch tool call with error guard ──
+      let toolResult: string;
+      try {
+        toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults, venues);
+      } catch (err) {
+        toolResult = JSON.stringify({
+          error: 'tool_execution_failed',
+          message: err instanceof Error ? err.message : 'Tool execution failed',
+        });
+      }
       toolResults.push({
         role: 'tool',
         content: toolResult,
@@ -1444,6 +1618,10 @@ export async function invokeOnboardingLlm(
       if (tc.name === 'create_connection') {
         try {
           const parsed = JSON.parse(toolResult) as Record<string, unknown>;
+          if (parsed.success && parsed.connectionId) {
+            resolvedConnections.createdConnectionIds.push(parsed.connectionId as string);
+            summaryFacts.connectionIds = [...(summaryFacts.connectionIds ?? []), parsed.connectionId as string];
+          }
           if (parsed.success && parsed.wallet && typeof parsed.wallet === 'object') {
             const wallet = parsed.wallet as Record<string, unknown>;
             pendingActions.push({
@@ -1470,7 +1648,10 @@ export async function invokeOnboardingLlm(
         const parsed = JSON.parse(toolResult) as Record<string, unknown>;
         if (tc.name === 'list_compatible_connections' && parsed.recommended && typeof parsed.recommended === 'object') {
           const rec = parsed.recommended as Record<string, unknown>;
-          if (rec.id) summaryFacts.connectionIds = [rec.id as string];
+          if (rec.id) {
+            resolvedConnections.recommendedConnectionIds.push(rec.id as string);
+            summaryFacts.connectionIds = [...(summaryFacts.connectionIds ?? []), rec.id as string];
+          }
         }
         if (tc.name === 'create_agent' && parsed.success && parsed.agentId) {
           createdAgent = {
@@ -1484,6 +1665,10 @@ export async function invokeOnboardingLlm(
           };
           summaryFacts.preset = createdAgent.preset;
           summaryFacts.capital = createdAgent.capital;
+          if (parsed.assignedConnectionId) {
+            const existing = summaryFacts.connectionIds ?? [];
+            summaryFacts.connectionIds = [...existing, parsed.assignedConnectionId as string];
+          }
         }
       } catch {
         // Non-JSON tool result — skip extraction

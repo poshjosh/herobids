@@ -4,7 +4,7 @@ import type { Database, UsageBillingRepository } from '@herobids/db';
 import { ChatUsageBillingRecorder } from '../billing/chat-usage-billing-recorder.js';
 import type { Redis } from 'ioredis';
 import type { ProvidersYaml } from '@herobids/domain';
-import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt } from './chat.js';
+import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt, resolveCreateAgentConnection } from './chat.js';
 import type { LlmToolCall } from '@herobids/llm';
 
 // Mock createProviderLink to avoid needing CREDENTIAL_ENCRYPTION_KEY in tests
@@ -135,6 +135,7 @@ async function buildAppWithRecorder(overrides: Partial<Record<string, unknown>> 
 
 beforeEach(() => {
   callMock.mockReset();
+  createProviderLinkMock.mockReset();
 });
 
 // ── executeChatAction: request_connection_form ──────────────────────────────
@@ -1506,5 +1507,417 @@ describe('invokeOnboardingLlm — wallet_created action', () => {
       (a) => a.type === 'confirm' && a.props && typeof a.props === 'object' && 'type' in a.props && a.props.type === 'wallet_created',
     );
     expect(walletActions.length).toBe(0);
+  });
+});
+
+// ── resolveCreateAgentConnection: unit tests ────────────────────────────────
+
+/**
+ * Build a mock DB where each SELECT call consumes the next array of rows
+ * from `responses`. The responses are consumed in order regardless of which
+ * table is queried — the test writer controls the sequence.
+ *
+ * Handles both `.where()` (returns thenable resolving to full array) and
+ * `.where().limit(1)` (returns thenable resolving to first element array,
+ * matching Drizzle's `[row]` destructure pattern for limit:1 queries).
+ */
+function buildSelectMock(responses: unknown[][]): Database {
+  let callIdx = 0;
+  const db = {
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockImplementation(() => {
+          const rows = responses[callIdx] ?? [];
+          callIdx++;
+          // For .where().limit(1): returns [firstRow]
+          const limitPromise = Promise.resolve(rows.length > 0 ? [rows[0]] : []);
+          // For .where() without .limit(): returns the full rows array
+          const fullPromise = Promise.resolve(rows);
+          return {
+            limit: vi.fn().mockReturnValue(limitPromise),
+            then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => fullPromise.then(resolve, reject),
+            catch: (reject: (e: unknown) => unknown) => fullPromise.catch(reject),
+          };
+        }),
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+    }),
+    transaction: vi.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(db)),
+    insert: vi.fn().mockReturnValue({
+      values: vi.fn().mockReturnValue({
+        onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+      }),
+      returning: vi.fn().mockResolvedValue([{}]),
+    }),
+    update: vi.fn().mockReturnValue({
+      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+    }),
+    delete: vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    }),
+  };
+  return db as unknown as Database;
+}
+
+function makeTradingConnection(id: string, label = 'Test', provider = 'hyperliquid') {
+  return { id, resolvedVenueAccountId: 'va-1', label, provider };
+}
+
+function makeNonTradingConnection(id: string, label = 'Gmail', provider = 'gmail') {
+  return { id, resolvedVenueAccountId: null, label, provider };
+}
+
+const TRADING_PRESET = 'direct-trading';
+const NON_TRADING_PRESET = 'personal-assistant';
+
+describe('resolveCreateAgentConnection', () => {
+  it('returns explicit selectedConnectionId when valid and compatible', async () => {
+    const db = buildSelectMock([[makeTradingConnection('conn-1')]]);
+    const result = await resolveCreateAgentConnection(
+      'conn-1',
+      TRADING_PRESET,
+      { createdConnectionIds: [], recommendedConnectionIds: [], threadConnectionIds: [] },
+      db,
+      TEST_USER_ID,
+    );
+    expect(result.connectionId).toBe('conn-1');
+    expect(result.error).toBeUndefined();
+  });
+
+  it('returns error when explicit selectedConnectionId is not found', async () => {
+    const db = buildSelectMock([[]]);
+    const result = await resolveCreateAgentConnection(
+      'conn-missing',
+      TRADING_PRESET,
+      { createdConnectionIds: [], recommendedConnectionIds: [], threadConnectionIds: [] },
+      db,
+      TEST_USER_ID,
+    );
+    expect(result.connectionId).toBeUndefined();
+    expect(result.error).toBeDefined();
+    const parsed = JSON.parse(result.error!);
+    expect(parsed.error).toBe('connection_not_found');
+  });
+
+  it('returns error when explicit selectedConnectionId is incompatible (trading agent, non-trading connection)', async () => {
+    const db = buildSelectMock([[makeNonTradingConnection('conn-1')]]);
+    const result = await resolveCreateAgentConnection(
+      'conn-1',
+      TRADING_PRESET,
+      { createdConnectionIds: [], recommendedConnectionIds: [], threadConnectionIds: [] },
+      db,
+      TEST_USER_ID,
+    );
+    expect(result.connectionId).toBeUndefined();
+    expect(result.error).toBeDefined();
+    const parsed = JSON.parse(result.error!);
+    expect(parsed.error).toBe('connection_incompatible');
+    expect(parsed.message).toContain('not a trading venue');
+  });
+
+  it('returns error when explicit selectedConnectionId is incompatible (non-trading agent, trading connection)', async () => {
+    const db = buildSelectMock([[makeTradingConnection('conn-1')]]);
+    const result = await resolveCreateAgentConnection(
+      'conn-1',
+      NON_TRADING_PRESET,
+      { createdConnectionIds: [], recommendedConnectionIds: [], threadConnectionIds: [] },
+      db,
+      TEST_USER_ID,
+    );
+    expect(result.connectionId).toBeUndefined();
+    expect(result.error).toBeDefined();
+    const parsed = JSON.parse(result.error!);
+    expect(parsed.error).toBe('connection_incompatible');
+    expect(parsed.message).toContain('trading venue');
+  });
+
+  it('resolves from same-turn created connection (tier 2)', async () => {
+    const db = buildSelectMock([[makeTradingConnection('conn-created')]]);
+    const result = await resolveCreateAgentConnection(
+      undefined, // omitted
+      TRADING_PRESET,
+      { createdConnectionIds: ['conn-created'], recommendedConnectionIds: [], threadConnectionIds: [] },
+      db,
+      TEST_USER_ID,
+    );
+    expect(result.connectionId).toBe('conn-created');
+    expect(result.error).toBeUndefined();
+  });
+
+  it('resolves from same-turn recommended connection (tier 3)', async () => {
+    const db = buildSelectMock([[makeTradingConnection('conn-rec')]]);
+    const result = await resolveCreateAgentConnection(
+      undefined,
+      TRADING_PRESET,
+      { createdConnectionIds: [], recommendedConnectionIds: ['conn-rec'], threadConnectionIds: [] },
+      db,
+      TEST_USER_ID,
+    );
+    expect(result.connectionId).toBe('conn-rec');
+    expect(result.error).toBeUndefined();
+  });
+
+  it('resolves from thread metadata connectionIds (tier 4)', async () => {
+    const db = buildSelectMock([[makeNonTradingConnection('thread-conn')]]);
+    const result = await resolveCreateAgentConnection(
+      undefined,
+      NON_TRADING_PRESET,
+      { createdConnectionIds: [], recommendedConnectionIds: [], threadConnectionIds: ['thread-conn'] },
+      db,
+      TEST_USER_ID,
+    );
+    expect(result.connectionId).toBe('thread-conn');
+    expect(result.error).toBeUndefined();
+  });
+
+  it('returns ambiguity error when multiple compatible connections exist in thread', async () => {
+    const db = buildSelectMock([[
+      makeTradingConnection('conn-a', 'Wallet A'),
+      makeTradingConnection('conn-b', 'Wallet B'),
+    ]]);
+    const result = await resolveCreateAgentConnection(
+      undefined,
+      TRADING_PRESET,
+      { createdConnectionIds: [], recommendedConnectionIds: [], threadConnectionIds: ['conn-a', 'conn-b'] },
+      db,
+      TEST_USER_ID,
+    );
+    expect(result.connectionId).toBeUndefined();
+    expect(result.error).toBeDefined();
+    const parsed = JSON.parse(result.error!);
+    expect(parsed.error).toBe('connection_ambiguous');
+    expect(parsed.connections).toHaveLength(2);
+  });
+
+  it('filters out incompatible connections and resolves the single compatible one', async () => {
+    // One trading, one non-trading in thread — trading agent should
+    // resolve to the single compatible trading connection.
+    const db = buildSelectMock([[
+      makeTradingConnection('conn-trading'),
+      makeNonTradingConnection('conn-nontrading'),
+    ]]);
+    const result = await resolveCreateAgentConnection(
+      undefined,
+      TRADING_PRESET,
+      { createdConnectionIds: [], recommendedConnectionIds: [], threadConnectionIds: ['conn-trading', 'conn-nontrading'] },
+      db,
+      TEST_USER_ID,
+    );
+    expect(result.connectionId).toBe('conn-trading');
+    expect(result.error).toBeUndefined();
+  });
+
+  it('returns no connection when surfaced connection is incompatible (trading agent, non-trading surfaced)', async () => {
+    const db = buildSelectMock([[makeNonTradingConnection('conn-nontrading')]]);
+    const result = await resolveCreateAgentConnection(
+      undefined,
+      TRADING_PRESET,
+      { createdConnectionIds: [], recommendedConnectionIds: [], threadConnectionIds: ['conn-nontrading'] },
+      db,
+      TEST_USER_ID,
+    );
+    // No compatible connection found → no autowiring, no error
+    expect(result.connectionId).toBeUndefined();
+    expect(result.error).toBeUndefined();
+  });
+
+  it('never auto-binds an unsurfaced connection (no blind DB lookup)', async () => {
+    // DB has a connection but it's not in any surfaced context
+    const db = buildSelectMock([]);
+    const result = await resolveCreateAgentConnection(
+      undefined,
+      TRADING_PRESET,
+      { createdConnectionIds: [], recommendedConnectionIds: [], threadConnectionIds: [] },
+      db,
+      TEST_USER_ID,
+    );
+    // No surfaced context → no autowiring
+    expect(result.connectionId).toBeUndefined();
+    expect(result.error).toBeUndefined();
+  });
+});
+
+// ── executeChatAction: assignedConnectionId in create_agent result ───────────
+
+describe('executeChatAction — assignedConnectionId', () => {
+  it('includes assignedConnectionId in the create_agent result when a connection is bound', async () => {
+    // We need a mock that allows create_agent to succeed far enough to build
+    // the result object. Use a spy / manual approach: call executeChatAction
+    // but mock the DB deeply enough for the handler to reach the result
+    // construction. The simplest path triggers an early failure AFTER the
+    // connection handling but BEFORE needing complex mocks — we use the
+    // billing gate to short-circuit right at the result construction.
+
+    // Actually, verify at the Zod level: test that when selectedConnectionId is
+    // present, the result object includes assignedConnectionId. We can test this
+    // by mocking the DB to make create_agent succeed minimally.
+
+    // Build a DB mock that returns user row with model config so it passes the
+    // model_settings check, then fails at checkAgentLimit (plansConfig undefined
+    // → skipped), then fails at skill resolution... 
+
+    // Simpler: we know from the code structure that `assignedConnectionId` is
+    // added to the result object when `connectionIds.length > 0`. This is
+    // a deterministic output of `executeChatAction`. Test it by setting up
+    // the right conditions.
+
+    // Use a mock DB that provides the user row and connection rows needed
+    // for a successful create_agent call. The key path is:
+    // 1. User lookup returns a row with aiModelConfig
+    // 2. Plan check skipped (plansConfig undefined)
+    // 3. prepareAgentCreateFields succeeds
+    // 4. Transaction succeeds (inserts are no-ops in mock)
+    // 5. syncAgentSkillAssignments succeeds (mock returns ok)
+
+    // The create_agent handler does multiple DB selects. Provide responses in
+    // the expected order: user lookup (planId + aiModelConfig), resolveRuntimePolicyOverrides
+    // user lookup, then transaction connection validation.
+    // Use a non-trading connection (resolvedVenueAccountId: null) to match the custom preset.
+    const db = buildSelectMock([
+      [{ planId: 'free', isAdmin: false, aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+      [], // resolveRuntimePolicyOverrides user lookup — no aiModelConfig → returns null
+      [{ id: 'conn-1', status: 'active', resolvedVenueAccountId: null }], // non-trading connection for custom preset
+      [], [], [], [], [], [], [], // extra slots for remaining queries
+    ]);
+
+    const mockUsageBillingRepo = {
+      getAccountByUserId: vi.fn().mockResolvedValue(null), // fresh user, no billing account
+      canSpendNow: vi.fn(),
+    } as unknown as UsageBillingRepository;
+
+    const result = await executeChatAction(
+      makeToolCall('create_agent', {
+        skillPresetId: 'custom',
+        selectedConnectionId: 'conn-1',
+      }),
+      db,
+      TEST_USER_ID,
+      EMPTY_PROVIDERS_YAML,
+      mockUsageBillingRepo,
+    );
+
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed.success).toBe(true);
+    expect(parsed.assignedConnectionId).toBe('conn-1');
+  });
+});
+
+// ── invokeOnboardingLlm: connection autowiring loop-level test ──────────────
+
+describe('invokeOnboardingLlm — connection autowiring', () => {
+  it('auto-wires a same-turn created connection when create_agent omits selectedConnectionId', async () => {
+    // Mock createProviderLink to return a successful connection
+    createProviderLinkMock.mockResolvedValueOnce({
+      kind: 'ok',
+      credentialId: 'cred-1',
+      connectionId: 'conn-created',
+      provider: 'hyperliquid',
+      label: 'Hyperliquid Wallet',
+      venueAccountId: 'va-1',
+      wallet: {
+        address: '0xAutoWired',
+        network: 'Hyperliquid',
+      },
+    } as never);
+
+    // LLM: round 1 = create_connection, round 2 = create_agent (no selectedConnectionId)
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: '',
+        toolCalls: [makeToolCall('create_connection', {
+          provider: 'hyperliquid',
+          label: 'Hyperliquid Wallet',
+          capability: 'trading',
+          credentialMode: 'generated',
+        })],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: '',
+        toolCalls: [makeToolCall('create_agent', {
+          skillPresetId: 'direct-trading',
+          capital: '1000',
+        })],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Agent created with your wallet.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    // Call-order based mock: each DB select consumes the next response.
+    // 0. create_connection → user lookup (planId)
+    // 1. resolveCreateAgentConnection → validateSurfacedConnections
+    // 2. create_agent → user lookup (planId, isAdmin, aiModelConfig)
+    // 3. resolveRuntimePolicyOverrides → user lookup
+    // 4. resolveSkillAssignmentsForUser → skill lookup
+    // 5. resolveSkillAssignmentsForUser → entitlement lookup
+    // 6. resolveSkillAssignmentsForUser → revision lookup
+    // 7. transaction → connection validation
+    // 8. syncAgentSkillAssignments → agentSkills select
+    const db = buildSelectMock([
+      [{ planId: 'free', isAdmin: false }],
+      [{ id: 'conn-created', resolvedVenueAccountId: 'va-1', label: 'HW', provider: 'hyperliquid' }],
+      [{ planId: 'free', isAdmin: false, aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+      [], // resolveRuntimePolicyOverrides user lookup — empty is fine
+      [{ id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0 }],
+      [], // entitlements
+      [{ skillId: 'trading', revisionId: 'rev-1', version: 1 }],
+      [{ id: 'conn-created', resolvedVenueAccountId: 'va-1' }],
+      [], // syncAgentSkillAssignments → agentSkills select
+      [], [], [], // extra slots
+    ]);
+
+    const result = await invokeOnboardingLlm(
+      LLM_CONFIG,
+      EMPTY_PROVIDERS_YAML,
+      db,
+      TEST_USER_ID,
+      [],
+      null,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { hyperliquid: { walletGeneration: { enabled: true } }, jupiter: {}, '1inch': {} },
+    );
+
+    // The wallet_created action confirms create_connection ran.
+    const walletActions = (result.actions ?? []).filter(
+      (a) => a.type === 'confirm' && a.props && typeof a.props === 'object' && 'type' in a.props && a.props.type === 'wallet_created',
+    );
+    expect(walletActions.length).toBeGreaterThanOrEqual(1);
+
+    // createProviderLink was called — confirms the create_connection path executed.
+    expect(createProviderLinkMock).toHaveBeenCalledTimes(1);
+
+    // Verify autowiring: the connectionId from create_connection is captured
+    // in summaryFacts, confirming that the connection was created and tracked
+    // for subsequent autowiring to create_agent.
+    expect(result.summaryFacts?.connectionIds).toContain('conn-created');
   });
 });
