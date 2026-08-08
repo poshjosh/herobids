@@ -48,7 +48,7 @@ Follow these steps to implement all the items in the plan or task-list provided 
 
    b. If the code review does not include critical/high issues/observations, go to Step 7.
 
-7. Save the issues from the last code review (which must not include critical/high issues) at the bottom of the plan/task-list document as well as your memory as "Outstanding Issues", include the new issues to "Outstanding Issues" and if possible group them by [item], where [item] is either the item number or title or descriptive text of the item being implemented.
+7. Save the issues from the last code review (which must not include critical/high issues) at the bottom of the plan/task-list document as "Outstanding Issues", include the new issues to "Outstanding Issues" and if possible group them by [item], where [item] is either the item number or title or descriptive text of the item being implemented.
 
 8. Git add and commit the changes. 
 
