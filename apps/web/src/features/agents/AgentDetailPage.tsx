@@ -361,10 +361,11 @@ export function AgentDetailPage() {
             justifyContent: 'space-between',
             gap: 12,
             fontSize: 13,
+            color: 'var(--color-text)',
           }}>
             <span>
               💳 Your trading wallet may need funding before live trading.{' '}
-              <a href={fundingDocUrl} target="_blank" rel="noopener noreferrer">
+              <a href={fundingDocUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>
                 Learn how to fund →
               </a>
             </span>
