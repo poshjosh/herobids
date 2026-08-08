@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { ApiError, agents as agentsApi, skills as skillsApi, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness, type AgentActivityEntry } from '../../lib/api-client.js';
+import { ApiError, agents as agentsApi, skills as skillsApi, providerCatalog, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness, type AgentActivityEntry } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
@@ -103,6 +103,57 @@ export function AgentDetailPage() {
     enabled: !!id && hasTradingCapability,
   });
   const tradingCapability = capabilityQuery.data;
+
+  // ── Funding reminder banner ───────────────────────────────────────
+  const [fundingBannerDismissed, setFundingBannerDismissed] = useState(() => {
+    return localStorage.getItem(`funding-banner-dismissed-${id}`) === '1';
+  });
+
+  const providerCatalogQuery = useQuery({
+    queryKey: ['providerCatalog'],
+    queryFn: () => providerCatalog.get(),
+    staleTime: 5 * 60_000,
+  });
+
+  // Resolve venue from the agent's trading connection provider, or use the
+  // connectionId to query the connections list.
+  const tradingConnectionId = tradingCapability?.connectionId;
+
+  const connectionsQuery = useQuery({
+    queryKey: ['agents', id, 'connections'],
+    queryFn: () => agentsApi.getConnections(id!),
+    enabled: !!id && !!tradingConnectionId,
+  });
+
+  const resolvedVenue = (() => {
+    if (!tradingConnectionId || !connectionsQuery.data) return null;
+    const conn = connectionsQuery.data.connections.find(c => c.connectionId === tradingConnectionId);
+    return conn?.provider ?? null;
+  })();
+
+  const venueHasWalletGeneration = resolvedVenue
+    ? providerCatalogQuery.data?.providers.some(p => p.id === resolvedVenue && p.walletGeneration?.available === true)
+    : false;
+
+  const showFundingBanner = hasTradingCapability
+    && tradingConnectionId != null
+    && venueHasWalletGeneration === true
+    && !fundingBannerDismissed;
+
+  const fundingDocUrl = (() => {
+    const BASE = '/docs/trading-venues/funding-wallets';
+    if (!resolvedVenue) return BASE;
+    if (resolvedVenue === 'hyperliquid') return `${BASE}#hyperliquid`;
+    if (resolvedVenue === 'jupiter') return `${BASE}#jupiter`;
+    if (resolvedVenue === '1inch') return `${BASE}#1inch`;
+    return BASE;
+  })();
+
+  const dismissFundingBanner = () => {
+    localStorage.setItem(`funding-banner-dismissed-${id}`, '1');
+    setFundingBannerDismissed(true);
+  };
+  // ── End funding reminder banner ────────────────────────────────────
 
   const startMutation = useMutation({
     mutationFn: () => agentsApi.start(id!),
@@ -299,6 +350,27 @@ export function AgentDetailPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {runtimeAlert && <ErrorBanner message={runtimeAlert} />}
         {lifecycleError && <ErrorBanner message={localizeApiError(intl, lifecycleError, 'common.errorTitle')} />}
+        {showFundingBanner && (
+          <div style={{
+            padding: '12px 16px',
+            background: 'var(--color-surface-info, #e7f3ff)',
+            border: '1px solid var(--color-info, #0969da)',
+            borderRadius: 8,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            fontSize: 13,
+          }}>
+            <span>
+              💳 Your trading wallet may need funding before live trading.{' '}
+              <a href={fundingDocUrl} target="_blank" rel="noopener noreferrer">
+                Learn how to fund →
+              </a>
+            </span>
+            <Button variant="ghost" size="sm" onClick={dismissFundingBanner}>Dismiss</Button>
+          </div>
+        )}
 
         <Card>
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>

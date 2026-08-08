@@ -27,3 +27,7 @@ Pick Jupiter if you trade tokens on Solana and want fast, cheap swaps at the bes
 
 - **Solana only** — Jupiter works exclusively on the Solana blockchain. If you trade on Ethereum or other chains, use 1inch instead.
 - **Spot trading only** — Jupiter does not support leverage or perpetual futures. For leveraged trading, use Hyperliquid.
+
+## See also
+
+- [Funding Your Wallets](/docs/trading-venues/funding-wallets) — How to fund your Jupiter wallet

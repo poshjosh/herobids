@@ -21,3 +21,7 @@ New to the crypto ecosystem? Start with [Crypto Ecosystem](/docs/reference/crypt
 - **You trade across Ethereum, Arbitrum, or other EVM chains** → 1inch
 
 Choose one during agent creation. You can always connect more later.
+
+## Funding
+
+Before your agent can trade, your wallets need to be funded. See [Funding Your Wallets](/docs/trading-venues/funding-wallets) for a step-by-step guide for each venue.

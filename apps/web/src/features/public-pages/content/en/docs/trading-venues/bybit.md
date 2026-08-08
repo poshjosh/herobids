@@ -31,3 +31,7 @@ Pick Bybit if you want to deposit fiat currency, trade a wide range of assets, o
 - **KYC required** — You must provide personal identification documents.
 - **Not anonymous** — Your identity is tied to your account.
 - **Centralized risk** — Funds are held by Bybit. If the exchange were compromised, you could lose assets (use only amounts you trust a centralized platform to hold).
+
+## See also
+
+- [Funding Your Wallets](/docs/trading-venues/funding-wallets) — How to fund your Bybit account

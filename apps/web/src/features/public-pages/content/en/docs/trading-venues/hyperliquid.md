@@ -29,3 +29,7 @@ Pick Hyperliquid if you want leverage, shorting, or perpetual futures trading. I
 
 - **Crypto only** — You must deposit cryptocurrency. No direct fiat (USD, EUR, etc.) on-ramp through Hyperliquid itself.
 - **Requires understanding of futures** — Leveraged trading carries risk and is not suitable for beginners.
+
+## See also
+
+- [Funding Your Wallets](/docs/trading-venues/funding-wallets) — How to fund your Hyperliquid wallet

@@ -92,6 +92,7 @@ export const PUBLIC_PAGE_REGISTRY: Record<string, SectionMeta> = {
           'trading-venues/bybit': { title: 'Bybit' },
           'trading-venues/jupiter': { title: 'Jupiter' },
           'trading-venues/1inch': { title: '1inch' },
+          'trading-venues/funding-wallets': { title: 'Funding Your Wallets' },
         },
       },
     },

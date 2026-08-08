@@ -4,6 +4,18 @@ import { ChatQuickReplies } from './ChatQuickReplies.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { saveGuidedSetupOAuthDraft } from './guidedSetupOAuthDraft.js';
 
+/**
+ * Resolve a funding docs deep-link URL from a fundingInstructionId and provider name.
+ * Uses prefix matching for 1inch (ID is dynamic: 1inch-8453, 1inch-42161, etc.).
+ */
+function resolveFundingDocUrl(fundingId: string, provider: string): string {
+  const BASE = '/docs/trading-venues/funding-wallets';
+  if (fundingId === 'hyperliquid-mainnet') return `${BASE}#hyperliquid`;
+  if (fundingId === 'solana-mainnet') return `${BASE}#jupiter`;
+  if (fundingId.startsWith('1inch-') || provider === '1inch') return `${BASE}#1inch`;
+  return BASE;
+}
+
 interface GuidedSetupActionRendererProps {
   actions: NonNullable<ChatMessage['actions']>;
   onQuickReply: (value: string) => void;
@@ -96,6 +108,14 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
                   <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
                     {fundingInstructionText}
                   </div>
+                  <a
+                    href={resolveFundingDocUrl(fundingId, providerName)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: 13, color: 'var(--color-primary)', marginTop: 8, display: 'inline-block' }}
+                  >
+                    Learn more about funding {displayName} wallets →
+                  </a>
                 </div>
               );
             }

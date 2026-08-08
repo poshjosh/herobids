@@ -30,3 +30,7 @@ Pick 1inch if you trade across multiple EVM-compatible blockchains (Ethereum, Ar
 
 - **No leverage** — 1inch only supports spot token swaps. For leveraged trading, use Hyperliquid.
 - **Perp DEXs on EVM are limited** — 1inch focuses on spot swaps. While some perpetual venues exist on EVM chains, they're not as mature as Hyperliquid's dedicated perp market.
+
+## See also
+
+- [Funding Your Wallets](/docs/trading-venues/funding-wallets) — How to fund your 1inch wallet
