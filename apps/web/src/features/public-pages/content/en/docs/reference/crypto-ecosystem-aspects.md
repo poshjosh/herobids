@@ -1,4 +1,4 @@
-# Crypto Ecosystem: Categories & Concepts
+# Crypto Ecosystem: Aspects
 
 A deeper breakdown of each layer in the crypto ecosystem. For a high-level overview, see [Crypto Ecosystem](/docs/reference/crypto-ecosystem).
 

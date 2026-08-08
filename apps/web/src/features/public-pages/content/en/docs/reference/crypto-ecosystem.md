@@ -88,6 +88,6 @@ The only direct overlaps:
 
 ## Learn more
 
-- [Crypto Ecosystem: Categories & Concepts](/docs/reference/crypto-ecosystem-aspects) — A deeper breakdown of each category with analogies.
+- [Crypto Ecosystem: Aspects](/docs/reference/crypto-ecosystem-aspects) — A deeper breakdown of each category with analogies.
 - [Trading Venues](/docs/trading-venues) — OpenAIdom's supported venues and when to use each.
 - [Glossary](/docs/reference/glossary) — Definitions of terms used across the platform.

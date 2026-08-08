@@ -963,9 +963,9 @@ Reply-threading still takes priority. If you reply directly to an OpenAIdom Tele
   },
   {
     id: 'docs/reference/crypto-ecosystem-aspects',
-    title: 'Crypto Ecosystem: Categories & Concepts',
+    title: 'Crypto Ecosystem: Aspects',
     kind: 'markdown',
-    content: `# Crypto Ecosystem: Categories & Concepts
+    content: `# Crypto Ecosystem: Aspects
 
 A deeper breakdown of each layer in the crypto ecosystem. For a high-level overview, see [Crypto Ecosystem](/docs/reference/crypto-ecosystem).
 
@@ -1184,7 +1184,7 @@ The only direct overlaps:
 
 ## Learn more
 
-- [Crypto Ecosystem: Categories & Concepts](/docs/reference/crypto-ecosystem-aspects) — A deeper breakdown of each category with analogies.
+- [Crypto Ecosystem: Aspects](/docs/reference/crypto-ecosystem-aspects) — A deeper breakdown of each category with analogies.
 - [Trading Venues](/docs/trading-venues) — OpenAIdom's supported venues and when to use each.
 - [Glossary](/docs/reference/glossary) — Definitions of terms used across the platform.`,
     headings: ['Two worlds: CeFi and DeFi', 'The layers', 'Blockchain', 'Centralized Exchange (CEX)', 'Decentralized Exchange (DEX)', 'Perpetual Futures (Perps)', 'DEX Aggregator', 'Where OpenAIdom fits', 'Key insight', 'Learn more'],
@@ -1356,7 +1356,7 @@ Your connection to a specific exchange (e.g. a Hyperliquid API key, a Solana wal
 **See also:**
 
 - [Crypto Ecosystem](/docs/reference/crypto-ecosystem) — Overview of blockchains, exchanges, and aggregators.
-- [Crypto Ecosystem: Categories & Concepts](/docs/reference/crypto-ecosystem-aspects) — Deeper breakdown of each category.
+- [Crypto Ecosystem: Aspects](/docs/reference/crypto-ecosystem-aspects) — Deeper breakdown of each category.
 - [Trading Venues](/docs/trading-venues) — OpenAIdom's supported venues.`,
     headings: ['Actor', 'Agent', 'Agent Guardrail', 'Agent Mode Purity', 'Approval', 'Approval Code', 'Authorization Mode', 'Binding', 'Blueprint', 'Bot', 'Bot Run', 'BPS (Basis Point)', 'Connection', 'Credential', 'dailyLossLimit', 'Decision', 'Execution Mode', 'globalMaxDrawdownPct', 'maxDrawdown', 'maxDrawdownPct', 'maxOpenPositions', 'Platform Safety Alert', 'Reconciliation', 'Skill Preset', 'Slippage', 'stopLossCooldownMs', 'Strategic Intent', 'Strategy Preset', 'targetSize', 'Tick', 'Trading Instance', 'Venue Account'],
     tags: ['docs', 'glossary', 'reference'],
