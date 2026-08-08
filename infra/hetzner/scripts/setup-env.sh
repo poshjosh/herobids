@@ -11,9 +11,9 @@
 #
 # Usage:
 #   infra/hetzner/scripts/setup-env.sh [--env <staging|production>] [<server-ip>] --file <path>
-#   infra/hetzner/scripts/setup-env.sh --env staging --file .env.staging
-#   infra/hetzner/scripts/setup-env.sh 1.2.3.4 --file ../.env.prod      # explicit IP
-#   infra/hetzner/scripts/setup-env.sh                                  # interactive prompt
+#   infra/hetzner/scripts/setup-env.sh --env staging --file infra/hetzner/.env.staging
+#   infra/hetzner/scripts/setup-env.sh 1.2.3.4 --file infra/hetzner/.env.prod           # explicit IP
+#   infra/hetzner/scripts/setup-env.sh                                                  # interactive prompt
 #
 # Environment:
 #   HEROBIDS_ENV   Deployment environment: staging | production (default: production).

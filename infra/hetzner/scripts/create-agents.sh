@@ -55,15 +55,15 @@ PLATFORM_ASSESSMENT_3H='{"enabled":true,"reviewIntervalMs":10800000}'
 
 # thyper — Hyperliquid contrarian mean-reversion
 THYPER_AGENT_NAME="thyper"
-THYPER_AGENT_PROMPT="Scan Hyperliquid for overbought/oversold conditions. Use contrarian mean-reversion signals to enter positions against prevailing sentiment when extreme readings are detected. Submit long decisions on oversold bounces and short decisions on overbought rejections."
+THYPER_AGENT_PROMPT="Grow this portfolio aggressively"
 
 # t1inch — 1inch range-bound mean-reversion
 T1INCH_AGENT_NAME="t1inch"
-T1INCH_AGENT_PROMPT="Scan 1inch for tokens trading in well-defined ranges. Identify range support and resistance levels. Submit long decisions near support and short decisions near resistance. Use range-bound mean-reversion with tight stop-losses on range breaks."
+T1INCH_AGENT_PROMPT="Grow this portfolio aggressively"
 
 # tplaybook — ICT swing trading
 TPLAYBOOK_AGENT_NAME="tplaybook"
-TPLAYBOOK_AGENT_PROMPT="Follow the ICT trading playbook. Use the ICT Bearish Swing and ICT Bullish Swing skills to identify high-probability swing trade setups. Execute only when daily bias aligns with the trade direction. Manage positions with structured stop-loss and profit-taking rules."
+TPLAYBOOK_AGENT_PROMPT="Grow this portfolio aggressively"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 
