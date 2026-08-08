@@ -50,14 +50,32 @@ Download available container logs (API, worker, agent) from the running stack an
 
 ### Step 4 — Collect database records
 
-Query and save relevant records scoped to the evaluation period:
-- `trading_instances`, `bots`, `decisions`, `execution_plans`, `fills`
-- `agent_journal_events` for the agent(s)
-- `agent_sessions`, `agent_memory`
-- Capability grants, trading bindings, venue accounts
-- any other tables relevant to the agent's behaviour or the evaluation questions
+Discover what data (database/cache/other etc.) exists and query everything relevant to the agent.
 
-Save as JSON or CSV files under `<output-folder>/db/`.
+1. **Discover all public tables:**
+   ```sql
+   SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename;
+   ```
+2. **Read the Drizzle schema index** at `packages/db/src/schema/index.ts` to understand
+   each table's purpose. This is the canonical registry — use it as a semantic decoder,
+   not as a checklist of tables that "should" exist.
+3. **Query every table in these semantic domains** for the agent(s) under evaluation,
+   scoped to the evaluation period where the table has a timestamp column:
+
+   | Domain | What to look for |
+   |--------|------------------|
+   | **Agent identity & config** | Agent records, bots created by the agent, blueprint/preset bindings, skills |
+   | **Runtime lifecycle** | Runtime sessions, heartbeats, container status |
+   | **Trading decisions & execution** | The append-only audit trail: decisions, execution plans, orders, fills, positions, decision contexts, decision failures, decision approvals |
+   | **Venue connections** | Connections, agent connections, connection audit log, venue accounts |
+   | **Strategy & review** | Preset bindings, preset transitions, review advice, assessment runs, scan metrics, scan candidates |
+   | **Messages & artifacts** | Agent messages, outbound messages, artifacts |
+   | **Journal & reconciliation** | Journal events, reconciliation events, balance snapshots |
+   | **Cost & billing** | Usage events, ledger entries, billing periods |
+4. **Save** each table's relevant rows as JSON or CSV under `<output-folder>/db/<tablename>.json`.
+5. **If a semantic domain has no matching tables**, note it as informational — not a bug.
+   For example, agent memory is stored in Redis (`agent:memory:*` keys), so no DB table
+   is expected for that domain.
 
 ### Step 5 — Collect Redis state
 

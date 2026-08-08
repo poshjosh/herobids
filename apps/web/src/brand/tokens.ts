@@ -20,9 +20,6 @@ export const COMPACT_MARK = '/brand/compact-mark.png';
 /** Banner artwork for login hero, public landing, and wide treatments. */
 export const BANNER = '/brand/banner.png';
 
-/** Dark brand mark for light backgrounds (email headers, etc.). No CSS filter needed. */
-export const WORDMARK_DARK = '/brand/wordmark-dark.png';
-
 /** Favicon set — single set with solid navy background, visible on light and dark browser chrome. */
 export const FAVICON = {
   ico: '/favicon.ico',

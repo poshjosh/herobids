@@ -28,7 +28,7 @@ agentRuntime:
 
 alerts:
   email:
-    brandImageUrl: https://openaidom.com/brand/wordmark-dark.png
+    brandImageUrl: https://openaidom.com/brand/compact-mark.png
 
 # PRODUCTION: Billing must be a real provider (not mock). The startup guard
 # in apps/*/src/config.ts enforces this — the process will refuse to start if

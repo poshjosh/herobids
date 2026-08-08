@@ -39,7 +39,7 @@ liveRollout:
 
 alerts:
   email:
-    brandImageUrl: https://staging.openaidom.com/brand/wordmark-dark.png
+    brandImageUrl: https://staging.openaidom.com/brand/compact-mark.png
           
 # Billing — multi-provider subscription billing.
 # Use 'mock' for local dev/CI (no credentials needed — checkout auto-fulfills instantly).

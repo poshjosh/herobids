@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- prompt for chat assisted create agent form to prefer numbered lists
+- brand icon used in emails and external htmls, by updating brandImageUrl 
+
 ## v0.1.0 - 2026-08-08
 
 ### Added
