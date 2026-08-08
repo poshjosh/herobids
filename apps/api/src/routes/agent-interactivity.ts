@@ -765,12 +765,13 @@ export async function telegramWebhookHandler(
           return;
         }
         if (slashCmd.command === 'help') {
-          await sendTelegramText(chatId, formatCommandHelp(slashCmd.args[0]));
+          const helpText = formatCommandHelp(slashCmd.args[0]);
+          await sendTelegramText(chatId, `Your chat ID: ${chatId}\n\n${helpText}`);
           return;
         }
         if (slashCmd.command === 'start' && slashCmd.args.length === 0) {
           // Exact bare /start → onboarding/help, not lifecycle.
-          await sendTelegramText(chatId, formatCommandHelp());
+          await sendTelegramText(chatId, `Your chat ID: ${chatId}\n\n${formatCommandHelp()}`);
           return;
         }
         // Require user binding for all other commands

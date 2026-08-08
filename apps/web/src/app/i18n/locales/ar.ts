@@ -239,7 +239,7 @@ export const messages: Record<string, string> = {
   'settings.subtitle': 'تفضيلات الحساب وإعداد الإشعارات',
   'settings.telegram.title': 'إشعارات تيليغرام',
   'settings.telegram.description':
-    'اربط حسابك على تيليغرام لتلقي رسائل وكلاء الذكاء الاصطناعي وتنبيهات السلامة مباشرةً في تيليغرام. ابدأ محادثة مع بوت OpenAIDom، وأرسل /start، ثم الصق معرّف المحادثة هنا.',
+    'اربط حسابك على تيليغرام لتلقي رسائل وكلاء الذكاء الاصطناعي وتنبيهات السلامة مباشرةً في تيليغرام. ابدأ محادثة مع بوت OpenAIDom وأرسل /start — سيرد البوت بمعرّف المحادثة الخاص بك. الصقه هنا.',
   'settings.telegram.chatId.label': 'معرّف محادثة تيليغرام',
   'settings.telegram.chatId.placeholder': 'مثال: 123456789',
   'settings.telegram.saved': 'تم حفظ معرّف محادثة تيليغرام.',

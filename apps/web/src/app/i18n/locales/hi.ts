@@ -239,7 +239,7 @@ export const messages: Record<string, string> = {
   'settings.subtitle': 'खाता प्राथमिकताएं और अधिसूचना कॉन्फ़िगरेशन',
   'settings.telegram.title': 'Telegram सूचनाएं',
   'settings.telegram.description':
-    'अपने Telegram खाते को बाइंड करें ताकि AI एजेंट संदेश और सुरक्षा अलर्ट सीधे Telegram में मिलें। OpenAIdom बॉट के साथ चैट शुरू करें, /start भेजें, फिर अपना चैट ID यहाँ पेस्ट करें.',
+    'अपने Telegram खाते को बाइंड करें ताकि AI एजेंट संदेश और सुरक्षा अलर्ट सीधे Telegram में मिलें। OpenAIdom बॉट के साथ चैट शुरू करें और /start भेजें — बॉट आपके चैट ID के साथ जवाब देगा। इसे यहाँ पेस्ट करें।',
   'settings.telegram.chatId.label': 'Telegram चैट ID',
   'settings.telegram.chatId.placeholder': 'उदा. 123456789',
   'settings.telegram.saved': 'Telegram चैट ID सहेज लिया गया।',
