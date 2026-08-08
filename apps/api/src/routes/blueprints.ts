@@ -17,6 +17,7 @@ import {
   agentSkills,
   connections,
   venueAccounts,
+  users,
 } from '@herobids/db';
 import {
   applyPresetToAgent,
@@ -34,6 +35,7 @@ import {
   CreateBlueprintRevisionSchema,
   encodeBlueprintCursor,
   decodeBlueprintCursor,
+  normalizePersistedAiModelConfig,
 } from '@herobids/domain';
 import type {
   AgentRiskDefaultsConfig,
@@ -1837,6 +1839,34 @@ export async function blueprintRoutes(
         compatibleExecutionModes.push('paper', 'shadow', 'live');
       }
 
+      // Check model selection readiness — surface if the agent won't be startable
+      let modelSelectionReady = true;
+      if (bp.kind === 'agent') {
+        const agentP = rawPayload as AgentBlueprintRevisionPayload;
+        const hasModelPolicy = agentP.modelPolicy && typeof agentP.modelPolicy === 'object'
+          && (agentP.modelPolicy as Record<string, unknown>)['provider'];
+        if (!hasModelPolicy) {
+          const [userRow] = await db.select({ aiModelConfig: users.aiModelConfig })
+            .from(users).where(eq(users.id, request.userId)).limit(1);
+          const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
+          if (!userAiConfig?.provider || !userAiConfig?.lightModel || !userAiConfig?.heavyModel) {
+            modelSelectionReady = false;
+            warnings.push('Model selection incomplete — configure an LLM provider in Settings before starting this agent');
+          }
+        }
+      }
+
+      // Check skill portability at preview time so installers know before committing
+      if (bp.kind === 'agent') {
+        const skillRefs = await getRevisionSkillRefs(db, revision.id);
+        if (skillRefs.length > 0) {
+          const portability = await validateSkillPortability(skillRefs, db);
+          if (!portability.valid) {
+            warnings.push(`Skill dependency unavailable: ${portability.errors.join('; ')}`);
+          }
+        }
+      }
+
       const response = {
         blueprintId: bp.id,
         revisionId: revision.id,
@@ -1848,6 +1878,7 @@ export async function blueprintRoutes(
         compatibleExecutionModes,
         selectedResolvedMode: capResult.resolvedMode,
         validationWarnings: [...warnings, ...capResult.errors],
+        modelSelectionReady,
       };
 
       // Validate response shape
@@ -2160,6 +2191,17 @@ export async function blueprintRoutes(
         if (bp.kind === 'agent') {
           const agentPayloadFinal = finalPayload as AgentBlueprintRevisionPayload;
 
+          // Same-user pre-fill: copy telegramChatId when installer is the blueprint author
+          let telegramChatId: string | null = null;
+          if (bp.authorId === request.userId) {
+            const [userRow] = await tx
+              .select({ telegramChatId: users.telegramChatId })
+              .from(users)
+              .where(eq(users.id, request.userId))
+              .limit(1);
+            telegramChatId = userRow?.telegramChatId ?? null;
+          }
+
           // Build unifiedConfig from blueprint agent fields that map to UnifiedAgentConfig
           const unifiedConfig: Record<string, unknown> = {};
           if (agentPayloadFinal.technical) unifiedConfig.technical = agentPayloadFinal.technical;
@@ -2208,6 +2250,7 @@ export async function blueprintRoutes(
             runtimePolicyOverrides: agentPayloadFinal.runtimePolicyOverrides ?? null,
             wakePreferences: agentPayloadFinal.wakePreferences ?? null,
             unifiedConfig: Object.keys(unifiedConfig).length > 0 ? unifiedConfig : null,
+            telegramChatId,
           } as typeof agents.$inferInsert);
 
           // Insert agent_skills rows

@@ -265,6 +265,7 @@ export const BlueprintInstantiatePreviewResponseSchema = z.object({
   compatibleExecutionModes: z.array(z.string()),
   selectedResolvedMode: z.string().nullable(),
   validationWarnings: z.array(z.string()),
+  modelSelectionReady: z.boolean(),
 }).strict();
 
 // ── Confirmation ─────────────────────────────────────────────────────────────

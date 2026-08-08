@@ -119,6 +119,7 @@ export interface BlueprintInstantiatePreviewResponse {
   compatibleExecutionModes: string[];
   selectedResolvedMode: string | null;
   validationWarnings: string[];
+  modelSelectionReady: boolean;
 }
 
 // ── Instantiate Confirm ─────────────────────────────────────────────

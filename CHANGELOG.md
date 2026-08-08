@@ -10,6 +10,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Wallet Funding Documentation & Post-Creation Links:** New public documentation page (`/docs/trading-venues/funding-wallets`) covering how to fund wallets across Hyperliquid, Jupiter, 1inch, and Bybit — both platform-generated and user-provided. Cross-linked from all venue pages and the trading-venues index. A "Learn more about funding" link now appears on the `wallet_created` confirm card in Guided Setup chat. A dismissible funding reminder banner shows on the agent detail page when the agent has a trading connection with wallet-generation capability. See `docs/features/2026/08/08/001-wallet-funding-docs/001-plan.md`.
 
+- **Marketplace blueprint preview now surfaces start-readiness.** The `POST /blueprints/:id/instantiate/preview` response includes a new `modelSelectionReady` boolean — `false` when the blueprint lacks explicit model configuration and the installer has no AI model settings configured, meaning the agent cannot be started without additional setup. A corresponding warning is added to `validationWarnings`.
+
+- **Marketplace blueprint preview now validates skill portability upfront.** Skill dependency validation (previously only checked at instantiate time) now runs during preview, so installers see unavailable skill dependencies as warnings before committing to instantiation.
+
+- **Same-user blueprint instantiation pre-fills Telegram chat ID.** When the installer is the blueprint author, the new agent automatically inherits the author's Telegram chat ID from their user profile — eliminating a manual setup step for creators copying their own blueprints.
+
 ### Changed
 
 - Add note to setup Telegram at the end of the chat assisted agent creation flow
