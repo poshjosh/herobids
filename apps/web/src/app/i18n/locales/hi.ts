@@ -568,6 +568,8 @@ export const messages: Record<string, string> = {
   'agents.detail.notFound': 'AI एजेंट नहीं मिला',
   'agents.detail.runtimeAlert.crashed': 'AI एजेंट क्रैश हो गया। रनटाइम अप्रत्याशित रूप से रुक गया। नीचे हाल की गतिविधि और क्षमता तैयारी देखें।',
   'agents.detail.runtimeAlert.unhealthy': 'AI एजेंट रनटाइम अस्वस्थ है। हार्टबीट गायब हैं और वर्कर रिकवर कर रहा है।',
+  'agents.detail.fundingBanner.text': 'लाइव ट्रेडिंग से पहले आपके ट्रेडिंग वॉलेट में धनराशि की आवश्यकता हो सकती है।',
+  'agents.detail.fundingBanner.learnMore': 'धनराशि जोड़ने का तरीका जानें →',
   'agents.detail.editConfig': 'कॉन्फ़िग संपादित करें',
   'agents.detail.starting': 'शुरू किया जा रहा है…',
   'agents.detail.start': 'शुरू करें',

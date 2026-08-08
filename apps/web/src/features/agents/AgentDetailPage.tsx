@@ -364,9 +364,9 @@ export function AgentDetailPage() {
             color: 'var(--color-text-primary)',
           }}>
             <span>
-              Your trading wallet may need funding before live trading.{' '}
+              {intl.formatMessage({ id: 'agents.detail.fundingBanner.text' })}{' '}
               <a href={fundingDocUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-brand)' }}>
-                Learn how to fund →
+                {intl.formatMessage({ id: 'agents.detail.fundingBanner.learnMore' })}
               </a>
             </span>
             <Button variant="ghost" size="sm" onClick={dismissFundingBanner}>Dismiss</Button>

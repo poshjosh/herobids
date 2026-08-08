@@ -613,6 +613,8 @@ export const messages: Record<string, string> = {
   'agents.detail.notFound': 'AI agent not found',
   'agents.detail.runtimeAlert.crashed': 'AI agent crashed. The runtime stopped unexpectedly. Review recent activity and capability readiness below.',
   'agents.detail.runtimeAlert.unhealthy': 'AI agent runtime is unhealthy. Heartbeats are missing and the worker is recovering.',
+  'agents.detail.fundingBanner.text': 'Your trading wallet may need funding before live trading.',
+  'agents.detail.fundingBanner.learnMore': 'Learn how to fund →',
   'agents.detail.editConfig': 'Edit config',
   'agents.detail.starting': 'Starting…',
   'agents.detail.start': 'Start',
