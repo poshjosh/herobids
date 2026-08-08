@@ -491,7 +491,7 @@ export function Modal({
   placement?: 'center' | 'top';
   children: React.ReactNode;
 }) {
-  return createPortal(
+  const content = (
     <div
       onClick={closeOnBackdropClick ? onClose : undefined}
       style={{
@@ -547,9 +547,16 @@ export function Modal({
         </div>
         {children}
       </div>
-    </div>,
-    document.body,
+    </div>
   );
+
+  // In SSR (e.g. renderToStaticMarkup), portals to document.body are not available.
+  // Render the content directly without a portal.
+  if (typeof document === 'undefined') {
+    return content;
+  }
+
+  return createPortal(content, document.body);
 }
 
 // ---------------------------------------------------------------------------

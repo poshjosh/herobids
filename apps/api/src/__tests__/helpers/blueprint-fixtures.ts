@@ -110,6 +110,7 @@ export interface BlueprintRowOverrides {
   forkCount?: number;
   popularityScore?: number;
   trendingScore?: number;
+  performanceScore?: number;
 }
 
 export function buildBlueprint(overrides: BlueprintRowOverrides = {}) {
@@ -139,6 +140,7 @@ export function buildBlueprint(overrides: BlueprintRowOverrides = {}) {
     forkCount: overrides.forkCount ?? 0,
     popularityScore: overrides.popularityScore ?? 0,
     trendingScore: overrides.trendingScore ?? 0,
+    performanceScore: overrides.performanceScore ?? 0,
   };
 }
 
