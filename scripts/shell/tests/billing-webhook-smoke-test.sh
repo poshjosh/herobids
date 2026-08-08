@@ -165,6 +165,25 @@ fi
 ok "API reachable at ${API_BASE_URL}"
 
 # ---------------------------------------------------------------------------
+# Pre-check: ensure Creem webhook endpoint is available (not mock provider)
+# ---------------------------------------------------------------------------
+
+WEBHOOK_CHECK=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${API_BASE_URL}/billing/webhook/creem" \
+  -H 'content-type: application/json' \
+  -d '{}' 2>/dev/null || echo "000")
+
+if [[ "${WEBHOOK_CHECK}" == "404" ]]; then
+  WEBHOOK_BODY=$(curl -s -X POST "${API_BASE_URL}/billing/webhook/creem" \
+    -H 'content-type: application/json' \
+    -d '{}' 2>/dev/null || echo "")
+  if echo "${WEBHOOK_BODY}" | grep -q "provider_not_configured\|mock_not_supported"; then
+    warn "Creem webhook not available (Creem billing provider not active). Skipping test."
+    warn "Set BILLING_PRIMARY_PROVIDER=creem in config to enable this test."
+    exit 0
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Cleanup on exit
 # ---------------------------------------------------------------------------
 

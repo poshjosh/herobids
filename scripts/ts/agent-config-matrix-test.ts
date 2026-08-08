@@ -230,6 +230,8 @@ async function scenario_intelligence_patch(token: string): Promise<void> {
       hybridMode: 'mixed',
       strategyPreset: 'momentum',
       style: 'balanced',
+      executionDefaults: { mode: 'paper' as const },
+      skillIds: ['trading'],
       // No connectionIds — not needed for this test
     },
   });
@@ -262,6 +264,8 @@ async function scenario_hybrid_mixed_post(token: string): Promise<void> {
       hybridMode: 'mixed',
       strategyPreset: 'momentum',
       style: 'balanced',
+      executionDefaults: { mode: 'paper' as const },
+      skillIds: ['trading'],
       connectionIds: [connectionId],
     },
   });
@@ -287,6 +291,8 @@ async function scenario_hybrid_mixed_patch(token: string): Promise<void> {
       hybridMode: 'mixed',
       strategyPreset: 'swing',
       style: 'balanced',
+      executionDefaults: { mode: 'paper' as const },
+      skillIds: ['trading'],
       connectionIds: [connectionId],
     },
   });
@@ -326,6 +332,8 @@ async function scenario_hybrid_scanner_post(token: string): Promise<void> {
       hybridMode: 'scanner_gated',
       strategyPreset: 'momentum',
       style: 'balanced',
+      executionDefaults: { mode: 'paper' as const },
+      skillIds: ['trading'],
       connectionIds: [connectionId],
     },
   });
@@ -350,6 +358,8 @@ async function scenario_hybrid_scanner_patch(token: string): Promise<void> {
       hybridMode: 'scanner_gated',
       strategyPreset: 'swing',
       style: 'balanced',
+      executionDefaults: { mode: 'paper' as const },
+      skillIds: ['trading'],
       connectionIds: [connectionId],
     },
   });

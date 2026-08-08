@@ -271,27 +271,16 @@ run_script() {
   local script_path="$2"
   shift 2
 
-  if [[ $# -gt 0 ]]; then
-    log "Running: ${script_path} $*"
-    if bash "${script_path}" "$@"; then
-      RESULTS+=("${GREEN}PASS${RESET}  ${label}")
-      return 0
-    else
-      RESULTS+=("${RED}FAIL${RESET}  ${label}")
-      OVERALL_EXIT=1
-      return 1
-    fi
+  log "Running: ${script_path}${*:+ $*}"
+  if bash "${script_path}" "$@"; then
+    RESULTS+=("${GREEN}PASS${RESET}  ${label}")
   else
-    log "Running: ${script_path}"
-    if bash "${script_path}"; then
-      RESULTS+=("${GREEN}PASS${RESET}  ${label}")
-      return 0
-    else
-      RESULTS+=("${RED}FAIL${RESET}  ${label}")
-      OVERALL_EXIT=1
-      return 1
-    fi
+    RESULTS+=("${RED}FAIL${RESET}  ${label}")
+    OVERALL_EXIT=1
   fi
+  # Always return 0 — failures are tracked in RESULTS/OVERALL_EXIT.
+  # Returning non-zero would trigger `set -e` and kill the script early.
+  return 0
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
