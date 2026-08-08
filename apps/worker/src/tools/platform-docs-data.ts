@@ -1396,8 +1396,12 @@ Pick 1inch if you trade across multiple EVM-compatible blockchains (Ethereum, Ar
 ## Limitations
 
 - **No leverage** — 1inch only supports spot token swaps. For leveraged trading, use Hyperliquid.
-- **Perp DEXs on EVM are limited** — 1inch focuses on spot swaps. While some perpetual venues exist on EVM chains, they're not as mature as Hyperliquid's dedicated perp market.`,
-    headings: ['What it\'s good for', 'How it works', 'Fees', 'Best use case', 'Limitations'],
+- **Perp DEXs on EVM are limited** — 1inch focuses on spot swaps. While some perpetual venues exist on EVM chains, they're not as mature as Hyperliquid's dedicated perp market.
+
+## See also
+
+- [Funding Your Wallets](/docs/trading-venues/funding-wallets) — How to fund your 1inch wallet`,
+    headings: ['What it\'s good for', 'How it works', 'Fees', 'Best use case', 'Limitations', 'See also'],
     tags: ['1inch', 'docs', 'trading-venues'],
   },
   {
@@ -1436,9 +1440,94 @@ Pick Bybit if you want to deposit fiat currency, trade a wide range of assets, o
 
 - **KYC required** — You must provide personal identification documents.
 - **Not anonymous** — Your identity is tied to your account.
-- **Centralized risk** — Funds are held by Bybit. If the exchange were compromised, you could lose assets (use only amounts you trust a centralized platform to hold).`,
-    headings: ['What it\'s good for', 'How it works', 'Fees', 'Best use case', 'Limitations'],
+- **Centralized risk** — Funds are held by Bybit. If the exchange were compromised, you could lose assets (use only amounts you trust a centralized platform to hold).
+
+## See also
+
+- [Funding Your Wallets](/docs/trading-venues/funding-wallets) — How to fund your Bybit account`,
+    headings: ['What it\'s good for', 'How it works', 'Fees', 'Best use case', 'Limitations', 'See also'],
     tags: ['bybit', 'docs', 'trading-venues'],
+  },
+  {
+    id: 'docs/trading-venues/funding-wallets',
+    title: 'Funding Your Wallets',
+    kind: 'markdown',
+    content: `# Funding Your Wallets
+
+This guide covers how to fund wallets across all supported trading venues — both platform-generated wallets (created by OpenAIdom) and user-provided wallets connected via API keys or self-custodied wallets.
+
+---
+
+## Hyperliquid
+
+### Platform-generated wallet (OpenAIdom creates it)
+
+- **What to send:** USDC via Arbitrum bridge
+- **Where to find the address:** Settings → Connections, or the wallet-created card in chat
+- **Confirmation:** ~2–5 min after Arbitrum finality
+- **Minimum recommended:** \$50 USDC
+
+### User-provided API keys
+
+- Fund your Hyperliquid account via the standard Arbitrum bridge or exchange withdrawal
+- See [Hyperliquid](/docs/trading-venues/hyperliquid) for connection setup
+
+### Gas & fees
+
+- Hyperliquid is gasless for spot USDC transfers
+- Trading fees: maker/taker (see [hyperliquid.xyz](https://hyperliquid.xyz))
+
+---
+
+## Jupiter
+
+### Platform-generated wallet (OpenAIdom creates it)
+
+- **What to send:** SOL (for gas) + USDC (for trading)
+- **Where to send from:** Any Solana wallet or exchange
+- **Confirmation:** ~1–2 seconds (Solana)
+- **Minimum recommended:** 0.05 SOL + \$20 USDC
+
+### User-provided wallet
+
+- Ensure your connected Solana wallet holds SOL + USDC
+- See [Jupiter](/docs/trading-venues/jupiter) for connection setup
+
+### Gas & fees
+
+- SOL for transaction fees (~0.000005 SOL per tx)
+- Jupiter aggregates routes for best swap prices
+
+---
+
+## 1inch
+
+### Platform-generated wallet (OpenAIdom creates it)
+
+- **What to send:** ETH (for gas on Base) + USDC (for trading)
+- **Where to bridge from:** Ethereum mainnet via Base Bridge, or send from exchange
+- **Confirmation:** ~2–3 min (Base L2)
+- **Minimum recommended:** 0.01 ETH + \$20 USDC
+
+### User-provided wallet
+
+- Ensure your EVM wallet on Base holds ETH + USDC
+- See [1inch](/docs/trading-venues/1inch) for connection setup
+
+### Gas & fees
+
+- ETH on Base for transaction fees
+- 1inch aggregates across DEXs for best rates
+
+---
+
+## Bybit
+
+- Bybit uses API keys only — no platform-generated wallets
+- Fund your Bybit account via Bybit's standard deposit flow (USDT or USDC)
+- See [Bybit](/docs/trading-venues/bybit) for connection setup`,
+    headings: ['Hyperliquid', 'Platform-generated wallet (OpenAIdom creates it)', 'User-provided API keys', 'Gas & fees', 'Jupiter', 'Platform-generated wallet (OpenAIdom creates it)', 'User-provided wallet', 'Gas & fees', '1inch', 'Platform-generated wallet (OpenAIdom creates it)', 'User-provided wallet', 'Gas & fees', 'Bybit'],
+    tags: ['docs', 'funding-wallets', 'trading-venues'],
   },
   {
     id: 'docs/trading-venues/hyperliquid',
@@ -1474,8 +1563,12 @@ Pick Hyperliquid if you want leverage, shorting, or perpetual futures trading. I
 ## Limitations
 
 - **Crypto only** — You must deposit cryptocurrency. No direct fiat (USD, EUR, etc.) on-ramp through Hyperliquid itself.
-- **Requires understanding of futures** — Leveraged trading carries risk and is not suitable for beginners.`,
-    headings: ['What it\'s good for', 'How it works', 'Fees', 'Best use case', 'Limitations'],
+- **Requires understanding of futures** — Leveraged trading carries risk and is not suitable for beginners.
+
+## See also
+
+- [Funding Your Wallets](/docs/trading-venues/funding-wallets) — How to fund your Hyperliquid wallet`,
+    headings: ['What it\'s good for', 'How it works', 'Fees', 'Best use case', 'Limitations', 'See also'],
     tags: ['docs', 'hyperliquid', 'trading-venues'],
   },
   {
@@ -1504,8 +1597,12 @@ New to the crypto ecosystem? Start with [Crypto Ecosystem](/docs/reference/crypt
 - **You want the fastest and cheapest token swaps on Solana** → Jupiter
 - **You trade across Ethereum, Arbitrum, or other EVM chains** → 1inch
 
-Choose one during agent creation. You can always connect more later.`,
-    headings: ['Quick comparison', 'What should I choose?'],
+Choose one during agent creation. You can always connect more later.
+
+## Funding
+
+Before your agent can trade, your wallets need to be funded. See [Funding Your Wallets](/docs/trading-venues/funding-wallets) for a step-by-step guide for each venue.`,
+    headings: ['Quick comparison', 'What should I choose?', 'Funding'],
     tags: ['docs', 'trading-venues'],
   },
   {
@@ -1540,8 +1637,12 @@ Pick Jupiter if you trade tokens on Solana and want fast, cheap swaps at the bes
 ## Limitations
 
 - **Solana only** — Jupiter works exclusively on the Solana blockchain. If you trade on Ethereum or other chains, use 1inch instead.
-- **Spot trading only** — Jupiter does not support leverage or perpetual futures. For leveraged trading, use Hyperliquid.`,
-    headings: ['What it\'s good for', 'How it works', 'Fees', 'Best use case', 'Limitations'],
+- **Spot trading only** — Jupiter does not support leverage or perpetual futures. For leveraged trading, use Hyperliquid.
+
+## See also
+
+- [Funding Your Wallets](/docs/trading-venues/funding-wallets) — How to fund your Jupiter wallet`,
+    headings: ['What it\'s good for', 'How it works', 'Fees', 'Best use case', 'Limitations', 'See also'],
     tags: ['docs', 'jupiter', 'trading-venues'],
   },
   {
