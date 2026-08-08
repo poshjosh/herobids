@@ -2,7 +2,7 @@
 
 **Feature:** Guided Setup reliability hardening
 **Date:** 2026-08-07
-**Status:** Draft
+**Status:** Implemented
 **Related:**
 - [AI-First UX / Onboarding Chat](../../2026/08/01/005-ai-first-ux/002-onboarding-chat.md)
 - [Guided Setup Inline Connection Form](../../2026/08/05/002-guided-setup-inline-connection-form/001-plan.md)
@@ -423,3 +423,42 @@ If existing mocks are too brittle for the connection-autowiring path, add a narr
 - wiring the API-local Guided Setup runtime to the real platform-docs index
 - a general-purpose post-greeting quick-reply action type for arbitrary LLM-driven follow-up questions (this plan adds only the narrow connection-choice buttons)
 - broader create-parity work already captured in [Fix Guided Setup Missing Agent Config](../../2026/08/07/001-fix-guided-setup-missing-agent-config/001-plan.md)
+
+## Outstanding Issues (Post-Implementation)
+
+### Workstream 1: Backend Connection Autowiring
+
+#### MEDIUM
+- **M1**: No error-path integration test for autowiring ambiguity in the tool loop
+- **M2**: TOCTOU between autowiring validation and transaction validation — document rationale
+- **M3**: `validateSurfacedConnections` fetches ALL user connections instead of targeted `WHERE id IN`
+- **M4**: `custom` preset agents with trading skills won't get trading connections autowired (pre-existing limitation)
+- **M5**: `assignedConnectionId` in result only reflects first connection ID (fine for now, connections always 0-1)
+
+#### LOW
+- **L1**: Variable naming `resolvedConnections` is a context, not resolved objects — consider renaming to `connectionContext`
+- **L2**: `validateSurfacedConnections` silently drops stale IDs — add code comment explaining intent
+- **L5**: Missing loop-level test for incompatible explicit `selectedConnectionId`
+
+### Workstream 3: Prompt Contract Cleanup
+
+#### MEDIUM
+- **M1**: `CHAT_TOOLS` descriptions are not contract-tested (`selectedConnectionId`, `create_connection`)
+- **M3**: Prompt wording inconsistency: "next create_agent call" vs "follows immediately"
+
+#### LOW
+- **L1**: No positive assertion that `list_available_skills` survived docs-tool removal
+- **L2**: Docs-tool test could miss reworded references
+- **L3**: `buildSystemPrompt` export widens public API surface
+
+### Workstream 5: Connection Disambiguation Buttons
+
+#### MEDIUM
+- **M1**: No integration test verifies venue-hint threading in the tool-loop disambiguation path
+- **M2**: `BUTTON_VALUE_RE` is case-sensitive — consider making it case-insensitive for defensive hardening
+
+#### LOW
+- **L1**: `buildResumeFallback` for `connection_selected` is generic (doesn't name the connection)
+- **L2**: "Generate a new wallet" button always shown regardless of venue wallet-generation capability
+- **L3**: `detectPresetFromContent` runs unnecessarily on button-reply content
+- **L4**: Regex character class may need future-proofing for connection ID format changes
