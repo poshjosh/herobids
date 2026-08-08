@@ -390,6 +390,8 @@ async function scenario1_boundedScanCompletes(token: string): Promise<void> {
       hybridMode: 'scanner_gated',
       strategyPreset: 'momentum',
       style: 'balanced',
+      executionDefaults: { mode: 'paper' as const },
+      skillIds: ['trading'],
       connectionIds: [connectionId],
       technical: {
         filters: {
@@ -544,6 +546,8 @@ async function scenario2_explicitIntervalRespected(token: string): Promise<void>
       hybridMode: 'scanner_gated',
       strategyPreset: 'momentum',
       style: 'balanced',
+      executionDefaults: { mode: 'paper' as const },
+      skillIds: ['trading'],
       connectionIds: [connectionId],
       technical: {
         filters: {

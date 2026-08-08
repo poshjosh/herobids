@@ -7,6 +7,36 @@
 # excluded by design — they require operator-managed API keys and hit live
 # venue endpoints.
 #
+# ── Known skips (tests that self-skip in dev) ────────────────────────────────
+#
+# billing-webhook-smoke       Tier 3  Requires BILLING_PRIMARY_PROVIDER=creem.
+#                                     Default dev config uses 'mock' provider.
+#                                     Set in config/{staging,production}.yaml.
+#
+# agent-trade-test            Tier 5  Requires Ollama LLM models pre-loaded.
+# preset-review-gap-closure   Tier 5  These tests need the agent runtime to
+#                                     reason via LLM. In dev, Ollama models may
+#                                     not be pre-loaded or responsive enough,
+#                                     causing agent crashes and timeouts.
+#                                     Pre-check: Ollama /api/tags reachable.
+#
+# caddy-routing-smoke         Tier 6  Requires network access to CADDY_BASE_URL
+#                                     (default: staging.openaidom.com).
+#                                     Pre-check: curl to CADDY_BASE_URL/health.
+#
+# telegram-messaging          Tier 6  Requires TELEGRAM_WEBHOOK_URL set.
+#                                     Webhook absence is a config choice; the
+#                                     test treats it as informational (non-fatal).
+#
+# ── API validation known issue ───────────────────────────────────────────────
+#
+# resolveExecutionModeForSkills (agent-config-helpers.ts) only checks skillIds
+# for trading capability, not capabilityMode. The CreateAgentSchema superRefine
+# considers capabilityMode='hybrid' as trading-capable. This forces test
+# payloads for hybrid agents to include BOTH executionDefaults AND
+# skillIds:['trading'], even though skills are auto-resolved later in the
+# handler flow. See .ignore/test-related-changes.md for details.
+#
 # Tiers (run in order; tiers 5-6 are opt-in):
 #   1. No-stack              — pure vitest, no services required
 #   2. Redis-only            — requires Redis (auto-started if needed)

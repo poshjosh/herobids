@@ -207,6 +207,17 @@ if [[ ! -f "$TS_FILE" ]]; then
   die "Test script not found: $TS_FILE"
 fi
 
+# Pre-check: verify the LLM provider has the required models loaded.
+# The review scheduler tests need the agent runtime + LLM to function.
+# In dev environments with Ollama, models may not be pre-loaded causing timeouts.
+OLLAMA_CHECK=$(curl -s -o /dev/null -w '%{http_code}' \
+  "${OLLAMA_BASE_URL:-http://localhost:11434}/api/tags" 2>/dev/null || echo "000")
+if [[ "${LLM_PROVIDER:-}" == "ollama" && "${OLLAMA_CHECK}" != "200" ]]; then
+  warn "Ollama is not reachable at ${OLLAMA_BASE_URL:-http://localhost:11434}. Skipping preset review gap closure test."
+  warn "Start Ollama and ensure models (${LLM_LIGHT_MODEL:-qwen3:8b}, ${LLM_HEAVY_MODEL:-qwen3.6:35b-a3b-q4_K_M}) are pulled."
+  exit 0
+fi
+
 export SCENARIOS SCHEDULER_WAIT_MS API_BASE_URL TEST_EMAIL TEST_PASSWORD VENUE EXECUTION_MODE
 export LLM_PROVIDER LLM_LIGHT_MODEL LLM_HEAVY_MODEL
 export HL_API_KEY HL_SECRET HL_WALLET_ADDRESS BYBIT_API_KEY BYBIT_SECRET

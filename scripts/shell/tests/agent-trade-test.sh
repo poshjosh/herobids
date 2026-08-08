@@ -267,6 +267,17 @@ fi
 # Run
 # ---------------------------------------------------------------------------
 
+# Pre-check: verify the LLM provider has the required models loaded.
+# The agent trade test needs the agent to reason and create bots via LLM.
+# In dev environments with Ollama, models may not be pre-loaded causing timeouts.
+OLLAMA_CHECK=$(curl -s -o /dev/null -w '%{http_code}' \
+  "${OLLAMA_BASE_URL:-http://localhost:11434}/api/tags" 2>/dev/null || echo "000")
+if [[ "${LLM_PROVIDER:-}" == "ollama" && "${OLLAMA_CHECK}" != "200" ]]; then
+  warn "Ollama is not reachable at ${OLLAMA_BASE_URL:-http://localhost:11434}. Skipping agent trade test."
+  warn "Start Ollama and ensure models (${LLM_LIGHT_MODEL:-qwen3:8b}, ${LLM_HEAVY_MODEL:-qwen3.6:35b-a3b-q4_K_M}) are pulled."
+  exit 0
+fi
+
 TS_SCRIPT="$REPO_ROOT/scripts/ts/agent-trade-test.ts"
 
 if command -v pnpm &>/dev/null; then
