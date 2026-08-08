@@ -21,6 +21,7 @@ import {
   UnifiedAgentConfigSchema,
   RiskConfigSchema,
   BotRiskSchema,
+  ExecutionDefaultsSchema,
   type AgentStyleValue,
   type ReasoningLevel,
 } from './schema.js';
@@ -1662,5 +1663,31 @@ describe('BotRiskSchema', () => {
     });
     expect(result.maxNewPositionsPerDay).toBe(5);
     expect(result.avoidParabolicMovePct).toBe(30);
+  });
+});
+
+// ── Regression: sliageBps must accept null ──────────────────────────────
+
+describe('ExecutionDefaultsSchema — sliageBps null tolerance', () => {
+  it('accepts sliageBps: null (defense-in-depth)', () => {
+    const result = ExecutionDefaultsSchema.parse({
+      mode: 'paper',
+      slippageBps: null,
+    });
+    expect(result.slippageBps).toBeNull();
+  });
+
+  it('accepts sliageBps: undefined (omitted key)', () => {
+    const result = ExecutionDefaultsSchema.parse({ mode: 'shadow' });
+    expect(result.slippageBps).toBeUndefined();
+  });
+
+  it('accepts a numeric slippageBps', () => {
+    const result = ExecutionDefaultsSchema.parse({ mode: 'shadow', slippageBps: 50 });
+    expect(result.slippageBps).toBe(50);
+  });
+
+  it('rejects a negative slippageBps', () => {
+    expect(() => ExecutionDefaultsSchema.parse({ mode: 'paper', slippageBps: -1 })).toThrow();
   });
 });

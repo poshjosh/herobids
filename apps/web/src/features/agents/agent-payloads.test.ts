@@ -347,7 +347,6 @@ describe('agent payload builders', () => {
       },
       executionDefaults: {
         mode: 'paper',
-        slippageBps: null,
       },
       tickIntervalMs: null,
       capital: null,
@@ -670,7 +669,7 @@ describe('agent payload builders', () => {
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
       emailDelivery: 'inherit',
     });
-    expect(payload.executionDefaults).toEqual({ mode: 'live', slippageBps: null });
+    expect(payload.executionDefaults).toEqual({ mode: 'live' });
   });
 
   it('does not send executionDefaults when mode is null (non-trading agent)', () => {
@@ -1214,5 +1213,57 @@ describe('buildUpdateAgentPayload — emailDelivery mapping', () => {
     expect(payload.notificationPolicy).toEqual({
       sendMessage: { email: { enabled: false, source: 'explicit_update' } },
     });
+  });
+});
+
+// ── Regression: sliageBps must not be sent as null ──────────────────────
+
+describe('buildUpdateAgentPayload — sliageBps null regression', () => {
+  it('omits sliageBps from executionDefaults when maxSlippageBps is empty', () => {
+    const payload = buildUpdateAgentPayload({
+      ...BASE_UPDATE_INPUT,
+      hasTradingCapability: true,
+      executionMode: 'shadow',
+      maxSlippageBps: '',
+    });
+    expect(payload.executionDefaults).toBeDefined();
+    expect(payload.executionDefaults).not.toHaveProperty('slippageBps');
+  });
+
+  it('includes sliageBps in executionDefaults when maxSlippageBps is a number', () => {
+    const payload = buildUpdateAgentPayload({
+      ...BASE_UPDATE_INPUT,
+      hasTradingCapability: true,
+      executionMode: 'shadow',
+      maxSlippageBps: '50',
+    });
+    expect(payload.executionDefaults).toMatchObject({ slippageBps: 50 });
+  });
+});
+
+describe('buildCreateAgentPayload — sliageBps null regression', () => {
+  it('omits sliageBps from executionDefaults when maxSlippageBps is empty', () => {
+    const payload = buildCreateAgentPayload({
+      ...BASE_CREATE_INPUT,
+      requiresTradingSetup: true,
+      maxSlippageBps: '',
+    });
+    // Create path doesn't send executionDefaults at all when mode is not set
+    // (requiresTradingSetup needs connections for mode resolution).
+    // The key invariant: if executionDefaults is present, sliageBps is not null.
+    if (payload.executionDefaults) {
+      expect(payload.executionDefaults).not.toHaveProperty('slippageBps');
+    }
+  });
+
+  it('includes sliageBps in executionDefaults when maxSlippageBps is a number', () => {
+    const payload = buildCreateAgentPayload({
+      ...BASE_CREATE_INPUT,
+      requiresTradingSetup: true,
+      executionMode: 'test',
+      connectionIds: ['conn-1'],
+      maxSlippageBps: '75',
+    });
+    expect(payload.executionDefaults).toMatchObject({ mode: 'shadow', slippageBps: 75 });
   });
 });

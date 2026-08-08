@@ -117,6 +117,15 @@ describe('projectAgentToBlueprintPayload', () => {
     });
     expect(payload.capabilityMode).toBe('intelligence');
   });
+
+  it('projects agent with executionDefaults.slippageBps: null to a valid blueprint payload', () => {
+    const payload = projectAgentToBlueprintPayload({
+      ...minimalAgentInput,
+      executionDefaults: { mode: 'paper', slippageBps: null },
+    });
+    const result = AgentBlueprintRevisionPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(true);
+  });
 });
 
 // ── Bot projection tests ─────────────────────────────────────────────────────

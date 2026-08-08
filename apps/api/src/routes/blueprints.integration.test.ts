@@ -2459,3 +2459,309 @@ describe.skipIf(SKIP)('Blueprint instantiation — faithful copy verification', 
   });
 });
 
+// ── Preview: model readiness & skill portability ─────────────────────────
+
+describe.skipIf(SKIP)('Blueprint preview — start-readiness checks', () => {
+  let db: ReturnType<typeof createDatabase>;
+  let app: ReturnType<typeof Fastify>;
+  let authCfg: AuthConfig;
+
+  beforeAll(async () => {
+    db = createDatabase(process.env['DATABASE_URL']!);
+    authCfg = makeAuthConfig();
+
+    app = Fastify({ logger: false });
+    await authPlugin(app, { config: authCfg, db });
+    await blueprintRoutes(app, db, agentRiskDefaults, executionCapabilityAdapter, testPlansConfig);
+    await app.ready();
+  }, 30_000);
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(async () => {
+    await db.execute(sql`
+      TRUNCATE
+        blueprint_usage_events,
+        blueprint_instantiation_requests,
+        agent_skills,
+        bots,
+        agents,
+        blueprint_revision_skills,
+        blueprint_revisions,
+        blueprints,
+        venue_accounts,
+        connections,
+        user_credentials,
+        sessions,
+        oauth_identities,
+        user_plans,
+        users
+      CASCADE
+    `);
+
+    await db.insert(users).values({
+      id: TEST_USER_ID,
+      username: 'test_bp_int',
+      displayName: 'Test BP Int',
+      email: TEST_USER_EMAIL,
+      planId: 'free',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  });
+
+  async function getAuthToken(userId = TEST_USER_ID): Promise<string> {
+    const sessionId = crypto.randomUUID();
+    await db.insert(sessions).values({
+      id: sessionId,
+      userId,
+      expiresAt: new Date(Date.now() + 86_400_000),
+      revokedAt: null,
+      createdAt: new Date(),
+    });
+    return createSessionToken(authCfg, userId, sessionId);
+  }
+
+  async function seedBlueprint(
+    bpOverrides: Partial<typeof blueprints.$inferInsert> = {},
+    payload: Record<string, unknown>,
+    authorId = TEST_USER_ID,
+  ) {
+    const bpId = (bpOverrides.id as string) ?? crypto.randomUUID();
+    const revId = crypto.randomUUID();
+    const kind = (payload.kind as string) ?? 'agent';
+    const strategyType = kind === 'agent'
+      ? ((payload.strategy as Record<string, unknown> | null)?.type as string | null) ?? null
+      : ((payload.strategy as Record<string, unknown>)?.type as string | null) ?? null;
+    const style = (payload.style as string | null) ?? null;
+    const venueType = kind === 'bot' ? ((payload.venueType as string) ?? null) : null;
+    const now = new Date();
+
+    const finalPubStatus = (bpOverrides.publicationStatus as string) ?? 'published';
+    const isPublished = finalPubStatus === 'published';
+
+    const baseValues: Record<string, unknown> = {
+      id: bpId,
+      authorId,
+      publicationStatus: 'draft',
+      kind,
+      name: (payload.name as string) ?? 'Test BP',
+      description: (payload.description as string) ?? '',
+      tags: ['test'],
+      strategyType,
+      style,
+      venueType,
+      currentRevisionId: null,
+      publishedRevisionId: null,
+      publishedAt: null,
+      likeCount: 0,
+      forkCount: 0,
+      popularityScore: 0,
+      trendingScore: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const nonLifecycleOverrides = { ...bpOverrides };
+    delete nonLifecycleOverrides.publicationStatus;
+    delete nonLifecycleOverrides.publishedRevisionId;
+    delete nonLifecycleOverrides.publishedAt;
+    delete nonLifecycleOverrides.currentRevisionId;
+
+    const merged = { ...baseValues, ...nonLifecycleOverrides };
+
+    await db.insert(blueprints).values(merged as typeof blueprints.$inferInsert);
+
+    await db.insert(blueprintRevisions).values({
+      id: revId,
+      blueprintId: bpId,
+      version: 1,
+      kind,
+      name: (payload.name as string) ?? 'Test BP',
+      description: (payload.description as string) ?? '',
+      strategyType,
+      style,
+      venueType,
+      tags: ['test'],
+      payload,
+      changeSummary: 'initial',
+      createdByUserId: authorId,
+      createdAt: now,
+    });
+
+    await db
+      .update(blueprints)
+      .set({
+        publicationStatus: finalPubStatus,
+        currentRevisionId: revId,
+        publishedRevisionId: isPublished ? revId : null,
+        publishedAt: isPublished ? now : null,
+      })
+      .where(eq(blueprints.id, bpId));
+
+    return { bpId, revId };
+  }
+
+  // ── Test 6: modelSelectionReady false when no model configured ─────────
+
+  it('preview returns modelSelectionReady: false when blueprint has no modelPolicy and user has no AI settings', async () => {
+    const payload = makeAgentPayload({ modelPolicy: undefined });
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate/preview`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { revisionId: revId },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.modelSelectionReady).toBe(false);
+    expect(body.validationWarnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Model selection incomplete'),
+      ]),
+    );
+  });
+
+  // ── Test 7: modelSelectionReady true when blueprint has modelPolicy ────
+
+  it('preview returns modelSelectionReady: true when blueprint has explicit modelPolicy', async () => {
+    const payload = makeAgentPayload({
+      modelPolicy: { provider: 'openai', lightModel: 'gpt-4.1-mini', heavyModel: 'gpt-4.1' },
+    });
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate/preview`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { revisionId: revId },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.modelSelectionReady).toBe(true);
+  });
+
+  // ── Test 8: modelSelectionReady true when user has AI settings ─────────
+
+  it('preview returns modelSelectionReady: true when blueprint has no modelPolicy but user has AI settings', async () => {
+    // Give the user AI model config
+    await db.update(users)
+      .set({
+        aiModelConfig: {
+          provider: 'openrouter',
+          lightModel: 'openai/gpt-4.1-mini',
+          heavyModel: 'anthropic/claude-sonnet-4-5',
+        },
+      })
+      .where(eq(users.id, TEST_USER_ID));
+
+    const payload = makeAgentPayload({ modelPolicy: undefined });
+    const { bpId, revId } = await seedBlueprint({}, payload);
+    const token = await getAuthToken();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate/preview`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { revisionId: revId },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.modelSelectionReady).toBe(true);
+  });
+
+  // ── Test 9: same-user instantiate pre-fills telegramChatId ─────────────
+
+  it('instantiate pre-fills telegramChatId when installer is the blueprint author', async () => {
+    // Give the author a telegram chat ID
+    await db.update(users)
+      .set({ telegramChatId: '123456789' })
+      .where(eq(users.id, TEST_USER_ID));
+
+    const payload = makeAgentPayload();
+    const { bpId, revId } = await seedBlueprint({}, payload, TEST_USER_ID);
+    const token = await getAuthToken();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: {
+        authorization: `Bearer ${token}`,
+        'Idempotency-Key': `test-telegram-pre-fill-${crypto.randomUUID()}`,
+      },
+      payload: { revisionId: revId },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+
+    const [agent] = await db
+      .select({ telegramChatId: agents.telegramChatId })
+      .from(agents)
+      .where(eq(agents.id, body.actorId));
+    expect(agent!.telegramChatId).toBe('123456789');
+  });
+
+  // ── Test 10: instantiate does NOT pre-fill for different user ──────────
+
+  it('instantiate does NOT pre-fill telegramChatId when installer is a different user', async () => {
+    const OTHER_USER_ID = 'other-user-bp-int';
+
+    // Give the author a telegram chat ID
+    await db.update(users)
+      .set({ telegramChatId: '999999999' })
+      .where(eq(users.id, TEST_USER_ID));
+
+    // Create a different user
+    await db.insert(users).values({
+      id: OTHER_USER_ID,
+      username: 'other_bp_int',
+      displayName: 'Other BP Int',
+      email: 'other-bp-int@test.local',
+      planId: 'free',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // Give the other user a different telegram chat ID
+    await db.update(users)
+      .set({ telegramChatId: '111111111' })
+      .where(eq(users.id, OTHER_USER_ID));
+
+    const payload = makeAgentPayload();
+    const { bpId, revId } = await seedBlueprint({}, payload, TEST_USER_ID);
+    const token = await getAuthToken(OTHER_USER_ID);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/blueprints/${bpId}/instantiate`,
+      headers: {
+        authorization: `Bearer ${token}`,
+        'Idempotency-Key': `test-telegram-no-leak-${crypto.randomUUID()}`,
+      },
+      payload: { revisionId: revId },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+
+    const [agent] = await db
+      .select({ telegramChatId: agents.telegramChatId })
+      .from(agents)
+      .where(eq(agents.id, body.actorId));
+
+    // Should NOT inherit the author's telegramChatId
+    // (it may be null or the other user's ID, but must NOT be the author's)
+    expect(agent!.telegramChatId).not.toBe('999999999');
+  });
+});
+

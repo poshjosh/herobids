@@ -12,6 +12,7 @@ import {
   BlueprintInstantiateRequestSchema,
   BlueprintForkRequestSchema,
   PublishBlueprintSchema,
+  ExecutionPolicySchema,
   encodeBlueprintCursor,
   decodeBlueprintCursor,
 } from './blueprint.js';
@@ -623,5 +624,34 @@ describe('encodeBlueprintCursor / decodeBlueprintCursor', () => {
   it('returns empty object for empty string', () => {
     const decoded = decodeBlueprintCursor('');
     expect(decoded).toEqual({});
+  });
+});
+
+// ── Regression: takeProfitPct must accept null ──────────────────────────
+
+describe('ExecutionPolicySchema — takeProfitPct null tolerance', () => {
+  it('accepts takeProfitPct: null (defense-in-depth)', () => {
+    const result = ExecutionPolicySchema.parse({
+      positionSizeMode: 'fixed',
+      fixedPositionSize: '100',
+      takeProfitPct: null,
+    });
+    expect(result.takeProfitPct).toBeNull();
+  });
+
+  it('accepts takeProfitPct: undefined (omitted key)', () => {
+    const result = ExecutionPolicySchema.parse({
+      positionSizeMode: 'percent_equity',
+    });
+    expect(result.takeProfitPct).toBeUndefined();
+  });
+
+  it('accepts a numeric takeProfitPct', () => {
+    const result = ExecutionPolicySchema.parse({ takeProfitPct: 10 });
+    expect(result.takeProfitPct).toBe(10);
+  });
+
+  it('rejects a negative takeProfitPct', () => {
+    expect(() => ExecutionPolicySchema.parse({ takeProfitPct: -1 })).toThrow();
   });
 });
