@@ -496,6 +496,7 @@ export function Modal({
 }) {
   const content = (
     <div
+      className="modal-backdrop"
       onClick={closeOnBackdropClick ? onClose : undefined}
       style={{
         position: 'fixed',
@@ -510,6 +511,7 @@ export function Modal({
       }}
     >
       <div
+        className="modal-dialog"
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
