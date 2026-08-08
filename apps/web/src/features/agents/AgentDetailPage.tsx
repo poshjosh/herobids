@@ -364,7 +364,7 @@ export function AgentDetailPage() {
             color: 'var(--color-text-primary)',
           }}>
             <span>
-              💳 Your trading wallet may need funding before live trading.{' '}
+              Your trading wallet may need funding before live trading.{' '}
               <a href={fundingDocUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-brand)' }}>
                 Learn how to fund →
               </a>
