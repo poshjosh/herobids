@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Add note to setup Telegram at the end of the chat assisted agent creation flow
 - **Telegram `/start` and `/help` now include the user's chat ID in the response.** Previously, new users had to discover their chat ID through a third-party bot like `@userinfobot`. Now, sending `/start` or `/help` to the OpenAIdom Telegram bot replies with the chat ID at the top of the message, so users can paste it directly into Settings. Updated the Settings page description text accordingly.
 
 ## v0.1.1 - 2026-08-08
