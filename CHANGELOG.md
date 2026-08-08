@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.1.2 - 2026-08-08
+
 ### Added
 
 - **Wallet Funding Documentation & Post-Creation Links:** New public documentation page (`/docs/trading-venues/funding-wallets`) covering how to fund wallets across Hyperliquid, Jupiter, 1inch, and Bybit — both platform-generated and user-provided. Cross-linked from all venue pages and the trading-venues index. A "Learn more about funding" link now appears on the `wallet_created` confirm card in Guided Setup chat. A dismissible funding reminder banner shows on the agent detail page when the agent has a trading connection with wallet-generation capability. See `docs/features/2026/08/08/001-wallet-funding-docs/001-plan.md`.
