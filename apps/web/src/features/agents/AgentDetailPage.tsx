@@ -353,19 +353,19 @@ export function AgentDetailPage() {
         {showFundingBanner && (
           <div style={{
             padding: '12px 16px',
-            background: 'var(--color-surface-info, #e7f3ff)',
-            border: '1px solid var(--color-info, #0969da)',
+            background: 'var(--color-brand-subtle)',
+            border: '1px solid var(--color-brand-dim)',
             borderRadius: 8,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 12,
             fontSize: 13,
-            color: 'var(--color-text)',
+            color: 'var(--color-text-primary)',
           }}>
             <span>
               💳 Your trading wallet may need funding before live trading.{' '}
-              <a href={fundingDocUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>
+              <a href={fundingDocUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-brand)' }}>
                 Learn how to fund →
               </a>
             </span>
