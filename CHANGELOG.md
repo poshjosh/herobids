@@ -15,6 +15,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Add note to setup Telegram at the end of the chat assisted agent creation flow
 - **Telegram `/start` and `/help` now include the user's chat ID in the response.** Previously, new users had to discover their chat ID through a third-party bot like `@userinfobot`. Now, sending `/start` or `/help` to the OpenAIdom Telegram bot replies with the chat ID at the top of the message, so users can paste it directly into Settings. Updated the Settings page description text accordingly.
 
+### Fixed
+
+- **Agent update fails "Expected number, received null" when slippage field is empty.** The frontend `buildUpdateAgentPayload()` explicitly set `executionDefaults.slippageBps = null` when the form field was empty, but `ExecutionDefaultsSchema` rejected `null` (`.optional()` without `.nullable()`). Fixed by removing the `else null` branch in the frontend and adding `.nullable()` to both `ExecutionDefaultsSchema.slippageBps` and `ExecutionPolicySchema.takeProfitPct` as defense-in-depth. See `docs/bug-reports/2026/08/08/001-execution-defaults-slippage-null-validation.md`.
+
 ## v0.1.1 - 2026-08-08
 
 ### Changed

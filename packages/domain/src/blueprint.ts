@@ -34,7 +34,7 @@ export type PublicationStatus = z.infer<typeof PublicationStatusSchema>;
 export const ExecutionPolicySchema = z.object({
   positionSizeMode: z.enum(['fixed', 'percent_equity']).optional(),
   fixedPositionSize: z.string().optional(),
-  takeProfitPct: z.number().min(0).optional(),
+  takeProfitPct: z.number().min(0).nullable().optional(),
 }).strict();
 export type ExecutionPolicy = z.infer<typeof ExecutionPolicySchema>;
 

@@ -2146,7 +2146,7 @@ export const StrategySchema = z.object({
  */
 export const ExecutionDefaultsSchema = z.object({
   mode: z.enum(['paper', 'shadow', 'live']).default('paper'),
-  slippageBps: z.number().min(0).optional(),
+  slippageBps: z.number().min(0).nullable().optional(),
 });
 export type ExecutionDefaults = z.infer<typeof ExecutionDefaultsSchema>;
 

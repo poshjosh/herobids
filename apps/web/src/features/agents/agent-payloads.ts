@@ -327,7 +327,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
       : null,
   };
   if (input.maxSlippageBps) executionDefaults.slippageBps = parseInt(input.maxSlippageBps, 10);
-  else executionDefaults.slippageBps = null;
+  // Omit slippageBps when empty (rather than sending null) — ExecutionDefaultsSchema rejects null
 
   const parsedTickInterval = input.preserveOriginalTickIntervalMs
     ? undefined
