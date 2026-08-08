@@ -339,22 +339,39 @@ body {
 }
 
 /* Refresh icon shown next to the guided/form switch while in guided mode.
- * Resets the guided chat thread (same as the old "Start over" action). */
+ * Resets the guided chat thread (same as the old "Start over" action).
+ * Text label shown on larger screens, icon-only on smaller screens. */
 .create-flow-refresh {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 6px;
+  padding: 4px 8px;
   border-radius: 6px;
+  font-size: 13px;
   color: var(--color-text-muted);
 }
 
 .create-flow-refresh:hover {
   color: var(--color-text);
   background: var(--color-surface-2);
+}
+
+.create-flow-refresh-label {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .create-flow-refresh-label {
+    display: inline;
+  }
+
+  .create-flow-refresh {
+    padding: 4px 8px;
+  }
 }
 
 /* Content below the create flow (setup card + agent rows) is constrained to

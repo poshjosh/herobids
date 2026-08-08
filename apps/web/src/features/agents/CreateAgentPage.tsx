@@ -70,6 +70,9 @@ export function CreateAgentPage() {
                   <path d="M21 12a9 9 0 1 1-2.64-6.36" />
                   <polyline points="21 3 21 9 15 9" />
                 </svg>
+                <span className="create-flow-refresh-label">
+                  {intl.formatMessage({ id: 'agents.create.refresh' })}
+                </span>
               </button>
             )}
           </div>
