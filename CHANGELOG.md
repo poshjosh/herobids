@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.1.0 - 2026-08-08
+
 ### Added
 
 - **Progressive Connection Setup — Intent-First Trading Flow:** The Guided Setup chat no longer throws a blank connection form at users. A new progressive decision tree (Q0 fork: "I'm new" / "I know what I want") determines whether to Fast Track (one asset-interest question → auto-configured venue + strategy + generated wallet), Direct (user names venue → wallet choice), or Guided (Q1 ecosystem + Q2 long/short → venue lock → wallet choice). A new `create_connection` chat tool generates wallets server-side with zero user input via `POST /setup/provider-link` with `credentialMode: 'generated'`. The trading preset choice is simplified to a single approval-policy question ("execute automatically or ask for approval?") with `authorizationMode` mapped internally to `direct` / `approval_required`. The frontend renders a wallet funding guidance card for generated wallets. See `docs/features/2026/08/07/004-progressive-connection-setup/001-plan.md`.
