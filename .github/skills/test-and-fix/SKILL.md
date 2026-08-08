@@ -39,7 +39,7 @@ This skill runs the repository validation workflow end to end, fixes failures as
    - After the fix, rerun the same failed command before proceeding.
 
 4. Continue the sequence only after the current command passes.
-   - Once the failed command is green, resume with the next command in order.
+   - Once the failed command is green, commit related changes, then resume with the next command in order.
    - Repeat the stop-fix-rerun loop until the entire automated sequence succeeds.
 
 5. Run manual user-acceptance tests.
