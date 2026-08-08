@@ -142,7 +142,9 @@ if [[ -n "$VERSION" ]]; then
   echo -n "Commit ALL unstaged files or only CHANGELOG.md + package.json? [A]ll / [o]nly bump files: "
   read -r COMMIT_CHOICE
 
-  case "${COMMIT_CHOICE,,}" in
+  COMMIT_CHOICE_LOWER=$(echo "$COMMIT_CHOICE" | tr '[:upper:]' '[:lower:]')
+
+  case "$COMMIT_CHOICE_LOWER" in
     a|all)
       COMMIT_ALL=true
       log "Will commit all unstaged files."
