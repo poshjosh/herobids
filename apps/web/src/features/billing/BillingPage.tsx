@@ -2,7 +2,7 @@ import { useIntl } from 'react-intl';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { billing, agents as agentsApi } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button } from '../../lib/ui.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, inputStyle } from '../../lib/ui.js';
 import { formatCurrencyFromCents, formatShortDate } from '../../lib/formatting.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { BillingDetails, formatMicrousd } from './BillingDetails.js';
@@ -544,7 +544,7 @@ export function BillingPage() {
                     value={selectedTopUpPackId}
                     onChange={(e) => setSelectedTopUpPackId(e.target.value)}
                     disabled={(usageSummary?.topUpPacks?.length ?? 0) === 0}
-                    style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
+                    style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px', cursor: 'pointer' }}
                   >
                     {(usageSummary?.topUpPacks?.length ?? 0) === 0 && <option value="">{intl.formatMessage({ id: 'common.noPacksAvailable' })}</option>}
                     {(usageSummary?.topUpPacks ?? []).map((pack) => (

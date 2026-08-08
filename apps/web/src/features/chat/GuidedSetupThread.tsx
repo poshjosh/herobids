@@ -136,7 +136,7 @@ export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit
       <ChatComposer
         onSend={onSend}
         disabled={disabled || sending}
-        placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+        placeholder="Type your message..."
       />
     </div>
   );

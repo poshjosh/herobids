@@ -189,9 +189,6 @@ export function AgentsPage() {
     <PageShell>
       <PageHeader
         title={intl.formatMessage({ id: 'agents.title' })}
-        subtitle={agentTab === 'marketplace'
-          ? 'Discover and deploy AI agents from the community marketplace'
-          : undefined}
         action={
           <Button variant="primary" size="sm" onClick={() => navigate('/agents/new')}>
             {intl.formatMessage({ id: 'agents.create.title' })}
@@ -280,6 +277,7 @@ export function AgentsPage() {
       {agentTab === 'marketplace' && (
         <BlueprintBrowse
           defaultKind="agent"
+          hideKindFilter
           onUseBlueprint={setSelectedBlueprint}
         />
       )}

@@ -7,7 +7,7 @@ import type {
   UsagePeriodsResponse,
   Agent,
 } from '../../lib/api-client.js';
-import { Card, LoadingRows, ErrorState, ErrorBanner, Button } from '../../lib/ui.js';
+import { Card, LoadingRows, ErrorState, ErrorBanner, Button, inputStyle } from '../../lib/ui.js';
 import { formatShortDate } from '../../lib/formatting.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 
@@ -131,13 +131,13 @@ export function BillingDetails({
           value={softCapInput}
           onChange={(e) => setSoftCapInput(e.target.value)}
           placeholder="Soft cap (cents)"
-          style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
+          style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px' }}
         />
         <input
           value={hardCapInput}
           onChange={(e) => setHardCapInput(e.target.value)}
           placeholder="Hard cap (cents)"
-          style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
+          style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px' }}
         />
         <Button
           variant="secondary"
@@ -164,7 +164,7 @@ export function BillingDetails({
         <select
           value={meterFilter}
           onChange={(e) => { setMeterFilter(e.target.value); setUsageEventOffset(0); }}
-          style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
+          style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px', cursor: 'pointer' }}
         >
           <option value="">All meters</option>
           <option value="llm.input_tokens">llm.input_tokens</option>
@@ -177,7 +177,7 @@ export function BillingDetails({
         <select
           value={agentFilter}
           onChange={(e) => { setAgentFilter(e.target.value); setUsageEventOffset(0); }}
-          style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
+          style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px', cursor: 'pointer' }}
         >
           <option value="">All agents</option>
           {(agentsQuery.data ?? []).map((agent) => (
@@ -188,7 +188,7 @@ export function BillingDetails({
         <select
           value={periodFilter}
           onChange={(e) => { setPeriodFilter(e.target.value); setUsageEventOffset(0); }}
-          style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
+          style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px', cursor: 'pointer' }}
         >
           <option value="">All periods</option>
           {(periodsQuery.data?.periods ?? []).map((period) => (
@@ -306,7 +306,7 @@ export function BillingDetails({
           <select
             value={ledgerDirectionFilter}
             onChange={(e) => { setLedgerDirectionFilter(e.target.value); setLedgerOffset(0); }}
-            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)', fontSize: '13px' }}
+            style={{ ...inputStyle, padding: '6px 10px', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }}
           >
             <option value="">All Entries</option>
             <option value="credit">Credits Only</option>

@@ -416,16 +416,7 @@ export function SkillsPage() {
             placeholder={intl.formatMessage({ id: 'skills.searchPlaceholder', defaultMessage: 'Search skills…' })}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              padding: '8px 12px',
-              fontSize: '14px',
-              border: '1px solid var(--color-border)',
-              borderRadius: '8px',
-              background: 'var(--color-bg)',
-              color: 'var(--color-text)',
-              outline: 'none',
-              maxWidth: '360px',
-            }}
+            style={{ ...inputStyle, padding: '8px 12px', fontSize: '14px', maxWidth: '360px' }}
           />
           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
             {skillTabs.map((tab) => (
@@ -902,12 +893,13 @@ const fieldLabelStyle: React.CSSProperties = {
 };
 
 const inputStyle: React.CSSProperties = {
-  border: '1px solid var(--color-border)',
+  border: '1.5px solid var(--input-border-color)',
   borderRadius: '8px',
-  background: 'var(--color-surface-2)',
+  background: 'var(--color-surface-3)',
   color: 'var(--color-text-primary)',
   fontSize: '13px',
   padding: '8px 10px',
+  transition: 'border-color 0.15s, box-shadow 0.15s',
 };
 
 const textareaStyle: React.CSSProperties = {

@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useIntl } from 'react-intl';
 import { listSelectableSkills } from './agent-display.js';
 import type { Skill } from '../../lib/api-client.js';
+import { inputStyle } from '../../lib/ui.js';
 
 interface SkillPickerProps {
   skills: Skill[];
@@ -46,15 +47,7 @@ export function SkillPicker({ skills, selectedSkillIds, onChange, loading = fals
         placeholder={intl.formatMessage({ id: 'agents.skillPicker.searchPlaceholder', defaultMessage: 'Search skills…' })}
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
-        style={{
-          padding: '6px 10px',
-          fontSize: '13px',
-          border: '1px solid var(--color-border)',
-          borderRadius: '6px',
-          background: 'var(--color-bg)',
-          color: 'var(--color-text)',
-          outline: 'none',
-        }}
+        style={{ ...inputStyle, padding: '6px 10px', fontSize: '13px', borderRadius: '6px' }}
       />
       <div
         style={{

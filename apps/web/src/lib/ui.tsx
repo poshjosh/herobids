@@ -420,7 +420,7 @@ export function RelativeTime({ timestamp }: { timestamp: string | null }) {
 
 export function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
+    <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '8px', letterSpacing: '0.02em' }}>
       {children}
     </div>
   );
@@ -468,14 +468,15 @@ export function ErrorBanner({ message, onDismiss }: { message: string; onDismiss
 
 export const inputStyle: React.CSSProperties = {
   width: '100%',
-  padding: '9px 12px',
-  background: 'var(--color-surface-2)',
-  border: '1px solid var(--color-border)',
-  borderRadius: '7px',
+  padding: '10px 14px',
+  background: 'var(--color-surface-3)',
+  border: '1.5px solid var(--input-border-color)',
+  borderRadius: '8px',
   color: 'var(--color-text-primary)',
-  fontSize: '16px',
+  fontSize: '15px',
   outline: 'none',
   boxSizing: 'border-box',
+  transition: 'border-color 0.15s, box-shadow 0.15s',
 };
 
 export function Modal({
@@ -483,12 +484,14 @@ export function Modal({
   onClose,
   closeOnBackdropClick = true,
   placement = 'center',
+  maxWidth = '480px',
   children,
 }: {
   title: string;
   onClose: () => void;
   closeOnBackdropClick?: boolean;
   placement?: 'center' | 'top';
+  maxWidth?: string;
   children: React.ReactNode;
 }) {
   const content = (
@@ -516,7 +519,7 @@ export function Modal({
           borderRadius: '12px',
           padding: '28px',
           width: '100%',
-          maxWidth: '480px',
+          maxWidth,
           maxHeight: placement === 'top' ? 'calc(100vh - 96px)' : 'calc(100vh - 48px)',
           overflowY: 'auto',
           margin: placement === 'top' ? '24px 0' : 'auto 0',
@@ -810,17 +813,7 @@ export function ToolTagPicker({
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder={searchPlaceholder}
               autoFocus
-              style={{
-                width: '100%',
-                padding: '6px 10px',
-                background: 'var(--color-surface-2)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '6px',
-                color: 'var(--color-text-primary)',
-                fontSize: '13px',
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
+              style={{ ...inputStyle, padding: '6px 10px', borderRadius: '6px', fontSize: '13px' }}
               onKeyDown={handleDropdownKeyDown}
             />
           </div>

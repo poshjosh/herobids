@@ -256,17 +256,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: 'min(520px, 60vh)',
-        borderRadius: 10,
-        overflow: 'hidden',
-        border: '1px solid var(--color-border)',
-        backgroundColor: 'var(--color-surface-1)',
-      }}
-    >
+    <div className="guided-setup-panel">
       {/* OAuth resume transition — reassures the user while the thread
           is being restored and the connection result is processed. */}
       {oauthResuming && (

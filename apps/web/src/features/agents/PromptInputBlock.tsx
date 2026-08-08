@@ -72,17 +72,18 @@ export function PromptInputBlock({
   return (
     <div data-field={dataField} style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '4px' }}>
       {/* Label */}
-      <label style={{ fontSize: '14px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
+      <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '2px', letterSpacing: '0.02em' }}>
         {goalLabel}
       </label>
 
       {/* ── Unified block: textarea + bottom bar ── */}
       <div
         style={{
-          border: `1px solid ${goalError ? 'var(--color-danger)' : 'var(--color-border)'}`,
+          border: `1.5px solid ${goalError ? 'var(--color-danger)' : 'var(--input-border-color)'}`,
           borderRadius: '10px',
-          background: 'var(--color-surface-2)',
+          background: 'var(--color-surface-3)',
           overflow: 'hidden',
+          transition: 'border-color 0.15s, box-shadow 0.15s',
         }}
       >
         {/* Textarea — no internal border, fully seamless */}

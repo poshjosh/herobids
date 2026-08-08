@@ -16,6 +16,8 @@ interface BlueprintBrowseProps {
   onUseBlueprint?: (blueprint: BlueprintSummary) => void;
   /** If true, renders as a standalone page (with PageShell/PageHeader). */
   standalone?: boolean;
+  /** If true, hides the All/Agents/Bots kind filter tabs. */
+  hideKindFilter?: boolean;
 }
 
 const SORT_OPTIONS: Array<{ value: BlueprintBrowseParams['sort']; label: string }> = [
@@ -46,6 +48,7 @@ export function BlueprintBrowse({
   defaultKind,
   onUseBlueprint,
   standalone = false,
+  hideKindFilter = false,
 }: BlueprintBrowseProps) {
   const [kind, setKind] = useState<BlueprintBrowseParams['kind']>(defaultKind);
   const [sort, setSort] = useState<BlueprintBrowseParams['sort']>('popular');
@@ -117,18 +120,20 @@ export function BlueprintBrowse({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {/* Filters row */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-          {KIND_TABS.map((tab) => (
-            <Button
-              key={tab.label}
-              variant={kind === tab.value ? 'primary' : 'secondary'}
-              size="sm"
-              onClick={() => handleKindChange(tab.value)}
-            >
-              {tab.label}
-            </Button>
-          ))}
-        </div>
+        {!hideKindFilter && (
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            {KIND_TABS.map((tab) => (
+              <Button
+                key={tab.label}
+                variant={kind === tab.value ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => handleKindChange(tab.value)}
+              >
+                {tab.label}
+              </Button>
+            ))}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
           {visibleSortOptions.map((opt) => (
             <Button

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { AdminUserRow } from '../../lib/api-client.js';
-import { Card, Button, EmptyState } from '../../lib/ui.js';
+import { Card, Button, EmptyState, inputStyle } from '../../lib/ui.js';
 
 interface Props {
   users: AdminUserRow[];
@@ -39,15 +39,7 @@ export function AdminUsersSection({ users, onPromote, onRevoke, mutationPending 
           placeholder="Filter by email or name…"
           value={filter}
           onChange={(e) => handleFilterChange(e.target.value)}
-          style={{
-            flex: 1,
-            padding: '6px 10px',
-            background: 'var(--color-surface-2)',
-            border: '1px solid var(--color-border)',
-            borderRadius: '6px',
-            color: 'var(--color-text-primary)',
-            fontSize: '13px',
-          }}
+          style={{ ...inputStyle, flex: 1, padding: '6px 10px', borderRadius: '6px', fontSize: '13px' }}
         />
         <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{visible.length} users</span>
       </div>

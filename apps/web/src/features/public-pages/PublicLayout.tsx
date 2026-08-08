@@ -5,6 +5,7 @@ import { useLocale } from '../../app/i18n/I18nProvider.js';
 import type { SupportedLocale } from '../../app/i18n/resolveLocale.js';
 import { PUBLIC_PAGE_REGISTRY, getSectionPages } from './contentRegistry.js';
 import { BrandLogo } from '../../brand/BrandLogo.js';
+import { inputStyle } from '../../lib/ui.js';
 
 interface PublicLayoutProps {
   children: ReactNode;
@@ -80,14 +81,7 @@ export function PublicLayout({ children, translated = false, section, page, loca
             <select
               value={effectiveLocale}
               onChange={(e) => handleLocaleChange(e.target.value)}
-              style={{
-                padding: '4px 8px',
-                borderRadius: '6px',
-                border: '1px solid var(--color-border)',
-                background: 'var(--color-surface-0)',
-                color: 'var(--color-text-primary)',
-                fontSize: '13px',
-              }}
+              style={{ ...inputStyle, padding: '4px 8px', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }}
             >
               {supportedLocales.map((loc) => (
                 <option key={loc} value={loc}>

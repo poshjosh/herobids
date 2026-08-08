@@ -53,14 +53,16 @@ export function ChatComposer({ onSend, disabled = false, placeholder = 'Type you
           resize: 'none',
           padding: '10px 14px',
           borderRadius: 8,
-          border: '1px solid var(--color-border)',
-          backgroundColor: 'var(--color-surface-2)',
-          color: 'var(--color-text)',
+          border: '1.5px solid var(--input-border-color)',
+          backgroundColor: 'var(--color-surface-3)',
+          color: 'var(--color-text-primary)',
           fontSize: 15,
           lineHeight: 1.4,
           fontFamily: 'inherit',
           outline: 'none',
           maxHeight: 120,
+          minHeight: 41,
+          transition: 'border-color 0.15s, box-shadow 0.15s',
         }}
       />
       <button

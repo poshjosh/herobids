@@ -2,24 +2,69 @@
 @plugin "@tailwindcss/typography";
 
 /* ─── Global background ──────────────────────────────────────────────────────
- * The brand background image is used on every page except documentation
- * (public-pages). Documentation pages override this via PublicLayout's
- * solid background. The landing page has its own layered treatment.
- * Blurred on all pages except / where the landing page layers take over. */
+ * Every page shares a living "aurora" field: a deep space base gradient with
+ * slow-drifting, hue-shifting light orbs (body::before) and a fine dot-grid +
+ * vignette texture (body::after). The landing page layers cinematic artwork on
+ * top of this same field so the whole site feels like one continuous scene.
+ * ──────────────────────────────────────────────────────────────────────────── */
 
 body {
-  background-color: #0a0a1a;
+  background:
+    radial-gradient(ellipse 120% 90% at 50% -10%, rgba(99, 91, 255, 0.10) 0%, transparent 55%),
+    linear-gradient(165deg, #05080f 0%, #0a1022 34%, #0d1628 66%, #060a15 100%);
+  background-attachment: fixed;
 }
 
+/* Drifting aurora orbs — the heartbeat of the background.
+ * Oversized (inset: -25%) so the drift/scale animation never exposes an edge. */
 body::before {
   content: '';
   position: fixed;
-  inset: 0;
-  background:
-    linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.35)),
-    url('/openaidom-background-1.avif') center / cover no-repeat;
-  filter: blur(6px);
+  inset: -25%;
   z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 42% 38% at 18% 20%, rgba(124, 104, 255, 0.32) 0%, transparent 62%),
+    radial-gradient(ellipse 38% 42% at 84% 26%, rgba(72, 56, 234, 0.28) 0%, transparent 62%),
+    radial-gradient(ellipse 48% 40% at 68% 82%, rgba(56, 132, 246, 0.26) 0%, transparent 62%),
+    radial-gradient(ellipse 44% 44% at 28% 86%, rgba(158, 92, 255, 0.24) 0%, transparent 62%),
+    radial-gradient(ellipse 34% 30% at 50% 52%, rgba(88, 120, 255, 0.16) 0%, transparent 60%);
+  filter: blur(26px) saturate(125%);
+  animation:
+    aurora-drift 30s ease-in-out infinite alternate,
+    aurora-hue 48s linear infinite alternate;
+  will-change: transform, filter;
+}
+
+/* Fine dot-grid + soft vignette for depth and focus. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.055) 0.5px, transparent 0.5px),
+    radial-gradient(ellipse 90% 80% at 50% 40%, transparent 55%, rgba(3, 6, 14, 0.55) 100%);
+  background-size: 32px 32px, cover;
+}
+
+@keyframes aurora-drift {
+  0%   { transform: translate3d(-3%, -2%, 0) scale(1.06) rotate(0deg); }
+  50%  { transform: translate3d(3%,  2%, 0) scale(1.14) rotate(3deg); }
+  100% { transform: translate3d(-2%, 3%, 0) scale(1.08) rotate(-2deg); }
+}
+
+@keyframes aurora-hue {
+  from { filter: blur(26px) saturate(125%) hue-rotate(0deg); }
+  to   { filter: blur(26px) saturate(140%) hue-rotate(26deg); }
+}
+
+/* Respect reduced-motion — hold the aurora perfectly still. */
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    animation: none;
+  }
 }
 
 @theme {
@@ -68,6 +113,20 @@ body::before {
   --color-border-subtle: oklch(22% 0.01 260);
 }
 
+/* ─── Input border color ───────────────────────────────────────────────────
+ * Responsive: muted brand indigo on desktop, full brand indigo on mobile
+ * so form inputs are more striking on smaller screens.
+ * ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --input-border-color: var(--color-brand-subtle);
+}
+
+@media (max-width: 768px) {
+  :root {
+    --input-border-color: var(--color-brand);
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -97,6 +156,50 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--color-surface-4);
   border-radius: 3px;
+}
+
+/* ─── Form input focus ring ────────────────────────────────────────────────
+ * Applies a brand-colored glow to all text inputs, textareas, and selects
+ * on focus so the active field is immediately obvious.
+ * ─────────────────────────────────────────────────────────────────────────── */
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--color-brand) !important;
+  box-shadow: 0 0 0 3px rgba(99, 91, 255, 0.18);
+  outline: none;
+}
+
+/* ─── Filled-input accent ──────────────────────────────────────────────────
+ * A subtle left-border accent on inputs that have content, helping users
+ * scan which fields they've already completed.
+ * Selects are excluded — React-controlled selects don't expose their value
+ * as an HTML attribute, so CSS-only detection isn't reliable for them.
+ * ─────────────────────────────────────────────────────────────────────────── */
+input:not(:placeholder-shown):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+textarea:not(:placeholder-shown) {
+  border-left-width: 3px;
+  border-left-color: var(--color-brand-dim);
+}
+
+/* ─── Guided setup panel — mobile height ───────────────────────────────────
+ * Reduces vertical space on mobile so the initial messages remain visible
+ * even when the on-screen keyboard opens.
+ * ─────────────────────────────────────────────────────────────────────────── */
+.guided-setup-panel {
+  display: flex;
+  flex-direction: column;
+  height: min(520px, 60vh);
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface-1);
+}
+
+@media (max-width: 768px) {
+  .guided-setup-panel {
+    height: min(420px, 45vh);
+  }
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-muted);
@@ -153,7 +256,7 @@ body {
   display: none;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 8px 12px;
   background: var(--color-surface-1);
   border-bottom: 1px solid var(--color-border);
   position: sticky;
@@ -164,12 +267,11 @@ body {
 /* Hamburger button */
 .layout-hamburger {
   background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border: none;
   color: var(--color-text-primary);
   cursor: pointer;
-  padding: 6px 8px;
-  font-size: 16px;
+  padding: 1px 1px;
+  font-size: 32px;
   line-height: 1;
   flex-shrink: 0;
 }
@@ -442,29 +544,51 @@ body {
 /* ── Variant: full-bleed image (Option 3) ─────────────────────────────────── */
 
 .landing-page--image {
-  background: url('/openaidom-background-1.avif') center / cover no-repeat;
+  isolation: isolate;
 }
 
-/* Heavily blur only the center of the image (where the figure is) */
+/* Cinematic artwork layer: a slow Ken Burns push keeps the hero alive while
+ * the shared aurora glows through the letterboxed edges. */
 .landing-page--image::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: url('/openaidom-background-1.avif') center / cover no-repeat;
-  filter: blur(16px) brightness(0.5);
-  mask-image: radial-gradient(ellipse 35% 45% at 50% 45%, black 70%, transparent 100%);
-  -webkit-mask-image: radial-gradient(ellipse 35% 45% at 50% 45%, black 70%, transparent 100%);
   z-index: 0;
+  background: url('/openaidom-background-1.avif') center / contain no-repeat;
+  transform-origin: center;
+  animation: landing-kenburns 26s ease-in-out infinite alternate;
+  will-change: transform;
 }
 
-/* Dark overlay for text readability */
+/* Blend + glow overlay: a brand-tinted core light and top/bottom fades melt the
+ * artwork into the aurora so there is no hard rectangular seam. */
 .landing-page--image::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
   z-index: 0;
   pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(124, 104, 255, 0.22) 0%, transparent 58%),
+    linear-gradient(180deg, rgba(5, 8, 15, 0.60) 0%, transparent 26%, transparent 68%, rgba(5, 8, 15, 0.82) 100%);
+  animation: landing-glow 9s ease-in-out infinite alternate;
+}
+
+@keyframes landing-kenburns {
+  from { transform: scale(1) translate3d(0, 0, 0); }
+  to   { transform: scale(1.09) translate3d(0, -1.5%, 0); }
+}
+
+@keyframes landing-glow {
+  from { opacity: 0.85; }
+  to   { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-page--image::before,
+  .landing-page--image::after {
+    animation: none;
+  }
 }
 
 /* ── Content card ─────────────────────────────────────────────────────────── */
@@ -480,11 +604,15 @@ body {
   gap: 20px;
   max-width: 520px;
   width: 100%;
-  background: rgba(15, 15, 26, 0.75);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(13, 15, 28, 0.62);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 16px;
+  box-shadow:
+    0 0 0 1px rgba(124, 104, 255, 0.10),
+    0 24px 70px -24px rgba(99, 91, 255, 0.55),
+    0 12px 40px rgba(0, 0, 0, 0.55);
 }
 
 .landing-page-tagline {
@@ -509,11 +637,14 @@ body {
   text-decoration: none;
   font-size: 14px;
   font-weight: 600;
-  transition: opacity 0.15s;
+  box-shadow: 0 6px 20px -6px rgba(99, 91, 255, 0.7);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 }
 
 .landing-page-cta:hover {
-  opacity: 0.9;
+  opacity: 0.95;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px -6px rgba(99, 91, 255, 0.85);
 }
 
 /* ── Mobile ───────────────────────────────────────────────────────────────── */
