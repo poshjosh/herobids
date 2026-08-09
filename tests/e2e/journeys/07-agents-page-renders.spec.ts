@@ -25,7 +25,19 @@ test.describe('Journey 7: Capability setup and readiness', () => {
   test('new user lands on AI Agents page without crashing', async ({ page }) => {
     await registerUser(page, EMPTY_STATE_EMAIL, PASSWORD, 'E2E User J7 Empty');
 
-    await expect(page).toHaveURL(/\/agents/, { timeout: 15_000 });
+    // New users with 0 agents are auto-redirected to /agents/new.
+    // Create a minimal agent via API so the list page is accessible.
+    const token = await page.evaluate(() => localStorage.getItem('hb_session_token'));
+    const createRes = await page.request.post('/api/agents', {
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      data: { name: 'Smoke Test Agent', prompt: 'Minimal agent for page render smoke test.', provider: 'ollama', lightModel: 'qwen3:8b', heavyModel: 'qwen3.6:35b-a3b-q4_K_M' },
+    });
+    if (!createRes.ok()) {
+      throw new Error(`Failed to create agent for smoke test: ${createRes.status()} ${await createRes.text()}`);
+    }
+
+    await page.goto('/agents');
+    await expect(page).toHaveURL(/\/agents$/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: /AI Agents/i })).toBeVisible({ timeout: 5_000 });
     // The "No AI agents yet" empty state was removed — the page should render
     // cleanly with the "Create AI agent" CTA.

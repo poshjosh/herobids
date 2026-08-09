@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Remove connection related UI from agents dashboard/page
+- Improve login UX for mobile
+
 ## v0.1.2 - 2026-08-08
 
 ### Added
