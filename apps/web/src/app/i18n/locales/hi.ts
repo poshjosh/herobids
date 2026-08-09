@@ -7,6 +7,9 @@ export const messages: Record<string, string> = {
   'nav.connections': 'कनेक्शन',
   'nav.credentials': 'क्रेडेंशियल',
   'nav.billing': 'बिलिंग',
+  'nav.exposure': 'एक्सपोज़र',
+  'nav.venueAccounts': 'वेन्यू अकाउंट',
+  'nav.preview': 'पूर्वावलोकन',
 
   // Public pages — navigation
   'public.nav.help': 'सहायता',

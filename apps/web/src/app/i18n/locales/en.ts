@@ -12,6 +12,8 @@ export const messages: Record<string, string> = {
   'nav.tradingSetup': 'Trading setup',
   'nav.exposure': 'Exposure',
   'nav.advanced': 'Advanced',
+  'nav.preview': 'Preview',
+  'nav.venueAccounts': 'Venue Accounts',
   'nav.openNavigation': 'Open navigation',
   'nav.closeNavigation': 'Close navigation',
   'nav.signOut': 'Sign out',

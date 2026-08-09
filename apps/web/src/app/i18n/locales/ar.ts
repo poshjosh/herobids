@@ -7,6 +7,9 @@ export const messages: Record<string, string> = {
   'nav.connections': 'الاتصالات',
   'nav.credentials': 'بيانات الاعتماد',
   'nav.billing': 'الفواتير',
+  'nav.exposure': 'التعرض',
+  'nav.venueAccounts': 'حسابات المنصة',
+  'nav.preview': 'معاينة',
 
   // Public pages — navigation
   'public.nav.help': 'مساعدة',

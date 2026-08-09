@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Admin-only Preview section in sidebar with Exposure, Outcomes, Credentials, and Venue Accounts pages (not yet approved for regular users)
+
 ## v0.1.4 - 2026-08-09
 
 ### Changed

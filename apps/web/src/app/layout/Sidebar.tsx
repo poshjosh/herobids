@@ -27,6 +27,14 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [locale]);
 
+  const PREVIEW_ITEMS = useMemo(() => [
+    { path: '/exposure',       label: intl.formatMessage({ id: 'nav.exposure' }),       icon: '◉' },
+    { path: '/outcomes',       label: intl.formatMessage({ id: 'nav.outcomes' }),       icon: '◈' },
+    { path: '/credentials',    label: intl.formatMessage({ id: 'nav.credentials' }),    icon: '⊟' },
+    { path: '/venue-accounts', label: intl.formatMessage({ id: 'nav.venueAccounts' }),  icon: '⊞' },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [locale]);
+
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
 
   const isAdvancedActive = useMemo(
@@ -38,6 +46,15 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const effectiveAdvancedOpen = advancedOpen || isAdvancedActive;
+
+  const isPreviewActive = useMemo(
+    () => PREVIEW_ITEMS.some((item) => isActive(item.path)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [location.pathname, PREVIEW_ITEMS],
+  );
+
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const effectivePreviewOpen = previewOpen || isPreviewActive;
 
   return (
     <nav
@@ -106,6 +123,26 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
             <NavGroup>
               <NavItem path="/admin" label="Dashboard" icon="⊟" active={isActive('/admin')} onNavigate={onClose} />
             </NavGroup>
+          </>
+        )}
+
+        {user?.isAdmin && (
+          <>
+            <SectionLabel
+              collapsible
+              open={effectivePreviewOpen}
+              onToggle={() => setPreviewOpen((prev) => !prev)}
+              controlsId="sidebar-preview-group"
+            >
+              {intl.formatMessage({ id: 'nav.preview' })}
+            </SectionLabel>
+            {effectivePreviewOpen && (
+              <NavGroup id="sidebar-preview-group">
+                {PREVIEW_ITEMS.map((item) => (
+                  <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
+                ))}
+              </NavGroup>
+            )}
           </>
         )}
       </div>
