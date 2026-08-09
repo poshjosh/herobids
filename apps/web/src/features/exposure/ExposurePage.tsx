@@ -46,7 +46,7 @@ export function ExposurePage() {
             <KV
               label={intl.formatMessage({ id: 'exposure.totalRealizedPnl' })}
               value={
-                <span style={{ color: pnlColor(overview.summary.outcomes.trading?.totalRealizedPnl), fontWeight: '600', fontSize: '18px' }}>
+                <span style={{ color: pnlColor(overview.summary.outcomes.trading?.totalRealizedPnl), fontWeight: '600', fontSize: '1.125rem' }}>
                   {formatPnl(overview.summary.outcomes.trading?.totalRealizedPnl)}
                 </span>
               }
@@ -81,7 +81,7 @@ function InstancePositions({ instanceId, instanceLabel }: { instanceId: string; 
       {query.isLoading && <LoadingRows count={2} />}
       {query.isError && <ErrorState message={(query.error as Error).message} />}
       {query.isSuccess && positions.length === 0 && (
-        <div style={{ color: 'var(--color-text-muted)', fontSize: '14px', padding: '12px 0' }}>No open positions</div>
+        <div style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem', padding: '12px 0' }}>No open positions</div>
       )}
       {query.isSuccess && positions.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -94,7 +94,7 @@ function InstancePositions({ instanceId, instanceLabel }: { instanceId: string; 
                     style={{
                       padding: '2px 8px',
                       borderRadius: '4px',
-                      fontSize: '11px',
+                      fontSize: '0.6875rem',
                       fontWeight: '500',
                       background: pos.side === 'long' ? 'var(--color-success-subtle)' : 'var(--color-danger-subtle)',
                       color: pos.side === 'long' ? 'var(--color-success)' : 'var(--color-danger)',
@@ -105,18 +105,18 @@ function InstancePositions({ instanceId, instanceLabel }: { instanceId: string; 
                 </div>
                 <div style={{ display: 'flex', gap: '24px', textAlign: 'right' }}>
                   <div>
-                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Size</div>
-                    <div style={{ fontSize: '14px', fontWeight: '500' }}>{new Decimal(pos.size).toFixed(4)}</div>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>Size</div>
+                    <div style={{ fontSize: '0.875rem', fontWeight: '500' }}>{new Decimal(pos.size).toFixed(4)}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Entry</div>
-                    <div style={{ fontSize: '14px', fontWeight: '500' }}>${new Decimal(pos.entryPrice).toFixed(2)}</div>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>Entry</div>
+                    <div style={{ fontSize: '0.875rem', fontWeight: '500' }}>${new Decimal(pos.entryPrice).toFixed(2)}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Realized P&L</div>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>Realized P&L</div>
                     <div
                       style={{
-                        fontSize: '14px',
+                        fontSize: '0.875rem',
                         fontWeight: '500',
                         color: new Decimal(pos.realizedPnl).gte(0) ? 'var(--color-success)' : 'var(--color-danger)',
                       }}

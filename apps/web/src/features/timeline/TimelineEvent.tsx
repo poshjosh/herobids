@@ -70,7 +70,7 @@ export function TimelineEvent({ event, isLast = false }: TimelineEventProps) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: '11px',
+          fontSize: '0.6875rem',
           color: dotColor,
           flexShrink: 0,
           zIndex: 1,
@@ -82,13 +82,13 @@ export function TimelineEvent({ event, isLast = false }: TimelineEventProps) {
       {/* Content */}
       <div style={{ flex: 1, paddingBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
-          <span style={{ fontSize: '13px', color: 'var(--color-text-primary)', fontWeight: '500' }}>
+          <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-primary)', fontWeight: '500' }}>
             {messageText}
           </span>
           {event.severity !== 'info' && (
             <span
               style={{
-                fontSize: '10px',
+                fontSize: '0.625rem',
                 padding: '1px 6px',
                 borderRadius: '4px',
                 background: event.severity === 'critical' ? 'var(--color-danger-subtle)' : 'var(--color-warning-subtle)',
@@ -108,7 +108,7 @@ export function TimelineEvent({ event, isLast = false }: TimelineEventProps) {
                 background: 'transparent',
                 border: 'none',
                 color: 'var(--color-text-muted)',
-                fontSize: '11px',
+                fontSize: '0.6875rem',
                 cursor: 'pointer',
                 padding: '0',
               }}
@@ -124,7 +124,7 @@ export function TimelineEvent({ event, isLast = false }: TimelineEventProps) {
               padding: '10px 12px',
               background: 'var(--color-surface-2)',
               borderRadius: '6px',
-              fontSize: '11px',
+              fontSize: '0.6875rem',
               color: 'var(--color-text-secondary)',
               overflow: 'auto',
               maxHeight: '200px',

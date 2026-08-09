@@ -15,7 +15,7 @@ function UsageBar({ used, total }: { used: number; total: number }) {
       <div style={{ height: '4px', background: 'var(--color-surface-3)', borderRadius: '2px', overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: '2px' }} />
       </div>
-      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '3px' }}>{pct}% used</div>
+      <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginTop: '3px' }}>{pct}% used</div>
     </div>
   );
 }
@@ -38,7 +38,7 @@ export function AdminResourcesSection({ stats }: { stats: AdminStatsResponse }) 
       <Card>
         <div style={{ fontWeight: '600', marginBottom: '12px' }}>Disk</div>
         {disk == null ? (
-          <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Disk stats unavailable</div>
+          <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>Disk stats unavailable</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <KV label="Total" value={fmtBytes(disk.totalBytes)} />

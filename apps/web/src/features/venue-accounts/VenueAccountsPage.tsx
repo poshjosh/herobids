@@ -67,12 +67,12 @@ export function VenueAccountsPage() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
                   <div style={{ fontWeight: '500', marginBottom: '2px' }}>{va.label}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                     {va.venue}{venueTypeMap[va.venue] === 'swap' && va.venueAccountRef ? ` · ${va.venueAccountRef}` : ''}
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                     {va.credentialId ? 'Credentials linked' : 'No credentials'}
                   </div>
                   <Button

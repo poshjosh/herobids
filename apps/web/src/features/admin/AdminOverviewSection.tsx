@@ -15,7 +15,7 @@ function StatusPill({ status }: { status: 'ok' | 'timeout' | 'error' }) {
         display: 'inline-block',
         padding: '2px 8px',
         borderRadius: '20px',
-        fontSize: '12px',
+        fontSize: '0.75rem',
         fontWeight: '500',
         color,
         background: bg,
@@ -56,10 +56,10 @@ export function AdminOverviewSection({ stats }: { stats: AdminStatsResponse }) {
 function StatCard({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
   return (
     <Card style={alert ? { borderColor: 'var(--color-warning)' } : undefined}>
-      <div style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', marginBottom: '6px' }}>
+      <div style={{ fontSize: '0.6875rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', marginBottom: '6px' }}>
         {label}
       </div>
-      <div style={{ fontSize: '22px', fontWeight: '700', color: alert ? 'var(--color-warning)' : 'var(--color-text-primary)' }}>
+      <div style={{ fontSize: '1.375rem', fontWeight: '700', color: alert ? 'var(--color-warning)' : 'var(--color-text-primary)' }}>
         {value}
       </div>
     </Card>

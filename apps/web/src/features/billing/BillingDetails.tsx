@@ -123,7 +123,7 @@ export function BillingDetails({
   return (
     <>
       {/* Spend Controls */}
-      <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
         Spend Controls
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', marginBottom: '10px' }}>
@@ -157,7 +157,7 @@ export function BillingDetails({
       )}
 
       {/* Usage Filters */}
-      <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '16px' }}>
+      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '16px' }}>
         Usage Filters
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
@@ -221,7 +221,7 @@ export function BillingDetails({
 
       {/* By-meter breakdown */}
       <Card style={{ padding: '20px' }}>
-        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           Usage by Meter
         </div>
         {usageBreakdownQuery.isLoading && <LoadingRows count={3} />}
@@ -232,12 +232,12 @@ export function BillingDetails({
           />
         )}
         {usageBreakdown && usageBreakdown.byMeter.length === 0 && (
-          <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
+          <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem', padding: '24px 0' }}>
             {intl.formatMessage({ id: 'billing.usage.emptyBreakdown' })}
           </div>
         )}
         {usageBreakdown && usageBreakdown.byMeter.length > 0 && (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
                 <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Meter</th>
@@ -260,7 +260,7 @@ export function BillingDetails({
 
       {/* By-agent breakdown */}
       <Card style={{ padding: '20px' }}>
-        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           Usage by Agent
         </div>
         {usageBreakdownQuery.isLoading && <LoadingRows count={3} />}
@@ -271,12 +271,12 @@ export function BillingDetails({
           />
         )}
         {usageBreakdown && usageBreakdown.byAgent.length === 0 && (
-          <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
+          <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem', padding: '24px 0' }}>
             {intl.formatMessage({ id: 'billing.usage.emptyBreakdown' })}
           </div>
         )}
         {usageBreakdown && usageBreakdown.byAgent.length > 0 && (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
                 <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Agent</th>
@@ -299,14 +299,14 @@ export function BillingDetails({
 
       {/* Billing Ledger */}
       <Card style={{ padding: '20px' }}>
-        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           Billing Ledger
         </div>
         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
           <select
             value={ledgerDirectionFilter}
             onChange={(e) => { setLedgerDirectionFilter(e.target.value); setLedgerOffset(0); }}
-            style={{ ...inputStyle, padding: '6px 10px', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }}
+            style={{ ...inputStyle, padding: '6px 10px', borderRadius: '6px', fontSize: '0.8125rem', cursor: 'pointer' }}
           >
             <option value="">All Entries</option>
             <option value="credit">Credits Only</option>
@@ -321,14 +321,14 @@ export function BillingDetails({
           />
         )}
         {ledgerEntries && ledgerEntries.records.length === 0 && (
-          <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
+          <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem', padding: '24px 0' }}>
             No billing ledger entries recorded yet.
           </div>
         )}
         {ledgerEntries && ledgerEntries.records.length > 0 && (
           <>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
                     <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>Date</th>
@@ -345,7 +345,7 @@ export function BillingDetails({
                       <td style={{ padding: '8px' }}>
                         <div>{LEDGER_ENTRY_TYPE_LABELS[entry.entryType] ?? entry.entryType}</div>
                         {entry.description && (
-                          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>{entry.description}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>{entry.description}</div>
                         )}
                       </td>
                       <td style={{
@@ -383,7 +383,7 @@ export function BillingDetails({
 
       {/* Usage event ledger */}
       <Card style={{ padding: '20px' }}>
-        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           Usage Events
         </div>
         {usageEventsQuery.isLoading && <LoadingRows count={5} />}
@@ -394,14 +394,14 @@ export function BillingDetails({
           />
         )}
         {usageEvents && usageEvents.records.length === 0 && (
-          <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
+          <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem', padding: '24px 0' }}>
             No usage events recorded yet.
           </div>
         )}
         {usageEvents && usageEvents.records.length > 0 && (
           <>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
                     <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Time</th>
@@ -460,7 +460,7 @@ export function BillingDetails({
 
       {/* Historical periods */}
       <Card style={{ padding: '20px' }}>
-        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           Billing Periods
         </div>
         {periodsQuery.isLoading && <LoadingRows count={3} />}
@@ -471,12 +471,12 @@ export function BillingDetails({
           />
         )}
         {periodsQuery.data && periodsQuery.data.periods.length === 0 && (
-          <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
+          <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem', padding: '24px 0' }}>
             {intl.formatMessage({ id: 'billing.usage.emptyPeriods' })}
           </div>
         )}
         {periodsQuery.data && periodsQuery.data.periods.length > 0 && (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
                 <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Period</th>

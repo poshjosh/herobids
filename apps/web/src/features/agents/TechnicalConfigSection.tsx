@@ -30,7 +30,7 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
     set({ confidence: { ...value.confidence, ...patch } });
 
   const sectionTitleStyle: React.CSSProperties = {
-    fontSize: '13px',
+    fontSize: '0.8125rem',
     fontWeight: '600',
     color: 'var(--color-text-primary)',
     padding: '8px 0',
@@ -40,7 +40,7 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
     <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
       {/* Discovery filters */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+        <div style={{ fontSize: '0.8125rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>
           {intl.formatMessage({ id: 'agents.technical.filters.title' })}
         </div>
 
@@ -187,7 +187,7 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
                     border: `1px solid ${value.signalBias === bias ? 'var(--color-brand)' : 'var(--color-border)'}`,
                     background: value.signalBias === bias ? 'var(--color-brand-subtle, rgba(99,102,241,0.06))' : 'transparent',
                     cursor: 'pointer',
-                    fontSize: '13px',
+                    fontSize: '0.8125rem',
                     color: 'var(--color-text-primary)',
                   }}
                   aria-pressed={value.signalBias === bias}
@@ -270,7 +270,7 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
                 <ParamInput label={intl.formatMessage({ id: 'agents.technical.params.confirmBars' })} value={value.indicators.choch.confirmBars} type="int" onChange={(v) => setIndicators({ choch: { ...value.indicators.choch, confirmBars: v } })} />
               </div>
               <div style={{ marginTop: '6px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
                   <input
                     type="checkbox"
                     checked={value.indicators.choch.rejectOnBearish}
@@ -331,7 +331,7 @@ function IndicatorRow({
         />
         <label
           htmlFor={`ind-${slug}`}
-          style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-primary)', cursor: 'pointer' }}
+          style={{ fontSize: '0.8125rem', fontWeight: '500', color: 'var(--color-text-primary)', cursor: 'pointer' }}
         >
           {label}
         </label>
@@ -354,9 +354,9 @@ function ParamInput({
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '100px' }}>
-      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{label}</div>
+      <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>{label}</div>
       <input
-        style={{ ...inputStyle, padding: '5px 8px', fontSize: '13px' }}
+        style={{ ...inputStyle, padding: '5px 8px', fontSize: '0.8125rem' }}
         type="number"
         step={type === 'int' ? '1' : 'any'}
         value={value}

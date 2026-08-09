@@ -82,12 +82,12 @@ export function OutcomeBoardPage() {
 function ScoreCard({ label, value, highlight }: { label: string; value: string | number; highlight?: boolean }) {
   return (
     <Card style={{ padding: '16px 20px' }}>
-      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
+      <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
         {label}
       </div>
       <div
         style={{
-          fontSize: '28px',
+          fontSize: '1.75rem',
           fontWeight: '700',
           color: highlight ? 'var(--color-brand)' : 'var(--color-text-primary)',
         }}
@@ -118,10 +118,10 @@ function OutcomeAgentCard({ agent, onOpen, showExecutionMode }: { agent: Agent; 
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
-            <span style={{ fontSize: '15px', fontWeight: '600' }}>{agent.name}</span>
+            <span style={{ fontSize: '0.9375rem', fontWeight: '600' }}>{agent.name}</span>
             <StatusBadge status={agent.status} />
             {showExecutionMode && (
-              <span style={{ padding: '3px 8px', borderRadius: '20px', background: 'var(--color-surface-2)', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+              <span style={{ padding: '3px 8px', borderRadius: '20px', background: 'var(--color-surface-2)', fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
                 {intl.formatMessage({ id: 'agents.modeBadge' }, { mode: formatExecutionMode(agent.executionMode, intl) })}
               </span>
             )}
@@ -171,15 +171,15 @@ function OutcomeBlock({
 }) {
   return (
     <div>
-      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
+      <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
         {label}
       </div>
-      {loading && <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Loading…</div>}
-      {!loading && !content && <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{emptyMessage}</div>}
+      {loading && <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>Loading…</div>}
+      {!loading && !content && <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{emptyMessage}</div>}
       {!loading && content && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <div style={{ fontSize: '13px', color: 'var(--color-text-primary)', lineHeight: '1.5' }}>{content}</div>
-          {timestamp && <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}><RelativeTime timestamp={timestamp} /></div>}
+          <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-primary)', lineHeight: '1.5' }}>{content}</div>
+          {timestamp && <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}><RelativeTime timestamp={timestamp} /></div>}
         </div>
       )}
     </div>

@@ -37,12 +37,12 @@ export function AgentDocumentPicker({
         <Button variant="secondary" type="button" onClick={() => inputRef.current?.click()}>
           Choose files
         </Button>
-        <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
           {files.length === 0 ? 'No files selected' : `${files.length} file${files.length === 1 ? '' : 's'} selected`}
         </span>
       </div>
 
-      <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', margin: 0 }}>
+      <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: 0 }}>
         {helperText}
       </p>
 
@@ -59,14 +59,14 @@ export function AgentDocumentPicker({
                 border: '1px solid var(--color-border)',
                 borderRadius: '8px',
                 background: 'var(--color-surface-2)',
-                fontSize: '13px',
+                fontSize: '0.8125rem',
                 color: 'var(--color-text-secondary)',
               }}
             >
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                 {file.name}
               </span>
-              <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', flexShrink: 0 }}>
+              <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', flexShrink: 0 }}>
                 ({(file.size / 1024).toFixed(0)} KB)
               </span>
               <button
@@ -79,7 +79,7 @@ export function AgentDocumentPicker({
                 }}
                 style={{
                   color: 'var(--color-danger)',
-                  fontSize: '12px',
+                  fontSize: '0.75rem',
                   marginLeft: 'auto',
                   flexShrink: 0,
                   background: 'none',

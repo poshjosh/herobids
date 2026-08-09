@@ -248,7 +248,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
           )}
           <option value={CUSTOM_PROVIDER_OPTION}>{intl.formatMessage({ id: 'setup.form.group.custom' })}</option>
         </select>
-        {catalogQuery.isLoading ? <div style={{ marginTop: '8px', fontSize: '12px' }}>Loading provider catalog...</div> : null}
+        {catalogQuery.isLoading ? <div style={{ marginTop: '8px', fontSize: '0.75rem' }}>Loading provider catalog...</div> : null}
       </div>
 
       {!isOAuthProvider && (
@@ -349,7 +349,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
                   autoComplete="new-password"
                 />
                 {field.description ? (
-                  <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)' }}>{field.description}</div>
+                  <div style={{ marginTop: '4px', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{field.description}</div>
                 ) : null}
               </div>
             ))}
@@ -361,7 +361,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
 
       {isOAuthProvider && (
         <div style={{ marginBottom: '16px', padding: '16px', background: 'var(--color-surface-2)', borderRadius: '8px', textAlign: 'center' }}>
-          <div style={{ fontSize: '14px', marginBottom: '12px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+          <div style={{ fontSize: '0.875rem', marginBottom: '12px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
             {intl.formatMessage({ id: 'setup.form.oauthDescription' }, { provider: selectedProvider?.displayName ?? effectiveProvider })}
           </div>
           <Button variant="primary" type="button" onClick={handleOAuthConnect} disabled={oauthMutation.isPending || !effectiveProvider}>
@@ -425,8 +425,8 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability, initi
           padding: '32px',
           boxShadow: '0 2px 16px rgba(0, 0, 0, 0.08)',
         }}>
-          <h1 style={{ fontSize: '22px', fontWeight: '600', margin: '0 0 8px 0' }}>{intl.formatMessage({ id: 'setup.form.title' })}</h1>
-          <p style={{ color: 'var(--color-text-secondary)', margin: '0 0 24px 0', fontSize: '14px' }}>
+          <h1 style={{ fontSize: '1.375rem', fontWeight: '600', margin: '0 0 8px 0' }}>{intl.formatMessage({ id: 'setup.form.title' })}</h1>
+          <p style={{ color: 'var(--color-text-secondary)', margin: '0 0 24px 0', fontSize: '0.875rem' }}>
             {intl.formatMessage({ id: 'setup.form.standaloneSubtitle' })}
           </p>
           {formContent}

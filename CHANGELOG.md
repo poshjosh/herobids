@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Convert all `fontSize`/`font-size` values from px to rem, with a `--font-scale` CSS variable on `:root` to scale the entire site via one value
+
 ## v0.1.3 - 2026-08-09
 
 ### Changed

@@ -48,7 +48,7 @@ export function HealthStrip({ instances }: HealthStripProps) {
       )}
 
       {instances.length === 0 && (
-        <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
+        <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
           No agents configured
         </span>
       )}
@@ -81,7 +81,7 @@ function HealthItem({
           animation: attention ? 'pulse 1.5s ease-in-out infinite' : undefined,
         }}
       />
-      <span style={{ fontSize: '13px', color }}>
+      <span style={{ fontSize: '0.8125rem', color }}>
         {count} {label}
       </span>
     </div>

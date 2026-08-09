@@ -60,7 +60,7 @@ export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit
               alignItems: 'center',
               height: '100%',
               color: 'var(--color-text-muted)',
-              fontSize: 14,
+              fontSize: '0.875rem',
             }}
           >
             Starting conversation...
@@ -105,7 +105,7 @@ export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit
                 borderRadius: 12,
                 backgroundColor: 'var(--color-surface-2)',
                 color: 'var(--color-text)',
-                fontSize: 15,
+                fontSize: '0.9375rem',
                 lineHeight: 1.5,
                 display: 'flex',
                 flexDirection: 'column',
@@ -116,7 +116,7 @@ export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit
                 <span style={{ animation: 'pulse 1.5s infinite', color: 'var(--color-primary)' }}>●</span>
                 Processing your connection…
               </span>
-              <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+              <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
                 One moment while we complete the setup.
               </span>
             </div>
@@ -125,7 +125,7 @@ export function GuidedSetupThread({ messages, onSend, onQuickReply, onFormSubmit
 
         {/* Sending indicator */}
         {sending && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', color: 'var(--color-text-muted)', fontSize: 13 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>
             <span style={{ animation: 'pulse 1.5s infinite' }}>●</span>
             Assistant is thinking...
           </div>

@@ -55,7 +55,7 @@ export function AgentTradesTable({ agentId, executionMode, isActive }: Props) {
 
   if (items.length === 0) {
     return (
-      <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-muted)' }}>
+      <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
         {intl.formatMessage({ id: 'agents.trades.empty' })}
       </p>
     );
@@ -65,7 +65,7 @@ export function AgentTradesTable({ agentId, executionMode, isActive }: Props) {
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
             {[colToken, colVenue, colStatus, colEntry, colExit, colSize, colPnl, colHold, colMode, colTime].map((col) => (
@@ -96,7 +96,7 @@ export function AgentTradesTable({ agentId, executionMode, isActive }: Props) {
                     style={{
                       padding: '2px 7px',
                       borderRadius: '12px',
-                      fontSize: '11px',
+                      fontSize: '0.6875rem',
                       fontWeight: '600',
                       background: row.status === 'open' ? 'var(--color-success-subtle)' : 'var(--color-surface-2)',
                       color: row.status === 'open' ? 'var(--color-success)' : 'var(--color-text-muted)',

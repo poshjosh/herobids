@@ -39,7 +39,7 @@ const pillStyle: React.CSSProperties = {
   padding: '2px 8px',
   borderRadius: '12px',
   background: 'var(--color-surface-2)',
-  fontSize: '11px',
+  fontSize: '0.6875rem',
   color: 'var(--color-text-secondary)',
   fontWeight: '500',
 };
@@ -260,7 +260,7 @@ function BlueprintCard({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: '0.9375rem', fontWeight: '600', color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {blueprint.name}
             </span>
             {/* Rank badge — only for trading agents with a score */}
@@ -271,7 +271,7 @@ function BlueprintCard({
                 padding: '1px 6px',
                 borderRadius: '10px',
                 background: 'var(--color-accent-subtle)',
-                fontSize: '11px',
+                fontSize: '0.6875rem',
                 fontWeight: '700',
                 color: 'var(--color-accent)',
               }}>
@@ -279,7 +279,7 @@ function BlueprintCard({
               </span>
             )}
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
             {blueprint.kind === 'agent' ? '🤖 Agent' : '📈 Bot'}
             {blueprint.strategyType && ` · ${blueprint.strategyType}`}
             {blueprint.venueType && ` · ${blueprint.venueType}`}
@@ -291,7 +291,7 @@ function BlueprintCard({
       </div>
 
       {/* Description */}
-      <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+      <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
         {blueprint.description || 'No description'}
       </div>
 
@@ -308,7 +308,7 @@ function BlueprintCard({
       )}
 
       {/* Stats */}
-      <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--color-text-muted)', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: '16px', fontSize: '0.75rem', color: 'var(--color-text-muted)', alignItems: 'center' }}>
         {canLike ? (
           <Button
             size="sm"

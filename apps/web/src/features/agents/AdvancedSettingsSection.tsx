@@ -26,7 +26,7 @@ const wrapperStyle: React.CSSProperties = {};
 const summaryStyle: React.CSSProperties = {
   padding: '12px 0',
   cursor: 'pointer',
-  fontSize: '14px',
+  fontSize: '0.875rem',
   fontWeight: '600',
   color: 'var(--color-text-secondary)',
   userSelect: 'none',
@@ -43,7 +43,7 @@ const tabBarStyle: React.CSSProperties = {
 
 const tabStyle = (active: boolean): React.CSSProperties => ({
   padding: '10px 16px',
-  fontSize: '14px',
+  fontSize: '0.875rem',
   fontWeight: active ? '600' : '500',
   color: 'var(--color-text-primary)',
   background: 'none',
@@ -147,7 +147,7 @@ export function AdvancedSettingsSection({
                 onClick={() => setActiveIdx(idx)}
               >
                 {hasError && (
-                  <span style={{ marginRight: '4px', fontSize: '10px' }}>●</span>
+                  <span style={{ marginRight: '4px', fontSize: '0.625rem' }}>●</span>
                 )}
                 {intl.formatMessage({ id: sectionLabels[idx] })}
               </button>

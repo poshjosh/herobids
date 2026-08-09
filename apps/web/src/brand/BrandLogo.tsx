@@ -149,7 +149,7 @@ function BrandWordmark({
 
 function TypographicMark({ size, variant }: { size: BrandSize; variant: BrandVariant }) {
   const color = resolveTypographicColor(variant);
-  const fontSize = size === 'sm' ? '14px' : size === 'md' ? '20px' : '30px';
+  const fontSize = size === 'sm' ? '0.875rem' : size === 'md' ? '1.25rem' : '1.875rem';
 
   return (
     <span
@@ -183,7 +183,7 @@ function TypographicWordmark({
 }) {
   const white = '#FFFFFF';
   const accent = '#635BFF';
-  const fontSize = size === 'sm' ? '14px' : size === 'md' ? '18px' : '24px';
+  const fontSize = size === 'sm' ? '0.875rem' : size === 'md' ? '1.125rem' : '1.5rem';
   const className = ['brand-wordmark', responsive && 'brand-wordmark-responsive'].filter(Boolean).join(' ');
 
   return (

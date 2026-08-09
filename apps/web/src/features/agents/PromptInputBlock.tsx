@@ -72,7 +72,7 @@ export function PromptInputBlock({
   return (
     <div data-field={dataField} style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '4px' }}>
       {/* Label */}
-      <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '2px', letterSpacing: '0.02em' }}>
+      <label style={{ fontSize: '0.8125rem', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '2px', letterSpacing: '0.02em' }}>
         {goalLabel}
       </label>
 
@@ -96,7 +96,7 @@ export function PromptInputBlock({
             border: 'none',
             borderRadius: 0,
             color: 'var(--color-text-primary)',
-            fontSize: '16px',
+            fontSize: '1rem',
             outline: 'none',
             resize: 'vertical',
             overflow: 'hidden',
@@ -140,7 +140,7 @@ export function PromptInputBlock({
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '3px',
-                  fontSize: '12px',
+                  fontSize: '0.75rem',
                   color: 'var(--color-text-secondary)',
                   background: 'var(--color-surface-3)',
                   padding: '2px 7px',
@@ -167,7 +167,7 @@ export function PromptInputBlock({
                       background: 'none',
                       border: 'none',
                       color: 'var(--color-text-muted)',
-                      fontSize: '13px',
+                      fontSize: '0.8125rem',
                       padding: 0,
                       lineHeight: 1,
                       flexShrink: 0,
@@ -185,7 +185,7 @@ export function PromptInputBlock({
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '3px',
-                  fontSize: '12px',
+                  fontSize: '0.75rem',
                   color: 'var(--color-text-secondary)',
                   background: 'var(--color-surface-3)',
                   padding: '2px 7px',
@@ -213,7 +213,7 @@ export function PromptInputBlock({
                     background: 'none',
                     border: 'none',
                     color: 'var(--color-text-muted)',
-                    fontSize: '13px',
+                    fontSize: '0.8125rem',
                     padding: 0,
                     lineHeight: 1,
                     flexShrink: 0,
@@ -250,7 +250,7 @@ export function PromptInputBlock({
               background: 'none',
               border: 'none',
               cursor: 'pointer',
-              fontSize: '18px',
+              fontSize: '1.125rem',
               padding: '4px 8px',
               color:
                 pendingFiles.length > 0
@@ -272,7 +272,7 @@ export function PromptInputBlock({
               background: 'transparent',
               border: 'none',
               color: 'var(--color-text-primary)',
-              fontSize: '13px',
+              fontSize: '0.8125rem',
               padding: '4px 6px',
               cursor: 'pointer',
               outline: 'none',
@@ -294,7 +294,7 @@ export function PromptInputBlock({
         <div
           style={{
             color: 'var(--color-danger)',
-            fontSize: '12px',
+            fontSize: '0.75rem',
             marginTop: '2px',
           }}
         >

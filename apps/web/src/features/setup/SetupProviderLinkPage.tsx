@@ -56,7 +56,7 @@ export function SetupProviderLinkPage() {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center', maxWidth: '400px', padding: '24px' }}>
-          <div style={{ fontSize: '20px', fontWeight: '600', marginBottom: '12px', color: 'var(--color-danger)' }}>
+          <div style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '12px', color: 'var(--color-danger)' }}>
             Link Expired
           </div>
           <div style={{ color: 'var(--color-text-secondary)', marginBottom: '24px' }}>{errorMessage}</div>
@@ -92,7 +92,7 @@ export function SetupProviderLinkPage() {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center', maxWidth: '460px', padding: '24px' }}>
-          <div style={{ fontSize: '20px', fontWeight: '600', marginBottom: '12px', color: 'var(--color-success)' }}>
+          <div style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '12px', color: 'var(--color-success)' }}>
             Connected!
           </div>
           <div style={{ color: 'var(--color-text-secondary)', marginBottom: '24px', lineHeight: '1.6' }}>

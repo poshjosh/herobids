@@ -168,7 +168,7 @@ export function SkillsPage() {
         />
       )}
       {!canViewMarketplace && (
-        <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
+        <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem', lineHeight: '1.5' }}>
           {marketplaceUnavailableMessage}
         </div>
       )}
@@ -203,7 +203,7 @@ export function SkillsPage() {
     if (activeCategory === 'marketplace') {
       if (!canViewMarketplace) {
         return (
-          <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
+          <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem', lineHeight: '1.5' }}>
             {marketplaceUnavailableMessage}
           </div>
         );
@@ -244,7 +244,7 @@ export function SkillsPage() {
 
       {showCreateComposer && (
         <Card style={{ marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+          <div style={{ fontSize: '0.9375rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>
             {intl.formatMessage({ id: 'skills.form.createTitle', defaultMessage: 'Create skill' })}
           </div>
           <label style={fieldLabelStyle}>
@@ -318,7 +318,7 @@ export function SkillsPage() {
               loading={toolsQuery.isLoading}
             />
             {toolsQuery.isError && (
-              <div style={{ fontSize: '12px', color: 'var(--color-danger)', marginTop: '4px' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--color-danger)', marginTop: '4px' }}>
                 {(toolsQuery.error as Error).message}
               </div>
             )}
@@ -342,7 +342,7 @@ export function SkillsPage() {
               </option>
             </select>
           </label>
-          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
             {autoPublishesNonDraftSkills
               ? intl.formatMessage({
                   id: 'skills.visibility.autoPublishHint',
@@ -416,7 +416,7 @@ export function SkillsPage() {
             placeholder={intl.formatMessage({ id: 'skills.searchPlaceholder', defaultMessage: 'Search skills…' })}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ ...inputStyle, padding: '8px 12px', fontSize: '14px', maxWidth: '360px' }}
+            style={{ ...inputStyle, padding: '8px 12px', fontSize: '0.875rem', maxWidth: '360px' }}
           />
           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
             {skillTabs.map((tab) => (
@@ -438,7 +438,7 @@ export function SkillsPage() {
       )}
 
       {!isLoading && !queryError && privateSkillsDisabled && (
-        <div style={{ marginBottom: '24px', color: 'var(--color-text-muted)', fontSize: '12px' }}>
+        <div style={{ marginBottom: '24px', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
           {autoPublishesNonDraftSkills
             ? intl.formatMessage({
                 id: 'skills.privatePlanUnavailableWithAutoPublish',
@@ -580,15 +580,15 @@ function SkillCard({
     <Card style={{ display: 'flex', flexDirection: 'column', gap: '12px', ...(isEditing ? { gridColumn: '1 / -1' } : {}) }}>
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-          <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)' }}>{skill.name}</div>
-          <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+          <div style={{ fontSize: '0.9375rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>{skill.name}</div>
+          <span style={{ fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
             {statusLabel}
           </span>
-          <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+          <span style={{ fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
             {priceLabel}
           </span>
         </div>
-        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>{skill.description}</div>
+        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>{skill.description}</div>
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -771,7 +771,7 @@ function SkillCard({
               loading={toolsLoading}
             />
             {toolsError && (
-              <div style={{ fontSize: '12px', color: 'var(--color-danger)', marginTop: '4px' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--color-danger)', marginTop: '4px' }}>
                 {(toolsError as Error).message}
               </div>
             )}
@@ -813,7 +813,7 @@ function SkillCard({
       )}
 
       {canManage && !canPublishByPlan && (
-        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
           {intl.formatMessage({
             id: 'skills.marketplacePublishingUnavailable',
             defaultMessage: 'Your plan does not allow marketplace publishing.',
@@ -822,7 +822,7 @@ function SkillCard({
       )}
 
       {hasUnpublishedRevision && canManage && (
-        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
           {intl.formatMessage({
             id: 'skills.unpublishedRevisionNotice',
             defaultMessage: 'You have an update ready to be published.',
@@ -831,7 +831,7 @@ function SkillCard({
       )}
 
       {canManage && !canCreatePrivateSkills && (
-        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
           {intl.formatMessage({
             id: 'skills.privateUnavailable',
             defaultMessage: 'Private skills are unavailable on your current plan.',
@@ -840,7 +840,7 @@ function SkillCard({
       )}
 
       {mode === 'marketplace' && skill.sourceKind === 'user' && !canLikeByPlan && (
-        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
           {intl.formatMessage({
             id: 'skills.likeUnavailable',
             defaultMessage: 'Liking marketplace skills is unavailable on your current plan.',
@@ -848,7 +848,7 @@ function SkillCard({
         </div>
       )}
 
-      <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
         {metricsQuery.isLoading && (
           <div>{intl.formatMessage({ id: 'skills.metrics.loading', defaultMessage: 'Loading metrics...' })}</div>
         )}
@@ -881,14 +881,14 @@ const pillStyle: React.CSSProperties = {
   borderRadius: '20px',
   background: 'var(--color-surface-2)',
   color: 'var(--color-text-secondary)',
-  fontSize: '12px',
+  fontSize: '0.75rem',
 };
 
 const fieldLabelStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: '6px',
-  fontSize: '12px',
+  fontSize: '0.75rem',
   color: 'var(--color-text-secondary)',
 };
 
@@ -897,7 +897,7 @@ const inputStyle: React.CSSProperties = {
   borderRadius: '8px',
   background: 'var(--color-surface-3)',
   color: 'var(--color-text-primary)',
-  fontSize: '13px',
+  fontSize: '0.8125rem',
   padding: '8px 10px',
   transition: 'border-color 0.15s, box-shadow 0.15s',
 };

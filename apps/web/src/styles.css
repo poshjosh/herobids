@@ -119,6 +119,7 @@ body::after {
  * ─────────────────────────────────────────────────────────────────────────── */
 :root {
   --input-border-color: var(--color-brand-subtle);
+  --font-scale: 1.25;
 }
 
 @media (max-width: 768px) {
@@ -129,6 +130,11 @@ body::after {
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  /* Scale all rem-based sizes. 1 = 100%, 1.25 = 125%, etc. */
+  font-size: calc(100% * var(--font-scale));
 }
 
 html,
@@ -271,7 +277,7 @@ textarea:not(:placeholder-shown) {
   color: var(--color-text-primary);
   cursor: pointer;
   padding: 1px 1px;
-  font-size: 28px;
+  font-size: 1.75rem;
   line-height: 1;
   flex-shrink: 0;
 }
@@ -430,7 +436,7 @@ textarea:not(:placeholder-shown) {
   border: none;
   cursor: pointer;
   padding: 4px 8px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--color-text-muted);
   border-radius: 6px;
 }
@@ -453,7 +459,7 @@ textarea:not(:placeholder-shown) {
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--color-text-muted);
 }
 
@@ -507,7 +513,7 @@ textarea:not(:placeholder-shown) {
   padding: 12px 20px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface-1);
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--color-text);
 }
@@ -523,7 +529,7 @@ textarea:not(:placeholder-shown) {
   padding: 4px;
   border-radius: 4px;
   color: var(--color-text-muted);
-  font-size: 18px;
+  font-size: 1.125rem;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -625,7 +631,7 @@ textarea:not(:placeholder-shown) {
 }
 
 .landing-page-tagline {
-  font-size: 18px;
+  font-size: 1.125rem;
   color: rgba(255, 255, 255, 0.85);
   margin: 0;
   line-height: 1.5;
@@ -644,7 +650,7 @@ textarea:not(:placeholder-shown) {
   color: #fff;
   border-radius: 6px;
   text-decoration: none;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   box-shadow: 0 6px 20px -6px rgba(99, 91, 255, 0.7);
   transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
@@ -716,7 +722,7 @@ textarea:not(:placeholder-shown) {
   border-radius: 12px;
   background-color: var(--color-surface-2);
   color: var(--color-text-primary);
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1.5;
   word-break: break-word;
 }
@@ -727,7 +733,7 @@ textarea:not(:placeholder-shown) {
   gap: 8px;
   padding: 8px 0;
   color: var(--color-text-muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
   margin-bottom: 16px;
 }
 
@@ -756,7 +762,7 @@ textarea:not(:placeholder-shown) {
   border: 1px solid var(--color-border);
   background-color: var(--color-surface-2);
   color: var(--color-text-primary);
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1.4;
   font-family: inherit;
 }
@@ -767,7 +773,7 @@ textarea:not(:placeholder-shown) {
   border: none;
   background-color: var(--color-brand);
   color: var(--brand-white);
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
@@ -781,7 +787,7 @@ textarea:not(:placeholder-shown) {
 
 .try-page-error {
   color: var(--color-danger);
-  font-size: 13px;
+  font-size: 0.8125rem;
   margin-top: 6px;
 }
 
@@ -807,7 +813,7 @@ textarea:not(:placeholder-shown) {
   border: 1px solid var(--color-border);
   background-color: transparent;
   color: var(--color-text-primary);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-family: inherit;
   cursor: pointer;
 }

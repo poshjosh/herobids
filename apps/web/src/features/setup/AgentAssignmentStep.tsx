@@ -80,16 +80,16 @@ export function AgentAssignmentStep({ connectionId, connectionLabel, connectionP
       onClose={onDone}
     >
       <div style={{ marginBottom: '16px' }}>
-        <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+        <div style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '4px' }}>
           {intl.formatMessage({ id: 'setup.agentAssignment.title' })}
         </div>
-        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
           {intl.formatMessage({ id: 'setup.agentAssignment.subtitle' })}
         </div>
       </div>
 
       {error && (
-        <div style={{ padding: '8px 12px', background: 'var(--color-surface-error, rgba(239,68,68,0.08))', borderRadius: '6px', fontSize: '13px', color: 'var(--color-text-error, #ef4444)', marginBottom: '12px' }}>
+        <div style={{ padding: '8px 12px', background: 'var(--color-surface-error, rgba(239,68,68,0.08))', borderRadius: '6px', fontSize: '0.8125rem', color: 'var(--color-text-error, #ef4444)', marginBottom: '12px' }}>
           {error}
         </div>
       )}
@@ -99,7 +99,7 @@ export function AgentAssignmentStep({ connectionId, connectionLabel, connectionP
       ) : agentsQuery.isError ? (
         <ErrorState message={(agentsQuery.error as Error).message} onRetry={() => void agentsQuery.refetch()} />
       ) : agents.length === 0 ? (
-        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5', padding: '8px 0' }}>
+        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5', padding: '8px 0' }}>
           {intl.formatMessage({ id: 'setup.agentAssignment.noAgents' })}
         </div>
       ) : (
@@ -126,8 +126,8 @@ export function AgentAssignmentStep({ connectionId, connectionLabel, connectionP
                 style={{ accentColor: 'var(--color-brand)', width: '16px', height: '16px' }}
               />
               <div>
-                <div style={{ fontSize: '13px', fontWeight: '600' }}>{agent.name}</div>
-                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                <div style={{ fontSize: '0.8125rem', fontWeight: '600' }}>{agent.name}</div>
+                <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
                   {agent.status} {agent.executionMode ? `· ${agent.executionMode}` : ''}
                 </div>
               </div>

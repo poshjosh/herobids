@@ -37,7 +37,7 @@ export function CapabilitySelector({ value, onChange }: CapabilitySelectorProps)
 
   return (
     <div role="group" aria-labelledby="capability-selector-label">
-      <div id="capability-selector-label" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+      <div id="capability-selector-label" style={{ fontSize: '0.8125rem', fontWeight: '500', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
         {intl.formatMessage({ id: 'agents.capability.title' })}
       </div>
       <div style={{ display: 'flex', gap: '8px' }}>
@@ -61,20 +61,20 @@ export function CapabilitySelector({ value, onChange }: CapabilitySelectorProps)
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                <span style={{ fontSize: '14px' }}>{mode.icon}</span>
-                <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+                <span style={{ fontSize: '0.875rem' }}>{mode.icon}</span>
+                <span style={{ fontSize: '0.8125rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>
                   {intl.formatMessage({ id: mode.labelKey })}
                 </span>
                 {active && (
-                  <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--color-brand)' }}>✓</span>
+                  <span style={{ marginLeft: 'auto', fontSize: '0.6875rem', color: 'var(--color-brand)' }}>✓</span>
                 )}
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', lineHeight: '1.4', marginBottom: '4px' }}>
+              <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', lineHeight: '1.4', marginBottom: '4px' }}>
                 {intl.formatMessage({ id: mode.descriptionKey })}
               </div>
               <div
                 style={{
-                  fontSize: '10px',
+                  fontSize: '0.625rem',
                   fontWeight: '600',
                   color: 'var(--color-text-muted)',
                   textTransform: 'uppercase' as const,

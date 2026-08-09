@@ -36,7 +36,7 @@ export function WakeSourceSection({ selected, onChange, disabled, sources }: Wak
 
   return (
     <div>
-      <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: 'var(--color-text-primary)' }}>
+      <div style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '8px', color: 'var(--color-text-primary)' }}>
         Which notices should the agent receive?
       </div>
       {visibleSources.map(source => (
@@ -57,7 +57,7 @@ export function WakeSourceSection({ selected, onChange, disabled, sources }: Wak
             onChange={() => toggle(source.value)}
             disabled={disabled}
           />
-          <span style={{ fontSize: '13px', color: 'var(--color-text-primary)' }}>
+          <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-primary)' }}>
             {source.description}
           </span>
         </label>

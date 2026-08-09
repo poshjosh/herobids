@@ -107,7 +107,7 @@ export function AgentCapabilityPage() {
             padding: '3px 8px',
             borderRadius: '20px',
             background: 'var(--color-surface-2)',
-            fontSize: '12px',
+            fontSize: '0.75rem',
             color: 'var(--color-text-secondary)',
           }}
         >
@@ -118,11 +118,11 @@ export function AgentCapabilityPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
         <section aria-label={intl.formatMessage({ id: 'agents.summary.capabilityReadiness' })}>
           <Card>
-            <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.readiness' })}</div>
+            <div style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '12px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.readiness' })}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <KV label={intl.formatMessage({ id: 'common.state' })} value={formatCapabilityState(readiness.state, intl)} />
               {readiness.state === 'unconfigured' && (
-                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '-8px', lineHeight: '1.4' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '-8px', lineHeight: '1.4' }}>
                   {intl.formatMessage({ id: 'agents.capabilityState.unconfigured.tradingNote' })}
                 </div>
               )}
@@ -135,20 +135,20 @@ export function AgentCapabilityPage() {
         </section>
 
         <Card>
-          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.whyThisState' })}</div>
+          <div style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '12px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.whyThisState' })}</div>
           {readiness.reasons.length === 0 ? (
-            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{intl.formatMessage({ id: 'agents.capabilityPage.readyForUse' })}</div>
+            <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>{intl.formatMessage({ id: 'agents.capabilityPage.readyForUse' })}</div>
           ) : (
-            <ul style={{ margin: 0, paddingLeft: '18px', color: 'var(--color-text-secondary)', fontSize: '13px', lineHeight: '1.6' }}>
+            <ul style={{ margin: 0, paddingLeft: '18px', color: 'var(--color-text-secondary)', fontSize: '0.8125rem', lineHeight: '1.6' }}>
               {readiness.reasons.map((reason) => <li key={reason}>{reason}</li>)}
             </ul>
           )}
         </Card>
 
         <Card>
-          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.nextSteps' })}</div>
+          <div style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '12px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.nextSteps' })}</div>
           {nextSteps.length === 0 ? (
-            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+            <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
               {intl.formatMessage({ id: 'agents.capabilityPage.noGuidedSetup' })}
             </div>
           ) : (
@@ -163,17 +163,17 @@ export function AgentCapabilityPage() {
         {family === 'trading' && (
           <Card>
             {bindError && (
-              <div style={{ padding: '8px 12px', background: 'var(--color-surface-error, rgba(239,68,68,0.08))', borderRadius: '6px', fontSize: '13px', color: 'var(--color-text-error, #ef4444)', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ padding: '8px 12px', background: 'var(--color-surface-error, rgba(239,68,68,0.08))', borderRadius: '6px', fontSize: '0.8125rem', color: 'var(--color-text-error, #ef4444)', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>{bindError}</span>
-                <button type="button" onClick={() => setBindError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '16px', lineHeight: 1, padding: '0 4px' }}>×</button>
+                <button type="button" onClick={() => setBindError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '1rem', lineHeight: 1, padding: '0 4px' }}>×</button>
               </div>
             )}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <div style={{ fontSize: '14px', fontWeight: '600' }}>{intl.formatMessage({ id: 'agents.capabilityPage.availableConnections' })}</div>
+              <div style={{ fontSize: '0.875rem', fontWeight: '600' }}>{intl.formatMessage({ id: 'agents.capabilityPage.availableConnections' })}</div>
               <button
                 type="button"
                 onClick={() => { setShowAddConnection(true); setBindError(null); }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--color-brand)', padding: '2px 4px' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', color: 'var(--color-brand)', padding: '2px 4px' }}
               >
                 {intl.formatMessage({ id: 'agents.capabilityPage.addConnection' })}
               </button>
@@ -189,7 +189,7 @@ export function AgentCapabilityPage() {
                 }}
               />
             ) : (availableConnectionsQuery.data?.connections.length ?? 0) === 0 ? (
-              <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+              <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
                 {intl.formatMessage({ id: 'agents.capabilityPage.noConnections' })}
               </div>
             ) : (
@@ -202,12 +202,12 @@ export function AgentCapabilityPage() {
                     <div key={connection.connectionId} style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
                         <div>
-                          <div style={{ fontSize: '14px', fontWeight: '600' }}>{connection.label}</div>
-                          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: '1.5' }}>
+                          <div style={{ fontSize: '0.875rem', fontWeight: '600' }}>{connection.label}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: '1.5' }}>
                             {intl.formatMessage({ id: 'agents.capabilityPage.connectionMeta' }, { provider: connection.provider, connectionStatus: connection.status, grantStatus: isBound ? connection.grantStatus ?? 'active' : '—' })}
                           </div>
                           {connection.providerRef && (
-                            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '6px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.reference' }, { reference: connection.providerRef })}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '6px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.reference' }, { reference: connection.providerRef })}</div>
                           )}
                         </div>
                         <Button

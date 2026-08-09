@@ -360,7 +360,7 @@ export function AgentDetailPage() {
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 12,
-            fontSize: 13,
+            fontSize: '0.8125rem',
             color: 'var(--color-text-primary)',
           }}>
             <span>
@@ -399,7 +399,7 @@ export function AgentDetailPage() {
           <details>
             <summary
               style={{
-                fontSize: '11px',
+                fontSize: '0.6875rem',
                 fontWeight: '600',
                 textTransform: 'uppercase',
                 letterSpacing: '0.06em',
@@ -413,7 +413,7 @@ export function AgentDetailPage() {
             <div style={{ marginTop: '12px' }}>
           {messagesQuery.isLoading && <LoadingRows count={3} />}
           {messagesQuery.isSuccess && messagesQuery.data.length === 0 && (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.detail.noMessages' })}</p>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>{intl.formatMessage({ id: 'agents.detail.noMessages' })}</p>
           )}
           {messagesQuery.isSuccess && messagesQuery.data.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -422,17 +422,17 @@ export function AgentDetailPage() {
                 const deliveryDetail = getMessageDeliveryDetail(msg);
                 const classVariant = getMessageClassBadgeVariant(msg.messageClass);
 
-                return <div key={msg.id} style={{ padding: '10px 12px', borderRadius: '6px', background: 'var(--color-surface-raised)', fontSize: '13px' }}>
+                return <div key={msg.id} style={{ padding: '10px 12px', borderRadius: '6px', background: 'var(--color-surface-raised)', fontSize: '0.8125rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: msg.subject ? '4px' : '0' }}>
                     <span style={{ display: 'flex', gap: '6px', alignItems: 'center', fontWeight: '500', color: msg.authoredBy === 'platform' ? 'var(--color-warning)' : 'var(--color-text)' }}>
                       {msg.authoredBy === 'platform' ? intl.formatMessage({ id: 'agents.detail.messageAuthor.platform' }) : intl.formatMessage({ id: 'agents.detail.messageAuthor.agent' })}
                       {classVariant === 'alert' && (
-                        <span style={{ padding: '1px 6px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', background: 'var(--color-warning-bg, #fff3cd)', color: 'var(--color-warning, #b45309)' }}>
+                        <span style={{ padding: '1px 6px', borderRadius: '10px', fontSize: '0.6875rem', fontWeight: '600', background: 'var(--color-warning-bg, #fff3cd)', color: 'var(--color-warning, #b45309)' }}>
                           {intl.formatMessage({ id: 'agents.detail.messageClass.alert' })}
                         </span>
                       )}
                       {classVariant === 'reminder' && (
-                        <span style={{ padding: '1px 6px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', background: 'var(--color-info-bg, #dbeafe)', color: 'var(--color-info, #1d4ed8)' }}>
+                        <span style={{ padding: '1px 6px', borderRadius: '10px', fontSize: '0.6875rem', fontWeight: '600', background: 'var(--color-info-bg, #dbeafe)', color: 'var(--color-info, #1d4ed8)' }}>
                           {intl.formatMessage({ id: 'agents.detail.messageClass.reminder' })}
                         </span>
                       )}
@@ -444,7 +444,7 @@ export function AgentDetailPage() {
                   </div>
                   {msg.subject && <div style={{ fontWeight: '600', marginBottom: '2px' }}>{msg.subject}</div>}
                   <div style={{ color: 'var(--color-text-muted)' }}>{msg.body}</div>
-                  {deliveryDetail && <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: '4px' }}>{deliveryDetail}</div>}
+                  {deliveryDetail && <div style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', marginTop: '4px' }}>{deliveryDetail}</div>}
                 </div>
               })}
             </div>
@@ -457,7 +457,7 @@ export function AgentDetailPage() {
           <details>
             <summary
               style={{
-                fontSize: '11px',
+                fontSize: '0.6875rem',
                 fontWeight: '600',
                 textTransform: 'uppercase',
                 letterSpacing: '0.06em',
@@ -471,10 +471,10 @@ export function AgentDetailPage() {
             <div style={{ marginTop: '12px' }}>
           {decisionsQuery.isLoading && <LoadingRows count={3} />}
           {decisionsQuery.isSuccess && (decisionsQuery.data as unknown[]).length === 0 && (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.detail.noDecisions' })}</p>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>{intl.formatMessage({ id: 'agents.detail.noDecisions' })}</p>
           )}
           {decisionsQuery.isSuccess && (decisionsQuery.data as unknown[]).length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.8125rem' }}>
               {(decisionsQuery.data as Array<{ id: string; intent: string; createdAt: string }>).map((d) => (
                 <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
                   <span>{d.intent}</span>
@@ -492,7 +492,7 @@ export function AgentDetailPage() {
             <details open>
               <summary
                 style={{
-                  fontSize: '11px',
+                  fontSize: '0.6875rem',
                   fontWeight: '600',
                   textTransform: 'uppercase',
                   letterSpacing: '0.06em',
@@ -515,7 +515,7 @@ export function AgentDetailPage() {
             <details>
               <summary
                 style={{
-                  fontSize: '11px',
+                  fontSize: '0.6875rem',
                   fontWeight: '600',
                   textTransform: 'uppercase',
                   letterSpacing: '0.06em',
@@ -541,7 +541,7 @@ export function AgentDetailPage() {
           <details>
             <summary
               style={{
-                fontSize: '11px',
+                fontSize: '0.6875rem',
                 fontWeight: '600',
                 textTransform: 'uppercase',
                 letterSpacing: '0.06em',
@@ -553,7 +553,7 @@ export function AgentDetailPage() {
               {intl.formatMessage({ id: 'agents.detail.objective' })}
             </summary>
             <div style={{ marginTop: '12px' }}>
-          <p style={{ margin: '0 0 12px', fontSize: '13px', lineHeight: '1.5' }}>{objective}</p>
+          <p style={{ margin: '0 0 12px', fontSize: '0.8125rem', lineHeight: '1.5' }}>{objective}</p>
           {operatorContextItems.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
               {operatorContextItems.map((item) => (
@@ -563,7 +563,7 @@ export function AgentDetailPage() {
                     padding: '3px 8px',
                     borderRadius: '20px',
                     background: 'var(--color-surface-2)',
-                    fontSize: '12px',
+                    fontSize: '0.75rem',
                     color: 'var(--color-text-secondary)',
                   }}
                 >
@@ -589,7 +589,7 @@ export function AgentDetailPage() {
             <details>
               <summary
                 style={{
-                  fontSize: '11px',
+                  fontSize: '0.6875rem',
                   fontWeight: '600',
                   textTransform: 'uppercase',
                   letterSpacing: '0.06em',
@@ -606,7 +606,7 @@ export function AgentDetailPage() {
             {!skillsQuery.isLoading && !skillsQuery.isError && capabilityQuery.isLoading && <LoadingRows count={2} />}
             {capabilityQuery.isError && <ErrorState message={localizeApiError(intl, capabilityQuery.error, 'common.errorTitle')} />}
             {!skillsQuery.isLoading && !skillsQuery.isError && !hasTradingCapability && (
-              <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.summary.noCapabilitySetup' })}</div>
+              <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>{intl.formatMessage({ id: 'agents.summary.noCapabilitySetup' })}</div>
             )}
             {!skillsQuery.isLoading && !skillsQuery.isError && hasTradingCapability && tradingCapability && (
               <section
@@ -615,10 +615,10 @@ export function AgentDetailPage() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
                   <div>
-                    <div style={{ fontSize: '14px', fontWeight: '600' }}>{formatCapabilityFamily(tradingCapability.family, intl)}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{formatCapabilityState(tradingCapability.state, intl)}</div>
+                    <div style={{ fontSize: '0.875rem', fontWeight: '600' }}>{formatCapabilityFamily(tradingCapability.family, intl)}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{formatCapabilityState(tradingCapability.state, intl)}</div>
                     {tradingCapability.state === 'unconfigured' && (
-                      <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: '1.4' }}>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: '1.4' }}>
                         {intl.formatMessage({ id: 'agents.capabilityState.unconfigured.tradingNote' })}
                       </div>
                     )}
@@ -633,7 +633,7 @@ export function AgentDetailPage() {
                       : intl.formatMessage({ id: 'agents.summary.configureCapability' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })}
                   </Button>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
                   <div>{intl.formatMessage({ id: 'agents.detail.connectionReadiness' })}: {formatCapabilityState(tradingCapability.connectionReadiness, intl)}</div>
                   <div>{intl.formatMessage({ id: 'agents.detail.agentEligibility' })}: {intl.formatMessage({ id: `agents.eligibility.${tradingCapability.agentEligibility}` })}</div>
                   <div>{intl.formatMessage({ id: 'agents.detail.effectiveReady' })}: {tradingCapability.effectiveReady ? intl.formatMessage({ id: 'common.yes' }) : intl.formatMessage({ id: 'common.no' })}</div>
@@ -671,7 +671,7 @@ export function AgentDetailPage() {
           <details>
             <summary
               style={{
-                fontSize: '11px',
+                fontSize: '0.6875rem',
                 fontWeight: '600',
                 textTransform: 'uppercase',
                 letterSpacing: '0.06em',
@@ -685,7 +685,7 @@ export function AgentDetailPage() {
             </summary>
             <div style={{ marginTop: '12px' }}>
           {!canViewPrompts && (
-            <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.5', color: 'var(--color-text-muted)' }}>
+            <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: '1.5', color: 'var(--color-text-muted)' }}>
               Prompt visibility is not available on your current plan.
             </p>
           )}
@@ -697,7 +697,7 @@ export function AgentDetailPage() {
             />
           )}
           {canViewPrompts && promptQuery.isSuccess && promptQuery.data === null && (
-            <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.5', color: 'var(--color-text-muted)' }}>
+            <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: '1.5', color: 'var(--color-text-muted)' }}>
               {intl.formatMessage({ id: 'agents.detail.promptUnavailable' })}
             </p>
           )}
@@ -729,7 +729,7 @@ export function AgentDetailPage() {
                       onClick={() => setActivePromptTab(tab.key)}
                       style={{
                         padding: '4px 10px',
-                        fontSize: '12px',
+                        fontSize: '0.75rem',
                         borderRadius: '6px',
                         border: '1px solid var(--color-border)',
                         background: activePromptTab === tab.key ? 'var(--color-surface-3)' : 'transparent',
@@ -748,7 +748,7 @@ export function AgentDetailPage() {
                   aria-labelledby={`agent-prompt-tab-${activePromptTab}`}
                 >
                   {activeContent == null ? (
-                    <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.5', color: 'var(--color-text-muted)' }}>
+                    <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: '1.5', color: 'var(--color-text-muted)' }}>
                       {intl.formatMessage({ id: 'agents.detail.promptSurfaceUnavailable' })}
                     </p>
                   ) : (
@@ -759,7 +759,7 @@ export function AgentDetailPage() {
                         background: 'var(--color-surface-2)',
                         borderRadius: '8px',
                         border: '1px solid var(--color-border)',
-                        fontSize: '12px',
+                        fontSize: '0.75rem',
                         lineHeight: '1.5',
                         color: 'var(--color-text-secondary)',
                         fontFamily: 'monospace',
@@ -787,10 +787,10 @@ export function AgentDetailPage() {
           <SectionLabel>{intl.formatMessage({ id: 'agents.detail.artifacts' })}</SectionLabel>
           {artifactsQuery.isLoading && <LoadingRows count={3} />}
           {artifactsQuery.isSuccess && artifactsQuery.data.length === 0 && (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.detail.noArtifacts' })}</p>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>{intl.formatMessage({ id: 'agents.detail.noArtifacts' })}</p>
           )}
           {artifactsQuery.isSuccess && artifactsQuery.data.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8125rem' }}>
               {artifactsQuery.data.map((a: AgentArtifact) => {
                 const isExpanded = expandedArtifactId === a.id;
                 const hasLocation = a.location?.url || a.location?.body;
@@ -819,7 +819,7 @@ export function AgentDetailPage() {
                       onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
                     >
                       <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                        <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
                         <span>
                           <span style={{ fontWeight: '500' }}>{a.artifactType}</span>
                           {' · '}
@@ -840,12 +840,12 @@ export function AgentDetailPage() {
                         borderRadius: '6px',
                         background: 'var(--color-surface-1)',
                         border: '1px solid var(--color-border)',
-                        fontSize: '13px',
+                        fontSize: '0.8125rem',
                         lineHeight: '1.6',
                       }}>
                         {a.summary && (
                           <div style={{ marginBottom: hasLocation || hasMetadata ? '10px' : '0' }}>
-                            <div style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                            <div style={{ fontSize: '0.6875rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
                               {intl.formatMessage({ id: 'agents.detail.artifactSummary', defaultMessage: 'Summary' })}
                             </div>
                             <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--color-text-primary)' }}>{a.summary}</div>
@@ -853,7 +853,7 @@ export function AgentDetailPage() {
                         )}
                         {hasLocation && (
                           <div style={{ marginBottom: hasMetadata ? '10px' : '0' }}>
-                            <div style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                            <div style={{ fontSize: '0.6875rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
                               {intl.formatMessage({ id: 'agents.detail.artifactContent', defaultMessage: 'Content' })}
                             </div>
                             {a.location!.url ? (
@@ -888,7 +888,7 @@ export function AgentDetailPage() {
                         )}
                         {hasMetadata && (
                           <div>
-                            <div style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                            <div style={{ fontSize: '0.6875rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
                               {intl.formatMessage({ id: 'agents.detail.artifactMetadata', defaultMessage: 'Metadata' })}
                             </div>
                             <pre style={{
@@ -896,7 +896,7 @@ export function AgentDetailPage() {
                               padding: '8px',
                               borderRadius: '4px',
                               background: 'var(--color-surface-2)',
-                              fontSize: '12px',
+                              fontSize: '0.75rem',
                               fontFamily: 'monospace',
                               whiteSpace: 'pre-wrap',
                               wordBreak: 'break-word',

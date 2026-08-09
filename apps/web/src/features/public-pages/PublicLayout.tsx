@@ -81,7 +81,7 @@ export function PublicLayout({ children, translated = false, section, page, loca
             <select
               value={effectiveLocale}
               onChange={(e) => handleLocaleChange(e.target.value)}
-              style={{ ...inputStyle, padding: '4px 8px', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }}
+              style={{ ...inputStyle, padding: '4px 8px', borderRadius: '6px', fontSize: '0.8125rem', cursor: 'pointer' }}
             >
               {supportedLocales.map((loc) => (
                 <option key={loc} value={loc}>
@@ -107,7 +107,7 @@ export function PublicLayout({ children, translated = false, section, page, loca
 const navLinkStyle: React.CSSProperties = {
   color: 'var(--color-text-secondary)',
   textDecoration: 'none',
-  fontSize: '14px',
+  fontSize: '0.875rem',
   fontWeight: '500',
 };
 
@@ -195,7 +195,7 @@ export function PublicFooter({ locale }: { locale: SupportedLocale }) {
             <h4
               style={{
                 margin: '0 0 12px 0',
-                fontSize: '14px',
+                fontSize: '0.875rem',
                 fontWeight: '600',
                 color: 'var(--color-text-primary)',
               }}
@@ -212,7 +212,7 @@ export function PublicFooter({ locale }: { locale: SupportedLocale }) {
                       style={{
                         color: 'var(--color-text-tertiary)',
                         textDecoration: 'none',
-                        fontSize: '12px',
+                        fontSize: '0.75rem',
                         fontWeight: '600',
                         textTransform: 'none',
                         letterSpacing: '0.05em',
@@ -229,7 +229,7 @@ export function PublicFooter({ locale }: { locale: SupportedLocale }) {
                           style={{
                             color: 'var(--color-text-secondary)',
                             textDecoration: 'none',
-                            fontSize: '13px',
+                            fontSize: '0.8125rem',
                           }}
                         >
                           {link.label}
@@ -249,7 +249,7 @@ export function PublicFooter({ locale }: { locale: SupportedLocale }) {
                       style={{
                         color: 'var(--color-text-secondary)',
                         textDecoration: 'none',
-                        fontSize: '13px',
+                        fontSize: '0.8125rem',
                       }}
                     >
                       {link.label}
@@ -269,7 +269,7 @@ export function PublicFooter({ locale }: { locale: SupportedLocale }) {
           borderTop: '1px solid var(--color-border-subtle)',
           textAlign: 'center',
           color: 'var(--color-text-muted)',
-          fontSize: '12px',
+          fontSize: '0.75rem',
         }}
       >
         © {new Date().getFullYear()} OpenAIdom. All rights reserved.

@@ -104,16 +104,16 @@ export function LoginPage() {
       <PageShell>
         <div style={{ textAlign: 'center' }}>
           {/* Mail icon */}
-          <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.6 }}>✉️</div>
-          <div style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px', color: 'var(--color-text-primary)' }}>
+          <div style={{ fontSize: '3rem', marginBottom: '16px', opacity: 0.6 }}>✉️</div>
+          <div style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '8px', color: 'var(--color-text-primary)' }}>
             {intl.formatMessage({ id: 'auth.loginLinkSent.title' })}
           </div>
-          <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginBottom: '24px', lineHeight: '1.5' }}>
+          <div style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', marginBottom: '24px', lineHeight: '1.5' }}>
             {intl.formatMessage({ id: 'auth.loginLinkSent.message' })}
           </div>
           {error && (
             <div style={{
-              fontSize: '13px', color: 'var(--color-danger, #e05252)',
+              fontSize: '0.8125rem', color: 'var(--color-danger, #e05252)',
               padding: '10px 12px', background: 'rgba(224,82,82,0.08)',
               borderRadius: '6px', marginBottom: '16px',
             }}>
@@ -130,7 +130,7 @@ export function LoginPage() {
               color: 'white',
               border: 'none',
               borderRadius: '8px',
-              fontSize: '14px',
+              fontSize: '0.875rem',
               fontWeight: '500',
               cursor: pending ? 'not-allowed' : 'pointer',
               opacity: pending ? 0.7 : 1,
@@ -151,7 +151,7 @@ export function LoginPage() {
         {/* Username field — shown for new users */}
         {newUser && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label htmlFor="login-username" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
+            <label htmlFor="login-username" style={{ fontSize: '0.8125rem', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
               {intl.formatMessage({ id: 'auth.username.label' })}
             </label>
             <input
@@ -168,7 +168,7 @@ export function LoginPage() {
 
         {/* Email field */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label htmlFor="login-email" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
+          <label htmlFor="login-email" style={{ fontSize: '0.8125rem', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
             {intl.formatMessage({ id: 'auth.email.email.label' })}
           </label>
           <input
@@ -188,7 +188,7 @@ export function LoginPage() {
         {/* Password field — conditionally rendered */}
         {isPasswordExpanded && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label htmlFor="login-password" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
+            <label htmlFor="login-password" style={{ fontSize: '0.8125rem', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
               {intl.formatMessage({ id: 'auth.email.password.label' })}
             </label>
             <div style={{ position: 'relative' }}>
@@ -213,7 +213,7 @@ export function LoginPage() {
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  fontSize: '12px',
+                  fontSize: '0.75rem',
                   color: 'var(--color-text-muted)',
                   padding: '4px',
                 }}
@@ -238,7 +238,7 @@ export function LoginPage() {
 
         {/* Error */}
         {error && (
-          <div style={{ fontSize: '13px', color: 'var(--color-danger, #e05252)', padding: '10px 12px', background: 'rgba(224,82,82,0.08)', borderRadius: '6px' }}>
+          <div style={{ fontSize: '0.8125rem', color: 'var(--color-danger, #e05252)', padding: '10px 12px', background: 'rgba(224,82,82,0.08)', borderRadius: '6px' }}>
             {error}
           </div>
         )}
@@ -258,7 +258,7 @@ export function LoginPage() {
                   color: 'var(--color-text-primary)',
                   border: '1px solid var(--color-border)',
                   borderRadius: '8px',
-                  fontSize: '15px',
+                  fontSize: '0.9375rem',
                   fontWeight: '500',
                   cursor: pending || !email ? 'not-allowed' : 'pointer',
                   opacity: pending || !email ? 0.5 : 1,
@@ -280,7 +280,7 @@ export function LoginPage() {
                   color: 'white',
                   border: 'none',
                   borderRadius: '8px',
-                  fontSize: '15px',
+                  fontSize: '0.9375rem',
                   fontWeight: '500',
                   cursor: pending || !email || !password ? 'not-allowed' : 'pointer',
                   opacity: pending || !email || !password ? 0.7 : 1,
@@ -304,7 +304,7 @@ export function LoginPage() {
                   color: 'white',
                   border: 'none',
                   borderRadius: '8px',
-                  fontSize: '15px',
+                  fontSize: '0.9375rem',
                   fontWeight: '500',
                   cursor: pending || !email ? 'not-allowed' : 'pointer',
                   opacity: pending || !email ? 0.7 : 1,
@@ -323,7 +323,7 @@ export function LoginPage() {
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  fontSize: '13px',
+                  fontSize: '0.8125rem',
                   color: 'var(--color-text-muted)',
                   textDecoration: 'underline',
                   whiteSpace: 'nowrap',
@@ -347,7 +347,7 @@ export function LoginPage() {
               background: 'none',
               border: 'none',
               cursor: 'pointer',
-              fontSize: '13px',
+              fontSize: '0.8125rem',
               color: 'var(--color-text-muted)',
               textDecoration: 'underline',
               padding: '4px 0',
@@ -362,7 +362,7 @@ export function LoginPage() {
       {!isMobile && (
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '8px 0' }}>
         <div style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
-        <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'auth.divider.or' })}</span>
+        <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'auth.divider.or' })}</span>
         <div style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
       </div>
       )}
@@ -381,7 +381,7 @@ export function LoginPage() {
           borderRadius: '8px',
           border: '1px solid var(--color-border)',
           textDecoration: 'none',
-          fontSize: '15px',
+          fontSize: '0.9375rem',
           fontWeight: '500',
           cursor: 'pointer',
           transition: 'background 0.15s, box-shadow 0.15s',
@@ -393,7 +393,7 @@ export function LoginPage() {
         {intl.formatMessage({ id: 'auth.continueWithGoogle' })}
       </a>
 
-      <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', textAlign: 'center' }}>
+      <div style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', textAlign: 'center' }}>
         {intl.formatMessage({ id: 'auth.terms' })}
       </div>
     </PageShell>
@@ -420,7 +420,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
           <div style={{ marginBottom: '8px' }}>
             <BrandLogo display="full" variant="auto" size="lg" />
           </div>
-          <div style={{ color: 'var(--color-text-secondary)', fontSize: '15px', marginBottom: '20px' }}>
+          <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.9375rem', marginBottom: '20px' }}>
             {intl.formatMessage({ id: 'auth.tagline' })}
           </div>
         </div>
@@ -435,7 +435,7 @@ const inputStyle: React.CSSProperties = {
   background: 'var(--color-surface-0)',
   border: '1px solid var(--color-border)',
   borderRadius: '6px',
-  fontSize: '14px',
+  fontSize: '0.875rem',
   color: 'var(--color-text-primary)',
   outline: 'none',
   width: '100%',

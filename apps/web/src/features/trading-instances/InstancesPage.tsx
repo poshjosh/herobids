@@ -43,7 +43,7 @@ export function InstancesPage() {
                     onClick={() => navigate(`/instances/${bot.id}`)}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                      <span style={{ fontWeight: '600', fontSize: '15px' }}>{strategyType ?? 'Bot'}</span>
+                      <span style={{ fontWeight: '600', fontSize: '0.9375rem' }}>{strategyType ?? 'Bot'}</span>
                       <StatusBadge status={bot.status} />
                     </div>
                     <div style={{ display: 'flex', gap: '24px' }}>

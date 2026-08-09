@@ -88,7 +88,7 @@ function HourGrid({
                 width: '32px',
                 height: '28px',
                 borderRadius: '4px',
-                fontSize: '11px',
+                fontSize: '0.6875rem',
                 cursor: isPreview ? 'default' : 'pointer',
                 background: checked ? 'var(--color-brand)' : 'var(--color-surface-2)',
                 color: checked
@@ -125,7 +125,7 @@ function HourGrid({
         })}
       </div>
       {!isPreview && (
-        <div style={{ display: 'flex', gap: '8px', marginTop: '4px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '4px', fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
           <span>{isCustom ? 'Custom hours' : 'Style default'}</span>
           {isCustom && (
             <button
@@ -137,7 +137,7 @@ function HourGrid({
                 padding: '0',
                 cursor: 'pointer',
                 color: 'var(--color-accent)',
-                fontSize: '11px',
+                fontSize: '0.6875rem',
                 textDecoration: 'underline',
               }}
             >
@@ -147,7 +147,7 @@ function HourGrid({
         </div>
       )}
       {isPreview && previewNote && (
-        <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
+        <div style={{ marginTop: '4px', fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
           {previewNote}
         </div>
       )}
@@ -218,7 +218,7 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
           padding: '0',
           cursor: 'pointer',
           color: 'var(--color-accent)',
-          fontSize: '13px',
+          fontSize: '0.8125rem',
           textDecoration: 'underline',
           marginTop: '4px',
           display: 'block',
@@ -233,20 +233,20 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
   return (
     <div style={{ marginTop: '8px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-        <div style={{ fontWeight: 600, fontSize: '14px' }}>
+        <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>
           {intl.formatMessage({ id: 'agents.runtimePolicy.title' })}
         </div>
         {!alwaysExpanded && (
           <button
             type="button"
             onClick={() => setOpen(false)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: 'var(--color-text-muted)' }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: 'var(--color-text-muted)' }}
           >
             ×
           </button>
         )}
       </div>
-      <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '16px' }}>
+      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '16px' }}>
         {intl.formatMessage({ id: 'agents.runtimePolicy.description' })}
       </div>
 
@@ -267,7 +267,7 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
               onChange={(e) => handleNumericChange(field, e.target.value)}
             />
             {field === 'maxHoldDurationMs' && (
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+              <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                 {intl.formatMessage({ id: 'agents.runtimePolicy.maxHoldDurationHelp' })}
               </div>
             )}
@@ -293,14 +293,14 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
               }
             }}
           />
-          <label htmlFor="rp-weekendPause" style={{ fontWeight: 600, fontSize: '14px', cursor: 'pointer' }}>
+          <label htmlFor="rp-weekendPause" style={{ fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }}>
             {intl.formatMessage({ id: 'agents.runtimePolicy.weekendPause' })}
           </label>
         </div>
 
         {/* allowedHoursUtc */}
         <div>
-          <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
+          <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '6px' }}>
             {intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtc' })}
             {(() => {
               const activeSessions = overrides?.tradingSessions;
@@ -332,7 +332,7 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
             })()}
             previewNote={intl.formatMessage({ id: 'agents.runtimePolicy.sessionPreviewNote' })}
           />
-          <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+          <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>
             {intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtcHelp' })}
           </div>
         </div>
@@ -340,10 +340,10 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
         {/* Trading Session Presets */}
         {showTradingSessionPresets && (
           <div>
-            <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
+            <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '6px' }}>
               {intl.formatMessage({ id: 'agents.runtimePolicy.tradingSessionsLabel' })}
             </div>
-            <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
               {intl.formatMessage({ id: 'agents.runtimePolicy.tradingSessionsHelp' })}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
@@ -368,7 +368,7 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
                       borderRadius: '6px',
                       cursor: 'pointer',
                       background: checked ? 'var(--color-brand-soft, rgba(59,130,246,0.08))' : 'var(--color-surface-2)',
-                      fontSize: '13px',
+                      fontSize: '0.8125rem',
                       userSelect: 'none',
                     }}
                   >
@@ -394,8 +394,8 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
                       }}
                       style={{ accentColor: 'var(--color-brand)' }}
                     />
-                    <span style={{ fontSize: '12px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>{intl.formatMessage({ id: labelId })}</span>
-                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: subId })}</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: '500', color: 'var(--color-text-secondary)' }}>{intl.formatMessage({ id: labelId })}</span>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: subId })}</span>
                   </label>
                 );
               })}

@@ -36,7 +36,7 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
-            <span style={{ fontWeight: '600', fontSize: '15px', color: 'var(--color-text-primary)' }}>{agent.name}</span>
+            <span style={{ fontWeight: '600', fontSize: '0.9375rem', color: 'var(--color-text-primary)' }}>{agent.name}</span>
             <StatusBadge status={agent.status} />
             {hasTradingCapability && (
               <span
@@ -44,7 +44,7 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
                   padding: '3px 8px',
                   borderRadius: '20px',
                   background: 'var(--color-surface-2)',
-                  fontSize: '12px',
+                  fontSize: '0.75rem',
                   color: 'var(--color-text-secondary)',
                 }}
               >
@@ -57,7 +57,7 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
                   padding: '3px 8px',
                   borderRadius: '20px',
                   background: 'var(--color-warning-subtle)',
-                  fontSize: '12px',
+                  fontSize: '0.75rem',
                   color: 'var(--color-warning)',
                 }}
               >
@@ -65,7 +65,7 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
               </span>
             )}
           </div>
-          <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+          <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
             {formatObjectivePreview(objective)}
           </div>
         </div>
@@ -75,13 +75,13 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
             aria-label={intl.formatMessage({ id: 'agents.summary.capabilityReadinessAria' }, { capability: formatCapabilityFamily(primaryCapability.family, intl) })}
             style={{ minWidth: '180px', textAlign: 'right' }}
           >
-            <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
               {intl.formatMessage({ id: 'agents.summary.capabilityReadiness' })}
             </div>
-            <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>
               {formatCapabilityFamily(primaryCapability.family, intl)}
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
               {formatCapabilityState(primaryCapability.state, intl)}
             </div>
           </section>
@@ -90,16 +90,16 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         {skillsQuery.isLoading && (
-          <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.loadingSkills' })}</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.loadingSkills' })}</span>
         )}
         {skillsQuery.isError && (
-          <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.capabilityUnavailable' })}</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.capabilityUnavailable' })}</span>
         )}
         {!skillsQuery.isLoading && !skillsQuery.isError && readinessQuery.isLoading && (
-          <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.checkingCapability' })}</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.checkingCapability' })}</span>
         )}
         {!skillsQuery.isLoading && !skillsQuery.isError && !readinessQuery.isLoading && !hasTradingCapability && (
-          <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.noCapabilitySetup' })}</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.summary.noCapabilitySetup' })}</span>
         )}
         {!skillsQuery.isLoading && !skillsQuery.isError && !readinessQuery.isLoading && primaryCapability && (
           <span
@@ -108,7 +108,7 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
               borderRadius: '20px',
               background: primaryCapability.effectiveReady ? 'var(--color-success-subtle)' : 'var(--color-warning-subtle)',
               color: primaryCapability.effectiveReady ? 'var(--color-success)' : 'var(--color-warning)',
-              fontSize: '12px',
+              fontSize: '0.75rem',
             }}
           >
             {formatCapabilityFamily(primaryCapability.family, intl)}: {formatCapabilityState(primaryCapability.state, intl)}
@@ -117,7 +117,7 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
       </div>
 
       {outcomes?.trading && hasTradingCapability && (
-        <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+        <div style={{ display: 'flex', gap: '16px', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
           <span>
             {intl.formatMessage({ id: 'agents.summary.pnl' })}:{' '}
             <span style={{ color: pnlColor(outcomes.trading.totalRealizedPnl), fontWeight: '500' }}>

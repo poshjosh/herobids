@@ -19,7 +19,7 @@ const pillStyle: React.CSSProperties = {
   padding: '2px 8px',
   borderRadius: '12px',
   background: 'var(--color-surface-2)',
-  fontSize: '11px',
+  fontSize: '0.6875rem',
   color: 'var(--color-text-secondary)',
   fontWeight: '500',
 };
@@ -237,7 +237,7 @@ export function BlueprintDetailPage({ blueprintId }: BlueprintDetailPageProps) {
             {canLike ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginRight: '4px' }}>Likes</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginRight: '4px' }}>Likes</span>
                   <Button
                     size="sm"
                     variant="secondary"
@@ -275,7 +275,7 @@ export function BlueprintDetailPage({ blueprintId }: BlueprintDetailPageProps) {
         {rev.description && (
           <Card>
             <SectionLabel>Description</SectionLabel>
-            <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', lineHeight: '1.6', marginTop: '8px' }}>
+            <div style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', lineHeight: '1.6', marginTop: '8px' }}>
               {rev.description}
             </div>
           </Card>
@@ -294,11 +294,11 @@ export function BlueprintDetailPage({ blueprintId }: BlueprintDetailPageProps) {
               }}>
                 Published revision
               </span>
-              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+              <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
                 {bp.publishedRevisionId ? `v${rev.version}` : 'Not published'}
               </span>
               {bp.publishedRevisionId && (
-                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
                   {bp.publishedRevisionId}
                 </span>
               )}
@@ -313,10 +313,10 @@ export function BlueprintDetailPage({ blueprintId }: BlueprintDetailPageProps) {
               }}>
                 Current (editing) revision
               </span>
-              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+              <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
                 v{rev.version}
               </span>
-              <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
                 {bp.currentRevisionId}
               </span>
             </div>
@@ -327,7 +327,7 @@ export function BlueprintDetailPage({ blueprintId }: BlueprintDetailPageProps) {
         {bp.kind === 'agent' && rev.skills.length > 0 && (
           <Card>
             <SectionLabel>Skills ({rev.skills.length})</SectionLabel>
-            <div style={{ fontSize: '12px', fontFamily: 'monospace', color: 'var(--color-text-muted)', marginTop: '8px' }}>
+            <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--color-text-muted)', marginTop: '8px' }}>
               {rev.skills.map((s, i) => (
                 <div key={i}>
                   skillId: {s.skillId} | revisionId: {s.skillRevisionId}

@@ -162,7 +162,7 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
     <h2
       style={{
         margin: '0 0 16px',
-        fontSize: '16px',
+        fontSize: '1rem',
         fontWeight: '600',
         color: 'var(--color-text-primary)',
         paddingBottom: '8px',
@@ -177,7 +177,7 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 function LoadingCard() {
   return (
     <Card>
-      <div style={{ color: 'var(--color-text-muted)', fontSize: '14px' }}>Loading…</div>
+      <div style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>Loading…</div>
     </Card>
   );
 }
@@ -186,7 +186,7 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void 
   return (
     <Card style={{ borderColor: 'var(--color-danger)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ color: 'var(--color-danger)', fontSize: '14px' }}>{message}</span>
+        <span style={{ color: 'var(--color-danger)', fontSize: '0.875rem' }}>{message}</span>
         <Button size="sm" variant="ghost" onClick={onRetry}>Retry</Button>
       </div>
     </Card>

@@ -98,7 +98,7 @@ function ScoreGauge({ score, size = 'lg' }: { score: number; size?: 'sm' | 'lg' 
         </div>
       </div>
       {size === 'lg' && (
-        <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
           out of 100
         </span>
       )}
@@ -117,14 +117,14 @@ function FindingRow({ finding }: { finding: EvaluationFinding }) {
         padding: '8px 10px',
         borderRadius: '6px',
         background: 'var(--color-surface-2)',
-        fontSize: '13px',
+        fontSize: '0.8125rem',
         cursor: 'pointer',
       }}
       onClick={() => setExpanded(!expanded)}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         <span>{SEVERITY_ICONS[finding.severity] ?? '⚪'}</span>
-        <code style={{ fontSize: '11px', color: 'var(--color-text-muted)', background: 'var(--color-surface-3)', padding: '1px 5px', borderRadius: '4px' }}>
+        <code style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', background: 'var(--color-surface-3)', padding: '1px 5px', borderRadius: '4px' }}>
           {finding.code}
         </code>
         <span style={{ fontWeight: 500 }}>{finding.title}</span>
@@ -133,7 +133,7 @@ function FindingRow({ finding }: { finding: EvaluationFinding }) {
         <div style={{ marginTop: '6px', paddingLeft: '22px', color: 'var(--color-text-secondary)', lineHeight: '1.4' }}>
           {finding.detail}
           {finding.evidence && (
-            <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
+            <div style={{ marginTop: '4px', fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
               Evidence: {finding.evidence}
             </div>
           )}
@@ -160,7 +160,7 @@ function RunDetail({
 
   if (!run.result) {
     return (
-      <div style={{ padding: '16px', color: 'var(--color-text-muted)', fontSize: '13px' }}>
+      <div style={{ padding: '16px', color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>
         {run.status === 'queued' || run.status === 'running'
           ? intl.formatMessage({ id: 'common.pleaseWait' })
           : run.status === 'failed'
@@ -180,10 +180,10 @@ function RunDetail({
       <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
         <ScoreGauge score={scorecard.overallScore} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <div style={{ fontSize: '14px', fontWeight: 600 }}>
+          <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
             {intl.formatMessage({ id: 'agents.evaluations.overallScore' })}
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
             {intl.formatMessage(
               { id: 'agents.evaluations.findings' },
               { count: run.result.summary.totalFindings },
@@ -205,7 +205,7 @@ function RunDetail({
 
       {/* Section scores */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           Sections
         </div>
         {scorecard.sections.map((section) => {
@@ -221,12 +221,12 @@ function RunDetail({
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: section.findings.length > 0 ? '6px' : '0' }}>
-                <span style={{ fontSize: '13px', fontWeight: 500, textTransform: 'capitalize' }}>
+                <span style={{ fontSize: '0.8125rem', fontWeight: 500, textTransform: 'capitalize' }}>
                   {section.section.replace(/_/g, ' ')}
                 </span>
                 <span
                   style={{
-                    fontSize: '14px',
+                    fontSize: '0.875rem',
                     fontWeight: 700,
                     color: sColors.text,
                   }}
@@ -247,7 +247,7 @@ function RunDetail({
 
         {/* Non-applicable sections */}
         {scorecard.sections.filter((s) => !s.applicable).length > 0 && (
-          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', fontStyle: 'italic', marginTop: '4px' }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontStyle: 'italic', marginTop: '4px' }}>
             {intl.formatMessage({ id: 'agents.evaluations.sectionNotApplicable' })}:{' '}
             {scorecard.sections
               .filter((s) => !s.applicable)
@@ -259,7 +259,7 @@ function RunDetail({
 
       {/* Findings summary if no findings */}
       {run.result.summary.totalFindings === 0 && (
-        <div style={{ padding: '12px', background: 'var(--color-success-subtle)', borderRadius: '6px', fontSize: '13px', color: 'var(--color-success)' }}>
+        <div style={{ padding: '12px', background: 'var(--color-success-subtle)', borderRadius: '6px', fontSize: '0.8125rem', color: 'var(--color-success)' }}>
           {intl.formatMessage({ id: 'agents.evaluations.noFindings' })}
         </div>
       )}
@@ -324,7 +324,7 @@ function RunList({
           gridTemplateColumns: '100px 80px 100px 1fr',
           gap: '8px',
           padding: '6px 10px',
-          fontSize: '11px',
+          fontSize: '0.6875rem',
           fontWeight: 600,
           color: 'var(--color-text-muted)',
           textTransform: 'uppercase',
@@ -358,14 +358,14 @@ function RunList({
               cursor: isTerminal ? 'pointer' : 'default',
               transition: 'background 0.15s',
               alignItems: 'center',
-              fontSize: '13px',
+              fontSize: '0.8125rem',
             }}
           >
             <StatusBadge status={run.status} />
             <span style={{ fontWeight: 600, color: hasResult ? scoreColor(run.result!.scorecard.overallScore).text : 'var(--color-text-muted)' }}>
               {hasResult ? Math.round(run.result!.scorecard.overallScore) : '—'}
             </span>
-            <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>
+            <span style={{ color: 'var(--color-text-secondary)', fontSize: '0.75rem' }}>
               {formatScopeType(run.requestedScope.type)}
             </span>
             <RelativeTime timestamp={run.requestedAt as unknown as string} />
@@ -639,7 +639,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
       <details>
         <summary
           style={{
-            fontSize: '11px',
+            fontSize: '0.6875rem',
             fontWeight: '600',
             textTransform: 'uppercase',
             letterSpacing: '0.06em',
@@ -671,7 +671,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                     : intl.formatMessage({ id: 'agents.evaluations.runNow' })}
               </Button>
 
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={includeNarrative}
@@ -682,7 +682,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
               </label>
 
               {triggerMutation.isError && (
-                <span style={{ fontSize: '12px', color: 'var(--color-danger)' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-danger)' }}>
                   {triggerMutation.error instanceof ApiError && (triggerMutation.error as ApiError).status === 409
                     ? intl.formatMessage({ id: 'agents.evaluations.alreadyRunning' })
                     : (triggerMutation.error instanceof ApiError && (triggerMutation.error as ApiError).message)
@@ -692,7 +692,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
               )}
 
               {triggerMutation.isSuccess && (
-                <span style={{ fontSize: '12px', color: 'var(--color-success)' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-success)' }}>
                   {intl.formatMessage({ id: 'agents.evaluations.triggerSuccess' })}
                 </span>
               )}
@@ -702,7 +702,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
             {eligibilityQuery.isSuccess &&
               !eligibilityQuery.data.canEvaluate && (
                 <span style={{
-                  fontSize: '12px',
+                  fontSize: '0.75rem',
                   color: 'var(--color-text-muted)',
                 }}>
                   {eligibilityQuery.data.reason ??
@@ -730,7 +730,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
               </Button>
 
               {reviewTriggerMutation.isError && (
-                <span style={{ fontSize: '12px', color: 'var(--color-danger)' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-danger)' }}>
                   {reviewTriggerMutation.error instanceof ApiError && (reviewTriggerMutation.error as ApiError).status === 409
                     ? intl.formatMessage({ id: 'agents.strategyReview.alreadyInProgress' })
                     : reviewTriggerMutation.error instanceof ApiError
@@ -743,7 +743,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
             {/* Eligibility hint */}
             {reviewEligibilityQuery.isSuccess &&
               !reviewEligibilityQuery.data.canTrigger && (
-                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                   {reviewEligibilityQuery.data.reason ?? intl.formatMessage({ id: 'agents.strategyReview.notAvailable' })}
                 </span>
               )}
@@ -754,7 +754,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                 marginTop: '4px',
                 padding: '8px 10px',
                 borderRadius: '6px',
-                fontSize: '13px',
+                fontSize: '0.8125rem',
                 background: reviewStatus.status === 'succeeded'
                   ? (reviewStatus.resultSummary?.hasAdvice ? 'var(--color-success-subtle)' : 'var(--color-surface-2)')
                   : reviewStatus.status === 'failed'
@@ -773,7 +773,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                       ? intl.formatMessage({ id: 'agents.strategyReview.completeWithAdvice' }, { count: reviewStatus.resultSummary.advisedCount })
                       : intl.formatMessage({ id: 'agents.strategyReview.completeNoAdvice' })}
                     {reviewStatus.resultSummary.checkOutcome && (
-                      <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginLeft: '8px' }}>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginLeft: '8px' }}>
                         ({reviewStatus.resultSummary.checkOutcome})
                       </span>
                     )}
@@ -788,7 +788,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                 {/* Phase C: Assessment Results (primary UX) */}
                 {resultsData && resultsData.results.length > 0 && (
                   <div style={{ marginBottom: '12px' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '8px' }}>
                       {intl.formatMessage({ id: 'agents.strategyReview.results.title' })}
                     </div>
                     {resultsData.results.map((r, i) => (
@@ -801,12 +801,12 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                       }}>
                         {/* Symbol header */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                          <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                          <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
                             {r.symbol ?? 'Unknown'}
                           </span>
                           {r.urgency && r.urgency !== 'low' && (
                             <span style={{
-                              padding: '1px 6px', borderRadius: '10px', fontSize: '10px', fontWeight: 600,
+                              padding: '1px 6px', borderRadius: '10px', fontSize: '0.625rem', fontWeight: 600,
                               background: r.urgency === 'high' ? 'var(--color-danger-subtle)' : 'var(--color-warning-subtle)',
                               color: r.urgency === 'high' ? 'var(--color-danger)' : 'var(--color-warning)',
                             }}>
@@ -816,7 +816,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                         </div>
 
                         {/* Current vs Recommended */}
-                        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '8px', fontSize: '12px' }}>
+                        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '8px', fontSize: '0.75rem' }}>
                           <div>
                             <span style={{ color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.strategyReview.results.current' })}: </span>
                             <span style={{ color: 'var(--color-text-secondary)' }}>{r.currentPresetName}</span>
@@ -825,7 +825,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                             <div>
                               <span style={{ color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.strategyReview.results.recommended' })}: </span>
                               <span style={{ color: 'var(--color-success)', fontWeight: 600 }}>{r.recommendedPresetName}</span>
-                              <span style={{ marginLeft: '4px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                              <span style={{ marginLeft: '4px', fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
                                 ({intl.formatMessage({ id: 'agents.strategyReview.results.confidence' })}: {(r.confidence * 100).toFixed(0)}%)
                               </span>
                             </div>
@@ -834,7 +834,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
 
                         {/* Preset ranking table */}
                         {r.rankings.length > 0 && (
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', marginBottom: '8px' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.6875rem', marginBottom: '8px' }}>
                             <thead>
                               <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
                                 <th style={{ padding: '2px 6px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{intl.formatMessage({ id: 'agents.strategyReview.results.column.preset' })}</th>
@@ -856,7 +856,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                                   <td style={{ padding: '2px 6px', color: 'var(--color-text-primary)', fontWeight: p.presetKey === r.recommendedPreset ? 700 : 400 }}>
                                     {p.presetName}
                                     {p.presetKey === r.currentPreset && (
-                                      <span style={{ marginLeft: '4px', fontSize: '9px', color: 'var(--color-text-muted)' }}>
+                                      <span style={{ marginLeft: '4px', fontSize: '0.5625rem', color: 'var(--color-text-muted)' }}>
                                         ({intl.formatMessage({ id: 'agents.strategyReview.results.current' })})
                                       </span>
                                     )}
@@ -875,7 +875,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                         )}
 
                         {/* Agent action status */}
-                        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                        <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
                           {r.agentAction === 'acted' && r.agentActionDetail
                             ? intl.formatMessage({ id: 'agents.strategyReview.results.agentActed' }, { preset: r.agentActionDetail.appliedPreset })
                             : intl.formatMessage({ id: 'agents.strategyReview.results.agentNotified' })}
@@ -883,7 +883,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                       </div>
                     ))}
                     {resultsData.capacityExceeded && (
-                      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                      <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                         {intl.formatMessage({ id: 'agents.strategyReview.results.capacityExceeded' })}
                       </div>
                     )}
@@ -892,7 +892,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
 
                 {/* Phase B: Assessing progress */}
                 {reviewStatus?.resultSummary?.assessmentStatus === 'assessing' && (
-                  <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
                     {intl.formatMessage({ id: 'agents.strategyReview.assessing' }, {
                       assessed: reviewStatus.resultSummary.assessedCount ?? 0,
                       total: reviewStatus.resultSummary.totalAdvised ?? 0,
@@ -902,22 +902,22 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
 
                 {/* Phase A: Per-instrument table (collapsed, show details) */}
                 <details open={!resultsData || resultsData.results.length === 0}>
-                  <summary style={{ fontSize: '12px', color: 'var(--color-text-muted)', cursor: 'pointer', marginBottom: '4px' }}>
+                  <summary style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', cursor: 'pointer', marginBottom: '4px' }}>
                     {intl.formatMessage({ id: 'agents.strategyReview.details' })}
                   </summary>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid var(--color-border)', textAlign: 'left' }}>
-                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
+                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.6875rem' }}>
                           {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.symbol' })}
                         </th>
-                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
+                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.6875rem' }}>
                           {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.preset' })}
                         </th>
-                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
+                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.6875rem' }}>
                           {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.outcome' })}
                         </th>
-                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
+                        <th style={{ padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.6875rem' }}>
                           {intl.formatMessage({ id: 'agents.strategyReview.adviceColumn.reasons' })}
                         </th>
                       </tr>
@@ -929,7 +929,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                           <td style={{ padding: '4px 8px', color: 'var(--color-text-secondary)' }}>{a.activePresetName}</td>
                           <td style={{ padding: '4px 8px' }}>
                             <span style={{
-                              padding: '1px 6px', borderRadius: '10px', fontSize: '11px', fontWeight: 600,
+                              padding: '1px 6px', borderRadius: '10px', fontSize: '0.6875rem', fontWeight: 600,
                               background: a.outcome === 'advised' ? 'var(--color-success-subtle)' : 'var(--color-surface-2)',
                               color: a.outcome === 'advised' ? 'var(--color-success)' : 'var(--color-text-muted)',
                             }}>
@@ -941,7 +941,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                               ? a.reasonsDisplay.map((r, j) => (
                                   <code key={j} style={{
                                     display: 'inline-block', marginRight: '4px', marginBottom: '2px',
-                                    padding: '1px 5px', borderRadius: '4px', fontSize: '11px',
+                                    padding: '1px 5px', borderRadius: '4px', fontSize: '0.6875rem',
                                     background: 'var(--color-surface-3)', color: 'var(--color-text-muted)',
                                   }}>{r}</code>
                                 ))
@@ -990,7 +990,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-primary)' }}>
                   Run {selectedRunId.slice(0, 8)}
                 </span>
                 <Button

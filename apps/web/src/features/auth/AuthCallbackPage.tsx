@@ -70,7 +70,7 @@ export function AuthCallbackPage() {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center', maxWidth: '400px', padding: '24px' }}>
-          <div style={{ fontSize: '20px', fontWeight: '600', marginBottom: '12px', color: 'var(--color-danger)' }}>
+          <div style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '12px', color: 'var(--color-danger)' }}>
             {intl.formatMessage({ id: 'auth.callback.signInFailed' })}
           </div>
           <div style={{ color: 'var(--color-text-secondary)', marginBottom: '24px' }}>{errorMessage}</div>

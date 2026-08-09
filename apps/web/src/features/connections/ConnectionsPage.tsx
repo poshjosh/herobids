@@ -140,7 +140,7 @@ export function ConnectionsPage() {
             ? 'var(--color-surface-success, rgba(34,197,94,0.08))'
             : 'var(--color-surface-danger, rgba(239,68,68,0.08))',
           borderRadius: '8px',
-          fontSize: '13px',
+          fontSize: '0.8125rem',
           color: 'var(--color-text-secondary)',
           display: 'flex',
           alignItems: 'center',
@@ -150,7 +150,7 @@ export function ConnectionsPage() {
           <button
             type="button"
             onClick={() => setOauthNotification(null)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '16px', lineHeight: 1, padding: '0 4px' }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '1rem', lineHeight: 1, padding: '0 4px' }}
           >
             ×
           </button>
@@ -158,12 +158,12 @@ export function ConnectionsPage() {
       )}
 
       {assignmentSuccess && (
-        <div style={{ padding: '10px 16px', marginBottom: '16px', background: 'var(--color-surface-success, rgba(34,197,94,0.08))', borderRadius: '8px', fontSize: '13px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ padding: '10px 16px', marginBottom: '16px', background: 'var(--color-surface-success, rgba(34,197,94,0.08))', borderRadius: '8px', fontSize: '0.8125rem', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span>{intl.formatMessage({ id: 'connections.assignmentSuccess' })}</span>
           <button
             type="button"
             onClick={() => setAssignmentSuccess(false)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '16px', lineHeight: 1, padding: '0 4px' }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '1rem', lineHeight: 1, padding: '0 4px' }}
           >
             ×
           </button>
@@ -203,7 +203,7 @@ export function ConnectionsPage() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '13px',
+                fontSize: '0.8125rem',
                 fontWeight: 600,
                 color: 'var(--color-text-secondary)',
                 flexShrink: 0,
@@ -212,7 +212,7 @@ export function ConnectionsPage() {
               </div>
               <div>
                 <div style={{ fontWeight: 600 }}>{displayLabel}</div>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span>{displayName}</span>
                   <span style={{
                     display: 'inline-block',

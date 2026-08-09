@@ -17,14 +17,14 @@ export function AdminBillingSection({ webhooks }: Props) {
   return (
     <Card style={{ padding: 0 }}>
       <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border-subtle)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+        <span style={{ fontSize: '0.875rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>
           Failed Webhook Events
         </span>
         <span
           style={{
             padding: '2px 8px',
             borderRadius: '20px',
-            fontSize: '11px',
+            fontSize: '0.6875rem',
             fontWeight: '600',
             background: webhooks.length > 0 ? 'var(--color-warning-subtle)' : 'var(--color-surface-3)',
             color: webhooks.length > 0 ? 'var(--color-warning)' : 'var(--color-text-muted)',
@@ -38,7 +38,7 @@ export function AdminBillingSection({ webhooks }: Props) {
         <EmptyState title="No failed webhooks" message="All billing webhook events processed successfully." />
       ) : (
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
             <thead>
               <tr style={{ background: 'var(--color-surface-2)' }}>
                 <Th>Event ID</Th>
@@ -52,7 +52,7 @@ export function AdminBillingSection({ webhooks }: Props) {
               {paged.map((wh) => (
                 <tr key={wh.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
                   <Td>
-                    <span style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                    <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                       {wh.id.slice(0, 20)}…
                     </span>
                   </Td>
@@ -61,12 +61,12 @@ export function AdminBillingSection({ webhooks }: Props) {
                     <span style={{ color: 'var(--color-danger)', fontWeight: '500' }}>{wh.status}</span>
                   </Td>
                   <Td>
-                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px', maxWidth: '300px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ color: 'var(--color-text-secondary)', fontSize: '0.75rem', maxWidth: '300px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {wh.error ?? '—'}
                     </span>
                   </Td>
                   <Td>
-                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
                       {new Date(wh.processedAt).toLocaleString()}
                     </span>
                   </Td>
@@ -82,7 +82,7 @@ export function AdminBillingSection({ webhooks }: Props) {
           <Button size="sm" variant="secondary" disabled={clampedPage === 0} onClick={() => setPage(clampedPage - 1)}>
             Prev
           </Button>
-          <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
+          <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
             Page {clampedPage + 1} of {totalPages}
           </span>
           <Button size="sm" variant="secondary" disabled={clampedPage >= totalPages - 1} onClick={() => setPage(clampedPage + 1)}>
@@ -96,7 +96,7 @@ export function AdminBillingSection({ webhooks }: Props) {
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '600', color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
+    <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '600', color: 'var(--color-text-secondary)', fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
       {children}
     </th>
   );

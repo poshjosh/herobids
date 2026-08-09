@@ -130,12 +130,12 @@ export function BotsPage() {
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontWeight: '600', fontSize: '15px', fontFamily: 'monospace' }}>
+                    <span style={{ fontWeight: '600', fontSize: '0.9375rem', fontFamily: 'monospace' }}>
                       {bot.id.slice(0, 8)}
                     </span>
                     <StatusBadge status={bot.status} />
                   </div>
-                  <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                     {bot.creatorType === 'agent' ? `AI agent: ${bot.creatorId.slice(0, 8)}` : 'you'}
                   </span>
                 </div>

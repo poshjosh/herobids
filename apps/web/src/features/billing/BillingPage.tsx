@@ -68,11 +68,11 @@ function CreditGauge({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
         <div>
           {isOverLimit ? (
-            <span style={{ fontSize: '24px', fontWeight: '600', color: 'var(--color-danger, #e53e3e)' }}>
+            <span style={{ fontSize: '1.5rem', fontWeight: '600', color: 'var(--color-danger, #e53e3e)' }}>
               {formatMicrousd(Math.abs(balanceMicrousd))} {intl.formatMessage({ id: 'billing.usage.overLimit' })}
             </span>
           ) : (
-            <span style={{ fontSize: '24px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+            <span style={{ fontSize: '1.5rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>
               {formatMicrousd(balanceMicrousd)} {intl.formatMessage({ id: 'billing.usage.creditLeft' })}
             </span>
           )}
@@ -80,7 +80,7 @@ function CreditGauge({
         <span style={{
           padding: '2px 10px',
           borderRadius: '12px',
-          fontSize: '12px',
+          fontSize: '0.75rem',
           fontWeight: '500',
           background: `${statusInfo.color}1a`,
           color: statusInfo.color,
@@ -108,12 +108,12 @@ function CreditGauge({
       </div>
 
       {/* Used this month */}
-      <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+      <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
         {formatMicrousd(usageChargeMicrousd)} {intl.formatMessage({ id: 'billing.usage.usedThisMonth' })}
       </div>
 
       {/* Plan breakdown */}
-      <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
         {formatMicrousd(includedCreditMicrousd)} {intl.formatMessage({ id: 'billing.usage.includedWithPlan' }, { planName })}
         {topUpMicrousd > 0 && <> + {formatMicrousd(topUpMicrousd)} {intl.formatMessage({ id: 'billing.usage.topUps' })}</>}
       </div>
@@ -300,7 +300,7 @@ export function BillingPage() {
             padding: '12px 16px',
             marginBottom: '16px',
             borderRadius: '8px',
-            fontSize: '13px',
+            fontSize: '0.8125rem',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
@@ -316,7 +316,7 @@ export function BillingPage() {
           </span>
           <button
             onClick={() => setCheckoutBanner(null)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 0 0 12px', color: 'inherit' }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '0 0 0 12px', color: 'inherit' }}
             aria-label={intl.formatMessage({ id: 'common.dismiss' })}
           >
             ✕
@@ -338,12 +338,12 @@ export function BillingPage() {
           <Card style={{ padding: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   {intl.formatMessage({ id: 'billing.currentPlan' })}
                 </div>
-                <div style={{ fontSize: '18px', fontWeight: '600' }}>{summary.planLabel}</div>
+                <div style={{ fontSize: '1.125rem', fontWeight: '600' }}>{summary.planLabel}</div>
                 {summary.billingInterval && (
-                  <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                  <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                     {intl.formatMessage({ id: 'billing.billedInterval' }, { interval: intl.formatMessage({ id: `billing.interval.${summary.billingInterval}` }) })}
                   </div>
                 )}
@@ -373,18 +373,18 @@ export function BillingPage() {
 
           {summary.subscription && (
             <Card style={{ padding: '20px' }}>
-              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 {intl.formatMessage({ id: 'billing.subscription' })}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px' }}>
                 <div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'common.status' })}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'common.status' })}</div>
                   <div style={{ fontWeight: '500', color: statusLabel(intl, summary.subscription.status).color }}>
                     {statusLabel(intl, summary.subscription.status).text}
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'billing.renews' })}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'billing.renews' })}</div>
                   <div style={{ fontWeight: '500' }}>
                     {summary.subscription.cancelAtPeriodEnd
                       ? intl.formatMessage({ id: 'billing.cancelsOn' }, { date: formatShortDate(intl, summary.subscription.currentPeriodEnd) })
@@ -393,18 +393,18 @@ export function BillingPage() {
                 </div>
                 {summary.subscription.trialEnd && (
                   <div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'billing.trialEnds' })}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'billing.trialEnds' })}</div>
                     <div style={{ fontWeight: '500' }}>{formatShortDate(intl, summary.subscription.trialEnd)}</div>
                   </div>
                 )}
               </div>
               {summary.subscription.cancelAtPeriodEnd && (
-                <div style={{ marginTop: '12px', padding: '10px 14px', background: 'var(--color-surface-2)', borderRadius: '6px', fontSize: '13px', color: 'var(--color-warning)' }}>
+                <div style={{ marginTop: '12px', padding: '10px 14px', background: 'var(--color-surface-2)', borderRadius: '6px', fontSize: '0.8125rem', color: 'var(--color-warning)' }}>
                   {intl.formatMessage({ id: 'billing.cancelNotice' })}
                 </div>
               )}
               {(summary.subscription.status === 'past_due' || summary.subscription.status === 'incomplete') && (
-                <div style={{ marginTop: '12px', padding: '10px 14px', background: 'var(--color-surface-2)', borderRadius: '6px', fontSize: '13px', color: 'var(--color-warning)' }}>
+                <div style={{ marginTop: '12px', padding: '10px 14px', background: 'var(--color-surface-2)', borderRadius: '6px', fontSize: '0.8125rem', color: 'var(--color-warning)' }}>
                   {intl.formatMessage({ id: 'billing.paymentIssueNotice' })}
                 </div>
               )}
@@ -413,7 +413,7 @@ export function BillingPage() {
 
           {summary.availablePlans.length > 0 && (
             <Card style={{ padding: '20px' }}>
-              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 {summary.subscription ? intl.formatMessage({ id: 'billing.changePlan' }) : intl.formatMessage({ id: 'billing.upgrade' })}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -422,7 +422,7 @@ export function BillingPage() {
                     <div>
                       <div style={{ fontWeight: '500' }}>{plan.prices[0]?.displayLabel ?? plan.planId}</div>
                       {plan.prices[0]?.amountCents != null && (
-                        <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
+                        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
                           {formatCurrencyFromCents(intl, plan.prices[0].amountCents)}/{intl.formatMessage({ id: `billing.interval.${plan.prices[0].interval}` })}
                         </div>
                       )}
@@ -474,7 +474,7 @@ export function BillingPage() {
             border: `1px solid ${usageAccount.status === 'hard_limited' ? 'var(--color-danger, #e53e3e)' : 'var(--color-warning)'}`,
             borderRadius: '8px',
             color: usageAccount.status === 'hard_limited' ? 'var(--color-danger, #e53e3e)' : 'var(--color-warning-text, #92400e)',
-            fontSize: '13px',
+            fontSize: '0.8125rem',
           }}>
             {usageAccount.status === 'hard_limited'
               ? intl.formatMessage({ id: 'billing.usage.warning.hardLimited' })
@@ -483,11 +483,11 @@ export function BillingPage() {
         )}
         <Card style={{ padding: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               {intl.formatMessage({ id: 'billing.usage.sectionTitle' })}
             </div>
             {usageSummary?.currentPeriod && (
-              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                 {formatShortDate(intl, usageSummary.currentPeriod.periodStart)} - {formatShortDate(intl, usageSummary.currentPeriod.periodEnd)}
               </div>
             )}
@@ -500,12 +500,12 @@ export function BillingPage() {
             />
           )}
           {!usageSummaryQuery.isLoading && !usageSummaryQuery.isError && !usageAccount && (
-            <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>
               {intl.formatMessage({ id: 'billing.usage.emptyAccount' })}
             </div>
           )}
           {!usageSummaryQuery.isLoading && !usageSummaryQuery.isError && usageAccount && !usageSummary?.currentPeriod && (
-            <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>
               {intl.formatMessage({ id: 'billing.usage.emptyPeriod' })}
             </div>
           )}
@@ -526,7 +526,7 @@ export function BillingPage() {
                   {usageSummary.warnings.filter((w) => w.reached).map((w) => (
                     <span
                       key={w.thresholdPct}
-                      style={{ padding: '2px 8px', background: 'var(--color-surface-2)', borderRadius: '4px', fontSize: '12px', color: 'var(--color-warning-text, #92400e)' }}
+                      style={{ padding: '2px 8px', background: 'var(--color-surface-2)', borderRadius: '4px', fontSize: '0.75rem', color: 'var(--color-warning-text, #92400e)' }}
                     >
                       {intl.formatMessage({ id: 'billing.usage.thresholdReached' }, { pct: w.thresholdPct })}
                     </span>
@@ -565,7 +565,7 @@ export function BillingPage() {
                   <ErrorBanner message={topUpError} onDismiss={() => setTopUpError(null)} />
                 )}
                 {(usageSummary?.topUpPacks?.length ?? 0) === 0 && (
-                  <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                  <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                     {intl.formatMessage({ id: 'billing.usage.topUpsNotEnabled' })}
                   </div>
                 )}

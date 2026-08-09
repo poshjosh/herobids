@@ -191,7 +191,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
           alignItems: 'center',
           height: '100%',
           color: 'var(--color-text-muted)',
-          fontSize: 15,
+          fontSize: '0.9375rem',
         }}
       >
         <span style={{ animation: 'pulse 1.5s infinite' }}>●</span>
@@ -210,7 +210,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
           alignItems: 'center',
           height: '100%',
           color: 'var(--color-text-muted)',
-          fontSize: 15,
+          fontSize: '0.9375rem',
         }}
       >
         <span style={{ animation: 'pulse 1.5s infinite' }}>●</span>
@@ -233,7 +233,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
           padding: 32,
         }}
       >
-        <div style={{ color: 'var(--color-error)', fontSize: 15, textAlign: 'center' }}>
+        <div style={{ color: 'var(--color-error)', fontSize: '0.9375rem', textAlign: 'center' }}>
           {error}
         </div>
         <button
@@ -244,7 +244,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
             border: 'none',
             backgroundColor: 'var(--color-primary)',
             color: 'var(--color-on-primary)',
-            fontSize: 14,
+            fontSize: '0.875rem',
             fontWeight: 600,
             cursor: 'pointer',
           }}
@@ -269,7 +269,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
             padding: '12px 16px',
             backgroundColor: 'var(--color-primary)',
             color: 'var(--color-on-primary)',
-            fontSize: 14,
+            fontSize: '0.875rem',
             fontWeight: 500,
             flexShrink: 0,
           }}
@@ -320,10 +320,10 @@ function BillingGate({
         padding: 32,
       }}
     >
-      <div style={{ fontSize: 48 }}>💳</div>
+      <div style={{ fontSize: '3rem' }}>💳</div>
       <div
         style={{
-          fontSize: 18,
+          fontSize: '1.125rem',
           fontWeight: 600,
           color: 'var(--color-text)',
           textAlign: 'center',
@@ -333,7 +333,7 @@ function BillingGate({
       </div>
       <div
         style={{
-          fontSize: 14,
+          fontSize: '0.875rem',
           color: 'var(--color-text-muted)',
           textAlign: 'center',
           maxWidth: 320,
@@ -352,7 +352,7 @@ function BillingGate({
               border: 'none',
               backgroundColor: 'var(--color-primary)',
               color: 'var(--color-on-primary)',
-              fontSize: 14,
+              fontSize: '0.875rem',
               fontWeight: 600,
               cursor: 'pointer',
             }}
@@ -369,7 +369,7 @@ function BillingGate({
               border: '1px solid var(--color-border)',
               backgroundColor: 'transparent',
               color: 'var(--color-text)',
-              fontSize: 14,
+              fontSize: '0.875rem',
               fontWeight: 600,
               cursor: 'pointer',
             }}
@@ -386,7 +386,7 @@ function BillingGate({
               border: '1px solid var(--color-border)',
               backgroundColor: 'transparent',
               color: 'var(--color-text)',
-              fontSize: 14,
+              fontSize: '0.875rem',
               fontWeight: 600,
               cursor: 'pointer',
             }}
@@ -396,7 +396,7 @@ function BillingGate({
         )}
       </div>
       {!isSuspended && (
-        <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
           After adding credit, click Try Again to continue.
         </div>
       )}

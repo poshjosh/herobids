@@ -37,7 +37,7 @@ export function StyleSelector({ value, onChange }: StyleSelectorProps) {
 
   return (
     <div role="radiogroup" aria-labelledby="style-selector-label">
-      <div id="style-selector-label" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>
+      <div id="style-selector-label" style={{ fontSize: '0.8125rem', fontWeight: '500', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>
         {intl.formatMessage({ id: 'agents.style.title' })}
       </div>
       <div style={{ display: 'flex', gap: '8px' }}>
@@ -68,12 +68,12 @@ export function StyleSelector({ value, onChange }: StyleSelectorProps) {
                 style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '14px' }}>{style.icon}</span>
-                <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+                <span style={{ fontSize: '0.875rem' }}>{style.icon}</span>
+                <span style={{ fontSize: '0.8125rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>
                   {intl.formatMessage({ id: style.labelKey })}
                 </span>
                 {active && (
-                  <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--color-brand)' }}>✓</span>
+                  <span style={{ marginLeft: 'auto', fontSize: '0.6875rem', color: 'var(--color-brand)' }}>✓</span>
                 )}
               </div>
             </label>

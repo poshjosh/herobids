@@ -91,7 +91,7 @@ export function BlueprintEditModal({ blueprint, onClose, onEdited }: BlueprintEd
             padding: '2px 8px',
             borderRadius: '12px',
             background: isPublished ? 'var(--color-success-bg, #e6f4ea)' : 'var(--color-surface-2)',
-            fontSize: '11px',
+            fontSize: '0.6875rem',
             fontWeight: '500',
             color: isPublished ? 'var(--color-success, #1e7e34)' : 'var(--color-text-secondary)',
           }}>
@@ -104,7 +104,7 @@ export function BlueprintEditModal({ blueprint, onClose, onEdited }: BlueprintEd
               padding: '2px 8px',
               borderRadius: '12px',
               background: 'var(--color-warning-bg, #fff3cd)',
-              fontSize: '11px',
+              fontSize: '0.6875rem',
               fontWeight: '500',
               color: 'var(--color-warning, #856404)',
             }}>
@@ -115,7 +115,7 @@ export function BlueprintEditModal({ blueprint, onClose, onEdited }: BlueprintEd
 
         {isPublished && !hasStagedEdits && (
           <div style={{
-            fontSize: '12px',
+            fontSize: '0.75rem',
             color: 'var(--color-text-muted)',
             background: 'var(--color-surface-1)',
             padding: '8px 12px',
@@ -136,7 +136,7 @@ export function BlueprintEditModal({ blueprint, onClose, onEdited }: BlueprintEd
 
         <SectionLabel>Payload ({blueprint.kind})</SectionLabel>
         {parseError && (
-          <div style={{ color: 'var(--color-danger, #dc3545)', fontSize: '12px' }}>
+          <div style={{ color: 'var(--color-danger, #dc3545)', fontSize: '0.75rem' }}>
             JSON error: {parseError}
           </div>
         )}
@@ -147,7 +147,7 @@ export function BlueprintEditModal({ blueprint, onClose, onEdited }: BlueprintEd
             ...inputStyle,
             minHeight: '300px',
             fontFamily: 'var(--font-mono, monospace)',
-            fontSize: '12px',
+            fontSize: '0.75rem',
             lineHeight: '1.5',
             resize: 'vertical',
           }}

@@ -832,7 +832,7 @@ export function CreateAgentFlow({
               <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
             </select>
             {intent.skillPreset !== 'custom' && selectedSkills.length > 0 && (
-              <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+              <div style={{ marginTop: '4px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
                 {selectedSkills.map((s) => s.name).join(', ')}
               </div>
             )}
@@ -841,7 +841,7 @@ export function CreateAgentFlow({
           {/* Custom skill picker — shown inline when custom preset is selected */}
           {intent.skillPreset === 'custom' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-              <div style={{ fontSize: '14px', fontWeight: '600' }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: '600' }}>
                 {intl.formatMessage({ id: 'agents.create.skills' })}
               </div>
               <SkillPicker
@@ -906,7 +906,7 @@ export function CreateAgentFlow({
           />
 
           {/* Style summary */}
-          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '0' }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0' }}>
             {formatStyleSummary(intent.style, intl.formatMessage({ id: STYLE_LABEL_KEYS[intent.style] }), resolveModelPricing(
               availableModelsQuery.data?.providers ?? [],
               intent.provider,
@@ -984,7 +984,7 @@ export function CreateAgentFlow({
             modelSlot={
               showIntelligence ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                  <div style={{ fontSize: '0.875rem', fontWeight: '600' }}>
                     {intl.formatMessage({ id: 'agents.create.models.title' })}
                   </div>
                   <ModelSelectionFields
@@ -1046,7 +1046,7 @@ export function CreateAgentFlow({
                               <option key={level} value={level}>{intl.formatMessage({ id: `aiModels.reasoning.${level}` })}</option>
                             ))}
                           </select>
-                          <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                          <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                             {intl.formatMessage({ id: 'agents.edit.models.reasoning.scoutHelp' })}
                           </div>
                         </div>
@@ -1081,7 +1081,7 @@ export function CreateAgentFlow({
                             <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
                             <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
                           </select>
-                          <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                          <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                             {intl.formatMessage({ id: 'agents.edit.models.reasoning.judgeHelp' })}
                           </div>
                         </div>
@@ -1095,10 +1095,10 @@ export function CreateAgentFlow({
               <div data-field="connectionIds" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <FieldLabel>{intl.formatMessage({ id: 'agents.create.connections' })}</FieldLabel>
                 {(tradingConnectionsQuery.isLoading || allConnectionsQuery.isLoading) ? (
-                  <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
+                  <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
                 ) : allPickerConnections.length === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                       {intl.formatMessage({ id: 'agents.create.noConnections' })}
                     </div>
                     <div>
@@ -1186,7 +1186,7 @@ export function CreateAgentFlow({
                                 padding: '2px 8px',
                                 borderRadius: '12px',
                                 background: 'var(--color-surface-2)',
-                                fontSize: '12px',
+                                fontSize: '0.75rem',
                                 cursor: 'default',
                               }}
                             >
@@ -1215,7 +1215,7 @@ export function CreateAgentFlow({
                                   border: 'none',
                                   cursor: 'pointer',
                                   padding: '0 2px',
-                                  fontSize: '14px',
+                                  fontSize: '0.875rem',
                                   lineHeight: '1',
                                   color: 'var(--color-text-muted)',
                                 }}
@@ -1238,7 +1238,7 @@ export function CreateAgentFlow({
                       border: 'none',
                       cursor: 'pointer',
                       padding: '4px 0',
-                      fontSize: '12px',
+                      fontSize: '0.75rem',
                       color: 'var(--color-brand)',
                       textAlign: 'left',
                     }}
@@ -1248,7 +1248,7 @@ export function CreateAgentFlow({
                 )}
 
                 {formErrors.connectionIds && (
-                  <div style={{ color: 'var(--color-danger)', fontSize: '12px' }}>{formErrors.connectionIds}</div>
+                  <div style={{ color: 'var(--color-danger)', fontSize: '0.75rem' }}>{formErrors.connectionIds}</div>
                 )}
               </div>
             }
@@ -1281,7 +1281,7 @@ export function CreateAgentFlow({
                       <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
                     </select>
                     {formErrors.executionMode && (
-                      <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>
+                      <div style={{ color: 'var(--color-danger)', fontSize: '0.75rem', marginTop: '4px' }}>
                         {formErrors.executionMode}
                       </div>
                     )}
@@ -1316,7 +1316,7 @@ export function CreateAgentFlow({
                         <option key={v} value={v}>{v}</option>
                       ))}
                     </select>
-                    {formErrors.venue && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.venue}</div>}
+                    {formErrors.venue && <div style={{ color: 'var(--color-danger)', fontSize: '0.75rem', marginTop: '4px' }}>{formErrors.venue}</div>}
                   </div>
 
                   {/* Trade Authorization */}
@@ -1330,7 +1330,7 @@ export function CreateAgentFlow({
                       <option value="direct">{intl.formatMessage({ id: 'agents.authorizationMode.direct' })}</option>
                       <option value="approval_required">{intl.formatMessage({ id: 'agents.authorizationMode.approvalRequired' })}</option>
                     </select>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                       {intent.authorizationMode === 'direct'
                         ? intl.formatMessage({ id: 'agents.authorizationMode.directHelp' })
                         : intl.formatMessage({ id: 'agents.authorizationMode.approvalRequiredHelp' })}
@@ -1338,7 +1338,7 @@ export function CreateAgentFlow({
                   </div>
 
                   <div>
-                    <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '12px' }}>
                       {intl.formatMessage({ id: 'agents.create.tradingControls.title' })}
                     </div>
                     <TradingGuardrailsFields
@@ -1469,7 +1469,7 @@ export function CreateAgentFlow({
         <button type="button" onClick={onClose} aria-label="Close" className="create-flow-card-close">✕</button>
       </div>
       <div className="create-flow-card-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
           <tbody>
             <ReviewRow label={intl.formatMessage({ id: 'agents.create.name' })} value={intent.name.trim()} />
             <ReviewRow
@@ -1488,12 +1488,12 @@ export function CreateAgentFlow({
         </table>
 
         {showIntelligence && (
-          <div style={{ padding: '12px', background: 'var(--color-bg-subtle, rgba(0,0,0,0.04))', borderRadius: '6px', fontSize: '14px', lineHeight: '1.5' }}>
+          <div style={{ padding: '12px', background: 'var(--color-bg-subtle, rgba(0,0,0,0.04))', borderRadius: '6px', fontSize: '0.875rem', lineHeight: '1.5' }}>
             {intent.goal}
           </div>
         )}
 
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
           <tbody>
             {requiresTradingSetup && <ReviewRow label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(intent.executionMode, intl)} />}
             {showIntelligence && (

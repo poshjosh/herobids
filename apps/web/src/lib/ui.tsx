@@ -22,11 +22,11 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
   return (
     <div className="page-header-responsive">
       <div>
-        <h1 style={{ margin: 0, fontSize: '22px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+        <h1 style={{ margin: 0, fontSize: '1.375rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>
           {title}
         </h1>
         {subtitle && (
-          <p style={{ margin: '4px 0 0', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+          <p style={{ margin: '4px 0 0', fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
             {subtitle}
           </p>
         )}
@@ -73,13 +73,13 @@ export function Card({
 export function MetricCard({ label, value, total, color, className }: { label: string; value: string | number; total?: number; color?: string; className?: string }) {
   return (
     <Card className={className} style={{ padding: '16px 20px' }}>
-      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
+      <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
         {label}
       </div>
-      <div style={{ fontSize: '24px', fontWeight: '600', color: color ?? 'var(--color-text-primary)' }}>
+      <div style={{ fontSize: '1.5rem', fontWeight: '600', color: color ?? 'var(--color-text-primary)' }}>
         {value}
         {total !== undefined && (
-          <span style={{ fontSize: '14px', fontWeight: '400', color: 'var(--color-text-muted)', marginLeft: '4px' }}>
+          <span style={{ fontSize: '0.875rem', fontWeight: '400', color: 'var(--color-text-muted)', marginLeft: '4px' }}>
             / {total}
           </span>
         )}
@@ -120,7 +120,7 @@ export function StatusBadge({ status }: { status: string }) {
         borderRadius: '20px',
         background: colors.bg,
         color: colors.text,
-        fontSize: '12px',
+        fontSize: '0.75rem',
         fontWeight: '500',
       }}
     >
@@ -218,7 +218,7 @@ export function Button({
         justifyContent: 'center',
         gap: '6px',
         padding: size === 'sm' ? '5px 12px' : '8px 16px',
-        fontSize: size === 'sm' ? '13px' : '15px',
+        fontSize: size === 'sm' ? '0.8125rem' : '0.9375rem',
         fontWeight: '500',
         borderRadius: '7px',
         cursor: disabled ? 'not-allowed' : 'pointer',
@@ -272,9 +272,9 @@ export function EmptyState({ title, message, action }: { title: string; message:
         gap: '12px',
       }}
     >
-      <div style={{ fontSize: '32px', opacity: 0.3 }}>◈</div>
-      <div style={{ fontSize: '16px', fontWeight: '500', color: 'var(--color-text-primary)' }}>{title}</div>
-      <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', maxWidth: '320px' }}>{message}</div>
+      <div style={{ fontSize: '2rem', opacity: 0.3 }}>◈</div>
+      <div style={{ fontSize: '1rem', fontWeight: '500', color: 'var(--color-text-primary)' }}>{title}</div>
+      <div style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', maxWidth: '320px' }}>{message}</div>
       {action && <div style={{ marginTop: '8px' }}>{action}</div>}
     </div>
   );
@@ -299,7 +299,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
       <div style={{ fontWeight: '500', marginBottom: '4px' }}>
         {intl.formatMessage({ id: 'common.errorTitle' })}
       </div>
-      <div style={{ fontSize: '13px', opacity: 0.8 }}>{message}</div>
+      <div style={{ fontSize: '0.8125rem', opacity: 0.8 }}>{message}</div>
       {onRetry && (
         <button
           onClick={onRetry}
@@ -310,7 +310,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
             border: '1px solid var(--color-danger)',
             borderRadius: '6px',
             color: 'var(--color-danger)',
-            fontSize: '12px',
+            fontSize: '0.75rem',
             cursor: 'pointer',
           }}
         >
@@ -329,7 +329,7 @@ export function SectionLabel({ children, uppercase = true }: { children: ReactNo
   return (
     <div
       style={{
-        fontSize: '11px',
+        fontSize: '0.6875rem',
         fontWeight: '600',
         textTransform: uppercase ? 'uppercase' : 'none',
         letterSpacing: '0.06em',
@@ -349,10 +349,10 @@ export function SectionLabel({ children, uppercase = true }: { children: ReactNo
 export function KV({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-      <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+      <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
         {label}
       </span>
-      <span style={{ fontSize: '14px', color: 'var(--color-text-primary)', fontWeight: '500' }}>{value}</span>
+      <span style={{ fontSize: '0.875rem', color: 'var(--color-text-primary)', fontWeight: '500' }}>{value}</span>
     </div>
   );
 }
@@ -408,7 +408,7 @@ export function RelativeTime({ timestamp }: { timestamp: string | null }) {
   const label = intl.formatRelativeTime(value, unit, { numeric: 'always', style: 'short' });
 
   return (
-    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }} title={timestamp}>
+    <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }} title={timestamp}>
       {label}
     </span>
   );
@@ -420,7 +420,7 @@ export function RelativeTime({ timestamp }: { timestamp: string | null }) {
 
 export function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '8px', letterSpacing: '0.02em' }}>
+    <div style={{ fontSize: '0.8125rem', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '8px', letterSpacing: '0.02em' }}>
       {children}
     </div>
   );
@@ -435,7 +435,7 @@ export function ErrorBanner({ message, onDismiss }: { message: string; onDismiss
         border: '1px solid var(--color-danger)',
         borderRadius: '7px',
         color: 'var(--color-danger)',
-        fontSize: '13px',
+        fontSize: '0.8125rem',
         marginBottom: '16px',
         display: 'flex',
         alignItems: 'flex-start',
@@ -452,7 +452,7 @@ export function ErrorBanner({ message, onDismiss }: { message: string; onDismiss
             border: 'none',
             color: 'var(--color-danger)',
             cursor: 'pointer',
-            fontSize: '16px',
+            fontSize: '1rem',
             lineHeight: 1,
             padding: '0 2px',
             opacity: 0.7,
@@ -473,7 +473,7 @@ export const inputStyle: React.CSSProperties = {
   border: '1.5px solid var(--input-border-color)',
   borderRadius: '8px',
   color: 'var(--color-text-primary)',
-  fontSize: '15px',
+  fontSize: '0.9375rem',
   outline: 'none',
   boxSizing: 'border-box',
   transition: 'border-color 0.15s, box-shadow 0.15s',
@@ -528,7 +528,7 @@ export function Modal({
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <div style={{ fontWeight: '600', fontSize: '17px' }}>{title}</div>
+          <div style={{ fontWeight: '600', fontSize: '1.0625rem' }}>{title}</div>
           <button
             type="button"
             onClick={onClose}
@@ -540,7 +540,7 @@ export function Modal({
               padding: '4px',
               borderRadius: '4px',
               color: 'var(--color-text-muted)',
-              fontSize: '18px',
+              fontSize: '1.125rem',
               lineHeight: '1',
               display: 'flex',
               alignItems: 'center',
@@ -719,7 +719,7 @@ export function ToolTagPicker({
   // Empty state (no tools data)
   if (tools.length === 0) {
     return (
-      <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{noToolsAvailableLabel}</div>
+      <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{noToolsAvailableLabel}</div>
     );
   }
 
@@ -738,7 +738,7 @@ export function ToolTagPicker({
               borderRadius: '20px',
               background: 'var(--color-accent-subtle, rgba(99,102,241,0.1))',
               border: '1px solid var(--color-accent)',
-              fontSize: '12px',
+              fontSize: '0.75rem',
               color: 'var(--color-accent)',
               lineHeight: '1.4',
             }}
@@ -756,7 +756,7 @@ export function ToolTagPicker({
                 border: 'none',
                 color: 'inherit',
                 cursor: disabled ? 'default' : 'pointer',
-                fontSize: '14px',
+                fontSize: '0.875rem',
                 lineHeight: 1,
                 padding: '0 2px',
                 opacity: 0.7,
@@ -779,7 +779,7 @@ export function ToolTagPicker({
             borderRadius: '20px',
             background: 'var(--color-surface-2)',
             border: '1px dashed var(--color-border)',
-            fontSize: '12px',
+            fontSize: '0.75rem',
             color: 'var(--color-text-secondary)',
             cursor: disabled ? 'default' : 'pointer',
             lineHeight: '1.4',
@@ -815,7 +815,7 @@ export function ToolTagPicker({
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder={searchPlaceholder}
               autoFocus
-              style={{ ...inputStyle, padding: '6px 10px', borderRadius: '6px', fontSize: '13px' }}
+              style={{ ...inputStyle, padding: '6px 10px', borderRadius: '6px', fontSize: '0.8125rem' }}
               onKeyDown={handleDropdownKeyDown}
             />
           </div>
@@ -823,7 +823,7 @@ export function ToolTagPicker({
           {/* Tool list */}
           <div style={{ overflowY: 'auto', flex: 1, padding: '4px 0' }}>
             {sortedGroups.length === 0 ? (
-              <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-muted)' }}>
+              <div style={{ padding: '16px', textAlign: 'center', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
                 {noMatchLabel.replace('{query}', searchQuery)}
               </div>
             ) : (
@@ -832,7 +832,7 @@ export function ToolTagPicker({
                   <div
                     style={{
                       padding: '6px 12px 2px',
-                      fontSize: '11px',
+                      fontSize: '0.6875rem',
                       fontWeight: '600',
                       textTransform: 'uppercase',
                       letterSpacing: '0.05em',
@@ -864,16 +864,16 @@ export function ToolTagPicker({
                           border: 'none',
                           cursor: 'pointer',
                           textAlign: 'left',
-                          fontSize: '13px',
+                          fontSize: '0.8125rem',
                           color: 'var(--color-text-primary)',
                         }}
                       >
-                        <span style={{ flexShrink: 0, width: '16px', fontSize: '13px', lineHeight: '1.4' }}>
+                        <span style={{ flexShrink: 0, width: '16px', fontSize: '0.8125rem', lineHeight: '1.4' }}>
                           {isSelected ? '✓' : '○'}
                         </span>
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: '500', fontSize: '13px' }}>{tool.name}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', lineHeight: '1.4', marginTop: '1px' }}>
+                          <div style={{ fontWeight: '500', fontSize: '0.8125rem' }}>{tool.name}</div>
+                          <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', lineHeight: '1.4', marginTop: '1px' }}>
                             {tool.description}
                           </div>
                         </div>

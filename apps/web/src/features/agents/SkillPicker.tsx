@@ -29,15 +29,15 @@ export function SkillPicker({ skills, selectedSkillIds, onChange, loading = fals
   }, [selectableSkills, searchTerm]);
 
   if (loading) {
-    return <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.skillPicker.loading' })}</div>;
+    return <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.skillPicker.loading' })}</div>;
   }
 
   if (errorMessage) {
-    return <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>{errorMessage}</div>;
+    return <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>{errorMessage}</div>;
   }
 
   if (selectableSkills.length === 0) {
-    return <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.skillPicker.empty' })}</div>;
+    return <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.skillPicker.empty' })}</div>;
   }
 
   return (
@@ -47,7 +47,7 @@ export function SkillPicker({ skills, selectedSkillIds, onChange, loading = fals
         placeholder={intl.formatMessage({ id: 'agents.skillPicker.searchPlaceholder', defaultMessage: 'Search skills…' })}
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
-        style={{ ...inputStyle, padding: '6px 10px', fontSize: '13px', borderRadius: '6px' }}
+        style={{ ...inputStyle, padding: '6px 10px', fontSize: '0.8125rem', borderRadius: '6px' }}
       />
       <div
         style={{
@@ -60,7 +60,7 @@ export function SkillPicker({ skills, selectedSkillIds, onChange, loading = fals
         }}
       >
         {filteredSkills.length === 0 ? (
-          <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', padding: '8px 0' }}>
+          <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', padding: '8px 0' }}>
             {intl.formatMessage({ id: 'agents.skillPicker.noResults', defaultMessage: 'No skills match your search.' })}
           </div>
         ) : (
@@ -90,8 +90,8 @@ export function SkillPicker({ skills, selectedSkillIds, onChange, loading = fals
                   style={{ marginTop: '3px', flexShrink: 0 }}
                 />
                 <div>
-                  <div style={{ fontWeight: '400', fontSize: '14px', color: 'var(--color-text-secondary)' }}>{skill.name}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px', lineHeight: '1.45' }}>
+                  <div style={{ fontWeight: '400', fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>{skill.name}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px', lineHeight: '1.45' }}>
                     {skill.description.length > 50 ? `${skill.description.slice(0, 50)}…` : skill.description}
                   </div>
                 </div>

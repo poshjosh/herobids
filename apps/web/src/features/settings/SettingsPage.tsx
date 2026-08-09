@@ -23,7 +23,7 @@ const inputStyle: React.CSSProperties = {
   borderRadius: '6px',
   background: 'var(--color-surface-2)',
   color: 'var(--color-text)',
-  fontSize: '14px',
+  fontSize: '0.875rem',
   boxSizing: 'border-box',
 };
 
@@ -151,7 +151,7 @@ export function SettingsPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '540px' }}>
         {/* Language preference */}
         <Card>
-          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: '0.875rem', fontWeight: '600' }}>
             {intl.formatMessage({ id: 'settings.locale.title' })}
           </h3>
           {localeMutation.isError && (
@@ -176,10 +176,10 @@ export function SettingsPage() {
         </Card>
 
         <Card>
-          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: '0.875rem', fontWeight: '600' }}>
             {intl.formatMessage({ id: 'aiModels.title' })}
           </h3>
-          <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+          <p style={{ margin: '0 0 16px', fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
             {intl.formatMessage({ id: 'aiModels.description' })}
           </p>
 
@@ -187,7 +187,7 @@ export function SettingsPage() {
             <ErrorBanner message={localizeApiError(intl, modelMutation.error, 'common.errorTitle')} />
           )}
           {modelSaved && (
-            <div style={{ marginBottom: '12px', padding: '8px 12px', borderRadius: '6px', background: 'var(--color-success-subtle)', color: 'var(--color-success)', fontSize: '13px' }}>
+            <div style={{ marginBottom: '12px', padding: '8px 12px', borderRadius: '6px', background: 'var(--color-success-subtle)', color: 'var(--color-success)', fontSize: '0.8125rem' }}>
               {intl.formatMessage({ id: 'aiModels.saved' })}
             </div>
           )}
@@ -246,7 +246,7 @@ export function SettingsPage() {
                     <option key={level} value={level}>{intl.formatMessage({ id: `aiModels.reasoning.${level}` })}</option>
                   ))}
                 </select>
-                <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                   {intl.formatMessage({ id: 'aiModels.scoutReasoning.help' })}
                 </div>
               </div>
@@ -266,7 +266,7 @@ export function SettingsPage() {
                   <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
                   <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
                 </select>
-                <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                   {intl.formatMessage({ id: 'aiModels.judgeReasoning.help' })}
                 </div>
               </div>
@@ -275,7 +275,7 @@ export function SettingsPage() {
             {/* Adaptive reasoning toggles — side by side (matching reasoning levels grid) */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div>
-                <label htmlFor="adapt-scout-reasoning" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer' }}>
+                <label htmlFor="adapt-scout-reasoning" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.875rem', color: 'var(--color-text)', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="adapt-scout-reasoning"
@@ -287,12 +287,12 @@ export function SettingsPage() {
                   />
                   {intl.formatMessage({ id: 'settings.adaptiveScoutReasoning' })}
                 </label>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                <p style={{ margin: '4px 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
                   {intl.formatMessage({ id: 'settings.adaptiveScoutReasoningHelp' })}
                 </p>
               </div>
               <div>
-                <label htmlFor="adapt-judge-reasoning" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer' }}>
+                <label htmlFor="adapt-judge-reasoning" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.875rem', color: 'var(--color-text)', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="adapt-judge-reasoning"
@@ -304,7 +304,7 @@ export function SettingsPage() {
                   />
                   {intl.formatMessage({ id: 'settings.adaptiveJudgeReasoning' })}
                 </label>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                <p style={{ margin: '4px 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
                   {intl.formatMessage({ id: 'settings.adaptiveJudgeReasoningHelp' })}
                 </p>
               </div>
@@ -334,10 +334,10 @@ export function SettingsPage() {
         </Card>
 
         <Card>
-          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: '0.875rem', fontWeight: '600' }}>
             {intl.formatMessage({ id: 'settings.telegram.title' })}
           </h3>
-          <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+          <p style={{ margin: '0 0 16px', fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
             {intl.formatMessage({ id: 'settings.telegram.description' })}
           </p>
 
@@ -352,7 +352,7 @@ export function SettingsPage() {
               <ErrorBanner message={localizeApiError(intl, telegramMutation.error, 'common.errorTitle')} />
             )}
             {saved && (
-              <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--color-success-subtle)', color: 'var(--color-success)', fontSize: '13px' }}>
+              <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--color-success-subtle)', color: 'var(--color-success)', fontSize: '0.8125rem' }}>
                 {intl.formatMessage({ id: 'settings.telegram.saved' })}
               </div>
             )}
@@ -391,10 +391,10 @@ export function SettingsPage() {
         </Card>
 
         <Card>
-          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: '0.875rem', fontWeight: '600' }}>
             {intl.formatMessage({ id: 'settings.emailDelivery.title' })}
           </h3>
-          <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+          <p style={{ margin: '0 0 16px', fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
             {intl.formatMessage({ id: 'settings.emailDelivery.description' })}
           </p>
 
@@ -409,7 +409,7 @@ export function SettingsPage() {
               <ErrorBanner message={localizeApiError(intl, emailMutation.error, 'common.errorTitle')} />
             )}
             {emailDeliverySaved && (
-              <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--color-success-subtle)', color: 'var(--color-success)', fontSize: '13px' }}>
+              <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--color-success-subtle)', color: 'var(--color-success)', fontSize: '0.8125rem' }}>
                 {intl.formatMessage({ id: 'settings.emailDelivery.saved' })}
               </div>
             )}
@@ -424,10 +424,10 @@ export function SettingsPage() {
                 style={{ marginTop: '2px', flexShrink: 0 }}
               />
               <div>
-                <label htmlFor="email-delivery-toggle" style={{ fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer' }}>
+                <label htmlFor="email-delivery-toggle" style={{ fontSize: '0.875rem', color: 'var(--color-text)', cursor: 'pointer' }}>
                   {intl.formatMessage({ id: 'settings.emailDelivery.label' })}
                 </label>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                <p style={{ margin: '4px 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
                   {intl.formatMessage({ id: 'settings.emailDelivery.help.delivery' })}
                   {meQuery.data?.email ? (
                     <> (<strong style={{ color: 'var(--color-text)' }}>{meQuery.data.email}</strong>)</>

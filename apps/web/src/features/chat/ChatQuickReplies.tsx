@@ -30,7 +30,7 @@ export function ChatQuickReplies({ options, onSelect, disabled = false }: ChatQu
             border: '1px solid var(--color-primary)',
             backgroundColor: 'transparent',
             color: 'var(--color-primary)',
-            fontSize: 14,
+            fontSize: '0.875rem',
             fontWeight: 500,
             cursor: disabled ? 'not-allowed' : 'pointer',
             opacity: disabled ? 0.5 : 1,

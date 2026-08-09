@@ -39,16 +39,16 @@ export function AdminUsersSection({ users, onPromote, onRevoke, mutationPending 
           placeholder="Filter by email or name…"
           value={filter}
           onChange={(e) => handleFilterChange(e.target.value)}
-          style={{ ...inputStyle, flex: 1, padding: '6px 10px', borderRadius: '6px', fontSize: '13px' }}
+          style={{ ...inputStyle, flex: 1, padding: '6px 10px', borderRadius: '6px', fontSize: '0.8125rem' }}
         />
-        <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{visible.length} users</span>
+        <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{visible.length} users</span>
       </div>
 
       {paged.length === 0 ? (
         <EmptyState title="No users" message="No users match your filter." />
       ) : (
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
             <thead>
               <tr style={{ background: 'var(--color-surface-2)' }}>
                 <Th>Email</Th>
@@ -77,7 +77,7 @@ export function AdminUsersSection({ users, onPromote, onRevoke, mutationPending 
                   <Td>{user.agentCount}</Td>
                   <Td>{user.botCount}</Td>
                   <Td>
-                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
                       {new Date(user.createdAt).toLocaleString()}
                     </span>
                   </Td>
@@ -116,7 +116,7 @@ export function AdminUsersSection({ users, onPromote, onRevoke, mutationPending 
           <Button size="sm" variant="secondary" disabled={clampedPage === 0} onClick={() => setPage(clampedPage - 1)}>
             Prev
           </Button>
-          <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
+          <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
             Page {clampedPage + 1} of {totalPages}
           </span>
           <Button size="sm" variant="secondary" disabled={clampedPage >= totalPages - 1} onClick={() => setPage(clampedPage + 1)}>
@@ -130,7 +130,7 @@ export function AdminUsersSection({ users, onPromote, onRevoke, mutationPending 
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '600', color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
+    <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '600', color: 'var(--color-text-secondary)', fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
       {children}
     </th>
   );
@@ -151,7 +151,7 @@ function PlanBadge({ planId }: { planId: string }) {
         display: 'inline-block',
         padding: '2px 7px',
         borderRadius: '4px',
-        fontSize: '11px',
+        fontSize: '0.6875rem',
         fontWeight: '500',
         background: 'var(--color-surface-3)',
         color: 'var(--color-text-secondary)',

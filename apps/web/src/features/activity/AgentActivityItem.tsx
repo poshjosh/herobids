@@ -50,7 +50,7 @@ export function AgentActivityItem({ entry, isLast = false }: AgentActivityItemPr
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: '12px',
+          fontSize: '0.75rem',
           color: iconColor,
           flexShrink: 0,
           marginTop: '1px',
@@ -62,18 +62,18 @@ export function AgentActivityItem({ entry, isLast = false }: AgentActivityItemPr
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {entry.title}
           </span>
-          <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flexShrink: 0 }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', flexShrink: 0 }}>
             <RelativeTime timestamp={entry.timestamp} />
           </span>
         </div>
-        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '2px', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {entry.summary}
         </div>
         {entry.agentName && (
-          <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '3px' }}>
+          <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginTop: '3px' }}>
             Agent: {entry.agentName}
           </div>
         )}

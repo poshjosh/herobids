@@ -49,7 +49,7 @@ export function StrategyPresetSelector({
     <div>
       <FieldLabel>{intl.formatMessage({ id: 'agents.technical.preset.label' })}</FieldLabel>
       {loading ? (
-        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', padding: '8px 0' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', padding: '8px 0' }}>
           Loading presets…
         </div>
       ) : (
@@ -64,7 +64,7 @@ export function StrategyPresetSelector({
             >
               <div
                 style={{
-                  fontSize: '13px',
+                  fontSize: '0.8125rem',
                   fontWeight: '600',
                   color: 'var(--color-text-primary)',
                   marginBottom: '4px',
@@ -74,7 +74,7 @@ export function StrategyPresetSelector({
               </div>
               <div
                 style={{
-                  fontSize: '11px',
+                  fontSize: '0.6875rem',
                   color: 'var(--color-text-secondary)',
                   lineHeight: '1.4',
                 }}
@@ -92,7 +92,7 @@ export function StrategyPresetSelector({
             >
               <div
                 style={{
-                  fontSize: '13px',
+                  fontSize: '0.8125rem',
                   fontWeight: '600',
                   color: 'var(--color-text-primary)',
                   marginBottom: '4px',
@@ -102,7 +102,7 @@ export function StrategyPresetSelector({
               </div>
               <div
                 style={{
-                  fontSize: '11px',
+                  fontSize: '0.6875rem',
                   color: 'var(--color-text-secondary)',
                   lineHeight: '1.4',
                 }}

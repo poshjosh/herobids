@@ -83,7 +83,7 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
                     borderRadius: 8,
                     backgroundColor: 'var(--color-success-bg, #e6f7ed)',
                     border: '1px solid var(--color-success, #2da44e)',
-                    fontSize: 14,
+                    fontSize: '0.875rem',
                     color: 'var(--color-text)',
                     marginTop: 8,
                   }}
@@ -93,7 +93,7 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
                   </div>
                   <div style={{
                     fontFamily: 'monospace',
-                    fontSize: 12,
+                    fontSize: '0.75rem',
                     padding: '8px',
                     backgroundColor: 'var(--color-surface-1, #f6f8fa)',
                     borderRadius: 4,
@@ -102,17 +102,17 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
                   }}>
                     {walletAddress}
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+                  <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
                     Network: {network}
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                  <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', marginTop: 4 }}>
                     {fundingInstructionText}
                   </div>
                   <a
                     href={resolveFundingDocUrl(fundingId, providerName)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={{ fontSize: 13, color: 'var(--color-primary)', marginTop: 8, display: 'inline-block' }}
+                    style={{ fontSize: '0.8125rem', color: 'var(--color-primary)', marginTop: 8, display: 'inline-block' }}
                   >
                     Learn more about funding {displayName} wallets →
                   </a>
@@ -127,7 +127,7 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
                   borderRadius: 8,
                   backgroundColor: 'var(--color-success-bg, #e6f7ed)',
                   border: '1px solid var(--color-success, #2da44e)',
-                  fontSize: 14,
+                  fontSize: '0.875rem',
                   color: 'var(--color-text)',
                 }}
               >
@@ -195,7 +195,7 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
                   borderRadius: 8,
                   backgroundColor: 'var(--color-surface-2)',
                   border: '1px solid var(--color-border)',
-                  fontSize: 14,
+                  fontSize: '0.875rem',
                   color: 'var(--color-text-muted)',
                 }}
               >

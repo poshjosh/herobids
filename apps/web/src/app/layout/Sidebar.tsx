@@ -66,7 +66,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
               border: 'none',
               color: 'var(--color-text-muted)',
               cursor: 'pointer',
-              fontSize: '18px',
+              fontSize: '1.125rem',
               lineHeight: 1,
               padding: '2px 4px',
             }}
@@ -135,7 +135,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '12px',
+                  fontSize: '0.75rem',
                   fontWeight: '600',
                   color: 'var(--color-brand)',
                 }}
@@ -146,7 +146,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
-                  fontSize: '13px',
+                  fontSize: '0.8125rem',
                   fontWeight: '500',
                   color: 'var(--color-text-primary)',
                   overflow: 'hidden',
@@ -158,7 +158,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
               </div>
               <div
                 style={{
-                  fontSize: '11px',
+                  fontSize: '0.6875rem',
                   color: 'var(--color-text-muted)',
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
@@ -177,7 +177,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
               border: '1px solid var(--color-border)',
               borderRadius: '6px',
               color: 'var(--color-text-muted)',
-              fontSize: '12px',
+              fontSize: '0.75rem',
               cursor: 'pointer',
               textAlign: 'left',
             }}
@@ -222,7 +222,7 @@ function SectionLabel({
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          fontSize: '10px',
+          fontSize: '0.625rem',
           fontWeight: '600',
           textTransform: 'uppercase',
           letterSpacing: '0.08em',
@@ -231,7 +231,7 @@ function SectionLabel({
           textAlign: 'left',
         }}
       >
-        <span style={{ fontSize: '10px', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>▸</span>
+        <span style={{ fontSize: '0.625rem', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>▸</span>
         {children}
       </button>
     );
@@ -239,7 +239,7 @@ function SectionLabel({
   return (
     <div
       style={{
-        fontSize: '10px',
+        fontSize: '0.625rem',
         fontWeight: '600',
         textTransform: 'uppercase',
         letterSpacing: '0.08em',
@@ -264,14 +264,14 @@ function NavItem({ path, label, icon, active, onNavigate }: { path: string; labe
         padding: '7px 10px',
         borderRadius: '7px',
         textDecoration: 'none',
-        fontSize: '14px',
+        fontSize: '0.875rem',
         fontWeight: active ? '500' : '400',
         color: active ? 'var(--color-brand)' : 'var(--color-text-secondary)',
         background: active ? 'var(--color-brand-subtle)' : 'transparent',
         transition: 'all 0.1s',
       }}
     >
-      <span style={{ fontSize: '16px', opacity: 0.8 }}>{icon}</span>
+      <span style={{ fontSize: '1rem', opacity: 0.8 }}>{icon}</span>
       {label}
     </Link>
   );

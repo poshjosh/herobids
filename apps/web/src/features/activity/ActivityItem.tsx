@@ -54,7 +54,7 @@ export function ActivityItem({ event, isLast = false }: ActivityItemProps) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: '12px',
+          fontSize: '0.75rem',
           color: iconColor,
           flexShrink: 0,
           marginTop: '1px',
@@ -65,7 +65,7 @@ export function ActivityItem({ event, isLast = false }: ActivityItemProps) {
 
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '13px', color: 'var(--color-text-primary)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-word' }}>
+        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-primary)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-word' }}>
           {messageText}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>

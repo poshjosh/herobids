@@ -25,7 +25,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           borderRadius: 12,
           backgroundColor: isUser ? 'var(--color-primary)' : 'var(--color-surface-2)',
           color: isUser ? 'var(--color-on-primary)' : 'var(--color-text)',
-          fontSize: 15,
+          fontSize: '0.9375rem',
           lineHeight: 1.5,
           wordBreak: 'break-word',
         }}

@@ -25,7 +25,7 @@ function FreshnessBadge({ state }: { state: string }) {
         display: 'inline-block',
         padding: '2px 8px',
         borderRadius: '20px',
-        fontSize: '12px',
+        fontSize: '0.75rem',
         fontWeight: '500',
         color,
         background: bg,
@@ -43,7 +43,7 @@ function PassBadge({ pass }: { pass: boolean }) {
         display: 'inline-block',
         padding: '2px 8px',
         borderRadius: '20px',
-        fontSize: '12px',
+        fontSize: '0.75rem',
         fontWeight: '500',
         color: pass ? 'var(--color-success)' : 'var(--color-danger)',
         background: pass ? 'var(--color-success-subtle)' : 'var(--color-danger-subtle)',
@@ -69,7 +69,7 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
       <Card>
         <div style={{ fontWeight: '600', marginBottom: '12px' }}>Discovery Snapshot</div>
         {disc == null ? (
-          <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>No discovery snapshot available</div>
+          <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>No discovery snapshot available</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <Grid columns={4} gap={12}>
@@ -93,7 +93,7 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
             {disc.sourceStats?.['discovery']?.networkCounts &&
               Object.keys(disc.sourceStats['discovery'].networkCounts).length > 0 && (
                 <div>
-                  <div style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', marginBottom: '6px' }}>
+                  <div style={{ fontSize: '0.6875rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', marginBottom: '6px' }}>
                     Tokens by Network
                   </div>
                   <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -104,7 +104,7 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
                           padding: '4px 10px',
                           borderRadius: '6px',
                           background: 'var(--color-surface-2)',
-                          fontSize: '12px',
+                          fontSize: '0.75rem',
                           color: 'var(--color-text-primary)',
                         }}
                       >
@@ -119,7 +119,7 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
             {/* Source contribution */}
             {disc.sourceStats && Object.keys(disc.sourceStats).length > 0 && (
               <div>
-                <div style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', marginBottom: '6px' }}>
+                <div style={{ fontSize: '0.6875rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', marginBottom: '6px' }}>
                   Discovery Source Contribution
                 </div>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -133,7 +133,7 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
                         padding: '4px 10px',
                         borderRadius: '6px',
                         background: 'var(--color-surface-2)',
-                        fontSize: '12px',
+                        fontSize: '0.75rem',
                       }}
                     >
                       <span style={{ color: 'var(--color-text-muted)' }}>{src}</span>
@@ -152,7 +152,7 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
         <Card style={{ borderColor: 'var(--color-warning)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
             <div style={{ fontWeight: '600' }}>Latest Market Data Error</div>
-            <span style={{ background: 'var(--color-warning-subtle)', color: 'var(--color-warning)', padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '600' }}>
+            <span style={{ background: 'var(--color-warning-subtle)', color: 'var(--color-warning)', padding: '2px 8px', borderRadius: '20px', fontSize: '0.6875rem', fontWeight: '600' }}>
               {lastError.source}
             </span>
           </div>
@@ -181,16 +181,16 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
               >
                 <span style={{ fontWeight: '600', minWidth: '60px' }}>{symbol}</span>
                 {snap == null ? (
-                  <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>No snapshot</span>
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>No snapshot</span>
                 ) : (
                   <>
                     <PassBadge pass={snap.pass} />
                     <FreshnessBadge state={snap.freshness.state} />
-                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                       {fmtTs(snap.evaluatedAt)}
                     </span>
                     {snap.reasons.length > 0 && (
-                      <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', flex: 1 }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', flex: 1 }}>
                         {snap.reasons.join(' · ')}
                       </span>
                     )}
@@ -205,7 +205,7 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
       {/* Providers table */}
       <Card style={{ padding: 0 }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border-subtle)' }}>
-          <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+          <span style={{ fontSize: '0.875rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>
             Providers
           </span>
         </div>
@@ -214,7 +214,7 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
           <EmptyState title="No provider data" message="Market data config not available." />
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
               <thead>
                 <tr style={{ background: 'var(--color-surface-2)' }}>
                   <Th>Provider</Th>
@@ -243,12 +243,12 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
                             <span style={{ fontWeight: '600' }}>{p.name}</span>
                             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                               {p.unwired && (
-                                <span style={{ padding: '1px 6px', borderRadius: '4px', fontSize: '10px', background: 'var(--color-warning-subtle)', color: 'var(--color-warning)' }}>
+                                <span style={{ padding: '1px 6px', borderRadius: '4px', fontSize: '0.625rem', background: 'var(--color-warning-subtle)', color: 'var(--color-warning)' }}>
                                   unwired
                                 </span>
                               )}
                               {!p.enabled && (
-                                <span style={{ padding: '1px 6px', borderRadius: '4px', fontSize: '10px', background: 'var(--color-surface-3)', color: 'var(--color-text-muted)' }}>
+                                <span style={{ padding: '1px 6px', borderRadius: '4px', fontSize: '0.625rem', background: 'var(--color-surface-3)', color: 'var(--color-text-muted)' }}>
                                   disabled
                                 </span>
                               )}
@@ -262,7 +262,7 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
                             style={{
                               padding: '2px 8px',
                               borderRadius: '20px',
-                              fontSize: '11px',
+                              fontSize: '0.6875rem',
                               fontWeight: '500',
                               color: p.enabled && !p.unwired ? 'var(--color-success)' : p.unwired ? 'var(--color-warning)' : 'var(--color-text-muted)',
                               background: p.enabled && !p.unwired ? 'var(--color-success-subtle)' : p.unwired ? 'var(--color-warning-subtle)' : 'var(--color-surface-3)',
@@ -273,7 +273,7 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
                         </Td>
                       )}
                       <Td>
-                        <span style={{ fontFamily: 'monospace', fontSize: '11px', color: 'var(--color-text-secondary)', background: 'var(--color-surface-2)', padding: '2px 6px', borderRadius: '4px' }}>
+                        <span style={{ fontFamily: 'monospace', fontSize: '0.6875rem', color: 'var(--color-text-secondary)', background: 'var(--color-surface-2)', padding: '2px 6px', borderRadius: '4px' }}>
                           {rc.requestClass}
                         </span>
                       </Td>
@@ -288,7 +288,7 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
                         </span>
                       </Td>
                       <Td>
-                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                        <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
                           {fmtTs(rc.counters.lastSuccessAt ?? null)}
                         </span>
                       </Td>
@@ -314,7 +314,7 @@ export function AdminMarketDataSection({ overview, providers }: Props) {
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '600', color: 'var(--color-text-secondary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
+    <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '600', color: 'var(--color-text-secondary)', fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
       {children}
     </th>
   );

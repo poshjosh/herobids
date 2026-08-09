@@ -61,7 +61,7 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
   const isBlurred = (field: string) => blurred.has(field);
 
   const sectionTitleStyle: React.CSSProperties = {
-    fontSize: '13px',
+    fontSize: '0.8125rem',
     fontWeight: '600',
     color: 'var(--color-text-primary)',
   };
@@ -82,13 +82,13 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
     border: `1px solid ${active ? 'var(--color-brand)' : 'var(--color-border)'}`,
     background: active ? 'var(--color-brand-subtle, rgba(99,102,241,0.06))' : 'transparent',
     cursor: 'pointer',
-    fontSize: '13px',
+    fontSize: '0.8125rem',
     color: 'var(--color-text-primary)',
   });
 
   const errorTextStyle: React.CSSProperties = {
     marginTop: '4px',
-    fontSize: '12px',
+    fontSize: '0.75rem',
     color: 'var(--color-danger)',
     lineHeight: '1.5',
   };
@@ -116,7 +116,7 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
 
         {isSwapVenue && (
           <div style={{
-            fontSize: '12px',
+            fontSize: '0.75rem',
             color: 'var(--color-text-muted)',
             fontStyle: 'italic',
             padding: '8px',
@@ -338,7 +338,7 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
         </div>
       </div>
 
-      <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+      <div style={{ marginTop: '4px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
         Your settings are not saved as a blueprint. To reuse this configuration, save it as a blueprint from the Blueprints page.
       </div>
     </div>

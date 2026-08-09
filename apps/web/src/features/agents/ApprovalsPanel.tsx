@@ -97,7 +97,7 @@ export function ApprovalsPanel({ agentId }: ApprovalsPanelProps) {
     return (
       <Card>
         <SectionLabel>{intl.formatMessage({ id: 'agents.approvals.title' })}</SectionLabel>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: '13px', margin: 0 }}>
+        <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem', margin: 0 }}>
           {intl.formatMessage({ id: 'agents.approvals.empty' })}
         </p>
       </Card>
@@ -177,7 +177,7 @@ function ApprovalCard({
     display: 'flex',
     justifyContent: 'space-between',
     gap: '8px',
-    fontSize: '13px',
+    fontSize: '0.8125rem',
     lineHeight: '1.5',
   };
 
@@ -214,7 +214,7 @@ function ApprovalCard({
       >
         <span
           style={{
-            fontSize: '14px',
+            fontSize: '0.875rem',
             fontWeight: '700',
             fontFamily: 'monospace',
             color: 'var(--color-brand)',
@@ -226,7 +226,7 @@ function ApprovalCard({
         >
           {approval.shortCode}
         </span>
-        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+        <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
           {intl.formatMessage({ id: 'agents.approvals.expires' }, { time: formatExpiry(approval.expiresAt) })}
         </span>
       </div>
@@ -284,7 +284,7 @@ function ApprovalCard({
           padding: '10px 12px',
           borderRadius: '6px',
           background: 'var(--color-surface-2)',
-          fontSize: '12px',
+          fontSize: '0.75rem',
           color: 'var(--color-text-secondary)',
           lineHeight: '1.5',
           marginBottom: '12px',
@@ -292,7 +292,7 @@ function ApprovalCard({
           wordBreak: 'break-word',
         }}
       >
-        <div style={{ fontSize: '10px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+        <div style={{ fontSize: '0.625rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
           {intl.formatMessage({ id: 'agents.approvals.rationale' })}
         </div>
         {approval.rationaleSummary || 'No rationale provided.'}
@@ -301,7 +301,7 @@ function ApprovalCard({
       {/* Telegram hint */}
       <div
         style={{
-          fontSize: '11px',
+          fontSize: '0.6875rem',
           color: 'var(--color-text-muted)',
           marginBottom: '12px',
           padding: '6px 10px',
@@ -343,7 +343,7 @@ function ApprovalCard({
       {isResolved && !error && (
         <div
           style={{
-            fontSize: '12px',
+            fontSize: '0.75rem',
             padding: '6px 10px',
             borderRadius: '4px',
             background: resolvedAction === 'rejected'
@@ -371,7 +371,7 @@ function ApprovalCard({
       {error && (
         <div
           style={{
-            fontSize: '12px',
+            fontSize: '0.75rem',
             padding: '6px 10px',
             borderRadius: '4px',
             background: 'var(--color-danger-subtle)',

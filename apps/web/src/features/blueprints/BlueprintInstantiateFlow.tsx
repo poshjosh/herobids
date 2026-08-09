@@ -180,7 +180,7 @@ export function BlueprintInstantiateFlow({
     return (
       <Modal title="Agent created!" onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+          <div style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
             Your agent <strong>{edits.name || blueprint.name}</strong> has been created and is in <strong>stopped</strong> status.
           </div>
           {createdActorId && (
@@ -218,7 +218,7 @@ export function BlueprintInstantiateFlow({
           {preview.rawPayload.description != null && (
             <div>
               <SectionLabel>Description</SectionLabel>
-              <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+              <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
                 {String(preview.rawPayload.description)}
               </div>
             </div>
@@ -239,10 +239,10 @@ export function BlueprintInstantiateFlow({
           {preview.rawRisk && (
             <>
               <SectionLabel>Risk Profile</SectionLabel>
-              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
                 Shows the blueprint author's raw risk values and the effective values after applying defaults and operator ceilings.
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8125rem' }}>
                 <div style={{ fontWeight: '600', color: 'var(--color-text-muted)' }}>Field</div>
                 <div style={{ fontWeight: '600', color: 'var(--color-text-muted)' }}>Raw → Effective</div>
                 {renderRiskRows(preview.effectiveRisk, preview.rawRisk)}
@@ -254,7 +254,7 @@ export function BlueprintInstantiateFlow({
           {preview.requiredPrivateInputs.length > 0 && (
             <>
               <SectionLabel>Required</SectionLabel>
-              <div style={{ color: 'var(--color-warning)', fontSize: '13px' }}>
+              <div style={{ color: 'var(--color-warning)', fontSize: '0.8125rem' }}>
                 {preview.requiredPrivateInputs.join('; ')}
               </div>
             </>
@@ -265,7 +265,7 @@ export function BlueprintInstantiateFlow({
             <>
               <SectionLabel>Warnings</SectionLabel>
               {preview.validationWarnings.filter((w) => w.length > 0).map((w, i) => (
-                <div key={i} style={{ color: 'var(--color-warning)', fontSize: '12px' }}>⚠ {w}</div>
+                <div key={i} style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>⚠ {w}</div>
               ))}
             </>
           )}
@@ -307,12 +307,12 @@ export function BlueprintInstantiateFlow({
           {editableRiskFields.length > 0 && (
             <>
               <SectionLabel>Risk overrides</SectionLabel>
-              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                 Only mutable fields are shown. Operator ceilings are enforced.
               </div>
               {editableRiskFields.map(([key, field]) => (
                 <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
                     <span style={{ color: 'var(--color-text-secondary)', fontWeight: '500' }}>
                       {formatRiskFieldLabel(key)}
                     </span>
@@ -338,7 +338,7 @@ export function BlueprintInstantiateFlow({
           {isTrading && preview.kind === 'agent' && (
             <>
               <SectionLabel>Trading connections</SectionLabel>
-              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                 Select active connections for this agent to trade through.
               </div>
               {connectionsQuery.isLoading && <LoadingRows count={2} />}
@@ -346,7 +346,7 @@ export function BlueprintInstantiateFlow({
                 <ErrorBanner message={(connectionsQuery.error as Error).message} />
               )}
               {connectionsQuery.isSuccess && connections.length === 0 && (
-                <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
                   No active connections available. Set up a connection first.
                 </div>
               )}
@@ -361,7 +361,7 @@ export function BlueprintInstantiateFlow({
                     background: 'var(--color-surface-2)',
                     borderRadius: '7px',
                     cursor: 'pointer',
-                    fontSize: '13px',
+                    fontSize: '0.8125rem',
                   }}
                 >
                   <input
@@ -376,7 +376,7 @@ export function BlueprintInstantiateFlow({
                     }}
                   />
                   <span style={{ fontWeight: '500' }}>{conn.label}</span>
-                  <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({conn.provider})</span>
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '0.6875rem' }}>({conn.provider})</span>
                 </label>
               ))}
             </>
@@ -402,7 +402,7 @@ export function BlueprintInstantiateFlow({
         placement="top"
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '560px' }}>
-          <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+          <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
             Review the configuration below. This will create a <strong>stopped</strong> agent. You can review and start it from the Agents page.
           </div>
 
@@ -415,7 +415,7 @@ export function BlueprintInstantiateFlow({
           {selectedConnectionIds.length > 0 && (
             <>
               <SectionLabel>Connections</SectionLabel>
-              <div style={{ fontSize: '13px', color: 'var(--color-text-primary)' }}>
+              <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-primary)' }}>
                 {selectedConnectionIds.length} connection(s) selected
               </div>
             </>
@@ -431,7 +431,7 @@ export function BlueprintInstantiateFlow({
           )}
 
           {isTrading && selectedConnectionIds.length === 0 && (
-            <div style={{ color: 'var(--color-warning)', fontSize: '12px' }}>
+            <div style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>
               ⚠ No trading connections selected. The agent will be created but may need connections to trade.
             </div>
           )}
@@ -490,10 +490,10 @@ function renderRiskRows(
     const mutableMark = field.mutable ? '' : ' 🔒';
     return (
       <>
-        <div style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>
+        <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.75rem' }}>
           {formatRiskFieldLabel(key)}{mutableMark}
         </div>
-        <div style={{ fontSize: '12px' }}>
+        <div style={{ fontSize: '0.75rem' }}>
           <span style={{ color: 'var(--color-text-muted)' }}>{rawDisplay}</span>
           {' → '}
           <span style={{ color: 'var(--color-text-primary)', fontWeight: '500' }}>{effDisplay}</span>

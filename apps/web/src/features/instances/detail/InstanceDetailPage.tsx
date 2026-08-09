@@ -191,7 +191,7 @@ export function InstanceDetailPage() {
             padding: '3px 8px',
             borderRadius: '20px',
             background: 'var(--color-surface-2)',
-            fontSize: '12px',
+            fontSize: '0.75rem',
             color: 'var(--color-text-secondary)',
           }}
         >
@@ -245,19 +245,19 @@ export function InstanceDetailPage() {
               <SectionLabel>Open positions</SectionLabel>
               {positionsQuery.isLoading && <LoadingRows count={2} />}
               {positionsQuery.isSuccess && (positionsQuery.data?.positions.length ?? 0) === 0 && (
-                <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>No open positions</div>
+                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>No open positions</div>
               )}
               {positionsQuery.isSuccess && (positionsQuery.data?.positions.length ?? 0) > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {positionsQuery.data!.positions.map((pos) => (
                     <div key={pos.id} style={{ padding: '10px 12px', background: 'var(--color-surface-2)', borderRadius: '6px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span style={{ fontWeight: '500', fontSize: '13px' }}>{pos.symbol}</span>
-                        <span style={{ fontSize: '11px', color: pos.side === 'long' ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: '600', textTransform: 'uppercase' }}>
+                        <span style={{ fontWeight: '500', fontSize: '0.8125rem' }}>{pos.symbol}</span>
+                        <span style={{ fontSize: '0.6875rem', color: pos.side === 'long' ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: '600', textTransform: 'uppercase' }}>
                           {pos.side}
                         </span>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                         <span>{new Decimal(pos.size).toFixed(4)} @ ${new Decimal(pos.entryPrice).toFixed(2)}</span>
                         <span style={{ color: new Decimal(pos.realizedPnl).gte(0) ? 'var(--color-success)' : 'var(--color-danger)' }}>
                           {new Decimal(pos.realizedPnl).gte(0) ? '+' : ''}{new Decimal(pos.realizedPnl).toFixed(2)}
@@ -273,12 +273,12 @@ export function InstanceDetailPage() {
       {/* ── Confirmation Modals ──────────────────────────────────── */}
       {showStopConfirm && (
         <Modal title="Stop bot?" onClose={() => setShowStopConfirm(false)}>
-          <p style={{ margin: '0 0 8px', color: 'var(--color-text-secondary)', fontSize: '14px' }}>
+          <p style={{ margin: '0 0 8px', color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>
             The bot will stop scanning but any open positions will remain in your portfolio.
             You can restart it later.
           </p>
           {positionsQuery.data && (positionsQuery.data.positions.length ?? 0) > 0 && (
-            <p style={{ margin: '0 0 16px', color: 'var(--color-warning)', fontSize: '13px' }}>
+            <p style={{ margin: '0 0 16px', color: 'var(--color-warning)', fontSize: '0.8125rem' }}>
               ⚠ You have {positionsQuery.data.positions.length} open position{positionsQuery.data.positions.length !== 1 ? 's' : ''}.
             </p>
           )}
@@ -293,12 +293,12 @@ export function InstanceDetailPage() {
 
       {showDeleteConfirm && (
         <Modal title="Delete bot?" onClose={() => setShowDeleteConfirm(false)}>
-          <p style={{ margin: '0 0 8px', color: 'var(--color-text-secondary)', fontSize: '14px' }}>
+          <p style={{ margin: '0 0 8px', color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>
             This action is irreversible. The bot will be permanently deleted. Its trade records and
             event history will be preserved in the database but will no longer be linked to a bot.
           </p>
           {positionsQuery.data && (positionsQuery.data.positions.length ?? 0) > 0 && (
-            <p style={{ margin: '0 0 16px', color: 'var(--color-warning)', fontSize: '13px' }}>
+            <p style={{ margin: '0 0 16px', color: 'var(--color-warning)', fontSize: '0.8125rem' }}>
               ⚠ You have {positionsQuery.data.positions.length} open position{positionsQuery.data.positions.length !== 1 ? 's' : ''}.
               These positions will remain in the exchange but will no longer be tracked by this bot.
             </p>

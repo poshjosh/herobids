@@ -47,18 +47,18 @@ export class ErrorBoundary extends Component<Props, State> {
             background: 'var(--color-surface-1, #fff)',
           }}
         >
-          <div style={{ fontSize: '48px' }}>⚠</div>
-          <h1 style={{ fontSize: '20px', fontWeight: 600, color: 'var(--color-text-primary, #111)', margin: 0 }}>
+          <div style={{ fontSize: '3rem' }}>⚠</div>
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--color-text-primary, #111)', margin: 0 }}>
             Something went wrong
           </h1>
-          <p style={{ fontSize: '14px', color: 'var(--color-text-secondary, #666)', maxWidth: '480px', lineHeight: 1.5 }}>
+          <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary, #666)', maxWidth: '480px', lineHeight: 1.5 }}>
             An unexpected error occurred. Please try refreshing the page.
           </p>
           <button
             onClick={() => window.location.reload()}
             style={{
               padding: '8px 20px',
-              fontSize: '14px',
+              fontSize: '0.875rem',
               fontWeight: 500,
               borderRadius: '6px',
               border: 'none',
@@ -75,7 +75,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 marginTop: '16px',
                 padding: '16px',
                 maxWidth: '640px',
-                fontSize: '11px',
+                fontSize: '0.6875rem',
                 textAlign: 'left',
                 overflow: 'auto',
                 background: 'var(--color-surface-2, #f5f5f5)',

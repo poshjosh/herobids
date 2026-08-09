@@ -193,15 +193,15 @@ export function ModelSelectionFields({
       ) : null}
 
       {loading ? (
-        <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
           {loadingLabel}
         </div>
       ) : providerOptions.length === 0 ? (
-        <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
           {emptyLabel}
         </div>
       ) : providerModels.length === 0 ? (
-        <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
           {emptyLabel}
         </div>
       ) : (
@@ -219,7 +219,7 @@ export function ModelSelectionFields({
                 </option>
               ))}
             </select>
-            <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+            <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
               {economyHelp}
             </div>
           </div>
@@ -237,7 +237,7 @@ export function ModelSelectionFields({
                 </option>
               ))}
             </select>
-            <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+            <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
               {premiumHelp}
             </div>
           </div>

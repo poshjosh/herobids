@@ -94,16 +94,16 @@ export function AgentControlsSection({
     gap: '12px',
   };
   const rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' };
-  const helperTextStyle: React.CSSProperties = { marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' };
+  const helperTextStyle: React.CSSProperties = { marginTop: '4px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' };
   const errorTextStyle: React.CSSProperties = { ...helperTextStyle, color: 'var(--color-danger)' };
 
   return (
     <div style={sectionStyle}>
       <div>
-        <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+        <div style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '4px' }}>
           {intl.formatMessage({ id: 'agents.create.controls.title' })}
         </div>
-        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
           {intl.formatMessage({ id: 'agents.create.controls.description' })}
         </div>
       </div>
@@ -163,7 +163,7 @@ export function AgentControlsSection({
         {!tickIntervalError && fieldErrors?.tickIntervalMins && <div style={errorTextStyle}>{fieldErrors.tickIntervalMins}</div>}
         {!tickIntervalError && !fieldErrors?.tickIntervalMins && tickIntervalNotice && <div style={helperTextStyle}>{tickIntervalNotice}</div>}
         {!tickIntervalError && cadence && (
-          <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+          <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
             {explicitCadence
               ? intl.formatMessage({ id: 'agents.controls.tickInterval.slowdownCaveat' }, { cadence })
               : intl.formatMessage({ id: 'agents.controls.tickInterval.expectedCadence' }, { cadence })}
@@ -172,7 +172,7 @@ export function AgentControlsSection({
       </div>
 
       {estimatedDailySpend != null && (
-        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
           {intl.formatMessage({ id: 'agents.controls.estimatedDailySpend' }, { amount: estimatedDailySpend.toFixed(2) })}
         </div>
       )}
@@ -182,7 +182,7 @@ export function AgentControlsSection({
 
 export function TradingGuardrailsFields({ value, onChange, defaults = null, fieldErrors, onClearFieldError, onBlurField }: TradingGuardrailsFieldsProps) {
   const intl = useIntl();
-  const helperTextStyle: React.CSSProperties = { marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' };
+  const helperTextStyle: React.CSSProperties = { marginTop: '4px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' };
   const errorTextStyle: React.CSSProperties = { ...helperTextStyle, color: 'var(--color-danger)' };
 
   return (

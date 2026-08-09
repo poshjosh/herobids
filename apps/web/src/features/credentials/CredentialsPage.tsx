@@ -113,13 +113,13 @@ export function CredentialsPage() {
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
                 <div>
                   <div style={{ fontWeight: '500', marginBottom: '2px' }}>{credential.label}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
                     {intl.formatMessage({ id: 'credentials.providerLabel' }, { provider: findProviderDisplayName(catalogQuery.data?.providers, credential.provider) })}
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'credentials.idLabel' }, { id: credential.id })}</div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'credentials.idLabel' }, { id: credential.id })}</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                     {intl.formatMessage({ id: 'credentials.addedDate' }, { date: formatShortDate(intl, credential.createdAt) })}
                   </div>
                   <Button
@@ -231,7 +231,7 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
               />
             </div>
           ) : null}
-          {catalogQuery.isLoading ? <div style={{ marginTop: '8px', fontSize: '12px' }}>Loading provider catalog...</div> : null}
+          {catalogQuery.isLoading ? <div style={{ marginTop: '8px', fontSize: '0.75rem' }}>Loading provider catalog...</div> : null}
         </div>
 
         <div style={{ marginBottom: '16px' }}>
@@ -289,7 +289,7 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
                     autoComplete="new-password"
                   />
                   {field.description ? (
-                    <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)' }}>{field.description}</div>
+                    <div style={{ marginTop: '4px', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{field.description}</div>
                   ) : null}
                 </div>
               ))}

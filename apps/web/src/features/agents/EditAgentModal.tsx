@@ -603,7 +603,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
             </select>
             {skillPreset !== 'custom' && selectedSkills.length > 0 && (
-              <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+              <div style={{ marginTop: '4px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
                 {selectedSkills.map((s) => s.name).join(', ')}
               </div>
             )}
@@ -688,7 +688,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
           />
 
           {/* Style summary */}
-          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '0' }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0' }}>
             {formatStyleSummary(
               style,
               intl.formatMessage({ id: STYLE_LABEL_KEYS[style] }),
@@ -775,10 +775,10 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <FieldLabel>{intl.formatMessage({ id: 'agents.create.connections' })}</FieldLabel>
                 {(availableConnectionsQuery.isLoading || allConnectionsQuery.isLoading) ? (
-                  <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
+                  <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
                 ) : allPickerConnections.length === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                       {intl.formatMessage({ id: 'agents.create.noConnections' })}
                     </div>
                     <div>
@@ -843,7 +843,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                                 padding: '2px 8px',
                                 borderRadius: '12px',
                                 background: 'var(--color-surface-2)',
-                                fontSize: '12px',
+                                fontSize: '0.75rem',
                                 cursor: 'default',
                               }}
                             >
@@ -859,7 +859,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                                   border: 'none',
                                   cursor: 'pointer',
                                   padding: '0 2px',
-                                  fontSize: '14px',
+                                  fontSize: '0.875rem',
                                   lineHeight: '1',
                                   color: 'var(--color-text-muted)',
                                 }}
@@ -879,7 +879,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                         border: 'none',
                         cursor: 'pointer',
                         padding: '4px 0',
-                        fontSize: '12px',
+                        fontSize: '0.75rem',
                         color: 'var(--color-brand)',
                         textAlign: 'left',
                       }}
@@ -894,10 +894,10 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               showIntelligence ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div>
-                    <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+                    <div style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '4px' }}>
                       {intl.formatMessage({ id: 'agents.edit.models.title' })}
                     </div>
-                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+                    <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
                       {modelOverrideEnabled
                         ? intl.formatMessage({ id: 'agents.edit.models.description' })
                         : intl.formatMessage({ id: 'agents.edit.models.inherited' }, {
@@ -910,7 +910,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
 
                   {!modelOverrideEnabled ? (
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                      <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                         {intl.formatMessage({ id: 'agents.edit.models.inheritHelp' })}
                       </div>
                       <Button
@@ -967,7 +967,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                               <option key={level} value={level}>{intl.formatMessage({ id: `aiModels.reasoning.${level}` })}</option>
                             ))}
                           </select>
-                          <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                          <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                             {intl.formatMessage({ id: 'agents.edit.models.reasoning.scoutHelp' })}
                           </div>
                         </div>
@@ -990,14 +990,14 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                             <option value="medium">{intl.formatMessage({ id: 'aiModels.reasoning.medium' })}</option>
                             <option value="high">{intl.formatMessage({ id: 'aiModels.reasoning.high' })}</option>
                           </select>
-                          <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                          <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                             {intl.formatMessage({ id: 'agents.edit.models.reasoning.judgeHelp' })}
                           </div>
                         </div>
                       </div>
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
-                        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                           {intl.formatMessage({ id: 'agents.edit.models.overrideHelp' })}
                         </div>
                         <Button
@@ -1027,7 +1027,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                         <option value="test">{intl.formatMessage({ id: 'agents.create.executionMode.test' })}</option>
                         <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
                       </select>
-                      <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                         {intl.formatMessage({ id: 'agents.edit.executionModeHelp' }, { mode: formatExecutionMode(form.executionMode, intl) })}
                       </div>
                     </div>
@@ -1044,14 +1044,14 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                       <option value="direct">{intl.formatMessage({ id: 'agents.authorizationMode.direct' })}</option>
                       <option value="approval_required">{intl.formatMessage({ id: 'agents.authorizationMode.approvalRequired' })}</option>
                     </select>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                       {form.authorizationMode === 'direct'
                         ? intl.formatMessage({ id: 'agents.authorizationMode.directHelp' })
                         : intl.formatMessage({ id: 'agents.authorizationMode.approvalRequiredHelp' })}
                     </div>
                   </div>
 
-                  <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>
+                  <div style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '12px' }}>
                     {intl.formatMessage({ id: 'agents.create.tradingControls.title' })}
                   </div>
                   <TradingGuardrailsFields

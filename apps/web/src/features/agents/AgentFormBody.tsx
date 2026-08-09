@@ -222,13 +222,13 @@ export function AgentFormBody(props: AgentFormBodyProps) {
 
   const errorStyle: React.CSSProperties = {
     color: 'var(--color-danger)',
-    fontSize: '12px',
+    fontSize: '0.75rem',
     marginTop: '2px',
   };
 
   const helperStyle: React.CSSProperties = {
     marginTop: '2px',
-    fontSize: '12px',
+    fontSize: '0.75rem',
     color: 'var(--color-text-muted)',
     lineHeight: '1.5',
   };
@@ -364,10 +364,10 @@ export function AgentFormBody(props: AgentFormBodyProps) {
 
             {/* Email delivery — tri-state override */}
             <div>
-              <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '6px' }}>
                 {intl.formatMessage({ id: 'agents.create.emailDelivery' })}
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
+              <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
                 {props.accountEmail
                   ? `${intl.formatMessage({ id: 'agents.create.emailDelivery.help' })} — ${props.accountEmail}`
                   : intl.formatMessage({ id: 'agents.create.emailDelivery.helpNoEmail' })}
@@ -397,7 +397,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
               {/* Filter Trades — 3-way selector replacing pre-filter toggle + hybrid mode */}
               <div>
                 <FieldLabel>{intl.formatMessage({ id: 'agents.technical.filterTrades.label' })}</FieldLabel>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', lineHeight: '1.4' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', lineHeight: '1.4' }}>
                   Reduce cost by filtering trade options before AI agent sees them.
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -439,10 +439,10 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                           transition: 'border-color 0.12s',
                         }}
                       >
-                        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '4px' }}>
                           {option.label}
                         </div>
-                        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                        <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
                           {option.description}
                         </div>
                       </button>
@@ -455,10 +455,10 @@ export function AgentFormBody(props: AgentFormBodyProps) {
               {props.value.capabilityMode === 'hybrid' && props.value.hybridMode === 'scanner_gated' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
                   <FieldLabel>{intl.formatMessage({ id: 'agents.technical.platformAssessment.label' })}</FieldLabel>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
                     {intl.formatMessage({ id: 'agents.technical.platformAssessment.description' })}
                   </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8125rem', cursor: 'pointer' }}>
                     <input
                       type="checkbox"
                       checked={props.value.platformAssessmentEnabled}
@@ -473,7 +473,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                   </label>
                   {props.value.platformAssessmentEnabled && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <label style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                         Review interval
                       </label>
                       <select
@@ -524,7 +524,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                   <>
                     <div
                       style={{
-                        fontSize: '13px',
+                        fontSize: '0.8125rem',
                         fontWeight: '600',
                         marginBottom: '12px',
                         marginTop: '48px',
