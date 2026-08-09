@@ -122,18 +122,23 @@ export function CredentialsPage() {
                   <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                     {intl.formatMessage({ id: 'credentials.addedDate' }, { date: formatShortDate(intl, credential.createdAt) })}
                   </div>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => {
-                      if (confirm(intl.formatMessage({ id: 'credentials.deleteConfirm' }, { label: credential.label }))) {
-                        deleteMutation.mutate(credential.id);
-                      }
-                    }}
-                    disabled={deleteMutation.isPending}
-                  >
-                    {intl.formatMessage({ id: 'common.delete' })}
-                  </Button>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm(intl.formatMessage({ id: 'credentials.deleteConfirm' }, { label: credential.label }))) {
+                          deleteMutation.mutate(credential.id);
+                        }
+                      }}
+                      disabled={deleteMutation.isPending}
+                    >
+                      {intl.formatMessage({ id: 'common.delete' })}
+                    </Button>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', maxWidth: '240px', textAlign: 'right' }}>
+                      {intl.formatMessage({ id: 'credentials.guidedLinkNote' })}
+                    </div>
+                  </div>
                 </div>
               </div>
             </Card>

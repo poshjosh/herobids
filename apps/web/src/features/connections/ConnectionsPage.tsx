@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useIntl } from 'react-intl';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { connections as connectionsApi, providerCatalog as providerCatalogApi, type ProviderSetupResult, ApiError } from '../../lib/api-client.js';
+import { connections as connectionsApi, providerCatalog as providerCatalogApi, setup as setupApi, type ProviderSetupResult, ApiError } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { AgentAssignmentStep } from '../setup/AgentAssignmentStep.js';
@@ -86,6 +86,28 @@ export function ConnectionsPage() {
         } else {
           setDeleteError(intl.formatMessage({ id: 'connections.deleteBlocked' }));
         }
+      } else {
+        setDeleteError(intl.formatMessage({ id: 'connections.deleteFailed' }));
+      }
+    },
+  });
+
+  const deleteProviderLinkMutation = useMutation({
+    mutationFn: (id: string) => setupApi.deleteProviderLink(id),
+    onSuccess: () => {
+      setDeleteError(null);
+      void qc.invalidateQueries({ queryKey: ['connections'] });
+    },
+    onError: (error: ApiError) => {
+      if (error.code === 'provider_link.in_use') {
+        setDeleteError(intl.formatMessage(
+          { id: 'connections.cascadeDeleteBlocked' },
+          {
+            blockingAgentIds: ((error.params?.blockingAgentIds as string[]) ?? []).join(', '),
+            blockingConnectionBotIds: ((error.params?.blockingConnectionBotIds as string[]) ?? []).join(', '),
+            blockingVenueAccountBotIds: ((error.params?.blockingVenueAccountBotIds as string[]) ?? []).join(', '),
+          },
+        ));
       } else {
         setDeleteError(intl.formatMessage({ id: 'connections.deleteFailed' }));
       }
@@ -251,17 +273,32 @@ export function ConnectionsPage() {
                 </Button>
               )}
               {conn.assignedAgentCount === 0 && conn.referencingBotCount === 0 && (
-              <Button
-                variant="danger"
-                onClick={() => {
-                  if (confirm(intl.formatMessage({ id: 'connections.deleteConfirm' }, { label: conn.label }))) {
-                    deleteMutation.mutate(conn.id);
-                  }
-                }}
-                disabled={deleteMutation.isPending}
-              >
-                {intl.formatMessage({ id: 'connections.delete' })}
-              </Button>
+                <>
+                  <Button
+                    variant="danger"
+                    onClick={() => {
+                      if (confirm(intl.formatMessage({ id: 'connections.deleteConfirm' }, { label: conn.label }))) {
+                        deleteMutation.mutate(conn.id);
+                      }
+                    }}
+                    disabled={deleteMutation.isPending || deleteProviderLinkMutation.isPending}
+                  >
+                    {intl.formatMessage({ id: 'connections.delete' })}
+                  </Button>
+                  {conn.resolvedVenueAccountId !== null && (
+                    <Button
+                      variant="danger"
+                      onClick={() => {
+                        if (confirm(intl.formatMessage({ id: 'connections.cascadeDeleteConfirm' }, { label: conn.label }))) {
+                          deleteProviderLinkMutation.mutate(conn.id);
+                        }
+                      }}
+                      disabled={deleteMutation.isPending || deleteProviderLinkMutation.isPending}
+                    >
+                      {intl.formatMessage({ id: 'connections.cascadeDelete' })}
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           </div>

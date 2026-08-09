@@ -16,6 +16,7 @@ function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col, val) => ({ _eq: val })),
   and: vi.fn((...args) => ({ _and: args })),
+  inArray: vi.fn((_col, vals) => ({ _inArray: vals })),
   sql: vi.fn().mockImplementation((strings: TemplateStringsArray) => ({ _sql: strings.join('') })),
 }));
 
@@ -610,5 +611,229 @@ describe('POST /setup/provider-link', () => {
 
     expect(res.statusCode).toBe(403);
     expect(res.json<{ error: string }>().error).toBe('plan.limit_exceeded');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /setup/provider-link/:connectionId — cascade delete
+// ---------------------------------------------------------------------------
+
+describe('DELETE /setup/provider-link/:connectionId', () => {
+  let deletedFromDb: string[] = [];
+  let deletedFromTx: string[] = [];
+
+  function buildMockDbWithDelete(...selectResults: unknown[][]) {
+    deletedFromDb = [];
+    deletedFromTx = [];
+    let selectCallIdx = 0;
+    const allSelectResults = selectResults.length > 0 ? selectResults : [[], []];
+
+    const mockDeleteChain = (tracker: string[]) => ({
+      where: vi.fn().mockResolvedValue(undefined),
+    });
+
+    // Track which "table" gets deleted by intercepting from() if possible,
+    // otherwise just track that delete was called.
+    const mockDeleteFn = (tracker: string[]) =>
+      vi.fn().mockImplementation(() => {
+        tracker.push('deleted');
+        return mockDeleteChain(tracker);
+      });
+
+    const makeSelect = () =>
+      vi.fn().mockImplementation(() => ({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockImplementation(() => allSelectResults[selectCallIdx++] ?? []),
+        }),
+      }));
+
+    return {
+      select: makeSelect(),
+      insert: vi.fn().mockImplementation(() => ({
+        values: vi.fn().mockResolvedValue(undefined),
+      })),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+      }),
+      delete: mockDeleteFn(deletedFromDb),
+      transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        return fn({
+          execute: vi.fn().mockResolvedValue([]),
+          select: makeSelect(),
+          insert: vi.fn().mockImplementation(() => ({
+            values: vi.fn().mockResolvedValue(undefined),
+          })),
+          update: vi.fn().mockReturnValue({
+            set: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue(undefined),
+            }),
+          }),
+          delete: mockDeleteFn(deletedFromTx),
+        });
+      }),
+    } as any;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('cascade-deletes connection, venue account, and credential when no blockers exist', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    // Select results in order:
+    // 0: connection lookup (resolveProviderLinkDependents)
+    // 1: agent_connections active
+    // 2: bots on connection
+    // 3: bots on venue account
+    // 4: agent_connections active (resolveBlockingAgentLabels)
+    await setupRoutes(app, buildMockDbWithDelete(
+      [{ id: 'conn-1', credentialId: 'cred-1', resolvedVenueAccountId: 'va-1' }],
+      [],
+      [],
+      [],
+      [],
+    ));
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/setup/provider-link/conn-1',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ status: string; deleted: Record<string, boolean> }>();
+    expect(body.status).toBe('deleted');
+    expect(body.deleted.connection).toBe(true);
+    expect(body.deleted.venueAccount).toBe(true);
+    expect(body.deleted.credential).toBe(true);
+    // Transaction deletes should have been called (connection, venue account, credential)
+    expect(deletedFromTx.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('cascade-deletes connection and venue account when credentialId is null', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDbWithDelete(
+      [{ id: 'conn-1', credentialId: null, resolvedVenueAccountId: 'va-1' }],
+      [],
+      [],
+      [],
+      [],
+    ));
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/setup/provider-link/conn-1',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ status: string; deleted: Record<string, boolean> }>();
+    expect(body.status).toBe('deleted');
+    expect(body.deleted.connection).toBe(true);
+    expect(body.deleted.venueAccount).toBe(true);
+    expect(body.deleted.credential).toBe(false);
+  });
+
+  it('returns 409 when active agent grants block deletion', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDbWithDelete(
+      [{ id: 'conn-1', credentialId: 'cred-1', resolvedVenueAccountId: 'va-1' }],
+      [{ id: 'ac-1', agentId: 'agent-1' }], // active grants
+      [],
+      [],
+      [{ id: 'ac-1', agentId: 'agent-1' }], // resolveBlockingAgentLabels: grants
+      [{ id: 'agent-1' }], // resolveBlockingAgentLabels: agents
+    ));
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/setup/provider-link/conn-1',
+    });
+
+    expect(res.statusCode).toBe(409);
+    const body = res.json<{ error: string; params: Record<string, unknown> }>();
+    expect(body.error).toBe('provider_link.in_use');
+    expect(body.params.blockingAgentIds).toEqual(['agent-1']);
+    // No deletes should have occurred
+    expect(deletedFromTx.length).toBe(0);
+  });
+
+  it('returns 409 when bots on the connection block deletion', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDbWithDelete(
+      [{ id: 'conn-1', credentialId: 'cred-1', resolvedVenueAccountId: 'va-1' }],
+      [], // no active agent grants
+      [{ id: 'bot-1' }], // bot referencing connection
+      [],
+      [], // no active agent grants
+    ));
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/setup/provider-link/conn-1',
+    });
+
+    expect(res.statusCode).toBe(409);
+    const body = res.json<{ error: string; params: Record<string, unknown> }>();
+    expect(body.error).toBe('provider_link.in_use');
+    expect(body.params.blockingConnectionBotIds).toEqual(['bot-1']);
+  });
+
+  it('returns 409 when bots on the venue account block deletion', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDbWithDelete(
+      [{ id: 'conn-1', credentialId: 'cred-1', resolvedVenueAccountId: 'va-1' }],
+      [], // no active agent grants
+      [], // no bots on connection
+      [{ id: 'bot-2' }], // bot referencing venue account
+      [], // no active agent grants
+    ));
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/setup/provider-link/conn-1',
+    });
+
+    expect(res.statusCode).toBe(409);
+    const body = res.json<{ error: string; params: Record<string, unknown> }>();
+    expect(body.error).toBe('provider_link.in_use');
+    expect(body.params.blockingVenueAccountBotIds).toEqual(['bot-2']);
+  });
+
+  it('returns 400 for connection with resolvedVenueAccountId = null (not eligible)', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDbWithDelete(
+      [{ id: 'conn-1', credentialId: null, resolvedVenueAccountId: null }],
+    ));
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/setup/provider-link/conn-1',
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json<{ error: string }>();
+    expect(body.error).toBe('provider_link.not_eligible');
+  });
+
+  it('returns 404 when connection does not exist', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDbWithDelete(
+      [], // empty — connection not found
+    ));
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/setup/provider-link/nonexistent',
+    });
+
+    expect(res.statusCode).toBe(404);
   });
 });

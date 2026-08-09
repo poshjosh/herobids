@@ -1381,6 +1381,7 @@ export interface Connection {
   status: 'active' | 'revoked';
   meta: Record<string, unknown> | null;
   profile?: Record<string, unknown> | null;
+  resolvedVenueAccountId: string | null;
   createdAt: string;
   updatedAt: string;
   assignedAgentCount: number;
@@ -1455,9 +1456,21 @@ export interface ProviderSetupResult {
   wallet?: { address: string; network: string; fundingInstructionId: string; custodyMode: 'direct' };
 }
 
+export interface ProviderLinkDeleteResult {
+  status: 'deleted';
+  connectionId: string;
+  deleted: {
+    connection: boolean;
+    venueAccount: boolean;
+    credential: boolean;
+  };
+}
+
 export const setup = {
   providerLink: (data: { provider: string; label: string; credentialMode?: 'manual' | 'generated'; secrets?: Record<string, string>; capability?: 'trading' }) =>
     request<ProviderSetupResult>('/setup/provider-link', { method: 'POST', body: JSON.stringify(data) }),
+  deleteProviderLink: (connectionId: string) =>
+    request<ProviderLinkDeleteResult>(`/setup/provider-link/${connectionId}`, { method: 'DELETE' }),
 };
 
 // ---------------------------------------------------------------------------

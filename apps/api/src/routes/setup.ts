@@ -13,6 +13,7 @@ import { checkConnectionLimit, checkCredentialLimit, checkVenueAccountLimit } fr
 import { SetupProviderLinkSchema } from '../schemas.js';
 import { errorPayload, type ApiErrorDetail } from '../error-payload.js';
 import { getProviderWalletGenerationCapability, providerAllowsTradingSetup } from '../providers/registry.js';
+import { deleteProviderLink } from '../provider-links.js';
 
 function credentialValidationPayload(errors: ReturnType<typeof validateVenueSecrets>) {
   const primary = errors[0]!;
@@ -324,6 +325,73 @@ export async function setupRoutes(
       errorPayload(result.code, result.message, result.params),
     );
   });
+
+  /**
+   * DELETE /setup/provider-link/:connectionId
+   *
+   * Cascade-deletes a guided trading provider link: connection, linked venue
+   * account, and linked credential in one transaction. Only eligible for
+   * connections with `resolvedVenueAccountId !== null`.
+   */
+  app.delete<{ Params: { connectionId: string } }>(
+    '/setup/provider-link/:connectionId',
+    async (request, reply) => {
+      const { connectionId } = request.params;
+
+      try {
+        const result = await deleteProviderLink(db, connectionId, request.userId);
+
+        if (result.kind === 'ok') {
+          return reply.status(200).send({
+            status: 'deleted',
+            connectionId: result.connectionId,
+            deleted: result.deleted,
+          });
+        }
+
+        if (result.kind === 'not_found') {
+          return reply.status(404).send(
+            errorPayload('not_found', 'Connection not found'),
+          );
+        }
+
+        if (result.kind === 'not_eligible') {
+          return reply.status(400).send(
+            errorPayload(
+              'provider_link.not_eligible',
+              'This connection is not a guided trading link. Use DELETE /connections/:id?permanent=true to delete the connection only.',
+              { connectionId: result.connectionId },
+            ),
+          );
+        }
+
+        if (result.kind === 'blocked') {
+          return reply.status(409).send({
+            error: 'provider_link.in_use',
+            params: {
+              connectionId: result.connectionId,
+              blockingAgentIds: result.blockingAgentIds,
+              blockingConnectionBotIds: result.blockingConnectionBotIds,
+              blockingVenueAccountBotIds: result.blockingVenueAccountBotIds,
+              hint:
+                'Remove agent grants and bots before deleting the linked wallet data.',
+            },
+          });
+        }
+
+        if (result.kind === 'fault') {
+          return reply.status(500).send(
+            errorPayload(result.code, result.message),
+          );
+        }
+      } catch (err) {
+        app.log.error({ err, connectionId }, 'Unhandled error in provider-link cascade delete');
+        return reply.status(500).send(
+          errorPayload('internal_error', 'An unexpected error occurred while deleting the provider link.'),
+        );
+      }
+    },
+  );
 }
 
 function walletCapabilityFor(provider: string, credentialMode: 'manual' | 'generated', deps: SetupRouteDeps) {

@@ -75,18 +75,23 @@ export function VenueAccountsPage() {
                   <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                     {va.credentialId ? 'Credentials linked' : 'No credentials'}
                   </div>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => {
-                      if (confirm(`Delete venue account "${va.label}"?`)) {
-                        deleteMutation.mutate(va.id);
-                      }
-                    }}
-                    disabled={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm(`Delete venue account "${va.label}"?`)) {
+                          deleteMutation.mutate(va.id);
+                        }
+                      }}
+                      disabled={deleteMutation.isPending}
+                    >
+                      Delete
+                    </Button>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', maxWidth: '240px', textAlign: 'right' }}>
+                      Guided trading links are best removed from Connections.
+                    </div>
+                  </div>
                 </div>
               </div>
             </Card>

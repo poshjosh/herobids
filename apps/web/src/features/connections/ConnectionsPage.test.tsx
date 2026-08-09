@@ -53,6 +53,7 @@ function makeConnection(overrides: Partial<Connection> = {}): Connection {
     label: 'Test Connection',
     status: 'active',
     meta: null,
+    resolvedVenueAccountId: null,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     assignedAgentCount: 0,
@@ -201,5 +202,105 @@ describe('ConnectionsPage delete error handler', () => {
     // Empty array is truthy → takes blockedByBots path with empty join
     expect(result.type).toBe('blockedByBots');
     expect((result as { botIds: string }).botIds).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cascade delete (provider link) error handling — pure function
+// ---------------------------------------------------------------------------
+
+type CascadeDeleteErrorState =
+  | { type: 'blocked'; blockingAgentIds: string; blockingConnectionBotIds: string; blockingVenueAccountBotIds: string }
+  | { type: 'generic' };
+
+function handleCascadeDeleteError(error: ApiError): CascadeDeleteErrorState {
+  if (error.code === 'provider_link.in_use') {
+    return {
+      type: 'blocked',
+      blockingAgentIds: ((error.params?.blockingAgentIds as string[]) ?? []).join(', '),
+      blockingConnectionBotIds: ((error.params?.blockingConnectionBotIds as string[]) ?? []).join(', '),
+      blockingVenueAccountBotIds: ((error.params?.blockingVenueAccountBotIds as string[]) ?? []).join(', '),
+    };
+  }
+  return { type: 'generic' };
+}
+
+describe('ConnectionsPage cascade delete error handler', () => {
+  it('returns blocked state when error code is provider_link.in_use', () => {
+    const error = new ApiError(409, 'provider_link.in_use', 'In use', {
+      connectionId: 'conn-1',
+      blockingAgentIds: ['agent-1'],
+      blockingConnectionBotIds: ['bot-1'],
+      blockingVenueAccountBotIds: [],
+      hint: 'Remove agent grants and bots before deleting the linked wallet data.',
+    });
+
+    const result = handleCascadeDeleteError(error);
+    expect(result.type).toBe('blocked');
+    expect((result as CascadeDeleteErrorState & { type: 'blocked' }).blockingAgentIds).toBe('agent-1');
+    expect((result as CascadeDeleteErrorState & { type: 'blocked' }).blockingConnectionBotIds).toBe('bot-1');
+    expect((result as CascadeDeleteErrorState & { type: 'blocked' }).blockingVenueAccountBotIds).toBe('');
+  });
+
+  it('returns generic state for non-provider_link.in_use errors', () => {
+    const error = new ApiError(500, 'internal_error', 'Something broke');
+    const result = handleCascadeDeleteError(error);
+    expect(result.type).toBe('generic');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cascade delete button visibility
+// ---------------------------------------------------------------------------
+
+describe('ConnectionsPage cascade delete button visibility', () => {
+  it('shows cascade delete button for eligible trading connection with resolvedVenueAccountId', () => {
+    const html = renderPage([
+      makeConnection({
+        assignedAgentCount: 0,
+        referencingBotCount: 0,
+        resolvedVenueAccountId: 'va-1',
+      }),
+    ]);
+    // Should show the cascade delete action text (English rendering)
+    expect(html).toContain('Delete connection + linked wallet data');
+  });
+
+  it('hides cascade delete button when resolvedVenueAccountId is null', () => {
+    const html = renderPage([
+      makeConnection({
+        assignedAgentCount: 0,
+        referencingBotCount: 0,
+        resolvedVenueAccountId: null,
+      }),
+    ]);
+    // Regular delete button should be present
+    expect(html).toContain('>Delete<');
+    // Cascade delete i18n key should not appear
+    expect(html).not.toContain('connections.cascadeDelete');
+  });
+
+  it('hides both delete buttons when connection has agent assignments', () => {
+    const html = renderPage([
+      makeConnection({
+        assignedAgentCount: 1,
+        referencingBotCount: 0,
+        resolvedVenueAccountId: 'va-1',
+      }),
+    ]);
+    expect(html).not.toContain('connections.delete');
+    expect(html).not.toContain('connections.cascadeDelete');
+  });
+
+  it('hides both delete buttons when connection has bot references', () => {
+    const html = renderPage([
+      makeConnection({
+        assignedAgentCount: 0,
+        referencingBotCount: 1,
+        resolvedVenueAccountId: 'va-1',
+      }),
+    ]);
+    expect(html).not.toContain('connections.delete');
+    expect(html).not.toContain('connections.cascadeDelete');
   });
 });

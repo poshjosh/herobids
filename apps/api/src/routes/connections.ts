@@ -25,6 +25,7 @@ function selectConnectionView() {
     label: connections.label,
     status: connections.status,
     meta: connections.meta,
+    resolvedVenueAccountId: connections.resolvedVenueAccountId,
     createdAt: connections.createdAt,
     updatedAt: connections.updatedAt,
     assignedAgentCount: sql<number>`(
