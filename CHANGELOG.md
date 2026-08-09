@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.1.4 - 2026-08-09
+
 ### Changed
 
 - Stop seeding ICT Bearish Swing and ICT Bullish Swing playbooks as skills; remove all references from setup scripts, create-agents scripts, and agent-matrix-evaluation
