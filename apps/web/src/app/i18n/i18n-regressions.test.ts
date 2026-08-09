@@ -140,18 +140,6 @@ describe('setup flow copy changes', () => {
     }
   });
 
-  it('missionControl.setup.* keys are all defined for the setup card on Mission Control', () => {
-    for (const key of [
-      'missionControl.setup.title',
-      'missionControl.setup.message',
-      'missionControl.setup.cta',
-      'missionControl.setup.successMessage',
-      'missionControl.setup.successDismiss',
-    ]) {
-      expect(enMessages[key], `Missing i18n key: ${key}`).toBeTruthy();
-    }
-  });
-
   it('AgentCapabilityPage trading next steps no longer route to /connections', () => {
     // The trading capability page must guide users to AI Agents for setup,
     // not to /connections which is now an advanced/partial tool.

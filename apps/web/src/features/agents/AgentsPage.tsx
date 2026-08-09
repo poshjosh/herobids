@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
-import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, dashboard, type AgentOutcomes, type ProviderSetupResult, type Skill } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, dashboard, type AgentOutcomes, type Skill } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, Button, Card, MetricCard, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { BlueprintBrowse } from '../blueprints/BlueprintBrowse.js';
 import { BlueprintInstantiateFlow } from '../blueprints/BlueprintInstantiateFlow.js';
@@ -13,7 +13,6 @@ import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { formatPnl, pnlColor } from '../../lib/formatting.js';
-import { AgentAssignmentStep } from '../setup/AgentAssignmentStep.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
@@ -166,12 +165,6 @@ export function AgentsPage() {
     queryFn: () => dashboard.overview(),
   });
 
-  // ── Setup flow state (from Mission Control) ────────────────────
-  const [showSetup, setShowSetup] = useState(false);
-  const [setupStep, setSetupStep] = useState<'form' | 'assign'>('form');
-  const [setupResult, setSetupResult] = useState<ProviderSetupResult | null>(null);
-  const [setupSuccess, setSetupSuccess] = useState<{ label: string; provider: string } | null>(null);
-
   const items = query.data ?? [];
 
   // New users (0 agents) are sent straight to the dedicated create page so
@@ -234,34 +227,6 @@ export function AgentsPage() {
             </div>
           )}
 
-          {/* ── Quick trading setup card ─────────────────────────────── */}
-          {query.isSuccess && items.length > 0 && (
-            setupSuccess ? (
-              <Card style={{ padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'var(--color-surface-success, rgba(34,197,94,0.08))', border: '1px solid var(--color-border-subtle)' }}>
-                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                  {intl.formatMessage({ id: 'missionControl.setup.successMessage' }, { label: setupSuccess.label, provider: setupSuccess.provider })}
-                </span>
-                <Button variant="ghost" size="sm" onClick={() => setSetupSuccess(null)}>
-                  {intl.formatMessage({ id: 'missionControl.setup.successDismiss' })}
-                </Button>
-              </Card>
-            ) : (
-              <Card style={{ padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: '1px solid var(--color-border-subtle)' }}>
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '2px' }}>
-                    {intl.formatMessage({ id: 'missionControl.setup.title' })}
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                    {intl.formatMessage({ id: 'missionControl.setup.message' })}
-                  </div>
-                </div>
-                <Button variant="secondary" size="sm" onClick={() => setShowSetup(true)}>
-                  {intl.formatMessage({ id: 'missionControl.setup.cta' })}
-                </Button>
-              </Card>
-            )
-          )}
-
           {query.isSuccess && items.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {items.map((agent) => (
@@ -279,34 +244,6 @@ export function AgentsPage() {
           defaultKind="agent"
           hideKindFilter
           onUseBlueprint={setSelectedBlueprint}
-        />
-      )}
-
-      {/* ── Setup modals ──────────────────────────────────────────── */}
-      {showSetup && setupStep === 'form' && (
-        <ProviderSetupForm
-          defaultCapability="trading"
-          onClose={() => { setShowSetup(false); setSetupStep('form'); }}
-          onSuccess={(result) => {
-            void qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'bindings'] });
-            void qc.invalidateQueries({ queryKey: ['connections'] });
-            setSetupResult(result);
-            setSetupStep('assign');
-          }}
-        />
-      )}
-
-      {showSetup && setupStep === 'assign' && setupResult && (
-        <AgentAssignmentStep
-          connectionId={setupResult.connection.id}
-          connectionLabel={setupResult.connection.label}
-          connectionProvider={setupResult.connection.provider}
-          onDone={() => {
-            setShowSetup(false);
-            setSetupStep('form');
-            setSetupResult(null);
-            setSetupSuccess({ label: setupResult.connection.label, provider: setupResult.connection.provider });
-          }}
         />
       )}
 
