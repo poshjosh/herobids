@@ -372,7 +372,7 @@ export const messages: Record<string, string> = {
   'connections.deleteBlocked': 'لا يمكن حذف هذا الاتصال لأنه معين بشكل نشط لواحد أو أكثر من الوكلاء. قم بإلغائه بدلاً من ذلك، أو قم بإزالته من جميع الوكلاء أولاً.',
   'connections.deleteBlockedByBots': 'لا يمكن حذف هذا الاتصال لأنه مشار إليه بواسطة البوتات: {blockingBotIds}. احذف البوتات أولاً.',
   'connections.deleteFailed': 'فشل حذف الاتصال. يرجى المحاولة مرة أخرى.',
-  'connections.cascadeDelete': 'حذف الاتصال + بيانات المحفظة المرتبطة',
+  'connections.cascadeDelete': 'حذف الاتصال + البيانات المرتبطة',
   'connections.cascadeDeleteConfirm': 'حذف الاتصال "{label}" وسجل المحفظة المرتبط والمفتاح السري المخزن من OpenAIdom؟ لا يمكن التراجع عن هذا.',
   'connections.cascadeDeleteBlocked': 'لا يمكن حذف بيانات المحفظة المرتبطة. قم بإزالة منح الوكيل والبوتات أولاً. الوكلاء المانعون: {blockingAgentIds}. البوتات المانعة على الاتصال: {blockingConnectionBotIds}. البوتات المانعة على حساب المنصة: {blockingVenueAccountBotIds}.',
   'connections.assignmentSuccess': 'تم تعيين الاتصال للوكلاء المحددين.',

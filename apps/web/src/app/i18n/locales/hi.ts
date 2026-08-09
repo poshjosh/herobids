@@ -372,7 +372,7 @@ export const messages: Record<string, string> = {
   'connections.deleteBlocked': 'इस कनेक्शन को हटाया नहीं जा सकता क्योंकि यह सक्रिय रूप से एक या अधिक एजेंटों को असाइन किया गया है। इसके बजाय इसे रद्द करें, या पहले सभी एजेंटों से हटाएँ।',
   'connections.deleteBlockedByBots': 'इस कनेक्शन को हटाया नहीं जा सकता क्योंकि यह बॉट्स द्वारा संदर्भित है: {blockingBotIds}. पहले बॉट्स हटाएँ।',
   'connections.deleteFailed': 'कनेक्शन हटाने में विफल। कृपया पुनः प्रयास करें।',
-  'connections.cascadeDelete': 'कनेक्शन + लिंक्ड वॉलेट डेटा हटाएँ',
+  'connections.cascadeDelete': 'कनेक्शन + लिंक्ड डेटा हटाएँ',
   'connections.cascadeDeleteConfirm': 'कनेक्शन "{label}" और इसका लिंक्ड वॉलेट रिकॉर्ड और OpenAIdom से संग्रहीत क्रेडेंशियल/प्राइवेट की हटाएँ? इसे वापस नहीं लाया जा सकता।',
   'connections.cascadeDeleteBlocked': 'लिंक्ड वॉलेट डेटा नहीं हटा सकते। पहले एजेंट अनुदान और बॉट हटाएँ। अवरोधक एजेंट: {blockingAgentIds}. कनेक्शन पर अवरोधक बॉट: {blockingConnectionBotIds}. वेन्यू अकाउंट पर अवरोधक बॉट: {blockingVenueAccountBotIds}.',
   'connections.assignmentSuccess': 'कनेक्शन चयनित एजेंटों को सौंपा गया।',

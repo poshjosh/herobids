@@ -263,7 +263,7 @@ describe('ConnectionsPage cascade delete button visibility', () => {
       }),
     ]);
     // Should show the cascade delete action text (English rendering)
-    expect(html).toContain('Delete connection + linked wallet data');
+    expect(html).toContain('Delete connection + linked data');
   });
 
   it('hides cascade delete button when resolvedVenueAccountId is null', () => {

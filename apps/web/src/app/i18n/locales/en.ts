@@ -371,7 +371,7 @@ export const messages: Record<string, string> = {
   'connections.deleteBlocked': 'Cannot delete this connection because it is actively assigned to one or more agents. Revoke it instead, or remove it from all agents first.',
   'connections.deleteBlockedByBots': 'Cannot delete this connection because it is referenced by bots: {blockingBotIds}. Delete the bots first.',
   'connections.deleteFailed': 'Failed to delete connection. Please try again.',
-  'connections.cascadeDelete': 'Delete connection + linked wallet data',
+  'connections.cascadeDelete': 'Delete connection + linked data',
   'connections.cascadeDeleteConfirm': 'Delete connection "{label}" and its linked wallet record and stored credential/private key from OpenAIdom? This cannot be undone.',
   'connections.cascadeDeleteBlocked': 'Cannot delete the linked wallet data. Remove agent grants and bots first. Blocking agents: {blockingAgentIds}. Blocking bots on connection: {blockingConnectionBotIds}. Blocking bots on venue account: {blockingVenueAccountBotIds}.',
   'connections.assignmentSuccess': 'Connection assigned to selected agents.',
