@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.1.5 - 2026-08-09
+
 ### Changed
 
 - Drop Total Realized P&L metric from Activity page; keep only the four agent-status metrics (Active, Paused, Unhealthy, Stopped)
