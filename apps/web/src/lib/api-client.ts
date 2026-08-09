@@ -1452,7 +1452,7 @@ export const capabilities = {
 
 export interface ProviderSetupResult {
   credential: { id: string; provider: string; label: string; createdAt: string };
-  connection: { id: string; provider: string; label: string; status: string; credentialId: string; createdAt: string };
+  connection: { id: string; provider: string; label: string; status: string; credentialId: string; resolvedVenueAccountId: string | null; createdAt: string };
   wallet?: { address: string; network: string; fundingInstructionId: string; custodyMode: 'direct' };
 }
 

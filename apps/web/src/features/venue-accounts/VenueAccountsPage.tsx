@@ -89,7 +89,7 @@ export function VenueAccountsPage() {
                       Delete
                     </Button>
                     <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', maxWidth: '240px', textAlign: 'right' }}>
-                      Guided trading links are best removed from Connections.
+                      {intl.formatMessage({ id: 'venueAccounts.guidedLinkNote' })}
                     </div>
                   </div>
                 </div>

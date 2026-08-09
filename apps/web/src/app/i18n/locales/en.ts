@@ -408,6 +408,7 @@ export const messages: Record<string, string> = {
   // Venue Accounts
   'venueAccounts.deleteBlocked': 'Cannot delete venue account — still referenced by bots: {blockingBotIds}. Remove these first.',
   'venueAccounts.deleteFailed': 'Failed to delete venue account. Please try again.',
+  'venueAccounts.guidedLinkNote': 'Guided trading links are best removed from Connections.',
 
   // Agents
   'agents.title': 'AI Agents',

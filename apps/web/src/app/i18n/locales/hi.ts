@@ -409,6 +409,7 @@ export const messages: Record<string, string> = {
   // Venue Accounts
   'venueAccounts.deleteBlocked': 'वेन्यू अकाउंट हटा नहीं सकते — अभी भी बॉट द्वारा संदर्भित: {blockingBotIds}. पहले इन्हें हटाएँ।',
   'venueAccounts.deleteFailed': 'वेन्यू अकाउंट हटाने में विफल। कृपया पुनः प्रयास करें।',
+  'venueAccounts.guidedLinkNote': 'गाइडेड ट्रेडिंग लिंक को Connections से हटाना सबसे अच्छा है।',
 
   // Agents
   'agents.title': 'AI एजेंट',

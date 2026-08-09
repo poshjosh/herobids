@@ -409,6 +409,7 @@ export const messages: Record<string, string> = {
   // Venue Accounts
   'venueAccounts.deleteBlocked': 'لا يمكن حذف حساب المنصة — لا يزال مستخدمًا من قبل البوتات: {blockingBotIds}. قم بإزالتها أولاً.',
   'venueAccounts.deleteFailed': 'فشل حذف حساب المنصة. يرجى المحاولة مرة أخرى.',
+  'venueAccounts.guidedLinkNote': 'من الأفضل إزالة روابط التداول الموجهة من Connections.',
 
   // Agents
   'agents.title': 'وكلاء الذكاء الاصطناعي',

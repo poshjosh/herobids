@@ -356,3 +356,15 @@ This remains correct for both generated and manually supplied trading credential
 ## Open Questions
 
 None at this time.
+
+## Outstanding Issues
+
+### [1] Add shared backend resolver/helper in provider-links.ts
+- **[LOW]** Double query of `agent_connections` in `deleteProviderLink` — `resolveProviderLinkDependents` queries it once, then `resolveBlockingAgentLabels` queries again. Consider folding label resolution into the dependents resolver.
+
+### [5] Add new destructive choice and confirmation modal in Connections
+- **[MEDIUM]** Uses browser-native `confirm()` instead of a rich confirmation modal as recommended by the plan. The existing delete action also uses `confirm()`, so this is internally consistent. Not blocking for v1.
+- **[MEDIUM]** Blocker error message displays agent/bot IDs as comma-separated text without deep links. The plan says to add deep links where trivial; keep v1 simple if scope multiplies.
+
+### [7] Add regression tests
+- **[LOW]** API connection list test uses `resolvedVenueAccountId` in the fixture but has no dedicated assertion verifying it appears in the GET `/connections` response.
