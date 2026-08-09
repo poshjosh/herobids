@@ -271,7 +271,7 @@ textarea:not(:placeholder-shown) {
   color: var(--color-text-primary);
   cursor: pointer;
   padding: 1px 1px;
-  font-size: 32px;
+  font-size: 28px;
   line-height: 1;
   flex-shrink: 0;
 }
