@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # agent-matrix-evaluation.sh — Full lifecycle: setup → create → run → evaluate → shutdown.
 #
-# Creates a 2×2 matrix of agents testing:
+# Creates agents testing:
 #   - scanner_gated vs pure intelligence
-#   - ICT skills (bullish + bearish swing) vs no skills
 #
 # Pipeline:
 #   1. Setup    — reset-and-run.sh (teardown, rebuild, seed admin, provision venue credentials)
-#   2. Create   — tsx scripts/ts/agent-matrix-evaluation.ts (ICT skills + 4 agents)
+#   2. Create   — tsx scripts/ts/agent-matrix-evaluation.ts (2 agents)
 #   3. Run      — agents start automatically within step 2 and run for EVAL_DURATION_MIN
 #   4. Stop     — agents stop automatically at end of step 2
 #   5. Evaluate — download-eval-reports.sh (trigger evaluations, download reports)

@@ -1,20 +1,17 @@
 /**
- * agent-matrix-evaluation.ts — Create a 2×2 matrix of agents, run them, then
- * stop them for evaluation.
+ * agent-matrix-evaluation.ts — Create agents for each matrix case, run them,
+ * then stop them for evaluation.
  *
  * Matrix:
  *   - scanner_gated vs pure intelligence
- *   - ICT skills (bullish + bearish swing) vs no skills
  *
  * What it does
  * ────────────
- *  1. Ensures the ICT Bearish Swing and ICT Bullish Swing skills exist
- *     (creates them via API if missing — the "post startup" pattern).
- *  2. Creates 4 agents in a 2×2 matrix.
- *  3. Starts all agents simultaneously.
- *  4. Waits for the configured duration.
- *  5. Stops all agents.
- *  6. Prints agent IDs ready for evaluation via download-eval-reports.sh.
+ *  1. Creates an agent for each matrix case.
+ *  2. Starts all agents simultaneously.
+ *  3. Waits for the configured duration.
+ *  4. Stops all agents.
+ *  5. Prints agent IDs ready for evaluation via download-eval-reports.sh.
  *
  * Prerequisites
  * ─────────────
@@ -37,7 +34,6 @@
  *                         Set ADMIN_EMAIL / ADMIN_PASSWORD for shadow.
  *  EVAL_DURATION_MIN     60 (default) — how long to run agents before stopping
  *  TICK_INTERVAL_MS      30000 (default, 30s)
- *  SKIP_SKILL_SETUP      1 to skip skill provisioning (if already done)
  *  SKIP_TEARDOWN         1 to leave agents running (skip stop)
  *
  * Usage
@@ -48,7 +44,6 @@
  *  EVAL_DURATION_MIN=120 EXECUTION_MODE=paper tsx scripts/ts/agent-matrix-evaluation.ts
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -69,7 +64,6 @@ const LLM_HEAVY_MODEL = process.env['LLM_HEAVY_MODEL'] ?? 'qwen3.6:35b-a3b-q4_K_
 const EXECUTION_MODE = process.env['EXECUTION_MODE'] ?? 'shadow';
 const EVAL_DURATION_MIN = parseInt(process.env['EVAL_DURATION_MIN'] ?? '60', 10);
 const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '30000', 10);
-const SKIP_SKILL_SETUP = process.env['SKIP_SKILL_SETUP'] === '1';
 const SKIP_TEARDOWN = process.env['SKIP_TEARDOWN'] === '1';
 const POLL_INTERVAL_MS = 10_000;
 
@@ -81,12 +75,7 @@ const ADAPT_JUDGE_REASONING = false;
 const CAPITAL = '1000';
 const STYLE = 'balanced';
 
-// ICT skill source files
-const ICT_BEARISH_SKILL_FILE = path.resolve(REPO_ROOT, 'docs/skills/ict-bearish-swing.md');
-const ICT_BULLISH_SKILL_FILE = path.resolve(REPO_ROOT, 'docs/skills/ict-bullish-swing.md');
-
 // Shared agent goal — neutral enough to work for both intelligence and scanner_gated modes.
-// The ICT skills (when attached) provide the specific trading framework.
 const AGENT_GOAL = 'Grow this portfolio aggressively';
 
 // ---------------------------------------------------------------------------
@@ -133,40 +122,22 @@ interface MatrixCase {
   name: string;
   capabilityMode: 'intelligence' | 'hybrid';
   hybridMode?: 'scanner_gated';
-  skillFiles: string[]; // skill source files to attach (empty = no ICT skills)
   description: string;
 }
 
 const MATRIX_CASES: MatrixCase[] = [
   {
-    id: 'a-pure-intel-no-skills',
-    name: 'A - Pure Intel, No Skills',
+    id: 'a-pure-intel',
+    name: 'A - Pure Intel',
     capabilityMode: 'intelligence',
-    skillFiles: [],
-    description: 'Pure intelligence (LLM-only), no ICT skills — baseline',
+    description: 'Pure intelligence (LLM-only) — baseline',
   },
   {
-    id: 'b-pure-intel-ict-skills',
-    name: 'B - Pure Intel + ICT Skills',
-    capabilityMode: 'intelligence',
-    skillFiles: [ICT_BEARISH_SKILL_FILE, ICT_BULLISH_SKILL_FILE],
-    description: 'Pure intelligence (LLM-only) + ICT Bullish & Bearish Swing skills',
-  },
-  {
-    id: 'c-scanner-gated-no-skills',
-    name: 'C - Scanner-Gated, No Skills',
+    id: 'b-scanner-gated',
+    name: 'B - Scanner-Gated',
     capabilityMode: 'hybrid',
     hybridMode: 'scanner_gated',
-    skillFiles: [],
-    description: 'Scanner-gated hybrid, no ICT skills — cost baseline',
-  },
-  {
-    id: 'd-scanner-gated-ict-skills',
-    name: 'D - Scanner-Gated + ICT Skills',
-    capabilityMode: 'hybrid',
-    hybridMode: 'scanner_gated',
-    skillFiles: [ICT_BEARISH_SKILL_FILE, ICT_BULLISH_SKILL_FILE],
-    description: 'Scanner-gated hybrid + ICT Bullish & Bearish Swing skills',
+    description: 'Scanner-gated hybrid — cost baseline',
   },
 ];
 
@@ -302,92 +273,15 @@ async function fetchTradingConnectionId(token: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Skill provisioning
-// ---------------------------------------------------------------------------
-
-interface SkillToProvision {
-  name: string;
-  description: string;
-  instructions: string;
-  tags: string[];
-}
-
-async function ensureSkill(token: string, skill: SkillToProvision): Promise<string> {
-  const listRes = await apiRequest<SkillListResponse>(
-    'GET', '/skills?scope=mine', { token },
-  );
-
-  if (listRes.status === 200) {
-    const existing = listRes.body.skills?.find((s) => s.name === skill.name);
-    if (existing) {
-      ok(`Skill already exists: "${skill.name}" (id=${existing.id})`);
-      return existing.id;
-    }
-  }
-
-  const createRes = await apiRequest<SkillBody>(
-    'POST', '/skills',
-    {
-      token,
-      body: {
-        name: skill.name,
-        description: skill.description,
-        instructions: skill.instructions,
-        promptTemplate: null,
-        requiredTools: [
-          'get_market_overview', 'check_regime', 'get_price', 'get_funding_rates',
-          'search_tokens', 'discover_tokens', 'find_instrument', 'submit_decision',
-          'get_account_summary', 'list_positions', 'get_analytics', 'get_risk_limits',
-          'adjust_risk_limits', 'send_message',
-        ],
-        publicationStatus: 'draft',
-        tags: skill.tags,
-        changeSummary: 'Seeded by agent-matrix-evaluation',
-      },
-    },
-  );
-
-  if (createRes.status === 201 && createRes.body.id) {
-    ok(`Created skill: "${skill.name}" (id=${createRes.body.id})`);
-    return createRes.body.id;
-  }
-
-  fatal(`Failed to create skill "${skill.name}": ${createRes.status} ${JSON.stringify(createRes.body)}`);
-}
-
-function buildIctSkills(): SkillToProvision[] {
-  const bearishInstructions = fs.readFileSync(ICT_BEARISH_SKILL_FILE, 'utf-8');
-  const bullishInstructions = fs.readFileSync(ICT_BULLISH_SKILL_FILE, 'utf-8');
-
-  return [
-    {
-      name: 'ICT Bearish Swing',
-      description: 'Trade bearish swings using the ICT EMA model: daily bias confirmation followed by 1H optimal trade entries with structured stop-loss and profit-taking rules.',
-      instructions: bearishInstructions,
-      tags: ['bearish', 'swing', 'inner circle trader', 'ict'],
-    },
-    {
-      name: 'ICT Bullish Swing',
-      description: 'Trade bullish swings using the ICT EMA model: daily bias confirmation followed by 1H optimal trade entries with structured stop-loss and profit-taking rules.',
-      instructions: bullishInstructions,
-      tags: ['bullish', 'swing', 'inner circle trader', 'ict'],
-    },
-  ];
-}
-
-// ---------------------------------------------------------------------------
 // Agent lifecycle
 // ---------------------------------------------------------------------------
 
 async function createAgent(
   token: string,
   mc: MatrixCase,
-  ictSkillIds: string[],
   connectionId: string,
 ): Promise<string> {
   const skillIds = ['trading'];
-  if (ictSkillIds.length > 0) {
-    skillIds.push(...ictSkillIds);
   }
 
   const payload: Record<string, unknown> = {
@@ -474,38 +368,13 @@ async function main(): Promise<void> {
   section('Trading connection');
   const connectionId = await fetchTradingConnectionId(token);
 
-  // ── Provision ICT skills ──
-  let ictSkillIds: string[] = [];
-
-  if (!SKIP_SKILL_SETUP) {
-    section('Provisioning ICT skills');
-    const skills = buildIctSkills();
-    for (const skill of skills) {
-      const skillId = await ensureSkill(token, skill);
-      ictSkillIds.push(skillId);
-    }
-    ok(`ICT skills ready (${ictSkillIds.length} skills)`);
-  } else {
-    section('Skipping ICT skill setup (SKIP_SKILL_SETUP=1)');
-    const listRes = await apiRequest<SkillListResponse>('GET', '/skills?scope=mine', { token });
-    if (listRes.status === 200) {
-      const bearish = listRes.body.skills?.find((s) => s.name === 'ICT Bearish Swing');
-      const bullish = listRes.body.skills?.find((s) => s.name === 'ICT Bullish Swing');
-      if (bearish) ictSkillIds.push(bearish.id);
-      if (bullish) ictSkillIds.push(bullish.id);
-      ok(`Found ${ictSkillIds.length} ICT skill(s) from existing skills`);
-    }
-  }
-
   // ── Create agents ──
   section(`Creating ${MATRIX_CASES.length} matrix agents`);
 
   const created: Array<{ mc: MatrixCase; agentId: string }> = [];
   for (const mc of MATRIX_CASES) {
     info(`Creating ${mc.id}...`);
-    const hasSkills = mc.skillFiles.length > 0;
-    const agentSkillIds = hasSkills ? ictSkillIds : [];
-    const agentId = await createAgent(token, mc, agentSkillIds, connectionId);
+    const agentId = await createAgent(token, mc, connectionId);
     created.push({ mc, agentId });
     ok(`${mc.id} → ${agentId} (bound to ${connectionId.slice(0, 8)}…)`);
   }
@@ -548,32 +417,29 @@ async function main(): Promise<void> {
   // ── Summary ──
   section('Agent Matrix Summary');
   console.log('');
-  console.log('┌──────┬──────────────────────────────────┬──────────────────┬─────────────────┬──────────┐');
-  console.log('│ Cell │ Name                             │ Mode             │ ICT Skills      │ Agent ID │');
-  console.log('├──────┼──────────────────────────────────┼──────────────────┼─────────────────┼──────────┤');
+  console.log('┌──────┬──────────────────────────────────┬──────────────────┬──────────┐');
+  console.log('│ Cell │ Name                             │ Mode             │ Agent ID │');
+  console.log('├──────┼──────────────────────────────────┼──────────────────┼──────────┤');
   for (const { mc, agentId } of created) {
     const mode = mc.hybridMode
       ? `${mc.capabilityMode}/${mc.hybridMode}`
       : mc.capabilityMode;
-    const skills = mc.skillFiles.length > 0 ? 'Bullish + Bearish' : 'None';
     const shortId = agentId.slice(0, 8);
-    console.log(`│  ${mc.id[0]?.toUpperCase() ?? '?'}   │ ${mc.name.padEnd(32)} │ ${mode.padEnd(16)} │ ${skills.padEnd(15)} │ ${shortId} │`);
+    console.log(`│  ${mc.id[0]?.toUpperCase() ?? '?'}   │ ${mc.name.padEnd(32)} │ ${mode.padEnd(16)} │ ${shortId} │`);
   }
-  console.log('└──────┴──────────────────────────────────┴──────────────────┴─────────────────┴──────────┘');
+  console.log('└──────┴──────────────────────────────────┴──────────────────┴──────────┘');
 
   // ── Per-agent variable breakdown ──
   section('Per-Agent Variable Breakdown');
   console.log('');
 
   for (const { mc, agentId } of created) {
-    const hasSkills = mc.skillFiles.length > 0;
     console.log(`${BOLD}${mc.id.toUpperCase()} — ${mc.name}${RESET}`);
     console.log(`${DIM}  Description: ${mc.description}${RESET}`);
     console.log(`  Agent ID:            ${agentId}`);
     console.log(`  capabilityMode:      ${mc.capabilityMode}`);
     console.log(`  hybridMode:          ${mc.hybridMode ?? '(n/a — intelligence mode)'}`);
-    console.log(`  ICT skills:          ${hasSkills ? 'ICT Bearish Swing + ICT Bullish Swing' : 'None'}`);
-    console.log(`  Skill IDs attached:  ${hasSkills ? ictSkillIds.join(', ') : '(trading only)'}`);
+    console.log(`  Skill IDs attached:  trading`);
     console.log(`  ─── Fixed across all agents ───`);
     console.log(`  executionDefaults.mode: ${EXECUTION_MODE}`);
     console.log(`  capital:             $${CAPITAL}`);
@@ -593,10 +459,7 @@ async function main(): Promise<void> {
   // ── Evaluation instructions ──
   section('Evaluation Comparisons');
   console.log('');
-  console.log('  A vs C  → scanner_gated cost/behavior delta (no skills)');
-  console.log('  B vs D  → scanner_gated cost/behavior delta (with ICT skills)');
-  console.log('  A vs B  → ICT skills impact on pure-intelligence trading');
-  console.log('  C vs D  → ICT skills impact on scanner-gated decisions');
+  console.log('  A vs B  → scanner_gated cost/behavior delta');
   console.log('');
 
   if (!SKIP_TEARDOWN) {

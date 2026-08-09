@@ -8,7 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Improve UX, by ensuring on-obtrusive display of goal prompt
+- Stop seeding ICT Bearish Swing and ICT Bullish Swing playbooks as skills; remove all references from setup scripts, create-agents scripts, and agent-matrix-evaluation
+- Improve UX, by ensuring unobtrusive display of goal prompt
 - Convert all `fontSize`/`font-size` values from px to rem, with a `--font-scale` CSS variable on `:root` to scale the entire site via one value
 
 ## v0.1.3 - 2026-08-09

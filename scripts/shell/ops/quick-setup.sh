@@ -109,16 +109,6 @@ AI4TRADE_SKILL_DESCRIPTION="Buy, sell, follow, and share trading signals via the
 AI4TRADE_SKILL_TAG="ai4trade.ai, trading-signals"
 AI4TRADE_SKILL_SOURCE_FILE="$REPO_ROOT/docs/skills/ai4trade-trading-signals.md"
 
-ICT_BEARISH_SKILL_NAME="ICT Bearish Swing"
-ICT_BEARISH_SKILL_DESCRIPTION="Trade bearish swings using the ICT EMA model: daily bias confirmation followed by 1H optimal trade entries with structured stop-loss and profit-taking rules."
-ICT_BEARISH_SKILL_TAG="bearish, swing, inner circle trader, ict"
-ICT_BEARISH_SKILL_SOURCE_FILE="$REPO_ROOT/docs/skills/ict-bearish-swing.md"
-
-ICT_BULLISH_SKILL_NAME="ICT Bullish Swing"
-ICT_BULLISH_SKILL_DESCRIPTION="Trade bullish swings using the ICT EMA model: daily bias confirmation followed by 1H optimal trade entries with structured stop-loss and profit-taking rules."
-ICT_BULLISH_SKILL_TAG="bullish, swing, inner circle trader, ict"
-ICT_BULLISH_SKILL_SOURCE_FILE="$REPO_ROOT/docs/skills/ict-bullish-swing.md"
-
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -422,58 +412,6 @@ build_ai4trade_skill_payload() {
     }'
 }
 
-build_ict_bearish_skill_payload() {
-  local instructions
-
-  if [[ ! -f "$ICT_BEARISH_SKILL_SOURCE_FILE" ]]; then
-    die "Skill source file not found: $ICT_BEARISH_SKILL_SOURCE_FILE"
-  fi
-
-  instructions="$(cat "$ICT_BEARISH_SKILL_SOURCE_FILE")"
-
-  jq -n \
-    --arg name "$ICT_BEARISH_SKILL_NAME" \
-    --arg description "$ICT_BEARISH_SKILL_DESCRIPTION" \
-    --arg instructions "$instructions" \
-    --arg tag "$ICT_BEARISH_SKILL_TAG" \
-    '{
-      name: $name,
-      description: $description,
-      instructions: $instructions,
-      promptTemplate: null,
-      requiredTools: ["get_market_overview", "check_regime", "get_price", "get_funding_rates", "search_tokens", "discover_tokens", "find_instrument", "submit_decision", "get_account_summary", "list_positions", "get_analytics", "get_risk_limits", "adjust_risk_limits", "send_message"],
-      publicationStatus: "draft",
-      tags: [$tag],
-      changeSummary: "Seeded by quick-setup"
-    }'
-}
-
-build_ict_bullish_skill_payload() {
-  local instructions
-
-  if [[ ! -f "$ICT_BULLISH_SKILL_SOURCE_FILE" ]]; then
-    die "Skill source file not found: $ICT_BULLISH_SKILL_SOURCE_FILE"
-  fi
-
-  instructions="$(cat "$ICT_BULLISH_SKILL_SOURCE_FILE")"
-
-  jq -n \
-    --arg name "$ICT_BULLISH_SKILL_NAME" \
-    --arg description "$ICT_BULLISH_SKILL_DESCRIPTION" \
-    --arg instructions "$instructions" \
-    --arg tag "$ICT_BULLISH_SKILL_TAG" \
-    '{
-      name: $name,
-      description: $description,
-      instructions: $instructions,
-      promptTemplate: null,
-      requiredTools: ["get_market_overview", "check_regime", "get_price", "get_funding_rates", "search_tokens", "discover_tokens", "find_instrument", "submit_decision", "get_account_summary", "list_positions", "get_analytics", "get_risk_limits", "adjust_risk_limits", "send_message"],
-      publicationStatus: "draft",
-      tags: [$tag],
-      changeSummary: "Seeded by quick-setup"
-    }'
-}
-
 ensure_flight_deal_monitoring_skill() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log_info "Dry-run mode: skipping Flight Deal Monitoring skill provisioning"
@@ -536,68 +474,6 @@ ensure_ai4trade_skill() {
 
   log_error "Skill creation failed (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
   die "${AI4TRADE_SKILL_NAME} provisioning step failed."
-}
-
-ensure_ict_bearish_skill() {
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    log_info "Dry-run mode: skipping ${ICT_BEARISH_SKILL_NAME} provisioning"
-    return 0
-  fi
-
-  log_section "Provision ${ICT_BEARISH_SKILL_NAME}"
-
-  api_call GET /skills '?scope=mine'
-  if [[ "$HTTP_STATUS" -ne 200 ]]; then
-    log_error "Failed to list skills (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
-    die "${ICT_BEARISH_SKILL_NAME} provisioning step failed."
-  fi
-
-  ICT_BEARISH_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r --arg name "$ICT_BEARISH_SKILL_NAME" '[.skills[] | select(.name == $name) | .id][0] // empty')"
-  if [[ -n "$ICT_BEARISH_SKILL_ID" && "$ICT_BEARISH_SKILL_ID" != "null" ]]; then
-    log_info "Skill already exists: ${ICT_BEARISH_SKILL_NAME} (id=${ICT_BEARISH_SKILL_ID})"
-    return 0
-  fi
-
-  api_call POST /skills "$(build_ict_bearish_skill_payload)"
-  if [[ "$HTTP_STATUS" -eq 201 ]]; then
-    ICT_BEARISH_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r '.id')"
-    log_ok "Created skill: ${ICT_BEARISH_SKILL_NAME} (id=${ICT_BEARISH_SKILL_ID})"
-    return 0
-  fi
-
-  log_error "Skill creation failed (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
-  die "${ICT_BEARISH_SKILL_NAME} provisioning step failed."
-}
-
-ensure_ict_bullish_skill() {
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    log_info "Dry-run mode: skipping ${ICT_BULLISH_SKILL_NAME} provisioning"
-    return 0
-  fi
-
-  log_section "Provision ${ICT_BULLISH_SKILL_NAME}"
-
-  api_call GET /skills '?scope=mine'
-  if [[ "$HTTP_STATUS" -ne 200 ]]; then
-    log_error "Failed to list skills (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
-    die "${ICT_BULLISH_SKILL_NAME} provisioning step failed."
-  fi
-
-  ICT_BULLISH_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r --arg name "$ICT_BULLISH_SKILL_NAME" '[.skills[] | select(.name == $name) | .id][0] // empty')"
-  if [[ -n "$ICT_BULLISH_SKILL_ID" && "$ICT_BULLISH_SKILL_ID" != "null" ]]; then
-    log_info "Skill already exists: ${ICT_BULLISH_SKILL_NAME} (id=${ICT_BULLISH_SKILL_ID})"
-    return 0
-  fi
-
-  api_call POST /skills "$(build_ict_bullish_skill_payload)"
-  if [[ "$HTTP_STATUS" -eq 201 ]]; then
-    ICT_BULLISH_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r '.id')"
-    log_ok "Created skill: ${ICT_BULLISH_SKILL_NAME} (id=${ICT_BULLISH_SKILL_ID})"
-    return 0
-  fi
-
-  log_error "Skill creation failed (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
-  die "${ICT_BULLISH_SKILL_NAME} provisioning step failed."
 }
 
 # Core
@@ -846,8 +722,6 @@ fi
 
 ensure_flight_deal_monitoring_skill
 ensure_ai4trade_skill
-ensure_ict_bearish_skill
-ensure_ict_bullish_skill
 
 if [[ "$RUN_MULTI_PROVIDER" -eq 1 ]]; then
   # -------------------------------------------------------------------------
@@ -1031,12 +905,6 @@ if [[ -n "${FLIGHT_DEAL_SKILL_ID:-}" && "${FLIGHT_DEAL_SKILL_ID:-}" != "null" ]]
 fi
 if [[ -n "${AI4TRADE_SKILL_ID:-}" && "${AI4TRADE_SKILL_ID:-}" != "null" ]]; then
   log_ok "Skill:       ${AI4TRADE_SKILL_ID}  (${AI4TRADE_SKILL_NAME})"
-fi
-if [[ -n "${ICT_BEARISH_SKILL_ID:-}" && "${ICT_BEARISH_SKILL_ID:-}" != "null" ]]; then
-  log_ok "Skill:       ${ICT_BEARISH_SKILL_ID}  (${ICT_BEARISH_SKILL_NAME})"
-fi
-if [[ -n "${ICT_BULLISH_SKILL_ID:-}" && "${ICT_BULLISH_SKILL_ID:-}" != "null" ]]; then
-  log_ok "Skill:       ${ICT_BULLISH_SKILL_ID}  (${ICT_BULLISH_SKILL_NAME})"
 fi
 if [[ "$RUN_MULTI_PROVIDER" -eq 1 ]]; then
   for summary in "${MULTI_SETUP_SUMMARIES[@]}"; do

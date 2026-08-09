@@ -4,7 +4,7 @@
 # Creates three agents:
 #   - thyper     (Hyperliquid perpetals, contrarian, hybrid scanner-gated)
 #   - t1inch     (1inch DEX swaps, range, hybrid scanner-gated)
-#   - tplaybook  (Hyperliquid perpetals, ICT swing trading, intelligence mode)
+#   - tintel     (Hyperliquid, intelligence mode)
 #   - security-auditor (non-trading, 24h tick)
 #
 # Prerequisites:
@@ -45,9 +45,9 @@ THYPER_AGENT_PROMPT="Grow this portfolio aggressively"
 T1INCH_AGENT_NAME="t1inch"
 T1INCH_AGENT_PROMPT="Grow this portfolio aggressively"
 
-# tplaybook — ICT swing trading
-TPLAYBOOK_AGENT_NAME="tplaybook"
-TPLAYBOOK_AGENT_PROMPT="Grow this portfolio aggressively"
+# tintel — intelligence mode
+TINTEL_AGENT_NAME="tintel"
+TINTEL_AGENT_PROMPT="Grow this portfolio aggressively"
 
 # Security audit agent (non-trading)
 SECURITY_AUDIT_NAME="security-auditor"
@@ -311,67 +311,34 @@ build_t1inch_agent_payload() {
     }'
 }
 
-build_tplaybook_agent_payload() {
+build_tintel_agent_payload() {
   local connection_id="$1"
-  local skill_id1="$2"
-  local skill_id2="$3"
-  if [[ -n "$skill_id1" && -n "$skill_id2" ]]; then
-    jq -n \
-      --arg name "$TPLAYBOOK_AGENT_NAME" \
-      --arg prompt "$TPLAYBOOK_AGENT_PROMPT" \
-      --arg provider "$AGENT_PROVIDER" \
-      --arg lightModel "$AGENT_LIGHT_MODEL" \
-      --arg heavyModel "$AGENT_HEAVY_MODEL" \
-      --arg capabilityMode "intelligence" \
-      --arg executionVenue "hyperliquid" \
-      --arg authorizationMode "direct" \
-      --arg connectionId "$connection_id" \
-      --arg skillId1 "$skill_id1" \
-      --arg skillId2 "$skill_id2" \
-      --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
-      '{
-        name: $name,
-        prompt: $prompt,
-        provider: $provider,
-        lightModel: $lightModel,
-        heavyModel: $heavyModel,
-        capabilityMode: $capabilityMode,
-        executionVenue: $executionVenue,
-        authorizationMode: $authorizationMode,
-        connectionIds: [$connectionId],
-        skillIds: ["trading", $skillId1, $skillId2],
-        executionDefaults: { mode: "shadow" },
-        telegramChatId: $telegramChatId,
-      capital: "1000"
-      }'
-  else
-    jq -n \
-      --arg name "$TPLAYBOOK_AGENT_NAME" \
-      --arg prompt "$TPLAYBOOK_AGENT_PROMPT" \
-      --arg provider "$AGENT_PROVIDER" \
-      --arg lightModel "$AGENT_LIGHT_MODEL" \
-      --arg heavyModel "$AGENT_HEAVY_MODEL" \
-      --arg capabilityMode "intelligence" \
-      --arg executionVenue "hyperliquid" \
-      --arg authorizationMode "direct" \
-      --arg connectionId "$connection_id" \
-      --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
-      '{
-        name: $name,
-        prompt: $prompt,
-        provider: $provider,
-        lightModel: $lightModel,
-        heavyModel: $heavyModel,
-        capabilityMode: $capabilityMode,
-        executionVenue: $executionVenue,
-        authorizationMode: $authorizationMode,
-        connectionIds: [$connectionId],
-        skillIds: ["trading"],
-        executionDefaults: { mode: "shadow" },
-        telegramChatId: $telegramChatId,
-      capital: "1000"
-      }'
-  fi
+  jq -n \
+    --arg name "$TINTEL_AGENT_NAME" \
+    --arg prompt "$TINTEL_AGENT_PROMPT" \
+    --arg provider "$AGENT_PROVIDER" \
+    --arg lightModel "$AGENT_LIGHT_MODEL" \
+    --arg heavyModel "$AGENT_HEAVY_MODEL" \
+    --arg capabilityMode "intelligence" \
+    --arg executionVenue "hyperliquid" \
+    --arg authorizationMode "direct" \
+    --arg connectionId "$connection_id" \
+    --arg telegramChatId "${TELEGRAM_CHAT_ID:-}" \
+    '{
+      name: $name,
+      prompt: $prompt,
+      provider: $provider,
+      lightModel: $lightModel,
+      heavyModel: $heavyModel,
+      capabilityMode: $capabilityMode,
+      executionVenue: $executionVenue,
+      authorizationMode: $authorizationMode,
+      connectionIds: [$connectionId],
+      skillIds: ["trading"],
+      executionDefaults: { mode: "shadow" },
+      telegramChatId: $telegramChatId,
+    capital: "1000"
+    }'
 }
 
 # ---------------------------------------------------------------------------
@@ -480,42 +447,15 @@ create_non_trading_agent() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 3 — Look up skill IDs for tplaybook
-# ---------------------------------------------------------------------------
-
-log_section "Step 3: Look up skill IDs"
-
-ICT_BEARISH_SKILL_ID=""
-ICT_BULLISH_SKILL_ID=""
-
-api_call GET /skills '?scope=selectable'
-if [[ "$HTTP_STATUS" -eq 200 ]]; then
-  ICT_BEARISH_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r --arg name "ICT Bearish Swing" '.skills[]? | select(.name == $name) | .id' | head -1)"
-  ICT_BULLISH_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r --arg name "ICT Bullish Swing" '.skills[]? | select(.name == $name) | .id' | head -1)"
-fi
-
-if [[ -n "$ICT_BEARISH_SKILL_ID" && "$ICT_BEARISH_SKILL_ID" != "null" ]]; then
-  log_ok "Found ICT Bearish Swing skill: ${ICT_BEARISH_SKILL_ID}"
-else
-  log_warn "ICT Bearish Swing skill not found — tplaybook will be created without skill bindings"
-fi
-
-if [[ -n "$ICT_BULLISH_SKILL_ID" && "$ICT_BULLISH_SKILL_ID" != "null" ]]; then
-  log_ok "Found ICT Bullish Swing skill: ${ICT_BULLISH_SKILL_ID}"
-else
-  log_warn "ICT Bullish Swing skill not found — tplaybook will be created without skill bindings"
-fi
-
-# ---------------------------------------------------------------------------
-# Step 4 — Create trading agents
+# Step 3 — Create trading agents
 # ---------------------------------------------------------------------------
 
 THYPER_ID="$(create_agent "$THYPER_AGENT_NAME" "$(build_thyper_agent_payload "$HYPERLIQUID_CONNECTION_ID")")"
 T1INCH_ID="$(create_agent "$T1INCH_AGENT_NAME" "$(build_t1inch_agent_payload "$ONEINCH_CONNECTION_ID")")"
-TPLAYBOOK_ID="$(create_agent "$TPLAYBOOK_AGENT_NAME" "$(build_tplaybook_agent_payload "$HYPERLIQUID_CONNECTION_ID" "${ICT_BEARISH_SKILL_ID:-}" "${ICT_BULLISH_SKILL_ID:-}")")"
+TINTEL_ID="$(create_agent "$TINTEL_AGENT_NAME" "$(build_tintel_agent_payload "$HYPERLIQUID_CONNECTION_ID")")"
 
 # ---------------------------------------------------------------------------
-# Step 5 — Create security-auditor agent
+# Step 4 — Create security-auditor agent
 # ---------------------------------------------------------------------------
 
 if [[ ! -f "$SECURITY_AUDIT_PROMPT_FILE" ]]; then
@@ -527,13 +467,13 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 6 — Summary
+# Step 5 — Summary
 # ---------------------------------------------------------------------------
 
 log_section "Agent creation summary"
 log_ok "thyper           → id=${THYPER_ID}  connection=Hyperliquid (${HYPERLIQUID_CONNECTION_ID})"
 log_ok "t1inch           → id=${T1INCH_ID}  connection=1inch (${ONEINCH_CONNECTION_ID})"
-log_ok "tplaybook        → id=${TPLAYBOOK_ID}  connection=Hyperliquid (${HYPERLIQUID_CONNECTION_ID})"
+log_ok "tintel           → id=${TINTEL_ID}  connection=Hyperliquid (${HYPERLIQUID_CONNECTION_ID})"
 log_ok "security-auditor → id=${SECURITY_AUDITOR_ID}  tick=24h (non-trading)"
 log_info "All agents are in 'stopped' state. Start them via the API or UI when ready."
 log_info "All agents are in 'stopped' state. Start them via the API or UI when ready."
