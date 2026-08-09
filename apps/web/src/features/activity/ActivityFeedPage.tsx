@@ -6,7 +6,6 @@ import { PageShell, PageHeader, Card, EmptyState, ErrorState, LoadingRows, Butto
 import { ActivityItem } from './ActivityItem.js';
 import { AgentActivityItem } from './AgentActivityItem.js';
 import { mergeActivityFeedItems } from './activity-feed-items.js';
-import { formatPnl, pnlColor } from '../../lib/formatting.js';
 
 type FeedMode = 'all' | 'bots' | 'agents';
 
@@ -17,11 +16,6 @@ export function ActivityFeedPage() {
   const agentsQuery = useQuery({
     queryKey: ['agents'],
     queryFn: () => agentsApi.list(),
-  });
-
-  const overviewQuery = useQuery({
-    queryKey: ['dashboard', 'overview'],
-    queryFn: () => dashboard.overview(),
   });
 
   const items = agentsQuery.data ?? [];
@@ -83,12 +77,6 @@ export function ActivityFeedPage() {
           <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.paused' })} value={counts.paused} />
           <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.unhealthy' })} value={counts.unhealthy} />
           <MetricCard className="metrics-summary-card" label={intl.formatMessage({ id: 'missionControl.metric.stopped' })} value={counts.stopped} />
-          <MetricCard
-            className="metrics-summary-card"
-            label={intl.formatMessage({ id: 'missionControl.metric.totalPnl' })}
-            value={overviewQuery.isLoading ? '—' : formatPnl(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
-            color={overviewQuery.isLoading ? undefined : pnlColor(overviewQuery.data?.summary.outcomes.trading?.totalRealizedPnl)}
-          />
         </div>
       )}
 

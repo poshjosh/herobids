@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Drop Total Realized P&L metric from Activity page; keep only the four agent-status metrics (Active, Paused, Unhealthy, Stopped)
+
 ### Added
 
 - Admin-only Preview section in sidebar with Exposure, Outcomes, Credentials, and Venue Accounts pages (not yet approved for regular users)
