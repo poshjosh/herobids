@@ -66,7 +66,7 @@ export function AgentSummaryCard({ agent, outcomes, onOpen }: AgentSummaryCardPr
             )}
           </div>
           <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
-            {formatObjectivePreview(objective)}
+            {formatObjectivePreview(objective, 40)}
           </div>
         </div>
 

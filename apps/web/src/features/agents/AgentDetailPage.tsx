@@ -293,7 +293,7 @@ export function AgentDetailPage() {
     <PageShell>
       <PageHeader
         title={agent.name}
-        subtitle={formatObjectivePreview(objective)}
+        subtitle={formatObjectivePreview(objective, 40)}
         action={
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {(agent.status === 'stopped' || agent.status === 'crashed') && (
