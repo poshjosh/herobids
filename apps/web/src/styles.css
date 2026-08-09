@@ -591,6 +591,15 @@ textarea:not(:placeholder-shown) {
   }
 }
 
+/* Mobile: skip the heavy AVIF artwork. The aurora field (body::before/::after)
+ * already provides a rich animated background without the image payload. */
+@media (max-width: 768px) {
+  .landing-page--image::before {
+    background-image: none;
+    animation: none;
+  }
+}
+
 /* ── Content card ─────────────────────────────────────────────────────────── */
 
 .landing-page-card {
