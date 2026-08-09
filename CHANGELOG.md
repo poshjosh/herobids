@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.1.3 - 2026-08-09
+
 ### Changed
 
 - Remove connection related UI from agents dashboard/page
