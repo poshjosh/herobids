@@ -21,10 +21,11 @@ You do **not** need another `NS` record for `staging`.
 After adding it, test with:
 ```bash
 dig staging.openaidom.com +short
-128.140.55.192
+128.140.55.192 -> staging
+167.233.213.107 -> production
 ```
 
-For AAA record
+For AAAA record
 ```bash
 dig AAAA staging.openaidom.com +short
 ```

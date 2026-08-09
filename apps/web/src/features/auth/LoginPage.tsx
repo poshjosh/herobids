@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useIntl } from 'react-intl';
 import { config } from '../../lib/config.js';
@@ -22,6 +22,15 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [newUser, setNewUser] = useState(false);
   const [username, setUsername] = useState('');
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 480px)');
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   const isPasswordExpanded = pageState === 'passwordExpanded' || pageState === 'signingInWithPassword';
   const isLinkSent = pageState === 'loginLinkSent' || pageState === 'resendingLoginLink';
@@ -259,7 +268,7 @@ export function LoginPage() {
                   ? intl.formatMessage({ id: 'common.loading' })
                   : newUser
                     ? intl.formatMessage({ id: 'auth.sendRegistrationLink' })
-                    : intl.formatMessage({ id: 'auth.sendLoginLink' })}
+                    : intl.formatMessage({ id: isMobile ? 'auth.sendLoginLink.mobile' : 'auth.sendLoginLink' })}
               </button>
               <button
                 type="submit"
@@ -305,7 +314,7 @@ export function LoginPage() {
                   ? intl.formatMessage({ id: 'common.loading' })
                   : newUser
                     ? intl.formatMessage({ id: 'auth.sendRegistrationLink' })
-                    : intl.formatMessage({ id: 'auth.sendLoginLink' })}
+                    : intl.formatMessage({ id: isMobile ? 'auth.sendLoginLink.mobile' : 'auth.sendLoginLink' })}
               </button>
               <button
                 type="button"
@@ -321,7 +330,7 @@ export function LoginPage() {
                   padding: '12px 8px',
                 }}
               >
-                {intl.formatMessage({ id: 'auth.signInWithPassword' })}
+                {intl.formatMessage({ id: isMobile ? 'auth.signInWithPassword.mobile' : 'auth.signInWithPassword' })}
               </button>
             </>
           )}
@@ -349,12 +358,14 @@ export function LoginPage() {
         </div>
       </form>
 
-      {/* Divider */}
+      {/* Divider — hidden on mobile */}
+      {!isMobile && (
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '8px 0' }}>
         <div style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
         <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'auth.divider.or' })}</span>
         <div style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
       </div>
+      )}
 
       {/* Google sign-in */}
       <a
