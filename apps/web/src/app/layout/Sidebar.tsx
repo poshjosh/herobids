@@ -155,7 +155,20 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
             borderTop: '1px solid var(--color-border-subtle)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+          <Link
+            to="/settings"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              marginBottom: '8px',
+              textDecoration: 'none',
+              borderRadius: '6px',
+              padding: '6px 8px',
+              marginLeft: '-8px',
+              marginRight: '-8px',
+            }}
+          >
             {user.avatarUrl ? (
               <img
                 src={user.avatarUrl}
@@ -204,7 +217,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
                 {user.planId}
               </div>
             </div>
-          </div>
+          </Link>
           <button
             onClick={() => void logout()}
             style={{
