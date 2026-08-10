@@ -354,6 +354,11 @@ export class AgentSessionManager {
         // Reconcile billing account and period FIRST — the period reconciliation
         // may increase included credit and recompute spend state (e.g. after a
         // plan upgrade), which can move the account out of hard_limited.
+        // Spend caps are operator-controlled (plan config). User overrides set
+        // via POST /billing/spend-caps (admin-only) are intentionally
+        // overwritten here with plan-derived caps on every session start.
+        // This ensures the plan tier remains the authoritative ceiling.
+        // See ADR-006: docs/tech/adrs/2026/08/006-spend-caps-operator-only.md
         if (this.config.usageBillingRepo) {
           const includedCreditMicrousd = (planUsage?.includedCreditCents ?? 0) * 10_000;
           const softCapMicrousd = planUsage?.softCapCents != null ? planUsage.softCapCents * 10_000 : null;

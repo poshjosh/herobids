@@ -138,38 +138,42 @@ export function BillingDetails({
 
   return (
     <>
-      {/* Spend Controls */}
-      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '24px', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-        Spend Controls
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', marginBottom: '10px' }}>
-        <input
-          value={softCapInput}
-          onChange={(e) => setSoftCapInput(e.target.value)}
-          placeholder="Soft cap (cents)"
-          style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px' }}
-        />
-        <input
-          value={hardCapInput}
-          onChange={(e) => setHardCapInput(e.target.value)}
-          placeholder="Hard cap (cents)"
-          style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px' }}
-        />
-        <Button
-          variant="secondary"
-          disabled={spendCapsMutation.isPending || !usageAccount}
-          onClick={() => {
-            const soft = softCapInput.trim() === '' ? null : Number.parseInt(softCapInput, 10);
-            const hard = hardCapInput.trim() === '' ? null : Number.parseInt(hardCapInput, 10);
-            if ((soft != null && Number.isNaN(soft)) || (hard != null && Number.isNaN(hard))) return;
-            spendCapsMutation.mutate({ softCapCents: soft, hardCapCents: hard });
-          }}
-        >
-          {spendCapsMutation.isPending ? 'Saving...' : 'Update Spend Caps'}
-        </Button>
-      </div>
-      {spendCapsError && (
-        <ErrorBanner message={spendCapsError} onDismiss={() => setSpendCapsError(null)} />
+      {/* Spend Controls — operator-only. See ADR-006: docs/tech/adrs/2026/08/006-spend-caps-operator-only.md */}
+      {isAdmin && (
+        <>
+          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '24px', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Spend Controls (Admin)
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', marginBottom: '10px' }}>
+            <input
+              value={softCapInput}
+              onChange={(e) => setSoftCapInput(e.target.value)}
+              placeholder="Soft cap (cents)"
+              style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px' }}
+            />
+            <input
+              value={hardCapInput}
+              onChange={(e) => setHardCapInput(e.target.value)}
+              placeholder="Hard cap (cents)"
+              style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px' }}
+            />
+            <Button
+              variant="secondary"
+              disabled={spendCapsMutation.isPending || !usageAccount}
+              onClick={() => {
+                const soft = softCapInput.trim() === '' ? null : Number.parseInt(softCapInput, 10);
+                const hard = hardCapInput.trim() === '' ? null : Number.parseInt(hardCapInput, 10);
+                if ((soft != null && Number.isNaN(soft)) || (hard != null && Number.isNaN(hard))) return;
+                spendCapsMutation.mutate({ softCapCents: soft, hardCapCents: hard });
+              }}
+            >
+              {spendCapsMutation.isPending ? 'Saving...' : 'Update Spend Caps'}
+            </Button>
+          </div>
+          {spendCapsError && (
+            <ErrorBanner message={spendCapsError} onDismiss={() => setSpendCapsError(null)} />
+          )}
+        </>
       )}
 
       {/* Usage Filters */}

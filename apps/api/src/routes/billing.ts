@@ -951,7 +951,11 @@ export async function billingRoutes(
   });
 
   // ---------------------------------------------------------------------------
-  // POST /billing/spend-caps — set soft and hard spend caps for the account
+  // POST /billing/spend-caps — admin-only spend cap override.
+  // Non-admin users cannot set caps via the UI (gated by isAdmin in
+  // BillingDetails). User-set caps are temporary: agent-session-manager.ts
+  // overwrites them with plan defaults on every session start.
+  // See ADR-006: docs/tech/adrs/2026/08/006-spend-caps-operator-only.md
   // ---------------------------------------------------------------------------
   app.post<{ Body: { softCapCents?: number | null; hardCapCents?: number | null } }>(
     '/billing/spend-caps',
