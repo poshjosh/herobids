@@ -16,6 +16,10 @@ RUN pnpm --filter @herobids/domain run build
 # Pass VITE_API_ORIGIN so the OAuth URL points at the host-accessible API port.
 ARG VITE_API_ORIGIN=http://localhost:3000
 ENV VITE_API_ORIGIN=$VITE_API_ORIGIN
+# VITE_SITE_URL is the public-facing domain, used to generate sitemap.xml.
+# Leave empty to skip sitemap generation.
+ARG VITE_SITE_URL
+ENV VITE_SITE_URL=$VITE_SITE_URL
 RUN pnpm --filter @herobids/web run build
 
 # ── runtime: nginx serves the built static assets ────────────────────────────

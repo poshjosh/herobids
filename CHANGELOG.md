@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Sitemap
+
 ## v0.1.5 - 2026-08-09
 
 ### Changed
