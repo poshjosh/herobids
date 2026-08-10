@@ -660,7 +660,7 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.addConnection': '+ إضافة اتصال',
   'agents.capabilityPage.connectionMeta': 'المزوّد: {provider} · الاتصال: {connectionStatus} · المنحة: {grantStatus}',
   'agents.capabilityPage.reference': 'المرجع: {reference}',
-  'agents.capabilityPage.unbind': 'إزالة',
+  'agents.capabilityPage.unbind': 'إلغاء',
   'agents.capabilityPage.bind': 'تعيين للوكيل',
   'agents.capabilityPage.bindDisabledTooltip': 'الاتصال غير نشط',
   'agents.capabilityPage.bindFailed': 'تعذر تعيين {label}: {error}',

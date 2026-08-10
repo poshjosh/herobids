@@ -660,7 +660,7 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.addConnection': '+ कनेक्शन जोड़ें',
   'agents.capabilityPage.connectionMeta': 'प्रदाता: {provider} · कनेक्शन: {connectionStatus} · अनुदान: {grantStatus}',
   'agents.capabilityPage.reference': 'संदर्भ: {reference}',
-  'agents.capabilityPage.unbind': 'हटाएं',
+  'agents.capabilityPage.unbind': 'रद्द करें',
   'agents.capabilityPage.bind': 'एजेंट को असाइन करें',
   'agents.capabilityPage.bindDisabledTooltip': 'कनेक्शन सक्रिय नहीं है',
   'agents.capabilityPage.bindFailed': '{label} असाइन नहीं कर सका: {error}',
