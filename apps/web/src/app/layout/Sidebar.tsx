@@ -22,12 +22,8 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [locale]);
 
-  const ADVANCED_ITEMS = useMemo(() => [
-    { path: '/bots', label: intl.formatMessage({ id: 'nav.bots' }), icon: '⊞' },
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [locale]);
-
   const PREVIEW_ITEMS = useMemo(() => [
+    { path: '/bots',           label: intl.formatMessage({ id: 'nav.bots' }),           icon: '⊞' },
     { path: '/exposure',       label: intl.formatMessage({ id: 'nav.exposure' }),       icon: '◉' },
     { path: '/outcomes',       label: intl.formatMessage({ id: 'nav.outcomes' }),       icon: '◈' },
     { path: '/credentials',    label: intl.formatMessage({ id: 'nav.credentials' }),    icon: '⊟' },
@@ -36,16 +32,6 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
   ], [locale]);
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
-
-  const isAdvancedActive = useMemo(
-    () => ADVANCED_ITEMS.some((item) => isActive(item.path)),
-    // ADVANCED_ITEMS is locale-stable; the real dependency is location.pathname
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [location.pathname, ADVANCED_ITEMS],
-  );
-
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const effectiveAdvancedOpen = advancedOpen || isAdvancedActive;
 
   const isPreviewActive = useMemo(
     () => PREVIEW_ITEMS.some((item) => isActive(item.path)),
@@ -100,22 +86,6 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
             <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
           ))}
         </NavGroup>
-
-        <SectionLabel
-          collapsible
-          open={effectiveAdvancedOpen}
-          onToggle={() => setAdvancedOpen((prev) => !prev)}
-          controlsId="sidebar-advanced-group"
-        >
-          {intl.formatMessage({ id: 'nav.advanced' })}
-        </SectionLabel>
-        {effectiveAdvancedOpen && (
-          <NavGroup id="sidebar-advanced-group">
-            {ADVANCED_ITEMS.map((item) => (
-              <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
-            ))}
-          </NavGroup>
-        )}
 
         {user?.isAdmin && (
           <>

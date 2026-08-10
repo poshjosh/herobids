@@ -56,7 +56,7 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Mission Control, AI Agents, Skills. Under "Manage": Connections, Billing, Settings. Under "Advanced" (collapsible, collapsed by default): Bots. Click "▸ Advanced" to expand. | ✅ | 2026-07-08: Spec updated — nav simplified; Credentials removed from Manage; Trading setup, Exposure, Activity, Outcomes removed from Advanced (pages still accessible via direct URL) |
+| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Agents, Skills, Connections, Activity, Billing, Settings. No "Advanced" section. | ✅ | 2026-08-10: Advanced section removed; Bots moved to Preview (admin-only) |
 | N-02 | Active link highlighted | Click each nav link | Current page link is visually active | ✅ | 2026-07-07: Active link shows green background + green text (verified on AI Agents page screenshot) |
 | N-03 | Root redirect (authenticated) | Navigate to `/` as authenticated user | Redirected to `/agents` | — | 2026-08-06: Updated — redirect target changed from `/mission-control` to `/agents` |
 | N-04 | Unknown route | Navigate to `/does-not-exist` | React Router error boundary shown (404 Not Found); does not crash | ✅ | 2026-07-07: Shows "Page not found" with "← Back to Mission Control" button; no crash |
@@ -138,7 +138,7 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 | AG-04 | Create agent — validation | Submit with missing required fields | Error banner shown; form not dismissed | ✅ | "Review →" button disabled when goal is empty; no submission possible |
 | AG-05 | Start agent | Open agent detail; click "Start" | Status transitions `stopped` → `starting` → `active`; worker picks up within ~2 s | ✅ | stopped → starting → active observed; Stop button appeared immediately |
 | AG-06 | Agent detail page renders | Click agent name | Navigates to `/agents/:id`; shows Status, Execution mode, Objective, Capabilities, Prompt Surfaces, Runtime Health (if active), Messages to User, Protocol Activity, and Artifacts | ✅ | Status label now shows "Status" after adding `common.status` i18n key; Execution mode only shown when agent has trading capability (intentional) |
-| AG-07 | Start button when stopped | Open agent detail for stopped agent | "Start" button shown in header | ✅ | "Start" button shown alongside Edit config and Delete |
+| AG-07 | Start button when stopped | Open agent detail for stopped agent | "Start" button shown in header | ✅ | "Start" button shown alongside Edit and Delete |
 | AG-08 | Pause/Resume buttons | Open detail for active agent | "Pause" shown when active; "Resume" when paused | ✅ | Pause → paused, Resume → active verified |
 | AG-09 | Stop button visibility | Open detail for active/starting/paused/unhealthy agent | "Stop" button shown | ✅ | Stop button visible; transitions to stopped with "Session stopped" timeline event |
 | AG-10 | Crashed alert banner | Open detail for crashed agent | "Agent crashed. The runtime stopped unexpectedly." error banner shown | — | Banner shown when agent status is crashed |
@@ -163,7 +163,7 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| AG-E01 | Edit form opens | On agent detail, click "Edit config" | Edit modal opens; all fields pre-filled from agent data (name, goal, style, capital, etc.) | — | |
+| AG-E01 | Edit form opens | On agent detail, click "Edit" | Edit modal opens; all fields pre-filled from agent data (name, goal, style, capital, etc.) | — | |
 | AG-E02 | Style selector pre-filled | Open edit form for an agent with a known style | Style selector reflects the agent's current style (or "Balanced" if unknown) | — | |
 | AG-E03 | Style change drives defaults | In edit form, change Style from Careful to Bold | Cost preset, tick interval, and daily budget update to Bold defaults | — | |
 | AG-E04 | Save changes — happy path | Edit name and goal; click "Save changes" | Modal closes; agent detail reflects updated name and goal | — | |

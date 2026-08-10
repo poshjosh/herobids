@@ -49,7 +49,7 @@ describe('i18n regressions', () => {
       },
       {
         file: new URL('../../features/agents/AgentDetailPage.tsx', import.meta.url),
-        banned: ['Edit config', 'Delete this agent? This cannot be undone.'],
+        banned: ['Edit config', 'Edit agent', 'Delete this agent? This cannot be undone.'],
       },
     ];
 
