@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Guided Setup: minimum-viable checkpoint & fine-tuning fork — users can create immediately or customize prompt, Telegram chat ID, style, and strategy before creation
+- Guided Setup: Telegram chat ID collection during fine-tuning with step-by-step instructions for getting it from @OpenAIdomBot
 - Quick action (edit, start, stop) buttons to the agent summary card
 - Sitemap
 - Enable hetzner automated backups for production
