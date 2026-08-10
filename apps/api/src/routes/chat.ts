@@ -275,7 +275,7 @@ Ask: "What type of assets interest you? Bitcoin / Ethereum / Memecoins / Not sur
 | Memecoins | jupiter | momentum-position |
 | Not sure | jupiter | momentum-position |
 
-Apply these defaults without asking: \`authorizationMode\`="direct", \`filterTrades\`="scanner_gated", \`platformAssessmentEnabled\`=true, \`requestedExecutionMode\`="test", \`style\`="balanced".
+Apply these defaults without asking: \`authorizationMode\`="direct", \`filterTrades\`="scanner_gated", \`platformAssessmentEnabled\`=true, \`requestedExecutionMode\`="test", \`style\`="balanced", \`capital\`="Not specified".
 
 Jump to Step 3.
 
@@ -2014,9 +2014,10 @@ export async function chatRoutes(
       }
 
       // Detect preset from the user's message so prompt routing works on the
-      // first turn after the user taps a preset button.
+      // first turn after the user taps a preset button. Also handles mid-thread
+      // preset switching.
       const detectedPreset = detectPresetFromContent(content);
-      if (detectedPreset && !effectiveMetadata?.summary?.preset) {
+      if (detectedPreset) {
         effectiveMetadata = {
           ...(effectiveMetadata ?? {}),
           summary: { ...(effectiveMetadata?.summary ?? {}), preset: detectedPreset },
