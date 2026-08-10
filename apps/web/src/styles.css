@@ -339,6 +339,16 @@ textarea:not(:placeholder-shown) {
    * ──────────────────────────────────────────────────────────────────────────── */
 }
 
+/* ─── Agent summary card action icons ──────────────────────────────────────── */
+
+.agent-summary-card:hover .agent-summary-actions {
+  opacity: 1 !important;
+}
+
+.agent-summary-actions button:hover {
+  background: var(--color-surface-2);
+}
+
 /* ─── Brand Logo ────────────────────────────────────────────────────────────── */
 .brand-wordmark {
   display: inline-flex;

@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Quick action (edit, start, stop) buttons to the agent summary card
 - Sitemap
 - Enable hetzner automated backups for production
 - Guided Setup chat agent now knows canonical platform URLs (form: /agents/new, billing: /billing, settings: /settings) — no more hallucinated links
