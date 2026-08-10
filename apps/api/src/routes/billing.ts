@@ -256,7 +256,7 @@ export async function billingRoutes(
     const url = await providerManager.createPortalUrl(
       {
         customerId: customer.externalCustomerId,
-        returnUrl: frontendOrigin,
+        returnUrl: `${frontendOrigin}/billing`,
       },
       subscription.provider as 'creem' | 'stripe',
     );
