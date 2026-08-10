@@ -252,9 +252,8 @@ textarea:not(:placeholder-shown) {
   flex: 1;
   overflow-y: auto;
   min-width: 0;
-  background: rgba(11, 18, 32, 0.65);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
 }
 
 /* Mobile top bar */
