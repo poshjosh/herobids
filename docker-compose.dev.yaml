@@ -53,5 +53,6 @@ services:
       - ./apps/web/src:/app/apps/web/src:ro
     command: ['pnpm', '--filter', '@herobids/web', 'run', 'dev', '--host', '0.0.0.0']
     environment:
+      # dev-only env var that tells Vite's dev server where to forward /api requests
       # Proxy in vite.config.ts reads this to forward /api to the api service
       VITE_API_PROXY_TARGET: http://api:3000
