@@ -338,8 +338,6 @@ export const messages: Record<string, string> = {
   'billing.usage.includedWithPlan': 'مشمول مع {planName}',
   'billing.usage.topUps': 'تعبئة رصيد',
   'billing.usage.overLimit': 'تجاوز الحد',
-  'billing.usage.viewDetails': 'عرض التفاصيل ▸',
-  'billing.usage.hideDetails': 'إخفاء التفاصيل ▾',
   'billing.usage.totalCredit': 'إجمالي الرصيد',
   'billing.usage.yourPlan': 'خطتك',
   'billing.usage.sectionTitle': 'استخدام AI — الفترة الحالية',

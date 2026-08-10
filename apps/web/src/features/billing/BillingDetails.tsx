@@ -26,6 +26,19 @@ const LEDGER_ENTRY_TYPE_LABELS: Record<string, string> = {
   invoice_settlement: 'Invoice settlement',
 };
 
+const METER_LABELS: Record<string, string> = {
+  'llm.input_tokens': 'llm input tokens',
+  'llm.cached_input_tokens': 'llm cached input tokens',
+  'llm.output_tokens': 'llm output tokens',
+  'llm.reasoning_tokens': 'llm reasoning tokens',
+  'agent.runtime_ms': 'agent runtime (milliseconds)',
+  'assessment.request': 'strategy assessment',
+};
+
+function formatMeterLabel(meterKey: string): string {
+  return METER_LABELS[meterKey] ?? meterKey;
+}
+
 interface BillingDetailsProps {
   // Spend Controls
   softCapInput: string;
@@ -78,6 +91,8 @@ interface BillingDetailsProps {
 
   // i18n
   intl: ReturnType<typeof useIntl>;
+  /** Only admins see ledger + usage events */
+  isAdmin?: boolean;
 }
 
 export function BillingDetails({
@@ -115,6 +130,7 @@ export function BillingDetails({
   usageEventsPageSize,
   ledgerPageSize,
   intl,
+  isAdmin,
 }: BillingDetailsProps) {
   const usageBreakdown = usageBreakdownQuery.data;
   const usageEvents = usageEventsQuery.data;
@@ -123,7 +139,7 @@ export function BillingDetails({
   return (
     <>
       {/* Spend Controls */}
-      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '24px', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
         Spend Controls
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', marginBottom: '10px' }}>
@@ -167,11 +183,9 @@ export function BillingDetails({
           style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px', cursor: 'pointer' }}
         >
           <option value="">All meters</option>
-          <option value="llm.input_tokens">llm.input_tokens</option>
-          <option value="llm.cached_input_tokens">llm.cached_input_tokens</option>
-          <option value="llm.output_tokens">llm.output_tokens</option>
-          <option value="llm.reasoning_tokens">llm.reasoning_tokens</option>
-          <option value="agent.runtime_ms">agent.runtime_ms</option>
+          {Object.entries(METER_LABELS).map(([key, label]) => (
+            <option key={key} value={key}>{label}</option>
+          ))}
         </select>
 
         <select
@@ -248,7 +262,7 @@ export function BillingDetails({
             <tbody>
               {usageBreakdown.byMeter.map((row) => (
                 <tr key={row.meterKey} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                  <td style={{ padding: '8px', fontFamily: 'monospace' }}>{row.meterKey}</td>
+                  <td style={{ padding: '8px' }}>{formatMeterLabel(row.meterKey)}</td>
                   <td style={{ padding: '8px', textAlign: 'right' }}>{row.quantity.toLocaleString()}</td>
                   <td style={{ padding: '8px', textAlign: 'right' }}>{formatMicrousd(row.chargeMicrousd)}</td>
                 </tr>
@@ -298,6 +312,7 @@ export function BillingDetails({
       </Card>
 
       {/* Billing Ledger */}
+      {isAdmin && (
       <Card style={{ padding: '20px' }}>
         <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           Billing Ledger
@@ -380,8 +395,10 @@ export function BillingDetails({
           </>
         )}
       </Card>
+      )}
 
       {/* Usage event ledger */}
+      {isAdmin && (
       <Card style={{ padding: '20px' }}>
         <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           Usage Events
@@ -419,7 +436,7 @@ export function BillingDetails({
                       <td style={{ padding: '8px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
                         {new Date(ev.occurredAt).toLocaleString()}
                       </td>
-                      <td style={{ padding: '8px', fontFamily: 'monospace' }}>{ev.meterKey}</td>
+                      <td style={{ padding: '8px' }}>{formatMeterLabel(ev.meterKey)}</td>
                       <td style={{ padding: '8px', textAlign: 'right' }}>{ev.quantity.toLocaleString()} {ev.unit}</td>
                       <td style={{ padding: '8px' }}>{ev.agent?.name ?? '—'}</td>
                       <td style={{ padding: '8px' }}>
@@ -457,6 +474,7 @@ export function BillingDetails({
           </>
         )}
       </Card>
+      )}
 
       {/* Historical periods */}
       <Card style={{ padding: '20px' }}>

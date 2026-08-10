@@ -337,8 +337,6 @@ export const messages: Record<string, string> = {
   'billing.usage.includedWithPlan': 'Included with {planName}',
   'billing.usage.topUps': 'top-ups',
   'billing.usage.overLimit': 'over limit',
-  'billing.usage.viewDetails': 'View details ▸',
-  'billing.usage.hideDetails': 'Hide details ▾',
   'billing.usage.totalCredit': 'Total credit',
   'billing.usage.yourPlan': 'your plan',
   'billing.usage.sectionTitle': 'AI Usage — Current Period',

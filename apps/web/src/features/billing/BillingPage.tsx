@@ -5,6 +5,7 @@ import { billing, agents as agentsApi } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, inputStyle } from '../../lib/ui.js';
 import { formatCurrencyFromCents, formatShortDate } from '../../lib/formatting.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
+import { useSession } from '../../app/providers/SessionProvider.js';
 import { BillingDetails, formatMicrousd } from './BillingDetails.js';
 
 function statusLabel(intl: ReturnType<typeof useIntl>, status: string): { text: string; color: string } {
@@ -124,6 +125,7 @@ function CreditGauge({
 export function BillingPage() {
   const intl = useIntl();
   const queryClient = useQueryClient();
+  const { user } = useSession();
   const [usageEventOffset, setUsageEventOffset] = useState(0);
   const [meterFilter, setMeterFilter] = useState('');
   const [agentFilter, setAgentFilter] = useState('');
@@ -137,7 +139,6 @@ export function BillingPage() {
   const [spendCapsError, setSpendCapsError] = useState<string | null>(null);
   const [topUpError, setTopUpError] = useState<string | null>(null);
   const [checkoutBanner, setCheckoutBanner] = useState<'success' | 'cancelled' | null>(null);
-  const [showDetails, setShowDetails] = useState(false);
   const [ledgerOffset, setLedgerOffset] = useState(0);
   const [ledgerDirectionFilter, setLedgerDirectionFilter] = useState('');
   const USAGE_EVENTS_PAGE_SIZE = 50;
@@ -165,13 +166,13 @@ export function BillingPage() {
   const usageBreakdownQuery = useQuery({
     queryKey: ['billing', 'usage-breakdown', usageFilters.periodId, usageFilters.from, usageFilters.to],
     queryFn: () => billing.usageBreakdown({ periodId: usageFilters.periodId, from: usageFilters.from, to: usageFilters.to }),
-    enabled: showDetails,
+    enabled: true,
   });
 
   const usageEventsQuery = useQuery({
     queryKey: ['billing', 'usage-events', usageEventOffset, usageFilters],
     queryFn: () => billing.usageEvents({ limit: USAGE_EVENTS_PAGE_SIZE, offset: usageEventOffset, ...usageFilters }),
-    enabled: showDetails,
+    enabled: true,
   });
 
   const ledgerQuery = useQuery({
@@ -182,13 +183,13 @@ export function BillingPage() {
       periodId: usageFilters.periodId || undefined,
       direction: (ledgerDirectionFilter as 'credit' | 'debit') || undefined,
     }),
-    enabled: showDetails,
+    enabled: true,
   });
 
   const periodsQuery = useQuery({
     queryKey: ['billing', 'periods'],
     queryFn: () => billing.periods(),
-    enabled: showDetails,
+    enabled: true,
   });
 
   const checkoutMutation = useMutation({
@@ -247,7 +248,7 @@ export function BillingPage() {
   const agentsQuery = useQuery({
     queryKey: ['agents', 'list'],
     queryFn: () => agentsApi.list(),
-    enabled: showDetails,
+    enabled: true,
   });
 
   const summary = summaryQuery.data;
@@ -574,18 +575,7 @@ export function BillingPage() {
           )}
         </Card>
 
-        {/* Details toggle */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <Button
-            variant="secondary"
-            onClick={() => setShowDetails(!showDetails)}
-          >
-            {showDetails ? intl.formatMessage({ id: 'billing.usage.hideDetails' }) : intl.formatMessage({ id: 'billing.usage.viewDetails' })}
-          </Button>
-        </div>
-
-        {showDetails && (
-          <BillingDetails
+        <BillingDetails
             softCapInput={softCapInput}
             setSoftCapInput={setSoftCapInput}
             hardCapInput={hardCapInput}
@@ -620,8 +610,8 @@ export function BillingPage() {
             usageEventsPageSize={USAGE_EVENTS_PAGE_SIZE}
             ledgerPageSize={LEDGER_PAGE_SIZE}
             intl={intl}
+            isAdmin={user?.isAdmin}
           />
-        )}
       </div>
     </PageShell>
   );

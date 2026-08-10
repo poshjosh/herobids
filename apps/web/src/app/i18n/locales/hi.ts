@@ -338,8 +338,6 @@ export const messages: Record<string, string> = {
   'billing.usage.includedWithPlan': '{planName} के साथ शामिल',
   'billing.usage.topUps': 'टॉप-अप',
   'billing.usage.overLimit': 'सीमा पार',
-  'billing.usage.viewDetails': 'विवरण देखें ▸',
-  'billing.usage.hideDetails': 'विवरण छिपाएँ ▾',
   'billing.usage.totalCredit': 'कुल क्रेडिट',
   'billing.usage.yourPlan': 'आपकी योजना',
   'billing.usage.sectionTitle': 'AI उपयोग — वर्तमान अवधि',
