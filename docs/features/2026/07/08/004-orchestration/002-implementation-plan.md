@@ -546,10 +546,6 @@ This feature is complete when all of the following are true:
 - **Fix:** Use `??` consistently: `this.defaultResources.memoryLimitMb ?? 512`.
 - **File:** `apps/worker/src/agents/agent-runtime-launcher.ts`
 
-### [Phase 2] Competing tfvars templates (LOW)
-- Three tfvars templates exist: `terraform.tfvars.example`, `staging.tfvars.example`, `production.tfvars.example`. May confuse new operators.
-- **Fix:** Add note directing to per-environment templates, or deprecate legacy template.
-
 ### [Phase 2] Client cloud-init missing nomad_version format comment (LOW)
 - Control-plane `cloud-init.yaml` documents that `nomad_version` must not include the Debian revision suffix. Client template uses same pattern but lacks the comment.
 - **Fix:** Add the same note to `cloud-init-nomad-client.yaml` variable block.

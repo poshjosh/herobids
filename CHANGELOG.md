@@ -9,6 +9,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Sitemap
+- Enable hetzner automated backups for production
 
 ## v0.1.5 - 2026-08-09
 

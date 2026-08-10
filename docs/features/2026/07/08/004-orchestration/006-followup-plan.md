@@ -26,7 +26,7 @@ This is a followup to docs/features/2026/07/08/004-orchestration/002-implementat
 
 ### 5. Competing tfvars templates (LOW) — DONE
 - Three tfvars templates exist: `terraform.tfvars.example`, `staging.tfvars.example`, `production.tfvars.example`. May confuse new operators.
-- **Fix:** Add note directing to per-environment templates, or deprecate legacy template.
+- **Fix:** We now have only `remote.tfvars.example`
 
 ---
 

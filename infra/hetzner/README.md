@@ -114,7 +114,7 @@ infra/hetzner/
 ├── cloud-init-nomad-client.yaml    # Agent node first-boot provisioning (Docker, Nomad client, UFW)
 ├── terraform.tfvars.example        # Template for terraform variables (single-file setup)
 ├── staging.tfvars.example          # Staging-specific tfvars template
-├── production.tfvars.example       # Production-specific tfvars template
+├── remote.tfvars.example       # Production-specific tfvars template
 ├── deploy.sh                       # Full deploy orchestrator (env → push → seed → verify)
 ├── README.md                       # This file
 └── scripts/

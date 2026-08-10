@@ -1,20 +1,20 @@
 # ─────────────────────────────────────────────────────────────
-# Staging Terraform Variables — Herobids Hetzner Deployment
+# Production/Staging Terraform Variables — Herobids Hetzner Deployment
 # ─────────────────────────────────────────────────────────────
 #
-# Copy this file to staging.tfvars and fill in your values:
+# Copy this file to staging.tfvars/production.tfvars and fill in your values:
 #
-#   cp staging.tfvars.example staging.tfvars
+#   cp remote.tfvars.example staging.tfvars
 #
 # Then provision with:
 #   ./scripts/provision.sh --env staging --var-file staging.tfvars
 #
-# staging.tfvars is gitignored — never commit real secrets.
+# staging.tfvars/production.tfvars is gitignored — never commit real secrets.
 # ─────────────────────────────────────────────────────────────
 
 # ── Environment ───────────────────────────────────────────
 
-environment = "staging"
+environment = "staging"  # or "production"
 
 # ── Provider ──────────────────────────────────────────────
 
@@ -22,7 +22,7 @@ hcloud_token = "your-hetzner-cloud-api-token"  # required, sensitive
 
 # ── Server ────────────────────────────────────────────────
 
-server_name = "herobids-staging"
+server_name = "herobids-staging"  # or "herobids-production"
 # server_type = "cx23"
 # location    = "fsn1"
 # image       = "ubuntu-24.04"
@@ -42,7 +42,10 @@ EOT
 
 git_repo_url = "git@github.com:your-org/herobids.git"  # required
 # git_branch = "main"
-app_domain = "staging.openaidom.com"
+app_domain = "staging.openaidom.com"  # or "openaidom.com"
+
+# Enable Hetzner automated backups (€/month per server)
+# backups = false
 
 # ── Nomad Orchestration ───────────────────────────────────
 
@@ -50,7 +53,9 @@ app_domain = "staging.openaidom.com"
 # nomad_version = "1.9.7"
 
 # ── Private Network ───────────────────────────────────────
-# Staging network: 10.0.0.0/16 (do NOT overlap with production's 10.1.0.0/16)
+# Staging network:    10.0.0.0/16 
+# Production network: 10.1.0.0/16
+# We use staging network as example here
 #
 # ⚠️  MANUAL CHECK REQUIRED: Verify subnet_ip_range falls within network_ip_range.
 #     Terraform cannot fully validate CIDR containment at plan time.
@@ -106,5 +111,5 @@ app_domain = "staging.openaidom.com"
 # ─────────────────────────────────────────────────────────────
 # Sensitive variables (hcloud_token, deploy_ssh_private_key)
 # are marked sensitive in Terraform and will not appear in
-# plan/apply output. Store staging.tfvars securely.
+# plan/apply output. Store staging.tfvars/production.tfvars securely.
 # ─────────────────────────────────────────────────────────────

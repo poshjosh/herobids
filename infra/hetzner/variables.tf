@@ -44,6 +44,12 @@ variable "server_type" {
   }
 }
 
+variable "backups" {
+  type        = bool
+  description = "Enable Hetzner automated backups (€/month per server)"
+  default     = false
+}
+
 variable "location" {
   type        = string
   description = "Hetzner datacenter location"

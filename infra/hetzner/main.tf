@@ -143,6 +143,7 @@ resource "hcloud_server" "default" {
   server_type = var.server_type
   location    = var.location
   image       = var.image
+  backups     = var.backups
 
   ssh_keys = [hcloud_ssh_key.default.id]
 

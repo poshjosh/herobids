@@ -261,8 +261,7 @@ Remove the `(future: workspaces)` note and document the new workspace-based work
 #### Files
 
 - `infra/hetzner/README.md`
-- `infra/hetzner/staging.tfvars.example` (if it references state conventions)
-- `infra/hetzner/production.tfvars.example`
+- `infra/hetzner/remote.tfvars.example` (if it references state conventions)
 - `docs/runbooks/staging-smoke-test.md` (the prerequisite about `terraform output`)
 - `docs/features/2026/07/08/003-staging-environment-setup/001-plan.md` (if it references state management)
 
@@ -330,7 +329,7 @@ After the code changes land, the operator must:
 
 When ready to provision production:
 
-1. Copy `production.tfvars.example` to `production.tfvars` and fill in values.
+1. Copy `remote.tfvars.example` to `production.tfvars` and fill in values.
 2. Run `provision.sh --env production --var-file production.tfvars`.
 3. The script creates the `production` workspace and provisions a fresh server.
 
