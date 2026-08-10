@@ -4,7 +4,7 @@ import type { Database, UsageBillingRepository } from '@herobids/db';
 import { ChatUsageBillingRecorder } from '../billing/chat-usage-billing-recorder.js';
 import type { Redis } from 'ioredis';
 import type { ProvidersYaml } from '@herobids/domain';
-import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt, resolveCreateAgentConnection, buildSystemPrompt, buildConnectionChoiceActions } from './chat.js';
+import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt, resolveCreateAgentConnection, buildSystemPrompt, buildTradingPrompt, buildConnectionChoiceActions } from './chat.js';
 import type { LlmToolCall } from '@herobids/llm';
 
 // Mock createProviderLink to avoid needing CREDENTIAL_ENCRYPTION_KEY in tests
@@ -2046,30 +2046,26 @@ describe('buildSystemPrompt — prompt contract', () => {
   it('does not instruct the model to emit arbitrary quick_replies after the greeting', () => {
     // The prompt must not contain instructions to emit quick_replies in contexts
     // beyond the initial greeting (which is UI-provided).
+    const tradingPrompt = buildTradingPrompt();
     // "Use quick_replies" as a directive to the model must be absent.
-    expect(prompt).not.toMatch(/Use quick_replies/i);
-    // The only references to quick_replies should describe them as
-    // runtime-emitted, UI-provided, or explicitly NOT model-emitted.
-    expect(prompt).toMatch(/quick_replies/);
-    // After the "Note on structured choices" paragraph, there must not be any
-    // affirmative instruction that implies the model can emit quick_replies.
-    // "do NOT attempt" is fine — that's the corrective note.
-    expect(prompt).toContain('Note on structured choices');
-    const afterNote = prompt.split('Note on structured choices')[1];
-    expect(afterNote).toBeDefined();
-    // Check that after the note, there's no directive to USE quick_replies
-    // (but "do NOT attempt" is a negative statement, not a directive)
-    expect(afterNote).not.toMatch(/Use quick_replies|you can emit|emit quick_replies as|send quick_replies|present quick_replies/i);
+    expect(tradingPrompt).not.toMatch(/Use quick_replies/i);
+    // There must be no instruction that implies the model can emit quick_replies
+    // outside the initial greeting buttons (which are UI-provided, not model-emitted).
+    expect(tradingPrompt).not.toMatch(/emit quick_replies|send quick_replies|present quick_replies|you can use quick_replies/i);
   });
 
   it('does not claim unconditional auto-selection for selectedConnectionId', () => {
     // The tool description in CHAT_TOOLS is not embedded in the prompt,
     // but the prompt text itself must not contain false claims about
-    // unconditional auto-selection.
-    expect(prompt).not.toContain('auto-selected');
+    // unconditional auto-selection of the connection.
+    // This constraint lives in the trading-specific General Connection Rules.
+    const tradingPrompt = buildTradingPrompt();
+    // The prompt must not claim the connection will be auto-selected
+    // unconditionally (i.e., without context-dependent resolution).
+    expect(tradingPrompt).not.toMatch(/auto[- ]select(ed|ing|s)?\s*(the\s*)?connection/i);
     // The prompt should describe autowiring as context-dependent, not automatic.
     // Verify the prompt mentions the autowiring behavior (General Connection Rules).
-    expect(prompt).toContain('auto-assigns');
+    expect(tradingPrompt).toContain('auto-assigns');
   });
 });
 

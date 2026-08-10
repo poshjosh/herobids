@@ -1470,7 +1470,7 @@ This guide covers how to fund wallets across all supported trading venues — bo
 ### User-provided API keys
 
 - Fund your Hyperliquid account via the standard Arbitrum bridge or exchange withdrawal
-- See [Hyperliquid](/docs/trading-venues/hyperliquid) for more information on Hyperliquid
+- See [Hyperliquid](/docs/trading-venues/hyperliquid) for more information on Hyperliquid.
 
 ### Gas & fees
 
@@ -1491,7 +1491,7 @@ This guide covers how to fund wallets across all supported trading venues — bo
 ### User-provided wallet
 
 - Ensure your connected Solana wallet holds SOL + USDC
-- See [Jupiter](/docs/trading-venues/jupiter) for more information on Jupiter
+- See [Jupiter](/docs/trading-venues/jupiter) for more information on Jupiter.
 
 ### Gas & fees
 
@@ -1512,7 +1512,7 @@ This guide covers how to fund wallets across all supported trading venues — bo
 ### User-provided wallet
 
 - Ensure your EVM wallet on Base holds ETH + USDC
-- See [1inch](/docs/trading-venues/1inch) for more information on 1inch
+- See [1inch](/docs/trading-venues/1inch) for more information on 1inch.
 
 ### Gas & fees
 
@@ -1525,7 +1525,7 @@ This guide covers how to fund wallets across all supported trading venues — bo
 
 - Bybit uses API keys only — no platform-generated wallets
 - Fund your Bybit account via Bybit's standard deposit flow (USDT or USDC)
-- See [Bybit](/docs/trading-venues/bybit) for more information on Bybit`,
+- See [Bybit](/docs/trading-venues/bybit) for more information in Bybit.`,
     headings: ['Hyperliquid', 'Platform-generated wallet (OpenAIdom creates it)', 'User-provided API keys', 'Gas & fees', 'Jupiter', 'Platform-generated wallet (OpenAIdom creates it)', 'User-provided wallet', 'Gas & fees', '1inch', 'Platform-generated wallet (OpenAIdom creates it)', 'User-provided wallet', 'Gas & fees', 'Bybit'],
     tags: ['docs', 'funding-wallets', 'trading-venues'],
   },
