@@ -61,13 +61,13 @@ Route auto-generates: `/docs/trading-venues/funding-wallets`. The `MarkdownPage`
 ## Hyperliquid
 ### Platform-generated wallet (OpenAIdom creates it)
 - What to send: USDC via Arbitrum bridge
-- Where to find the address: Settings → Connections, or the wallet-created card in chat
+- Where to find the address: Sidebar → Connections
 - Confirmation: ~2-5 min after Arbitrum finality
 - Minimum recommended: $50 USDC
 
 ### User-provided API keys
 - Fund your Hyperliquid account via the standard Arbitrum bridge or exchange withdrawal
-- See [Hyperliquid](/docs/trading-venues/hyperliquid) for connection setup
+- See [Hyperliquid](/docs/trading-venues/hyperliquid) for more information on Hyperliquid
 
 ### Gas & fees
 - Hyperliquid is gasless for spot USDC transfers
@@ -82,7 +82,7 @@ Route auto-generates: `/docs/trading-venues/funding-wallets`. The `MarkdownPage`
 
 ### User-provided wallet
 - Ensure your connected Solana wallet holds SOL + USDC
-- See [Jupiter](/docs/trading-venues/jupiter) for connection setup
+- See [Jupiter](/docs/trading-venues/jupiter) for more information on Jupiter
 
 ### Gas & fees
 - SOL for transaction fees (~0.000005 SOL per tx)
@@ -97,7 +97,7 @@ Route auto-generates: `/docs/trading-venues/funding-wallets`. The `MarkdownPage`
 
 ### User-provided wallet
 - Ensure your EVM wallet on Base holds ETH + USDC
-- See [1inch](/docs/trading-venues/1inch) for connection setup
+- See [1inch](/docs/trading-venues/1inch) for more information on 1inch
 
 ### Gas & fees
 - ETH on Base for transaction fees
@@ -106,7 +106,7 @@ Route auto-generates: `/docs/trading-venues/funding-wallets`. The `MarkdownPage`
 ## Bybit
 - Bybit uses API keys only — no platform-generated wallets
 - Fund your Bybit account via Bybit's standard deposit flow (USDT or USDC)
-- See [Bybit](/docs/trading-venues/bybit) for connection setup
+- See [Bybit](/docs/trading-venues/bybit) for more information on Bybit
 ```
 
 #### A3. Cross-link from existing venue pages
