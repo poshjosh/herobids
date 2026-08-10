@@ -214,6 +214,22 @@ Route: `/agents?create=1` — simplified create-agent form with Style selector, 
 
 ---
 
+## 6c. Agents — Dedicated Create Page
+
+Route: `/agents/new` — dedicated page for agent creation with URL-driven form vs. chat mode.
+
+| ID | Test Case | Steps | Expected | Status | Notes |
+|----|-----------|-------|----------|--------|-------|
+| AG-D01 | Default mode is form | Navigate to `/agents/new` with no query params | The plain form-based creation flow is shown (not the guided chat). URL remains `/agents/new`. | — | 2026-08-10: `/agents/new` now defaults to form; guided chat requires `?ui=chat` |
+| AG-D02 | Query param enables chat | Navigate to `/agents/new?ui=chat` | The guided chat flow is shown. URL updates to `/agents/new?ui=chat`. | — | |
+| AG-D03 | Toggle switch updates URL | On `/agents/new`, click the toggle to switch to guided chat | Mode switches to guided chat. URL updates to `/agents/new?ui=chat`. | — | |
+| AG-D04 | Toggle switch removes query param | On `/agents/new?ui=chat`, click the toggle to switch to form | Mode switches to form. URL updates to `/agents/new` (no query param). | — | |
+| AG-D05 | Chat "Use the form" link updates URL | In guided chat mode, click or follow the "Use the form" suggestion from the chat agent | Mode switches to form. URL updates to `/agents/new`. | — | Depends on GuidedSetupPanel's onSwitchToForm callback |
+| AG-D06 | Direct navigation preserves mode | Navigate directly to `/agents/new?ui=chat` | Guided chat loads (not form). No redirect or mode flash. | — | |
+| AG-D07 | Refresh preserves mode | On `/agents/new?ui=chat`, refresh the page | Stays in guided chat mode. URL unchanged. | — | |
+
+---
+
 ## 7. Skills
 
 Route: `/skills` — capability bundles that tell agents what they can do.
@@ -358,8 +374,8 @@ Route: `/skills` — capability bundles that tell agents what they can do.
 | TRY-02 | `/try` page loads for unauthenticated users | Visit `/try` without being logged in | Chat-like UI with typing animation, messages appear in sequence | — | |
 | TRY-03 | Email validation on `/try` | Enter invalid email (e.g., "not-an-email") and submit | "Enter a valid email address" error shown | — | |
 | TRY-04 | Email submission sends login link | Enter valid email and submit | "An email has been sent to..." message appears, check inbox for link | — | |
-| TRY-05 | Login link redirects to agent creation | Click login link from email | Redirects to `/agents/new` after authentication | — | Landing on `/agents/new` may show Guided Setup chat, billing gate, or plain form — all are acceptable per plan Decision 7. |
+| TRY-05 | Login link redirects to guided chat | Click login link from email | Redirects to `/agents/new?ui=chat` after authentication | — | `/try` login links now point to guided chat (`?ui=chat`), not the form default |
 | TRY-06 | `/try` resend button works | After link sent, click "Resend link" | Another email sent, rate-limit message if clicked too quickly | — | |
-| TRY-07 | Authenticated user visiting `/try` | Log in, then navigate to `/try` | Redirected to `/agents/new` | — | |
+| TRY-07 | Authenticated user visiting `/try` | Log in, then navigate to `/try` | Redirected to `/agents/new?ui=chat` | — | |
 | TRY-08 | `/try` page works on mobile | Visit `/try` on a mobile viewport (or resize browser) | Layout adjusts, inputs are full-width, messages readable | — | |
-| TRY-09 | Post-auth experience after `/try` | Complete flow: `/try` → email → click link → authenticate | User lands at `/agents/new` and can create an agent | — | |
+| TRY-09 | Post-auth experience after `/try` | Complete flow: `/try` → email → click link → authenticate | User lands at `/agents/new?ui=chat` and sees the guided chat | — | |

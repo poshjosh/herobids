@@ -167,11 +167,11 @@ export function AgentsPage() {
 
   const items = query.data ?? [];
 
-  // New users (0 agents) are sent straight to the dedicated create page so
-  // they can build their first agent without an empty list in the way.
+  // New users (0 agents) are sent straight to guided chat so they
+  // can build their first agent without an empty list in the way.
   useEffect(() => {
     if (query.isSuccess && items.length === 0) {
-      navigate('/agents/new', { replace: true });
+      navigate('/agents/new?ui=chat', { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query.isSuccess, items.length]);

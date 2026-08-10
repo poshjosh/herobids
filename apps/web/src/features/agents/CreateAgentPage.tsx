@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useRef, useState, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { skills as skillsApi } from '../../lib/api-client.js';
@@ -14,13 +14,33 @@ import { CreateAgentFlow } from './AgentsPage.js';
  * Hosts both the guided (chat) and plain (form) creation flows, with a header
  * toggle to switch between them. Kept separate from the agents list page so the
  * creation experience is focused and free of layout overlap.
+ *
+ * URL convention:
+ * - /agents/new          → form (default)
+ * - /agents/new?ui=chat  → guided chat
  */
 export function CreateAgentPage() {
   const intl = useIntl();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [mode, setMode] = useState<'guided' | 'form'>('guided');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const initialMode: 'guided' | 'form' = useMemo(() => {
+    return searchParams.get('ui') === 'chat' ? 'guided' : 'form';
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [mode, setMode] = useState<'guided' | 'form'>(initialMode);
   const guidedStartOverRef = useRef<(() => void) | null>(null);
+
+  const switchMode = (newMode: 'guided' | 'form') => {
+    setMode(newMode);
+    if (newMode === 'guided') {
+      setSearchParams({ ui: 'chat' }, { replace: true });
+    } else {
+      setSearchParams({}, { replace: true });
+    }
+  };
 
   const skillsQuery = useQuery({
     queryKey: ['skills'],
@@ -42,7 +62,7 @@ export function CreateAgentPage() {
             <button
               type="button"
               className="create-flow-switch"
-              onClick={() => setMode(mode === 'guided' ? 'form' : 'guided')}
+              onClick={() => switchMode(mode === 'guided' ? 'form' : 'guided')}
             >
               {mode === 'guided'
                 ? intl.formatMessage({ id: 'agents.create.switchToForm' })
@@ -83,7 +103,7 @@ export function CreateAgentPage() {
         <GuidedSetupPanel
           startOverRef={guidedStartOverRef}
           onAgentCreated={handleCreated}
-          onSwitchToForm={() => setMode('form')}
+          onSwitchToForm={() => switchMode('form')}
         />
       ) : (
         <CreateAgentFlow

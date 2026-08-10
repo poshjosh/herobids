@@ -10,6 +10,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Sitemap
 - Enable hetzner automated backups for production
+- Guided Setup chat agent now knows canonical platform URLs (form: /agents/new, billing: /billing, settings: /settings) — no more hallucinated links
+
+### Changed
+
+- `/agents/new` now defaults to the form-based creation flow; guided chat is available via `/agents/new?ui=chat`. The URL stays in sync when toggling between form and chat modes.
+
+### Fixed
+
+- `/try` login links and new-user (0 agents) redirect now point to `/agents/new?ui=chat` so prospecting users land on guided chat, not the form
 
 ## v0.1.5 - 2026-08-09
 

@@ -124,14 +124,14 @@ describe('TryPage', () => {
 
   // ── Redirect for authenticated users ─────────────────────────────────
 
-  it('contains redirect target /agents/new in component source', () => {
-    // The component calls navigate('/agents/new') when isAuthenticated()
+  it('contains redirect target /agents/new?ui=chat in component source', () => {
+    // The component calls navigate('/agents/new?ui=chat') when isAuthenticated()
     // returns true. Since renderToStaticMarkup doesn't run useEffect,
     // we verify the redirect target is hardcoded in the component source.
     const fs = require('node:fs');
     const sourcePath = new URL('./TryPage.tsx', import.meta.url).pathname;
     const source = fs.readFileSync(sourcePath, 'utf8');
-    expect(source).toContain("'/agents/new'");
+    expect(source).toContain("'/agents/new?ui=chat'");
   });
 
   // ── Module-level integration checks ──────────────────────────────────

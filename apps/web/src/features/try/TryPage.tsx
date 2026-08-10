@@ -42,10 +42,10 @@ type Phase =
 export function TryPage() {
   const navigate = useNavigate();
 
-  // Redirect authenticated users to /agents/new
+  // Redirect authenticated users to guided chat
   useEffect(() => {
     if (isAuthenticated()) {
-      navigate('/agents/new', { replace: true });
+      navigate('/agents/new?ui=chat', { replace: true });
     }
   }, [navigate]);
 
@@ -114,7 +114,7 @@ export function TryPage() {
     async (emailToSend: string) => {
       setServerError('');
       try {
-        await auth.sendLoginLink(emailToSend, undefined, '/agents/new');
+        await auth.sendLoginLink(emailToSend, undefined, '/agents/new?ui=chat');
         return { ok: true };
       } catch (err) {
         if (err instanceof ApiError && err.status === 429) {
