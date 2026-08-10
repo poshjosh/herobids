@@ -899,6 +899,41 @@ plans:
           - Topup200
           - Topup500
           - Topup1000
+    pro:
+      entitlements: # required
+        skills:
+          canCreatePrivateSkills: true
+          canViewMarketplaceSkills: true
+          canPublishToMarketplace: true
+          autoPublishNonDraftSkills: false
+          canPriceSkills: true
+          canLikeMarketplaceSkills: true
+        agents:
+          canViewOwnPrompts: false
+        blueprints:
+          canViewMarketplaceBlueprints: true
+          canLikeMarketplaceBlueprints: true
+        limits:
+          maxAgents: 9
+          maxBots: 27
+          maxConnections: 45
+          maxCredentials: 45
+          maxBindings: 45
+          maxVenueAccounts: 45
+          maxConcurrentBacktests: 9
+          liveEnabled: true
+      usage: # required
+        includedCreditCents: 5000
+        softCapCents: 0    # at zero, warn the user
+        hardCapCents: 500  # at $-5, block the user
+        topUpPackIds: 
+          - Topup5
+          - Topup20
+          - Topup50
+          - Topup100
+          - Topup200
+          - Topup500
+          - Topup1000
           
 # Billing — multi-provider subscription billing.
 # Use 'mock' for local dev/CI (no credentials needed — checkout auto-fulfills instantly).

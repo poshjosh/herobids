@@ -337,7 +337,7 @@ export function BillingPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Current Plan */}
           <Card style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   {intl.formatMessage({ id: 'billing.currentPlan' })}
@@ -349,7 +349,23 @@ export function BillingPage() {
                   </div>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {summary.availablePlans.length > 0 && summary.availablePlans.map((plan) => (
+                  plan.prices.map((price) => (
+                    <Button
+                      key={price.id}
+                      variant="primary"
+                      onClick={() => (summary.subscription
+                        ? upgradeMutation.mutate({ planId: plan.planId, priceId: price.id })
+                        : checkoutMutation.mutate({ planId: plan.planId, priceId: price.id }))}
+                      disabled={upgradeMutation.isPending || checkoutMutation.isPending}
+                    >
+                      {(upgradeMutation.isPending || checkoutMutation.isPending)
+                        ? intl.formatMessage({ id: 'billing.switching' })
+                        : intl.formatMessage({ id: summary.subscription ? 'billing.switchAction' : 'billing.subscribeAction' }, { label: price.displayLabel })}
+                    </Button>
+                  ))
+                ))}
                 {summary.hasPaymentCustomer && !!summary.subscription && (
                   <Button
                     variant="secondary"
@@ -409,57 +425,6 @@ export function BillingPage() {
                   {intl.formatMessage({ id: 'billing.paymentIssueNotice' })}
                 </div>
               )}
-            </Card>
-          )}
-
-          {summary.availablePlans.length > 0 && (
-            <Card style={{ padding: '20px' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {summary.subscription ? intl.formatMessage({ id: 'billing.changePlan' }) : intl.formatMessage({ id: 'billing.upgrade' })}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {summary.availablePlans.map((plan) => (
-                  <div key={plan.planId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
-                    <div>
-                      <div style={{ fontWeight: '500' }}>{plan.prices[0]?.displayLabel ?? plan.planId}</div>
-                      {plan.prices[0]?.amountCents != null && (
-                        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
-                          {formatCurrencyFromCents(intl, plan.prices[0].amountCents)}/{intl.formatMessage({ id: `billing.interval.${plan.prices[0].interval}` })}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      {summary.subscription ? (
-                        plan.prices.map((price) => (
-                          <Button
-                            key={price.id}
-                            variant="primary"
-                            onClick={() => upgradeMutation.mutate({ planId: plan.planId, priceId: price.id })}
-                            disabled={upgradeMutation.isPending}
-                          >
-                            {upgradeMutation.isPending
-                              ? intl.formatMessage({ id: 'billing.switching' })
-                              : intl.formatMessage({ id: 'billing.switchAction' }, { label: price.displayLabel })}
-                          </Button>
-                        ))
-                      ) : (
-                        plan.prices.map((price) => (
-                          <Button
-                            key={price.id}
-                            variant="primary"
-                            onClick={() => checkoutMutation.mutate({ planId: plan.planId, priceId: price.id })}
-                            disabled={checkoutMutation.isPending}
-                          >
-                            {checkoutMutation.isPending
-                              ? intl.formatMessage({ id: 'billing.loadingCheckout' })
-                              : intl.formatMessage({ id: 'billing.subscribeAction' }, { label: price.displayLabel })}
-                          </Button>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
             </Card>
           )}
         </div>

@@ -318,8 +318,6 @@ export const messages: Record<string, string> = {
   'billing.trialEnds': 'Trial ends',
   'billing.cancelNotice': 'Your subscription will be canceled at the end of the current billing period. You can reactivate from the billing portal.',
   'billing.paymentIssueNotice': 'There is a payment issue with your subscription. Please update your payment method to avoid service interruption.',
-  'billing.changePlan': 'Change plan to',
-  'billing.upgrade': 'Upgrade',
   'billing.switching': 'Switching…',
   'billing.switchAction': 'Switch to {label}',
   'billing.loadingCheckout': 'Loading…',

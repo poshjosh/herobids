@@ -319,8 +319,6 @@ export const messages: Record<string, string> = {
   'billing.trialEnds': 'ट्रायल समाप्त',
   'billing.cancelNotice': 'आपकी सदस्यता वर्तमान बिलिंग अवधि के अंत में रद्द हो जाएगी। आप बिलिंग पोर्टल से इसे फिर सक्रिय कर सकते हैं।',
   'billing.paymentIssueNotice': 'आपकी सदस्यता में भुगतान समस्या है। सेवा बाधित होने से बचने के लिए भुगतान विधि अपडेट करें।',
-  'billing.changePlan': 'योजना में बदलें',
-  'billing.upgrade': 'अपग्रेड',
   'billing.switching': 'बदला जा रहा है…',
   'billing.switchAction': '{label} पर स्विच करें',
   'billing.loadingCheckout': 'लोड हो रहा है…',

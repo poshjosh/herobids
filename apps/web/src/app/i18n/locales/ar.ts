@@ -319,8 +319,6 @@ export const messages: Record<string, string> = {
   'billing.trialEnds': 'تنتهي التجربة',
   'billing.cancelNotice': 'سيتم إلغاء اشتراكك في نهاية فترة الفوترة الحالية. يمكنك إعادة التفعيل من بوابة الفواتير.',
   'billing.paymentIssueNotice': 'هناك مشكلة في الدفع. يُرجى تحديث وسيلة الدفع لتجنب انقطاع الخدمة.',
-  'billing.changePlan': 'تغيير الخطة إلى',
-  'billing.upgrade': 'الترقية',
   'billing.switching': 'جارٍ التبديل…',
   'billing.switchAction': 'التبديل إلى {label}',
   'billing.loadingCheckout': 'جارٍ التحميل…',
