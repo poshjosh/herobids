@@ -148,7 +148,7 @@ export function SettingsPage() {
         subtitle={intl.formatMessage({ id: 'settings.subtitle' })}
       />
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '540px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '680px' }}>
         {/* Language preference */}
         <Card>
           <h3 style={{ margin: '0 0 12px', fontSize: '0.875rem', fontWeight: '600' }}>
@@ -209,7 +209,7 @@ export function SettingsPage() {
                 adaptJudgeReasoning: modelSettings.adaptJudgeReasoning,
               });
             }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}
           >
             <ModelSelectionFields
               value={modelSettings}
@@ -230,7 +230,7 @@ export function SettingsPage() {
             />
 
             {/* Reasoning levels side by side */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '12px' }}>
               <div>
                 <FieldLabel>{intl.formatMessage({ id: 'aiModels.scoutReasoning.label' })}</FieldLabel>
                 <select
@@ -273,7 +273,7 @@ export function SettingsPage() {
             </div>
 
             {/* Adaptive reasoning toggles — side by side (matching reasoning levels grid) */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '12px' }}>
               <div>
                 <label htmlFor="adapt-scout-reasoning" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.875rem', color: 'var(--color-text)', cursor: 'pointer' }}>
                   <input

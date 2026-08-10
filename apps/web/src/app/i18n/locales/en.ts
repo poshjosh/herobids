@@ -259,7 +259,7 @@ export const messages: Record<string, string> = {
   'settings.locale.title': 'Language',
   'settings.locale.label': 'Display language',
   'aiModels.title': 'AI models',
-  'aiModels.description': 'Choose one provider, then pick an economy model for lighter work and a premium model for heavier reasoning.',
+  'aiModels.description': 'Select an economy model for lighter work and a premium model for heavier reasoning.',
   'aiModels.provider.label': 'Provider',
   'aiModels.provider.placeholder': 'Select a provider',
   'aiModels.economy.label': 'Economy model',

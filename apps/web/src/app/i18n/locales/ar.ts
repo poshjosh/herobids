@@ -260,7 +260,7 @@ export const messages: Record<string, string> = {
   'settings.locale.title': 'اللغة',
   'settings.locale.label': 'لغة العرض',
   'aiModels.title': 'نماذج الذكاء الاصطناعي',
-  'aiModels.description': 'اختر مزوّداً واحداً، ثم اختر نموذجاً اقتصادياً للأعمال الأخف ونموذجاً مميزاً للاستدلال الأقوى.',
+  'aiModels.description': 'اختر نموذجاً اقتصادياً للأعمال الأخف ونموذجاً مميزاً للاستدلال الأقوى.',
   'aiModels.provider.label': 'المزوّد',
   'aiModels.provider.placeholder': 'اختر مزوّداً',
   'aiModels.economy.label': 'النموذج الاقتصادي',

@@ -11,6 +11,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Sitemap
 - Enable hetzner automated backups for production
 - Guided Setup chat agent now knows canonical platform URLs (form: /agents/new, billing: /billing, settings: /settings) — no more hallucinated links
+- Added warning against entering secrets directly into chat.
 
 ### Changed
 

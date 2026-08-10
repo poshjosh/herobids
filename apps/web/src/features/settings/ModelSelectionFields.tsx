@@ -173,7 +173,7 @@ export function ModelSelectionFields({
   const providerOptions = providers;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
       {providerOptions.length > 1 ? (
         <div>
           <FieldLabel>{providerLabel}</FieldLabel>

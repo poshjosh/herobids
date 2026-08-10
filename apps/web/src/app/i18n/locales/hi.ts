@@ -260,7 +260,7 @@ export const messages: Record<string, string> = {
   'settings.locale.title': 'भाषा',
   'settings.locale.label': 'प्रदर्शन भाषा',
   'aiModels.title': 'AI मॉडल',
-  'aiModels.description': 'एक प्रदाता चुनें, फिर हल्के काम के लिए एक किफायती मॉडल और भारी reasoning के लिए एक प्रीमियम मॉडल चुनें।',
+  'aiModels.description': 'हल्के काम के लिए एक किफायती मॉडल और भारी reasoning के लिए एक प्रीमियम मॉडल चुनें।',
   'aiModels.provider.label': 'प्रदाता',
   'aiModels.provider.placeholder': 'प्रदाता चुनें',
   'aiModels.economy.label': 'किफायती मॉडल',
