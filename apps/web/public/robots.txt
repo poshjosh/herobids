@@ -1,0 +1,19 @@
+User-agent: *
+
+Disallow: /agents
+Disallow: /bots
+Disallow: /connections
+Disallow: /credentials
+Disallow: /venue-accounts
+Disallow: /settings
+Disallow: /admin
+Disallow: /billing
+Disallow: /activity
+Disallow: /outcomes
+Disallow: /exposure
+Disallow: /skills
+Disallow: /mission-control
+Disallow: /auth/
+Disallow: /setup/
+
+Sitemap: https://openaidom.com/sitemap.xml
