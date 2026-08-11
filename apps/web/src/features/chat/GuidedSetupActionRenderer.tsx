@@ -162,6 +162,23 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
                     marginTop: 8,
                   }}
                 >
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 6,
+                      backgroundColor: '#FFF8E1',
+                      border: '1px solid #FFC107',
+                      marginBottom: 12,
+                      fontSize: '0.85rem',
+                      color: '#5D4037',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 8,
+                    }}
+                  >
+                    <span style={{ flexShrink: 0 }}>⚠️</span>
+                    <span>Do not enter secrets directly into the chat. Only enter them into secure forms provided for that purpose.</span>
+                  </div>
                   <ProviderSetupForm
                     inline
                     defaultCapability={preferredCapability ?? 'trading'}

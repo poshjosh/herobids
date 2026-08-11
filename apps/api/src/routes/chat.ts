@@ -18,6 +18,9 @@ import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js
 import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from './agents.js';
 import { createProviderLink } from './setup.js';
 import { generateWallet } from '@herobids/venues';
+import { createLogger } from '../logger.js';
+
+const logger = createLogger('herobids-chat');
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -129,12 +132,6 @@ You can create an agent directly using the create_agent action when you have eno
 export function buildBaseReference(): string {
   return `
 
-## Important Rules
-
-- You are single-purpose: create agents. Nothing else.
-- Never ask for private keys, API secrets, or passwords.
-- Whenever you open a form for the user to enter secrets (e.g. API keys, wallet secrets, or private keys), include a brief and emphasized security reminder: "Do not enter secrets directly into the chat. Only enter them into secure forms (within the chat) provided for that purpose."
-
 ## Important URLs
 
 When directing the user to a page on the platform, use Markdown links so they are clickable:
@@ -190,7 +187,7 @@ Enter fine-tuning mode. Start with:
 
 Walk through the optional fine-tune items ONE AT A TIME. Do not list them all at once — ask about each item, let the user respond, then move to the next or ask if they want to continue.
 
-After each fine-tune item, ask something like: "Anything else you'd like to customize, or should I create your agent now?"
+After each fine-tune item, if there are outstanding customization items, ask something like: "Should I create your agent now, or is there anything else you'd like to customize?", then list the remaining fine-tune items as numbered options.
 
 If the user says "create my agent", "create now", "done", "that's all", "I'm done", or similar — exit fine-tuning mode immediately. Show the confirmation summary and call create_agent. Do NOT keep offering more customization options after the user signals they're done.
 
@@ -213,6 +210,8 @@ What's your Telegram chat ID? (Or say 'skip' if you don't want Telegram notifica
 If the user provides a chat ID, pass it as \`telegramChatId\` on the \`create_agent\` call. If they skip, omit it. Do NOT ask the user to enter their chat ID in Settings — collect it directly in the chat during fine-tuning.
 
 ### Rules:
+- You are single-purpose: create agents. Nothing else.
+- Never ask for private keys, API secrets, or passwords.
 - If listing options, prefer numbered lists. This way, the user can select an option by responding with its corresponding number instead of typing the full text.
 - When the user needs to connect a provider, call \`list_compatible_connections\` first with the appropriate \`preferredCapability\`. If an existing active compatible connection works, reuse it. Never ask the user to type secrets, API keys, OAuth codes, or passwords into the chat.
 - After the user completes or dismisses the connection form, the server resumes you automatically. If the connection was linked (\`step: 'connection_linked'\`), acknowledge it and continue. If the user dismissed the form (\`step: 'connection_form_cancelled'\`), acknowledge their choice and offer alternatives (reuse an existing connection, switch to the form, or continue without) — do NOT immediately call \`request_connection_form\` again for the same need.
@@ -584,6 +583,10 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
           enum: ['direct', 'approval_required'],
           description: "Trade execution authorization policy. ONLY for trading presets. Omit for non-trading agents. 'direct' means the agent executes trades automatically. 'approval_required' means the agent asks for approval before each trade. Default: 'direct'.",
         },
+        telegramChatId: {
+          type: 'string',
+          description: 'Telegram chat ID for agent notifications. Collect this during fine-tuning from the user via @OpenAIdomBot. Omit if the user skips Telegram setup.',
+        },
       },
       required: ['skillPresetId'],
     },
@@ -603,6 +606,7 @@ export const GuidedSetupCreateAgentInput = z.object({
   platformAssessmentEnabled: z.boolean().optional(),
   platformAssessmentReviewIntervalHours: z.enum(['6', '12', '24', '48', '96']).optional(),
   authorizationMode: z.enum(['direct', 'approval_required']).optional(),
+  telegramChatId: z.string().optional(),
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -955,7 +959,8 @@ export async function executeChatAction(
           : `${filtered.length} active connection(s) found.`;
 
         return JSON.stringify({ connections: filtered, recommended, message });
-      } catch {
+      } catch (err) {
+        logger.error({ err, userId }, 'Guided Setup: list_compatible_connections failed');
         return JSON.stringify({ connections: [], message: 'Could not retrieve connections.' });
       }
     }
@@ -972,6 +977,8 @@ export async function executeChatAction(
         const known = listProviderRegistry().find((entry) => entry.id === rawPreferredProvider);
         if (known && known.status !== 'deprecated') {
           preferredProvider = known.id;
+        } else {
+          logger.warn({ rawPreferredProvider, userId }, 'Guided Setup: LLM requested unknown or deprecated provider');
         }
       }
 
@@ -1016,25 +1023,26 @@ export async function executeChatAction(
       // Derive label server-side when the model omits it
       const effectiveLabel = label ?? `${known.displayName} Wallet`;
 
-      // Look up user plan and admin status for plan-limit enforcement
-      const [userRow] = await db
-        .select({ planId: users.planId, isAdmin: users.isAdmin })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
+      try {
+        // Look up user plan and admin status for plan-limit enforcement
+        const [userRow] = await db
+          .select({ planId: users.planId, isAdmin: users.isAdmin })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
 
-      const result = await createProviderLink(db, plansConfig, { venues, generateWallet }, {
-        userId,
-        userPlanId: userRow?.planId ?? 'free',
-        isAdmin: userRow?.isAdmin ?? false,
-        provider,
-        label: effectiveLabel,
-        capability: capability === 'trading' ? 'trading' : undefined,
-        credentialMode: 'generated',
-        secrets: undefined,
-      });
+        const result = await createProviderLink(db, plansConfig, { venues, generateWallet }, {
+          userId,
+          userPlanId: userRow?.planId ?? 'free',
+          isAdmin: userRow?.isAdmin ?? false,
+          provider,
+          label: effectiveLabel,
+          capability: capability === 'trading' ? 'trading' : undefined,
+          credentialMode: 'generated',
+          secrets: undefined,
+        });
 
-      if (result.kind === 'ok') {
+        if (result.kind === 'ok') {
         const response: Record<string, unknown> = {
           success: true,
           connectionId: result.connectionId,
@@ -1069,10 +1077,17 @@ export async function executeChatAction(
         });
       }
 
-      return JSON.stringify({
-        error: result.kind === 'error' || result.kind === 'fault' ? result.code : 'setup.provider_link_failed',
-        message: result.kind === 'error' || result.kind === 'fault' ? result.message : 'Failed to create connection. Please try the manual form instead.',
-      });
+        return JSON.stringify({
+          error: result.kind === 'error' || result.kind === 'fault' ? result.code : 'setup.provider_link_failed',
+          message: result.kind === 'error' || result.kind === 'fault' ? result.message : 'Failed to create connection. Please try the manual form instead.',
+        });
+      } catch (err) {
+        logger.error({ err, userId, provider }, 'Guided Setup: create_connection failed');
+        return JSON.stringify({
+          error: 'setup.provider_link_failed',
+          message: 'Failed to create connection due to an unexpected error.',
+        });
+      }
     }
 
     case 'list_available_skills': {
@@ -1095,26 +1110,35 @@ export async function executeChatAction(
             ? `${availableSkills.length} skills available for agent assignment.`
             : 'No skills currently available.',
         });
-      } catch {
+      } catch (err) {
+        logger.error({ err, userId }, 'Guided Setup: list_available_skills failed');
         return JSON.stringify({ skills: [], message: 'Could not retrieve available skills.' });
       }
     }
 
     case 'create_agent': {
       // Billing gate: defense-in-depth for agent creation
-      if (usageBillingRepo) {
-        const account = await usageBillingRepo.getAccountByUserId(userId);
-        const canSpendResult = account
-          ? await usageBillingRepo.canSpendNow(account.id)
-          : null;
-        if (canSpendResult && !canSpendResult.canSpend) {
-          return JSON.stringify({
-            error: 'billing.top_up_required',
-            message: 'You need to add credit before creating an agent.',
-            reason: canSpendResult.reason,
-            availableMicrousd: canSpendResult.availableMicrousd,
-          });
+      try {
+        if (usageBillingRepo) {
+          const account = await usageBillingRepo.getAccountByUserId(userId);
+          const canSpendResult = account
+            ? await usageBillingRepo.canSpendNow(account.id)
+            : null;
+          if (canSpendResult && !canSpendResult.canSpend) {
+            return JSON.stringify({
+              error: 'billing.top_up_required',
+              message: 'You need to add credit before creating an agent.',
+              reason: canSpendResult.reason,
+              availableMicrousd: canSpendResult.availableMicrousd,
+            });
+          }
         }
+      } catch (err) {
+        logger.error({ err, userId }, 'Guided Setup: billing gate check failed');
+        return JSON.stringify({
+          error: 'agent_creation_failed',
+          message: 'Unable to verify billing status. Please try again.',
+        });
       }
 
       const parsed = GuidedSetupCreateAgentInput.safeParse(toolCall.args);
@@ -1137,6 +1161,7 @@ export async function executeChatAction(
       const strategyPreset = parsed.data.strategyPreset ?? (isTradingPreset ? 'momentum' : undefined);
       const connectionIds = parsed.data.selectedConnectionId ? [parsed.data.selectedConnectionId] : [];
       const hasConnections = connectionIds.length > 0;
+      const rawTelegramChatId = parsed.data.telegramChatId?.trim() || null;
 
       // Map user-facing execution mode to an initial canonical mode.
       // 'test' → 'paper' when no connections exist, 'shadow' when connections are present.
@@ -1220,103 +1245,102 @@ export async function executeChatAction(
         ? { type: strategyPreset, decisionMode: 'hybrid' } as Record<string, unknown>
         : null;
 
-      // ── Look up user plan and AI config ─────────────────────────────────
-      const [userRow] = await db
-        .select({ planId: users.planId, isAdmin: users.isAdmin, aiModelConfig: users.aiModelConfig })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-      const userPlanId = userRow?.planId ?? 'free';
-      const isAdmin = userRow?.isAdmin ?? false;
+      try {
+        // ── Look up user plan and AI config ───────────────────────────────
+        const [userRow] = await db
+          .select({ planId: users.planId, isAdmin: users.isAdmin, aiModelConfig: users.aiModelConfig })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+        const userPlanId = userRow?.planId ?? 'free';
+        const isAdmin = userRow?.isAdmin ?? false;
 
-      // ── Plan enforcement: check agent-count limit ───────────────────────
-      if (plansConfig) {
-        const planCheck = await checkAgentLimit(db, plansConfig, userId, userPlanId, isAdmin);
-        if (!planCheck.ok) {
+        // ── Plan enforcement: check agent-count limit ─────────────────────
+        if (plansConfig) {
+          const planCheck = await checkAgentLimit(db, plansConfig, userId, userPlanId, isAdmin);
+          if (!planCheck.ok) {
+            return JSON.stringify({
+              error: 'plan.limit_exceeded',
+              message: planCheck.error.message,
+              limit: planCheck.error.limit,
+              current: planCheck.error.current,
+            });
+          }
+        }
+
+        // ── Resolve authorization mode (matching form route pattern) ──────
+        // Backward-compat: legacy trading-assistant preset defaults to approval_required
+        // when no explicit authorizationMode is provided.
+        const effectiveAuthorizationMode = parsed.data.authorizationMode
+          ?? (parsed.data.skillPresetId === 'trading-assistant' ? 'approval_required' : undefined);
+        const authorizationModeProvided = parsed.data.authorizationMode !== undefined
+          || parsed.data.skillPresetId === 'trading-assistant';
+        const authorizationMode = resolveAuthorizationMode({
+          skillIds,
+          submittedAuthorizationMode: effectiveAuthorizationMode,
+          authorizationModeProvided,
+        });
+
+        // ── Resolve model configuration ──────────────────────────────────
+        const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
+        const operatorDefaults = modelDefaults?.provider && modelDefaults?.lightModel && modelDefaults?.heavyModel
+          ? { provider: modelDefaults.provider, lightModel: modelDefaults.lightModel, heavyModel: modelDefaults.heavyModel }
+          : null;
+        if (!userAiConfig && !operatorDefaults) {
           return JSON.stringify({
-            error: 'plan.limit_exceeded',
-            message: planCheck.error.message,
-            limit: planCheck.error.limit,
-            current: planCheck.error.current,
+            error: 'config.model_settings_required',
+            message: 'Before I can create an agent, you need to configure your AI model settings. Go to Settings → AI Models and choose a provider and models, then come back and try again.',
           });
         }
-      }
+        const effectiveModelPolicy: Record<string, unknown> = userAiConfig ? {} : operatorDefaults!;
 
-      // ── Resolve authorization mode (matching form route pattern) ────────
-      // Backward-compat: legacy trading-assistant preset defaults to approval_required
-      // when no explicit authorizationMode is provided.
-      const effectiveAuthorizationMode = parsed.data.authorizationMode
-        ?? (parsed.data.skillPresetId === 'trading-assistant' ? 'approval_required' : undefined);
-      const authorizationModeProvided = parsed.data.authorizationMode !== undefined
-        || parsed.data.skillPresetId === 'trading-assistant';
-      const authorizationMode = resolveAuthorizationMode({
-        skillIds,
-        submittedAuthorizationMode: effectiveAuthorizationMode,
-        authorizationModeProvided,
-      });
-
-      // ── Shared create-time normalization ────────────────────────────────
-      const createFields = await prepareAgentCreateFields({
-        name,
-        prompt,
-        skillIds,
-        style,
-        capabilityMode,
-        hybridMode,
-        strategyPreset,
-        capital: parsed.data.capital ?? null,
-        skillPresetId: parsed.data.skillPresetId,
-        connectionIds,
-        toolPolicy: null,
-        platformAssessment,
-        authorizationMode: authorizationMode.value,
-        executionDefaults: executionDefaults as import('@herobids/domain').ExecutionDefaults | null,
-        strategy: strategy as import('@herobids/domain').StrategyIdentity | null,
-        runtimePolicyOverrides: null,
-        db,
-        userId,
-        plansConfig,
-        userPlanId,
-        isAdmin,
-        agentRiskDefaults,
-      });
-
-      // ── Resolve model configuration ────────────────────────────────────
-      const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
-      const operatorDefaults = modelDefaults?.provider && modelDefaults?.lightModel && modelDefaults?.heavyModel
-        ? { provider: modelDefaults.provider, lightModel: modelDefaults.lightModel, heavyModel: modelDefaults.heavyModel }
-        : null;
-      if (!userAiConfig && !operatorDefaults) {
-        return JSON.stringify({
-          error: 'config.model_settings_required',
-          message: 'Before I can create an agent, you need to configure your AI model settings. Go to Settings → AI Models and choose a provider and models, then come back and try again.',
+        // ── Shared create-time normalization ──────────────────────────────
+        const createFields = await prepareAgentCreateFields({
+          name,
+          prompt,
+          skillIds,
+          style,
+          capabilityMode,
+          hybridMode,
+          strategyPreset,
+          capital: parsed.data.capital ?? null,
+          skillPresetId: parsed.data.skillPresetId,
+          connectionIds,
+          toolPolicy: null,
+          platformAssessment,
+          authorizationMode: authorizationMode.value,
+          executionDefaults: executionDefaults as import('@herobids/domain').ExecutionDefaults | null,
+          strategy: strategy as import('@herobids/domain').StrategyIdentity | null,
+          runtimePolicyOverrides: null,
+          db,
+          userId,
+          plansConfig,
+          userPlanId,
+          isAdmin,
+          agentRiskDefaults,
         });
-      }
-      const effectiveModelPolicy: Record<string, unknown> = userAiConfig ? {} : operatorDefaults!;
 
-      const agentId = uuid();
-      const timestamp = now();
+        const agentId = uuid();
+        const timestamp = now();
 
-      // ── Validate and resolve skill assignments (before transaction) ───
-      const skillPlanPolicy = plansConfig
-        ? resolvePlanSkillEntitlements(plansConfig, userPlanId, isAdmin)
-        : { canViewMarketplaceSkills: true };
-      const assignmentResolution = await resolveSkillAssignmentsForUser(
-        db,
-        userId,
-        skillIds,
-        new Set(),
-        skillPlanPolicy.canViewMarketplaceSkills,
-      );
-      if (assignmentResolution.error) {
-        return JSON.stringify({
-          error: assignmentResolution.error.code,
-          message: assignmentResolution.error.message,
-          details: assignmentResolution.error.details,
-        });
-      }
-
-      try {
+        // ── Validate and resolve skill assignments (before transaction) ───
+        const skillPlanPolicy = plansConfig
+          ? resolvePlanSkillEntitlements(plansConfig, userPlanId, isAdmin)
+          : { canViewMarketplaceSkills: true };
+        const assignmentResolution = await resolveSkillAssignmentsForUser(
+          db,
+          userId,
+          skillIds,
+          new Set(),
+          skillPlanPolicy.canViewMarketplaceSkills,
+        );
+        if (assignmentResolution.error) {
+          return JSON.stringify({
+            error: assignmentResolution.error.code,
+            message: assignmentResolution.error.message,
+            details: assignmentResolution.error.details,
+          });
+        }
         await db.transaction(async (tx) => {
           // Validate connection ownership and type compatibility.
           if (connectionIds.length > 0) {
@@ -1372,7 +1396,7 @@ export async function executeChatAction(
             runtimePolicyOverrides: createFields.runtimePolicyOverrides,
             notificationPolicy: createFields.notificationPolicy,
             wakePreferences: null,
-            telegramChatId: null,
+            telegramChatId: rawTelegramChatId,
             createdAt: timestamp,
             updatedAt: timestamp,
           } as never);
@@ -1437,6 +1461,7 @@ export async function executeChatAction(
         }
         return JSON.stringify(result);
       } catch (err) {
+        logger.error({ err, userId, preset: parsed.data?.skillPresetId }, 'Guided Setup agent creation failed');
         return JSON.stringify({
           error: 'agent_creation_failed',
           message: err instanceof Error ? err.message : 'Failed to create agent',
