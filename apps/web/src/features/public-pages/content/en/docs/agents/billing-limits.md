@@ -1,6 +1,6 @@
 # Agent Billing Limits
 
-OpenAIdom lets you set spending limits on your agent's LLM usage so you never get a surprise bill. There are two kinds of limits, and they behave very differently.
+OpenAIdom enforces spending limits on your agent's LLM usage so you never get a surprise bill. Limits are set by your subscription plan and apply automatically. There are two kinds of limits, and they behave very differently.
 
 ## Soft cap vs hard cap
 
@@ -14,7 +14,7 @@ OpenAIdom lets you set spending limits on your agent's LLM usage so you never ge
 
 Your agent's trading logic is yours. The platform does not silently degrade, pause, or alter how your agent thinks or trades just because a spending threshold was crossed.
 
-The soft cap is purely a notification boundary. It tells you that spending is approaching the limit you set, so you can decide what to do — top up, raise the cap, or let it reach the hard cap.
+The soft cap is purely a notification boundary. It tells you that spending is approaching your plan's hard limit, so you can decide what to do — top up, upgrade your plan, or let it reach the hard cap.
 
 ## What happens at the hard cap
 
@@ -28,14 +28,14 @@ The agent does **not** automatically close positions, submit orders, or change y
 
 The hard-cap boundary is exact. For example:
 
-- If your hard cap is **$1.00**, paid usage stops once your balance reaches exactly **-$1.00** — not -$0.99, not after the next tick.
-- If your hard cap is **$0.00**, paid usage stops at exactly $0.00 (i.e. once your included credits are exhausted).
-- If you **do not set a hard cap**, no hard cap is enforced — your agent can continue spending until stopped manually.
+- If your plan's hard cap is **$1.00**, paid usage stops once your balance reaches exactly **-$1.00** — not -$0.99, not after the next tick.
+- If your plan's hard cap is **$0.00**, paid usage stops at exactly $0.00 (i.e. once your included credits are exhausted).
+- If your plan **has no hard cap**, no hard limit is enforced — your agent can continue spending until stopped manually.
 
 ## What to do when a cap is reached
 
-- **Top up** — Purchase additional credits from the Billing page.
-- **Adjust caps** — Raise or remove the soft cap and/or hard cap from the Billing page.
+- **Top up** — Purchase additional credits from the Billing page to move your balance back above the cap.
+- **Upgrade your plan** — Higher-tier plans include more included credits and higher spending limits.
 - **Let it stop** — If you are comfortable with the stop, no action is needed. Your agent will resume on its next tick once spending is back under the cap.
 
 ## Open positions at the hard cap
@@ -46,14 +46,14 @@ If your agent has open positions when the hard cap stops it, those positions wil
 
 You should treat a hard-cap stop with open positions as an event that needs your attention. The notification you receive will list the open positions so you can act.
 
-## Setting your caps
+## Where caps come from
 
-Caps are set in two places:
+Caps are set by your subscription plan:
 
-1. **Plan defaults** — Your subscription plan may include default soft and hard caps. These are set by the platform operator and apply unless you override them.
-2. **Billing page** — You can set your own soft cap and hard cap from the **Billing** page at any time. Your values override the plan defaults.
+- **Plan defaults** — Every plan tier includes a soft cap and a hard cap configured by the platform operator. These apply automatically to all agents under your account.
+- **No manual override** — You cannot set custom caps from the Billing page. If your current plan's limits are too restrictive, upgrading to a higher tier is the way to get more headroom.
 
-If you do not set any caps, no spending limits are enforced. Your agent will run until you stop it manually.
+If your plan has no caps configured, no spending limits are enforced. Your agent will run until you stop it manually.
 
 ## Notifications
 
