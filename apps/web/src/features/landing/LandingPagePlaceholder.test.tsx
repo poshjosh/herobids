@@ -83,7 +83,7 @@ describe('LandingPagePlaceholder', () => {
 
   it('displays the tagline from vision.md', () => {
     const html = renderPage();
-    expect(html).toContain('Low cost AI agents that trade, assist, research and more');
+    expect(html).toContain('Affordable AI agents that get the job done');
   });
 
   it('renders the BrandLogo component (verified via rendered brand mark image)', () => {

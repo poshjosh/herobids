@@ -109,7 +109,7 @@ export const messages: Record<string, string> = {
   'common.pleaseWait': 'Please wait…',
 
   // Auth
-  'auth.tagline': 'Low cost AI agents that trade, assist, research and more',
+  'auth.tagline': 'Affordable AI agents that get the job done',
   'auth.continueWithGoogle': 'Continue with Google',
   'auth.divider.or': 'or',
   'auth.email.name.label': 'Name',

@@ -66,6 +66,8 @@ export const PUBLIC_PAGE_REGISTRY: Record<string, SectionMeta> = {
       agents: {
         title: 'Agents',
         pages: {
+          'agents/what-are-ai-agents': { title: 'What are AI agents?' },
+          'agents/how-agent-costs-are-kept-low': { title: 'How agent costs are kept low' },
           'agents/agent-style': { title: 'Agent Style' },
           'agents/billing-limits': { title: 'Billing Limits' },
         },

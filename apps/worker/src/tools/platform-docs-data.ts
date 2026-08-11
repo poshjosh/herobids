@@ -508,13 +508,27 @@ const MARKDOWN_DOCS: DocsIndexEntry[] = [
     kind: 'markdown',
     content: `# About OpenAIdom
 
+We are all about _Affordable AI agents that get the job done_. Here's what you need to know:
+
+> The power and usefulness of AI agents increases dramatically when those agents are given a long lifespan and persistent memory. Instead of starting from scratch every time, an agent can remember what it has learned, build and better understand context over time, while continuously work toward its goals.
+
+_OpenAIdom_
+
+A long lifespan has other advantages: **greater personalization** and **better decision-making over time**. An agent that has been working with you for months can understand you much better than an agent that only sees today's conversation.
+
+However, running an AI agent continuously can be expensive. Every thought, communication, tool call and action can consume AI resources.
+
+**This is where OpenAIdom comes in.**
+
+OpenAIdom has expended significant effort into reducing the cost of running agents, so they can operate for much longer without prohibitive cost. This is in line with our vision.
+
 ## Vision
 
-To bring the power of AI agents to everyone.
+A world where everyone can benefit from AI agents.
 
 ## Mission
 
-Make using AI agents as simple as describing what you want to an AI agent that knows what to do to get what you want.
+To make long-running AI agents affordable and simple enough to live and work alongside you.
 
 ## Core Concepts
 
@@ -524,9 +538,9 @@ We offer AI agents as a service. AI agents:
 
 2. **should remain in contact.** You remain in contact with any agent working for you. An example is by using messaging apps or email.
 
-3. **can be subject matter experts** We use skills to make agents experts. Our first and core skills relate to crypto trading and personal assistance.
+3. **can be subject matter experts** We use skills to make agents experts. Our first and core skills relate to crypto trading and personal assistantance.
 
-3. **are unique.** Each user can run one or more agents, each operating independently with its own goals and constraints.
+4. **are unique.** Each user can run one or more agents, each operating independently with its own goals and constraints.
 
 ## AI-first, not AI-wrapped
 
@@ -692,7 +706,7 @@ See [Agent Billing Limits](/docs/agents/billing-limits) for details.`,
     kind: 'markdown',
     content: `# Agent Billing Limits
 
-OpenAIdom lets you set spending limits on your agent's LLM usage so you never get a surprise bill. There are two kinds of limits, and they behave very differently.
+OpenAIdom enforces spending limits on your agent's LLM usage so you never get a surprise bill. Limits are set by your subscription plan and apply automatically. There are two kinds of limits, and they behave very differently.
 
 ## Soft cap vs hard cap
 
@@ -706,7 +720,7 @@ OpenAIdom lets you set spending limits on your agent's LLM usage so you never ge
 
 Your agent's trading logic is yours. The platform does not silently degrade, pause, or alter how your agent thinks or trades just because a spending threshold was crossed.
 
-The soft cap is purely a notification boundary. It tells you that spending is approaching the limit you set, so you can decide what to do — top up, raise the cap, or let it reach the hard cap.
+The soft cap is purely a notification boundary. It tells you that spending is approaching your plan's hard limit, so you can decide what to do — top up, upgrade your plan, or let it reach the hard cap.
 
 ## What happens at the hard cap
 
@@ -720,14 +734,14 @@ The agent does **not** automatically close positions, submit orders, or change y
 
 The hard-cap boundary is exact. For example:
 
-- If your hard cap is **\$1.00**, paid usage stops once your balance reaches exactly **-\$1.00** — not -\$0.99, not after the next tick.
-- If your hard cap is **\$0.00**, paid usage stops at exactly \$0.00 (i.e. once your included credits are exhausted).
-- If you **do not set a hard cap**, no hard cap is enforced — your agent can continue spending until stopped manually.
+- If your plan's hard cap is **\$1.00**, paid usage stops once your balance reaches exactly **-\$1.00** — not -\$0.99, not after the next tick.
+- If your plan's hard cap is **\$0.00**, paid usage stops at exactly \$0.00 (i.e. once your included credits are exhausted).
+- If your plan **has no hard cap**, no hard limit is enforced — your agent can continue spending until stopped manually.
 
 ## What to do when a cap is reached
 
-- **Top up** — Purchase additional credits from the Billing page.
-- **Adjust caps** — Raise or remove the soft cap and/or hard cap from the Billing page.
+- **Top up** — Purchase additional credits from the Billing page to move your balance back above the cap.
+- **Upgrade your plan** — Higher-tier plans include more included credits and higher spending limits.
 - **Let it stop** — If you are comfortable with the stop, no action is needed. Your agent will resume on its next tick once spending is back under the cap.
 
 ## Open positions at the hard cap
@@ -738,14 +752,14 @@ If your agent has open positions when the hard cap stops it, those positions wil
 
 You should treat a hard-cap stop with open positions as an event that needs your attention. The notification you receive will list the open positions so you can act.
 
-## Setting your caps
+## Where caps come from
 
-Caps are set in two places:
+Caps are set by your subscription plan:
 
-1. **Plan defaults** — Your subscription plan may include default soft and hard caps. These are set by the platform operator and apply unless you override them.
-2. **Billing page** — You can set your own soft cap and hard cap from the **Billing** page at any time. Your values override the plan defaults.
+- **Plan defaults** — Every plan tier includes a soft cap and a hard cap configured by the platform operator. These apply automatically to all agents under your account.
+- **No manual override** — You cannot set custom caps from the Billing page. If your current plan's limits are too restrictive, upgrading to a higher tier is the way to get more headroom.
 
-If you do not set any caps, no spending limits are enforced. Your agent will run until you stop it manually.
+If your plan has no caps configured, no spending limits are enforced. Your agent will run until you stop it manually.
 
 ## Notifications
 
@@ -755,8 +769,198 @@ When a cap is reached, OpenAIdom notifies you through your configured channels (
 - Current spending vs the cap
 - Whether open positions exist
 - What actions you can take`,
-    headings: ['Soft cap vs hard cap', 'Why the soft cap does not change agent behavior', 'What happens at the hard cap', 'What to do when a cap is reached', 'Open positions at the hard cap', 'Setting your caps', 'Notifications'],
+    headings: ['Soft cap vs hard cap', 'Why the soft cap does not change agent behavior', 'What happens at the hard cap', 'What to do when a cap is reached', 'Open positions at the hard cap', 'Where caps come from', 'Notifications'],
     tags: ['agents', 'billing-limits', 'docs'],
+  },
+  {
+    id: 'docs/agents/how-agent-costs-are-kept-low',
+    title: 'How OpenAIdom Keeps AI Agent Costs Low',
+    kind: 'markdown',
+    content: `# How OpenAIdom Keeps AI Agent Costs Low
+
+> The power and usefulness of AI agents increases dramatically when those agents are given a long lifespan and persistent memory. Instead of starting from scratch every time, an agent can remember what it has learned, build and better understand context over time, while continuously work toward its goals.
+
+_OpenAIdom_
+
+Despite it's advantages, running an AI agent continuously is expensive. Every thought, communication, tool call and action can consume AI tokens/resources.
+
+**This is where OpenAIdom comes in.**
+
+OpenAIdom has expended significant effort into reducing the cost of running agents, so they can operate for much longer without prohibitive cost.
+
+OpenAIdom takes a different approach to saving cost. Here's how.
+
+## Big brain when it matters. Small brain when it doesn't.
+
+Most platforms use one expensive model for everything.
+
+OpenAIdom splits the job in two:
+
+| Role | What it does |
+|------|--------------|
+| **Scout** | Cheap, fast checks: research, scanning, fact-finding, spotting change |
+| **Judge** | Higher-level decisions: whether to act, trade, change course, or go deeper |
+
+The scout handles the routine work.  
+The judge only steps in when there is something worth deciding.
+
+That keeps costs down without making the agent dull.
+
+## No signal? No spend.
+
+OpenAIdom does not ask the AI to think just because time passed.
+
+Before an agent spends money on a full reasoning pass, the platform checks:
+- Is it even trading time?
+- Is the market worth acting on?
+- Did anything meaningful actually change?
+- Is there a real setup here, or just noise?
+
+If the answer is no, the AI does less or does nothing.
+
+That is one of the biggest reasons costs stay low.
+
+## Stop waking the agent for nonsense.
+
+A lot of agent cost comes from pointless interruptions.
+
+OpenAIdom is strict about wake-ups:
+- events that do not need agent action do not trigger full AI work
+- repeated noise gets cooled down
+- bursts of alerts get grouped together
+- some agent modes ignore non-essential wake-ups entirely
+
+In plain English: the agent gets disturbed less, so you get charged less.
+
+## Cheap thinking for ordinary moments. Deep thinking for real ones.
+
+Not every moment deserves a premium reasoning bill.
+
+OpenAIdom keeps routine checks light and saves deeper thinking for moments like:
+- a sharp market change
+- a drawdown
+- a live position that needs attention
+- an important new user message
+- a scanner-detected opportunity
+
+So the agent does not burn premium tokens to say, "nothing changed."
+
+## Filter first. Let AI in last.
+
+OpenAIdom does as much cheap filtering as possible before the expensive part begins.
+
+That means:
+- rules can screen out bad conditions
+- scanners can narrow the field
+- unchanged situations can be skipped
+- no-op ticks can die early
+
+Sometimes AI only makes the final call.  
+Sometimes rules do the whole job.
+
+Either way, you are not paying full price for the first draft.
+
+## Shared market watching beats duplicated work
+
+Many platforms make every agent rediscover the same market from scratch.
+
+That is wasteful.
+
+OpenAIdom shares the heavy lifting:
+- shared discovery
+- shared market state
+- shared monitoring
+- shared cached reads
+
+So your agents are not all paying separately to learn the same thing.
+
+## Say less. Spend less.
+
+AI cost is not just about how often you call the model.  
+It is also about how much you send every time.
+
+OpenAIdom keeps prompts lean by:
+- keeping only the most useful recent history
+- trimming older context
+- shortening stale tool results
+- limiting how much raw context is shown at once
+- showing only the tools the agent really needs
+
+The result: less filler, more signal, lower cost.
+
+## If nothing changed, we do not pay twice
+
+A lot of platforms re-run expensive reasoning on nearly identical situations.
+
+OpenAIdom checks whether the important pieces actually changed:
+- positions
+- price movement
+- market state
+- active watches
+- portfolio condition
+
+If the meaningful picture is the same, the platform can skip the full AI pass.
+
+That is not a flashy trick.  
+It is just disciplined engineering, and it saves real money.
+
+## Retries with a leash
+
+When a provider is slow or fails, OpenAIdom does not spiral into waste.
+
+It retries carefully:
+- a few times
+- with backoff
+- with limits
+- without hammering broken services forever
+
+So temporary problems stay temporary, instead of turning into a credit drain.
+
+## Built-in brakes when the system is having a bad day
+
+If the platform sees repeated failures the agent cannot fix by "thinking harder," it does not keep spending anyway.
+
+OpenAIdom can suppress or reduce AI work during repeated issues like:
+- disconnect loops
+- repeated sync failures
+- infrastructure trouble
+- noisy failure cycles
+
+That means your budget is protected even when the environment is not behaving.
+
+## Your cost level should match your mission
+
+Not every agent needs the same budget.
+
+OpenAIdom offers cost presets so you can choose the right level for the job:
+- **Minimal** for cheap monitoring and careful watchkeeping
+- **Standard** for balanced day-to-day work
+- **Premium** for heavier, faster, more aggressive analysis
+
+You decide how hard the agent should work.  
+The platform makes sure it does not spend like every task is a crisis.
+
+## Real limits, not wishful thinking
+
+OpenAIdom does not rely on "hopefully the agent behaves cheaply."
+
+It also uses hard spend controls:
+- billing limits
+- soft warnings
+- hard stop points
+- per-agent budget controls
+
+So cost control is not just a clever prompt strategy.
+
+It is built into the runtime itself.
+
+## The bottom line
+
+OpenAIdom keeps agent costs low by being ruthless about waste. That is how agents stay active longer without becoming unaffordable.
+
+[Learn about billing limits](/docs/agents/billing-limits)`,
+    headings: ['Big brain when it matters. Small brain when it doesn\'t.', 'No signal? No spend.', 'Stop waking the agent for nonsense.', 'Cheap thinking for ordinary moments. Deep thinking for real ones.', 'Filter first. Let AI in last.', 'Shared market watching beats duplicated work', 'Say less. Spend less.', 'If nothing changed, we do not pay twice', 'Retries with a leash', 'Built-in brakes when the system is having a bad day', 'Your cost level should match your mission', 'Real limits, not wishful thinking', 'The bottom line'],
+    tags: ['agents', 'docs', 'how-agent-costs-are-kept-low'],
   },
   {
     id: 'docs/agents/index',
@@ -766,6 +970,8 @@ When a cap is reached, OpenAIdom notifies you through your configured channels (
 
 Documentation covering AI agent configuration and management on OpenAIdom.
 
+- [What are AI agents?](/docs/agents/what-are-ai-agents) — A quick introduction to what AI agents are and what they can do.
+- [How agent costs are kept low](/docs/agents/how-agent-costs-are-kept-low) — How OpenAIdom keeps long-running agents affordable.
 - [Agent Style](/docs/agents/agent-style) — How agent styles control LLM budget and trading behavior.
 - [Billing Limits](/docs/agents/billing-limits) — Soft caps, hard caps, and what happens when your agent hits its spending limit.
 
@@ -793,6 +999,68 @@ Trade Authorization (\`authorizationMode\`) controls how your agent's trade deci
 The **Trading Assistant** preset defaults to Approval required. All other trading presets default to Direct, but you can change the mode at any time when creating or editing your agent.`,
     headings: ['Agent Presets', 'Trade Authorization'],
     tags: ['agents', 'docs'],
+  },
+  {
+    id: 'docs/agents/what-are-ai-agents',
+    title: 'What are AI agents?',
+    kind: 'markdown',
+    content: `# What are AI agents?
+
+An AI agent is software that can **understand what you want, make decisions, use tools, and take action** for you.
+
+A chatbot answers your questions.
+
+An AI agent can **do the work**.
+
+For example, instead of asking:
+
+> "What's happening with Bitcoin?"
+
+you could tell an agent:
+
+> "Monitor Bitcoin and tell me on Telegram when something important happens."
+
+The agent can monitor the market, analyze what it finds, and message you when it matters.
+
+_the above agent would need a tool for sending telegram messages_
+
+## What can an AI agent do?
+
+An agent can:
+
+* Research information
+  - research a company
+  - design a diet
+  - find out about a person
+  - help you understand the laws of your country (e.g. consumer protection laws)
+* Automate repetitive tasks
+* Handle reminders and todos  
+  - remind you of birthdays and other occasions
+  - send an inspirational quote to you every morning
+* Monitor markets and websites
+  - monitor flight related websites to find the best deal for you
+* Analyze data
+  - analyse expenditure
+  - analyse accounting data
+
+## AI agents on OpenAIdom
+
+> The power and usefulness of AI agents increases dramatically when those agents are given a long lifespan and persistent memory. Instead of starting from scratch every time, an agent can remember what it has learned, build and better understand context over time, while continuously work toward its goals.
+
+_OpenAIdom_
+
+OpenAIdom offers long-running agents at a fraction of the cost. See [how costs are kept low](/docs/agents/how-agent-costs-are-kept-low)
+
+AI agents on OpenAIdom can:
+
+* Connecto to external services like gmail/trading platforms
+* Send notifications
+  - send email on your behalf, or send you an email
+  - send telegram messages to you.
+* Trade crypto
+* Trade forex (coming soon)`,
+    headings: ['What can an AI agent do?', 'AI agents on OpenAIdom'],
+    tags: ['agents', 'docs', 'what-are-ai-agents'],
   },
   {
     id: 'docs/messaging/index',
@@ -1796,6 +2064,7 @@ Once created, click **Start** on your agent. It will:
 
 ## Where to go next
 
+- [What are AI agents?](/docs/agents/what-are-ai-agents) — A quick introduction to AI agents and what they can do for you.
 - [FAQs](/help/faqs) — Common questions about agents, Telegram, and billing.
 - [Agent Style](/docs/agents/agent-style) — Understand how agent styles control cost and behavior.
 - [Agent Billing Limits](/docs/agents/billing-limits) — Set spending caps so you never get a surprise bill.
@@ -1858,7 +2127,9 @@ Set optional spending limits so you never get a surprise bill:
 
 If you do not set any caps, no spending limits are enforced. Your agent will run until you stop it manually.
 
-See [Agent Billing Limits](/docs/agents/billing-limits) for details.`,
+See [Agent Billing Limits](/docs/agents/billing-limits) for details.
+
+Learn [how OpenAIdom keeps agent costs low](/docs/agents/how-agent-costs-are-kept-low) through smart model routing, wake filtering, and disciplined engineering.`,
     headings: ['Agent runtime', 'LLM usage', 'Billing caps (safety net)'],
     tags: ['help', 'pricing'],
   },
@@ -1931,7 +2202,7 @@ For privacy-related questions, contact us at **[admin@openaidom.com](mailto:admi
     kind: 'markdown',
     content: `# User Agreement
 
-*Last updated: 2026-07-06*
+*Last updated: 2026-08-11*
 
 By using OpenAIdom, ("the platform"), you agree to these terms. If you do not agree, do not use the platform.
 

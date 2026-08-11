@@ -45,6 +45,7 @@ Once created, click **Start** on your agent. It will:
 
 ## Where to go next
 
+- [What are AI agents?](/docs/agents/what-are-ai-agents) — A quick introduction to AI agents and what they can do for you.
 - [FAQs](/help/faqs) — Common questions about agents, Telegram, and billing.
 - [Agent Style](/docs/agents/agent-style) — Understand how agent styles control cost and behavior.
 - [Agent Billing Limits](/docs/agents/billing-limits) — Set spending caps so you never get a surprise bill.

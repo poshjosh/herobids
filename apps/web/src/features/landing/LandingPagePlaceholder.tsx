@@ -25,7 +25,7 @@ export function LandingPagePlaceholder() {
       <div className="landing-page-card">
         <BrandLogo display="full" variant="dark" size="lg" />
         <p className="landing-page-tagline">
-          Low cost AI agents that trade, assist, research and more
+          Affordable AI agents that get the job done
         </p>
         <div className="landing-page-ctas">
           <Link to="/login" className="landing-page-cta">

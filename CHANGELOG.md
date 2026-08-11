@@ -6,8 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
+### Changed
 
+- Added documentation on what ai agents are and how we save costs.
+- Update apps/web/src/features/public-pages/content/en/docs/agents/billing-limits.md to account for this ADR docs/tech/adrs/2026/08/006-spend-caps-operator-only.md
 - robots.txt
 
 ## v0.1.6 - 2026-08-11
@@ -491,7 +493,7 @@ See [002-plan.md](docs/features/2026/07/24/001-post-eval-fixes/002-plan.md).
 
 ### Changed
 
-- **Updated tagline** from "AI crypto trader, personal assistant and more" to "Low cost AI agents that trade, assist, research and more" across `auth.tagline` and `agents.subtitle`.
+- **Updated tagline** from "AI crypto trader, personal assistant and more" to "Affordable AI agents that get the job done" across `auth.tagline` and `agents.subtitle`.
 - **Removed `/status` and `/skills` slash commands** — both are fully covered by `/agents` (multi-agent summary) and `/info` (per-agent details including skills).
 
 ## v0.0.28 - 2026-07-16

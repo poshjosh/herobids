@@ -2,6 +2,8 @@
 
 Documentation covering AI agent configuration and management on OpenAIdom.
 
+- [What are AI agents?](/docs/agents/what-are-ai-agents) — A quick introduction to what AI agents are and what they can do.
+- [How agent costs are kept low](/docs/agents/how-agent-costs-are-kept-low) — How OpenAIdom keeps long-running agents affordable.
 - [Agent Style](/docs/agents/agent-style) — How agent styles control LLM budget and trading behavior.
 - [Billing Limits](/docs/agents/billing-limits) — Soft caps, hard caps, and what happens when your agent hits its spending limit.
 

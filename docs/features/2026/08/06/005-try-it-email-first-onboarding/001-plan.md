@@ -133,7 +133,7 @@ This plan is **related to but separate from** the AI-First UX feature (`docs/fea
 Replace the placeholder landing implementation with the real landing page:
 
 - **Background image:** `docs/product/brand/images/openaidom-background.avif` — central figure with a speech/thought bubble. Left-aligned on desktop, stacked on mobile. During implementation, copy the image to `apps/web/public/` and reference it from there.
-- **Tagline:** *"Low cost AI agents that trade, assist, research and more"* from `docs/vision.md`.
+- **Tagline:** *"Affordable AI agents that get the job done"* from `docs/vision.md`.
 - **Encouraging copy:** A short sentence or two above the fold reinforcing the value proposition for new visitors.
 - **CTA buttons:** "Sign in" (links to `/login`) and "Try it" (links to `/try`). Both primary-styled.
 - **Responsive:** mobile-specific adjustments scoped to the landing page only; no body-wide typography or global form-style overrides.

@@ -1,6 +1,6 @@
 # User Agreement
 
-*Last updated: 2026-07-06*
+*Last updated: 2026-08-11*
 
 By using OpenAIdom, ("the platform"), you agree to these terms. If you do not agree, do not use the platform.
 

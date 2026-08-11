@@ -129,7 +129,7 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| AG-01 | Agents list renders | Navigate to `/agents` | Page titled "AI Agents"; subtitle "Low cost AI agents that trade, assist, research and more" | ✅ | Title "AI Agents"; subtitle "Low cost AI agents that trade, assist, research and more" |
+| AG-01 | Agents list renders | Navigate to `/agents` | Page titled "AI Agents"; subtitle "Affordable AI agents that get the job done" | ✅ | Title "AI Agents"; subtitle "Affordable AI agents that get the job done" |
 | AG-02 | Empty state | Open with no agents | No "No agents yet" empty state; guided chat is the default entry point for new users | ✅ | 2026-08-05: Empty state removed — new users land on the guided chat instead |
 | AG-03 | Create agent — happy path | Click "New agent"; fill goal, preset, and execution mode; submit | Agent detail page opens for the new agent | ✅ | Created test-agent-01; navigated to /agents/:id |
 | AG-03a | Create flow panel — new user | Open `/agents` with 0 agents | Create flow is expanded by default showing guided chat; no header CTA button | ✅ | 2026-08-05: New user sees guided chat expanded; no "New AI agent" button |
