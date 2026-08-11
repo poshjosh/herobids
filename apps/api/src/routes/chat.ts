@@ -274,7 +274,7 @@ Ask: "What type of assets interest you? Bitcoin / Ethereum / Memecoins / Not sur
 | Memecoins | jupiter | momentum-position |
 | Not sure | jupiter | momentum-position |
 
-Apply these defaults without asking: \`authorizationMode\`="direct", \`filterTrades\`="scanner_gated", \`platformAssessmentEnabled\`=true, \`requestedExecutionMode\`="test", \`style\`="balanced", \`capital\`="Not specified".
+Apply these defaults without asking: \`authorizationMode\`="direct", \`filterTrades\`="scanner_gated", \`platformAssessmentEnabled\`=true, \`requestedExecutionMode\`="test", \`style\`="balanced", \`capital\`="1000".
 
 Jump to Step 3.
 

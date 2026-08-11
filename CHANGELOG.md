@@ -8,12 +8,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Guided Setup: minimum-viable checkpoint & fine-tuning fork — users can create immediately or customize prompt, Telegram chat ID, style, and strategy before creation
-- Guided Setup: Telegram chat ID collection during fine-tuning with step-by-step instructions for getting it from @OpenAIdomBot
+- Guided Create Agent Setup: set default capital of 1000.
+- Guided Create Agent Setup: minimum-viable checkpoint & fine-tuning fork — users can create immediately or customize prompt, Telegram chat ID, style, and strategy before creation
+- Guided Create Agent Setup: Telegram chat ID collection during fine-tuning with step-by-step instructions for getting it from @OpenAIdomBot
 - Quick action (edit, start, stop) buttons to the agent summary card
 - Sitemap
 - Enable hetzner automated backups for production
-- Guided Setup chat agent now knows canonical platform URLs (form: /agents/new, billing: /billing, settings: /settings) — no more hallucinated links
+- Guided Create Agent Setup chat agent now knows canonical platform URLs (form: /agents/new, billing: /billing, settings: /settings) — no more hallucinated links
 - Added warning against entering secrets directly into chat.
 
 ### Changed
