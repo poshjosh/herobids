@@ -4,8 +4,8 @@
  * Verifies the dedicated create-agent page:
  *   1. The agents page has a "Create AI agent" button that navigates to
  *      /agents/new.
- *   2. The create page defaults to guided chat.
- *   3. The header switch toggles between guided chat and the plain form.
+ *   2. The create page defaults to the plain form.
+ *   3. The header switch toggles between the plain form and guided chat.
  */
 
 import { test, expect } from '@playwright/test';
@@ -39,18 +39,20 @@ test.describe('Journey 18: Create AI Agent flow', () => {
     await createButton.click();
     await expect(page).toHaveURL(/\/agents\/new/, { timeout: 5_000 });
 
-    // Guided chat greeting is visible on the create page.
-    await expect(page.getByText(/Hi! I can help you create an AI agent/i)).toBeVisible({ timeout: 10_000 });
+    // The create page defaults to the plain form.
+    await expect(page.locator('.create-flow-card')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/What type of AI agent\?/i)).toBeVisible({ timeout: 5_000 });
   });
 
   test('header switch toggles between guided chat and the plain form', async ({ page }) => {
     await registerUser(page, EMAIL_SWITCH, PASSWORD, 'E2E User J18S');
 
-    await page.goto('/agents/new');
+    // Navigate to the create page in guided chat mode.
+    await page.goto('/agents/new?ui=chat');
     await expect(page).toHaveURL(/\/agents\/new/, { timeout: 15_000 });
 
-    // Guided chat greeting is visible by default.
-    await expect(page.getByText(/Hi! I can help you create an AI agent/i)).toBeVisible({ timeout: 10_000 });
+    // The page is in guided chat mode — verify the switch button says "Use the form".
+    await expect(page.getByRole('button', { name: /^Use the form$/i })).toBeVisible({ timeout: 10_000 });
 
     // Switch to the plain form.
     await page.getByRole('button', { name: /^Use the form$/i }).click();
@@ -59,6 +61,7 @@ test.describe('Journey 18: Create AI Agent flow', () => {
 
     // Switch back to guided chat.
     await page.getByRole('button', { name: /^Use guided chat$/i }).click();
-    await expect(page.getByText(/Hi! I can help you create an AI agent/i)).toBeVisible({ timeout: 10_000 });
+    // Guided chat panel is now visible (shows loading or thread messages).
+    await expect(page.locator('.guided-setup-panel')).toBeVisible({ timeout: 10_000 });
   });
 });

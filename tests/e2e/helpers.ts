@@ -90,11 +90,16 @@ export async function createAgent(
 ): Promise<string> {
   await page.goto('/agents/new');
 
-  // The create page defaults to Guided Setup (chat). Switch to the form so the
-  // form-based selectors below work.
+  // The create page defaults to form mode. If we landed in guided mode
+  // (e.g. redirected via ?ui=chat), switch to form so the form-based
+  // selectors below work.
   const switchToForm = page.getByRole('button', { name: /^Use the form$/i });
-  await switchToForm.waitFor({ state: 'visible', timeout: 15_000 });
-  await switchToForm.click();
+  const switchToGuided = page.getByRole('button', { name: /^Use guided chat$/i });
+  if (await switchToForm.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await switchToForm.click();
+  } else {
+    await switchToGuided.waitFor({ state: 'visible', timeout: 10_000 });
+  }
 
   // Fill name (required) — derive a short name from the goal
   const nameField = page.locator('input[type="text"]').first();

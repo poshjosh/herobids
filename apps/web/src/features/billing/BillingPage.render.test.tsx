@@ -1,10 +1,26 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IntlProvider } from 'react-intl';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
 import { messages } from '../../app/i18n/locales/en.js';
 import { BillingPage } from './BillingPage.js';
 import type { billing } from '../../lib/api-client.js';
+
+// BillingPage calls useSession() which requires a SessionProvider context.
+// In static render (renderToStaticMarkup) there is no provider tree, so we mock
+// the hook to return a no-op session.
+vi.mock('../../app/providers/SessionProvider.js', () => ({
+  useSession: () => ({
+    login: vi.fn().mockResolvedValue(undefined),
+    user: null,
+    loading: false,
+    authenticated: false,
+    logout: vi.fn().mockResolvedValue(undefined),
+    refresh: vi.fn().mockResolvedValue(undefined),
+  }),
+  SessionProvider: ({ children }: { children: ReactNode }) => children,
+}));
 
 type Summary = Awaited<ReturnType<typeof billing.summary>>;
 
@@ -67,16 +83,12 @@ describe('BillingPage rendering', () => {
 
     expect(html).toContain('AI Usage — Current Period');
     expect(html).toContain(messages['billing.usage.emptyAccount']);
-    // Detail sections are collapsed by default — verify toggle is present
-    expect(html).toContain('View details ▸');
-    // Detail tables should NOT be visible when collapsed
-    expect(html).not.toContain('Usage by Meter');
-    expect(html).not.toContain(messages['billing.usage.emptyBreakdown']);
-    expect(html).not.toContain('Usage by Agent');
-    expect(html).not.toContain('Usage Events');
-    expect(html).not.toContain('No usage events recorded yet.');
-    expect(html).not.toContain('Billing Periods');
-    expect(html).not.toContain(messages['billing.usage.emptyPeriods']);
+    // Detail sections are always rendered (no longer behind a collapsible toggle)
+    expect(html).toContain('Usage by Meter');
+    expect(html).toContain(messages['billing.usage.emptyBreakdown']);
+    expect(html).toContain('Usage by Agent');
+    expect(html).toContain('Billing Periods');
+    expect(html).toContain(messages['billing.usage.emptyPeriods']);
   });
 
   it('renders Subscribe buttons for new users with the plan display label', () => {

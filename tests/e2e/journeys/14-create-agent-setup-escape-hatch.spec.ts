@@ -19,10 +19,15 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
 
     await page.goto('/agents/new');
 
-    // The create page defaults to Guided Setup (chat). Switch to the form.
-    const switchToForm = page.getByRole('button', { name: /^Use the form$/i });
-    await switchToForm.waitFor({ state: 'visible', timeout: 15_000 });
-    await switchToForm.click();
+    // The create page defaults to form mode. If we landed in guided mode
+    // (e.g. redirected via ?ui=chat), switch to form.
+    const switchToFormBtn = page.getByRole('button', { name: /^Use the form$/i });
+    const switchToGuidedBtn = page.getByRole('button', { name: /^Use guided chat$/i });
+    if (await switchToFormBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      await switchToFormBtn.click();
+    } else {
+      await switchToGuidedBtn.waitFor({ state: 'visible', timeout: 10_000 });
+    }
 
     // Fill name (required field) and goal
     await page.locator('input[type="text"]').first().fill('Crypto Trading Agent J14');
