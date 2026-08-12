@@ -2355,6 +2355,7 @@ const assessmentRequestService = new AssessmentRequestService(
   usageBillingRepo,
   appConfig.platformAssessor,
   platformAssessor,
+  appConfig.plans.defaultPlanId,
 );
 
 setAssessmentRequestPort(assessmentRequestService);

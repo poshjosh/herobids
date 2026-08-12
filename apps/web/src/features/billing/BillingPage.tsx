@@ -138,6 +138,8 @@ export function BillingPage() {
   const [selectedTopUpPackId, setSelectedTopUpPackId] = useState('');
   const [spendCapsError, setSpendCapsError] = useState<string | null>(null);
   const [topUpError, setTopUpError] = useState<string | null>(null);
+  const [portalError, setPortalError] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [checkoutBanner, setCheckoutBanner] = useState<'success' | 'cancelled' | null>(null);
   const [ledgerOffset, setLedgerOffset] = useState(0);
   const [ledgerDirectionFilter, setLedgerDirectionFilter] = useState('');
@@ -203,14 +205,22 @@ export function BillingPage() {
   const portalMutation = useMutation({
     mutationFn: () => billing.createPortalSession(),
     onSuccess: (data) => {
+      setPortalError(null);
       window.location.href = data.url;
+    },
+    onError: (err: unknown) => {
+      setPortalError(localizeApiError(intl, err, 'common.errorTitle'));
     },
   });
 
   const cancelMutation = useMutation({
     mutationFn: () => billing.cancelSubscription(),
     onSuccess: () => {
+      setCancelError(null);
       void queryClient.invalidateQueries({ queryKey: ['billing', 'summary'] });
+    },
+    onError: (err: unknown) => {
+      setCancelError(localizeApiError(intl, err, 'common.errorTitle'));
     },
   });
 
@@ -385,6 +395,8 @@ export function BillingPage() {
                   </Button>
                 )}
               </div>
+              {portalError && <ErrorBanner message={portalError} onDismiss={() => setPortalError(null)} />}
+              {cancelError && <ErrorBanner message={cancelError} onDismiss={() => setCancelError(null)} />}
             </div>
           </Card>
 

@@ -372,8 +372,9 @@ export class UsageBillingRepository {
       return { canSpend: false, availableMicrousd, hardCapMicrousd: period.hardCapMicrousd, status: 'hard_limited', reason: 'hard_limited' };
     }
     // null cap → unlimited on the credit dimension.
-    // set cap → block as soon as available credit hits or goes below the cap boundary.
-    if (period.hardCapMicrousd != null && availableMicrousd <= -period.hardCapMicrousd) {
+    // set cap → block when available credit reaches or falls below the hard-cap balance threshold.
+    // A negative hardCap means overdraft is allowed up to that amount.
+    if (period.hardCapMicrousd != null && availableMicrousd <= period.hardCapMicrousd) {
       return { canSpend: false, availableMicrousd, hardCapMicrousd: period.hardCapMicrousd, status: period.status as AccountStatus, reason: 'no_available_credit' };
     }
 
@@ -1565,7 +1566,15 @@ export class UsageBillingRepository {
  * Balance = includedCredit + topUps - usageCharge, so top-ups increase balance
  * and can unblock a hard-limited account within the same period.
  *
- * Caps represent maximum allowed net out-of-pocket beyond included credits.
+ * Caps represent balance thresholds (not overspend amounts):
+ * - softCapMicrousd: warn when balance drops to this level (null = no warning)
+ * - hardCapMicrousd: block when balance drops to this level (null = no limit;
+ *   negative = allow overdraft up to that amount)
+ *
+ * Examples with includedCredit = $20 (2 000 000 microusd):
+ *   softCap=500 000 ($5)  hardCap=0        → warn at $5 left,  block at $0
+ *   softCap=500 000 ($5)  hardCap=-200 000  → warn at $5 left,  block at -$2
+ *   softCap=0            hardCap=0        → warn+block at $0 (free plan)
  */
 export function computeSpendStatus(period: {
   balanceMicrousd: number;
@@ -1574,13 +1583,11 @@ export function computeSpendStatus(period: {
   includedCreditMicrousd: number;
   usageChargeMicrousd: number;
 }): AccountStatus {
-  // Net out-of-pocket spend beyond included credits and top-ups
-  const netOutOfPocket = Math.max(0, -period.balanceMicrousd);
-
-  if (period.hardCapMicrousd != null && netOutOfPocket >= period.hardCapMicrousd) {
+  // hardCap check first — when both caps are hit, hard_limited takes priority
+  if (period.hardCapMicrousd != null && period.balanceMicrousd <= period.hardCapMicrousd) {
     return 'hard_limited';
   }
-  if (period.softCapMicrousd != null && netOutOfPocket >= period.softCapMicrousd) {
+  if (period.softCapMicrousd != null && period.balanceMicrousd <= period.softCapMicrousd) {
     return 'soft_limited';
   }
   return 'active';

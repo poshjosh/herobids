@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Scroll to letter when user clicks to view, on landing page
+- Fix handling of softCapCents and hardCapCents
 - noscript fallback for index page
 
 ## v0.1.7 - 2026-08-12

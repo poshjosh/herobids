@@ -629,10 +629,10 @@ export const AuthConfigSchema = z.object({
 export const PlanUsagePackagingSchema = z.object({
   /** Monthly included credits in cents */
   includedCreditCents: z.number().int().min(0).default(0),
-  /** Soft spend cap in cents — warn but allow continued usage */
+  /** Soft spend cap in cents — warn when balance reaches this level (balance-based; non-negative) */
   softCapCents: z.number().int().min(0).optional(),
-  /** Hard spend cap in cents — block further usage */
-  hardCapCents: z.number().int().min(0).optional(),
+  /** Hard spend cap in cents — block when balance reaches this level (balance-based; negative = allow overdraft) */
+  hardCapCents: z.number().int().optional(),
   /** Credit top-up pack IDs available on this plan. Non-empty → top-ups enabled. */
   topUpPackIds: z.array(z.string()).default([]),
 });

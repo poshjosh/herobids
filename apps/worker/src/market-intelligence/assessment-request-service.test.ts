@@ -59,6 +59,7 @@ function makeQueueDb(selectQueue: unknown[]) {
 
 function makeMockBillingRepo(overrides?: Partial<Record<string, unknown>>) {
   return {
+    getUserPlanId: vi.fn().mockResolvedValue('free'),
     getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue({
       id: 'acct_test',
       ownerUserId: 'user-1',
@@ -116,6 +117,43 @@ function makeOperatorConfig(overrides?: Partial<PlatformAssessorConfig>): Platfo
     maxConcurrentAssessments: 1,
     maxInstrumentsPerRequest: 3,
     ...overrides,
+  };
+}
+
+function mockArtifact() {
+  return {
+    artifact: {
+      id: 'artifact-1',
+      venueFamily: 'hyperliquid',
+      styleTier: 'standard',
+      assessmentRunId: 'run-1',
+      assessedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      maxActorUseAge: 'PT12H',
+      maxWakeAge: 'PT6H',
+      assessmentVersion: 1,
+      artifactVersion: 1,
+      rankingPolicyVersion: 1,
+      status: 'active' as const,
+      allowedPresets: ['standard'],
+      currentMarketSummary: 'Test summary',
+      regimeSummary: 'Test regime',
+      scanHealthSummary: 'Test health',
+      presetRankings: [],
+      recommendedPreset: 'standard',
+      relativeUplift: null,
+      confidence: 0.8,
+      urgency: 'low' as const,
+      reasoningSummary: 'Test reasoning',
+      evidenceRefs: [],
+    },
+    llmUsage: {
+      totalInputTokens: 100,
+      totalOutputTokens: 50,
+      totalReasoningTokens: 0,
+      callCount: 1,
+      estimatedCostMicrousd: 115,
+    },
   };
 }
 
@@ -232,6 +270,7 @@ describe('AssessmentRequestService', () => {
       billingRepo,
       makeOperatorConfig(),
       assessor,
+      'free',
     );
   }
 
@@ -335,6 +374,52 @@ describe('AssessmentRequestService', () => {
       } else {
         expect(result.data.kind).toBe('billing_blocked');
       }
+    });
+  });
+
+  // ── Plan Resolution ─────────────────────────────────────────────────
+
+  describe('plan resolution', () => {
+    it('uses the user plan from getUserPlanId when available', async () => {
+      billingRepo.getUserPlanId = vi.fn().mockResolvedValue('starter');
+      assessor.assessIdentity = vi.fn().mockResolvedValue(ok(mockArtifact()));
+      const service = createService([
+        ...agentFoundSelectQueue(),
+      ]);
+
+      await service.requestAssessment({
+        agentId: 'agent-1',
+        symbol: 'BTC',
+        venueFamily: 'hyperliquid',
+        instrumentKind: 'orderbook',
+      });
+
+      expect(billingRepo.getUserPlanId).toHaveBeenCalledWith('user-1');
+      expect(billingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith(
+        'user-1',
+        'starter',
+      );
+    });
+
+    it('falls back to defaultPlanId when getUserPlanId returns null', async () => {
+      billingRepo.getUserPlanId = vi.fn().mockResolvedValue(null);
+      assessor.assessIdentity = vi.fn().mockResolvedValue(ok(mockArtifact()));
+      const service = createService([
+        ...agentFoundSelectQueue(),
+      ]);
+
+      await service.requestAssessment({
+        agentId: 'agent-2',
+        symbol: 'BTC',
+        venueFamily: 'hyperliquid',
+        instrumentKind: 'orderbook',
+      });
+
+      expect(billingRepo.getUserPlanId).toHaveBeenCalledWith('user-1');
+      expect(billingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith(
+        'user-1',
+        'free', // defaultPlanId from createService()
+      );
     });
   });
 
@@ -551,7 +636,7 @@ describe('AssessmentRequestService', () => {
         [],                                         // fresh artifact miss
       ]);
       const service1 = new AssessmentRequestService(
-        db1 as any, billingRepo, makeOperatorConfig(), assessor,
+        db1 as any, billingRepo, makeOperatorConfig(), assessor, 'free',
       );
 
       const first = await service1.requestAssessment({
@@ -576,7 +661,7 @@ describe('AssessmentRequestService', () => {
       ]);
       const billingRepo2 = makeMockBillingRepo();
       const service2 = new AssessmentRequestService(
-        db2 as any, billingRepo2, makeOperatorConfig(), makeMockAssessor(),
+        db2 as any, billingRepo2, makeOperatorConfig(), makeMockAssessor(), 'free',
       );
 
       const second = await service2.requestAssessment({
@@ -661,7 +746,7 @@ describe('AssessmentRequestService', () => {
       const { db, updateSpy, setSpy, whereSpy } = makeSpiedDb(actedOnSelectQueue());
 
       const service = new AssessmentRequestService(
-        db as any, billingRepo, makeOperatorConfig(), assessor,
+        db as any, billingRepo, makeOperatorConfig(), assessor, 'free',
       );
 
       await service.requestAssessment({
@@ -697,7 +782,7 @@ describe('AssessmentRequestService', () => {
       const { db, updateSpy, setSpy, whereSpy } = makeSpiedDb(actedOnSelectQueue());
 
       const service = new AssessmentRequestService(
-        db as any, billingRepo, makeOperatorConfig(), assessor,
+        db as any, billingRepo, makeOperatorConfig(), assessor, 'free',
       );
 
       await service.requestAssessment({
@@ -734,7 +819,7 @@ describe('AssessmentRequestService', () => {
       const { db, updateSpy, whereSpy } = makeSpiedDb(actedOnSelectQueue());
 
       const service = new AssessmentRequestService(
-        db as any, billingRepo, makeOperatorConfig(), assessor,
+        db as any, billingRepo, makeOperatorConfig(), assessor, 'free',
       );
 
       await service.requestAssessment({
@@ -757,7 +842,7 @@ describe('AssessmentRequestService', () => {
       const { db, updateSpy, whereSpy } = makeSpiedDb(actedOnSelectQueue());
 
       const service = new AssessmentRequestService(
-        db as any, billingRepo, makeOperatorConfig(), assessor,
+        db as any, billingRepo, makeOperatorConfig(), assessor, 'free',
       );
 
       await service.requestAssessment({
@@ -779,7 +864,7 @@ describe('AssessmentRequestService', () => {
       const { db, updateSpy, whereSpy } = makeSpiedDb(actedOnSelectQueue());
 
       const service = new AssessmentRequestService(
-        db as any, billingRepo, makeOperatorConfig(), assessor,
+        db as any, billingRepo, makeOperatorConfig(), assessor, 'free',
       );
 
       await service.requestAssessment({
@@ -801,7 +886,7 @@ describe('AssessmentRequestService', () => {
       const { db, updateSpy, whereSpy } = makeSpiedDb(actedOnSelectQueue());
 
       const service = new AssessmentRequestService(
-        db as any, billingRepo, makeOperatorConfig(), assessor,
+        db as any, billingRepo, makeOperatorConfig(), assessor, 'free',
       );
 
       await service.requestAssessment({
@@ -824,7 +909,7 @@ describe('AssessmentRequestService', () => {
       const { db, updateSpy, setSpy } = makeSpiedDb(actedOnSelectQueue());
 
       const service = new AssessmentRequestService(
-        db as any, billingRepo, makeOperatorConfig(), assessor,
+        db as any, billingRepo, makeOperatorConfig(), assessor, 'free',
       );
 
       await service.requestAssessment({
@@ -847,7 +932,7 @@ describe('AssessmentRequestService', () => {
       const { db, updateSpy } = makeSpiedDb([]);
 
       const service = new AssessmentRequestService(
-        db as any, billingRepo, makeOperatorConfig(), assessor,
+        db as any, billingRepo, makeOperatorConfig(), assessor, 'free',
       );
 
       await service.requestAssessment({

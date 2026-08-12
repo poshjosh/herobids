@@ -854,8 +854,8 @@ plans:
           liveEnabled: true
       usage: # required
         includedCreditCents: 0
-        softCapCents: 0    # at zero, warn the user
-        hardCapCents: 100  # at $-1, block the user
+        softCapCents: 200  # warn when $2 left
+        hardCapCents: -100 # block when balance ≤ $0
         topUpPackIds: 
           - Topup5
           - Topup20
@@ -889,8 +889,8 @@ plans:
           liveEnabled: true
       usage: # required
         includedCreditCents: 2000
-        softCapCents: 0    # at zero, warn the user
-        hardCapCents: 200  # at $-2, block the user
+        softCapCents: 500  # warn when $5 credit left
+        hardCapCents: 0    # block when balance ≤ $0
         topUpPackIds: 
           - Topup5
           - Topup20
@@ -924,8 +924,8 @@ plans:
           liveEnabled: true
       usage: # required
         includedCreditCents: 5000
-        softCapCents: 0    # at zero, warn the user
-        hardCapCents: 500  # at $-5, block the user
+        softCapCents: 1000  # warn when $10 credit left
+        hardCapCents: -500  # block when $5 overdrawn
         topUpPackIds: 
           - Topup5
           - Topup20

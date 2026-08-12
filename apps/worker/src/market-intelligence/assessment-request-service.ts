@@ -172,6 +172,7 @@ export class AssessmentRequestService {
     private readonly billingRepo: UsageBillingRepository,
     operatorConfig: PlatformAssessorConfig,
     private readonly assessor: PlatformAssessor,
+    private readonly defaultPlanId: string,
   ) {
     this.log = createLogger('assessment-request-service');
     this.config = operatorConfig;
@@ -973,7 +974,8 @@ export class AssessmentRequestService {
   // ── Billing Helpers ──────────────────────────────────────────────────
 
   private async resolveBillingContext(userId: string): Promise<ResolvedBillableContext> {
-    const account = await this.billingRepo.getOrCreateBillingAccountForUser(userId, 'default');
+    const planId = await this.billingRepo.getUserPlanId(userId) ?? this.defaultPlanId;
+    const account = await this.billingRepo.getOrCreateBillingAccountForUser(userId, planId);
     const rateCard = await this.billingRepo.ensureActiveRateCard('default');
     const period = await this.billingRepo.getOrCreateOpenPeriod(
       account.id,

@@ -5,7 +5,7 @@ import { BillingRepository, UsageBillingRepository, users, fills, bots, agents, 
 import { eq, and, desc, gte, lte, inArray, or, type SQL } from 'drizzle-orm';
 import { createProviderManager } from '../billing/provider-manager.js';
 import { EntitlementSync } from '../billing/entitlement-sync.js';
-import { CreemSignatureError } from '../billing/creem-provider.js';
+import { CreemSignatureError, CreemApiError } from '../billing/creem-provider.js';
 import { StripeSignatureError } from '../billing/stripe-client.js';
 import { UnknownWebhookEventTypeError, ProviderUnavailableError } from '../billing/provider-port.js';
 import { MockProvider } from '../billing/mock-provider.js';
@@ -253,15 +253,32 @@ export async function billingRoutes(
       );
     }
 
-    const url = await providerManager.createPortalUrl(
-      {
-        customerId: customer.externalCustomerId,
-        returnUrl: `${frontendOrigin}/billing`,
-      },
-      subscription.provider as 'creem' | 'stripe',
-    );
-
-    return reply.send({ url });
+    try {
+      const url = await providerManager.createPortalUrl(
+        {
+          customerId: customer.externalCustomerId,
+          returnUrl: `${frontendOrigin}/billing`,
+        },
+        subscription.provider as 'creem' | 'stripe',
+      );
+      return reply.send({ url });
+    } catch (err) {
+      if (err instanceof ProviderUnavailableError) {
+        return reply.status(502).send(
+          errorPayload('billing.portal.provider_unavailable', 'Billing provider is temporarily unavailable. Please try again later.', {
+            provider: subscription.provider,
+          }),
+        );
+      }
+      if (err instanceof CreemApiError) {
+        return reply.status(502).send(
+          errorPayload('billing.portal.provider_error', `Billing provider error: ${err.message}`, {
+            provider: subscription.provider,
+          }),
+        );
+      }
+      throw err;
+    }
   });
 
   // -------------------------------------------------------------------------
@@ -279,11 +296,29 @@ export async function billingRoutes(
       return reply.status(400).send(errorPayload('billing.cancel.already_canceled', 'Subscription is already canceled'));
     }
 
-    await providerManager.cancelSubscription(
-      subscription.externalSubscriptionId,
-      subscription.provider as 'creem' | 'stripe',
-      true, // cancel at period end
-    );
+    try {
+      await providerManager.cancelSubscription(
+        subscription.externalSubscriptionId,
+        subscription.provider as 'creem' | 'stripe',
+        true, // cancel at period end
+      );
+    } catch (err) {
+      if (err instanceof ProviderUnavailableError) {
+        return reply.status(502).send(
+          errorPayload('billing.cancel.provider_unavailable', 'Billing provider is temporarily unavailable. Please try again later.', {
+            provider: subscription.provider,
+          }),
+        );
+      }
+      if (err instanceof CreemApiError) {
+        return reply.status(502).send(
+          errorPayload('billing.cancel.provider_error', `Billing provider error: ${err.message}`, {
+            provider: subscription.provider,
+          }),
+        );
+      }
+      throw err;
+    }
 
     // Mock provider is stateless — synthesize a cancel event so the subscription
     // row reflects cancelAtPeriodEnd immediately without an external webhook.
@@ -611,22 +646,26 @@ export async function billingRoutes(
       : [];
 
     const warningThresholds = usageBillingConfig?.warningThresholdsPct ?? [50, 80, 100];
-    const netOutOfPocket = period ? Math.max(0, -period.balanceMicrousd) : 0;
-    const hardCap = period?.hardCapMicrousd;
+    const hardCap = period?.hardCapMicrousd ?? null;
+    const includedCredit = period?.includedCreditMicrousd ?? 0;
+    const balance = period?.balanceMicrousd ?? 0;
     const topUpPacks = resolveTopUpPacks(account.activePlanId, plansConfig, usageBillingConfig, providerManager, topUpProvider);
-    // null = no cap → skip warnings.
-    // 0 = block at $0.00 → don't reuse percentage thresholds (all would read as reached);
-    //     instead surface a single "hard cap reached" state when netOutOfPocket >= 0.
-    // > 0 = use percentage thresholds as normal.
+
+    // Warnings track consumption of the budget from included credit down to the hard cap.
+    // budget = 0 (free plan, $0 included, $0 hard cap) → surface 100% when at/under cap.
+    // budget > 0 → percentage thresholds of budget consumed.
+    // null hard cap → unlimited, no warnings.
+    const budget = hardCap != null ? includedCredit - hardCap : null;
+    const consumed = Math.max(0, includedCredit - balance);
     const warnings: Array<{ thresholdPct: number; reached: boolean }> =
-      hardCap == null
-        ? []
-        : hardCap === 0
-          ? [{ thresholdPct: 100, reached: netOutOfPocket >= 0 }]
-          : warningThresholds.map((pct) => ({
-              thresholdPct: pct,
-              reached: netOutOfPocket >= (hardCap * pct) / 100,
-            }));
+      budget != null && budget > 0
+        ? warningThresholds.map((pct) => ({
+            thresholdPct: pct,
+            reached: consumed >= Math.ceil((budget * pct) / 100),
+          }))
+        : hardCap != null && balance <= hardCap
+          ? [{ thresholdPct: 100, reached: true }]
+          : [];
 
     return reply.send({
       account: {
@@ -971,15 +1010,14 @@ export async function billingRoutes(
         return reply.status(404).send(errorPayload('billing.account_not_found', 'Billing account not found'));
       }
 
-      // Validate caps are non-negative and hardCap >= softCap when both set
+      // Soft cap must be non-negative (warning at a negative balance is not an early warning).
+      // Hard cap can be negative (allows overdraft up to that amount).
+      // When both are set, hard cap must be ≤ soft cap (hard cap is more restrictive).
       if (softCapCents != null && softCapCents < 0) {
         return reply.status(400).send(errorPayload('billing.caps.invalid', 'softCapCents must be non-negative'));
       }
-      if (hardCapCents != null && hardCapCents < 0) {
-        return reply.status(400).send(errorPayload('billing.caps.invalid', 'hardCapCents must be non-negative'));
-      }
-      if (softCapCents != null && hardCapCents != null && hardCapCents < softCapCents) {
-        return reply.status(400).send(errorPayload('billing.caps.invalid', 'hardCapCents must be greater than or equal to softCapCents'));
+      if (softCapCents != null && hardCapCents != null && hardCapCents > softCapCents) {
+        return reply.status(400).send(errorPayload('billing.caps.invalid', 'hardCapCents must be less than or equal to softCapCents'));
       }
 
       // Convert cents to microusd (1 cent = 10_000 microusd)
