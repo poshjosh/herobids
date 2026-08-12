@@ -154,7 +154,9 @@ log "Step 1 — Discovering running agents..."
 if [[ "${INCLUDE_LIVE}" == "true" ]]; then
   LIVE_FILTER=""
 else
-  LIVE_FILTER="AND (a.execution_mode IS NULL OR a.execution_mode != 'live')"
+  # Execution mode lives in the execution_defaults JSONB column since the
+  # 2026-08-02 agent-table migration (docs/bug-reports/2026/08/02/001).
+  LIVE_FILTER="AND (a.execution_defaults->>'mode' IS DISTINCT FROM 'live')"
 fi
 
 mapfile -t AGENT_IDS < <(PG -c \
@@ -174,7 +176,7 @@ if [[ "${INCLUDE_LIVE}" == "false" ]]; then
      FROM agent_runtime_sessions s
      JOIN agents a ON a.id = s.agent_id
      WHERE s.status NOT IN ('stopped','crashed')
-       AND a.execution_mode = 'live'" \
+       AND a.execution_defaults->>'mode' = 'live'" \
     | tr -d ' ' | grep -v '^$' || true)
 
   if [[ ${#LIVE_IDS[@]} -gt 0 ]]; then
