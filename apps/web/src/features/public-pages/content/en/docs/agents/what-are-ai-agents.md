@@ -49,7 +49,7 @@ AI agents on OpenAIdom can:
 
 * Connecto to external services like gmail/trading platforms
 * Send notifications
-  - send email on your behalf, or send you an email
-  - send telegram messages to you.
+  - [send email on your behalf, or send you an email](/docs/messaging/email/how-agents-send-email)
+  - [send telegram messages to you](/docs/messaging/telegram/slash-commands)
 * Trade crypto
 * Trade forex (coming soon)
