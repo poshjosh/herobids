@@ -571,9 +571,9 @@ textarea:not(:placeholder-shown) {
   align-items: center;
   justify-content: center;
   width: 100%;
-  /* Reserve the artwork's height (140% of card width at 3:2) so the proof
-   * cards clear the image below. 15/14 = 1.4 × (1024/1536). */
-  aspect-ratio: 15 / 14;
+  /* Reserve the artwork's height (168% of card width at 3:2) so the proof
+   * cards clear the image below. 25/28 = 1.68 × (1024/1536). */
+  aspect-ratio: 75 / 74;
 }
 
 .landing-page-hero::before {
@@ -582,7 +582,7 @@ textarea:not(:placeholder-shown) {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 140%;
+  width: 148%;
   aspect-ratio: 1536 / 1024;
   background: url('/openaidom-background-1.avif') center / contain no-repeat;
   z-index: 0;
@@ -599,6 +599,7 @@ textarea:not(:placeholder-shown) {
   align-items: center;
   text-align: center;
   padding: 48px 40px;
+  transform: translate(-20px, -12px);
   gap: 20px;
   flex: 1;
   min-width: 0;
@@ -660,7 +661,7 @@ textarea:not(:placeholder-shown) {
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 0px;
   align-items: stretch;
   max-width: 680px;
   width: 100%;
