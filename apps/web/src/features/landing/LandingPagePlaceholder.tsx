@@ -28,23 +28,25 @@ export function LandingPagePlaceholder() {
   return (
     <div className="landing-page landing-page--image">
       <div className="landing-page-row">
-        <div className="landing-page-card">
-          <BrandLogo display="full" variant="dark" size="lg" />
-          <p className="landing-page-tagline">
-            Affordable AI agents that get the job done
-          </p>
-          <p className="landing-page-description">
-            We offer AI as a service so that you can have your own 
-            personal assistant without needing to know about agents, 
-            servers or hosting.
-          </p>
-          <div className="landing-page-ctas">
-            <Link to="/login" className="landing-page-cta">
-              Sign in
-            </Link>
-            <Link to="/try" className="landing-page-cta">
-              Try it
-            </Link>
+        <div className="landing-page-hero">
+          <div className="landing-page-card">
+            <BrandLogo display="full" variant="dark" size="lg" />
+            <p className="landing-page-tagline">
+              Affordable AI agents that get the job done
+            </p>
+            <p className="landing-page-description">
+              We offer AI as a service so that you can have your own 
+              personal assistant without needing to know about agents, 
+              servers or hosting.
+            </p>
+            <div className="landing-page-ctas">
+              <Link to="/login" className="landing-page-cta">
+                Sign in
+              </Link>
+              <Link to="/try" className="landing-page-cta">
+                Try it
+              </Link>
+            </div>
           </div>
         </div>
 

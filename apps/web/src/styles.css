@@ -563,57 +563,30 @@ textarea:not(:placeholder-shown) {
   isolation: isolate;
 }
 
-/* Cinematic artwork layer: a slow Ken Burns push keeps the hero alive while
- * the shared aurora glows through the letterboxed edges. */
-.landing-page--image::before {
-  content: '';
-  /* position: absolute;
-  inset: 0;
-  z-index: 0;
-  background: url('/openaidom-background-1.avif') center / contain no-repeat;
-  transform-origin: center;
-  animation: landing-kenburns 26s ease-in-out infinite alternate;
-  will-change: transform; */
+/* ── Hero: AVIF artwork sits behind the main card ─────────────────────────── */
+
+.landing-page-hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  /* Reserve the artwork's height (140% of card width at 3:2) so the proof
+   * cards clear the image below. 15/14 = 1.4 × (1024/1536). */
+  aspect-ratio: 15 / 14;
 }
 
-/* Blend + glow overlay: a brand-tinted core light and top/bottom fades melt the
- * artwork into the aurora so there is no hard rectangular seam. */
-.landing-page--image::after {
+.landing-page-hero::before {
   content: '';
-  /* position: absolute;
-  inset: 0;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 140%;
+  aspect-ratio: 1536 / 1024;
+  background: url('/openaidom-background-1.avif') center / contain no-repeat;
   z-index: 0;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 50% 44%, rgba(124, 104, 255, 0.22) 0%, transparent 58%),
-    linear-gradient(180deg, rgba(5, 8, 15, 0.60) 0%, transparent 26%, transparent 68%, rgba(5, 8, 15, 0.82) 100%);
-  animation: landing-glow 9s ease-in-out infinite alternate; */
-}
-
-@keyframes landing-kenburns {
-  from { transform: scale(1) translate3d(0, 0, 0); }
-  to   { transform: scale(1.09) translate3d(0, -1.5%, 0); }
-}
-
-@keyframes landing-glow {
-  from { opacity: 0.85; }
-  to   { opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .landing-page--image::before,
-  .landing-page--image::after {
-    animation: none;
-  }
-}
-
-/* Mobile: skip the heavy AVIF artwork. The aurora field (body::before/::after)
- * already provides a rich animated background without the image payload. */
-@media (max-width: 768px) {
-  .landing-page--image::before {
-    background-image: none;
-    animation: none;
-  }
 }
 
 /* ── Content card ─────────────────────────────────────────────────────────── */
@@ -823,6 +796,15 @@ textarea:not(:placeholder-shown) {
 @media (max-width: 768px) {
   .landing-page {
     padding: 24px;
+  }
+
+  .landing-page-hero {
+    aspect-ratio: auto;
+    display: block;
+  }
+
+  .landing-page-hero::before {
+    display: none;
   }
 
   .landing-page-row {
