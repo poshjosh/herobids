@@ -673,6 +673,7 @@ textarea:not(:placeholder-shown) {
 .landing-page-proofs {
   display: flex;
   gap: 20px;
+  margin-top: -44px;  /* tune this — larger negative = more overlap */
 }
 
 .landing-page-proof {
@@ -817,11 +818,13 @@ textarea:not(:placeholder-shown) {
   .landing-page-proofs {
     flex-direction: column;
     gap: 14px;
+    margin-top: 0;
   }
 
   .landing-page-card {
     padding: 32px 24px;
     max-width: 100%;
+    transform: none;
   }
 
   .landing-page-ctas {
