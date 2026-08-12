@@ -125,7 +125,7 @@ describe('LandingPagePlaceholder', () => {
 
   it('renders the letter toggle heading', () => {
     const html = renderPage();
-    expect(html).toContain('A letter to you');
+    expect(html).toContain('A letter for you');
   });
 
   it('keeps the letter collapsed by default', () => {

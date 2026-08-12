@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Link, Navigate } from 'react-router';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { LoadingSpinner } from '../../app/layout/RootLayout.js';
@@ -10,6 +10,13 @@ export function LandingPagePlaceholder() {
   const { user, loading } = useSession();
   const { locale } = useLocale();
   const [letterOpen, setLetterOpen] = useState(false);
+  const letterRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (letterOpen && letterRef.current) {
+      letterRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [letterOpen]);
 
   if (loading) {
     return (
@@ -82,11 +89,11 @@ export function LandingPagePlaceholder() {
         onClick={() => setLetterOpen((v) => !v)}
         aria-expanded={letterOpen}
       >
-        A letter to you
+        A letter for you
       </button>
 
       {letterOpen && (
-      <section className="landing-page-about">
+      <section className="landing-page-about" ref={letterRef}>
         <h2 className="landing-page-about-heading">Dear OpenAIdom user,</h2>
         <p className="landing-page-about-text">
           Here is what we are working towards:
@@ -117,7 +124,7 @@ export function LandingPagePlaceholder() {
           preferences, and becomes more useful.
         </p>
         <p className="landing-page-about-text">
-          This is already possible, but at a high cost. We have made it more affordable.
+          This is already possible, but at a high cost. We have made it much more affordable.
           Don't just take our word for it, try it yourself. Sign in and create your first assistant.
         </p>
         <p className="landing-page-about-text">
