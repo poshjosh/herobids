@@ -567,27 +567,27 @@ textarea:not(:placeholder-shown) {
  * the shared aurora glows through the letterboxed edges. */
 .landing-page--image::before {
   content: '';
-  position: absolute;
+  /* position: absolute;
   inset: 0;
   z-index: 0;
   background: url('/openaidom-background-1.avif') center / contain no-repeat;
   transform-origin: center;
   animation: landing-kenburns 26s ease-in-out infinite alternate;
-  will-change: transform;
+  will-change: transform; */
 }
 
 /* Blend + glow overlay: a brand-tinted core light and top/bottom fades melt the
  * artwork into the aurora so there is no hard rectangular seam. */
 .landing-page--image::after {
   content: '';
-  position: absolute;
+  /* position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
   background:
     radial-gradient(circle at 50% 44%, rgba(124, 104, 255, 0.22) 0%, transparent 58%),
     linear-gradient(180deg, rgba(5, 8, 15, 0.60) 0%, transparent 26%, transparent 68%, rgba(5, 8, 15, 0.82) 100%);
-  animation: landing-glow 9s ease-in-out infinite alternate;
+  animation: landing-glow 9s ease-in-out infinite alternate; */
 }
 
 @keyframes landing-kenburns {
@@ -746,12 +746,30 @@ textarea:not(:placeholder-shown) {
 
 /* ── About section ────────────────────────────────────────────────────────── */
 
+.landing-page-letter-toggle {
+  position: relative;
+  z-index: 1;
+  margin: 48px 0 48px 0;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.landing-page-letter-toggle:hover {
+  opacity: 0.85;
+}
+
 .landing-page-about {
   position: relative;
   z-index: 1;
   max-width: 576px;
   width: 100%;
-  margin-top: 48px;
+  margin-bottom: 72px;
   padding: 44px 40px 36px;
   text-align: left;
   background: #faf7f0;
@@ -792,6 +810,14 @@ textarea:not(:placeholder-shown) {
   margin-top: 8px;
 }
 
+/* ── Footer ─────────────────────────────────────────────────────────────────
+ * Override the landing page's align-items:center so the PublicFooter spans
+ * full width and renders its 4-column grid correctly. */
+
+.landing-page > footer {
+  width: 100%;
+}
+
 /* ── Mobile ───────────────────────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
@@ -825,7 +851,8 @@ textarea:not(:placeholder-shown) {
   }
 
   .landing-page-about {
-    margin-top: 32px;
+    margin-top: 48px;
+    margin-bottom: 48px;
     padding: 32px 24px 28px;
     max-width: 100%;
   }

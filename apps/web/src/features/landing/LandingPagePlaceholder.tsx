@@ -1,10 +1,15 @@
+import { useState } from 'react';
 import { Link, Navigate } from 'react-router';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { LoadingSpinner } from '../../app/layout/RootLayout.js';
 import { BrandLogo } from '../../brand/BrandLogo.js';
+import { PublicFooter } from '../public-pages/PublicLayout.js';
+import { useLocale } from '../../app/i18n/I18nProvider.js';
 
 export function LandingPagePlaceholder() {
   const { user, loading } = useSession();
+  const { locale } = useLocale();
+  const [letterOpen, setLetterOpen] = useState(false);
 
   if (loading) {
     return (
@@ -70,6 +75,15 @@ export function LandingPagePlaceholder() {
         </div>
       </div>
 
+      <button
+        className="landing-page-letter-toggle"
+        onClick={() => setLetterOpen((v) => !v)}
+        aria-expanded={letterOpen}
+      >
+        A letter to you
+      </button>
+
+      {letterOpen && (
       <section className="landing-page-about">
         <h2 className="landing-page-about-heading">Dear OpenAIdom user,</h2>
         <p className="landing-page-about-text">
@@ -118,6 +132,9 @@ export function LandingPagePlaceholder() {
           </Link>
         </div>
       </section>
+      )}
+
+      <PublicFooter locale={locale} />
     </div>
   );
 }

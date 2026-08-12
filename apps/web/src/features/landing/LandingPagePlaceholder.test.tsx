@@ -25,6 +25,11 @@ vi.mock('../../app/providers/SessionProvider.js', () => ({
   SessionProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+vi.mock('../../app/i18n/I18nProvider.js', () => ({
+  useLocale: () => ({ locale: 'en', setLocale: vi.fn(), supportedLocales: ['en'] }),
+  I18nProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 import { LandingPagePlaceholder } from './LandingPagePlaceholder.js';
@@ -118,14 +123,14 @@ describe('LandingPagePlaceholder', () => {
 
   // ── About section ────────────────────────────────────────────────────────
 
-  it('renders the about section heading', () => {
+  it('renders the letter toggle heading', () => {
     const html = renderPage();
-    expect(html).toContain('Dear OpenAIdom user');
+    expect(html).toContain('A letter to you');
   });
 
-  it('renders the about section key phrases', () => {
+  it('keeps the letter collapsed by default', () => {
     const html = renderPage();
-    expect(html).toContain('personal assistant');
-    expect(html).toContain('create your first assistant');
+    expect(html).not.toContain('Dear OpenAIdom user');
+    expect(html).not.toContain('create your first assistant');
   });
 });
