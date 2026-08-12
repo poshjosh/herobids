@@ -6,9 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.1.7 - 2026-08-12
+
 ### Added
 
-- More landing page content
+- Improve landing page UX
+- More landing page content, including letter to users
 - Documentation on what ai agents are and how we save costs.
 
 ### Changed
