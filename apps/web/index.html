@@ -4,11 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OpenAIdom</title>
-    <meta name="description" content="OpenAIdom — Affordable AI agents that get the job done.. Describe what you want, and an agent gets it for you." />
+    <meta name="description" content="OpenAIdom — Affordable AI agents that get the job done. We offer AI as a service so that you can create your own personal assistant without needing to know about agents, servers or hosting." />
 
     <!-- Open Graph -->
     <meta property="og:title" content="OpenAIdom" />
-    <meta property="og:description" content="Affordable AI agents that get the job done.. Describe what you want, and an agent gets it for you." />
+    <meta property="og:description" content="Affordable AI agents that get the job done. We offer AI as a service so that you can create your own personal assistant without needing to know about agents, servers or hosting." />
     <meta property="og:image" content="/brand/banner.png" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://openaidom.com/" />
@@ -17,7 +17,7 @@
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="OpenAIdom" />
-    <meta name="twitter:description" content="Affordable AI agents that get the job done.. Describe what you want, and an agent gets it for you." />
+    <meta name="twitter:description" content="Affordable AI agents that get the job done. We offer AI as a service so that you can create your own personal assistant without needing to know about agents, servers or hosting." />
     <meta name="twitter:image" content="/brand/banner.png" />
 
     <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
@@ -26,9 +26,48 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-title" content="OpenAIdom" />
     <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- JSON-LD structured data for crawlers (e.g. Google brand verification, search) -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "OpenAIdom",
+        "url": "https://openaidom.com/",
+        "description": "Affordable AI agents that get the job done. We offer AI as a service so that you can create your own personal assistant without needing to know about agents, servers or hosting.",
+        "about": {
+          "@type": "Thing",
+          "name": "AI Agent Platform",
+          "description": "OpenAIdom is an AI agent platform where you describe what you want and an autonomous agent gets it done for you — from crypto trading to personal assistance. Create your own personal assistant without managing servers, hosting, or agent infrastructure."
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <div style="padding:2rem;font-family:system-ui,-apple-system,sans-serif;max-width:720px;margin:4rem auto;line-height:1.6;color:#1a1a2e;background:#fff">
+        <h1 style="font-size:2.5rem;margin-bottom:1rem">OpenAIdom</h1>
+        <em>AI Agents That Get the Job Done</em>
+        <p style="font-size:1.125rem;color:#4a4a6a;margin-bottom:1.5rem">
+          We offer AI as a service, so you can create your own personal assistant
+          without needing to know about agents, servers, or hosting.
+        </p>
+        <p style="font-size:1.125rem;color:#4a4a6a;margin-bottom:1.5rem">
+          We focus our research on saving cost. We believe we are No.&nbsp;1 on
+          affordability, without losing effectiveness; and we are increasing
+          the gap.
+        </p>     
+        <p style="font-size:1.125rem;color:#4a4a6a;margin-bottom:1.5rem">
+          After login. Click one button to create your AI agent, the same
+          way you sign one letter to employ a new team member. Thereafter 
+          onboard your new AI employee.
+        </p> 
+        <p style="font-size:0.875rem;color:#888">
+          Please enable JavaScript to use the full platform.
+        </p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

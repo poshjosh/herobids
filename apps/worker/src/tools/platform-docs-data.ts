@@ -2107,7 +2107,11 @@ Notes:
 - _We estimated a run would cost 50k output and 10k input tokens. This is usually for heavy users. Most runs will cost less._
 - _Updated 15 July 2026_
 
-LLM cost limits also depend on your agent's **style**:
+Learn [how OpenAIdom keeps agent costs low](/docs/agents/how-agent-costs-are-kept-low) through smart model routing, wake filtering, and disciplined engineering.
+
+## Cost limits
+
+You can limit how much your agent spends per day on LLM. LLM cost limits also depend on your agent's **style**:
 
 | Style | Default daily limit | Tick interval | What it means |
 |---|---|---|---|
@@ -2127,10 +2131,8 @@ Set optional spending limits so you never get a surprise bill:
 
 If you do not set any caps, no spending limits are enforced. Your agent will run until you stop it manually.
 
-See [Agent Billing Limits](/docs/agents/billing-limits) for details.
-
-Learn [how OpenAIdom keeps agent costs low](/docs/agents/how-agent-costs-are-kept-low) through smart model routing, wake filtering, and disciplined engineering.`,
-    headings: ['Agent runtime', 'LLM usage', 'Billing caps (safety net)'],
+See [Agent Billing Limits](/docs/agents/billing-limits) for details.`,
+    headings: ['Agent runtime', 'LLM usage', 'Cost limits', 'Billing caps (safety net)'],
     tags: ['help', 'pricing'],
   },
   {

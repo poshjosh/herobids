@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- noscript fallback for index page
+
 ## v0.1.7 - 2026-08-12
 
 ### Added
