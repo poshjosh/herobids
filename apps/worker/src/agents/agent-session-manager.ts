@@ -384,11 +384,16 @@ export class AgentSessionManager {
           );
 
           // Gate check AFTER reconciliation — spend state is now fresh.
-          // getOrCreateOpenPeriod recomputes account status when credit increases.
+          // getOrCreateOpenPeriod recomputes account status when credit increases
+          // or caps change. recomputeSpendState below re-derives the status from
+          // the open period regardless, so a stale persisted status (e.g. written
+          // by an older worker image before a billing-semantics change) can never
+          // deadlock session launches. See docs/bug-reports/2026/08/12/001.
           // Fail-open: if the billing DB is unreachable, allow the session to
           // launch rather than crashing the reconciliation loop.
           let canSpendResult: import('@herobids/db').CanSpendNowResult;
           try {
+            await this.config.usageBillingRepo.recomputeSpendState(billingAccount.id);
             canSpendResult = await this.config.usageBillingRepo.canSpendNow(billingAccount.id);
           } catch (err) {
             logger.error({ agentId: agent.id, userId: agent.userId, err }, 'Failed to check canSpendNow — allowing session launch (fail-open)');

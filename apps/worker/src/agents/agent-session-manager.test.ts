@@ -1537,6 +1537,8 @@ describe('AgentSessionManager', () => {
         getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue(mockBillingAccount),
         ensureActiveRateCard: vi.fn().mockResolvedValue(mockRateCard),
         getOrCreateOpenPeriod: vi.fn().mockResolvedValue({ id: 'period-1' }),
+        recomputeSpendState: vi.fn().mockResolvedValue('active'),
+        canSpendNow: vi.fn().mockResolvedValue({ canSpend: true, availableMicrousd: 0, hardCapMicrousd: null, status: 'active', reason: 'ok' }),
       };
 
       (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
@@ -1571,6 +1573,62 @@ describe('AgentSessionManager', () => {
         null,
         null,
       );
+    });
+
+    it('recomputes spend state before gating so a stale persisted hard_limited status cannot deadlock launch', async () => {
+      const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+
+      const mockBillingAccount = { id: 'account-1', userId: 'user-1', status: 'hard_limited' };
+      const mockRateCard = { id: 'ratecard-1', name: 'default' };
+      const usageBillingRepo = {
+        getUserPlanId: vi.fn().mockResolvedValue(null),
+        getAccountByUserId: vi.fn().mockResolvedValue(null),
+        getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue(mockBillingAccount),
+        ensureActiveRateCard: vi.fn().mockResolvedValue(mockRateCard),
+        getOrCreateOpenPeriod: vi.fn().mockResolvedValue({ id: 'period-1' }),
+        // Stale persisted status is hard_limited, but the fresh recompute
+        // resolves to active — the launch must proceed.
+        recomputeSpendState: vi.fn().mockResolvedValue('active'),
+        canSpendNow: vi.fn().mockResolvedValue({ canSpend: true, availableMicrousd: 0, hardCapMicrousd: null, status: 'active', reason: 'ok' }),
+      };
+
+      (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'sess-billing', agentId: 'agent-1' },
+      ]);
+
+      const eventPublisher = {
+        emitGuardrailTriggered: vi.fn().mockResolvedValue(undefined),
+        emitInstanceStatus: vi.fn().mockResolvedValue(undefined),
+        publishUserNotification: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        eventPublisher as any,
+        runtimeLauncher as any,
+        {
+          budgets: TEST_RUNTIME_BUDGETS,
+          usageBillingRepo: usageBillingRepo as any,
+          usageBillingConfig: { defaultRateCardName: 'default' } as any,
+        },
+        reconnectHandler as any,
+      );
+
+      await manager.reconcileStartingSessions();
+
+      expect(usageBillingRepo.recomputeSpendState).toHaveBeenCalledWith('account-1');
+      expect(usageBillingRepo.canSpendNow).toHaveBeenCalledWith('account-1');
+      expect(
+        usageBillingRepo.recomputeSpendState.mock.invocationCallOrder[0],
+      ).toBeLessThan(usageBillingRepo.canSpendNow.mock.invocationCallOrder[0]);
+      // The launch must actually proceed — the billing-block path is not taken.
+      expect(runtimeLauncher.launch).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'sess-billing', agentId: 'agent-1' }),
+      );
+      expect(agentRepo.updateAgent).not.toHaveBeenCalled();
+      expect(agentRepo.markSessionStopped).not.toHaveBeenCalled();
+      expect(eventPublisher.emitGuardrailTriggered).not.toHaveBeenCalled();
+      expect(eventPublisher.emitInstanceStatus).not.toHaveBeenCalled();
     });
   });
 

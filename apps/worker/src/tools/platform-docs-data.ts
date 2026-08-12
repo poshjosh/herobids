@@ -1055,12 +1055,29 @@ AI agents on OpenAIdom can:
 
 * Connecto to external services like gmail/trading platforms
 * Send notifications
-  - send email on your behalf, or send you an email
-  - send telegram messages to you.
+  - [send email on your behalf, or send you an email](/docs/messaging/email/how-agents-send-email)
+  - [send telegram messages to you](/docs/messaging/telegram/slash-commands)
 * Trade crypto
 * Trade forex (coming soon)`,
     headings: ['What can an AI agent do?', 'AI agents on OpenAIdom'],
     tags: ['agents', 'docs', 'what-are-ai-agents'],
+  },
+  {
+    id: 'docs/messaging/email/how-agents-send-email',
+    title: 'How Agents Send Email',
+    kind: 'markdown',
+    content: `# How Agents Send Email
+
+We provide AI agents as a service. Our AI agents may be configured to send messages to its owner (our users) either via email or via Telegram. AI agents may only send when the following are true:
+
+1. The user must add a Gmail connection, which requires OAuth approval. See: [Connections](/connections).
+2. The user must then assign the connection to the agent. Connections may also be revoked or deleted.
+3. The user's agent must have the email skill. See: [Skills](/skills).
+4. The user may then instruct their agent to send an email.
+
+> Note: both the \`/connections\` and the \`/skills\` pages require authentication.`,
+    headings: [],
+    tags: ['docs', 'email', 'how-agents-send-email', 'messaging'],
   },
   {
     id: 'docs/messaging/index',
@@ -1071,7 +1088,8 @@ AI agents on OpenAIdom can:
 Documentation covering messaging integrations between OpenAIdom agents and external platforms.
 
 - [Telegram Slash Commands](/docs/messaging/telegram/slash-commands) — Complete reference for Telegram slash commands: agent discovery, status checks, lifecycle control (start/pause/resume/stop/restart), configuration (mode/connect/disconnect), trade approvals (/yes, /no), and messaging.
-- [Telegram Reply Threading](/docs/messaging/telegram/reply-threading) — How agent Telegram messages use reply anchors and route replies back to the agent.`,
+- [Telegram Reply Threading](/docs/messaging/telegram/reply-threading) — How agent Telegram messages use reply anchors and route replies back to the agent.
+- [How Agents Send Email](/docs/messaging/email/how-agents-send-email) — The steps required before an agent can send email: add a Gmail connection, assign it to the agent, enable the email skill, then instruct the agent.`,
     headings: [],
     tags: ['docs', 'messaging'],
   },

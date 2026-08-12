@@ -12,6 +12,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fix handling of softCapCents and hardCapCents
 - noscript fallback for index page
 
+### Fixed
+
+- Session launch gate now recomputes billing spend state before gating, so a stale persisted `hard_limited` status (e.g. written by an older worker image before a billing-semantics change) can no longer deadlock agent starts (docs/bug-reports/2026/08/12/001)
+
 ## v0.1.7 - 2026-08-12
 
 ### Added
