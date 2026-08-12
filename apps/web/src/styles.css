@@ -584,7 +584,9 @@ textarea:not(:placeholder-shown) {
   transform: translate(-50%, -50%);
   width: 148%;
   aspect-ratio: 1536 / 1024;
-  background: url('/openaidom-background-1.avif') center / contain no-repeat;
+  background: url('openaidom-background.avif') center / contain no-repeat;
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
   z-index: 0;
   pointer-events: none;
 }
