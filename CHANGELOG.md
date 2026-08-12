@@ -6,9 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- More landing page content
+- Documentation on what ai agents are and how we save costs.
+
 ### Changed
 
-- Added documentation on what ai agents are and how we save costs.
 - Update apps/web/src/features/public-pages/content/en/docs/agents/billing-limits.md to account for this ADR docs/tech/adrs/2026/08/006-spend-caps-operator-only.md
 - robots.txt
 

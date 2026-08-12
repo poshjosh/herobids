@@ -8,11 +8,11 @@ An AI agent can **do the work**.
 
 For example, instead of asking:
 
-> "What's happening with Bitcoin?"
+> What's happening with Bitcoin?
 
 you could tell an agent:
 
-> "Monitor Bitcoin and tell me on Telegram when something important happens."
+> Monitor Bitcoin and tell me on Telegram when something important happens.
 
 The agent can monitor the market, analyze what it finds, and message you when it matters.
 

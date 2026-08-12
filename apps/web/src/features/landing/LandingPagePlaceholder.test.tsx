@@ -92,4 +92,40 @@ describe('LandingPagePlaceholder', () => {
     expect(html).toContain('compact-mark.png');
     expect(html).toContain('OpenAIdom');
   });
+
+  // ── Proof cards ──────────────────────────────────────────────────────────
+
+  it('renders the cost proof card heading', () => {
+    const html = renderPage();
+    expect(html).toContain('Our agents cost less');
+  });
+
+  it('renders the cost proof card link', () => {
+    const html = renderPage();
+    expect(html).toContain('href="/docs/agents/how-agent-costs-are-kept-low"');
+    expect(html).toContain('See how costs are kept low');
+  });
+
+  it('renders the one-click proof card heading', () => {
+    const html = renderPage();
+    expect(html).toContain('Get your agent in one click');
+  });
+
+  it('renders the app-purpose description for Google verification', () => {
+    const html = renderPage();
+    expect(html).toContain('We offer AI as a service');
+  });
+
+  // ── About section ────────────────────────────────────────────────────────
+
+  it('renders the about section heading', () => {
+    const html = renderPage();
+    expect(html).toContain('Dear OpenAIdom user');
+  });
+
+  it('renders the about section key phrases', () => {
+    const html = renderPage();
+    expect(html).toContain('personal assistant');
+    expect(html).toContain('create your first assistant');
+  });
 });
