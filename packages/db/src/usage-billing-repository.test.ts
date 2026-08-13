@@ -430,70 +430,80 @@ function makePeriod(overrides: {
 }
 
 describe('computeSpendStatus', () => {
-  it('returns hard_limited when balance is positive but hardCap is 0 (exact boundary — block at $0.00)', () => {
-    // hardCap = $0.00 → netOutOfPocket (0) >= 0 → hard_limited
+  it('returns active when balance is above the hard-cap threshold of 0 (block only at $0.00)', () => {
+    // hardCap = 0 → block at $0.00; balance $20.00 > 0 → active
     const status = computeSpendStatus(makePeriod({ balanceMicrousd: 20_000_000 }));
-    expect(status).toBe('hard_limited');
+    expect(status).toBe('active');
   });
 
-  it('returns hard_limited when balance is exactly 0 and hardCap is 0 (exact boundary)', () => {
+  it('returns hard_limited when balance hits the hard-cap threshold of 0 (exact boundary)', () => {
     // User spent exactly their included credit + top-ups → balance = 0
-    // With hardCap 0, netOutOfPocket (0) >= 0 → hard_limited
     const status = computeSpendStatus(makePeriod({ balanceMicrousd: 0 }));
     expect(status).toBe('hard_limited');
   });
 
-  it('returns hard_limited when balance is negative and hardCap is 0', () => {
-    // User overspent by $0.01 → balance = -$0.01 → netOutOfPocket = $0.01 > $0
+  it('returns hard_limited when balance drops below the hard-cap threshold of 0', () => {
+    // User overspent by $0.01 → balance = -$0.01 < $0.00
     const status = computeSpendStatus(makePeriod({ balanceMicrousd: -100 }));
     expect(status).toBe('hard_limited');
   });
 
-  it('returns hard_limited when netOutOfPocket exceeds a non-zero hardCap', () => {
-    // hardCap = $5.00 (500 cents), balance = -$6.00 → netOutOfPocket = $6.00 > $5.00
-    const status = computeSpendStatus(makePeriod({
-      balanceMicrousd: -60_000,
-      hardCapMicrousd: 50_000,
-    }));
-    expect(status).toBe('hard_limited');
-  });
-
-  it('returns hard_limited when netOutOfPocket equals a non-zero hardCap (exact boundary)', () => {
-    // hardCap = $5.00, balance = -$5.00 → netOutOfPocket = $5.00 >= $5.00 → hard_limited
+  it('returns hard_limited when balance reaches a negative hard-cap threshold (overdraft allowance — exact boundary)', () => {
+    // hardCap = -$5.00 → overdraft of up to $5.00 allowed; -$5.00 exactly → blocked
     const status = computeSpendStatus(makePeriod({
       balanceMicrousd: -50_000,
       softCapMicrousd: null,
-      hardCapMicrousd: 50_000,
+      hardCapMicrousd: -50_000,
     }));
     expect(status).toBe('hard_limited');
   });
 
-  it('returns active when netOutOfPocket is below a non-zero hardCap', () => {
-    // hardCap = $5.00, balance = -$3.00 → netOutOfPocket = $3.00 < $5.00
+  it('returns hard_limited when balance drops below a negative hard-cap threshold (overdraft exceeded)', () => {
+    // hardCap = -$5.00, balance = -$6.00 → beyond the overdraft allowance
+    const status = computeSpendStatus(makePeriod({
+      balanceMicrousd: -60_000,
+      softCapMicrousd: null,
+      hardCapMicrousd: -50_000,
+    }));
+    expect(status).toBe('hard_limited');
+  });
+
+  it('returns active when balance is above a negative hard-cap threshold (within overdraft allowance)', () => {
+    // hardCap = -$5.00, balance = -$3.00 → within allowance
     const status = computeSpendStatus(makePeriod({
       balanceMicrousd: -30_000,
       softCapMicrousd: null,
-      hardCapMicrousd: 50_000,
+      hardCapMicrousd: -50_000,
     }));
     expect(status).toBe('active');
   });
 
-  it('returns soft_limited when netOutOfPocket exceeds softCap but not hardCap', () => {
-    // softCap = $2.00, hardCap = $5.00, balance = -$3.00 → netOutOfPocket = $3.00
+  it('returns soft_limited when balance reaches the soft-cap threshold but stays above the hard cap', () => {
+    // softCap = $5.00, hardCap = 0, balance = $5.00 → warn at the soft threshold
     const status = computeSpendStatus(makePeriod({
-      balanceMicrousd: -30_000,
-      softCapMicrousd: 20_000,
-      hardCapMicrousd: 50_000,
+      balanceMicrousd: 50_000,
+      softCapMicrousd: 50_000,
+      hardCapMicrousd: 0,
     }));
     expect(status).toBe('soft_limited');
   });
 
-  it('returns hard_limited when netOutOfPocket exceeds both caps (hard check wins)', () => {
-    // softCap = $2.00, hardCap = $5.00, balance = -$6.00 → netOutOfPocket = $6.00
+  it('returns active when balance is above the soft-cap threshold', () => {
+    // softCap = $5.00, hardCap = 0, balance = $6.00 → no warning yet
+    const status = computeSpendStatus(makePeriod({
+      balanceMicrousd: 60_000,
+      softCapMicrousd: 50_000,
+      hardCapMicrousd: 0,
+    }));
+    expect(status).toBe('active');
+  });
+
+  it('returns hard_limited when balance drops below both thresholds (hard check wins)', () => {
+    // softCap = $2.00, hardCap = 0, balance = -$6.00 → hard cap hit first
     const status = computeSpendStatus(makePeriod({
       balanceMicrousd: -60_000,
       softCapMicrousd: 20_000,
-      hardCapMicrousd: 50_000,
+      hardCapMicrousd: 0,
     }));
     expect(status).toBe('hard_limited');
   });
@@ -508,14 +518,14 @@ describe('computeSpendStatus', () => {
     expect(status).toBe('active');
   });
 
-  it('returns active when softCap is null (no soft cap set)', () => {
-    // softCap null → skip soft check, even with negative balance below hardCap threshold
+  it('returns soft_limited when softCap is set and hardCap is null (warn only)', () => {
+    // softCap = $5.00, no hard cap → warn, never block
     const status = computeSpendStatus(makePeriod({
       balanceMicrousd: -10_000,
-      softCapMicrousd: null,
-      hardCapMicrousd: 50_000,
+      softCapMicrousd: 50_000,
+      hardCapMicrousd: null,
     }));
-    expect(status).toBe('active');
+    expect(status).toBe('soft_limited');
   });
 
   it('returns active when both caps are null (free plan pre-cap config)', () => {
@@ -528,21 +538,19 @@ describe('computeSpendStatus', () => {
     expect(status).toBe('active');
   });
 
-  it('top-up alone does not unblock when hardCap is 0 (exact boundary)', () => {
-    // hardCap = $0.00 means block at $0.00.  Even after topping up,
-    // netOutOfPocket = 0 >= 0 → hard_limited.  User must raise the cap
-    // above 0 to unblock.
+  it('top-up that restores balance above the hard-cap threshold unblocks the account', () => {
+    // hardCap = 0 blocks at $0.00.
+    // Before top-up: balance = -$0.10 → hard_limited
     const before = computeSpendStatus(makePeriod({ balanceMicrousd: -10_000 }));
     expect(before).toBe('hard_limited');
 
-    // After $5 top-up (adds 50,000 microusd): balance = $4.00 → still blocked
+    // After $5.00 top-up: balance = $4.90 → above threshold → active
     const after = computeSpendStatus(makePeriod({ balanceMicrousd: 40_000 }));
-    expect(after).toBe('hard_limited');
+    expect(after).toBe('active');
   });
 
-  it('top-up that partially restores balance but still negative keeps hard-limited', () => {
-    // Before top-up: balance = -$10.00 → hard_limited
-    // After $5 top-up: balance = -$5.00 → still negative → still hard_limited
+  it('top-up that partially restores balance but stays below the threshold keeps hard-limited', () => {
+    // hardCap = 0, balance = -$5.00 → still below $0.00 → hard_limited
     const status = computeSpendStatus(makePeriod({ balanceMicrousd: -50_000 }));
     expect(status).toBe('hard_limited');
   });
@@ -1083,15 +1091,15 @@ describe('canSpendNow', () => {
 
   // ── New hard-cap-aware tests ──────────────────────────────────────────
 
-  it('blocks when available credit hits exact hard-cap boundary', async () => {
-    // hardCap = $5.00 (50,000 microusd), available = -$5.00 → exactly at boundary
+  it('blocks when available credit reaches the hard-cap threshold (exact boundary)', async () => {
+    // hardCap = -$5.00 (overdraft allowance), available = -$5.00 → exactly at boundary
     const db = {
       select: vi.fn().mockImplementation(() =>
         makeSelectChain([{
           status: 'active',
           balanceMicrousd: -50_000,
           reservedMicrousd: 0,
-          hardCapMicrousd: 50_000,
+          hardCapMicrousd: -50_000,
         }]),
       ),
     } as unknown as Database;
@@ -1100,19 +1108,19 @@ describe('canSpendNow', () => {
     const result = await repo.canSpendNow('acc_test');
     expect(result.canSpend).toBe(false);
     expect(result.availableMicrousd).toBe(-50_000);
-    expect(result.hardCapMicrousd).toBe(50_000);
+    expect(result.hardCapMicrousd).toBe(-50_000);
     expect(result.reason).toBe('no_available_credit');
   });
 
-  it('blocks when available credit is beyond hard-cap boundary', async () => {
-    // hardCap = $5.00, available = -$6.00 → beyond boundary
+  it('blocks when available credit drops below the hard-cap threshold', async () => {
+    // hardCap = -$5.00, available = -$6.00 → overdraft beyond allowance
     const db = {
       select: vi.fn().mockImplementation(() =>
         makeSelectChain([{
           status: 'active',
           balanceMicrousd: -60_000,
           reservedMicrousd: 0,
-          hardCapMicrousd: 50_000,
+          hardCapMicrousd: -50_000,
         }]),
       ),
     } as unknown as Database;
@@ -1124,15 +1132,15 @@ describe('canSpendNow', () => {
     expect(result.reason).toBe('no_available_credit');
   });
 
-  it('allows when balance is negative but still above hard-cap boundary', async () => {
-    // hardCap = $5.00, available = -$3.00 → still above boundary (not yet reached)
+  it('allows when available credit is above the hard-cap threshold (within overdraft allowance)', async () => {
+    // hardCap = -$5.00, available = -$3.00 → within allowance, not yet blocked
     const db = {
       select: vi.fn().mockImplementation(() =>
         makeSelectChain([{
           status: 'active',
           balanceMicrousd: -30_000,
           reservedMicrousd: 0,
-          hardCapMicrousd: 50_000,
+          hardCapMicrousd: -50_000,
         }]),
       ),
     } as unknown as Database;
@@ -1184,15 +1192,15 @@ describe('canSpendNow', () => {
     expect(result.reason).toBe('no_available_credit');
   });
 
-  it('accounts for reservations: blocked when balance minus reserved hits boundary', async () => {
-    // hardCap = $5.00, balance = -$4.00, reserved = $2.00 → available = -$6.00 → blocked
+  it('accounts for reservations: blocked when balance minus reserved reaches the threshold', async () => {
+    // hardCap = -$5.00, balance = -$4.00, reserved = $2.00 → available = -$6.00 → blocked
     const db = {
       select: vi.fn().mockImplementation(() =>
         makeSelectChain([{
           status: 'active',
           balanceMicrousd: -40_000,
           reservedMicrousd: 20_000,
-          hardCapMicrousd: 50_000,
+          hardCapMicrousd: -50_000,
         }]),
       ),
     } as unknown as Database;
@@ -1208,8 +1216,8 @@ describe('canSpendNow', () => {
 // ── reserveCharge tests ──────────────────────────────────────────────────────
 
 describe('reserveCharge', () => {
-  it('blocks reservation when post-reservation available credit hits exact hard-cap boundary', async () => {
-    // hardCap = $5.00, available = -$3.00, reserve $2.00 → post-reservation = -$5.00 = boundary → blocked
+  it('blocks reservation when post-reservation available credit reaches the hard-cap threshold (exact boundary)', async () => {
+    // hardCap = -$5.00, available = -$3.00, reserve $2.00 → post-reservation = -$5.00 = boundary → blocked
     const tx = new MockTransaction();
     const db = {
       transaction: vi.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
@@ -1219,7 +1227,7 @@ describe('reserveCharge', () => {
       status: 'active',
       balanceMicrousd: -30_000,
       reservedMicrousd: 0,
-      hardCapMicrousd: 50_000,
+      hardCapMicrousd: -50_000,
     });
 
     const repo = new UsageBillingRepository(db);
@@ -1230,11 +1238,11 @@ describe('reserveCharge', () => {
         amountMicrousd: 20_000,
         reservationId: 'resv_1',
       }),
-    ).rejects.toThrow(/hardCap 50000/);
+    ).rejects.toThrow(/hardCap -50000/);
   });
 
-  it('blocks reservation when post-reservation available credit goes beyond hard-cap boundary', async () => {
-    // hardCap = $5.00, available = -$4.00, reserve $2.00 → post-reservation = -$6.00 > $5.00 → blocked
+  it('blocks reservation when post-reservation available credit drops below the hard-cap threshold', async () => {
+    // hardCap = -$5.00, available = -$4.00, reserve $2.00 → post-reservation = -$6.00 → blocked
     const tx = new MockTransaction();
     const db = {
       transaction: vi.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
@@ -1244,7 +1252,7 @@ describe('reserveCharge', () => {
       status: 'active',
       balanceMicrousd: -40_000,
       reservedMicrousd: 0,
-      hardCapMicrousd: 50_000,
+      hardCapMicrousd: -50_000,
     });
 
     const repo = new UsageBillingRepository(db);
@@ -1255,11 +1263,11 @@ describe('reserveCharge', () => {
         amountMicrousd: 20_000,
         reservationId: 'resv_2',
       }),
-    ).rejects.toThrow(/hardCap 50000/);
+    ).rejects.toThrow(/hardCap -50000/);
   });
 
-  it('allows reservation when post-reservation available credit stays above boundary', async () => {
-    // hardCap = $5.00, available = -$2.00, reserve $1.00 → post-reservation = -$3.00 < $5.00 → allowed
+  it('allows reservation when post-reservation available credit stays above the hard-cap threshold', async () => {
+    // hardCap = -$5.00, available = -$2.00, reserve $1.00 → post-reservation = -$3.00 → within allowance
     const tx = new MockTransaction();
     const db = {
       transaction: vi.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
@@ -1269,7 +1277,7 @@ describe('reserveCharge', () => {
       status: 'active',
       balanceMicrousd: -20_000,
       reservedMicrousd: 0,
-      hardCapMicrousd: 50_000,
+      hardCapMicrousd: -50_000,
     });
 
     const repo = new UsageBillingRepository(db);

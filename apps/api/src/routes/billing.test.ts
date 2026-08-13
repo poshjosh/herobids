@@ -356,7 +356,7 @@ describe('billing routes', () => {
     expect(res.json().topUpPacks).toEqual([]);
   });
 
-  it('usage-summary warning thresholds follow net out-of-pocket spend rather than gross usage charge', async () => {
+  it('usage-summary warning thresholds track consumption of the budget between included credit and the hard cap', async () => {
     const billingConfig = BillingConfigSchema.parse({});
     const usageBillingConfig = UsageBillingConfigSchema.parse({
       enabled: true,
@@ -422,16 +422,18 @@ describe('billing routes', () => {
 
     const res = await app.inject({ method: 'GET', url: '/billing/usage-summary' });
     expect(res.statusCode).toBe(200);
+    // includedCredit $7.00, hardCap $5.00 → budget $2.00.
+    // balance $1.00 → consumed $6.00 ≥ budget → every threshold reached.
     expect(res.json().warnings).toEqual([
-      { thresholdPct: 50, reached: false },
-      { thresholdPct: 80, reached: false },
-      { thresholdPct: 100, reached: false },
+      { thresholdPct: 50, reached: true },
+      { thresholdPct: 80, reached: true },
+      { thresholdPct: 100, reached: true },
     ]);
   });
 
-  it('usage-summary shows hard-cap reached when hard cap is zero and balance is negative', async () => {
-    // hardCap=0 means block at $0.00 — when netOutOfPocket >= 0,
-    // a single "hard cap reached" warning is surfaced.
+  it('usage-summary warning thresholds still track the budget when hard cap is zero and balance is negative', async () => {
+    // hardCap=0 means block at $0.00.  Budget = includedCredit - 0 = $5.00.
+    // balance -$3.00 → consumed $8.00 → both thresholds reached.
     const billingConfig = BillingConfigSchema.parse({});
     const usageBillingConfig = UsageBillingConfigSchema.parse({
       enabled: true,
@@ -498,10 +500,8 @@ describe('billing routes', () => {
 
     const res = await app.inject({ method: 'GET', url: '/billing/usage-summary' });
     expect(res.statusCode).toBe(200);
-    // hardCap=0 blocks at $0.00 — since netOutOfPocket >= 0, the single
-    // "hard cap reached" warning is surfaced.  Percentage thresholds from
-    // config are NOT used because 50%/80%/100% of zero are meaningless.
     expect(res.json().warnings).toEqual([
+      { thresholdPct: 80, reached: true },
       { thresholdPct: 100, reached: true },
     ]);
   });

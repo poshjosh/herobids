@@ -772,6 +772,12 @@ textarea:not(:placeholder-shown) {
   line-height: 1.6;
 }
 
+.landing-page-signature-svg {
+  width: 180px;
+  transform: rotate(-2deg);
+  transform-origin: left bottom;
+}
+
 .landing-page-about-signature {
   font-family: "Snell Roundhand", "Apple Chancery", "Segoe Script", "Brush Script MT", cursive;
   font-size: 1.25rem;
@@ -779,12 +785,6 @@ textarea:not(:placeholder-shown) {
   color: #2d2a24;
   display: inline-block;
   margin-top: 2px;
-}
-
-.landing-page-signature-svg {
-  width: 180px;
-  transform: rotate(-2deg);
-  transform-origin: left bottom;
 }
 
 .landing-page-about .landing-page-ctas {

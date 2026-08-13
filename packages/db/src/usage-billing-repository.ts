@@ -321,9 +321,11 @@ export class UsageBillingRepository {
    *
    * Hard-cap rule: null cap = unlimited on the credit dimension.  When a
    * hard cap is set, paid work is blocked as soon as available credit
-   * (balanceMicrousd - reservedMicrousd) reaches or goes below the cap
-   * boundary (availableMicrousd <= -hardCapMicrousd).  In addition, the
-   * account status check blocks hard_limited and suspended accounts.
+   * (balanceMicrousd - reservedMicrousd) reaches or goes below the hard-cap
+   * balance threshold (availableMicrousd <= hardCapMicrousd).  A hard cap of
+   * 0 blocks at $0.00; a negative hard cap allows overdraft up to that
+   * amount.  In addition, the account status check blocks hard_limited and
+   * suspended accounts.
    *
    * If no open period exists (fresh user), treat as canSpend: true.
    */
@@ -1287,9 +1289,9 @@ export class UsageBillingRepository {
    *
    * Locks the open period row with SELECT FOR UPDATE (R6), validates account
    * status (blocks hard_limited/suspended), checks available credit against
-   * the hard-cap boundary (null cap = unlimited, set cap = blocks when
-   * post-reservation available credit reaches or goes below the cap
-   * boundary), creates a reservation ledger entry, and increments
+   * the hard-cap balance threshold (null cap = unlimited, set cap = blocks
+   * when post-reservation available credit reaches or goes below the
+   * threshold), creates a reservation ledger entry, and increments
    * reserved_microusd.
    */
   async reserveCharge(input: ReserveChargeInput): Promise<ReserveChargeResult> {
@@ -1331,7 +1333,7 @@ export class UsageBillingRepository {
 
       if (
         period.hardCapMicrousd != null &&
-        postReservationAvailableMicrousd <= -period.hardCapMicrousd
+        postReservationAvailableMicrousd <= period.hardCapMicrousd
       ) {
         throw Object.assign(
           new Error(

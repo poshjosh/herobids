@@ -21,14 +21,14 @@ Define the exact semantics of soft-cap and hard-cap enforcement in the agent run
 The hard-cap boundary is exact and consistent across all enforcement methods:
 
 - `hardCapMicrousd = null` → **no hard cap** is enforced. Unlimited spending.
-- `hardCapMicrousd` is set → paid work is blocked **as soon as** available credit reaches or goes below the cap boundary.
+- `hardCapMicrousd` is set → paid work is blocked **as soon as** the balance / available credit reaches or goes below the hard-cap balance threshold. A hard cap of `0` blocks at $0.00; a negative hard cap allows overdraft up to that amount.
 
-Example: `hardCapCents: 100` ($1.00) means the user can spend down to just above `-$1.00`; once they hit exactly `-$1.00`, further paid work is blocked.
+Example: `hardCapCents: 0` blocks at $0.00. `hardCapCents: -100` means the user can spend down to just above `-$1.00`; once they hit exactly `-$1.00`, further paid work is blocked.
 
 This rule applies identically in all three enforcement methods:
-- `computeSpendStatus()`: hard-limited when `netOutOfPocket >= hardCapMicrousd`
-- `canSpendNow()`: blocked when `availableMicrousd <= -hardCapMicrousd`
-- `reserveCharge()`: blocked when `post-reservation availableMicrousd <= -hardCapMicrousd`
+- `computeSpendStatus()`: hard-limited when `balanceMicrousd <= hardCapMicrousd`
+- `canSpendNow()`: blocked when `availableMicrousd <= hardCapMicrousd`
+- `reserveCharge()`: blocked when `post-reservation availableMicrousd <= hardCapMicrousd`
 
 ### Soft cap: warn, do not mutate
 
@@ -62,9 +62,9 @@ It must not:
 
 Hard-cap-boundary enforcement is the primary credit check. It blocks paid work (agent runtime and Guided Setup chat) when available credit hits or falls below the hard-cap boundary. When no hard cap is set (`hardCapMicrousd = null`), paid work is **not** blocked on the credit dimension.
 
-**Rule**: `availableMicrousd = balanceMicrousd - reservedMicrousd`. When `hardCapMicrousd` is set and `availableMicrousd <= -hardCapMicrousd`, all paid LLM dispatch is blocked regardless of account status.
+**Rule**: `availableMicrousd = balanceMicrousd - reservedMicrousd`. When `hardCapMicrousd` is set and `availableMicrousd <= hardCapMicrousd`, all paid LLM dispatch is blocked regardless of account status.
 
-Note: `hardCapMicrousd = 0` is a **real cap** — it means paid work is blocked at $0.00 (once included credits are exhausted). It is distinct from `hardCapMicrousd = null`, which means no cap at all.
+Note: `hardCapMicrousd = 0` is a **real cap** — it means paid work is blocked at $0.00 (once included credits are exhausted). A negative `hardCapMicrousd` allows overdraft up to that amount. Both are distinct from `hardCapMicrousd = null`, which means no cap at all.
 
 This uses the shared `canSpendNow()` guard in `packages/db/src/usage-billing-repository.ts`, which checks account status, available credit, and the hard-cap boundary in a single call. The guard returns:
 
@@ -86,7 +86,7 @@ The `reserveCharge()` method applies the same hard-cap boundary rule. A reservat
 
 ```
 postReservationAvailable = balanceMicrousd - reservedMicrousd - amountMicrousd
-blocked when hardCapMicrousd != null && postReservationAvailable <= -hardCapMicrousd
+blocked when hardCapMicrousd != null && postReservationAvailable <= hardCapMicrousd
 ```
 
 When `hardCapMicrousd = null`, reservations are not blocked on the credit dimension.
