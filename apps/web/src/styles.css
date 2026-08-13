@@ -756,7 +756,8 @@ textarea:not(:placeholder-shown) {
     0 2px 6px rgba(0, 0, 0, 0.08),
     0 12px 32px rgba(0, 0, 0, 0.12);
   font-family: "Segoe Print", "Chalkboard SE", "Comic Sans MS", sans-serif;  
-  font-size: 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 300;
   color: #2d2a24;
 }
 
@@ -769,6 +770,21 @@ textarea:not(:placeholder-shown) {
   color: #3d3a34;
   margin: 0 0 20px;
   line-height: 1.6;
+}
+
+.landing-page-about-signature {
+  font-family: "Snell Roundhand", "Apple Chancery", "Segoe Script", "Brush Script MT", cursive;
+  font-size: 1.25rem;
+  line-height: 1.1;
+  color: #2d2a24;
+  display: inline-block;
+  margin-top: 2px;
+}
+
+.landing-page-signature-svg {
+  width: 180px;
+  transform: rotate(-2deg);
+  transform-origin: left bottom;
 }
 
 .landing-page-about .landing-page-ctas {

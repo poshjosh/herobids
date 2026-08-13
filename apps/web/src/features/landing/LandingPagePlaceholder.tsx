@@ -96,7 +96,7 @@ export function LandingPagePlaceholder() {
       <section className="landing-page-about" ref={letterRef}>
         <h2 className="landing-page-about-heading">Dear OpenAIdom user,</h2>
         <p className="landing-page-about-text">
-          Here is what we are working towards:
+          This is what we offer:
         </p>
         <p className="landing-page-about-text">
           Imagine you create your own AI personal assistant, then send it a messge on Telegram: 
@@ -125,17 +125,48 @@ export function LandingPagePlaceholder() {
         </p>
         <p className="landing-page-about-text">
           This is already possible, but at a high cost. We have made it much more affordable.
-          Don't just take our word for it, try it yourself. Sign in and create your first assistant.
+          Don't just take our word for it, try it.
         </p>
-        <p className="landing-page-about-text">
-          Signed,
-          <br/>
+        <div aria-label="Signed">
+          <svg viewBox="0 0 200 60" className="landing-page-signature-svg">
+            <path d="
+                  M 6 54
+                  C 10 50, 13 36, 16 14
+                  C 16 22, 15 38, 15 50
+                  C 15 42, 13 36, 15 31
+                  C 17 27, 23 26, 28 27
+                  C 33 28, 37 30, 39 33
+                  C 40 40, 39 47, 39 52
+                  C 40 46, 43 40, 49 39
+                  C 54 38, 57 41, 56 45
+                  C 54 48, 49 50, 45 49
+                  C 42 48, 40 45, 41 42
+                  C 42 38, 45 34, 50 32
+                  C 55 30, 58 22, 59 12
+                  C 59 22, 58 36, 56 46
+                  C 57 40, 60 35, 65 34
+                  C 70 34, 72 38, 70 42
+                  C 68 46, 64 48, 60 47
+                  C 62 41, 65 35, 71 34
+                  C 77 34, 80 39, 78 44
+                  C 76 49, 72 51, 68 51
+                  C 71 44, 75 39, 81 38
+                  C 87 38, 89 42, 87 47
+                  C 85 51, 80 52, 77 51
+                  C 82 51, 89 50, 96 49
+                  C 106 48, 116 48, 124 49
+                "
+                fill="none"
+                stroke="#2d2a24"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round" />
+          </svg>
+        </div>
+        <div className="landing-page-about-signature">
           Helen
-        </p>
+        </div>
         <div className="landing-page-ctas">
-          <Link to="/login" className="landing-page-cta">
-            Sign in
-          </Link>
           <Link to="/try" className="landing-page-cta">
             Try it
           </Link>
