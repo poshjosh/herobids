@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.1.12 - 2026-08-15
+
 ### Changed
 
 - Support email from `admin@openaidom.com` to `support@openaidom.com`
