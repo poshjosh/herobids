@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Update pricing documentation.
+
 ## v0.1.10 - 2026-08-14
 
 ### Changed
