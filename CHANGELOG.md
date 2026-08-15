@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.1.14 - 2026-08-15
+
 ### Fixed
 
 - Fix Creem cancel/upgrade subscription requests using the wrong payload shape (both were broken).

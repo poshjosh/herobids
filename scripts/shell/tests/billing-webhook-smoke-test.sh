@@ -328,10 +328,11 @@ check() {
   local label="$1"; shift
   if "$@"; then
     ok "${label}"
-    ((PASSED++))
+    # Plain assignment (not ((PASSED++))) — post-increment from 0 evaluates to 0/false and would trip `set -e`.
+    PASSED=$((PASSED + 1))
   else
     warn "FAIL: ${label}"
-    ((FAILED++))
+    FAILED=$((FAILED + 1))
   fi
 }
 
