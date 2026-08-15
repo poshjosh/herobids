@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+###
+
+- Added production plans and topups
+
 ## v0.1.12 - 2026-08-15
 
 ### Changed

@@ -55,3 +55,10 @@ billing:
           interval: month
           displayLabel: "Starter (Monthly)"
           amountCents: 2000                          
+# Commercial usage billing — metering, rate cards, spend-state enforcement, and credit ledger.
+usageBilling:
+  topUpProductsByProvider:                 # provider → [{packId, externalId, cents}]
+    creem:
+      - packId: Topup5
+        externalId: prod_13TZZ9AsdyFtGoY2BqVYAy
+        cents: 500        

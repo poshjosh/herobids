@@ -986,10 +986,6 @@ usageBilling:
       - packId: Topup1000
         externalId: Topup1000
         cents: 100000
-    creem:
-      - packId: Topup5
-        externalId: prod_13TZZ9AsdyFtGoY2BqVYAy
-        cents: 500        
   fallbackCacheReadPct: 75                 # % of input rate to use as cache-read rate when provider has no explicit cache price
   failedRequestOutputPct: 75               # % of maxTokens to bill as estimated output on failed (timeout/server-error) LLM calls
   defaultRateCardItems:                    # seed items for how much each type of agent activity costs
