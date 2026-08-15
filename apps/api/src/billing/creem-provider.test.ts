@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import crypto from 'node:crypto';
-import { CreemProvider, CreemSignatureError } from './creem-provider.js';
+import { CreemProvider, CreemSignatureError, CreemSubscriptionItemMismatchError } from './creem-provider.js';
 import { UnknownWebhookEventTypeError } from './provider-port.js';
 import type { CreemConfig } from '@herobids/domain';
 
@@ -133,5 +133,115 @@ describe('CreemProvider.verifyWebhook', () => {
     expect(event.customerId).toBe('cus_301');
     expect(event.productOrPriceId).toBe('topup_20');
     expect(event.metadata['checkoutKind']).toBe('top_up');
+  });
+});
+
+describe('CreemProvider.cancelSubscription', () => {
+  const config = makeCreemConfig();
+  const provider = new CreemProvider(config);
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends mode=scheduled with onExecute=cancel for at-period-end cancellation', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await provider.cancelSubscription('sub_123', true);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${config.apiBaseUrl}/subscriptions/sub_123/cancel`,
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ mode: 'scheduled', onExecute: 'cancel' }) }),
+    );
+  });
+
+  it('sends mode=immediate with no onExecute for immediate cancellation', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await provider.cancelSubscription('sub_123', false);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${config.apiBaseUrl}/subscriptions/sub_123/cancel`,
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ mode: 'immediate' }) }),
+    );
+  });
+});
+
+describe('CreemProvider.upgradeSubscription', () => {
+  const config = makeCreemConfig();
+  const provider = new CreemProvider(config);
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubFetchWithSubscription(items: Array<{ id?: string; product_id?: string; price_id?: string }>) {
+    const fetchMock = vi.fn().mockImplementation((_url: string, init: { method: string }) => {
+      if (init.method === 'GET') {
+        return Promise.resolve(new Response(JSON.stringify({ items }), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('fetches the subscription and updates the matched item by id (avoids appending a new item)', async () => {
+    const fetchMock = stubFetchWithSubscription([{ id: 'sitem_1', product_id: 'prod_pro_monthly' }]);
+
+    await provider.upgradeSubscription('sub_123', 'prod_pro_monthly', 'prod_pro_yearly', true);
+
+    expect(fetchMock).toHaveBeenCalledWith(`${config.apiBaseUrl}/subscriptions?subscription_id=sub_123`, expect.objectContaining({ method: 'GET' }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${config.apiBaseUrl}/subscriptions/sub_123`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ items: [{ id: 'sitem_1', product_id: 'prod_pro_yearly' }], update_behavior: 'proration-charge-immediately' }),
+      }),
+    );
+  });
+
+  it('uses proration-none when prorate is false', async () => {
+    stubFetchWithSubscription([{ id: 'sitem_1', price_id: 'price_pro_monthly' }]);
+
+    await provider.upgradeSubscription('sub_123', 'price_pro_monthly', 'prod_pro_yearly', false);
+
+    const fetchMock = vi.mocked(fetch);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${config.apiBaseUrl}/subscriptions/sub_123`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ items: [{ id: 'sitem_1', product_id: 'prod_pro_yearly' }], update_behavior: 'proration-none' }),
+      }),
+    );
+  });
+
+  it('throws instead of updating when no item matches the current product/price id', async () => {
+    stubFetchWithSubscription([{ id: 'sitem_1', product_id: 'prod_other' }]);
+
+    await expect(
+      provider.upgradeSubscription('sub_123', 'prod_pro_monthly', 'prod_pro_yearly', true),
+    ).rejects.toThrow(CreemSubscriptionItemMismatchError);
+  });
+
+  it('throws instead of updating when the current product/price id matches multiple items', async () => {
+    stubFetchWithSubscription([
+      { id: 'sitem_1', product_id: 'prod_pro_monthly' },
+      { id: 'sitem_2', product_id: 'prod_pro_monthly' },
+    ]);
+
+    await expect(
+      provider.upgradeSubscription('sub_123', 'prod_pro_monthly', 'prod_pro_yearly', true),
+    ).rejects.toThrow(CreemSubscriptionItemMismatchError);
+  });
+
+  it('throws instead of updating when the matched item has no id', async () => {
+    stubFetchWithSubscription([{ product_id: 'prod_pro_monthly' }]);
+
+    await expect(
+      provider.upgradeSubscription('sub_123', 'prod_pro_monthly', 'prod_pro_yearly', true),
+    ).rejects.toThrow(CreemSubscriptionItemMismatchError);
   });
 });

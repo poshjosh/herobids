@@ -29,7 +29,7 @@ export class MockProvider implements PaymentProvider {
     // No-op in mock
   }
 
-  async upgradeSubscription(_externalSubscriptionId: string, _newProductOrPriceId: string, _prorate: boolean): Promise<void> {
+  async upgradeSubscription(_externalSubscriptionId: string, _currentProductOrPriceId: string, _newProductOrPriceId: string, _prorate: boolean): Promise<void> {
     // No-op in mock
   }
 

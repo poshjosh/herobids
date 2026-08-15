@@ -8,7 +8,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- Hide the Manage billing button on the Billing page and file the stale billing-status deadlock bug report.
+- Fix Creem cancel/upgrade subscription requests using the wrong payload shape (both were broken).
+- Fix Creem subscription upgrades appending a new billable item instead of replacing the existing one.
+
+### Removed
+
+- Remove the Manage billing button on the Billing page and file the stale billing-status deadlock bug report.
 
 ## v0.1.13 - 2026-08-15
 

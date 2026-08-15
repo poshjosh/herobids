@@ -396,6 +396,7 @@ export async function billingRoutes(
     await providerManager.upgradeSubscription(
       subscription.externalSubscriptionId,
       provider,
+      subscription.externalPriceOrProductId,
       newProductOrPriceId,
       true, // prorate
     );

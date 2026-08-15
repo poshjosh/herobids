@@ -90,12 +90,18 @@ export class PaymentProviderManager {
     await provider.cancelSubscription(externalSubscriptionId, atPeriodEnd);
   }
 
-  async upgradeSubscription(externalSubscriptionId: string, owningProvider: BillingProvider, newProductOrPriceId: string, prorate: boolean): Promise<void> {
+  async upgradeSubscription(
+    externalSubscriptionId: string,
+    owningProvider: BillingProvider,
+    currentProductOrPriceId: string,
+    newProductOrPriceId: string,
+    prorate: boolean,
+  ): Promise<void> {
     const provider = this.providers.get(owningProvider);
     if (!provider) {
       throw new Error(`No provider registered for '${owningProvider}'`);
     }
-    await provider.upgradeSubscription(externalSubscriptionId, newProductOrPriceId, prorate);
+    await provider.upgradeSubscription(externalSubscriptionId, currentProductOrPriceId, newProductOrPriceId, prorate);
   }
 }
 

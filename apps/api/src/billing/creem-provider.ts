@@ -63,14 +63,29 @@ export class CreemProvider implements PaymentProvider {
   }
 
   async cancelSubscription(externalSubscriptionId: string, atPeriodEnd = true): Promise<void> {
+    // Creem has no at_period_end field — timing is chosen via mode/onExecute instead.
     await this.post(`/subscriptions/${externalSubscriptionId}/cancel`, {
-      at_period_end: atPeriodEnd,
+      mode: atPeriodEnd ? 'scheduled' : 'immediate',
+      ...(atPeriodEnd ? { onExecute: 'cancel' } : {}),
     });
   }
 
-  async upgradeSubscription(externalSubscriptionId: string, newProductId: string, prorate: boolean): Promise<void> {
-    await this.post(`/subscriptions/${externalSubscriptionId}/upgrade`, {
-      product_id: newProductId,
+  async upgradeSubscription(externalSubscriptionId: string, currentProductOrPriceId: string, newProductId: string, prorate: boolean): Promise<void> {
+    // Creem creates a new item when no item id is given, so the existing item must be
+    // resolved and referenced by id — otherwise a plan change appends a second billable item.
+    // Retrieve endpoint takes subscription_id as a query param, not a path segment.
+    const subscription = await this.get<CreemSubscriptionEntity>(`/subscriptions?subscription_id=${encodeURIComponent(externalSubscriptionId)}`);
+    const items = subscription.items ?? [];
+    const matches = items.filter(
+      (item) => item.product_id === currentProductOrPriceId || item.price_id === currentProductOrPriceId,
+    );
+    const matchedItem = matches[0];
+    if (matches.length !== 1 || !matchedItem?.id) {
+      throw new CreemSubscriptionItemMismatchError(externalSubscriptionId, currentProductOrPriceId, matches.length);
+    }
+
+    await this.post(`/subscriptions/${externalSubscriptionId}`, {
+      items: [{ id: matchedItem.id, product_id: newProductId }],
       update_behavior: prorate ? 'proration-charge-immediately' : 'proration-none',
     });
   }
@@ -176,6 +191,28 @@ export class CreemProvider implements PaymentProvider {
     }
     return json;
   }
+
+  private async get<T>(path: string): Promise<T> {
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}${path}`, {
+        method: 'GET',
+        headers: this.headers,
+      });
+    } catch (err) {
+      throw new ProviderUnavailableError('creem', 'Network error', err);
+    }
+
+    if (res.status >= 500) {
+      throw new ProviderUnavailableError('creem', `Server error ${res.status}`);
+    }
+
+    const json = await res.json() as T & { message?: string };
+    if (!res.ok) {
+      throw new CreemApiError(res.status, json.message ?? `Creem API error ${res.status}`);
+    }
+    return json;
+  }
 }
 
 // --- Event type mapping ---
@@ -216,6 +253,28 @@ export class CreemApiError extends Error {
     super(message);
     this.name = 'CreemApiError';
   }
+}
+
+/** Thrown when the subscription item to update can't be uniquely resolved — refuses to guess and risk double-billing. */
+export class CreemSubscriptionItemMismatchError extends Error {
+  constructor(subscriptionId: string, currentProductOrPriceId: string, matchCount: number) {
+    super(
+      `Cannot resolve a unique subscription item for '${currentProductOrPriceId}' on subscription '${subscriptionId}' (found ${matchCount} item(s) with an id match)`,
+    );
+    this.name = 'CreemSubscriptionItemMismatchError';
+  }
+}
+
+// --- Response types (minimal subset) ---
+
+interface CreemSubscriptionItemEntity {
+  id?: string;
+  product_id?: string;
+  price_id?: string;
+}
+
+interface CreemSubscriptionEntity {
+  items?: CreemSubscriptionItemEntity[];
 }
 
 export class CreemSignatureError extends Error {

@@ -97,8 +97,9 @@ export class StripeProvider implements PaymentProvider {
     }
   }
 
-  async upgradeSubscription(externalSubscriptionId: string, newPriceId: string, prorate: boolean): Promise<void> {
+  async upgradeSubscription(externalSubscriptionId: string, _currentProductOrPriceId: string, newPriceId: string, prorate: boolean): Promise<void> {
     try {
+      // Stripe's client already fetches the subscription itself to resolve the existing item id.
       await this.client.updateSubscriptionPrice(externalSubscriptionId, newPriceId, prorate);
     } catch (err) {
       if (err instanceof StripeNetworkError) {

@@ -25,7 +25,11 @@ export interface PaymentProvider {
   createCheckoutUrl(params: CheckoutParams): Promise<string>;
   createPortalUrl(params: PortalParams): Promise<string>;
   cancelSubscription(externalSubscriptionId: string, atPeriodEnd?: boolean): Promise<void>;
-  upgradeSubscription(externalSubscriptionId: string, newProductOrPriceId: string, prorate: boolean): Promise<void>;
+  /**
+   * currentProductOrPriceId identifies which existing subscription item to replace —
+   * required so adapters can avoid appending a second billable item instead of updating one.
+   */
+  upgradeSubscription(externalSubscriptionId: string, currentProductOrPriceId: string, newProductOrPriceId: string, prorate: boolean): Promise<void>;
   verifyWebhook(payload: string, headers: Record<string, string>): NormalizedWebhookEvent;
 }
 
