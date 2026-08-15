@@ -49,8 +49,8 @@ We do not share your data with third parties for their own marketing or analytic
 ## Your rights
 
 - **Correction** — You can update your account details and agent configurations at any time.
-- **Deletion** — You can request account deletion by contacting us at admin@openaidom.com. Trading records required for regulatory compliance may be retained.
+- **Deletion** — You can request account deletion by contacting us at support@openaidom.com. Trading records required for regulatory compliance may be retained.
 
 ## Contact
 
-For privacy-related questions, contact us at **[admin@openaidom.com](mailto:admin@openaidom.com)**.
+For privacy-related questions, contact us at **[support@openaidom.com](mailto:support@openaidom.com)**.
