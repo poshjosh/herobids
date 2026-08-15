@@ -484,7 +484,7 @@ export async function billingRoutes(
           return reply.status(400).send(errorPayload('billing.webhook.invalid_signature', 'Invalid signature', { provider: 'creem' }));
         }
         if (err instanceof UnknownWebhookEventTypeError) {
-          app.log.debug({ eventType: err.eventType }, 'Ignoring unsupported Creem event type');
+          app.log.info({ eventType: err.eventType }, 'Ignoring unsupported Creem event type');
           return reply.status(200).send({ received: true });
         }
         throw err;
@@ -519,7 +519,7 @@ export async function billingRoutes(
           );
         }
         if (err instanceof UnknownWebhookEventTypeError) {
-          app.log.debug({ eventType: err.eventType }, 'Ignoring unsupported webhook event type');
+          app.log.info({ eventType: err.eventType }, 'Ignoring unsupported webhook event type');
           return reply.status(200).send({ received: true });
         }
         throw err;
