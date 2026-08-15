@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Hide the Manage billing button on the Billing page and file the stale billing-status deadlock bug report.
+
 ## v0.1.13 - 2026-08-15
 
 ###

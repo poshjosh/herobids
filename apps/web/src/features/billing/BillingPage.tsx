@@ -376,15 +376,6 @@ export function BillingPage() {
                     </Button>
                   ))
                 ))}
-                {summary.hasPaymentCustomer && !!summary.subscription && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => portalMutation.mutate()}
-                    disabled={portalMutation.isPending}
-                  >
-                    {portalMutation.isPending ? intl.formatMessage({ id: 'billing.opening' }) : intl.formatMessage({ id: 'billing.manageBilling' })}
-                  </Button>
-                )}
                 {summary.subscription && summary.subscription.status !== 'canceled' && !summary.subscription.cancelAtPeriodEnd && (
                   <Button
                     variant="secondary"
