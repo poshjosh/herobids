@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Privacy policy to explicitly include google data requirements
+
 ## v0.1.14 - 2026-08-15
 
 ### Fixed
