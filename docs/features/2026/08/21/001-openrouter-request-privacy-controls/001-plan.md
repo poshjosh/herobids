@@ -213,7 +213,7 @@ Changes:
 - Avoid duplicating literals at call sites.
 - Prefer one small shared helper if many call sites require the same mapping.
 
-### 4. Emit OpenRouter `provider` controls in the request body — PENDING
+### 4. Emit OpenRouter `provider` controls in the request body — DONE
 
 Files:
 
@@ -230,7 +230,7 @@ Changes:
 - Emit nothing when no controls are set.
 - Do not send the `provider` object for non-OpenRouter requests.
 
-### 5. Test the new request-shape behavior — PENDING
+### 5. Test the new request-shape behavior — DONE
 
 Files:
 
@@ -245,7 +245,7 @@ Add coverage for:
 - Existing OpenRouter `cache_control` behavior still works.
 - Existing reasoning/tool-call behavior remains intact.
 
-### 6. Document the operator-level semantics — PENDING
+### 6. Document the operator-level semantics — DONE
 
 Files:
 

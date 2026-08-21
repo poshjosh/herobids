@@ -86,6 +86,82 @@ providers (e.g. OpenRouter), the worker fetches pricing into `llm_pricing_snapsh
 └─────────────────────────────────────────────┘
 ```
 
+## OpenRouter Request Privacy Controls
+
+OpenRouter account-wide privacy settings (configured in the OpenRouter dashboard) remain recommended, but application requests also enforce privacy and routing controls at the request level. Neither layer alone is sufficient for compliance-sensitive guarantees (e.g. Google Limited Use); both must be active.
+
+### Supported Fields
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `dataCollection` | `'allow' \| 'deny'` | `'deny'` | Controls whether downstream providers can use prompts for training |
+| `zdr` | `boolean` | `true` | Zero Data Retention — no prompts/completions stored by OpenRouter |
+| `allowFallbacks` | `boolean` | unset | Whether to allow fallback to alternative models |
+| `only` | `string[]` | unset | Restrict routing to listed provider slugs |
+| `order` | `string[]` | unset | Preferred provider order |
+
+### Phase 1 Defaults
+
+The initial rollout enforces the minimum controls needed for compliance:
+
+- `dataCollection: deny` — always set
+- `zdr: true` — always set
+- `allowFallbacks`, `only`, `order` — intentionally unset
+
+Rationale: `dataCollection: deny` and `zdr: true` directly address compliance concerns (Google Limited Use). More restrictive controls like `only`, `order`, and `allowFallbacks: false` narrow routing and can reduce resilience — reserved for later phases after live validation.
+
+### Configuration
+
+Operator config in `config/default.yaml`:
+
+```yaml
+llm:
+  openRouterProviderControls:
+    dataCollection: deny
+    zdr: true
+    # allowFallbacks, only, order intentionally unset — see plan Phase 2/3
+```
+
+Zod schema (`packages/domain/src/config/schema.ts`):
+
+```ts
+export const OpenRouterProviderControlsSchema = z.object({
+  dataCollection: z.enum(['allow', 'deny']).default('deny'),
+  zdr: z.boolean().default(true),
+  allowFallbacks: z.boolean().optional(),
+  only: z.array(z.string()).optional(),
+  order: z.array(z.string()).optional(),
+});
+```
+
+When the config block is omitted entirely, defaults apply (`dataCollection: 'deny'`, `zdr: true`).
+
+### Wire Format
+
+The shared LLM client emits a `provider` object in OpenRouter request bodies. Only defined fields are sent; the object is omitted entirely for non-OpenRouter providers.
+
+```json
+{
+  "model": "deepseek/deepseek-v4-pro",
+  "messages": [...],
+  "provider": {
+    "data_collection": "deny",
+    "zdr": true
+  }
+}
+```
+
+Field mapping: `dataCollection` → `data_collection`, `allowFallbacks` → `allow_fallbacks`. Other fields map 1:1.
+
+### Two-Layer Enforcement
+
+| Layer | Where | What it covers |
+|-------|-------|----------------|
+| Account-level | OpenRouter dashboard | Global default for all requests from the org |
+| Request-level | This feature (`openRouterProviderControls`) | Per-request enforcement regardless of dashboard state |
+
+Both layers must be active. The account-level setting protects against application bugs or misconfiguration. The request-level setting protects against dashboard drift or multi-tenant account sharing.
+
 ## Removing a Provider
 
 Remove its entry from `config/providers.yaml`.
