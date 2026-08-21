@@ -44,6 +44,8 @@ export interface DockerAgentManagerConfig {
   marketDataConfigJson?: string;
   /** Full operator agentRuntime config (policy, budgets, thresholds) forwarded to the agent runtime */
   agentRuntimeConfigJson: string;
+  /** OpenRouter provider controls (JSON) forwarded to the agent runtime for privacy enforcement */
+  openRouterProviderControlsJson?: string;
   /** Market data: DexScreener base URL */
   marketDataDexscreenerBaseUrl?: string;
   /** Market data: DexScreener requests per minute */
@@ -124,6 +126,7 @@ export class DockerAgentManager {
   private readonly llmTradingHoursJson: string | undefined;
   private readonly marketDataConfigJson: string | undefined;
   private readonly agentRuntimeConfigJson: string;
+  private readonly openRouterProviderControlsJson: string | undefined;
   private readonly marketDataDexscreenerBaseUrl: string | undefined;
   private readonly marketDataDexscreenerRpm: number | undefined;
   private readonly marketDataBinanceBaseUrl: string | undefined;
@@ -164,6 +167,7 @@ export class DockerAgentManager {
     this.llmTradingHoursJson = _config.llmTradingHoursJson;
     this.marketDataConfigJson = _config.marketDataConfigJson;
     this.agentRuntimeConfigJson = _config.agentRuntimeConfigJson;
+    this.openRouterProviderControlsJson = _config.openRouterProviderControlsJson;
     this.marketDataDexscreenerBaseUrl = _config.marketDataDexscreenerBaseUrl;
     this.marketDataDexscreenerRpm = _config.marketDataDexscreenerRpm;
     this.marketDataBinanceBaseUrl = _config.marketDataBinanceBaseUrl;
@@ -230,6 +234,7 @@ export class DockerAgentManager {
         ...(this.llmTradingHoursJson ? [`TRADING_HOURS_JSON=${this.llmTradingHoursJson}`] : []),
         ...(this.marketDataConfigJson ? [`MARKET_DATA_CONFIG_JSON=${this.marketDataConfigJson}`] : []),
         `AGENT_RUNTIME_CONFIG_JSON=${this.agentRuntimeConfigJson}`,
+        ...(this.openRouterProviderControlsJson ? [`OPENROUTER_PROVIDER_CONTROLS=${this.openRouterProviderControlsJson}`] : []),
         'AGENT_WORKSPACE_ROOT=/workspace',
         ...(this.marketDataDexscreenerBaseUrl && this.marketDataBinanceBaseUrl ? [`MARKET_DATA_CONFIGURED=1`] : []),
         ...(this.marketDataDexscreenerBaseUrl ? [`DEXSCREENER_BASE_URL=${this.marketDataDexscreenerBaseUrl}`] : []),

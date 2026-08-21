@@ -301,6 +301,7 @@ export async function generateEvaluationNarrative(
     maxTokens: narrativeConfig.maxTokens,
     timeoutMs: narrativeConfig.timeoutMs,
     baseUrl: narrativeConfig.baseUrl,
+    openRouterProviderControls: narrativeConfig.openRouterProviderControls,
   };
 
   let prompt: string;

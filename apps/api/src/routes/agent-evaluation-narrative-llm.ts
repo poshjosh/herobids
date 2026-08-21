@@ -3,6 +3,7 @@ import { getProviderModelIds, type ProvidersYaml, type ProviderConfig } from '@h
 import type { ResolvedNarrativeLlmConfig } from '@herobids/db';
 import type { NarrativeLlmRequest } from '@herobids/domain';
 import type { PersistedAiModelConfig } from '@herobids/domain';
+import type { OpenRouterProviderControls } from '@herobids/llm';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 
 export interface NarrativeLlmResolutionInput {
@@ -25,6 +26,8 @@ export interface NarrativeLlmResolutionInput {
   /** Optional catalog deps for dynamic provider model validation (OpenRouter/Ollama).
    * When omitted, dynamic provider models are not validated at request time. */
   catalogDeps?: LlmCatalogDeps;
+  /** OpenRouter provider controls for privacy enforcement. */
+  openRouterProviderControls?: OpenRouterProviderControls;
 }
 
 /**
@@ -125,5 +128,6 @@ export async function resolveNarrativeLlmConfig(input: NarrativeLlmResolutionInp
     baseUrl,
     timeoutMs: input.operatorTimeoutMs,
     maxTokens: input.operatorMaxTokens,
+    openRouterProviderControls: input.openRouterProviderControls,
   };
 }

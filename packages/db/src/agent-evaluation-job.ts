@@ -1,4 +1,4 @@
-import type { ResolvedEvaluationScope } from '@herobids/domain';
+import type { ResolvedEvaluationScope, OpenRouterProviderControlsConfig } from '@herobids/domain';
 
 /**
  * BullMQ queue name for agent evaluation jobs.
@@ -19,6 +19,8 @@ export interface ResolvedNarrativeLlmConfig {
   timeoutMs: number;
   /** Maximum tokens for the narrative generation response. */
   maxTokens: number;
+  /** OpenRouter provider controls for privacy enforcement. */
+  openRouterProviderControls?: OpenRouterProviderControlsConfig;
 }
 
 /**

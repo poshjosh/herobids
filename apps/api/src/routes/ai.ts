@@ -177,7 +177,7 @@ The config must include these sections: strategy, risk, execution.
 Respond with ONLY a valid JSON object, no prose.`;
 
     const result = await callLlmProvider(
-      { provider: effectiveConfig.provider, model: effectiveConfig.model, maxTokens: 1024, timeoutMs: effectiveConfig.timeoutMs, baseUrl: effectiveConfig.baseUrl },
+      { provider: effectiveConfig.provider, model: effectiveConfig.model, maxTokens: 1024, timeoutMs: effectiveConfig.timeoutMs, baseUrl: effectiveConfig.baseUrl, openRouterProviderControls: llmConfig.openRouterProviderControls },
       { messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: parsed.data.text }], maxTokens: 1024 },
     );
 
@@ -234,7 +234,7 @@ Respond with ONLY a valid JSON object, no prose.`;
     }, null, 2);
 
     const result = await callLlmProvider(
-      { provider: effectiveConfig.provider, model: effectiveConfig.model, maxTokens: 2048, timeoutMs: effectiveConfig.timeoutMs, baseUrl: effectiveConfig.baseUrl },
+      { provider: effectiveConfig.provider, model: effectiveConfig.model, maxTokens: 2048, timeoutMs: effectiveConfig.timeoutMs, baseUrl: effectiveConfig.baseUrl, openRouterProviderControls: llmConfig.openRouterProviderControls },
       {
         messages: [
           { role: 'system', content: 'You are a professional trading portfolio analyst. Analyze the portfolio data and provide concise, actionable insights about performance, risk, and improvement opportunities.' },
@@ -266,7 +266,7 @@ Respond with ONLY a valid JSON object, no prose.`;
     }, null, 2);
 
     const result = await callLlmProvider(
-      { provider: effectiveConfig.provider, model: effectiveConfig.model, maxTokens: 1024, timeoutMs: effectiveConfig.timeoutMs, baseUrl: effectiveConfig.baseUrl },
+      { provider: effectiveConfig.provider, model: effectiveConfig.model, maxTokens: 1024, timeoutMs: effectiveConfig.timeoutMs, baseUrl: effectiveConfig.baseUrl, openRouterProviderControls: llmConfig.openRouterProviderControls },
       {
         messages: [
           { role: 'system', content: 'You are a trading signal analyst. Explain the given trade signal in plain language, describing what it indicates, why it may have been generated, and what action it suggests.' },

@@ -529,6 +529,7 @@ const agentRuntimeLauncher = (() => {
     redisUrl: appConfig.redis.url,
     databaseUrl: appConfig.database.url,
     agentRuntimeConfigJson,
+    openRouterProviderControlsJson: JSON.stringify(appConfig.llm.openRouterProviderControls),
     llmProvider: appConfig.llm.provider,
     llmBaseUrl: appConfig.llm.baseUrl,
     llmModel: appConfig.llm.model,
@@ -586,6 +587,7 @@ const agentRuntimeLauncher = (() => {
         tempStorageMb: appConfig.agentRuntime.sandboxDefaults.tempStorageMb,
         maxProcesses: appConfig.agentRuntime.sandboxDefaults.maxProcesses,
         agentRuntimeConfigJson,
+        openRouterProviderControlsJson: JSON.stringify(appConfig.llm.openRouterProviderControls),
         ...(appConfig.llm.tradingHours
           ? { llmTradingHoursJson: JSON.stringify(appConfig.llm.tradingHours) }
           : {}),
@@ -1519,6 +1521,7 @@ function createStrategy(strategyConfig: StrategyConfig, candleFetcher?: CandleFe
       return new LlmStrategy(
         () => idGen.decisionId(),
         async (artifact) => { await llmArtifactRepo.insert({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null, source: 'llm_strategy', decisionIds: null }); },
+        appConfig.llm.openRouterProviderControls,
       );
 
     case 'hybrid': {
@@ -1527,6 +1530,7 @@ function createStrategy(strategyConfig: StrategyConfig, candleFetcher?: CandleFe
       const llm = new LlmStrategy(
         () => idGen.decisionId(),
         async (artifact) => { await llmArtifactRepo.insert({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null, source: 'llm_strategy', decisionIds: null }); },
+        appConfig.llm.openRouterProviderControls,
       );
       return new HybridStrategy(mechanical, llm);
     }
@@ -2143,6 +2147,7 @@ const backtestRuntime = new BacktestRuntime(
       maxDecisionDivergencePct: appConfig.llmValidation.maxDecisionDivergencePct,
       maxPnlRegressionPct: appConfig.llmValidation.maxPnlRegressionPct,
     },
+    openRouterProviderControls: appConfig.llm.openRouterProviderControls,
   },
   db,
 );
@@ -2341,6 +2346,7 @@ const { assessor: platformAssessor, llmConfig: platformLlmConfig } = createPlatf
   evidencePorts,
   getPresets,
   logger,
+  appConfig.llm.openRouterProviderControls,
 );
 
 const usageBillingRepo = new UsageBillingRepository(

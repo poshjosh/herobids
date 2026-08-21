@@ -152,7 +152,7 @@ Only defined fields should be emitted.
 
 ## Detailed Plan
 
-### 1. Add typed OpenRouter provider controls at the LLM boundary — PENDING
+### 1. Add typed OpenRouter provider controls at the LLM boundary — DONE
 
 Files:
 
@@ -166,7 +166,7 @@ Changes:
 - Extend `LlmProviderConfig` with an optional `openRouterProviderControls` field.
 - Keep the field optional so non-OpenRouter providers and existing call sites remain source-compatible.
 
-### 2. Add operator config support for OpenRouter request controls — PENDING
+### 2. Add operator config support for OpenRouter request controls — DONE
 
 Files:
 

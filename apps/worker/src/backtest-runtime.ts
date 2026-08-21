@@ -3,6 +3,7 @@ import { createLogger } from './logger.js';
 import type { Database } from '@herobids/db';
 import { BacktestingRepository, LlmArtifactRepository, PgJournal, DecisionRepository } from '@herobids/db';
 import { LlmStrategy, MechanicalStrategy } from '@herobids/strategy';
+import type { OpenRouterProviderControls } from '@herobids/llm';
 import { runBacktest, ArrayHistoricalDataFeed, runValidation } from '@herobids/backtesting';
 import type { HistoricalFrame, ValidationThresholds, BacktestConfig } from '@herobids/backtesting';
 import { quantity, price } from '@herobids/domain';
@@ -30,6 +31,7 @@ export interface BacktestRuntimeConfig {
   maxDataGapMs?: number;
   defaultWarmUpFrames?: number;
   validationThresholds?: ValidationThresholds;
+  openRouterProviderControls?: OpenRouterProviderControls;
 }
 
 const logger = createLogger('backtest-runtime');
@@ -145,6 +147,7 @@ export class BacktestRuntime {
         return new LlmStrategy(
           () => crypto.randomUUID(),
           async (artifact) => { await llmArtifactRepo.insert({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null, source: 'llm_strategy', decisionIds: null }); },
+          this.config.openRouterProviderControls,
         );
       case 'hybrid':
         throw new Error('hybrid decisionMode is not yet supported for backtesting');

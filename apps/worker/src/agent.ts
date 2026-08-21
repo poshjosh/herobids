@@ -13,11 +13,11 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal, LlmArtifactRepository } from '@herobids/db';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml } from '@herobids/domain';
-import { type LlmToolDefinition, resolveReasoningParams } from '@herobids/llm';
+import { type LlmToolDefinition, type OpenRouterProviderControls, resolveReasoningParams } from '@herobids/llm';
 import {
   CompositeEconomicCalendarProvider,
   RedisProviderResponseCache,
@@ -109,6 +109,14 @@ const LLM_PROVIDER = process.env['LLM_PROVIDER'];
 const LLM_BASE_URL = process.env['LLM_BASE_URL'];
 const LLM_MAX_TOKENS = parseInt(process.env['LLM_MAX_TOKENS'] ?? '4096', 10);
 const LLM_TIMEOUT_MS = parseInt(process.env['LLM_TIMEOUT_MS'] ?? '60000', 10);
+const OPENROUTER_PROVIDER_CONTROLS: OpenRouterProviderControls | undefined = (() => {
+  const raw = process.env['OPENROUTER_PROVIDER_CONTROLS'];
+  if (!raw) return undefined;
+  try {
+    const parsed = OpenRouterProviderControlsSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : undefined;
+  } catch { return undefined; }
+})();
 const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '900000', 10);
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env['HEARTBEAT_INTERVAL_MS'] ?? '5000', 10);
 const SERVER_COST_USD_PER_HOUR = Number(process.env['LLM_SERVER_COST_USD_PER_HOUR'] ?? '0.02');
@@ -2674,6 +2682,7 @@ async function runTick(): Promise<void> {
             timeoutMs: LLM_TIMEOUT_MS,
             baseUrl: resolvedBaseUrl,
             providersBaseUrlMap,
+            openRouterProviderControls: OPENROUTER_PROVIDER_CONTROLS,
           },
           maxPositions,
           agentMemory: agentRuntimePolicy.promptStyle === 'enriched'
@@ -3149,6 +3158,7 @@ async function runTick(): Promise<void> {
           baseUrl: resolvedBaseUrl,
           providersBaseUrlMap,
           thinking: agentRuntimePolicy.llm.thinking,
+          openRouterProviderControls: OPENROUTER_PROVIDER_CONTROLS,
         },
         requestBase: {
           maxTokens: scoutLoopConfig.maxTokens,
@@ -3395,6 +3405,7 @@ async function runTick(): Promise<void> {
         baseUrl: resolvedBaseUrl,
         providersBaseUrlMap,
         thinking: agentRuntimePolicy.llm.thinking,
+        openRouterProviderControls: OPENROUTER_PROVIDER_CONTROLS,
       },
       requestBase: {
         maxTokens: LLM_MAX_TOKENS,

@@ -18,6 +18,7 @@ import {
   AgentRepository,
 } from '@herobids/db';
 import type { EvaluationJobData, ResolvedNarrativeLlmConfig } from '@herobids/db';
+import type { OpenRouterProviderControls } from '@herobids/llm';
 import type { EvaluationScope, EvaluationTrigger, ProvidersYaml } from '@herobids/domain';
 import { resolveNarrativeLlmConfig } from './agent-evaluation-narrative-llm.js';
 import { NoSessionForScopeError } from '@herobids/db';
@@ -88,6 +89,8 @@ export interface NarrativeLlmDeps {
   catalogTimeoutMs: number;
   /** Catalog cache TTL (for dynamic provider model validation) */
   catalogCacheTtlMs: number;
+  /** OpenRouter provider controls for privacy enforcement. */
+  openRouterProviderControls?: OpenRouterProviderControls;
 }
 
 /**
@@ -178,6 +181,7 @@ export async function agentEvaluationRoutes(
             operatorTimeoutMs: narrativeLlmDeps.timeoutMs,
             operatorMaxTokens: narrativeLlmDeps.maxTokens,
             providersYaml: narrativeLlmDeps.providersYaml,
+            openRouterProviderControls: narrativeLlmDeps.openRouterProviderControls,
             catalogDeps: {
               db,
               providersYaml: narrativeLlmDeps.providersYaml,

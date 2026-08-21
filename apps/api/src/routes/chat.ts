@@ -1581,6 +1581,7 @@ export async function invokeOnboardingLlm(
         maxTokens: llmConfig.maxTokens,
         timeoutMs: llmConfig.timeoutMs,
         baseUrl: llmConfig.baseUrl,
+        openRouterProviderControls: llmConfig.openRouterProviderControls,
       },
       {
         messages,
@@ -1808,6 +1809,7 @@ export async function invokeOnboardingLlm(
       maxTokens: llmConfig.maxTokens,
       timeoutMs: llmConfig.timeoutMs,
       baseUrl: llmConfig.baseUrl,
+      openRouterProviderControls: llmConfig.openRouterProviderControls,
     },
     {
       messages,

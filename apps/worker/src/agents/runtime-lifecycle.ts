@@ -28,6 +28,8 @@ export interface AgentEnvConfig {
   marketDataTimeoutMs?: number;
   /** Providers YAML serialised to JSON, forwarded to agent for rate-card seeding. */
   providersYamlJson?: string;
+  /** OpenRouter provider controls (JSON) forwarded to agent for privacy enforcement. */
+  openRouterProviderControlsJson?: string;
   /**
    * Optional: Shared services cluster addresses for agent runtime connectivity.
    * When provided, REDIS_URL and DATABASE_URL are constructed from these
@@ -123,6 +125,9 @@ export function buildAgentEnv(
 
   // Providers YAML — forward for per-model rate-card seeding inside the container.
   if (config.providersYamlJson) envOut['PROVIDERS_YAML'] = config.providersYamlJson;
+
+  // OpenRouter provider controls — forward for privacy enforcement inside the container.
+  if (config.openRouterProviderControlsJson) envOut['OPENROUTER_PROVIDER_CONTROLS'] = config.openRouterProviderControlsJson;
 
   // Credential encryption key — needed by the agent for venue account and Gmail OAuth token decryption.
   if (resolvedEnv['CREDENTIAL_ENCRYPTION_KEY']) envOut['CREDENTIAL_ENCRYPTION_KEY'] = resolvedEnv['CREDENTIAL_ENCRYPTION_KEY']!;

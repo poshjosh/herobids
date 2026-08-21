@@ -6,7 +6,7 @@ import type {
   PlatformAssessorConfig as DomainPlatformAssessorConfig,
   PlatformAssessmentLlmConfig,
 } from '@herobids/domain';
-import { callLlmProvider, type LlmProviderConfig, type LlmRequest } from '@herobids/llm';
+import { callLlmProvider, type LlmProviderConfig, type LlmRequest, type OpenRouterProviderControls } from '@herobids/llm';
 import { PlatformAssessor, type PlatformAssessorRuntimeConfig, type PlatformAssessorDeps, type LlmCallUsage } from './platform-assessor.js';
 import type { LlmRankerConfig } from './llm-ranker.js';
 import type { AssessmentEvidencePorts } from './assessment-ports.js';
@@ -47,6 +47,7 @@ export interface AssessorFactoryResult {
  * @param evidencePorts - Evidence collection ports.
  * @param getPresets - Function to load presets for a style tier.
  * @param logger - Optional logger instance.
+ * @param openRouterProviderControls - Optional OpenRouter privacy/routing controls applied to platform LLM requests.
  * @throws If llmConfig is provided but its provider is not in the loaded registry.
  */
 export function createPlatformAssessor(
@@ -57,6 +58,7 @@ export function createPlatformAssessor(
   evidencePorts: AssessmentEvidencePorts,
   getPresets: (styleTier: string) => Array<{ key: string; entry: PresetEntry }>,
   logger?: Logger,
+  openRouterProviderControls?: OpenRouterProviderControls,
 ): AssessorFactoryResult {
   const log = logger ?? createLogger('assessor-factory');
 
@@ -129,6 +131,7 @@ export function createPlatformAssessor(
     timeoutMs: llmConfig?.timeoutMs ?? 30000,
     providersBaseUrlMap,
     baseUrl: llmConfig?.baseUrl,
+    openRouterProviderControls,
   };
 
   async function platformCallLlm(prompt: string): Promise<{ text: string; usage: LlmCallUsage }> {

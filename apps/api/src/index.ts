@@ -281,6 +281,7 @@ await agentEvaluationRoutes(app, evaluationQueue, db, {
   providersYaml,
   catalogTimeoutMs: appConfig.llm.catalog.timeoutMs,
   catalogCacheTtlMs: appConfig.llm.catalog.cacheTtlMs,
+  openRouterProviderControls: appConfig.llm.openRouterProviderControls,
 });
 await platformAssessmentReviewRoutes(app, manualReviewQueue, db, {
   platformAssessorEnabled: appConfig.platformAssessor?.enabled ?? false,

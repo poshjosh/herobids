@@ -3,7 +3,7 @@ import type { Result } from '@herobids/domain';
 import { ok, err, quantity } from '@herobids/domain';
 import { callLlmProvider } from './llm-provider.js';
 import type { LlmProviderConfig, LlmResponse } from './llm-provider.js';
-import { stripEmptyValues } from '@herobids/llm';
+import { stripEmptyValues, type OpenRouterProviderControls } from '@herobids/llm';
 import crypto from 'node:crypto';
 
 /**
@@ -71,6 +71,7 @@ export class LlmStrategy implements Strategy {
   constructor(
     private readonly idGen: () => string,
     private readonly onArtifact?: ArtifactCallback,
+    private readonly openRouterProviderControls?: OpenRouterProviderControls,
   ) {}
 
   async evaluate(
@@ -97,6 +98,7 @@ export class LlmStrategy implements Strategy {
       maxTokens: config.maxTokens,
       timeoutMs: config.timeoutMs,
       baseUrl: config.baseUrl,
+      openRouterProviderControls: this.openRouterProviderControls,
     };
 
     let llmResponse = responseCache.get(cacheKey);
