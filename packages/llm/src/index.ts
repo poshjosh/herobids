@@ -17,6 +17,7 @@ export type {
   LlmProviderError,
   LlmResult,
   ReasoningLevel,
+  OpenRouterProviderControls,
 } from './llm-provider.js';
 
 export { fetchOpenRouterPricing } from './openrouter-pricing.js';

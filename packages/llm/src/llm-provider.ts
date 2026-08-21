@@ -5,6 +5,24 @@
  * runtime can import it without introducing a circular dependency.
  */
 
+/**
+ * Controls for OpenRouter's provider routing and privacy features.
+ * These map directly to the `provider` field in OpenRouter's request body.
+ * @see https://openrouter.ai/docs/api-reference/overview
+ */
+export interface OpenRouterProviderControls {
+  /** Whether to allow OpenRouter to log prompts/completions. 'deny' enables zero data retention. */
+  dataCollection?: 'allow' | 'deny';
+  /** Shorthand for Zero Data Retention — when true, equivalent to dataCollection: 'deny'. */
+  zdr?: boolean;
+  /** Whether to allow fallback to alternative models when the primary is unavailable. */
+  allowFallbacks?: boolean;
+  /** Restrict routing to only these provider IDs (e.g. ['anthropic', 'openai']). */
+  only?: string[];
+  /** Preferred order of providers to try. */
+  order?: string[];
+}
+
 export interface LlmProviderConfig {
   provider: string;
   model: string;
@@ -23,6 +41,8 @@ export interface LlmProviderConfig {
     lightBudgetTokens: number;
     deepBudgetTokens: number;
   };
+  /** OpenRouter-specific provider routing and privacy controls. Ignored for non-OpenRouter providers. */
+  openRouterProviderControls?: OpenRouterProviderControls;
 }
 
 export interface LlmToolDefinition {

@@ -152,7 +152,7 @@ Only defined fields should be emitted.
 
 ## Detailed Plan
 
-### 1. Add typed OpenRouter provider controls at the LLM boundary
+### 1. Add typed OpenRouter provider controls at the LLM boundary — PENDING
 
 Files:
 
@@ -166,7 +166,7 @@ Changes:
 - Extend `LlmProviderConfig` with an optional `openRouterProviderControls` field.
 - Keep the field optional so non-OpenRouter providers and existing call sites remain source-compatible.
 
-### 2. Add operator config support for OpenRouter request controls
+### 2. Add operator config support for OpenRouter request controls — PENDING
 
 Files:
 
@@ -192,7 +192,7 @@ llm:
 - Validate shape with Zod.
 - Ensure config resolution still follows the repo rule: one resolved typed config object, no side-channel env reads in request assembly.
 
-### 3. Thread the controls into all `callLlmProvider()` call sites
+### 3. Thread the controls into all `callLlmProvider()` call sites — PENDING
 
 Files:
 
@@ -213,7 +213,7 @@ Changes:
 - Avoid duplicating literals at call sites.
 - Prefer one small shared helper if many call sites require the same mapping.
 
-### 4. Emit OpenRouter `provider` controls in the request body
+### 4. Emit OpenRouter `provider` controls in the request body — PENDING
 
 Files:
 
@@ -230,7 +230,7 @@ Changes:
 - Emit nothing when no controls are set.
 - Do not send the `provider` object for non-OpenRouter requests.
 
-### 5. Test the new request-shape behavior
+### 5. Test the new request-shape behavior — PENDING
 
 Files:
 
@@ -245,7 +245,7 @@ Add coverage for:
 - Existing OpenRouter `cache_control` behavior still works.
 - Existing reasoning/tool-call behavior remains intact.
 
-### 6. Document the operator-level semantics
+### 6. Document the operator-level semantics — PENDING
 
 Files:
 
