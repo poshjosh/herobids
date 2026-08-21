@@ -455,6 +455,19 @@ export const LlmCatalogConfigSchema = z.object({
   cacheTtlMs: z.number().min(1000).default(86_400_000),
 });
 
+export const OpenRouterProviderControlsSchema = z.object({
+  /** Whether to allow third-party data collection on OpenRouter. 'deny' prevents providers from training on prompts. */
+  dataCollection: z.enum(['allow', 'deny']).default('deny'),
+  /** Zero Data Retention — when true, no prompts or completions are stored by OpenRouter or downstream providers. */
+  zdr: z.boolean().default(true),
+  /** Whether to allow fallback to alternative models if the primary is unavailable. */
+  allowFallbacks: z.boolean().optional(),
+  /** Restrict routing to only these provider slugs. */
+  only: z.array(z.string()).optional(),
+  /** Preferred provider ordering for routing. */
+  order: z.array(z.string()).optional(),
+});
+
 export const LlmRuntimeConfigSchema = z.object({
   provider: z.string().default('openrouter'),
   model: z.string().default('anthropic/claude-sonnet-4-5'),
@@ -462,6 +475,8 @@ export const LlmRuntimeConfigSchema = z.object({
   baseUrl: z.string().optional(),
   maxTokens: z.number().int().min(1).default(4096),
   timeoutMs: z.number().min(1000).default(60_000),
+  /** OpenRouter request-level privacy and routing controls. Emitted in the `provider` object of every OpenRouter request body. */
+  openRouterProviderControls: OpenRouterProviderControlsSchema.default({}),
   /** Catalog discovery settings — controls model listing for dynamic providers like Ollama */
   catalog: LlmCatalogConfigSchema.default({}),
   /** Agent reasoning loop interval in ms. How often the agent calls the LLM to reassess and act. */
@@ -1808,6 +1823,7 @@ export type EvaluationConfig = z.infer<typeof EvaluationConfigSchema>;
 export type EvaluationThresholds = z.infer<typeof EvaluationThresholdsSchema>;
 export type MarketDataRecordingConfig = z.infer<typeof MarketDataRecordingConfigSchema>;
 export type LlmRuntimeConfig = z.infer<typeof LlmRuntimeConfigSchema>;
+export type OpenRouterProviderControlsConfig = z.infer<typeof OpenRouterProviderControlsSchema>;
 export type LlmValidationConfig = z.infer<typeof LlmValidationConfigSchema>;
 export type LiveRolloutConfig = z.infer<typeof LiveRolloutConfigSchema>;
 export type SimulationConfig = AppConfig['simulation'];

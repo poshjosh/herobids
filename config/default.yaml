@@ -361,6 +361,13 @@ llm:
   baseUrl: http://host.docker.internal:11434/v1  # Ollama: use host.docker.internal, NOT localhost inside Docker
   maxTokens: 4096               # Max tokens per LLM call
   timeoutMs: 60000              # LLM call timeout in ms
+  # OpenRouter request-level privacy & routing controls.
+  # These are emitted in the `provider` object of every OpenRouter request body.
+  # See docs/best-practices/llm-providers.md for rationale.
+  openRouterProviderControls:
+    dataCollection: deny       # Deny third-party data collection; enforces ZDR on OpenRouter
+    zdr: true                  # Zero Data Retention — no prompts/completions stored by OpenRouter
+    # allowFallbacks, only, order intentionally unset — see plan Phase 2/3
   # Catalog discovery — controls model listing for dynamic providers (e.g. Ollama /api/tags).
   # Separate from llm.timeoutMs which is tuned for generation; discovery uses a short timeout.
   catalog:
