@@ -316,3 +316,22 @@ This phase should happen only after confirming which OpenRouter downstream endpo
 5. Add unit tests.
 6. Run lint + targeted tests.
 7. Validate configured staging/production models still work.
+
+## Outstanding Issues
+
+### Item 1: Type definition
+- LOW: `OpenRouterProviderControls` export appended at end of barrel exports (not alphabetical). Cosmetic.
+- LOW: JSDoc `@see` link points to generic API overview; more helpful link would be provider routing docs.
+
+### Item 2: Config schema
+- LOW: `only` and `order` arrays accept empty values (`[]`). Consider `.min(1)` guard in Phase 2/3 when these fields are actively used.
+
+### Item 3: Call-site threading
+- LOW: `createPlatformAssessor` uses trailing optional positional params. Consider options object pattern in a future refactor.
+- LOW: Agent sandbox silently swallows Zod parse failures on `OPENROUTER_PROVIDER_CONTROLS` env var. A log warning would improve observability.
+
+### Item 5: Tests
+- LOW: Tests 2-6 don't assert `result.ok` before inspecting the request body. Would improve diagnostic clarity on test failures.
+
+### Item 6: Documentation
+- LOW: "Google Limited Use" mentioned without linking to internal compliance doc.
