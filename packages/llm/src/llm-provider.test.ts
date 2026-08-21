@@ -8,7 +8,7 @@ import {
   isClaudeModel,
   resolveReasoningParams,
 } from './llm-provider.js';
-import type { LlmMessage, ReasoningLevel } from './llm-provider.js';
+import type { LlmMessage, LlmProviderConfig, LlmRequest, ReasoningLevel } from './llm-provider.js';
 
 describe('callLlmProvider thinking controls', () => {
   const originalEnv = { ...process.env };
@@ -1308,5 +1308,187 @@ describe('callLlmProvider unified reasoning parameter', () => {
     expect(body['thinking']).toEqual({ type: 'adaptive' });
     expect(body).not.toHaveProperty('output_config');
     expect(body).not.toHaveProperty('reasoning');
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// OpenRouter provider controls emission
+// ---------------------------------------------------------------------------
+
+describe('OpenRouter provider controls emission', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const openrouterConfig: LlmProviderConfig = {
+    provider: 'openrouter',
+    model: 'anthropic/claude-sonnet-4-20250514',
+    maxTokens: 4096,
+    timeoutMs: 30_000,
+    baseUrl: 'https://openrouter.ai/api/v1',
+  };
+
+  const baseRequest: LlmRequest = {
+    messages: [{ role: 'user', content: 'hello' }],
+    maxTokens: 1024,
+  };
+
+  function mockFetch() {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      model: 'anthropic/claude-sonnet-4-20250514',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  function getRequestBody(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> {
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    return JSON.parse(String(init.body)) as Record<string, unknown>;
+  }
+
+  it('includes provider.data_collection and provider.zdr when controls are set', async () => {
+    const fetchMock = mockFetch();
+
+    const result = await callLlmProvider(
+      {
+        ...openrouterConfig,
+        openRouterProviderControls: {
+          dataCollection: 'deny',
+          zdr: true,
+        },
+      },
+      baseRequest,
+    );
+
+    expect(result.ok).toBe(true);
+    const body = getRequestBody(fetchMock);
+    expect(body['provider']).toEqual({
+      data_collection: 'deny',
+      zdr: true,
+    });
+  });
+
+  it('omits undefined fields from the provider object', async () => {
+    const fetchMock = mockFetch();
+
+    await callLlmProvider(
+      {
+        ...openrouterConfig,
+        openRouterProviderControls: {
+          zdr: true,
+        },
+      },
+      baseRequest,
+    );
+
+    const body = getRequestBody(fetchMock);
+    expect(body['provider']).toEqual({ zdr: true });
+    expect(body['provider']).not.toHaveProperty('data_collection');
+    expect(body['provider']).not.toHaveProperty('allow_fallbacks');
+    expect(body['provider']).not.toHaveProperty('only');
+    expect(body['provider']).not.toHaveProperty('order');
+  });
+
+  it('does not include a provider object for non-OpenRouter requests', async () => {
+    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      model: 'gpt-4o',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callLlmProvider(
+      {
+        provider: 'openai',
+        model: 'gpt-4o',
+        maxTokens: 4096,
+        timeoutMs: 30_000,
+        openRouterProviderControls: {
+          dataCollection: 'deny',
+          zdr: true,
+        },
+      },
+      baseRequest,
+    );
+
+    const body = getRequestBody(fetchMock);
+    expect(body).not.toHaveProperty('provider');
+  });
+
+  it('does not emit provider key when openRouterProviderControls is empty (all fields undefined)', async () => {
+    const fetchMock = mockFetch();
+
+    await callLlmProvider(
+      {
+        ...openrouterConfig,
+        openRouterProviderControls: {},
+      },
+      baseRequest,
+    );
+
+    const body = getRequestBody(fetchMock);
+    expect(body).not.toHaveProperty('provider');
+  });
+
+  it('preserves existing cache_control behavior alongside the provider object', async () => {
+    const fetchMock = mockFetch();
+
+    await callLlmProvider(
+      {
+        ...openrouterConfig,
+        openRouterProviderControls: {
+          dataCollection: 'deny',
+          zdr: true,
+        },
+      },
+      baseRequest,
+    );
+
+    const body = getRequestBody(fetchMock);
+    expect(body['cache_control']).toEqual({ type: 'ephemeral' });
+    expect(body['provider']).toEqual({
+      data_collection: 'deny',
+      zdr: true,
+    });
+  });
+
+  it('maps all five control fields correctly to snake_case wire format', async () => {
+    const fetchMock = mockFetch();
+
+    await callLlmProvider(
+      {
+        ...openrouterConfig,
+        openRouterProviderControls: {
+          dataCollection: 'deny',
+          zdr: true,
+          allowFallbacks: false,
+          only: ['anthropic'],
+          order: ['anthropic', 'openai'],
+        },
+      },
+      baseRequest,
+    );
+
+    const body = getRequestBody(fetchMock);
+    expect(body['provider']).toEqual({
+      data_collection: 'deny',
+      zdr: true,
+      allow_fallbacks: false,
+      only: ['anthropic'],
+      order: ['anthropic', 'openai'],
+    });
   });
 });
