@@ -290,6 +290,21 @@ async function callOpenAiCompatibleProvider(
     requestBody['cache_control'] = { type: 'ephemeral' };
   }
 
+  // Emit OpenRouter provider routing/privacy controls.
+  // Only defined fields are sent; nothing is emitted for non-OpenRouter providers.
+  if (config.provider === 'openrouter' && config.openRouterProviderControls) {
+    const controls = config.openRouterProviderControls;
+    const providerObj: Record<string, unknown> = {};
+    if (controls.dataCollection !== undefined) providerObj['data_collection'] = controls.dataCollection;
+    if (controls.zdr !== undefined) providerObj['zdr'] = controls.zdr;
+    if (controls.allowFallbacks !== undefined) providerObj['allow_fallbacks'] = controls.allowFallbacks;
+    if (controls.only !== undefined) providerObj['only'] = controls.only;
+    if (controls.order !== undefined) providerObj['order'] = controls.order;
+    if (Object.keys(providerObj).length > 0) {
+      requestBody['provider'] = providerObj;
+    }
+  }
+
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',

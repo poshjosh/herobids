@@ -192,7 +192,7 @@ llm:
 - Validate shape with Zod.
 - Ensure config resolution still follows the repo rule: one resolved typed config object, no side-channel env reads in request assembly.
 
-### 3. Thread the controls into all `callLlmProvider()` call sites — PENDING
+### 3. Thread the controls into all `callLlmProvider()` call sites — DONE
 
 Files:
 
