@@ -1386,6 +1386,16 @@ export interface Connection {
   updatedAt: string;
   assignedAgentCount: number;
   referencingBotCount: number;
+  /** Credential display label when a credential is linked. */
+  credentialLabel: string | null;
+  /** Credential provider slug when a credential is linked. */
+  credentialProvider: string | null;
+  /** Venue account display label when a trading account is resolved. */
+  venueAccountLabel: string | null;
+  /** Venue slug for the resolved trading account. */
+  venueAccountVenue: string | null;
+  /** Public venue account reference (wallet address, subaccount ID, etc.) */
+  venueAccountRef: string | null;
 }
 
 export interface AgentConnectionEntry {
