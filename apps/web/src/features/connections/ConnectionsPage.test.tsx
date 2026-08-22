@@ -58,6 +58,11 @@ function makeConnection(overrides: Partial<Connection> = {}): Connection {
     updatedAt: '2026-01-01T00:00:00Z',
     assignedAgentCount: 0,
     referencingBotCount: 0,
+    credentialLabel: null,
+    credentialProvider: null,
+    venueAccountLabel: null,
+    venueAccountVenue: null,
+    venueAccountRef: null,
     ...overrides,
   };
 }
@@ -302,5 +307,51 @@ describe('ConnectionsPage cascade delete button visibility', () => {
     ]);
     expect(html).not.toContain('connections.delete');
     expect(html).not.toContain('connections.cascadeDelete');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wallet details rendering
+// ---------------------------------------------------------------------------
+
+describe('ConnectionsPage wallet details rendering', () => {
+  it('shows funding address when venueAccountRef exists', () => {
+    const html = renderPage([
+      makeConnection({ venueAccountRef: '0xabc123' }),
+    ]);
+    expect(html).toContain('0xabc123');
+    expect(html).toContain('Funding address');
+  });
+
+  it('hides funding address when venueAccountRef is null', () => {
+    const html = renderPage([
+      makeConnection({ venueAccountRef: null }),
+    ]);
+    expect(html).not.toContain('Funding address');
+  });
+
+  it('shows credential label when credentialLabel exists', () => {
+    const html = renderPage([
+      makeConnection({ credentialLabel: 'My API Key' }),
+    ]);
+    expect(html).toContain('My API Key');
+    expect(html).toContain('Credential');
+  });
+
+  it('hides credential row when credentialLabel is null', () => {
+    const html = renderPage([
+      makeConnection({ credentialLabel: null }),
+    ]);
+    expect(html).not.toContain('>Credential<');
+  });
+
+  it('shows both funding address and credential when both exist', () => {
+    const html = renderPage([
+      makeConnection({ venueAccountRef: '0xdef456', credentialLabel: 'Trading Key' }),
+    ]);
+    expect(html).toContain('0xdef456');
+    expect(html).toContain('Funding address');
+    expect(html).toContain('Trading Key');
+    expect(html).toContain('Credential');
   });
 });

@@ -374,6 +374,10 @@ export const messages: Record<string, string> = {
   'connections.oauth.error': 'Connection failed',
   'connections.oauth.errorMessage': 'Failed to connect {provider}. {error}',
   'connections.reconnect': 'Reconnect',
+  'connections.fundingAddress': 'Funding address',
+  'connections.credential': 'Credential',
+  'connections.copy': 'Copy',
+  'connections.copied': 'Copied',
 
   // Credentials
   'credentials.title': 'Credentials',
