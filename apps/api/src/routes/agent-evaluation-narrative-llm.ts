@@ -2,8 +2,7 @@ import { resolveEffectiveLlmSelection, resolveAgentCostProfile, type AgentLlmSel
 import { getProviderModelIds, type ProvidersYaml, type ProviderConfig } from '@herobids/domain';
 import type { ResolvedNarrativeLlmConfig } from '@herobids/db';
 import type { NarrativeLlmRequest } from '@herobids/domain';
-import type { PersistedAiModelConfig } from '@herobids/domain';
-import type { OpenRouterProviderControls } from '@herobids/llm';
+import type { PersistedAiModelConfig, OpenRouterProviderControlsConfig } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 
 export interface NarrativeLlmResolutionInput {
@@ -27,7 +26,7 @@ export interface NarrativeLlmResolutionInput {
    * When omitted, dynamic provider models are not validated at request time. */
   catalogDeps?: LlmCatalogDeps;
   /** OpenRouter provider controls for privacy enforcement. */
-  openRouterProviderControls?: OpenRouterProviderControls;
+  openRouterProviderControls?: OpenRouterProviderControlsConfig;
 }
 
 /**
