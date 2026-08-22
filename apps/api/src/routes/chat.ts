@@ -13,7 +13,7 @@ import { normalizePersistedAiModelConfig, type AgentRiskDefaultsConfig } from '@
 import { errorPayload } from '../error-payload.js';
 import { listProviderRegistry, getProviderWalletGenerationCapability } from '../providers/registry.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
-import { resolveExecutionModeForSkills, validateConnectionRequirement, resolveAuthorizationMode } from './agent-config-helpers.js';
+import { resolveExecutionModeForSkills, validateConnectionRequirement, resolveAuthorizationMode, optionalPositiveDecimalStringSchema } from './agent-config-helpers.js';
 import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from './agents.js';
 import { createProviderLink } from './setup.js';
@@ -595,7 +595,7 @@ const CHAT_TOOLS: LlmToolDefinition[] = [
 
 export const GuidedSetupCreateAgentInput = z.object({
   skillPresetId: z.enum(['trading', 'direct-trading', 'trading-assistant', 'personal-assistant', 'custom']),
-  capital: z.string().min(1).optional(),
+  capital: optionalPositiveDecimalStringSchema,
   goal: z.string().optional(),
   style: z.enum(['careful', 'balanced', 'bold']).optional(),
   requestedExecutionMode: z.enum(['test', 'live']).optional(),
