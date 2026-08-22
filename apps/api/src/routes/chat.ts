@@ -1840,6 +1840,61 @@ export async function invokeOnboardingLlm(
   return { content: finalResult.data.content, toolCallsProcessed, createdAgent, summaryFacts, actions: pendingActions, billingUsage: usageAcc.tokensUsed > 0 ? usageAcc : undefined };
 }
 
+// ── Injection Detection ─────────────────────────────────────────────────
+
+/**
+ * Confidence tier for injection pattern matches.
+ *
+ * - HIGH: Never appears in legitimate Guided Setup input. Hard reject (400).
+ * - MEDIUM: May have legitimate uses (markdown, pasted content). Log + monitor only.
+ */
+type InjectionConfidence = 'high' | 'medium';
+
+const INJECTION_PATTERNS: Array<{ pattern: RegExp; label: string; confidence: InjectionConfidence }> = [
+  // ── HIGH confidence: hard reject ──────────────────────────────────────
+  {
+    pattern: /ignore\s+(?:all\s+)?(?:the\s+)?(?:previous|above|prior|these)\s+instructions/i,
+    label: 'instruction_override',
+    confidence: 'high',
+  },
+  {
+    pattern: /you\s+are\s+(?:now|no\s+longer)\s+(?:an?\s+)?(?:unrestricted|admin|system|different)\b/i,
+    label: 'role_change',
+    confidence: 'high',
+  },
+  {
+    pattern: /<!\[CDATA\[|]]>|<\/(?:system|instructions|prompt)>/i,
+    label: 'xml_injection',
+    confidence: 'high',
+  },
+
+  // ── MEDIUM confidence: log + monitor, do NOT reject ───────────────────
+  {
+    pattern: /(?:^|\n)\s*(?:system|assistant|tool)\s*:/im,
+    label: 'role_impersonation',
+    confidence: 'medium',
+  },
+  {
+    pattern: /(?:^|\n)\s*(?:={3,}|-{3,}|#{3,})/m,
+    label: 'delimiter_injection',
+    confidence: 'medium',
+  },
+];
+
+/**
+ * Check user message content for known prompt injection patterns.
+ * Returns { label, confidence } of the first matched pattern, or null if clean.
+ */
+export function detectInjection(content: string): { label: string; confidence: InjectionConfidence } | null {
+  const trimmed = content.trim();
+  for (const { pattern, label, confidence } of INJECTION_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { label, confidence };
+    }
+  }
+  return null;
+}
+
 // ── Route Registration ───────────────────────────────────────────────────────
 
 export async function chatRoutes(
@@ -1923,6 +1978,20 @@ export async function chatRoutes(
     }
 
     const { content } = parsed.data;
+
+    // Detect prompt injection attempts before persisting or invoking LLM
+    const injection = detectInjection(content);
+    if (injection) {
+      if (injection.confidence === 'high') {
+        return reply.status(400).send(errorPayload(
+          'invalid_input',
+          'Your message could not be processed. Please rephrase without special directives or system-level language.',
+          { reason: injection.label },
+        ));
+      }
+      // Medium confidence — log for security monitoring but allow through
+      request.log.warn({ injectionLabel: injection.label, threadId: request.params.id, userId: request.userId }, 'medium-confidence injection pattern detected');
+    }
 
     // Billing gate: block paid LLM calls when user has no available credit
     if (usageBillingRepo) {
