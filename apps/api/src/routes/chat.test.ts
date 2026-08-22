@@ -1406,6 +1406,63 @@ describe('executeChatAction — authorizationMode', () => {
   });
 });
 
+// ── GuidedSetupCreateAgentInput: capital validation ─────────────────────────
+
+describe('GuidedSetupCreateAgentInput — capital validation', () => {
+  it('rejects non-numeric capital', async () => {
+    const { GuidedSetupCreateAgentInput } = await import('./chat.js');
+    const parsed = GuidedSetupCreateAgentInput.safeParse({
+      skillPresetId: 'direct-trading',
+      capital: 'ABC',
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('rejects negative capital', async () => {
+    const { GuidedSetupCreateAgentInput } = await import('./chat.js');
+    const parsed = GuidedSetupCreateAgentInput.safeParse({
+      skillPresetId: 'direct-trading',
+      capital: '-500',
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('rejects zero capital', async () => {
+    const { GuidedSetupCreateAgentInput } = await import('./chat.js');
+    const parsed = GuidedSetupCreateAgentInput.safeParse({
+      skillPresetId: 'direct-trading',
+      capital: '0',
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('accepts valid positive decimal capital', async () => {
+    const { GuidedSetupCreateAgentInput } = await import('./chat.js');
+    const parsed = GuidedSetupCreateAgentInput.safeParse({
+      skillPresetId: 'direct-trading',
+      capital: '1000',
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('allows capital to be omitted (optional for non-trading presets)', async () => {
+    const { GuidedSetupCreateAgentInput } = await import('./chat.js');
+    const parsed = GuidedSetupCreateAgentInput.safeParse({
+      skillPresetId: 'personal-assistant',
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('rejects capital containing injection content', async () => {
+    const { GuidedSetupCreateAgentInput } = await import('./chat.js');
+    const parsed = GuidedSetupCreateAgentInput.safeParse({
+      skillPresetId: 'direct-trading',
+      capital: '0\n\n=== INJECTION ===',
+    });
+    expect(parsed.success).toBe(false);
+  });
+});
+
 // ── invokeOnboardingLlm: wallet_created action emission ─────────────────────
 
 describe('invokeOnboardingLlm — wallet_created action', () => {
@@ -2730,5 +2787,50 @@ describe('prompt injection defenses — invokeOnboardingLlm message wrapping', (
     // Assistant message not wrapped
     expect(messages[2]!.content).toBe('What style?');
     expect(messages[2]!.content).not.toContain('<user_msg_');
+  });
+
+  it('generates different nonces across invocations', async () => {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'First response.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Second response.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+
+    await invokeOnboardingLlm(LLM_CONFIG, EMPTY_PROVIDERS_YAML, db, TEST_USER_ID, [], null);
+    await invokeOnboardingLlm(LLM_CONFIG, EMPTY_PROVIDERS_YAML, db, TEST_USER_ID, [], null);
+
+    expect(callMock).toHaveBeenCalledTimes(2);
+
+    const messages1 = callMock.mock.calls[0]![1]!.messages as Array<{ role: string; content: string }>;
+    const messages2 = callMock.mock.calls[1]![1]!.messages as Array<{ role: string; content: string }>;
+
+    const nonce1Match = messages1[0]!.content.match(/user_msg_([0-9a-f]{4})/);
+    const nonce2Match = messages2[0]!.content.match(/user_msg_([0-9a-f]{4})/);
+
+    expect(nonce1Match).not.toBeNull();
+    expect(nonce2Match).not.toBeNull();
+
+    // Nonces should differ between invocations (statistically near-certain with 65536 possibilities)
+    expect(nonce1Match![1]).not.toBe(nonce2Match![1]);
   });
 });
