@@ -38,8 +38,9 @@ graph TB
 
 ## Detail Lives Elsewhere
 
-This page is intentionally high level. Deeper runtime boundaries, agent messaging, and transport details belong in the specialized docs under [docs/tech/agents/](../agents) and the ADRs under [docs/tech/adrs/](../adrs).
+This page is intentionally high level. Deeper runtime boundaries, agent messaging, and transport details belong in the specialized docs under [docs/tech/agents/](../agents) and the ADRs under [docs/tech/architecture/adrs/](./adrs).
 
 Additional architecture documents:
 
 - [Market Data Architecture](./market-data.md) — current-state source of truth for provider wiring, source selection, caching, and degradation behavior
+- [Security Architecture](./security.md) — threat model, trust boundaries, defense-in-depth principles, and mitigation catalogue

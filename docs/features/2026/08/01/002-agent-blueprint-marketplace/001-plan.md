@@ -32,10 +32,10 @@ This split is intentional because the project does not need backward compatibili
 
 ## Supporting Material
 
-1. [docs/tech/adrs/2026/08/001-blueprint-is-the-marketplace-asset.md](../../../../../tech/adrs/2026/08/001-blueprint-is-the-marketplace-asset.md)
-2. [docs/tech/adrs/2026/08/002-template-vs-instance-boundary.md](../../../../../tech/adrs/2026/08/002-template-vs-instance-boundary.md)
-3. [docs/tech/adrs/2026/08/003-agent-blueprint-contract.md](../../../../../tech/adrs/2026/08/003-agent-blueprint-contract.md)
-4. [docs/tech/adrs/2026/08/004-blueprint-marketplace-ranking-and-attribution.md](../../../../../tech/adrs/2026/08/004-blueprint-marketplace-ranking-and-attribution.md)
+1. [docs/tech/architecture/adrs/2026/08/001-blueprint-is-the-marketplace-asset.md](../../../../../tech/architecture/adrs/2026/08/001-blueprint-is-the-marketplace-asset.md)
+2. [docs/tech/architecture/adrs/2026/08/002-template-vs-instance-boundary.md](../../../../../tech/architecture/adrs/2026/08/002-template-vs-instance-boundary.md)
+3. [docs/tech/architecture/adrs/2026/08/003-agent-blueprint-contract.md](../../../../../tech/architecture/adrs/2026/08/003-agent-blueprint-contract.md)
+4. [docs/tech/architecture/adrs/2026/08/004-blueprint-marketplace-ranking-and-attribution.md](../../../../../tech/architecture/adrs/2026/08/004-blueprint-marketplace-ranking-and-attribution.md)
 
 ## Working Rules
 

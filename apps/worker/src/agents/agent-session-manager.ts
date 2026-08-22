@@ -358,7 +358,7 @@ export class AgentSessionManager {
         // via POST /billing/spend-caps (admin-only) are intentionally
         // overwritten here with plan-derived caps on every session start.
         // This ensures the plan tier remains the authoritative ceiling.
-        // See ADR-006: docs/tech/adrs/2026/08/006-spend-caps-operator-only.md
+        // See ADR-006: docs/tech/architecture/adrs/2026/08/006-spend-caps-operator-only.md
         if (this.config.usageBillingRepo) {
           const includedCreditMicrousd = (planUsage?.includedCreditCents ?? 0) * 10_000;
           const softCapMicrousd = planUsage?.softCapCents != null ? planUsage.softCapCents * 10_000 : null;

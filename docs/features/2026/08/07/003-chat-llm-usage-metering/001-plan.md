@@ -10,7 +10,7 @@ Plan 003 (`docs/features/2026/08/06/003-guided-setup-billing-gate/001-plan.md`) 
 
 Today, every `callLlmProvider()` call inside `invokeOnboardingLlm()` in `apps/api/src/routes/chat.ts` consumes paid LLM tokens without recording any usage event, ledger entry, or spend against the user's billing account.
 
-This plan adds per-token billing metering for all chat surfaces: Guided Setup now, and future general Chat With AI surfaces through the same reusable path. This is consistent with ADR 005 (`docs/tech/adrs/2026/08/005-onboarding-chat-agent-runtime-model.md`): chat is billed per-token, not as continuous runtime.
+This plan adds per-token billing metering for all chat surfaces: Guided Setup now, and future general Chat With AI surfaces through the same reusable path. This is consistent with ADR 005 (`docs/tech/architecture/adrs/2026/08/005-onboarding-chat-agent-runtime-model.md`): chat is billed per-token, not as continuous runtime.
 
 ## Current Code Truth
 

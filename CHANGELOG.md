@@ -70,7 +70,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Update apps/web/src/features/public-pages/content/en/docs/agents/billing-limits.md to account for this ADR docs/tech/adrs/2026/08/006-spend-caps-operator-only.md
+- Update apps/web/src/features/public-pages/content/en/docs/agents/billing-limits.md to account for this ADR docs/tech/architecture/adrs/2026/08/006-spend-caps-operator-only.md
 - robots.txt
 
 ## v0.1.6 - 2026-08-11
@@ -88,7 +88,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Spend-cap controls on the Billing page are now admin-only (see docs/tech/adrs/2026/08/006-spend-caps-operator-only.md)
+- Spend-cap controls on the Billing page are now admin-only (see docs/tech/architecture/adrs/2026/08/006-spend-caps-operator-only.md)
 - `/agents/new` now defaults to the form-based creation flow; guided chat is available via `/agents/new?ui=chat`. The URL stays in sync when toggling between form and chat modes.
 
 ### Fixed

@@ -396,7 +396,7 @@ This plan depends on or should be coordinated with:
 1. `docs/features/2026/07/12/001-openaidom-domain-rollout/001-plan.md` for hostname cutover and canonical origin changes
 2. `docs/features/2026/07/12/003-platform-email-redesign/001-plan.md` for deeper email implementation details already identified
 3. `docs/product/brand/brand-palette.md` for authoritative palette values used by web and email branding
-4. the accepted web i18n contract in `docs/tech/adrs/2026/06/002-web-i18n-contract-and-key-strategy.md`
+4. the accepted web i18n contract in `docs/tech/architecture/adrs/2026/06/002-web-i18n-contract-and-key-strategy.md`
 
 ---
 

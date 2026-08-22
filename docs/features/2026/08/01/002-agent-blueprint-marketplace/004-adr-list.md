@@ -9,16 +9,16 @@ These ADRs lock the architectural decisions that Phase 1 depends on. They are th
 
 ## ADR Set
 
-1. [docs/tech/adrs/2026/08/001-blueprint-is-the-marketplace-asset.md](../../../../../tech/adrs/2026/08/001-blueprint-is-the-marketplace-asset.md)
+1. [docs/tech/architecture/adrs/2026/08/001-blueprint-is-the-marketplace-asset.md](../../../../../tech/architecture/adrs/2026/08/001-blueprint-is-the-marketplace-asset.md)
 Purpose: decide that blueprints, not live agents, are the canonical marketplace asset.
 
-2. [docs/tech/adrs/2026/08/002-template-vs-instance-boundary.md](../../../../../tech/adrs/2026/08/002-template-vs-instance-boundary.md)
+2. [docs/tech/architecture/adrs/2026/08/002-template-vs-instance-boundary.md](../../../../../tech/architecture/adrs/2026/08/002-template-vs-instance-boundary.md)
 Purpose: lock the shareable template surface versus private and runtime-only instance state.
 
-3. [docs/tech/adrs/2026/08/003-agent-blueprint-contract.md](../../../../../tech/adrs/2026/08/003-agent-blueprint-contract.md)
+3. [docs/tech/architecture/adrs/2026/08/003-agent-blueprint-contract.md](../../../../../tech/architecture/adrs/2026/08/003-agent-blueprint-contract.md)
 Purpose: define the typed blueprint contract, blueprint kinds, and the first-class agent strategy surface.
 
-4. [docs/tech/adrs/2026/08/004-blueprint-marketplace-ranking-and-attribution.md](../../../../../tech/adrs/2026/08/004-blueprint-marketplace-ranking-and-attribution.md)
+4. [docs/tech/architecture/adrs/2026/08/004-blueprint-marketplace-ranking-and-attribution.md](../../../../../tech/architecture/adrs/2026/08/004-blueprint-marketplace-ranking-and-attribution.md)
 Purpose: decide how blueprint lineage, usage, likes, ranking, and attribution work in v1 and what is deferred.
 
 ## Decision Order

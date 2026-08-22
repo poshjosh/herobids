@@ -78,7 +78,7 @@ Open questions
 
 ### ADR
 
-One ADR is needed: **ADR 005 — Onboarding Chat Agent Runtime Model** at `docs/tech/adrs/2026/08/005-onboarding-chat-agent-runtime-model.md`. This records the decision that the chat agent is per-message invoked, not a continuously-running agent runtime.
+One ADR is needed: **ADR 005 — Onboarding Chat Agent Runtime Model** at `docs/tech/architecture/adrs/2026/08/005-onboarding-chat-agent-runtime-model.md`. This records the decision that the chat agent is per-message invoked, not a continuously-running agent runtime.
 
 ### Product Spec
 

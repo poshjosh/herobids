@@ -138,7 +138,7 @@ export function BillingDetails({
 
   return (
     <>
-      {/* Spend Controls — operator-only. See ADR-006: docs/tech/adrs/2026/08/006-spend-caps-operator-only.md */}
+      {/* Spend Controls — operator-only. See ADR-006: docs/tech/architecture/adrs/2026/08/006-spend-caps-operator-only.md */}
       {isAdmin && (
         <>
           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '24px', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>

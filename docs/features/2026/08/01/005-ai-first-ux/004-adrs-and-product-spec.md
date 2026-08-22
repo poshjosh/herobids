@@ -22,7 +22,7 @@ Two decisions rise to the level of an Architecture Decision Record:
 - It does NOT have access to trading tools, worker messaging/memory tools, or background execution
 - Thread persistence stores only replayable user/assistant messages; summaries and workflow state live in thread metadata or a separate internal store
 
-This is the most important ADR to write. Proposed location: `docs/tech/adrs/2026/08/005-onboarding-chat-agent-runtime-model.md`
+This is the most important ADR to write. Proposed location: `docs/tech/architecture/adrs/2026/08/005-onboarding-chat-agent-runtime-model.md`
 
 #### ADR 006: Structured Actions Contract For LLM-Initiated UI Components (Optional)
 
