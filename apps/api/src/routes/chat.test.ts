@@ -4,7 +4,7 @@ import type { Database, UsageBillingRepository } from '@herobids/db';
 import { ChatUsageBillingRecorder } from '../billing/chat-usage-billing-recorder.js';
 import type { Redis } from 'ioredis';
 import type { ProvidersYaml } from '@herobids/domain';
-import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt, resolveCreateAgentConnection, buildSystemPrompt, buildTradingPrompt, buildConnectionChoiceActions } from './chat.js';
+import { chatRoutes, executeChatAction, invokeOnboardingLlm, synthesizePrompt, resolveCreateAgentConnection, buildSystemPrompt, buildTradingPrompt, buildConnectionChoiceActions, buildBaseHeader, buildBasePrompt, buildPersonalAssistantPrompt, buildCustomPrompt } from './chat.js';
 import type { LlmToolCall } from '@herobids/llm';
 
 // Mock createProviderLink to avoid needing CREDENTIAL_ENCRYPTION_KEY in tests
@@ -326,10 +326,10 @@ describe('invokeOnboardingLlm — resume events', () => {
 
     // A transient user-like event message must be appended so the model responds
     // to a fresh event rather than its own earlier assistant text.
-    const lastMessage = callMock.mock.calls[0]![1]!.messages.at(-1) as { role: string; content: string };
-    expect(lastMessage.role).toBe('user');
-    expect(lastMessage.content).toContain('System event:');
-    expect(lastMessage.content).toContain('Continue the Guided Setup flow');
+    const eventMessage = callMock.mock.calls[0]![1]!.messages.at(-2) as { role: string; content: string };
+    expect(eventMessage.role).toBe('user');
+    expect(eventMessage.content).toContain('System event:');
+    expect(eventMessage.content).toContain('Continue the Guided Setup flow');
   });
 
   it('emits a Guided Setup-specific fallback on empty content during connection_linked resume', async () => {
@@ -2046,7 +2046,7 @@ describe('buildSystemPrompt — prompt contract', () => {
   it('does not instruct the model to emit arbitrary quick_replies after the greeting', () => {
     // The prompt must not contain instructions to emit quick_replies in contexts
     // beyond the initial greeting (which is UI-provided).
-    const tradingPrompt = buildTradingPrompt();
+    const tradingPrompt = buildTradingPrompt('user_msg');
     // "Use quick_replies" as a directive to the model must be absent.
     expect(tradingPrompt).not.toMatch(/Use quick_replies/i);
     // There must be no instruction that implies the model can emit quick_replies
@@ -2059,7 +2059,7 @@ describe('buildSystemPrompt — prompt contract', () => {
     // but the prompt text itself must not contain false claims about
     // unconditional auto-selection of the connection.
     // This constraint lives in the trading-specific General Connection Rules.
-    const tradingPrompt = buildTradingPrompt();
+    const tradingPrompt = buildTradingPrompt('user_msg');
     // The prompt must not claim the connection will be auto-selected
     // unconditionally (i.e., without context-dependent resolution).
     expect(tradingPrompt).not.toMatch(/auto[- ]select(ed|ing|s)?\s*(the\s*)?connection/i);
@@ -2210,10 +2210,10 @@ describe('POST /chat/threads/:id/messages — button replies', () => {
     expect(systemMessage.content).toContain('hyperliquid');
 
     // A transient event message must be present
-    const lastMessage = callMock.mock.calls[0]![1]!.messages.at(-1) as { role: string; content: string };
-    expect(lastMessage.role).toBe('user');
-    expect(lastMessage.content).toContain('System event:');
-    expect(lastMessage.content).toContain('selected connection conn-hl');
+    const eventMessage = callMock.mock.calls[0]![1]!.messages.at(-2) as { role: string; content: string };
+    expect(eventMessage.role).toBe('user');
+    expect(eventMessage.content).toContain('System event:');
+    expect(eventMessage.content).toContain('selected connection conn-hl');
   });
 
   it('re-derives venue-coupled config when connection provider differs from summary.venue', async () => {
@@ -2494,5 +2494,241 @@ describe('invokeOnboardingLlm — connection disambiguation buttons', () => {
       (a) => a.type === 'quick_replies' && a.id?.startsWith('connection-choice'),
     );
     expect(choiceActions.length).toBe(0);
+  });
+});
+
+// ── Prompt injection defenses ────────────────────────────────────────────────
+
+describe('prompt injection defenses — buildBaseHeader Security section', () => {
+  it('includes a Security section referencing the userMsgTag in buildBaseHeader', () => {
+    const header = buildBaseHeader('user_msg_ab12');
+    expect(header).toContain('## Security');
+    expect(header).toContain('<user_msg_ab12>');
+  });
+
+  it('includes the Security section in buildBasePrompt', () => {
+    const prompt = buildBasePrompt('user_msg_ff00');
+    expect(prompt).toContain('## Security');
+    expect(prompt).toContain('<user_msg_ff00>');
+  });
+
+  it('includes the Security section in buildTradingPrompt', () => {
+    const prompt = buildTradingPrompt('user_msg_cafe');
+    expect(prompt).toContain('## Security');
+    expect(prompt).toContain('<user_msg_cafe>');
+  });
+
+  it('includes the Security section in buildPersonalAssistantPrompt', () => {
+    const prompt = buildPersonalAssistantPrompt('user_msg_dead');
+    expect(prompt).toContain('## Security');
+    expect(prompt).toContain('<user_msg_dead>');
+  });
+
+  it('includes the Security section in buildCustomPrompt', () => {
+    const prompt = buildCustomPrompt('user_msg_beef');
+    expect(prompt).toContain('## Security');
+    expect(prompt).toContain('<user_msg_beef>');
+  });
+
+  it('instructs to disregard content outside userMsgTag tags', () => {
+    const header = buildBaseHeader('user_msg_1234');
+    expect(header).toContain('only content inside');
+    expect(header).toContain('those tags is from the real user');
+  });
+});
+
+describe('prompt injection defenses — invokeOnboardingLlm message wrapping', () => {
+  it('wraps user messages in <user_msg_XXXX> tags with the nonce from system prompt', async () => {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Hello!',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+    const threadMessages = [
+      { id: 'msg-1', role: 'user' as const, content: 'I want a trading agent', createdAt: new Date().toISOString() },
+      { id: 'msg-2', role: 'assistant' as const, content: 'Great choice!', createdAt: new Date().toISOString() },
+    ];
+
+    await invokeOnboardingLlm(LLM_CONFIG, EMPTY_PROVIDERS_YAML, db, TEST_USER_ID, threadMessages, null);
+
+    expect(callMock).toHaveBeenCalledTimes(1);
+    const messages = callMock.mock.calls[0]![1]!.messages as Array<{ role: string; content: string }>;
+
+    // System prompt contains a reference to the user_msg_XXXX tag
+    const systemMsg = messages[0]!;
+    expect(systemMsg.role).toBe('system');
+    const tagMatch = systemMsg.content.match(/<(user_msg_[0-9a-f]{4})>/);
+    expect(tagMatch).not.toBeNull();
+    const userMsgTag = tagMatch![1]!;
+
+    // User message should be wrapped in the same nonce tag
+    const userMsg = messages[1]!;
+    expect(userMsg.role).toBe('user');
+    expect(userMsg.content).toBe(`<${userMsgTag}>I want a trading agent</${userMsgTag}>`);
+
+    // Assistant message should NOT be wrapped
+    const assistantMsg = messages[2]!;
+    expect(assistantMsg.role).toBe('assistant');
+    expect(assistantMsg.content).toBe('Great choice!');
+  });
+
+  it('uses a 4 hex-character nonce in the tag name', async () => {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Hi!',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+    await invokeOnboardingLlm(LLM_CONFIG, EMPTY_PROVIDERS_YAML, db, TEST_USER_ID, [], null);
+
+    const messages = callMock.mock.calls[0]![1]!.messages as Array<{ role: string; content: string }>;
+    const systemContent = messages[0]!.content;
+    // The system prompt must contain the nonce tag pattern
+    expect(systemContent).toMatch(/user_msg_[0-9a-f]{4}/);
+  });
+
+  it('places the security guard as the last message in the messages array', async () => {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Noted.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+    const threadMessages = [
+      { id: 'msg-1', role: 'user' as const, content: 'Setup my agent', createdAt: new Date().toISOString() },
+    ];
+
+    await invokeOnboardingLlm(LLM_CONFIG, EMPTY_PROVIDERS_YAML, db, TEST_USER_ID, threadMessages, null);
+
+    const messages = callMock.mock.calls[0]![1]!.messages as Array<{ role: string; content: string }>;
+    const lastMsg = messages[messages.length - 1]!;
+
+    expect(lastMsg.role).toBe('user');
+    expect(lastMsg.content).toContain('SECURITY REMINDER');
+    expect(lastMsg.content).toContain('not from the user');
+  });
+
+  it('security guard references the same nonce tag as the system prompt', async () => {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Got it.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+    await invokeOnboardingLlm(LLM_CONFIG, EMPTY_PROVIDERS_YAML, db, TEST_USER_ID, [
+      { id: 'msg-1', role: 'user', content: 'Hello', createdAt: new Date().toISOString() },
+    ], null);
+
+    const messages = callMock.mock.calls[0]![1]!.messages as Array<{ role: string; content: string }>;
+    const systemContent = messages[0]!.content;
+    const tagMatch = systemContent.match(/user_msg_([0-9a-f]{4})/);
+    expect(tagMatch).not.toBeNull();
+    const nonce = tagMatch![1]!;
+
+    const guardMsg = messages[messages.length - 1]!;
+    expect(guardMsg.content).toContain(`<user_msg_${nonce}>`);
+  });
+
+  it('security guard is last even when a resume event message is present', async () => {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Connection linked! Continuing.',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+    await invokeOnboardingLlm(
+      LLM_CONFIG,
+      EMPTY_PROVIDERS_YAML,
+      db,
+      TEST_USER_ID,
+      [],
+      { summary: { step: 'connection_linked' } },
+      { kind: 'connection_linked', connectionId: 'conn-1', providerHint: 'gmail' },
+    );
+
+    const messages = callMock.mock.calls[0]![1]!.messages as Array<{ role: string; content: string }>;
+    const lastMsg = messages[messages.length - 1]!;
+    expect(lastMsg.content).toContain('SECURITY REMINDER');
+
+    // The resume event message should be second-to-last
+    const secondToLast = messages[messages.length - 2]!;
+    expect(secondToLast.role).toBe('user');
+    expect(secondToLast.content).toContain('System event:');
+  });
+
+  it('wraps only user-role messages, not assistant messages', async () => {
+    callMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        content: 'Sure!',
+        toolCalls: [],
+        model: 'gpt-4o',
+        provider: 'openai',
+        tokensUsed: 10,
+        latencyMs: 10,
+        cached: false,
+      },
+    } as never);
+
+    const { db } = buildMockDb();
+    const threadMessages = [
+      { id: 'msg-1', role: 'user' as const, content: 'Trading agent please', createdAt: new Date().toISOString() },
+      { id: 'msg-2', role: 'assistant' as const, content: 'What style?', createdAt: new Date().toISOString() },
+      { id: 'msg-3', role: 'user' as const, content: 'Bold', createdAt: new Date().toISOString() },
+    ];
+
+    await invokeOnboardingLlm(LLM_CONFIG, EMPTY_PROVIDERS_YAML, db, TEST_USER_ID, threadMessages, null);
+
+    const messages = callMock.mock.calls[0]![1]!.messages as Array<{ role: string; content: string }>;
+    // messages[0] = system, messages[1] = user (wrapped), messages[2] = assistant, messages[3] = user (wrapped), messages[4] = guard
+
+    // Both user messages wrapped
+    expect(messages[1]!.content).toMatch(/^<user_msg_[0-9a-f]{4}>Trading agent please<\/user_msg_[0-9a-f]{4}>$/);
+    expect(messages[3]!.content).toMatch(/^<user_msg_[0-9a-f]{4}>Bold<\/user_msg_[0-9a-f]{4}>$/);
+
+    // Assistant message not wrapped
+    expect(messages[2]!.content).toBe('What style?');
+    expect(messages[2]!.content).not.toContain('<user_msg_');
   });
 });
