@@ -6,12 +6,11 @@
 
 app:
   logLevel: debug   
-                       # Verbose logging for staging troubleshooting
-platformAssessor:
-  enabled: true  # disabled by default until shadow mode validated
-  llm:
-    provider: openrouter                # provider identifier in providers.yaml
-    model: deepseek/deepseek-v4-pro     # model ID
+
+# Live trading — explicitly disabled for staging safety.
+# Override with LIVE_ROLLOUT_ENABLED=true only for targeted smoke tests.
+liveRollout:
+  enabled: false
 
 llm:
   provider: openrouter                  # LLM provider: openrouter | openai | anthropic | ollama | deepseek
@@ -31,11 +30,12 @@ agentRuntime:
       provider: openrouter                    # suggested provider in forms
       lightModel: deepseek/deepseek-v4-flash  # suggested economy (scout) model
       heavyModel: deepseek/deepseek-v4-pro    # suggested premium (judge) model
-
-# Live trading — explicitly disabled for staging safety.
-# Override with LIVE_ROLLOUT_ENABLED=true only for targeted smoke tests.
-liveRollout:
-  enabled: false
+                       
+platformAssessor:
+  enabled: true  # disabled by default until shadow mode validated
+  llm:
+    provider: openrouter                # provider identifier in providers.yaml
+    model: deepseek/deepseek-v4-pro     # model ID
 
 alerts:
   email:

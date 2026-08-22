@@ -1,11 +1,10 @@
 # Operator configuration — self-documenting reference.
 # Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
-#
-platformAssessor:
-  enabled: true  # disabled by default until shadow mode validated
-  llm:
-    provider: openrouter                # provider identifier in providers.yaml
-    model: anthropic/claude-fable-5     # model ID
+app:
+  logLevel: info
+
+liveRollout:
+  enabled: true
 
 llm:
   provider: openrouter                  # LLM provider: openrouter | openai | anthropic | ollama | deepseek
@@ -25,6 +24,15 @@ agentRuntime:
       provider: openrouter                    # suggested provider in forms
       lightModel: deepseek/deepseek-v4-flash  # suggested economy (scout) model
       heavyModel: deepseek/deepseek-v4-pro    # suggested premium (judge) model
+      
+# Operator configuration — self-documenting reference.
+# Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
+#
+platformAssessor:
+  enabled: true  # disabled by default until shadow mode validated
+  llm:
+    provider: openrouter                # provider identifier in providers.yaml
+    model: anthropic/claude-fable-5     # model ID
 
 alerts:
   email:

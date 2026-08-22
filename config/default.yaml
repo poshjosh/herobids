@@ -27,6 +27,24 @@ sharedServices:
   postgresPassword: herobids
   postgresDatabase: herobids
 
+# Live rollout gating — fail-closed operator policy for live execution mode.
+# All checks must pass before an instance is allowed to trade live.
+liveRollout:
+  enabled: false                          # master switch — must be true for any live instance to start
+  allowedVenues:                          # venues permitted to execute live orders
+    - hyperliquid
+    - 1inch
+    - bybit
+    - jupiter
+  requireDbCredentials: true              # reject env-var credential fallback for live mode
+  maxInitialOrderNotionalUsd: "10000"     # hard cap on single-order notional (USD) during rollout
+  maxConsecutiveVenueErrors: 3            # circuit-breaker: halt after N consecutive venue errors
+  slippageAlertBps: 50                    # log warning when fill slippage exceeds this
+  limitOrderTimeoutMs: 120000             # cancel stale live limit orders after this timeout
+  marketOrderTimeoutMs: 30000             # mark unresolved live market orders as recovery-required after this timeout
+  timeoutCheckIntervalMs: 10000           # frequency of live timeout scans
+  crashPolicy: alert_manual_intervention  # auto_go_flat | alert_manual_intervention
+
 venues:
   hyperliquid:
     baseUrl: https://api.hyperliquid.xyz
@@ -629,24 +647,6 @@ llmValidation:
   minReplayContexts: 100
   maxDecisionDivergencePct: 20
   maxPnlRegressionPct: 10
-
-# Live rollout gating — fail-closed operator policy for live execution mode.
-# All checks must pass before an instance is allowed to trade live.
-liveRollout:
-  enabled: false                          # master switch — must be true for any live instance to start
-  allowedVenues:                          # venues permitted to execute live orders
-    - hyperliquid
-    - 1inch
-    - bybit
-    - jupiter
-  requireDbCredentials: true              # reject env-var credential fallback for live mode
-  maxInitialOrderNotionalUsd: "10000"     # hard cap on single-order notional (USD) during rollout
-  maxConsecutiveVenueErrors: 3            # circuit-breaker: halt after N consecutive venue errors
-  slippageAlertBps: 50                    # log warning when fill slippage exceeds this
-  limitOrderTimeoutMs: 120000             # cancel stale live limit orders after this timeout
-  marketOrderTimeoutMs: 30000             # mark unresolved live market orders as recovery-required after this timeout
-  timeoutCheckIntervalMs: 10000           # frequency of live timeout scans
-  crashPolicy: alert_manual_intervention  # auto_go_flat | alert_manual_intervention
 
 # ── Platform Assessor ──────────────────────────────────────────────────────
 # On-demand per-symbol assessment — no scheduled background generation.

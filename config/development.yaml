@@ -4,14 +4,13 @@
 llm:
   tickIntervalMs: 60000         # Agent reasoning loop interval in ms (how often the agent calls the LLM)
 
-# Alerting — dispatches journal events to Telegram channels.
-alerts:
-  email:
-    brandImageUrl: http://localhost:8080/brand/compact-mark.png
-
 platformAssessor:
   enabled: true
   minReviewIntervalMs: 300000  # 5 min — operator floor for agent reviewIntervalMs
   cacheFreshnessMs: 300000  # 5 min — lookup and artifact expiry
 
+# Alerting — dispatches journal events to Telegram channels.
+alerts:
+  email:
+    brandImageUrl: http://localhost:8080/brand/compact-mark.png
 
