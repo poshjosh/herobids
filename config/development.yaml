@@ -10,6 +10,7 @@ alerts:
     brandImageUrl: http://localhost:8080/brand/compact-mark.png
 
 platformAssessor:
+  enabled: true
   minReviewIntervalMs: 300000  # 5 min — operator floor for agent reviewIntervalMs
   cacheFreshnessMs: 300000  # 5 min — lookup and artifact expiry
 
