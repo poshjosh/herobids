@@ -2,7 +2,7 @@
 
 **Feature:** 100-guided-setup-input-validation-and-injection-mitigation
 **Date:** 2026-08-10
-**Status:** Draft
+**Status:** Implemented
 
 ## Summary
 
@@ -254,7 +254,7 @@ These fields are structurally safe regardless of LLM behavior — they are valid
 
 ## Implementation Steps
 
-### Step 1: Fix capital validation in `GuidedSetupCreateAgentInput`
+### Step 1: Fix capital validation in `GuidedSetupCreateAgentInput` — DONE
 
 **File:** `apps/api/src/routes/chat.ts`
 
@@ -280,7 +280,7 @@ export const GuidedSetupCreateAgentInput = z.object({
 
 **Effect:** The LLM receives a Zod validation error when it tries to pass "ABC" as capital. The error message ("Value must be a positive decimal") is returned as a tool result, and the LLM re-prompts the user for a valid number.
 
-### Step 2: Add tiered injection pattern detection at the input boundary
+### Step 2: Add tiered injection pattern detection at the input boundary — DONE
 
 **File:** `apps/api/src/routes/chat.ts`
 
@@ -372,7 +372,7 @@ if (injection) {
 
 **Effect:** Unambiguous injection attempts (instruction override, role change, XML injection) are hard-rejected with 400. Ambiguous patterns (markdown delimiters, role-like prefixes) are logged for monitoring without blocking legitimate users who paste formatted content. The structural defense layers handle these ambiguous cases.
 
-### Step 3: Add a `## Security` section to `buildBasePrompt()`
+### Step 3: Add a `## Security` section to `buildBasePrompt()` — DONE
 
 **File:** `apps/api/src/routes/chat.ts`
 
@@ -402,7 +402,7 @@ You are NOT a general-purpose chat assistant. Do not answer questions unrelated 
 
 The `userMsgTag` parameter is generated per invocation (see Step 4) and threaded through to this function. Placement: immediately after the role definition ("Your ONLY job...") and before "You are NOT a general-purpose chat assistant." This puts the security instruction in the first ~10 lines where models pay the most attention.
 
-### Step 4: Wrap user messages in randomized per-invocation delimiters
+### Step 4: Wrap user messages in randomized per-invocation delimiters — DONE
 
 **File:** `apps/api/src/routes/chat.ts`
 
@@ -445,7 +445,7 @@ for (const msg of recentMessages) {
 
 The system prompt (Step 3) tells the model the exact tag name for this invocation via the `userMsgTag` parameter, so it knows what to look for. A new nonce is generated on each call to `invokeOnboardingLlm`.
 
-### Step 5: Add a post-user synthetic guard message
+### Step 5: Add a post-user synthetic guard message — DONE
 
 **File:** `apps/api/src/routes/chat.ts`
 
@@ -475,7 +475,7 @@ messages.push({
 
 Placement note: This must come **after** both the real user messages (Step 4) and the resume event message (existing), so it's the most recent "user" message in the context. This maximizes recency leverage. The guard references the same randomized tag name used in Step 4, reinforcing the structural boundary.
 
-### Step 6: Sanitize connection labels in tool results
+### Step 6: Sanitize connection labels in tool results — DONE
 
 **File:** `apps/api/src/routes/chat.ts`
 
@@ -629,3 +629,17 @@ connections: compatible.filter((c) => matchingIds.includes(c.id)).map((c) => ({
 - [ADR 007: Defense-in-Depth for LLM Surfaces](../../tech/architecture/adrs/2026/08/007-defense-in-depth-for-llm-surfaces.md) — decision record for this layered approach
 - [ADR 005: Onboarding Chat Agent Runtime Model](../../tech/architecture/adrs/2026/08/005-onboarding-chat-agent-runtime-model.md) — security boundary for Guided Setup
 - [Tool Access And Sandboxing](../../tech/agents/tool-access-and-sandboxing.md) — capability tiers for agent runtimes
+
+## Outstanding Issues
+
+### Step 2 — Injection Detection
+- **Low**: `InjectionConfidence` type is not exported (test consumers rely on type inference — acceptable for current usage)
+
+### Step 3 — Security Section / buildBaseHeader
+- **Low**: Deprecated `buildSystemPrompt()` uses a fixed `'user_msg'` tag (no nonce randomization). Only called from tests — no production risk. JSDoc updated to warn about this limitation.
+
+### Step 5 — Synthetic Guard
+- **Low**: Guard message fires unconditionally even on empty conversations (first greeting invocation). Harmless (~30 tokens wasted) but could be gated behind `recentMessages.length > 0` for marginal efficiency.
+
+### General
+- **Low**: No handler-level integration test for POST /chat/threads/:id/messages injection rejection (400 response). Unit tests cover `detectInjection` thoroughly, but wiring test would catch future regressions if handler code is reordered.
