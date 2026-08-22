@@ -84,11 +84,17 @@ const CONNECTION_ROW = {
   label: 'My Hyperliquid Connection',
   status: 'active',
   meta: null,
+  profile: null,
   resolvedVenueAccountId: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
   assignedAgentCount: 0,
   referencingBotCount: 0,
+  credentialLabel: null,
+  credentialProvider: null,
+  venueAccountLabel: null,
+  venueAccountVenue: null,
+  venueAccountRef: null,
 };
 
 let mockDbRows: Record<string, unknown>[] = [];
@@ -358,6 +364,135 @@ describe('GET /connections', () => {
     expect(Array.isArray(body.connections)).toBe(true);
     expect(body.connections[0]?.assignedAgentCount).toBe(0);
     expect(body.connections[0]?.referencingBotCount).toBe(0);
+  });
+
+  it('returns credentialLabel and credentialProvider when a credential is linked', async () => {
+    mockDbRows = [{
+      ...CONNECTION_ROW,
+      credentialId: 'cred-1',
+      credentialLabel: 'My API Key',
+      credentialProvider: 'hyperliquid',
+    }];
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/connections' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ connections: Array<{ credentialLabel: string; credentialProvider: string }> }>();
+    expect(body.connections[0]?.credentialLabel).toBe('My API Key');
+    expect(body.connections[0]?.credentialProvider).toBe('hyperliquid');
+  });
+
+  it('returns null for credential fields when no credential is linked', async () => {
+    mockDbRows = [CONNECTION_ROW]; // credentialId is null
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/connections' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ connections: Array<{ credentialLabel: string | null; credentialProvider: string | null }> }>();
+    expect(body.connections[0]?.credentialLabel).toBeNull();
+    expect(body.connections[0]?.credentialProvider).toBeNull();
+  });
+
+  it('returns venueAccountLabel, venueAccountVenue, and venueAccountRef when resolvedVenueAccountId is set', async () => {
+    mockDbRows = [{
+      ...CONNECTION_ROW,
+      resolvedVenueAccountId: 'va-1',
+      venueAccountLabel: 'Main Trading Account',
+      venueAccountVenue: 'hyperliquid',
+      venueAccountRef: '0xabc123',
+    }];
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/connections' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ connections: Array<{ venueAccountLabel: string; venueAccountVenue: string; venueAccountRef: string }> }>();
+    expect(body.connections[0]?.venueAccountLabel).toBe('Main Trading Account');
+    expect(body.connections[0]?.venueAccountVenue).toBe('hyperliquid');
+    expect(body.connections[0]?.venueAccountRef).toBe('0xabc123');
+  });
+
+  it('returns null for venue account fields when resolvedVenueAccountId is null', async () => {
+    mockDbRows = [CONNECTION_ROW]; // resolvedVenueAccountId is null
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/connections' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ connections: Array<{ venueAccountLabel: string | null; venueAccountVenue: string | null; venueAccountRef: string | null }> }>();
+    expect(body.connections[0]?.venueAccountLabel).toBeNull();
+    expect(body.connections[0]?.venueAccountVenue).toBeNull();
+    expect(body.connections[0]?.venueAccountRef).toBeNull();
+  });
+
+  it('returns the profile field', async () => {
+    mockDbRows = [{
+      ...CONNECTION_ROW,
+      profile: { displayName: 'Trader Joe', avatar: 'https://example.com/avatar.png' },
+    }];
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/connections' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ connections: Array<{ profile: { displayName: string; avatar: string } }> }>();
+    expect(body.connections[0]?.profile).toEqual({ displayName: 'Trader Joe', avatar: 'https://example.com/avatar.png' });
+  });
+
+  it('returns null profile when profile is not set', async () => {
+    mockDbRows = [CONNECTION_ROW]; // profile is null
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/connections' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ connections: Array<{ profile: unknown }> }>();
+    expect(body.connections[0]?.profile).toBeNull();
+  });
+
+  it('does not expose secrets (encrypted_data, encryption_meta) in the response', async () => {
+    // The connection view only selects explicit fields via selectConnectionView().
+    // Verify the response shape matches exactly what is declared there — no more.
+    mockDbRows = [CONNECTION_ROW];
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/connections' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ connections: Array<Record<string, unknown>> }>();
+    const conn = body.connections[0]!;
+    // The view selects only these keys — secrets like encrypted_data and
+    // encryption_meta are never part of selectConnectionView().
+    const allowedKeys = new Set([
+      'id', 'userId', 'credentialId', 'provider', 'label', 'status', 'meta',
+      'profile', 'resolvedVenueAccountId', 'createdAt', 'updatedAt',
+      'assignedAgentCount', 'referencingBotCount',
+      'credentialLabel', 'credentialProvider',
+      'venueAccountLabel', 'venueAccountVenue', 'venueAccountRef',
+    ]);
+    const responseKeys = Object.keys(conn);
+    for (const key of responseKeys) {
+      expect(allowedKeys.has(key)).toBe(true);
+    }
+    // Explicitly assert secrets are absent
+    expect(responseKeys).not.toContain('encrypted_data');
+    expect(responseKeys).not.toContain('encryption_meta');
   });
 });
 

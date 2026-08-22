@@ -25,6 +25,7 @@ function selectConnectionView() {
     label: connections.label,
     status: connections.status,
     meta: connections.meta,
+    profile: connections.profile,
     resolvedVenueAccountId: connections.resolvedVenueAccountId,
     createdAt: connections.createdAt,
     updatedAt: connections.updatedAt,
@@ -39,6 +40,31 @@ function selectConnectionView() {
       FROM bots b
       WHERE b.connection_id = ${connections.id}
     )`.mapWith(Number),
+    credentialLabel: sql<string | null>`(
+      SELECT uc.label::text
+      FROM user_credentials uc
+      WHERE uc.id = ${connections.credentialId}
+    )`,
+    credentialProvider: sql<string | null>`(
+      SELECT uc.provider::text
+      FROM user_credentials uc
+      WHERE uc.id = ${connections.credentialId}
+    )`,
+    venueAccountLabel: sql<string | null>`(
+      SELECT va.label::text
+      FROM venue_accounts va
+      WHERE va.id = ${connections.resolvedVenueAccountId}
+    )`,
+    venueAccountVenue: sql<string | null>`(
+      SELECT va.venue::text
+      FROM venue_accounts va
+      WHERE va.id = ${connections.resolvedVenueAccountId}
+    )`,
+    venueAccountRef: sql<string | null>`(
+      SELECT va.venue_account_ref::text
+      FROM venue_accounts va
+      WHERE va.id = ${connections.resolvedVenueAccountId}
+    )`,
   };
 }
 

@@ -135,7 +135,7 @@ Suggested rows:
 
 ## Phase 1 Implementation Plan
 
-### Step 1: Expand the connection view query minimally
+### Step 1: Expand the connection view query minimally — PENDING
 
 Update the connections route to join only the data phase 1 needs.
 
@@ -154,7 +154,7 @@ Implementation notes:
 2. The detail summary should be assembled server-side so the UI only does simple conditional rendering.
 3. Preserve existing fields and counts unchanged.
 
-### Step 2: Align web API types
+### Step 2: Align web API types — PENDING
 
 Update `apps/web/src/lib/api-client.ts` so the `Connection` interface matches the expanded response.
 
@@ -164,7 +164,7 @@ Changes:
 2. Keep the rest of the current `Connection` shape intact.
 3. Keep fields optional only where the backend genuinely treats them as optional.
 
-### Step 3: Render funding and credential rows on the Connections page
+### Step 3: Render funding and credential rows on the Connections page — PENDING
 
 Update `apps/web/src/features/connections/ConnectionsPage.tsx`.
 
