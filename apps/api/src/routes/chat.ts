@@ -620,6 +620,25 @@ export const GuidedSetupCreateAgentInput = z.object({
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Maximum length for sanitized labels in LLM tool results. */
+const LABEL_MAX_LEN = 80;
+
+/** Safe character set for LLM-facing labels. */
+const SAFE_LABEL_RE = /[^a-zA-Z0-9 _.@:/-]/g;
+
+/**
+ * Sanitize a user-controlled string before it appears in LLM tool results.
+ * Truncates to LABEL_MAX_LEN, strips characters outside a safe set, and
+ * collapses whitespace.
+ */
+export function sanitizeLabel(value: string): string {
+  return value
+    .slice(0, LABEL_MAX_LEN)
+    .replace(SAFE_LABEL_RE, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function uuid(): string {
   return crypto.randomUUID();
 }
@@ -877,8 +896,8 @@ export async function resolveCreateAgentConnection(
           message: 'Multiple compatible connections are available. Please specify which one to use.',
           connections: compatible.filter((c) => matchingIds.includes(c.id)).map((c) => ({
             id: c.id,
-            label: c.label,
-            provider: c.provider,
+            label: sanitizeLabel(c.label ?? ''),
+            provider: sanitizeLabel(c.provider),
           })),
         }),
       };
@@ -941,8 +960,8 @@ export async function executeChatAction(
         // Annotate each connection with its capability and filter if requested.
         const annotated = rows.map((r) => ({
           id: r.id,
-          provider: r.provider,
-          label: r.label,
+          provider: sanitizeLabel(r.provider),
+          label: sanitizeLabel(r.label ?? ''),
           status: r.status,
           capability: r.resolvedVenueAccountId ? 'trading' as const : 'non-trading' as const,
         }));
@@ -1055,8 +1074,8 @@ export async function executeChatAction(
         const response: Record<string, unknown> = {
           success: true,
           connectionId: result.connectionId,
-          provider: result.provider,
-          label: result.label,
+          provider: sanitizeLabel(result.provider),
+          label: sanitizeLabel(result.label),
         };
         if (result.wallet) {
           const walletCap = getProviderWalletGenerationCapability(provider, venues);
