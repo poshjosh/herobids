@@ -2,7 +2,7 @@
 
 **Feature:** 000-connections-wallet-details
 **Date:** 2026-08-11
-**Status:** Draft
+**Status:** Complete
 
 ## Summary
 
@@ -135,7 +135,7 @@ Suggested rows:
 
 ## Phase 1 Implementation Plan
 
-### Step 1: Expand the connection view query minimally — PENDING
+### Step 1: Expand the connection view query minimally — DONE
 
 Update the connections route to join only the data phase 1 needs.
 
@@ -154,7 +154,7 @@ Implementation notes:
 2. The detail summary should be assembled server-side so the UI only does simple conditional rendering.
 3. Preserve existing fields and counts unchanged.
 
-### Step 2: Align web API types — PENDING
+### Step 2: Align web API types — DONE
 
 Update `apps/web/src/lib/api-client.ts` so the `Connection` interface matches the expanded response.
 
@@ -164,7 +164,7 @@ Changes:
 2. Keep the rest of the current `Connection` shape intact.
 3. Keep fields optional only where the backend genuinely treats them as optional.
 
-### Step 3: Render funding and credential rows on the Connections page — PENDING
+### Step 3: Render funding and credential rows on the Connections page — DONE
 
 Update `apps/web/src/features/connections/ConnectionsPage.tsx`.
 
@@ -241,3 +241,21 @@ Mitigation:
 2. Consistent use of `providerRef` and `profile` in the main connections route.
 3. Timestamps or expandable advanced-detail states on the card.
 4. Additional funding metadata such as network, bridge hints, or custody annotations.
+
+
+## Outstanding Issues
+
+### Step 1: API query expansion
+- MEDIUM: 5 correlated subqueries (2 for credentials, 3 for venue accounts) where lateral joins or combined subqueries could reduce to 2. PK-index access makes this negligible for typical list sizes (< 50 connections per user). Consider refactoring if latency tightens.
+- LOW: Response uses flat fields (`credentialLabel`, `venueAccountRef`, etc.) instead of the plan's proposed nested `ConnectionDetailSummary` shape. Flat approach is simpler and avoids null-object ambiguity. Intentional simplification.
+- LOW: `profile` field added to `selectConnectionView()` despite plan saying Phase 1 does not depend on it. Harmless and already tested.
+
+### Step 2: Web types alignment
+- No outstanding issues.
+
+### Step 3: UI rendering
+- MEDIUM: Copy button has no `aria-label`. Screen readers will announce the changing text content but lack context about what is being copied. Consider adding `aria-label` with funding address context.
+- MEDIUM: No test for copy button click interaction (clipboard call). Tests use `renderToStaticMarkup` which doesn't support events. Would require `@testing-library/react` with `userEvent` for interactive testing.
+- MEDIUM: No `.catch()` on `navigator.clipboard.writeText()`. If clipboard API is unavailable, the promise rejects silently. Consistent with existing `WalletCreatedStep` pattern but still a gap.
+- LOW: Copy button uses native `<button>` instead of the project's `<Button>` component for size/styling reasons.
+- LOW: `copiedId` state is shared across all cards — only one card shows "Copied" at a time. Acceptable UX tradeoff.
