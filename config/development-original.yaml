@@ -1,6 +1,9 @@
 # Operator configuration — self-documenting reference.
 # Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
 
+llm:
+  tickIntervalMs: 60000         # Agent reasoning loop interval in ms (how often the agent calls the LLM)
+
 platformAssessor:
   enabled: true
   minReviewIntervalMs: 300000  # 5 min — operator floor for agent reviewIntervalMs
