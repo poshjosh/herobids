@@ -10,7 +10,39 @@ import { renderEmail } from '@herobids/domain';
 // ---------------------------------------------------------------------------
 
 export interface AuthMailer {
-  sendLoginLink(to: string, link: string, ttlSecs?: number): Promise<{ code: string; message: string } | undefined>;
+  sendLoginLink(to: string, link: string, ttlSecs?: number, locale?: string): Promise<{ code: string; message: string } | undefined>;
+}
+
+// ---------------------------------------------------------------------------
+// Localized login-link email strings — keyed by BCP-47 locale code.
+// ---------------------------------------------------------------------------
+
+const LOGIN_LINK_MESSAGES: Record<string, Record<string, string>> = {
+  en: {
+    subject: 'Sign in to OpenAIdom',
+    preheader: 'Your sign-in link is ready',
+    title: 'Sign in to OpenAIdom',
+    body: 'Click the button below to sign in. This link expires in {ttlMinutes} minutes.\n\nIf you did not request this link, you can safely ignore this email.',
+    cta: 'Sign In',
+  },
+  ar: {
+    subject: 'تسجيل الدخول إلى OpenAIdom',
+    preheader: 'رابط تسجيل الدخول جاهز',
+    title: 'تسجيل الدخول إلى OpenAIdom',
+    body: 'انقر على الزر أدناه لتسجيل الدخول. تنتهي صلاحية هذا الرابط خلال {ttlMinutes} دقائق.\n\nإذا لم تطلب هذا الرابط، يمكنك تجاهل هذا البريد بأمان.',
+    cta: 'تسجيل الدخول',
+  },
+  hi: {
+    subject: 'OpenAIdom में साइन इन करें',
+    preheader: 'आपका साइन-इन लिंक तैयार है',
+    title: 'OpenAIdom में साइन इन करें',
+    body: 'साइन इन करने के लिए नीचे दिए गए बटन पर क्लिक करें। यह लिंक {ttlMinutes} मिनट में समाप्त हो जाएगा।\n\nयदि आपने इस लिंक का अनुरोध नहीं किया है, तो आप इस ईमेल को सुरक्षित रूप से अनदेखा कर सकते हैं।',
+    cta: 'साइन इन',
+  },
+};
+
+function getLoginLinkMessages(locale: string): Record<string, string> {
+  return LOGIN_LINK_MESSAGES[locale] ?? LOGIN_LINK_MESSAGES['en']!;
 }
 
 /**
@@ -34,18 +66,20 @@ export function createAuthMailer(config: AlertsConfig, brandImageUrl?: string): 
 
   const timeoutMs = email.timeoutMs;
 
-  async function sendLoginLink(to: string, link: string, ttlSecs?: number): Promise<{ code: string; message: string } | undefined> {
+  async function sendLoginLink(to: string, link: string, ttlSecs?: number, locale?: string): Promise<{ code: string; message: string } | undefined> {
     try {
       const ttlMinutes = ttlSecs ? Math.round(ttlSecs / 60) : 10;
+      const effectiveLocale = locale ?? 'en';
+      const messages = getLoginLinkMessages(effectiveLocale);
+      const bodyText = messages['body']!.replace('{ttlMinutes}', String(ttlMinutes));
+      const bodyHtml = bodyText.split('\n\n').map(p => `<p>${p}</p>`).join('\n');
       const rendered = renderEmail({
-        subject: 'Sign in to OpenAIdom',
-        preheader: 'Your sign-in link is ready',
-        title: 'Sign in to OpenAIdom',
-        body: [
-          `<p>Click the button below to sign in. This link expires in ${ttlMinutes} minutes.</p>`,
-          '<p>If you did not request this link, you can safely ignore this email.</p>',
-        ].join('\n'),
-        cta: { text: 'Sign In', url: link },
+        subject: messages['subject']!,
+        preheader: messages['preheader']!,
+        title: messages['title']!,
+        body: bodyHtml,
+        cta: { text: messages['cta']!, url: link },
+        locale: effectiveLocale,
         ...(effectiveBrandImageUrl ? { brandImageUrl: effectiveBrandImageUrl } : {}),
       });
 

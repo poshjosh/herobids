@@ -155,6 +155,66 @@ describe('sendLoginLink — email body rendering', () => {
 });
 
 // ---------------------------------------------------------------------------
+// sendLoginLink — locale support
+// ---------------------------------------------------------------------------
+
+describe('sendLoginLink — locale support', () => {
+  it('produces Arabic subject and body when locale is "ar"', async () => {
+    mockSend.mockResolvedValue({ MessageId: 'msg-1' });
+    const mailer = createAuthMailer(makeAlertsConfig())!;
+
+    await mailer.sendLoginLink('user@example.com', 'https://link.example/auth?token=abc', 600, 'ar');
+
+    const params = vi.mocked(SendEmailCommand).mock.calls[0]![0] as Record<string, unknown>;
+    const content = (params['Content'] as Record<string, unknown>)['Simple'];
+    expect(content['Subject']['Data']).toBe('تسجيل الدخول إلى OpenAIdom');
+    const htmlBody = content['Body']['Html']['Data'] as string;
+    expect(htmlBody).toContain('تسجيل الدخول');
+    expect(htmlBody).toContain('dir="rtl"');
+    expect(htmlBody).toContain('lang="ar"');
+  });
+
+  it('produces Hindi subject and body when locale is "hi"', async () => {
+    mockSend.mockResolvedValue({ MessageId: 'msg-1' });
+    const mailer = createAuthMailer(makeAlertsConfig())!;
+
+    await mailer.sendLoginLink('user@example.com', 'https://link.example/auth?token=abc', 600, 'hi');
+
+    const params = vi.mocked(SendEmailCommand).mock.calls[0]![0] as Record<string, unknown>;
+    const content = (params['Content'] as Record<string, unknown>)['Simple'];
+    expect(content['Subject']['Data']).toBe('OpenAIdom में साइन इन करें');
+    const htmlBody = content['Body']['Html']['Data'] as string;
+    expect(htmlBody).toContain('साइन इन');
+    expect(htmlBody).toContain('lang="hi"');
+  });
+
+  it('falls back to English when locale is not provided (backward compatible)', async () => {
+    mockSend.mockResolvedValue({ MessageId: 'msg-1' });
+    const mailer = createAuthMailer(makeAlertsConfig())!;
+
+    await mailer.sendLoginLink('user@example.com', 'https://link.example/auth?token=abc', 600);
+
+    const params = vi.mocked(SendEmailCommand).mock.calls[0]![0] as Record<string, unknown>;
+    const content = (params['Content'] as Record<string, unknown>)['Simple'];
+    expect(content['Subject']['Data']).toBe('Sign in to OpenAIdom');
+    const htmlBody = content['Body']['Html']['Data'] as string;
+    expect(htmlBody).toContain('Click the button below to sign in');
+    expect(htmlBody).toContain('lang="en"');
+  });
+
+  it('falls back to English for unknown locale', async () => {
+    mockSend.mockResolvedValue({ MessageId: 'msg-1' });
+    const mailer = createAuthMailer(makeAlertsConfig())!;
+
+    await mailer.sendLoginLink('user@example.com', 'https://link.example/auth?token=abc', 600, 'xx');
+
+    const params = vi.mocked(SendEmailCommand).mock.calls[0]![0] as Record<string, unknown>;
+    const content = (params['Content'] as Record<string, unknown>)['Simple'];
+    expect(content['Subject']['Data']).toBe('Sign in to OpenAIdom');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // sendLoginLink — return values / error handling
 // ---------------------------------------------------------------------------
 

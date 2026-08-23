@@ -411,9 +411,21 @@ export async function authRoutes(
 
     // Create token and send email (or log link for dev when email is disabled)
     const link = makeLoginLinkUrl(token);
+
+    // Look up user's preferred locale for email localization (defaults to 'en' for new users)
+    let userLocale = 'en';
+    const [existingUser] = await db
+      .select({ preferredLocale: users.preferredLocale })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+    if (existingUser?.preferredLocale) {
+      userLocale = existingUser.preferredLocale;
+    }
+
     let sendOk = false;
     if (authMailer) {
-      const sendError = await authMailer.sendLoginLink(email, link, config.loginLinkTtlSecs);
+      const sendError = await authMailer.sendLoginLink(email, link, config.loginLinkTtlSecs, userLocale);
       if (sendError) {
         app.log.error({ err: sendError, email }, 'Failed to send login link email');
       } else {

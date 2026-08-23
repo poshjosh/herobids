@@ -28,6 +28,8 @@ export interface EmailContent {
    * When set, the image is rendered above the typographic header.
    */
   brandImageUrl?: string;
+  /** BCP-47 locale code for language/direction. Defaults to 'en'. */
+  locale?: string;
 }
 
 export interface RenderedEmail {
@@ -53,6 +55,14 @@ const BRAND = {
 
 const FONT_STACK =
   "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+
+// ── RTL locales ────────────────────────────────────────────────────────────
+
+const RTL_LOCALES = new Set(['ar', 'he', 'fa', 'ur']);
+
+function resolveDir(locale: string): 'rtl' | 'ltr' {
+  return RTL_LOCALES.has(locale) ? 'rtl' : 'ltr';
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -106,6 +116,9 @@ function renderText(content: EmailContent): string {
 // ── HTML renderer ──────────────────────────────────────────────────────────
 
 function renderHtml(content: EmailContent): string {
+  const locale = content.locale ?? 'en';
+  const dir = resolveDir(locale);
+
   const preheader = content.preheader
     ? `\n    <!--[if !mso]><!-- --><div style="display:none;font-size:1px;color:#0B1220;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;mso-hide:all;">${htmlEscape(content.preheader)}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div><!--<![endif]-->`
     : '';
@@ -144,7 +157,7 @@ function renderHtml(content: EmailContent): string {
     : '';
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${locale}" dir="${dir}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -152,33 +165,33 @@ function renderHtml(content: EmailContent): string {
   <meta name="supported-color-schemes" content="light dark">
   <title>${htmlEscape(content.subject)}</title>${preheader}
 </head>
-<body style="margin:0;padding:0;background-color:${BRAND.background};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<body style="margin:0;padding:0;background-color:${BRAND.background};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;direction:${dir};">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.background};">
     <tr>
-      <td align="center" style="padding:40px 20px;">
+      <td align="center" style="padding:40px 20px;text-align:start;">
         <!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background-color:${BRAND.cardBg};border-radius:8px;">
           <!-- Header -->
           <tr>
             <td align="center" style="padding:32px 40px 0 40px;">${brandImage}
-              <span style="font-family:${FONT_STACK};font-size:24px;font-weight:700;letter-spacing:-0.5px;"><span style="color:${BRAND.bodyText};">Open</span><span style="color:${BRAND.headerText};">AI</span><span style="color:${BRAND.bodyText};">dom</span></span>
+              <span dir="ltr" style="font-family:${FONT_STACK};font-size:24px;font-weight:700;letter-spacing:-0.5px;"><span style="color:${BRAND.bodyText};">Open</span><span style="color:${BRAND.headerText};">AI</span><span style="color:${BRAND.bodyText};">dom</span></span>
             </td>
           </tr>
           <!-- Title -->
           <tr>
-            <td style="padding:24px 40px 0 40px;">
+            <td style="padding:24px 40px 0 40px;text-align:start;">
               <h1 style="font-family:${FONT_STACK};font-size:20px;font-weight:600;color:${BRAND.bodyText};margin:0;line-height:1.4;">${htmlEscape(content.title)}</h1>
             </td>
           </tr>
           <!-- Body -->
           <tr>
-            <td style="padding:16px 40px 8px 40px;font-family:${FONT_STACK};font-size:16px;line-height:1.6;color:${BRAND.bodyText};">
+            <td style="padding:16px 40px 8px 40px;font-family:${FONT_STACK};font-size:16px;line-height:1.6;color:${BRAND.bodyText};text-align:start;">
               ${content.body}
             </td>
           </tr>${ctaBlock}
           <!-- Footer -->
           <tr>
-            <td style="padding:24px 40px 32px 40px;border-top:1px solid ${BRAND.border};">${footerNoteBlock}
+            <td style="padding:24px 40px 32px 40px;border-top:1px solid ${BRAND.border};text-align:start;">${footerNoteBlock}
               <p style="font-family:${FONT_STACK};font-size:13px;color:${BRAND.footerText};margin:0;">— OpenAIdom</p>
             </td>
           </tr>

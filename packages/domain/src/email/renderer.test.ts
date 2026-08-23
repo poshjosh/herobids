@@ -223,6 +223,37 @@ describe('renderEmail', () => {
     });
   });
 
+  // -- RTL / locale support ---------------------------------------------------
+
+  describe('locale and direction', () => {
+    it('renders dir="rtl" and lang="ar" for Arabic locale', () => {
+      const result = renderEmail(makeContent({ locale: 'ar' }));
+      expect(result.html).toContain('lang="ar"');
+      expect(result.html).toContain('dir="rtl"');
+      expect(result.html).toContain('direction:rtl');
+      expect(result.html).toContain('text-align:start');
+    });
+
+    it('renders dir="ltr" and lang="hi" for Hindi locale', () => {
+      const result = renderEmail(makeContent({ locale: 'hi' }));
+      expect(result.html).toContain('lang="hi"');
+      expect(result.html).toContain('dir="ltr"');
+      expect(result.html).toContain('direction:ltr');
+    });
+
+    it('defaults to dir="ltr" and lang="en" when locale is not provided', () => {
+      const result = renderEmail(makeContent());
+      expect(result.html).toContain('lang="en"');
+      expect(result.html).toContain('dir="ltr"');
+      expect(result.html).toContain('direction:ltr');
+    });
+
+    it('adds dir="ltr" to the brand wordmark span for correct rendering in RTL', () => {
+      const result = renderEmail(makeContent({ locale: 'ar' }));
+      expect(result.html).toMatch(/dir="ltr"[^>]*>.*Open.*AI.*dom/s);
+    });
+  });
+
   // -- Edge cases ------------------------------------------------------------
 
   describe('edge cases', () => {
