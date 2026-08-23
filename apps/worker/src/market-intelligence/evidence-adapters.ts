@@ -103,7 +103,7 @@ export function createEvidencePorts(params: CreateEvidencePortsParams): Assessme
         const candleFetcher = async (symbol: string): Promise<PriceCandle[]> => {
           return scannerCandleFetcher(
             { venueType: 'orderbook', providerSymbol: symbol },
-            '1D',
+            '1d',
             requiredCandles,
           );
         };

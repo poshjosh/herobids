@@ -889,6 +889,7 @@ export const messages: Record<string, string> = {
 
   // Technical config section
   'agents.technical.title': 'Technical Configuration',
+  'agents.technical.customize': 'Customize',
   'agents.technical.preset.label': 'Strategy preset',
   'agents.technical.preset.momentumBreakout.label': 'Momentum Breakout',
   'agents.technical.preset.momentumBreakout.description': 'Trend-following: RSI health, MACD crossover, volume confirmation',

@@ -230,7 +230,7 @@ describe('applyPresetToAgent', () => {
       rsi: { enabled: true, period: 14 },
       macd: { enabled: false },
     });
-    expect(result.technical.candles).toEqual({ interval: '1H', limit: 24 });
+    expect(result.technical.candles).toEqual({ interval: '1h', limit: 24 });
     expect(result.technical.signalBias).toBe('trend-following');
     expect(result.technical.scanIntervalMs).toBe(30000);
 

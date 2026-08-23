@@ -200,7 +200,11 @@ export function technicalConfigToFormState(config: Record<string, unknown>): Tec
       quoteAssetSymbol: typeof filters['quoteAssetSymbol'] === 'string' ? filters['quoteAssetSymbol'] : 'USDC',
     },
     candles: {
-      interval: (candles['interval'] as '5m' | '15m' | '1H' | '4H' | '1D' | undefined) ?? '15m',
+      interval: (() => {
+        const raw = typeof candles['interval'] === 'string' ? candles['interval'].toLowerCase() : '15m';
+        const valid = ['5m', '15m', '1h', '4h', '1d'] as const;
+        return (valid.includes(raw as typeof valid[number]) ? raw : '15m') as TechnicalConfigFormState['candles']['interval'];
+      })(),
       limit: String(candles['limit'] ?? 100),
     },
     signalBias: (config['signalBias'] as 'trend-following' | 'mean-reverting' | undefined) ?? 'trend-following',

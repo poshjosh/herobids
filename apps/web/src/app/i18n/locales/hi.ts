@@ -776,6 +776,7 @@ export const messages: Record<string, string> = {
 
   // Technical config section
   'agents.technical.title': 'टेक्निकल कॉन्फ़िगरेशन',
+  'agents.technical.customize': 'कस्टमाइज़',
   'agents.technical.preset.label': 'स्ट्रैटेजी प्रीसेट',
   'agents.technical.preset.momentumBreakout.label': 'मोमेंटम ब्रेकआउट',
   'agents.technical.preset.momentumBreakout.description': 'ट्रेंड-फॉलोइंग: RSI स्वास्थ्य, MACD क्रॉसओवर, वॉल्यूम पुष्टि',

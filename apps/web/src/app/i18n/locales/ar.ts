@@ -776,6 +776,7 @@ export const messages: Record<string, string> = {
 
   // Technical config section
   'agents.technical.title': 'الإعدادات التقنية',
+  'agents.technical.customize': 'تخصيص',
   'agents.technical.preset.label': 'إعداد الاستراتيجية',
   'agents.technical.preset.momentumBreakout.label': 'اختراق الزخم',
   'agents.technical.preset.momentumBreakout.description': 'اتباع الاتجاه: صحة RSI، تقاطع MACD، وتأكيد الحجم',

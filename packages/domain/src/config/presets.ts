@@ -186,7 +186,7 @@ export function applyPresetToAgent(
     technical: {
       indicators: (p['indicators'] as Record<string, unknown>) ?? {},
       candles: {
-        interval: String(p['candleInterval'] ?? '15m'),
+        interval: String(p['candleInterval'] ?? '15m').toLowerCase(),
         limit: Number(p['candleLimit'] ?? 48),
       },
       signalBias: String(p['signalBias'] ?? 'trend-following'),
