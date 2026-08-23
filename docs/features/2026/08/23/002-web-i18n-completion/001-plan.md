@@ -2,7 +2,7 @@
 
 **Feature:** web-i18n-completion
 **Date:** 2026-08-23
-**Status:** Draft
+**Status:** Implemented
 
 ## Summary
 
@@ -56,7 +56,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
 
 ## Implementation Steps
 
-### Step 1: Migrate BotsPage
+### Step 1: Migrate BotsPage — DONE
 
 **Files:**
 - `apps/web/src/features/bots/BotsPage.tsx`
@@ -73,7 +73,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
   - Error messages
 - Add corresponding entries to ar.ts and hi.ts.
 
-### Step 2: Migrate InstancesPage (trading-instances)
+### Step 2: Migrate InstancesPage (trading-instances) — DONE
 
 **Files:**
 - `apps/web/src/features/trading-instances/InstancesPage.tsx`
@@ -85,7 +85,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
 - Keys: `instances.*` namespace.
 - Add to ar.ts and hi.ts.
 
-### Step 3: Migrate InstanceDetailPage
+### Step 3: Migrate InstanceDetailPage — DONE
 
 **Files:**
 - `apps/web/src/features/instances/detail/InstanceDetailPage.tsx`
@@ -104,7 +104,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
 - Keys: `instanceDetail.*` namespace.
 - Add to ar.ts and hi.ts.
 
-### Step 4: Migrate TryPage
+### Step 4: Migrate TryPage — DONE
 
 **Files:**
 - `apps/web/src/features/try/TryPage.tsx`
@@ -116,7 +116,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
 - Keys: `try.*` namespace.
 - Add to ar.ts and hi.ts.
 
-### Step 5: Fix partial migrations — BillingDetails
+### Step 5: Fix partial migrations — BillingDetails — DONE
 
 **Files:**
 - `apps/web/src/features/billing/BillingDetails.tsx`
@@ -128,7 +128,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
 - Keys: `billing.details.*` namespace (extend existing `billing.*`).
 - Add to ar.ts and hi.ts.
 
-### Step 6: Fix partial migrations — GuidedSetupPanel
+### Step 6: Fix partial migrations — GuidedSetupPanel — DONE
 
 **Files:**
 - `apps/web/src/features/chat/GuidedSetupPanel.tsx`
@@ -140,7 +140,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
 - Keys: `guidedSetup.*` namespace.
 - Add to ar.ts and hi.ts.
 
-### Step 7: Fix partial migrations — GuidedSetupActionRenderer
+### Step 7: Fix partial migrations — GuidedSetupActionRenderer — DONE
 
 **Files:**
 - `apps/web/src/features/chat/GuidedSetupActionRenderer.tsx`
@@ -151,7 +151,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
 - Keys: `guidedSetup.actions.*` namespace.
 - Add to ar.ts and hi.ts.
 
-### Step 8: Fix partial migration — CredentialsPage loading text
+### Step 8: Fix partial migration — CredentialsPage loading text — DONE
 
 **Files:**
 - `apps/web/src/features/credentials/CredentialsPage.tsx`
@@ -161,7 +161,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
 - Extract: "Loading provider catalog..." → `credentials.loadingCatalog`.
 - Add to ar.ts and hi.ts.
 
-### Step 9: Add missing API error keys to catalogs
+### Step 9: Add missing API error keys to catalogs — DONE
 
 **Files:**
 - `apps/web/src/app/i18n/locales/{en,ar,hi}.ts`
@@ -178,7 +178,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
 - Use the English `message` field as the en value; translate for ar/hi.
 - Estimated ~30 new keys.
 
-### Step 10: Fix date/number formatting in user-facing components
+### Step 10: Fix date/number formatting in user-facing components — DONE
 
 **Files:**
 - `apps/web/src/features/billing/BillingDetails.tsx`
@@ -192,7 +192,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
 
 **Note:** Admin pages (AdminBillingSection, AdminUsersSection, AdminMarketDataSection, AdminOverviewSection) are excluded — they remain English-only and can use ad-hoc formatting.
 
-### Step 11: Add RTL support to email renderer
+### Step 11: Add RTL support to email renderer — DONE
 
 **Files:**
 - `packages/domain/src/email/renderer.ts`
@@ -209,7 +209,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
 - Add tests: render with `locale: 'ar'` → HTML contains `dir="rtl"`, `lang="ar"`, `text-align: start`.
 - Backward compatible: omitting `locale` defaults to `'en'` / `'ltr'` (existing behavior).
 
-### Step 12: Localize login link email
+### Step 12: Localize login link email — DONE
 
 **Files:**
 - `apps/api/src/auth-mailer.ts`
@@ -228,7 +228,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
 - Pass `locale` to `renderEmail()` so RTL layout is applied for Arabic.
 - Update tests to verify localized rendering for each supported locale.
 
-### Step 13: Thread user locale to login link email
+### Step 13: Thread user locale to login link email — DONE
 
 **Files:**
 - `apps/api/src/routes/auth.ts` (where `sendLoginLink` is called)
@@ -238,7 +238,7 @@ Telegram localization, remaining email localization (billing/safety alerts), loc
 - For the login-link request flow: the user is already identified by email at this point. Look up `preferredLocale` from the user row (if one exists) and pass to `sendLoginLink()`.
 - For brand-new users (no row yet), use `'en'` as default.
 
-### Step 14: Extend i18n regression test
+### Step 14: Extend i18n regression test — DONE
 
 **Files:**
 - `apps/web/src/app/i18n/i18n-regressions.test.ts`
