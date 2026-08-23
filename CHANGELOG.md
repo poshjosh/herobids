@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Added openrouter request privacy controls
+- Added wallet details per connection on the connection page
+
+### Changed
+
+- Make strategy presets editable (which translates them to custom strategy)
+- Relaxed agent creation form validation, e.g. by providing useful defaults
+
 ## v0.1.15 - 2026-08-20
 
 ### Changed
