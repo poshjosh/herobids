@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useIntl } from 'react-intl';
 import { useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { bots as botsApi, capabilities as capabilitiesApi } from '../../lib/api-client.js';
@@ -11,18 +12,10 @@ import { StrategyPresetSelector } from '../../lib/StrategyPresetSelector.js';
 import { BotCustomConfigSection, type BotCustomConfigFormState, defaultBotCustomConfig } from './BotCustomConfigSection.js';
 import { SWAP_VENUES } from '@herobids/domain';
 
-const STYLE_OPTIONS = [
-  { value: 'economy', label: 'Economy', description: 'Fewer indicators, lower confidence thresholds' },
-  { value: 'standard', label: 'Standard', description: 'Balanced indicators and risk' },
-  { value: 'premium', label: 'Premium', description: 'Full indicator suite, strict confirmation' },
-] as const;
+const STYLE_VALUES = ['economy', 'standard', 'premium'] as const;
 
-const EXECUTION_MODES = [
-  { value: 'test', label: 'Test', description: 'Simulated trading — no real money' },
-  { value: 'live', label: 'Live', description: 'Real order placement' },
-] as const;
-
-type ExecutionModeValue = typeof EXECUTION_MODES[number]['value'];
+const EXECUTION_MODE_VALUES = ['test', 'live'] as const;
+type ExecutionModeValue = typeof EXECUTION_MODE_VALUES[number];
 
 function presetToCustomConfig(preset: PresetFromApi): BotCustomConfigFormState {
   const params = (preset.strategy.params ?? {}) as Record<string, unknown>;
@@ -88,6 +81,7 @@ function buildCustomBotConfig(
 // BotsPage
 // ---------------------------------------------------------------------------
 export function BotsPage() {
+  const intl = useIntl();
   const [showCreate, setShowCreate] = useState(false);
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -102,9 +96,9 @@ export function BotsPage() {
   return (
     <PageShell>
       <PageHeader
-        title="Bots"
-        subtitle="Trading bots created by you or your AI agents"
-        action={<Button variant="primary" onClick={() => setShowCreate(true)}>Create Bot</Button>}
+        title={intl.formatMessage({ id: 'bots.title' })}
+        subtitle={intl.formatMessage({ id: 'bots.subtitle' })}
+        action={<Button variant="primary" onClick={() => setShowCreate(true)}>{intl.formatMessage({ id: 'bots.createBot' })}</Button>}
       />
 
       {query.isLoading && <LoadingRows count={3} />}
@@ -114,9 +108,9 @@ export function BotsPage() {
 
       {query.isSuccess && items.length === 0 && (
         <EmptyState
-          title="No bots yet"
-          message="Create one or let an AI agent create bots on your behalf."
-          action={<Button variant="primary" onClick={() => setShowCreate(true)}>Create Bot</Button>}
+          title={intl.formatMessage({ id: 'bots.empty.title' })}
+          message={intl.formatMessage({ id: 'bots.empty.message' })}
+          action={<Button variant="primary" onClick={() => setShowCreate(true)}>{intl.formatMessage({ id: 'bots.createBot' })}</Button>}
         />
       )}
 
@@ -136,20 +130,22 @@ export function BotsPage() {
                     <StatusBadge status={bot.status} />
                   </div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                    {bot.creatorType === 'agent' ? `AI agent: ${bot.creatorId.slice(0, 8)}` : 'you'}
+                    {bot.creatorType === 'agent'
+                      ? intl.formatMessage({ id: 'bots.creatorAgent' }, { id: bot.creatorId.slice(0, 8) })
+                      : intl.formatMessage({ id: 'bots.creatorUser' })}
                   </span>
                 </div>
                 <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
                   <KV
-                    label="Strategy"
+                    label={intl.formatMessage({ id: 'bots.kv.strategy' })}
                     value={String((bot.config['strategy'] as Record<string, unknown> | undefined)?.['type'] ?? '—')}
                   />
                   <KV
-                    label="Mode"
+                    label={intl.formatMessage({ id: 'bots.kv.mode' })}
                     value={String((bot.config['execution'] as Record<string, unknown> | undefined)?.['mode'] ?? 'paper')}
                   />
-                  <KV label="Created" value={<RelativeTime timestamp={bot.createdAt} />} />
-                  {bot.startedAt && <KV label="Started" value={<RelativeTime timestamp={bot.startedAt} />} />}
+                  <KV label={intl.formatMessage({ id: 'bots.kv.created' })} value={<RelativeTime timestamp={bot.createdAt} />} />
+                  {bot.startedAt && <KV label={intl.formatMessage({ id: 'bots.kv.started' })} value={<RelativeTime timestamp={bot.startedAt} />} />}
                 </div>
               </div>
             </Card>
@@ -182,6 +178,7 @@ interface CreateBotForm {
 }
 
 function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const intl = useIntl();
   const [form, setForm] = useState<CreateBotForm>({
     connectionId: '',
     strategyPreset: 'momentum',
@@ -210,7 +207,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const mutation = useMutation({
     mutationFn: () => {
       const venue = selectedConnection?.provider;
-      if (!venue) throw new Error('Select a platform link before creating a bot');
+      if (!venue) throw new Error(intl.formatMessage({ id: 'bots.modal.errorNoConnection' }));
 
       let config: Record<string, unknown>;
 
@@ -218,7 +215,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
         config = buildCustomBotConfig(form.customConfig, form.executionMode, venue, form.symbol);
       } else {
         const preset = fetchedPresets.find((p) => p.key === form.strategyPreset);
-        if (!preset) throw new Error('Selected strategy preset not found');
+        if (!preset) throw new Error(intl.formatMessage({ id: 'bots.modal.errorPresetNotFound' }));
         config = {
           strategy: preset.strategy,
           ...(preset.risk ? { risk: preset.risk } : {}),
@@ -234,17 +231,17 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
   });
 
   return (
-    <Modal title="Create Bot" onClose={onClose}>
+    <Modal title={intl.formatMessage({ id: 'bots.modal.title' })} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {/* Platform link */}
         <div>
-          <FieldLabel>Platform link</FieldLabel>
+          <FieldLabel>{intl.formatMessage({ id: 'bots.modal.platformLink' })}</FieldLabel>
           <select
             value={form.connectionId}
             onChange={(e) => setForm((s) => ({ ...s, connectionId: e.target.value }))}
             style={{ ...inputStyle, cursor: 'pointer' }}
           >
-            <option value="">— Select platform link —</option>
+            <option value="">{intl.formatMessage({ id: 'bots.modal.platformLinkPlaceholder' })}</option>
             {tradingConnections.map((c) => (
               <option key={c.connectionId} value={c.connectionId}>{c.label} ({c.provider})</option>
             ))}
@@ -253,20 +250,20 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
 
         {/* Symbol */}
         <div>
-          <FieldLabel>{isSwapVenue ? 'Instrument (e.g. WETH/USDC)' : 'Symbol (e.g. BTC-PERP)'}</FieldLabel>
+          <FieldLabel>{isSwapVenue ? intl.formatMessage({ id: 'bots.modal.symbolSwap' }) : intl.formatMessage({ id: 'bots.modal.symbolPerp' })}</FieldLabel>
           <input
             type="text"
             style={inputStyle}
             value={form.symbol}
             onChange={(e) => setForm((s) => ({ ...s, symbol: e.target.value }))}
-            placeholder={isSwapVenue ? 'WETH/USDC' : 'BTC-PERP'}
+            placeholder={intl.formatMessage({ id: isSwapVenue ? 'bots.modal.symbolSwapPlaceholder' : 'bots.modal.symbolPerpPlaceholder' })}
           />
         </div>
 
         {/* Style tier — hidden in custom mode, since the style only controls preset tier */}
         {form.strategyPreset !== 'custom' && (
           <div>
-            <FieldLabel>Strategy style</FieldLabel>
+            <FieldLabel>{intl.formatMessage({ id: 'bots.modal.strategyStyle' })}</FieldLabel>
             <select
               value={selectedStyle}
               onChange={(e) => {
@@ -275,8 +272,10 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
               }}
               style={{ ...inputStyle, cursor: 'pointer' }}
             >
-              {STYLE_OPTIONS.map((s) => (
-                <option key={s.value} value={s.value}>{s.label} — {s.description}</option>
+              {STYLE_VALUES.map((v) => (
+                <option key={v} value={v}>
+                  {intl.formatMessage({ id: `bots.modal.style.${v}.label` })} — {intl.formatMessage({ id: `bots.modal.style.${v}.description` })}
+                </option>
               ))}
             </select>
           </div>
@@ -311,14 +310,16 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
 
         {/* Execution mode */}
         <div>
-          <FieldLabel>Execution mode</FieldLabel>
+          <FieldLabel>{intl.formatMessage({ id: 'bots.modal.executionMode' })}</FieldLabel>
           <select
             value={form.executionMode}
             onChange={(e) => setForm((s) => ({ ...s, executionMode: e.target.value as ExecutionModeValue }))}
             style={{ ...inputStyle, cursor: 'pointer' }}
           >
-            {EXECUTION_MODES.map((m) => (
-              <option key={m.value} value={m.value}>{m.label} — {m.description}</option>
+            {EXECUTION_MODE_VALUES.map((v) => (
+              <option key={v} value={v}>
+                {intl.formatMessage({ id: `bots.modal.executionMode.${v}.label` })} — {intl.formatMessage({ id: `bots.modal.executionMode.${v}.description` })}
+              </option>
             ))}
           </select>
         </div>
@@ -326,7 +327,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
         {mutation.isError && <ErrorBanner message={(mutation.error as Error).message} />}
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-          <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
+          <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'bots.modal.cancel' })}</Button>
           <Button
             variant="primary"
             type="button"
@@ -344,7 +345,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
             }
             onClick={() => mutation.mutate()}
           >
-            {mutation.isPending ? 'Creating…' : 'Create Bot'}
+            {mutation.isPending ? intl.formatMessage({ id: 'bots.modal.creating' }) : intl.formatMessage({ id: 'bots.createBot' })}
           </Button>
         </div>
       </div>
