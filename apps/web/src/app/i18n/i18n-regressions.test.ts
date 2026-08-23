@@ -29,6 +29,15 @@ describe('i18n regressions', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('does not use ad-hoc toLocaleString formatting in BillingDetails or ApprovalsPanel', () => {
+    const targetFiles = [
+      new URL('../../features/billing/BillingDetails.tsx', import.meta.url).pathname,
+      new URL('../../features/agents/ApprovalsPanel.tsx', import.meta.url).pathname,
+    ];
+    const offenders = targetFiles.filter((file) => readFileSync(file, 'utf8').includes('toLocaleString('));
+    expect(offenders).toEqual([]);
+  });
+
   it('keeps migrated pages free from the old hard-coded English copy', () => {
     const expectations = [
       {
@@ -50,6 +59,22 @@ describe('i18n regressions', () => {
       {
         file: new URL('../../features/agents/AgentDetailPage.tsx', import.meta.url),
         banned: ['Edit config', 'Edit agent', 'Delete this agent? This cannot be undone.'],
+      },
+      {
+        file: new URL('../../features/bots/BotsPage.tsx', import.meta.url),
+        banned: ['Trading bots created by you or your AI agents', 'No bots yet', 'Create Bot'],
+      },
+      {
+        file: new URL('../../features/instances/detail/InstanceDetailPage.tsx', import.meta.url),
+        banned: ['Bot not found', 'Stop bot?', 'Delete bot?'],
+      },
+      {
+        file: new URL('../../features/trading-instances/InstancesPage.tsx', import.meta.url),
+        banned: ['Advanced trading records', 'No bots yet'],
+      },
+      {
+        file: new URL('../../features/chat/GuidedSetupPanel.tsx', import.meta.url),
+        banned: ['Checking account', 'Starting chat', 'Processing your connection'],
       },
     ];
 
