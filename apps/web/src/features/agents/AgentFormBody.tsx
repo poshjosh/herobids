@@ -270,7 +270,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
       {/* Telegram Chat ID — always visible */}
       <div style={fieldGap}>
         <FieldLabel>
-          {intl.formatMessage({ id: 'agents.create.telegramChatId' })}
+          {intl.formatMessage({ id: 'agents.create.telegramChatId' })}{' '}<span className="optional-hint">{intl.formatMessage({ id: 'common.optional', defaultMessage: '(Optional)' })}</span>
         </FieldLabel>
         <input
           style={inputStyle}
@@ -283,7 +283,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
       {/* Name + auto-hint */}
       <div data-field="name" style={fieldGap}>
         <FieldLabel>
-          {intl.formatMessage({ id: 'agents.create.name' })}
+          {intl.formatMessage({ id: 'agents.create.name' })}{' '}<span className="optional-hint">{intl.formatMessage({ id: 'common.optional', defaultMessage: '(Optional)' })}</span>
         </FieldLabel>
         <input
           style={inputStyle}
