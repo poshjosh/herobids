@@ -6,24 +6,25 @@
 
 ## Summary
 
-Make the agent creation and edit forms less intimidating by relaxing field requirements. Fields that the backend treats as optional should not be forced in the frontend. Fields that require a value should resolve sensible server-side defaults when the user omits them. The result: a user can create an agent by filling in only the fields they care about, and the form communicates this clearly.
+Make the agent creation and edit forms less intimidating by relaxing field requirements. The API already accepts most fields as optional and guards against invalid states — the problem is that the frontend forces the user to provide values that could be pre-resolved with sensible defaults. This plan makes the frontend stop requiring fields unnecessarily, pre-filling defaults instead, and communicating optionality clearly via progressive disclosure.
 
 This is the foundational step toward blank-slate agents (see `docs/features/pending/002-blank-slate-agents/001-plan.md`), but scoped to just the field optionality and UX clarity — no new API endpoints, no self-management tools, no one-click button.
 
 ## Goals
 
-- Fields that are optional in the backend are not required by the frontend form.
-- Fields that need a value (e.g., `name`, `executionDefaults.mode` for trading agents) resolve a sensible default when omitted, and the form communicates what that default will be.
-- The user clearly understands which fields are optional and what happens if they leave them blank.
+- Fields that the user doesn't care about are pre-filled with sensible defaults — the user can submit without touching them.
+- The form communicates clearly which fields matter and what happens if defaults are used.
+- The API is unchanged. The frontend always sends valid, complete payloads — it just resolves defaults client-side when the user doesn't provide values.
 - Existing agents and form-submitted agents with all fields filled continue to work identically (backward compatible).
 
 ## Non-Goals
 
+- Changing the API schema or validation rules. The API guards stay as-is.
 - Adding a "one-click create" button or empty-body POST. That's a follow-up feature.
-- Adding agent self-management tools (`update_my_prompt`, `manage_my_skills`).
+- Adding agent self-management tools.
 - Changing the agent detail page or post-creation guidance.
 - Removing the Guided Setup chat flow.
-- Redesigning the form layout or visual style beyond optionality indicators.
+- Moving defaults to operator config (deferred — hardcoded in frontend for v1).
 
 ## Current State
 
@@ -37,214 +38,150 @@ This is the foundational step toward blank-slate agents (see `docs/features/pend
 | `venue` | When `executionMode === 'live'` | Must not be empty |
 | `connectionIds` | When venue is selected and no connection granted | Must have at least 1 |
 
-### Fields currently required by the API (`CreateAgentSchema` superRefine)
+### What the API actually requires
 
-| Field | When required | Rule |
+| Field | API rule | Can the frontend pre-fill? |
 |---|---|---|
-| `name` | Always | `z.string().min(1).max(100)` |
-| `prompt` | When no `technical` config | superRefine: "prompt is required when no technical config is provided" |
-| `executionDefaults` | When trading-capable | superRefine: trading skills or hybrid mode |
-| Provider/model | Effectively always | 400 if no agent model policy AND no user AI settings |
+| `name` | `z.string().min(1).max(100)` | Yes — auto-generate |
+| `prompt` | Required when no `technical` | Yes — use a default prompt |
+| `executionDefaults` | Required when trading-capable | Yes — `{ mode: 'paper' }` |
+| Provider/model | 400 if no agent policy + no user AI settings | Yes — use operator defaults from `modelDefaults` |
+| `capital` | Optional (but frontend forces it for trading) | Yes — use `"1000"` |
 
-### Server-side defaults already available
+### Key insight
 
-| Field | Default source |
-|---|---|
-| `capabilityMode` | `'intelligence'` (hardcoded in `resolveUnifiedConfig`) |
-| `style` | `'balanced'` (form default) |
-| `maxBots` | Plan limit (resolved in `prepareAgentCreateFields`) |
-| `toolPolicy` | Derived from `skillIds` |
-| `executionDefaults.mode` | Resolved by `resolveExecutionModeForSkills` (paper when no connection) |
-| LLM provider/model | Operator defaults: `agentRuntime.llm.modelDefaults.{provider, lightModel, heavyModel}` in `config/default.yaml` |
-| `name` | Auto-generated in chat route (`generateAgentName`); frontend has `generateAgentName(style, counter)` |
+The API is fine. It validates against invalid states. The frontend is the bottleneck — it rejects the form before the user can submit, demanding values that have obvious defaults.
 
 ## Architecture Decisions
 
-1. **Backend changes are minimal.** The API schema already has most fields optional. The main changes are: (a) remove the `prompt` superRefine requirement (resolve a default instead), (b) resolve `executionDefaults` server-side when omitted for trading agents, (c) fall back to operator model defaults when no user/agent model is configured, (d) make `name` optional (auto-generate server-side).
+1. **No API changes.** The frontend always sends a complete, valid payload. It resolves defaults client-side for any field the user doesn't fill.
+2. **Defaults are hardcoded in the frontend for v1.** Default prompt text, default capital, name generation — all live in the frontend code. A follow-up can extract them to a config endpoint if needed.
+3. **Name includes style for readability.** Format: `{style}-agent-{hex}` (e.g., `bold-agent-A7F3`). Human-readable, indicates the agent's personality, collision-free via the hex suffix.
+4. **Progressive disclosure communicates optionality.** Rather than labeling fields "optional," the form uses a two-tier layout: minimal visible surface (always-ready to submit) + expandable customization section.
 
-2. **Default prompt is operator-configurable.** Add an `agentDefaults` section to `config/default.yaml` with a `blankPrompt` text. When the user omits `prompt` and no `technical` config is provided, use this instead of rejecting. The prompt signals "awaiting instructions" rather than assuming a trading goal.
+## Default Values (hardcoded in frontend, v1)
 
-3. **Model fallback uses existing operator config.** `agentRuntime.llm.modelDefaults.{provider, lightModel, heavyModel}` already exists. When neither the agent nor the user has model settings, fall back to these operator defaults. Remove the 400 rejection — agents can always be created.
-
-4. **Form UX uses progressive disclosure.** Rather than labeling every field "optional" (which is noisy), the form shows a minimal initial state with just 1-2 fields pre-filled and a clear "Configure more" expansion. The advanced section already exists — we extend this pattern to the primary fields.
+| Field | Default value | Notes |
+|---|---|---|
+| `name` | `{style}-agent-{4 hex chars}` | e.g., `balanced-agent-A7F3`. Regenerates on style change. |
+| `prompt` | `"Await instructions from your creator."` | Signals blank-slate agent. |
+| `executionDefaults` | `{ mode: 'paper' }` | Safe default. Resolves to shadow if connection present (existing backend logic via `resolveExecutionModeForSkills`). |
+| `capital` | `"1000"` | For trading agents only. Represents simulated USDC. |
+| Provider/model | From `agentRuntime.llm.modelDefaults` (fetched via existing `ai/settings` or `ai/available-models` endpoint) | Frontend already queries these on mount. |
+| `style` | `'balanced'` | Already the default today. |
+| `capabilityMode` | `'intelligence'` | Already the default today. |
 
 ## UX Approach: Progressive Disclosure
 
 ### Problem
 
-If all fields are visible and all are optional, the user doesn't know where to start or what matters. Labeling 15 fields "optional" creates visual noise.
+If all fields are visible and most have defaults, the user doesn't know where to start or what matters. Labeling 15 fields "optional" creates visual noise.
 
 ### Solution: Two-tier form
 
 **Tier 1 — Always visible (the "quick create" surface):**
-- **Agent type** selector (trading / personal assistant / custom) — pre-selects skills and defaults. Already exists as the capability mode selector.
-- **Name** — pre-filled with an auto-generated name (e.g., `AG-7F3A`). Editable. Helper text: "Auto-generated. Change it if you'd like."
+- **Agent type** selector (trading / personal assistant / custom) — pre-selects skills and defaults. Already exists as the capability mode / skill preset selector.
+- **Name** — pre-filled with `{style}-agent-{hex}` (e.g., `balanced-agent-A7F3`). Editable. Helper text: "Auto-generated. Change it anytime."
 - **Create** button — always enabled. Creates with all defaults.
 
 **Tier 2 — Expandable ("Customize" section):**
 - **Objective / prompt** — empty text area. Helper text: "Leave blank to start with a blank-slate agent that awaits your instructions."
-- **Capital** — empty by default for trading agents. Helper text: "Default: 1000 USDC (simulated)."
+- **Capital** — shows the default (`1000`). Helper text: "Simulated USDC allocation for trading agents."
 - **Execution mode** — dropdown defaulting to "Test". Helper text: "Test mode uses simulated funds."
 - **Strategy** — dropdown (momentum, range, etc.). Only shown for trading agents.
-- **Style** — careful / balanced / bold. Pre-selected: balanced.
+- **Style** — careful / balanced / bold. Pre-selected: balanced. Changing this regenerates the name.
 - **Connection** — only shown for live mode.
-- **Model / provider** — only shown if the user wants to override operator/user defaults.
+- **Model / provider** — only shown if the user wants to override defaults. Helper text: "Default: [model name from operator settings]."
 
 **Advanced Settings** (existing section, unchanged):
 - Tick interval, risk limits, platform assessment, etc.
 
 ### Visual indicators
 
-- Tier 1 fields that have defaults show the default value inline (greyed-out placeholder or pre-filled).
-- The "Customize" section has a collapsed-by-default disclosure with a label like "Configure agent" or "More options" and a count badge: "(7 options)".
-- No "optional" badge spam. The UX communicates optionality through pre-filled defaults and progressive disclosure — if it's hidden, it's optional.
-
-### Alternative considered: "optional" labels
-
-Adding "(optional)" next to each field. Rejected because:
-- When most fields are optional, labeling them all is redundant and noisy.
-- Progressive disclosure is a stronger signal: hidden = optional, visible = important.
-- The "Create" button being always-enabled is the strongest affordance that the form is ready.
+- Tier 1 fields that have defaults show the default value inline (pre-filled, editable).
+- The "Customize" section is collapsed by default with a label like "Configure agent" or "More options".
+- No "optional" badge spam. Optionality is communicated through: pre-filled defaults, progressive disclosure (hidden = optional), and the Create button being always-enabled.
+- The strongest signal that defaults are fine: the Create button works immediately.
 
 ## Implementation Steps
 
-### Step 1: Operator config — add `agentDefaults` section
+### Step 1: Update name generation
 
 **Files:**
-- `config/default.yaml`
-- `packages/domain/src/config/` (schema expansion + validation)
-
-**Changes:**
-- Add `agentDefaults` section to `config/default.yaml`:
-  ```yaml
-  agentDefaults:
-    blankPrompt: "You are an AI agent on the OpenAIdom platform. You have not yet been given a specific goal. Await instructions from your creator."
-    defaultCapital: "1000"
-    namePrefix: "AG"
-  ```
-- Add Zod schema for `agentDefaults` in the domain config types.
-- Validate at startup (fail fast).
-
-### Step 2: API — make `name` optional, auto-generate when omitted
-
-**Files:**
-- `apps/api/src/routes/agents.ts` (schema + handler)
-- `apps/api/src/routes/agents.test.ts`
-
-**Changes:**
-- Change `CreateAgentSchema.name` from `AgentNameSchema` (required) to `AgentNameSchema.optional()`.
-- In the `POST /agents` handler, when `name` is not provided, generate one server-side using the pattern from the chat route: `prefix-HEXHEX` (e.g., `AG-7F3A`). Use `agentDefaults.namePrefix` from operator config.
-- The generated name must pass `AgentNameSchema` validation (never collides with reserved names "all" / "*").
-
-### Step 3: API — remove `prompt` requirement, resolve default
-
-**Files:**
-- `apps/api/src/routes/agents.ts` (superRefine rule)
-- `apps/api/src/routes/agents.test.ts`
-
-**Changes:**
-- Remove the superRefine rule: `if (!data.technical && !data.prompt) → error`.
-- In the handler, when `prompt` is not provided and no `technical` config exists, resolve `agentDefaults.blankPrompt` from operator config.
-- Pass the resolved prompt to `prepareAgentCreateFields` and the DB insert.
-
-### Step 4: API — resolve `executionDefaults` when omitted for trading agents
-
-**Files:**
-- `apps/api/src/routes/agents.ts` (superRefine rule + handler)
-- `apps/api/src/routes/agents.test.ts`
-
-**Changes:**
-- Remove the superRefine rule: `if (isTradingCapable && !data.executionDefaults) → error`.
-- In the handler, when a trading-capable agent is created without `executionDefaults`, resolve a default: `{ mode: 'paper' }` (no connections = paper; has connections = shadow). Reuse `resolveExecutionModeForSkills` which already handles this logic.
-- If the user provides `executionDefaults`, use them as-is (existing behavior).
-
-### Step 5: API — fall back to operator model defaults
-
-**Files:**
-- `apps/api/src/routes/agents.ts` (model validation block)
-- `apps/api/src/routes/agents.test.ts`
-
-**Changes:**
-- Currently: if no agent model policy AND no user AI settings → 400.
-- New: if no agent model policy AND no user AI settings → resolve from `agentRuntime.llm.modelDefaults.{provider, lightModel, heavyModel}` and stamp the agent's model policy with these values.
-- The agent is created with an explicit model policy derived from operator defaults. It can run immediately.
-
-### Step 6: API — resolve default capital for trading agents
-
-**Files:**
-- `apps/api/src/routes/agents.ts` (handler)
-- `apps/api/src/routes/agents.test.ts`
-
-**Changes:**
-- When a trading-capable agent is created without `capital`, resolve `agentDefaults.defaultCapital` from operator config.
-- Ensure downstream risk calculation (`dailyLossLimitDefaultRatio * capital`) works correctly with the resolved default.
-- Non-trading agents: capital remains null (no change).
-
-### Step 7: Frontend — relax `validateCreateAgentForm`
-
-**Files:**
-- `apps/web/src/features/agents/form-validation.ts`
-- `apps/web/src/features/agents/form-validation.test.ts` (if exists)
-
-**Changes:**
-- `name`: remove the "Name is required" check. When empty, the server auto-generates.
-- `goal`: remove the "Objective / prompt is required" check. When empty, the server uses the blank-slate prompt.
-- `capital`: remove the "Capital is required" check for trading agents. When empty, the server uses `agentDefaults.defaultCapital`.
-- Keep `venue` required for live mode (this is a hard infrastructure requirement — live trading needs a venue).
-- Keep `connectionIds` required when venue is selected (same reason).
-- Keep all "if provided, must be valid" checks (positive number, within bounds, etc.) unchanged.
-
-### Step 8: Frontend — progressive disclosure form layout
-
-**Files:**
-- `apps/web/src/features/agents/AgentsPage.tsx` (CreateAgentFlow)
-- `apps/web/src/features/agents/CreateAgentPage.tsx`
-- i18n locale files
-
-**Changes:**
-
-**Tier 1 (always visible):**
-- Agent type selector (existing capability mode / skill preset selector) — keep as-is.
-- Name field — pre-fill with auto-generated name from `generateAgentName(style, nameCounterRef.current)`. Show as editable with a greyed "auto-generated" indicator.
-- "Create Agent" button — always enabled (no validation blocks it for tier 1).
-
-**Tier 2 (expandable "Customize" disclosure):**
-- Move `goal`, `capital`, `executionMode`, `strategyPreset`, `style`, `venue`, `connectionIds`, and model/provider fields into a collapsible section.
-- Default: collapsed.
-- Label: "Customize" or "Configure agent" with optional count badge.
-- Each field shows helper text explaining the default when left blank:
-  - Goal: "Leave blank for a blank-slate agent that awaits your instructions."
-  - Capital: "Default: 1000 USDC (simulated). Only relevant for trading agents."
-  - Execution mode: "Default: Test (simulated funds, no real trades)."
-  - Model: "Default: [operator default model name]. Change in Settings for all agents."
-
-**Advanced Settings** — unchanged (already a collapsed section).
-
-### Step 9: Frontend — pre-fill name from server defaults
-
-**Files:**
-- `apps/web/src/features/agents/AgentsPage.tsx`
 - `apps/web/src/features/agents/agent-name.ts`
 
 **Changes:**
-- Update `generateAgentName` to use a prefix+hex pattern matching the server-side format: `AG-XXXX` (or fetch the prefix from a new `/agents/defaults` endpoint if we want server/client consistency — TBD, could also just hardcode the same prefix on both sides for v1).
-- When the form mounts, pre-fill the name field with the auto-generated name. Mark it as "auto-generated" (existing `nameIsAutoGenerated` state).
-- If the user clears the name field entirely, omit `name` from the payload and let the server generate.
+- Replace the current `generateAgentName(style, counter)` → `balanced-agent-3` with a new implementation: `generateAgentName(style)` → `balanced-agent-A7F3`.
+- Use `crypto.getRandomValues` (browser) to generate 2 random bytes → 4 hex chars (uppercase).
+- Drop the sequential counter parameter — hex suffix is always unique enough.
+- On style change, regenerate the name (existing behavior, just with new format).
 
-### Step 10: Frontend — update form submission to omit empty optional fields
+### Step 2: Relax `validateCreateAgentForm`
 
 **Files:**
-- `apps/web/src/features/agents/AgentsPage.tsx` (form submission handler)
+- `apps/web/src/features/agents/form-validation.ts`
+- Tests if they exist
 
 **Changes:**
-- When submitting the create form, omit fields from the API payload when they are empty/unset:
-  - `name`: omit if empty (server auto-generates).
-  - `prompt`: omit if empty (server uses blank prompt).
-  - `capital`: omit if empty (server uses default for trading agents).
-  - `executionDefaults`: omit if not explicitly set (server resolves).
-- Keep existing behavior: when a field IS provided, send it as-is.
+- `name`: remove the "Name is required" check. The form always pre-fills a name, so this validation is now a safety net only if the user explicitly clears it AND we decide not to refill. Decision: if user clears it, auto-regenerate on blur (or keep the validation as a fallback — either way it won't fire in normal flow because tier 1 always has a name).
+- `goal`: remove the "Objective / prompt is required" check. When the goal field is empty, the frontend sends the default prompt.
+- `capital`: remove the "Capital is required" check for trading agents. When empty, the frontend sends `"1000"`.
+- Keep `venue` required for live mode (hard infrastructure requirement).
+- Keep `connectionIds` required when venue is selected (same reason).
+- Keep all "if provided, must be valid" checks unchanged.
 
-### Step 11: i18n
+### Step 3: Update form submission to send defaults for empty fields
+
+**Files:**
+- `apps/web/src/features/agents/AgentsPage.tsx` (CreateAgentFlow submission handler)
+
+**Changes:**
+- When building the API payload:
+  - `name`: if empty (shouldn't happen due to pre-fill), generate one. Always send.
+  - `prompt`: if goal field is empty, send the default prompt text. Always send a non-empty prompt.
+  - `capital`: if empty and trading agent, send `"1000"`. Non-trading agents: omit (already the case).
+  - `executionDefaults`: if not explicitly set by the user, send `{ mode: 'paper' }` for trading agents (existing logic already does this — verify and ensure it's not gated by the user touching the field).
+  - Provider/model: if user hasn't selected a model, resolve from the `modelDefaults` already fetched from the `ai/settings` endpoint. Build a `modelPolicy` from those defaults.
+
+### Step 4: Progressive disclosure layout
+
+**Files:**
+- `apps/web/src/features/agents/AgentsPage.tsx` (CreateAgentFlow component)
+
+**Changes:**
+- Restructure the form into two tiers:
+  - **Tier 1 (always visible):** Type selector + Name + Create button.
+  - **Tier 2 (collapsed "Customize" disclosure):** Goal, capital, execution mode, strategy, style, venue, connection, model/provider.
+- The "Customize" section uses a disclosure/accordion pattern (collapsed by default).
+- Advanced Settings section remains as-is (already a disclosure).
+- Style field being in tier 2 means the name won't regenerate until the user opens Customize and changes style. The initial name uses the default style (`balanced`). This is fine — if they change style, the name updates.
+
+### Step 5: Helper text for fields
+
+**Files:**
+- `apps/web/src/features/agents/AgentsPage.tsx`
+- i18n locale files
+
+**Changes:**
+- Add helper/description text below each field in the Customize section:
+  - Name: "Auto-generated from your agent's style. Change it anytime."
+  - Goal: "Leave blank for a blank-slate agent that awaits your instructions."
+  - Capital: "Default: 1000 USDC (simulated). Only used for trading agents."
+  - Execution mode: "Test mode uses simulated funds. No real money is used."
+  - Model: "Using [default model]. Change in Settings to apply to all agents."
+- These are static descriptive text, not validation messages.
+
+### Step 6: Ensure model defaults are always available
+
+**Files:**
+- `apps/web/src/features/agents/AgentsPage.tsx` (CreateAgentFlow)
+
+**Changes:**
+- The form already queries `ai/settings` and `ai/available-models` on mount. Verify that `modelDefaults` (provider, lightModel, heavyModel) are available from these responses.
+- When building the payload, if the user hasn't touched model/provider fields, construct a `modelPolicy` from the fetched `modelDefaults`. This ensures the API never rejects for "provider required."
+- If the user HAS saved their own AI settings (user-level defaults), those already flow through — the form currently uses them. No change needed for that path.
+
+### Step 7: i18n
 
 **Files:**
 - `apps/web/src/app/i18n/locales/{en,ar,hi}.ts`
@@ -252,49 +189,45 @@ Adding "(optional)" next to each field. Rejected because:
 **Changes:**
 - Add strings for:
   - Customize section label
-  - Helper text for each field's default behavior
-  - Auto-generated name indicator text
-- Run the i18n regression test to ensure all locales stay aligned.
+  - Helper text for each field
+  - Auto-generated name indicator
+- Run the i18n regression test.
 
 ## Verification
 
-### API tests
-1. `POST /agents` with empty body (only optional fields) → creates agent with auto-generated name, blank prompt, no skills, paper mode, operator model defaults.
-2. `POST /agents` with `name` omitted → auto-generated name in response.
-3. `POST /agents` with `prompt` omitted and no `technical` → blank-slate prompt persisted.
-4. `POST /agents` with trading skills but no `executionDefaults` → resolved to paper mode.
-5. `POST /agents` with no model policy and no user AI settings → operator defaults stamped.
-6. `POST /agents` with trading skills but no `capital` → `agentDefaults.defaultCapital` persisted.
-7. `POST /agents` with all fields provided → existing behavior unchanged.
-8. Auto-generated names never collide with reserved names ("all", "*").
-
 ### Frontend tests
-9. Form submits successfully with all fields empty (except type selection).
-10. Name field pre-fills with auto-generated value.
-11. Customize section is collapsed by default.
-12. Helper text renders for each field.
-13. Validation still catches invalid values when fields ARE filled (e.g., capital = "abc").
-14. Live mode still requires venue + connection (hard requirement unchanged).
+1. Form submits successfully when only type is selected (all other fields use defaults).
+2. Name field pre-fills with `{style}-agent-{hex}` format.
+3. Changing style regenerates the name.
+4. Customize section is collapsed by default.
+5. Empty goal field results in default prompt being sent to API.
+6. Empty capital field for trading agent results in `"1000"` being sent.
+7. Model defaults are sent when user hasn't configured a provider.
+8. Validation still catches invalid values when fields ARE filled (e.g., capital = "abc").
+9. Live mode still requires venue + connection (hard requirement unchanged).
+10. Helper text renders for each field in the Customize section.
 
 ### Manual / UAT
-15. Walk through: open form → select "Trading" → click "Create Agent" without filling anything else → agent created with defaults → verify on detail page: has name, blank prompt, paper mode, 1000 capital, operator model.
-16. Walk through: open form → select "Custom" → click "Create Agent" → agent created with intelligence mode, blank prompt, no capital, no skills.
-17. Walk through: open form → expand Customize → fill in goal, change capital → create → values respected.
+11. Walk through: open form → select "Trading" → click "Create Agent" without expanding Customize → agent created with defaults → verify: has name like `balanced-agent-A7F3`, default prompt, paper mode, 1000 capital, operator model.
+12. Walk through: open form → select "Custom" → click "Create Agent" → agent created with intelligence mode, default prompt, no capital, no skills.
+13. Walk through: open form → expand Customize → fill in goal, change style to "bold", change capital → create → values respected, name regenerated to `bold-agent-XXXX`.
+14. Walk through: open form → expand Customize → select live mode → venue + connection become required → cannot submit without them.
 
 ## Risks / Considerations
 
-1. **Server/client name format divergence.** If the frontend generates `balanced-agent-3` but the server generates `AG-7F3A`, there's a mismatch. Mitigation: align both to the prefix+hex format. The frontend pre-fills; if the user doesn't touch it, we can either send it or omit it (server regenerates). Omitting is simpler — the pre-fill is just a preview.
+1. **Model defaults might not be available.** If the `ai/settings` query fails or returns no `modelDefaults`, the form can't auto-fill the provider. Mitigation: disable the Create button until `modelDefaults` loads, or show an inline error ("Unable to load model defaults — please select a model manually"). This is an edge case (operator config issue).
 
-2. **Existing users expect required fields.** Users accustomed to the current form might be confused when fields disappear or become optional. Mitigation: progressive disclosure means the fields are still available (just collapsed), and the helper text explains defaults.
+2. **Name regeneration on style change.** If the user manually edits the name, then changes style, should the name regenerate and overwrite their edit? No — the existing `nameIsAutoGenerated` flag already handles this. If the user has typed their own name, style changes don't touch it.
 
-3. **Blank-slate agents might confuse the runtime.** An agent with "await instructions" prompt and no skills — what does it do when started? It runs a tick, sees no tools, and produces a "waiting for instructions" response. This is harmless but could confuse users. Mitigation: the agent detail page should already show status and prompt — the user sees it's blank. A follow-up feature (post-creation guidance banner) addresses this more directly.
+3. **Default prompt wording.** "Await instructions from your creator" is generic but clear. It might feel odd for users who expect the agent to do something immediately. Mitigation: the post-creation detail page should make it clear the agent needs a mission. This is addressed in the blank-slate agents follow-up.
 
-4. **Capital default for non-trading agents.** Non-trading agents don't use capital. The server should NOT stamp a default capital for non-trading agents — only for trading-capable ones. Verify this in tests.
+4. **Backward compatibility.** Users who already know the form and fill everything in — nothing changes for them. The Customize section just starts collapsed; if they expand it, all the same fields are there.
 
-## Deferred (follow-up in one-click plan)
+## Deferred (follow-up in blank-slate agents plan)
 
-- "Create Agent" one-click button on `/agents` page (empty-body POST).
+- "Create Agent" one-click button on `/agents` page (empty-body POST, requires API to accept empty body).
 - Post-creation guidance banner ("Give your agent a mission").
 - Agent self-management tools (`update_my_prompt`, `manage_my_skills`).
 - Worker prompt context acknowledging blank-slate agents.
+- Moving defaults to operator config (`agentDefaults` section).
 - Landing page proof card verification.
