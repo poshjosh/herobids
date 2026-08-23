@@ -1,4 +1,5 @@
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
+import type { useIntl } from 'react-intl';
 import type {
   UsageBillingAccount,
   UsageBreakdownResponse,
@@ -178,7 +179,7 @@ export function BillingDetails({
 
       {/* Usage Filters */}
       <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '16px' }}>
-        Usage Filters
+        {intl.formatMessage({ id: 'billing.details.section.usageFilters' })}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
         <select
@@ -186,7 +187,7 @@ export function BillingDetails({
           onChange={(e) => { setMeterFilter(e.target.value); setUsageEventOffset(0); }}
           style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px', cursor: 'pointer' }}
         >
-          <option value="">All meters</option>
+          <option value="">{intl.formatMessage({ id: 'billing.details.allMeters' })}</option>
           {Object.entries(METER_LABELS).map(([key, label]) => (
             <option key={key} value={key}>{label}</option>
           ))}
@@ -197,7 +198,7 @@ export function BillingDetails({
           onChange={(e) => { setAgentFilter(e.target.value); setUsageEventOffset(0); }}
           style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px', cursor: 'pointer' }}
         >
-          <option value="">All agents</option>
+          <option value="">{intl.formatMessage({ id: 'billing.details.allAgents' })}</option>
           {(agentsQuery.data ?? []).map((agent) => (
             <option key={agent.id} value={agent.id}>{agent.name}</option>
           ))}
@@ -208,7 +209,7 @@ export function BillingDetails({
           onChange={(e) => { setPeriodFilter(e.target.value); setUsageEventOffset(0); }}
           style={{ ...inputStyle, padding: '8px 10px', borderRadius: '6px', cursor: 'pointer' }}
         >
-          <option value="">All periods</option>
+          <option value="">{intl.formatMessage({ id: 'billing.details.allPeriods' })}</option>
           {(periodsQuery.data?.periods ?? []).map((period) => (
             <option key={period.id} value={period.id}>
               {formatShortDate(intl, period.periodStart)} - {formatShortDate(intl, period.periodEnd)}
@@ -219,7 +220,7 @@ export function BillingDetails({
         <input
           value={sessionFilter}
           onChange={(e) => { setSessionFilter(e.target.value); setUsageEventOffset(0); }}
-          placeholder="Session ID"
+          placeholder={intl.formatMessage({ id: 'billing.details.sessionIdPlaceholder' })}
           style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
         />
 
@@ -240,7 +241,7 @@ export function BillingDetails({
       {/* By-meter breakdown */}
       <Card style={{ padding: '20px' }}>
         <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Usage by Meter
+          {intl.formatMessage({ id: 'billing.details.section.usageByMeter' })}
         </div>
         {usageBreakdownQuery.isLoading && <LoadingRows count={3} />}
         {usageBreakdownQuery.isError && (
@@ -258,9 +259,15 @@ export function BillingDetails({
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Meter</th>
-                <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Quantity</th>
-                <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Charge</th>
+                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>
+                  {intl.formatMessage({ id: 'billing.details.header.meter' })}
+                </th>
+                <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>
+                  {intl.formatMessage({ id: 'billing.details.header.quantity' })}
+                </th>
+                <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>
+                  {intl.formatMessage({ id: 'billing.details.header.charge' })}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -279,7 +286,7 @@ export function BillingDetails({
       {/* By-agent breakdown */}
       <Card style={{ padding: '20px' }}>
         <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Usage by Agent
+          {intl.formatMessage({ id: 'billing.details.section.usageByAgent' })}
         </div>
         {usageBreakdownQuery.isLoading && <LoadingRows count={3} />}
         {usageBreakdownQuery.isError && (
@@ -297,9 +304,15 @@ export function BillingDetails({
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Agent</th>
-                <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Quantity</th>
-                <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Charge</th>
+                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>
+                  {intl.formatMessage({ id: 'billing.details.header.agent' })}
+                </th>
+                <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>
+                  {intl.formatMessage({ id: 'billing.details.header.quantity' })}
+                </th>
+                <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>
+                  {intl.formatMessage({ id: 'billing.details.header.charge' })}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -327,9 +340,9 @@ export function BillingDetails({
             onChange={(e) => { setLedgerDirectionFilter(e.target.value); setLedgerOffset(0); }}
             style={{ ...inputStyle, padding: '6px 10px', borderRadius: '6px', fontSize: '0.8125rem', cursor: 'pointer' }}
           >
-            <option value="">All Entries</option>
-            <option value="credit">Credits Only</option>
-            <option value="debit">Debits Only</option>
+            <option value="">{intl.formatMessage({ id: 'billing.details.allEntries' })}</option>
+            <option value="credit">{intl.formatMessage({ id: 'billing.details.creditsOnly' })}</option>
+            <option value="debit">{intl.formatMessage({ id: 'billing.details.debitsOnly' })}</option>
           </select>
         </div>
         {ledgerQuery.isLoading && <LoadingRows count={5} />}
@@ -483,7 +496,7 @@ export function BillingDetails({
       {/* Historical periods */}
       <Card style={{ padding: '20px' }}>
         <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Billing Periods
+          {intl.formatMessage({ id: 'billing.details.section.billingPeriods' })}
         </div>
         {periodsQuery.isLoading && <LoadingRows count={3} />}
         {periodsQuery.isError && (
@@ -501,10 +514,18 @@ export function BillingDetails({
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Period</th>
-                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Status</th>
-                <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Usage Charges</th>
-                <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Balance</th>
+                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>
+                  {intl.formatMessage({ id: 'billing.details.header.period' })}
+                </th>
+                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>
+                  {intl.formatMessage({ id: 'billing.details.header.status' })}
+                </th>
+                <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>
+                  {intl.formatMessage({ id: 'billing.details.header.usageCharges' })}
+                </th>
+                <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>
+                  {intl.formatMessage({ id: 'billing.details.header.balance' })}
+                </th>
               </tr>
             </thead>
             <tbody>

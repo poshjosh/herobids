@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useIntl } from 'react-intl';
 import type { ChatMessage, ProviderSetupResult } from '../../lib/api-client.js';
 import { ChatQuickReplies } from './ChatQuickReplies.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
@@ -37,6 +38,7 @@ interface GuidedSetupActionRendererProps {
  * - confirm: Agent creation confirmation card
  */
 export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit, threadId, disabled = false, hideForms = false }: GuidedSetupActionRendererProps) {
+  const intl = useIntl();
   // Track locally dismissed form action IDs so the form disappears instantly
   // on cancel, before the API round-trip completes. This also prevents
   // double-clicks since there is no longer a visible target.
@@ -133,7 +135,7 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
               >
                 {'message' in confirmProps
                   ? String(confirmProps.message)
-                  : '✓ Confirmed'}
+                  : intl.formatMessage({ id: 'guidedSetup.actions.confirmed' })}
               </div>
             );
           }
@@ -177,7 +179,7 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
                     }}
                   >
                     <span style={{ flexShrink: 0 }}>⚠️</span>
-                    <span>Do not enter secrets directly into the chat. Only enter them into secure forms provided for that purpose.</span>
+                    <span>{intl.formatMessage({ id: 'guidedSetup.actions.secretsWarning' })}</span>
                   </div>
                   <ProviderSetupForm
                     inline
@@ -216,7 +218,7 @@ export function GuidedSetupActionRenderer({ actions, onQuickReply, onFormSubmit,
                   color: 'var(--color-text-muted)',
                 }}
               >
-                {`📋 Form: ${action.form ?? 'unknown'}`}
+                {intl.formatMessage({ id: 'guidedSetup.actions.formFallback' }, { form: action.form ?? 'unknown' })}
               </div>
             );
 

@@ -1118,4 +1118,52 @@ export const messages: Record<string, string> = {
   'instanceDetail.modal.delete.body': 'यह कार्रवाई अपरिवर्तनीय है। बॉट स्थायी रूप से हटा दिया जाएगा। इसके ट्रेड रिकॉर्ड और इवेंट इतिहास डेटाबेस में संरक्षित रहेंगे लेकिन किसी बॉट से लिंक नहीं रहेंगे।',
   'instanceDetail.modal.delete.positionWarning': 'आपके पास {count, plural, one {# खुली पोजीशन} other {# खुली पोजीशन}} हैं। ये पोजीशन एक्सचेंज में बनी रहेंगी लेकिन इस बॉट द्वारा ट्रैक नहीं की जाएंगी।',
   'instanceDetail.modal.delete.confirm': 'स्थायी रूप से हटाएं',
+
+  // Try page (email verification flow)
+  'try.message1': 'नमस्ते! मैं आपको एक AI एजेंट बनाने में मदद कर सकता हूं। पहले आपको सेटअप करते हैं।',
+  'try.message2': 'मुझे लगता है कि आपने लॉग इन नहीं किया है, कृपया अपना ईमेल पता दें ताकि आपके AI एजेंट आपसे संवाद कर सकें',
+  'try.message3': '{email} पर एक ईमेल भेजा गया है। अपना इनबॉक्स जांचें — लिंक आपको एक नए AI एजेंट के लिए सेटअप करेगा।',
+  'try.typing': 'सहायक टाइप कर रहा है...',
+  'try.validationError': 'एक मान्य ईमेल पता दर्ज करें',
+  'try.errorRateLimit': 'कृपया दूसरा लिंक अनुरोध करने से पहले प्रतीक्षा करें',
+  'try.errorGeneric': 'कुछ गलत हो गया। कृपया पुनः प्रयास करें।',
+  'try.send': 'भेजें',
+  'try.resending': 'पुनः भेजा जा रहा है...',
+  'try.resendLink': 'लिंक पुनः भेजें',
+
+  // Billing details (filters, section titles, table headers)
+  'billing.details.allMeters': 'सभी मीटर',
+  'billing.details.allAgents': 'सभी एजेंट',
+  'billing.details.allPeriods': 'सभी अवधियां',
+  'billing.details.allEntries': 'सभी प्रविष्टियां',
+  'billing.details.creditsOnly': 'केवल क्रेडिट',
+  'billing.details.debitsOnly': 'केवल डेबिट',
+  'billing.details.sessionIdPlaceholder': 'सत्र आईडी',
+  'billing.details.section.usageFilters': 'उपयोग फ़िल्टर',
+  'billing.details.section.usageByMeter': 'मीटर के अनुसार उपयोग',
+  'billing.details.section.usageByAgent': 'एजेंट के अनुसार उपयोग',
+  'billing.details.section.billingPeriods': 'बिलिंग अवधियां',
+  'billing.details.header.meter': 'मीटर',
+  'billing.details.header.quantity': 'मात्रा',
+  'billing.details.header.charge': 'शुल्क',
+  'billing.details.header.agent': 'एजेंट',
+  'billing.details.header.period': 'अवधि',
+  'billing.details.header.status': 'स्थिति',
+  'billing.details.header.usageCharges': 'उपयोग शुल्क',
+  'billing.details.header.balance': 'शेष',
+
+  // Guided Setup (loading states and error recovery)
+  'guidedSetup.checkingAccount': 'खाते की जाँच हो रही है...',
+  'guidedSetup.startingChat': 'चैट शुरू हो रही है...',
+  'guidedSetup.processingConnection': 'आपका कनेक्शन प्रोसेस हो रहा है…',
+  'guidedSetup.tryAgain': 'पुनः प्रयास करें',
+  'guidedSetup.billingGate.afterAddingCredit': 'क्रेडिट जोड़ने के बाद, जारी रखने के लिए "पुनः प्रयास करें" पर क्लिक करें।',
+
+  // Guided Setup actions
+  'guidedSetup.actions.secretsWarning': 'सीक्रेट्स सीधे चैट में दर्ज न करें। उन्हें केवल इस उद्देश्य के लिए प्रदान किए गए सुरक्षित फ़ॉर्म में दर्ज करें।',
+  'guidedSetup.actions.confirmed': '✓ पुष्टि हो गई',
+  'guidedSetup.actions.formFallback': '📋 फ़ॉर्म: {form}',
+
+  // Credentials
+  'credentials.loadingCatalog': 'प्रदाता कैटलॉग लोड हो रहा है...',
 };

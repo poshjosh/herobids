@@ -1118,4 +1118,52 @@ export const messages: Record<string, string> = {
   'instanceDetail.modal.delete.body': 'هذا الإجراء لا يمكن التراجع عنه. سيتم حذف البوت نهائياً. سيتم الاحتفاظ بسجلات التداول وسجل الأحداث في قاعدة البيانات لكنها لن تكون مرتبطة ببوت.',
   'instanceDetail.modal.delete.positionWarning': 'لديك {count, plural, one {مركز مفتوح واحد} other {# مراكز مفتوحة}}. ستبقى هذه المراكز في المنصة لكن لن يتتبعها هذا البوت بعد الآن.',
   'instanceDetail.modal.delete.confirm': 'حذف نهائي',
+
+  // Try page (email verification flow)
+  'try.message1': 'مرحباً! يمكنني مساعدتك في إنشاء وكيل ذكاء اصطناعي. دعنا نجهزك أولاً.',
+  'try.message2': 'يبدو أنك لم تسجل الدخول، يرجى تقديم عنوان بريدك الإلكتروني حتى يتمكن وكلاء الذكاء الاصطناعي من التواصل معك',
+  'try.message3': 'تم إرسال بريد إلكتروني إلى {email}. تحقق من صندوق الوارد — سيقوم الرابط بإعدادك لوكيل ذكاء اصطناعي جديد.',
+  'try.typing': 'المساعد يكتب...',
+  'try.validationError': 'أدخل عنوان بريد إلكتروني صالح',
+  'try.errorRateLimit': 'يرجى الانتظار قبل طلب رابط آخر',
+  'try.errorGeneric': 'حدث خطأ ما. يرجى المحاولة مرة أخرى.',
+  'try.send': 'إرسال',
+  'try.resending': 'جارٍ إعادة الإرسال...',
+  'try.resendLink': 'إعادة إرسال الرابط',
+
+  // Billing details (filters, section titles, table headers)
+  'billing.details.allMeters': 'جميع العدادات',
+  'billing.details.allAgents': 'جميع الوكلاء',
+  'billing.details.allPeriods': 'جميع الفترات',
+  'billing.details.allEntries': 'جميع الإدخالات',
+  'billing.details.creditsOnly': 'الأرصدة فقط',
+  'billing.details.debitsOnly': 'المدينات فقط',
+  'billing.details.sessionIdPlaceholder': 'معرف الجلسة',
+  'billing.details.section.usageFilters': 'فلاتر الاستخدام',
+  'billing.details.section.usageByMeter': 'الاستخدام حسب العداد',
+  'billing.details.section.usageByAgent': 'الاستخدام حسب الوكيل',
+  'billing.details.section.billingPeriods': 'فترات الفوترة',
+  'billing.details.header.meter': 'العداد',
+  'billing.details.header.quantity': 'الكمية',
+  'billing.details.header.charge': 'الرسوم',
+  'billing.details.header.agent': 'الوكيل',
+  'billing.details.header.period': 'الفترة',
+  'billing.details.header.status': 'الحالة',
+  'billing.details.header.usageCharges': 'رسوم الاستخدام',
+  'billing.details.header.balance': 'الرصيد',
+
+  // Guided Setup (loading states and error recovery)
+  'guidedSetup.checkingAccount': 'جارٍ التحقق من الحساب...',
+  'guidedSetup.startingChat': 'جارٍ بدء المحادثة...',
+  'guidedSetup.processingConnection': 'جارٍ معالجة اتصالك…',
+  'guidedSetup.tryAgain': 'حاول مرة أخرى',
+  'guidedSetup.billingGate.afterAddingCredit': 'بعد إضافة الرصيد، انقر على "حاول مرة أخرى" للمتابعة.',
+
+  // Guided Setup actions
+  'guidedSetup.actions.secretsWarning': 'لا تدخل الأسرار مباشرة في المحادثة. أدخلها فقط في النماذج الآمنة المخصصة لذلك.',
+  'guidedSetup.actions.confirmed': '✓ تم التأكيد',
+  'guidedSetup.actions.formFallback': '📋 نموذج: {form}',
+
+  // Credentials
+  'credentials.loadingCatalog': 'جارٍ تحميل كتالوج المزودين...',
 };

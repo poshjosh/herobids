@@ -236,7 +236,7 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
               />
             </div>
           ) : null}
-          {catalogQuery.isLoading ? <div style={{ marginTop: '8px', fontSize: '0.75rem' }}>Loading provider catalog...</div> : null}
+          {catalogQuery.isLoading ? <div style={{ marginTop: '8px', fontSize: '0.75rem' }}>{intl.formatMessage({ id: 'credentials.loadingCatalog' })}</div> : null}
         </div>
 
         <div style={{ marginBottom: '16px' }}>

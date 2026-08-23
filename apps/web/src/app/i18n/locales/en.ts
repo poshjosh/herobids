@@ -1123,4 +1123,52 @@ export const messages: Record<string, string> = {
   'instanceDetail.modal.delete.body': 'This action is irreversible. The bot will be permanently deleted. Its trade records and event history will be preserved in the database but will no longer be linked to a bot.',
   'instanceDetail.modal.delete.positionWarning': 'You have {count, plural, one {# open position} other {# open positions}}. These positions will remain in the exchange but will no longer be tracked by this bot.',
   'instanceDetail.modal.delete.confirm': 'Delete permanently',
+
+  // Try page (email verification flow)
+  'try.message1': "Hi! I can help you create an AI agent. Let's get you set up first.",
+  'try.message2': 'I see you have not logged in, please provide your email address so your AI agents can communicate with you',
+  'try.message3': 'An email has been sent to {email}. Check your inbox — the link will set you up for a new AI agent.',
+  'try.typing': 'Assistant is typing...',
+  'try.validationError': 'Enter a valid email address',
+  'try.errorRateLimit': 'Please wait before requesting another link',
+  'try.errorGeneric': 'Something went wrong. Please try again.',
+  'try.send': 'Send',
+  'try.resending': 'Resending...',
+  'try.resendLink': 'Resend link',
+
+  // Billing details (filters, section titles, table headers)
+  'billing.details.allMeters': 'All meters',
+  'billing.details.allAgents': 'All agents',
+  'billing.details.allPeriods': 'All periods',
+  'billing.details.allEntries': 'All Entries',
+  'billing.details.creditsOnly': 'Credits Only',
+  'billing.details.debitsOnly': 'Debits Only',
+  'billing.details.sessionIdPlaceholder': 'Session ID',
+  'billing.details.section.usageFilters': 'Usage Filters',
+  'billing.details.section.usageByMeter': 'Usage by Meter',
+  'billing.details.section.usageByAgent': 'Usage by Agent',
+  'billing.details.section.billingPeriods': 'Billing Periods',
+  'billing.details.header.meter': 'Meter',
+  'billing.details.header.quantity': 'Quantity',
+  'billing.details.header.charge': 'Charge',
+  'billing.details.header.agent': 'Agent',
+  'billing.details.header.period': 'Period',
+  'billing.details.header.status': 'Status',
+  'billing.details.header.usageCharges': 'Usage Charges',
+  'billing.details.header.balance': 'Balance',
+
+  // Guided Setup (loading states and error recovery)
+  'guidedSetup.checkingAccount': 'Checking account...',
+  'guidedSetup.startingChat': 'Starting chat...',
+  'guidedSetup.processingConnection': 'Processing your connection…',
+  'guidedSetup.tryAgain': 'Try Again',
+  'guidedSetup.billingGate.afterAddingCredit': 'After adding credit, click Try Again to continue.',
+
+  // Guided Setup actions
+  'guidedSetup.actions.secretsWarning': 'Do not enter secrets directly into the chat. Only enter them into secure forms provided for that purpose.',
+  'guidedSetup.actions.confirmed': '✓ Confirmed',
+  'guidedSetup.actions.formFallback': '📋 Form: {form}',
+
+  // Credentials
+  'credentials.loadingCatalog': 'Loading provider catalog...',
 };

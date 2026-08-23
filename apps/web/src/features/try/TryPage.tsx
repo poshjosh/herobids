@@ -1,18 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router';
+import { useIntl } from 'react-intl';
 import { isAuthenticated } from '../../lib/session.js';
 import { auth, ApiError } from '../../lib/api-client.js';
 import { BrandLogo } from '../../brand/BrandLogo.js';
-
-// ---------------------------------------------------------------------------
-// Static copy
-// ---------------------------------------------------------------------------
-
-const MESSAGE_1 = "Hi! I can help you create an AI agent. Let's get you set up first.";
-const MESSAGE_2 =
-  'I see you have not logged in, please provide your email address so your AI agents can communicate with you';
-const MESSAGE_3 = (email: string) =>
-  `An email has been sent to ${email}. Check your inbox — the link will set you up for a new AI agent.`;
 
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -41,6 +32,7 @@ type Phase =
 
 export function TryPage() {
   const navigate = useNavigate();
+  const intl = useIntl();
 
   // Redirect authenticated users to guided chat
   useEffect(() => {
@@ -90,12 +82,12 @@ export function TryPage() {
 
   const validate = useCallback((value: string): boolean => {
     if (!EMAIL_REGEX.test(value)) {
-      setValidationError('Enter a valid email address');
+      setValidationError(intl.formatMessage({ id: 'try.validationError' }));
       return false;
     }
     setValidationError('');
     return true;
-  }, []);
+  }, [intl]);
 
   const handleEmailChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -118,14 +110,14 @@ export function TryPage() {
         return { ok: true };
       } catch (err) {
         if (err instanceof ApiError && err.status === 429) {
-          setServerError('Please wait before requesting another link');
+          setServerError(intl.formatMessage({ id: 'try.errorRateLimit' }));
         } else {
-          setServerError('Something went wrong. Please try again.');
+          setServerError(intl.formatMessage({ id: 'try.errorGeneric' }));
         }
         return { ok: false };
       }
     },
-    [],
+    [intl],
   );
 
   // ── Phase-derived flags (must be above handleSubmit / handleKeyDown) ────
@@ -189,7 +181,7 @@ export function TryPage() {
         {/* Message 1 */}
         {showMessage1 && (
           <div className="try-page-message-row">
-            <div className="try-page-bubble">{MESSAGE_1}</div>
+            <div className="try-page-bubble">{intl.formatMessage({ id: 'try.message1' })}</div>
           </div>
         )}
 
@@ -197,14 +189,14 @@ export function TryPage() {
         {showTyping && (
           <div className="try-page-typing">
             <span className="try-page-typing-dot">●</span>
-            Assistant is typing...
+            {intl.formatMessage({ id: 'try.typing' })}
           </div>
         )}
 
         {/* Message 2 */}
         {showMessage2 && (
           <div className="try-page-message-row">
-            <div className="try-page-bubble">{MESSAGE_2}</div>
+            <div className="try-page-bubble">{intl.formatMessage({ id: 'try.message2' })}</div>
           </div>
         )}
 
@@ -228,7 +220,7 @@ export function TryPage() {
                 disabled={isEmailSubmitting || !email.trim()}
                 className="try-page-send-btn"
               >
-                {isEmailSubmitting ? '...' : 'Send'}
+                {isEmailSubmitting ? '...' : intl.formatMessage({ id: 'try.send' })}
               </button>
             </div>
             {validationError && <div className="try-page-error">{validationError}</div>}
@@ -239,7 +231,7 @@ export function TryPage() {
         {/* Message 3 (after link sent) */}
         {showMessage3 && (
           <div className="try-page-message-row">
-            <div className="try-page-bubble">{MESSAGE_3(email)}</div>
+            <div className="try-page-bubble">{intl.formatMessage({ id: 'try.message3' }, { email })}</div>
           </div>
         )}
 
@@ -255,7 +247,7 @@ export function TryPage() {
                 disabled={isResending}
                 className="try-page-resend-btn"
               >
-                {isResending ? 'Resending...' : 'Resend link'}
+                {isResending ? intl.formatMessage({ id: 'try.resending' }) : intl.formatMessage({ id: 'try.resendLink' })}
               </button>
             </div>
           </div>

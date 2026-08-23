@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { useIntl } from 'react-intl';
 import { useGuidedSetup } from './useGuidedSetup.js';
 import { GuidedSetupThread } from './GuidedSetupThread.js';
 import { loadGuidedSetupOAuthDraft, clearGuidedSetupOAuthDraft } from './guidedSetupOAuthDraft.js';
@@ -28,6 +29,7 @@ interface GuidedSetupPanelProps {
 export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm }: GuidedSetupPanelProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const intl = useIntl();
 
   // Detect OAuth return synchronously so we can skip auto-init before the
   // initThread / loadThread race begins (see useGuidedSetup skipAutoInit).
@@ -195,7 +197,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
         }}
       >
         <span style={{ animation: 'pulse 1.5s infinite' }}>●</span>
-        &nbsp;Checking account...
+        &nbsp;{intl.formatMessage({ id: 'guidedSetup.checkingAccount' })}
       </div>
     );
   }
@@ -214,7 +216,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
         }}
       >
         <span style={{ animation: 'pulse 1.5s infinite' }}>●</span>
-        &nbsp;Starting chat...
+        &nbsp;{intl.formatMessage({ id: 'guidedSetup.startingChat' })}
       </div>
     );
   }
@@ -249,7 +251,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
             cursor: 'pointer',
           }}
         >
-          Try Again
+          {intl.formatMessage({ id: 'guidedSetup.tryAgain' })}
         </button>
       </div>
     );
@@ -275,7 +277,7 @@ export function GuidedSetupPanel({ onAgentCreated, startOverRef, onSwitchToForm 
           }}
         >
           <span style={{ animation: 'pulse 1.5s infinite' }}>●</span>
-          Processing your connection…
+          {intl.formatMessage({ id: 'guidedSetup.processingConnection' })}
         </div>
       )}
       {/* Chat thread */}
@@ -306,6 +308,7 @@ function BillingGate({
   clearBillingBlocked?: () => void;
 }) {
   const navigate = useNavigate();
+  const intl = useIntl();
   const isSuspended = reason === 'suspended';
 
   return (
@@ -329,7 +332,7 @@ function BillingGate({
           textAlign: 'center',
         }}
       >
-        Credit Required
+        {intl.formatMessage({ id: 'guidedSetup.billingGate.title' })}
       </div>
       <div
         style={{
@@ -357,7 +360,7 @@ function BillingGate({
               cursor: 'pointer',
             }}
           >
-            Add Credit
+            {intl.formatMessage({ id: 'guidedSetup.billingGate.addCredit' })}
           </button>
         )}
         {onSwitchToForm && (
@@ -374,7 +377,7 @@ function BillingGate({
               cursor: 'pointer',
             }}
           >
-            Use standard form
+            {intl.formatMessage({ id: 'guidedSetup.billingGate.useFormInstead' })}
           </button>
         )}
         {clearBillingBlocked && (
@@ -391,13 +394,13 @@ function BillingGate({
               cursor: 'pointer',
             }}
           >
-            Try Again
+            {intl.formatMessage({ id: 'guidedSetup.billingGate.tryAgain' })}
           </button>
         )}
       </div>
       {!isSuspended && (
         <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
-          After adding credit, click Try Again to continue.
+          {intl.formatMessage({ id: 'guidedSetup.billingGate.afterAddingCredit' })}
         </div>
       )}
     </div>
