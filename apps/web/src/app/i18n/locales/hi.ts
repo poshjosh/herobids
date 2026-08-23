@@ -460,6 +460,8 @@ export const messages: Record<string, string> = {
   'agents.create.skillPreset.custom': 'कस्टम',
   'agents.create.skillPreset.includes': 'शामिल हैं: {skills}',
   'agents.create.skills': 'कौशल',
+  'agents.create.skills.editLabel': 'कौशल संपादित करें',
+  'agents.create.skills.addLabel': 'कौशल जोड़ें',
   'agents.create.executionMode.test': 'टेस्ट — सिमुलेटेड, कोई वास्तविक पैसा नहीं',
   'agents.create.executionMode.live': 'लाइव — वास्तविक ऑर्डर प्लेसमेंट',
   'agents.create.models.title': 'AI मॉडल',

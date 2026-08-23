@@ -460,6 +460,8 @@ export const messages: Record<string, string> = {
   'agents.create.skillPreset.custom': 'مخصص',
   'agents.create.skillPreset.includes': 'يتضمن: {skills}',
   'agents.create.skills': 'المهارات',
+  'agents.create.skills.editLabel': 'تعديل المهارات',
+  'agents.create.skills.addLabel': 'إضافة مهارات',
   'agents.create.executionMode.test': 'تجريبي — محاكاة، بدون أموال حقيقية',
   'agents.create.executionMode.live': 'حي — تنفيذ أوامر حقيقية',
   'agents.create.models.title': 'نماذج الذكاء الاصطناعي',

@@ -467,6 +467,8 @@ export const messages: Record<string, string> = {
   'agents.create.skillPreset.custom': 'Custom',
   'agents.create.skillPreset.includes': 'Includes: {skills}',
   'agents.create.skills': 'Skills',
+  'agents.create.skills.editLabel': 'Edit skills',
+  'agents.create.skills.addLabel': 'Add skills',
   'agents.create.executionMode.test': 'Test — simulated, no real money',
   'agents.create.executionMode.live': 'Live — real order placement',
   'agents.create.models.title': 'AI models',
