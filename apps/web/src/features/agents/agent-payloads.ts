@@ -5,7 +5,7 @@ import type { RuntimePolicyOverrides } from './style-mapping.js';
 import { parseTickIntervalMinutesInput } from './tick-interval.js';
 
 /** Default prompt for agents created without a user-specified goal. */
-const DEFAULT_BLANK_PROMPT = 'You have not yet been given a goal. Do not call any tools. Do not take any action. Wait for your creator to send you instructions. If no instructions have been received, respond with a single word: "OK".';
+export const DEFAULT_BLANK_PROMPT = 'You have not yet been given a goal. Do not call any tools. Do not take any action. Wait for your creator to send you instructions. If no instructions have been received, respond with a single word: "OK".';
 
 const VALID_ESCALATION_POLICIES = ['never', 'uncovered_or_triggered', 'always'] as const;
 

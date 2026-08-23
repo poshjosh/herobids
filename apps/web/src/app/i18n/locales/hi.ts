@@ -375,6 +375,10 @@ export const messages: Record<string, string> = {
   'connections.oauth.error': 'कनेक्शन विफल',
   'connections.oauth.errorMessage': '{provider} कनेक्ट करने में विफल। {error}',
   'connections.reconnect': 'पुनः कनेक्ट करें',
+  'connections.fundingAddress': 'फंडिंग पता',
+  'connections.credential': 'क्रेडेंशियल',
+  'connections.copy': 'कॉपी',
+  'connections.copied': 'कॉपी हो गया',
 
   // Credentials
   'credentials.title': 'क्रेडेंशियल',

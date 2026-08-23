@@ -375,6 +375,10 @@ export const messages: Record<string, string> = {
   'connections.oauth.error': 'فشل الاتصال',
   'connections.oauth.errorMessage': 'فشل توصيل {provider}. {error}',
   'connections.reconnect': 'إعادة الاتصال',
+  'connections.fundingAddress': 'عنوان التمويل',
+  'connections.credential': 'بيانات الاعتماد',
+  'connections.copy': 'نسخ',
+  'connections.copied': 'تم النسخ',
 
   // Credentials
   'credentials.title': 'بيانات الاعتماد',

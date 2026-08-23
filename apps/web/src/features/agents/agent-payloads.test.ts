@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateAgentPayload, buildUpdateAgentPayload, normalizeEscalationPolicy, resolveCanonicalExecutionMode, resolveCreateAgentConnectionIds } from './agent-payloads.js';
+import { buildCreateAgentPayload, buildUpdateAgentPayload, DEFAULT_BLANK_PROMPT, normalizeEscalationPolicy, resolveCanonicalExecutionMode, resolveCreateAgentConnectionIds } from './agent-payloads.js';
 
 const TECHNICAL_CONFIG = {
   filters: {
@@ -1265,5 +1265,26 @@ describe('buildCreateAgentPayload — sliageBps null regression', () => {
       maxSlippageBps: '75',
     });
     expect(payload.executionDefaults).toMatchObject({ mode: 'shadow', slippageBps: 75 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEFAULT_BLANK_PROMPT fallback
+// ---------------------------------------------------------------------------
+
+describe('buildCreateAgentPayload — DEFAULT_BLANK_PROMPT fallback', () => {
+  it('uses DEFAULT_BLANK_PROMPT when goal is empty', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, goal: '' });
+    expect(payload.prompt).toBe(DEFAULT_BLANK_PROMPT);
+  });
+
+  it('uses DEFAULT_BLANK_PROMPT when goal is whitespace-only', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, goal: '   ' });
+    expect(payload.prompt).toBe(DEFAULT_BLANK_PROMPT);
+  });
+
+  it('uses user goal when provided', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, goal: 'Trade aggressively' });
+    expect(payload.prompt).toBe('Trade aggressively');
   });
 });

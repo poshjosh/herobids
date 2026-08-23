@@ -1504,7 +1504,7 @@ export function CreateAgentFlow({
           </tbody>
         </table>
 
-        {showIntelligence && (
+        {showIntelligence && intent.goal.trim() && (
           <div style={{ padding: '12px', background: 'var(--color-bg-subtle, rgba(0,0,0,0.04))', borderRadius: '6px', fontSize: '0.875rem', lineHeight: '1.5' }}>
             {intent.goal}
           </div>
