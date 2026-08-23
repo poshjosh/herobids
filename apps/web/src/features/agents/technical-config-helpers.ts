@@ -255,3 +255,98 @@ export function technicalConfigToFormState(config: Record<string, unknown>): Tec
     },
   };
 }
+
+/**
+ * Convert a preset's strategy.params (from PresetFromApi) to TechnicalConfigFormState.
+ *
+ * Preset params use a slightly different shape than the persisted TechnicalConfig:
+ * - indicators and confidence are nested under params.indicators
+ * - confidence is at params.indicators.confidence (not top-level params.indicators.confidence in the API payload)
+ * - candle settings are flat: params.candleInterval, params.candleLimit
+ * - scanIntervalMs may or may not be present
+ *
+ * This function bridges that shape difference so the existing TechnicalConfigSection
+ * can render preset values in readonly mode.
+ */
+export function presetParamsToFormState(params: Record<string, unknown>): TechnicalConfigFormState {
+  const indicators = (params['indicators'] as Record<string, unknown> | undefined) ?? {};
+  const rsi = (indicators['rsi'] as Record<string, unknown> | undefined) ?? {};
+  const macd = (indicators['macd'] as Record<string, unknown> | undefined) ?? {};
+  const volume = (indicators['volume'] as Record<string, unknown> | undefined) ?? {};
+  const choch = (indicators['choch'] as Record<string, unknown> | undefined) ?? {};
+  const sr = (indicators['supportResistance'] as Record<string, unknown> | undefined) ?? {};
+  const conf = (indicators['confidence'] as Record<string, unknown> | undefined) ?? {};
+
+  const scanIntervalMs = typeof params['scanIntervalMs'] === 'number'
+    ? (params['scanIntervalMs'] as number)
+    : 60_000;
+
+  return {
+    filters: {
+      venue: '',
+      venueType: '',
+      minVolume24hUsd: '',
+      minLiquidityUsd: '',
+      networks: [],
+      symbols: [],
+      excludeSymbols: [],
+      quoteAssetSymbol: 'USDC',
+    },
+    candles: {
+      interval: (['5m', '15m', '1h', '4h', '1d'] as const).includes(params['candleInterval'] as string)
+        ? (params['candleInterval'] as TechnicalConfigFormState['candles']['interval'])
+        : '15m',
+      limit: String(params['candleLimit'] ?? 100),
+    },
+    signalBias: (params['signalBias'] as 'trend-following' | 'mean-reverting' | undefined) ?? 'trend-following',
+    scanIntervalMins: String(Math.round(scanIntervalMs / 60_000)),
+    scanBatchSize: String(params['scanBatchSize'] ?? 5),
+    indicators: {
+      rsi: {
+        enabled: Boolean(rsi['enabled'] ?? true),
+        period: String(rsi['period'] ?? 14),
+        healthyMin: String(rsi['healthyMin'] ?? 40),
+        healthyMax: String(rsi['healthyMax'] ?? 70),
+        overbought: String(rsi['overbought'] ?? 80),
+        weakBelow: String(rsi['weakBelow'] ?? 30),
+      },
+      macd: {
+        enabled: Boolean(macd['enabled'] ?? true),
+        fast: String(macd['fast'] ?? 12),
+        slow: String(macd['slow'] ?? 26),
+        signal: String(macd['signal'] ?? 9),
+      },
+      volume: {
+        enabled: Boolean(volume['enabled'] ?? true),
+        strongRatio: String(volume['strongRatio'] ?? 1.5),
+        weakRatio: String(volume['weakRatio'] ?? 0.5),
+        recentBars: String(volume['recentBars'] ?? 4),
+        avgBars: String(volume['avgBars'] ?? 20),
+      },
+      choch: {
+        enabled: Boolean(choch['enabled'] ?? false),
+        swingLookback: String(choch['swingLookback'] ?? 5),
+        minSwingPct: String(choch['minSwingPct'] ?? 0.01),
+        confirmBars: String(choch['confirmBars'] ?? 2),
+        rejectOnBearish: Boolean(choch['rejectOnBearish'] ?? false),
+      },
+      supportResistance: {
+        enabled: Boolean(sr['enabled'] ?? false),
+        lookback: String(sr['lookback'] ?? 50),
+        breakoutThreshold: String(sr['breakoutThreshold'] ?? 0.005),
+      },
+    },
+    confidence: {
+      rsiWeight: String(conf['rsiWeight'] ?? 0.15),
+      macdCrossoverWeight: String(conf['macdCrossoverWeight'] ?? 0.20),
+      macdIncreasingWeight: String(conf['macdIncreasingWeight'] ?? 0.10),
+      volumeWeight: String(conf['volumeWeight'] ?? 0.15),
+      breakoutWeight: String(conf['breakoutWeight'] ?? 0.15),
+      chochBullishWeight: String(conf['chochBullishWeight'] ?? 0.15),
+      chochBearishPenalty: String(conf['chochBearishPenalty'] ?? 0.10),
+      priceActionWeight: String(conf['priceActionWeight'] ?? 0.10),
+      minConfidence: String(conf['minConfidence'] ?? 0.45),
+      minReasons: String(conf['minReasons'] ?? 2),
+    },
+  };
+}

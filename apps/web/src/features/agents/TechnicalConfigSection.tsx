@@ -7,6 +7,8 @@ interface TechnicalConfigSectionProps {
   onChange: (state: TechnicalConfigFormState) => void;
   showErrors?: boolean;
   onClearFieldError?: (field: string) => void;
+  /** When true, all inputs are disabled (readonly preset preview). */
+  disabled?: boolean;
 }
 
 /**
@@ -18,10 +20,10 @@ interface TechnicalConfigSectionProps {
  * confidence weights. This removes the second, competing frontend-only preset
  * system that previously lived here.
  */
-export function TechnicalConfigSection({ value, onChange, showErrors, onClearFieldError }: TechnicalConfigSectionProps) {
+export function TechnicalConfigSection({ value, onChange, showErrors, onClearFieldError, disabled }: TechnicalConfigSectionProps) {
   const intl = useIntl();
 
-  const set = (patch: Partial<TechnicalConfigFormState>) => onChange({ ...value, ...patch });
+  const set = (patch: Partial<TechnicalConfigFormState>) => { if (!disabled) onChange({ ...value, ...patch }); };
   const setFilters = (patch: Partial<TechnicalConfigFormState['filters']>) =>
     set({ filters: { ...value.filters, ...patch } });
   const setIndicators = (patch: Partial<IndicatorFormState>) =>
@@ -38,7 +40,7 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
-      {/* Discovery filters */}
+      <fieldset disabled={disabled} style={{ border: 'none', margin: 0, padding: 0, opacity: disabled ? 0.7 : 1 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <div style={{ fontSize: '0.8125rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>
           {intl.formatMessage({ id: 'agents.technical.filters.title' })}
@@ -302,6 +304,7 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
               <ParamInput label={intl.formatMessage({ id: 'agents.technical.params.minReasons' })} value={value.confidence.minReasons} type="int" onChange={(v) => setConfidence({ minReasons: v })} />
             </div>
       </div>
+      </fieldset>
     </div>
   );
 }

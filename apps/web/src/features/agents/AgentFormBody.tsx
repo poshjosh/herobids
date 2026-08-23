@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
@@ -10,6 +10,7 @@ import { AdvancedSettingsSection } from './AdvancedSettingsSection.js';
 import { AgentControlsSection } from './AgentControlsSection.js';
 import { WakeSourceSection, TRADING_WAKE_SOURCES } from './WakeSourceSection.js';
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
+import { presetParamsToFormState } from './technical-config-helpers.js';
 
 // ---------------------------------------------------------------------------
 // ADVANCED_FIELD_TAB — maps validated field names to Advanced Settings tab index
@@ -151,9 +152,21 @@ export function AgentFormBody(props: AgentFormBodyProps) {
   });
 
   // Filter to agent-compatible presets (excludes DCA and any future bot-only strategies)
-  const agentPresets = (presetsQuery.data?.presets ?? []).filter((p) =>
-    (AGENT_STRATEGY_PRESET_KEYS as readonly string[]).includes(p.key),
+  const agentPresets = useMemo(
+    () => (presetsQuery.data?.presets ?? []).filter((p) =>
+      (AGENT_STRATEGY_PRESET_KEYS as readonly string[]).includes(p.key),
+    ),
+    [presetsQuery.data],
   );
+
+  // Derive a readonly TechnicalConfigFormState from the currently selected preset
+  // so TechnicalConfigSection can render the preset's values in disabled mode.
+  const selectedPresetFormState = useMemo(() => {
+    if (!props.value.strategyPreset || props.value.strategyPreset === 'custom') return null;
+    const preset = agentPresets.find((p) => p.key === props.value.strategyPreset);
+    if (!preset) return null;
+    return presetParamsToFormState(preset.strategy.params);
+  }, [props.value.strategyPreset, agentPresets]);
 
   // ---- internal helpers ----
 
@@ -516,6 +529,55 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                   presets={agentPresets}
                   loading={presetsQuery.isLoading}
                 />
+
+                {/* Readonly preset preview — shown when a named preset is selected.
+                    Displays the preset's resolved strategy values in a disabled form
+                    so the user can see what the preset contains before committing. */}
+                {props.value.strategyPreset && props.value.strategyPreset !== 'custom' && selectedPresetFormState && (
+                  <>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '12px',
+                        marginTop: '48px',
+                      }}
+                    >
+                      <div style={{ fontSize: '0.8125rem', fontWeight: '600' }}>
+                        {intl.formatMessage({ id: 'agents.technical.title' })}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Transition to custom mode: populate technicalConfig with
+                          // the preset's values so the user starts editing from there.
+                          props.onChange({
+                            strategyPreset: 'custom',
+                            technicalConfig: selectedPresetFormState,
+                          });
+                        }}
+                        style={{
+                          padding: '4px 10px',
+                          fontSize: '0.75rem',
+                          fontWeight: '500',
+                          borderRadius: '6px',
+                          border: '1px solid var(--color-border)',
+                          background: 'var(--color-surface-1)',
+                          color: 'var(--color-text-primary)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {intl.formatMessage({ id: 'agents.technical.customize' })}
+                      </button>
+                    </div>
+                    <TechnicalConfigSection
+                      value={selectedPresetFormState}
+                      onChange={() => {/* noop — disabled mode */}}
+                      disabled
+                    />
+                  </>
+                )}
 
                 {/* Detailed technical editor — only shown in custom mode.
                     Manual edits keep the preset marked 'custom' (custom-on-divergence:
