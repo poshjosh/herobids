@@ -308,7 +308,7 @@ export function CreateAgentFlow({
     costPreset: styleDefaults.costPreset,
     dailySpendBudgetUsd: styleDefaults.dailySpendBudgetUsd,
     tickIntervalMins: styleDefaults.tickIntervalMins,
-    capital: '',
+    capital: '1000',
     dailyMaxLossPct: '',
     maxDrawdownPct: '',
     maxSlippageBps: '',

@@ -251,7 +251,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
               props.onChange({ capital: e.target.value });
             }}
             onBlur={() => handleFieldBlur('capital')}
-            placeholder={intl.formatMessage({ id: 'common.unlimited' })}
+            placeholder=""
           />
           {props.formErrors.capital && (
             <div style={errorStyle}>{props.formErrors.capital}</div>
