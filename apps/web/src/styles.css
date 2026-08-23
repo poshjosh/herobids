@@ -1055,3 +1055,24 @@ textarea:not(:placeholder-shown) {
     max-width: 100%;
   }
 }
+
+/* ─── Optional hint labels ─────────────────────────────────────────────────── */
+.optional-hint {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin-left: 4px;
+}
+
+/* ─── Goal subtitle — hidden on mobile ─────────────────────────────────────── */
+.goal-subtitle {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 768px) {
+  .goal-subtitle {
+    display: none;
+  }
+}

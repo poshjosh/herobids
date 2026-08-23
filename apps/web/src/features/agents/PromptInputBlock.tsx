@@ -1,4 +1,4 @@
-import { useId, useRef } from 'react';
+import { useId, useRef, type ReactNode } from 'react';
 import { useIntl } from 'react-intl';
 import type { AgentStyleValue } from './style-mapping.js';
 
@@ -10,7 +10,7 @@ export interface PromptInputBlockProps {
   onGoalChange: (goal: string) => void;
   onGoalBlur?: () => void;
   goalPlaceholder: string;
-  goalLabel: string;
+  goalLabel: ReactNode;
   goalError?: string;
   required?: boolean;
   /** data-field attribute value for scroll-to-error (e.g. "goal") */

@@ -42,11 +42,6 @@ export function validateCreateAgentForm(
     errors.name = 'Name is required.';
   }
 
-  // goal: required if intelligence mode
-  if (showIntelligence && !intent.goal.trim()) {
-    errors.goal = 'Objective / prompt is required.';
-  }
-
   // capital: required if trading, must be positive number
   if (intent.requiresTradingSetup) {
     if (!intent.capital.trim()) {

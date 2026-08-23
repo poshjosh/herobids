@@ -39,31 +39,29 @@ describe('validateCreateAgentForm', () => {
     expect(result.errors.name).toBeDefined();
   });
 
-  it('returns error for missing goal in intelligence mode', () => {
+  it('does not return error for missing goal in intelligence mode', () => {
     const result = validateCreateAgentForm(
       validIntent({ goal: '', capabilityMode: 'intelligence', requiresTradingSetup: false }),
       DEFAULT_CONSTRAINTS,
     );
-    expect(result.valid).toBe(false);
-    expect(result.errors.goal).toBeDefined();
+    expect(result.errors.goal).toBeUndefined();
   });
 
-  it('returns error for missing goal in hybrid mode', () => {
+  it('does not return error for missing goal in hybrid mode', () => {
     const result = validateCreateAgentForm(
       validIntent({ goal: '', capabilityMode: 'hybrid' }),
       DEFAULT_CONSTRAINTS,
     );
-    expect(result.valid).toBe(false);
-    expect(result.errors.goal).toBeDefined();
+    expect(result.errors.goal).toBeUndefined();
   });
 
-  it('requires goal in hybrid mode even with trading setup', () => {
+  it('does not require goal in hybrid mode even with trading setup', () => {
     const result = validateCreateAgentForm(
       validIntent({ goal: '', capabilityMode: 'hybrid', requiresTradingSetup: true }),
       DEFAULT_CONSTRAINTS,
     );
-    // hybrid mode includes intelligence, so objective/prompt is required regardless of trading setup
-    expect(result.errors.goal).toBeDefined();
+    // goal is now optional — agents created without one get a default blank prompt
+    expect(result.errors.goal).toBeUndefined();
   });
 
   it('returns error for missing capital when trading', () => {
@@ -223,7 +221,8 @@ describe('validateCreateAgentForm', () => {
     );
     expect(result.valid).toBe(false);
     expect(result.errors.name).toBeDefined();
-    expect(result.errors.goal).toBeDefined();
     expect(result.errors.capital).toBeDefined();
+    // goal is now optional — no error expected for empty goal
+    expect(result.errors.goal).toBeUndefined();
   });
 });

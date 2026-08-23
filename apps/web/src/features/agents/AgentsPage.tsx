@@ -753,7 +753,6 @@ export function CreateAgentFlow({
 
   const createDisabled = mutation.isPending
     || !intent.name.trim()
-    || (showIntelligence && !intent.goal.trim())
     || (intent.executionMode === 'live' && (!intent.venue || !intent.venueType))
     || (requiresTradingSetup && intent.venue.trim() !== '' && intent.connectionIds.length === 0)
     || tickIntervalError != null
@@ -884,9 +883,8 @@ export function CreateAgentFlow({
             }}
             onGoalBlur={() => validateFieldOnBlur('goal')}
             goalPlaceholder={intl.formatMessage({ id: resolveGoalPlaceholderKey(intent.skillPreset) })}
-            goalLabel={intl.formatMessage({ id: intent.capabilityMode === 'hybrid' ? 'agents.create.goalBoth' : 'agents.create.goal' })}
+            goalLabel={<>{intl.formatMessage({ id: intent.capabilityMode === 'hybrid' ? 'agents.create.goalBoth' : 'agents.create.goal' })}{' '}<span className="goal-subtitle">{intl.formatMessage({ id: intent.capabilityMode === 'hybrid' ? 'agents.create.goalBoth.subtitle' : 'agents.create.goal.subtitle' })}</span></>}
             goalError={formErrors.goal}
-            required
             pendingFiles={intent.pendingFiles}
             onPendingFilesChange={(pendingFiles) => setIntent((state) => ({ ...state, pendingFiles }))}
             style={intent.style}
@@ -1112,7 +1110,7 @@ export function CreateAgentFlow({
             }
             connectionSlot={
               <div data-field="connectionIds" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <FieldLabel>{intl.formatMessage({ id: 'agents.create.connections' })}</FieldLabel>
+                <FieldLabel>{intl.formatMessage({ id: 'agents.create.connections' })}{' '}<span className="optional-hint">{intl.formatMessage({ id: 'common.optional', defaultMessage: '(Optional)' })}</span></FieldLabel>
                 {(tradingConnectionsQuery.isLoading || allConnectionsQuery.isLoading) ? (
                   <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
                 ) : allPickerConnections.length === 0 ? (
