@@ -1076,4 +1076,13 @@ export const messages: Record<string, string> = {
   'bots.modal.executionMode.live.description': 'वास्तविक ऑर्डर प्लेसमेंट',
   'bots.modal.symbolSwapPlaceholder': 'WETH/USDC',
   'bots.modal.symbolPerpPlaceholder': 'BTC-PERP',
+
+  // Instances (legacy trading records)
+  'instances.title': 'बॉट्स',
+  'instances.subtitle': 'अनुकूलता और इतिहास के लिए रखे गए उन्नत ट्रेडिंग रिकॉर्ड',
+  'instances.empty.title': 'अभी तक कोई बॉट नहीं',
+  'instances.empty.message': 'यह दृश्य केवल पढ़ने के लिए है। एजेंट क्षेत्र से एजेंट बनाएं और प्रबंधित करें।',
+  'instances.fallbackBot': 'बॉट',
+  'instances.kv.created': 'बनाया गया',
+  'instances.kv.started': 'शुरू किया',
 };

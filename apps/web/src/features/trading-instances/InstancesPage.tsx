@@ -1,9 +1,11 @@
+import { useIntl } from 'react-intl';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { bots as botsApi } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
 
 export function InstancesPage() {
+  const intl = useIntl();
   const navigate = useNavigate();
 
   const query = useQuery({
@@ -16,8 +18,8 @@ export function InstancesPage() {
   return (
     <PageShell>
       <PageHeader
-        title="Bots"
-        subtitle="Advanced trading records kept for compatibility and history"
+        title={intl.formatMessage({ id: 'instances.title' })}
+        subtitle={intl.formatMessage({ id: 'instances.subtitle' })}
       />
 
       {query.isLoading && <LoadingRows count={3} />}
@@ -25,8 +27,8 @@ export function InstancesPage() {
 
       {query.isSuccess && items.length === 0 && (
         <EmptyState
-          title="No bots yet"
-          message="This view is read-only. Create and manage agents from the Agents area."
+          title={intl.formatMessage({ id: 'instances.empty.title' })}
+          message={intl.formatMessage({ id: 'instances.empty.message' })}
         />
       )}
 
@@ -43,12 +45,12 @@ export function InstancesPage() {
                     onClick={() => navigate(`/instances/${bot.id}`)}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                      <span style={{ fontWeight: '600', fontSize: '0.9375rem' }}>{strategyType ?? 'Bot'}</span>
+                      <span style={{ fontWeight: '600', fontSize: '0.9375rem' }}>{strategyType ?? intl.formatMessage({ id: 'instances.fallbackBot' })}</span>
                       <StatusBadge status={bot.status} />
                     </div>
                     <div style={{ display: 'flex', gap: '24px' }}>
-                      <KV label="Created" value={<RelativeTime timestamp={bot.createdAt} />} />
-                      {bot.startedAt && <KV label="Started" value={<RelativeTime timestamp={bot.startedAt} />} />}
+                      <KV label={intl.formatMessage({ id: 'instances.kv.created' })} value={<RelativeTime timestamp={bot.createdAt} />} />
+                      {bot.startedAt && <KV label={intl.formatMessage({ id: 'instances.kv.started' })} value={<RelativeTime timestamp={bot.startedAt} />} />}
                     </div>
                   </div>
                 </div>

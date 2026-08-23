@@ -1076,4 +1076,13 @@ export const messages: Record<string, string> = {
   'bots.modal.executionMode.live.description': 'تنفيذ أوامر حقيقية',
   'bots.modal.symbolSwapPlaceholder': 'WETH/USDC',
   'bots.modal.symbolPerpPlaceholder': 'BTC-PERP',
+
+  // Instances (legacy trading records)
+  'instances.title': 'البوتات',
+  'instances.subtitle': 'سجلات تداول متقدمة محفوظة للتوافق والتاريخ',
+  'instances.empty.title': 'لا توجد بوتات بعد',
+  'instances.empty.message': 'هذا العرض للقراءة فقط. أنشئ وأدر الوكلاء من منطقة الوكلاء.',
+  'instances.fallbackBot': 'بوت',
+  'instances.kv.created': 'تاريخ الإنشاء',
+  'instances.kv.started': 'تاريخ البدء',
 };

@@ -1081,4 +1081,13 @@ export const messages: Record<string, string> = {
   'bots.modal.executionMode.live.description': 'Real order placement',
   'bots.modal.symbolSwapPlaceholder': 'WETH/USDC',
   'bots.modal.symbolPerpPlaceholder': 'BTC-PERP',
+
+  // Instances (legacy trading records)
+  'instances.title': 'Bots',
+  'instances.subtitle': 'Advanced trading records kept for compatibility and history',
+  'instances.empty.title': 'No bots yet',
+  'instances.empty.message': 'This view is read-only. Create and manage agents from the Agents area.',
+  'instances.fallbackBot': 'Bot',
+  'instances.kv.created': 'Created',
+  'instances.kv.started': 'Started',
 };
