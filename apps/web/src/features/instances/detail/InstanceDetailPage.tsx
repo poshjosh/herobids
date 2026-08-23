@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
+import { useIntl } from 'react-intl';
 import Decimal from 'decimal.js';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { bots as botsApi, journal, type ActivityEvent, ApiError } from '../../../lib/api-client.js';
@@ -10,6 +11,7 @@ import { useEventStream, type UserEvent } from '../../../lib/useEventStream.js';
 export function InstanceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const intl = useIntl();
   const qc = useQueryClient();
 
   // Invalidate bot data when a real-time status event arrives for this bot
@@ -96,9 +98,9 @@ export function InstanceDetailPage() {
       return (
         <PageShell>
           <EmptyState
-            title="Bot not found"
-            message="This bot does not exist or you don't have access."
-            action={<Button variant="ghost" size="sm" onClick={() => navigate('/bots')}>← Back to bots</Button>}
+            title={intl.formatMessage({ id: 'instanceDetail.notFound.title' })}
+            message={intl.formatMessage({ id: 'instanceDetail.notFound.message' })}
+            action={<Button variant="ghost" size="sm" onClick={() => navigate('/bots')}>{intl.formatMessage({ id: 'instanceDetail.backToBots' })}</Button>}
           />
         </PageShell>
       );
@@ -114,9 +116,9 @@ export function InstanceDetailPage() {
     return (
       <PageShell>
         <EmptyState
-          title="Bot not found"
-          message="This bot does not exist or you don't have access."
-          action={<Button variant="ghost" size="sm" onClick={() => navigate('/bots')}>← Back to bots</Button>}
+          title={intl.formatMessage({ id: 'instanceDetail.notFound.title' })}
+          message={intl.formatMessage({ id: 'instanceDetail.notFound.message' })}
+          action={<Button variant="ghost" size="sm" onClick={() => navigate('/bots')}>{intl.formatMessage({ id: 'instanceDetail.backToBots' })}</Button>}
         />
       </PageShell>
     );
@@ -144,7 +146,7 @@ export function InstanceDetailPage() {
   return (
     <PageShell>
       <PageHeader
-        title={`${symbol || strategyType || 'Bot'}`}
+        title={`${symbol || strategyType || intl.formatMessage({ id: 'instanceDetail.fallbackTitle' })}`}
         subtitle={strategyType}
         action={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -155,7 +157,7 @@ export function InstanceDetailPage() {
                 onClick={() => setShowStopConfirm(true)}
                 disabled={stopMutation.isPending}
               >
-                {stopMutation.isPending ? 'Stopping…' : 'Stop'}
+                {stopMutation.isPending ? intl.formatMessage({ id: 'instanceDetail.action.stopping' }) : intl.formatMessage({ id: 'instanceDetail.action.stop' })}
               </Button>
             )}
             {(inst.status === 'stopped' || inst.status === 'crashed') && (
@@ -165,7 +167,7 @@ export function InstanceDetailPage() {
                 onClick={() => startMutation.mutate()}
                 disabled={startMutation.isPending}
               >
-                {startMutation.isPending ? 'Starting…' : 'Start'}
+                {startMutation.isPending ? intl.formatMessage({ id: 'instanceDetail.action.starting' }) : intl.formatMessage({ id: 'instanceDetail.action.start' })}
               </Button>
             )}
             {(inst.status === 'stopped' || inst.status === 'crashed') && !startMutation.isPending && (
@@ -175,10 +177,10 @@ export function InstanceDetailPage() {
                 onClick={() => setShowDeleteConfirm(true)}
                 disabled={deleteMutation.isPending}
               >
-                {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+                {deleteMutation.isPending ? intl.formatMessage({ id: 'instanceDetail.action.deleting' }) : intl.formatMessage({ id: 'instanceDetail.action.delete' })}
               </Button>
             )}
-            <Button variant="ghost" size="sm" onClick={() => navigate('/bots')}>← Back</Button>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/bots')}>{intl.formatMessage({ id: 'instanceDetail.back' })}</Button>
           </div>
         }
       />
@@ -195,7 +197,7 @@ export function InstanceDetailPage() {
             color: 'var(--color-text-secondary)',
           }}
         >
-          {execMode} mode
+          {execMode} {intl.formatMessage({ id: 'instanceDetail.modeSuffix' })}
         </span>
       </div>
 
@@ -207,17 +209,17 @@ export function InstanceDetailPage() {
 
       {inst.status === 'crashed' && (
         <div style={{ marginBottom: '16px' }}>
-          <ErrorBanner message="This instance crashed during startup. Check the latest journal events and verify the linked venue account and credential before retrying." />
+          <ErrorBanner message={intl.formatMessage({ id: 'instanceDetail.crashedMessage' })} />
         </div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '24px', alignItems: 'start' }}>
         {/* Left: timeline */}
         <div>
-          <SectionLabel>Timeline</SectionLabel>
+          <SectionLabel>{intl.formatMessage({ id: 'instanceDetail.section.timeline' })}</SectionLabel>
           {journalQuery.isLoading && <LoadingRows count={4} />}
           {journalQuery.isSuccess && timelineEvents.length === 0 && (
-            <EmptyState title="No events yet" message="Events will appear here once the agent starts trading." />
+            <EmptyState title={intl.formatMessage({ id: 'instanceDetail.timeline.empty.title' })} message={intl.formatMessage({ id: 'instanceDetail.timeline.empty.message' })} />
           )}
           {journalQuery.isSuccess && timelineEvents.length > 0 && (
             <div>
@@ -232,20 +234,20 @@ export function InstanceDetailPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Config summary */}
           <Card>
-            <SectionLabel>Configuration</SectionLabel>
+            <SectionLabel>{intl.formatMessage({ id: 'instanceDetail.section.configuration' })}</SectionLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <KV label="Strategy" value={strategyType || '—'} />
-              <KV label="Symbol" value={symbol || '—'} />
-              <KV label="Execution mode" value={execMode} />
+              <KV label={intl.formatMessage({ id: 'instanceDetail.config.strategy' })} value={strategyType || '—'} />
+              <KV label={intl.formatMessage({ id: 'instanceDetail.config.symbol' })} value={symbol || '—'} />
+              <KV label={intl.formatMessage({ id: 'instanceDetail.config.executionMode' })} value={execMode} />
             </div>
           </Card>
 
             {/* Open positions — shown for all statuses; stopped/crashed agents may still hold positions */}
             <Card>
-              <SectionLabel>Open positions</SectionLabel>
+              <SectionLabel>{intl.formatMessage({ id: 'instanceDetail.section.openPositions' })}</SectionLabel>
               {positionsQuery.isLoading && <LoadingRows count={2} />}
               {positionsQuery.isSuccess && (positionsQuery.data?.positions.length ?? 0) === 0 && (
-                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>No open positions</div>
+                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>{intl.formatMessage({ id: 'instanceDetail.positions.empty' })}</div>
               )}
               {positionsQuery.isSuccess && (positionsQuery.data?.positions.length ?? 0) > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -272,41 +274,38 @@ export function InstanceDetailPage() {
       </div>
       {/* ── Confirmation Modals ──────────────────────────────────── */}
       {showStopConfirm && (
-        <Modal title="Stop bot?" onClose={() => setShowStopConfirm(false)}>
+        <Modal title={intl.formatMessage({ id: 'instanceDetail.modal.stop.title' })} onClose={() => setShowStopConfirm(false)}>
           <p style={{ margin: '0 0 8px', color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>
-            The bot will stop scanning but any open positions will remain in your portfolio.
-            You can restart it later.
+            {intl.formatMessage({ id: 'instanceDetail.modal.stop.body' })}
           </p>
           {positionsQuery.data && (positionsQuery.data.positions.length ?? 0) > 0 && (
             <p style={{ margin: '0 0 16px', color: 'var(--color-warning)', fontSize: '0.8125rem' }}>
-              ⚠ You have {positionsQuery.data.positions.length} open position{positionsQuery.data.positions.length !== 1 ? 's' : ''}.
+              ⚠ {intl.formatMessage({ id: 'instanceDetail.modal.stop.positionWarning' }, { count: positionsQuery.data.positions.length })}
             </p>
           )}
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
-            <Button variant="ghost" size="sm" onClick={() => setShowStopConfirm(false)}>Cancel</Button>
+            <Button variant="ghost" size="sm" onClick={() => setShowStopConfirm(false)}>{intl.formatMessage({ id: 'instanceDetail.modal.cancel' })}</Button>
             <Button variant="danger" size="sm" onClick={() => { setShowStopConfirm(false); stopMutation.mutate(); }}>
-              Stop bot
+              {intl.formatMessage({ id: 'instanceDetail.modal.stop.confirm' })}
             </Button>
           </div>
         </Modal>
       )}
 
       {showDeleteConfirm && (
-        <Modal title="Delete bot?" onClose={() => setShowDeleteConfirm(false)}>
+        <Modal title={intl.formatMessage({ id: 'instanceDetail.modal.delete.title' })} onClose={() => setShowDeleteConfirm(false)}>
           <p style={{ margin: '0 0 8px', color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>
-            This action is irreversible. The bot will be permanently deleted. Its trade records and
-            event history will be preserved in the database but will no longer be linked to a bot.
+            {intl.formatMessage({ id: 'instanceDetail.modal.delete.body' })}
           </p>
           {positionsQuery.data && (positionsQuery.data.positions.length ?? 0) > 0 && (
             <p style={{ margin: '0 0 16px', color: 'var(--color-warning)', fontSize: '0.8125rem' }}>
-              ⚠ You have {positionsQuery.data.positions.length} open position{positionsQuery.data.positions.length !== 1 ? 's' : ''}.
-              These positions will remain in the exchange but will no longer be tracked by this bot.
+              ⚠ {intl.formatMessage({ id: 'instanceDetail.modal.delete.positionWarning' }, { count: positionsQuery.data.positions.length })}
             </p>
           )}
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
-            <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+            <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(false)}>{intl.formatMessage({ id: 'instanceDetail.modal.cancel' })}</Button>
             <Button variant="danger" size="sm" onClick={() => { setShowDeleteConfirm(false); deleteMutation.mutate(); }}>
-              Delete permanently
+              {intl.formatMessage({ id: 'instanceDetail.modal.delete.confirm' })}
             </Button>
           </div>
         </Modal>
