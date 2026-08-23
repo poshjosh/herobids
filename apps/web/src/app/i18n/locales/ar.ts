@@ -1017,6 +1017,7 @@ export const messages: Record<string, string> = {
   'agents.approvals.confidence': 'Confidence',
   'agents.approvals.rationale': 'Rationale',
   'agents.approvals.telegramHint': 'Or from Telegram: /yes {code} or /no {code}',
+  'agents.approvals.noRationale': 'لم يتم تقديم مبرر.',
   'agents.detail.skillPreset': 'Preset',
   'agents.strategyReview.assessing': 'Assessing {assessed} of {total} instruments\u2026',
   'agents.strategyReview.details': 'Show instrument details',

@@ -619,6 +619,7 @@ export const messages: Record<string, string> = {
   'agents.approvals.confidence': 'Confidence',
   'agents.approvals.rationale': 'Rationale',
   'agents.approvals.telegramHint': 'Or from Telegram: /yes {code} or /no {code}',
+  'agents.approvals.noRationale': 'No rationale provided.',
 
   // Agent detail continued
   'agents.detail.skillPreset': 'Preset',

@@ -293,7 +293,7 @@ function ApprovalCard({
         <div style={{ fontSize: '0.625rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
           {intl.formatMessage({ id: 'agents.approvals.rationale' })}
         </div>
-        {approval.rationaleSummary || 'No rationale provided.'}
+        {approval.rationaleSummary || intl.formatMessage({ id: 'agents.approvals.noRationale' })}
       </div>
 
       {/* Telegram hint */}
