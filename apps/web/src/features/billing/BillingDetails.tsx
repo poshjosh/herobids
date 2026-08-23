@@ -274,7 +274,7 @@ export function BillingDetails({
               {usageBreakdown.byMeter.map((row) => (
                 <tr key={row.meterKey} style={{ borderBottom: '1px solid var(--color-border)' }}>
                   <td style={{ padding: '8px' }}>{formatMeterLabel(row.meterKey)}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{row.quantity.toLocaleString()}</td>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>{intl.formatNumber(row.quantity)}</td>
                   <td style={{ padding: '8px', textAlign: 'right' }}>{formatMicrousd(row.chargeMicrousd)}</td>
                 </tr>
               ))}
@@ -319,7 +319,7 @@ export function BillingDetails({
               {usageBreakdown.byAgent.map((row) => (
                 <tr key={row.agentId} style={{ borderBottom: '1px solid var(--color-border)' }}>
                   <td style={{ padding: '8px' }}>{row.agentName}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{row.quantity.toLocaleString()}</td>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>{intl.formatNumber(row.quantity)}</td>
                   <td style={{ padding: '8px', textAlign: 'right' }}>{formatMicrousd(row.chargeMicrousd)}</td>
                 </tr>
               ))}
@@ -372,7 +372,7 @@ export function BillingDetails({
                   {ledgerEntries.records.map((entry) => (
                     <tr key={entry.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                       <td style={{ padding: '8px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-                        {new Date(entry.createdAt).toLocaleString()}
+                        {intl.formatDate(entry.createdAt, { dateStyle: 'medium', timeStyle: 'short' })}
                       </td>
                       <td style={{ padding: '8px' }}>
                         <div>{LEDGER_ENTRY_TYPE_LABELS[entry.entryType] ?? entry.entryType}</div>
@@ -451,10 +451,10 @@ export function BillingDetails({
                   {usageEvents.records.map((ev) => (
                     <tr key={ev.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                       <td style={{ padding: '8px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-                        {new Date(ev.occurredAt).toLocaleString()}
+                        {intl.formatDate(ev.occurredAt, { dateStyle: 'medium', timeStyle: 'short' })}
                       </td>
                       <td style={{ padding: '8px' }}>{formatMeterLabel(ev.meterKey)}</td>
-                      <td style={{ padding: '8px', textAlign: 'right' }}>{ev.quantity.toLocaleString()} {ev.unit}</td>
+                      <td style={{ padding: '8px', textAlign: 'right' }}>{intl.formatNumber(ev.quantity)} {ev.unit}</td>
                       <td style={{ padding: '8px' }}>{ev.agent?.name ?? '—'}</td>
                       <td style={{ padding: '8px' }}>
                         {ev.session?.id ? (

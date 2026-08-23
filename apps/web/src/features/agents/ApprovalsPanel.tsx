@@ -58,13 +58,11 @@ export function ApprovalsPanel({ agentId }: ApprovalsPanelProps) {
   };
 
   const formatExpiry = (expiresAt: string): string => {
-    const date = new Date(expiresAt);
-    return date.toLocaleString(undefined, {
+    return intl.formatDate(expiresAt, {
       month: 'short',
       day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZoneName: 'short',
+      hour: 'numeric',
+      minute: 'numeric',
     });
   };
 
