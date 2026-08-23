@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, Navigate } from 'react-router';
+import { useIntl } from 'react-intl';
 import { useSession } from '../../app/providers/SessionProvider.js';
 import { LoadingSpinner } from '../../app/layout/RootLayout.js';
 import { BrandLogo } from '../../brand/BrandLogo.js';
@@ -9,6 +10,7 @@ import { useLocale } from '../../app/i18n/I18nProvider.js';
 export function LandingPagePlaceholder() {
   const { user, loading } = useSession();
   const { locale } = useLocale();
+  const intl = useIntl();
   const [letterOpen, setLetterOpen] = useState(false);
   const letterRef = useRef<HTMLElement>(null);
 
@@ -39,19 +41,17 @@ export function LandingPagePlaceholder() {
           <div className="landing-page-card">
             <BrandLogo display="full" variant="dark" size="lg" />
             <p className="landing-page-tagline">
-              Affordable AI agents that get the job done
+              {intl.formatMessage({ id: 'landing.tagline' })}
             </p>
             <p className="landing-page-description">
-              We offer AI as a service so that you can have your own 
-              personal assistant without needing to know about agents, 
-              servers or hosting.
+              {intl.formatMessage({ id: 'landing.description' })}
             </p>
             <div className="landing-page-ctas">
               <Link to="/login" className="landing-page-cta">
-                Sign in
+                {intl.formatMessage({ id: 'landing.signIn' })}
               </Link>
               <Link to="/try" className="landing-page-cta">
-                Try it
+                {intl.formatMessage({ id: 'landing.tryIt' })}
               </Link>
             </div>
           </div>
@@ -59,26 +59,22 @@ export function LandingPagePlaceholder() {
 
         <div className="landing-page-proofs">
           <div className="landing-page-proof">
-            <p className="landing-page-proof-heading">Our agents cost less</p>
+            <p className="landing-page-proof-heading">{intl.formatMessage({ id: 'landing.proof.cost.heading' })}</p>
             <p className="landing-page-proof-text">
-              We focus our research on saving cost. We believe we are No.&nbsp;1 on
-              affordability, without losing effectiveness; and we are increasing
-              the gap.
+              {intl.formatMessage({ id: 'landing.proof.cost.text' })}
             </p>
             <Link to="/docs/agents/how-agent-costs-are-kept-low" className="landing-page-proof-link">
-              See how costs are kept low
+              {intl.formatMessage({ id: 'landing.proof.cost.link' })}
             </Link>
           </div>
 
           <div className="landing-page-proof">
-            <p className="landing-page-proof-heading">Get your agent in one click</p>
+            <p className="landing-page-proof-heading">{intl.formatMessage({ id: 'landing.proof.oneClick.heading' })}</p>
             <p className="landing-page-proof-text">
-              After login. Click one button to create your AI agent, the same
-              way you sign one letter to employ a new team member. Thereafter 
-              onboard your new AI employee.
+              {intl.formatMessage({ id: 'landing.proof.oneClick.text' })}
             </p>
             <Link to="/try" className="landing-page-proof-link">
-              Employ your first AI agent
+              {intl.formatMessage({ id: 'landing.proof.oneClick.link' })}
             </Link>
           </div>
         </div>
@@ -89,43 +85,34 @@ export function LandingPagePlaceholder() {
         onClick={() => setLetterOpen((v) => !v)}
         aria-expanded={letterOpen}
       >
-        A letter for you
+        {intl.formatMessage({ id: 'landing.letter.toggle' })}
       </button>
 
       {letterOpen && (
       <section className="landing-page-about" ref={letterRef}>
-        <h2 className="landing-page-about-heading">Dear OpenAIdom user,</h2>
+        <h2 className="landing-page-about-heading">{intl.formatMessage({ id: 'landing.letter.greeting' })}</h2>
         <p className="landing-page-about-text">
-          This is what we offer:
+          {intl.formatMessage({ id: 'landing.letter.intro' })}
         </p>
         <p className="landing-page-about-text">
-          Imagine you create your own AI personal assistant, then send it a messge on Telegram: 
-
+          {intl.formatMessage({ id: 'landing.letter.para1' })}
           <blockquote>
-            I am on a tight budget, so I want you to help me save money by spending wisely
+            {intl.formatMessage({ id: 'landing.letter.quote1' })}
           </blockquote>
-          
-          Your assistant is an AI agent, and knows that it's reasoning and actions costs money, 
-          so it adjusts.
+          {intl.formatMessage({ id: 'landing.letter.para1b' })}
         </p>
         <p className="landing-page-about-text">
-
-          Next you tell your assistant to: 
-          
+          {intl.formatMessage({ id: 'landing.letter.para2' })}
           <blockquote>
-            find the best flight deal from Bengaluru to San Francisco between 1st and 3rd of next month.
+            {intl.formatMessage({ id: 'landing.letter.quote2' })}
           </blockquote>
-
-          Your assistant asks a few questions to clarify your preferences, and then it goes to work.
-          Not long after you receive an email from your assistant with a link to the best flight deal.
+          {intl.formatMessage({ id: 'landing.letter.para2b' })}
         </p>
         <p className="landing-page-about-text">
-          Over time, your assistant gets to know you. It remembers what matters to you, learns your 
-          preferences, and becomes more useful.
+          {intl.formatMessage({ id: 'landing.letter.para3' })}
         </p>
         <p className="landing-page-about-text">
-          This is already possible, but at a high cost. We have made it much more affordable.
-          Don't just take our word for it, try it.
+          {intl.formatMessage({ id: 'landing.letter.para4' })}
         </p>
         <div aria-label="Signed">
           <svg viewBox="0 0 200 60" className="landing-page-signature-svg">
@@ -164,11 +151,11 @@ export function LandingPagePlaceholder() {
           </svg>
         </div>
         <div className="landing-page-about-signature">
-          Helen
+          {intl.formatMessage({ id: 'landing.letter.signature' })}
         </div>
         <div className="landing-page-ctas">
           <Link to="/try" className="landing-page-cta">
-            Try it
+            {intl.formatMessage({ id: 'landing.tryIt' })}
           </Link>
         </div>
       </section>
