@@ -79,7 +79,7 @@ This is the foundational step toward blank-slate agents (see `docs/features/pend
 | Field | Default value | Notes |
 |---|---|---|
 | `name` | `{style}-agent-{4 hex chars}` | e.g., `balanced-agent-A7F3`. Regenerates on style change. |
-| `prompt` | `"Await instructions from your creator."` | Sent when goal field is empty. User never sees this text in the form. |
+| `prompt` | `"You have not yet been given a goal. Do not call any tools. Do not take any action. Wait for your creator to send you instructions. If no instructions have been received, respond with a single word: "OK"."` | Sent when goal field is empty. Explicit no-op to prevent spurious tool calls or token waste if the user starts the agent before configuring it. |
 | `executionDefaults` | `{ mode: 'paper' }` | Resolves to shadow if connection present (existing backend logic). |
 | `capital` | `"1000"` | Pre-filled for trading agents. User can change or clear (validation catches empty). |
 | Provider/model | From operator `modelDefaults` (fetched via `ai/settings`) | Existing auto-fill behavior. |
@@ -150,9 +150,10 @@ This is the foundational step toward blank-slate agents (see `docs/features/pend
 
 **Changes:**
 - When building the API payload for `POST /agents`:
-  - If `intent.goal` is empty (after trim), send `prompt: "Await instructions from your creator."` instead of an empty string.
+  - If `intent.goal` is empty (after trim), send `prompt: "You have not yet been given a goal. Do not call any tools. Do not take any action. Wait for your creator to send you instructions. If no instructions have been received, respond with a single word: \"OK\"."` instead of an empty string.
   - If `intent.goal` is non-empty, send it as `prompt` (existing behavior).
 - This ensures the API never receives an empty `prompt` (which would fail the superRefine rule).
+- The default prompt is explicit about doing nothing — prevents spurious tool calls and minimizes token usage if the user starts the agent before giving it a real goal.
 
 ### Step 7: "(Optional)" label styling
 
@@ -208,7 +209,7 @@ This is the foundational step toward blank-slate agents (see `docs/features/pend
 
 1. **Users might not notice the collapsible skills section.** Mitigation: the expand label is styled as an interactive element (underline or button-like affordance), and the preset skill names still show in the muted line below the preset selector.
 
-2. **Default prompt wording.** "Await instructions from your creator" is generic but functional. It's never shown to the user in the form — only persisted to the DB and shown on the agent detail page. If it reads oddly there, it can be updated independently.
+2. **Default prompt wording.** "You have not yet been given a goal..." is explicit about doing nothing. It prevents tool calls and produces a single "OK" token if the agent runs without a real goal. The user never sees this in the form — it only appears on the agent detail page and in the runtime context.
 
 3. **Name generation collision risk.** 4 hex chars = 65,536 possibilities. For a single user creating agents, collisions are astronomically unlikely. Even across all users, the name doesn't need to be globally unique — it's scoped to the user.
 
