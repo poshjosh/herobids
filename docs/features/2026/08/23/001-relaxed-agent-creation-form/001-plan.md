@@ -116,19 +116,20 @@ If all fields are visible and most have defaults, the user doesn't know where to
 - Drop the sequential counter parameter — hex suffix is always unique enough.
 - On style change, regenerate the name (existing behavior, just with new format).
 
-### Step 2: Relax `validateCreateAgentForm`
+### Step 2: Remove goal/prompt required validation
 
 **Files:**
 - `apps/web/src/features/agents/form-validation.ts`
 - Tests if they exist
 
 **Changes:**
-- `name`: remove the "Name is required" check. The form always pre-fills a name, so this validation is now a safety net only if the user explicitly clears it AND we decide not to refill. Decision: if user clears it, auto-regenerate on blur (or keep the validation as a fallback — either way it won't fire in normal flow because tier 1 always has a name).
-- `goal`: remove the "Objective / prompt is required" check. When the goal field is empty, the frontend sends the default prompt.
-- `capital`: remove the "Capital is required" check for trading agents. When empty, the frontend sends `"1000"`.
-- Keep `venue` required for live mode (hard infrastructure requirement).
-- Keep `connectionIds` required when venue is selected (same reason).
-- Keep all "if provided, must be valid" checks unchanged.
+- `goal`: remove the "Objective / prompt is required" check. When the goal field is empty, the frontend sends the default prompt at submission time. A blank goal is now an intentional valid state.
+- **Keep all other validation unchanged:**
+  - `name` stays required — user could clear the pre-filled name.
+  - `capital` stays required for trading agents — user could clear the pre-filled `1000`.
+  - `venue` stays required for live mode.
+  - `connectionIds` stays required when venue is selected.
+  - All "if provided, must be valid" checks stay unchanged.
 
 ### Step 3: Update form submission to send defaults for empty fields
 
@@ -196,16 +197,18 @@ If all fields are visible and most have defaults, the user doesn't know where to
 ## Verification
 
 ### Frontend tests
-1. Form submits successfully when only type is selected (all other fields use defaults).
+1. Form submits successfully when only type is selected and defaults are kept.
 2. Name field pre-fills with `{style}-agent-{hex}` format.
 3. Changing style regenerates the name.
 4. Customize section is collapsed by default.
 5. Empty goal field results in default prompt being sent to API.
-6. Empty capital field for trading agent results in `"1000"` being sent.
+6. Pre-filled capital (`1000`) for trading agent is sent when user doesn't change it.
 7. Model defaults are sent when user hasn't configured a provider.
-8. Validation still catches invalid values when fields ARE filled (e.g., capital = "abc").
-9. Live mode still requires venue + connection (hard requirement unchanged).
-10. Helper text renders for each field in the Customize section.
+8. Validation catches cleared name (user deletes the pre-filled name → "Name is required").
+9. Validation catches cleared capital for trading agent (user deletes `1000` → "Capital is required").
+10. Validation still catches invalid values when fields ARE filled (e.g., capital = "abc").
+11. Live mode still requires venue + connection (hard requirement unchanged).
+12. Helper text renders for each field in the Customize section.
 
 ### Manual / UAT
 11. Walk through: open form → select "Trading" → click "Create Agent" without expanding Customize → agent created with defaults → verify: has name like `balanced-agent-A7F3`, default prompt, paper mode, 1000 capital, operator model.
