@@ -101,7 +101,7 @@ describe('sendLoginLink — email body rendering', () => {
     expect(htmlBody).toContain('background-color:#635BFF');
     expect(htmlBody).toContain('>Sign In<');
     // Fallback link below CTA
-    expect(htmlBody).toContain("If the button doesn't work");
+    expect(htmlBody).toContain("button doesn&#39;t work");
     // OpenAIdom branding — split-color wordmark: only "AI" is accent-colored
     expect(htmlBody).toContain('>Open<');
     expect(htmlBody).toContain('>AI<');

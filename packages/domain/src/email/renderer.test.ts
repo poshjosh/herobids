@@ -121,8 +121,20 @@ describe('renderEmail', () => {
       const result = renderEmail(
         makeContent({ cta: { text: 'Click', url: 'https://example.com/verify' } }),
       );
-      expect(result.html).toContain("If the button doesn't work");
+      // The default English fallback text is HTML-escaped in the output
+      expect(result.html).toContain("button doesn&#39;t work");
       expect(result.html).toContain('https://example.com/verify');
+    });
+
+    it('uses custom ctaFallbackText when provided', () => {
+      const result = renderEmail(
+        makeContent({
+          cta: { text: 'Click', url: 'https://example.com/verify' },
+          ctaFallbackText: 'إذا لم يعمل الزر، انسخ والصق هذا الرابط:',
+        }),
+      );
+      expect(result.html).toContain('إذا لم يعمل الزر، انسخ والصق هذا الرابط:');
+      expect(result.html).not.toContain("If the button doesn't work");
     });
 
     it('includes footer note when provided', () => {

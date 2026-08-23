@@ -24,6 +24,7 @@ const LOGIN_LINK_MESSAGES: Record<string, Record<string, string>> = {
     title: 'Sign in to OpenAIdom',
     body: 'Click the button below to sign in. This link expires in {ttlMinutes} minutes.\n\nIf you did not request this link, you can safely ignore this email.',
     cta: 'Sign In',
+    ctaFallback: "If the button doesn't work, copy and paste this link:",
   },
   ar: {
     subject: 'تسجيل الدخول إلى OpenAIdom',
@@ -31,6 +32,7 @@ const LOGIN_LINK_MESSAGES: Record<string, Record<string, string>> = {
     title: 'تسجيل الدخول إلى OpenAIdom',
     body: 'انقر على الزر أدناه لتسجيل الدخول. تنتهي صلاحية هذا الرابط خلال {ttlMinutes} دقائق.\n\nإذا لم تطلب هذا الرابط، يمكنك تجاهل هذا البريد بأمان.',
     cta: 'تسجيل الدخول',
+    ctaFallback: 'إذا لم يعمل الزر، انسخ والصق هذا الرابط:',
   },
   hi: {
     subject: 'OpenAIdom में साइन इन करें',
@@ -38,6 +40,7 @@ const LOGIN_LINK_MESSAGES: Record<string, Record<string, string>> = {
     title: 'OpenAIdom में साइन इन करें',
     body: 'साइन इन करने के लिए नीचे दिए गए बटन पर क्लिक करें। यह लिंक {ttlMinutes} मिनट में समाप्त हो जाएगा।\n\nयदि आपने इस लिंक का अनुरोध नहीं किया है, तो आप इस ईमेल को सुरक्षित रूप से अनदेखा कर सकते हैं।',
     cta: 'साइन इन',
+    ctaFallback: 'अगर बटन काम नहीं करता, तो इस लिंक को कॉपी और पेस्ट करें:',
   },
 };
 
@@ -79,6 +82,7 @@ export function createAuthMailer(config: AlertsConfig, brandImageUrl?: string): 
         title: messages['title']!,
         body: bodyHtml,
         cta: { text: messages['cta']!, url: link },
+        ctaFallbackText: messages['ctaFallback'],
         locale: effectiveLocale,
         ...(effectiveBrandImageUrl ? { brandImageUrl: effectiveBrandImageUrl } : {}),
       });

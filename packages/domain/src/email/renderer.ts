@@ -21,6 +21,8 @@ export interface EmailContent {
   body: string;
   /** Optional call-to-action button. */
   cta?: { text: string; url: string };
+  /** Localized fallback text shown below the CTA button (defaults to English). */
+  ctaFallbackText?: string;
   /** Optional footer note (e.g. "If you did not request this…"). */
   footerNote?: string;
   /**
@@ -145,7 +147,7 @@ function renderHtml(content: EmailContent): string {
             <tr>
               <td align="center" style="padding:0 40px 24px 40px;">
                 <p style="font-family:${FONT_STACK};font-size:13px;color:${BRAND.footerText};margin:0;word-break:break-all;">
-                  If the button doesn't work, copy and paste this link:<br>
+                  ${htmlEscape(content.ctaFallbackText ?? "If the button doesn't work, copy and paste this link:")}<br>
                   <a href="${htmlEscape(safeUrl(content.cta.url))}" style="color:${BRAND.footerText};text-decoration:underline;">${htmlEscape(content.cta.url)}</a>
                 </p>
               </td>
