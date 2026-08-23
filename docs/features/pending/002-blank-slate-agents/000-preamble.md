@@ -1,0 +1,7 @@
+The future of prompts, skills and connections
+
+- Granting some connections should automatically add a skill to the granted agent. For example, granting an agent a Gmail connection should automatically assign the email skill. What do you think? Any caveats? What other skill could be automatically assigned?
+
+- Agents should be able to manage own skills. There should be appropriate tools to enable the agent inspect existing skills and add/remove etc The problem is that some skills are in the agent's prompt already. One way to handle this is to exclude those skills in the agent's prompt from skill management. For example list_skills should not list skills which the agent already have. Also, load skill should not load such skills. Are there better ways to handle this? Any caveats?
+
+- We are thinking of permiting a user to change the agents objective/goal. We could make use of telegram slash commands. What do you think? Any caveats? Any better way?
