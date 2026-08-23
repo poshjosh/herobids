@@ -8,7 +8,7 @@
 
 Make the agent creation and edit forms less intimidating by relaxing field requirements. Fields that the backend treats as optional should not be forced in the frontend. Fields that require a value should resolve sensible server-side defaults when the user omits them. The result: a user can create an agent by filling in only the fields they care about, and the form communicates this clearly.
 
-This is the foundational step toward one-click agent creation (see `docs/features/pending/002-one-click-agent-creation/001-plan.md`), but scoped to just the field optionality and UX clarity — no new API endpoints, no self-management tools, no one-click button.
+This is the foundational step toward blank-slate agents (see `docs/features/pending/002-blank-slate-agents/001-plan.md`), but scoped to just the field optionality and UX clarity — no new API endpoints, no self-management tools, no one-click button.
 
 ## Goals
 

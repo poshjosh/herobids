@@ -1,4 +1,4 @@
-# One-Click Agent Creation
+# Blank-Slate Agents
 
 **Status:** Pending (depends on `docs/features/2026/08/23/001-relaxed-agent-creation-form/001-plan.md`)
 
