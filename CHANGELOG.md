@@ -16,6 +16,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Make strategy presets editable (which translates them to custom strategy)
 - Relaxed agent creation form validation, e.g. by providing useful defaults
 
+### Fixed
+
+- Fix "Connect Gmail" button doing nothing in the create agent form (undefined ref crash in onBeforeOAuthRedirect)
+
 ## v0.1.15 - 2026-08-20
 
 ### Changed

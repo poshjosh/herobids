@@ -1037,4 +1037,7 @@ export const messages: Record<string, string> = {
   'landing.letter.para3': 'بمرور الوقت، يتعرّف مساعدك عليك. يتذكّر ما يهمّك، ويتعلّم تفضيلاتك، ويصبح أكثر فائدة.',
   'landing.letter.para4': 'هذا ممكن بالفعل، لكن بتكلفة عالية. نحن جعلناه أقل تكلفة بكثير. لا تأخذ كلامنا فحسب، جرّبه.',
   'landing.letter.signature': 'هيلين',
+
+  // Locale picker
+  'localePicker.label': 'تغيير اللغة',
 };

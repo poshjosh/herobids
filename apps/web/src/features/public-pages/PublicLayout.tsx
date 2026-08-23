@@ -5,7 +5,7 @@ import { useLocale } from '../../app/i18n/I18nProvider.js';
 import type { SupportedLocale } from '../../app/i18n/resolveLocale.js';
 import { PUBLIC_PAGE_REGISTRY, getSectionPages } from './contentRegistry.js';
 import { BrandLogo } from '../../brand/BrandLogo.js';
-import { inputStyle } from '../../lib/ui.js';
+import { LocalePickerButton } from '../../lib/LocalePickerButton.js';
 
 interface PublicLayoutProps {
   children: ReactNode;
@@ -35,7 +35,7 @@ function publicUrl(section: string, page: string, currentLocale?: string): strin
 }
 
 export function PublicLayout({ children, translated = false, section, page, locale }: PublicLayoutProps) {
-  const { setLocale, supportedLocales } = useLocale();
+  const { setLocale } = useLocale();
   const effectiveLocale = locale ?? 'en';
   const intl = useIntl();
   const navigate = useNavigate();
@@ -78,17 +78,9 @@ export function PublicLayout({ children, translated = false, section, page, loca
           </a>
 
           {translated && (
-            <select
-              value={effectiveLocale}
-              onChange={(e) => handleLocaleChange(e.target.value)}
-              style={{ ...inputStyle, padding: '4px 8px', borderRadius: '6px', fontSize: '0.8125rem', cursor: 'pointer' }}
-            >
-              {supportedLocales.map((loc) => (
-                <option key={loc} value={loc}>
-                  {loc.toUpperCase()}
-                </option>
-              ))}
-            </select>
+            <LocalePickerButton
+              onLocaleChange={(next) => handleLocaleChange(next)}
+            />
           )}
         </nav>
       </header>

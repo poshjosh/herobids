@@ -6,6 +6,7 @@ import { LoadingSpinner } from '../../app/layout/RootLayout.js';
 import { BrandLogo } from '../../brand/BrandLogo.js';
 import { PublicFooter } from '../public-pages/PublicLayout.js';
 import { useLocale } from '../../app/i18n/I18nProvider.js';
+import { LocalePickerButton } from '../../lib/LocalePickerButton.js';
 
 export function LandingPagePlaceholder() {
   const { user, loading } = useSession();
@@ -36,6 +37,9 @@ export function LandingPagePlaceholder() {
   // Unauthenticated visitors see the landing page
   return (
     <div className="landing-page landing-page--image">
+      <div style={{ position: 'absolute', top: '16px', right: '24px', zIndex: 10 }}>
+        <LocalePickerButton />
+      </div>
       <div className="landing-page-row">
         <div className="landing-page-hero">
           <div className="landing-page-card">

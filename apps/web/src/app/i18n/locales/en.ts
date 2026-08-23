@@ -1042,4 +1042,7 @@ export const messages: Record<string, string> = {
   'landing.letter.para3': 'Over time, your assistant gets to know you. It remembers what matters to you, learns your preferences, and becomes more useful.',
   'landing.letter.para4': 'This is already possible, but at a high cost. We have made it much more affordable. Don\u2019t just take our word for it, try it.',
   'landing.letter.signature': 'Helen',
+
+  // Locale picker
+  'localePicker.label': 'Change language',
 };
