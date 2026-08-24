@@ -5,6 +5,7 @@ import {
   TechnicalConfigSchema,
   venueTypeFromProvider,
   normalizePersistedAiModelConfig,
+  type TechnicalConfig,
   type RiskPosture,
   type StrategyIdentity,
   type ExecutionDefaults,
@@ -212,6 +213,24 @@ export async function resolveUnifiedConfig(params: {
       'Cannot create a scanner-gated agent without a technical configuration. ' +
       'Provide a strategy preset or an explicit technical config.',
     );
+  }
+
+  // 10. Guard: scanner_gated orderbook agents MUST have a regime config.
+  // Without it the scanner fingerprint is permanently 'regime:unavailable',
+  // the dedup gate never changes, and wake signals are suppressed indefinitely.
+  // Swap/DEX venues are excluded — BTC regime is not meaningful for memecoin scanning.
+  if (
+    finalUnifiedConfig &&
+    finalUnifiedConfig['hybridMode'] === 'scanner_gated' &&
+    finalUnifiedConfig['technical']
+  ) {
+    const tech = finalUnifiedConfig['technical'] as TechnicalConfig;
+    if (tech.filters.venueType === 'orderbook' && !tech.regime) {
+      throw new Error(
+        'Scanner-gated orderbook agents require a regime configuration for the scanner to function. ' +
+        'Add a "regime" field to the technical config (e.g. { "benchmarkSymbol": "BTC" }) or use a strategy preset that includes one.',
+      );
+    }
   }
 
   return finalUnifiedConfig;

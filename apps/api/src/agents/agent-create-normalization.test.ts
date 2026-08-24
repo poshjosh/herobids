@@ -49,6 +49,7 @@ function mockDb(): Database {
 /** A valid technical config from the momentum preset (real shape from YAML). */
 const VALID_TECHNICAL: Record<string, unknown> = {
   filters: { venue: 'hyperliquid', venueType: 'orderbook' },
+  regime: { benchmarkSymbol: 'BTC' },
   indicators: {
     trend: { enabled: true, emaFast: 9, emaSlow: 21 },
     momentum: { enabled: true, rsiPeriod: 14, rsiOversold: 30, rsiOverbought: 70 },
@@ -195,5 +196,69 @@ describe('resolveUnifiedConfig', () => {
     expect(result).not.toBeNull();
     expect(result!['capabilityMode']).toBe('intelligence');
     expect(result!['technical']).toBeUndefined();
+  });
+
+  // ── Step-10 guard: scanner_gated orderbook requires regime ──────────────
+
+  it('throws when scanner_gated orderbook technical has no regime', async () => {
+    resolvePresetMock.mockReturnValue(null);
+
+    const db = mockDb();
+
+    const technicalNoRegime: Record<string, unknown> = {
+      ...VALID_TECHNICAL,
+      filters: { venue: 'hyperliquid', venueType: 'orderbook' },
+      regime: undefined,
+    };
+    delete technicalNoRegime['regime'];
+
+    await expect(
+      resolveUnifiedConfig({
+        capabilityMode: 'hybrid',
+        hybridMode: 'scanner_gated',
+        technical: technicalNoRegime,
+        db,
+      }),
+    ).rejects.toThrow(/Scanner-gated orderbook agents require a regime configuration/);
+  });
+
+  it('does NOT throw when scanner_gated orderbook technical has regime', async () => {
+    resolvePresetMock.mockReturnValue(null);
+
+    const db = mockDb();
+
+    const result = await resolveUnifiedConfig({
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+      technical: { ...VALID_TECHNICAL, regime: { benchmarkSymbol: 'BTC' } },
+      db,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!['technical']).toBeDefined();
+    expect(result!['hybridMode']).toBe('scanner_gated');
+  });
+
+  it('does NOT throw when scanner_gated swap technical has no regime', async () => {
+    resolvePresetMock.mockReturnValue(null);
+
+    const db = mockDb();
+
+    const swapTechnicalNoRegime: Record<string, unknown> = {
+      ...VALID_TECHNICAL,
+      filters: { venue: 'jupiter', venueType: 'swap' },
+    };
+    delete swapTechnicalNoRegime['regime'];
+
+    const result = await resolveUnifiedConfig({
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+      technical: swapTechnicalNoRegime,
+      db,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!['technical']).toBeDefined();
+    expect(result!['hybridMode']).toBe('scanner_gated');
   });
 });
