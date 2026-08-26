@@ -215,6 +215,22 @@ export async function resolveUnifiedConfig(params: {
     );
   }
 
+  // 9b. Default regime injection for scanner-gated orderbook agents.
+  // Strategy presets do not include regime config, so preset-derived technical
+  // configs arrive without one. Rather than rejecting, inject the platform
+  // default (BTC benchmark) so the scanner fingerprint works out of the box.
+  // Swap venues are excluded — BTC regime is not meaningful for memecoin scanning.
+  if (
+    finalUnifiedConfig &&
+    finalUnifiedConfig['hybridMode'] === 'scanner_gated' &&
+    finalUnifiedConfig['technical']
+  ) {
+    const tech = finalUnifiedConfig['technical'] as TechnicalConfig;
+    if (tech.filters.venueType === 'orderbook' && !tech.regime) {
+      (finalUnifiedConfig['technical'] as Record<string, unknown>).regime = { benchmarkSymbol: 'BTC' };
+    }
+  }
+
   // 10. Guard: scanner_gated orderbook agents MUST have a regime config.
   // Without it the scanner fingerprint is permanently 'regime:unavailable',
   // the dedup gate never changes, and wake signals are suppressed indefinitely.

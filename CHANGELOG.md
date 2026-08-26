@@ -19,6 +19,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Fix "Connect Gmail" button doing nothing in the create agent form (undefined ref crash in onBeforeOAuthRedirect)
+- Fix scanner-gated orderbook agents silently running without regime config (permanent `regime:unavailable` fingerprint suppressing all wakes). Reject at creation time; inject BTC default at runtime for legacy agents.
 
 ## v0.1.15 - 2026-08-20
 

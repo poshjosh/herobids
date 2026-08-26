@@ -200,7 +200,7 @@ describe('resolveUnifiedConfig', () => {
 
   // ── Step-10 guard: scanner_gated orderbook requires regime ──────────────
 
-  it('throws when scanner_gated orderbook technical has no regime', async () => {
+  it('injects default regime when scanner_gated orderbook technical has no regime', async () => {
     resolvePresetMock.mockReturnValue(null);
 
     const db = mockDb();
@@ -212,14 +212,16 @@ describe('resolveUnifiedConfig', () => {
     };
     delete technicalNoRegime['regime'];
 
-    await expect(
-      resolveUnifiedConfig({
-        capabilityMode: 'hybrid',
-        hybridMode: 'scanner_gated',
-        technical: technicalNoRegime,
-        db,
-      }),
-    ).rejects.toThrow(/Scanner-gated orderbook agents require a regime configuration/);
+    const result = await resolveUnifiedConfig({
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+      technical: technicalNoRegime,
+      db,
+    });
+
+    // Step 9b injects default regime for orderbook agents
+    const tech = result!['technical'] as Record<string, unknown>;
+    expect(tech['regime']).toEqual({ benchmarkSymbol: 'BTC' });
   });
 
   it('does NOT throw when scanner_gated orderbook technical has regime', async () => {
