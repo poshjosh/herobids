@@ -247,8 +247,10 @@ async function callOpenAiCompatibleProvider(
   const baseUrl = config.baseUrl ?? resolveBaseUrl(config.provider, config.providersBaseUrlMap);
   const apiKey = resolveApiKey(config.provider);
 
-  // Local providers (e.g. Ollama) don't need an API key when baseUrl is explicitly set.
-  if (!apiKey && !config.baseUrl) {
+  // Local providers (e.g. Ollama) don't need an API key when a base URL is
+  // resolved — either set explicitly on the config or registered in the
+  // operator's provider registry (providers.yaml → providersBaseUrlMap).
+  if (!apiKey && !config.baseUrl && !config.providersBaseUrlMap?.[config.provider]) {
     return { ok: false, error: { code: 'provider.no_credentials', message: `No API key found for provider "${config.provider}"`, retryable: false } };
   }
 

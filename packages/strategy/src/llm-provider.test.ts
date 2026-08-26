@@ -41,6 +41,26 @@ describe('callLlmProvider', () => {
     }
   });
 
+  it('skips credential check when provider is registered in providersBaseUrlMap', async () => {
+    vi.unstubAllEnvs();
+    delete process.env['LLM_API_KEY_OLLAMA'];
+    delete process.env['LLM_API_KEY'];
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'local ok' } }], usage: { total_tokens: 3 } }),
+    }) as unknown as typeof fetch;
+
+    const result = await callLlmProvider(
+      { ...baseConfig, provider: 'ollama', model: 'qwen3:8b', providersBaseUrlMap: { ollama: 'http://localhost:11434/v1' } },
+      baseRequest,
+    );
+
+    expect(result.ok).toBe(true);
+    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(fetchCall[0]).toBe('http://localhost:11434/v1/chat/completions');
+  });
+
   it('falls back to generic LLM_API_KEY env var', async () => {
     vi.unstubAllEnvs();
     delete process.env['LLM_API_KEY_OPENAI'];
