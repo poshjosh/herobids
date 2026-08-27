@@ -209,7 +209,7 @@ resource "hcloud_server" "default" {
   # To destroy a PRODUCTION server:
   #   Same procedure, plus: remove any agent nodes first.  
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 }
 
