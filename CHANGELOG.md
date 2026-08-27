@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Update production Creem product IDs to new live store
+
 ## v0.1.16 - 2026-08-27
 
 ### Added
