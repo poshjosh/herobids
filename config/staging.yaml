@@ -47,14 +47,37 @@ billing:
     apiBaseUrl: https://api.creem.io/v1      # auto-switches to test-api if key starts with creem_test_
     planProducts:
       starter:
-        - creemProductId: "prod_2muSl3xna4UWLN6O9nJcjR"    
+        - creemProductId: "prod_2OBELmb8ms9TSkmtnDcQS"
           interval: month
           displayLabel: "Starter (Monthly)"
-          amountCents: 2000                          
+          amountCents: 2000
+      pro:
+        - creemProductId: "prod_5CBoLXkzWJ5DexYwl108Ys"
+          interval: month
+          displayLabel: "Pro (Monthly)"
+          amountCents: 5000
 # Commercial usage billing — metering, rate cards, spend-state enforcement, and credit ledger.
 usageBilling:
   topUpProductsByProvider:                 # provider → [{packId, externalId, cents}]
     creem:
       - packId: Topup5
-        externalId: prod_13TZZ9AsdyFtGoY2BqVYAy
-        cents: 500        
+        externalId: prod_3WCPXEgotvZ85zdrD9qnP8
+        cents: 500
+      - packId: Topup20
+        externalId: prod_2x9Min1Xx5YOH5Ubt52mmd
+        cents: 2000
+      - packId: Topup50
+        externalId: prod_44Al2TJSabU3XQ5lQ3x7cP
+        cents: 5000
+      - packId: Topup100
+        externalId: prod_6ftLFBT2pSTOPECInvJdYh
+        cents: 10000
+      - packId: Topup200
+        externalId: prod_6Josxz4DPhgoTfjlrvuhVJ
+        cents: 20000
+      - packId: Topup500
+        externalId: prod_1BfEjIcJ3X4mX8unuMHwGl
+        cents: 50000
+      - packId: Topup1000
+        externalId: prod_2axliJTOsfhDwX3fBsjlum
+        cents: 100000

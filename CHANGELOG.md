@@ -13,6 +13,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Migrate Creem billing to new store — recreated all 9 products (2 subscription plans + 7 credit top-up packs) with tax-exclusive pricing, product images, and default success URL; updated staging config and env with new product IDs and API key
 - Make strategy presets editable (which translates them to custom strategy)
 - Relaxed agent creation form validation, e.g. by providing useful defaults
 
