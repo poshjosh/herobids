@@ -82,9 +82,9 @@ write_files:
       }
 
       advertise {
-        http = "{{ GetPrivateIP }}"
-        rpc  = "{{ GetPrivateIP }}"
-        serf = "{{ GetPrivateIP }}"
+        http = "__PRIVATE_IP__"
+        rpc  = "__PRIVATE_IP__"
+        serf = "__PRIVATE_IP__"
       }
 
       plugin "docker" {
@@ -433,6 +433,15 @@ runcmd:
       ufw allow from ${private_subnet} to any port 4648 proto tcp
 
       # Enable and start Nomad
+      # Resolve the private network IP (from the Hetzner private network, not Docker's bridge)
+      # and patch the Nomad config before starting. GetPrivateIP in Nomad's Go templates
+      # picks Docker's docker0 (172.17.x.x) over the Hetzner private interface.
+      PRIVATE_IP=$(ip -4 addr show | grep -oP '10\.0\.\d+\.\d+' | head -1)
+      if [ -n "$PRIVATE_IP" ]; then
+        sed -i "s/__PRIVATE_IP__/$PRIVATE_IP/g" /etc/nomad.d/nomad.hcl
+      else
+        logger -t cloud-init "WARNING: Could not resolve private network IP — Nomad advertise will use placeholder"
+      fi
       systemctl enable nomad
       systemctl start nomad
 
