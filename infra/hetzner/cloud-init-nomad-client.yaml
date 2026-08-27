@@ -69,12 +69,12 @@ write_files:
       # Retry joins handle transient network unavailability at first boot.
       server_join {
         retry_join = ["${nomad_server_addr}:4647"]
-        retry_max  = 30
+        retry_max  = 0
         retry_interval = "5s"
       }
 
       advertise {
-        http = "{{ GetPrivateIP }}"
+        http = "__PRIVATE_IP__"
       }
 
   - path: /etc/systemd/system/nomad.service
@@ -137,6 +137,15 @@ runcmd:
   - systemctl start fail2ban
 
   # ── Enable and start Nomad client ────────────────────────
+  # Resolve the private network IP (from the Hetzner private network, not Docker's bridge)
+  # and patch the Nomad config before starting.
+  - |
+    PRIVATE_IP=$(ip -4 addr show | grep -oP '10\.0\.\d+\.\d+' | head -1)
+    if [ -n "$PRIVATE_IP" ]; then
+      sed -i "s/__PRIVATE_IP__/$PRIVATE_IP/g" /etc/nomad.d/nomad.hcl
+    else
+      logger -t cloud-init "WARNING: Could not resolve private network IP — Nomad advertise will use placeholder"
+    fi
   - systemctl daemon-reload
   - systemctl enable nomad
   - systemctl start nomad
