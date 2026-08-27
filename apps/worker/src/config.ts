@@ -108,6 +108,7 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   PLATFORM_ASSESSOR_CACHE_FRESHNESS_MS: { path: 'platformAssessor.cacheFreshnessMs', type: 'number' },
   // Nomad
   NOMAD_TOKEN: { path: 'nomad.token', type: 'string' },
+  NOMAD_ADDR: { path: 'nomad.addr', type: 'string' },
 };
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
