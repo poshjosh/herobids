@@ -12,10 +12,14 @@ export function toMessageValues(params?: Record<string, unknown>): Record<string
 export function localizeApiError(intl: IntlShape, error: unknown, fallbackId: string): string {
   if (error instanceof ApiError) {
     try {
-      return intl.formatMessage(
+      const localized = intl.formatMessage(
         { id: error.code, defaultMessage: error.message },
         toMessageValues(error.params),
       );
+      if (error.code === 'validation_error' && localized !== error.message) {
+        return `${localized}. ${error.message}`;
+      }
+      return localized;
     } catch {
       return error.message;
     }

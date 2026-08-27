@@ -84,7 +84,7 @@ import { initEmailTools } from './tools/email.js';
 import { extractCeilings, extractCreatorInput, resolveProfile } from './agent-risk-limits.js';
 import { getWorkspacePaths } from './tools/workspace.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
-import { resolveEffectiveLlmSelection, type UserModelDefaults } from './llm-selection.js';
+import { resolveEffectiveLlmSelection, type UserModelDefaults, type OperatorModelDefaults } from './llm-selection.js';
 import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
 import { canRouteToHybridEvaluator, runHybridEvaluator } from './hybrid-agent-evaluator.js';
 import { resolveHybridTargetSize } from './hybrid-decision-sizing.js';
@@ -263,6 +263,7 @@ interface AgentConfig {
   telegramChatId?: string;
   runtimeDescriptor?: RuntimeDescriptor;
   userModelDefaults?: UserModelDefaults | null;
+  operatorModelDefaults?: OperatorModelDefaults | null;
   userId?: string;
   usageBillingPlanId?: string;
   usageBillingIncludedCreditMicrousd?: number;

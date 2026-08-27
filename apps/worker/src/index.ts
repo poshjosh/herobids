@@ -1403,6 +1403,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
   usageBillingConfig: appConfig.usageBilling,
   providersYaml,
   crashLoopGuard: appConfig.agentRuntime.crashLoopGuard,
+  operatorModelDefaults: appConfig.agentRuntime.llm.modelDefaults,
 }, agentReconnectHandler, platformAlerts, redisClient);
 
 // Queue used by the broker callback to enqueue bot start jobs
@@ -1486,6 +1487,8 @@ const agentBroker = new AgentMessageBroker(
   },
   appConfig.agentRiskDefaults,
   appConfig.alerts.email.brandImageUrl,
+  undefined, // db — not wired yet
+  appConfig.agentRuntime.llm.modelDefaults,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);

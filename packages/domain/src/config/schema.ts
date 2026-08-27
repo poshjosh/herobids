@@ -160,9 +160,9 @@ export const LlmScoutConfigSchema = z.object({
   maxHoldDurationMs: z.number().int().min(0).nullish().transform((v) => v ?? undefined),
 });
 
-/** Operator-suggested UI defaults for model selection forms.
- *  These populate the initial values in user Settings and agent create/edit forms.
- *  They are NOT used as runtime fallbacks — agents must have explicit model selection.
+/** Operator model defaults — the final fallback tier for model selection.
+ *  Used when neither the agent nor the user has explicit model selection.
+ *  Also populates initial values in UI forms (Settings page, agent create/edit).
  *  All fields are optional: absent/empty = no operator default, frontend falls back to first multi-provider. */
 export const ModelDefaultsSchema = z.object({
   provider: z.string().min(1).optional(),

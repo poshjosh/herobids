@@ -14,6 +14,7 @@ import type {
   AssessStrategyPresetRequestPayload,
   ChangeStrategyPresetRequestPayload,
   ToolContext,
+  OperatorModelDefaults,
 } from '@herobids/domain';
 import {
   Decimal,
@@ -111,6 +112,7 @@ export class AgentMessageBroker {
     private readonly agentRiskDefaults?: AgentRiskDefaultsConfig,
     private readonly brandImageUrl?: string,
     private readonly db?: Database,
+    private readonly operatorModelDefaults?: OperatorModelDefaults,
   ) {}
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
@@ -600,6 +602,7 @@ export class AgentMessageBroker {
               lightModel: userAiModelConfig.lightModel,
               heavyModel: userAiModelConfig.heavyModel,
             } : null,
+            operatorModelDefaults: this.operatorModelDefaults ?? null,
           },
         });
         // Use heavy model for bot decisions; fall back to light model.

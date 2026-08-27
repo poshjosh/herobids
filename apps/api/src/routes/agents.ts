@@ -48,6 +48,7 @@ import {
   WakePreferencesSchema,
   type AgentRiskDefaultsConfig,
   type AgentCostEstimatesConfig,
+  type ModelDefaults,
 } from '@herobids/domain';
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
@@ -506,6 +507,7 @@ export async function agentRoutes(
   agentRiskDefaults: AgentRiskDefaultsConfig = DEFAULT_AGENT_RISK_DEFAULTS,
   agentCostEstimates?: AgentCostEstimatesConfig,
   redisClient?: Redis,
+  operatorModelDefaults?: ModelDefaults,
 ): Promise<void> {
   const approvalRepo = new DecisionApprovalRepository(db);
 
@@ -591,7 +593,8 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
     }
 
-    // Reject creation when neither the agent policy nor the user's saved AI defaults have models.
+    // Reject creation when neither the agent policy, the user's saved AI defaults,
+    // nor the operator's modelDefaults have models.
     // Without any model configured, the agent would fail to start immediately.
     const agentModelSelection = extractModelSelection(effectiveModelPolicy);
     if (!agentModelSelection.provider) {
@@ -600,7 +603,7 @@ export async function agentRoutes(
         .where(eq(users.id, request.userId))
         .limit(1);
       const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
-      if (!userAiConfig) {
+      if (!userAiConfig && !operatorModelDefaults?.provider) {
         return reply.status(400).send({
           error: 'validation_error',
           details: [{ code: 'custom', path: ['provider'], message: 'Provider is required — set it here or configure your AI settings in Settings' }],

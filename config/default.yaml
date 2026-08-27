@@ -501,9 +501,9 @@ agentRuntime:
   thinking:
     drawdownThresholdPct: -2   # drawdown % that triggers deep thinking mode
   llm:
-    # UI defaults for model selection forms (Settings page, agent create/edit).
-    # These populate the initial values when no user/agent selection exists.
-    # They are NOT used as runtime fallbacks — agents must have explicit models.
+    # Operator defaults for model selection — used as the final fallback tier
+    # when neither the agent nor the user has explicit model selection.
+    # Also populates initial values in UI forms (Settings page, agent create/edit).
     modelDefaults:
       provider: ollama                      # suggested provider in forms
       lightModel: qwen3:8b                   # suggested economy (scout) model

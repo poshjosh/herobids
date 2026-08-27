@@ -7,6 +7,7 @@ import type {
   PlansConfig,
   UsageBillingConfig,
   ProvidersYaml,
+  OperatorModelDefaults,
 } from '@herobids/domain';
 import { resolveAgentRuntimePolicy, toGuardrailNumber } from '@herobids/domain';
 import { buildRuntimeDescriptor } from '@herobids/db';
@@ -79,6 +80,8 @@ export interface AgentSessionManagerConfig {
   providersYaml?: ProvidersYaml;
   /** Cross-session crash-loop guard config — if unset, guard is disabled */
   crashLoopGuard?: CrashLoopGuardConfig;
+  /** Operator model defaults — final fallback tier for model resolution when neither agent nor user has explicit selection */
+  operatorModelDefaults?: OperatorModelDefaults;
 }
 
 /**
@@ -456,7 +459,7 @@ export class AgentSessionManager {
 
         // Validate model selection before launch — fail loudly rather than letting the container crash silently.
         const effectiveSelection = resolveEffectiveLlmSelection({
-          agentConfig: { provider, lightModel, heavyModel, userModelDefaults: userModelDefaults ?? null },
+          agentConfig: { provider, lightModel, heavyModel, userModelDefaults: userModelDefaults ?? null, operatorModelDefaults: this.config.operatorModelDefaults ?? null },
         });
         if (!effectiveSelection.provider || !effectiveSelection.lightModel || !effectiveSelection.heavyModel) {
           const code = 'config.model_selection_incomplete';
@@ -504,6 +507,7 @@ export class AgentSessionManager {
           ...(lightModel ? { lightModel } : {}),
           ...(heavyModel ? { heavyModel } : {}),
           ...(userModelDefaults ? { userModelDefaults } : {}),
+          ...(this.config.operatorModelDefaults ? { operatorModelDefaults: this.config.operatorModelDefaults } : {}),
           ...(typeof modelPolicy?.['costPreset'] === 'string'
             ? { costPreset: modelPolicy['costPreset'] }
             : {}),

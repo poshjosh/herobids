@@ -107,3 +107,121 @@ describe('resolveEffectiveLlmSelection', () => {
     });
   });
 });
+
+describe('resolveEffectiveLlmSelection — operator defaults tier', () => {
+  it('uses operator defaults when both agent and user have no selection', () => {
+    const resolved = resolveEffectiveLlmSelection({
+      agentConfig: {
+        operatorModelDefaults: {
+          provider: 'ollama',
+          lightModel: 'qwen3:8b',
+          heavyModel: 'qwen3.6:35b',
+        },
+      },
+    });
+
+    expect(resolved).toEqual({
+      provider: 'ollama',
+      lightModel: 'qwen3:8b',
+      heavyModel: 'qwen3.6:35b',
+    });
+  });
+
+  it('user defaults take precedence over operator defaults', () => {
+    const resolved = resolveEffectiveLlmSelection({
+      agentConfig: {
+        userModelDefaults: {
+          provider: 'openai',
+          lightModel: 'gpt-4.1-mini',
+          heavyModel: 'gpt-4.1',
+        },
+        operatorModelDefaults: {
+          provider: 'ollama',
+          lightModel: 'qwen3:8b',
+          heavyModel: 'qwen3.6:35b',
+        },
+      },
+    });
+
+    expect(resolved).toEqual({
+      provider: 'openai',
+      lightModel: 'gpt-4.1-mini',
+      heavyModel: 'gpt-4.1',
+    });
+  });
+
+  it('agent config takes precedence over both user and operator defaults', () => {
+    const resolved = resolveEffectiveLlmSelection({
+      agentConfig: {
+        provider: 'anthropic',
+        lightModel: 'claude-haiku-3-5',
+        heavyModel: 'claude-sonnet-4-5',
+        userModelDefaults: {
+          provider: 'openai',
+          lightModel: 'gpt-4.1-mini',
+          heavyModel: 'gpt-4.1',
+        },
+        operatorModelDefaults: {
+          provider: 'ollama',
+          lightModel: 'qwen3:8b',
+          heavyModel: 'qwen3.6:35b',
+        },
+      },
+    });
+
+    expect(resolved).toEqual({
+      provider: 'anthropic',
+      lightModel: 'claude-haiku-3-5',
+      heavyModel: 'claude-sonnet-4-5',
+    });
+  });
+
+  it('mixes tiers per field: agent provider, operator models', () => {
+    const resolved = resolveEffectiveLlmSelection({
+      agentConfig: {
+        provider: 'anthropic',
+        operatorModelDefaults: {
+          provider: 'ollama',
+          lightModel: 'qwen3:8b',
+          heavyModel: 'qwen3.6:35b',
+        },
+      },
+    });
+
+    expect(resolved).toEqual({
+      provider: 'anthropic',
+      lightModel: 'qwen3:8b',
+      heavyModel: 'qwen3.6:35b',
+    });
+  });
+
+  it('null or undefined operatorModelDefaults does not break existing behavior', () => {
+    const withNull = resolveEffectiveLlmSelection({
+      agentConfig: {
+        userModelDefaults: {
+          provider: 'openai',
+          lightModel: 'gpt-4.1-mini',
+          heavyModel: 'gpt-4.1',
+        },
+        operatorModelDefaults: null,
+      },
+    });
+
+    const withUndefined = resolveEffectiveLlmSelection({
+      agentConfig: {
+        userModelDefaults: {
+          provider: 'openai',
+          lightModel: 'gpt-4.1-mini',
+          heavyModel: 'gpt-4.1',
+        },
+      },
+    });
+
+    expect(withNull).toEqual(withUndefined);
+    expect(withNull).toEqual({
+      provider: 'openai',
+      lightModel: 'gpt-4.1-mini',
+      heavyModel: 'gpt-4.1',
+    });
+  });
+});
