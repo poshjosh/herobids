@@ -11,7 +11,7 @@ cd infra/hetzner
 ./scripts/smoke-test.sh --env staging
 ```
 
-Expected: 11 passed, 0 failed, 3 skipped. Exit code 0.
+Expected: 13 passed, 0 failed, 3 skipped. Exit code 0.
 
 If any check fails, the script prints the specific failure and the command to diagnose it (typically `./scripts/logs.sh --env staging -- <service>`).
 
