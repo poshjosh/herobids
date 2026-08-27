@@ -61,6 +61,19 @@ The `unifiedConfig` JSONB column carries **authored configuration** set at creat
 
 The `blueprint-projection.ts` service treats the entire column as **authored recipe** (not runtime state). The runtime write path (`persistConfig`) exists but is not currently exercised by any agent tool.
 
+### Existing Clone-Adjacent Code We Must Reuse Safely
+
+There is already production code that performs the two halves of "clone authored agent config":
+
+| Concern | Location | Notes |
+|---|---|---|
+| Agent -> authored payload projection | `apps/api/src/services/blueprint-projection.ts` | Produces `AgentBlueprintRevisionPayload` from an agent row |
+| Agent -> blueprint draft route | `apps/api/src/routes/agents.ts` (`POST /agents/:id/blueprints`) | Uses `projectAgentToBlueprintPayload()` |
+| Keep agent's blueprint in sync | `apps/api/src/services/agent-blueprint-sync-service.ts` | Uses the same projection logic on agent start |
+| Authored payload -> agent creation | `apps/api/src/routes/blueprints.ts` (`POST /blueprints/:blueprintId/instantiate`) | Rebuilds agent rows from blueprint payload |
+
+"Go Live" should avoid inventing a second independent authored-payload-to-agent mapping. The safest path is to extract the existing blueprint instantiation core into a shared internal service, keep blueprint behavior unchanged, and make Go Live a thin wrapper over that shared core plus its agent-specific rules.
+
 ### Current Normalization Boundary
 
 The existing `prepareAgentCreateFields()` / `resolveUnifiedConfig()` pipeline does **not** currently accept every authored `unifiedConfig` subtree as an explicit input. Today it directly models:
@@ -83,6 +96,7 @@ Additional authored subtrees such as `intelligence`, `executionPolicy`, `allowed
 - `unifiedConfig` must be carried over during clone — it is authored config, not runtime state.
 - "Go Live" must go through the existing agent creation pipeline (validation, normalization, skill selectability, plan limits) rather than raw column copying.
 - `prepareAgentCreateFields()` covers config normalization, not the entire create pipeline. Name validation and skill selectability must still run as explicit steps, and authored `unifiedConfig` subtrees not yet modeled by that helper must still be preserved.
+- Do not break existing blueprint behavior. Extract the shared authored-payload-to-agent creation core from the blueprint instantiate path first, keep blueprint route behavior byte-for-byte equivalent where intended, then add Go Live as a separate wrapper.
 
 ## Proposed Solution
 
@@ -102,17 +116,13 @@ A new API endpoint that clones a test agent's config into a new live agent.
 
 **Endpoint:** `POST /agents/:id/go-live`
 
-**Architecture:** Extract a shared `cloneAgentAsLive()` service function that:
-1. Loads the source agent and validates ownership/mode/connections.
-2. Re-runs the same create-time validation responsibilities used by POST /agents, split by responsibility:
-  - request/schema validation for any name override
-  - skill selectability resolution via `resolveSkillAssignmentsForUser()`
-  - config normalization/validation via `prepareAgentCreateFields()`
-  - plan enforcement via `checkLiveEnabled()` and `checkAgentLimit()`
-3. Preserves **all** authored `unifiedConfig` subtrees. For fields already modeled by `PrepareAgentCreateFieldsParams`, feed them through the shared normalization path. For authored subtrees that are not yet modeled there (`intelligence`, `executionPolicy`, `allowedPresets`, `presetTransition` today), either extend the helper interfaces to accept them or merge them back after validation. No authored config may be dropped.
-4. Sets `executionDefaults.mode = 'live'`.
-5. Inserts the new agent, inserts resolved `agent_skills` assignments, and copies active `agent_connections` rows.
-6. Returns the new agent in the same response shape as POST `/agents`.
+**Architecture:** extract a shared internal authored-payload-to-agent creation service from the existing blueprint instantiate flow, then add Go Live as a thin wrapper over that service.
+
+**Shared-core rule:**
+- First refactor the code in `apps/api/src/routes/blueprints.ts` that turns an `AgentBlueprintRevisionPayload` into a stopped agent row into an internal service or helper module.
+- Make `POST /blueprints/:blueprintId/instantiate` call that new shared service with no intended behavior change.
+- Only after the blueprint route is using the extracted shared core should `cloneAgentAsLive()` be added as a second caller.
+- Go Live must not call the public blueprint route end-to-end and must not create blueprint attribution or usage side effects.
 
 **Fields carried over from source agent:**
 
@@ -223,6 +233,35 @@ A new API endpoint that clones a test agent's config into a new live agent.
 
 **Implementation guidance:**
 
+*Step 3A — Extract the shared authored-payload creation core from blueprint instantiate first:*
+
+- Identify the existing agent-instantiation block inside `apps/api/src/routes/blueprints.ts` that maps `AgentBlueprintRevisionPayload` to the inserted `agents` row.
+- Move that authored-payload-to-agent creation logic into a dedicated internal service/helper, for example:
+  - `apps/api/src/services/agent-authored-instantiation-service.ts`, or
+  - a similarly-scoped helper module under `services/`.
+- The extracted service should accept authored payload plus caller-supplied context and return enough data for both callers:
+  - inserted agent row or inserted agent ID
+  - resolved `agent_skills` assignments inserted
+  - final `unifiedConfig` / `risk` / `executionDefaults` used for persistence if needed by tests
+- The blueprint instantiate route remains responsible for blueprint-only concerns:
+  - publication and access checks
+  - idempotency keys and replay semantics
+  - blueprint attribution fields (`blueprintId`, `blueprintRevisionId`)
+  - blueprint usage events
+- The extracted service must have **no** blueprint side effects on its own.
+
+*Step 3B — Make blueprint instantiate use the extracted core with no behavior change:*
+
+- Replace the inline agent creation block in `apps/api/src/routes/blueprints.ts` with a call to the extracted service.
+- Preserve current blueprint instantiate behavior exactly:
+  - same response status / payload
+  - same attribution fields
+  - same skill pinning behavior
+  - same idempotency behavior
+  - same unifiedConfig mapping semantics
+
+*Step 3C — Add Go Live as a thin wrapper over the extracted core:*
+
 *Service layer — new file `apps/api/src/services/agent-go-live-service.ts`:*
 
 Extract a `cloneAgentAsLive()` function that:
@@ -230,29 +269,19 @@ Extract a `cloneAgentAsLive()` function that:
 2. Validates source mode is paper or shadow (400 if already live).
 3. Loads source agent's active connections (`agent_connections` with status `active`) and skill assignments (`agent_skills`).
 4. Validates at least one active connection exists (required for live mode).
-5. Builds create params using source agent's authored config, mapping the **helper-supported subset** to the `PrepareAgentCreateFieldsParams` interface from `agent-create-normalization.ts`:
-   - `name`: source name + `" (Live)"` (caller can override via optional `name` param).
-   - `prompt`, `style`, `capital`, `tickIntervalMs`, `maxBots`, `toolPolicy`, `modelPolicy`, `runtimePolicyOverrides`, `wakePreferences`, `notificationPolicy`, `telegramChatId`, `openPositionEscalationToJudgePolicy`: copied from source.
-   - `executionDefaults`: source's execution defaults with `mode` overridden to `'live'`.
-   - `technical`, `capabilityMode`, `hybridMode`, `platformAssessment`, `authorizationMode`: extracted from source's `unifiedConfig`.
-   - `risk`, `strategy`: copied from source.
-   - `skillIds`: from source's `agent_skills`.
-   - `connectionIds`: from source's active `agent_connections`.
-   - `skillPresetId`: extracted from source's `unifiedConfig.metadata.skillPresetId` if present.
-   - `strategyPreset`: extracted from source's `unifiedConfig.metadata.strategyPreset` if present.
-6. Separately resolves skill assignments with `resolveSkillAssignmentsForUser(...)` using the source skill IDs. This is the step that re-checks skill selectability/entitlements. Do **not** raw-copy existing `agent_skills` rows.
-7. Calls `prepareAgentCreateFields(params)` for the helper-supported config subset. This covers config normalization/validation such as technical config parsing, strategy preset resolution, Zod defaults, scanner-gated guards, regime injection, notification policy normalization, and runtime policy stamping. It does **not** replace request-schema validation or skill selectability checks.
-8. Preserves authored `unifiedConfig` subtrees that are not currently represented by `PrepareAgentCreateFieldsParams` (`intelligence`, `executionPolicy`, `allowedPresets`, `presetTransition` today). Acceptable implementation options:
-  - extend `PrepareAgentCreateFieldsParams` / `resolveUnifiedConfig()` to accept and validate these subtrees directly, or
-  - merge these validated source subtrees back into the normalized `createFields.unifiedConfig` before insert.
-  In either case, the final cloned agent must not lose any authored `unifiedConfig` field present on the source.
-9. Checks plan entitlements: `checkLiveEnabled(plansConfig, userPlanId, isAdmin)`.
-10. Checks agent count limit: `checkAgentLimit(...)`.
-11. In a transaction:
-   - Inserts new agent row with the prepared fields.
-   - Copies `agent_skills` rows with new `agentId` (using the resolved `assignmentResolution` from skill selectability checks, not raw row copies).
-   - Copies active `agent_connections` rows with new `agentId` and new row IDs.
-12. Returns the new agent.
+5. Projects the source agent into an authored payload using the existing shared projection logic (`projectAgentToBlueprintPayload()` or an extracted equivalent), then applies Go Live-specific transformations on that payload:
+   - set `executionDefaults.mode = 'live'`
+   - override `name` to `source name + " (Live)"` unless caller provides a custom name
+   - ensure blueprint attribution is **not** carried over
+6. Re-runs the non-blueprint create-time validation responsibilities that Go Live still owns:
+   - request/schema validation for any name override
+   - skill selectability resolution via `resolveSkillAssignmentsForUser()`
+   - config normalization/validation via `prepareAgentCreateFields()` for helper-supported config
+   - plan enforcement via `checkLiveEnabled()` and `checkAgentLimit()`
+7. Preserves **all** authored `unifiedConfig` subtrees from the source agent. For fields already modeled by `PrepareAgentCreateFieldsParams`, feed them through the shared normalization path. For authored subtrees that are not yet modeled there (`intelligence`, `executionPolicy`, `allowedPresets`, `presetTransition` today), either extend the helper interfaces to accept them or merge them back after validation. No authored config may be dropped.
+8. Calls the extracted authored-payload-to-agent creation core to create the new stopped agent row, while Go Live separately handles agent-only/private fields that blueprints intentionally do not carry (active `agent_connections`, `notificationPolicy`, `telegramChatId`).
+9. Copies active `agent_connections` rows to the new agent with fresh IDs.
+10. Returns the new agent.
 
 *Route layer — in `apps/api/src/routes/agents.ts`:*
 
@@ -264,6 +293,7 @@ Add `POST /agents/:id/go-live`:
 
 **Test requirements:**
 - Unit/integration tests:
+  - Refactor safety: existing `POST /blueprints/:blueprintId/instantiate` tests continue to pass unchanged after extraction.
   - Successfully clones a paper agent as live — verify new agent has `mode: 'live'`, same skills, same connections, and all authored `unifiedConfig` fields from the source.
   - Successfully clones a shadow agent as live.
   - Cloned agent has `style` and `openPositionEscalationToJudgePolicy` from source.
@@ -283,6 +313,16 @@ Add `POST /agents/:id/go-live`:
   - maxBots ceiling from user plan is respected.
   - Scanner-gated agent clones correctly with full technical config preserved.
   - Route response shape matches POST `/agents` response shape, including unifiedConfig-derived fields and `riskContract`.
+
+*Blueprint-regression tests to add or strengthen as part of this task:*
+- In `apps/api/src/routes/blueprints.integration.test.ts`:
+  - add a regression test that instantiating an agent blueprint preserves authored payload fields that are easy to lose during extraction: `intelligence`, `executionPolicy`, `allowedPresets`, `presetTransition`, `platformAssessment`, `authorizationMode`, `wakePreferences`, and `openPositionEscalationToJudgePolicy`.
+  - keep the existing deterministic-copy and idempotency tests passing after extraction.
+- In `apps/api/src/services/blueprint-projection.test.ts`:
+  - add or strengthen projection tests for fields that Go Live will rely on from authored payload projection: `intelligence`, `executionPolicy`, `allowedPresets`, `presetTransition`, `platformAssessment`, `authorizationMode`, and `wakePreferences`.
+- If the shared authored-payload creation core becomes a new service file:
+  - add unit tests for that service covering agent-row creation from a rich `AgentBlueprintRevisionPayload`.
+  - verify blueprint-only concerns are *not* handled there (no attribution or usage-event side effects inside the shared core).
 
 **Demo:** `POST /agents/:id/go-live` creates a new live agent, visible in the agent list, startable immediately. The agent has the same technical config, strategy, and capabilities as the source.
 
@@ -320,6 +360,12 @@ Add `POST /agents/:id/go-live`:
 
 **Implementation guidance:**
 
+*Blueprint regression before/alongside Go Live:*
+
+1. Run and keep passing the existing blueprint instantiate and blueprint projection test suites while doing the extraction.
+2. Add explicit regression coverage for the extracted shared core before switching Go Live onto it.
+3. Confirm `POST /agents/:id/blueprints` projection behavior remains unchanged.
+
 *Functional test (in `apps/api/src/__tests__/functional/`):*
 
 Test the complete mode immutability + Go Live flow:
@@ -350,5 +396,8 @@ Test `/golive` Telegram flow:
 - Telegram `/golive` functional test.
 - Verify `/help mode` output no longer mentions setting mode.
 - Verify `/help golive` output is present and correct.
+- Blueprint instantiate regression tests remain green after the shared-core extraction.
+- Blueprint projection tests cover the authored fields used by Go Live.
+- If `POST /agents/:id/blueprints` has route-level tests already, keep them green; otherwise add a focused regression test for the projection route if the extraction touches its shared projection helper usage.
 
 **Demo:** Full end-to-end flow from paper agent creation through "Go Live" to live agent start, with mode-change attempts correctly rejected at every step via PATCH (primary UI path), PUT (chat-based path), and Telegram.

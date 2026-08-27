@@ -169,6 +169,9 @@ export function resolveStyleTickIntervalMs(style: AgentStyleValue, tickIntervalM
   return Number(resolveStyleDefaults(style).tickIntervalMins) * MS_PER_MINUTE;
 }
 
+/** Backend ceiling for maxHoldDurationMs (RUNTIME_POLICY_CEILINGS.maxHoldDurationMs). */
+const MAX_HOLD_DURATION_CEILING_MS = 86_400_000 - 1;
+
 export function deriveStyleMaxHoldDurationMs(style: AgentStyleValue, tickIntervalMsOverride?: number | null): number {
   const defaults = resolveStyleDefaults(style);
   const defaultTickIntervalMs = Number(defaults.tickIntervalMins) * MS_PER_MINUTE;
@@ -176,7 +179,7 @@ export function deriveStyleMaxHoldDurationMs(style: AgentStyleValue, tickInterva
     ? defaults.maxHoldDurationMs / defaultTickIntervalMs
     : 1;
 
-  return Math.round(resolveStyleTickIntervalMs(style, tickIntervalMsOverride) * multiplier);
+  return Math.min(Math.round(resolveStyleTickIntervalMs(style, tickIntervalMsOverride) * multiplier), MAX_HOLD_DURATION_CEILING_MS);
 }
 
 export function applyAutoMaxHoldOverride(
