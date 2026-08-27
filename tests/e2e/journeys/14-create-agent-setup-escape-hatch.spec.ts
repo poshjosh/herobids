@@ -48,10 +48,15 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
     // Select the trading-capable skill — must switch to Custom preset first
     await page.locator('select:has(option[value="personal-assistant"])').selectOption('custom');
 
-    // Expand the Advanced Settings section and switch to the Skills tab
-    // so the skill checkboxes become visible.  The AdvancedSettingsSection
-    // wraps everything in a single <details> with summary "Advanced Settings";
-    // sections are tabs (AI Configuration / Skills / Trading Setup / Strategy).
+    // Skills are behind the "▸ Add skills (Optional)" expandable section.
+    // Click it to reveal skill checkboxes.
+    const addSkillsBtn = page.getByRole('button', { name: /Add skills/i });
+    if (await addSkillsBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      await addSkillsBtn.click();
+      await page.waitForTimeout(300);
+    }
+
+    // If the Advanced Settings section exists (with a Skills tab), open it
     const advancedDetails = page.locator('details').filter({ hasText: 'Advanced Settings' }).first();
     const detailsCount = await advancedDetails.count();
     if (detailsCount > 0) {

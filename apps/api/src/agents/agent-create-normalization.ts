@@ -226,7 +226,7 @@ export async function resolveUnifiedConfig(params: {
     finalUnifiedConfig['technical']
   ) {
     const tech = finalUnifiedConfig['technical'] as TechnicalConfig;
-    if (tech.filters.venueType === 'orderbook' && !tech.regime) {
+    if (tech.filters?.venueType === 'orderbook' && !tech.regime) {
       (finalUnifiedConfig['technical'] as Record<string, unknown>).regime = { benchmarkSymbol: 'BTC' };
     }
   }
@@ -241,7 +241,7 @@ export async function resolveUnifiedConfig(params: {
     finalUnifiedConfig['technical']
   ) {
     const tech = finalUnifiedConfig['technical'] as TechnicalConfig;
-    if (tech.filters.venueType === 'orderbook' && !tech.regime) {
+    if (tech.filters?.venueType === 'orderbook' && !tech.regime) {
       throw new Error(
         'Scanner-gated orderbook agents require a regime configuration for the scanner to function. ' +
         'Add a "regime" field to the technical config (e.g. { "benchmarkSymbol": "BTC" }) or use a strategy preset that includes one.',

@@ -40,7 +40,9 @@ test.describe('Journey 3: Messages section renders on agent detail page', () => 
 
     // Both the Messages to User card and the Protocol Activity card should be
     // present and display their respective empty states.
-    await expect(page.getByText(/Messages to User/i)).toBeVisible({ timeout: 5000 });
+    // The Messages section is inside a collapsed <details>; click to expand.
+    await expect(page.getByText(/Messages to user/i)).toBeVisible({ timeout: 5000 });
+    await page.getByText(/Messages to user/i).click();
     await expect(page.getByText(/No messages sent yet/i)).toBeVisible({ timeout: 5000 });
 
     await expect(page.getByText(/Activity Timeline/i)).toBeVisible({ timeout: 5000 });

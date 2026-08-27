@@ -85,27 +85,17 @@ describe('TryPage', () => {
   // ── Static message copy ──────────────────────────────────────────────
 
   it('contains the static message copy for message 1', () => {
-    // MESSAGE_1 is "Hi! I can help you create an AI agent. ..."
-    // In the IDLE phase it's not rendered to DOM, but we verify the
-    // string exists in the component source code.
-    const fs = require('node:fs');
-    const sourcePath = new URL('./TryPage.tsx', import.meta.url).pathname;
-    const source = fs.readFileSync(sourcePath, 'utf8');
-    expect(source).toContain("Hi! I can help you create an AI agent.");
+    // Messages are now i18n keys rendered via react-intl.
+    // Verify the English locale file contains the expected copy.
+    expect(messages['try.message1']).toContain("Hi! I can help you create an AI agent.");
   });
 
   it('contains the static message copy for message 2 in source', () => {
-    const fs = require('node:fs');
-    const sourcePath = new URL('./TryPage.tsx', import.meta.url).pathname;
-    const source = fs.readFileSync(sourcePath, 'utf8');
-    expect(source).toContain('I see you have not logged in');
+    expect(messages['try.message2']).toContain('I see you have not logged in');
   });
 
   it('contains the static message copy for message 3 in source', () => {
-    const fs = require('node:fs');
-    const sourcePath = new URL('./TryPage.tsx', import.meta.url).pathname;
-    const source = fs.readFileSync(sourcePath, 'utf8');
-    expect(source).toContain('An email has been sent to');
+    expect(messages['try.message3']).toContain('An email has been sent to');
   });
 
   // ── Email validation ─────────────────────────────────────────────────

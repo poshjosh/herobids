@@ -10,14 +10,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IntlProvider } from 'react-intl';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-
-// Simple English messages fallback — matches react-intl IntlProvider requirement
-const enMessages = {
-  'status.running': 'Running',
-  'status.stopped': 'Stopped',
-  'status.crashed': 'Crashed',
-  'status.starting': 'Starting',
-};
+import { messages as enMessages } from '../../../app/i18n/locales/en.js';
 
 // ── Mock Setup ──────────────────────────────────────────────────────────
 

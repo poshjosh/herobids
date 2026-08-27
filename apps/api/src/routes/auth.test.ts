@@ -856,12 +856,21 @@ describe('auth routes', () => {
       };
     }
 
+    /** Minimal db mock that satisfies the locale lookup (select → from → where → limit). */
+    function makeLoginLinkDbMock() {
+      const chain: Record<string, unknown> = {};
+      chain.from = vi.fn().mockReturnValue(chain);
+      chain.where = vi.fn().mockReturnValue(chain);
+      chain.limit = vi.fn().mockResolvedValue([]);
+      return { select: vi.fn().mockReturnValue(chain) } as any;
+    }
+
     it('returns 400 for invalid email', async () => {
       const { authRoutes } = await import('./auth.js');
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, makeRedisMock() as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), makeRedisMock() as any);
 
       const res = await app.inject({
         method: 'POST',
@@ -881,7 +890,7 @@ describe('auth routes', () => {
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, redis as any, 'free', undefined, authMailer as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), redis as any, 'free', undefined, authMailer as any);
 
       const res = await app.inject({
         method: 'POST',
@@ -901,7 +910,7 @@ describe('auth routes', () => {
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
       // No authMailer passed — email delivery is disabled, but the response is still generic
-      await authRoutes(app, makeAuthConfig(), {} as any, makeRedisMock() as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), makeRedisMock() as any);
 
       const res = await app.inject({
         method: 'POST',
@@ -920,7 +929,7 @@ describe('auth routes', () => {
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), redis as any);
 
       const res = await app.inject({
         method: 'POST',
@@ -940,7 +949,7 @@ describe('auth routes', () => {
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, redis as any, 'free', undefined, authMailer as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), redis as any, 'free', undefined, authMailer as any);
 
       const res = await app.inject({
         method: 'POST',
@@ -960,7 +969,7 @@ describe('auth routes', () => {
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
       const config = makeAuthConfig();
-      await authRoutes(app, config, {} as any, redis as any, 'free', undefined, authMailer as any);
+      await authRoutes(app, config, makeLoginLinkDbMock(), redis as any, 'free', undefined, authMailer as any);
 
       await app.inject({
         method: 'POST',
@@ -983,7 +992,7 @@ describe('auth routes', () => {
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), redis as any);
 
       await app.inject({
         method: 'POST',
@@ -1003,7 +1012,7 @@ describe('auth routes', () => {
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, redis as any, 'free', undefined, authMailer as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), redis as any, 'free', undefined, authMailer as any);
 
       await app.inject({
         method: 'POST',
@@ -1024,7 +1033,7 @@ describe('auth routes', () => {
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
       const config = makeAuthConfig();
-      await authRoutes(app, config, {} as any, redis as any, 'free', undefined, authMailer as any);
+      await authRoutes(app, config, makeLoginLinkDbMock(), redis as any, 'free', undefined, authMailer as any);
 
       await app.inject({
         method: 'POST',
@@ -1036,6 +1045,7 @@ describe('auth routes', () => {
         'user@example.com',
         expect.any(String),
         config.loginLinkTtlSecs,
+        'en',
       );
     });
 
@@ -1046,7 +1056,7 @@ describe('auth routes', () => {
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, makeRedisMock() as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), makeRedisMock() as any);
 
       const res = await app.inject({
         method: 'POST',
@@ -1063,7 +1073,7 @@ describe('auth routes', () => {
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, makeRedisMock() as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), makeRedisMock() as any);
 
       const res = await app.inject({
         method: 'POST',
@@ -1080,7 +1090,7 @@ describe('auth routes', () => {
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, makeRedisMock() as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), makeRedisMock() as any);
 
       const res = await app.inject({
         method: 'POST',
@@ -1156,7 +1166,7 @@ describe('auth routes', () => {
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), redis as any);
 
       const res = await app.inject({
         method: 'POST',
@@ -1182,7 +1192,7 @@ describe('auth routes', () => {
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), redis as any);
 
       await app.inject({
         method: 'POST',
@@ -1204,7 +1214,7 @@ describe('auth routes', () => {
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), redis as any);
 
       await app.inject({
         method: 'POST',
@@ -1227,7 +1237,7 @@ describe('auth routes', () => {
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), redis as any);
 
       await app.inject({
         method: 'POST',
@@ -1250,7 +1260,7 @@ describe('auth routes', () => {
       const app = Fastify();
       app.decorateRequest('userId', '');
       app.decorateRequest('userPlanId', '');
-      await authRoutes(app, makeAuthConfig(), {} as any, redis as any);
+      await authRoutes(app, makeAuthConfig(), makeLoginLinkDbMock(), redis as any);
 
       await app.inject({
         method: 'POST',

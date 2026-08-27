@@ -45,7 +45,9 @@ test.describe('Journey 2: Recent Decisions section renders on agent detail page'
 
     // The Recent Decisions card should be present and display the empty state
     // ("No decisions submitted yet.") since no agent actions have been taken.
-    await expect(page.getByText(/Recent Decisions/i)).toBeVisible({ timeout: 5000 });
+    // The section is inside a collapsed <details>; click to expand.
+    await expect(page.getByText(/Recent decisions/i)).toBeVisible({ timeout: 5000 });
+    await page.getByText(/Recent decisions/i).click();
     await expect(page.getByText(/no decisions submitted yet/i)).toBeVisible({ timeout: 5000 });
   });
 });

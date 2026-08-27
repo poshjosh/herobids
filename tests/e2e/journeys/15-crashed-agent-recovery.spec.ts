@@ -10,7 +10,7 @@
  * endpoint correctly enforcing "stop before delete".
  */
 
-import { registerUser } from '../helpers.js';
+import { registerUser, ensureUserAiModelSettings } from '../helpers.js';
 import { test, expect } from '@playwright/test';
 
 const EMAIL = `j15-${Date.now()}@e2e.local`;
@@ -25,6 +25,9 @@ test.describe('Journey 15: Crashed-agent recovery', () => {
       test.skip(true, 'Auth token not accessible from storage (hb_session_token)');
       return;
     }
+
+    // Ensure the user has AI model settings so the agent can start
+    await ensureUserAiModelSettings(page);
 
     // Create agent via API — starts in 'stopped' state
     const agentRes = await request.post('/api/agents', {

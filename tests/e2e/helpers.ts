@@ -68,6 +68,25 @@ export async function getAuthToken(page: Page): Promise<string> {
   return token;
 }
 
+/**
+ * Set user AI model preferences via PATCH /settings/ai-model.
+ * Uses operator-default models (ollama) which are available in the E2E env.
+ */
+export async function ensureUserAiModelSettings(page: Page): Promise<void> {
+  const token = await getAuthToken(page);
+  const res = await page.request.patch('/api/settings/ai-model', {
+    headers: { Authorization: `Bearer ${token}` },
+    data: {
+      provider: 'ollama',
+      lightModel: 'qwen3:8b',
+      heavyModel: 'qwen3.6:35b-a3b-q4_K_M',
+    },
+  });
+  if (!res.ok()) {
+    throw new Error(`Failed to set AI model settings: ${res.status()} ${await res.text()}`);
+  }
+}
+
 export async function getAuthenticatedUserId(page: Page, request: APIRequestContext): Promise<string> {
   const token = await getAuthToken(page);
   const response = await request.get('/api/auth/me', {
