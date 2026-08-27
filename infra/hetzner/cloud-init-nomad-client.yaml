@@ -41,6 +41,14 @@ write_files:
 
         node_class = "agent"
 
+        servers = ["${nomad_server_addr}:4647"]
+
+        server_join {
+          retry_join = ["${nomad_server_addr}:4647"]
+          retry_max  = 0
+          retry_interval = "5s"
+        }
+
         meta {
           environment = "${environment}"
           node_pool   = "${node_pool}"
@@ -63,14 +71,6 @@ write_files:
             enabled = true
           }
         }
-      }
-
-      # Join the Nomad cluster via the server's private IP.
-      # Retry joins handle transient network unavailability at first boot.
-      server_join {
-        retry_join = ["${nomad_server_addr}:4647"]
-        retry_max  = 0
-        retry_interval = "5s"
       }
 
       advertise {
