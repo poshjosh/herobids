@@ -3,7 +3,6 @@
 **Status:** Ready for implementation
 **Scope:** Phase 1 — three new agent tools (`list_skills`, `add_skills`, `remove_skills`) with **same-tick hot-reload**, including same-tick LLM tool-list refresh
 **Excluded:** External skills.sh integration, publishing skills externally, connection auto-assign, `update_my_prompt`
-**Supersedes:** `002-dynamic-skill-management-plan.md` (next-tick-only variant)
 **Parent:** `docs/features/pending/002-blank-slate-agents/001-plan.md`
 
 ---
