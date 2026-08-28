@@ -164,7 +164,7 @@ Add the autoscale env file upload step to `deploy.sh`'s sequence:
 4. `seed-admin.sh` — seed admin user
 5. verify — health check
 
-### T8. Update scale-common.sh tf_ensure_ready `PENDING`
+### T8. Update scale-common.sh tf_ensure_ready `DONE`
 
 `tf_ensure_ready()` already handles backend init. Verify it works correctly when called for the first time after deploy (no prior `terraform init` from cloud-init). The `-reconfigure` flag in `tf_init_backend()` should handle this — confirm with a test.
 
@@ -174,7 +174,7 @@ Add the autoscale env file upload step to `deploy.sh`'s sequence:
 - `infra/hetzner/docs/auto-scaling/setup-auto-scaling.md` — Remove tfvars-based credential setup, add `setup-autoscale-env.sh` step.
 - `infra/hetzner/docs/auto-scaling/useful.md` — Update recovery guidance.
 
-### T10. Update tests `PENDING`
+### T10. Update tests `DONE`
 
 - Add a test to verify `tf_ensure_ready()` works when no prior `terraform init` has run (simulating the deferred-init path).
 - Verify the systemd `EnvironmentFile=-` pattern works with the existing test harness (source the env file before running the test functions).

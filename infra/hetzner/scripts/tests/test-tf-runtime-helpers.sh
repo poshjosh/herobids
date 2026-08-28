@@ -678,6 +678,377 @@ assert_neq "${RUN_EXIT}" "0" "fails when terraform apply returns non-zero"
 test_end || SUITE_FAILED=1
 
 # ═════════════════════════════════════════════════════════════════════════════
+# Deferred-init: tf_init_backend works with no prior .terraform directory
+# (T8 verification — simulates first boot without boot-time terraform init)
+# ═════════════════════════════════════════════════════════════════════════════
+
+test_begin "tf_init_backend (deferred-init, no .terraform dir)"
+
+# Create a fresh TERRAFORM_DIR with no .terraform subdirectory
+DEFERRED_TF_DIR="${TEST_TMPDIR}/deferred-terraform"
+mkdir -p "${DEFERRED_TF_DIR}"
+
+DEFERRED_MOCK_DIR="${TEST_TMPDIR}/deferred-mock-bin"
+mkdir -p "${DEFERRED_MOCK_DIR}"
+
+cat > "${DEFERRED_MOCK_DIR}/terraform" << 'DEFMOCK'
+#!/usr/bin/env bash
+echo "$0 $*" >> "${TEST_TMPDIR}/terraform-calls"
+exit 0
+DEFMOCK
+chmod +x "${DEFERRED_MOCK_DIR}/terraform"
+
+# --- Succeeds with no prior .terraform directory ---
+
+: > "${TEST_TMPDIR}/terraform-calls"
+RUN_EXIT=0
+RUN_OUTPUT="$(
+  {
+    export PATH="${DEFERRED_MOCK_DIR}:${PATH}"
+    export HEROBIDS_ENV="staging"
+    export TF_BACKEND_BUCKET="deferred-bucket"
+    export TF_BACKEND_REGION="eu-west-1"
+    export AWS_ACCESS_KEY_ID="AKID_DEFERRED"
+    export AWS_SECRET_ACCESS_KEY="SECRET_DEFERRED"
+    export TERRAFORM_DIR="${DEFERRED_TF_DIR}"
+    export TEST_TMPDIR="${TEST_TMPDIR}"
+    export NOMAD_AUTOSCALE_LOG_FILE="${TEST_TMPDIR}/autoscale.log"
+    export NOMAD_AUTOSCALE_LOCKFILE="${TEST_TMPDIR}/autoscale.lock"
+    export NOMAD_AUTOSCALE_COOLDOWN_FILE="${TEST_TMPDIR}/cooldown"
+    export NOMAD_AUTOSCALE_NODE_COUNT_FILE="${TEST_TMPDIR}/node-count"
+
+    source "${TESTS_DIR}/../scale-common.sh"
+
+    # Re-apply overrides after sourcing
+    export PATH="${DEFERRED_MOCK_DIR}:${PATH}"
+    export HEROBIDS_ENV="staging"
+    export TF_BACKEND_BUCKET="deferred-bucket"
+    export TF_BACKEND_REGION="eu-west-1"
+    export AWS_ACCESS_KEY_ID="AKID_DEFERRED"
+    export AWS_SECRET_ACCESS_KEY="SECRET_DEFERRED"
+    export TERRAFORM_DIR="${DEFERRED_TF_DIR}"
+
+    tf_init_backend
+  } 2>&1
+)" || RUN_EXIT=$?
+
+assert_eq "${RUN_EXIT}" "0" "succeeds with no .terraform directory present"
+
+# Verify .terraform does NOT exist (mock doesn't create it — proves we don't depend on it)
+assert_eq "$(test -d "${DEFERRED_TF_DIR}/.terraform" && echo "exists" || echo "absent")" "absent" \
+  "no .terraform dir existed before or after mock init"
+
+# Verify correct flags were passed
+TF_CALLS="$(cat "${TEST_TMPDIR}/terraform-calls" 2>/dev/null || echo "")"
+assert_contains "${TF_CALLS}" "init" "calls terraform init in deferred-init scenario"
+assert_contains "${TF_CALLS}" "-reconfigure" "passes -reconfigure (reinitializes from scratch)"
+assert_contains "${TF_CALLS}" "-backend-config=bucket=deferred-bucket" "passes correct bucket"
+assert_contains "${TF_CALLS}" "-backend-config=key=herobids/staging/terraform.tfstate" "passes correct state key"
+assert_contains "${TF_CALLS}" "-backend-config=region=eu-west-1" "passes correct region"
+assert_contains "${TF_CALLS}" "-input=false" "passes -input=false (non-interactive)"
+
+# --- tf_ensure_ready also works with no .terraform directory ---
+
+# Create a workspace-aware mock for the full tf_ensure_ready path
+DEFERRED_READY_DIR="${TEST_TMPDIR}/deferred-ready-mock"
+mkdir -p "${DEFERRED_READY_DIR}"
+
+cat > "${DEFERRED_READY_DIR}/terraform" << 'DRMOCK'
+#!/usr/bin/env bash
+echo "$0 $*" >> "${TEST_TMPDIR}/terraform-calls"
+case "$1" in
+  init)      exit 0 ;;
+  workspace)
+    case "$2" in
+      show)   echo "default"; exit 0 ;;
+      select) exit 0 ;;
+      new)    exit 0 ;;
+    esac
+    ;;
+esac
+exit 0
+DRMOCK
+chmod +x "${DEFERRED_READY_DIR}/terraform"
+
+DEFERRED_READY_TF_DIR="${TEST_TMPDIR}/deferred-ready-terraform"
+mkdir -p "${DEFERRED_READY_TF_DIR}"
+# Explicitly ensure no .terraform dir exists
+rm -rf "${DEFERRED_READY_TF_DIR}/.terraform"
+
+: > "${TEST_TMPDIR}/terraform-calls"
+RUN_EXIT=0
+RUN_OUTPUT="$(
+  {
+    export PATH="${DEFERRED_READY_DIR}:${PATH}"
+    export HEROBIDS_ENV="production"
+    export TF_BACKEND_BUCKET="prod-bucket"
+    export TF_BACKEND_REGION="us-east-1"
+    export AWS_ACCESS_KEY_ID="AKID_PROD"
+    export AWS_SECRET_ACCESS_KEY="SECRET_PROD"
+    export TERRAFORM_DIR="${DEFERRED_READY_TF_DIR}"
+    export TEST_TMPDIR="${TEST_TMPDIR}"
+    export NOMAD_AUTOSCALE_LOG_FILE="${TEST_TMPDIR}/autoscale.log"
+    export NOMAD_AUTOSCALE_LOCKFILE="${TEST_TMPDIR}/autoscale.lock"
+    export NOMAD_AUTOSCALE_COOLDOWN_FILE="${TEST_TMPDIR}/cooldown"
+    export NOMAD_AUTOSCALE_NODE_COUNT_FILE="${TEST_TMPDIR}/node-count"
+
+    source "${TESTS_DIR}/../scale-common.sh"
+
+    export PATH="${DEFERRED_READY_DIR}:${PATH}"
+    export HEROBIDS_ENV="production"
+    export TF_BACKEND_BUCKET="prod-bucket"
+    export TF_BACKEND_REGION="us-east-1"
+    export AWS_ACCESS_KEY_ID="AKID_PROD"
+    export AWS_SECRET_ACCESS_KEY="SECRET_PROD"
+    export TERRAFORM_DIR="${DEFERRED_READY_TF_DIR}"
+
+    tf_ensure_ready
+  } 2>&1
+)" || RUN_EXIT=$?
+
+assert_eq "${RUN_EXIT}" "0" "tf_ensure_ready succeeds with no .terraform directory (deferred-init)"
+assert_contains "${RUN_OUTPUT}" "Terraform ready" "logs ready message after deferred init"
+
+TF_CALLS="$(cat "${TEST_TMPDIR}/terraform-calls" 2>/dev/null || echo "")"
+assert_contains "${TF_CALLS}" "init" "deferred tf_ensure_ready calls init"
+assert_contains "${TF_CALLS}" "-reconfigure" "deferred tf_ensure_ready passes -reconfigure"
+assert_contains "${TF_CALLS}" "workspace" "deferred tf_ensure_ready manages workspace"
+
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
+# EnvironmentFile pattern: sourcing autoscale.env provides expected variables
+# ═════════════════════════════════════════════════════════════════════════════
+
+test_begin "EnvironmentFile pattern (autoscale.env)"
+
+# Create a mock autoscale.env file
+MOCK_ENV_DIR="${TEST_TMPDIR}/etc-herobids"
+mkdir -p "${MOCK_ENV_DIR}"
+MOCK_ENV_FILE="${MOCK_ENV_DIR}/autoscale.env"
+
+cat > "${MOCK_ENV_FILE}" << 'ENVEOF'
+AWS_ACCESS_KEY_ID=AKIA_TEST_KEY
+AWS_SECRET_ACCESS_KEY=test_secret_key_value
+TF_BACKEND_BUCKET=herobids-terraform-state
+TF_BACKEND_REGION=us-east-1
+TF_BACKEND_DYNAMODB_TABLE=herobids-terraform-lock
+NOMAD_TOKEN=test-nomad-acl-token
+ENVEOF
+
+# --- Sourcing the env file sets expected variables ---
+
+RUN_EXIT=0
+RUN_OUTPUT="$(
+  {
+    # Start with no backend vars set
+    unset TF_BACKEND_BUCKET TF_BACKEND_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY NOMAD_TOKEN 2>/dev/null || true
+
+    # Source the env file (mimics systemd EnvironmentFile= behavior)
+    set -a
+    source "${MOCK_ENV_FILE}"
+    set +a
+
+    # Emit values for assertion
+    echo "TF_BACKEND_BUCKET=${TF_BACKEND_BUCKET:-}"
+    echo "TF_BACKEND_REGION=${TF_BACKEND_REGION:-}"
+    echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}"
+    echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}"
+    echo "NOMAD_TOKEN=${NOMAD_TOKEN:-}"
+  } 2>&1
+)" || RUN_EXIT=$?
+
+assert_eq "${RUN_EXIT}" "0" "sourcing autoscale.env succeeds"
+assert_contains "${RUN_OUTPUT}" "TF_BACKEND_BUCKET=herobids-terraform-state" "TF_BACKEND_BUCKET is set correctly"
+assert_contains "${RUN_OUTPUT}" "TF_BACKEND_REGION=us-east-1" "TF_BACKEND_REGION is set correctly"
+assert_contains "${RUN_OUTPUT}" "AWS_ACCESS_KEY_ID=AKIA_TEST_KEY" "AWS_ACCESS_KEY_ID is set correctly"
+assert_contains "${RUN_OUTPUT}" "AWS_SECRET_ACCESS_KEY=test_secret_key_value" "AWS_SECRET_ACCESS_KEY is set correctly"
+assert_contains "${RUN_OUTPUT}" "NOMAD_TOKEN=test-nomad-acl-token" "NOMAD_TOKEN is set correctly"
+
+# --- tf_backend_configured returns 0 after sourcing the env file ---
+
+RUN_EXIT=0
+RUN_OUTPUT="$(
+  {
+    unset TF_BACKEND_BUCKET TF_BACKEND_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY 2>/dev/null || true
+
+    export TEST_TMPDIR="${TEST_TMPDIR}"
+    source "${TESTS_DIR}/source-helper.sh"
+
+    # Clear backend vars (source-helper does not set them, but be explicit)
+    unset TF_BACKEND_BUCKET TF_BACKEND_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY 2>/dev/null || true
+
+    # Source the env file
+    set -a
+    source "${MOCK_ENV_FILE}"
+    set +a
+
+    tf_backend_configured
+  } 2>&1
+)" || RUN_EXIT=$?
+
+assert_eq "${RUN_EXIT}" "0" "tf_backend_configured returns 0 after sourcing autoscale.env"
+
+# --- Env file with optional TF_BACKEND_DYNAMODB_TABLE ---
+
+RUN_EXIT=0
+RUN_OUTPUT="$(
+  {
+    unset TF_BACKEND_DYNAMODB_TABLE 2>/dev/null || true
+
+    set -a
+    source "${MOCK_ENV_FILE}"
+    set +a
+
+    echo "TF_BACKEND_DYNAMODB_TABLE=${TF_BACKEND_DYNAMODB_TABLE:-}"
+  } 2>&1
+)" || RUN_EXIT=$?
+
+assert_contains "${RUN_OUTPUT}" "TF_BACKEND_DYNAMODB_TABLE=herobids-terraform-lock" \
+  "optional TF_BACKEND_DYNAMODB_TABLE is set from env file"
+
+# --- Env file without optional vars still passes tf_backend_configured ---
+
+MINIMAL_ENV_FILE="${MOCK_ENV_DIR}/autoscale-minimal.env"
+cat > "${MINIMAL_ENV_FILE}" << 'MINEOF'
+AWS_ACCESS_KEY_ID=AKIA_MIN
+AWS_SECRET_ACCESS_KEY=min_secret
+TF_BACKEND_BUCKET=min-bucket
+TF_BACKEND_REGION=eu-west-1
+MINEOF
+
+RUN_EXIT=0
+RUN_OUTPUT="$(
+  {
+    unset TF_BACKEND_BUCKET TF_BACKEND_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY 2>/dev/null || true
+
+    export TEST_TMPDIR="${TEST_TMPDIR}"
+    source "${TESTS_DIR}/source-helper.sh"
+
+    unset TF_BACKEND_BUCKET TF_BACKEND_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY 2>/dev/null || true
+
+    set -a
+    source "${MINIMAL_ENV_FILE}"
+    set +a
+
+    tf_backend_configured
+  } 2>&1
+)" || RUN_EXIT=$?
+
+assert_eq "${RUN_EXIT}" "0" "tf_backend_configured passes with minimal env file (no NOMAD_TOKEN or DynamoDB table)"
+
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Graceful degradation: missing env file → tf_backend_configured fails
+# ═════════════════════════════════════════════════════════════════════════════
+
+test_begin "Graceful degradation (missing autoscale.env)"
+
+# --- When env file doesn't exist, backend vars are unset, tf_backend_configured fails ---
+
+MISSING_ENV_FILE="${TEST_TMPDIR}/nonexistent/autoscale.env"
+
+RUN_EXIT=0
+RUN_OUTPUT="$(
+  {
+    unset TF_BACKEND_BUCKET TF_BACKEND_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY 2>/dev/null || true
+
+    export TEST_TMPDIR="${TEST_TMPDIR}"
+    source "${TESTS_DIR}/source-helper.sh"
+
+    # Ensure backend vars are unset (simulating boot without env file)
+    unset TF_BACKEND_BUCKET TF_BACKEND_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY 2>/dev/null || true
+
+    tf_backend_configured
+  } 2>&1
+)" || RUN_EXIT=$?
+
+assert_neq "${RUN_EXIT}" "0" "tf_backend_configured fails when env file was never sourced"
+assert_contains "${RUN_OUTPUT}" "TF_BACKEND_BUCKET" "error lists missing TF_BACKEND_BUCKET"
+assert_contains "${RUN_OUTPUT}" "TF_BACKEND_REGION" "error lists missing TF_BACKEND_REGION"
+assert_contains "${RUN_OUTPUT}" "AWS_ACCESS_KEY_ID" "error lists missing AWS_ACCESS_KEY_ID"
+assert_contains "${RUN_OUTPUT}" "AWS_SECRET_ACCESS_KEY" "error lists missing AWS_SECRET_ACCESS_KEY"
+
+# --- Partial env file (only some vars) still reports the missing ones ---
+
+PARTIAL_ENV_FILE="${MOCK_ENV_DIR}/autoscale-partial.env"
+cat > "${PARTIAL_ENV_FILE}" << 'PARTEOF'
+TF_BACKEND_BUCKET=partial-bucket
+AWS_ACCESS_KEY_ID=AKIA_PARTIAL
+PARTEOF
+
+RUN_EXIT=0
+RUN_OUTPUT="$(
+  {
+    unset TF_BACKEND_BUCKET TF_BACKEND_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY 2>/dev/null || true
+
+    export TEST_TMPDIR="${TEST_TMPDIR}"
+    source "${TESTS_DIR}/source-helper.sh"
+
+    unset TF_BACKEND_BUCKET TF_BACKEND_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY 2>/dev/null || true
+
+    set -a
+    source "${PARTIAL_ENV_FILE}"
+    set +a
+
+    tf_backend_configured
+  } 2>&1
+)" || RUN_EXIT=$?
+
+assert_neq "${RUN_EXIT}" "0" "tf_backend_configured fails with partial env file"
+assert_not_contains "${RUN_OUTPUT}" "TF_BACKEND_BUCKET" "does NOT list TF_BACKEND_BUCKET (it was set)"
+assert_contains "${RUN_OUTPUT}" "TF_BACKEND_REGION" "lists missing TF_BACKEND_REGION"
+assert_not_contains "${RUN_OUTPUT}" "AWS_ACCESS_KEY_ID" "does NOT list AWS_ACCESS_KEY_ID (it was set)"
+assert_contains "${RUN_OUTPUT}" "AWS_SECRET_ACCESS_KEY" "lists missing AWS_SECRET_ACCESS_KEY"
+
+# --- tf_init_backend fails gracefully with descriptive error ---
+
+RUN_EXIT=0
+RUN_OUTPUT="$(
+  {
+    unset TF_BACKEND_BUCKET TF_BACKEND_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY 2>/dev/null || true
+
+    export TEST_TMPDIR="${TEST_TMPDIR}"
+    export HEROBIDS_ENV="staging"
+    source "${TESTS_DIR}/source-helper.sh"
+
+    unset TF_BACKEND_BUCKET TF_BACKEND_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY 2>/dev/null || true
+    export HEROBIDS_ENV="staging"
+
+    tf_init_backend
+  } 2>&1
+)" || RUN_EXIT=$?
+
+assert_neq "${RUN_EXIT}" "0" "tf_init_backend fails when backend vars are missing"
+assert_contains "${RUN_OUTPUT}" "S3 backend not configured" "error message is descriptive"
+
+# --- tf_ensure_ready fails gracefully with missing backend vars ---
+
+RUN_EXIT=0
+RUN_OUTPUT="$(
+  {
+    unset TF_BACKEND_BUCKET TF_BACKEND_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY 2>/dev/null || true
+
+    export PATH="${READY_MOCK_DIR}:${PATH}"
+    export TEST_TMPDIR="${TEST_TMPDIR}"
+    export HEROBIDS_ENV="staging"
+    source "${TESTS_DIR}/source-helper.sh"
+
+    unset TF_BACKEND_BUCKET TF_BACKEND_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY 2>/dev/null || true
+    export PATH="${READY_MOCK_DIR}:${PATH}"
+    export HEROBIDS_ENV="staging"
+
+    tf_ensure_ready
+  } 2>&1
+)" || RUN_EXIT=$?
+
+assert_neq "${RUN_EXIT}" "0" "tf_ensure_ready fails gracefully when env file was never sourced"
+assert_contains "${RUN_OUTPUT}" "S3 backend not configured" "tf_ensure_ready reports backend not configured"
+
+test_end || SUITE_FAILED=1
+
+# ═════════════════════════════════════════════════════════════════════════════
 # Summary
 # ═════════════════════════════════════════════════════════════════════════════
 
