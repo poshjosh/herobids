@@ -14,7 +14,6 @@ import {
   blueprintLikes,
   bots,
   agents,
-  agentSkills,
   connections,
   venueAccounts,
   users,
@@ -47,6 +46,7 @@ import type {
 } from '@herobids/domain';
 import { listPresets, getPreset } from '@herobids/domain/config/presets-loader';
 import { resolvePlanBlueprintEntitlements } from '../plan-guards.js';
+import { createAgentFromPayload } from '../services/agent-instantiation-service.js';
 import { computeInstantiateRequestHash } from '../services/blueprint-idempotency.js';
 import { resolveEffectiveRisk } from '../services/blueprint-risk-resolver.js';
 import { validateSkillPortability } from '../services/blueprint-skill-validator.js';
@@ -2202,71 +2202,22 @@ export async function blueprintRoutes(
             telegramChatId = userRow?.telegramChatId ?? null;
           }
 
-          // Build unifiedConfig from blueprint agent fields that map to UnifiedAgentConfig
-          const unifiedConfig: Record<string, unknown> = {};
-          if (agentPayloadFinal.technical) unifiedConfig.technical = agentPayloadFinal.technical;
-          if (agentPayloadFinal.intelligence) unifiedConfig.intelligence = agentPayloadFinal.intelligence;
-          unifiedConfig.capabilityMode = agentPayloadFinal.capabilityMode;
-          if (agentPayloadFinal.hybridMode) unifiedConfig.hybridMode = agentPayloadFinal.hybridMode;
-          if (agentPayloadFinal.executionPolicy) {
-            unifiedConfig.execution = {
-              positionSizeMode: agentPayloadFinal.executionPolicy.positionSizeMode,
-              fixedPositionSize: agentPayloadFinal.executionPolicy.fixedPositionSize,
-            };
-          }
-          if (agentPayloadFinal.executionDefaults) {
-            unifiedConfig.execution = {
-              ...(isPlainObject(unifiedConfig.execution) ? unifiedConfig.execution : {}),
-              mode: agentPayloadFinal.executionDefaults.mode,
-            };
-          }
-          // Risk goes into unifiedConfig.risk (separate from direct risk column)
-          if (finalPayload.risk) {
-            unifiedConfig.risk = finalPayload.risk;
-          }
-          if (agentPayloadFinal.allowedPresets) unifiedConfig.allowedPresets = agentPayloadFinal.allowedPresets;
-          if (agentPayloadFinal.presetTransition) unifiedConfig.presetTransition = agentPayloadFinal.presetTransition;
-          if (agentPayloadFinal.platformAssessment) unifiedConfig.platformAssessment = agentPayloadFinal.platformAssessment;
-          unifiedConfig.authorizationMode = agentPayloadFinal.authorizationMode ?? 'direct';
-
-          await tx.insert(agents).values({
-            id: actorId,
-            userId: request.userId,
-            name: agentPayloadFinal.name ?? bp.name,
-            prompt: agentPayloadFinal.prompt ?? '',
-            style: agentPayloadFinal.style,
-            status: 'stopped',
-            risk: (finalPayload.risk as import('@herobids/domain').RiskPosture) ?? null,
-            strategy: agentPayloadFinal.strategy ?? null,
-            executionDefaults: agentPayloadFinal.executionDefaults ?? null,
-            capital: agentPayloadFinal.capital ?? null,
-            maxBots: agentPayloadFinal.maxBots ?? null,
-            tickIntervalMs: agentPayloadFinal.tickIntervalMs ?? null,
-            toolPolicy: agentPayloadFinal.toolPolicy ?? null,
-            modelPolicy: agentPayloadFinal.modelPolicy ?? null,
-            openPositionEscalationToJudgePolicy: agentPayloadFinal.openPositionEscalationToJudgePolicy ?? 'uncovered_or_triggered',
-            blueprintId: bp.id,
-            blueprintRevisionId: revision.id,
-            runtimePolicyOverrides: agentPayloadFinal.runtimePolicyOverrides ?? null,
-            wakePreferences: agentPayloadFinal.wakePreferences ?? null,
-            unifiedConfig: Object.keys(unifiedConfig).length > 0 ? unifiedConfig : null,
-            telegramChatId,
-          } as typeof agents.$inferInsert);
-
-          // Insert agent_skills rows
           const skillRefs = await getRevisionSkillRefs(tx as unknown as Database, revision.id);
-          if (skillRefs.length > 0) {
-            await tx.insert(agentSkills).values(
-              skillRefs.map((s, i) => ({
-                agentId: actorId,
-                skillId: s.skillId,
-                skillRevisionId: s.skillRevisionId,
-                orderIndex: i,
-                assignedByUserId: request.userId,
-                assignmentSource: 'blueprint_instantiate',
-              })),
-            );
-          }
+
+          await createAgentFromPayload(
+            tx as unknown as Database,
+            agentPayloadFinal,
+            skillRefs,
+            {
+              userId: request.userId,
+              agentId: actorId,
+              blueprintId: bp.id,
+              blueprintRevisionId: revision.id,
+              telegramChatId,
+              fallbackName: bp.name,
+            },
+            finalPayload.risk,
+          );
         } else {
           // Bot creation
           const botPayloadFinal = finalPayload as BotBlueprintRevisionPayload;

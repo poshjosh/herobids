@@ -54,6 +54,7 @@ import { resolveAgentStrategyPreset } from '../agents/strategy-preset-resolver.j
 import { errorPayload } from '../error-payload.js';
 import { startAgent, pauseAgent, resumeAgent, stopAgent } from '../services/agent-lifecycle-service.js';
 import { projectAgentToBlueprintPayload } from '../services/blueprint-projection.js';
+import { cloneAgentAsLive } from '../services/agent-go-live-service.js';
 import { buildBlueprintDetail } from './blueprints.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import {
@@ -2298,6 +2299,45 @@ export async function agentRoutes(
       executionStatus: approval.executionStatus ?? null,
       message: 'Trade proposal rejected.',
     });
+  });
+
+  // POST /agents/:id/go-live — clone a test agent as a new live agent
+  app.post<{ Params: { id: string }; Body: unknown }>('/agents/:id/go-live', async (request, reply) => {
+    const { id } = request.params;
+
+    const parsed = z.object({
+      name: AgentNameSchema.optional(),
+    }).safeParse(request.body ?? {});
+
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    const result = await cloneAgentAsLive({
+      sourceAgentId: id,
+      userId: request.userId,
+      nameOverride: parsed.data.name,
+      db,
+      plansConfig,
+      userPlanId: request.userPlanId || 'free',
+      isAdmin: request.isAdmin,
+      llmCatalogDeps,
+      agentRiskDefaults,
+      operatorModelDefaults,
+    });
+
+    if (!result.ok) {
+      return reply.status(result.status).send(
+        result.params
+          ? errorPayload(result.error, result.message, result.params)
+          : { error: result.error, message: result.message },
+      );
+    }
+
+    const [newAgent] = await db.select().from(agents).where(eq(agents.id, result.agentId));
+    const skillIds = await listSkillIdsForAgent(db, result.agentId);
+    const riskContract = resolveAgentRiskContractForResponse(newAgent!, agentRiskDefaults);
+    return reply.status(201).send({ ...decorateAgentResponse({ ...newAgent!, skillIds }), ...enrichAgentResponse(newAgent!), riskContract });
   });
 
   // POST /agents/:id/blueprints — create a draft blueprint from an existing agent
