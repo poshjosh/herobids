@@ -191,7 +191,7 @@ Implications:
 2. The run exits cleanly with a visible warning and no silent shrink.
 3. The README and any relevant runbook describe the same behavior the code enforces.
 
-### W2. Make autoscale Terraform execution environment-safe `PENDING`
+### W2. Make autoscale Terraform execution environment-safe `DONE`
 
 #### Problem
 
@@ -339,7 +339,7 @@ Nomad advertise address patching is currently tied to `10.0.*`, which is a stagi
 2. Agent nodes advertise the correct private IP in production.
 3. The chosen mechanism does not depend on a staging-only subnet prefix.
 
-### W4. Align Nomad ACL and token behavior `PENDING`
+### W4. Align Nomad ACL and token behavior `DONE`
 
 #### Problem
 

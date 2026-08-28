@@ -156,6 +156,13 @@ variable "terraform_version" {
   default     = "1.11.0"
 }
 
+variable "nomad_acl_token" {
+  type        = string
+  description = "Nomad ACL management token for authenticated API access. Required when Nomad ACLs are enabled (always in production). Bootstrap the token via 'nomad acl bootstrap' on the server, then provide it here. Injected into autoscale systemd services and written to /etc/nomad.d/acl-token."
+  sensitive   = true
+  default     = ""
+}
+
 # ── Private Network ───────────────────────────────────────
 
 variable "network_zone" {

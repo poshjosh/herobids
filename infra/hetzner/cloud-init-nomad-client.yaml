@@ -73,6 +73,10 @@ write_files:
         }
       }
 
+      acl {
+        enabled = true
+      }
+
       advertise {
         http = "__PRIVATE_IP__"
       }

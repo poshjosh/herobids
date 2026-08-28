@@ -209,6 +209,8 @@ resource "hcloud_server" "default" {
     alert_to                 = var.alert_to
     alert_smtp_user          = var.alert_smtp_user
     alert_smtp_pass          = var.alert_smtp_pass
+    # Nomad ACL
+    nomad_acl_token          = var.nomad_acl_token
     # S3 backend (control-plane autoscale)
     tf_backend_bucket         = var.tf_backend_bucket
     tf_backend_region         = var.tf_backend_region

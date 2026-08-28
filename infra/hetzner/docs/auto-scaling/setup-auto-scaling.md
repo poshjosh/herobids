@@ -13,6 +13,7 @@ For pitfalls and bugs encountered during initial setup, see [lessons-learnt.md](
 - You are on the `staging` Terraform workspace: `terraform workspace select staging`.
 - Your local `.env.staging` at `infra/hetzner/.env.staging` includes the Nomad worker config (see Step 4).
 - S3 backend is configured: you have an S3 bucket, AWS credentials, and optionally a DynamoDB table for locking. See `infra/hetzner/README.md` — "Terraform Remote Backend (S3)".
+- Nomad ACL token is available. If this is a fresh cluster, you will bootstrap ACLs after first boot (see Step 7b). If ACLs are already bootstrapped, set `nomad_acl_token` in your tfvars. See `infra/hetzner/README.md` — "Nomad ACL Authentication".
 
 ---
 
@@ -57,9 +58,13 @@ Add these to `infra/hetzner/.env.staging` (the control-plane private IP is `10.0
 # Nomad orchestration
 RUNTIME_BACKEND=nomad
 NOMAD_ADDR=http://10.0.0.2:4646
+NOMAD_TOKEN=<your-nomad-acl-token>
 SHARED_REDIS_HOST=10.0.0.2
 SHARED_POSTGRES_HOST=10.0.0.2
 ```
+
+> `NOMAD_TOKEN` is required for authenticated Nomad API access. If this is a fresh cluster,
+> leave it blank and fill it in after bootstrapping ACLs in Step 7b.
 
 To get the actual private IP after provisioning:
 ```bash
@@ -126,6 +131,44 @@ ssh -i ~/.ssh/herobids_deploy_key root@${SERVER_IP} \
 # No agent nodes yet (expected with agent_node_count=0)
 ssh -i ~/.ssh/herobids_deploy_key root@${SERVER_IP} 'nomad node status'
 ```
+
+## Step 7b — Bootstrap Nomad ACLs (first time only)
+
+If this is a fresh cluster without an ACL token:
+
+```bash
+# SSH to the control plane and bootstrap ACLs
+ssh -i ~/.ssh/herobids_deploy_key root@${SERVER_IP} 'nomad acl bootstrap'
+```
+
+Save the management token from the output. Then:
+
+1. Set `nomad_acl_token` in your `staging.tfvars`:
+   ```hcl
+   nomad_acl_token = "<management-token>"
+   ```
+
+2. Add `NOMAD_TOKEN` to your `.env.staging`:
+   ```bash
+   NOMAD_TOKEN=<management-token>
+   ```
+
+3. Re-apply Terraform to inject the token into systemd services:
+   ```bash
+   cd infra/hetzner
+   terraform apply -var-file=staging.tfvars
+   ```
+
+4. Redeploy to pick up the worker token:
+   ```bash
+   infra/hetzner/deploy.sh --env staging --env-file infra/hetzner/.env.staging
+   ```
+
+5. Verify authenticated access:
+   ```bash
+   ssh -i ~/.ssh/herobids_deploy_key root@${SERVER_IP} \
+     "NOMAD_TOKEN=<management-token> nomad node status"
+   ```
 
 ## Step 8 — Flip `prevent_destroy` back to `true`
 

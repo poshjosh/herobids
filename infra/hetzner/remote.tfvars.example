@@ -119,6 +119,13 @@ app_domain = "staging.openaidom.com"  # or "openaidom.com"
 # aws_access_key_id         = ""                       # AWS access key (sensitive)
 # aws_secret_access_key     = ""                       # AWS secret key (sensitive)
 
+# ── Nomad ACL ─────────────────────────────────────────────
+# Required for production. Bootstrap via 'nomad acl bootstrap' on the server,
+# then provide the management token here. Injected into autoscale services.
+# See infra/hetzner/README.md — "Nomad ACL Authentication" for details.
+
+# nomad_acl_token = ""  # Nomad ACL management token (sensitive)
+
 # ─────────────────────────────────────────────────────────────
 # Sensitive variables (hcloud_token, deploy_ssh_private_key)
 # are marked sensitive in Terraform and will not appear in

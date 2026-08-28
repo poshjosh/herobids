@@ -67,6 +67,7 @@ die() {
 # nomad_api <method> <path> [<extra_curl_args>...]
 # Makes an HTTP request to the Nomad API and returns the response body.
 # Automatically prepends NOMAD_ADDR to the path.
+# Sends the X-Nomad-Token header when NOMAD_TOKEN is set (ACL-enabled clusters).
 nomad_api() {
   local method="$1"
   local path="$2"
@@ -76,8 +77,15 @@ nomad_api() {
   local response
   local http_code
 
+  # Build auth header if NOMAD_TOKEN is set
+  local -a auth_args=()
+  if [[ -n "${NOMAD_TOKEN:-}" ]]; then
+    auth_args+=(-H "X-Nomad-Token: ${NOMAD_TOKEN}")
+  fi
+
   response="$(curl -s -S --connect-timeout 10 --max-time 30 -w '\n%{http_code}' \
     -X "${method}" \
+    "${auth_args[@]}" \
     "${url}" \
     "$@" 2>&1)" || {
     log "ERROR: curl failed for ${method} ${url}: ${response}"
@@ -151,7 +159,11 @@ current_agent_node_count() {
   # 2. Fall back: count Nomad client nodes (may include initializing nodes)
   if command -v curl &>/dev/null; then
     local nodes_json
-    nodes_json="$(curl -s --connect-timeout 10 --max-time 30 "${NOMAD_ADDR}/v1/nodes" 2>/dev/null || true)"
+    local -a curl_auth=()
+    if [[ -n "${NOMAD_TOKEN:-}" ]]; then
+      curl_auth+=(-H "X-Nomad-Token: ${NOMAD_TOKEN}")
+    fi
+    nodes_json="$(curl -s --connect-timeout 10 --max-time 30 "${curl_auth[@]}" "${NOMAD_ADDR}/v1/nodes" 2>/dev/null || true)"
     if [[ -n "${nodes_json}" ]]; then
       local node_count
       node_count="$(echo "${nodes_json}" | jq -r '[.[] | select(.Status != "down")] | length' 2>/dev/null || true)"

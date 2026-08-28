@@ -338,6 +338,76 @@ Agent nodes use a dedicated cloud-init template (`cloud-init-nomad-client.yaml`)
 4. Sets up UFW to allow only SSH from the internet — all other traffic is private-network only.
 5. Registers `environment`, `node_pool`, and `node_index` metadata for scheduling.
 
+## Nomad ACL Authentication
+
+Nomad ACLs are enabled on all clusters. Every consumer of the Nomad HTTP API — autoscale
+scripts, placement-failure watcher, and the worker's `NomadRuntimeAdapter` — must present
+a valid ACL token.
+
+### Bootstrap Workflow
+
+ACL bootstrap is a one-time manual step per cluster:
+
+1. **Provision the server** with `enable_nomad = true` (ACLs are enabled in the Nomad config automatically).
+
+2. **SSH to the control plane** and bootstrap ACLs:
+   ```bash
+   ssh root@<control-plane-ip>
+   nomad acl bootstrap
+   ```
+   This prints a management token. Save it securely — it cannot be retrieved again.
+
+3. **Provide the token to Terraform** by setting `nomad_acl_token` in your tfvars:
+   ```hcl
+   nomad_acl_token = "<management-token-from-step-2>"
+   ```
+
+4. **Re-apply Terraform** to inject the token into systemd services:
+   ```bash
+   ./scripts/provision.sh --env production --var-file production.tfvars
+   ```
+
+5. **Add `NOMAD_TOKEN` to the worker's `.env` file** so the `NomadRuntimeAdapter` can authenticate:
+   ```bash
+   # In .env.prod (or .env.staging)
+   NOMAD_TOKEN=<management-token-from-step-2>
+   ```
+
+6. **Redeploy** to pick up the new environment variable:
+   ```bash
+   ./deploy.sh --env production --env-file .env.prod
+   ```
+
+### Token Distribution
+
+| Consumer | Token Source | Mechanism |
+|---|---|---|
+| Autoscale services (`nomad-autoscale`, `nomad-scale-in`, `nomad-placement-failure-watcher`) | `nomad_acl_token` Terraform variable | `Environment=NOMAD_TOKEN=...` in systemd unit (via cloud-init) |
+| Worker (`NomadRuntimeAdapter`) | `NOMAD_TOKEN` in `.env.prod` | Docker Compose environment variable |
+| Shell scripts (`scale-common.sh` → `nomad_api()`) | Inherited from systemd `NOMAD_TOKEN` | `X-Nomad-Token` HTTP header when `NOMAD_TOKEN` is set |
+| Nomad client nodes | Gossip protocol (no HTTP token needed) | `acl { enabled = true }` in client config |
+
+### Verifying Authenticated Access
+
+```bash
+# On the control plane — verify the token works
+ssh root@<control-plane-ip>
+NOMAD_TOKEN=<your-token> nomad server members
+NOMAD_TOKEN=<your-token> nomad node status
+
+# Verify autoscale scripts can authenticate
+NOMAD_TOKEN=<your-token> /opt/herobids/infra/hetzner/scripts/check-nomad-capacity.sh
+
+# Verify unauthenticated access is rejected (expected: 403)
+curl -s http://127.0.0.1:4646/v1/nodes
+```
+
+### Token File
+
+On the control plane, the token is also written to `/etc/nomad.d/acl-token` (mode 600)
+during cloud-init. This file is available for manual debugging but is not used by scripts
+at runtime — they read `NOMAD_TOKEN` from the environment.
+
 ## Autoscale-Out (Phase 6)
 
 The autoscale-out system automatically provisions additional agent nodes when Nomad cluster

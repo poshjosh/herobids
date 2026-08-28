@@ -1552,7 +1552,7 @@ export type RuntimeBackend = typeof RUNTIME_BACKENDS[number];
 export const NomadConfigSchema = z.object({
   /** Nomad API base URL (e.g. 'http://10.0.0.1:4646'). Required when runtimeBackend is 'nomad'. */
   addr: z.string().url().default('http://localhost:4646'),
-  /** Nomad ACL token for authenticated API access. Override: NOMAD_TOKEN */
+  /** Nomad ACL token for authenticated API access. Required when runtimeBackend is 'nomad' (ACLs are always enabled in production). Override: NOMAD_TOKEN */
   token: z.string().nullable().optional(),
   /** Nomad region. Default: 'global'. */
   region: z.string().default('global'),

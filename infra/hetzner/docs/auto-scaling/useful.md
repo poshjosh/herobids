@@ -31,16 +31,27 @@ ssh-keygen -R <ip>
 
 ## Nomad Status
 
+All `nomad` commands on an ACL-enabled cluster require the token. Set `NOMAD_TOKEN` in your shell or pass it inline:
+
 ```bash
+# Set once per SSH session
+export NOMAD_TOKEN=<your-nomad-acl-token>
+
 # Server members (should advertise 10.0.0.x, NOT 172.17.x.x)
-ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> 'nomad server members'
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
+  "NOMAD_TOKEN=<token> nomad server members"
 
 # Client nodes (should show "ready" / "eligible")
-ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> 'nomad node status'
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
+  "NOMAD_TOKEN=<token> nomad node status"
 
 # Running jobs
-ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> 'nomad job status -namespace=herobids-agents'
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
+  "NOMAD_TOKEN=<token> nomad job status -namespace=herobids-agents"
 ```
+
+> On the control plane, the systemd services have `NOMAD_TOKEN` in their environment.
+> For interactive SSH sessions, you must set it yourself.
 
 ## Worker Logs
 
@@ -100,19 +111,24 @@ infra/hetzner/scripts/reset-and-run.sh --env staging --env-file .env.ops.staging
 
 ## Autoscale
 
+The autoscale scripts read `NOMAD_TOKEN` from the systemd environment automatically. For manual invocations via SSH, set `NOMAD_TOKEN` in the environment:
+
 ```bash
-# Check cluster capacity
-ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> '/opt/herobids/infra/hetzner/scripts/check-nomad-capacity.sh'
+# Check cluster capacity (NOMAD_TOKEN from systemd env)
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
+  "NOMAD_TOKEN=<token> /opt/herobids/infra/hetzner/scripts/check-nomad-capacity.sh"
 
 # Force scale-out (bypass thresholds)
-ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> '/opt/herobids/infra/hetzner/scripts/scale-out.sh --force'
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
+  "NOMAD_TOKEN=<token> /opt/herobids/infra/hetzner/scripts/scale-out.sh --force"
 
 # Dry-run scale-out
-ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> '/opt/herobids/infra/hetzner/scripts/scale-out.sh --dry-run'
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
+  "NOMAD_TOKEN=<token> /opt/herobids/infra/hetzner/scripts/scale-out.sh --dry-run"
 
 # Dry-run scale-in (must enable explicitly)
 ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
-  'ENABLE_SCALE_IN=true /opt/herobids/infra/hetzner/scripts/scale-in.sh --dry-run'
+  "NOMAD_TOKEN=<token> ENABLE_SCALE_IN=true /opt/herobids/infra/hetzner/scripts/scale-in.sh --dry-run"
 
 # Autoscale timer status
 ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> 'systemctl status nomad-autoscale.timer'

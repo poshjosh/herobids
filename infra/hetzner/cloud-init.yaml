@@ -87,6 +87,10 @@ write_files:
         serf = "__PRIVATE_IP__"
       }
 
+      acl {
+        enabled = true
+      }
+
       plugin "docker" {
         config {
           allow_privileged = false
@@ -136,6 +140,7 @@ write_files:
 
       # Autoscale thresholds (overridable via drop-in or env)
       Environment=NOMAD_ADDR=http://127.0.0.1:4646
+      Environment=NOMAD_TOKEN=${nomad_acl_token}
       Environment=NOMAD_SCALE_OUT_COOLDOWN_SECONDS=${scale_out_cooldown_seconds}
       Environment=NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT=${scale_out_memory_threshold_pct}
       Environment=NOMAD_SCALE_OUT_SLOT_THRESHOLD=${scale_out_slot_threshold}
@@ -229,6 +234,7 @@ write_files:
 
       # Scale-in configuration (overridable via drop-in or env)
       Environment=NOMAD_ADDR=http://127.0.0.1:4646
+      Environment=NOMAD_TOKEN=${nomad_acl_token}
       Environment=HEROBIDS_ENV=${environment}
       Environment=TERRAFORM_DIR=/opt/herobids/infra/hetzner
       Environment=ENABLE_SCALE_IN=${enable_scale_in}
@@ -309,6 +315,7 @@ write_files:
 
       # Placement-failure safety net configuration
       Environment=NOMAD_ADDR=http://127.0.0.1:4646
+      Environment=NOMAD_TOKEN=${nomad_acl_token}
       Environment=HEROBIDS_ENV=${environment}
       Environment=NOMAD_PLACEMENT_FAILURE_WINDOW_SECONDS=${placement_failure_window_seconds}
       Environment=NOMAD_PLACEMENT_FAILURE_THRESHOLD=${placement_failure_threshold}
@@ -510,11 +517,18 @@ runcmd:
         systemctl start nomad-scale-in.timer
       fi
 
-      # TODO(Phase 8): Enable Nomad ACLs for cluster security.
-      # Currently the Nomad cluster has no access control — any process on the
-      # private network can call the Nomad HTTP API. ACLs should be configured
-      # when admin alerting and operator visibility are added in Phase 8.
-      # See: https://developer.hashicorp.com/nomad/tutorials/access-control/access-control
+      # Write the operator-provided Nomad ACL token so systemd services and
+      # scripts can authenticate to the Nomad HTTP API. The token is injected
+      # via the nomad_acl_token Terraform variable and passed through cloud-init.
+      # Operators bootstrap ACLs manually once ('nomad acl bootstrap'), then
+      # provide the resulting management token here.
+      if [ -n "${nomad_acl_token}" ]; then
+        echo "${nomad_acl_token}" > /etc/nomad.d/acl-token
+        chmod 600 /etc/nomad.d/acl-token
+        logger -t cloud-init "Nomad ACL token written to /etc/nomad.d/acl-token"
+      else
+        logger -t cloud-init "WARNING: nomad_acl_token is empty — Nomad ACL-authenticated access will not work. Bootstrap ACLs and provide the token via Terraform."
+      fi
     fi
 
 final_message: "Cloud-init complete (${environment}). SSH in and upload ${env_file}, then run: cd /opt/herobids && docker compose -f docker-compose.yaml -f ${compose_overlay} up -d --build"
