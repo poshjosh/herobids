@@ -174,12 +174,16 @@ write_files:
       Environment=TF_VAR_agent_node_server_type=${agent_node_server_type}
       Environment=TF_VAR_location=${location}
 
+      # S3 backend credentials and config for autoscale terraform operations
+      Environment=TF_BACKEND_BUCKET=${tf_backend_bucket}
+      Environment=TF_BACKEND_REGION=${tf_backend_region}
+      Environment=TF_BACKEND_DYNAMODB_TABLE=${tf_backend_dynamodb_table}
+      Environment=AWS_ACCESS_KEY_ID=${aws_access_key_id}
+      Environment=AWS_SECRET_ACCESS_KEY=${aws_secret_access_key}
+
       # Security hardening: restrict privileges while allowing terraform state writes.
       # ProtectSystem=strict mounts /usr, /boot, /etc read-only.
-      # /opt/herobids (where terraform state lives) remains writable.
-      # Note: /tmp is NOT in ReadWritePaths — PrivateTmp=true gives the service
-      # its own private /tmp, so writing to the shared /tmp is both unnecessary
-      # and would conflict with PrivateTmp.
+      # /opt/herobids (where terraform runs) remains writable.
       NoNewPrivileges=true
       PrivateTmp=true
       ProtectSystem=strict
@@ -255,6 +259,13 @@ write_files:
       Environment=TF_VAR_agent_node_server_type=${agent_node_server_type}
       Environment=TF_VAR_location=${location}
 
+      # S3 backend credentials and config for scale-in terraform operations
+      Environment=TF_BACKEND_BUCKET=${tf_backend_bucket}
+      Environment=TF_BACKEND_REGION=${tf_backend_region}
+      Environment=TF_BACKEND_DYNAMODB_TABLE=${tf_backend_dynamodb_table}
+      Environment=AWS_ACCESS_KEY_ID=${aws_access_key_id}
+      Environment=AWS_SECRET_ACCESS_KEY=${aws_secret_access_key}
+
       # Security hardening (same profile as autoscale-out)
       NoNewPrivileges=true
       PrivateTmp=true
@@ -321,6 +332,13 @@ write_files:
       Environment=ALERT_TO=${alert_to}
       Environment=ALERT_SMTP_USER=${alert_smtp_user}
       Environment=ALERT_SMTP_PASS=${alert_smtp_pass}
+
+      # S3 backend credentials and config for safety-net terraform operations
+      Environment=TF_BACKEND_BUCKET=${tf_backend_bucket}
+      Environment=TF_BACKEND_REGION=${tf_backend_region}
+      Environment=TF_BACKEND_DYNAMODB_TABLE=${tf_backend_dynamodb_table}
+      Environment=AWS_ACCESS_KEY_ID=${aws_access_key_id}
+      Environment=AWS_SECRET_ACCESS_KEY=${aws_secret_access_key}
 
       # Security hardening
       NoNewPrivileges=true
@@ -426,10 +444,19 @@ runcmd:
       mkdir -p /opt/nomad/data
 
       # Initialize Terraform in the infra directory (repo already cloned above)
-      # The terraform state backend is local — state lives on the control-plane filesystem.
+      # Uses the S3 remote backend — backend config comes from environment variables
+      # injected into the systemd service units. First-boot init ensures the backend
+      # is configured so the autoscale timer can run immediately after boot.
       if [ -d /opt/herobids/infra/hetzner ]; then
         cd /opt/herobids/infra/hetzner
-        terraform init -input=false || logger -t cloud-init "WARNING: terraform init failed — autoscale will not function until resolved."
+        TF_INIT_ARGS="-input=false -backend-config=bucket=${tf_backend_bucket} -backend-config=key=herobids/${environment}/terraform.tfstate -backend-config=region=${tf_backend_region}"
+        if [ -n "${tf_backend_dynamodb_table}" ]; then
+          TF_INIT_ARGS="$TF_INIT_ARGS -backend-config=dynamodb_table=${tf_backend_dynamodb_table}"
+        fi
+        # shellcheck disable=SC2086 — values are operator-controlled Terraform template vars, no spaces expected.
+        AWS_ACCESS_KEY_ID="${aws_access_key_id}" AWS_SECRET_ACCESS_KEY="${aws_secret_access_key}" terraform init $TF_INIT_ARGS || logger -t cloud-init "WARNING: terraform init failed — autoscale will not function until resolved."
+        # Select the environment workspace
+        terraform workspace select ${environment} 2>/dev/null || terraform workspace new ${environment} || logger -t cloud-init "WARNING: terraform workspace select failed"
       fi
 
       # Seed the autoscale node count file from the initial agent_node_count.

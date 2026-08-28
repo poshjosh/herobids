@@ -12,6 +12,7 @@ For pitfalls and bugs encountered during initial setup, see [lessons-learnt.md](
 - `staging.tfvars` is populated (copy from `remote.tfvars.example` if not).
 - You are on the `staging` Terraform workspace: `terraform workspace select staging`.
 - Your local `.env.staging` at `infra/hetzner/.env.staging` includes the Nomad worker config (see Step 4).
+- S3 backend is configured: you have an S3 bucket, AWS credentials, and optionally a DynamoDB table for locking. See `infra/hetzner/README.md` — "Terraform Remote Backend (S3)".
 
 ---
 
@@ -37,6 +38,13 @@ agent_node_count       = 0    # start with 0, provision nodes when ready to test
 min_agent_nodes        = 0    # allow scale-in to 0
 max_agent_nodes        = 3
 agent_node_server_type = "cpx22"
+
+# S3 Backend for autoscale (required for control-plane terraform operations)
+tf_backend_bucket         = "your-tf-state-bucket"
+tf_backend_region         = "eu-central-1"
+# tf_backend_dynamodb_table = "your-tf-lock-table"  # optional, for state locking
+aws_access_key_id         = "AKIA..."
+aws_secret_access_key     = "..."
 ```
 
 Leave autoscale, scale-in, placement-failure, and alerting defaults commented out — their defaults in `variables.tf` are sensible for staging.
@@ -64,8 +72,18 @@ If this is the first time enabling Nomad, the control-plane's `user_data` will c
 
 Temporarily set `prevent_destroy = false` in `main.tf` on the `hcloud_server.default` resource (line ~212). Do NOT commit this change — revert it after apply.
 
+Initialize with the S3 backend before applying:
+
 ```bash
 cd infra/hetzner
+
+# Initialize Terraform with S3 backend
+terraform init \
+  -backend-config="bucket=your-tf-state-bucket" \
+  -backend-config="key=herobids/staging/terraform.tfstate" \
+  -backend-config="region=eu-central-1"
+
+terraform workspace select staging
 terraform apply -var-file=staging.tfvars
 ```
 

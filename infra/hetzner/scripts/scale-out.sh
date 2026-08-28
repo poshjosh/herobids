@@ -130,20 +130,9 @@ log "  Force:         ${FORCE}"
 log "  Bypass cooldown: ${BYPASS_COOLDOWN}"
 log ""
 
-# Verify terraform is available (needed for apply step only)
-if ! command -v terraform &>/dev/null; then
-  die "terraform not found in PATH. Install terraform >= 1.0." 1
-fi
-
-# Verify terraform directory exists
-if [[ ! -d "${TERRAFORM_DIR}" ]]; then
-  die "TERRAFORM_DIR '${TERRAFORM_DIR}' does not exist. Are Nomad and agent pool provisioned for this environment?" 1
-fi
-
-# Verify terraform is initialized (state exists)
-if [[ ! -f "${TERRAFORM_DIR}/terraform.tfstate" ]]; then
-  die "No terraform.tfstate found in ${TERRAFORM_DIR}. Run 'terraform init' first." 1
-fi
+# Initialize Terraform with S3 backend and select the correct workspace.
+# This replaces the old local terraform.tfstate pre-flight check.
+tf_ensure_ready
 
 # ─── Get current state ────────────────────────────────────────────────────────
 
@@ -316,40 +305,9 @@ fi
 log ""
 log "=== Provisioning agent node ${NEW_COUNT}/${MAX_COUNT} ==="
 
-cd "${TERRAFORM_DIR}"
+log "Terraform apply: terraform apply -auto-approve -var agent_node_count=${NEW_COUNT}"
 
-# Build terraform -var args from env vars.
-# TF_VAR_* env vars are automatically read by terraform, so we only need
-# to pass the dynamic agent_node_count. The static vars (max, min,
-# thresholds, etc.) are set via systemd Environment=TF_VAR_... directives
-# and picked up by terraform automatically.
-#
-# We also pass -var-file if TF_CLI_ARGS or the env-specific tfvars exists,
-# as a convenience for the initial provision that may have extra vars.
-TF_ARGS="${TF_CLI_ARGS:-}"
-if [[ -z "${TF_ARGS}" ]]; then
-  case "${HEROBIDS_ENV:-production}" in
-    staging)
-      if [[ -f "${TERRAFORM_DIR}/staging.tfvars" ]]; then
-        TF_ARGS="-var-file=${TERRAFORM_DIR}/staging.tfvars"
-      fi
-      ;;
-    production)
-      if [[ -f "${TERRAFORM_DIR}/production.tfvars" ]]; then
-        TF_ARGS="-var-file=${TERRAFORM_DIR}/production.tfvars"
-      fi
-      ;;
-  esac
-  # If no env-specific tfvars exists, fall back to generic terraform.tfvars
-  if [[ -z "${TF_ARGS}" ]] && [[ -f "${TERRAFORM_DIR}/terraform.tfvars" ]]; then
-    TF_ARGS="-var-file=${TERRAFORM_DIR}/terraform.tfvars"
-  fi
-fi
-
-log "Terraform args: ${TF_ARGS} -var agent_node_count=${NEW_COUNT}"
-
-# shellcheck disable=SC2086
-if terraform apply -auto-approve ${TF_ARGS} -var "agent_node_count=${NEW_COUNT}"; then
+if tf_apply_var "agent_node_count=${NEW_COUNT}"; then
   log ""
   log "=== Scale-out successful ==="
   log "  Agent nodes: ${CURRENT_COUNT} → ${NEW_COUNT}"

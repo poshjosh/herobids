@@ -118,17 +118,9 @@ log "  Drain deadline:    ${NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS}s"
 log "  Dry run:           ${DRY_RUN}"
 log ""
 
-if ! command -v terraform &>/dev/null; then
-  die "terraform not found in PATH." 1
-fi
-
-if [[ ! -d "${TERRAFORM_DIR}" ]]; then
-  die "TERRAFORM_DIR '${TERRAFORM_DIR}' does not exist." 1
-fi
-
-if [[ ! -f "${TERRAFORM_DIR}/terraform.tfstate" ]]; then
-  die "No terraform.tfstate found in ${TERRAFORM_DIR}. Run 'terraform init' first." 1
-fi
+# Initialize Terraform with S3 backend and select the correct workspace.
+# This replaces the old local terraform.tfstate pre-flight check.
+tf_ensure_ready
 
 # ─── Get current state ────────────────────────────────────────────────────────
 
@@ -352,32 +344,9 @@ for node_id in "${DRAIN_OK[@]}"; do
   log "    - ${node_id}"
 done
 
-cd "${TERRAFORM_DIR}"
+log "Terraform apply: terraform apply -auto-approve -var agent_node_count=${NEW_COUNT}"
 
-# Build terraform args (same pattern as scale-out.sh)
-TF_ARGS="${TF_CLI_ARGS:-}"
-if [[ -z "${TF_ARGS}" ]]; then
-  case "${HEROBIDS_ENV:-production}" in
-    staging)
-      if [[ -f "${TERRAFORM_DIR}/staging.tfvars" ]]; then
-        TF_ARGS="-var-file=${TERRAFORM_DIR}/staging.tfvars"
-      fi
-      ;;
-    production)
-      if [[ -f "${TERRAFORM_DIR}/production.tfvars" ]]; then
-        TF_ARGS="-var-file=${TERRAFORM_DIR}/production.tfvars"
-      fi
-      ;;
-  esac
-  if [[ -z "${TF_ARGS}" ]] && [[ -f "${TERRAFORM_DIR}/terraform.tfvars" ]]; then
-    TF_ARGS="-var-file=${TERRAFORM_DIR}/terraform.tfvars"
-  fi
-fi
-
-log "Terraform args: ${TF_ARGS} -var agent_node_count=${NEW_COUNT}"
-
-# shellcheck disable=SC2086
-if terraform apply -auto-approve ${TF_ARGS} -var "agent_node_count=${NEW_COUNT}"; then
+if tf_apply_var "agent_node_count=${NEW_COUNT}"; then
   log ""
   log "=== Scale-in successful ==="
   log "  Agent nodes: ${CURRENT_COUNT} → ${NEW_COUNT}"

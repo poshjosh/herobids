@@ -7,6 +7,23 @@ terraform {
       version = "~> 1.49"
     }
   }
+
+  # S3 remote backend for Terraform state.
+  # All values are provided at init time via -backend-config flags or
+  # environment variables — this keeps the config environment-agnostic.
+  #
+  # Environment isolation: same bucket, different keys per environment.
+  #   Staging:    key = "herobids/staging/terraform.tfstate"
+  #   Production: key = "herobids/production/terraform.tfstate"
+  #
+  # Required env vars on the control plane:
+  #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY  — S3 credentials
+  #   TF_BACKEND_BUCKET, TF_BACKEND_REGION     — bucket config
+  #   TF_BACKEND_DYNAMODB_TABLE (optional)      — state locking
+  #
+  # Operators: run `terraform init -backend-config="bucket=..." -backend-config="key=..." ...`
+  # Control-plane autoscale: tf_init_backend() in scale-common.sh handles this.
+  backend "s3" {}
 }
 
 provider "hcloud" {
@@ -192,6 +209,12 @@ resource "hcloud_server" "default" {
     alert_to                 = var.alert_to
     alert_smtp_user          = var.alert_smtp_user
     alert_smtp_pass          = var.alert_smtp_pass
+    # S3 backend (control-plane autoscale)
+    tf_backend_bucket         = var.tf_backend_bucket
+    tf_backend_region         = var.tf_backend_region
+    tf_backend_dynamodb_table = var.tf_backend_dynamodb_table
+    aws_access_key_id         = var.aws_access_key_id
+    aws_secret_access_key     = var.aws_secret_access_key
   })
 
   labels = {

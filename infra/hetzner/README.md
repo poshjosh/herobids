@@ -13,7 +13,7 @@ Deployment of Herobids on Hetzner Cloud VPS (CPX22, Ubuntu 24.04). Supports two 
 | **Env file** | `.env.staging` | `.env.prod` |
 | **Compose overlay** | `docker-compose.staging.yaml` | `docker-compose.prod.yaml` |
 | **NODE_ENV** | `staging` | `production` |
-| **Terraform state** | Terraform workspaces (`staging` / `production`) | Terraform workspaces (`staging` / `production`) |
+| **Terraform state** | S3 remote backend (`herobids/staging/terraform.tfstate`) | S3 remote backend (`herobids/production/terraform.tfstate`) |
 
 ### Naming conventions
 
@@ -38,13 +38,13 @@ HEROBIDS_ENV=staging ./scripts/logs.sh -- api worker
 
 ### Terraform Workspaces
 
-Each environment has its own Terraform workspace:
+Each environment has its own Terraform workspace and an isolated state key in the S3 remote backend:
 
-| Workspace | Environment |
-|---|---|
-| `staging` | Staging server (`herobids-staging`) |
-| `production` | Production server (`herobids`) |
-| `default` | Deprecated — do not use |
+| Workspace | Environment | S3 State Key |
+|---|---|---|
+| `staging` | Staging server (`herobids-staging`) | `herobids/staging/terraform.tfstate` |
+| `production` | Production server (`herobids`) | `herobids/production/terraform.tfstate` |
+| `default` | Deprecated — do not use | — |
 
 All deploy scripts automatically select the correct workspace via the `--env` flag.
 
@@ -71,6 +71,62 @@ terraform workspace select staging    # switch to staging
 # Production (created on first run)
 ./scripts/provision.sh --env production --var-file production.tfvars
 ```
+
+### Terraform Remote Backend (S3)
+
+Terraform state is stored in an AWS S3 bucket, not on the local filesystem. This
+ensures the control-plane autoscale services and operator-initiated terraform commands
+share the same authoritative state.
+
+**Backend layout:**
+
+| Environment | Bucket | Key | Isolation |
+|---|---|---|---|
+| Staging | `<your-bucket>` | `herobids/staging/terraform.tfstate` | Same bucket, different key |
+| Production | `<your-bucket>` | `herobids/production/terraform.tfstate` | Same bucket, different key |
+
+**Required environment variables (control plane):**
+
+| Variable | Description |
+|---|---|
+| `TF_BACKEND_BUCKET` | S3 bucket name |
+| `TF_BACKEND_REGION` | AWS region (e.g. `eu-central-1`) |
+| `TF_BACKEND_DYNAMODB_TABLE` | DynamoDB table for state locking (optional) |
+| `AWS_ACCESS_KEY_ID` | AWS access key |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key |
+
+These are set in the systemd service units (`nomad-autoscale.service`,
+`nomad-scale-in.service`, `nomad-placement-failure-watcher.service`) via cloud-init,
+and passed as Terraform variables at provision time.
+
+**Operator init (local machine):**
+
+When running terraform locally, pass backend config via `-backend-config`:
+
+```bash
+cd infra/hetzner
+
+# Initialize with S3 backend for staging
+terraform init \
+  -backend-config="bucket=your-tf-state-bucket" \
+  -backend-config="key=herobids/staging/terraform.tfstate" \
+  -backend-config="region=eu-central-1"
+
+terraform workspace select staging
+terraform plan -var-file=staging.tfvars
+```
+
+**Verifying backend connectivity on the control plane:**
+
+```bash
+ssh root@<control-plane-ip>
+cd /opt/herobids/infra/hetzner
+terraform workspace show       # should print the environment name
+terraform state list           # should list known resources
+```
+
+If `terraform state list` fails, check that `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY` are set in the service environment.
 
 ### Runtime Policy
 
@@ -670,7 +726,9 @@ When an alert is received, follow these steps:
 3. **Check Terraform state:**
    ```bash
    cd /opt/herobids/infra/hetzner
-   terraform plan
+   terraform workspace show    # verify correct environment
+   terraform state list        # verify remote state accessible
+   terraform plan              # check for drift
    ```
 
 4. **Common recovery actions:**
@@ -1175,6 +1233,7 @@ and re-enable steps.
 | **Migrations didn't run** | API logs show missing tables | Run manually: `ssh root@<IP> 'cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.{prod,staging}.yaml run --rm migrate'` |
 | **Agent image not found** | Worker logs "image not found" | The agent image must be built before worker starts. Run `./scripts/push.sh` which builds it. |
 | **terraform.tfvars not found** | `provision.sh` fails with error | `cp terraform.tfvars.example terraform.tfvars` and fill in required values, including `environment`. |
+| **S3 backend not configured** | Autoscale fails with "Missing backend environment variables" | Set `TF_BACKEND_BUCKET`, `TF_BACKEND_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` in the service environment or re-provision with the backend variables in tfvars. |
 | **Git clone fails on server** | cloud-init log shows SSH error | Verify `deploy_ssh_private_key` is a valid key with read access to the repo. |
 | **Let's Encrypt cert never issued** | Caddy stuck, no HTTPS | Ensure port 80 is reachable (Let's Encrypt HTTP challenge). Check UFW and Hetzner firewall. |
 

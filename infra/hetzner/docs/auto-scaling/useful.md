@@ -5,6 +5,10 @@ Quick-reference commands for operating the Nomad staging cluster.
 Server IP and agent node IPs change on recreation. Always check first:
 ```bash
 cd infra/hetzner
+
+# Ensure you're initialized with the S3 backend and on the right workspace
+terraform workspace select staging
+
 terraform output -raw server_ipv4          # control-plane public IP
 terraform output -raw control_plane_private_ip  # control-plane private IP
 terraform output -json agent_node_public_ips    # agent node public IPs
@@ -66,6 +70,7 @@ Requires `prevent_destroy = false` on `hcloud_server.default` in `main.tf` (beca
 
 ```bash
 cd infra/hetzner
+terraform workspace select staging
 terraform apply -var-file=staging.tfvars -var="agent_node_count=1"
 ```
 
@@ -126,7 +131,7 @@ ssh -i ~/.ssh/herobids_deploy_key root@<agent-ip> 'journalctl -u nomad --no-page
 ssh -i ~/.ssh/herobids_deploy_key root@<agent-ip> 'cat /etc/nomad.d/nomad.hcl'
 
 # Check private network connectivity from agent to control-plane
-ssh -i ~/.ssh/herobids_deploy_key root@<agent-ip> 'nc -zv 10.0.0.2 4647'
+ssh -i ~/.ssh/herobids_deploy_key root@<agent-ip> 'nc -zv <control-plane-private-ip> 4647'
 
 # Restart Nomad on agent node
 ssh -i ~/.ssh/herobids_deploy_key root@<agent-ip> 'systemctl restart nomad'

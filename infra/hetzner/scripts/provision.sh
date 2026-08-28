@@ -155,7 +155,43 @@ terraform workspace select "${HEROBIDS_ENV}" 2>/dev/null || \
 # ─── Terraform init ──────────────────────────────────────────────────────────
 
 echo "==> [${HEROBIDS_ENV}] Running terraform init..."
-terraform init
+
+# Build S3 backend config flags from environment variables.
+# The same env vars (TF_BACKEND_BUCKET, TF_BACKEND_REGION, etc.) are used
+# by the control-plane autoscale services — keeping the config model consistent.
+TF_BACKEND_BUCKET="${TF_BACKEND_BUCKET:-}"
+TF_BACKEND_REGION="${TF_BACKEND_REGION:-eu-central-1}"
+TF_BACKEND_DYNAMODB_TABLE="${TF_BACKEND_DYNAMODB_TABLE:-}"
+
+if [[ -z "${TF_BACKEND_BUCKET}" ]]; then
+  echo "ERROR: TF_BACKEND_BUCKET is not set." >&2
+  echo "The S3 remote backend requires:" >&2
+  echo "  TF_BACKEND_BUCKET          — S3 bucket name" >&2
+  echo "  TF_BACKEND_REGION          — AWS region (default: eu-central-1)" >&2
+  echo "  AWS_ACCESS_KEY_ID          — AWS credentials" >&2
+  echo "  AWS_SECRET_ACCESS_KEY      — AWS credentials" >&2
+  echo "  TF_BACKEND_DYNAMODB_TABLE  — DynamoDB table for state locking (optional)" >&2
+  echo "" >&2
+  echo "Example:" >&2
+  echo "  export TF_BACKEND_BUCKET=herobids-terraform-state" >&2
+  echo "  export TF_BACKEND_REGION=eu-central-1" >&2
+  echo "  export AWS_ACCESS_KEY_ID=AKIA..." >&2
+  echo "  export AWS_SECRET_ACCESS_KEY=..." >&2
+  echo "  $0 --env staging --var-file staging.tfvars" >&2
+  exit 1
+fi
+
+INIT_ARGS=(-input=false \
+  "-backend-config=bucket=${TF_BACKEND_BUCKET}" \
+  "-backend-config=key=herobids/${HEROBIDS_ENV}/terraform.tfstate" \
+  "-backend-config=region=${TF_BACKEND_REGION}" \
+)
+
+if [[ -n "${TF_BACKEND_DYNAMODB_TABLE}" ]]; then
+  INIT_ARGS+=("-backend-config=dynamodb_table=${TF_BACKEND_DYNAMODB_TABLE}")
+fi
+
+terraform init "${INIT_ARGS[@]}"
 
 # ─── Terraform plan (preview) ────────────────────────────────────────────────
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-`approved`
+`in-progress`
 
 ## Purpose
 
@@ -125,7 +125,7 @@ Implications:
 
 ## Workstreams
 
-### W1. Fix drain-timeout safety semantics
+### W1. Fix drain-timeout safety semantics `PENDING`
 
 #### Problem
 
@@ -191,7 +191,7 @@ Implications:
 2. The run exits cleanly with a visible warning and no silent shrink.
 3. The README and any relevant runbook describe the same behavior the code enforces.
 
-### W2. Make autoscale Terraform execution environment-safe
+### W2. Make autoscale Terraform execution environment-safe `PENDING`
 
 #### Problem
 
@@ -285,7 +285,7 @@ The scale scripts are less robust than `provision.sh`:
 2. A missing backend configuration, missing environment isolation, or missing credentials produces a clear fatal error before any drain or apply attempt.
 3. The same mechanism is used by `scale-in.sh`, `scale-out.sh`, and alert diagnostics.
 
-### W3. Generalize private IP resolution
+### W3. Generalize private IP resolution `PENDING`
 
 #### Problem
 
@@ -339,7 +339,7 @@ Nomad advertise address patching is currently tied to `10.0.*`, which is a stagi
 2. Agent nodes advertise the correct private IP in production.
 3. The chosen mechanism does not depend on a staging-only subnet prefix.
 
-### W4. Align Nomad ACL and token behavior
+### W4. Align Nomad ACL and token behavior `PENDING`
 
 #### Problem
 
@@ -406,7 +406,7 @@ The worker adapter and the shell autoscaler are inconsistent. The adapter suppor
 2. Production documentation no longer says two conflicting things about Nomad authentication.
 3. A production operator can verify the expected auth path without reading source code.
 
-### W5. Add tests and rollout-facing documentation
+### W5. Add tests and rollout-facing documentation `PENDING`
 
 #### Problem
 

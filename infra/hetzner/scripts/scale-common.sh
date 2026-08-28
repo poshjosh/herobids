@@ -282,6 +282,140 @@ is_dry_run() {
   [[ "${DRY_RUN}" == "true" ]]
 }
 
+# ─── Terraform Runtime Helpers ────────────────────────────────────────────────
+#
+# Shared helpers for autoscale-time Terraform operations. These centralize
+# environment validation, backend initialization, and workspace selection
+# so that scale-in.sh, scale-out.sh, and alert-common.sh are thin consumers.
+
+# tf_ensure_env — fail fast if HEROBIDS_ENV is not set to staging or production.
+tf_ensure_env() {
+  case "${HEROBIDS_ENV:-}" in
+    staging|production) ;;
+    *)
+      die "HEROBIDS_ENV must be 'staging' or 'production' (got '${HEROBIDS_ENV:-<unset>}'). Cannot determine target environment for Terraform." 1
+      ;;
+  esac
+}
+
+# tf_backend_configured — returns 0 if the S3 backend env vars are set.
+tf_backend_configured() {
+  local missing=()
+  [[ -z "${TF_BACKEND_BUCKET:-}" ]] && missing+=("TF_BACKEND_BUCKET")
+  [[ -z "${TF_BACKEND_REGION:-}" ]] && missing+=("TF_BACKEND_REGION")
+  [[ -z "${AWS_ACCESS_KEY_ID:-}" ]] && missing+=("AWS_ACCESS_KEY_ID")
+  [[ -z "${AWS_SECRET_ACCESS_KEY:-}" ]] && missing+=("AWS_SECRET_ACCESS_KEY")
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    log "ERROR: Missing backend environment variables: ${missing[*]}"
+    return 1
+  fi
+  return 0
+}
+
+# tf_init_backend — run terraform init with S3 backend configuration.
+# Must be called before any terraform plan/apply in autoscale scripts.
+#
+# Uses -reconfigure to avoid interactive prompts. This is correct for the
+# autoscale use case: systemd services always target the same backend, and
+# -reconfigure ensures stale local .terraform state doesn't cause drift.
+# Operators should NOT use this function for manual Terraform sessions —
+# use provision.sh instead, which handles backend init separately.
+#
+# Uses HEROBIDS_ENV to derive the state key.
+tf_init_backend() {
+  tf_ensure_env
+
+  if ! tf_backend_configured; then
+    die "S3 backend not configured. Set TF_BACKEND_BUCKET, TF_BACKEND_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY." 1
+  fi
+
+  local state_key="herobids/${HEROBIDS_ENV}/terraform.tfstate"
+  local -a init_args=(-input=false -reconfigure
+    "-backend-config=bucket=${TF_BACKEND_BUCKET}"
+    "-backend-config=key=${state_key}"
+    "-backend-config=region=${TF_BACKEND_REGION}"
+  )
+
+  if [[ -n "${TF_BACKEND_DYNAMODB_TABLE:-}" ]]; then
+    init_args+=("-backend-config=dynamodb_table=${TF_BACKEND_DYNAMODB_TABLE}")
+  fi
+
+  log "Initializing Terraform backend (bucket=${TF_BACKEND_BUCKET}, key=${state_key}, region=${TF_BACKEND_REGION})..."
+
+  cd "${TERRAFORM_DIR}"
+
+  if ! terraform init "${init_args[@]}"; then
+    die "Terraform backend initialization failed. Check AWS credentials and bucket configuration." 1
+  fi
+
+  log "Terraform backend initialized (env=${HEROBIDS_ENV})."
+}
+
+# tf_select_workspace — select or create the Terraform workspace matching HEROBIDS_ENV.
+tf_select_workspace() {
+  tf_ensure_env
+
+  cd "${TERRAFORM_DIR}"
+
+  local current_ws
+  current_ws="$(terraform workspace show 2>/dev/null || echo "default")"
+
+  if [[ "${current_ws}" == "${HEROBIDS_ENV}" ]]; then
+    log "Terraform workspace already set to '${HEROBIDS_ENV}'."
+    return 0
+  fi
+
+  log "Selecting Terraform workspace '${HEROBIDS_ENV}' (currently: '${current_ws}')..."
+
+  if ! terraform workspace select "${HEROBIDS_ENV}" 2>/dev/null; then
+    if ! terraform workspace new "${HEROBIDS_ENV}"; then
+      die "Failed to select or create Terraform workspace '${HEROBIDS_ENV}'." 1
+    fi
+  fi
+
+  log "Terraform workspace set to '${HEROBIDS_ENV}'."
+}
+
+# tf_ensure_ready — full pre-flight check for autoscale Terraform operations.
+# Validates: env set, terraform binary, terraform dir, backend configured, init + workspace.
+tf_ensure_ready() {
+  tf_ensure_env
+
+  if ! command -v terraform &>/dev/null; then
+    die "terraform not found in PATH." 1
+  fi
+
+  if [[ ! -d "${TERRAFORM_DIR}" ]]; then
+    die "TERRAFORM_DIR '${TERRAFORM_DIR}' does not exist." 1
+  fi
+
+  tf_init_backend
+  tf_select_workspace
+
+  log "Terraform ready (env=${HEROBIDS_ENV}, dir=${TERRAFORM_DIR})."
+}
+
+# tf_apply_var — execute a terraform apply with the given -var overrides.
+# Usage: tf_apply_var "agent_node_count=5"
+# No tfvars file is needed — all inputs come from TF_VAR_* environment
+# variables set in the systemd service unit.
+#
+# NOTE: Do not pass sensitive values (secrets, API keys, passwords) as -var
+# arguments — they appear in process listings and terraform logs. Use TF_VAR_*
+# environment variables for sensitive inputs instead.
+tf_apply_var() {
+  cd "${TERRAFORM_DIR}"
+
+  local -a var_args=()
+  for var_pair in "$@"; do
+    var_args+=("-var" "${var_pair}")
+  done
+
+  log "Terraform apply: terraform apply -auto-approve ${var_args[*]}"
+  terraform apply -auto-approve "${var_args[@]}"
+}
+
 # ─── Nomad node helpers (Phase 7) ─────────────────────────────────────────────
 #
 # These helpers are used by both check-placement-failures.sh (safety net) and

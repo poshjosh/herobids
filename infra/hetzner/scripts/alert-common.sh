@@ -283,13 +283,17 @@ EOF
     echo ""
   fi
 
-  # ── Last Terraform error ────────────────────────────────────────────────────
-  if [[ -n "${TERRAFORM_DIR:-}" ]] && [[ -f "${TERRAFORM_DIR}/terraform.tfstate" ]]; then
-    echo "--- Terraform State ---"
-    echo "  State file: ${TERRAFORM_DIR}/terraform.tfstate"
-    echo "  Last modified: $(stat -c '%y' "${TERRAFORM_DIR}/terraform.tfstate" 2>/dev/null || stat -f '%Sm' "${TERRAFORM_DIR}/terraform.tfstate" 2>/dev/null || echo "unknown")"
-    echo ""
+  # ── Terraform backend info ────────────────────────────────────────────────────
+  echo "--- Terraform Backend ---"
+  echo "  Backend:  S3 (remote)"
+  echo "  Bucket:   ${TF_BACKEND_BUCKET:-<not set>}"
+  echo "  Region:   ${TF_BACKEND_REGION:-<not set>}"
+  echo "  Key:      herobids/${env}/terraform.tfstate"
+  if [[ -n "${TF_BACKEND_DYNAMODB_TABLE:-}" ]]; then
+    echo "  Lock table: ${TF_BACKEND_DYNAMODB_TABLE}"
   fi
+  echo "  Dir:      ${TERRAFORM_DIR:-<not set>}"
+  echo ""
 
   # ── Recent autoscale log tail ───────────────────────────────────────────────
   local log_file="${NOMAD_AUTOSCALE_LOG_FILE:-/var/log/nomad-autoscale.log}"
