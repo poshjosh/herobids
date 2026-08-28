@@ -8,6 +8,10 @@ import {
   ScannerWakeContextSchema,
   MarketWatchTriggeredPayloadSchema,
   SendMessagePayloadSchema,
+  ManageAgentSkillsPayloadSchema,
+  ManageAgentSkillsResultSchema,
+  AGENT_MESSAGE_TYPES,
+  MESSAGE_PAYLOAD_SCHEMAS,
 } from './agent-protocol.js';
 
 // Shared base fields for all wake payloads
@@ -569,6 +573,218 @@ describe('SendMessagePayloadSchema', () => {
     const result = SendMessagePayloadSchema.safeParse({
       body: 'Hello',
       contextRef: 'x'.repeat(201),
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+
+// ── AGENT_MESSAGE_TYPES — skill management constant ─────────────────────────
+
+describe('AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS', () => {
+  it('equals "agent.manage_skills"', () => {
+    expect(AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS).toBe('agent.manage_skills');
+  });
+});
+
+// ── MESSAGE_PAYLOAD_SCHEMAS — skill management registration ─────────────────
+
+describe('MESSAGE_PAYLOAD_SCHEMAS registration', () => {
+  it('has ManageAgentSkillsPayloadSchema registered for agent.manage_skills', () => {
+    const schema = MESSAGE_PAYLOAD_SCHEMAS['agent.manage_skills'];
+    expect(schema).toBeDefined();
+    expect(schema).toBe(ManageAgentSkillsPayloadSchema);
+  });
+});
+
+// ── ManageAgentSkillsPayloadSchema ──────────────────────────────────────────
+
+describe('ManageAgentSkillsPayloadSchema', () => {
+  it('accepts a valid add payload', () => {
+    const result = ManageAgentSkillsPayloadSchema.safeParse({
+      action: 'add',
+      skillIds: ['trading'],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.action).toBe('add');
+      expect(result.data.skillIds).toEqual(['trading']);
+    }
+  });
+
+  it('accepts a valid remove payload', () => {
+    const result = ManageAgentSkillsPayloadSchema.safeParse({
+      action: 'remove',
+      skillIds: ['web-access'],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.action).toBe('remove');
+      expect(result.data.skillIds).toEqual(['web-access']);
+    }
+  });
+
+  it('accepts skillIds with exactly 10 entries (upper boundary)', () => {
+    const ids = Array.from({ length: 10 }, (_, i) => `skill-${i}`);
+    const result = ManageAgentSkillsPayloadSchema.safeParse({ action: 'add', skillIds: ids });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.skillIds).toHaveLength(10);
+    }
+  });
+
+  it('accepts skillIds with exactly 1 entry (lower boundary)', () => {
+    const result = ManageAgentSkillsPayloadSchema.safeParse({ action: 'add', skillIds: ['solo'] });
+    expect(result.success).toBe(true);
+  });
+
+  // --- Rejection edge cases ---
+
+  it('rejects empty skillIds array', () => {
+    const result = ManageAgentSkillsPayloadSchema.safeParse({
+      action: 'add',
+      skillIds: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects skillIds with more than 10 entries', () => {
+    const ids = Array.from({ length: 11 }, (_, i) => `skill-${i}`);
+    const result = ManageAgentSkillsPayloadSchema.safeParse({ action: 'add', skillIds: ids });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects invalid action value', () => {
+    const result = ManageAgentSkillsPayloadSchema.safeParse({
+      action: 'update',
+      skillIds: ['trading'],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects missing action field', () => {
+    const result = ManageAgentSkillsPayloadSchema.safeParse({
+      skillIds: ['trading'],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects missing skillIds field', () => {
+    const result = ManageAgentSkillsPayloadSchema.safeParse({
+      action: 'add',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects skillIds containing empty strings', () => {
+    const result = ManageAgentSkillsPayloadSchema.safeParse({
+      action: 'add',
+      skillIds: [''],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects skillIds with non-string elements', () => {
+    const result = ManageAgentSkillsPayloadSchema.safeParse({
+      action: 'add',
+      skillIds: [123],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects completely empty object', () => {
+    const result = ManageAgentSkillsPayloadSchema.safeParse({});
+    expect(result.success).toBe(false);
+  });
+});
+
+// ── ManageAgentSkillsResultSchema ───────────────────────────────────────────
+
+describe('ManageAgentSkillsResultSchema', () => {
+  it('accepts a valid ok result', () => {
+    const result = ManageAgentSkillsResultSchema.safeParse({
+      status: 'ok',
+      action: 'add',
+      skillIds: ['trading', 'web-access'],
+      warnings: [],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.status).toBe('ok');
+      expect(result.data.action).toBe('add');
+      expect(result.data.skillIds).toEqual(['trading', 'web-access']);
+      expect(result.data.warnings).toEqual([]);
+    }
+  });
+
+  it('accepts a valid error result with error message', () => {
+    const result = ManageAgentSkillsResultSchema.safeParse({
+      status: 'error',
+      action: 'remove',
+      skillIds: [],
+      warnings: [],
+      error: 'Skill not found',
+      errorCode: 'SKILL_NOT_FOUND',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.status).toBe('error');
+      expect(result.data.error).toBe('Skill not found');
+      expect(result.data.errorCode).toBe('SKILL_NOT_FOUND');
+    }
+  });
+
+  it('defaults skillIds and warnings to [] when omitted', () => {
+    const result = ManageAgentSkillsResultSchema.safeParse({
+      status: 'ok',
+      action: 'add',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.skillIds).toEqual([]);
+      expect(result.data.warnings).toEqual([]);
+    }
+  });
+
+  it('accepts a result with warnings', () => {
+    const result = ManageAgentSkillsResultSchema.safeParse({
+      status: 'ok',
+      action: 'add',
+      skillIds: ['trading'],
+      warnings: ['Skill already assigned'],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.warnings).toEqual(['Skill already assigned']);
+    }
+  });
+
+  it('rejects invalid status value', () => {
+    const result = ManageAgentSkillsResultSchema.safeParse({
+      status: 'pending',
+      action: 'add',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects invalid action value', () => {
+    const result = ManageAgentSkillsResultSchema.safeParse({
+      status: 'ok',
+      action: 'update',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects missing status field', () => {
+    const result = ManageAgentSkillsResultSchema.safeParse({
+      action: 'add',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects missing action field', () => {
+    const result = ManageAgentSkillsResultSchema.safeParse({
+      status: 'ok',
     });
     expect(result.success).toBe(false);
   });

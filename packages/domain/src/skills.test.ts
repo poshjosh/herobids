@@ -1,5 +1,51 @@
 import { describe, it, expect } from 'vitest';
-import { EMAIL_SKILL, SYSTEM_SKILLS, TRADING_SKILL } from './skills.js';
+import { BASE_SKILL, EMAIL_SKILL, SYSTEM_SKILLS, TRADING_SKILL } from './skills.js';
+
+// ── BASE_SKILL — skill management tools ─────────────────────────────────────
+
+describe('BASE_SKILL', () => {
+  it('has id "base"', () => {
+    expect(BASE_SKILL.id).toBe('base');
+  });
+
+  it.each(['list_skills', 'add_skills', 'remove_skills'])(
+    'requiredTools includes %s',
+    (toolName) => {
+      expect(BASE_SKILL.requiredTools).toContain(toolName);
+    },
+  );
+
+  it('instructions mention list_skills', () => {
+    expect(BASE_SKILL.instructions).toContain('list_skills');
+  });
+
+  it('instructions mention add_skills', () => {
+    expect(BASE_SKILL.instructions).toContain('add_skills');
+  });
+
+  it('instructions mention remove_skills', () => {
+    expect(BASE_SKILL.instructions).toContain('remove_skills');
+  });
+
+  it('instructions contain skill management guidance text', () => {
+    // Verify the instructions provide meaningful guidance about skill operations
+    expect(BASE_SKILL.instructions).toContain('discover what skills you have');
+    expect(BASE_SKILL.instructions).toContain('adopt new skills');
+    expect(BASE_SKILL.instructions).toContain('drop skills you no longer need');
+  });
+
+  it('retains existing core tools alongside skill tools', () => {
+    // Ensure adding skill tools did not remove pre-existing core tools
+    const corePreviousTools = [
+      'send_message', 'publish_artifact', 'set_memory', 'get_memory',
+      'list_memory_keys', 'delete_memory', 'get_risk_limits',
+      'get_account_summary', 'get_schema',
+    ];
+    for (const tool of corePreviousTools) {
+      expect(BASE_SKILL.requiredTools).toContain(tool);
+    }
+  });
+});
 
 describe('EMAIL_SKILL', () => {
   it('has id email', () => {

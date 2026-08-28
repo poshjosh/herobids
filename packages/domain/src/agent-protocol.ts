@@ -167,6 +167,13 @@ export const BotQueryPayloadSchema = z.object({
 
 export type BotQueryPayload = z.infer<typeof BotQueryPayloadSchema>;
 
+/** Brokered skill management — agent requests adding or removing skills. */
+export const ManageAgentSkillsPayloadSchema = z.object({
+  action: z.enum(['add', 'remove']),
+  skillIds: z.array(z.string().min(1)).min(1).max(10),
+});
+export type ManageAgentSkillsPayload = z.infer<typeof ManageAgentSkillsPayloadSchema>;
+
 // --- Trading Instance → Agent Messages ---
 
 export const ContextSnapshotPayloadSchema = z.object({
@@ -511,6 +518,7 @@ export const AGENT_MESSAGE_TYPES = {
   CONFIG_UPDATE: 'agent.config.update',
   TOOL_ASSESS_STRATEGY_PRESET: 'agent.tool.assess_strategy_preset.request',
   TOOL_CHANGE_STRATEGY_PRESET: 'agent.tool.change_strategy_preset.request',
+  MANAGE_AGENT_SKILLS: 'agent.manage_skills',
 } as const;
 
 export const INSTANCE_MESSAGE_TYPES = {
@@ -704,6 +712,17 @@ export const ChangeStrategyPresetResultPayloadSchema = z.object({
 });
 export type ChangeStrategyPresetResultPayload = z.infer<typeof ChangeStrategyPresetResultPayloadSchema>;
 
+/** Result schema for brokered skill management (add/remove). */
+export const ManageAgentSkillsResultSchema = z.object({
+  status: z.enum(['ok', 'error']),
+  action: z.enum(['add', 'remove']),
+  skillIds: z.array(z.string()).default([]),
+  warnings: z.array(z.string()).default([]),
+  error: z.string().optional(),
+  errorCode: z.string().optional(),
+});
+export type ManageAgentSkillsResult = z.infer<typeof ManageAgentSkillsResultSchema>;
+
 /** Map message type to its payload schema for validation */
 export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: DecisionSubmitPayloadSchema,
@@ -718,6 +737,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.CONFIG_UPDATE]: ConfigUpdatePayloadSchema,
   [AGENT_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET]: AssessStrategyPresetRequestPayloadSchema,
   [AGENT_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET]: ChangeStrategyPresetRequestPayloadSchema,
+  [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: ManageAgentSkillsPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: ContextSnapshotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: DecisionAcceptedPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_REJECTED]: DecisionRejectedPayloadSchema,
