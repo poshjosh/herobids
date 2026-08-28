@@ -20,6 +20,7 @@ export const SLASH_COMMANDS = [
   'stop',
   'restart',
   'mode',
+  'golive',
   'connect',
   'disconnect',
   'to',
@@ -148,7 +149,8 @@ const COMMAND_HELP: CommandHelpEntry[] = [
   { command: 'stop', syntax: '/stop <agent>', description: 'Stop an agent', category: 'lifecycle' },
   { command: 'restart', syntax: '/restart <agent>', description: 'Stop then start an agent', category: 'lifecycle' },
 
-  { command: 'mode', syntax: '/mode <agent> [mode]', description: 'Show or set execution mode', category: 'config' },
+  { command: 'mode', syntax: '/mode <agent>', description: 'Show execution mode', category: 'config' },
+  { command: 'golive', syntax: '/golive <agent>', description: 'Create a live copy of a test agent', category: 'config' },
   { command: 'connect', syntax: '/connect <agent> [id|label]', description: 'Start or assign a connection', category: 'config' },
   { command: 'disconnect', syntax: '/disconnect <agent> <id|label>', description: 'Revoke a connection', category: 'config' },
 
@@ -252,15 +254,24 @@ const DETAILED_HELP: Record<string, string> = {
   ].join('\n'),
 
   mode: [
-    '/mode <agent> [mode]',
+    '/mode <agent>',
     '',
-    'Without a mode: shows the current execution mode for the agent.',
-    'With a mode: sets the execution mode (agent must be stopped).',
-    'Accepted modes: test, paper, shadow (aliases for test), live.',
+    'Shows the current execution mode for the agent.',
     'Examples:',
     '  /mode Momentum        — show current mode',
-    '  /mode Momentum test   — set to test (simulated)',
-    '  /mode Momentum live   — set to live',
+    '',
+    'To switch to live trading, use /golive <agent>.',
+  ].join('\n'),
+
+  golive: [
+    '/golive <agent>',
+    '',
+    'Creates a new live agent by cloning the configuration of a test agent.',
+    'The source agent must be in paper or shadow mode.',
+    'The new agent starts in stopped status with execution mode set to live.',
+    'Examples:',
+    '  /golive Momentum      — create a live copy of Momentum',
+    '  /golive "DCA Bot"     — create a live copy of DCA Bot',
   ].join('\n'),
 
   connect: [

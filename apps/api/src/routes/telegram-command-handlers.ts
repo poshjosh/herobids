@@ -25,7 +25,6 @@ import {
   listAgentConnections,
   grantConnection,
   revokeConnection,
-  setExecutionMode,
 } from '../services/agent-config-service.js';
 import {
   makeSetupLinkUrl,
@@ -37,7 +36,6 @@ import {
   resumeAgent,
   stopAgent,
 } from '../services/agent-lifecycle-service.js';
-import { hasSkillCapabilityFamily } from '../routes/agent-config-helpers.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -842,7 +840,7 @@ export async function handleMode(
 ): Promise<string> {
   try {
     if (args.length === 0) {
-      return 'Usage: /mode <agent name> [test|live|paper|shadow]';
+      return 'Usage: /mode <agent name>';
     }
 
     const resolved = await resolveAgentByName(db, userId, args[0]!);
@@ -857,62 +855,26 @@ export async function handleMode(
     }
     const agent = resolved.agent;
 
+    // Reject mode-change attempts — mode is immutable after creation
+    if (args.length >= 2) {
+      return 'Execution mode cannot be changed after creation. Use /golive <agent> to create a live copy of this agent\'s configuration.';
+    }
+
     // Read-only: show current execution mode
-    if (args.length === 1) {
-      const mode = (agent.executionDefaults as Record<string, unknown> | null)?.['mode'] as string | undefined;
-      if (mode === 'shadow') {
-        return `${agent.name} execution mode: shadow (venue-backed simulation)`;
-      }
-      if (mode === 'paper') {
-        return `${agent.name} execution mode: paper (simulated)`;
-      }
-      if (mode === 'live') {
-        return `${agent.name} execution mode: live`;
-      }
-      return `${agent.name} execution mode: not applicable`;
+    const mode = (agent.executionDefaults as Record<string, unknown> | null)?.['mode'] as string | undefined;
+    if (mode === 'shadow') {
+      return `${agent.name} execution mode: shadow (venue-backed simulation)`;
     }
-
-    // Set mode
-    const rawMode = args[1]!.toLowerCase();
-    const validModes = ['paper', 'shadow', 'live'];
-    if (!validModes.includes(rawMode)) {
-      return `Invalid mode "${args[1]}". Use paper, shadow, or live.`;
+    if (mode === 'paper') {
+      return `${agent.name} execution mode: paper (simulated)`;
     }
-
-    const canonicalMode = rawMode as 'paper' | 'shadow' | 'live';
-
-    // Validate agent is stopped
-    if (agent.status !== 'stopped') {
-      return `Cannot change execution mode: ${agent.name} is ${agent.status}. Stop the agent first.`;
+    if (mode === 'live') {
+      return `${agent.name} execution mode: live`;
     }
-
-    // Validate the agent has trading skills
-    const skillRows = await db
-      .select({ skillId: agentSkills.skillId })
-      .from(agentSkills)
-      .where(eq(agentSkills.agentId, agent.id));
-    const skillIds = skillRows.map((r) => r.skillId);
-    if (!hasSkillCapabilityFamily(skillIds, 'trading')) {
-      return `Cannot set execution mode: ${agent.name} does not have trading skills.`;
-    }
-
-    const result = await setExecutionMode(db, agent.id, userId, canonicalMode);
-
-    if (result.ok) {
-      const displayMode = canonicalMode === 'paper' ? 'paper (simulated)'
-        : canonicalMode === 'shadow' ? 'shadow (venue-backed simulation)'
-        : 'live';
-      return `${agent.name} execution mode set to ${displayMode}.`;
-    }
-
-    const err_ = result.error;
-    if (err_.code === 'agent.not_found') {
-      return `Agent "${args[0]}" not found.`;
-    }
-    return `Failed to set execution mode for ${agent.name}. Please try again.`;
+    return `${agent.name} execution mode: not applicable`;
   } catch (error) {
     console.error('handleMode failed:', error);
-    return 'Failed to set execution mode. Please try again later.';
+    return 'Failed to retrieve execution mode. Please try again later.';
   }
 }
 
@@ -1065,4 +1027,17 @@ export async function handleDisconnect(
     console.error('handleDisconnect failed:', error);
     return 'Failed to revoke connection. Please try again later.';
   }
+}
+
+// ── handleGoLive (placeholder — real implementation in Task 4) ────────────
+
+export async function handleGoLive(
+  _db: Database,
+  _userId: string,
+  args: string[],
+): Promise<string> {
+  if (args.length === 0) {
+    return 'Usage: /golive <agent name>';
+  }
+  return 'Go Live command will be available soon.';
 }

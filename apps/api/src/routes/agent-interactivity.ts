@@ -36,6 +36,7 @@ import {
   handleMode,
   handleConnect,
   handleDisconnect,
+  handleGoLive,
 } from './telegram-command-handlers.js';
 import {
   CostPresetSchema,
@@ -686,6 +687,11 @@ export async function telegramWebhookHandler(
         // Config commands (Slice 5)
         if (slashCmd.command === 'mode') {
           const response = await handleMode(db, userId, slashCmd.args);
+          await sendTelegramText(chatId, response);
+          return;
+        }
+        if (slashCmd.command === 'golive') {
+          const response = await handleGoLive(db, userId, slashCmd.args);
           await sendTelegramText(chatId, response);
           return;
         }

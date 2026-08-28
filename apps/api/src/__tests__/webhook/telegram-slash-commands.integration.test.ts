@@ -24,14 +24,13 @@ vi.mock('../../services/agent-lifecycle-service.js', () => ({
 }));
 
 vi.mock('../../services/agent-config-service.js', () => ({
-  setExecutionMode: vi.fn(),
   grantConnection: vi.fn(),
   revokeConnection: vi.fn(),
   listAgentConnections: vi.fn(),
 }));
 
 import { startAgent, stopAgent } from '../../services/agent-lifecycle-service.js';
-import { setExecutionMode, grantConnection, revokeConnection } from '../../services/agent-config-service.js';
+import { grantConnection, revokeConnection } from '../../services/agent-config-service.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -416,13 +415,13 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
 
   // ── H2: Stopped-agent constraint — /mode ──────────────────────────────
 
-  it('/mode <agent> live rejects non-stopped agent', async () => {
+  it('/mode <agent> live rejects with immutability message', async () => {
     let selectCount = 0;
     const db = {
       select: vi.fn().mockImplementation(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID }]);
-        return makeChain([stubAgent({ status: 'active' })]);
+        return makeChain([stubAgent({ status: 'stopped' })]);
       }),
     } as unknown as Database;
     const redis = buildMockRedis();
@@ -434,9 +433,8 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     await flushPromises();
 
     const text = sentText(fetchSpy);
-    expect(text).toContain('Cannot change execution mode');
-    expect(text).toContain('active');
-    expect(text).toContain('Stop the agent first');
+    expect(text).toContain('Execution mode cannot be changed after creation');
+    expect(text).toContain('/golive');
   });
 
   // ── H2: Stopped-agent constraint — /connect ──────────────────────────
@@ -643,23 +641,21 @@ describe('Telegram Slash Commands — Stopped-Agent Constraints (Handler Unit)',
     vi.clearAllMocks();
   });
 
-  it('handleMode rejects non-stopped agent with "Cannot change execution mode"', async () => {
+  it('handleMode rejects mode change with immutability message', async () => {
     const { handleMode } = await import('../../routes/telegram-command-handlers.js');
 
     let selectCount = 0;
     const db = {
       select: vi.fn().mockImplementation(() => {
         selectCount += 1;
-        if (selectCount === 1) return makeChain([stubAgent({ status: 'active' })]);
+        if (selectCount === 1) return makeChain([stubAgent({ status: 'stopped' })]);
         return makeChain([]);
       }),
     } as unknown as Database;
 
     const result = await handleMode(db, TEST_USER_ID, ['MyAgent', 'live']);
-    expect(result).toContain('Cannot change execution mode');
-    expect(result).toContain('active');
-    expect(result).toContain('Stop the agent first');
-    expect(setExecutionMode).not.toHaveBeenCalled();
+    expect(result).toContain('Execution mode cannot be changed after creation');
+    expect(result).toContain('/golive');
   });
 
   it('handleConnect rejects non-stopped agent with "Agent must be stopped"', async () => {
@@ -698,10 +694,7 @@ describe('Telegram Slash Commands — Stopped-Agent Constraints (Handler Unit)',
     expect(revokeConnection).not.toHaveBeenCalled();
   });
 
-  it('handleMode accepts stopped agent and calls setExecutionMode', async () => {
-    const mockSetMode = vi.mocked(setExecutionMode);
-    mockSetMode.mockResolvedValue(ok({ mode: 'live' }));
-
+  it('handleMode rejects any mode argument regardless of agent status', async () => {
     const { handleMode } = await import('../../routes/telegram-command-handlers.js');
 
     let selectCount = 0;
@@ -709,12 +702,12 @@ describe('Telegram Slash Commands — Stopped-Agent Constraints (Handler Unit)',
       select: vi.fn().mockImplementation(() => {
         selectCount += 1;
         if (selectCount === 1) return makeChain([stubAgent({ status: 'stopped' })]);
-        return makeChain([{ skillId: 'trading' }]); // skills query — real system skill ID
+        return makeChain([{ skillId: 'trading' }]);
       }),
     } as unknown as Database;
 
-    const result = await handleMode(db, TEST_USER_ID, ['MyAgent', 'live']);
-    expect(result).toContain('execution mode set to');
-    expect(setExecutionMode).toHaveBeenCalledWith(db, AGENT_ID, TEST_USER_ID, 'live');
+    const result = await handleMode(db, TEST_USER_ID, ['MyAgent', 'paper']);
+    expect(result).toContain('Execution mode cannot be changed after creation');
+    expect(result).toContain('/golive');
   });
 });
