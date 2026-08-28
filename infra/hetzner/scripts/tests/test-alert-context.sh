@@ -64,7 +64,7 @@ run_build_context() {
 
 run_build_context \
   "TF_BACKEND_BUCKET=my-state-bucket" \
-  "TF_BACKEND_REGION=eu-central-1"
+  "TF_BACKEND_REGION=us-east-1"
 assert_eq "${RUN_EXIT}" "0" "build_alert_context succeeds"
 assert_contains "${RUN_OUTPUT}" "S3 (remote)" "context shows S3 (remote) backend label"
 assert_contains "${RUN_OUTPUT}" "Terraform Backend" "context has Terraform Backend header"
@@ -75,7 +75,7 @@ assert_contains "${RUN_OUTPUT}" "my-state-bucket" "context shows the configured 
 
 # --- Shows region ---
 
-assert_contains "${RUN_OUTPUT}" "eu-central-1" "context shows the configured region"
+assert_contains "${RUN_OUTPUT}" "us-east-1" "context shows the configured region"
 
 # --- Shows state key derived from env ---
 
@@ -95,7 +95,7 @@ assert_contains "${RUN_OUTPUT}" "us-east-1" "shows production region"
 
 run_build_context \
   "TF_BACKEND_BUCKET=my-bucket" \
-  "TF_BACKEND_REGION=eu-central-1" \
+  "TF_BACKEND_REGION=us-east-1" \
   "TF_BACKEND_DYNAMODB_TABLE=tf-locks"
 assert_contains "${RUN_OUTPUT}" "tf-locks" "context shows DynamoDB table when set"
 assert_contains "${RUN_OUTPUT}" "Lock table" "context has lock table label"
@@ -104,7 +104,7 @@ assert_contains "${RUN_OUTPUT}" "Lock table" "context has lock table label"
 
 run_build_context \
   "TF_BACKEND_BUCKET=my-bucket" \
-  "TF_BACKEND_REGION=eu-central-1"
+  "TF_BACKEND_REGION=us-east-1"
 assert_not_contains "${RUN_OUTPUT}" "Lock table" "no lock table label when TF_BACKEND_DYNAMODB_TABLE is unset"
 
 # --- Shows <not set> placeholders when vars are missing ---
@@ -118,14 +118,14 @@ assert_contains "${RUN_OUTPUT}" "<not set>" "shows <not set> when backend vars a
 
 run_build_context \
   "TF_BACKEND_BUCKET=my-bucket" \
-  "TF_BACKEND_REGION=eu-central-1"
+  "TF_BACKEND_REGION=us-east-1"
 assert_contains "${RUN_OUTPUT}" "Dir:" "context has Dir label"
 
 # --- Does not mention local terraform.tfstate ---
 
 run_build_context \
   "TF_BACKEND_BUCKET=my-bucket" \
-  "TF_BACKEND_REGION=eu-central-1"
+  "TF_BACKEND_REGION=us-east-1"
 assert_not_contains "${RUN_OUTPUT}" "terraform.tfstate.d" "no reference to local terraform.tfstate.d"
 # The key path contains terraform.tfstate but that's the S3 key, not a local file reference.
 # We specifically check that it does NOT reference a local state file path pattern.
@@ -135,7 +135,7 @@ assert_not_contains "${RUN_OUTPUT}" "Local state" "no reference to local state"
 
 run_build_context \
   "TF_BACKEND_BUCKET=my-bucket" \
-  "TF_BACKEND_REGION=eu-central-1"
+  "TF_BACKEND_REGION=us-east-1"
 assert_contains "${RUN_OUTPUT}" "test_failure" "context includes the failure type"
 assert_contains "${RUN_OUTPUT}" "test reason" "context includes the failure reason"
 assert_contains "${RUN_OUTPUT}" "staging" "context includes the environment"
@@ -146,14 +146,14 @@ assert_contains "${RUN_OUTPUT}" "Herobids Autoscale Alert" "context has the aler
 echo "7" > "${TEST_TMPDIR}/node-count"
 run_build_context \
   "TF_BACKEND_BUCKET=my-bucket" \
-  "TF_BACKEND_REGION=eu-central-1"
+  "TF_BACKEND_REGION=us-east-1"
 assert_contains "${RUN_OUTPUT}" "7" "context includes the node count from state file"
 
 # --- Context includes manual recovery reference ---
 
 run_build_context \
   "TF_BACKEND_BUCKET=my-bucket" \
-  "TF_BACKEND_REGION=eu-central-1"
+  "TF_BACKEND_REGION=us-east-1"
 assert_contains "${RUN_OUTPUT}" "Manual recovery" "context includes manual recovery reference"
 assert_contains "${RUN_OUTPUT}" "herobids-nomad-autoscaler" "context includes autoscaler attribution"
 

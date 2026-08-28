@@ -22,7 +22,7 @@ variable "tf_backend_bucket" {
 variable "tf_backend_region" {
   type        = string
   description = "AWS region for the S3 state backend."
-  default     = "eu-central-1"
+  default     = "us-east-1"
 }
 
 variable "tf_backend_dynamodb_table" {

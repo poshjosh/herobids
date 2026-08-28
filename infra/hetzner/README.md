@@ -90,7 +90,7 @@ share the same authoritative state.
 | Variable | Description |
 |---|---|
 | `TF_BACKEND_BUCKET` | S3 bucket name |
-| `TF_BACKEND_REGION` | AWS region (e.g. `eu-central-1`) |
+| `TF_BACKEND_REGION` | AWS region (e.g. `us-east-1`) |
 | `TF_BACKEND_DYNAMODB_TABLE` | DynamoDB table for state locking (optional) |
 | `AWS_ACCESS_KEY_ID` | AWS access key |
 | `AWS_SECRET_ACCESS_KEY` | AWS secret key |
@@ -110,7 +110,7 @@ cd infra/hetzner
 terraform init \
   -backend-config="bucket=your-tf-state-bucket" \
   -backend-config="key=herobids/staging/terraform.tfstate" \
-  -backend-config="region=eu-central-1"
+  -backend-config="region=us-east-1"
 
 terraform workspace select staging
 terraform plan -var-file=staging.tfvars

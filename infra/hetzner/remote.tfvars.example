@@ -114,7 +114,7 @@ app_domain = "staging.openaidom.com"  # or "openaidom.com"
 # See infra/hetzner/README.md — "Terraform Remote Backend (S3)" for details.
 
 # tf_backend_bucket         = "your-tf-state-bucket"  # S3 bucket name
-# tf_backend_region         = "eu-central-1"           # AWS region
+# tf_backend_region         = "us-east-1"           # AWS region
 # tf_backend_dynamodb_table = ""                       # DynamoDB table for locking (optional)
 # aws_access_key_id         = ""                       # AWS access key (sensitive)
 # aws_secret_access_key     = ""                       # AWS secret key (sensitive)

@@ -42,7 +42,7 @@ agent_node_server_type = "cpx22"
 
 # S3 Backend for autoscale (required for control-plane terraform operations)
 tf_backend_bucket         = "your-tf-state-bucket"
-tf_backend_region         = "eu-central-1"
+tf_backend_region         = "us-east-1"
 # tf_backend_dynamodb_table = "your-tf-lock-table"  # optional, for state locking
 aws_access_key_id         = "AKIA..."
 aws_secret_access_key     = "..."
@@ -86,7 +86,7 @@ cd infra/hetzner
 terraform init \
   -backend-config="bucket=your-tf-state-bucket" \
   -backend-config="key=herobids/staging/terraform.tfstate" \
-  -backend-config="region=eu-central-1"
+  -backend-config="region=us-east-1"
 
 terraform workspace select staging
 terraform apply -var-file=staging.tfvars
