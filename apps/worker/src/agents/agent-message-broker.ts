@@ -15,6 +15,7 @@ import type {
   ChangeStrategyPresetRequestPayload,
   ToolContext,
   OperatorModelDefaults,
+  PlansConfig,
 } from '@herobids/domain';
 import {
   Decimal,
@@ -113,6 +114,7 @@ export class AgentMessageBroker {
     private readonly brandImageUrl?: string,
     private readonly db?: Database,
     private readonly operatorModelDefaults?: OperatorModelDefaults,
+    readonly plansConfig?: PlansConfig,
   ) {}
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
@@ -197,6 +199,7 @@ export class AgentMessageBroker {
       [AGENT_MESSAGE_TYPES.BOT_QUERY]: 'bot_query',
       [AGENT_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET]: 'assess_strategy_preset',
       [AGENT_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET]: 'change_strategy_preset',
+      [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: 'manage_agent_skills',
     };
     const capabilityName = capabilityByType[envelope.type];
     // Saved so recordEnd can be called in the finally block on every exit path.

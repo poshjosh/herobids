@@ -86,6 +86,14 @@ export function deriveToolPolicyFromSkills(
       limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 },
     };
   }
+  if (!basePolicy['manage_agent_skills']) {
+    basePolicy['manage_agent_skills'] = {
+      capability: 'manage_agent_skills',
+      tier: 'brokered',
+      enabled: true,
+      limits: { maxPerMinute: 10, maxConcurrent: 1, timeoutMs: 30_000 },
+    };
+  }
   return Object.keys(basePolicy).length > 0 ? basePolicy : null;
 }
 
