@@ -551,7 +551,7 @@ wait_for_drain_complete() {
     elapsed=$(( elapsed + poll_interval ))
   done
 
-  log "WARNING: Node ${node_id} did not drain within ${timeout_seconds}s. Remaining allocations will be force-stopped on destruction."
+  log "WARNING: Node ${node_id} did not drain within ${timeout_seconds}s. Node will be excluded from the destroy set."
   return 1
 }
 

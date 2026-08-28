@@ -313,8 +313,10 @@ for node_id in "${VERIFIED_IDLE[@]}"; do
   # Step 3: Wait for drain to complete.
   # An idle node should drain immediately (no allocations to migrate).
   if ! wait_for_drain_complete "${node_id}" "${NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS}"; then
-    log "WARNING: Node ${node_id} did not drain completely within deadline."
-    log "It will be force-stopped when the server is destroyed — this is acceptable."
+    log "WARNING: Node ${node_id} did not drain within ${NOMAD_SCALE_IN_DRAIN_DEADLINE_SECONDS}s deadline."
+    log "  Node will NOT be destroyed. Re-marking as eligible for investigation."
+    mark_node_eligible "${node_id}" || true
+    continue
   fi
 
   DRAIN_OK+=("${node_id}")

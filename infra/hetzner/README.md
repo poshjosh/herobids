@@ -606,7 +606,13 @@ ENABLE_SCALE_IN=true NOMAD_SCALE_IN_MAX_NODES_PER_RUN=3 \
 
 **Safety property:** a node that still has running allocations after the drain deadline
 is NOT destroyed. The routine logs a warning and leaves the node in the cluster.
-Operators should investigate stuck allocations manually.
+
+**After timeout:**
+- The node is re-marked as eligible for scheduling and remains in the cluster.
+- Scale-in is incomplete for that candidate — the Terraform shrink count excludes timed-out nodes.
+- If ALL candidates time out, no Terraform apply runs at all.
+- Operators should investigate stuck allocations: `nomad node status <node-id>`, `nomad alloc status <alloc-id>`.
+- A subsequent nightly run will retry if the node becomes idle.
 
 ### Placement-Failure Safety Net (Phase 7)
 

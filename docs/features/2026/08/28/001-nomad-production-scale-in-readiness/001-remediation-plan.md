@@ -125,7 +125,7 @@ Implications:
 
 ## Workstreams
 
-### W1. Fix drain-timeout safety semantics `PENDING`
+### W1. Fix drain-timeout safety semantics `DONE`
 
 #### Problem
 

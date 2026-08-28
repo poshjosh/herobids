@@ -152,3 +152,45 @@ ssh -i ~/.ssh/herobids_deploy_key root@<agent-ip> 'nc -zv <control-plane-private
 # Restart Nomad on agent node
 ssh -i ~/.ssh/herobids_deploy_key root@<agent-ip> 'systemctl restart nomad'
 ```
+
+## Scale-In Drain Timeout Investigation
+
+When a scale-in drain times out, the node is NOT destroyed — it stays in the cluster
+and is re-marked eligible. The autoscale log reports the timeout with a `WARNING` line.
+
+**Identify the timed-out node:**
+
+```bash
+# Check the autoscale log for drain timeout warnings
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
+  'grep "did not drain within" /var/log/nomad-autoscale.log | tail -10'
+```
+
+**Inspect the node and its allocations:**
+
+```bash
+# Node status — shows drain state, eligibility, and allocation summary
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
+  "NOMAD_TOKEN=<token> nomad node status <node-id>"
+
+# List allocations on the node — look for running/pending that blocked the drain
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
+  "NOMAD_TOKEN=<token> nomad node status -verbose <node-id>"
+```
+
+**Inspect stuck allocations:**
+
+```bash
+# Allocation detail — check DesiredStatus, ClientStatus, and task events
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
+  "NOMAD_TOKEN=<token> nomad alloc status <alloc-id>"
+
+# Allocation logs — check for application errors preventing graceful shutdown
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
+  "NOMAD_TOKEN=<token> nomad alloc logs <alloc-id>"
+```
+
+**After resolving the stuck allocation:**
+
+The next nightly scale-in run will re-evaluate the node. If it is idle, it will be
+drained and removed normally. No manual intervention is needed to retry.
