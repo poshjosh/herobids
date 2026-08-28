@@ -8,12 +8,12 @@
 # https://openaidom.com with no port and no cert warning.
 #
 # The correct deploy key is auto-detected from --ssh-target (167.233.213.107 ->
-# ~/.ssh/herobids_deploy_key_prod, 128.140.55.192 -> ~/.ssh/herobids_deploy_key).
+# ~/.ssh/herobids_deploy_key_prod, 78.46.192.37 -> ~/.ssh/herobids_deploy_key).
 # Override with --identity for any other host.
 #
 # Usage:
 #   scripts/shell/ops/sidestep-zscaler-start.sh
-#   scripts/shell/ops/sidestep-zscaler-start.sh --domain staging.openaidom.com --ssh-target root@128.140.55.192
+#   scripts/shell/ops/sidestep-zscaler-start.sh --domain staging.openaidom.com --ssh-target root@78.46.192.37
 #   scripts/shell/ops/sidestep-zscaler-start.sh --ssh-target root@1.2.3.4 --identity ~/.ssh/some_key
 #   scripts/shell/ops/sidestep-zscaler-start.sh --browser edge
 #   scripts/shell/ops/sidestep-zscaler-start.sh --no-browser
@@ -48,6 +48,7 @@ default_identity_for_target() {
   case "$1" in
     *167.233.213.107) printf '%s' "$HOME/.ssh/herobids_deploy_key_prod" ;;
     *128.140.55.192)  printf '%s' "$HOME/.ssh/herobids_deploy_key" ;;
+    *78.46.192.37)    printf '%s' "$HOME/.ssh/herobids_deploy_key" ;;
     *) printf '' ;;
   esac
 }

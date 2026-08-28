@@ -8,6 +8,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Update production Creem product IDs to new live store
 
+### Added
+
+- Nomad orchestration enabled on staging — agent containers are scheduled onto dedicated Hetzner agent nodes via Nomad, with autoscale timers and placement-failure safety net active
+
+### Fixed
+
+- Fix Nomad server advertising Docker bridge IP (`172.17.0.1`) instead of Hetzner private network IP — replaced `{{ GetPrivateIP }}` with runtime IP resolution in cloud-init
+- Fix Nomad client `server_join` being ignored — moved from top-level config into `client {}` block, added `servers` list
+- Fix Nomad client giving up on server join after 150s — changed `retry_max` from 30 to 0 (infinite)
+- Fix `NOMAD_ADDR` env var not mapped in worker config — added env override mapping in `apps/worker/src/config.ts`
+- Fix `cpx21` server type no longer available in Hetzner `fsn1` — updated to `cpx22`
+
 ## v0.1.16 - 2026-08-27
 
 ### Added

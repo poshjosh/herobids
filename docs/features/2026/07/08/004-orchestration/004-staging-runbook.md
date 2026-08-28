@@ -1,5 +1,7 @@
 # Staging Orchestration Runbook
 
+> **Superseded by:** infra/hetzner/docs/auto-scaling/setup-auto-scaling.md
+
 > **Feature:** 004-orchestration (Phases 1–9)
 > **Environment:** Staging (`NODE_ENV=staging`, `HEROBIDS_ENV=staging`)
 > **Last updated:** 2026-07-08

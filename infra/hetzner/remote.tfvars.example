@@ -71,7 +71,7 @@ app_domain = "staging.openaidom.com"  # or "openaidom.com"
 # agent_node_count        = 0    # autoscaler adjusts at runtime
 # min_agent_nodes         = 0    # allow scale-in to 0
 # max_agent_nodes         = 3    # small pool for staging
-# agent_node_server_type  = "cpx21"
+# agent_node_server_type  = "cpx22"
 
 # ── Autoscale Configuration ───────────────────────────────
 # Staging uses tighter thresholds for faster validation:
