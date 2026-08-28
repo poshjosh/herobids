@@ -153,7 +153,7 @@ A new API endpoint that clones a test agent's config into a new live agent.
 
 ## Task Breakdown
 
-### Task 1: Guard mode changes in `resolveExecutionModeForSkills()`
+### Task 1: Guard mode changes in `resolveExecutionModeForSkills()` — DONE
 
 **Objective:** Prevent explicit execution mode changes that cross the test/live boundary.
 
@@ -187,7 +187,7 @@ A new API endpoint that clones a test agent's config into a new live agent.
 
 ---
 
-### Task 2: Remove `setExecutionMode()` and update Telegram `/mode` handler and help text
+### Task 2: Remove `setExecutionMode()` and update Telegram `/mode` handler and help text — DONE
 
 **Objective:** Remove the direct mode-write path, make `/mode` read-only, and align all Telegram help text.
 
@@ -238,7 +238,7 @@ A new API endpoint that clones a test agent's config into a new live agent.
 
 ---
 
-### Task 3: Extract shared `cloneAgentAsLive()` service and implement `POST /agents/:id/go-live`
+### Task 3: Extract shared `cloneAgentAsLive()` service and implement `POST /agents/:id/go-live` — DONE
 
 **Objective:** Create the "Go Live" API endpoint using the existing agent creation pipeline.
 
@@ -346,7 +346,7 @@ Add `POST /agents/:id/go-live`:
 
 ---
 
-### Task 4: Add Telegram `/golive` command
+### Task 4: Add Telegram `/golive` command — DONE
 
 **Objective:** Expose "Go Live" via Telegram for users who manage agents through chat.
 
@@ -376,7 +376,7 @@ Add `POST /agents/:id/go-live`:
 
 ---
 
-### Task 5: End-to-end verification and edge case coverage
+### Task 5: End-to-end verification and edge case coverage — DONE
 
 **Objective:** Verify the full flow works correctly across all entry points with no regressions.
 
@@ -424,3 +424,40 @@ Test `/golive` Telegram flow:
 - If `POST /agents/:id/blueprints` has route-level tests already, keep them green; otherwise add a focused regression test for the projection route if the extraction touches its shared projection helper usage.
 
 **Demo:** Full end-to-end flow from paper agent creation through "Go Live" to live agent start, with mode-change attempts correctly rejected at every step via PATCH (primary UI path), PUT (chat-based path), and Telegram.
+
+
+---
+
+## Outstanding Issues
+
+### Task 1: Guard mode changes
+
+- **Low** — `TEST_MODES` Set declared inside the `if` block. Could be moved to module scope for consistency.
+
+### Task 2: Remove setExecutionMode
+
+- No outstanding issues.
+
+### Task 3: Extract shared service & Go Live endpoint
+
+- **Medium** — `agent-go-live-service.ts`: Two redundant UPDATE calls in the Go Live transaction (metadata overlay + notificationPolicy). Should be merged into a single UPDATE.
+- **Medium** — `agent-go-live-service.ts`: `preserveKeys` only lists `['metadata']`. Other authored subtrees (intelligence, execution, etc.) are modeled in the payload path, but a defensive comment or TODO is recommended for future fields.
+- **Medium** — `agent-go-live-service.ts`: Connection insertion uses sequential `for...of` loop instead of batch insert. Should use Drizzle batch `.values([...])`.
+- **Medium** — `blueprint-projection.ts`: Reads `uc.executionPolicy` but agents store `uc.execution`. Go Live has a workaround, but the projection itself should be fixed to read the correct key.
+- **Medium** — Missing blueprint-regression tests: instantiation field preservation for `intelligence`, `executionPolicy`↔`execution`, `allowedPresets`, `presetTransition`, `platformAssessment`, `authorizationMode`, `wakePreferences`, metadata.
+- **Medium** — Missing "source agent is unchanged after clone" test in go-live service unit tests.
+- **Low** — `agent-instantiation-service.ts`: `riskOverride` typed as `unknown` instead of `RiskPosture | null`.
+- **Low** — `agent-instantiation-service.ts`: Redundant telegramChatId null-coalescing (lines 114-118).
+- **Low** — `agents.ts` / `agent-go-live-service.ts`: Auto-generated live name not validated against name length limit.
+
+### Task 4: Telegram /golive command
+
+- **Medium** — `telegram-command-handlers.ts`: Error mapping uses string-matching on `result.message` for "already live" and "no connections" cases. Should use dedicated error codes.
+- **Medium** — `agent-interactivity.ts`: `telegramWebhookHandler` has 10 positional parameters. Should be refactored to options object.
+- **Low** — Test files use `as any` casts for config objects.
+
+### Task 5: End-to-end verification
+
+- **Medium** — Missing Telegram `/golive` functional tests (success, already-live rejection, not-found).
+- **Medium** — Missing explicit assertions: `riskOverrides`/`pauseState` excluded, `skillRevisionId` re-resolution verified, `/help` output checks.
+- **Low** — Missing cross-user 404 security test.
