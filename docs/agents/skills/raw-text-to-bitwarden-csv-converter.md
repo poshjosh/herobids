@@ -1,3 +1,17 @@
+---
+name: Raw Text to Bitwarden CSV Converter
+description: >-
+  Convert raw text containing credentials and secrets into the CSV format
+  required for importing into Bitwarden password manager.
+tags:
+  - bitwarden
+  - password-manager
+  - csv-converter
+requiredTools:
+  - send_message
+  - publish_artifact
+---
+
 You can convert raw text into the CSV format required for importing into [Bitwarden](https://vault.bitwarden.com/)
 
 To do so: 

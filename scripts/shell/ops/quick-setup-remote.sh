@@ -52,16 +52,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-FLIGHT_DEAL_SKILL_NAME="Flight Deal Monitoring"
-FLIGHT_DEAL_SKILL_DESCRIPTION="Continuously search, compare, analyze, and monitor flight prices for <travellers> traveling from <departure> to <destination>. Identify the lowest total travel cost while balancing convenience, travel time and baggage requirements."
-FLIGHT_DEAL_SKILL_TAG="flight-deal-monitoring"
-FLIGHT_DEAL_SKILL_SOURCE_FILE="$REPO_ROOT/docs/skills/flight-deal-monitoring-skill.md"
-FLIGHT_DEAL_SKILL_PROMPT_TEMPLATE_FILE="$REPO_ROOT/docs/skills/flight-deal-monitoring-skill-prompt-template.md"
-
-AI4TRADE_SKILL_NAME="AI4Trade Trading Signals"
-AI4TRADE_SKILL_DESCRIPTION="Buy, sell, follow, and share trading signals via the AI4Trade platform."
-AI4TRADE_SKILL_TAG="trading-signals, ai4trade.ai"
-AI4TRADE_SKILL_SOURCE_FILE="$REPO_ROOT/docs/skills/ai4trade-trading-signals.md"
+SKILLS_DIR="$REPO_ROOT/docs/agents/skills"
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -474,56 +465,158 @@ build_provider_secrets_json() {
   esac
 }
 
-build_flight_deal_skill_payload() {
-  local instructions
-  local promptTemplate
-  [[ -f "$FLIGHT_DEAL_SKILL_SOURCE_FILE" ]] || die "Skill source file not found: $FLIGHT_DEAL_SKILL_SOURCE_FILE"
-  instructions="$(cat "$FLIGHT_DEAL_SKILL_SOURCE_FILE")"
+# ---------------------------------------------------------------------------
+# Generic skill provisioning — reads YAML frontmatter from markdown files
+# ---------------------------------------------------------------------------
 
-  if [[ -f "$FLIGHT_DEAL_SKILL_PROMPT_TEMPLATE_FILE" ]]; then
-    promptTemplate="$(< "$FLIGHT_DEAL_SKILL_PROMPT_TEMPLATE_FILE")"
-  else
-    promptTemplate=""
+parse_frontmatter_field() {
+  local file="$1" field="$2"
+  local fm
+  fm="$(awk '/^---$/{if(n++)exit;next}n' "$file")"
+  echo "$fm" | grep -E "^${field}:" | head -1 | sed "s/^${field}:[[:space:]]*//"
+}
+
+parse_frontmatter_block_scalar() {
+  local file="$1" field="$2"
+  local fm
+  fm="$(awk '/^---$/{if(n++)exit;next}n' "$file")"
+  if echo "$fm" | grep -qE "^${field}:[[:space:]]*>-"; then
+    echo "$fm" | awk -v f="^${field}:" '
+      $0 ~ f { found=1; next }
+      found && /^[a-zA-Z]/ { exit }
+      found && /^  / { sub(/^  /, ""); line = (line ? line " " : "") $0 }
+      END { print line }
+    '
+    return
+  fi
+  if echo "$fm" | grep -qE "^${field}:[[:space:]]*\\|"; then
+    echo "$fm" | awk -v f="^${field}:" '
+      $0 ~ f { found=1; next }
+      found && /^[a-zA-Z]/ { exit }
+      found && /^  / { sub(/^  /, ""); line = (line ? line "\n" : "") $0 }
+      END { print line }
+    '
+    return
+  fi
+  parse_frontmatter_field "$file" "$field"
+}
+
+parse_frontmatter_list() {
+  local file="$1" field="$2"
+  local fm
+  fm="$(awk '/^---$/{if(n++)exit;next}n' "$file")"
+  echo "$fm" | awk -v f="^${field}:" '
+    $0 ~ f { found=1; next }
+    found && /^[a-zA-Z]/ { exit }
+    found && /^  - / { sub(/^  - /, ""); items = items (items ? "," : "") "\"" $0 "\"" }
+    END { print "[" items "]" }
+  '
+}
+
+parse_skill_body() {
+  local file="$1"
+  awk 'BEGIN{n=0} /^---$/{n++;next} n>=2{print}' "$file"
+}
+
+build_skill_payload_from_file() {
+  local skill_file="$1"
+  local seed_label="${2:-prod-setup}"
+
+  local name description tags_json tools_json instructions promptTemplate
+  name="$(parse_frontmatter_field "$skill_file" "name")"
+  description="$(parse_frontmatter_block_scalar "$skill_file" "description")"
+  tags_json="$(parse_frontmatter_list "$skill_file" "tags")"
+  tools_json="$(parse_frontmatter_list "$skill_file" "requiredTools")"
+  instructions="$(parse_skill_body "$skill_file")"
+
+  if [[ -z "$name" ]]; then
+    log_warn "Skipping ${skill_file}: no 'name' in frontmatter"
+    return 1
   fi
 
+  local promptTemplate
+  promptTemplate="$(parse_frontmatter_block_scalar "$skill_file" "promptTemplate")"
+
   jq -n \
-    --arg name "$FLIGHT_DEAL_SKILL_NAME" \
-    --arg description "$FLIGHT_DEAL_SKILL_DESCRIPTION" \
+    --arg name "$name" \
+    --arg description "$description" \
     --arg instructions "$instructions" \
     --arg promptTemplate "$promptTemplate" \
-    --arg tag "$FLIGHT_DEAL_SKILL_TAG" \
+    --argjson tags "$tags_json" \
+    --argjson requiredTools "$tools_json" \
+    --arg changeSummary "Seeded by ${seed_label}" \
     '{
       name: $name,
       description: $description,
       instructions: $instructions,
       promptTemplate: (if $promptTemplate == "" then null else $promptTemplate end),
-      requiredTools: ["search_web", "browse_url", "read_document", "set_memory", "get_memory", "list_memory_keys", "delete_memory", "schedule_reminder", "send_message", "publish_artifact"],
+      requiredTools: $requiredTools,
       publicationStatus: "draft",
-      tags: [$tag],
-      changeSummary: "Seeded by prod-setup"
+      tags: $tags,
+      changeSummary: $changeSummary
     }'
 }
 
-build_ai4trade_skill_payload() {
-  local instructions
-  [[ -f "$AI4TRADE_SKILL_SOURCE_FILE" ]] || die "Skill source file not found: $AI4TRADE_SKILL_SOURCE_FILE"
-  instructions="$(cat "$AI4TRADE_SKILL_SOURCE_FILE")"
+ensure_skill() {
+  local skill_file="$1"
+  local skill_name
+  skill_name="$(parse_frontmatter_field "$skill_file" "name")"
 
-  jq -n \
-    --arg name "$AI4TRADE_SKILL_NAME" \
-    --arg description "$AI4TRADE_SKILL_DESCRIPTION" \
-    --arg instructions "$instructions" \
-    --arg tag "$AI4TRADE_SKILL_TAG" \
-    '{
-      name: $name,
-      description: $description,
-      instructions: $instructions,
-      promptTemplate: null,
-      requiredTools: ["list_files", "write_file", "read_file", "browse_url", "read_document", "submit_decision", "find_instrument", "get_market_overview", "check_regime", "get_price", "get_account_summary", "list_positions", "get_analytics", "get_risk_limits", "search_tokens", "send_message", "publish_artifact"],
-      publicationStatus: "draft",
-      tags: [$tag],
-      changeSummary: "Seeded by prod-setup"
-    }'
+  if [[ -z "$skill_name" ]]; then
+    log_warn "Skipping ${skill_file}: no 'name' in frontmatter"
+    return 0
+  fi
+
+  log_section "Provision skill: ${skill_name}"
+
+  if [[ -z "${SKILLS_LIST_CACHED:-}" ]]; then
+    retry_api_call GET /skills '?scope=mine'
+    if [[ "$HTTP_STATUS" -ne 200 ]]; then
+      log_error "Failed to list skills (HTTP ${HTTP_STATUS})"
+      die "Skill provisioning step failed."
+    fi
+    SKILLS_LIST_CACHED="$RESPONSE_BODY"
+  fi
+
+  local existing_id
+  existing_id="$(echo "$SKILLS_LIST_CACHED" | jq -r --arg name "$skill_name" '[.skills[] | select(.name == $name) | .id][0] // empty')"
+  if [[ -n "$existing_id" && "$existing_id" != "null" ]]; then
+    log_info "Skill already exists: ${skill_name} (id=${existing_id})"
+    PROVISIONED_SKILL_IDS+=("${existing_id}|${skill_name}")
+    return 0
+  fi
+
+  local payload
+  payload="$(build_skill_payload_from_file "$skill_file" "prod-setup")" || return 0
+
+  retry_api_call POST /skills "$payload"
+  if [[ "$HTTP_STATUS" -eq 201 ]]; then
+    local new_id
+    new_id="$(echo "$RESPONSE_BODY" | jq -r '.id')"
+    log_ok "Created skill: ${skill_name} (id=${new_id})"
+    PROVISIONED_SKILL_IDS+=("${new_id}|${skill_name}")
+    SKILLS_LIST_CACHED=""
+    return 0
+  fi
+
+  log_error "Skill creation failed (HTTP ${HTTP_STATUS})"
+  die "Skill provisioning step failed for: ${skill_name}"
+}
+
+ensure_all_skills() {
+  if [[ ! -d "$SKILLS_DIR" ]]; then
+    log_warn "Skills directory not found: ${SKILLS_DIR} — skipping skill provisioning"
+    return 0
+  fi
+
+  SKILLS_LIST_CACHED=""
+  PROVISIONED_SKILL_IDS=()
+
+  local skill_file
+  for skill_file in "$SKILLS_DIR"/*.md; do
+    [[ ! -f "$skill_file" ]] && continue
+    ensure_skill "$skill_file"
+  done
 }
 
 # Core required vars
@@ -735,65 +828,7 @@ fi
 if [[ "$SKIP_SKILL" -eq 1 ]]; then
   log_info "Skipping skill provisioning (--skip-skill)"
 else
-  ensure_flight_deal_monitoring_skill() {
-    log_section "Step 2: Ensure Flight Deal Monitoring skill"
-
-    retry_api_call GET /skills '?scope=mine'
-    if [[ "$HTTP_STATUS" -ne 200 ]]; then
-      log_error "Failed to list skills (HTTP ${HTTP_STATUS})"
-      die "Skill provisioning step failed."
-    fi
-
-    FLIGHT_DEAL_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r --arg name "$FLIGHT_DEAL_SKILL_NAME" \
-      '[.skills[] | select(.name == $name) | .id][0] // empty')"
-
-    if [[ -n "$FLIGHT_DEAL_SKILL_ID" && "$FLIGHT_DEAL_SKILL_ID" != "null" ]]; then
-      log_info "Skill already exists: ${FLIGHT_DEAL_SKILL_NAME} (id=${FLIGHT_DEAL_SKILL_ID})"
-      return 0
-    fi
-
-    retry_api_call POST /skills "$(build_flight_deal_skill_payload)"
-    if [[ "$HTTP_STATUS" -eq 201 ]]; then
-      FLIGHT_DEAL_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r '.id')"
-      log_ok "Created skill: ${FLIGHT_DEAL_SKILL_NAME} (id=${FLIGHT_DEAL_SKILL_ID})"
-      return 0
-    fi
-
-    log_error "Skill creation failed (HTTP ${HTTP_STATUS})"
-    die "Skill provisioning step failed."
-  }
-
-  ensure_flight_deal_monitoring_skill
-
-  ensure_ai4trade_skill() {
-    log_section "Provision ${AI4TRADE_SKILL_NAME}"
-
-    retry_api_call GET /skills '?scope=mine'
-    if [[ "$HTTP_STATUS" -ne 200 ]]; then
-      log_error "Failed to list skills (HTTP ${HTTP_STATUS})"
-      die "${AI4TRADE_SKILL_NAME} provisioning step failed."
-    fi
-
-    AI4TRADE_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r --arg name "$AI4TRADE_SKILL_NAME" \
-      '[.skills[] | select(.name == $name) | .id][0] // empty')"
-
-    if [[ -n "$AI4TRADE_SKILL_ID" && "$AI4TRADE_SKILL_ID" != "null" ]]; then
-      log_info "Skill already exists: ${AI4TRADE_SKILL_NAME} (id=${AI4TRADE_SKILL_ID})"
-      return 0
-    fi
-
-    retry_api_call POST /skills "$(build_ai4trade_skill_payload)"
-    if [[ "$HTTP_STATUS" -eq 201 ]]; then
-      AI4TRADE_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r '.id')"
-      log_ok "Created skill: ${AI4TRADE_SKILL_NAME} (id=${AI4TRADE_SKILL_ID})"
-      return 0
-    fi
-
-    log_error "Skill creation failed (HTTP ${HTTP_STATUS})"
-    die "${AI4TRADE_SKILL_NAME} provisioning step failed."
-  }
-
-  ensure_ai4trade_skill
+  ensure_all_skills
 fi
 
 # ---------------------------------------------------------------------------
@@ -952,12 +987,11 @@ fi
 log_section "Setup complete"
 log_ok "Email:       ${AUTH_EMAIL}"
 log_ok "Mode:        ${EFFECTIVE_SETUP_MODE}"
-if [[ -n "${FLIGHT_DEAL_SKILL_ID:-}" && "${FLIGHT_DEAL_SKILL_ID:-}" != "null" ]]; then
-  log_ok "Skill:       ${FLIGHT_DEAL_SKILL_ID}  (${FLIGHT_DEAL_SKILL_NAME})"
-fi
-if [[ -n "${AI4TRADE_SKILL_ID:-}" && "${AI4TRADE_SKILL_ID:-}" != "null" ]]; then
-  log_ok "Skill:       ${AI4TRADE_SKILL_ID}  (${AI4TRADE_SKILL_NAME})"
-fi
+for skill_summary in "${PROVISIONED_SKILL_IDS[@]:-}"; do
+  [[ -z "$skill_summary" ]] && continue
+  IFS='|' read -r sid sname <<< "$skill_summary"
+  log_ok "Skill:       ${sid}  (${sname})"
+done
 if [[ "$RUN_MULTI_PROVIDER" -eq 1 ]]; then
   for summary in "${MULTI_SETUP_SUMMARIES[@]}"; do
     IFS='|' read -r summary_provider summary_label summary_credential_id summary_connection_id summary_venue_account_id summary_binding_id <<< "$summary"

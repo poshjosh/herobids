@@ -53,7 +53,7 @@ TINTEL_AGENT_PROMPT="Grow this portfolio aggressively"
 SECURITY_AUDIT_NAME="security-auditor"
 SECURITY_AUDIT_TICK_INTERVAL_MS="86400000"  # 24 hours
 SECURITY_AUDIT_SKILL_IDS='["web-access","programming","file-management","task-management"]'
-SECURITY_AUDIT_PROMPT_FILE="${REPO_ROOT}/docs/skills/security-audit-prompt.md"
+SECURITY_AUDIT_PROMPT_FILE="${REPO_ROOT}/docs/agents/prompts/security-audit-prompt.md"
 
 # ---------------------------------------------------------------------------
 # Logging

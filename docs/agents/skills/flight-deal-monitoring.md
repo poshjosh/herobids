@@ -1,3 +1,38 @@
+---
+name: Flight Deal Monitoring
+description: >-
+  Continuously search, compare, analyze, and monitor flight prices.
+  Identify the lowest total travel cost while balancing convenience,
+  travel time and baggage requirements.
+tags:
+  - flight-deal-monitoring
+requiredTools:
+  - search_web
+  - browse_url
+  - read_document
+  - set_memory
+  - get_memory
+  - list_memory_keys
+  - delete_memory
+  - schedule_reminder
+  - send_message
+  - publish_artifact
+promptTemplate: |
+  Required details:
+
+  - number-of-travellers =
+  - start-date =
+  - end-date =
+  - departure-city = Colorado USA +- 200km
+  - destination-city = Rome Ialy +- 200km
+
+  Optional details:
+
+  - round-trip = yes
+  - search-interval = 3 hours
+  - report-frequency = 28 hours
+---
+
 You have access to airfare research, monitoring, history, scheduling, and alerting tools.
 
 - Use `search_web(query)` to search flight search engines, airline sites, and promotion pages.
