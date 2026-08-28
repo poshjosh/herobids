@@ -490,6 +490,166 @@ describe('runStructuredToolLoop', () => {
     });
   });
 
+  describe('getTools per-turn tool refresh', () => {
+    it('calls getTools on each turn and passes the returned tools to the LLM', async () => {
+      const toolsPerCall: string[][] = [];
+
+      vi.mocked(callLlmWithRetry).mockImplementation(async (_config, request) => {
+        toolsPerCall.push((request.tools ?? []).map(t => t.name));
+
+        if (toolsPerCall.length === 1) {
+          return {
+            result: {
+              ok: true,
+              data: {
+                content: 'calling tool',
+                toolCalls: [{ id: 'call_1', name: 'tool_a', args: {} }],
+                model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+              },
+            },
+            attempts: 1, delaysMs: [],
+          };
+        }
+        return {
+          result: {
+            ok: true,
+            data: {
+              content: 'done',
+              toolCalls: [],
+              model: 'test-model', provider: 'openai', tokensUsed: 5, latencyMs: 3, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        };
+      });
+
+      const getTools = vi.fn()
+        .mockReturnValueOnce([
+          { name: 'tool_a', description: 'Tool A', inputSchema: { type: 'object' } },
+        ])
+        .mockReturnValueOnce([
+          { name: 'tool_a', description: 'Tool A', inputSchema: { type: 'object' } },
+          { name: 'tool_b', description: 'Tool B', inputSchema: { type: 'object' } },
+        ]);
+
+      await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [], // static tools ignored when getTools is provided
+        maxTurns: 3,
+        getTools,
+        executeTool: async () => JSON.stringify({ ok: true }),
+      });
+
+      expect(getTools).toHaveBeenCalledTimes(2);
+      expect(toolsPerCall[0]).toEqual(['tool_a']);
+      expect(toolsPerCall[1]).toEqual(['tool_a', 'tool_b']);
+    });
+
+    it('falls back to options.tools when getTools is not provided', async () => {
+      const toolsPerCall: string[][] = [];
+
+      vi.mocked(callLlmWithRetry).mockImplementation(async (_config, request) => {
+        toolsPerCall.push((request.tools ?? []).map(t => t.name));
+        return {
+          result: {
+            ok: true,
+            data: {
+              content: 'done',
+              toolCalls: [],
+              model: 'test-model', provider: 'openai', tokensUsed: 5, latencyMs: 3, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        };
+      });
+
+      await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [
+          { name: 'static_tool', description: 'Static', inputSchema: { type: 'object' } },
+        ],
+        maxTurns: 1,
+        executeTool: async () => null,
+      });
+
+      expect(toolsPerCall[0]).toEqual(['static_tool']);
+    });
+
+    it('after a simulated skill change the next LLM call sees the new tools', async () => {
+      // Simulates: turn 1 has tool_a only, executeTool triggers a "skill change"
+      // that makes getTools return tool_a + tool_b on turn 2.
+      const toolsPerCall: string[][] = [];
+      let skillChanged = false;
+
+      const availableTools = [
+        { name: 'tool_a', description: 'Tool A', inputSchema: { type: 'object' } },
+      ];
+
+      vi.mocked(callLlmWithRetry).mockImplementation(async (_config, request) => {
+        toolsPerCall.push((request.tools ?? []).map(t => t.name));
+
+        if (toolsPerCall.length === 1) {
+          return {
+            result: {
+              ok: true,
+              data: {
+                content: 'adding skill',
+                toolCalls: [{ id: 'call_1', name: 'add_skills', args: { skillIds: ['trading'] } }],
+                model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+              },
+            },
+            attempts: 1, delaysMs: [],
+          };
+        }
+        return {
+          result: {
+            ok: true,
+            data: {
+              content: 'done',
+              toolCalls: [],
+              model: 'test-model', provider: 'openai', tokensUsed: 5, latencyMs: 3, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        };
+      });
+
+      const result = await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [],
+        maxTurns: 3,
+        getTools: () => {
+          if (skillChanged) {
+            return [
+              ...availableTools,
+              { name: 'submit_decision', description: 'Submit decision', inputSchema: { type: 'object' } },
+            ];
+          }
+          return [...availableTools];
+        },
+        executeTool: async (toolCall) => {
+          if (toolCall.name === 'add_skills') {
+            // Simulate skill change side effect
+            skillChanged = true;
+          }
+          return JSON.stringify({ success: true });
+        },
+      });
+
+      expect(result.ok).toBe(true);
+      // Turn 1: only tool_a visible
+      expect(toolsPerCall[0]).toEqual(['tool_a']);
+      // Turn 2: after skill change, submit_decision is now visible
+      expect(toolsPerCall[1]).toEqual(['tool_a', 'submit_decision']);
+    });
+  });
+
   describe('stale tool result truncation', () => {
     it('truncates tool results only after the full retention window (age > retentionTurns)', async () => {
       // retentionTurns=3: ages 0-3 keep full results; age 4+ truncates.
