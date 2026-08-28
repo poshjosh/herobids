@@ -140,7 +140,6 @@ write_files:
 
       # Autoscale thresholds (overridable via drop-in or env)
       Environment=NOMAD_ADDR=http://127.0.0.1:4646
-      Environment=NOMAD_TOKEN=${nomad_acl_token}
       Environment=NOMAD_SCALE_OUT_COOLDOWN_SECONDS=${scale_out_cooldown_seconds}
       Environment=NOMAD_SCALE_OUT_MEMORY_THRESHOLD_PCT=${scale_out_memory_threshold_pct}
       Environment=NOMAD_SCALE_OUT_SLOT_THRESHOLD=${scale_out_slot_threshold}
@@ -179,12 +178,9 @@ write_files:
       Environment=TF_VAR_agent_node_server_type=${agent_node_server_type}
       Environment=TF_VAR_location=${location}
 
-      # S3 backend credentials and config for autoscale terraform operations
-      Environment=TF_BACKEND_BUCKET=${tf_backend_bucket}
-      Environment=TF_BACKEND_REGION=${tf_backend_region}
-      Environment=TF_BACKEND_DYNAMODB_TABLE=${tf_backend_dynamodb_table}
-      Environment=AWS_ACCESS_KEY_ID=${aws_access_key_id}
-      Environment=AWS_SECRET_ACCESS_KEY=${aws_secret_access_key}
+      # Autoscale secrets loaded from deployed env file (see setup-autoscale-env.sh).
+      # The - prefix makes the file optional — if missing, tf_backend_configured() handles it gracefully.
+      EnvironmentFile=-/etc/herobids/autoscale.env
 
       # Security hardening: restrict privileges while allowing terraform state writes.
       # ProtectSystem=strict mounts /usr, /boot, /etc read-only.
@@ -234,7 +230,6 @@ write_files:
 
       # Scale-in configuration (overridable via drop-in or env)
       Environment=NOMAD_ADDR=http://127.0.0.1:4646
-      Environment=NOMAD_TOKEN=${nomad_acl_token}
       Environment=HEROBIDS_ENV=${environment}
       Environment=TERRAFORM_DIR=/opt/herobids/infra/hetzner
       Environment=ENABLE_SCALE_IN=${enable_scale_in}
@@ -265,12 +260,9 @@ write_files:
       Environment=TF_VAR_agent_node_server_type=${agent_node_server_type}
       Environment=TF_VAR_location=${location}
 
-      # S3 backend credentials and config for scale-in terraform operations
-      Environment=TF_BACKEND_BUCKET=${tf_backend_bucket}
-      Environment=TF_BACKEND_REGION=${tf_backend_region}
-      Environment=TF_BACKEND_DYNAMODB_TABLE=${tf_backend_dynamodb_table}
-      Environment=AWS_ACCESS_KEY_ID=${aws_access_key_id}
-      Environment=AWS_SECRET_ACCESS_KEY=${aws_secret_access_key}
+      # Autoscale secrets loaded from deployed env file (see setup-autoscale-env.sh).
+      # The - prefix makes the file optional — if missing, tf_backend_configured() handles it gracefully.
+      EnvironmentFile=-/etc/herobids/autoscale.env
 
       # Security hardening (same profile as autoscale-out)
       NoNewPrivileges=true
@@ -315,7 +307,6 @@ write_files:
 
       # Placement-failure safety net configuration
       Environment=NOMAD_ADDR=http://127.0.0.1:4646
-      Environment=NOMAD_TOKEN=${nomad_acl_token}
       Environment=HEROBIDS_ENV=${environment}
       Environment=NOMAD_PLACEMENT_FAILURE_WINDOW_SECONDS=${placement_failure_window_seconds}
       Environment=NOMAD_PLACEMENT_FAILURE_THRESHOLD=${placement_failure_threshold}
@@ -340,12 +331,9 @@ write_files:
       Environment=ALERT_SMTP_USER=${alert_smtp_user}
       Environment=ALERT_SMTP_PASS=${alert_smtp_pass}
 
-      # S3 backend credentials and config for safety-net terraform operations
-      Environment=TF_BACKEND_BUCKET=${tf_backend_bucket}
-      Environment=TF_BACKEND_REGION=${tf_backend_region}
-      Environment=TF_BACKEND_DYNAMODB_TABLE=${tf_backend_dynamodb_table}
-      Environment=AWS_ACCESS_KEY_ID=${aws_access_key_id}
-      Environment=AWS_SECRET_ACCESS_KEY=${aws_secret_access_key}
+      # Autoscale secrets loaded from deployed env file (see setup-autoscale-env.sh).
+      # The - prefix makes the file optional — if missing, tf_backend_configured() handles it gracefully.
+      EnvironmentFile=-/etc/herobids/autoscale.env
 
       # Security hardening
       NoNewPrivileges=true
@@ -450,20 +438,24 @@ runcmd:
       # Create Nomad data directory
       mkdir -p /opt/nomad/data
 
-      # Initialize Terraform in the infra directory (repo already cloned above)
-      # Uses the S3 remote backend — backend config comes from environment variables
-      # injected into the systemd service units. First-boot init ensures the backend
-      # is configured so the autoscale timer can run immediately after boot.
-      if [ -d /opt/herobids/infra/hetzner ]; then
-        cd /opt/herobids/infra/hetzner
-        TF_INIT_ARGS="-input=false -backend-config=bucket=${tf_backend_bucket} -backend-config=key=herobids/${environment}/terraform.tfstate -backend-config=region=${tf_backend_region}"
-        if [ -n "${tf_backend_dynamodb_table}" ]; then
-          TF_INIT_ARGS="$TF_INIT_ARGS -backend-config=dynamodb_table=${tf_backend_dynamodb_table}"
+      # Initialize Terraform if autoscale credentials have been deployed.
+      # /etc/herobids/autoscale.env is uploaded by setup-autoscale-env.sh (via deploy.sh).
+      # On first boot this file won't exist yet — terraform init is deferred to the
+      # first autoscale run via tf_ensure_ready() in scale-common.sh.
+      if [ -f /etc/herobids/autoscale.env ]; then
+        . /etc/herobids/autoscale.env
+        if [ -d /opt/herobids/infra/hetzner ]; then
+          cd /opt/herobids/infra/hetzner
+          TF_INIT_ARGS="-input=false -backend-config=bucket=$TF_BACKEND_BUCKET -backend-config=key=herobids/${environment}/terraform.tfstate -backend-config=region=$TF_BACKEND_REGION"
+          if [ -n "$TF_BACKEND_DYNAMODB_TABLE" ]; then
+            TF_INIT_ARGS="$TF_INIT_ARGS -backend-config=dynamodb_table=$TF_BACKEND_DYNAMODB_TABLE"
+          fi
+          # shellcheck disable=SC2086 — values are operator-controlled, no spaces expected.
+          terraform init $TF_INIT_ARGS || logger -t cloud-init "WARNING: terraform init failed — autoscale will not function until resolved."
+          terraform workspace select ${environment} 2>/dev/null || terraform workspace new ${environment} || logger -t cloud-init "WARNING: terraform workspace select failed"
         fi
-        # shellcheck disable=SC2086 — values are operator-controlled Terraform template vars, no spaces expected.
-        AWS_ACCESS_KEY_ID="${aws_access_key_id}" AWS_SECRET_ACCESS_KEY="${aws_secret_access_key}" terraform init $TF_INIT_ARGS || logger -t cloud-init "WARNING: terraform init failed — autoscale will not function until resolved."
-        # Select the environment workspace
-        terraform workspace select ${environment} 2>/dev/null || terraform workspace new ${environment} || logger -t cloud-init "WARNING: terraform workspace select failed"
+      else
+        logger -t cloud-init "INFO: /etc/herobids/autoscale.env not found — terraform init deferred to first autoscale run."
       fi
 
       # Seed the autoscale node count file from the initial agent_node_count.
@@ -521,17 +513,18 @@ runcmd:
         systemctl start nomad-scale-in.timer
       fi
 
-      # Write the operator-provided Nomad ACL token so systemd services and
-      # scripts can authenticate to the Nomad HTTP API. The token is injected
-      # via the nomad_acl_token Terraform variable and passed through cloud-init.
-      # Operators bootstrap ACLs manually once ('nomad acl bootstrap'), then
-      # provide the resulting management token here.
-      if [ -n "${nomad_acl_token}" ]; then
-        echo "${nomad_acl_token}" > /etc/nomad.d/acl-token
-        chmod 600 /etc/nomad.d/acl-token
-        logger -t cloud-init "Nomad ACL token written to /etc/nomad.d/acl-token"
+      # Write Nomad ACL token file if autoscale env has been deployed.
+      # This is also handled by setup-autoscale-env.sh, but we write it here too
+      # so the token is available immediately after a deploy + reboot cycle.
+      if [ -f /etc/herobids/autoscale.env ]; then
+        . /etc/herobids/autoscale.env
+        if [ -n "${NOMAD_TOKEN:-}" ]; then
+          echo "$NOMAD_TOKEN" > /etc/nomad.d/acl-token
+          chmod 600 /etc/nomad.d/acl-token
+          logger -t cloud-init "Nomad ACL token written to /etc/nomad.d/acl-token (from autoscale.env)"
+        fi
       else
-        logger -t cloud-init "WARNING: nomad_acl_token is empty — Nomad ACL-authenticated access will not work. Bootstrap ACLs and provide the token via Terraform."
+        logger -t cloud-init "INFO: /etc/herobids/autoscale.env not found — Nomad ACL token deferred to deploy."
       fi
     fi
 

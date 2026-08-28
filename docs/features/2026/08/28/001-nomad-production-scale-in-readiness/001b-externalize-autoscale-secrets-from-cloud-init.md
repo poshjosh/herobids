@@ -92,7 +92,7 @@ Create `infra/hetzner/scripts/setup-autoscale-env.sh`:
 
 Alternatively, integrate this into `deploy.sh` as an additional step alongside the existing `setup-env.sh` call.
 
-### T2. Update systemd service units in cloud-init.yaml `PENDING`
+### T2. Update systemd service units in cloud-init.yaml `DONE`
 
 For each of the three service units (`nomad-autoscale.service`, `nomad-scale-in.service`, `nomad-placement-failure-watcher.service`):
 
@@ -112,7 +112,7 @@ For each of the three service units (`nomad-autoscale.service`, `nomad-scale-in.
 
 3. Keep all non-secret `Environment=` directives (thresholds, paths, `HEROBIDS_ENV`, etc.) inline — they're infrastructure config, not secrets.
 
-### T3. Update cloud-init runcmd terraform init `PENDING`
+### T3. Update cloud-init runcmd terraform init `DONE`
 
 The `terraform init` step in the runcmd block currently uses the baked-in credentials. Options:
 
@@ -129,7 +129,7 @@ fi
 
 **Option B:** Skip the boot-time `terraform init` entirely. Rely on `tf_ensure_ready()` to do it on the first autoscale timer invocation. Simpler, but means the first autoscale run takes longer (init + workspace select + capacity check + possible apply).
 
-### T4. Update cloud-init NOMAD_TOKEN file write `PENDING`
+### T4. Update cloud-init NOMAD_TOKEN file write `DONE`
 
 The current runcmd writes `${nomad_acl_token}` to `/etc/nomad.d/acl-token`. This should also come from the environment file instead:
 
