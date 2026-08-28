@@ -116,3 +116,17 @@ client {
 **Root cause:** Terraform state is local, stored in `terraform.tfstate.d/staging/` on your Mac. The server has its own empty state. Running Terraform on the server is equivalent to a fresh init against the same config.
 
 **Fix:** Always run Terraform from the machine that owns the state (your local machine). The autoscaler on the server will eventually need its own state — this is a known limitation (see runbook "Known Limitations").
+
+---
+
+## 10. Cloud-init `runcmd` re-runs on reboot, destroying deployed `.env`
+
+**Symptom:** After a server reboot, `https://staging.openaidom.com` was unreachable. All Docker containers were gone, `herobids.service` was `inactive (dead)`, and `/opt/herobids/.env` was missing.
+
+**Root cause:** Cloud-init `runcmd` runs on every boot on Ubuntu 24.04. The `git clone` command would fail (directory already exists), but the `.env` file — uploaded by `deploy.sh` and gitignored — was never restored. Without `.env`, `docker compose up` (via the systemd service) fails silently. The net effect: every reboot kills the staging deployment.
+
+**Fix:** Guard `git clone`, `git config`, and `cp .env.example` with first-boot-only checks (`if [ ! -d /opt/herobids/.git ]` and `if [ ! -f /opt/herobids/${env_file} ]`). On reboot, these steps are skipped, preserving the deployed state. The systemd service then starts the app normally.
+
+**Files changed:** `cloud-init.yaml`
+
+**Bug report:** `docs/bug-reports/2026/08/28/001-cloud-init-reboot-overwrites-env-and-repo.md`

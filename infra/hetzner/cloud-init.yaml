@@ -43,7 +43,7 @@ write_files:
     permissions: '0644'
     content: |
       [Unit]
-      Description=Herobids Trading Platform
+      Description=OpenAIdom AI Agents as a Service
       Requires=docker.service
       After=docker.service network-online.target
 
@@ -379,15 +379,32 @@ runcmd:
   - ssh-keyscan -H github.com >> /root/.ssh/known_hosts 2>/dev/null || true
   - chmod 644 /root/.ssh/known_hosts
 
-  # ── Clone herobids repo ──────────────────────────────────
-  - GIT_SSH_COMMAND="ssh -i /root/.ssh/deploy_key -o StrictHostKeyChecking=accept-new" git clone --branch ${git_branch} ${git_repo_url} /opt/herobids
+  # ── Clone herobids repo (first boot only) ─────────────────
+  # Guard: skip if the repo already exists (e.g. reboot).
+  # cloud-init runcmd runs on every boot on Ubuntu 24.04.
+  # An unconditional git clone would fail on non-empty /opt/herobids
+  # and leave .env (uploaded by deploy.sh, gitignored) unrestored.
+  - |
+    if [ ! -d /opt/herobids/.git ]; then
+      GIT_SSH_COMMAND="ssh -i /root/.ssh/deploy_key -o StrictHostKeyChecking=accept-new" git clone --branch ${git_branch} ${git_repo_url} /opt/herobids
+    else
+      logger -t cloud-init "Repo already exists at /opt/herobids — skipping clone"
+    fi
 
-  # ── Configure git for future pushes ──────────────────────
-  - git -C /opt/herobids config core.sshCommand "ssh -i /root/.ssh/deploy_key -o StrictHostKeyChecking=accept-new"
+  # ── Configure git for future pushes (first boot only) ────
+  - |
+    if [ -d /opt/herobids/.git ]; then
+      git -C /opt/herobids config core.sshCommand "ssh -i /root/.ssh/deploy_key -o StrictHostKeyChecking=accept-new"
+    fi
 
-  # ── Create .env from example ─────────────────────────────
-  - cp -n /opt/herobids/.env.example /opt/herobids/${env_file}
-  - chmod 600 /opt/herobids/${env_file}
+  # ── Create .env from example (first boot only) ──────────
+  # cp -n (no-clobber) already guards against overwriting, but skip
+  # entirely if .env already exists (deployed by deploy.sh / setup-env.sh).
+  - |
+    if [ ! -f /opt/herobids/${env_file} ]; then
+      cp -n /opt/herobids/.env.example /opt/herobids/${env_file}
+      chmod 600 /opt/herobids/${env_file}
+    fi
 
   # ── Setup backup directory ───────────────────────────────
   - mkdir -p /opt/herobids-backup

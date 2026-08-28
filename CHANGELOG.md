@@ -18,7 +18,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fix Nomad client `server_join` being ignored — moved from top-level config into `client {}` block, added `servers` list
 - Fix Nomad client giving up on server join after 150s — changed `retry_max` from 30 to 0 (infinite)
 - Fix `NOMAD_ADDR` env var not mapped in worker config — added env override mapping in `apps/worker/src/config.ts`
-- Fix `cpx21` server type no longer available in Hetzner `fsn1` — updated to `cpx22`
+- Fix `cpx21` server type no longer available in Hetzner `fsn1` — updated to `cx23`
+- Fix cloud-init `runcmd` destroying deployed `.env` on server reboot — guarded `git clone`, `git config`, and `.env` copy with first-boot-only checks
 
 ## v0.1.16 - 2026-08-27
 

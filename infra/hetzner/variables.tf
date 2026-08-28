@@ -196,7 +196,7 @@ variable "max_agent_nodes" {
 variable "agent_node_server_type" {
   type        = string
   description = "Hetzner instance type for agent (Nomad client) nodes."
-  default     = "cpx21"
+  default     = "cx23"
 
   validation {
     condition     = can(regex("^(cx|ccx|cpx|CAX)\\d+$", var.agent_node_server_type))
