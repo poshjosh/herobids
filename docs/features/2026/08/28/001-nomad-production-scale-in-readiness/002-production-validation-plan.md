@@ -134,22 +134,16 @@ failure, simulating a node that never finishes draining.
 1. Create a staging scenario where a node remains non-empty past the configured drain deadline:
    ```bash
    ssh root@<control-plane-ip>
-
-   # Source the staging hooks to inject drain timeout
-   export HEROBIDS_ENV=staging
-   export INJECT_DRAIN_TIMEOUT=true
-   source /opt/herobids/infra/hetzner/scripts/tests/staging-hooks.sh
-   # Expected: "[STAGING-HOOK] Drain timeout injection ACTIVE ..."
    ```
 
-2. Run a real scale-in with the injected timeout:
+2. Run a real scale-in with the injected drain timeout via `STAGING_HOOKS=true`:
    ```bash
-   ENABLE_SCALE_IN=true INJECT_DRAIN_TIMEOUT=true \
+   ENABLE_SCALE_IN=true STAGING_HOOKS=true INJECT_DRAIN_TIMEOUT=true \
      /opt/herobids/infra/hetzner/scripts/scale-in.sh
    ```
-   Note: The hooks must be sourced within the script. For production validation, add
-   a temporary one-liner to scale-in.sh that sources staging-hooks.sh, then revert.
-   Alternatively, run the drain loop manually with the hooks sourced in the shell.
+   The `STAGING_HOOKS=true` env var causes `scale-in.sh` to auto-source `staging-hooks.sh`,
+   which overrides `wait_for_drain_complete` to always return failure. The production guard
+   in the hooks file prevents this from activating when `HEROBIDS_ENV=production`.
 
 3. Confirm the script logs the timeout condition (look for `[STAGING-HOOK]` and `did not drain within`).
 4. Confirm the node is not destroyed by the subsequent Terraform step.
@@ -184,17 +178,11 @@ simulating a Terraform apply crash without damaging staging state.
 1. Induce a safe, reversible Terraform apply failure in staging:
    ```bash
    ssh root@<control-plane-ip>
-
-   # Source the staging hooks to inject Terraform failure
-   export HEROBIDS_ENV=staging
-   export INJECT_TF_APPLY_FAILURE=true
-   source /opt/herobids/infra/hetzner/scripts/tests/staging-hooks.sh
-   # Expected: "[STAGING-HOOK] Terraform apply failure injection ACTIVE ..."
    ```
 
-2. Run scale-in with the injected failure:
+2. Run scale-in with the injected Terraform failure via `STAGING_HOOKS=true`:
    ```bash
-   ENABLE_SCALE_IN=true INJECT_TF_APPLY_FAILURE=true \
+   ENABLE_SCALE_IN=true STAGING_HOOKS=true INJECT_TF_APPLY_FAILURE=true \
      /opt/herobids/infra/hetzner/scripts/scale-in.sh
    ```
 

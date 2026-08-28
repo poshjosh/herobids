@@ -41,6 +41,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/scale-common.sh"
 source "${SCRIPT_DIR}/alert-common.sh"
 
+# ─── Staging failure-injection hooks (optional, staging only) ──────────────────
+# Setting STAGING_HOOKS=true auto-sources staging-hooks.sh, which overrides
+# specific functions to simulate failure scenarios for validation testing.
+# The hooks refuse to activate when HEROBIDS_ENV=production.
+
+if [[ "${STAGING_HOOKS:-}" == "true" ]]; then
+  if [[ -f "${SCRIPT_DIR}/tests/staging-hooks.sh" ]]; then
+    source "${SCRIPT_DIR}/tests/staging-hooks.sh"
+  else
+    log "WARNING: STAGING_HOOKS=true but staging-hooks.sh not found at ${SCRIPT_DIR}/tests/staging-hooks.sh"
+  fi
+fi
+
 # ─── Scale-in defaults ────────────────────────────────────────────────────────
 
 ENABLE_SCALE_IN="${ENABLE_SCALE_IN:-false}"
@@ -172,7 +185,6 @@ while IFS= read -r node_id; do
     log "  Node ${node_id}: IDLE (0 running allocations) — candidate."
     IDLE_NODES+=("${node_id}")
   else
-    local running
     running="$(node_running_alloc_count "${node_id}")" || running="?"
     log "  Node ${node_id}: ACTIVE (${running} running allocations) — skipping."
   fi
