@@ -493,3 +493,20 @@ Completion of this plan means the implementation is ready for serious staging va
 It does **not** mean production scale-in should be enabled immediately.
 
 Production becomes eligible only after the separate validation plan has been executed successfully and reviewed.
+
+
+## Outstanding Issues
+
+### W2: Terraform execution environment-safe
+
+- **MEDIUM**: `tf_backend_bucket`, `aws_access_key_id`, `aws_secret_access_key` variables default to empty string. An operator can provision a control plane with empty S3 credentials — the autoscale services will fail at runtime (caught by `tf_backend_configured()`), but ideally this would be caught at provision time. Deferrable — cross-variable validation is complex in Terraform.
+- **MEDIUM**: DynamoDB state locking is optional everywhere. For production, state locking is important. Docs should recommend it more strongly. Deferrable.
+- **LOW**: `tf_apply_var()` logs var args in plaintext. Currently only `agent_node_count` is passed (not sensitive). Docstring warns against passing sensitive values.
+
+### W4: Nomad ACL and token behavior
+
+- **LOW**: `alert-common.sh` `build_alert_context()` makes direct `curl` calls to the Nomad API, duplicating the token handling pattern from `nomad_api()`. Maintenance concern — both paths work correctly. Consider refactoring to use `nomad_api()` for consistency.
+
+### W5: Tests and documentation
+
+- **LOW**: `nomad-scale-in.service` systemd unit has no `[Install]` section (unlike the other oneshot services). No functional impact — the timer manages lifecycle. Cosmetic inconsistency.
