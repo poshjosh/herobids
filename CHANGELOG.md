@@ -11,6 +11,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Nomad orchestration enabled on staging — agent containers are scheduled onto dedicated Hetzner agent nodes via Nomad, with autoscale timers and placement-failure safety net active
+- Dynamic skill management with same-tick hot-reload — agents can discover, add, and remove skills at runtime via `list_skills`, `add_skills`, `remove_skills` tools. Skill changes take effect immediately within the same tick (no 5–15 minute wait). Includes broker handler with sync Redis reply, plan entitlement enforcement, and per-turn tool definition refresh in the judge loop.
 
 ### Fixed
 
