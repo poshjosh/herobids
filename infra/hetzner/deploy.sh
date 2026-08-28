@@ -2,10 +2,11 @@
 # deploy.sh — Full deployment orchestrator for Herobids on Hetzner.
 #
 # Runs the complete deploy sequence:
-#   1. setup-env.sh   — upload .env to server
-#   2. push.sh --yes  — git pull → build → compose up
-#   3. seed-admin.sh  — seed admin user (skipped if ADMIN_EMAIL/ADMIN_PASSWORD not set)
-#   4. verify         — curl health endpoint on server
+#   1. setup-env.sh            — upload .env to server
+#   2. setup-autoscale-env.sh  — upload autoscale.env (infra secrets, skipped if TF_BACKEND_BUCKET unset)
+#   3. push.sh --yes           — git pull → build → compose up
+#   4. seed-admin.sh           — seed admin user (skipped if ADMIN_EMAIL/ADMIN_PASSWORD not set)
+#   5. verify                  — curl health endpoint on server
 #
 # Usage:
 #   infra/hetzner/deploy.sh [--env <staging|production>] [--env-file <path>] [<server-ip>]
@@ -104,7 +105,7 @@ echo ""
 
 # ─── Step 1: Upload .env ─────────────────────────────────────────────────────
 
-echo "── Step 1/4: Upload .env ──"
+echo "── Step 1/5: Upload .env ──"
 
 SETUP_ARGS=("${SCRIPTS_DIR}/setup-env.sh" "--env" "${HEROBIDS_ENV}" "${SERVER_IP}")
 if [[ -n "${ENV_FILE}" ]]; then
@@ -119,9 +120,25 @@ fi
 
 echo ""
 
-# ─── Step 2: Push (git pull → build → compose up) ────────────────────────────
+# ─── Step 2: Upload autoscale.env (infra secrets) ────────────────────────────
 
-echo "── Step 2/4: Push (git pull → build → compose up) ──"
+echo "── Step 2/5: Upload autoscale.env ──"
+
+if [[ -n "${TF_BACKEND_BUCKET:-}" ]]; then
+  if ! "${SCRIPTS_DIR}/setup-autoscale-env.sh" --env "${HEROBIDS_ENV}" "${SERVER_IP}"; then
+    echo "" >&2
+    echo "ERROR: setup-autoscale-env.sh failed. Aborting deploy." >&2
+    exit 1
+  fi
+else
+  echo "TF_BACKEND_BUCKET not set — skipping autoscale env upload."
+fi
+
+echo ""
+
+# ─── Step 3: Push (git pull → build → compose up) ────────────────────────────
+
+echo "── Step 3/5: Push (git pull → build → compose up) ──"
 
 if ! "${SCRIPTS_DIR}/push.sh" --env "${HEROBIDS_ENV}" --yes "${SERVER_IP}"; then
   echo "" >&2
@@ -131,9 +148,9 @@ fi
 
 echo ""
 
-# ─── Step 3: Seed admin user (skip if env vars not set) ──────────────────────
+# ─── Step 4: Seed admin user (skip if env vars not set) ──────────────────────
 
-echo "── Step 3/4: Seed admin user ──"
+echo "── Step 4/5: Seed admin user ──"
 
 if [[ -z "${ADMIN_EMAIL:-}" || -z "${ADMIN_PASSWORD:-}" ]]; then
   echo "ADMIN_EMAIL or ADMIN_PASSWORD not set — skipping admin seeding."
@@ -148,9 +165,9 @@ fi
 
 echo ""
 
-# ─── Step 4: Verify health endpoint ──────────────────────────────────────────
+# ─── Step 5: Verify health endpoint ──────────────────────────────────────────
 
-echo "── Step 4/4: Verify health endpoint ──"
+echo "── Step 5/5: Verify health endpoint ──"
 
 # Pre-flight: verify SSH connectivity before polling health
 echo ""

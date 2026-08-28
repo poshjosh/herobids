@@ -2,7 +2,7 @@
 
 ## Status
 
-`draft`
+`in-progress`
 
 ## Problem
 
@@ -80,7 +80,7 @@ One source of truth. No duplication.
 
 ## Task Breakdown
 
-### T1. Create the autoscale environment file upload script
+### T1. Create the autoscale environment file upload script `PENDING`
 
 Create `infra/hetzner/scripts/setup-autoscale-env.sh`:
 - Reads `TF_BACKEND_BUCKET`, `TF_BACKEND_REGION`, `TF_BACKEND_DYNAMODB_TABLE`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `NOMAD_ACL_TOKEN` from the operator's environment.
@@ -92,7 +92,7 @@ Create `infra/hetzner/scripts/setup-autoscale-env.sh`:
 
 Alternatively, integrate this into `deploy.sh` as an additional step alongside the existing `setup-env.sh` call.
 
-### T2. Update systemd service units in cloud-init.yaml
+### T2. Update systemd service units in cloud-init.yaml `PENDING`
 
 For each of the three service units (`nomad-autoscale.service`, `nomad-scale-in.service`, `nomad-placement-failure-watcher.service`):
 
@@ -112,7 +112,7 @@ For each of the three service units (`nomad-autoscale.service`, `nomad-scale-in.
 
 3. Keep all non-secret `Environment=` directives (thresholds, paths, `HEROBIDS_ENV`, etc.) inline — they're infrastructure config, not secrets.
 
-### T3. Update cloud-init runcmd terraform init
+### T3. Update cloud-init runcmd terraform init `PENDING`
 
 The `terraform init` step in the runcmd block currently uses the baked-in credentials. Options:
 
@@ -129,14 +129,14 @@ fi
 
 **Option B:** Skip the boot-time `terraform init` entirely. Rely on `tf_ensure_ready()` to do it on the first autoscale timer invocation. Simpler, but means the first autoscale run takes longer (init + workspace select + capacity check + possible apply).
 
-### T4. Update cloud-init NOMAD_TOKEN file write
+### T4. Update cloud-init NOMAD_TOKEN file write `PENDING`
 
 The current runcmd writes `${nomad_acl_token}` to `/etc/nomad.d/acl-token`. This should also come from the environment file instead:
 
 1. Remove the `nomad_acl_token` template variable from the runcmd block.
 2. Add a step to `setup-autoscale-env.sh` (or `deploy.sh`) that writes `/etc/nomad.d/acl-token` from `NOMAD_ACL_TOKEN` if it's set.
 
-### T5. Remove unused Terraform variables
+### T5. Remove unused Terraform variables `PENDING`
 
 Remove from `variables.tf`:
 - `tf_backend_bucket`
@@ -151,11 +151,11 @@ Remove the corresponding entries from:
 - `remote.tfvars.example`
 - `production.tfvars` (commented entries)
 
-### T6. Update provision.sh
+### T6. Update provision.sh `PENDING`
 
 `provision.sh` already reads `TF_BACKEND_BUCKET` etc. from environment variables — no change needed there. But remove any documentation that tells operators to put these values in tfvars.
 
-### T7. Update deploy.sh
+### T7. Update deploy.sh `PENDING`
 
 Add the autoscale env file upload step to `deploy.sh`'s sequence:
 1. `setup-env.sh` — upload `.env` (app secrets)
@@ -164,17 +164,17 @@ Add the autoscale env file upload step to `deploy.sh`'s sequence:
 4. `seed-admin.sh` — seed admin user
 5. verify — health check
 
-### T8. Update scale-common.sh tf_ensure_ready
+### T8. Update scale-common.sh tf_ensure_ready `PENDING`
 
 `tf_ensure_ready()` already handles backend init. Verify it works correctly when called for the first time after deploy (no prior `terraform init` from cloud-init). The `-reconfigure` flag in `tf_init_backend()` should handle this — confirm with a test.
 
-### T9. Update documentation
+### T9. Update documentation `PENDING`
 
 - `infra/hetzner/README.md` — Update the "Terraform Remote Backend (S3)" and "Nomad ACL Authentication" sections to describe the new single-source workflow.
 - `infra/hetzner/docs/auto-scaling/setup-auto-scaling.md` — Remove tfvars-based credential setup, add `setup-autoscale-env.sh` step.
 - `infra/hetzner/docs/auto-scaling/useful.md` — Update recovery guidance.
 
-### T10. Update tests
+### T10. Update tests `PENDING`
 
 - Add a test to verify `tf_ensure_ready()` works when no prior `terraform init` has run (simulating the deferred-init path).
 - Verify the systemd `EnvironmentFile=-` pattern works with the existing test harness (source the env file before running the test functions).
