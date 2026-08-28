@@ -2,7 +2,7 @@
 
 ## Status
 
-`in-progress`
+`complete`
 
 ## Problem
 
@@ -80,7 +80,7 @@ One source of truth. No duplication.
 
 ## Task Breakdown
 
-### T1. Create the autoscale environment file upload script `PENDING`
+### T1. Create the autoscale environment file upload script `DONE`
 
 Create `infra/hetzner/scripts/setup-autoscale-env.sh`:
 - Reads `TF_BACKEND_BUCKET`, `TF_BACKEND_REGION`, `TF_BACKEND_DYNAMODB_TABLE`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `NOMAD_ACL_TOKEN` from the operator's environment.
@@ -155,7 +155,7 @@ Remove the corresponding entries from:
 
 `provision.sh` already reads `TF_BACKEND_BUCKET` etc. from environment variables — no change needed there. But remove any documentation that tells operators to put these values in tfvars.
 
-### T7. Update deploy.sh `PENDING`
+### T7. Update deploy.sh `DONE`
 
 Add the autoscale env file upload step to `deploy.sh`'s sequence:
 1. `setup-env.sh` — upload `.env` (app secrets)
