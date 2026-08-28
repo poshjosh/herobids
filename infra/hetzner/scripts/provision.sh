@@ -9,8 +9,8 @@
 #     (or pass --env on the command line).
 #
 # Usage:
-#   infra/hetzner/scripts/provision.sh [--env <staging|production>] [--var-file <path>]
-#   infra/hetzner/scripts/provision.sh --env staging --var-file staging.tfvars
+#   infra/hetzner/scripts/provision.sh [--env <staging|production>] [--var-file <path>] [--backend-env-file <path>]
+#   infra/hetzner/scripts/provision.sh --env staging --var-file staging.tfvars --backend-env-file .env.backend
 #   infra/hetzner/scripts/provision.sh --env production --var-file production.tfvars
 #
 # Environment:
@@ -40,6 +40,7 @@ source "${SCRIPT_DIR}/_ssh_opts.sh"
 VAR_FILE=""
 TF_CLI_ARGS=""
 AUTO_APPROVE=false
+BACKEND_ENV_FILE=""
 
 parse_env_flag "$@"
 shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
@@ -54,24 +55,36 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
+    --backend-env-file)
+      BACKEND_ENV_FILE="${2:-}"
+      if [[ -z "${BACKEND_ENV_FILE}" ]]; then
+        echo "ERROR: --backend-env-file requires a path argument." >&2
+        exit 1
+      fi
+      shift 2
+      ;;
     --yes|--auto-approve)
       AUTO_APPROVE=true
       shift
       ;;
     --help|-h)
-      echo "Usage: $0 [--env <staging|production>] [--var-file <path>] [--yes | --auto-approve]" >&2
+      echo "Usage: $0 [--env <staging|production>] [--var-file <path>] [--backend-env-file <path>] [--yes]" >&2
       echo "" >&2
       echo "Options:" >&2
-      echo "  --env <name>        Target environment: staging or production." >&2
-      echo "  --var-file <path>   Path to terraform.tfvars file for this environment." >&2
-      echo "  --yes, --auto-approve  Skip the confirmation prompt and auto-approve apply." >&2
+      echo "  --env <name>              Target environment: staging or production." >&2
+      echo "  --var-file <path>         Path to terraform.tfvars file for this environment." >&2
+      echo "  --backend-env-file <path> Path to env file with S3 backend credentials" >&2
+      echo "                            (TF_BACKEND_BUCKET, AWS_ACCESS_KEY_ID, etc.)." >&2
+      echo "                            Sourced before terraform init. Falls back to" >&2
+      echo "                            shell environment variables if omitted." >&2
+      echo "  --yes, --auto-approve     Skip the confirmation prompt and auto-approve apply." >&2
       echo "  Note: production applies require an additional 'yes' confirmation." >&2
       echo "" >&2
       echo "Terraform workspaces are automatically managed from --env." >&2
       echo "Each environment (staging/production) gets its own isolated state." >&2
       echo "" >&2
       echo "Examples:" >&2
-      echo "  $0 --env staging --var-file staging.tfvars" >&2
+      echo "  $0 --env staging --var-file staging.tfvars --backend-env-file .env.backend" >&2
       echo "  $0 --env production --var-file production.tfvars" >&2
       echo "  $0 --env staging --var-file staging.tfvars --yes  # CI/CD mode" >&2
       exit 0
@@ -155,6 +168,25 @@ terraform workspace select "${HEROBIDS_ENV}" 2>/dev/null || \
 # ─── Terraform init ──────────────────────────────────────────────────────────
 
 echo "==> [${HEROBIDS_ENV}] Running terraform init..."
+
+# Source backend env file if provided (--backend-env-file).
+# This sets TF_BACKEND_BUCKET, AWS_ACCESS_KEY_ID, etc. from a file
+# instead of requiring them as shell environment variables.
+# The file uses KEY=VALUE format (same as autoscale.env on the server).
+if [[ -n "${BACKEND_ENV_FILE}" ]]; then
+  if [[ "${BACKEND_ENV_FILE}" != /* ]]; then
+    BACKEND_ENV_FILE="${TF_DIR}/${BACKEND_ENV_FILE}"
+  fi
+  if [[ ! -f "${BACKEND_ENV_FILE}" ]]; then
+    echo "ERROR: --backend-env-file '${BACKEND_ENV_FILE}' does not exist." >&2
+    exit 1
+  fi
+  echo "==> Sourcing backend env file: ${BACKEND_ENV_FILE}"
+  set -a
+  # shellcheck disable=SC1090
+  source "${BACKEND_ENV_FILE}"
+  set +a
+fi
 
 # Build S3 backend config flags from environment variables.
 # The same env vars (TF_BACKEND_BUCKET, TF_BACKEND_REGION, etc.) are used

@@ -9,9 +9,9 @@
 #   5. verify                  — curl health endpoint on server
 #
 # Usage:
-#   infra/hetzner/deploy.sh [--env <staging|production>] [--env-file <path>] [<server-ip>]
+#   infra/hetzner/deploy.sh [--env <staging|production>] [--env-file <path>] [--backend-env-file <path>] [<server-ip>]
 #   infra/hetzner/deploy.sh                                                                # auto-detect IP, prompt for .env
-#   infra/hetzner/deploy.sh --env staging --env-file infra/hetzner/.env.staging            # deploy to staging
+#   infra/hetzner/deploy.sh --env staging --env-file .env.staging --backend-env-file .env.backend
 #   infra/hetzner/deploy.sh --env-file infra/hetzner/.env.prod 1.2.3.4                     # explicit IP + .env
 #   ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=secret ./deploy.sh --env-file infra/hetzner/.env.prod
 #
@@ -41,6 +41,7 @@ shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 
 ENV_FILE=""
 SERVER_IP=""
+BACKEND_ENV_FILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -52,13 +53,24 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
+    --backend-env-file)
+      BACKEND_ENV_FILE="${2:-}"
+      if [[ -z "${BACKEND_ENV_FILE}" ]]; then
+        echo "ERROR: --backend-env-file requires a path argument." >&2
+        exit 1
+      fi
+      shift 2
+      ;;
     --help|-h)
-      echo "Usage: $0 [--env <staging|production>] [--env-file <path>] [<server-ip>]" >&2
+      echo "Usage: $0 [--env <staging|production>] [--env-file <path>] [--backend-env-file <path>] [<server-ip>]" >&2
       echo "" >&2
       echo "Options:" >&2
-      echo "  --env <name>        Target environment: staging or production (default: production)." >&2
-      echo "  --env-file <path>   Path to local .env file (forwarded to setup-env.sh)." >&2
-      echo "  <server-ip>         Server IP address (auto-detected from terraform if omitted)." >&2
+      echo "  --env <name>              Target environment: staging or production (default: production)." >&2
+      echo "  --env-file <path>         Path to local .env file (forwarded to setup-env.sh)." >&2
+      echo "  --backend-env-file <path> Path to env file with S3 backend and Nomad ACL credentials." >&2
+      echo "                            Sourced before uploading autoscale.env to the server." >&2
+      echo "                            Falls back to shell environment variables if omitted." >&2
+      echo "  <server-ip>               Server IP address (auto-detected from terraform if omitted)." >&2
       echo "" >&2
       echo "Environment variables:" >&2
       echo "  HEROBIDS_ENV        Deployment environment (overridden by --env)." >&2
@@ -123,6 +135,19 @@ echo ""
 # ─── Step 2: Upload autoscale.env (infra secrets) ────────────────────────────
 
 echo "── Step 2/5: Upload autoscale.env ──"
+
+# Source backend env file if provided (--backend-env-file).
+if [[ -n "${BACKEND_ENV_FILE}" ]]; then
+  if [[ ! -f "${BACKEND_ENV_FILE}" ]]; then
+    echo "ERROR: --backend-env-file '${BACKEND_ENV_FILE}' does not exist." >&2
+    exit 1
+  fi
+  echo "==> Sourcing backend env file: ${BACKEND_ENV_FILE}"
+  set -a
+  # shellcheck disable=SC1090
+  source "${BACKEND_ENV_FILE}"
+  set +a
+fi
 
 if [[ -n "${TF_BACKEND_BUCKET:-}" ]]; then
   if ! "${SCRIPTS_DIR}/setup-autoscale-env.sh" --env "${HEROBIDS_ENV}" "${SERVER_IP}"; then
