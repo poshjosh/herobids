@@ -123,23 +123,13 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
     mode: 'live' as const,
   };
 
-  // Fix the executionPolicy mapping: the projection reads uc.executionPolicy,
-  // but stored unifiedConfig uses uc.execution. Carry over from source directly.
+  // Carry over source unifiedConfig for the metadata overlay step later.
   const sourceUc = (sourceAgent.unifiedConfig as Record<string, unknown> | null) ?? {};
-  const sourceExecution = sourceUc.execution as Record<string, unknown> | undefined;
-  let executionPolicy = projected.executionPolicy;
-  if (!executionPolicy && sourceExecution) {
-    executionPolicy = {
-      positionSizeMode: sourceExecution.positionSizeMode as 'fixed' | 'percent_equity' | undefined,
-      fixedPositionSize: sourceExecution.fixedPositionSize as string | undefined,
-    };
-  }
 
   const livePayload: AgentBlueprintRevisionPayload = {
     ...projected,
     name: liveName,
     executionDefaults: liveExecutionDefaults,
-    executionPolicy,
   };
 
   // 8. Validate canonical risk against operator ceilings
@@ -238,6 +228,8 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
     // (technical, intelligence, capabilityMode, hybridMode, executionPolicy,
     //  executionDefaults, allowedPresets, presetTransition, platformAssessment, authorizationMode).
     // We now overlay any source-only fields (metadata, and any future authored fields).
+    // TODO: if new authored unifiedConfig fields are added that aren't modeled by
+    // AgentBlueprintRevisionPayload, add them to preserveKeys here.
     const preserveKeys = ['metadata'];
     const overlayFields: Record<string, unknown> = {};
     for (const key of preserveKeys) {
@@ -246,34 +238,33 @@ export async function cloneAgentAsLive(params: GoLiveParams): Promise<GoLiveResu
       }
     }
 
+    // 13. Single UPDATE for agent-private fields that blueprints don't carry,
+    // plus the unifiedConfig overlay from step 12b.
+    const updateSet: Record<string, unknown> = {
+      notificationPolicy: sourceAgent.notificationPolicy,
+    };
     if (Object.keys(overlayFields).length > 0) {
       const currentUc = result.unifiedConfig ?? {};
-      const mergedUc = { ...currentUc, ...overlayFields };
-      await (tx as unknown as Database).update(agents)
-        .set({ unifiedConfig: mergedUc })
-        .where(eq(agents.id, newAgentId));
+      updateSet.unifiedConfig = { ...currentUc, ...overlayFields };
     }
-
-    // 13. Copy agent's notificationPolicy from source
-    // These are agent-private fields that blueprints intentionally don't carry
     await (tx as unknown as Database).update(agents)
-      .set({
-        notificationPolicy: sourceAgent.notificationPolicy,
-      })
+      .set(updateSet)
       .where(eq(agents.id, newAgentId));
 
-    // 14. Copy active agent_connections to the new agent
-    for (const conn of activeConnections) {
-      await tx.insert(agentConnections).values({
-        id: crypto.randomUUID(),
-        agentId: newAgentId,
-        connectionId: conn.connectionId,
-        status: 'active',
-        grantedBy: userId,
-        grantedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      });
+    // 14. Copy active agent_connections to the new agent (batch insert)
+    if (activeConnections.length > 0) {
+      await tx.insert(agentConnections).values(
+        activeConnections.map((conn) => ({
+          id: crypto.randomUUID(),
+          agentId: newAgentId,
+          connectionId: conn.connectionId,
+          status: 'active' as const,
+          grantedBy: userId,
+          grantedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })),
+      );
     }
 
     return result;

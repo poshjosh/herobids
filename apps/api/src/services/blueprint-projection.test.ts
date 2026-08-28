@@ -118,6 +118,44 @@ describe('projectAgentToBlueprintPayload', () => {
     expect(payload.capabilityMode).toBe('intelligence');
   });
 
+  it('maps unifiedConfig.execution to executionPolicy in the projected payload', () => {
+    const payload = projectAgentToBlueprintPayload({
+      ...minimalAgentInput,
+      unifiedConfig: {
+        capabilityMode: 'hybrid',
+        execution: {
+          positionSizeMode: 'fixed',
+          fixedPositionSize: '200',
+          mode: 'paper',
+        },
+      },
+    });
+    expect(payload.executionPolicy).toEqual({
+      positionSizeMode: 'fixed',
+      fixedPositionSize: '200',
+      mode: 'paper',
+    });
+  });
+
+  it('projects authored unifiedConfig subtrees (allowedPresets, presetTransition, platformAssessment, authorizationMode, wakePreferences)', () => {
+    const payload = projectAgentToBlueprintPayload({
+      ...minimalAgentInput,
+      wakePreferences: { wakeOnNewPosition: true },
+      unifiedConfig: {
+        capabilityMode: 'intelligence',
+        allowedPresets: { presets: ['standard'] },
+        presetTransition: { cooldownMs: 5000 },
+        platformAssessment: { enabled: true, reviewIntervalMs: 3600_000 },
+        authorizationMode: 'approval_required',
+      },
+    });
+    expect(payload.allowedPresets).toEqual({ presets: ['standard'] });
+    expect(payload.presetTransition).toEqual({ cooldownMs: 5000 });
+    expect(payload.platformAssessment).toEqual({ enabled: true, reviewIntervalMs: 3600_000 });
+    expect(payload.authorizationMode).toBe('approval_required');
+    expect(payload.wakePreferences).toEqual({ wakeOnNewPosition: true });
+  });
+
   it('projects agent with executionDefaults.slippageBps: null to a valid blueprint payload', () => {
     const payload = projectAgentToBlueprintPayload({
       ...minimalAgentInput,

@@ -432,7 +432,7 @@ Test `/golive` Telegram flow:
 
 ### Task 1: Guard mode changes
 
-- **Low** — `TEST_MODES` Set declared inside the `if` block. Could be moved to module scope for consistency.
+- No outstanding issues (TEST_MODES moved to module scope).
 
 ### Task 2: Remove setExecutionMode
 
@@ -440,15 +440,9 @@ Test `/golive` Telegram flow:
 
 ### Task 3: Extract shared service & Go Live endpoint
 
-- **Medium** — `agent-go-live-service.ts`: Two redundant UPDATE calls in the Go Live transaction (metadata overlay + notificationPolicy). Should be merged into a single UPDATE.
-- **Medium** — `agent-go-live-service.ts`: `preserveKeys` only lists `['metadata']`. Other authored subtrees (intelligence, execution, etc.) are modeled in the payload path, but a defensive comment or TODO is recommended for future fields.
-- **Medium** — `agent-go-live-service.ts`: Connection insertion uses sequential `for...of` loop instead of batch insert. Should use Drizzle batch `.values([...])`.
-- **Medium** — `blueprint-projection.ts`: Reads `uc.executionPolicy` but agents store `uc.execution`. Go Live has a workaround, but the projection itself should be fixed to read the correct key.
-- **Medium** — Missing blueprint-regression tests: instantiation field preservation for `intelligence`, `executionPolicy`↔`execution`, `allowedPresets`, `presetTransition`, `platformAssessment`, `authorizationMode`, `wakePreferences`, metadata.
+- **Medium** — `agent-go-live-service.ts`: `preserveKeys` only lists `['metadata']`. Other authored subtrees are modeled in the payload path, but a defensive comment or TODO is recommended for future fields. (Comment added.)
 - **Medium** — Missing "source agent is unchanged after clone" test in go-live service unit tests.
-- **Low** — `agent-instantiation-service.ts`: `riskOverride` typed as `unknown` instead of `RiskPosture | null`.
-- **Low** — `agent-instantiation-service.ts`: Redundant telegramChatId null-coalescing (lines 114-118).
-- **Low** — `agents.ts` / `agent-go-live-service.ts`: Auto-generated live name not validated against name length limit.
+- **Medium** — Missing blueprint-regression tests: instantiation field preservation for authored fields in `blueprints.integration.test.ts`.
 
 ### Task 4: Telegram /golive command
 
@@ -458,6 +452,6 @@ Test `/golive` Telegram flow:
 
 ### Task 5: End-to-end verification
 
-- **Medium** — Missing Telegram `/golive` functional tests (success, already-live rejection, not-found).
+- **Medium** — Missing Telegram `/golive` functional tests (success, already-live rejection, not-found). Unit-tested in Tasks 2 and 4.
 - **Medium** — Missing explicit assertions: `riskOverrides`/`pauseState` excluded, `skillRevisionId` re-resolution verified, `/help` output checks.
 - **Low** — Missing cross-user 404 security test.

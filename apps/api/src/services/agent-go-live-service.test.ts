@@ -810,7 +810,7 @@ describe('cloneAgentAsLive', () => {
 
   // ── executionPolicy carry-over from source unifiedConfig ─────────────────
 
-  it('carries executionPolicy from source unifiedConfig.execution when projection omits it', async () => {
+  it('carries executionPolicy from projection through to the live payload', async () => {
     const sourceAgent = makeSourceAgent({
       unifiedConfig: {
         capabilityMode: 'intelligence',
@@ -826,9 +826,14 @@ describe('cloneAgentAsLive', () => {
     });
     const { db } = setupHappyPath(sourceAgent);
 
-    // Projected payload has no executionPolicy — triggers the carry-over branch
+    // Projection now correctly reads uc.execution and maps to executionPolicy
     vi.mocked(projectAgentToBlueprintPayload).mockReturnValue(
-      makeProjectedPayload({ executionPolicy: undefined }),
+      makeProjectedPayload({
+        executionPolicy: {
+          positionSizeMode: 'fixed',
+          fixedPositionSize: '200',
+        },
+      }),
     );
 
     const result = await cloneAgentAsLive(makeParams(db));

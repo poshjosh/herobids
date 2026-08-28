@@ -44,7 +44,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  */
 export function buildUnifiedConfigFromPayload(
   payload: AgentBlueprintRevisionPayload,
-  riskOverride?: unknown,
+  riskOverride?: RiskPosture | null,
 ): Record<string, unknown> | null {
   const uc: Record<string, unknown> = {};
 
@@ -97,17 +97,11 @@ export async function createAgentFromPayload(
   payload: AgentBlueprintRevisionPayload,
   skillRefs: SkillRef[],
   context: AgentFromPayloadContext,
-  riskOverride?: unknown,
+  riskOverride?: RiskPosture | null,
 ): Promise<AgentFromPayloadResult> {
   const agentId = context.agentId ?? crypto.randomUUID();
 
-  // Resolve telegramChatId: use explicit context value, or look up for same-user pre-fill
-  let telegramChatId: string | null = context.telegramChatId ?? null;
-  if (telegramChatId === undefined || telegramChatId === null) {
-    // Only populated by callers that explicitly pass it; skip DB lookup by default.
-    // Blueprint route passes it after its own author-check; Go Live passes it from the source agent.
-    telegramChatId = null;
-  }
+  const telegramChatId: string | null = context.telegramChatId ?? null;
 
   const unifiedConfig = buildUnifiedConfigFromPayload(payload, riskOverride);
 
