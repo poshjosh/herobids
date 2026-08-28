@@ -136,7 +136,7 @@ The current runcmd writes `${nomad_acl_token}` to `/etc/nomad.d/acl-token`. This
 1. Remove the `nomad_acl_token` template variable from the runcmd block.
 2. Add a step to `setup-autoscale-env.sh` (or `deploy.sh`) that writes `/etc/nomad.d/acl-token` from `NOMAD_ACL_TOKEN` if it's set.
 
-### T5. Remove unused Terraform variables `PENDING`
+### T5. Remove unused Terraform variables `DONE`
 
 Remove from `variables.tf`:
 - `tf_backend_bucket`
@@ -151,7 +151,7 @@ Remove the corresponding entries from:
 - `remote.tfvars.example`
 - `production.tfvars` (commented entries)
 
-### T6. Update provision.sh `PENDING`
+### T6. Update provision.sh `DONE`
 
 `provision.sh` already reads `TF_BACKEND_BUCKET` etc. from environment variables — no change needed there. But remove any documentation that tells operators to put these values in tfvars.
 

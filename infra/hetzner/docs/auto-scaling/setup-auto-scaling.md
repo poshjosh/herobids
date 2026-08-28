@@ -13,7 +13,7 @@ For pitfalls and bugs encountered during initial setup, see [lessons-learnt.md](
 - You are on the `staging` Terraform workspace: `terraform workspace select staging`.
 - Your local `.env.staging` at `infra/hetzner/.env.staging` includes the Nomad worker config (see Step 4).
 - S3 backend is configured: you have an S3 bucket, AWS credentials, and optionally a DynamoDB table for locking. See `infra/hetzner/README.md` — "Terraform Remote Backend (S3)".
-- Nomad ACL token is available. If this is a fresh cluster, you will bootstrap ACLs after first boot (see Step 7b). If ACLs are already bootstrapped, set `nomad_acl_token` in your tfvars. See `infra/hetzner/README.md` — "Nomad ACL Authentication".
+- Nomad ACL token is available. If this is a fresh cluster, you will bootstrap ACLs after first boot (see Step 7b). If ACLs are already bootstrapped, have the token ready as a shell environment variable (`NOMAD_ACL_TOKEN`). See `infra/hetzner/README.md` — "Nomad ACL Authentication".
 
 ---
 
@@ -39,14 +39,9 @@ agent_node_count       = 0    # start with 0, provision nodes when ready to test
 min_agent_nodes        = 0    # allow scale-in to 0
 max_agent_nodes        = 3
 agent_node_server_type = "cpx22"
-
-# S3 Backend for autoscale (required for control-plane terraform operations)
-tf_backend_bucket         = "your-tf-state-bucket"
-tf_backend_region         = "us-east-1"
-# tf_backend_dynamodb_table = "your-tf-lock-table"  # optional, for state locking
-aws_access_key_id         = "AKIA..."
-aws_secret_access_key     = "..."
 ```
+
+S3 backend credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `TF_BACKEND_BUCKET`, etc.) and the Nomad ACL token are **not** set in tfvars. They are provided as shell environment variables — `provision.sh` uses them for `terraform init`, and `deploy.sh` uploads them to the server as `/etc/herobids/autoscale.env`. See the Prerequisites section above.
 
 Leave autoscale, scale-in, placement-failure, and alerting defaults commented out — their defaults in `variables.tf` are sensible for staging.
 
@@ -143,9 +138,9 @@ ssh -i ~/.ssh/herobids_deploy_key root@${SERVER_IP} 'nomad acl bootstrap'
 
 Save the management token from the output. Then:
 
-1. Set `nomad_acl_token` in your `staging.tfvars`:
-   ```hcl
-   nomad_acl_token = "<management-token>"
+1. Export `NOMAD_ACL_TOKEN` in your shell (or `.envrc`):
+   ```bash
+   export NOMAD_ACL_TOKEN=<management-token>
    ```
 
 2. Add `NOMAD_TOKEN` to your `.env.staging`:
@@ -153,18 +148,12 @@ Save the management token from the output. Then:
    NOMAD_TOKEN=<management-token>
    ```
 
-3. Re-apply Terraform to inject the token into systemd services:
-   ```bash
-   cd infra/hetzner
-   terraform apply -var-file=staging.tfvars
-   ```
-
-4. Redeploy to pick up the worker token:
+3. Redeploy to upload the autoscale env file (which includes the token) and pick up the worker token:
    ```bash
    infra/hetzner/deploy.sh --env staging --env-file infra/hetzner/.env.staging
    ```
 
-5. Verify authenticated access:
+4. Verify authenticated access:
    ```bash
    ssh -i ~/.ssh/herobids_deploy_key root@${SERVER_IP} \
      "NOMAD_TOKEN=<management-token> nomad node status"

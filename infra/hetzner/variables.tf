@@ -11,40 +11,6 @@ variable "environment" {
   }
 }
 
-# ── S3 Backend (Control-Plane Autoscale) ───────────────────
-
-variable "tf_backend_bucket" {
-  type        = string
-  description = "S3 bucket name for Terraform remote state. Passed to control-plane systemd services for autoscale operations."
-  default     = ""
-}
-
-variable "tf_backend_region" {
-  type        = string
-  description = "AWS region for the S3 state backend."
-  default     = "us-east-1"
-}
-
-variable "tf_backend_dynamodb_table" {
-  type        = string
-  description = "DynamoDB table name for Terraform state locking. Leave empty to disable locking."
-  default     = ""
-}
-
-variable "aws_access_key_id" {
-  type        = string
-  description = "AWS access key ID for S3 backend access on the control plane."
-  sensitive   = true
-  default     = ""
-}
-
-variable "aws_secret_access_key" {
-  type        = string
-  description = "AWS secret access key for S3 backend access on the control plane."
-  sensitive   = true
-  default     = ""
-}
-
 # ── Provider ───────────────────────────────────────────────
 
 variable "hcloud_token" {
@@ -154,13 +120,6 @@ variable "terraform_version" {
   type        = string
   description = "Terraform version to install on the control-plane server for autoscale operations. Do NOT include the Debian package revision suffix (e.g., use '1.11.0' not '1.11.0-1')."
   default     = "1.11.0"
-}
-
-variable "nomad_acl_token" {
-  type        = string
-  description = "Nomad ACL management token for authenticated API access. Required when Nomad ACLs are enabled (always in production). Bootstrap the token via 'nomad acl bootstrap' on the server, then provide it here. Injected into autoscale systemd services and written to /etc/nomad.d/acl-token."
-  sensitive   = true
-  default     = ""
 }
 
 # ── Private Network ───────────────────────────────────────

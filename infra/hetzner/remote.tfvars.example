@@ -108,24 +108,6 @@ app_domain = "staging.openaidom.com"  # or "openaidom.com"
 # alert_smtp_user                    = ""    # SMTP auth username (sensitive)
 # alert_smtp_pass                    = ""    # SMTP auth password (sensitive)
 
-# ── S3 Backend (Control-Plane Autoscale) ───────────────────
-# Required for autoscale terraform operations on the control plane.
-# These values are injected into systemd service units via cloud-init.
-# See infra/hetzner/README.md — "Terraform Remote Backend (S3)" for details.
-
-# tf_backend_bucket         = "your-tf-state-bucket"  # S3 bucket name
-# tf_backend_region         = "us-east-1"           # AWS region
-# tf_backend_dynamodb_table = ""                       # DynamoDB table for locking (optional)
-# aws_access_key_id         = ""                       # AWS access key (sensitive)
-# aws_secret_access_key     = ""                       # AWS secret key (sensitive)
-
-# ── Nomad ACL ─────────────────────────────────────────────
-# Required for production. Bootstrap via 'nomad acl bootstrap' on the server,
-# then provide the management token here. Injected into autoscale services.
-# See infra/hetzner/README.md — "Nomad ACL Authentication" for details.
-
-# nomad_acl_token = ""  # Nomad ACL management token (sensitive)
-
 # ─────────────────────────────────────────────────────────────
 # Sensitive variables (hcloud_token, deploy_ssh_private_key)
 # are marked sensitive in Terraform and will not appear in
