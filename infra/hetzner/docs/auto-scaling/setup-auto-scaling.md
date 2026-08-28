@@ -41,7 +41,18 @@ max_agent_nodes        = 3
 agent_node_server_type = "cpx22"
 ```
 
-S3 backend credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `TF_BACKEND_BUCKET`, etc.) and the Nomad ACL token are **not** set in tfvars. They are provided as shell environment variables — `provision.sh` uses them for `terraform init`, and `deploy.sh` uploads them to the server as `/etc/herobids/autoscale.env`. See the Prerequisites section above.
+S3 backend credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `TF_BACKEND_BUCKET`, etc.) and the Nomad ACL token are **not** set in tfvars. They go in a backend env file or shell environment variables:
+
+```bash
+# Option 1 (recommended): create a backend env file
+cp backend.env.example .env.backend
+# fill in TF_BACKEND_BUCKET, AWS_ACCESS_KEY_ID, etc.
+
+# Option 2: export as shell variables
+export TF_BACKEND_BUCKET=your-bucket AWS_ACCESS_KEY_ID=AKIA... ...
+```
+
+See `infra/hetzner/README.md` — "Terraform Remote Backend (S3)" for full details.
 
 Leave autoscale, scale-in, placement-failure, and alerting defaults commented out — their defaults in `variables.tf` are sensible for staging.
 
@@ -77,14 +88,11 @@ Initialize with the S3 backend before applying:
 ```bash
 cd infra/hetzner
 
-# Initialize Terraform with S3 backend
-terraform init \
-  -backend-config="bucket=your-tf-state-bucket" \
-  -backend-config="key=herobids/staging/terraform.tfstate" \
-  -backend-config="region=us-east-1"
+# Using backend env file (recommended)
+./scripts/provision.sh --env staging --var-file staging.tfvars --backend-env-file .env.backend
 
-terraform workspace select staging
-terraform apply -var-file=staging.tfvars
+# Or with shell env vars (if you exported them earlier)
+./scripts/provision.sh --env staging --var-file staging.tfvars
 ```
 
 This provisions the private network, firewall, and attaches the control-plane. With `agent_node_count = 0`, no agent nodes are created yet.
@@ -106,10 +114,10 @@ ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> 'tail -f /var/log/cloud-init-
 ## Step 6 — Deploy the application
 
 ```bash
-infra/hetzner/deploy.sh --env staging --env-file infra/hetzner/.env.staging
+infra/hetzner/deploy.sh --env staging --env-file infra/hetzner/.env.staging --backend-env-file infra/hetzner/.env.backend
 ```
 
-This uploads the `.env.staging` (with Nomad config), builds, and starts all services.
+This uploads `.env.staging` (app secrets), `autoscale.env` (backend credentials from `--backend-env-file`), builds, and starts all services.
 
 ## Step 7 — Verify Nomad server
 

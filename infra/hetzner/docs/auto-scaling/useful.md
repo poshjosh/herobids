@@ -238,7 +238,7 @@ aws s3 ls "s3://${TF_BACKEND_BUCKET}/herobids/" --region "${TF_BACKEND_REGION}"
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `Missing backend environment variables` | `/etc/herobids/autoscale.env` missing or incomplete | Re-run `deploy.sh` to regenerate the env file from operator shell variables |
+| `Missing backend environment variables` | `/etc/herobids/autoscale.env` missing or incomplete | Re-run `deploy.sh --backend-env-file .env.backend` to regenerate the env file |
 | `Error configuring S3 backend` | Invalid credentials or bucket | Verify AWS credentials; check bucket exists and region matches |
 | `Error acquiring the state lock` | Previous terraform run interrupted | `terraform force-unlock <LOCK_ID>` |
 | `Failed to select workspace` | First run on new environment | The scripts auto-create the workspace; check for underlying init error |
@@ -289,7 +289,7 @@ ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `HTTP 403` in autoscale log | Token missing or wrong in `/etc/herobids/autoscale.env` | Set `NOMAD_ACL_TOKEN` in the operator's shell and re-run `deploy.sh` |
+| `HTTP 403` in autoscale log | Token missing or wrong in `/etc/herobids/autoscale.env` | Set `NOMAD_ACL_TOKEN` in `.env.backend` and re-run `deploy.sh --backend-env-file .env.backend` |
 | `Permission denied` in worker | `NOMAD_TOKEN` missing from `.env` file | Add token to `.env.prod` / `.env.staging` and redeploy |
 | Token was valid, now rejected | Bootstrap reset or cluster recreated | Re-bootstrap ACLs: `nomad acl bootstrap` and update all consumers |
 

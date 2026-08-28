@@ -85,18 +85,17 @@ share the same authoritative state.
 | Staging | `<your-bucket>` | `herobids/staging/terraform.tfstate` | Same bucket, different key |
 | Production | `<your-bucket>` | `herobids/production/terraform.tfstate` | Same bucket, different key |
 
-**Required shell environment variables:**
+**Required credentials:**
 
 | Variable | Description |
 |---|---|
 | `TF_BACKEND_BUCKET` | S3 bucket name |
-| `TF_BACKEND_REGION` | AWS region (e.g. `us-east-1`) |
+| `TF_BACKEND_REGION` | AWS region (default: `us-east-1`) |
 | `TF_BACKEND_DYNAMODB_TABLE` | DynamoDB table for state locking (optional) |
 | `AWS_ACCESS_KEY_ID` | AWS access key |
 | `AWS_SECRET_ACCESS_KEY` | AWS secret key |
 
-These are **shell environment variables** set on the operator's machine (or in `.envrc`).
-They are consumed by two paths:
+These credentials are consumed by two paths:
 
 1. `provision.sh` — passes them as `-backend-config` flags to `terraform init`.
 2. `deploy.sh` — uploads them to the server as `/etc/herobids/autoscale.env` via `setup-autoscale-env.sh`.
@@ -106,9 +105,36 @@ On the control plane, the systemd service units (`nomad-autoscale.service`,
 credentials from `EnvironmentFile=/etc/herobids/autoscale.env`. No credentials
 are baked into cloud-init or stored in Terraform state.
 
+**Three ways to provide credentials** (pick one):
+
+1. **Backend env file** (recommended — one file, reusable across commands):
+   ```bash
+   cp backend.env.example .env.backend
+   # fill in values once
+
+   ./scripts/provision.sh --env staging --var-file staging.tfvars --backend-env-file .env.backend
+   ./deploy.sh --env staging --env-file .env.staging --backend-env-file .env.backend
+   ```
+
+2. **Shell environment variables** (good for CI/CD):
+   ```bash
+   export TF_BACKEND_BUCKET=your-bucket
+   export TF_BACKEND_REGION=us-east-1
+   export AWS_ACCESS_KEY_ID=AKIA...
+   export AWS_SECRET_ACCESS_KEY=...
+   ./scripts/provision.sh --env staging --var-file staging.tfvars
+   ```
+
+3. **direnv `.envrc`** (auto-loads on `cd`):
+   ```bash
+   # infra/hetzner/.envrc
+   export TF_BACKEND_BUCKET=your-bucket
+   ...
+   ```
+
 **Operator init (local machine):**
 
-When running terraform locally, pass backend config via `-backend-config`:
+When running terraform manually (without `provision.sh`), pass backend config via `-backend-config`:
 
 ```bash
 cd infra/hetzner
@@ -179,11 +205,12 @@ infra/hetzner/
 ├── terraform.tfvars.example        # Template for terraform variables (single-file setup)
 ├── staging.tfvars.example          # Staging-specific tfvars template
 ├── remote.tfvars.example       # Production-specific tfvars template
+├── backend.env.example             # Template for S3 backend + Nomad ACL credentials
 ├── deploy.sh                       # Full deploy orchestrator (env → push → seed → verify)
 ├── README.md                       # This file
 └── scripts/
     ├── _ssh_opts.sh                # Shared SSH options + environment helpers
-    ├── provision.sh                # Terraform init + plan + apply (supports --var-file)
+    ├── provision.sh                # Terraform init + plan + apply (supports --var-file, --backend-env-file)
     ├── push.sh                     # Deploy latest code to server (git pull → build → compose up)
     ├── setup-env.sh                # Upload .env file to server
     ├── setup-autoscale-env.sh      # Upload autoscale.env (infra secrets) to server
