@@ -2,7 +2,7 @@
 # reset-and-run.sh — Nuclear reset + full provision for the Hetzner server.
 #
 # Chains the complete bootstrap sequence:
-#   1. reset.sh           — wipe DB, Redis, Caddy; restart services; seed admin
+#   1. reset.sh           — wipe DB, Redis; restart services; seed admin
 #   2. quick-setup-remote.sh — provision user, credentials, venue connections, skills
 #   3. create-agents.sh   — create security-auditor agent
 #
@@ -155,7 +155,7 @@ echo " Admin user:  ${ADMIN_EMAIL}"
 echo " Setup user:  ${AUTH_EMAIL}"
 echo ""
 echo "This will:"
-echo "  1. WIPE Postgres, Redis, Caddy TLS certs"
+echo "  1. WIPE Postgres, Redis (Caddy TLS certs preserved)"
 echo "  2. Seed admin user (${ADMIN_EMAIL})"
 echo "  3. Provision user account + venue credentials + connections"
 echo "  4. Create security-auditor agent"
@@ -229,7 +229,7 @@ log_section "Step 2/3: Provision user + credentials + connections"
 # Build a server-side env file with API_BASE_URL pointing at the Docker
 # internal network (http://api:3000). Scripts running on the server must
 # use the Docker service name, not the public HTTPS URL — especially
-# after a reset when Caddy TLS certs were just deleted.
+# after a reset when Caddy TLS certs may still be provisioning.
 SERVER_ENV="$(mktemp)"
 trap 'rm -f "$SERVER_ENV"' EXIT
 

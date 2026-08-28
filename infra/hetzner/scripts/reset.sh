@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # reset.sh — Wipe all ephemeral state (DB, Redis, Caddy cache) on the Hetzner server.
 #
-# Destroys and recreates the Postgres and Caddy volumes, flushes Redis, runs
-# fresh migrations, and verifies the API comes up healthy. Equivalent to a
-# full clean deploy from a blank database.
+# Destroys and recreates the Postgres volume, flushes Redis, runs
+# fresh migrations, and verifies the API comes up healthy. Caddy TLS
+# certificates are preserved to avoid Let's Encrypt rate limits.
+# Equivalent to a full clean deploy from a blank database.
 #
 # Usage:
 #   infra/hetzner/scripts/reset.sh [--env <staging|production>] [--yes|-y] [--seed] [<server-ip>]
@@ -24,7 +25,8 @@
 #   ./reset.sh 1.2.3.4
 #
 # WARNING: This is destructive — all trading data, user accounts, config
-# overrides, market data cache, and Let's Encrypt certificates will be lost.
+# overrides, and market data cache will be lost. Caddy TLS certificates
+# are preserved.
 
 set -euo pipefail
 
@@ -115,9 +117,9 @@ if [[ "${SKIP_CONFIRM}" != "true" ]]; then
   echo "  - Stop all services"
   echo "  - DELETE the Postgres database volume (all data)"
   echo "  - FLUSH Redis (all cached data)"
-  echo "  - DELETE Caddy TLS certificates & config"
   echo "  - Run fresh database migrations"
   echo "  - Restart all services"
+  echo "  - Caddy TLS certificates are PRESERVED (rate-limit safe)"
   echo ""
   if [[ "${SEED_AFTER}" == "true" ]]; then
     echo "  - Seed admin user (ADMIN_EMAIL=${ADMIN_EMAIL:-<not set>})"
@@ -146,10 +148,13 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Environment: ${HEROBIDS_ENV}"
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Stopping all services..."
 docker compose ${COMPOSE_FILES} down --remove-orphans 2>/dev/null || true
 
-echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Removing Docker volumes (pgdata, caddy_data, caddy_config)..."
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Removing Docker volumes (pgdata)..."
 docker volume rm herobids_pgdata 2>/dev/null || echo "    Volume pgdata not found — skipping."
-docker volume rm herobids_caddy_data 2>/dev/null || echo "    Volume caddy_data not found — skipping."
-docker volume rm herobids_caddy_config 2>/dev/null || echo "    Volume caddy_config not found — skipping."
+# Caddy TLS volumes are intentionally preserved across resets.
+# Let's Encrypt has a strict rate limit (5 certs per domain per 168 hours).
+# Deleting caddy_data forces a new certificate request on every reset,
+# which quickly exhausts the limit and leaves the site without TLS.
+echo "    Caddy TLS volumes preserved (caddy_data, caddy_config)."
 
 # Clean up any dangling containers/networks from failed runs
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pruning dangling resources..."
