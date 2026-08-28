@@ -85,7 +85,7 @@ share the same authoritative state.
 | Staging | `<your-bucket>` | `herobids/staging/terraform.tfstate` | Same bucket, different key |
 | Production | `<your-bucket>` | `herobids/production/terraform.tfstate` | Same bucket, different key |
 
-**Required environment variables (control plane):**
+**Required shell environment variables:**
 
 | Variable | Description |
 |---|---|
@@ -95,9 +95,16 @@ share the same authoritative state.
 | `AWS_ACCESS_KEY_ID` | AWS access key |
 | `AWS_SECRET_ACCESS_KEY` | AWS secret key |
 
-These are set in the systemd service units (`nomad-autoscale.service`,
-`nomad-scale-in.service`, `nomad-placement-failure-watcher.service`) via cloud-init,
-and passed as Terraform variables at provision time.
+These are **shell environment variables** set on the operator's machine (or in `.envrc`).
+They are consumed by two paths:
+
+1. `provision.sh` — passes them as `-backend-config` flags to `terraform init`.
+2. `deploy.sh` — uploads them to the server as `/etc/herobids/autoscale.env` via `setup-autoscale-env.sh`.
+
+On the control plane, the systemd service units (`nomad-autoscale.service`,
+`nomad-scale-in.service`, `nomad-placement-failure-watcher.service`) read the
+credentials from `EnvironmentFile=/etc/herobids/autoscale.env`. No credentials
+are baked into cloud-init or stored in Terraform state.
 
 **Operator init (local machine):**
 
@@ -125,8 +132,9 @@ terraform workspace show       # should print the environment name
 terraform state list           # should list known resources
 ```
 
-If `terraform state list` fails, check that `AWS_ACCESS_KEY_ID` and
-`AWS_SECRET_ACCESS_KEY` are set in the service environment.
+If `terraform state list` fails, check that `/etc/herobids/autoscale.env` contains
+valid `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` values (re-run `deploy.sh` to
+regenerate the file).
 
 ### Runtime Policy
 
@@ -178,6 +186,7 @@ infra/hetzner/
     ├── provision.sh                # Terraform init + plan + apply (supports --var-file)
     ├── push.sh                     # Deploy latest code to server (git pull → build → compose up)
     ├── setup-env.sh                # Upload .env file to server
+    ├── setup-autoscale-env.sh      # Upload autoscale.env (infra secrets) to server
     ├── seed-admin.sh               # Create or promote admin user on the server
     ├── logs.sh                     # Stream container logs from the server
     ├── reset.sh                    # Wipe DB, Redis, Caddy; fresh start
@@ -366,32 +375,30 @@ ACL bootstrap is a one-time manual step per cluster:
    ```
    This prints a management token. Save it securely — it cannot be retrieved again.
 
-3. **Provide the token to Terraform** by setting `nomad_acl_token` in your tfvars:
-   ```hcl
-   nomad_acl_token = "<management-token-from-step-2>"
-   ```
-
-4. **Re-apply Terraform** to inject the token into systemd services:
+3. **Set the token as a shell environment variable** on the operator's machine:
    ```bash
-   ./scripts/provision.sh --env production --var-file production.tfvars
+   export NOMAD_ACL_TOKEN="<management-token-from-step-2>"
    ```
 
-5. **Add `NOMAD_TOKEN` to the worker's `.env` file** so the `NomadRuntimeAdapter` can authenticate:
+4. **Add `NOMAD_TOKEN` to the worker's `.env` file** so the `NomadRuntimeAdapter` can authenticate:
    ```bash
    # In .env.prod (or .env.staging)
    NOMAD_TOKEN=<management-token-from-step-2>
    ```
 
-6. **Redeploy** to pick up the new environment variable:
+5. **Deploy** — `deploy.sh` uploads the token to the server via `setup-autoscale-env.sh`
+   (as part of `/etc/herobids/autoscale.env`) and the worker `.env`:
    ```bash
    ./deploy.sh --env production --env-file .env.prod
    ```
+   No re-provision is needed. The autoscale systemd services read `NOMAD_TOKEN` from
+   `EnvironmentFile=/etc/herobids/autoscale.env`.
 
 ### Token Distribution
 
 | Consumer | Token Source | Mechanism |
 |---|---|---|
-| Autoscale services (`nomad-autoscale`, `nomad-scale-in`, `nomad-placement-failure-watcher`) | `nomad_acl_token` Terraform variable | `Environment=NOMAD_TOKEN=...` in systemd unit (via cloud-init) |
+| Autoscale services (`nomad-autoscale`, `nomad-scale-in`, `nomad-placement-failure-watcher`) | `NOMAD_ACL_TOKEN` shell env var | Deployed to `/etc/herobids/autoscale.env` by `setup-autoscale-env.sh` (part of `deploy.sh`); read via `EnvironmentFile=` in systemd units |
 | Worker (`NomadRuntimeAdapter`) | `NOMAD_TOKEN` in `.env.prod` | Docker Compose environment variable |
 | Shell scripts (`scale-common.sh` → `nomad_api()`) | Inherited from systemd `NOMAD_TOKEN` | `X-Nomad-Token` HTTP header when `NOMAD_TOKEN` is set |
 | Nomad client nodes | Gossip protocol (no HTTP token needed) | `acl { enabled = true }` in client config |
@@ -414,8 +421,8 @@ curl -s http://127.0.0.1:4646/v1/nodes
 ### Token File
 
 On the control plane, the token is also written to `/etc/nomad.d/acl-token` (mode 600)
-during cloud-init. This file is available for manual debugging but is not used by scripts
-at runtime — they read `NOMAD_TOKEN` from the environment.
+by `setup-autoscale-env.sh` during deploy. This file is available for manual debugging
+but is not used by scripts at runtime — they read `NOMAD_TOKEN` from the environment.
 
 ## Autoscale-Out (Phase 6)
 
@@ -552,7 +559,7 @@ For environments without systemd, a cron entry achieves the same effect:
    reducing nodes removes from the end. No mid-list destruction.
 5. **Dry-run mode**: `--dry-run` shows what WOULD happen without making changes.
 6. **No secrets in scripts**: all credentials come from environment variables or
-   the Terraform tfvars file. Scripts accept config via env vars with sensible defaults.
+   `/etc/herobids/autoscale.env` (deployed by `setup-autoscale-env.sh`). Scripts accept config via env vars with sensible defaults.
 7. **TOCTOU-safe cooldown**: the cooldown check is re-evaluated inside the flock
    critical section, preventing a race where two concurrent invocations both pass
    the initial cooldown check and scale out back-to-back.
@@ -1167,12 +1174,13 @@ ssh root@<IP> 'cd /opt/herobids && docker compose -f docker-compose.yaml -f dock
 
 ## Full Deploy Workflow
 
-`deploy.sh` orchestrates a complete deployment in 4 steps:
+`deploy.sh` orchestrates a complete deployment in 5 steps:
 
-1. **setup-env** — upload `.env` to the server
-2. **push** — `git pull` → build agent image → `docker compose up -d --build` → health check
-3. **seed-admin** — create/promote admin user (skipped if `ADMIN_EMAIL`/`ADMIN_PASSWORD` not set)
-4. **verify** — curl the API health endpoint until it responds (up to 60s)
+1. **setup-env** — upload `.env` to the server (app secrets)
+2. **setup-autoscale-env** — upload `autoscale.env` to the server (infra secrets: AWS credentials, Nomad token)
+3. **push** — `git pull` → build agent image → `docker compose up -d --build` → health check
+4. **seed-admin** — create/promote admin user (skipped if `ADMIN_EMAIL`/`ADMIN_PASSWORD` not set)
+5. **verify** — curl the API health endpoint until it responds (up to 60s)
 
 If any step fails, the script stops immediately — no partial deploys.
 
@@ -1336,7 +1344,7 @@ and re-enable steps.
 | **Migrations didn't run** | API logs show missing tables | Run manually: `ssh root@<IP> 'cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.{prod,staging}.yaml run --rm migrate'` |
 | **Agent image not found** | Worker logs "image not found" | The agent image must be built before worker starts. Run `./scripts/push.sh` which builds it. |
 | **terraform.tfvars not found** | `provision.sh` fails with error | `cp terraform.tfvars.example terraform.tfvars` and fill in required values, including `environment`. |
-| **S3 backend not configured** | Autoscale fails with "Missing backend environment variables" | Set `TF_BACKEND_BUCKET`, `TF_BACKEND_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` in the service environment or re-provision with the backend variables in tfvars. |
+| **S3 backend not configured** | Autoscale fails with "Missing backend environment variables" | Verify `/etc/herobids/autoscale.env` exists on the server with valid `TF_BACKEND_BUCKET`, `TF_BACKEND_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. Re-run `deploy.sh` to regenerate it. |
 | **Git clone fails on server** | cloud-init log shows SSH error | Verify `deploy_ssh_private_key` is a valid key with read access to the repo. |
 | **Let's Encrypt cert never issued** | Caddy stuck, no HTTPS | Ensure port 80 is reachable (Let's Encrypt HTTP challenge). Check UFW and Hetzner firewall. |
 

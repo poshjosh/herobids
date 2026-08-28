@@ -168,7 +168,7 @@ Add the autoscale env file upload step to `deploy.sh`'s sequence:
 
 `tf_ensure_ready()` already handles backend init. Verify it works correctly when called for the first time after deploy (no prior `terraform init` from cloud-init). The `-reconfigure` flag in `tf_init_backend()` should handle this — confirm with a test.
 
-### T9. Update documentation `PENDING`
+### T9. Update documentation `DONE`
 
 - `infra/hetzner/README.md` — Update the "Terraform Remote Backend (S3)" and "Nomad ACL Authentication" sections to describe the new single-source workflow.
 - `infra/hetzner/docs/auto-scaling/setup-auto-scaling.md` — Remove tfvars-based credential setup, add `setup-autoscale-env.sh` step.

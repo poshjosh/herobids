@@ -201,23 +201,27 @@ When the autoscale service fails with `S3 backend not configured` or
 `Terraform backend initialization failed`, the control-plane cannot run
 Terraform operations.
 
-**Check the service environment:**
+**Check the environment file on the server:**
 
 ```bash
 ssh -i ~/.ssh/herobids_deploy_key root@<server-ip>
 
-# Verify the backend env vars are set in the autoscale service
-systemctl show nomad-autoscale.service -p Environment | tr ' ' '\n' | grep -E 'TF_BACKEND|AWS_'
-systemctl show nomad-scale-in.service -p Environment | tr ' ' '\n' | grep -E 'TF_BACKEND|AWS_'
+# Verify the autoscale env file exists and contains the backend vars
+cat /etc/herobids/autoscale.env | grep -E 'TF_BACKEND|AWS_'
 
 # Expected: TF_BACKEND_BUCKET, TF_BACKEND_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+
+# Verify the systemd services pick up the env file
+systemctl show nomad-autoscale.service -p EnvironmentFiles
+systemctl show nomad-scale-in.service -p EnvironmentFiles
 ```
 
 **Verify backend connectivity:**
 
 ```bash
-# Try a manual terraform init
+# Try a manual terraform init (source the env file first)
 cd /opt/herobids/infra/hetzner
+source /etc/herobids/autoscale.env
 terraform init \
   -backend-config="bucket=${TF_BACKEND_BUCKET}" \
   -backend-config="key=herobids/${HEROBIDS_ENV}/terraform.tfstate" \
@@ -234,7 +238,7 @@ aws s3 ls "s3://${TF_BACKEND_BUCKET}/herobids/" --region "${TF_BACKEND_REGION}"
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `Missing backend environment variables` | Backend vars not in systemd service | Re-provision with backend vars in tfvars, or add to systemd override |
+| `Missing backend environment variables` | `/etc/herobids/autoscale.env` missing or incomplete | Re-run `deploy.sh` to regenerate the env file from operator shell variables |
 | `Error configuring S3 backend` | Invalid credentials or bucket | Verify AWS credentials; check bucket exists and region matches |
 | `Error acquiring the state lock` | Previous terraform run interrupted | `terraform force-unlock <LOCK_ID>` |
 | `Failed to select workspace` | First run on new environment | The scripts auto-create the workspace; check for underlying init error |
@@ -256,14 +260,16 @@ ACL token is missing or invalid.
 ```bash
 ssh -i ~/.ssh/herobids_deploy_key root@<server-ip>
 
-# Check autoscale service environment
-systemctl show nomad-autoscale.service -p Environment | tr ' ' '\n' | grep NOMAD_TOKEN
+# Check the autoscale env file for the token
+grep NOMAD_TOKEN /etc/herobids/autoscale.env
 
-# Check scale-in service environment
-systemctl show nomad-scale-in.service -p Environment | tr ' ' '\n' | grep NOMAD_TOKEN
+# Verify systemd services reference the env file
+systemctl show nomad-autoscale.service -p EnvironmentFiles
+systemctl show nomad-scale-in.service -p EnvironmentFiles
 
 # Test the token against the Nomad API directly
-NOMAD_TOKEN=<token> nomad node status
+source /etc/herobids/autoscale.env
+NOMAD_TOKEN=$NOMAD_TOKEN nomad node status
 # Expected: list of nodes. If 403 → token is invalid or expired.
 ```
 
@@ -283,7 +289,7 @@ ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `HTTP 403` in autoscale log | Token missing or wrong in systemd env | Set `nomad_acl_token` in tfvars and re-provision |
+| `HTTP 403` in autoscale log | Token missing or wrong in `/etc/herobids/autoscale.env` | Set `NOMAD_ACL_TOKEN` in the operator's shell and re-run `deploy.sh` |
 | `Permission denied` in worker | `NOMAD_TOKEN` missing from `.env` file | Add token to `.env.prod` / `.env.staging` and redeploy |
 | Token was valid, now rejected | Bootstrap reset or cluster recreated | Re-bootstrap ACLs: `nomad acl bootstrap` and update all consumers |
 
