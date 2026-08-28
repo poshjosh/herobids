@@ -5,6 +5,19 @@ import type { AgentDecisionHandler } from './agent-decision-handler.js';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 
+// Module-level mocks for skill management functions used by handleManageAgentSkills
+vi.mock('@herobids/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@herobids/db')>();
+  return {
+    ...actual,
+    resolveSkillAssignmentsForUser: vi.fn().mockResolvedValue({ assignments: [] }),
+    syncAgentSkillAssignments: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
+// Import the mocked functions so we can configure per-test behavior
+import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
+
 function makeEnvelope(overrides: Record<string, unknown> = {}) {
   return {
     schemaVersion: 'v1',
@@ -2821,7 +2834,7 @@ describe('manage_agent_skills — capability routing', () => {
     expect(result.error).toMatch(/capability_denied/);
   });
 
-  it('passes capability gate but returns unsupported_type (handler not yet wired)', async () => {
+  it('passes capability gate and routes to handler (accepted even without db)', async () => {
     const agentRepo = mockAgentRepo();
     agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', status: 'active' });
     agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
@@ -2836,9 +2849,8 @@ describe('manage_agent_skills — capability routing', () => {
 
     const envelope = makeSkillsEnvelope();
     const result = await broker.processInbound(envelope);
-    // Capability is allowed but there's no handler case yet, so it hits default → unsupported_type
-    expect(result.accepted).toBe(false);
-    expect(result.error).toBe('unsupported_type');
+    // Handler is wired — accepted even if db is unavailable (handler publishes error reply internally)
+    expect(result.accepted).toBe(true);
   });
 
   it('validates the manage_agent_skills payload schema', async () => {
@@ -2859,6 +2871,659 @@ describe('manage_agent_skills — capability routing', () => {
     const result = await broker.processInbound(envelope);
     expect(result.accepted).toBe(false);
     expect(result.error).toBe('invalid_payload');
+  });
+});
+
+// ── handleManageAgentSkills handler logic ────────────────────────────────────
+
+describe('handleManageAgentSkills — handler logic', () => {
+  const resolveSkillAssignmentsMock = vi.mocked(resolveSkillAssignmentsForUser);
+  const syncAgentSkillAssignmentsMock = vi.mocked(syncAgentSkillAssignments);
+
+  function makeSkillsEnvelope(overrides: Record<string, unknown> = {}) {
+    return {
+      schemaVersion: 'v1',
+      messageId: `msg-${Math.random().toString(36).slice(2)}`,
+      correlationId: 'corr-001',
+      initiatorType: 'agent',
+      initiatorId: 'agent-123',
+      agentId: 'agent-123',
+      type: 'agent.manage_skills',
+      createdAt: new Date().toISOString(),
+      payload: {
+        action: 'add',
+        skillIds: ['trading'],
+        requestMessageId: 'req-abc-123',
+      },
+      ...overrides,
+    };
+  }
+
+  /**
+   * Creates a db mock for the 'add' path with explicit control.
+   * The add handler calls:
+   *   1. db.select(users).from(users).where(...).limit(1) → userRow
+   *   2. db.select(agentSkills).from(agentSkills).where(...) → existingSkillRows (no .limit())
+   */
+  function makeAddDbMock(
+    userRow: Record<string, unknown> = { planId: 'plan-free', isAdmin: false },
+    existingSkillRows: Array<{ skillId: string }> = [],
+  ) {
+    let callIndex = 0;
+    const selectFn = vi.fn().mockImplementation(() => {
+      const idx = callIndex++;
+      if (idx === 0) {
+        // users table query — has .limit()
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([userRow]),
+            }),
+          }),
+        };
+      }
+      // agentSkills table query — no .limit(), returns array directly from .where()
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(existingSkillRows),
+        }),
+      };
+    });
+    return { select: selectFn, transaction: vi.fn() } as any;
+  }
+
+  /**
+   * Creates a db mock for the 'remove' path.
+   * The remove handler calls:
+   *   1. db.select(agentSkills).from(agentSkills).where(...) → existingSkillRows
+   *   2. (optionally) db.select(users).from(users).where(...).limit(1) → userRow (if remaining skills > 0)
+   */
+  function makeRemoveDbMock(
+    existingSkillRows: Array<{ skillId: string }> = [],
+    userRow: Record<string, unknown> = { planId: 'plan-free', isAdmin: false },
+  ) {
+    let callIndex = 0;
+    const selectFn = vi.fn().mockImplementation(() => {
+      const idx = callIndex++;
+      if (idx === 0) {
+        // agentSkills table query — no .limit()
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(existingSkillRows),
+          }),
+        };
+      }
+      // users table query — has .limit()
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([userRow]),
+          }),
+        }),
+      };
+    });
+    return { select: selectFn, transaction: vi.fn() } as any;
+  }
+
+  function makeSkillsEventPublisher() {
+    return {
+      emitDecisionAccepted: vi.fn().mockResolvedValue(undefined),
+      emitDecisionRejected: vi.fn().mockResolvedValue(undefined),
+      emitInstanceStatus: vi.fn().mockResolvedValue(undefined),
+      emitToolResult: vi.fn().mockResolvedValue(undefined),
+      publishSkillsReply: vi.fn().mockResolvedValue(undefined),
+    } as unknown as InstanceEventPublisher;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolveSkillAssignmentsMock.mockResolvedValue({
+      assignments: [{ skillId: 'trading', skillRevisionId: 'rev-1' }],
+    });
+    syncAgentSkillAssignmentsMock.mockResolvedValue(undefined);
+  });
+
+  // ── MANAGE_AGENT_SKILLS add ──────────────────────────────────────────────
+
+  describe('add action', () => {
+    it('persists with assignmentSource agent_self and publishes success reply', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      const db = makeAddDbMock();
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, // telegram
+        undefined, // botRepo
+        undefined, // botStart
+        undefined, // botLimitCheck
+        undefined, // botLiveCheck
+        undefined, // botStop
+        undefined, // botRestart
+        undefined, // emailClient
+        undefined, // onAgentConfigUpdate
+        undefined, // agentRiskDefaults
+        undefined, // brandImageUrl
+        db,        // db
+      );
+
+      const envelope = makeSkillsEnvelope();
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect(syncAgentSkillAssignmentsMock).toHaveBeenCalledWith(
+        db,
+        'agent-123',
+        'user-1',
+        expect.any(Array),
+        'agent_self',
+      );
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-abc-123',
+        expect.objectContaining({
+          status: 'ok',
+          action: 'add',
+          skillIds: expect.arrayContaining(['trading']),
+        }),
+      );
+    });
+
+    it('publishes error reply for non-entitled skill (resolveSkillAssignmentsForUser returns error)', async () => {
+      resolveSkillAssignmentsMock.mockResolvedValue({
+        error: {
+          code: 'validation_error',
+          message: 'Some selected skills are not selectable for this user',
+        },
+      });
+
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      const db = makeAddDbMock();
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope();
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect(syncAgentSkillAssignmentsMock).not.toHaveBeenCalled();
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-abc-123',
+        expect.objectContaining({
+          status: 'error',
+          action: 'add',
+          errorCode: 'validation_error',
+          error: expect.stringContaining('not selectable'),
+        }),
+      );
+    });
+
+    it('is idempotent for already-assigned skill (still publishes success)', async () => {
+      // Skill 'trading' is already assigned
+      const db = makeAddDbMock(
+        { planId: 'plan-free', isAdmin: false },
+        [{ skillId: 'trading' }],
+      );
+      resolveSkillAssignmentsMock.mockResolvedValue({
+        assignments: [{ skillId: 'trading', skillRevisionId: 'rev-1' }],
+      });
+
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope();
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      // syncAgentSkillAssignments is still called (idempotent upsert)
+      expect(syncAgentSkillAssignmentsMock).toHaveBeenCalled();
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-abc-123',
+        expect.objectContaining({
+          status: 'ok',
+          action: 'add',
+          // Already-assigned skill is filtered from the addedSkillIds
+          skillIds: [],
+        }),
+      );
+    });
+
+    it('rejects base skill ID with base_skill_protected error code', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      const db = makeAddDbMock();
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'add', skillIds: ['base'], requestMessageId: 'req-base' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect(syncAgentSkillAssignmentsMock).not.toHaveBeenCalled();
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-base',
+        expect.objectContaining({
+          status: 'error',
+          errorCode: 'base_skill_protected',
+          error: expect.stringContaining('base skill'),
+        }),
+      );
+    });
+
+    it('publishes db_unavailable error reply when db is not wired', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+
+      // No db passed — defaults to undefined
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+      );
+
+      const envelope = makeSkillsEnvelope();
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-abc-123',
+        expect.objectContaining({
+          status: 'error',
+          errorCode: 'db_unavailable',
+        }),
+      );
+    });
+
+    it('publishes agent_not_found error reply when agent does not exist', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue(null);
+
+      const eventPublisher = makeSkillsEventPublisher();
+      const db = makeAddDbMock();
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope();
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect(syncAgentSkillAssignmentsMock).not.toHaveBeenCalled();
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-abc-123',
+        expect.objectContaining({
+          status: 'error',
+          errorCode: 'agent_not_found',
+        }),
+      );
+    });
+
+    it('publishes user_not_found error reply when user row is missing', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      // Users query returns empty array → user not found
+      const db = makeAddDbMock({ planId: 'plan-free', isAdmin: false }, []);
+      // Override: make the users table query return []
+      let callIndex = 0;
+      (db.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        const idx = callIndex++;
+        if (idx === 0) {
+          // users query → empty
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([]),
+              }),
+            }),
+          };
+        }
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([]),
+          }),
+        };
+      });
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope();
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect(syncAgentSkillAssignmentsMock).not.toHaveBeenCalled();
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-abc-123',
+        expect.objectContaining({
+          status: 'error',
+          errorCode: 'user_not_found',
+        }),
+      );
+    });
+  });
+
+  // ── MANAGE_AGENT_SKILLS remove ───────────────────────────────────────────
+
+  describe('remove action', () => {
+    it('deletes assignment and publishes success reply', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      const db = makeRemoveDbMock([{ skillId: 'trading' }]);
+
+      resolveSkillAssignmentsMock.mockResolvedValue({ assignments: [] });
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'remove', skillIds: ['trading'], requestMessageId: 'req-remove-1' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect(syncAgentSkillAssignmentsMock).toHaveBeenCalledWith(
+        db,
+        'agent-123',
+        'user-1',
+        expect.any(Array),
+        'agent_self',
+      );
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-remove-1',
+        expect.objectContaining({
+          status: 'ok',
+          action: 'remove',
+          skillIds: ['trading'],
+          warnings: [],
+        }),
+      );
+    });
+
+    it('publishes success reply with warnings for non-assigned skill', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      // No existing skills → the requested skill is not assigned
+      const db = makeRemoveDbMock([]);
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'remove', skillIds: ['nonexistent-skill'], requestMessageId: 'req-remove-2' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-remove-2',
+        expect.objectContaining({
+          status: 'ok',
+          action: 'remove',
+          skillIds: [],
+          warnings: ['nonexistent-skill'],
+        }),
+      );
+    });
+
+    it('rejects base skill ID with base_skill_protected error code', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      const db = makeRemoveDbMock([{ skillId: 'base' }]);
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'remove', skillIds: ['base'], requestMessageId: 'req-remove-base' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect(syncAgentSkillAssignmentsMock).not.toHaveBeenCalled();
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-remove-base',
+        expect.objectContaining({
+          status: 'error',
+          errorCode: 'base_skill_protected',
+        }),
+      );
+    });
+
+    it('removes one of two skills and re-resolves remaining assignments', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      // Agent has both 'trading' and 'analytics' — we remove 'trading', leaving 'analytics'
+      const db = makeRemoveDbMock(
+        [{ skillId: 'trading' }, { skillId: 'analytics' }],
+        { planId: 'plan-free', isAdmin: false },
+      );
+
+      resolveSkillAssignmentsMock.mockResolvedValue({
+        assignments: [{ skillId: 'analytics', skillRevisionId: 'rev-2' }],
+      });
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'remove', skillIds: ['trading'], requestMessageId: 'req-remove-partial' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      // resolveSkillAssignmentsForUser called with remaining skill only
+      expect(resolveSkillAssignmentsMock).toHaveBeenCalledWith(
+        db,
+        'user-1',
+        ['analytics'],
+        expect.any(Set),
+        expect.any(Boolean),
+      );
+      expect(syncAgentSkillAssignmentsMock).toHaveBeenCalledWith(
+        db,
+        'agent-123',
+        'user-1',
+        [{ skillId: 'analytics', skillRevisionId: 'rev-2' }],
+        'agent_self',
+      );
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-remove-partial',
+        expect.objectContaining({
+          status: 'ok',
+          action: 'remove',
+          skillIds: ['trading'],
+          warnings: [],
+        }),
+      );
+    });
+  });
+
+  // ── General ──────────────────────────────────────────────────────────────
+
+  describe('general', () => {
+    it('uses requestMessageId from the envelope payload for reply routing', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      const db = makeAddDbMock();
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const customRequestId = 'custom-req-id-xyz';
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'add', skillIds: ['trading'], requestMessageId: customRequestId },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        customRequestId,
+        expect.any(Object),
+      );
+    });
+
+    it('does not publish reply when requestMessageId is absent', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+
+      // No db → triggers db_unavailable path (which calls publishReply internally)
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'add', skillIds: ['trading'] }, // no requestMessageId
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      // publishSkillsReply should not be called when requestMessageId is absent
+      expect((eventPublisher as any).publishSkillsReply).not.toHaveBeenCalled();
+    });
+
+    it('publishes broker.internal_error reply when an unexpected exception occurs', async () => {
+      syncAgentSkillAssignmentsMock.mockRejectedValue(new Error('DB connection lost'));
+
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      const db = makeAddDbMock();
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope();
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-abc-123',
+        expect.objectContaining({
+          status: 'error',
+          errorCode: 'broker.internal_error',
+          error: expect.stringContaining('DB connection lost'),
+        }),
+      );
+    });
   });
 });
 
