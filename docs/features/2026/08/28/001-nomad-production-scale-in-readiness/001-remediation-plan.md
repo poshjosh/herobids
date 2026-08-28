@@ -2,7 +2,7 @@
 
 ## Status
 
-`in-progress`
+`complete`
 
 ## Purpose
 
@@ -406,7 +406,7 @@ The worker adapter and the shell autoscaler are inconsistent. The adapter suppor
 2. Production documentation no longer says two conflicting things about Nomad authentication.
 3. A production operator can verify the expected auth path without reading source code.
 
-### W5. Add tests and rollout-facing documentation `PENDING`
+### W5. Add tests and rollout-facing documentation `DONE`
 
 #### Problem
 

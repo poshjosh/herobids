@@ -250,7 +250,7 @@ EOF
     fi
     # Try the nodes summary endpoint for a quick capacity overview
     local nodes_json
-    nodes_json="$(curl -s --connect-timeout 10 --max-time 30 "${_alert_auth[@]}" "${NOMAD_ADDR}/v1/nodes" 2>/dev/null || true)"
+    nodes_json="$(curl -s --connect-timeout 10 --max-time 30 ${_alert_auth[@]+"${_alert_auth[@]}"} "${NOMAD_ADDR}/v1/nodes" 2>/dev/null || true)"
     if [[ -n "${nodes_json}" ]]; then
       local total ready down
       total="$(echo "${nodes_json}" | jq -r 'length' 2>/dev/null || echo "?")"
@@ -267,7 +267,7 @@ EOF
     echo ""
     echo "--- Recent Blocked Evaluations (last 5) ---"
     local evals_json
-    evals_json="$(curl -s --connect-timeout 10 --max-time 30 "${_alert_auth[@]}" "${NOMAD_ADDR}/v1/evaluations" 2>/dev/null || true)"
+    evals_json="$(curl -s --connect-timeout 10 --max-time 30 ${_alert_auth[@]+"${_alert_auth[@]}"} "${NOMAD_ADDR}/v1/evaluations" 2>/dev/null || true)"
     if [[ -n "${evals_json}" ]]; then
       local blocked
       blocked="$(echo "${evals_json}" | jq -r '

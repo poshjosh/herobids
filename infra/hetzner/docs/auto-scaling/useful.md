@@ -194,3 +194,148 @@ ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
 
 The next nightly scale-in run will re-evaluate the node. If it is idle, it will be
 drained and removed normally. No manual intervention is needed to retry.
+
+## Terraform Backend Initialization Failure
+
+When the autoscale service fails with `S3 backend not configured` or
+`Terraform backend initialization failed`, the control-plane cannot run
+Terraform operations.
+
+**Check the service environment:**
+
+```bash
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip>
+
+# Verify the backend env vars are set in the autoscale service
+systemctl show nomad-autoscale.service -p Environment | tr ' ' '\n' | grep -E 'TF_BACKEND|AWS_'
+systemctl show nomad-scale-in.service -p Environment | tr ' ' '\n' | grep -E 'TF_BACKEND|AWS_'
+
+# Expected: TF_BACKEND_BUCKET, TF_BACKEND_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+```
+
+**Verify backend connectivity:**
+
+```bash
+# Try a manual terraform init
+cd /opt/herobids/infra/hetzner
+terraform init \
+  -backend-config="bucket=${TF_BACKEND_BUCKET}" \
+  -backend-config="key=herobids/${HEROBIDS_ENV}/terraform.tfstate" \
+  -backend-config="region=${TF_BACKEND_REGION}"
+
+# If init fails, check AWS credentials
+aws sts get-caller-identity  # requires awscli
+
+# Check the S3 bucket is accessible
+aws s3 ls "s3://${TF_BACKEND_BUCKET}/herobids/" --region "${TF_BACKEND_REGION}"
+```
+
+**Common causes:**
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Missing backend environment variables` | Backend vars not in systemd service | Re-provision with backend vars in tfvars, or add to systemd override |
+| `Error configuring S3 backend` | Invalid credentials or bucket | Verify AWS credentials; check bucket exists and region matches |
+| `Error acquiring the state lock` | Previous terraform run interrupted | `terraform force-unlock <LOCK_ID>` |
+| `Failed to select workspace` | First run on new environment | The scripts auto-create the workspace; check for underlying init error |
+
+**After fixing:**
+
+```bash
+# Verify by running a dry-run
+NOMAD_TOKEN=<token> /opt/herobids/infra/hetzner/scripts/scale-out.sh --dry-run
+```
+
+## Nomad Token Authentication Failure
+
+When autoscale scripts fail with `HTTP 403` or `Permission denied`, the Nomad
+ACL token is missing or invalid.
+
+**Verify the token is set:**
+
+```bash
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip>
+
+# Check autoscale service environment
+systemctl show nomad-autoscale.service -p Environment | tr ' ' '\n' | grep NOMAD_TOKEN
+
+# Check scale-in service environment
+systemctl show nomad-scale-in.service -p Environment | tr ' ' '\n' | grep NOMAD_TOKEN
+
+# Test the token against the Nomad API directly
+NOMAD_TOKEN=<token> nomad node status
+# Expected: list of nodes. If 403 → token is invalid or expired.
+```
+
+**Verify the worker token:**
+
+```bash
+# Check the worker container's environment
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
+  'cd /opt/herobids && docker compose exec worker env | grep NOMAD_TOKEN'
+
+# Check worker logs for auth errors
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
+  'cd /opt/herobids && docker compose logs --tail=30 worker 2>&1 | grep -i "403\|denied\|auth"'
+```
+
+**Common causes:**
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `HTTP 403` in autoscale log | Token missing or wrong in systemd env | Set `nomad_acl_token` in tfvars and re-provision |
+| `Permission denied` in worker | `NOMAD_TOKEN` missing from `.env` file | Add token to `.env.prod` / `.env.staging` and redeploy |
+| Token was valid, now rejected | Bootstrap reset or cluster recreated | Re-bootstrap ACLs: `nomad acl bootstrap` and update all consumers |
+
+**After fixing:**
+
+```bash
+# Verify autoscale can authenticate
+NOMAD_TOKEN=<token> /opt/herobids/infra/hetzner/scripts/check-nomad-capacity.sh
+
+# Verify scale-in can authenticate
+NOMAD_TOKEN=<token> ENABLE_SCALE_IN=true \
+  /opt/herobids/infra/hetzner/scripts/scale-in.sh --dry-run
+```
+
+## Staging Validation: Intentional Drain Timeout
+
+When using the staging failure injection hooks (`staging-hooks.sh`) to validate
+drain-timeout handling for the production validation plan:
+
+**Before the test:**
+
+```bash
+ssh -i ~/.ssh/herobids_deploy_key root@<server-ip>
+
+# Record the current cluster state
+NOMAD_TOKEN=<token> nomad node status
+# Note node IDs, eligibility, and drain state
+```
+
+**During the test:**
+
+```bash
+# The staging hook makes wait_for_drain_complete always fail.
+# The script should:
+#   1. Log "[STAGING-HOOK] Simulating drain timeout ..."
+#   2. Log "WARNING: Node <id> did not drain within ..."
+#   3. Re-mark the node as eligible
+#   4. Skip the node in the Terraform shrink
+
+# Check the autoscale log
+tail -50 /var/log/nomad-autoscale.log | grep -E 'STAGING-HOOK|WARNING|DRAIN_OK|terraform'
+```
+
+**After the test:**
+
+```bash
+# Verify all nodes are back to normal
+NOMAD_TOKEN=<token> nomad node status
+# All nodes should be "ready" and "eligible"
+
+# Verify no unexpected Terraform changes happened
+cd /opt/herobids/infra/hetzner
+terraform plan
+# Expected: no changes (or only unrelated drift)
+```

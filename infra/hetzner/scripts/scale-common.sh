@@ -85,7 +85,7 @@ nomad_api() {
 
   response="$(curl -s -S --connect-timeout 10 --max-time 30 -w '\n%{http_code}' \
     -X "${method}" \
-    "${auth_args[@]}" \
+    ${auth_args[@]+"${auth_args[@]}"} \
     "${url}" \
     "$@" 2>&1)" || {
     log "ERROR: curl failed for ${method} ${url}: ${response}"
@@ -163,7 +163,7 @@ current_agent_node_count() {
     if [[ -n "${NOMAD_TOKEN:-}" ]]; then
       curl_auth+=(-H "X-Nomad-Token: ${NOMAD_TOKEN}")
     fi
-    nodes_json="$(curl -s --connect-timeout 10 --max-time 30 "${curl_auth[@]}" "${NOMAD_ADDR}/v1/nodes" 2>/dev/null || true)"
+    nodes_json="$(curl -s --connect-timeout 10 --max-time 30 ${curl_auth[@]+"${curl_auth[@]}"} "${NOMAD_ADDR}/v1/nodes" 2>/dev/null || true)"
     if [[ -n "${nodes_json}" ]]; then
       local node_count
       node_count="$(echo "${nodes_json}" | jq -r '[.[] | select(.Status != "down")] | length' 2>/dev/null || true)"

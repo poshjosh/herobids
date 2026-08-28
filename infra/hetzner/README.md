@@ -192,6 +192,15 @@ infra/hetzner/
     └── check-placement-failures.sh # Safety net: detect resource-exhaustion placement failures (Phase 7)
     ├── alert-common.sh             # Alert threshold tracking + email sending (Phase 8)
     └── send-alert.sh               # Standalone alert test/manual trigger (Phase 8)
+    └── tests/
+        ├── run-all.sh              # Discover and run all test-*.sh files
+        ├── test-harness.sh         # Assert helpers (assert_eq, assert_contains, etc.)
+        ├── source-helper.sh        # Source scale-common.sh with safe temp dir overrides
+        ├── test-tf-runtime-helpers.sh  # Tests for Terraform runtime helpers (W2)
+        ├── test-alert-context.sh   # Tests for alert context builder
+        ├── test-nomad-token.sh     # Tests for Nomad ACL token behavior (W4)
+        ├── test-drain-timeout.sh   # Tests for drain-timeout safety semantics (W1)
+        └── staging-hooks.sh        # Staging-only failure injection hooks (V4/V5 validation)
 ```
 
 ## Architecture
@@ -843,6 +852,24 @@ When an alert is received, follow these steps:
 |---|---|
 | `scripts/alert-common.sh` | Shared alert functions: failure tracking, context builder, email sending |
 | `scripts/send-alert.sh` | Standalone CLI for testing and manually triggering alerts |
+
+### Shell Script Tests
+
+Automated tests for the autoscale shell helpers live in `scripts/tests/`. Run them locally:
+
+```bash
+bash infra/hetzner/scripts/tests/run-all.sh
+```
+
+| Test File | Coverage |
+|---|---|
+| `test-tf-runtime-helpers.sh` | Terraform runtime helpers: env validation, backend config, init, workspace, apply |
+| `test-alert-context.sh` | Alert context builder: S3 backend info, failure metadata, node count |
+| `test-nomad-token.sh` | Nomad ACL token behavior: header injection, HTTP error handling, fallback paths |
+| `test-drain-timeout.sh` | Drain-timeout safety: timeout exclusion, mixed scenarios, shrink count derivation |
+
+Staging-only failure injection hooks for validation testing are in `scripts/tests/staging-hooks.sh`
+(see the [production validation plan](../../docs/features/2026/08/28/001-nomad-production-scale-in-readiness/002-production-validation-plan.md)).
 
 ## Isolation Model
 

@@ -24,13 +24,18 @@ has already landed.
 
 Before running this plan, confirm all of the following:
 
-1. The remediation plan is complete.
-2. The AWS S3-backed remote Terraform state is configured and documented.
-3. The Nomad ACL posture for production is implemented and documented.
+1. The remediation plan is complete (all workstreams W1–W5 marked DONE).
+2. The AWS S3-backed remote Terraform state is configured and documented (see `infra/hetzner/README.md` — "Terraform Remote Backend (S3)").
+3. The Nomad ACL posture for production is implemented and documented (see `infra/hetzner/README.md` — "Nomad ACL Authentication").
 4. Staging Nomad orchestration is healthy.
 5. Staging has enough disposable capacity to test both safe drain and blocked drain scenarios.
 6. Alert delivery is configured for the environment being tested.
-7. The staging-only failure-injection hooks from the remediation plan exist and are available.
+7. The staging-only failure-injection hooks exist at `infra/hetzner/scripts/tests/staging-hooks.sh` and have been verified to load correctly:
+   ```bash
+   ssh root@<control-plane-ip>
+   HEROBIDS_ENV=staging source /opt/herobids/infra/hetzner/scripts/tests/staging-hooks.sh
+   # Expected: "[STAGING-HOOK] Sourced but no hooks active ..."
+   ```
 
 ## Evidence Standard
 
@@ -120,19 +125,45 @@ Prove a node that fails to drain within the deadline is preserved rather than de
 
 #### Important note
 
-Use the explicit staging-only drain-timeout hook added by the remediation plan.
+Use the staging-only drain-timeout hook at `infra/hetzner/scripts/tests/staging-hooks.sh`.
+Setting `INJECT_DRAIN_TIMEOUT=true` overrides `wait_for_drain_complete` to always return
+failure, simulating a node that never finishes draining.
 
 #### Steps
 
-1. Create a staging scenario where a node remains non-empty past the configured drain deadline.
-2. Run a real scale-in with a suitably small deadline for the test.
-3. Confirm the script logs the timeout condition.
+1. Create a staging scenario where a node remains non-empty past the configured drain deadline:
+   ```bash
+   ssh root@<control-plane-ip>
+
+   # Source the staging hooks to inject drain timeout
+   export HEROBIDS_ENV=staging
+   export INJECT_DRAIN_TIMEOUT=true
+   source /opt/herobids/infra/hetzner/scripts/tests/staging-hooks.sh
+   # Expected: "[STAGING-HOOK] Drain timeout injection ACTIVE ..."
+   ```
+
+2. Run a real scale-in with the injected timeout:
+   ```bash
+   ENABLE_SCALE_IN=true INJECT_DRAIN_TIMEOUT=true \
+     /opt/herobids/infra/hetzner/scripts/scale-in.sh
+   ```
+   Note: The hooks must be sourced within the script. For production validation, add
+   a temporary one-liner to scale-in.sh that sources staging-hooks.sh, then revert.
+   Alternatively, run the drain loop manually with the hooks sourced in the shell.
+
+3. Confirm the script logs the timeout condition (look for `[STAGING-HOOK]` and `did not drain within`).
 4. Confirm the node is not destroyed by the subsequent Terraform step.
-5. Confirm the node can be restored to normal scheduling state after the test.
+5. Confirm the node can be restored to normal scheduling state after the test:
+   ```bash
+   # The script re-marks timed-out nodes as eligible automatically.
+   # Verify:
+   NOMAD_TOKEN=<token> nomad node status <node-id>
+   # Expected: SchedulingEligibility = eligible
+   ```
 
 #### Pass criteria
 
-1. Timeout is loud and visible.
+1. Timeout is loud and visible (grep for `[STAGING-HOOK]` and `WARNING` in logs).
 2. The timed-out node remains present after the run.
 3. No live allocation is force-stopped as part of the normal scale-in path.
 
@@ -144,19 +175,46 @@ Prove that a scale-in run fails safely when Terraform apply fails mid-process.
 
 #### Important note
 
-Use the explicit staging-only Terraform failure hook added by the remediation plan.
+Use the staging-only Terraform failure hook at `infra/hetzner/scripts/tests/staging-hooks.sh`.
+Setting `INJECT_TF_APPLY_FAILURE=true` overrides `tf_apply_var` to always return failure,
+simulating a Terraform apply crash without damaging staging state.
 
 #### Steps
 
-1. Induce a safe, reversible Terraform apply failure in staging.
-2. Run scale-in.
-3. Confirm the script reports the apply failure loudly.
-4. Confirm nodes already marked ineligible are restored to eligible state where the script promises to do so.
-5. Confirm no partial cluster damage remains after cleanup.
+1. Induce a safe, reversible Terraform apply failure in staging:
+   ```bash
+   ssh root@<control-plane-ip>
+
+   # Source the staging hooks to inject Terraform failure
+   export HEROBIDS_ENV=staging
+   export INJECT_TF_APPLY_FAILURE=true
+   source /opt/herobids/infra/hetzner/scripts/tests/staging-hooks.sh
+   # Expected: "[STAGING-HOOK] Terraform apply failure injection ACTIVE ..."
+   ```
+
+2. Run scale-in with the injected failure:
+   ```bash
+   ENABLE_SCALE_IN=true INJECT_TF_APPLY_FAILURE=true \
+     /opt/herobids/infra/hetzner/scripts/scale-in.sh
+   ```
+
+3. Confirm the script reports the apply failure loudly (grep for `[STAGING-HOOK]` and `ERROR`).
+4. Confirm nodes already marked ineligible are restored to eligible state:
+   ```bash
+   # The script re-marks drained nodes as eligible on apply failure.
+   # Verify:
+   NOMAD_TOKEN=<token> nomad node status <node-id>
+   # Expected: SchedulingEligibility = eligible
+   ```
+5. Confirm no partial cluster damage remains after cleanup:
+   ```bash
+   NOMAD_TOKEN=<token> nomad node status
+   # All nodes should be ready and eligible
+   ```
 
 #### Pass criteria
 
-1. Failure is loud and obvious.
+1. Failure is loud and obvious (visible in autoscale log and grep-able).
 2. The cluster remains serviceable afterward.
 3. Recovery steps are documented and repeatable.
 
