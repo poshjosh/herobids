@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { TOOL_CATALOG, TOOL_CATEGORY_LABELS, getToolCatalogEntry, KNOWN_AGENT_TOOL_NAMES } from './tools.js';
+import {
+  TOOL_CATALOG,
+  TOOL_CATEGORY_LABELS,
+  getToolCatalogEntry,
+  KNOWN_AGENT_TOOL_NAMES,
+  isKnownAgentToolName,
+  findUnknownSkillTools,
+} from './tools.js';
+import { BASE_SKILL } from './skills.js';
 
 describe('TOOL_CATALOG', () => {
   it('has exactly KNOWN_AGENT_TOOL_NAMES length entries', () => {
@@ -50,5 +58,78 @@ describe('getToolCatalogEntry()', () => {
   it('returns undefined for a nonexistent tool', () => {
     const entry = getToolCatalogEntry('nonexistent');
     expect(entry).toBeUndefined();
+  });
+});
+
+// ── Skill tool names in KNOWN_AGENT_TOOL_NAMES ──────────────────────────────
+
+describe('KNOWN_AGENT_TOOL_NAMES — skill tools', () => {
+  it.each(['add_skills', 'list_skills', 'remove_skills'])(
+    'includes %s',
+    (toolName) => {
+      expect(KNOWN_AGENT_TOOL_NAMES).toContain(toolName);
+    },
+  );
+
+  it('recognises skill tool names via isKnownAgentToolName()', () => {
+    expect(isKnownAgentToolName('add_skills')).toBe(true);
+    expect(isKnownAgentToolName('list_skills')).toBe(true);
+    expect(isKnownAgentToolName('remove_skills')).toBe(true);
+  });
+
+  it('rejects an unknown tool name via isKnownAgentToolName()', () => {
+    expect(isKnownAgentToolName('fly_to_moon')).toBe(false);
+  });
+});
+
+// ── TOOL_CATALOG entries for skill tools ────────────────────────────────────
+
+describe('TOOL_CATALOG — skill tool entries', () => {
+  it('list_skills has category read-database', () => {
+    const entry = getToolCatalogEntry('list_skills');
+    expect(entry).toBeDefined();
+    expect(entry!.category).toBe('read-database');
+  });
+
+  it('add_skills has category write-database', () => {
+    const entry = getToolCatalogEntry('add_skills');
+    expect(entry).toBeDefined();
+    expect(entry!.category).toBe('write-database');
+  });
+
+  it('remove_skills has category write-database', () => {
+    const entry = getToolCatalogEntry('remove_skills');
+    expect(entry).toBeDefined();
+    expect(entry!.category).toBe('write-database');
+  });
+
+  it('each skill tool has a non-empty description', () => {
+    for (const name of ['add_skills', 'list_skills', 'remove_skills']) {
+      const entry = getToolCatalogEntry(name);
+      expect(entry).toBeDefined();
+      expect(entry!.description.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ── findUnknownSkillTools ───────────────────────────────────────────────────
+
+describe('findUnknownSkillTools()', () => {
+  it('returns [] for BASE_SKILL.requiredTools (all known)', () => {
+    expect(findUnknownSkillTools(BASE_SKILL.requiredTools)).toEqual([]);
+  });
+
+  it('returns [] for an empty input array', () => {
+    expect(findUnknownSkillTools([])).toEqual([]);
+  });
+
+  it('returns unknown tools sorted and deduplicated', () => {
+    const result = findUnknownSkillTools(['send_message', 'teleport', 'teleport', 'antigravity']);
+    expect(result).toEqual(['antigravity', 'teleport']);
+  });
+
+  it('returns only the unknown tools when mixed with known ones', () => {
+    const result = findUnknownSkillTools(['list_skills', 'unknown_tool', 'add_skills']);
+    expect(result).toEqual(['unknown_tool']);
   });
 });

@@ -2766,3 +2766,144 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
     expect(params?.['model']).toBeUndefined();
   });
 });
+
+
+// ── manage_agent_skills capability routing ───────────────────────────────────
+
+describe('manage_agent_skills — capability routing', () => {
+  function makeSkillsEnvelope(overrides: Record<string, unknown> = {}) {
+    return {
+      schemaVersion: 'v1',
+      messageId: `msg-${Math.random().toString(36).slice(2)}`,
+      correlationId: 'corr-001',
+      initiatorType: 'agent',
+      initiatorId: 'agent-123',
+      agentId: 'agent-123',
+      type: 'agent.manage_skills',
+      createdAt: new Date().toISOString(),
+      payload: {
+        action: 'add',
+        skillIds: ['trading'],
+      },
+      ...overrides,
+    };
+  }
+
+  it('enforces capability policy for manage_agent_skills messages', async () => {
+    const agentRepo = mockAgentRepo();
+    // Provide a toolPolicy that explicitly disables manage_agent_skills
+    agentRepo.getAgent.mockResolvedValue({
+      id: 'agent-123',
+      userId: 'user-1',
+      status: 'active',
+      toolPolicy: {
+        manage_agent_skills: {
+          capability: 'manage_agent_skills',
+          tier: 'brokered',
+          enabled: false,
+          limits: { maxPerMinute: 10, maxConcurrent: 1, timeoutMs: 30_000 },
+        },
+      },
+    });
+    agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
+
+    const broker = new AgentMessageBroker(
+      {} as any,
+      agentRepo as any,
+      mockDecisionHandler(),
+      mockSessionManager(),
+      mockEventPublisher(),
+    );
+
+    const envelope = makeSkillsEnvelope();
+    const result = await broker.processInbound(envelope);
+    expect(result.accepted).toBe(false);
+    expect(result.error).toMatch(/capability_denied/);
+  });
+
+  it('passes capability gate but returns unsupported_type (handler not yet wired)', async () => {
+    const agentRepo = mockAgentRepo();
+    agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', status: 'active' });
+    agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
+
+    const broker = new AgentMessageBroker(
+      {} as any,
+      agentRepo as any,
+      mockDecisionHandler(),
+      mockSessionManager(),
+      mockEventPublisher(),
+    );
+
+    const envelope = makeSkillsEnvelope();
+    const result = await broker.processInbound(envelope);
+    // Capability is allowed but there's no handler case yet, so it hits default → unsupported_type
+    expect(result.accepted).toBe(false);
+    expect(result.error).toBe('unsupported_type');
+  });
+
+  it('validates the manage_agent_skills payload schema', async () => {
+    const agentRepo = mockAgentRepo();
+    agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', status: 'active' });
+
+    const broker = new AgentMessageBroker(
+      {} as any,
+      agentRepo as any,
+      mockDecisionHandler(),
+      mockSessionManager(),
+      mockEventPublisher(),
+    );
+
+    const envelope = makeSkillsEnvelope({
+      payload: { action: 'invalid_action', skillIds: ['trading'] },
+    });
+    const result = await broker.processInbound(envelope);
+    expect(result.accepted).toBe(false);
+    expect(result.error).toBe('invalid_payload');
+  });
+});
+
+// ── plansConfig constructor parameter ────────────────────────────────────────
+
+describe('AgentMessageBroker — plansConfig constructor parameter', () => {
+  it('accepts plansConfig as a readonly constructor parameter', () => {
+    const agentRepo = mockAgentRepo();
+    const plansConfig = { someSetting: true } as any;
+
+    const broker = new AgentMessageBroker(
+      {} as any,
+      agentRepo as any,
+      mockDecisionHandler(),
+      mockSessionManager(),
+      mockEventPublisher(),
+      undefined, // telegram
+      undefined, // botRepo
+      undefined, // botStart
+      undefined, // botLimitCheck
+      undefined, // botLiveCheck
+      undefined, // botStop
+      undefined, // botRestart
+      undefined, // emailClient
+      undefined, // onAgentConfigUpdate
+      undefined, // agentRiskDefaults
+      undefined, // brandImageUrl
+      undefined, // db
+      undefined, // operatorModelDefaults
+      plansConfig,
+    );
+
+    // plansConfig is readonly (not private readonly), so it's accessible
+    expect(broker.plansConfig).toBe(plansConfig);
+  });
+
+  it('defaults plansConfig to undefined when not provided', () => {
+    const broker = new AgentMessageBroker(
+      {} as any,
+      mockAgentRepo() as any,
+      mockDecisionHandler(),
+      mockSessionManager(),
+      mockEventPublisher(),
+    );
+
+    expect(broker.plansConfig).toBeUndefined();
+  });
+});
