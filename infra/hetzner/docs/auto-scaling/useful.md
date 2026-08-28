@@ -37,7 +37,7 @@ All `nomad` commands on an ACL-enabled cluster require the token. Set `NOMAD_TOK
 # Set once per SSH session
 export NOMAD_TOKEN=<your-nomad-acl-token>
 
-# Server members (should advertise 10.0.0.x, NOT 172.17.x.x)
+# Server members (should advertise 10.x.x.x, NOT 172.17.x.x)
 ssh -i ~/.ssh/herobids_deploy_key root@<server-ip> \
   "NOMAD_TOKEN=<token> nomad server members"
 

@@ -143,12 +143,16 @@ runcmd:
   # ── Enable and start Nomad client ────────────────────────
   # Resolve the private network IP (from the Hetzner private network, not Docker's bridge)
   # and patch the Nomad config before starting.
+  # ${private_subnet} is the Terraform-configured subnet CIDR (e.g. "10.0.0.0/24" for
+  # staging, "10.1.0.0/24" for production). We extract the first two octets to build a
+  # regex that matches the correct private network range.
   - |
-    PRIVATE_IP=$(ip -4 addr show | grep -oP '10\.0\.\d+\.\d+' | head -1)
+    SUBNET_PREFIX=$(echo "${private_subnet}" | cut -d'.' -f1-2)
+    PRIVATE_IP=$(ip -4 addr show | grep -oP "$SUBNET_PREFIX\.\d+\.\d+" | head -1)
     if [ -n "$PRIVATE_IP" ]; then
       sed -i "s/__PRIVATE_IP__/$PRIVATE_IP/g" /etc/nomad.d/nomad.hcl
     else
-      logger -t cloud-init "WARNING: Could not resolve private network IP — Nomad advertise will use placeholder"
+      logger -t cloud-init "WARNING: Could not resolve private network IP (subnet: ${private_subnet}) — Nomad advertise will use placeholder"
     fi
   - systemctl daemon-reload
   - systemctl enable nomad

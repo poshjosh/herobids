@@ -121,7 +121,7 @@ This uploads the `.env.staging` (with Nomad config), builds, and starts all serv
 ```bash
 SERVER_IP=$(cd infra/hetzner && terraform output -raw server_ipv4)
 
-# Server should be alive, advertising the private IP (10.0.0.x), NOT 172.17.x.x
+# Server should be alive, advertising the private IP (10.x.x.x), NOT 172.17.x.x
 ssh -i ~/.ssh/herobids_deploy_key root@${SERVER_IP} 'nomad server members'
 
 # Worker should report Runtime backend: nomad with the correct address

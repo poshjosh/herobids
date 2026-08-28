@@ -13,7 +13,7 @@ Bugs and pitfalls encountered while enabling Nomad orchestration on staging.
 
 **Root cause:** Nomad's Go template `{{ GetPrivateIP }}` returns the first RFC 1918 address it finds. Docker's bridge interface (`docker0` at `172.17.0.1`) was enumerated before the Hetzner private network interface (`enp7s0` at `10.0.0.2`).
 
-**Fix:** Replace `{{ GetPrivateIP }}` with a `__PRIVATE_IP__` placeholder in the cloud-init Nomad config files. At boot time, a `runcmd` step resolves the actual Hetzner private IP via `ip -4 addr show | grep -oP '10\.0\.\d+\.\d+'` and patches the config with `sed` before starting Nomad.
+**Fix:** Replace `{{ GetPrivateIP }}` with a `__PRIVATE_IP__` placeholder in the cloud-init Nomad config files. At boot time, a `runcmd` step extracts the network prefix from the Terraform-configured `private_subnet` variable (e.g. `10.0.0.0/24` → `10.0`, `10.1.0.0/24` → `10.1`) and uses it to build a regex that matches the correct Hetzner private interface, then patches the config with `sed` before starting Nomad.
 
 **Files changed:** `cloud-init.yaml`, `cloud-init-nomad-client.yaml`
 
@@ -130,3 +130,24 @@ client {
 **Files changed:** `cloud-init.yaml`
 
 **Bug report:** `docs/bug-reports/2026/08/28/001-cloud-init-reboot-overwrites-env-and-repo.md`
+
+---
+
+## 11. Hard-coded `10.0.*` private IP regex fails in production
+
+**Symptom:** Nomad server and client nodes in production (`10.1.0.0/24`) would fail to resolve their private IP at boot. The `PRIVATE_IP` variable would be empty, leaving the `__PRIVATE_IP__` placeholder unpatched in the Nomad config. Nomad would either refuse to start or advertise the wrong address.
+
+**Root cause:** The original fix for lesson #1 used a hard-coded regex `grep -oP '10\.0\.\d+\.\d+'` to avoid Docker's `172.17.x.x` bridge. This works for staging (`10.0.0.0/24`) but not production (`10.1.0.0/24`) — the `10.0` prefix was a staging-only assumption baked into both cloud-init templates.
+
+**Fix:** Extract the network prefix dynamically from the Terraform `private_subnet` template variable. The `runcmd` step now does:
+
+```bash
+SUBNET_PREFIX=$(echo "${private_subnet}" | cut -d'.' -f1-2)
+PRIVATE_IP=$(ip -4 addr show | grep -oP "$SUBNET_PREFIX\.\d+\.\d+" | head -1)
+```
+
+This produces `10.0` for staging and `10.1` for production, making the regex match the correct Hetzner private network in both environments.
+
+**Files changed:** `cloud-init.yaml`, `cloud-init-nomad-client.yaml`
+
+**Remediation plan:** `docs/features/2026/08/28/001-nomad-production-scale-in-readiness/001-remediation-plan.md` (W3)

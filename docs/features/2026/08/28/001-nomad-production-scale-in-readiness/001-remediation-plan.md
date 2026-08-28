@@ -285,7 +285,7 @@ The scale scripts are less robust than `provision.sh`:
 2. A missing backend configuration, missing environment isolation, or missing credentials produces a clear fatal error before any drain or apply attempt.
 3. The same mechanism is used by `scale-in.sh`, `scale-out.sh`, and alert diagnostics.
 
-### W3. Generalize private IP resolution `PENDING`
+### W3. Generalize private IP resolution `DONE`
 
 #### Problem
 
