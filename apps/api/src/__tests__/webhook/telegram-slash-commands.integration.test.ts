@@ -29,8 +29,13 @@ vi.mock('../../services/agent-config-service.js', () => ({
   listAgentConnections: vi.fn(),
 }));
 
+vi.mock('../../services/agent-go-live-service.js', () => ({
+  cloneAgentAsLive: vi.fn(),
+}));
+
 import { startAgent, stopAgent } from '../../services/agent-lifecycle-service.js';
 import { grantConnection, revokeConnection } from '../../services/agent-config-service.js';
+import { cloneAgentAsLive } from '../../services/agent-go-live-service.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -631,6 +636,88 @@ describe('Telegram Slash Commands — Webhook Integration', () => {
     const text = sentText(fetchSpy);
     expect(text).toContain('execution mode');
     expect(text).toContain('simulated');
+  });
+
+  // ── H3: /golive dispatch ─────────────────────────────────────────────
+
+  it('/golive <agent> dispatches to handleGoLive and returns clone success message', async () => {
+    const mockClone = vi.mocked(cloneAgentAsLive);
+    mockClone.mockResolvedValue({ ok: true, agentId: 'new-live-id' });
+
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount += 1;
+        if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID, planId: 'free', isAdmin: false }]);
+        return makeChain([stubAgent({ status: 'stopped', executionDefaults: { mode: 'paper' } })]);
+      }),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+    const res = await sendWebhook(app, `/golive ${AGENT_NAME}`);
+    expect(res.statusCode).toBe(200);
+    await flushPromises();
+
+    const text = sentText(fetchSpy);
+    expect(text).toContain("Created live agent");
+    expect(text).toContain(`${AGENT_NAME} (Live)`);
+    expect(text).toContain('/start');
+    expect(mockClone).toHaveBeenCalledWith(expect.objectContaining({
+      sourceAgentId: AGENT_ID,
+      userId: TEST_USER_ID,
+    }));
+  });
+
+  it('/golive <agent> returns error when agent is already live', async () => {
+    const mockClone = vi.mocked(cloneAgentAsLive);
+    mockClone.mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: 'validation_error',
+      message: 'Agent is already in live mode',
+    });
+
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount += 1;
+        if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID, planId: 'free', isAdmin: false }]);
+        return makeChain([stubAgent({ status: 'active', executionDefaults: { mode: 'live' } })]);
+      }),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+    const res = await sendWebhook(app, `/golive ${AGENT_NAME}`);
+    expect(res.statusCode).toBe(200);
+    await flushPromises();
+
+    const text = sentText(fetchSpy);
+    expect(text).toContain(`${AGENT_NAME} is already in live mode.`);
+  });
+
+  it('/golive returns not-found for unknown agent', async () => {
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount += 1;
+        if (selectCount === 1) return makeChain([{ userId: TEST_USER_ID, planId: 'free', isAdmin: false }]);
+        return makeChain([]); // agent not found
+      }),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+    const res = await sendWebhook(app, `/golive NonExistent`);
+    expect(res.statusCode).toBe(200);
+    await flushPromises();
+
+    const text = sentText(fetchSpy);
+    expect(text).toContain('Agent "NonExistent" not found.');
   });
 });
 

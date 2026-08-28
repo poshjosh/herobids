@@ -1,9 +1,9 @@
 /**
- * Unit tests for execution-mode immutability (Task 2).
+ * Unit tests for execution-mode immutability (Task 2) and /golive command (Task 4).
  *
  * Covers:
  * - handleMode: rejection when mode arg provided, read-only display, usage message
- * - handleGoLive: placeholder behaviour
+ * - handleGoLive: real implementation calling cloneAgentAsLive
  * - parseSlashCommand: /golive is a known command
  * - Help text: /help mode is read-only, /help golive exists, general help includes golive
  * - setExecutionMode no longer exported from agent-config-service
@@ -36,8 +36,15 @@ vi.mock('../services/agent-lifecycle-service.js', () => ({
   stopAgent: vi.fn(),
 }));
 
+// ── Mock agent-go-live-service ──
+
+vi.mock('../services/agent-go-live-service.js', () => ({
+  cloneAgentAsLive: vi.fn(),
+}));
+
 import { handleMode, handleGoLive } from './telegram-command-handlers.js';
 import { parseSlashCommand, formatCommandHelp } from './telegram-slash-commands.js';
+import { cloneAgentAsLive } from '../services/agent-go-live-service.js';
 
 // ── DB mock helpers ──────────────────────────────────────────────────────
 
@@ -206,28 +213,137 @@ describe('handleMode', () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('handleGoLive', () => {
+  const mockClone = vi.mocked(cloneAgentAsLive);
+
   it('returns usage message when no args provided', async () => {
     const db = {} as Database;
-    const result = await handleGoLive(db, 'user-1', []);
+    const result = await handleGoLive({ db, userId: 'user-1', args: [] });
     expect(result).toBe('Usage: /golive <agent name>');
   });
 
-  it('returns placeholder message when agent name provided', async () => {
-    const db = {} as Database;
-    const result = await handleGoLive(db, 'user-1', ['Momentum']);
-    expect(result).toBe('Go Live command will be available soon.');
+  it('returns not-found when agent does not exist', async () => {
+    const db = makeDb([]);
+    const result = await handleGoLive({ db, userId: 'user-1', args: ['Ghost'] });
+    expect(result).toBe('Agent "Ghost" not found.');
   });
 
-  it('returns placeholder message with multi-word agent name', async () => {
-    const db = {} as Database;
-    const result = await handleGoLive(db, 'user-1', ['DCA Bot']);
-    expect(result).toBe('Go Live command will be available soon.');
+  it('returns ambiguous message when multiple agents match', async () => {
+    const db = makeDb([
+      makeAgent({ id: 'a1', name: 'Momentum' }),
+      makeAgent({ id: 'a2', name: 'Momentum' }),
+    ]);
+    const result = await handleGoLive({ db, userId: 'user-1', args: ['Momentum'] });
+    expect(result).toContain('Multiple agents named "Momentum"');
   });
 
-  it('returns placeholder message even with extra args', async () => {
-    const db = {} as Database;
-    const result = await handleGoLive(db, 'user-1', ['Momentum', 'extra']);
-    expect(result).toBe('Go Live command will be available soon.');
+  it('clones successfully and returns success message', async () => {
+    const db = makeDb([makeAgent()]);
+    mockClone.mockResolvedValue({ ok: true, agentId: 'new-agent-id' });
+
+    const result = await handleGoLive({ db, userId: 'user-1', args: ['Momentum'] });
+    expect(result).toContain("Created live agent 'Momentum (Live)'");
+    expect(result).toContain('/start Momentum (Live)');
+    expect(mockClone).toHaveBeenCalledWith(expect.objectContaining({
+      sourceAgentId: 'agent-1',
+      userId: 'user-1',
+    }));
+  });
+
+  it('rejects if agent is already live', async () => {
+    const db = makeDb([makeAgent({ executionDefaults: { mode: 'live' } })]);
+    mockClone.mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: 'validation_error',
+      message: 'Agent is already in live mode',
+    });
+
+    const result = await handleGoLive({ db, userId: 'user-1', args: ['Momentum'] });
+    expect(result).toBe('Momentum is already in live mode.');
+  });
+
+  it('rejects if agent has no connections', async () => {
+    const db = makeDb([makeAgent()]);
+    mockClone.mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: 'validation_error',
+      message: 'At least one active connection is required for live mode',
+    });
+
+    const result = await handleGoLive({ db, userId: 'user-1', args: ['Momentum'] });
+    expect(result).toBe('Momentum has no active connections. Grant a connection first.');
+  });
+
+  it('rejects when plan does not allow live', async () => {
+    const db = makeDb([makeAgent()]);
+    mockClone.mockResolvedValue({
+      ok: false,
+      status: 403,
+      error: 'plan.live_not_enabled',
+      message: 'Live trading is not available on your current plan',
+    });
+
+    const result = await handleGoLive({ db, userId: 'user-1', args: ['Momentum'] });
+    expect(result).toBe('Live mode is not available on your plan.');
+  });
+
+  it('rejects when agent limit exceeded', async () => {
+    const db = makeDb([makeAgent()]);
+    mockClone.mockResolvedValue({
+      ok: false,
+      status: 403,
+      error: 'plan.agent_limit_exceeded',
+      message: 'Agent limit reached',
+    });
+
+    const result = await handleGoLive({ db, userId: 'user-1', args: ['Momentum'] });
+    expect(result).toBe('Cannot create live agent — agent limit reached.');
+  });
+
+  it('returns generic fallback for unexpected errors', async () => {
+    const db = makeDb([makeAgent()]);
+    mockClone.mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: 'validation_error',
+      message: 'Something unexpected went wrong',
+    });
+
+    const result = await handleGoLive({ db, userId: 'user-1', args: ['Momentum'] });
+    expect(result).toBe('Go Live failed: Something unexpected went wrong');
+  });
+
+  it('returns fallback message when an exception is thrown', async () => {
+    const db = makeDb([makeAgent()]);
+    mockClone.mockRejectedValue(new Error('connection refused'));
+
+    const result = await handleGoLive({ db, userId: 'user-1', args: ['Momentum'] });
+    expect(result).toBe('Failed to create live agent. Please try again later.');
+  });
+
+  it('passes plan and model deps through to cloneAgentAsLive', async () => {
+    const db = makeDb([makeAgent()]);
+    mockClone.mockResolvedValue({ ok: true, agentId: 'new-id' });
+    const fakePlansConfig = { plans: {} } as unknown;
+    const fakeRiskDefaults = { maxOpenPositions: 10 } as unknown;
+
+    await handleGoLive({
+      db,
+      userId: 'user-1',
+      args: ['Momentum'],
+      plansConfig: fakePlansConfig as any,
+      userPlanId: 'pro',
+      isAdmin: true,
+      agentRiskDefaults: fakeRiskDefaults as any,
+    });
+
+    expect(mockClone).toHaveBeenCalledWith(expect.objectContaining({
+      plansConfig: fakePlansConfig,
+      userPlanId: 'pro',
+      isAdmin: true,
+      agentRiskDefaults: fakeRiskDefaults,
+    }));
   });
 });
 

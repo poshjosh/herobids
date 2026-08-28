@@ -10,7 +10,7 @@ import { AgentDocumentService, sanitizeFilename } from '@herobids/documents';
 import { LocalDocumentStore } from '@herobids/documents/local-document-store';
 import { createDocumentTextExtractor } from '@herobids/documents/document-text-extractors';
 import { resolve } from 'node:path';
-import type { AgentRiskDefaultsConfig, AgentApprovalsConfig, AlertsConfig, AuthConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
+import type { AgentRiskDefaultsConfig, AgentApprovalsConfig, AlertsConfig, AuthConfig, ModelDefaults, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
 import { AgentRuntimePolicyOverridesSchema, AgentRiskDefaultsSchema, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
@@ -492,6 +492,10 @@ export async function telegramWebhookHandler(
   alertsConfig?: AlertsConfig,
   authConfig?: AuthConfig,
   agentApprovalsConfig?: AgentApprovalsConfig,
+  plansConfig?: PlansConfig,
+  llmCatalogDeps?: LlmCatalogDeps,
+  agentRiskDefaults?: AgentRiskDefaultsConfig,
+  operatorModelDefaults?: ModelDefaults,
 ): Promise<void> {
   const botToken = alertsConfig?.telegram?.botToken ?? '';
   const webhookSecret = alertsConfig?.telegram?.webhookSecret ?? '';
@@ -592,12 +596,14 @@ export async function telegramWebhookHandler(
     chatId: string,
     message: NonNullable<z.infer<typeof TelegramWebhookUpdateSchema>['message']>,
   ): Promise<void> {
-    const userRows = await db.select({ userId: users.id })
+    const userRows = await db.select({ userId: users.id, planId: users.planId, isAdmin: users.isAdmin })
       .from(users)
       .where(eq(users.telegramChatId, chatId))
       .limit(1);
 
     let userId = userRows[0]?.userId;
+    const userPlanId = userRows[0]?.planId ?? 'free';
+    const userIsAdmin = userRows[0]?.isAdmin ?? false;
 
     const trimmedText = message.text!.trim();
 
@@ -691,7 +697,17 @@ export async function telegramWebhookHandler(
           return;
         }
         if (slashCmd.command === 'golive') {
-          const response = await handleGoLive(db, userId, slashCmd.args);
+          const response = await handleGoLive({
+            db,
+            userId,
+            args: slashCmd.args,
+            plansConfig,
+            userPlanId,
+            isAdmin: userIsAdmin,
+            llmCatalogDeps,
+            agentRiskDefaults,
+            operatorModelDefaults,
+          });
           await sendTelegramText(chatId, response);
           return;
         }

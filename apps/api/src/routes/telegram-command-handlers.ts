@@ -11,7 +11,9 @@
 
 import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
-import type { AuthConfig } from '@herobids/domain';
+import type { AuthConfig, PlansConfig, AgentRiskDefaultsConfig, ModelDefaults } from '@herobids/domain';
+import type { LlmCatalogDeps } from '../llm-model-catalog.js';
+import { cloneAgentAsLive } from '../services/agent-go-live-service.js';
 import {
   agents,
   connections,
@@ -1029,15 +1031,83 @@ export async function handleDisconnect(
   }
 }
 
-// ── handleGoLive (placeholder — real implementation in Task 4) ────────────
+// ── handleGoLive ──────────────────────────────────────────────────────────
 
-export async function handleGoLive(
-  _db: Database,
-  _userId: string,
-  args: string[],
-): Promise<string> {
-  if (args.length === 0) {
-    return 'Usage: /golive <agent name>';
+export interface HandleGoLiveOpts {
+  db: Database;
+  userId: string;
+  args: string[];
+  plansConfig?: PlansConfig;
+  userPlanId?: string;
+  isAdmin?: boolean;
+  llmCatalogDeps?: LlmCatalogDeps;
+  agentRiskDefaults?: AgentRiskDefaultsConfig;
+  operatorModelDefaults?: ModelDefaults;
+}
+
+export async function handleGoLive(opts: HandleGoLiveOpts): Promise<string> {
+  const {
+    db,
+    userId,
+    args,
+    plansConfig,
+    userPlanId = 'free',
+    isAdmin = false,
+    llmCatalogDeps,
+    agentRiskDefaults,
+    operatorModelDefaults,
+  } = opts;
+
+  try {
+    if (args.length === 0) {
+      return 'Usage: /golive <agent name>';
+    }
+
+    const resolved = await resolveAgentByName(db, userId, args[0]!);
+    if (resolved.type === 'not_found') {
+      return `Agent "${args[0]}" not found.`;
+    }
+    if (resolved.type === 'ambiguous') {
+      const names = resolved.agents
+        .map((a) => `${a.name} (${a.id.slice(0, 8)}...)`)
+        .join(', ');
+      return `Multiple agents named "${args[0]}". Use a unique name or check the web app.\nMatches: ${names}`;
+    }
+    const agent = resolved.agent;
+
+    const result = await cloneAgentAsLive({
+      sourceAgentId: agent.id,
+      userId,
+      db,
+      plansConfig,
+      userPlanId,
+      isAdmin,
+      llmCatalogDeps,
+      agentRiskDefaults,
+      operatorModelDefaults,
+    });
+
+    if (!result.ok) {
+      const name = agent.name;
+      if (result.error === 'validation_error' && result.message === 'Agent is already in live mode') {
+        return `${name} is already in live mode.`;
+      }
+      if (result.error === 'validation_error' && result.message.includes('active connection')) {
+        return `${name} has no active connections. Grant a connection first.`;
+      }
+      if (result.error === 'plan.live_not_enabled') {
+        return 'Live mode is not available on your plan.';
+      }
+      if (result.error === 'plan.agent_limit_exceeded') {
+        return 'Cannot create live agent — agent limit reached.';
+      }
+      return `Go Live failed: ${result.message}`;
+    }
+
+    const liveName = `${agent.name} (Live)`;
+    return `Created live agent '${liveName}' — ready to start with /start ${liveName}`;
+  } catch (error) {
+    console.error('handleGoLive failed:', error);
+    return 'Failed to create live agent. Please try again later.';
   }
-  return 'Go Live command will be available soon.';
 }

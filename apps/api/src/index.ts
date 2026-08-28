@@ -215,7 +215,13 @@ registerGlobalErrorHandler(app);
 app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
 // Telegram webhook — public (unauthenticated), token-validated
-await telegramWebhookHandler(app, db, redisClient, appConfig.alerts, appConfig.auth, appConfig.agentApprovals);
+await telegramWebhookHandler(
+  app, db, redisClient, appConfig.alerts, appConfig.auth, appConfig.agentApprovals,
+  appConfig.plans,
+  { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps,
+  appConfig.agentRiskDefaults,
+  appConfig.agentRuntime.llm.modelDefaults,
+);
 
 // Auth routes (public — Google OAuth flow + exchange endpoint)
 const authMailer = createAuthMailer(appConfig.alerts, appConfig.alerts.email.brandImageUrl);
