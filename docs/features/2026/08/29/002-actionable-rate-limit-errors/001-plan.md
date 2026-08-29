@@ -1,6 +1,6 @@
 # Actionable Rate Limit Error Messages
 
-**Status:** Draft
+**Status:** Implemented
 **Created:** 2026-08-29
 **Area:** Agent runtime, capability policy, tool execution, message broker
 
@@ -298,7 +298,7 @@ The `capabilityEngine.checkAccess` type in the `ToolContext` interface also retu
 - No change to the happy path — allowed messages flow through identically.
 - `pnpm lint` passes.
 
-### Phase 4: Structured Logs — PENDING
+### Phase 4: Structured Logs — DONE
 
 **Effort:** ~0.25 day
 **Risk:** None
@@ -371,3 +371,21 @@ This already produces a reasonable error. The Phase 3 changes add the `retryable
 | Phase 3: Broker denial replies | ~1 day | Medium |
 | Phase 4: Structured logs | ~0.25 day | None |
 | **Total** | **~2.25 days** | |
+
+
+---
+
+## Outstanding Issues
+
+### Phase 1: Structured `checkAccess` Return Type
+- **[MEDIUM] `CapabilityDenial` lives in worker, not domain.** The type is defined in `apps/worker/src/agents/capability-policy.ts` and duplicated structurally in `packages/domain/src/tools.ts`. Moving it to `packages/domain/src/` would eliminate drift risk. Deferred because no external consumers exist yet.
+
+### Phase 2: Direct Tool Error Responses
+- **[LOW] Unused `_capability` parameter in `capabilityDeniedResult`.** The parameter is prefixed with `_` and serves a documentation purpose at call sites. No action needed.
+
+### Phase 3: Broker Denial Replies
+- **[LOW] `lpush` vs plan's `rpush`.** The plan specified `rpush` but implementation uses `lpush`. Functionally equivalent for single-element lists consumed by `blpop`. No behavioral difference.
+- **[LOW] TTL 60s vs plan's 120s.** Changed to 60s during code review to match `instance-event-publisher` TTL pattern. Both values are well above the 30s `blpop` timeout.
+
+### Phase 4: Structured Logs
+- No outstanding issues.
