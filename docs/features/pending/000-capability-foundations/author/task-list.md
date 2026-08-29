@@ -44,7 +44,7 @@ Definition of success:
 	- records feature dependencies and global invariants;
 	- states what is fixed now versus what remains open for later implementation.
 
-### C03. [PENDING] Create the authoring rules and feature template
+### C03. [DONE] Create the authoring rules and feature template
 
 - Expected output file: `docs/features/pending/000-program/002-feature-doc-template.md`
 - Completion criteria:
@@ -144,6 +144,5 @@ Definition of success:
 
 ### C01. Create the documentation tree
 
-- medium: remove or relabel the pre-C01 baseline note in `000-program/000-document-tree.md` that says there is not yet a `000-program/` folder, because the folder now exists.
 - low: split or rename the `Child Plans` section in `000-capability-foundations/001-roadmap.md` so active executable phases are distinct from supporting design inputs.
 - low: clarify whether `diagrams/current-architecture.md` is the canonical diagram entrypoint or whether the folder guide should describe the full diagram set more explicitly.
