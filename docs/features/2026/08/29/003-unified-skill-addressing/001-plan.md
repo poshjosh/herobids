@@ -240,9 +240,22 @@ Also add `resolveSkillRefs(refs: string[], db)` that:
 
 Update `listAssigned()`, `listAvailable()`, and `search()` to include `slug` in their return objects. Derive the slug from the joined skills table.
 
-### 7b. `list_skills` returns slugs
+### 7b. `list_skills` returns slugs and includes installed external skills
 
 The response uses `skill` (slug) as the primary identifier. Retain `id` for backward compatibility during transition.
+
+Additionally, `list_skills` runs `npx skills list` as a subprocess to discover installed external skills. The response gains an `external` section (same pattern as `search_skills`):
+
+```json
+{
+  "assigned": [{ "id": "trading", "skill": "system/trading", "name": "Trading", ... }],
+  "available": [{ "id": "programming", "skill": "system/programming", "name": "Programming", ... }],
+  "installedExternal": { "results": "...raw npx skills list output..." },
+  "hint": "..."
+}
+```
+
+If the CLI is unavailable or fails, `installedExternal` degrades to `{ "note": "..." }`. Platform results are always returned regardless of external arm status.
 
 ### 7c. `add_skills` accepts slugs and supports external skills
 
@@ -276,7 +289,7 @@ Local results include `slug` as the primary identifier.
 
 **Changes:**
 
-Add `runExternalSkillInstall(ref: string, cwd: string)` and `runExternalSkillRemove(name: string, cwd: string)` helpers. Same subprocess pattern as `runExternalSkillSearch`:
+Add `runExternalSkillInstall(ref: string, cwd: string)`, `runExternalSkillRemove(name: string, cwd: string)`, and `runExternalSkillList(cwd: string)` helpers. Same subprocess pattern as `runExternalSkillSearch`:
 
 ```typescript
 spawn('npx', ['skills', 'add', ref], {
@@ -292,7 +305,12 @@ And for remove:
 spawn('npx', ['skills', 'remove', name], { ... });
 ```
 
-Both return `{ ok: true; output: string } | { ok: false; error: string }`.
+And for list:
+```typescript
+spawn('npx', ['skills', 'list'], { ... });
+```
+
+All three return `{ ok: true; output: string } | { ok: false; error: string }`.
 
 **Depends on:** Nothing (can be built in parallel with Step 7).
 
@@ -400,7 +418,9 @@ Update BASE_SKILL instructions to:
 - `add_skills` with mixed platform + external slugs handles both.
 - `remove_skills` accepts slugs.
 - `remove_skills` with external slug routes to subprocess.
-- `list_skills` returns slugs.
+- `list_skills` returns slugs for platform skills.
+- `list_skills` includes `installedExternal` section from `npx skills list`.
+- `list_skills` degrades gracefully when external list subprocess fails.
 - `search_skills` returns slugs.
 - Response format uses `skill` (slug) not `skillId`.
 
