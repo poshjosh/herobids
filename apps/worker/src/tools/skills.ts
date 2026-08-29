@@ -87,6 +87,7 @@ async function runExternalSkillList(cwd: string): Promise<ExternalSubprocessResu
 async function buildIdToSlugMap(
   ctx: ToolContext,
   prefetchedAssigned?: Array<{ id: string; slug: string }>,
+  prefetchedAvailable?: Array<{ id: string; slug: string }>,
 ): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   // Seed with system skill slugs
@@ -97,6 +98,12 @@ async function buildIdToSlugMap(
   const assigned = prefetchedAssigned ?? (ctx.skillOps ? await ctx.skillOps.listAssigned().catch(() => []) : []);
   for (const s of assigned) {
     if (s.slug) map.set(s.id, s.slug);
+  }
+  // Augment with available skills (covers user-authored deps not yet assigned)
+  if (prefetchedAvailable) {
+    for (const s of prefetchedAvailable) {
+      if (s.slug && !map.has(s.id)) map.set(s.id, s.slug);
+    }
   }
   return map;
 }
@@ -323,10 +330,11 @@ const addSkillsTool: AgentTool = {
       }
 
       // Build slug lookup for response formatting
-      const idToSlug = await buildIdToSlugMap(ctx, cachedAssigned);
+      const idToSlug = await buildIdToSlugMap(ctx, cachedAssigned, cachedAvailable);
 
       // 2. Dependency auto-resolution for platform skills
       const autoResolved: Array<{ skill: string; requiredBy: string }> = [];
+      const missingDependencies: Array<{ skill: string; requiredBy: string }> = [];
       let allPlatformIds = [...new Set(platformIds)];
 
       if (includeDependencies && allPlatformIds.length > 0 && cachedAssigned.length + cachedAvailable.length > 0) {
@@ -351,6 +359,21 @@ const addSkillsTool: AgentTool = {
         if (depIdsToAdd.size > 0) {
           allPlatformIds = [...new Set([...allPlatformIds, ...depIdsToAdd])];
         }
+      } else if (!includeDependencies && allPlatformIds.length > 0 && cachedAssigned.length + cachedAvailable.length > 0) {
+        // Report which dependencies are missing without auto-adding them
+        const assignedSet = new Set(cachedAssigned.map(s => s.id));
+        for (const id of allPlatformIds) {
+          const skill = [...cachedAssigned, ...cachedAvailable].find(s => s.id === id);
+          if (skill) {
+            for (const depId of skill.dependsOn) {
+              if (!assignedSet.has(depId) && !allPlatformIds.includes(depId)) {
+                const depSlug = idToSlug.get(depId) ?? depId;
+                const reqSlug = idToSlug.get(id) ?? id;
+                missingDependencies.push({ skill: depSlug, requiredBy: reqSlug });
+              }
+            }
+          }
+        }
       }
 
       // 3. Auto-resolve file-management for external skills
@@ -362,40 +385,58 @@ const addSkillsTool: AgentTool = {
         }
       }
 
-      // 4. Execute platform add via broker
+      // 4. Execute platform add + external installs in parallel
+      const brokerPromise = allPlatformIds.length > 0
+        ? sendBrokerSkillMutation('add', allPlatformIds, ctx)
+        : Promise.resolve(undefined);
+
+      const externalPromise = (async (): Promise<Array<{ ref: string; ok: boolean; output?: string; error?: string }>> => {
+        if (externalRefs.length === 0) return [];
+        try {
+          const { getWorkspacePaths } = await import('./workspace.js');
+          const cwd = getWorkspacePaths(ctx.agentId).root;
+          const results = await Promise.all(
+            externalRefs.map(async (ref) => {
+              const result = await runExternalSkillInstall(ref, cwd);
+              if (result.ok) {
+                return { ref, ok: true as const, output: result.output };
+              }
+              return { ref, ok: false as const, error: result.error };
+            }),
+          );
+          return results;
+        } catch (err) {
+          return externalRefs.map(ref => ({
+            ref,
+            ok: false as const,
+            error: `External install unavailable: ${err instanceof Error ? err.message : 'unknown error'}`,
+          }));
+        }
+      })();
+
+      const [brokerSettled, externalSettled] = await Promise.allSettled([brokerPromise, externalPromise]);
+
       let platformResult: { added: string[]; warnings: string[] } | undefined;
-      if (allPlatformIds.length > 0) {
-        const brokerResult = await sendBrokerSkillMutation('add', allPlatformIds, ctx);
+      if (brokerSettled.status === 'fulfilled' && brokerSettled.value !== undefined) {
+        const brokerResult = brokerSettled.value;
         if (!brokerResult.success) {
-          // If there are external refs, try those even if platform fails
           if (externalRefs.length === 0) return brokerResult;
-          // Platform failed but we still try external below
           platformResult = { added: [], warnings: [`Platform skill add failed: ${brokerResult.error}`] };
         } else if (brokerResult._brokerResult) {
           platformResult = { added: brokerResult._brokerResult.skillIds, warnings: brokerResult._brokerResult.warnings };
         }
+      } else if (brokerSettled.status === 'rejected') {
+        const errMsg = brokerSettled.reason instanceof Error ? brokerSettled.reason.message : 'unknown error';
+        if (externalRefs.length === 0) {
+          return { success: false, error: `Broker communication failed: ${errMsg}`, errorCode: 'broker.communication_error' };
+        }
+        platformResult = { added: [], warnings: [`Platform skill add failed: ${errMsg}`] };
       }
 
-      // 5. Execute external skill installs
-      const externalResults: Array<{ ref: string; ok: boolean; output?: string; error?: string }> = [];
-      if (externalRefs.length > 0) {
-        try {
-          const { getWorkspacePaths } = await import('./workspace.js');
-          const cwd = getWorkspacePaths(ctx.agentId).root;
-          for (const ref of externalRefs) {
-            const result = await runExternalSkillInstall(ref, cwd);
-            if (result.ok) {
-              externalResults.push({ ref, ok: true, output: result.output });
-            } else {
-              externalResults.push({ ref, ok: false, error: result.error });
-            }
-          }
-        } catch (err) {
-          for (const ref of externalRefs) {
-            externalResults.push({ ref, ok: false, error: `External install unavailable: ${err instanceof Error ? err.message : 'unknown error'}` });
-          }
-        }
-      }
+      const externalResults: Array<{ ref: string; ok: boolean; output?: string; error?: string }> =
+        externalSettled.status === 'fulfilled' ? externalSettled.value : externalRefs.map(ref => ({
+          ref, ok: false, error: `External install failed: ${externalSettled.reason instanceof Error ? externalSettled.reason.message : 'unknown error'}`,
+        }));
 
       // 6. Hot-reload after platform changes
       let activeSkills: string[] | undefined;
@@ -418,6 +459,7 @@ const addSkillsTool: AgentTool = {
       const responseData: Record<string, unknown> = {
         added: [...addedSlugs, ...externalAdded],
         ...(autoResolved.length > 0 ? { autoResolved } : {}),
+        ...(missingDependencies.length > 0 ? { missingDependencies } : {}),
         ...(activeSkills ? { activeSkills } : {}),
         ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
         ...(!activeSkills && platformResult && platformResult.added.length > 0 ? { note: 'Skill change saved. Hot-reload failed — changes take effect next tick.' } : {}),
@@ -503,40 +545,59 @@ const removeSkillsTool: AgentTool = {
       // Build slug lookup for response formatting
       const idToSlug = await buildIdToSlugMap(ctx);
 
-      // Platform remove via broker
+      // Platform remove + external removes in parallel
+      const brokerPromise = platformIds.length > 0
+        ? sendBrokerSkillMutation('remove', platformIds, ctx)
+        : Promise.resolve(undefined);
+
+      const externalPromise = (async (): Promise<Array<{ ref: string; ok: boolean; output?: string; error?: string }>> => {
+        if (externalRefs.length === 0) return [];
+        try {
+          const { getWorkspacePaths } = await import('./workspace.js');
+          const cwd = getWorkspacePaths(ctx.agentId).root;
+          const results = await Promise.all(
+            externalRefs.map(async (ref) => {
+              const name = ref.split('/').pop()!;
+              const result = await runExternalSkillRemove(name, cwd);
+              if (result.ok) {
+                return { ref, ok: true as const, output: result.output };
+              }
+              return { ref, ok: false as const, error: result.error };
+            }),
+          );
+          return results;
+        } catch (err) {
+          return externalRefs.map(ref => ({
+            ref,
+            ok: false as const,
+            error: `External remove unavailable: ${err instanceof Error ? err.message : 'unknown error'}`,
+          }));
+        }
+      })();
+
+      const [brokerSettled, externalSettled] = await Promise.allSettled([brokerPromise, externalPromise]);
+
       let platformResult: { removed: string[]; warnings: string[] } | undefined;
-      if (platformIds.length > 0) {
-        const brokerResult = await sendBrokerSkillMutation('remove', platformIds, ctx);
+      if (brokerSettled.status === 'fulfilled' && brokerSettled.value !== undefined) {
+        const brokerResult = brokerSettled.value;
         if (!brokerResult.success) {
           if (externalRefs.length === 0) return brokerResult;
           platformResult = { removed: [], warnings: [`Platform skill remove failed: ${brokerResult.error}`] };
         } else if (brokerResult._brokerResult) {
           platformResult = { removed: brokerResult._brokerResult.skillIds, warnings: brokerResult._brokerResult.warnings };
         }
+      } else if (brokerSettled.status === 'rejected') {
+        const errMsg = brokerSettled.reason instanceof Error ? brokerSettled.reason.message : 'unknown error';
+        if (externalRefs.length === 0) {
+          return { success: false, error: `Broker communication failed: ${errMsg}`, errorCode: 'broker.communication_error' };
+        }
+        platformResult = { removed: [], warnings: [`Platform skill remove failed: ${errMsg}`] };
       }
 
-      // External remove via subprocess
-      const externalResults: Array<{ ref: string; ok: boolean; output?: string; error?: string }> = [];
-      if (externalRefs.length > 0) {
-        try {
-          const { getWorkspacePaths } = await import('./workspace.js');
-          const cwd = getWorkspacePaths(ctx.agentId).root;
-          for (const ref of externalRefs) {
-            // Extract skill name from slug (portion after /)
-            const name = ref.split('/').pop()!;
-            const result = await runExternalSkillRemove(name, cwd);
-            if (result.ok) {
-              externalResults.push({ ref, ok: true, output: result.output });
-            } else {
-              externalResults.push({ ref, ok: false, error: result.error });
-            }
-          }
-        } catch (err) {
-          for (const ref of externalRefs) {
-            externalResults.push({ ref, ok: false, error: `External remove unavailable: ${err instanceof Error ? err.message : 'unknown error'}` });
-          }
-        }
-      }
+      const externalResults: Array<{ ref: string; ok: boolean; output?: string; error?: string }> =
+        externalSettled.status === 'fulfilled' ? externalSettled.value : externalRefs.map(ref => ({
+          ref, ok: false, error: `External remove failed: ${externalSettled.reason instanceof Error ? externalSettled.reason.message : 'unknown error'}`,
+        }));
 
       // Hot-reload after platform changes
       let activeSkills: string[] | undefined;

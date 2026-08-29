@@ -13,7 +13,7 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal, LlmArtifactRepository, skills, skillRevisions, agentSkills } from '@herobids/db';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
@@ -1787,12 +1787,19 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
         .innerJoin(skills, eq(agentSkills.skillId, skills.id))
         .innerJoin(skillRevisions, eq(agentSkills.skillRevisionId, skillRevisions.id))
         .where(and(eq(agentSkills.agentId, AGENT_ID!), ne(skills.id, 'base')));
+
+        // Build id→slug map so dependsOn returns slugs, not raw IDs
+        const idToSlug = new Map(rows.map(r => [r.id, r.slug]));
+        for (const [slug, id] of SYSTEM_SKILL_SLUGS) {
+          idToSlug.set(id, slug);
+        }
+
         return rows.map(r => ({
           id: r.id,
           slug: r.slug,
           name: r.name ?? r.id,
           description: r.description ?? '',
-          dependsOn: inferDependsOn(r.requiredTools ?? [], r.id),
+          dependsOn: inferDependsOn(r.requiredTools ?? [], r.id).map(id => idToSlug.get(id) ?? id),
         }));
       },
       async listAvailable() {
@@ -1814,6 +1821,12 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
           eq(skills.priceCents, 0),
         ));
 
+        // Build id→slug map so dependsOn returns slugs, not raw IDs
+        const idToSlug = new Map(allSkills.map(r => [r.id, r.slug]));
+        for (const [slug, id] of SYSTEM_SKILL_SLUGS) {
+          idToSlug.set(id, slug);
+        }
+
         return allSkills
           .filter(s => s.id !== 'base' && !assignedSet.has(s.id))
           .map(s => ({
@@ -1821,7 +1834,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
             slug: s.slug,
             name: s.name ?? s.id,
             description: s.description ?? '',
-            dependsOn: inferDependsOn(s.requiredTools ?? [], s.id),
+            dependsOn: inferDependsOn(s.requiredTools ?? [], s.id).map(id => idToSlug.get(id) ?? id),
           }));
       },
       async search(query: string, limit?: number) {
@@ -1861,13 +1874,19 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
         ))
         .limit(effectiveLimit);
 
+        // Build id→slug map so dependsOn returns slugs, not raw IDs
+        const idToSlug = new Map(rows.map(r => [r.id, r.slug]));
+        for (const [slug, id] of SYSTEM_SKILL_SLUGS) {
+          idToSlug.set(id, slug);
+        }
+
         return rows.map(r => ({
           id: r.id,
           slug: r.slug,
           name: r.name ?? r.id,
           description: r.description ?? '',
           isAssigned: assignedSet.has(r.id),
-          dependsOn: inferDependsOn(r.requiredTools ?? [], r.id),
+          dependsOn: inferDependsOn(r.requiredTools ?? [], r.id).map(id => idToSlug.get(id) ?? id),
         }));
       },
     } : undefined,
