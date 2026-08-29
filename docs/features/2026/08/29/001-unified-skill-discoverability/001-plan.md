@@ -147,7 +147,7 @@ The system should report missing dependencies, not silently add them.
 
 ---
 
-## Step 1 — Domain: add `search_skills` to `KNOWN_AGENT_TOOL_NAMES` and `TOOL_CATALOG` [PENDING]
+## Step 1 — Domain: add `search_skills` to `KNOWN_AGENT_TOOL_NAMES` and `TOOL_CATALOG` [DONE]
 
 **File:** `packages/domain/src/tools.ts`
 
@@ -160,7 +160,7 @@ The system should report missing dependencies, not silently add them.
 
 ---
 
-## Step 2 — Domain: add `search_skills` to `BASE_SKILL` and update instructions [PENDING]
+## Step 2 — Domain: add `search_skills` to `BASE_SKILL` and update instructions [DONE]
 
 **File:** `packages/domain/src/skills.ts`
 

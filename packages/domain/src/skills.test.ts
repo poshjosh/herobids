@@ -8,7 +8,7 @@ describe('BASE_SKILL', () => {
     expect(BASE_SKILL.id).toBe('base');
   });
 
-  it.each(['list_skills', 'add_skills', 'remove_skills'])(
+  it.each(['list_skills', 'add_skills', 'remove_skills', 'search_skills'])(
     'requiredTools includes %s',
     (toolName) => {
       expect(BASE_SKILL.requiredTools).toContain(toolName);
@@ -29,9 +29,11 @@ describe('BASE_SKILL', () => {
 
   it('instructions contain skill management guidance text', () => {
     // Verify the instructions provide meaningful guidance about skill operations
-    expect(BASE_SKILL.instructions).toContain('discover what skills you have');
-    expect(BASE_SKILL.instructions).toContain('adopt new skills');
+    expect(BASE_SKILL.instructions).toContain('what skills you have');
+    expect(BASE_SKILL.instructions).toContain('adopt platform skills');
     expect(BASE_SKILL.instructions).toContain('drop skills you no longer need');
+    expect(BASE_SKILL.instructions).toContain('search_skills');
+    expect(BASE_SKILL.instructions).toContain('skills.sh');
   });
 
   it('retains existing core tools alongside skill tools', () => {
