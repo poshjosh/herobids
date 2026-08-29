@@ -300,7 +300,7 @@ for (( i=1; i<=AGENTS_NEEDED; i++ )); do
   log "Creating ${AGENT_NAME}..."
 
   CREATE_RESP=$(api POST /agents "$(jq -n --arg name "$AGENT_NAME" \
-    '{name: $name, style: "careful", prompt: "You are a capacity test agent. Stay idle."}')")
+    '{name: $name, style: "careful", prompt: "You are a capacity test agent. Do only one thing - respond with OK", tickIntervalMs: 43200000}')")
   AGENT_ID=$(echo "$CREATE_RESP" | jq -r '.id // empty')
 
   if [[ -n "$AGENT_ID" ]]; then
