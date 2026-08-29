@@ -356,7 +356,7 @@ Unless a second caller emerges, this helper should live alongside the worker ski
 
 ---
 
-## Step 9 — Worker: add discovery hint to `list_skills` [PENDING]
+## Step 9 — Worker: add discovery hint to `list_skills` [DONE]
 
 **File:** `apps/worker/src/tools/skills.ts`
 
@@ -372,7 +372,7 @@ For capabilities not listed here, use search_skills to search both platform skil
 
 ---
 
-## Step 10 — Worker: enrich `add_skills` response with unmet dependencies [PENDING]
+## Step 10 — Worker: enrich `add_skills` response with unmet dependencies [DONE]
 
 **File:** `apps/worker/src/tools/skills.ts`
 
@@ -398,7 +398,7 @@ The tool should report this data, not auto-add the dependency.
 
 ---
 
-## Step 11 — Worker: capability policy and runtime degradation wiring [PENDING]
+## Step 11 — Worker: capability policy and runtime degradation wiring [DONE]
 
 **Files:**
 - `apps/worker/src/agents/capability-policy.ts`
@@ -415,7 +415,7 @@ Even though the external arm is best-effort, the tool should disappear when DB-b
 
 ---
 
-## Step 12 — Tests [PENDING]
+## Step 12 — Tests [DONE]
 
 ### Domain
 
