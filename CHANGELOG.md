@@ -28,6 +28,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Moved the Capability Foundations-local program docs under `docs/features/pending/000-capability-foundations/program/`, aligned the handoff/control references, and removed whole-tree implications from the Capability Foundations author checklist
 - Moved `docs/skills/` to `docs/agents/skills/` and `security-audit-prompt.md` to `docs/agents/prompts/` for clearer separation of skills vs agent prompts.
 - Setup scripts (`quick-setup.sh`, `quick-setup-remote.sh`) now use a generic loop over `docs/agents/skills/*.md` instead of hardcoded per-skill functions. Adding a new skill only requires dropping a frontmatter-annotated markdown file.
 
