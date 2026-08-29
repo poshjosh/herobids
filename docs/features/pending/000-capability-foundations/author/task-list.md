@@ -51,7 +51,7 @@ Definition of success:
 	- defines the standard structure every feature doc must use;
 	- requires purpose, scope, non-goals, dependencies, fixed decisions, open latitude, acceptance criteria, and validation.
 
-### C04. [PENDING] Create the implementation playbook for spec-based agents
+### C04. [DONE] Create the implementation playbook for spec-based agents
 
 - Expected output file: `docs/features/pending/000-program/003-spec-agent-playbook.md`
 - Completion criteria:
@@ -144,5 +144,4 @@ Definition of success:
 
 ### C01. Create the documentation tree
 
-- low: split or rename the `Child Plans` section in `000-capability-foundations/001-roadmap.md` so active executable phases are distinct from supporting design inputs.
 - low: clarify whether `diagrams/current-architecture.md` is the canonical diagram entrypoint or whether the folder guide should describe the full diagram set more explicitly.

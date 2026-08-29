@@ -18,7 +18,7 @@ The roadmap implements the ADR set established in:
 
 The guiding rule is: do not combine service extraction with naming cleanup.
 
-## Child Plans
+## Executable Phases
 
 1. [Capability Foundations](./002-capability-foundations.md)
 2. [Capability Resolution And Route Migration](./003-capability-resolution-and-route-migration.md)
@@ -26,6 +26,9 @@ The guiding rule is: do not combine service extraction with naming cleanup.
 4. [Trading Capability Extraction](./005-trading-capability-extraction.md)
 5. [Messaging Capability Extraction](./006-messaging-capability-extraction.md)
 6. [Capability Naming Cleanup](./007-capability-naming-cleanup.md)
+
+## Supporting Normative Inputs
+
 7. [Cross-Service Capability Execution Design](./008-cross-service-capability-execution-design.md)
 8. [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md)
 9. [Capability Activation Model](./010-capability-activation-model.md)

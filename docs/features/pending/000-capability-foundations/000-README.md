@@ -6,13 +6,14 @@ activation, tool ownership, route alignment, and capability-service extraction.
 ## Reading Order
 
 1. [Capability Implementation Roadmap](./001-roadmap.md)
-2. phase documents: [002](./002-capability-foundations.md) through
-   [007](./007-capability-naming-cleanup.md)
-3. normative design inputs: [008](./008-cross-service-capability-execution-design.md)
-   through [011](./011-capability-route-and-response-migration-manifest.md)
-4. active taxonomy revision draft: [012](./012-shared-capability-taxonomy-revision.md)
-5. implementation task list: [tasks/001](./tasks/001-shared-trading-taxonomy-implementation-tasks.md)
-6. supporting diagrams under [diagrams](./diagrams/current-architecture.md)
+2. first executable slice for current implementation handoff:
+   [012](./012-shared-capability-taxonomy-revision.md), then the supporting
+   normative inputs [008](./008-cross-service-capability-execution-design.md)
+   through [011](./011-capability-route-and-response-migration-manifest.md),
+   then [tasks/001](./tasks/001-shared-trading-taxonomy-implementation-tasks.md)
+3. broader feature-phase context when needed: [002](./002-capability-foundations.md)
+   through [007](./007-capability-naming-cleanup.md)
+4. supporting diagrams under [diagrams](./diagrams/current-architecture.md)
 
 ## Historical Context
 
@@ -43,6 +44,8 @@ platform domain language by default.
 - [archive/000-q-and-a.md](./archive/000-q-and-a.md): historical,
   non-authoritative context
 - [001-roadmap.md](./001-roadmap.md): phase ordering and gates
+- [002](./002-capability-foundations.md) through [007](./007-capability-naming-cleanup.md):
+  broader phase-by-phase rollout context
 - [008](./008-cross-service-capability-execution-design.md) through
   [011](./011-capability-route-and-response-migration-manifest.md): normative
   design inputs for implementation
@@ -50,7 +53,9 @@ platform domain language by default.
    revision draft
 - [tasks/001](./tasks/001-shared-trading-taxonomy-implementation-tasks.md):
    concrete code-change tasks for routes, activation rows, ownership manifests,
-   and contract naming
+   and contract naming; first executable low-level slice controlled by
+   [001-roadmap.md](./001-roadmap.md), [012](./012-shared-capability-taxonomy-revision.md),
+   and the relevant 008 through 011 normative inputs
 - [archive/002-shared-trading-taxonomy-delta.md](./archive/002-shared-trading-taxonomy-delta.md):
    historical transition rationale retained for history
 - [archive/003-taxonomy-impact-map.md](./archive/003-taxonomy-impact-map.md):
