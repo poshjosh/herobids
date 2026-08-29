@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '@herobids/db/schema';
 import { convertZodToJsonSchema } from './registry.js';
+import { parseBrokerDenialReply } from './tool-errors.js';
 import { createLogger } from '../logger.js';
 import { randomUUID } from 'node:crypto';
 
@@ -90,8 +91,11 @@ async function executeApplyPresetTransition(
         };
       }
 
-      const parsed = JSON.parse(reply[1]) as { result: ToolResult };
-      return parsed.result;
+      const raw = JSON.parse(reply[1]) as Record<string, unknown>;
+      const denialResult = parseBrokerDenialReply(raw);
+      if (denialResult) return denialResult;
+      // Normal handler reply — wrapped in { result: ToolResult }
+      return (raw as { result: ToolResult }).result;
     } catch (err) {
       logger.error({ err, agentId: ctx.agentId }, 'Broker-mediated change_strategy_preset failed');
       return {

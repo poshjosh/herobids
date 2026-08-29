@@ -223,6 +223,22 @@ export class AgentMessageBroker {
       const denied = engine.checkAccess(capabilityName, effectiveAgentId, sessionId);
       if (denied) {
         logger.warn({ agentId: effectiveAgentId, capability: capabilityName, reason: denied.reason }, 'Capability policy denied');
+
+        // Push a denial reply to the Redis reply key so the tool's blpop doesn't time out.
+        const replyKey = this.extractDenialReplyKey(envelope);
+        if (replyKey) {
+          const replyPayload = JSON.stringify({
+            status: 'rejected',
+            code: `capability_denied:${denied.reason}`,
+            message: denied.message,
+            retryAfterMs: denied.retryAfterMs,
+            limit: denied.limit,
+            used: denied.used,
+          });
+          await this.redis.lpush(replyKey, replyPayload);
+          await this.redis.expire(replyKey, 60);
+        }
+
         return { accepted: false, error: `capability_denied:${denied.reason}` };
       }
       engine.recordStart(capabilityName, sessionId);
@@ -1600,6 +1616,35 @@ export class AgentMessageBroker {
       await this.redis.set(dedupKey, dedupStatus, 'EX', 86400); // 24h TTL
     } catch (err) {
       logger.warn({ agentId, dedupKey, err }, 'Failed to write billing dedup cache — duplicate notification possible on next tick');
+    }
+  }
+
+  /**
+   * Extract the Redis reply key from an envelope, if the message type supports
+   * synchronous replies. Returns undefined for fire-and-forget messages.
+   */
+  private extractDenialReplyKey(envelope: MessageEnvelope): string | undefined {
+    const payload = envelope.payload as Record<string, unknown>;
+
+    switch (envelope.type) {
+      case AGENT_MESSAGE_TYPES.DECISION_SUBMIT: {
+        const decisionId = payload.decisionId as string | undefined;
+        return decisionId ? `agent:decision:reply:${decisionId}` : undefined;
+      }
+      case AGENT_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET:
+      case AGENT_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET: {
+        const requestMessageId = payload.requestMessageId as string | undefined;
+        return requestMessageId ? `agent:preset:reply:${requestMessageId}` : undefined;
+      }
+      case AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS: {
+        const requestMessageId = payload.requestMessageId as string | undefined;
+        return requestMessageId ? `agent:skills:reply:${requestMessageId}` : undefined;
+      }
+      // Fire-and-forget: no reply channel
+      case AGENT_MESSAGE_TYPES.SEND_MESSAGE:
+      case AGENT_MESSAGE_TYPES.PUBLISH_ARTIFACT:
+      default:
+        return undefined;
     }
   }
 

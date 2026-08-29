@@ -1316,3 +1316,151 @@ describe('DATABASE_DEPENDENT_TOOLS includes skill tools', () => {
     },
   );
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 3: Broker denial reply handling (add_skills & remove_skills)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('skill mutation — broker capability denial', () => {
+  it.each([
+    ['add_skills', addSkills],
+    ['remove_skills', removeSkills],
+  ] as const)('%s returns capability denial when broker reply has status: rejected with rate_limit', async (_name, tool) => {
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:rate_limit_exceeded',
+      message: 'Rate limit exceeded for manage_agent_skills',
+      retryAfterMs: 5000,
+      limit: 10,
+      used: 10,
+    };
+    const ctx = makeCtx({ redis: makeRedisWithReply(denialReply) });
+
+    const result = await tool.execute({ skillIds: ['skill-1'] }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('capability_denied:rate_limit_exceeded');
+    expect(result.error).toBe('Rate limit exceeded for manage_agent_skills');
+    expect(result.retryable).toBe(true);
+    expect(result.fault).toBe(false);
+    expect(result.data).toMatchObject({
+      retryAfterMs: 5000,
+      limit: 10,
+      used: 10,
+    });
+  });
+
+  it.each([
+    ['add_skills', addSkills],
+    ['remove_skills', removeSkills],
+  ] as const)('%s returns capability denial with retryable: true for max_concurrent', async (_name, tool) => {
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:max_concurrent_exceeded',
+      message: 'Too many concurrent manage_agent_skills calls',
+      limit: 2,
+      used: 2,
+    };
+    const ctx = makeCtx({ redis: makeRedisWithReply(denialReply) });
+
+    const result = await tool.execute({ skillIds: ['skill-1'] }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.retryable).toBe(true);
+    expect(result.data).toMatchObject({ limit: 2, used: 2 });
+  });
+
+  it.each([
+    ['add_skills', addSkills],
+    ['remove_skills', removeSkills],
+  ] as const)('%s returns capability denial with retryable: false for non-transient denial', async (_name, tool) => {
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:capability_disabled',
+      message: 'manage_agent_skills is disabled',
+    };
+    const ctx = makeCtx({ redis: makeRedisWithReply(denialReply) });
+
+    const result = await tool.execute({ skillIds: ['skill-1'] }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('capability_denied:capability_disabled');
+    expect(result.retryable).toBe(false);
+  });
+
+  it.each([
+    ['add_skills', addSkills],
+    ['remove_skills', removeSkills],
+  ] as const)('%s uses fallback message when denial has no message field', async (_name, tool) => {
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:some_reason',
+    };
+    const ctx = makeCtx({ redis: makeRedisWithReply(denialReply) });
+
+    const result = await tool.execute({ skillIds: ['skill-1'] }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Capability denied');
+    expect(result.error).toContain('some_reason');
+  });
+
+  it.each([
+    ['add_skills', addSkills],
+    ['remove_skills', removeSkills],
+  ] as const)('%s falls through to ManageAgentSkillsResultSchema for normal replies', async (_name, tool) => {
+    const normalReply = makeBrokerReply({
+      action: tool === addSkills ? 'add' : 'remove',
+      skillIds: ['skill-1'],
+    });
+    const ctx = makeCtx({
+      redis: makeRedisWithReply(normalReply),
+      onSkillsChanged: vi.fn(async () => ['skill-1']),
+    });
+
+    const result = await tool.execute({ skillIds: ['skill-1'] }, ctx);
+
+    expect(result.success).toBe(true);
+  });
+
+  it.each([
+    ['add_skills', addSkills],
+    ['remove_skills', removeSkills],
+  ] as const)('%s does not call onSkillsChanged when denial reply received', async (_name, tool) => {
+    const onSkillsChanged = vi.fn(async () => []);
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:rate_limit_exceeded',
+      message: 'Rate limited',
+    };
+    const ctx = makeCtx({
+      redis: makeRedisWithReply(denialReply),
+      onSkillsChanged,
+    });
+
+    await tool.execute({ skillIds: ['skill-1'] }, ctx);
+
+    expect(onSkillsChanged).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['add_skills', addSkills],
+    ['remove_skills', removeSkills],
+  ] as const)('%s includes optional retryAfterMs/limit/used fields (undefined when absent)', async (_name, tool) => {
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:rate_limit_exceeded',
+      message: 'Rate limited',
+      retryAfterMs: 3000,
+      // limit and used not provided
+    };
+    const ctx = makeCtx({ redis: makeRedisWithReply(denialReply) });
+
+    const result = await tool.execute({ skillIds: ['skill-1'] }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.data).toMatchObject({ retryAfterMs: 3000 });
+    expect(result.data.limit).toBeUndefined();
+    expect(result.data.used).toBeUndefined();
+  });
+});

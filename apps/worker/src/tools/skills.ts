@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { AGENT_MESSAGE_TYPES, ManageAgentSkillsResultSchema } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
+import { parseBrokerDenialReply } from './tool-errors.js';
 import { createLogger } from '../logger.js';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -107,7 +108,11 @@ async function executeSkillMutation(
       };
     }
 
-    const parsed = ManageAgentSkillsResultSchema.safeParse(JSON.parse(reply[1]));
+    const replyData = JSON.parse(reply[1]) as Record<string, unknown>;
+    const denialResult = parseBrokerDenialReply(replyData);
+    if (denialResult) return denialResult;
+
+    const parsed = ManageAgentSkillsResultSchema.safeParse(replyData);
     if (!parsed.success) {
       logger.error({ agentId: ctx.agentId, action, parseErrors: parsed.error.issues }, 'Malformed broker reply for skill mutation');
       return {

@@ -90,7 +90,7 @@ const submitDecisionTool: AgentTool = {
     }
 
     const [, raw] = reply;
-    let parsed: { status: string; code?: string; message?: string; planId?: string; approvalId?: string; shortCode?: string; expiresAt?: string };
+    let parsed: { status: string; code?: string; message?: string; planId?: string; approvalId?: string; shortCode?: string; expiresAt?: string; retryAfterMs?: number; limit?: number; used?: number };
     try {
       parsed = JSON.parse(raw);
     } catch {
@@ -129,12 +129,19 @@ const submitDecisionTool: AgentTool = {
     }
 
     if (parsed.status === 'rejected') {
+      const isCapabilityDenial = parsed.code?.startsWith('capability_denied:') ?? false;
       return {
         success: false,
         fault: false,
         error: parsed.message ?? 'Decision rejected by risk gate.',
         errorCode: parsed.code ?? 'risk.rejected',
-        data: { decisionId },
+        retryable: isCapabilityDenial ? (parsed.code?.includes('rate_limit') || parsed.code?.includes('max_concurrent')) ?? false : false,
+        data: {
+          decisionId,
+          ...(parsed.retryAfterMs !== undefined ? { retryAfterMs: parsed.retryAfterMs } : {}),
+          ...(parsed.limit !== undefined ? { limit: parsed.limit } : {}),
+          ...(parsed.used !== undefined ? { used: parsed.used } : {}),
+        },
       };
     }
 

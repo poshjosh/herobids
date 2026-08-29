@@ -455,3 +455,138 @@ describe('change_strategy_preset', () => {
 
 
 });
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 3: Broker denial reply handling (broker-mediated path)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('change_strategy_preset — broker denial reply', () => {
+  beforeEach(() => {
+    // Ensure port is cleared so the broker-mediated path is taken
+    clearPresetTransitionPort();
+  });
+
+  function makeBrokerCtx(blpopReply: unknown): ToolContext {
+    return makeCtx({
+      redis: {
+        hset: vi.fn(async () => 1),
+        hget: vi.fn(async () => null),
+        hgetall: vi.fn(async () => null),
+        hdel: vi.fn(async () => 0),
+        publish: vi.fn(async () => 0),
+        blpop: vi.fn(async () => blpopReply),
+      },
+      publishToInbound: vi.fn(async () => undefined),
+    });
+  }
+
+  it('returns capability denial ToolResult when broker reply has status: rejected', async () => {
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:rate_limit_exceeded',
+      message: 'Rate limit exceeded for change_strategy_preset',
+      retryAfterMs: 8000,
+      limit: 3,
+      used: 3,
+    };
+    const ctx = makeBrokerCtx(['key', JSON.stringify(denialReply)]);
+
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'art-1', targetPreset: 'momentum', mode: 'entries_only' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('capability_denied:rate_limit_exceeded');
+    expect(result.error).toBe('Rate limit exceeded for change_strategy_preset');
+    expect(result.retryable).toBe(true);
+    expect(result.fault).toBe(false);
+    expect(result.data).toMatchObject({
+      retryAfterMs: 8000,
+      limit: 3,
+      used: 3,
+    });
+  });
+
+  it('returns capability denial with retryable: false for non-transient denial', async () => {
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:capability_disabled',
+      message: 'change_strategy_preset is disabled',
+    };
+    const ctx = makeBrokerCtx(['key', JSON.stringify(denialReply)]);
+
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'art-1', targetPreset: 'momentum', mode: 'entries_only' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('capability_denied:capability_disabled');
+    expect(result.retryable).toBe(false);
+  });
+
+  it('falls through to normal handler reply when status is not rejected', async () => {
+    const normalReply = {
+      result: {
+        success: true,
+        data: {
+          applied: true,
+          targetPreset: 'momentum',
+          mode: 'entries_only',
+          transitionId: 'tr-1',
+          state: 'applied',
+        },
+      },
+    };
+    const ctx = makeBrokerCtx(['key', JSON.stringify(normalReply)]);
+
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'art-1', targetPreset: 'momentum', mode: 'entries_only' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      applied: true,
+      targetPreset: 'momentum',
+    });
+  });
+
+  it('returns capability denial with max_concurrent retryable', async () => {
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:max_concurrent_exceeded',
+      message: 'Too many concurrent change requests',
+      limit: 1,
+      used: 1,
+    };
+    const ctx = makeBrokerCtx(['key', JSON.stringify(denialReply)]);
+
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'art-1', targetPreset: 'breakout', mode: 'entries_only' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.retryable).toBe(true);
+    expect(result.data).toMatchObject({ limit: 1, used: 1 });
+  });
+
+  it('uses fallback message when denial reply has no message field', async () => {
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:some_reason',
+    };
+    const ctx = makeBrokerCtx(['key', JSON.stringify(denialReply)]);
+
+    const result = await changeStrategyPresetTool.execute(
+      { assessmentArtifactId: 'art-1', targetPreset: 'momentum', mode: 'entries_only' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Capability denied');
+  });
+});

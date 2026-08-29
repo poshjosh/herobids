@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CapabilityDenial } from '../agents/capability-policy.js';
-import { capabilityDeniedResult } from './tool-errors.js';
+import { capabilityDeniedResult, parseBrokerDenialReply } from './tool-errors.js';
 
 describe('capabilityDeniedResult', () => {
   // ── Structural invariants ────────────────────────────────
@@ -312,5 +312,109 @@ describe('capabilityDeniedResult', () => {
         used: 1,
       },
     });
+  });
+});
+
+
+describe('parseBrokerDenialReply', () => {
+  it('returns undefined for a non-rejected reply', () => {
+    const raw = { result: { success: true } };
+    expect(parseBrokerDenialReply(raw)).toBeUndefined();
+  });
+
+  it('returns undefined when status is an unrelated value', () => {
+    const raw = { status: 'ok', data: 'something' };
+    expect(parseBrokerDenialReply(raw)).toBeUndefined();
+  });
+
+  it('returns a ToolResult for a rejected reply with rate_limit code', () => {
+    const raw = {
+      status: 'rejected',
+      code: 'capability_denied:rate_limit_exceeded',
+      message: 'Rate limit exceeded',
+      retryAfterMs: 30_000,
+      limit: 5,
+      used: 5,
+    };
+    const result = parseBrokerDenialReply(raw);
+    expect(result).toEqual({
+      success: false,
+      error: 'Rate limit exceeded',
+      errorCode: 'capability_denied:rate_limit_exceeded',
+      retryable: true,
+      fault: false,
+      data: {
+        retryAfterMs: 30_000,
+        limit: 5,
+        used: 5,
+      },
+    });
+  });
+
+  it('returns retryable: true for max_concurrent code', () => {
+    const raw = {
+      status: 'rejected',
+      code: 'capability_denied:max_concurrent_exceeded',
+      message: 'Too many concurrent calls',
+      limit: 3,
+      used: 3,
+    };
+    const result = parseBrokerDenialReply(raw);
+    expect(result).toBeDefined();
+    expect(result!.retryable).toBe(true);
+  });
+
+  it('returns retryable: false for a non-transient code', () => {
+    const raw = {
+      status: 'rejected',
+      code: 'capability_denied:capability_disabled',
+      message: 'Disabled',
+    };
+    const result = parseBrokerDenialReply(raw);
+    expect(result).toBeDefined();
+    expect(result!.retryable).toBe(false);
+  });
+
+  it('uses fallback message when message field is absent', () => {
+    const raw = {
+      status: 'rejected',
+      code: 'capability_denied:some_reason',
+    };
+    const result = parseBrokerDenialReply(raw);
+    expect(result).toBeDefined();
+    expect(result!.error).toBe('Capability denied: capability_denied:some_reason');
+  });
+
+  it('uses fallback error and errorCode when code is absent', () => {
+    const raw = {
+      status: 'rejected',
+    };
+    const result = parseBrokerDenialReply(raw);
+    expect(result).toBeDefined();
+    expect(result!.error).toBe('Capability denied: unknown');
+    expect(result!.errorCode).toBe('capability.policy_denied');
+    expect(result!.retryable).toBe(false);
+  });
+
+  it('leaves retryAfterMs/limit/used undefined when not in raw reply', () => {
+    const raw = {
+      status: 'rejected',
+      code: 'capability_denied:capability_disabled',
+      message: 'Disabled',
+    };
+    const result = parseBrokerDenialReply(raw);
+    const data = result!.data as Record<string, unknown>;
+    expect(data.retryAfterMs).toBeUndefined();
+    expect(data.limit).toBeUndefined();
+    expect(data.used).toBeUndefined();
+  });
+
+  it('always sets fault to false', () => {
+    const raw = {
+      status: 'rejected',
+      code: 'capability_denied:rate_limit_exceeded',
+      message: 'Rate limited',
+    };
+    expect(parseBrokerDenialReply(raw)!.fault).toBe(false);
   });
 });

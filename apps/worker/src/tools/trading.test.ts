@@ -318,3 +318,143 @@ describe('submit_decision — synchronous reply', () => {
     expect(result.data.preview.takeProfit).toBe('not set');
   });
 });
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 3: Capability denial rejected handler
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('submit_decision — capability denial rejection', () => {
+  let ctx: ToolContext;
+
+  beforeEach(() => {
+    ctx = makeCtx();
+  });
+
+  it('sets retryable: true when code contains rate_limit', async () => {
+    (ctx.redis.blpop as ReturnType<typeof vi.fn>).mockResolvedValue([
+      'replyKey',
+      JSON.stringify({
+        status: 'rejected',
+        code: 'capability_denied:rate_limit_exceeded',
+        message: 'Rate limit exceeded for submit_decision',
+        retryAfterMs: 5000,
+        limit: 10,
+        used: 10,
+      }),
+    ]);
+
+    const result = await submitDecision.execute(validParams, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.retryable).toBe(true);
+    expect(result.errorCode).toBe('capability_denied:rate_limit_exceeded');
+    expect(result.error).toBe('Rate limit exceeded for submit_decision');
+    expect(result.data).toMatchObject({
+      retryAfterMs: 5000,
+      limit: 10,
+      used: 10,
+    });
+  });
+
+  it('sets retryable: true when code contains max_concurrent', async () => {
+    (ctx.redis.blpop as ReturnType<typeof vi.fn>).mockResolvedValue([
+      'replyKey',
+      JSON.stringify({
+        status: 'rejected',
+        code: 'capability_denied:max_concurrent_exceeded',
+        message: 'Too many concurrent submit_decision calls',
+        limit: 3,
+        used: 3,
+      }),
+    ]);
+
+    const result = await submitDecision.execute(validParams, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.retryable).toBe(true);
+    expect(result.errorCode).toBe('capability_denied:max_concurrent_exceeded');
+    expect(result.data).toMatchObject({
+      limit: 3,
+      used: 3,
+    });
+    // retryAfterMs not provided — should be absent from data
+    expect(result.data.retryAfterMs).toBeUndefined();
+  });
+
+  it('sets retryable: false for non-transient capability denial (capability_disabled)', async () => {
+    (ctx.redis.blpop as ReturnType<typeof vi.fn>).mockResolvedValue([
+      'replyKey',
+      JSON.stringify({
+        status: 'rejected',
+        code: 'capability_denied:capability_disabled',
+        message: 'submit_decision is disabled for this agent',
+      }),
+    ]);
+
+    const result = await submitDecision.execute(validParams, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.retryable).toBe(false);
+    expect(result.errorCode).toBe('capability_denied:capability_disabled');
+    // No rate-limit-specific fields in data
+    expect(result.data.retryAfterMs).toBeUndefined();
+    expect(result.data.limit).toBeUndefined();
+    expect(result.data.used).toBeUndefined();
+  });
+
+  it('sets retryable: false for regular (non-capability) rejection', async () => {
+    (ctx.redis.blpop as ReturnType<typeof vi.fn>).mockResolvedValue([
+      'replyKey',
+      JSON.stringify({
+        status: 'rejected',
+        code: 'risk.exceeded',
+        message: 'Daily loss limit reached',
+      }),
+    ]);
+
+    const result = await submitDecision.execute(validParams, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.retryable).toBe(false);
+    expect(result.errorCode).toBe('risk.exceeded');
+    expect(result.error).toBe('Daily loss limit reached');
+  });
+
+  it('includes retryAfterMs, limit, used only when present in reply', async () => {
+    (ctx.redis.blpop as ReturnType<typeof vi.fn>).mockResolvedValue([
+      'replyKey',
+      JSON.stringify({
+        status: 'rejected',
+        code: 'capability_denied:rate_limit_exceeded',
+        message: 'Rate limited',
+        retryAfterMs: 3000,
+        // limit and used not provided
+      }),
+    ]);
+
+    const result = await submitDecision.execute(validParams, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.retryable).toBe(true);
+    expect(result.data.retryAfterMs).toBe(3000);
+    expect(result.data.limit).toBeUndefined();
+    expect(result.data.used).toBeUndefined();
+  });
+
+  it('always includes decisionId in data for rejected replies', async () => {
+    (ctx.redis.blpop as ReturnType<typeof vi.fn>).mockResolvedValue([
+      'replyKey',
+      JSON.stringify({
+        status: 'rejected',
+        code: 'capability_denied:rate_limit_exceeded',
+        message: 'Rate limited',
+      }),
+    ]);
+
+    const result = await submitDecision.execute(validParams, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.data.decisionId).toEqual(expect.any(String));
+  });
+});

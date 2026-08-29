@@ -12,6 +12,7 @@ import type {
   AssessmentRequestPortOutcome,
 } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
+import { parseBrokerDenialReply } from './tool-errors.js';
 import { createLogger } from '../logger.js';
 import { randomUUID } from 'node:crypto';
 
@@ -287,8 +288,11 @@ async function executeAssessStrategyPreset(
         };
       }
 
-      const parsed = JSON.parse(reply[1]) as { result: ToolResult };
-      return parsed.result;
+      const raw = JSON.parse(reply[1]) as Record<string, unknown>;
+      const denialResult = parseBrokerDenialReply(raw);
+      if (denialResult) return denialResult;
+      // Normal handler reply — wrapped in { result: ToolResult }
+      return (raw as { result: ToolResult }).result;
     } catch (err) {
       logger.error({ err, agentId: ctx.agentId }, 'Broker-mediated assess_strategy_preset failed');
       return {

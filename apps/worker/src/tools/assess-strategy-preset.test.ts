@@ -381,3 +381,131 @@ describe('mapOutcomeToResultEntry', () => {
     expect(result.errorCode).toBe('assessment.provider_failed');
   });
 });
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 3: Broker denial reply handling (broker-mediated path)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('assess_strategy_preset — broker denial reply', () => {
+  function makeBrokerCtx(blpopReply: unknown): ToolContext {
+    return makeCtx({
+      redis: {
+        hset: vi.fn(async () => 1),
+        hget: vi.fn(async () => null),
+        hgetall: vi.fn(async () => null),
+        hdel: vi.fn(async () => 0),
+        publish: vi.fn(async () => 0),
+        blpop: vi.fn(async () => blpopReply),
+      },
+      publishToInbound: vi.fn(async () => undefined),
+    });
+  }
+
+  it('returns capability denial ToolResult when broker reply has status: rejected', async () => {
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:rate_limit_exceeded',
+      message: 'Rate limit exceeded for assess_strategy_preset',
+      retryAfterMs: 10000,
+      limit: 5,
+      used: 5,
+    };
+    const ctx = makeBrokerCtx(['key', JSON.stringify(denialReply)]);
+
+    const result = await assessStrategyPresetTool.execute(
+      { symbols: ['BTC'], venueFamily: 'hyperliquid', instrumentKind: 'perp' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('capability_denied:rate_limit_exceeded');
+    expect(result.error).toBe('Rate limit exceeded for assess_strategy_preset');
+    expect(result.retryable).toBe(true);
+    expect(result.fault).toBe(false);
+    expect(result.data).toMatchObject({
+      retryAfterMs: 10000,
+      limit: 5,
+      used: 5,
+    });
+  });
+
+  it('returns capability denial with retryable: false for non-transient denial', async () => {
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:capability_disabled',
+      message: 'assess_strategy_preset is disabled',
+    };
+    const ctx = makeBrokerCtx(['key', JSON.stringify(denialReply)]);
+
+    const result = await assessStrategyPresetTool.execute(
+      { symbols: ['ETH'], venueFamily: 'hyperliquid', instrumentKind: 'perp' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('capability_denied:capability_disabled');
+    expect(result.retryable).toBe(false);
+  });
+
+  it('falls through to normal handler reply when status is not rejected', async () => {
+    const normalReply = {
+      result: {
+        success: true,
+        data: {
+          requestedInstrumentCount: 1,
+          assessedInstrumentCount: 1,
+          maxInstrumentsPerRequest: 3,
+          results: [],
+        },
+      },
+    };
+    const ctx = makeBrokerCtx(['key', JSON.stringify(normalReply)]);
+
+    const result = await assessStrategyPresetTool.execute(
+      { symbols: ['BTC'], venueFamily: 'hyperliquid', instrumentKind: 'perp' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      requestedInstrumentCount: 1,
+    });
+  });
+
+  it('returns capability denial with max_concurrent retryable', async () => {
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:max_concurrent_exceeded',
+      message: 'Too many concurrent assess requests',
+      limit: 2,
+      used: 2,
+    };
+    const ctx = makeBrokerCtx(['key', JSON.stringify(denialReply)]);
+
+    const result = await assessStrategyPresetTool.execute(
+      { symbols: ['SOL'], venueFamily: 'jupiter', instrumentKind: 'swap' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.retryable).toBe(true);
+    expect(result.data).toMatchObject({ limit: 2, used: 2 });
+  });
+
+  it('uses fallback message when denial reply has no message field', async () => {
+    const denialReply = {
+      status: 'rejected',
+      code: 'capability_denied:some_reason',
+    };
+    const ctx = makeBrokerCtx(['key', JSON.stringify(denialReply)]);
+
+    const result = await assessStrategyPresetTool.execute(
+      { symbols: ['BTC'], venueFamily: 'hyperliquid' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Capability denied');
+  });
+});
