@@ -167,7 +167,7 @@ cleanup() {
     ALLOC_POLL=10
     ALLOC_WAITED=0
     while [[ ${ALLOC_WAITED} -lt ${ALLOC_TIMEOUT} ]]; do
-      RUNNING_ALLOCS="$(remote_with_env 'NOMAD_TOKEN=$NOMAD_TOKEN nomad status 2>/dev/null | grep -c running' || echo "0")"
+      RUNNING_ALLOCS="$(remote_with_env 'NOMAD_TOKEN=$NOMAD_TOKEN nomad status 2>/dev/null | grep -v "No running" | grep -c running' || echo "0")"
       if [[ "${RUNNING_ALLOCS}" == "0" ]]; then
         ok "All allocations cleared."
         break
