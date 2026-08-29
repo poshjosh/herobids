@@ -397,7 +397,7 @@ Update BASE_SKILL instructions to:
 
 ---
 
-## Step 13 — Tests — PENDING
+## Step 13 — Tests — DONE
 
 ### Domain
 - `slugify` and `buildSkillSlug` helpers.

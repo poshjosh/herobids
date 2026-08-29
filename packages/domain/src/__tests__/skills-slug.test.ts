@@ -71,6 +71,14 @@ describe('buildSkillSlug', () => {
   it('does not slugify the authorHandle (pass-through)', () => {
     expect(buildSkillSlug('Alice', 'Trading')).toBe('alice/trading');
   });
+
+  it('produces trailing slash for empty name', () => {
+    expect(buildSkillSlug('system', '')).toBe('system/');
+  });
+
+  it('produces trailing slash for whitespace-only name', () => {
+    expect(buildSkillSlug('system', '   ')).toBe('system/');
+  });
 });
 
 // ── SYSTEM_SKILL_SLUGS ─────────────────────────────────────────────────────
