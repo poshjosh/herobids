@@ -60,7 +60,7 @@ Definition of success:
 	- states what to do when code disagrees with plan;
 	- states when to update docs and when to stop and escalate.
 
-### C05. [PENDING] Create the validation and change-control rules
+### C05. [DONE] Create the validation and change-control rules
 
 - Expected output file: `docs/features/pending/000-program/004-validation-and-change-control.md`
 - Completion criteria:

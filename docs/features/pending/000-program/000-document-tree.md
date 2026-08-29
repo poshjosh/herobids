@@ -1,6 +1,6 @@
 # Program Documentation Tree
 
-**Status:** proposed  
+**Status:** complete  
 **Created:** 2026-08-29
 
 ## Purpose
@@ -253,10 +253,13 @@ normalize them, interpret them as follows:
 1. `001-plan.md` is treated as a provisional equivalent of `001-overview.md`.
 2. `000-note.md` and `000-preamble.md` are treated as preparation material,
    equivalent in role to `author/` inputs unless later promoted.
-3. Existing unnumbered or irregular feature folders remain untouched in C01.
+3. `000-notes.md` and `000-analysis.md` are not canonical high-level doc
+   names, but may serve as provisional authorities only when the master
+   roadmap explicitly uses them as the current legacy entrypoint for a feature.
+4. Existing unnumbered or irregular feature folders remain untouched in C01.
    Later inventory and coherence steps decide whether they stay, rename, or
    archive.
-4. Do not create new pending docs using the legacy `001-plan.md` naming once
+5. Do not create new pending docs using the legacy `001-plan.md` naming once
    this tree spec exists.
 
 ## Fit With `000-capability-foundations/`

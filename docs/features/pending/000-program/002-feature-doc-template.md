@@ -1,6 +1,6 @@
 # Feature Document Template
 
-**Status:** proposed  
+**Status:** complete  
 **Created:** 2026-08-29  
 **Depends on:** [000-document-tree.md](./000-document-tree.md), [001-master-roadmap.md](./001-master-roadmap.md)
 
@@ -38,6 +38,9 @@ must start with:
    `Parent overview:`, or `Prerequisite:`
 5. `Normative inputs:` only when another active doc fixes decisions this doc
    relies on
+
+The `Status` line must use the canonical values defined in
+[004-validation-and-change-control.md](./004-validation-and-change-control.md).
 
 ## Required Sections
 
@@ -169,7 +172,7 @@ docs.
 ```md
 # <Feature Title>
 
-**Status:** proposed
+**Status:** draft
 **Created:** YYYY-MM-DD
 **Parent roadmap:** <optional>
 **Parent overview:** <optional>

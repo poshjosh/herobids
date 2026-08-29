@@ -1,6 +1,6 @@
 # Spec-Based Implementation Agent Playbook
 
-**Status:** proposed  
+**Status:** complete  
 **Created:** 2026-08-29  
 **Depends on:** [000-document-tree.md](./000-document-tree.md), [001-master-roadmap.md](./001-master-roadmap.md), [002-feature-doc-template.md](./002-feature-doc-template.md)
 
@@ -152,10 +152,11 @@ Update active docs as part of implementation when any of the following occurs:
 4. a compatibility note, migration note, or task ordering note is needed so
    the active docs accurately describe what the code now does
 
-Until [004-validation-and-change-control.md](./004-validation-and-change-control.md)
-exists, do not invent new status vocabularies. Preserve the status style
-already used by the active task list and record only factual, slice-local
-updates.
+Use [004-validation-and-change-control.md](./004-validation-and-change-control.md)
+for canonical status values, completion evidence rules, and the boundary
+between local doc updates and stop-and-escalate changes. When touching legacy
+pending docs, normalize status words only as far as the compatibility mapping
+in 004 allows without reopening scope.
 
 ## Validation Feedback Loop
 
