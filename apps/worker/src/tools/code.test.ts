@@ -436,4 +436,74 @@ console.log(exists ? 'found' : 'not found');
       vi.resetModules();
     }
   });
+
+  // ── CapabilityDenial string interpolation ─────────────────────────────────
+  // These tests verify that when checkAccess returns a CapabilityDenial object,
+  // the error string uses the `.message` field (not "[object Object]") and the
+  // `retryable` flag derives from the presence of `retryAfterMs`.
+
+  it('uses CapabilityDenial.message in the error string when policy denies (rate limit)', async () => {
+    const engine = new CapabilityPolicyEngine([
+      { capability: 'execute_code', tier: 'direct', enabled: true, limits: { maxPerMinute: 1 } },
+    ]);
+    const ctx = { ...makeCtx(), capabilityEngine: engine };
+
+    // First call succeeds and counts against the rate limit.
+    const first = await executeCode.execute(
+      { code: 'console.log("first")', language: 'javascript', dependencies: [] },
+      ctx,
+    );
+    expect(first.success).toBe(true);
+
+    // Second call should be rate-limited and return the denial message.
+    const second = await executeCode.execute(
+      { code: 'console.log("second")', language: 'javascript', dependencies: [] },
+      ctx,
+    );
+    expect(second.success).toBe(false);
+    expect(second.error).toContain('Rate limited');
+    expect(second.error).not.toContain('[object Object]');
+    expect(second.errorCode).toBe('capability.policy_denied');
+    // retryAfterMs is defined for rate_limit_exceeded → retryable must be true
+    expect(second.retryable).toBe(true);
+    expect(second.fault).toBe(false);
+  });
+
+  it('sets retryable=false when CapabilityDenial.retryAfterMs is undefined (disabled capability)', async () => {
+    const engine = new CapabilityPolicyEngine([
+      { capability: 'execute_code', tier: 'direct', enabled: false },
+    ]);
+    const ctx = { ...makeCtx(), capabilityEngine: engine };
+
+    const result = await executeCode.execute(
+      { code: 'console.log("blocked")', language: 'javascript', dependencies: [] },
+      ctx,
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('disabled');
+    expect(result.error).not.toContain('[object Object]');
+    expect(result.errorCode).toBe('capability.policy_denied');
+    // capability_disabled has no retryAfterMs → retryable must be false
+    expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
+  });
+
+  it('sets retryable=false when CapabilityDenial reason is kill_switch_active', async () => {
+    const engine = new CapabilityPolicyEngine([
+      { capability: 'execute_code', tier: 'direct', enabled: true },
+    ]);
+    engine.activateKillSwitch();
+    const ctx = { ...makeCtx(), capabilityEngine: engine };
+
+    const result = await executeCode.execute(
+      { code: 'console.log("killed")', language: 'javascript', dependencies: [] },
+      ctx,
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('suspended');
+    expect(result.error).not.toContain('[object Object]');
+    expect(result.errorCode).toBe('capability.policy_denied');
+    expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
+  });
 });

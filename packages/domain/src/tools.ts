@@ -167,7 +167,13 @@ export interface ToolContext {
   marketDataConfig?: Record<string, unknown>;
   /** Capability policy enforcement */
   capabilityEngine?: {
-    checkAccess: (capability: string, agentId: string, sessionId: string) => string | undefined;
+    checkAccess: (capability: string, agentId: string, sessionId: string) => {
+      reason: string;
+      retryAfterMs?: number;
+      limit?: number;
+      used?: number;
+      message: string;
+    } | undefined;
     recordStart: (capability: string, sessionId: string) => void;
     recordEnd: (capability: string, sessionId: string, telemetry: { capability: string; agentId: string; sessionId: string; timestamp: string; durationMs: number; inputSummary: string; outputSummary: string; success: boolean; errorCode?: string }) => void;
     getGrant: (capability: string) => { limits?: { maxInvocations?: number; maxPerMinute?: number; maxConcurrent?: number; timeoutMs?: number; maxResponseBytes?: number; maxTotalDownloadBytes?: number } } | undefined;

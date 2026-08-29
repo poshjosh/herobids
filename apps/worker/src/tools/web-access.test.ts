@@ -98,18 +98,26 @@ describe('search_web tool', () => {
     });
   });
 
-  it('is denied when capability policy returns a denial reason', async () => {
+  it('is denied when capability policy returns a denial object', async () => {
     process.env['TAVILY_API_KEY'] = 'test-key';
 
     const capabilityEngine = makeCapabilityEngine({
-      checkAccess: vi.fn(() => 'rate limit exceeded'),
+      checkAccess: vi.fn(() => ({
+        reason: 'rate_limit_exceeded' as const,
+        message: 'Rate limited: search_web used 5/5 times this minute. Try again in 30s.',
+        retryAfterMs: 30_000,
+        limit: 5,
+        used: 5,
+      })),
     });
 
     const result = await webSearchTool.execute({ query: 'test' }, makeContext({ capabilityEngine }));
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('capability policy denied');
+    expect(result.error).toContain('Rate limited');
+    expect(result.error).not.toContain('[object Object]');
     expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
   });
 
   it('returns a clean non-retryable error when TAVILY_API_KEY is absent', async () => {
@@ -414,15 +422,19 @@ describe('browse_url tool', () => {
     expect(result.fault).toBe(false);
   });
 
-  it('is denied when capability policy returns a denial reason', async () => {
+  it('is denied when capability policy returns a denial object', async () => {
     const capabilityEngine = makeCapabilityEngine({
-      checkAccess: vi.fn(() => 'capability disabled'),
+      checkAccess: vi.fn(() => ({
+        reason: 'capability_disabled' as const,
+        message: 'Capability browse_url is disabled for this agent.',
+      })),
     });
 
     const result = await browseUrlTool.execute({ url: 'https://example.com' }, makeContext({ capabilityEngine }));
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('capability policy denied');
+    expect(result.error).toContain('disabled');
+    expect(result.error).not.toContain('[object Object]');
     expect(result.retryable).toBe(false);
     expect(result.fault).toBe(false);
   });
@@ -551,5 +563,25 @@ describe('read_document', () => {
     // The fake PDF is not parseable by pdf-parse, so text is empty.
     // The tool still succeeds — the agent can inspect the raw bytes if needed.
     expect(data.text).toBe('');
+  });
+
+  it('is denied when capability policy returns a denial object', async () => {
+    const capabilityEngine = makeCapabilityEngine({
+      checkAccess: vi.fn(() => ({
+        reason: 'kill_switch_active' as const,
+        message: 'All tool invocations are temporarily suspended.',
+      })),
+    });
+
+    const result = await readDocumentTool.execute(
+      { url: 'https://example.com/doc.pdf' },
+      makeContext({ capabilityEngine }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('suspended');
+    expect(result.error).not.toContain('[object Object]');
+    expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
   });
 });

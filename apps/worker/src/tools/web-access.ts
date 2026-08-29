@@ -220,7 +220,7 @@ const webSearchTool: AgentTool = {
       const denied = ctx.capabilityEngine.checkAccess('search_web', ctx.agentId, ctx.sessionId);
       if (denied) {
         logger.warn({ agentId: ctx.agentId, reason: denied }, 'search_web denied by capability policy');
-        return nonFaultError(`capability policy denied: ${denied}`);
+        return nonFaultError(denied.message);
       }
       ctx.capabilityEngine.recordStart('search_web', ctx.sessionId);
     }
@@ -331,7 +331,7 @@ const browseUrlTool: AgentTool = {
       const denied = ctx.capabilityEngine.checkAccess('browse_url', ctx.agentId, ctx.sessionId);
       if (denied) {
         logger.warn({ agentId: ctx.agentId, reason: denied }, 'browse_url denied by capability policy');
-        return nonFaultError(`capability policy denied: ${denied}`);
+        return nonFaultError(denied.message);
       }
       ctx.capabilityEngine.recordStart('browse_url', ctx.sessionId);
     }
@@ -550,7 +550,7 @@ const readDocumentTool: AgentTool = {
       const denied = ctx.capabilityEngine.checkAccess('read_document', ctx.agentId, ctx.sessionId);
       if (denied) {
         logger.warn({ agentId: ctx.agentId, reason: denied }, 'read_document denied by capability policy');
-        return nonFaultError(`capability policy denied: ${denied}`);
+        return nonFaultError(denied.message);
       }
       ctx.capabilityEngine.recordStart('read_document', ctx.sessionId);
     }

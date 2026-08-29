@@ -222,8 +222,8 @@ export class AgentMessageBroker {
       const sessionId = activeSession?.id ?? effectiveAgentId;
       const denied = engine.checkAccess(capabilityName, effectiveAgentId, sessionId);
       if (denied) {
-        logger.warn({ agentId: effectiveAgentId, capability: capabilityName, reason: denied }, 'Capability policy denied');
-        return { accepted: false, error: `capability_denied:${denied}` };
+        logger.warn({ agentId: effectiveAgentId, capability: capabilityName, reason: denied.reason }, 'Capability policy denied');
+        return { accepted: false, error: `capability_denied:${denied.reason}` };
       }
       engine.recordStart(capabilityName, sessionId);
       policyEngine = engine;

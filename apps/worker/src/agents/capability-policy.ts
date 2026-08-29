@@ -36,6 +36,21 @@ export interface CapabilityLimits {
   maxTotalDownloadBytes?: number;
 }
 
+/** Returned by checkAccess when a capability invocation is denied. */
+export interface CapabilityDenial {
+  /** Machine-readable reason code. */
+  reason: 'kill_switch_active' | 'unknown_capability' | 'capability_disabled'
+    | 'capability_never_allowed' | 'rate_limit_exceeded' | 'max_concurrent_exceeded';
+  /** Milliseconds until the denial condition is expected to clear. Undefined for permanent denials. */
+  retryAfterMs?: number;
+  /** The configured limit that was hit (e.g. maxPerMinute value). */
+  limit?: number;
+  /** Current usage count against that limit. */
+  used?: number;
+  /** Human-readable message suitable for inclusion in an LLM tool response. */
+  message: string;
+}
+
 export interface ToolInvocationRecord {
   capability: string;
   agentId: string;
@@ -227,24 +242,24 @@ export class CapabilityPolicyEngine {
 
   /**
    * Check whether a capability invocation is allowed.
-   * Returns an error string if denied, undefined if allowed.
+   * Returns a {@link CapabilityDenial} if denied, undefined if allowed.
    */
-  checkAccess(capability: string, _agentId: string, sessionId: string): string | undefined {
+  checkAccess(capability: string, _agentId: string, sessionId: string): CapabilityDenial | undefined {
     if (this.killed) {
-      return 'kill_switch_active';
+      return { reason: 'kill_switch_active', message: 'All tool invocations are temporarily suspended.' };
     }
 
     const grant = this.grants.get(capability);
     if (!grant) {
-      return 'unknown_capability';
+      return { reason: 'unknown_capability', message: `Unknown capability: ${capability}.` };
     }
 
     if (!grant.enabled) {
-      return 'capability_disabled';
+      return { reason: 'capability_disabled', message: `Capability ${capability} is disabled for this agent.` };
     }
 
     if (grant.tier === 'never') {
-      return 'capability_never_allowed';
+      return { reason: 'capability_never_allowed', message: `Capability ${capability} is not available on this platform.` };
     }
 
     if (grant.limits?.maxPerMinute) {
@@ -254,16 +269,32 @@ export class CapabilityPolicyEngine {
 
       if (counter && now - counter.windowStart < 60_000) {
         if (counter.count >= grant.limits.maxPerMinute) {
-          return 'rate_limit_exceeded';
+          const retryAfterMs = Math.max(0, counter.windowStart + 60_000 - now);
+          const retryAfterSec = Math.ceil(retryAfterMs / 1000);
+          const limit = grant.limits.maxPerMinute;
+          const used = counter.count;
+          return {
+            reason: 'rate_limit_exceeded',
+            retryAfterMs,
+            limit,
+            used,
+            message: `Rate limited: ${capability} used ${used}/${limit} times this minute. Try again in ${retryAfterSec}s.`,
+          };
         }
       }
     }
 
     if (grant.limits?.maxConcurrent) {
       const key = `${sessionId}:${capability}`;
-      const current = this.concurrencyCounters.get(key) ?? 0;
-      if (current >= grant.limits.maxConcurrent) {
-        return 'max_concurrent_exceeded';
+      const used = this.concurrencyCounters.get(key) ?? 0;
+      if (used >= grant.limits.maxConcurrent) {
+        const limit = grant.limits.maxConcurrent;
+        return {
+          reason: 'max_concurrent_exceeded',
+          limit,
+          used,
+          message: `Concurrency limited: ${capability} has ${used}/${limit} concurrent calls active. Wait for a running call to complete.`,
+        };
       }
     }
 

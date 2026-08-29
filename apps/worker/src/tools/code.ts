@@ -65,7 +65,7 @@ const codeExecuteTool: AgentTool = {
       const policyDenied = ctx.capabilityEngine.checkAccess('execute_code', ctx.agentId, ctx.sessionId);
       if (policyDenied) {
         logger.warn({ agentId: ctx.agentId, reason: policyDenied }, 'execute_code denied by capability policy');
-          return { success: false, error: `capability policy denied: ${policyDenied}`, errorCode: 'capability.policy_denied', retryable: false, fault: false };
+          return { success: false, error: policyDenied.message, errorCode: 'capability.policy_denied', retryable: policyDenied.retryAfterMs !== undefined, fault: false };
       }
       // recordStart is deferred until after all validation so that early-exit
       // paths (invalid deps, missing config) don't leave the concurrency counter

@@ -36,7 +36,8 @@ describe('buildCapabilityPolicyEngine', () => {
     expect(engine.checkAccess('execute_code', 'agent-1', 'session-1')).toBeUndefined();
     engine.recordStart('execute_code', 'session-1');
 
-    expect(engine.checkAccess('execute_code', 'agent-1', 'session-1')).toBe('rate_limit_exceeded');
+    expect(engine.checkAccess('execute_code', 'agent-1', 'session-1'))
+      .toMatchObject({ reason: 'rate_limit_exceeded' });
 
     engine.replaceGrants(buildCapabilityGrants({
       execute_code: {
@@ -51,7 +52,37 @@ describe('buildCapabilityPolicyEngine', () => {
         limits: expect.objectContaining({ timeoutMs: 5_000, maxPerMinute: 1 }),
       }),
     );
-    expect(engine.checkAccess('execute_code', 'agent-1', 'session-1')).toBe('rate_limit_exceeded');
+    expect(engine.checkAccess('execute_code', 'agent-1', 'session-1'))
+      .toMatchObject({ reason: 'rate_limit_exceeded' });
+  });
+
+  it('rate_limit_exceeded after grant refresh still contains structured fields', () => {
+    const engine = buildCapabilityPolicyEngine({
+      execute_code: {
+        enabled: true,
+        tier: 'direct',
+        limits: { maxPerMinute: 1 },
+      },
+    });
+
+    engine.recordStart('execute_code', 'session-1');
+
+    engine.replaceGrants(buildCapabilityGrants({
+      execute_code: {
+        enabled: true,
+        tier: 'direct',
+        limits: { maxPerMinute: 1, timeoutMs: 5_000 },
+      },
+    }));
+
+    const denial = engine.checkAccess('execute_code', 'agent-1', 'session-1');
+    expect(denial).toBeDefined();
+    expect(denial!.reason).toBe('rate_limit_exceeded');
+    expect(denial!.limit).toBe(1);
+    expect(denial!.used).toBe(1);
+    expect(typeof denial!.retryAfterMs).toBe('number');
+    expect(denial!.retryAfterMs).toBeGreaterThanOrEqual(0);
+    expect(denial!.message).toBeDefined();
   });
 });
 
@@ -120,7 +151,8 @@ describe('DEFAULT_CAPABILITY_GRANTS — manage_agent_skills', () => {
     });
 
     const denied = engine.checkAccess('manage_agent_skills', 'agent-1', 'session-1');
-    expect(denied).toBe('capability_disabled');
+    expect(denied).toMatchObject({ reason: 'capability_disabled' });
+    expect(denied!.message).toContain('manage_agent_skills');
   });
 });
 
@@ -223,7 +255,8 @@ describe('DEFAULT_CAPABILITY_GRANTS — search_skills', () => {
     });
 
     const denied = engine.checkAccess('search_skills', 'agent-1', 'session-1');
-    expect(denied).toBe('capability_disabled');
+    expect(denied).toMatchObject({ reason: 'capability_disabled' });
+    expect(denied!.message).toContain('search_skills');
   });
 });
 

@@ -17,28 +17,38 @@ describe('CapabilityPolicyEngine', () => {
     it('denies capabilities with tier=never (disabled takes precedence)', () => {
       const engine = new CapabilityPolicyEngine();
       // Default never-tier grants are also disabled, so enabled check fires first
-      expect(engine.checkAccess('venue_api', 'agent-1', 'sess-1')).toBe('capability_disabled');
-      expect(engine.checkAccess('raw_secrets', 'agent-1', 'sess-1')).toBe('capability_disabled');
-      expect(engine.checkAccess('database_write', 'agent-1', 'sess-1')).toBe('capability_disabled');
-      expect(engine.checkAccess('host_control', 'agent-1', 'sess-1')).toBe('capability_disabled');
+      for (const cap of ['venue_api', 'raw_secrets', 'database_write', 'host_control']) {
+        const denial = engine.checkAccess(cap, 'agent-1', 'sess-1');
+        expect(denial).toMatchObject({ reason: 'capability_disabled' });
+        expect(denial!.message).toContain(cap);
+      }
     });
 
     it('denies capabilities with tier=never even if enabled', () => {
       const grants = [{ capability: 'dangerous_tool', tier: 'never' as const, enabled: true }];
       const engine = new CapabilityPolicyEngine(grants);
-      expect(engine.checkAccess('dangerous_tool', 'agent-1', 'sess-1')).toBe('capability_never_allowed');
+      const denial = engine.checkAccess('dangerous_tool', 'agent-1', 'sess-1');
+      expect(denial).toMatchObject({ reason: 'capability_never_allowed' });
+      expect(denial!.message).toContain('dangerous_tool');
     });
 
     it('denies unknown capabilities', () => {
       const engine = new CapabilityPolicyEngine();
-      expect(engine.checkAccess('unknown_tool', 'agent-1', 'sess-1')).toBe('unknown_capability');
+      const denial = engine.checkAccess('unknown_tool', 'agent-1', 'sess-1');
+      expect(denial).toMatchObject({ reason: 'unknown_capability' });
+      expect(denial!.message).toContain('unknown_tool');
     });
 
     it('denies all access after kill switch', () => {
       const engine = new CapabilityPolicyEngine();
       engine.activateKillSwitch();
-      expect(engine.checkAccess('submit_decision', 'agent-1', 'sess-1')).toBe('kill_switch_active');
-      expect(engine.checkAccess('web_fetch', 'agent-1', 'sess-1')).toBe('kill_switch_active');
+
+      const denial1 = engine.checkAccess('submit_decision', 'agent-1', 'sess-1');
+      expect(denial1).toMatchObject({ reason: 'kill_switch_active' });
+      expect(denial1!.message).toBeDefined();
+
+      const denial2 = engine.checkAccess('web_fetch', 'agent-1', 'sess-1');
+      expect(denial2).toMatchObject({ reason: 'kill_switch_active' });
     });
 
     it('re-allows access after deactivating kill switch', () => {
@@ -46,6 +56,85 @@ describe('CapabilityPolicyEngine', () => {
       engine.activateKillSwitch();
       engine.deactivateKillSwitch();
       expect(engine.checkAccess('submit_decision', 'agent-1', 'sess-1')).toBeUndefined();
+    });
+
+    describe('structured denial fields', () => {
+      it('permanent denials have no retryAfterMs', () => {
+        const engine = new CapabilityPolicyEngine();
+        engine.activateKillSwitch();
+
+        const killSwitchDenial = engine.checkAccess('submit_decision', 'agent-1', 'sess-1');
+        expect(killSwitchDenial).toBeDefined();
+        expect(killSwitchDenial!.retryAfterMs).toBeUndefined();
+
+        engine.deactivateKillSwitch();
+
+        const unknownDenial = engine.checkAccess('nonexistent', 'agent-1', 'sess-1');
+        expect(unknownDenial).toBeDefined();
+        expect(unknownDenial!.retryAfterMs).toBeUndefined();
+
+        const disabledDenial = engine.checkAccess('manage_bot', 'agent-1', 'sess-1');
+        expect(disabledDenial).toBeDefined();
+        expect(disabledDenial!.retryAfterMs).toBeUndefined();
+
+        const neverEngine = new CapabilityPolicyEngine([
+          { capability: 'x', tier: 'never', enabled: true },
+        ]);
+        const neverDenial = neverEngine.checkAccess('x', 'agent-1', 'sess-1');
+        expect(neverDenial).toBeDefined();
+        expect(neverDenial!.retryAfterMs).toBeUndefined();
+      });
+
+      it('every denial includes a non-empty message string', () => {
+        const engine = new CapabilityPolicyEngine([
+          { capability: 'limited', tier: 'direct', enabled: true, limits: { maxPerMinute: 1, maxConcurrent: 1 } },
+          { capability: 'off', tier: 'direct', enabled: false },
+          { capability: 'blocked', tier: 'never', enabled: true },
+        ]);
+
+        // kill_switch_active
+        engine.activateKillSwitch();
+        const killSwitchDenial = engine.checkAccess('limited', 'a', 's');
+        expect(killSwitchDenial).toBeDefined();
+        expect(typeof killSwitchDenial!.message).toBe('string');
+        expect(killSwitchDenial!.message.length).toBeGreaterThan(0);
+        engine.deactivateKillSwitch();
+
+        // unknown_capability
+        const unknownDenial = engine.checkAccess('nope', 'a', 's');
+        expect(unknownDenial).toBeDefined();
+        expect(typeof unknownDenial!.message).toBe('string');
+        expect(unknownDenial!.message.length).toBeGreaterThan(0);
+
+        // capability_disabled
+        const disabledDenial = engine.checkAccess('off', 'a', 's');
+        expect(disabledDenial).toBeDefined();
+        expect(typeof disabledDenial!.message).toBe('string');
+        expect(disabledDenial!.message.length).toBeGreaterThan(0);
+
+        // capability_never_allowed
+        const neverDenial = engine.checkAccess('blocked', 'a', 's');
+        expect(neverDenial).toBeDefined();
+        expect(typeof neverDenial!.message).toBe('string');
+        expect(neverDenial!.message.length).toBeGreaterThan(0);
+
+        // rate_limit_exceeded
+        engine.recordStart('limited', 's');
+        const rateDenial = engine.checkAccess('limited', 'a', 's');
+        expect(rateDenial).toBeDefined();
+        expect(typeof rateDenial!.message).toBe('string');
+        expect(rateDenial!.message.length).toBeGreaterThan(0);
+
+        // max_concurrent_exceeded — rate fires first on same engine, so use a separate one
+        const concEngine = new CapabilityPolicyEngine([
+          { capability: 'c', tier: 'direct', enabled: true, limits: { maxConcurrent: 1 } },
+        ]);
+        concEngine.recordStart('c', 's');
+        const concurrencyDenial = concEngine.checkAccess('c', 'a', 's');
+        expect(concurrencyDenial).toBeDefined();
+        expect(typeof concurrencyDenial!.message).toBe('string');
+        expect(concurrencyDenial!.message.length).toBeGreaterThan(0);
+      });
     });
   });
 
@@ -56,17 +145,34 @@ describe('CapabilityPolicyEngine', () => {
       for (let i = 0; i < 10; i++) {
         engine.recordStart('submit_decision', 'sess-1');
       }
-      expect(engine.checkAccess('submit_decision', 'agent-1', 'sess-1')).toBe('rate_limit_exceeded');
+      const denial = engine.checkAccess('submit_decision', 'agent-1', 'sess-1');
+      expect(denial).toMatchObject({ reason: 'rate_limit_exceeded' });
     });
 
     it('allows after rate window resets', () => {
       const engine = new CapabilityPolicyEngine();
-      // Fill up rate limit
       for (let i = 0; i < 10; i++) {
         engine.recordStart('submit_decision', 'sess-1');
       }
-      // This should be denied
-      expect(engine.checkAccess('submit_decision', 'agent-1', 'sess-1')).toBe('rate_limit_exceeded');
+      const denial = engine.checkAccess('submit_decision', 'agent-1', 'sess-1');
+      expect(denial).toMatchObject({ reason: 'rate_limit_exceeded' });
+    });
+
+    it('rate_limit_exceeded includes retryAfterMs, limit, and used', () => {
+      const engine = new CapabilityPolicyEngine([
+        { capability: 'probe', tier: 'direct', enabled: true, limits: { maxPerMinute: 2 } },
+      ]);
+      engine.recordStart('probe', 'sess-1');
+      engine.recordStart('probe', 'sess-1');
+
+      const denial = engine.checkAccess('probe', 'agent-1', 'sess-1');
+      expect(denial).toBeDefined();
+      expect(denial!.reason).toBe('rate_limit_exceeded');
+      expect(denial!.limit).toBe(2);
+      expect(denial!.used).toBe(2);
+      expect(typeof denial!.retryAfterMs).toBe('number');
+      expect(denial!.retryAfterMs).toBeGreaterThanOrEqual(0);
+      expect(denial!.message).toContain('2/2');
     });
   });
 
@@ -75,7 +181,8 @@ describe('CapabilityPolicyEngine', () => {
       const engine = new CapabilityPolicyEngine();
       // submit_decision has maxConcurrent: 1
       engine.recordStart('submit_decision', 'sess-1');
-      expect(engine.checkAccess('submit_decision', 'agent-1', 'sess-1')).toBe('max_concurrent_exceeded');
+      const denial = engine.checkAccess('submit_decision', 'agent-1', 'sess-1');
+      expect(denial).toMatchObject({ reason: 'max_concurrent_exceeded' });
     });
 
     it('allows after concurrent call ends', () => {
@@ -91,9 +198,24 @@ describe('CapabilityPolicyEngine', () => {
         outputSummary: 'test',
         success: true,
       });
-      // Rate counter was already incremented by recordStart, but concurrency is back to 0
-      // Since submit_decision maxPerMinute is 10 and we only did 1, it should be allowed
       expect(engine.checkAccess('submit_decision', 'agent-1', 'sess-1')).toBeUndefined();
+    });
+
+    it('max_concurrent_exceeded includes limit and used but no retryAfterMs', () => {
+      const engine = new CapabilityPolicyEngine([
+        { capability: 'conc', tier: 'direct', enabled: true, limits: { maxConcurrent: 3 } },
+      ]);
+      engine.recordStart('conc', 'sess-1');
+      engine.recordStart('conc', 'sess-1');
+      engine.recordStart('conc', 'sess-1');
+
+      const denial = engine.checkAccess('conc', 'agent-1', 'sess-1');
+      expect(denial).toBeDefined();
+      expect(denial!.reason).toBe('max_concurrent_exceeded');
+      expect(denial!.limit).toBe(3);
+      expect(denial!.used).toBe(3);
+      expect(denial!.retryAfterMs).toBeUndefined();
+      expect(denial!.message).toContain('3/3');
     });
   });
 
@@ -111,7 +233,8 @@ describe('CapabilityPolicyEngine', () => {
         { capability: 'custom_tool', tier: 'direct' as const, enabled: false },
       ];
       const engine = new CapabilityPolicyEngine(customGrants);
-      expect(engine.checkAccess('custom_tool', 'agent-1', 'sess-1')).toBe('capability_disabled');
+      expect(engine.checkAccess('custom_tool', 'agent-1', 'sess-1'))
+        .toMatchObject({ reason: 'capability_disabled' });
     });
   });
 
