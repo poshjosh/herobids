@@ -140,10 +140,13 @@ export async function syncSystemSkills(db: Database): Promise<void> {
       //    skill_revisions.skill_id → skills.id AND skills.published_revision_id → skill_revisions.id
       //    form a circular FK. We insert skills with null revision pointers, then insert the revision,
       //    then update skills to set the revision pointers.
+      const slug = `system/${skillId}`;
+
       if (existingSkill) {
         await tx
           .update(skillsTable)
           .set({
+            slug,
             publicationStatus: 'published',
             publishedAt: now,
             priceCents: 0,
@@ -166,6 +169,7 @@ export async function syncSystemSkills(db: Database): Promise<void> {
         await tx.insert(skillsTable).values({
           id: skillId,
           authorId: null,
+          slug,
           publicationStatus: 'published',
           publishedAt: now,
           // FK pointers set to null initially — patched in step 8 after revision is inserted

@@ -150,7 +150,7 @@ A data migration computes slugs for all existing rows. System skills get `system
 
 ---
 
-## Step 3 — Seeder: populate `slug` on system skill upsert — PENDING
+## Step 3 — Seeder: populate `slug` on system skill upsert — DONE
 
 **File:** `apps/api/src/sync-system-skills.ts`
 
@@ -498,3 +498,11 @@ Parallelizable groups:
 3. **[Low] `SYSTEM_SKILL_SLUGS` doesn't include `BASE_SKILL`** — Correct by design (BASE_SKILL is auto-injected). Consider adding a JSDoc note on `SYSTEM_SKILL_SLUGS` explaining the exclusion.
 
 4. **[Low] Missing edge case test for `buildSkillSlug` with empty name** — `buildSkillSlug('system', '')` produces `system/`. Document this behavior with a test.
+
+### Step 3 — Seeder: populate `slug` on system skill upsert
+
+1. **[Medium] Inline slug construction instead of using domain helper** — The seeder computes `` `system/${skillId}` `` inline rather than using `skill.slug!` from the pre-computed domain definition or `buildSkillSlug()`. Works correctly but bypasses the centralized slug construction pipeline.
+
+2. **[Medium] No test for hash-match path leaving a pre-existing null slug untouched** — The "skips update" test verifies no mutations, but doesn't cover the scenario where an existing row has `slug = NULL` and content matches. Not a real bug since Step 1 migration backfills all slugs, but worth documenting.
+
+3. **[Low] `config/default.yaml` plan tier renaming is unrelated** — The diff includes an unrelated config change. Should be committed separately per atomic commit guidelines.
