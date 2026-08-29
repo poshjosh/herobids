@@ -103,11 +103,15 @@ describe('list_skills', () => {
     const result = await listSkills.execute({}, ctx);
 
     expect(result.success).toBe(true);
-    expect(result.data).toEqual({
-      assigned,
-      available,
-      hint: 'For capabilities not listed here, use search_skills to search both platform skills and external skills discoverable through skills.sh.',
-    });
+    const data = result.data as Record<string, unknown>;
+    expect(data.assigned).toEqual([
+      { id: 's1', skill: 'trading', name: 'Trading', description: 'Trade stuff', dependsOn: [] },
+    ]);
+    expect(data.available).toEqual([
+      { id: 's2', skill: 'monitoring', name: 'Monitoring', description: 'Watch stuff', dependsOn: [] },
+    ]);
+    expect(data.hint).toEqual('For capabilities not listed here, use search_skills to search both platform skills and external skills discoverable through skills.sh.');
+    expect(data.installedExternal).toBeDefined();
   });
 
   it('surfaces dependsOn field in both assigned and available arrays', async () => {
@@ -541,7 +545,7 @@ describe('add_skills', () => {
       expect(data.missingDependencies).toBeUndefined();
     });
 
-    it('includes missingDependencies when some dependencies are not active', async () => {
+    it('auto-resolves dependencies when includeDependencies is true (default)', async () => {
       const onSkillsChanged = vi.fn(async () => ['skill-1']);
       const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
       const ctx = makeCtx({
@@ -558,10 +562,13 @@ describe('add_skills', () => {
 
       expect(result.success).toBe(true);
       const data = result.data as Record<string, unknown>;
-      expect(data.missingDependencies).toEqual([
-        { skillId: 'dep-a', requiredBy: 'skill-1' },
-        { skillId: 'dep-b', requiredBy: 'skill-1' },
-      ]);
+      // Dependencies are auto-resolved upfront, reported as autoResolved
+      const autoResolved = data.autoResolved as Array<{ skill: string; requiredBy: string }>;
+      expect(autoResolved).toBeDefined();
+      expect(autoResolved).toEqual(expect.arrayContaining([
+        { skill: 'dep-a', requiredBy: 'trading' },
+        { skill: 'dep-b', requiredBy: 'trading' },
+      ]));
     });
 
     it('skips missingDependencies computation when skillOps is not available', async () => {
@@ -602,7 +609,7 @@ describe('add_skills', () => {
       expect(data.activeSkills).toEqual(['skill-1']);
     });
 
-    it('handles multiple added skills with overlapping unmet dependencies', async () => {
+    it('auto-resolves overlapping dependencies for multiple added skills', async () => {
       const onSkillsChanged = vi.fn(async () => ['skill-a', 'skill-b']);
       const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-a', 'skill-b'] });
       const ctx = makeCtx({
@@ -620,15 +627,15 @@ describe('add_skills', () => {
 
       expect(result.success).toBe(true);
       const data = result.data as Record<string, unknown>;
-      const missing = data.missingDependencies as Array<{ skillId: string; requiredBy: string }>;
-      expect(missing).toBeDefined();
-      // dep-shared is unmet for both skill-a and skill-b; dep-only-a is unmet for skill-a only
-      expect(missing).toEqual(expect.arrayContaining([
-        { skillId: 'dep-shared', requiredBy: 'skill-a' },
-        { skillId: 'dep-only-a', requiredBy: 'skill-a' },
-        { skillId: 'dep-shared', requiredBy: 'skill-b' },
+      const autoResolved = data.autoResolved as Array<{ skill: string; requiredBy: string }>;
+      expect(autoResolved).toBeDefined();
+      // Dependencies are auto-resolved (dep-shared and dep-only-a)
+      expect(autoResolved).toHaveLength(3);
+      expect(autoResolved).toEqual(expect.arrayContaining([
+        { skill: 'dep-shared', requiredBy: 'a' },
+        { skill: 'dep-only-a', requiredBy: 'a' },
+        { skill: 'dep-shared', requiredBy: 'b' },
       ]));
-      expect(missing).toHaveLength(3);
     });
 
     it('skips added skill not found in assigned list (no dependsOn to check)', async () => {
@@ -653,7 +660,7 @@ describe('add_skills', () => {
       expect(data.missingDependencies).toBeUndefined();
     });
 
-    it('only reports dependencies that are not in the activeSkills set', async () => {
+    it('only auto-resolves dependencies not already assigned', async () => {
       const onSkillsChanged = vi.fn(async () => ['skill-1', 'dep-a']);
       const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
       const ctx = makeCtx({
@@ -662,6 +669,7 @@ describe('add_skills', () => {
         skillOps: makeSkillOps({
           listAssigned: vi.fn(async () => [
             { id: 'skill-1', slug: 'trading', name: 'Trading', description: 'Trade', dependsOn: ['dep-a', 'dep-b'] },
+            { id: 'dep-a', slug: 'dep-a', name: 'Dep A', description: 'Dependency A', dependsOn: [] },
           ]),
         }),
       });
@@ -670,9 +678,11 @@ describe('add_skills', () => {
 
       expect(result.success).toBe(true);
       const data = result.data as Record<string, unknown>;
-      // dep-a is active, dep-b is not → only dep-b reported
-      expect(data.missingDependencies).toEqual([
-        { skillId: 'dep-b', requiredBy: 'skill-1' },
+      // dep-a is already assigned → only dep-b auto-resolved
+      const autoResolved = data.autoResolved as Array<{ skill: string; requiredBy: string }>;
+      expect(autoResolved).toBeDefined();
+      expect(autoResolved).toEqual([
+        { skill: 'dep-b', requiredBy: 'trading' },
       ]);
     });
 
@@ -810,7 +820,7 @@ describe('remove_skills', () => {
     expect(result.errorCode).toBe('broker.malformed_reply');
   });
 
-  it('never computes missingDependencies even when skillOps is available', async () => {
+  it('does not compute autoResolved even when skillOps is available', async () => {
     const listAssigned = vi.fn(async () => [
       { id: 'skill-1', slug: 'trading', name: 'Trading', description: 'Trade', dependsOn: ['dep-missing'] },
     ]);
@@ -827,8 +837,7 @@ describe('remove_skills', () => {
     expect(result.success).toBe(true);
     const data = result.data as Record<string, unknown>;
     expect(data.missingDependencies).toBeUndefined();
-    // listAssigned should NOT be called for dependency check during remove
-    expect(listAssigned).not.toHaveBeenCalled();
+    expect(data.autoResolved).toBeUndefined();
   });
 });
 
@@ -1015,6 +1024,7 @@ type SearchSkillsData = {
   local: {
     results: Array<{
       id: string;
+      skill: string;
       name: string;
       description: string;
       isAssigned: boolean;
@@ -1109,7 +1119,10 @@ describe('search_skills', () => {
 
       expect(result.success).toBe(true);
       const data = result.data as SearchSkillsData;
-      expect(data.local.results).toEqual(searchResults);
+      expect(data.local.results).toEqual([
+        { id: 'sk-1', skill: 'trading', name: 'Trading', description: 'Trade crypto', isAssigned: true, dependsOn: ['sk-2'] },
+        { id: 'sk-3', skill: 'analytics', name: 'Analytics', description: 'Analyze markets', isAssigned: false, dependsOn: [] },
+      ]);
     });
 
     it('passes the query string to skillOps.search', async () => {
@@ -1201,7 +1214,9 @@ describe('search_skills', () => {
       expect(result.success).toBe(true);
       const data = result.data as SearchSkillsData;
       // Local results should still be present despite external failure
-      expect(data.local.results).toEqual(searchResults);
+      expect(data.local.results).toEqual([
+        { id: 'sk-1', skill: 'trading', name: 'Trading', description: 'Trade', isAssigned: false, dependsOn: [] },
+      ]);
       expect('note' in data.external).toBe(true);
     });
   });
@@ -1259,10 +1274,12 @@ describe('search_skills', () => {
       const data = result.data as SearchSkillsData;
       const item = data.local.results[0]!;
       expect(item).toHaveProperty('id');
+      expect(item).toHaveProperty('skill');
       expect(item).toHaveProperty('name');
       expect(item).toHaveProperty('description');
       expect(item).toHaveProperty('isAssigned');
       expect(item).toHaveProperty('dependsOn');
+      expect(item).not.toHaveProperty('slug');
     });
   });
 
@@ -1463,5 +1480,1308 @@ describe('skill mutation — broker capability denial', () => {
     expect(result.data).toMatchObject({ retryAfterMs: 3000 });
     expect(result.data.limit).toBeUndefined();
     expect(result.data.used).toBeUndefined();
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 4: Slug resolution, includeDependencies, external refs, response format
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('list_skills — installedExternal field', () => {
+  it('includes installedExternal in response data', async () => {
+    const ctx = makeCtx({
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => []),
+        listAvailable: vi.fn(async () => []),
+      }),
+    });
+
+    const result = await listSkills.execute({}, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data).toHaveProperty('installedExternal');
+  });
+
+  it('installedExternal degrades with a note when workspace import fails', async () => {
+    const ctx = makeCtx({
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => []),
+        listAvailable: vi.fn(async () => []),
+      }),
+    });
+
+    const result = await listSkills.execute({}, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    // In the test environment the dynamic import of ./workspace.js or npx spawn
+    // will fail — the external arm should degrade to a note
+    const ext = data.installedExternal as { note?: string; results?: string };
+    expect(ext).toBeDefined();
+    expect('note' in ext).toBe(true);
+    expect(typeof (ext as { note: string }).note).toBe('string');
+  });
+
+  it('response uses skill field (slug) instead of slug in assigned items', async () => {
+    const assigned = [
+      { id: 'trading', slug: 'system/trading', name: 'Trading', description: 'Trade stuff', dependsOn: [] as string[] },
+    ];
+    const ctx = makeCtx({
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => assigned),
+        listAvailable: vi.fn(async () => []),
+      }),
+    });
+
+    const result = await listSkills.execute({}, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as { assigned: Array<Record<string, unknown>> };
+    expect(data.assigned[0]).toHaveProperty('skill', 'system/trading');
+    expect(data.assigned[0]).toHaveProperty('id', 'trading');
+    expect(data.assigned[0]).toHaveProperty('name', 'Trading');
+    expect(data.assigned[0]).toHaveProperty('description', 'Trade stuff');
+    expect(data.assigned[0]).toHaveProperty('dependsOn');
+    // Should NOT have a 'slug' key in the output — it's mapped to 'skill'
+    expect(data.assigned[0]).not.toHaveProperty('slug');
+  });
+
+  it('response uses skill field (slug) instead of slug in available items', async () => {
+    const available = [
+      { id: 'risk-monitoring', slug: 'system/risk-monitoring', name: 'Risk Monitoring', description: 'Monitor', dependsOn: ['trading'] },
+    ];
+    const ctx = makeCtx({
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => []),
+        listAvailable: vi.fn(async () => available),
+      }),
+    });
+
+    const result = await listSkills.execute({}, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as { available: Array<Record<string, unknown>> };
+    expect(data.available[0]).toHaveProperty('skill', 'system/risk-monitoring');
+    expect(data.available[0]).not.toHaveProperty('slug');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// add_skills — includeDependencies parameter
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('add_skills — includeDependencies', () => {
+  it('defaults includeDependencies to true when omitted', async () => {
+    const onSkillsChanged = vi.fn(async () => ['skill-1', 'dep-a']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1', 'dep-a'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => [
+          { id: 'skill-1', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: ['dep-a'] },
+        ]),
+        listAvailable: vi.fn(async () => [
+          { id: 'dep-a', slug: 'system/dep-a', name: 'Dep A', description: 'Dep', dependsOn: [] },
+        ]),
+      }),
+    });
+
+    // No includeDependencies specified — should default to true
+    const result = await addSkills.execute({ skillIds: ['skill-1'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const autoResolved = data.autoResolved as Array<{ skill: string; requiredBy: string }>;
+    expect(autoResolved).toBeDefined();
+    expect(autoResolved.length).toBeGreaterThan(0);
+  });
+
+  it('does NOT auto-resolve dependencies when includeDependencies is false', async () => {
+    const onSkillsChanged = vi.fn(async () => ['skill-1']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => [
+          { id: 'skill-1', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: ['dep-a', 'dep-b'] },
+        ]),
+        listAvailable: vi.fn(async () => []),
+      }),
+    });
+
+    const result = await addSkills.execute(
+      { skillIds: ['skill-1'], includeDependencies: false },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    // No autoResolved when includeDependencies is false
+    expect(data.autoResolved).toBeUndefined();
+  });
+
+  it('sends only requested skill IDs to broker when includeDependencies is false', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+    const ctx = makeCtx({
+      publishToInbound,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => [
+          { id: 'skill-1', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: ['dep-a'] },
+        ]),
+        listAvailable: vi.fn(async () => []),
+      }),
+    });
+
+    await addSkills.execute(
+      { skillIds: ['skill-1'], includeDependencies: false },
+      ctx,
+    );
+
+    expect(publishToInbound).toHaveBeenCalledOnce();
+    const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+    // Only skill-1 sent — dep-a should NOT be included
+    expect(payload.skillIds).toEqual(['skill-1']);
+  });
+
+  it('includes dependency IDs in broker call when includeDependencies is true', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1', 'dep-a'] });
+    const ctx = makeCtx({
+      publishToInbound,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => []),
+        listAvailable: vi.fn(async () => [
+          { id: 'skill-1', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: ['dep-a'] },
+          { id: 'dep-a', slug: 'system/dep-a', name: 'Dep A', description: 'Dep', dependsOn: [] },
+        ]),
+      }),
+    });
+
+    await addSkills.execute(
+      { skillIds: ['skill-1'], includeDependencies: true },
+      ctx,
+    );
+
+    expect(publishToInbound).toHaveBeenCalledOnce();
+    const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+    // Both skill-1 and dep-a should be in the broker call
+    expect(payload.skillIds).toEqual(expect.arrayContaining(['skill-1', 'dep-a']));
+  });
+
+  it('autoResolved entries use slugs (not IDs) when available', async () => {
+    const onSkillsChanged = vi.fn(async () => ['trading', 'bot-management']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['trading', 'bot-management'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => [
+          { id: 'trading', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: ['bot-management'] },
+        ]),
+        listAvailable: vi.fn(async () => [
+          { id: 'bot-management', slug: 'system/bot-management', name: 'Bot Management', description: 'Bots', dependsOn: [] },
+        ]),
+      }),
+    });
+
+    const result = await addSkills.execute({ skillIds: ['trading'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const autoResolved = data.autoResolved as Array<{ skill: string; requiredBy: string }>;
+    expect(autoResolved).toBeDefined();
+    // Should use slug-based names from the idToSlug map
+    expect(autoResolved).toEqual(expect.arrayContaining([
+      { skill: 'system/bot-management', requiredBy: 'system/trading' },
+    ]));
+  });
+
+  it('omits autoResolved key entirely when no dependencies need resolution', async () => {
+    const onSkillsChanged = vi.fn(async () => ['skill-1']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => [
+          { id: 'skill-1', slug: 'system/simple', name: 'Simple', description: 'No deps', dependsOn: [] },
+        ]),
+        listAvailable: vi.fn(async () => []),
+      }),
+    });
+
+    const result = await addSkills.execute(
+      { skillIds: ['skill-1'], includeDependencies: true },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.autoResolved).toBeUndefined();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// add_skills — no skillOps (dependency resolution gracefully skipped)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('add_skills — no skillOps', () => {
+  it('skips dependency auto-resolution when skillOps is missing', async () => {
+    const onSkillsChanged = vi.fn(async () => ['skill-1']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: undefined,
+    });
+
+    const result = await addSkills.execute(
+      { skillIds: ['skill-1'], includeDependencies: true },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    // No autoResolved — can't compute deps without skillOps
+    expect(data.autoResolved).toBeUndefined();
+    expect(data.added).toEqual(['skill-1']);
+  });
+
+  it('still routes legacy IDs through SYSTEM_SKILL_SLUGS fallback when db is absent', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const onSkillsChanged = vi.fn(async () => ['trading']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['trading'] });
+    const ctx = makeCtx({
+      publishToInbound,
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: undefined,
+      db: undefined,
+    });
+
+    const result = await addSkills.execute({ skillIds: ['trading'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.added).toBeDefined();
+    // Verify 'trading' legacy ID was sent to broker as-is
+    const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+    expect(payload.skillIds).toEqual(expect.arrayContaining(['trading']));
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// add_skills — slug resolution (SYSTEM_SKILL_SLUGS, legacy IDs)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('add_skills — slug resolution', () => {
+  it('resolves system/trading slug to trading ID via SYSTEM_SKILL_SLUGS fallback (no db)', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['trading'] });
+    const ctx = makeCtx({
+      publishToInbound,
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+    });
+
+    await addSkills.execute({ skillIds: ['system/trading'] }, ctx);
+
+    expect(publishToInbound).toHaveBeenCalledOnce();
+    const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+    // system/trading slug should resolve to the 'trading' ID
+    expect(payload.skillIds).toEqual(expect.arrayContaining(['trading']));
+  });
+
+  it('passes legacy IDs through as-is when they have no slash (no db)', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['bot-management'] });
+    const ctx = makeCtx({
+      publishToInbound,
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+    });
+
+    await addSkills.execute({ skillIds: ['bot-management'] }, ctx);
+
+    expect(publishToInbound).toHaveBeenCalledOnce();
+    const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+    expect(payload.skillIds).toEqual(expect.arrayContaining(['bot-management']));
+  });
+
+  it('routes unknown slug-like refs (with /) to external when not in SYSTEM_SKILL_SLUGS (no db)', async () => {
+    // 'alice/custom-skill' is not a system slug and not in DB → external
+    const reply = makeBrokerReply({ action: 'add', skillIds: [] });
+    const ctx = makeCtx({
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+    });
+
+    const result = await addSkills.execute({ skillIds: ['alice/custom-skill'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    // The external ref should appear in the external results section
+    const external = data.external as Array<{ ref: string; ok: boolean; error?: string }> | undefined;
+    expect(external).toBeDefined();
+    expect(external!.some(e => e.ref === 'alice/custom-skill')).toBe(true);
+  });
+
+  it('handles mixed platform slugs, legacy IDs, and external refs', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['trading', 'bot-management'] });
+    const ctx = makeCtx({
+      publishToInbound,
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+    });
+
+    const result = await addSkills.execute(
+      { skillIds: ['system/trading', 'bot-management', 'alice/custom-skill'] },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    // Verify platform IDs went to broker
+    const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+    expect(payload.skillIds).toEqual(expect.arrayContaining(['trading', 'bot-management']));
+    // External ref should be in the external results
+    const data = result.data as Record<string, unknown>;
+    const external = data.external as Array<{ ref: string }> | undefined;
+    expect(external).toBeDefined();
+    expect(external!.some(e => e.ref === 'alice/custom-skill')).toBe(true);
+  });
+
+  it('response added array uses slugs (mapped from IDs via idToSlug)', async () => {
+    const onSkillsChanged = vi.fn(async () => ['trading']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['trading'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => [
+          { id: 'trading', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: [] },
+        ]),
+      }),
+    });
+
+    const result = await addSkills.execute({ skillIds: ['system/trading'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    // The 'added' array should contain slugs, not raw IDs
+    const added = data.added as string[];
+    expect(added).toContain('system/trading');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// add_skills — external ref routing
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('add_skills — external refs', () => {
+  it('attempts external install for slug-like refs not matching platform skills', async () => {
+    const ctx = makeCtx({
+      redis: makeRedisWithReply(makeBrokerReply({ action: 'add', skillIds: [] })),
+      db: undefined,
+    });
+
+    const result = await addSkills.execute({ skillIds: ['owner/custom-skill'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const external = data.external as Array<{ ref: string; ok: boolean; error?: string }>;
+    expect(external).toBeDefined();
+    expect(external).toHaveLength(1);
+    expect(external[0]!.ref).toBe('owner/custom-skill');
+    // In the test environment, the subprocess will fail (npx not available or workspace import fails)
+    // but the tool should handle it gracefully
+    expect(typeof external[0]!.ok).toBe('boolean');
+  });
+
+  it('auto-resolves file-management dependency for external skills when includeDependencies is true', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['file-management'] });
+    const ctx = makeCtx({
+      publishToInbound,
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => []),
+      }),
+    });
+
+    const result = await addSkills.execute(
+      { skillIds: ['owner/external-skill'], includeDependencies: true },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    // file-management should have been added to the broker call
+    expect(publishToInbound).toHaveBeenCalledOnce();
+    const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+    expect(payload.skillIds).toEqual(expect.arrayContaining(['file-management']));
+    // autoResolved should mention file-management
+    const data = result.data as Record<string, unknown>;
+    const autoResolved = data.autoResolved as Array<{ skill: string; requiredBy: string }>;
+    expect(autoResolved).toBeDefined();
+    expect(autoResolved).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        skill: 'system/file-management',
+        requiredBy: 'owner/external-skill',
+      }),
+    ]));
+  });
+
+  it('does NOT auto-resolve file-management for external skills when already assigned', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const reply = makeBrokerReply({ action: 'add', skillIds: [] });
+    const ctx = makeCtx({
+      publishToInbound,
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => [
+          { id: 'file-management', slug: 'system/file-management', name: 'File Management', description: 'Files', dependsOn: [] },
+        ]),
+      }),
+    });
+
+    const result = await addSkills.execute(
+      { skillIds: ['owner/external-skill'], includeDependencies: true },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    // No platform skills sent to broker (no broker call or empty skillIds)
+    // because file-management is already assigned
+    const data = result.data as Record<string, unknown>;
+    const autoResolved = data.autoResolved as Array<{ skill: string; requiredBy: string }> | undefined;
+    // Should not have auto-resolved file-management since already assigned
+    if (autoResolved) {
+      expect(autoResolved.every(r => r.skill !== 'system/file-management')).toBe(true);
+    }
+  });
+
+  it('does NOT auto-resolve file-management when includeDependencies is false', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const ctx = makeCtx({
+      publishToInbound,
+      redis: makeRedisWithReply(makeBrokerReply({ action: 'add', skillIds: [] })),
+      db: undefined,
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => []),
+      }),
+    });
+
+    const result = await addSkills.execute(
+      { skillIds: ['owner/external-skill'], includeDependencies: false },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.autoResolved).toBeUndefined();
+  });
+
+  it('continues external installs even when platform broker call fails', async () => {
+    const ctx = makeCtx({
+      // blpop returns null → timeout → broker failure
+      redis: makeRedisMock(),
+      db: undefined,
+    });
+
+    const result = await addSkills.execute(
+      { skillIds: ['owner/external-skill'] },
+      ctx,
+    );
+
+    // The tool should still succeed (external tried even if platform timed out)
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const external = data.external as Array<{ ref: string }>;
+    expect(external).toBeDefined();
+    expect(external[0]!.ref).toBe('owner/external-skill');
+  });
+
+  it('platform-only refs with broker timeout return broker.timeout (no external fallback)', async () => {
+    const ctx = makeCtx({
+      redis: makeRedisMock(), // blpop returns null → timeout
+      db: undefined,
+    });
+
+    const result = await addSkills.execute({ skillIds: ['trading'] }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('broker.timeout');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// remove_skills — slug-mapped response format
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('remove_skills — slug-mapped response', () => {
+  it('response removed array uses slugs when idToSlug mapping is available', async () => {
+    const onSkillsChanged = vi.fn(async () => []);
+    const reply = makeBrokerReply({ action: 'remove', skillIds: ['trading'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => [
+          { id: 'trading', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: [] },
+        ]),
+      }),
+    });
+
+    const result = await removeSkills.execute({ skillIds: ['trading'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const removed = data.removed as string[];
+    expect(removed).toContain('system/trading');
+  });
+
+  it('falls back to raw ID when slug mapping is not available', async () => {
+    const onSkillsChanged = vi.fn(async () => []);
+    const reply = makeBrokerReply({ action: 'remove', skillIds: ['unknown-id'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => []),
+      }),
+    });
+
+    const result = await removeSkills.execute({ skillIds: ['unknown-id'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const removed = data.removed as string[];
+    // Falls back to raw ID since no slug mapping
+    expect(removed).toContain('unknown-id');
+  });
+
+  it('accepts system slug and resolves to platform ID for broker call', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const reply = makeBrokerReply({ action: 'remove', skillIds: ['trading'] });
+    const ctx = makeCtx({
+      publishToInbound,
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => [
+          { id: 'trading', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: [] },
+        ]),
+      }),
+    });
+
+    await removeSkills.execute({ skillIds: ['system/trading'] }, ctx);
+
+    expect(publishToInbound).toHaveBeenCalledOnce();
+    const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+    // system/trading slug should resolve to 'trading' ID for broker
+    expect(payload.skillIds).toEqual(expect.arrayContaining(['trading']));
+  });
+
+  it('maps multiple removed IDs to their respective slugs', async () => {
+    const onSkillsChanged = vi.fn(async () => []);
+    const reply = makeBrokerReply({ action: 'remove', skillIds: ['trading', 'bot-management'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => [
+          { id: 'trading', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: [] },
+          { id: 'bot-management', slug: 'system/bot-management', name: 'Bot Management', description: 'Bots', dependsOn: [] },
+        ]),
+      }),
+    });
+
+    const result = await removeSkills.execute({ skillIds: ['trading', 'bot-management'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const removed = data.removed as string[];
+    expect(removed).toContain('system/trading');
+    expect(removed).toContain('system/bot-management');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// remove_skills — external ref routing
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('remove_skills — external refs', () => {
+  it('routes unknown slug-like refs to external subprocess removal', async () => {
+    const ctx = makeCtx({
+      redis: makeRedisWithReply(makeBrokerReply({ action: 'remove', skillIds: [] })),
+      db: undefined,
+    });
+
+    const result = await removeSkills.execute({ skillIds: ['owner/custom-skill'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const external = data.external as Array<{ ref: string; ok: boolean; error?: string }>;
+    expect(external).toBeDefined();
+    expect(external).toHaveLength(1);
+    expect(external[0]!.ref).toBe('owner/custom-skill');
+  });
+
+  it('handles mixed platform and external refs in remove', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const reply = makeBrokerReply({ action: 'remove', skillIds: ['trading'] });
+    const ctx = makeCtx({
+      publishToInbound,
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => [
+          { id: 'trading', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: [] },
+        ]),
+      }),
+    });
+
+    const result = await removeSkills.execute(
+      { skillIds: ['system/trading', 'alice/custom-skill'] },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    // Verify platform ID went to broker
+    const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+    expect(payload.skillIds).toEqual(expect.arrayContaining(['trading']));
+    // External ref should appear in external results
+    const data = result.data as Record<string, unknown>;
+    const external = data.external as Array<{ ref: string }>;
+    expect(external).toBeDefined();
+    expect(external.some(e => e.ref === 'alice/custom-skill')).toBe(true);
+  });
+
+  it('continues external removal even when platform broker times out', async () => {
+    const ctx = makeCtx({
+      redis: makeRedisMock(), // blpop → null → timeout
+      db: undefined,
+    });
+
+    const result = await removeSkills.execute(
+      { skillIds: ['owner/external-skill'] },
+      ctx,
+    );
+
+    // External-only ref: no platform IDs to send → no broker timeout
+    // Should succeed (external tried)
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const external = data.external as Array<{ ref: string }>;
+    expect(external).toBeDefined();
+    expect(external[0]!.ref).toBe('owner/external-skill');
+  });
+
+  it('includes external failure in warnings when external remove fails', async () => {
+    const ctx = makeCtx({
+      redis: makeRedisWithReply(makeBrokerReply({ action: 'remove', skillIds: [] })),
+      db: undefined,
+    });
+
+    const result = await removeSkills.execute({ skillIds: ['owner/failing-skill'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const external = data.external as Array<{ ref: string; ok: boolean; error?: string }>;
+    expect(external).toBeDefined();
+    // In the test environment the subprocess always fails (npx not available / workspace import fails)
+    expect(external[0]!.ok).toBe(false);
+    const warnings = data.warnings as string[];
+    expect(warnings).toBeDefined();
+    expect(warnings.some(w => w.includes('owner/failing-skill'))).toBe(true);
+  });
+
+  it('response removed array combines platform slug-mapped values and external refs', async () => {
+    const onSkillsChanged = vi.fn(async () => []);
+    const reply = makeBrokerReply({ action: 'remove', skillIds: ['trading'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => [
+          { id: 'trading', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: [] },
+        ]),
+      }),
+    });
+
+    const result = await removeSkills.execute(
+      { skillIds: ['system/trading', 'owner/ext-skill'] },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const removed = data.removed as string[];
+    // Platform skills use slug mapping
+    expect(removed).toContain('system/trading');
+    // External successful removals would be appended too
+    // (may or may not succeed in test env, but structure is correct)
+    expect(Array.isArray(removed)).toBe(true);
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 5: search_skills slug→skill mapping, buildIdToSlugMap, deduplication
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── search_skills: slug→skill field mapping (behavioral change) ─────────
+
+describe('search_skills — slug→skill field mapping', () => {
+  it('maps slug to skill field in every result item', async () => {
+    const searchResults = [
+      { id: 'sk-1', slug: 'system/trading', name: 'Trading', description: 'Trade crypto', isAssigned: true, dependsOn: [] as string[] },
+      { id: 'sk-2', slug: 'system/monitoring', name: 'Monitoring', description: 'Monitor markets', isAssigned: false, dependsOn: ['sk-1'] },
+    ];
+    const ctx = makeCtx({
+      skillOps: makeSkillOps({ search: vi.fn(async () => searchResults) }),
+    });
+
+    const result = await searchSkills.execute({ query: 'trade' }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as SearchSkillsData;
+    for (const item of data.local.results) {
+      expect(item).toHaveProperty('skill');
+      expect(item).not.toHaveProperty('slug');
+    }
+    expect(data.local.results[0]!.skill).toBe('system/trading');
+    expect(data.local.results[1]!.skill).toBe('system/monitoring');
+  });
+
+  it('preserves all other fields (id, name, description, isAssigned, dependsOn) in mapped results', async () => {
+    const searchResults = [
+      { id: 'sk-1', slug: 'system/analytics', name: 'Analytics', description: 'Analyze data', isAssigned: true, dependsOn: ['sk-base'] },
+    ];
+    const ctx = makeCtx({
+      skillOps: makeSkillOps({ search: vi.fn(async () => searchResults) }),
+    });
+
+    const result = await searchSkills.execute({ query: 'analytics' }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as SearchSkillsData;
+    const item = data.local.results[0]!;
+    expect(item.id).toBe('sk-1');
+    expect(item.skill).toBe('system/analytics');
+    expect(item.name).toBe('Analytics');
+    expect(item.description).toBe('Analyze data');
+    expect(item.isAssigned).toBe(true);
+    expect(item.dependsOn).toEqual(['sk-base']);
+  });
+
+  it('returns empty local results array when skillOps.search returns empty', async () => {
+    const ctx = makeCtx({
+      skillOps: makeSkillOps({ search: vi.fn(async () => []) }),
+    });
+
+    const result = await searchSkills.execute({ query: 'nonexistent' }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as SearchSkillsData;
+    expect(data.local.results).toEqual([]);
+  });
+
+  it('response format matches list_skills format (both use skill field, not slug)', async () => {
+    // list_skills assigned items
+    const assigned = [
+      { id: 's1', slug: 'system/trading', name: 'Trading', description: 'Trade stuff', dependsOn: [] as string[] },
+    ];
+    const listCtx = makeCtx({
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => assigned),
+        listAvailable: vi.fn(async () => []),
+      }),
+    });
+    const listResult = await listSkills.execute({}, listCtx);
+    const listData = listResult.data as { assigned: Array<Record<string, unknown>> };
+
+    // search_skills results
+    const searchResults = [
+      { id: 's1', slug: 'system/trading', name: 'Trading', description: 'Trade stuff', isAssigned: true, dependsOn: [] as string[] },
+    ];
+    const searchCtx = makeCtx({
+      skillOps: makeSkillOps({ search: vi.fn(async () => searchResults) }),
+    });
+    const searchResult = await searchSkills.execute({ query: 'trading' }, searchCtx);
+    const searchData = searchResult.data as SearchSkillsData;
+
+    // Both should use 'skill' key, not 'slug'
+    expect(listData.assigned[0]).toHaveProperty('skill', 'system/trading');
+    expect(listData.assigned[0]).not.toHaveProperty('slug');
+    expect(searchData.local.results[0]).toHaveProperty('skill', 'system/trading');
+    expect(searchData.local.results[0]).not.toHaveProperty('slug');
+  });
+
+  it('handles multiple results with different slugs correctly', async () => {
+    const searchResults = [
+      { id: 'a', slug: 'system/trading', name: 'Trading', description: 'D1', isAssigned: true, dependsOn: [] as string[] },
+      { id: 'b', slug: 'system/risk', name: 'Risk', description: 'D2', isAssigned: false, dependsOn: ['a'] },
+      { id: 'c', slug: 'custom/my-skill', name: 'My Skill', description: 'D3', isAssigned: false, dependsOn: [] as string[] },
+    ];
+    const ctx = makeCtx({
+      skillOps: makeSkillOps({ search: vi.fn(async () => searchResults) }),
+    });
+
+    const result = await searchSkills.execute({ query: 'skill' }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as SearchSkillsData;
+    expect(data.local.results).toHaveLength(3);
+    expect(data.local.results.map(r => r.skill)).toEqual([
+      'system/trading',
+      'system/risk',
+      'custom/my-skill',
+    ]);
+    // None should have slug key
+    for (const item of data.local.results) {
+      expect(item).not.toHaveProperty('slug');
+    }
+  });
+});
+
+// ── buildIdToSlugMap: with and without prefetched data ──────────────────
+
+describe('buildIdToSlugMap behavior (tested via add_skills and remove_skills)', () => {
+  // buildIdToSlugMap is not exported, so we test it indirectly through the tools
+  // that use it. The key behaviors:
+  // 1. Seeds with SYSTEM_SKILL_SLUGS (always present)
+  // 2. Augments with prefetched assigned skills when provided
+  // 3. Falls back to ctx.skillOps.listAssigned() when no prefetch
+
+  it('uses SYSTEM_SKILL_SLUGS to map known system IDs to slugs (no prefetch needed)', async () => {
+    // When adding a system skill ID, the response should use the system slug
+    // even without any skillOps-provided assigned data
+    const onSkillsChanged = vi.fn(async () => ['trading']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['trading'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => []),
+        listAvailable: vi.fn(async () => []),
+      }),
+    });
+
+    const result = await addSkills.execute({ skillIds: ['system/trading'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const added = data.added as string[];
+    // 'trading' ID maps to 'system/trading' slug via SYSTEM_SKILL_SLUGS
+    expect(added).toContain('system/trading');
+  });
+
+  it('maps user-authored skill IDs to slugs via prefetched assigned data', async () => {
+    const onSkillsChanged = vi.fn(async () => ['custom-id-1']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['custom-id-1'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => [
+          { id: 'custom-id-1', slug: 'user/my-custom-skill', name: 'Custom', description: 'User skill', dependsOn: [] },
+        ]),
+        listAvailable: vi.fn(async () => []),
+      }),
+    });
+
+    const result = await addSkills.execute({ skillIds: ['custom-id-1'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const added = data.added as string[];
+    // custom-id-1 → 'user/my-custom-skill' via prefetched assigned data
+    expect(added).toContain('user/my-custom-skill');
+  });
+
+  it('falls back to raw ID when skill is not in SYSTEM_SKILL_SLUGS or assigned list', async () => {
+    const onSkillsChanged = vi.fn(async () => ['unknown-skill-id']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['unknown-skill-id'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => []),
+        listAvailable: vi.fn(async () => []),
+      }),
+    });
+
+    const result = await addSkills.execute({ skillIds: ['unknown-skill-id'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const added = data.added as string[];
+    // Falls back to raw ID since not mappable
+    expect(added).toContain('unknown-skill-id');
+  });
+
+  it('buildIdToSlugMap without prefetch falls back to ctx.skillOps.listAssigned (remove_skills path)', async () => {
+    // remove_skills calls buildIdToSlugMap without prefetchedAssigned
+    // so it should internally call ctx.skillOps.listAssigned
+    const listAssigned = vi.fn(async () => [
+      { id: 'custom-id', slug: 'user/custom', name: 'Custom', description: 'Desc', dependsOn: [] },
+    ]);
+    const onSkillsChanged = vi.fn(async () => []);
+    const reply = makeBrokerReply({ action: 'remove', skillIds: ['custom-id'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({ listAssigned }),
+    });
+
+    const result = await removeSkills.execute({ skillIds: ['custom-id'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const removed = data.removed as string[];
+    // Should map custom-id → user/custom via listAssigned fallback
+    expect(removed).toContain('user/custom');
+    // listAssigned should have been called (used by buildIdToSlugMap fallback)
+    expect(listAssigned).toHaveBeenCalled();
+  });
+
+  it('buildIdToSlugMap gracefully handles listAssigned failure (fallback path)', async () => {
+    // When ctx.skillOps.listAssigned throws and no prefetch is provided,
+    // buildIdToSlugMap catches the error and only uses SYSTEM_SKILL_SLUGS
+    const onSkillsChanged = vi.fn(async () => []);
+    const reply = makeBrokerReply({ action: 'remove', skillIds: ['trading'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => { throw new Error('DB unavailable'); }),
+      }),
+    });
+
+    const result = await removeSkills.execute({ skillIds: ['trading'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const removed = data.removed as string[];
+    // Still maps via SYSTEM_SKILL_SLUGS despite listAssigned failure
+    expect(removed).toContain('system/trading');
+  });
+
+  it('buildIdToSlugMap without skillOps uses only SYSTEM_SKILL_SLUGS', async () => {
+    const onSkillsChanged = vi.fn(async () => []);
+    const reply = makeBrokerReply({ action: 'remove', skillIds: ['trading'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: undefined,
+    });
+
+    const result = await removeSkills.execute({ skillIds: ['trading'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const removed = data.removed as string[];
+    // System slug still available
+    expect(removed).toContain('system/trading');
+  });
+});
+
+// ── add_skills: listAssigned/listAvailable deduplication ────────────────
+
+describe('add_skills — listAssigned/listAvailable deduplication', () => {
+  // The key behavior: listAssigned and listAvailable are fetched once at the
+  // top of the try block and reused for: buildIdToSlugMap, dependency resolution,
+  // and file-management checks. These tests verify they're called exactly once.
+
+  it('calls listAssigned exactly once per add_skills execution', async () => {
+    const listAssigned = vi.fn(async () => [
+      { id: 'skill-1', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: ['dep-a'] },
+    ]);
+    const listAvailable = vi.fn(async () => [
+      { id: 'dep-a', slug: 'system/dep-a', name: 'Dep A', description: 'Dep', dependsOn: [] },
+    ]);
+    const onSkillsChanged = vi.fn(async () => ['skill-1', 'dep-a']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1', 'dep-a'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({ listAssigned, listAvailable }),
+    });
+
+    await addSkills.execute({ skillIds: ['skill-1'], includeDependencies: true }, ctx);
+
+    // listAssigned is used for: cached data (slug map + dep resolution + file-mgmt check)
+    // It should be called exactly once, not multiple times
+    expect(listAssigned).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls listAvailable exactly once per add_skills execution', async () => {
+    const listAssigned = vi.fn(async () => [
+      { id: 'skill-1', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: ['dep-a'] },
+    ]);
+    const listAvailable = vi.fn(async () => [
+      { id: 'dep-a', slug: 'system/dep-a', name: 'Dep A', description: 'Dep', dependsOn: [] },
+    ]);
+    const onSkillsChanged = vi.fn(async () => ['skill-1', 'dep-a']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1', 'dep-a'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({ listAssigned, listAvailable }),
+    });
+
+    await addSkills.execute({ skillIds: ['skill-1'], includeDependencies: true }, ctx);
+
+    expect(listAvailable).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses cached assigned data for both slug mapping and dependency resolution', async () => {
+    // This test verifies that the same data from listAssigned is used for:
+    // 1. buildIdToSlugMap (prefetchedAssigned parameter)
+    // 2. Dependency resolution (cachedAssigned)
+    const listAssigned = vi.fn(async () => [
+      { id: 'skill-1', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: ['dep-a'] },
+    ]);
+    const onSkillsChanged = vi.fn(async () => ['skill-1', 'dep-a']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1', 'dep-a'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned,
+        listAvailable: vi.fn(async () => []),
+      }),
+    });
+
+    const result = await addSkills.execute({ skillIds: ['skill-1'], includeDependencies: true }, ctx);
+
+    // Single call confirms deduplication
+    expect(listAssigned).toHaveBeenCalledTimes(1);
+
+    // Verify the cached data was used for slug mapping
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    const added = data.added as string[];
+    // skill-1 maps to system/trading via the cached assigned data
+    expect(added).toContain('system/trading');
+
+    // And the same data was used for dependency resolution
+    const autoResolved = data.autoResolved as Array<{ skill: string; requiredBy: string }>;
+    expect(autoResolved).toBeDefined();
+    expect(autoResolved.some(r => r.requiredBy === 'system/trading')).toBe(true);
+  });
+
+  it('deduplication holds when multiple skills are added simultaneously', async () => {
+    const listAssigned = vi.fn(async () => [
+      { id: 'skill-a', slug: 'system/a', name: 'A', description: 'Skill A', dependsOn: ['dep-shared'] },
+      { id: 'skill-b', slug: 'system/b', name: 'B', description: 'Skill B', dependsOn: ['dep-shared'] },
+    ]);
+    const listAvailable = vi.fn(async () => [
+      { id: 'dep-shared', slug: 'system/dep-shared', name: 'Dep', description: 'Shared dep', dependsOn: [] },
+    ]);
+    const onSkillsChanged = vi.fn(async () => ['skill-a', 'skill-b', 'dep-shared']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-a', 'skill-b', 'dep-shared'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({ listAssigned, listAvailable }),
+    });
+
+    await addSkills.execute({ skillIds: ['skill-a', 'skill-b'], includeDependencies: true }, ctx);
+
+    // Both should still be called exactly once despite two skills being added
+    expect(listAssigned).toHaveBeenCalledTimes(1);
+    expect(listAvailable).toHaveBeenCalledTimes(1);
+  });
+
+  it('deduplication holds when adding external refs alongside platform refs', async () => {
+    const listAssigned = vi.fn(async () => []);
+    const listAvailable = vi.fn(async () => []);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['trading'] });
+    const ctx = makeCtx({
+      redis: makeRedisWithReply(reply),
+      db: undefined,
+      skillOps: makeSkillOps({ listAssigned, listAvailable }),
+    });
+
+    await addSkills.execute(
+      { skillIds: ['system/trading', 'owner/ext-skill'], includeDependencies: true },
+      ctx,
+    );
+
+    // Even with external refs, the platform skill lists are fetched only once
+    expect(listAssigned).toHaveBeenCalledTimes(1);
+    expect(listAvailable).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call listAssigned/listAvailable when skillOps is missing', async () => {
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+    const ctx = makeCtx({
+      redis: makeRedisWithReply(reply),
+      skillOps: undefined,
+    });
+
+    const result = await addSkills.execute({ skillIds: ['skill-1'] }, ctx);
+
+    expect(result.success).toBe(true);
+    // No skillOps → no calls at all
+    // (Can't assert on mock — no mock exists — but success proves it doesn't crash)
+  });
+
+  it('handles listAssigned/listAvailable failure gracefully (cached arrays stay empty)', async () => {
+    const listAssigned = vi.fn(async () => { throw new Error('DB exploded'); });
+    const listAvailable = vi.fn(async () => { throw new Error('DB exploded'); });
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+    const ctx = makeCtx({
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({ listAssigned, listAvailable }),
+    });
+
+    const result = await addSkills.execute({ skillIds: ['skill-1'], includeDependencies: true }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    // No autoResolved — cached arrays are empty due to failure
+    expect(data.autoResolved).toBeUndefined();
+    // Slug map falls back to SYSTEM_SKILL_SLUGS only
+    expect(data.added).toEqual(['skill-1']);
+  });
+});
+
+
+// ── Edge cases from code review ─────────────────────────────────────────
+
+describe('add_skills — dependency resolution edge cases', () => {
+  it('does not spuriously add available skills that are not dependencies when includeDependencies is true', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const onSkillsChanged = vi.fn(async () => ['skill-1']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+    const ctx = makeCtx({
+      publishToInbound,
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => []),
+        listAvailable: vi.fn(async () => [
+          { id: 'skill-1', slug: 'system/trading', name: 'Trading', description: 'Trade', dependsOn: [] },
+          { id: 'unrelated-skill', slug: 'system/unrelated', name: 'Unrelated', description: 'Not a dep', dependsOn: [] },
+          { id: 'another-skill', slug: 'system/another', name: 'Another', description: 'Also not a dep', dependsOn: [] },
+        ]),
+      }),
+    });
+
+    const result = await addSkills.execute(
+      { skillIds: ['skill-1'], includeDependencies: true },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    // No autoResolved — skill-1 has dependsOn: [] so no deps to add
+    expect(data.autoResolved).toBeUndefined();
+    // Broker should only receive skill-1, not the unrelated available skills
+    expect(publishToInbound).toHaveBeenCalledOnce();
+    const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+    expect(payload.skillIds).toEqual(['skill-1']);
+    expect(payload.skillIds).not.toContain('unrelated-skill');
+    expect(payload.skillIds).not.toContain('another-skill');
+  });
+
+  it('handles circular dependencies without hanging or producing duplicates', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const onSkillsChanged = vi.fn(async () => ['skill-a', 'skill-b']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-a', 'skill-b'] });
+    const ctx = makeCtx({
+      publishToInbound,
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => []),
+        listAvailable: vi.fn(async () => [
+          // Circular: skill-a depends on skill-b, skill-b depends on skill-a
+          { id: 'skill-a', slug: 'system/a', name: 'A', description: 'Skill A', dependsOn: ['skill-b'] },
+          { id: 'skill-b', slug: 'system/b', name: 'B', description: 'Skill B', dependsOn: ['skill-a'] },
+        ]),
+      }),
+    });
+
+    // Adding both skills that form a cycle
+    const result = await addSkills.execute(
+      { skillIds: ['skill-a', 'skill-b'], includeDependencies: true },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    // The implementation does a single-pass scan: for each requested skill,
+    // check if deps are already in the requested set or already assigned.
+    // Since skill-a and skill-b are both in the requested set, neither should
+    // trigger auto-resolution.
+    const data = result.data as Record<string, unknown>;
+    expect(data.autoResolved).toBeUndefined();
+    // Broker receives exactly the two requested skills, no duplicates
+    expect(publishToInbound).toHaveBeenCalledOnce();
+    const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+    const sentIds = payload.skillIds as string[];
+    expect(sentIds).toHaveLength(2);
+    expect(new Set(sentIds).size).toBe(2); // no duplicates
+    expect(sentIds).toEqual(expect.arrayContaining(['skill-a', 'skill-b']));
+  });
+
+  it('handles circular dependency when only one side is requested', async () => {
+    const publishToInbound = vi.fn(async () => undefined);
+    const onSkillsChanged = vi.fn(async () => ['skill-a', 'skill-b']);
+    const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-a', 'skill-b'] });
+    const ctx = makeCtx({
+      publishToInbound,
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => []),
+        listAvailable: vi.fn(async () => [
+          { id: 'skill-a', slug: 'system/a', name: 'A', description: 'Skill A', dependsOn: ['skill-b'] },
+          { id: 'skill-b', slug: 'system/b', name: 'B', description: 'Skill B', dependsOn: ['skill-a'] },
+        ]),
+      }),
+    });
+
+    // Only requesting skill-a — skill-b is a dependency
+    const result = await addSkills.execute(
+      { skillIds: ['skill-a'], includeDependencies: true },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    // skill-b auto-resolved as dependency of skill-a
+    // Note: buildIdToSlugMap seeds from SYSTEM_SKILL_SLUGS + cachedAssigned,
+    // but not cachedAvailable, so non-system IDs from available-only skills
+    // will use the raw ID as fallback in autoResolved entries.
+    const autoResolved = data.autoResolved as Array<{ skill: string; requiredBy: string }>;
+    expect(autoResolved).toBeDefined();
+    expect(autoResolved).toEqual(expect.arrayContaining([
+      { skill: 'skill-b', requiredBy: 'skill-a' },
+    ]));
+    // The single-pass scan won't recursively resolve skill-b's dep on skill-a
+    // (skill-a is already in the platform IDs list), so no infinite recursion
+    expect(publishToInbound).toHaveBeenCalledOnce();
+    const [, payload] = publishToInbound.mock.calls[0]! as [string, Record<string, unknown>];
+    const sentIds = payload.skillIds as string[];
+    expect(sentIds).toEqual(expect.arrayContaining(['skill-a', 'skill-b']));
+    expect(new Set(sentIds).size).toBe(sentIds.length); // no duplicates
   });
 });

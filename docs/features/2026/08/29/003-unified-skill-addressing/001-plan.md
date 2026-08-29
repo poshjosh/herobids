@@ -228,7 +228,7 @@ Also add `resolveSkillRefs(refs: string[], db)` that:
 
 ---
 
-## Step 7 — Worker: slug resolution in `skillOps` and skill tools — PENDING
+## Step 7 — Worker: slug resolution in `skillOps` and skill tools — DONE
 
 **Files:**
 - `apps/worker/src/agent.ts`
@@ -283,7 +283,7 @@ Local results include `slug` as the primary identifier.
 
 ---
 
-## Step 8 — Worker: external skill install/remove subprocess — PENDING
+## Step 8 — Worker: external skill install/remove subprocess — DONE
 
 **File:** `apps/worker/src/tools/skills.ts`
 
@@ -528,3 +528,13 @@ Parallelizable groups:
 1. **[Medium] Author lookup repeated 3 times with identical pattern** — The `db.select({ username }).from(users).where(...)` block appears in POST create, PATCH update, and POST fork. Extract to a helper like `getAuthorUsername(db, userId)`.
 
 2. **[Medium] Indentation misalignment in try/catch blocks** — The `try {` and `} catch` blocks are at a different indentation level than the transaction they wrap. Cosmetic but affects readability.
+
+### Step 7 — Worker: slug resolution in skill tools
+
+1. **[Medium] Duplicate dependency entries in `autoResolved` for shared deps** — When two requested skills share a dependency, `autoResolved` contains near-duplicate entries (once per requiring skill). Documented by test — acceptable for agent visibility.
+
+2. **[Medium] `runExternalSubprocess` doesn't kill child on abort/timeout** — Node.js sends SIGTERM but no SIGKILL fallback. Matches existing `runExternalSkillSearch` pattern. Defense-in-depth improvement for later.
+
+### Step 8 — Worker: external skill install/remove subprocess
+
+(Implemented inline as part of Step 7. Uses shared `runExternalSubprocess` helper with configurable args/timeout.)
