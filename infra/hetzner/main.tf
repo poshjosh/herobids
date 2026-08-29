@@ -226,6 +226,7 @@ resource "hcloud_server" "default" {
   #   Same procedure, plus: remove any agent nodes first.  
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = [user_data]
   }
 }
 
