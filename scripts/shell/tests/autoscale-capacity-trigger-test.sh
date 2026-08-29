@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # autoscale-capacity-trigger-test.sh — Push cluster below capacity threshold to trigger scale-out.
 #
+# STATUS: EXPERIMENTAL — This test has known reliability issues with cleanup
+# and node lifecycle. It may leave orphaned jobs or nodes. Run only in staging
+# with close monitoring. See the autoscale-smoke-test.sh for a reliable
+# read-only alternative.
+#
 # Submits dummy Nomad jobs to consume free slots, waits for the autoscaler to
 # detect low capacity and provision a new node, then cleans up.
 #

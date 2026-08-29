@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # autoscale-agent-trigger-test.sh — Trigger autoscale via real agent creation.
 #
+# STATUS: EXPERIMENTAL — This test has known reliability issues with cleanup
+# and node lifecycle. It may leave orphaned agents or nodes, and incurs LLM
+# costs. Run only in staging with close monitoring. See the
+# autoscale-smoke-test.sh for a reliable read-only alternative.
+#
 # Creates enough agents via the API to consume cluster capacity below the
 # scale-out threshold, waits for the autoscaler to provision a new node,
 # then cleans up. This is a manual-only test — NOT included in run-extra-tests.sh.
