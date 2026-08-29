@@ -1,3 +1,22 @@
+// ── Slug helpers ────────────────────────────────────────────────────────────
+
+/** Convert a human-readable name to a kebab-case slug component. */
+export function slugify(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')  // strip non-alphanumeric (keep spaces & hyphens)
+    .replace(/[\s-]+/g, '-')        // collapse whitespace/hyphens to single hyphen
+    .replace(/^-+|-+$/g, '');       // trim leading/trailing hyphens
+}
+
+/** Build a full skill slug: `<authorHandle>/<slugified-name>`. */
+export function buildSkillSlug(authorHandle: string, name: string): string {
+  return `${authorHandle}/${slugify(name)}`;
+}
+
+// ── Skill definitions ───────────────────────────────────────────────────────
+
 /**
  * System skill definitions — seeded at deploy time.
  * Each skill defines what tools and context sections an agent can access.
@@ -8,6 +27,8 @@
 
 export interface SkillDefinition {
   id: string;
+  /** Unique human-readable slug: `author/name` (e.g. `system/trading`). */
+  slug?: string;
   /** Optional skill revision — incremented when the definition changes materially. */
   revision?: number;
   name: string;
@@ -40,6 +61,7 @@ export interface SkillDefinition {
  */
 export const BASE_SKILL: SkillDefinition = {
   id: 'base',
+  slug: 'system/base',
   name: 'Base',
   description: 'Core tools: memory, messaging, cost tracking, schema fetching, and account summary. Auto-injected into every agent.',
   instructions: `You have access to core tools.
@@ -75,6 +97,7 @@ export const BASE_SKILL: SkillDefinition = {
  */
 export const BOT_MANAGEMENT_SKILL: SkillDefinition = {
   id: 'bot-management',
+  slug: 'system/bot-management',
   name: 'Bot Management',
   description: 'Create, start, stop, and monitor trading bots.',
   instructions: `You have access to bot-management tools.
@@ -111,6 +134,7 @@ export const BOT_MANAGEMENT_SKILL: SkillDefinition = {
  */
 export const TRADING_SKILL: SkillDefinition = {
   id: 'trading',
+  slug: 'system/trading',
   name: 'Trading',
   description: 'Submit trade decisions and inspect trading state.',
   instructions: `You have access to trading tools, grouped by workflow phase.
@@ -156,6 +180,7 @@ To decide, you can:
  */
 export const RISK_MONITORING_SKILL: SkillDefinition = {
   id: 'risk-monitoring',
+  slug: 'system/risk-monitoring',
   name: 'Risk Monitoring',
   description: 'Watch open positions and alert the user when risk thresholds are approaching.',
   instructions: `You have access to risk-monitoring and alerting tools.
@@ -190,6 +215,7 @@ export const RISK_MONITORING_SKILL: SkillDefinition = {
  */
 export const PROGRAMMING_SKILL: SkillDefinition = {
   id: 'programming',
+  slug: 'system/programming',
   name: 'Programming',
   description: 'Code execution tools',
   instructions: `You have access to programming tools for code-driven automation, external API calls etc.
@@ -215,6 +241,7 @@ export const PROGRAMMING_SKILL: SkillDefinition = {
  */
 export const FILE_MANAGEMENT_SKILL: SkillDefinition = {
   id: 'file-management',
+  slug: 'system/file-management',
   name: 'File Management',
   description: 'Manage a per-agent workspace for intermediate files and outputs.',
   instructions: `You have access to workspace file-management tools.
@@ -247,6 +274,7 @@ Workspace rules:
  */
 export const WEB_ACCESS_SKILL: SkillDefinition = {
   id: 'web-access',
+  slug: 'system/web-access',
   name: 'Web Access',
   description: 'Search the internet, read web pages, and fetch documents for research and information gathering.',
   instructions: `You have access to internet research tools.
@@ -273,6 +301,7 @@ export const WEB_ACCESS_SKILL: SkillDefinition = {
  */
 export const TASK_MANAGEMENT_SKILL: SkillDefinition = {
   id: 'task-management',
+  slug: 'system/task-management',
   name: 'Task Management',
   description: 'Create, track, and complete durable tasks; schedule one-shot reminders.',
   instructions: `You have access to task management tools.
@@ -302,6 +331,7 @@ export const TASK_MANAGEMENT_SKILL: SkillDefinition = {
  */
 export const EMAIL_SKILL: SkillDefinition = {
   id: 'email',
+  slug: 'system/email',
   revision: 1,
   name: 'Email',
   description: 'Send emails on behalf of the user.',
@@ -338,6 +368,7 @@ Rule: Use send_email for any external email recipient. Use send_message for comm
  */
 export const PLATFORM_DOCS_SKILL: SkillDefinition = {
   id: 'platform-docs',
+  slug: 'system/platform-docs',
   name: 'Platform Docs',
   description: 'Search and read platform documentation, form schemas, and configuration references.',
   instructions: `You have access to platform documentation tools.
@@ -383,6 +414,13 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   EMAIL_SKILL,
   PLATFORM_DOCS_SKILL,
 ];
+
+/** Map from system skill slug → skill ID for fast lookup. */
+export const SYSTEM_SKILL_SLUGS: ReadonlyMap<string, string> = new Map(
+  SYSTEM_SKILLS
+    .filter((s): s is SkillDefinition & { slug: string } => s.slug != null)
+    .map(s => [s.slug, s.id]),
+);
 
 
 // ── Read-time dependency inference ──────────────────────────────────────────

@@ -135,7 +135,7 @@ A data migration computes slugs for all existing rows. System skills get `system
 
 ---
 
-## Step 2 — Domain: add `slugify` helper and update `SkillDefinition` — PENDING
+## Step 2 — Domain: add `slugify` helper and update `SkillDefinition` — DONE
 
 **File:** `packages/domain/src/skills.ts`
 
@@ -488,3 +488,13 @@ Parallelizable groups:
 2. **[Low] Migration `when` timestamp is a round number** — The journal `when` value `1786200000000` looks synthetic vs other entries' high-precision timestamps. Cosmetic only.
 
 3. **[Low] Backfill only handles single-space separators** — `LOWER(REPLACE(name, ' ', '-'))` doesn't handle double spaces, tabs, etc. Acceptable for backfill since current skill names are clean. The application-level `slugify()` (Step 2) should handle edge cases properly.
+
+### Step 2 — Domain: add `slugify` helper and update `SkillDefinition`
+
+1. **[Medium] `buildSkillSlug` does not normalize the author handle** — `buildSkillSlug('Alice', 'Trading')` produces `Alice/trading`. The author handle is passed through verbatim. Consider adding `.toLowerCase()` for defensive normalization, or adding a JSDoc note that the caller is responsible for passing a lowercase handle.
+
+2. **[Medium] Underscore handling in `slugify`** — `slugify('hello_world')` produces `helloworld` (underscores stripped). Most conventions treat underscores as word separators (`hello-world`). Consider adding `_` to the preserved character set so underscores become hyphens.
+
+3. **[Low] `SYSTEM_SKILL_SLUGS` doesn't include `BASE_SKILL`** — Correct by design (BASE_SKILL is auto-injected). Consider adding a JSDoc note on `SYSTEM_SKILL_SLUGS` explaining the exclusion.
+
+4. **[Low] Missing edge case test for `buildSkillSlug` with empty name** — `buildSkillSlug('system', '')` produces `system/`. Document this behavior with a test.
