@@ -597,6 +597,17 @@ function SkillCard({
         )) : <span style={pillStyle}>{intl.formatMessage({ id: 'skills.capability.base', defaultMessage: 'Base' })}</span>}
       </div>
 
+      {(skill.dependsOn?.length ?? 0) > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }} aria-label={intl.formatMessage({ id: 'skills.card.dependsOn', defaultMessage: 'Depends on:' })}>
+          <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
+            {intl.formatMessage({ id: 'skills.card.dependsOn', defaultMessage: 'Depends on:' })}
+          </span>
+          {skill.dependsOn.map((depId) => (
+            <span key={depId} style={dependencyPillStyle}>{depId}</span>
+          ))}
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
         {canPublish && (
           <Button
@@ -882,6 +893,15 @@ const pillStyle: React.CSSProperties = {
   background: 'var(--color-surface-2)',
   color: 'var(--color-text-secondary)',
   fontSize: '0.75rem',
+};
+
+const dependencyPillStyle: React.CSSProperties = {
+  fontSize: '0.6875rem',
+  padding: '2px 8px',
+  borderRadius: '4px',
+  background: 'var(--color-bg-tertiary, rgba(100, 100, 100, 0.15))',
+  color: 'var(--color-text-secondary)',
+  whiteSpace: 'nowrap',
 };
 
 const fieldLabelStyle: React.CSSProperties = {

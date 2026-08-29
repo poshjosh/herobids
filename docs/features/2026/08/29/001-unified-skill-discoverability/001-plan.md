@@ -240,7 +240,7 @@ The helper should:
 
 ---
 
-## Step 5 — API: derive `dependsOn` in skill views [PENDING]
+## Step 5 — API: derive `dependsOn` in skill views [DONE]
 
 **File:** `apps/api/src/routes/skills.ts`
 

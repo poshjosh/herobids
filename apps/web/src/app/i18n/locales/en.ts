@@ -99,6 +99,7 @@ export const messages: Record<string, string> = {
   'skills.status.archived': 'Archived',
   'skills.price.free': 'Free',
   'skills.capability.base': 'Base',
+  'skills.card.dependsOn': 'Depends on:',
   'skills.metrics.loading': 'Loading metrics...',
   'skills.metrics.loadError': 'Unable to load metrics: {message}',
 

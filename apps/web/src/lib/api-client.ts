@@ -432,6 +432,7 @@ export interface Skill {
   capabilityFamilies: string[];
   suggestedTickIntervalMs: number | null;
   tags: string[];
+  dependsOn: string[];
   createdAt: string;
   updatedAt: string;
 }
