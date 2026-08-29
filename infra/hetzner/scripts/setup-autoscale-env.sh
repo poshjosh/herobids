@@ -173,6 +173,21 @@ fi
 echo "==> Running systemctl daemon-reload ..."
 ssh ${SSH_OPTS} "root@${SERVER_IP}" 'systemctl daemon-reload'
 
+# ─── Upload tfvars file (required for terraform apply on the server) ──────────
+
+# The autoscale scripts use tf_apply_var which reads the environment-specific
+# tfvars file for required Terraform input variables (hcloud_token, deploy_ssh_private_key, etc.).
+TFVARS_FILE="${TF_DIR}/${HEROBIDS_ENV}.tfvars"
+if [[ -f "${TFVARS_FILE}" ]]; then
+  echo "==> Uploading ${HEROBIDS_ENV}.tfvars to server..."
+  scp ${SSH_OPTS} "${TFVARS_FILE}" "root@${SERVER_IP}:/opt/herobids/infra/hetzner/${HEROBIDS_ENV}.tfvars"
+  ssh ${SSH_OPTS} "root@${SERVER_IP}" "chmod 0600 /opt/herobids/infra/hetzner/${HEROBIDS_ENV}.tfvars"
+  echo "    Uploaded: /opt/herobids/infra/hetzner/${HEROBIDS_ENV}.tfvars (0600)"
+else
+  echo "WARNING: ${TFVARS_FILE} not found locally — terraform apply on the server may fail."
+  echo "  The autoscale scripts need this file for required Terraform variables."
+fi
+
 echo ""
 echo "==> Done. autoscale.env uploaded and permissions set."
 echo "    Path on server: /etc/herobids/autoscale.env"

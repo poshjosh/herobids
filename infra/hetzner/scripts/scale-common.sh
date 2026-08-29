@@ -410,8 +410,10 @@ tf_ensure_ready() {
 
 # tf_apply_var — execute a terraform apply with the given -var overrides.
 # Usage: tf_apply_var "agent_node_count=5"
-# No tfvars file is needed — all inputs come from TF_VAR_* environment
-# variables set in the systemd service unit.
+# Uses the environment-specific tfvars file (e.g., staging.tfvars) if it
+# exists in TERRAFORM_DIR, providing required Terraform input variables
+# (hcloud_token, deploy_ssh_private_key, etc.). Dynamic overrides are
+# passed as -var arguments.
 #
 # NOTE: Do not pass sensitive values (secrets, API keys, passwords) as -var
 # arguments — they appear in process listings and terraform logs. Use TF_VAR_*
@@ -419,13 +421,23 @@ tf_ensure_ready() {
 tf_apply_var() {
   cd "${TERRAFORM_DIR}"
 
-  local -a var_args=()
+  local -a apply_args=(-auto-approve)
+
+  # Use environment-specific tfvars file if available.
+  # This provides required Terraform variables (hcloud_token, deploy_ssh_private_key, etc.)
+  # that are not set via TF_VAR_* env vars in the systemd service units.
+  local tfvars_file="${TERRAFORM_DIR}/${HEROBIDS_ENV}.tfvars"
+  if [[ -f "${tfvars_file}" ]]; then
+    apply_args+=("-var-file=${tfvars_file}")
+    log "Using var-file: ${tfvars_file}"
+  fi
+
   for var_pair in "$@"; do
-    var_args+=("-var" "${var_pair}")
+    apply_args+=("-var" "${var_pair}")
   done
 
-  log "Terraform apply: terraform apply -auto-approve ${var_args[*]}"
-  terraform apply -auto-approve "${var_args[@]}"
+  log "Terraform apply: terraform apply ${apply_args[*]}"
+  terraform apply "${apply_args[@]}"
 }
 
 # ─── Nomad node helpers (Phase 7) ─────────────────────────────────────────────

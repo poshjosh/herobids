@@ -40,7 +40,7 @@ source "${SCRIPT_DIR}/_ssh_opts.sh"
 VAR_FILE=""
 TF_CLI_ARGS=""
 AUTO_APPROVE=false
-BACKEND_ENV_FILE=""
+BACKEND_ENV_FILE="${TF_DIR}/.env"
 
 parse_env_flag "$@"
 shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
@@ -146,6 +146,23 @@ if [[ -z "${VAR_FILE}" ]]; then
   fi
 fi
 
+# ─── Source backend env file (must happen before any terraform command) ───────
+
+if [[ -n "${BACKEND_ENV_FILE}" ]]; then
+  if [[ "${BACKEND_ENV_FILE}" != /* ]]; then
+    BACKEND_ENV_FILE="${TF_DIR}/${BACKEND_ENV_FILE}"
+  fi
+  if [[ ! -f "${BACKEND_ENV_FILE}" ]]; then
+    echo "ERROR: --backend-env-file '${BACKEND_ENV_FILE}' does not exist." >&2
+    exit 1
+  fi
+  echo "==> Sourcing backend env file: ${BACKEND_ENV_FILE}"
+  set -a
+  # shellcheck disable=SC1090
+  source "${BACKEND_ENV_FILE}"
+  set +a
+fi
+
 # ─── Terraform workspace ─────────────────────────────────────────────────────
 
 # Check BEFORE selecting — warn if still on deprecated default workspace
@@ -168,25 +185,6 @@ terraform workspace select "${HEROBIDS_ENV}" 2>/dev/null || \
 # ─── Terraform init ──────────────────────────────────────────────────────────
 
 echo "==> [${HEROBIDS_ENV}] Running terraform init..."
-
-# Source backend env file if provided (--backend-env-file).
-# This sets TF_BACKEND_BUCKET, AWS_ACCESS_KEY_ID, etc. from a file
-# instead of requiring them as shell environment variables.
-# The file uses KEY=VALUE format (same as autoscale.env on the server).
-if [[ -n "${BACKEND_ENV_FILE}" ]]; then
-  if [[ "${BACKEND_ENV_FILE}" != /* ]]; then
-    BACKEND_ENV_FILE="${TF_DIR}/${BACKEND_ENV_FILE}"
-  fi
-  if [[ ! -f "${BACKEND_ENV_FILE}" ]]; then
-    echo "ERROR: --backend-env-file '${BACKEND_ENV_FILE}' does not exist." >&2
-    exit 1
-  fi
-  echo "==> Sourcing backend env file: ${BACKEND_ENV_FILE}"
-  set -a
-  # shellcheck disable=SC1090
-  source "${BACKEND_ENV_FILE}"
-  set +a
-fi
 
 # Build S3 backend config flags from environment variables.
 # The same env vars (TF_BACKEND_BUCKET, TF_BACKEND_REGION, etc.) are used
@@ -213,7 +211,7 @@ if [[ -z "${TF_BACKEND_BUCKET}" ]]; then
   exit 1
 fi
 
-INIT_ARGS=(-input=false \
+INIT_ARGS=(-input=false -reconfigure \
   "-backend-config=bucket=${TF_BACKEND_BUCKET}" \
   "-backend-config=key=herobids/${HEROBIDS_ENV}/terraform.tfstate" \
   "-backend-config=region=${TF_BACKEND_REGION}" \

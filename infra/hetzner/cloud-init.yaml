@@ -518,7 +518,7 @@ runcmd:
       # so the token is available immediately after a deploy + reboot cycle.
       if [ -f /etc/herobids/autoscale.env ]; then
         . /etc/herobids/autoscale.env
-        if [ -n "${NOMAD_TOKEN:-}" ]; then
+        if [ -n "$NOMAD_TOKEN" ]; then
           echo "$NOMAD_TOKEN" > /etc/nomad.d/acl-token
           chmod 600 /etc/nomad.d/acl-token
           logger -t cloud-init "Nomad ACL token written to /etc/nomad.d/acl-token (from autoscale.env)"
