@@ -361,7 +361,7 @@ However, the broker handler's error messages should include slugs for better age
 
 ---
 
-## Step 11 — BASE_SKILL instruction update — PENDING
+## Step 11 — BASE_SKILL instruction update — DONE
 
 **File:** `packages/domain/src/skills.ts`
 

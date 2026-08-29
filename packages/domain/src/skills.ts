@@ -75,11 +75,10 @@ export const BASE_SKILL: SkillDefinition = {
 - Use \`get_risk_limits\` to inspect your effective risk limits, including which are mutable and which are locked by the creator.
 - Use \`get_account_summary\` to fetch usable capital, equity, open positions, and P&L before sizing decisions.
 - Use \`get_schema\` to fetch JSON Schema for a named config parameter or tool sub-schema. Call with name="all" to list available schemas before constructing config payloads.
-- Use \`list_skills\` to see what skills you have and what platform skills are available to add.
-- Use \`search_skills\` to find skills by keyword. It searches both the platform catalog and the standard skills.sh discovery flow.
-- Use \`add_skills\` to adopt platform skills. The response may tell you about dependency skills you should also add.
-- Use \`remove_skills\` to drop skills you no longer need.
-- External skills are instruction bundles. Discovering them does not install them. If you need to install one, you may first need the \`programming\` skill so you can use \`execute_code\` with the documented skills.sh workflow.`,
+- Use \`list_skills\` to see what skills you have and what platform skills are available to add. Skills are identified by their slug (e.g. system/trading, system/programming).
+- Use \`search_skills\` to find skills by keyword. It searches both the platform catalog and external skills via skills.sh.
+- Use \`add_skills\` to add skills by slug. Dependencies are added automatically unless you set includeDependencies to false. For external skills (e.g. twostraws/swiftui-agent-skill), the platform installs them and adds the file-management skill so you can read the installed instructions.
+- Use \`remove_skills\` to drop skills by slug.`,
   requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_risk_limits', 'get_account_summary', 'get_schema', 'list_skills', 'add_skills', 'remove_skills', 'search_skills'],
   capabilityFamilies: [],
   bindingRequirements: {},
