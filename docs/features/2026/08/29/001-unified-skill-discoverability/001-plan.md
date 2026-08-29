@@ -272,7 +272,7 @@ This keeps API responses current without introducing write-time or migration com
 
 ---
 
-## Step 7 — Worker: wire `skillOps.search` and derive dependency data in runtime skill queries [PENDING]
+## Step 7 — Worker: wire `skillOps.search` and derive dependency data in runtime skill queries [DONE]
 
 **File:** `apps/worker/src/agent.ts`
 

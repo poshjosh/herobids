@@ -4,6 +4,7 @@ import { AGENT_MESSAGE_TYPES, ManageAgentSkillsResultSchema } from '@herobids/do
 import { convertZodToJsonSchema } from './registry.js';
 import { createLogger } from '../logger.js';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 
 const logger = createLogger('tools:skills');
 
@@ -196,4 +197,131 @@ const removeSkillsTool: AgentTool = {
   },
 };
 
-export const skillTools: AgentTool[] = [listSkillsTool, addSkillsTool, removeSkillsTool];
+// ── search_skills ───────────────────────────────────────────────────────────
+
+const SearchSkillsParamsSchema = z.object({
+  query: z.string().min(1).max(200),
+});
+
+const EXTERNAL_SEARCH_TIMEOUT_MS = 15_000;
+const EXTERNAL_OUTPUT_MAX_BYTES = 8192;
+
+function tokenizeQuery(query: string): string[] {
+  return query.trim().split(/\s+/).filter(t => t.length > 0);
+}
+
+async function runExternalSkillSearch(
+  tokens: string[],
+  cwd: string,
+): Promise<{ output: string } | { error: string }> {
+  const sanitized = tokens
+    .map(t => t.trim())
+    .filter(t => t.length > 0)
+    .slice(0, 10);
+
+  if (sanitized.length === 0) {
+    return { error: 'No valid search tokens after sanitization' };
+  }
+
+  return new Promise((resolve) => {
+    const child = spawn('npx', ['skills', 'find', ...sanitized], {
+      cwd,
+      env: { ...process.env, CI: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: EXTERNAL_SEARCH_TIMEOUT_MS,
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      if (stdout.length < EXTERNAL_OUTPUT_MAX_BYTES) {
+        stdout += chunk.toString('utf-8').slice(0, EXTERNAL_OUTPUT_MAX_BYTES - stdout.length);
+      }
+    });
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      if (stderr.length < EXTERNAL_OUTPUT_MAX_BYTES) {
+        stderr += chunk.toString('utf-8').slice(0, EXTERNAL_OUTPUT_MAX_BYTES - stderr.length);
+      }
+    });
+
+    child.on('error', (err) => {
+      resolve({ error: `skills.sh CLI unavailable: ${err.message}` });
+    });
+
+    child.on('close', (code) => {
+      if (code === 0 && stdout.trim().length > 0) {
+        resolve({ output: stdout.trim() });
+      } else if (stderr.trim().length > 0) {
+        resolve({ error: `skills.sh exited with code ${code}: ${stderr.trim().slice(0, 500)}` });
+      } else {
+        resolve({ error: `skills.sh exited with code ${code} (no output)` });
+      }
+    });
+  });
+}
+
+const searchSkillsTool: AgentTool = {
+  name: 'search_skills',
+  description:
+    'Search for skills by keyword across the platform catalog and external skills discoverable through skills.sh.',
+  parametersSchema: SearchSkillsParamsSchema,
+  parameters: convertZodToJsonSchema(SearchSkillsParamsSchema),
+  category: 'read-database',
+  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+    const parsed = SearchSkillsParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: 'Invalid parameters: query must be a non-empty string (max 200 chars)',
+        errorCode: 'validation.invalid_params',
+      };
+    }
+    const { query } = parsed.data;
+
+    // Local platform search
+    let localResults: Array<{
+      id: string;
+      name: string;
+      description: string;
+      isAssigned: boolean;
+      dependsOn: string[];
+    }> = [];
+    if (ctx.skillOps) {
+      try {
+        localResults = await ctx.skillOps.search(query);
+      } catch (err) {
+        logger.warn({ err, agentId: ctx.agentId }, 'search_skills local search failed');
+      }
+    }
+
+    // External search via skills.sh (best-effort)
+    const tokens = tokenizeQuery(query);
+    let external: { results: string } | { note: string };
+
+    try {
+      const { getWorkspacePaths } = await import('./workspace.js');
+      const cwd = getWorkspacePaths(ctx.agentId).root;
+
+      const extResult = await runExternalSkillSearch(tokens, cwd);
+      if ('output' in extResult) {
+        external = { results: extResult.output };
+      } else {
+        external = { note: extResult.error };
+      }
+    } catch (err) {
+      external = { note: `External search unavailable: ${err instanceof Error ? err.message : 'unknown error'}` };
+    }
+
+    return {
+      success: true,
+      data: {
+        local: { results: localResults },
+        external,
+      },
+    };
+  },
+};
+
+export const skillTools: AgentTool[] = [listSkillsTool, addSkillsTool, removeSkillsTool, searchSkillsTool];

@@ -6,6 +6,7 @@ import { skillTools } from './skills.js';
 const listSkills = skillTools.find((t) => t.name === 'list_skills')!;
 const addSkills = skillTools.find((t) => t.name === 'add_skills')!;
 const removeSkills = skillTools.find((t) => t.name === 'remove_skills')!;
+const searchSkills = skillTools.find((t) => t.name === 'search_skills')!;
 
 // ── Test helpers ────────────────────────────────────────────────────────────
 
@@ -69,13 +70,13 @@ function makeSkillOps(
 // ── Tool exports sanity ─────────────────────────────────────────────────────
 
 describe('skillTools exports', () => {
-  it('exports exactly three tools', () => {
-    expect(skillTools).toHaveLength(3);
+  it('exports exactly four tools', () => {
+    expect(skillTools).toHaveLength(4);
   });
 
   it('exports tools with expected names', () => {
     const names = skillTools.map((t) => t.name);
-    expect(names).toEqual(['list_skills', 'add_skills', 'remove_skills']);
+    expect(names).toEqual(['list_skills', 'add_skills', 'remove_skills', 'search_skills']);
   });
 });
 
@@ -797,6 +798,299 @@ describe('list_skills dependsOn propagation', () => {
     const data = result.data as { assigned: typeof assigned; available: typeof available };
     expect(data.assigned[0]!.dependsOn).toHaveLength(8);
     expect(data.available[0]!.dependsOn).toHaveLength(1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// search_skills
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Shared type for the search_skills response data shape. */
+type SearchSkillsData = {
+  local: {
+    results: Array<{
+      id: string;
+      name: string;
+      description: string;
+      isAssigned: boolean;
+      dependsOn: string[];
+    }>;
+  };
+  external: { results: string } | { note: string };
+};
+
+describe('search_skills', () => {
+  it('is registered with read-database category', () => {
+    expect(searchSkills.category).toBe('read-database');
+  });
+
+  // ── Validation ──────────────────────────────────────────────────────────
+
+  describe('validation', () => {
+    it('rejects empty query', async () => {
+      const ctx = makeCtx({ skillOps: makeSkillOps() });
+      const result = await searchSkills.execute({ query: '' }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.errorCode).toBe('validation.invalid_params');
+    });
+
+    it('rejects query exceeding 200 characters', async () => {
+      const ctx = makeCtx({ skillOps: makeSkillOps() });
+      const longQuery = 'a'.repeat(201);
+      const result = await searchSkills.execute({ query: longQuery }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.errorCode).toBe('validation.invalid_params');
+    });
+
+    it('rejects missing query parameter', async () => {
+      const ctx = makeCtx({ skillOps: makeSkillOps() });
+      const result = await searchSkills.execute({}, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.errorCode).toBe('validation.invalid_params');
+    });
+
+    it('rejects non-string query', async () => {
+      const ctx = makeCtx({ skillOps: makeSkillOps() });
+      const result = await searchSkills.execute({ query: 123 }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.errorCode).toBe('validation.invalid_params');
+    });
+
+    it('accepts query at exactly 200 characters', async () => {
+      const ctx = makeCtx({ skillOps: makeSkillOps() });
+      const maxQuery = 'a'.repeat(200);
+      const result = await searchSkills.execute({ query: maxQuery }, ctx);
+
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts a single-character query', async () => {
+      const ctx = makeCtx({ skillOps: makeSkillOps() });
+      const result = await searchSkills.execute({ query: 'x' }, ctx);
+
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts whitespace-only query (passes min-length but tokenizes to zero external tokens)', async () => {
+      const ctx = makeCtx({ skillOps: makeSkillOps() });
+      const result = await searchSkills.execute({ query: '   ' }, ctx);
+
+      // Zod min(1) passes (length 3), but tokenizeQuery produces zero tokens
+      // Local search receives the raw string; external arm degrades gracefully
+      expect(result.success).toBe(true);
+      const data = result.data as SearchSkillsData;
+      expect(data.local.results).toEqual([]);
+      expect(data.external).toHaveProperty('note');
+    });
+  });
+
+  // ── Local search ────────────────────────────────────────────────────────
+
+  describe('local search', () => {
+    it('returns local results when skillOps.search returns data', async () => {
+      const searchResults = [
+        { id: 'sk-1', name: 'Trading', description: 'Trade crypto', isAssigned: true, dependsOn: ['sk-2'] },
+        { id: 'sk-3', name: 'Analytics', description: 'Analyze markets', isAssigned: false, dependsOn: [] as string[] },
+      ];
+      const ctx = makeCtx({
+        skillOps: makeSkillOps({ search: vi.fn(async () => searchResults) }),
+      });
+
+      const result = await searchSkills.execute({ query: 'trading' }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as SearchSkillsData;
+      expect(data.local.results).toEqual(searchResults);
+    });
+
+    it('passes the query string to skillOps.search', async () => {
+      const searchFn = vi.fn(async () => []);
+      const ctx = makeCtx({
+        skillOps: makeSkillOps({ search: searchFn }),
+      });
+
+      await searchSkills.execute({ query: 'crypto monitoring' }, ctx);
+
+      expect(searchFn).toHaveBeenCalledWith('crypto monitoring');
+      expect(searchFn).toHaveBeenCalledOnce();
+      expect(searchFn.mock.calls[0]).toHaveLength(1);
+    });
+
+    it('returns empty local results when skillOps is not provided', async () => {
+      const ctx = makeCtx({ skillOps: undefined });
+
+      const result = await searchSkills.execute({ query: 'trading' }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as SearchSkillsData;
+      expect(data.local.results).toEqual([]);
+    });
+
+    it('returns empty local results when skillOps.search throws', async () => {
+      const ctx = makeCtx({
+        skillOps: makeSkillOps({
+          search: vi.fn(async () => { throw new Error('DB connection lost'); }),
+        }),
+      });
+
+      const result = await searchSkills.execute({ query: 'trading' }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as SearchSkillsData;
+      expect(data.local.results).toEqual([]);
+    });
+
+    it('does not fail when skillOps.search throws a non-Error value', async () => {
+      const ctx = makeCtx({
+        skillOps: makeSkillOps({
+          search: vi.fn(async () => { throw 'string error'; }),
+        }),
+      });
+
+      const result = await searchSkills.execute({ query: 'trading' }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as SearchSkillsData;
+      expect(data.local.results).toEqual([]);
+    });
+  });
+
+  // ── External search ─────────────────────────────────────────────────────
+  // NOTE: These tests only cover the degradation path (dynamic import or
+  // spawn fails in the test environment). The external success path — where
+  // runExternalSkillSearch returns { output } — requires mocking
+  // child_process.spawn and the dynamic import of ./workspace.js. That path
+  // is covered at the integration level; adding spawn mocking here would
+  // couple unit tests to internal implementation details.
+
+  describe('external search', () => {
+    it('returns a note when external search is unavailable (dynamic import fails)', async () => {
+      const ctx = makeCtx({ skillOps: makeSkillOps() });
+
+      const result = await searchSkills.execute({ query: 'trading' }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as SearchSkillsData;
+      // The dynamic import of ./workspace.js may fail or npx skills won't be available —
+      // either way the external arm should gracefully degrade with a note
+      expect('note' in data.external).toBe(true);
+      const ext = data.external as { note: string };
+      expect(typeof ext.note).toBe('string');
+      expect(ext.note.length).toBeGreaterThan(0);
+    });
+
+    it('does not cause overall failure when external search fails', async () => {
+      const searchResults = [
+        { id: 'sk-1', name: 'Trading', description: 'Trade', isAssigned: false, dependsOn: [] as string[] },
+      ];
+      const ctx = makeCtx({
+        skillOps: makeSkillOps({ search: vi.fn(async () => searchResults) }),
+      });
+
+      const result = await searchSkills.execute({ query: 'trading' }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as SearchSkillsData;
+      // Local results should still be present despite external failure
+      expect(data.local.results).toEqual(searchResults);
+      expect('note' in data.external).toBe(true);
+    });
+  });
+
+  // ── Response shape ──────────────────────────────────────────────────────
+
+  describe('response shape', () => {
+    it('returns { local: { results }, external: { ... } } structure', async () => {
+      const ctx = makeCtx({ skillOps: makeSkillOps() });
+
+      const result = await searchSkills.execute({ query: 'test' }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as SearchSkillsData;
+      expect(data).toHaveProperty('local');
+      expect(data).toHaveProperty('external');
+
+      expect(data.local).toHaveProperty('results');
+      expect(Array.isArray(data.local.results)).toBe(true);
+
+      // External will have either 'results' (string) or 'note' (string)
+      const hasResults = 'results' in data.external;
+      const hasNote = 'note' in data.external;
+      expect(hasResults || hasNote).toBe(true);
+    });
+
+    it('external arm contains a string value (note on degradation, results on success)', async () => {
+      // In the test environment, external search degrades — verify the note variant is a string.
+      // The success variant (data.external.results) requires spawn mocking (see external search note).
+      const ctx = makeCtx({ skillOps: makeSkillOps() });
+
+      const result = await searchSkills.execute({ query: 'test' }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as SearchSkillsData;
+      if ('note' in data.external) {
+        expect(typeof data.external.note).toBe('string');
+      }
+      if ('results' in data.external) {
+        expect(typeof data.external.results).toBe('string');
+      }
+    });
+
+    it('local results array items have expected fields', async () => {
+      const searchResults = [
+        { id: 'sk-1', name: 'Trading', description: 'Trade crypto', isAssigned: true, dependsOn: ['sk-dep'] },
+      ];
+      const ctx = makeCtx({
+        skillOps: makeSkillOps({ search: vi.fn(async () => searchResults) }),
+      });
+
+      const result = await searchSkills.execute({ query: 'trading' }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as SearchSkillsData;
+      const item = data.local.results[0]!;
+      expect(item).toHaveProperty('id');
+      expect(item).toHaveProperty('name');
+      expect(item).toHaveProperty('description');
+      expect(item).toHaveProperty('isAssigned');
+      expect(item).toHaveProperty('dependsOn');
+    });
+  });
+
+  // ── Combined behavior ───────────────────────────────────────────────────
+
+  describe('combined behavior', () => {
+    it('returns both local results and external note in a single response', async () => {
+      const searchResults = [
+        { id: 'sk-1', name: 'Monitoring', description: 'Watch things', isAssigned: false, dependsOn: [] as string[] },
+      ];
+      const ctx = makeCtx({
+        skillOps: makeSkillOps({ search: vi.fn(async () => searchResults) }),
+      });
+
+      const result = await searchSkills.execute({ query: 'monitoring' }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as SearchSkillsData;
+      expect(data.local.results).toHaveLength(1);
+      expect(data.local.results[0]!.name).toBe('Monitoring');
+      expect('note' in data.external).toBe(true);
+    });
+
+    it('gracefully handles both skillOps missing and external search failing', async () => {
+      const ctx = makeCtx({ skillOps: undefined });
+
+      const result = await searchSkills.execute({ query: 'anything' }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as SearchSkillsData;
+      expect(data.local.results).toEqual([]);
+      expect('note' in data.external).toBe(true);
+    });
   });
 });
 
