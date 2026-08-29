@@ -1487,7 +1487,7 @@ const agentBroker = new AgentMessageBroker(
   },
   appConfig.agentRiskDefaults,
   appConfig.alerts.email.brandImageUrl,
-  undefined, // db — not wired yet
+  db,
   appConfig.agentRuntime.llm.modelDefaults,
   appConfig.plans,
 );
