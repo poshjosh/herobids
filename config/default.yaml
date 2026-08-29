@@ -584,9 +584,9 @@ agentRuntime:
   # Per-tier resource profiles for agent runtime containers.
   #
   # These profiles configure scheduler-level resource constraints applied to
-  # each agent container based on the owner's plan tier (free, pro, enterprise).
+  # each agent container based on the owner's plan tier (free, starter, pro).
   # The operator controls the absolute ceiling per tier — plan-specific product
-  # behaviour (e.g. enterprise-only dedicated nodes) can evolve separately.
+  # behaviour (e.g. pro/enterprise-only dedicated nodes) can evolve separately.
   #
   # Each profile sets:
   #   memoryLimitMb       — hard memory ceiling (OOM kill boundary)
@@ -597,15 +597,31 @@ agentRuntime:
   #   maxWallClockMs      — runtime wall-clock timeout (0 = unlimited)
   #
   # Strategy: soft-overcommit model.
-  #   free/pro: 512 MB hard limit, 256 MB scheduling reservation
-  #   free/pro: same baseline to keep costs low; differentiation via other entitlements
-  #   enterprise: 2 GB hard limit with tighter (50%) reservation for denser packing
+  #   free/starter/pro: 512 MB hard limit, 256 MB scheduling reservation
+  #   free/starter/pro: same baseline to keep costs low; differentiation via other entitlements
+  #   pro: 2 GB hard limit with tighter (50%) reservation for denser packing
   #
   # Fallback: when a plan tier has no matching profile, the launcher uses
   # sandboxDefaults above.
   # Autoscale: the autoscaler (Phase 6) reads these reservations to compute
   # cluster headroom — changing reservation values here changes provisioning
   # thresholds without code edits.
+  #
+  # IMPORTANT — link to infrastructure config:
+  #   The autoscale capacity script (check-nomad-capacity.sh) uses a separate
+  #   variable `agent_memory_reservation_mb` (set in staging.tfvars / production.tfvars)
+  #   to compute free agent slots: free_slots = free_cluster_memory / agent_memory_reservation_mb.
+  #   That infra-side value should approximate the MOST COMMON memoryReservationMb below.
+  #   If most agents are free/starter (256 MB), set agent_memory_reservation_mb = 256.
+  #   If mixed with pro (1024 MB), consider a weighted average or the dominant tier.
+  #   A lower infra value is conservative (scales out sooner); a higher value is aggressive.
+  #
+  #   Current mapping:
+  #     free/starter → memoryReservationMb: 256  → agent_memory_reservation_mb: 256 (match)
+  #     pro          → memoryReservationMb: 1024 → agent_memory_reservation_mb: 256 (undercount, safe)
+  #
+  #   See: infra/hetzner/variables.tf (agent_memory_reservation_mb)
+  #        infra/hetzner/scripts/check-nomad-capacity.sh (free_slots computation)
   resourceProfiles:
     free:
       memoryLimitMb: 512
@@ -614,14 +630,14 @@ agentRuntime:
       maxProcesses: 50
       tempStorageMb: 100
       maxWallClockMs: 0
-    pro:
+    starter:
       memoryLimitMb: 512
       memoryReservationMb: 256
       cpuShares: 256
       maxProcesses: 50
       tempStorageMb: 100
       maxWallClockMs: 0
-    enterprise:
+    pro:
       memoryLimitMb: 2048
       memoryReservationMb: 1024
       cpuShares: 512

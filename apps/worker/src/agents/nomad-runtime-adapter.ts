@@ -234,8 +234,12 @@ function buildNomadJobSpec(
                 pids_limit: maxProcesses,
               } as NomadJobSpec['Job']['TaskGroups'][0]['Tasks'][0]['Config'],
               Resources: {
-                MemoryMB: effectiveMemoryReservationMb, // soft scheduling reservation
-                MemoryMaxMB: memoryLimitMb,             // hard OOM ceiling
+                MemoryMB: effectiveMemoryReservationMb, // soft scheduling reservation (from resourceProfiles in config/default.yaml)
+                MemoryMaxMB: memoryLimitMb,             // hard OOM ceiling (from resourceProfiles in config/default.yaml)
+                // NOTE: The infra-side autoscaler uses a separate `agent_memory_reservation_mb`
+                // (from staging.tfvars / production.tfvars) to estimate free slots across the cluster.
+                // That value should approximate the most common MemoryMB here (typically 256 for free/starter).
+                // See: config/default.yaml → agentRuntime.resourceProfiles for the app-side values.
                 CPU: cpuShares,
               },
               LogConfig: {

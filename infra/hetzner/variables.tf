@@ -255,6 +255,19 @@ variable "agent_memory_reservation_mb" {
   description = "Scheduling memory reservation per agent slot (MB). Used by the autoscaler to compute free slot counts from available cluster memory."
   default     = 256
 
+  # IMPORTANT — link to application config:
+  #   This value should approximate the most common `memoryReservationMb` from
+  #   config/default.yaml → agentRuntime.resourceProfiles. The autoscaler uses it
+  #   to compute: free_slots = free_cluster_memory / agent_memory_reservation_mb.
+  #
+  #   Current app-side reservations (config/default.yaml):
+  #     free/starter: memoryReservationMb = 256 MB  ← this value matches
+  #     pro:          memoryReservationMb = 1024 MB ← undercounted (safe, scales out sooner)
+  #
+  #   If the agent mix changes (e.g., mostly pro agents), consider raising this value.
+  #   See: config/default.yaml → agentRuntime.resourceProfiles
+  #        apps/worker/src/agents/nomad-runtime-adapter.ts → buildNomadJobSpec() → Resources.MemoryMB
+
   validation {
     condition     = var.agent_memory_reservation_mb >= 64
     error_message = "agent_memory_reservation_mb must be >= 64."
