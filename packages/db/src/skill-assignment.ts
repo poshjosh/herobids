@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, or, sql } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { agentSkills, skillEntitlements, skillRevisions, skillUsageEvents, skills } from './schema/index.js';
 
@@ -20,6 +20,48 @@ export function isSkillSelectableForUser(input: {
   if (input.preservedSkillIds?.has(input.skill.id)) return true;
   if (input.entitledSkillIds.has(input.skill.id)) return true;
   return input.canViewMarketplaceSkills && input.skill.publicationStatus === 'published' && input.skill.priceCents === 0;
+}
+
+/**
+ * Resolve skill references (slugs or legacy IDs) to skill IDs in a single query.
+ *
+ * The returned map keys each input ref to its resolved skill ID.
+ * - For slug matches the key is the slug string.
+ * - For ID matches the key is the ID string.
+ * - If a ref matches both slug and ID (different rows), the slug match wins.
+ * - Refs that match nothing are omitted from the map.
+ */
+export async function resolveSkillIdsBySlugOrId(
+  db: Database,
+  refs: string[],
+): Promise<Map<string, string>> {
+  if (refs.length === 0) return new Map();
+
+  const unique = [...new Set(refs)];
+
+  const rows = await db
+    .select({ id: skills.id, slug: skills.slug })
+    .from(skills)
+    .where(or(inArray(skills.slug, unique), inArray(skills.id, unique)));
+
+  const result = new Map<string, string>();
+
+  // First pass: ID matches (lower priority).
+  for (const row of rows) {
+    if (unique.includes(row.id)) {
+      result.set(row.id, row.id);
+    }
+  }
+
+  // Second pass: slug matches (higher priority — overwrites if a ref matched
+  // both as an ID on one row and a slug on another).
+  for (const row of rows) {
+    if (row.slug !== null && unique.includes(row.slug)) {
+      result.set(row.slug, row.id);
+    }
+  }
+
+  return result;
 }
 
 export async function resolveSkillAssignmentsForUser(

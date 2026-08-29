@@ -195,7 +195,7 @@ Also add `resolveSkillRefs(refs: string[], db)` that:
 
 ---
 
-## Step 5 — DB: add slug-based skill lookup — PENDING
+## Step 5 — DB: add slug-based skill lookup — DONE
 
 **File:** `packages/db/src/skill-assignment.ts`
 
@@ -516,3 +516,9 @@ Parallelizable groups:
 1. **[Medium] `SkillRefKind` includes `'external'` but `ClassifiedSkillRef` never produces it** — The type declares `'slug' | 'legacy-id' | 'external'` but the pure classifier only returns slug or legacy-id. External is determined post-DB-resolution. Consider removing `'external'` from `SkillRefKind` and introducing a broader union type when the DB layer is added.
 
 2. **[Low] `partitionSkillRefs` duplicates `classifySkillRef` logic** — Both re-implement `ref.includes('/')` check. Consider implementing `partitionSkillRefs` in terms of `classifySkillRef` to keep source of truth singular.
+
+### Step 5 — DB: add slug-based skill lookup
+
+1. **[Medium] `unique.includes()` is O(n) per row** — Use a Set for O(1) lookup instead of linear array scan. Keep the array for the `inArray()` SQL call.
+
+2. **[Low] Missing test: ref matching both slug and ID on the same row** — The precedence test covers different rows but not the same-row case (a no-op but worth documenting).
