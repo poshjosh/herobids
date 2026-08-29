@@ -1785,7 +1785,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
         .innerJoin(skills, eq(agentSkills.skillId, skills.id))
         .innerJoin(skillRevisions, eq(agentSkills.skillRevisionId, skillRevisions.id))
         .where(and(eq(agentSkills.agentId, AGENT_ID!), ne(skills.id, 'base')));
-        return rows.map(r => ({ id: r.id, name: r.name ?? r.id, description: r.description ?? '' }));
+        return rows.map(r => ({ id: r.id, name: r.name ?? r.id, description: r.description ?? '', dependsOn: [] as string[] }));
       },
       async listAvailable() {
         const assignedIds = await db.select({ skillId: agentSkills.skillId })
@@ -1806,7 +1806,10 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
 
         return allSkills
           .filter(s => s.id !== 'base' && !assignedSet.has(s.id))
-          .map(s => ({ id: s.id, name: s.name ?? s.id, description: s.description ?? '' }));
+          .map(s => ({ id: s.id, name: s.name ?? s.id, description: s.description ?? '', dependsOn: [] as string[] }));
+      },
+      async search(_query: string, _limit?: number) {
+        return [] as Array<{ id: string; name: string; description: string; isAssigned: boolean; dependsOn: string[] }>;
       },
     } : undefined,
     onSkillsChanged: db && agentRepo ? async () => {

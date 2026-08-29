@@ -77,12 +77,13 @@ describe('list_skills', () => {
   });
 
   it('returns assigned and available arrays when skillOps is present', async () => {
-    const assigned = [{ id: 's1', name: 'Trading', description: 'Trade stuff' }];
-    const available = [{ id: 's2', name: 'Monitoring', description: 'Watch stuff' }];
+    const assigned = [{ id: 's1', name: 'Trading', description: 'Trade stuff', dependsOn: [] as string[] }];
+    const available = [{ id: 's2', name: 'Monitoring', description: 'Watch stuff', dependsOn: [] as string[] }];
     const ctx = makeCtx({
       skillOps: {
         listAssigned: vi.fn(async () => assigned),
         listAvailable: vi.fn(async () => available),
+        search: vi.fn(async () => []),
       },
     });
 
@@ -90,6 +91,52 @@ describe('list_skills', () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ assigned, available });
+  });
+
+  it('surfaces dependsOn field in both assigned and available arrays', async () => {
+    const assigned = [
+      { id: 's1', name: 'Trading', description: 'Trade stuff', dependsOn: ['s3'] },
+    ];
+    const available = [
+      { id: 's2', name: 'Monitoring', description: 'Watch stuff', dependsOn: ['s1', 's3'] },
+    ];
+    const ctx = makeCtx({
+      skillOps: {
+        listAssigned: vi.fn(async () => assigned),
+        listAvailable: vi.fn(async () => available),
+        search: vi.fn(async () => []),
+      },
+    });
+
+    const result = await listSkills.execute({}, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as { assigned: typeof assigned; available: typeof available };
+    expect(data.assigned[0]!.dependsOn).toEqual(['s3']);
+    expect(data.available[0]!.dependsOn).toEqual(['s1', 's3']);
+  });
+
+  it('returns empty dependsOn arrays when skills have no dependencies', async () => {
+    const assigned = [
+      { id: 's1', name: 'Trading', description: 'Trade stuff', dependsOn: [] as string[] },
+    ];
+    const available = [
+      { id: 's2', name: 'Monitoring', description: 'Watch stuff', dependsOn: [] as string[] },
+    ];
+    const ctx = makeCtx({
+      skillOps: {
+        listAssigned: vi.fn(async () => assigned),
+        listAvailable: vi.fn(async () => available),
+        search: vi.fn(async () => []),
+      },
+    });
+
+    const result = await listSkills.execute({}, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as { assigned: typeof assigned; available: typeof available };
+    expect(data.assigned[0]!.dependsOn).toEqual([]);
+    expect(data.available[0]!.dependsOn).toEqual([]);
   });
 
   it('returns error when skillOps is not wired', async () => {
@@ -106,6 +153,7 @@ describe('list_skills', () => {
       skillOps: {
         listAssigned: vi.fn(async () => { throw new Error('Redis down'); }),
         listAvailable: vi.fn(async () => []),
+        search: vi.fn(async () => []),
       },
     });
 
@@ -121,6 +169,7 @@ describe('list_skills', () => {
       skillOps: {
         listAssigned: vi.fn(async () => []),
         listAvailable: vi.fn(async () => { throw new Error('DB timeout'); }),
+        search: vi.fn(async () => []),
       },
     });
 
@@ -563,6 +612,68 @@ describe('remove_skills', () => {
 
     expect(result.success).toBe(false);
     expect(result.errorCode).toBe('broker.malformed_reply');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// skillOps.search stub contract
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('skillOps.search stub contract', () => {
+  type SkillSearchResult = Awaited<ReturnType<NonNullable<ToolContext['skillOps']>['search']>>;
+
+  it('returns an empty array when called with query only', async () => {
+    const searchFn: NonNullable<ToolContext['skillOps']>['search'] = vi.fn(async () => []);
+    const ctx = makeCtx({
+      skillOps: {
+        listAssigned: vi.fn(async () => []),
+        listAvailable: vi.fn(async () => []),
+        search: searchFn,
+      },
+    });
+
+    const result = await ctx.skillOps!.search('trading');
+
+    expect(result).toEqual([]);
+    expect(searchFn).toHaveBeenCalledWith('trading');
+  });
+
+  it('returns an empty array when called with query and limit', async () => {
+    const searchFn: NonNullable<ToolContext['skillOps']>['search'] = vi.fn(async () => []);
+    const ctx = makeCtx({
+      skillOps: {
+        listAssigned: vi.fn(async () => []),
+        listAvailable: vi.fn(async () => []),
+        search: searchFn,
+      },
+    });
+
+    const result = await ctx.skillOps!.search('monitoring', 5);
+
+    expect(result).toEqual([]);
+    expect(searchFn).toHaveBeenCalledWith('monitoring', 5);
+  });
+
+  it('accepts search results that include dependsOn and isAssigned fields', async () => {
+    const searchResults: SkillSearchResult = [
+      { id: 's1', name: 'Trading', description: 'Trade', isAssigned: true, dependsOn: ['s2'] },
+      { id: 's3', name: 'Analytics', description: 'Analyze', isAssigned: false, dependsOn: [] as string[] },
+    ];
+    const ctx = makeCtx({
+      skillOps: {
+        listAssigned: vi.fn(async () => []),
+        listAvailable: vi.fn(async () => []),
+        search: vi.fn(async () => searchResults),
+      },
+    });
+
+    const result = await ctx.skillOps!.search('trade', 10);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]!.isAssigned).toBe(true);
+    expect(result[0]!.dependsOn).toEqual(['s2']);
+    expect(result[1]!.isAssigned).toBe(false);
+    expect(result[1]!.dependsOn).toEqual([]);
   });
 });
 

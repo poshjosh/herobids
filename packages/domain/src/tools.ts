@@ -236,10 +236,17 @@ export interface ToolContext {
    * cannot depend on @herobids/db.
    */
   db?: unknown;
-  /** Skill catalog operations for list_skills. */
+  /** Skill catalog operations for list_skills and search_skills. */
   skillOps?: {
-    listAssigned(): Promise<Array<{ id: string; name: string; description: string }>>;
-    listAvailable(): Promise<Array<{ id: string; name: string; description: string }>>;
+    listAssigned(): Promise<Array<{ id: string; name: string; description: string; dependsOn: string[] }>>;
+    listAvailable(): Promise<Array<{ id: string; name: string; description: string; dependsOn: string[] }>>;
+    search(query: string, limit?: number): Promise<Array<{
+      id: string;
+      name: string;
+      description: string;
+      isAssigned: boolean;
+      dependsOn: string[];
+    }>>;
   };
   /**
    * Called by add_skills/remove_skills after the broker confirms the DB write.
