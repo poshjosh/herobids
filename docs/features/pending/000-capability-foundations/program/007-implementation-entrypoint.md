@@ -2,7 +2,7 @@
 
 **Status:** complete  
 **Created:** 2026-08-29  
-**Depends on:** [001-master-roadmap.md](./001-master-roadmap.md), [003-spec-agent-playbook.md](./003-spec-agent-playbook.md), [004-validation-and-change-control.md](./004-validation-and-change-control.md), [../000-README.md](../000-README.md), [../001-roadmap.md](../001-roadmap.md), [../012-shared-capability-taxonomy-revision.md](../012-shared-capability-taxonomy-revision.md), [../tasks/001-shared-trading-taxonomy-implementation-tasks.md](../tasks/001-shared-trading-taxonomy-implementation-tasks.md)
+**Depends on:** [001-master-roadmap.md](./001-master-roadmap.md), [003-spec-agent-playbook.md](./003-spec-agent-playbook.md), [004-validation-and-change-control.md](./004-validation-and-change-control.md), [../000-README.md](../000-README.md), [../001-roadmap.md](../001-roadmap.md), [../013-native-capabilities-and-external-backends.md](../013-native-capabilities-and-external-backends.md), [../tasks/002-external-backend-boundary-implementation-tasks.md](../tasks/002-external-backend-boundary-implementation-tasks.md)
 
 ## Purpose
 
@@ -21,24 +21,24 @@ Read and follow these docs in order:
 
 1. [../000-README.md](../000-README.md)
 2. [../001-roadmap.md](../001-roadmap.md)
-3. [../012-shared-capability-taxonomy-revision.md](../012-shared-capability-taxonomy-revision.md)
-4. [../tasks/001-shared-trading-taxonomy-implementation-tasks.md](../tasks/001-shared-trading-taxonomy-implementation-tasks.md)
+3. [../013-native-capabilities-and-external-backends.md](../013-native-capabilities-and-external-backends.md)
+4. [../tasks/002-external-backend-boundary-implementation-tasks.md](../tasks/002-external-backend-boundary-implementation-tasks.md)
 
 ## First Executable Slice
 
 1. Feature: Capability Foundations
-2. Current slice: Shared Capability Taxonomy Revision
-3. First task list: Shared Trading Taxonomy Implementation Tasks
-4. Immediate objective: implement the shared `trading` and `messaging`
-	capability taxonomy through shared domain metadata, ownership, and
-	foundational contract touchpoints named by `tasks/001`.
+2. Current slice: Native Capabilities And External Backends
+3. First task list: External Backend Boundary Implementation Tasks
+4. Immediate objective: implement the repo-local external-service boundary and
+	the generic platform contract that lets the platform treat a same-repo
+	external service as if it already lived in another repository and domain.
 
 ## Authority Order
 
 Use these docs in descending authority for the current slice:
 
-1. [../tasks/001-shared-trading-taxonomy-implementation-tasks.md](../tasks/001-shared-trading-taxonomy-implementation-tasks.md) for concrete work items and validation commands;
-2. [../012-shared-capability-taxonomy-revision.md](../012-shared-capability-taxonomy-revision.md) for slice scope, fixed decisions, and acceptance criteria;
+1. [../013-native-capabilities-and-external-backends.md](../013-native-capabilities-and-external-backends.md) for slice scope, fixed decisions, and acceptance criteria;
+2. [../tasks/002-external-backend-boundary-implementation-tasks.md](../tasks/002-external-backend-boundary-implementation-tasks.md) for concrete work items and validation commands under that slice;
 3. [../001-roadmap.md](../001-roadmap.md) for phase order, gates, and the later execution path;
 4. [../000-README.md](../000-README.md) for navigation and historical classification;
 5. [004-validation-and-change-control.md](./004-validation-and-change-control.md) for status normalization, completion evidence, and stop-versus-update rules;
@@ -47,16 +47,26 @@ Use these docs in descending authority for the current slice:
 ## Do Not Skip Ahead
 
 1. Do not jump directly to 002 through 007 because those later phase docs exist.
-2. Do not pull activation persistence, public route migration, worker gating,
-   or service-backed invocation naming into this slice; those belong to later
-   phase docs.
+2. Do not collapse the external-service boundary because the first backend is
+	temporarily in the same repository.
 3. Do not use 008 through 011 unless an active controlling doc for the current slice explicitly points to them.
-4. Do not widen scope beyond the shared taxonomy slice without an active doc update.
+4. Do not widen scope beyond the external-backend boundary slice without an active doc update.
 
 ## After This Slice
 
-After `tasks/001` is complete and validated, resume from the later executable
-phases in [../001-roadmap.md](../001-roadmap.md) in the documented order.
+After T4 in [../tasks/002-external-backend-boundary-implementation-tasks.md](../tasks/002-external-backend-boundary-implementation-tasks.md)
+is complete and its narrow validations are green, run the full
+`test-and-fix` skill using the explicit IDE path for the current environment:
+
+1. GitHub Copilot: `$HOME/.copilot/skills/test-and-fix/`
+2. Visual Studio Code: `$HOME/.copilot/skills/test-and-fix/`
+3. AWS Kiro: `$HOME/.kiro/skills/test-and-fix/`
+
+Do not assume the implementation agent will discover that skill automatically.
+
+If that checkpoint passes, return to [../001-roadmap.md](../001-roadmap.md)
+and continue only through the later draft phase docs that are explicitly
+unblocked by their own phase gates under the external-backend boundary model.
 
 ## Stop And Escalate
 
@@ -71,4 +81,4 @@ Stop and escalate instead of improvising when:
 
 1. derived this entrypoint from the final coherence pass recorded in [006-coherence-review.md](./006-coherence-review.md);
 2. matched the start sequence against [001-master-roadmap.md](./001-master-roadmap.md), [003-spec-agent-playbook.md](./003-spec-agent-playbook.md), and [../001-roadmap.md](../001-roadmap.md);
-3. confirmed that the first executable slice remains `012 -> tasks/001` across the active narrowed control-doc set.
+3. confirmed that the first executable slice remains `013 -> tasks/002` across the active narrowed control-doc set.

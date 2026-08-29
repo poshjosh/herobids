@@ -1,38 +1,46 @@
-# Capability Resolution And Route Migration
+# Native Capability And External Backend Resolution
 
 **Status:** draft
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)  
 **Prerequisite:** [Capability Foundations](./002-capability-foundations.md)
-**Normative inputs:** [Capability Activation Model](./010-capability-activation-model.md), [Capability Route And Response Migration Manifest](./011-capability-route-and-response-migration-manifest.md)
+**Normative inputs:** [Native Capabilities And External Backends](./013-native-capabilities-and-external-backends.md), [Capability Activation Model](./010-capability-activation-model.md), [Capability Route And Response Migration Manifest](./011-capability-route-and-response-migration-manifest.md)
 
 ## Purpose
 
-Add shared capability resolution and canonical product route identities without
-changing worker tool-visibility behavior or extracting services yet.
+Add shared control-plane resolution and canonical route identities for native
+capabilities and external backends without changing worker tool visibility yet.
 
 ## Scope
 
 This phase includes:
 
-1. shared capability resolution on top of runtime-family resolution
-2. durable product capability activation resolution
-3. canonical public capability route IDs
-4. explicit legacy route aliases
-5. provider lifecycle enrichment rules
+1. shared control-plane resolution across native capabilities, external
+   backends, with runtime-family data retained only as compatibility detail
+2. durable native capability activation resolution
+3. canonical public route IDs for native-capability and external-backend
+   control planes
+4. explicit compatibility policy for retiring platform-owned routes for the
+   first external domain
+5. separation of native lifecycle detail from external-backend registration,
+   health, and readiness detail
 
 This phase does not include:
 
 1. worker visibility enforcement
-2. capability service extraction
-3. naming cleanup
+2. external-backend runtime extraction beyond the control-plane rewrite
+3. platform-owned modeling of external-backend provider taxonomy or persistence
+   semantics
+4. terminology cleanup
 
 ## Non-Goals
 
 1. Do not change worker visibility rules in this phase.
-2. Do not extract capability services here.
-3. Do not use this phase for naming cleanup.
-4. Do not introduce a shared `/capabilities/crypto-trading` canonical route.
+2. Do not model the first external domain as a native capability.
+3. Do not keep the old trading capability route family as the canonical
+   control-plane identity.
+4. Do not move domain-specific provider or persistence rules for an external
+   backend into platform-core responses.
 
 ## Dependencies
 
@@ -42,53 +50,71 @@ This phase does not include:
 2. [002-capability-foundations.md](./002-capability-foundations.md) must first
    establish the shared registry, ownership, and contract foundations this
    phase consumes.
-3. [010-capability-activation-model.md](./010-capability-activation-model.md)
+3. [013-native-capabilities-and-external-backends.md](./013-native-capabilities-and-external-backends.md)
+   establishes the native-versus-external boundary model this phase must
+   resolve.
+4. [010-capability-activation-model.md](./010-capability-activation-model.md)
    and [011-capability-route-and-response-migration-manifest.md](./011-capability-route-and-response-migration-manifest.md)
    remain binding normative inputs for activation semantics and route coverage.
 
 ## Fixed Decisions
 
-1. Shared capability resolution builds on runtime-family resolution rather than
-   replacing it with ad hoc logic.
-2. Canonical shared capability routes are `/capabilities/trading` and
-   `/capabilities/messaging`.
-3. Provider lifecycle support, service health, and tenant readiness remain
-   distinct response concerns.
-4. Activation state must be sourced from the model in document 010, not
-   inferred from `capabilityMode`, connections, or skill membership.
+1. Shared control-plane resolution may expose runtime-family compatibility
+   detail, but native activation and external-backend dispatchability do not
+   derive their truth from that compatibility layer.
+2. Canonical native-capability routes use `/capabilities/:capabilityId`.
+3. Canonical external-backend control-plane routes use
+   `/external-backends/:backendId`.
+4. Activation state from document 010 applies only to native capabilities.
+   External backends resolve dispatchability from registration, entitlement,
+   health, and readiness inputs.
+5. Direct API registration and invocation are sufficient for external backends.
+   Skill or MCP packaging may later wrap the same boundary.
+6. Platform responses may surface provider lifecycle only for native
+   capabilities the platform owns. External backends surface generic
+   registration, health, and readiness detail only.
+7. Control-plane state resolution and effective tool-visibility resolution are
+   separate concerns. Resolved skills may influence effective visibility, but
+   they must not redefine native activation or external-backend dispatchability
+   state.
 
 ## Open Latitude
 
 Implementation may choose the following without escalation, as long as the
 fixed decisions, dependencies, acceptance criteria, and validation still hold:
 
-1. helper boundaries for shared capability resolution and response enrichment
-2. exact route-registration wiring and alias enforcement structure
+1. helper boundaries for shared control-plane resolution and response
+   enrichment
+2. exact route-registration wiring and compatibility-alias enforcement
+   structure
 3. test placement across API, domain, and db surfaces
-4. private naming of resolver internals that does not change the canonical
-   route IDs, activation rules, or compatibility policy
+4. private naming of resolver internals that does not change canonical route
+   families, activation rules, or compatibility policy
 
 ## Acceptance Criteria
 
 This phase is complete only when:
 
-1. a shared capability resolver exists and is consumed by API surfaces instead
-   of ad hoc duplicated logic
-2. canonical product routes exist for `trading` and `messaging`
-3. `/capabilities/trading` is the declared shared canonical route and no
-   undeclared crypto-specific shared alias exists
-4. provider lifecycle support is distinguishable from service health and tenant
-   readiness in API responses
-5. no worker tool-visibility behavior has changed yet
-6. activation state is sourced only from the model in document 010; it is not
-   inferred from `capabilityMode`, connections, or skill membership
+1. a shared control-plane state resolver exists and is consumed by API
+   surfaces instead of ad hoc duplicated logic
+2. canonical control-plane identity distinguishes `native-capability` from
+   `external-backend`
+3. canonical native-capability routes exist for native domains and generic
+   external-backend routes exist for backend IDs such as `trading`
+4. no external backend is represented as a canonical capability route or a
+   native activation row
+5. native lifecycle support, backend health, entitlement state, and agent
+   readiness remain distinguishable in API responses
+6. no worker tool-visibility behavior has changed yet
 
 ## Validation
 
-1. add tests for route IDs and alias behavior
-2. add tests proving `trading` maps to runtime family `trading`
-3. add tests proving messaging capability resolution reflects the brokered
-   surface plus email-family detail
+1. add tests for canonical route families and declared compatibility aliases
+2. add tests proving external backend `trading` resolves through backend
+   registration, entitlement or binding state, health, and backend-declared
+   readiness, with runtime-family data exposed only as compatibility detail
+3. add tests proving native messaging resolution reflects the implicit
+   platform-inbox or brokered path plus email-family detail
 4. add tests proving undeclared aliases and missing registry mappings fail
    loudly
 5. run targeted API, domain, and db tests
@@ -96,44 +122,57 @@ This phase is complete only when:
 
 ## Deliverables
 
-1. shared capability resolver that consumes:
-   - resolved skills
-   - readiness by runtime family
-   - granted connections by runtime family
-   - default connections by runtime family
-   - capability activation metadata
-2. API capability responses sourced from the shared resolver
-3. canonical route IDs such as `/capabilities/trading` and
-   `/capabilities/messaging`
-4. explicit route compatibility policy for trading surfaces
-5. separate enrichment fields for:
-   - static provider lifecycle support
-   - capability-service health or reachability
+1. a shared control-plane resolver that consumes:
+   - the native capability registry
+   - the external backend registry
+   - enabled native capability activation metadata
+   - entitlement and binding summaries
+   - health and readiness snapshots
+   - runtime-family compatibility detail
+2. API control-plane responses sourced from the shared resolver
+3. canonical route IDs such as `/capabilities/messaging` and
+   `/external-backends/trading`
+4. explicit compatibility policy for legacy trading route families
+5. separate response fields for:
+   - native capability activation
+   - external-backend registration
+   - health or reachability
    - tenant or agent readiness
 
 ## Implementation Notes
 
-### Activation rules
+### Native capability path
 
-Initial activation rules must be explicit:
+1. Native-capability responses may include platform-owned provider lifecycle
+   detail when the platform owns that capability's provider model.
+2. `messaging` remains the current native example.
 
-1. `trading` activation follows the durable row and resolver predicate
-   defined in document 010
-2. `messaging` is implicitly active only for the documented platform-inbox or
-   brokered user-messaging path
-3. `send_email` requires explicit messaging activation plus relevant provider
-   readiness state
+### External backend path
+
+1. External-backend responses identify backend ID, registration mode,
+   transport availability, health, entitlement state, and backend-declared
+   readiness summary.
+2. Backend responses must not force the platform to understand
+   trading-specific provider or storage vocabulary.
+
+### State versus visibility
+
+1. Control-plane state answers whether a native capability is active or whether
+   an external backend is registered and dispatchable.
+2. Effective tool visibility remains a later worker concern that may combine
+   control-plane state with resolved skills and runtime policy.
+3. API route migration in this phase must not collapse those two views into one
+   resolver contract.
 
 ### Route migration strategy
 
-Use the complete strangler-fig route matrix and response compatibility policy in
-document 011:
-
-1. keep `/capabilities/trading` as the canonical shared control-plane route
-2. do not introduce `/capabilities/crypto-trading` as a shared canonical path
-3. migrate response shapes and callers only where declared in document 011
-4. remove temporary compatibility fields or aliases only after verification
+1. Use the matrix in document 011 to move platform-owned trading surfaces to
+   generic external-backend control-plane routes.
+2. Any temporary compatibility alias must delegate to the canonical
+   external-backend handler and remain explicitly declared.
+3. Remove compatibility fields or aliases only after verification.
 
 ## Extraction Pattern
 
-This phase uses strangler-fig migration at the public API boundary only.
+This phase rewrites the control plane first. It does not yet change worker
+visibility or widen platform ownership.

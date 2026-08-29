@@ -27,10 +27,9 @@ Use this start rule in order:
 
 1. If `007-implementation-entrypoint.md` exists and is active, start there and
    follow it exactly.
-2. If 007 does not exist yet, start from the temporary coordination sequence
-   below.
+2. The pre-007 route below is retained only as historical fallback context.
 
-### Temporary Start Rule Before 007 Exists
+### Historical Fallback Before 007 Existed
 
 Read these docs in order:
 
@@ -38,11 +37,11 @@ Read these docs in order:
 2. [001-master-roadmap.md](./001-master-roadmap.md)
 3. [../000-README.md](../000-README.md)
 4. [../001-roadmap.md](../001-roadmap.md)
-5. [../012-shared-capability-taxonomy-revision.md](../012-shared-capability-taxonomy-revision.md)
-6. [../tasks/001-shared-trading-taxonomy-implementation-tasks.md](../tasks/001-shared-trading-taxonomy-implementation-tasks.md)
+5. [../013-native-capabilities-and-external-backends.md](../013-native-capabilities-and-external-backends.md)
+6. [../tasks/002-external-backend-boundary-implementation-tasks.md](../tasks/002-external-backend-boundary-implementation-tasks.md)
 
-Steps 3 through 6 are the live Capability Foundations entry sequence until 007
-exists.
+Steps 3 through 6 were the live Capability Foundations entry sequence before
+007 became the single-file handoff surface.
 
 Consult [005-feature-inventory.md](./005-feature-inventory.md) only as a
 derivative coordination index when you need a compact summary of the active
@@ -58,10 +57,10 @@ Once inside the coordinated Capability Foundations path, read in this order:
 1. [../000-README.md](../000-README.md),
    then
    [../001-roadmap.md](../001-roadmap.md)
-2. [../012-shared-capability-taxonomy-revision.md](../012-shared-capability-taxonomy-revision.md),
+2. [../013-native-capabilities-and-external-backends.md](../013-native-capabilities-and-external-backends.md),
    then
-   [../tasks/001-shared-trading-taxonomy-implementation-tasks.md](../tasks/001-shared-trading-taxonomy-implementation-tasks.md)
-3. later active phase docs only when the roadmap or current task list advances
+   [../tasks/002-external-backend-boundary-implementation-tasks.md](../tasks/002-external-backend-boundary-implementation-tasks.md)
+3. later draft phase docs only when the roadmap or current task list advances
    you to [../002-capability-foundations.md](../002-capability-foundations.md)
    through
    [../007-capability-naming-cleanup.md](../007-capability-naming-cleanup.md)
@@ -85,8 +84,8 @@ Treat each surface as follows:
 | Surface | Role | How to treat it |
 | --- | --- | --- |
 | [../000-README.md](../000-README.md) and [../001-roadmap.md](../001-roadmap.md) | active entry docs | Start the current Capability Foundations path here. These feature-local docs remain the primary authority for entry and sequencing. |
-| [../012-shared-capability-taxonomy-revision.md](../012-shared-capability-taxonomy-revision.md) and [../tasks/001-shared-trading-taxonomy-implementation-tasks.md](../tasks/001-shared-trading-taxonomy-implementation-tasks.md) | active ready slice | Enter implementation through these docs after the entry docs. |
-| [../002-capability-foundations.md](../002-capability-foundations.md) through [../007-capability-naming-cleanup.md](../007-capability-naming-cleanup.md) | active later phase docs | Use them only when the roadmap or current task list advances the path. |
+| [../013-native-capabilities-and-external-backends.md](../013-native-capabilities-and-external-backends.md) and [../tasks/002-external-backend-boundary-implementation-tasks.md](../tasks/002-external-backend-boundary-implementation-tasks.md) | active ready slice | Enter implementation through these docs after the entry docs. |
+| [../002-capability-foundations.md](../002-capability-foundations.md) through [../007-capability-naming-cleanup.md](../007-capability-naming-cleanup.md) | later draft phase docs | Use them only when the roadmap or current task list advances the path and their phase gates are satisfied. |
 | [../008-cross-service-capability-execution-design.md](../008-cross-service-capability-execution-design.md) through [../011-capability-route-and-response-migration-manifest.md](../011-capability-route-and-response-migration-manifest.md) | active supporting references | Use them only when an active doc names them; they do not gate entry to the current slice. |
 | [005-feature-inventory.md](./005-feature-inventory.md) | derivative coordination index | Use it as a compact summary of slice classes and historical exclusions. It does not override feature-local authority. |
 | `author/` | preparation material | Non-authoritative. Do not implement from it or use it to override active docs. |
@@ -106,13 +105,13 @@ Resolve the slice with this procedure:
    then
    [../001-roadmap.md](../001-roadmap.md)
 3. enter the current executable slice through
-   [../012-shared-capability-taxonomy-revision.md](../012-shared-capability-taxonomy-revision.md)
+   [../013-native-capabilities-and-external-backends.md](../013-native-capabilities-and-external-backends.md)
    and then
-   [../tasks/001-shared-trading-taxonomy-implementation-tasks.md](../tasks/001-shared-trading-taxonomy-implementation-tasks.md)
+   [../tasks/002-external-backend-boundary-implementation-tasks.md](../tasks/002-external-backend-boundary-implementation-tasks.md)
 4. use [005-feature-inventory.md](./005-feature-inventory.md) only when you
    need a derivative summary of slice classes or historical exclusions
-5. move to later active phase docs only when the roadmap or task list advances
-   the path beyond the current slice
+5. move to later draft phase docs only when the roadmap or task list advances
+   the path beyond the current slice and those docs are explicitly unblocked
 6. if the current coordinated slice has no active task list and no active doc
    explicitly authorizes direct implementation, stop and escalate; the docs are
    not ready for autonomous implementation handoff
@@ -197,6 +196,31 @@ Prefer the narrowest evidence that proves the slice: targeted tests, focused
 grep checks, schema checks, route checks, and then the required repo-wide
 checks such as `pnpm lint` when the active doc names them.
 
+## Full Validation Skill Checkpoints
+
+Use the full `test-and-fix` skill only at milestone boundaries, not after
+every local edit.
+
+For this feature set:
+
+1. use narrow validation while implementing one task or one small local repair
+2. run the full `test-and-fix` skill after the current executable slice
+   reaches its boundary-ready checkpoint, which for `tasks/002` is after T4
+   and before advancing into later phase docs
+3. run the full `test-and-fix` skill again after any later phase that changes
+   shared runtime, routing, visibility, integration, or boundary enforcement
+   behavior
+
+Explicit skill paths by IDE:
+
+1. GitHub Copilot: `$HOME/.copilot/skills/test-and-fix/`
+2. Visual Studio Code: `$HOME/.copilot/skills/test-and-fix/`
+3. AWS Kiro: `$HOME/.kiro/skills/test-and-fix/`
+
+Do not assume the implementation agent will find this skill automatically.
+If the current IDE exposes skills by path, pass the exact path above when
+triggering the full validation step.
+
 ## Stop-And-Escalate Conditions
 
 Stop implementation and escalate when any of the following is true:
@@ -226,9 +250,9 @@ resume.
 3. follow [../000-README.md](../000-README.md),
    then [../001-roadmap.md](../001-roadmap.md),
    then
-   [../012-shared-capability-taxonomy-revision.md](../012-shared-capability-taxonomy-revision.md),
+   [../013-native-capabilities-and-external-backends.md](../013-native-capabilities-and-external-backends.md),
    then
-   [../tasks/001-shared-trading-taxonomy-implementation-tasks.md](../tasks/001-shared-trading-taxonomy-implementation-tasks.md)
+   [../tasks/002-external-backend-boundary-implementation-tasks.md](../tasks/002-external-backend-boundary-implementation-tasks.md)
 4. use [005-feature-inventory.md](./005-feature-inventory.md) only as a
    derivative coordination summary when you need a compact slice index
 5. treat `author/` and `archive/` as non-authoritative

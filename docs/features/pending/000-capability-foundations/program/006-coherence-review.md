@@ -14,7 +14,7 @@ that now coordinates only the Capability Foundations documentation path.
 This review covers:
 
 1. the `program/` control-doc path through 000, 001, 003, 005, 007, and this review;
-2. the live Capability Foundations entry chain through `000-README.md`, `001-roadmap.md`, `012-shared-capability-taxonomy-revision.md`, and `tasks/001-shared-trading-taxonomy-implementation-tasks.md`;
+2. the live Capability Foundations entry chain through `000-README.md`, `001-roadmap.md`, `013-native-capabilities-and-external-backends.md`, and `tasks/002-external-backend-boundary-implementation-tasks.md`;
 3. the boundary between active authority, derivative coordination support, and historical material.
 
 ## Checks Performed
@@ -22,14 +22,16 @@ This review covers:
 1. verified that the author checklist no longer authorizes whole-pending-tree work from C08 onward;
 2. verified that `program/` now states a Capability Foundations-only live scope for the current roadmap;
 3. verified that [005-feature-inventory.md](./005-feature-inventory.md) is derivative coordination support rather than a second authority;
-4. verified that the live implementation path is unambiguous: `000-README.md -> 001-roadmap.md -> 012-shared-capability-taxonomy-revision.md -> tasks/001-shared-trading-taxonomy-implementation-tasks.md`;
+4. verified that the live implementation path is unambiguous: `000-README.md -> 001-roadmap.md -> 013-native-capabilities-and-external-backends.md -> tasks/002-external-backend-boundary-implementation-tasks.md`;
 5. verified that [007-implementation-entrypoint.md](./007-implementation-entrypoint.md) is the live single-file handoff surface and agrees with the roadmap and playbook;
 6. verified that [../001-roadmap.md](../001-roadmap.md) now presents the current ready slice before later executable phases;
-7. verified that active supporting references 008 through 011 now use the
+7. verified that supporting references 008 through 011 now use the
 	canonical required header and section structure for active `002+` docs;
 8. verified that the document tree and feature template explicitly allow the
 	documented legacy-numbering exception used by the current ready slice;
-9. verified that active versus historical distinctions remain explicit across `author/`, `archive/`, and supporting-reference surfaces.
+9. verified that the superseded `012 -> tasks/001` slice is no longer the
+	active implementation path;
+10. verified that active versus historical distinctions remain explicit across `author/`, `archive/`, and supporting-reference surfaces.
 
 ## Findings
 
@@ -46,6 +48,13 @@ This review covers:
 4. direct inspection confirming supporting references 008 through 011 now
 	follow the canonical active-doc section structure and that the tree/template
 	contract names the legacy-numbering exception explicitly.
+5. direct inspection confirming the active handoff path now uses `013 -> tasks/002` and no longer routes through the superseded `012 -> tasks/001` slice.
+6. direct inspection confirming the program master roadmap now classifies the
+	superseded `012 -> tasks/001` pair as historical comparison material rather
+	than active supporting references.
+7. direct inspection confirming the coordination docs now describe 002 through
+	011 with the same native-capability versus external-backend terminology used
+	in the rewritten phase and supporting docs.
 
 ## Outstanding Issues
 

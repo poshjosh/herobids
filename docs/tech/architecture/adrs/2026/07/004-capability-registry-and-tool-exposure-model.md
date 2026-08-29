@@ -1,7 +1,13 @@
 # ADR 004: Capability Registry And Tool Exposure Model
 
 **Date:** 2026-07-18
-**Status:** Proposed
+**Status:** Superseded
+**Superseded by:** [ADR 008](../08/008-native-capabilities-and-external-backends.md)
+
+This ADR is superseded by ADR 008. It assumed `trading` was a product
+capability in the native platform registry and control plane. The platform now
+distinguishes native capability metadata from external-backend registration and
+tool ownership.
 
 ## Context
 

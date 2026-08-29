@@ -1,8 +1,12 @@
 # Shared Trading Taxonomy Implementation Tasks
 
-**Status:** ready  
+**Status:** superseded
 **Created:** 2026-08-29  
 **Parent docs:** [Capability Implementation Roadmap](../001-roadmap.md), [Shared Capability Taxonomy Revision](../012-shared-capability-taxonomy-revision.md)
+
+This task list is superseded by
+[002-external-backend-boundary-implementation-tasks.md](./002-external-backend-boundary-implementation-tasks.md),
+which defines the current repo-local external-backend boundary work.
 
 ## Purpose
 

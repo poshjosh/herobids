@@ -10,8 +10,8 @@ activation, tool ownership, route alignment, and capability-service extraction.
 
 1. [Capability Implementation Roadmap](./001-roadmap.md)
 2. first executable slice for current implementation handoff:
-   [012](./012-shared-capability-taxonomy-revision.md), then
-   [tasks/001](./tasks/001-shared-trading-taxonomy-implementation-tasks.md)
+   [013](./013-native-capabilities-and-external-backends.md), then
+   [tasks/002](./tasks/002-external-backend-boundary-implementation-tasks.md)
 3. broader feature-phase context and later supporting references when needed:
    [002](./002-capability-foundations.md) through
    [011](./011-capability-route-and-response-migration-manifest.md)
@@ -32,17 +32,16 @@ the default implementation path:
 
 ## Current Direction
 
-The shared platform vocabulary uses:
+The platform direction now distinguishes:
 
-- capability
-- family
-- provider
+- native capabilities the platform intentionally owns
+- external backends the platform reaches over a boundary contract
+- registration mechanisms such as direct API now and skill or MCP packaging
+   later
 
-The first shared product capabilities are `trading` and `messaging`.
-
-Deeper market-specific trading taxonomy such as `crypto`, `forex`, and
-`commodities` is trading-owned and should not be promoted into the shared
-platform domain language by default.
+Messaging may remain native. A repo-local service such as `externals/trading/`
+is treated as an external backend from day one rather than as native platform
+logic.
 
 ## Document Roles
 
@@ -57,13 +56,13 @@ platform domain language by default.
    [011](./011-capability-route-and-response-migration-manifest.md): supporting
    reference docs for later phase detail; not required to enter the first ready
    slice
-- [012](./012-shared-capability-taxonomy-revision.md): implementation-ready
-   taxonomy authority for the first executable slice
-- [tasks/001](./tasks/001-shared-trading-taxonomy-implementation-tasks.md):
-   concrete code-change tasks for routes, activation rows, ownership manifests,
-   and contract naming; first executable low-level slice controlled by
-   [001-roadmap.md](./001-roadmap.md) and
-   [012](./012-shared-capability-taxonomy-revision.md)
+- [013](./013-native-capabilities-and-external-backends.md): implementation-
+   ready boundary authority for the current executable rewrite slice
+- [tasks/002](./tasks/002-external-backend-boundary-implementation-tasks.md):
+   concrete code-change tasks for the repo-local external-service boundary,
+   transport contract, client adapter, and boundary enforcement; first
+   executable low-level slice controlled by [001-roadmap.md](./001-roadmap.md)
+   and [013](./013-native-capabilities-and-external-backends.md)
 - [diagrams/current-architecture.md](./diagrams/current-architecture.md):
    canonical diagram entrypoint for the active architecture context; other
    diagrams are supporting references when explicitly needed
@@ -86,3 +85,7 @@ platform domain language by default.
    migration note because it documents the route and schema consequences of the
    old shared `crypto-trading` framing versus the adopted shared `trading`
    framing.
+4. [012](./012-shared-capability-taxonomy-revision.md) and
+   [tasks/001](./tasks/001-shared-trading-taxonomy-implementation-tasks.md)
+   are superseded as the first executable slice by the external-backend rewrite
+   direction in [013](./013-native-capabilities-and-external-backends.md).

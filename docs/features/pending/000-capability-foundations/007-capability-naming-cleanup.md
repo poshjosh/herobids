@@ -1,38 +1,39 @@
-# Capability Naming Cleanup
+# Native Capability And External Backend Terminology Cleanup
 
 **Status:** draft
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)  
 **Prerequisite:** [Messaging Capability Extraction](./006-messaging-capability-extraction.md)
-**Normative inputs:** [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md), [Capability Activation Model](./010-capability-activation-model.md), [Capability Route And Response Migration Manifest](./011-capability-route-and-response-migration-manifest.md)
+**Normative inputs:** [Native Capabilities And External Backends](./013-native-capabilities-and-external-backends.md), [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md), [Capability Activation Model](./010-capability-activation-model.md), [Capability Route And Response Migration Manifest](./011-capability-route-and-response-migration-manifest.md)
 
 ## Purpose
 
-Clean up the highest-risk terminology collisions after the capability service
-boundaries are already real.
+Clean up the highest-risk terminology collisions after native-capability and
+external-backend boundaries are already real.
 
 ## Scope
 
 This phase includes:
 
 1. worker tool-policy terminology cleanup
-2. runtime-composition terminology clarification
+2. control-plane terminology clarification for native capabilities, external
+   backends, registration mechanisms, and runtime families
 3. documentation alignment
 4. optional additive alias introduction where necessary
 
 This phase does not include:
 
-1. service extraction
+1. backend extraction
 2. large breaking persisted-field renames
 3. unrelated product feature work
 
 ## Non-Goals
 
-1. Do not perform service extraction in this phase.
+1. Do not perform extraction work in this phase.
 2. Do not introduce large breaking persisted-field renames here.
 3. Do not reopen unrelated product feature work during cleanup.
-4. Do not reopen the shared capability taxonomy decisions settled earlier in the
-   roadmap.
+4. Do not reopen the native-versus-external taxonomy decisions settled earlier
+   in the roadmap.
 
 ## Dependencies
 
@@ -40,9 +41,10 @@ This phase does not include:
    the last executable phase after
    [006-messaging-capability-extraction.md](./006-messaging-capability-extraction.md).
 2. [006-messaging-capability-extraction.md](./006-messaging-capability-extraction.md)
-   must first make the service boundaries real so naming cleanup can follow the
-   proven architecture instead of guessing it.
-3. [009-initial-capability-registry-and-tool-ownership-manifest.md](./009-initial-capability-registry-and-tool-ownership-manifest.md),
+   must first make the native and external boundaries real so naming cleanup
+   can follow the proven architecture instead of guessing it.
+3. [013-native-capabilities-and-external-backends.md](./013-native-capabilities-and-external-backends.md),
+   [009-initial-capability-registry-and-tool-ownership-manifest.md](./009-initial-capability-registry-and-tool-ownership-manifest.md),
    [010-capability-activation-model.md](./010-capability-activation-model.md),
    and [011-capability-route-and-response-migration-manifest.md](./011-capability-route-and-response-migration-manifest.md)
    remain binding normative inputs for allowed compatibility terms and route
@@ -50,13 +52,15 @@ This phase does not include:
 
 ## Fixed Decisions
 
-1. This cleanup happens after the capability service boundaries are already
+1. This cleanup happens after the native and external boundaries are already
    real.
-2. The cleanup must not change runtime behavior by itself.
-3. Any remaining legacy terms must be documented explicitly as compatibility
-   terms.
-4. Shared taxonomy, ownership, activation, and route decisions remain locked
-   during cleanup.
+2. Native capability, external backend, registration mechanism, runtime family,
+   and tool ownership are separate concepts and must not share ambiguous names.
+3. `trading` is the initial external-backend example and `messaging` is the
+   current native-capability example.
+4. The cleanup must not change runtime behavior by itself.
+5. Any remaining legacy terms must be documented explicitly as
+   compatibility-only terms.
 
 ## Open Latitude
 
@@ -74,11 +78,12 @@ fixed decisions, dependencies, acceptance criteria, and validation still hold:
 
 This phase is complete only when:
 
-1. code comments and type names no longer blur product capability and tool grant
-   terminology in the targeted surfaces
-2. stable docs align with the extracted architecture
+1. code comments and type names no longer blur native capability,
+   external-backend, and tool-grant terminology in the targeted surfaces
+2. stable docs align with the native-capability and external-backend
+   architecture
 3. no behavior changes are introduced by the cleanup itself
-4. any remaining legacy terms are explicitly documented as compatibility terms
+4. any remaining legacy terms are explicitly documented as compatibility-only
 5. grep residuals match the approved terminology inventory exactly
 
 ## Validation
@@ -91,12 +96,26 @@ This phase is complete only when:
 ## Deliverables
 
 1. worker tool-policy terminology moved away from product-capability wording
-2. clarified local aliases and comments around `capabilityMode`
-3. updated stable docs for capability, runtime family, preset, tool grant,
-   ownership, and route-ID terminology
-4. conflicting draft capability plans marked superseded where necessary
-5. a before-and-after terminology inventory listing allowed compatibility terms,
-   prohibited new usages, and intentional grep residuals
+   where that wording is no longer accurate
+2. clarified local aliases and comments around `capabilityMode` and runtime
+   families
+3. updated stable docs for native capability, external backend, registration
+   mechanism, runtime family, preset, tool grant, ownership, and route-ID
+   terminology
+4. conflicting draft plans marked superseded where necessary
+5. a before-and-after terminology inventory listing allowed compatibility
+   terms, prohibited new usages, and intentional grep residuals
+
+## Terminology Inventory
+
+| Preferred term | Meaning | Avoid or legacy term |
+| --- | --- | --- |
+| `native capability` | platform-owned domain semantics and activation model | using `capability` when only a runtime family is meant |
+| `external backend` | externally bounded domain addressed by `backendId` | calling the first external domain a native capability |
+| `registration mechanism` | direct API, skill, or MCP packaging | treating transport or packaging as domain ownership |
+| `runtime family` | compatibility or execution grouping such as `trading` or `email` | using family names as the canonical control-plane type |
+| `tool owner` | `core`, `general`, native-capability, or external-backend owner | inferring ownership from skill membership alone |
+| `legacy compatibility term` | old wording kept only to explain migration or preserve wire compatibility | introducing new product surfaces with the old wording |
 
 ## Implementation Notes
 

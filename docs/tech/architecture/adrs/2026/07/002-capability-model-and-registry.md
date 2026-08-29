@@ -1,7 +1,14 @@
 # ADR 002: Capability Model And Registry
 
 **Date:** 2026-07-17
-**Status:** Proposed
+**Status:** Superseded
+**Superseded by:** [ADR 008](../08/008-native-capabilities-and-external-backends.md)
+
+This ADR is superseded by ADR 008. It assumed `trading` and `messaging` were
+both first-class native platform capabilities with platform-owned service
+boundaries. The platform now distinguishes native capabilities from external
+backends, and `trading` is no longer the canonical example of a native
+capability.
 
 ## Context
 

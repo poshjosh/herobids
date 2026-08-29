@@ -28,7 +28,7 @@ This document includes:
 
 1. the entry and high-level Capability Foundations docs;
 2. the first ready executable slice now used for implementation handoff;
-3. the later active phase docs that remain on the governed path in dependency
+3. the later draft phase docs that remain on the governed path in dependency
    order;
 4. the supporting references that stay in-scope for later phase detail;
 5. the archive material that is explicitly excluded from the active inventory.
@@ -60,22 +60,22 @@ coordination purposes. They do not override the feature-local authority in
 
 | Surface | Role | Inventory meaning |
 | --- | --- | --- |
-| [012-shared-capability-taxonomy-revision.md](../012-shared-capability-taxonomy-revision.md) | ready child slice | Current implementation-ready authority for the first executable Capability Foundations slice. |
-| [tasks/001-shared-trading-taxonomy-implementation-tasks.md](../tasks/001-shared-trading-taxonomy-implementation-tasks.md) | low-level task list | Concrete code-change task surface for the first slice, subordinate to `012` and the roadmap. |
+| [013-native-capabilities-and-external-backends.md](../013-native-capabilities-and-external-backends.md) | ready child slice | Current implementation-ready authority for the external-backend boundary rewrite slice. |
+| [tasks/002-external-backend-boundary-implementation-tasks.md](../tasks/002-external-backend-boundary-implementation-tasks.md) | low-level task list | Concrete code-change task surface for the current rewrite slice, subordinate to `013` and the roadmap. |
 
-### Later Active Phase Docs
+### Later Draft Phase Docs
 
-These remain active Capability Foundations phase docs after the current ready
+These remain draft Capability Foundations phase docs after the current ready
 slice and stay ordered by the roadmap's dependency sequence.
 
 | Order | Surface | Role | Inventory meaning |
 | --- | --- | --- | --- |
-| 1 | [002-capability-foundations.md](../002-capability-foundations.md) | active later phase doc | Governs the broader foundations phase that remains on the active path after the current ready slice. |
-| 2 | [003-capability-resolution-and-route-migration.md](../003-capability-resolution-and-route-migration.md) | active later phase doc | Governs capability resolution and canonical route migration after foundations work is in place. |
-| 3 | [004-worker-tool-visibility-enforcement.md](../004-worker-tool-visibility-enforcement.md) | active later phase doc | Governs worker-side ownership and activation enforcement once route resolution is stable. |
-| 4 | [005-trading-capability-extraction.md](../005-trading-capability-extraction.md) | active later phase doc | Governs the deployable trading capability extraction phase after worker gating is complete. |
-| 5 | [006-messaging-capability-extraction.md](../006-messaging-capability-extraction.md) | active later phase doc | Governs the deployable messaging capability extraction phase after trading extraction. |
-| 6 | [007-capability-naming-cleanup.md](../007-capability-naming-cleanup.md) | active later phase doc | Governs naming cleanup only after the extraction phases are complete. |
+| 1 | [002-capability-foundations.md](../002-capability-foundations.md) | later draft phase doc | Governs the shared native-versus-external foundations that consolidate the generic boundary and registration model after the current ready slice. |
+| 2 | [003-capability-resolution-and-route-migration.md](../003-capability-resolution-and-route-migration.md) | later draft phase doc | Governs native-capability and external-backend control-plane resolution plus route migration after the foundations phase. |
+| 3 | [004-worker-tool-visibility-enforcement.md](../004-worker-tool-visibility-enforcement.md) | later draft phase doc | Governs generic worker visibility from native activation and external-backend dispatchability once control-plane resolution is stable. |
+| 4 | [005-trading-capability-extraction.md](../005-trading-capability-extraction.md) | later draft phase doc | Governs consolidation and completion of the first repo-local external trading backend boundary after generic visibility prerequisites are satisfied. |
+| 5 | [006-messaging-capability-extraction.md](../006-messaging-capability-extraction.md) | later draft phase doc | Governs native messaging hardening and extraction that coexists with external backends. |
+| 6 | [007-capability-naming-cleanup.md](../007-capability-naming-cleanup.md) | later draft phase doc | Governs terminology cleanup separating native capabilities, external backends, registration mechanisms, runtime families, and legacy terms. |
 
 ### Supporting References
 
@@ -84,10 +84,10 @@ readiness gate for entering the first executable slice.
 
 | Surface | Role | Inventory meaning |
 | --- | --- | --- |
-| [008-cross-service-capability-execution-design.md](../008-cross-service-capability-execution-design.md) | supporting reference | Later-phase design reference for cross-service execution behavior. |
-| [009-initial-capability-registry-and-tool-ownership-manifest.md](../009-initial-capability-registry-and-tool-ownership-manifest.md) | supporting reference | Reference manifest for registry shape and exhaustive tool ownership. |
-| [010-capability-activation-model.md](../010-capability-activation-model.md) | supporting reference | Reference model for activation state and readiness semantics. |
-| [011-capability-route-and-response-migration-manifest.md](../011-capability-route-and-response-migration-manifest.md) | supporting reference | Reference manifest for canonical route IDs and migration coverage. |
+| [008-cross-service-capability-execution-design.md](../008-cross-service-capability-execution-design.md) | supporting reference | Reference design for the generic external-backend execution boundary, shared envelope, auth, and readiness rules. |
+| [009-initial-capability-registry-and-tool-ownership-manifest.md](../009-initial-capability-registry-and-tool-ownership-manifest.md) | supporting reference | Reference manifest for native capability rows, external backend rows, and exhaustive tool ownership. |
+| [010-capability-activation-model.md](../010-capability-activation-model.md) | supporting reference | Reference model for native capability activation and external-backend dispatchability state. |
+| [011-capability-route-and-response-migration-manifest.md](../011-capability-route-and-response-migration-manifest.md) | supporting reference | Reference manifest for native capability and external-backend route and response migration. |
 
 ## Excluded From The Active Inventory
 
@@ -105,10 +105,12 @@ but it does not control the active implementation path coordinated by
 | [archive/001-tasklist.md](../archive/001-tasklist.md) | historical context | Excluded from the active inventory and not a current execution task list. |
 | [archive/002-shared-trading-taxonomy-delta.md](../archive/002-shared-trading-taxonomy-delta.md) | historical context | Excluded from the active inventory and retained as transition rationale only. |
 | [archive/003-taxonomy-impact-map.md](../archive/003-taxonomy-impact-map.md) | historical context | Excluded from the active inventory and retained as a historical impact note only. |
+| [012-shared-capability-taxonomy-revision.md](../012-shared-capability-taxonomy-revision.md) | superseded slice | Excluded from the active inventory as the old platform-owned first-slice model. |
+| [tasks/001-shared-trading-taxonomy-implementation-tasks.md](../tasks/001-shared-trading-taxonomy-implementation-tasks.md) | superseded task list | Excluded from the active inventory as the old first-slice implementation path. |
 
 ## Validation
 
-1. Matched the entry helper, high-level roadmap, first executable slice,
+1. Matched the entry helper, high-level roadmap, current executable rewrite slice,
    later active phase docs, and supporting references against
    [000-README.md](../000-README.md).
 2. Matched the same inventory classes and the 002 through 007 dependency order

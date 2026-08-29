@@ -83,8 +83,8 @@ Definition of success:
 - Expected output files:
 	- `docs/features/pending/000-capability-foundations/000-README.md`
 	- `docs/features/pending/000-capability-foundations/001-roadmap.md`
-	- `docs/features/pending/000-capability-foundations/012-shared-capability-taxonomy-revision.md`
-	- `docs/features/pending/000-capability-foundations/tasks/001-shared-trading-taxonomy-implementation-tasks.md`
+	- `docs/features/pending/000-capability-foundations/013-native-capabilities-and-external-backends.md`
+	- `docs/features/pending/000-capability-foundations/tasks/002-external-backend-boundary-implementation-tasks.md`
 - Completion criteria:
 	- Capability Foundations clearly fits the document-tree rules;
 	- active docs and historical docs are clearly separated;

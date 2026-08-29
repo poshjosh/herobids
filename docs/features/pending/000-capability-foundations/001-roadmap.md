@@ -8,16 +8,16 @@
 ## Purpose
 
 Decompose capability implementation into bounded, phase-specific docs so the
-platform can establish shared capability metadata, route resolution, worker
-gating, and service extraction without mixing those concerns into one
-uncontrolled stream.
+platform can separate native capabilities from external backends, establish a
+repo-local intermediate service boundary, and keep later service extraction or
+repository splits on one explicit path.
 
 ## Scope
 
 This roadmap includes:
 
-1. the ordered executable phases for capability foundations through naming
-   cleanup
+1. the ordered executable slices for capability foundations through external-
+   backend boundary hardening and later native-capability cleanup
 2. the active supporting references and the first ready low-level slice inside
    this feature
 3. the phase gates, extraction strategy, and cross-phase invariants that keep
@@ -35,10 +35,10 @@ This roadmap does not include:
 1. Do not combine service extraction with naming cleanup.
 2. Do not promote unrelated skill domains into product capabilities during this
    roadmap.
-3. Do not redesign deep trading semantics while extracting the `trading`
-   service boundary.
-4. Do not split attachments or documents into a separate top-level capability
-   during this roadmap.
+3. Do not let repo-local placement erase the external boundary for a domain the
+   platform does not want to own natively.
+4. Do not force skills or MCP as the first registration layer when direct API
+   integration is sufficient.
 
 ## Dependencies
 
@@ -49,25 +49,26 @@ This roadmap does not include:
    and [ADR 004](../../../tech/architecture/adrs/2026/07/004-capability-registry-and-tool-exposure-model.md)
    fix the architecture boundary this roadmap implements.
 3. The first executable slice in this feature is controlled by
-   [012-shared-capability-taxonomy-revision.md](./012-shared-capability-taxonomy-revision.md)
-   and [tasks/001-shared-trading-taxonomy-implementation-tasks.md](./tasks/001-shared-trading-taxonomy-implementation-tasks.md).
-4. Documents 008 through 011 remain background supporting references for later
-   phase detail, but they are not part of the readiness gate for entering the
-   first slice.
+   [013-native-capabilities-and-external-backends.md](./013-native-capabilities-and-external-backends.md)
+   and [tasks/002-external-backend-boundary-implementation-tasks.md](./tasks/002-external-backend-boundary-implementation-tasks.md).
+4. Documents 002 through 011 remain draft phase or supporting docs that must be
+   interpreted through the external-backend boundary rule set before later
+   execution resumes.
 
 ## Fixed Decisions
 
-1. `trading` and `messaging` are separate deployable capability services.
-2. Runtime binding families such as `trading` and `email` remain
-   compatibility-layer internals during this rollout.
-3. Capability-owned tool calls must converge on one versioned cross-service
+1. The platform must distinguish native capabilities from external backends.
+2. A repo-local external service may live under `externals/<domain>/` while the
+   platform core treats it as external from day one.
+3. Registration mechanism, capability semantics, and backend location are
+   separate concerns.
+4. Platform-to-external communication must cross one explicit boundary
    contract.
-4. Tool ownership must be exhaustive and machine-readable over
-   `AgentToolName`.
-5. Capability-owned tool visibility must require both ownership and activation.
-6. Provider lifecycle, service health, and tenant readiness are separate
-   states.
-7. Naming cleanup is not allowed to delay service extraction.
+5. Platform-core tool visibility and health gating must stay generic.
+6. Messaging may remain a native capability even when another domain is kept
+   external.
+7. No direct platform-core imports of external-service implementation are
+   allowed.
 
 ## Open Latitude
 
@@ -75,23 +76,26 @@ Implementation may choose the following without escalation, as long as the
 fixed decisions, dependencies, acceptance criteria, and validation still hold:
 
 1. helper and module boundaries inside each executable phase
-2. the exact order of local subtasks inside one phase or task list
+2. the exact service name, auth shape, and client-adapter placement used for
+   the first repo-local external backend
 3. whether a supporting design reference is consulted directly or summarized in
    the active task list, as long as the controlling ready docs stay unchanged
-4. compatibility-field mechanics that preserve the documented canonical routes
-   and identifiers
+4. the later packaging path for skill or MCP registration over the same
+   boundary contract
 
-Implementation may not use open latitude to reorder phases, reopen shared
-identifiers, or promote a supporting reference into a controlling doc silently.
+Implementation may not use open latitude to collapse the external boundary,
+reopen the native-versus-external model, or promote a supporting reference into
+a controlling doc silently.
 
 ## Child Docs And Sequence
 
 Current executable entry slice:
 
-1. [012-shared-capability-taxonomy-revision.md](./012-shared-capability-taxonomy-revision.md)
-2. [tasks/001-shared-trading-taxonomy-implementation-tasks.md](./tasks/001-shared-trading-taxonomy-implementation-tasks.md)
+1. [013-native-capabilities-and-external-backends.md](./013-native-capabilities-and-external-backends.md)
+2. [tasks/002-external-backend-boundary-implementation-tasks.md](./tasks/002-external-backend-boundary-implementation-tasks.md)
 
-Later executable phases in dependency order after the current ready slice:
+Draft phase docs that require rewrite under the external-backend model before
+later execution resumes:
 
 1. [002-capability-foundations.md](./002-capability-foundations.md)
 2. [003-capability-resolution-and-route-migration.md](./003-capability-resolution-and-route-migration.md)
@@ -100,7 +104,7 @@ Later executable phases in dependency order after the current ready slice:
 5. [006-messaging-capability-extraction.md](./006-messaging-capability-extraction.md)
 6. [007-capability-naming-cleanup.md](./007-capability-naming-cleanup.md)
 
-Supporting references for later phase detail:
+Supporting references for later phase detail and rewrite:
 
 1. [008-cross-service-capability-execution-design.md](./008-cross-service-capability-execution-design.md)
 2. [009-initial-capability-registry-and-tool-ownership-manifest.md](./009-initial-capability-registry-and-tool-ownership-manifest.md)
@@ -111,6 +115,8 @@ Historical context only:
 
 1. [archive/002-shared-trading-taxonomy-delta.md](./archive/002-shared-trading-taxonomy-delta.md)
 2. [archive/003-taxonomy-impact-map.md](./archive/003-taxonomy-impact-map.md)
+3. [012-shared-capability-taxonomy-revision.md](./012-shared-capability-taxonomy-revision.md)
+4. [tasks/001-shared-trading-taxonomy-implementation-tasks.md](./tasks/001-shared-trading-taxonomy-implementation-tasks.md)
 
 ## Acceptance Criteria
 
@@ -119,8 +125,9 @@ This roadmap is fit for implementation handoff only when:
 1. the ordered executable phases are explicit and do not mix with historical
    context
 2. the first executable slice is explicit and controlled by docs marked ready
-3. the cross-phase invariants and gates prevent route migration, worker gating,
-   or service extraction from starting out of order
+3. the cross-phase invariants and gates prevent platform-core code from
+   collapsing the external boundary or special-casing an external domain as
+   native by accident
 4. the active path distinguishes controlling docs, supporting references, and
    historical docs clearly enough for a spec-based implementation agent to
    follow without guessing
@@ -135,85 +142,95 @@ This roadmap is fit for implementation handoff only when:
    routes an implementation agent through the same current path
 3. the first task list in `tasks/` names only ready controlling docs as
    parents and does not require 008 through 011 to enter the slice
-4. no historical or superseded docs remain on the default implementation path
+4. no superseded `012 -> tasks/001` path remains on the default implementation
+   path
+
+## Full Validation Checkpoints
+
+Use narrow validation after each local change, but use the full
+`test-and-fix` skill only at implementation milestones.
+
+Run the full skill at these checkpoints:
+
+1. after the current executable slice reaches its boundary-ready checkpoint
+   and before later phase execution resumes; for `tasks/002`, this is after T4
+   and before later route and visibility phases begin
+2. after each later phase that changes shared runtime, routing, visibility,
+   integration, or boundary enforcement behavior
+3. before the overall Capability Foundations rollout is marked complete
+
+Explicit skill paths by IDE:
+
+1. GitHub Copilot: `$HOME/.copilot/skills/test-and-fix/`
+2. Visual Studio Code: `$HOME/.copilot/skills/test-and-fix/`
+3. AWS Kiro: `$HOME/.kiro/skills/test-and-fix/`
+
+Do not assume a spec-driven LLM agent will discover that skill automatically.
+When handing off implementation, provide the exact path for the current IDE.
 
 ## Extraction Strategy
 
-Two extraction patterns are mandatory in this roadmap:
+Two boundary patterns are mandatory in this roadmap:
 
-1. **Branch-by-abstraction** for capability service extraction.
-   Agent Core must call a stable abstraction first, then switch the backing
-   implementation from in-process logic to a separate capability service.
-2. **Strangler-fig migration** at public route boundaries.
-   Canonical product routes such as `/capabilities/trading` and
-   `/capabilities/messaging` are established first. Compatibility fields or
-   temporary aliases are used only where explicitly declared, and are removed
-   only after callers migrate.
+1. **Repo-local external boundary first.** The platform must talk to a
+   repo-local external backend over the same explicit contract it would use for
+   a later off-repo domain.
+2. **Move-by-repointing later.** Once the boundary contract, config, auth, and
+   health model are stable, moving the external service to its own repository
+   and domain should require base-URL and deployment changes rather than a
+   platform semantic rewrite.
 
 ## Phase Gates
 
-### Gate 1: Foundations complete
+### Gate 1: Boundary model complete
 
-Required before route migration or worker gating changes:
+Required before implementation spreads beyond the first slice:
 
-1. shared registry exists
-2. exhaustive ownership manifest exists
-3. cross-service capability-tool contract types exist
-4. preset or role metadata is separated conceptually from capabilities
-5. the registry and ownership data match the supporting reference in document
-   009
+1. native capabilities and external backends are explicitly distinguished
+2. the repo-local external service model is explicit
+3. allowed shared modules and forbidden import directions are explicit
+4. direct API is accepted as the first registration mechanism
 
-### Gate 2: Capability resolution complete
+### Gate 2: Repo-local external service boundary complete
 
-Required before worker gating changes:
+Required before later phase rewrites or execution:
 
-1. shared capability resolver exists
-2. canonical capability route IDs exist
-3. route alias policy is explicit
-4. provider lifecycle enrichment model is explicit
-5. activation state follows the supporting reference in document 010 and route
-   coverage follows the supporting reference in document 011
+1. `externals/<domain>/` exists as its own runtime boundary
+2. the platform reaches it only over the shared boundary contract
+3. the service has its own config, health, and compose wiring
+4. no direct platform-core imports of external-service implementation remain
 
-### Gate 3: Worker gating complete
+### Gate 3: Generic platform integration complete
 
-Required before service extraction:
+Required before native-capability cleanup and later route or visibility work:
 
-1. visibility uses ownership plus activation
-2. `send_message` remains available only through explicit messaging rules
-3. CI validates ownership exhaustiveness
-4. activation is resolved from the durable source described in document 010
+1. the platform client adapter is transport-only
+2. visibility and health gating stay generic for external backends
+3. auth, timeout, retry, and audit rules are generic rather than domain-owned
 
-### Gate 4: Trading extraction complete
+### Gate 4: Native capability cleanup complete
 
-Required before messaging extraction:
+Required before feature completion:
 
-1. Agent Core can invoke capability-owned trading tools through the stable
-   abstraction
-2. service authentication, idempotency, deadlines, and typed failures are real
-3. trading-instance authority is preserved
-4. every tool owned by `trading` in supporting reference 009 executes through
-   the capability service
-
-### Gate 5: Messaging extraction complete
-
-Required before naming cleanup:
-
-1. `send_message` and `send_email` run through the messaging capability service
-2. provider lifecycle and health appear correctly in capability APIs and UI
-3. preset handling is aligned in UI surfaces
-4. service boundary behavior follows supporting reference 008 without an
-   in-process fallback
+1. any remaining native capability behavior is explicit and justified
+2. messaging can remain native without forcing the same model on external
+   domains
+3. later phase docs have been rewritten to stop assuming the platform owns the
+   external domain as a native capability
 
 ## Completion Condition
 
 The roadmap's governed capability rollout is complete only when:
 
-1. product capability metadata is sourced from one shared registry
-2. every known agent tool has exactly one validated owner
-3. capability-owned tool visibility is gated by ownership and activation
-4. canonical public capability routes use product capability IDs, with legacy
-   aliases only where explicitly declared
-5. `trading` runs through a separate deployable capability service
-6. `messaging` runs through a separate deployable capability service
-7. runtime families such as `trading` and `email` remain compatibility-layer
-   internals rather than durable product identifiers
+1. the platform distinguishes native capabilities, external backends, and
+   registration mechanisms clearly
+2. a repo-local external service can live under `externals/<domain>/` while the
+   platform core interacts with it only over the shared boundary contract
+3. platform-core code does not import external-service implementation modules
+4. generic auth, health, visibility, and audit plumbing support external
+   backends without domain-specific platform assumptions
+5. moving the first external backend to another repository and domain would
+   require deployment and configuration changes, not a platform semantic
+   rewrite
+6. native capability behavior remains explicit and limited to domains the
+   platform intentionally keeps native

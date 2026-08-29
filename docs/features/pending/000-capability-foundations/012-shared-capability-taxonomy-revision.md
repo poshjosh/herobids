@@ -1,8 +1,13 @@
 # Shared Capability Taxonomy Revision
 
-**Status:** ready  
+**Status:** superseded
 **Created:** 2026-08-29  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)
+
+This slice is superseded by
+[013-native-capabilities-and-external-backends.md](./013-native-capabilities-and-external-backends.md),
+which replaces the platform-owned first-slice model with the repo-local
+external-backend boundary model.
 
 ## Purpose
 
@@ -39,12 +44,11 @@ This doc does not include:
 
 ## Dependencies
 
-1. [Capability Implementation Roadmap](./001-roadmap.md) fixes this document as
-   the controlling taxonomy authority for the first executable slice.
-2. [tasks/001-shared-trading-taxonomy-implementation-tasks.md](./tasks/001-shared-trading-taxonomy-implementation-tasks.md)
-   implements this taxonomy in shared domain metadata, ownership, and
-   foundational contract surfaces without pulling route migration, worker
-   gating, or service extraction into the first slice.
+1. [Capability Implementation Roadmap](./001-roadmap.md) now keeps this doc as
+   superseded historical context rather than the active first executable slice.
+2. [013-native-capabilities-and-external-backends.md](./013-native-capabilities-and-external-backends.md)
+   and [tasks/002-external-backend-boundary-implementation-tasks.md](./tasks/002-external-backend-boundary-implementation-tasks.md)
+   define the current controlling slice.
 
 ## Fixed Decisions
 
@@ -73,29 +77,23 @@ shared capability ID or to add a shared universal market layer.
 
 ## Acceptance Criteria
 
-This taxonomy revision is ready for the first executable slice only when:
+This taxonomy revision is retained for historical comparison only when:
 
-1. active shared-platform docs treat `trading` and `messaging` as the first
-   product capability IDs
-2. active shared-platform docs keep `family` as the deepest shared taxonomy
-   term
-3. deeper trading classification remains explicitly capability-owned
-4. the task list derived from this doc can drive shared domain, ownership, and
-   foundational contract updates without needing a contradictory historical
-   note
+1. the superseded status at the top of the doc is explicit
+2. the current controlling slice is linked directly from this doc
+3. readers can understand the old platform-owned first-slice model without
+   mistaking it for active authority
 
 ## Validation
 
-1. the capability-foundations folder guide and roadmap name this doc as the
-   controlling taxonomy authority for the first executable slice
-2. the first task list under `tasks/` uses `trading`, not `crypto-trading`, as
-   the shared capability ID target
-3. active docs in this feature do not promote `segment` or `market` into the
-   shared platform taxonomy
-4. any remaining shared `crypto-trading` references in active code or shared
-   schemas are retained only as negative guardrail checks or in historical docs
-5. route migration, activation persistence, worker visibility gating, and
-   service-backed invocation naming remain deferred to their later phase docs
+1. the active entry path in [000-README.md](./000-README.md),
+   [001-roadmap.md](./001-roadmap.md), and
+   [program/007-implementation-entrypoint.md](./program/007-implementation-entrypoint.md)
+   no longer routes through this doc as the first executable slice
+2. this doc links readers to
+   [013-native-capabilities-and-external-backends.md](./013-native-capabilities-and-external-backends.md)
+   and [tasks/002-external-backend-boundary-implementation-tasks.md](./tasks/002-external-backend-boundary-implementation-tasks.md)
+   as the current controlling path
 
 ## Shared Capability Examples
 

@@ -1,37 +1,41 @@
-# Trading Capability Extraction
+# First Repo-Local External Trading Backend
 
 **Status:** draft  
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)  
 **Prerequisite:** [Worker Tool Visibility Enforcement](./004-worker-tool-visibility-enforcement.md)
-**Normative inputs:** [Cross-Service Capability Execution Design](./008-cross-service-capability-execution-design.md), [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md)
+**Normative inputs:** [Native Capabilities And External Backends](./013-native-capabilities-and-external-backends.md), [Cross-Service Capability Execution Design](./008-cross-service-capability-execution-design.md), [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md)
 
 ## Purpose
 
-Extract `trading` as the first separate deployable capability service
-without renaming runtime binding families or redesigning trading-instance
-authority.
+Establish `trading` as the first repo-local external backend, expected to live
+under `externals/trading`, while treating it everywhere else in the platform as
+an external service from day one.
 
 ## Scope
 
 This phase includes:
 
-1. service boundary for `trading`
-2. branch-by-abstraction for trading tool invocation
-3. first real use of the cross-service capability-tool contract
-4. preservation of trading-instance authority
+1. the first repo-local external backend boundary for `trading`
+2. transport-only platform adapters for trading-owned tool invocation
+3. strict no-direct-import enforcement for the repo-local boundary
+4. preservation of trading domain authority inside the external backend
+5. consolidation and hardening of the bootstrap boundary work introduced by
+   the current ready slice
 
 This phase does not include:
 
-1. messaging extraction
+1. native messaging hardening
 2. global terminology cleanup
 3. runtime-family renames
+4. mandatory skill or MCP packaging before direct API integration works
 
 ## Non-Goals
 
-1. Do not extract the messaging capability in this phase.
-2. Do not use this phase for broad terminology cleanup.
-3. Do not rename runtime binding families into product capability IDs.
+1. Do not model trading as a native platform capability.
+2. Do not allow repo-local placement to justify direct imports into
+   `apps/api`, `apps/worker`, `apps/web`, or shared platform packages.
+3. Do not block on skills or MCP before direct API integration works.
 4. Do not treat a partial first-tool migration as complete trading extraction.
 
 ## Dependencies
@@ -39,88 +43,108 @@ This phase does not include:
 1. [Capability Implementation Roadmap](./001-roadmap.md) fixes this phase after
    [004-worker-tool-visibility-enforcement.md](./004-worker-tool-visibility-enforcement.md).
 2. [004-worker-tool-visibility-enforcement.md](./004-worker-tool-visibility-enforcement.md)
-   must first harden ownership and activation behavior before cross-service
-   extraction starts.
-3. [008-cross-service-capability-execution-design.md](./008-cross-service-capability-execution-design.md)
+   must first harden ownership and state behavior before full platform cutover
+   and full tool-coverage completion are declared for external-backend
+   extraction.
+3. [013-native-capabilities-and-external-backends.md](./013-native-capabilities-and-external-backends.md)
+   fixes the external boundary model this phase must implement.
+4. [008-cross-service-capability-execution-design.md](./008-cross-service-capability-execution-design.md)
    and [009-initial-capability-registry-and-tool-ownership-manifest.md](./009-initial-capability-registry-and-tool-ownership-manifest.md)
    remain binding normative inputs for the invocation boundary and tool
    coverage.
+5. [tasks/002-external-backend-boundary-implementation-tasks.md](./tasks/002-external-backend-boundary-implementation-tasks.md)
+   is the current bootstrap path for this boundary. This phase consolidates and
+   completes that work after the generic platform prerequisites are in place.
 
 ## Fixed Decisions
 
-1. `trading` remains the shared product capability ID for this phase.
-2. Runtime binding family `trading` remains an internal compatibility layer.
-3. Trading-owned tools must execute through the shared invocation contract once
-   extraction is complete.
-4. Trading-instance authority remains intact behind the capability service.
-5. Completion requires full trading-tool coverage from document 009, not a
-   partial slice.
+1. `trading` is the first external backend `backendId`, not a native
+   capability ID.
+2. The preferred intermediate runtime lives under `externals/trading/`.
+3. Platform code may share only transport DTOs, auth helpers, generic retry or
+   deadline utilities, health or readiness envelopes, and audit envelopes.
+4. All platform interaction crosses the external-backend contract by direct API
+   first.
+5. Domain-specific policy, persistence semantics, provider rules, and tool
+   meaning remain inside the external backend.
+6. Completion requires full tool coverage for every tool owned by
+   `external:trading` in document 009.
 
 ## Open Latitude
 
 Implementation may choose the following without escalation, as long as the
 fixed decisions, dependencies, acceptance criteria, and validation still hold:
 
-1. the exact abstraction boundary inside Agent Core for trading invocation
-2. service packaging, adapter boundaries, and internal request plumbing
-3. authentication and idempotency helper layout that still satisfies the shared
-   contract
+1. the exact adapter boundary inside platform-core dispatch for trading
+   invocation
+2. external service packaging, internal request plumbing, and compose wiring
+3. authentication and idempotency helper layout that still satisfies the
+   shared contract
 4. test placement across trading, worker, API, and integration suites
 
 ## Acceptance Criteria
 
 This phase is complete only when:
 
-1. `trading` runs as a separate deployable service
-2. Agent Core no longer directly imports capability-specific trading
-   implementation modules for the extracted tool slice
-3. extracted trading tools execute through the shared invocation contract
+1. `trading` runs as a separate repo-local external backend with its own
+   health endpoints
+2. platform-core code no longer directly imports implementation modules from
+   `externals/trading/`
+3. trading-owned tools execute through the shared external-backend invocation
+   contract
 4. idempotency behavior is defined and verified for side-effecting calls
 5. typed failures, deadlines, and authentication are enforced at the boundary
-6. trading-instance authority remains unchanged from a business-ownership
-   perspective
-7. every tool owned by `trading` in document 009 executes through the
-   service; a partial first-tool slice is not complete extraction
+6. the configured trading backend base URL can move off-repo without semantic
+   rewrites in platform-core code
+7. every tool owned by `external:trading` in document 009 executes through the
+   boundary; a partial first-tool slice is not complete extraction
 
 ## Validation
 
-1. add integration tests for authenticated cross-service invocation of every
+1. add integration tests for authenticated external-backend invocation of every
    trading-owned tool category
 2. add retry and idempotency tests for every side-effecting trading tool,
-   including `submit_decision` and bot/watch lifecycle tools
+   including `submit_decision` and bot or watch lifecycle tools
 3. add failure-mode tests required by document 008
-4. run targeted trading, API, worker, and domain tests
-5. run `pnpm lint`
-6. validate local or staging compose wiring for the new service
+4. run repository checks that fail on direct imports from `externals/trading/`
+5. run targeted trading, API, worker, and domain tests
+6. run `pnpm lint`
+7. validate local or staging compose wiring for the repo-local backend
 
 ## Deliverables
 
-1. a deployable `trading` capability service
-2. an Agent Core abstraction for capability-owned trading tool invocation
-3. service-backed implementations for every tool owned by `trading` in
-   document 009, including decision execution, bots, account and risk
+1. a deployable `externals/trading` runtime
+2. a transport-only platform adapter for external-backend trading tool
+   invocation
+3. backend-backed implementations for every tool owned by `external:trading`
+   in document 009, including decision execution, bots, account and risk
    inspection, market data, and price-watch lifecycle
-4. service authentication and authorization at the boundary
+4. boundary authentication and authorization
 5. idempotency, deadlines, and typed failures enforced through the contract
+6. automated enforcement of the no-direct-import rule
 
 ## Implementation Notes
 
-### Extraction pattern
+### Boundary pattern
 
-Use branch-by-abstraction and the HTTP invocation contract in document 008:
+1. Introduce or reuse a generic external-backend invocation client in
+   platform-core code.
+2. Treat the ready task list under `tasks/002` as the bootstrap path for this
+   client and boundary.
+3. Move callers onto that client before deleting any direct imports.
+4. Remove platform-side direct trading implementation imports before calling
+   extraction complete.
 
-1. define a capability-tool invocation abstraction in Agent Core
-2. keep the current in-process implementation behind that abstraction first
-3. add the service-backed `trading` implementation behind the same
-   abstraction
-4. switch callers to the abstraction
-5. remove direct in-process trading imports only after service-backed behavior
-   is verified
+### No-direct-import rule
 
-### Boundary constraints
+1. `apps/api`, `apps/worker`, `apps/web`, and shared packages must not import
+   implementation modules from `externals/trading/`.
+2. Repo-local placement is an operational convenience only. It does not soften
+   the boundary.
 
-1. `trading` remains the shared product capability ID
-2. runtime binding family `trading` remains an internal compatibility layer
-3. deeper trading market taxonomy remains capability-owned rather than part of
-   shared platform vocabulary
-4. trading-instance authority remains intact behind the capability service
+### Backend authority
+
+1. Trading connection semantics, risk policy, provider selection, market-data
+   policy, and durable side-effect rules stay in `externals/trading/`.
+2. Platform-core code owns only generic dispatch, auth, entitlement,
+   health or readiness gating, visibility composition, and audit plumbing.

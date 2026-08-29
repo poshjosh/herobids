@@ -1,7 +1,13 @@
 # ADR 003: Agent Core Vs Capability Services
 
 **Date:** 2026-07-17
-**Status:** Proposed
+**Status:** Superseded
+**Superseded by:** [ADR 008](../08/008-native-capabilities-and-external-backends.md)
+
+This ADR is superseded by ADR 008. It assumed major platform domains such as
+`trading` and `messaging` should be modeled as native capability services.
+The platform now allows repo-local or remote external backends that platform
+core must treat as external from day one.
 
 ## Context
 
