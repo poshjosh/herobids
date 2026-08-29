@@ -5,6 +5,7 @@
 # detect low capacity and provision a new node, then cleans up.
 #
 # Usage:
+#   scripts/shell/tests/autoscale-capacity-trigger-test.sh --env staging
 #   scripts/shell/tests/autoscale-capacity-trigger-test.sh \
 #     --env staging --backend-env-file infra/hetzner/.env.backend
 #
@@ -219,8 +220,15 @@ echo -e "${BOLD}2. Current cluster capacity${RESET}"
 CAPACITY_OUTPUT="$(remote_with_env 'NOMAD_TOKEN=$NOMAD_TOKEN /opt/herobids/infra/hetzner/scripts/check-nomad-capacity.sh 2>/dev/null')"
 log "Capacity output: ${CAPACITY_OUTPUT}"
 
-FREE_SLOTS="$(echo "${CAPACITY_OUTPUT}" | grep -oP 'free_slots=\K[0-9]+' || echo "0")"
-SCALE_OUT_THRESHOLD="$(echo "${CAPACITY_OUTPUT}" | grep -oP 'scale_out_slot_threshold=\K[0-9]+' || echo "0")"
+FREE_SLOTS="$(echo "${CAPACITY_OUTPUT}" | sed -n 's/.*free_slots=\([0-9][0-9]*\).*/\1/p' | head -1)"
+FREE_SLOTS="${FREE_SLOTS:-0}"
+
+# Read the scale-out threshold from the server's systemd config.
+# The capacity script doesn't output this — it's configured via NOMAD_SCALE_OUT_SLOT_THRESHOLD.
+SCALE_OUT_THRESHOLD="$(remote 'set -a; source /etc/herobids/autoscale.env 2>/dev/null; set +a; echo ${NOMAD_SCALE_OUT_SLOT_THRESHOLD:-3}' | tr -d '[:space:]')"
+if [[ -z "${SCALE_OUT_THRESHOLD}" || "${SCALE_OUT_THRESHOLD}" == "0" ]]; then
+  SCALE_OUT_THRESHOLD=3
+fi
 
 log "Free slots:              ${FREE_SLOTS}"
 log "Scale-out threshold:     ${SCALE_OUT_THRESHOLD}"
@@ -255,7 +263,7 @@ for (( i=1; i<=JOBS_NEEDED; i++ )); do
   JOB_NAME="capacity-test-${i}"
   log "Submitting ${JOB_NAME}..."
 
-  JOB_OUTPUT="$(remote_with_env "NOMAD_TOKEN=\$NOMAD_TOKEN nomad job run -<<'JOBEOF'
+  JOB_OUTPUT="$(remote_with_env "NOMAD_TOKEN=\$NOMAD_TOKEN nomad job run -detach -<<'JOBEOF'
 job \"capacity-test-${i}\" {
   datacenters = [\"dc1\"]
   type = \"service\"
@@ -308,7 +316,7 @@ WAITED=0
 while [[ ${WAITED} -lt ${JOB_TIMEOUT} ]]; do
   RUNNING_COUNT=0
   for job in "${JOBS_SUBMITTED[@]}"; do
-    STATUS="$(remote_with_env "NOMAD_TOKEN=\$NOMAD_TOKEN nomad job status -short '${job}' 2>/dev/null | grep -oP 'Status\\s+=\\s+\\K\\w+'" || echo "unknown")"
+    STATUS="$(remote_with_env "NOMAD_TOKEN=\$NOMAD_TOKEN nomad job status -short '${job}' 2>/dev/null | sed -n 's/.*Status[[:space:]]*=[[:space:]]*\\([a-zA-Z_]*\\).*/\\1/p' | head -1" || echo "unknown")"
     [[ "${STATUS}" == "running" ]] && (( RUNNING_COUNT++ )) || true
   done
   log "Running: ${RUNNING_COUNT}/${#JOBS_SUBMITTED[@]} (${WAITED}s elapsed)"
@@ -327,7 +335,8 @@ check "All dummy jobs running" \
 echo -e "${BOLD}6. Verify capacity below threshold${RESET}"
 
 CAPACITY_AFTER="$(remote_with_env 'NOMAD_TOKEN=$NOMAD_TOKEN /opt/herobids/infra/hetzner/scripts/check-nomad-capacity.sh 2>/dev/null')"
-FREE_AFTER="$(echo "${CAPACITY_AFTER}" | grep -oP 'free_slots=\K[0-9]+' || echo "0")"
+FREE_AFTER="$(echo "${CAPACITY_AFTER}" | sed -n 's/.*free_slots=\([0-9][0-9]*\).*/\1/p' | head -1)"
+FREE_AFTER="${FREE_AFTER:-0}"
 log "Free slots after load: ${FREE_AFTER} (threshold: ${SCALE_OUT_THRESHOLD})"
 
 check "Free slots below threshold (${FREE_AFTER} < ${SCALE_OUT_THRESHOLD})" \

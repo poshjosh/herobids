@@ -293,8 +293,14 @@ fi
 CAPACITY_OUTPUT="$(remote_with_env 'NOMAD_TOKEN=$NOMAD_TOKEN /opt/herobids/infra/hetzner/scripts/check-nomad-capacity.sh 2>/dev/null')"
 log "Capacity output: ${CAPACITY_OUTPUT}"
 
-FREE_SLOTS="$(echo "${CAPACITY_OUTPUT}" | grep -oP 'free_slots=\K[0-9]+' || echo "0")"
-SCALE_OUT_THRESHOLD="$(echo "${CAPACITY_OUTPUT}" | grep -oP 'scale_out_slot_threshold=\K[0-9]+' || echo "0")"
+FREE_SLOTS="$(echo "${CAPACITY_OUTPUT}" | sed -n 's/.*free_slots=\([0-9][0-9]*\).*/\1/p' | head -1)"
+FREE_SLOTS="${FREE_SLOTS:-0}"
+
+# Read the scale-out threshold from the server's systemd config.
+SCALE_OUT_THRESHOLD="$(remote 'set -a; source /etc/herobids/autoscale.env 2>/dev/null; set +a; echo ${NOMAD_SCALE_OUT_SLOT_THRESHOLD:-3}' | tr -d '[:space:]')"
+if [[ -z "${SCALE_OUT_THRESHOLD}" || "${SCALE_OUT_THRESHOLD}" == "0" ]]; then
+  SCALE_OUT_THRESHOLD=3
+fi
 
 log "Free slots:              ${FREE_SLOTS}"
 log "Scale-out threshold:     ${SCALE_OUT_THRESHOLD}"
