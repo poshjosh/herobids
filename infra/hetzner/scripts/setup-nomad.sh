@@ -51,7 +51,7 @@ parse_env_flag "$@"
 shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 
 ENV_FILE=""
-BACKEND_ENV_FILE=""
+BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-${INFRA_DIR}/.env.backend}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

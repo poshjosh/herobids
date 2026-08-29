@@ -78,7 +78,7 @@ check() {
 parse_env_flag "$@"
 shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 
-BACKEND_ENV_FILE=""
+BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-${ROOT}/infra/hetzner/.env.backend}"
 ENV_FILE=""
 
 while [[ $# -gt 0 ]]; do

@@ -40,7 +40,7 @@ source "${SCRIPT_DIR}/_ssh_opts.sh"
 VAR_FILE=""
 TF_CLI_ARGS=""
 AUTO_APPROVE=false
-BACKEND_ENV_FILE="${TF_DIR}/.env"
+BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-${TF_DIR}/.env.backend}"
 
 parse_env_flag "$@"
 shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true

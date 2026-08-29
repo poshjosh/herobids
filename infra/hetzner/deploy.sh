@@ -41,7 +41,7 @@ shift $((HEROBIDS_ENV_SHIFT)) 2>/dev/null || true
 
 ENV_FILE=""
 SERVER_IP=""
-BACKEND_ENV_FILE=""
+BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-${SCRIPT_DIR}/../.env.backend}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
