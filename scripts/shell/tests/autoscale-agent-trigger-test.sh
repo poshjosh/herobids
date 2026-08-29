@@ -217,6 +217,18 @@ cleanup() {
       api POST "/agents/${agent_id}/stop" >/dev/null 2>&1 || true
       api DELETE "/agents/${agent_id}" >/dev/null 2>&1 || true
     done
+    ok "Agents stopped and deleted."
+
+    # Wait for Nomad allocations to clear, then scale in the extra node.
+    log "Waiting 30s for allocations to clear..."
+    sleep 30
+    log "Triggering scale-in to remove extra node..."
+    remote_with_env "
+      rm -f /var/run/nomad-autoscale.lock
+      ENABLE_SCALE_IN=true TF_VAR_min_agent_nodes=0 TF_VAR_max_agent_nodes=99 \
+      TF_VAR_agent_node_server_type=cx23 TF_VAR_location=fsn1 \
+      /opt/herobids/infra/hetzner/scripts/scale-in.sh
+    " >/dev/null 2>&1 || warn "Scale-in after cleanup failed (may need manual intervention)."
     ok "Cleanup complete."
   fi
   exit $exit_code

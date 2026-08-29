@@ -158,6 +158,16 @@ cleanup() {
     for job in "${JOBS_SUBMITTED[@]}"; do
       remote_with_env "NOMAD_TOKEN=\$NOMAD_TOKEN nomad job stop -purge '${job}'" >/dev/null 2>&1 || true
     done
+    ok "Dummy jobs stopped."
+
+    # Scale in the extra node that was provisioned during the test.
+    log "Triggering scale-in to remove extra node..."
+    remote_with_env "
+      rm -f /var/run/nomad-autoscale.lock
+      ENABLE_SCALE_IN=true TF_VAR_min_agent_nodes=0 TF_VAR_max_agent_nodes=99 \
+      TF_VAR_agent_node_server_type=cx23 TF_VAR_location=fsn1 \
+      /opt/herobids/infra/hetzner/scripts/scale-in.sh
+    " >/dev/null 2>&1 || warn "Scale-in after cleanup failed (may need manual intervention)."
     ok "Cleanup complete."
   fi
   exit $exit_code
