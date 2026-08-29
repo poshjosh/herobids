@@ -5,7 +5,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-
 import type { SQL } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import type { PlanSkillsEntitlements, PlansConfig } from '@herobids/domain';
-import { findUnknownSkillTools } from '@herobids/domain';
+import { findUnknownSkillTools, inferDependsOn } from '@herobids/domain';
 import { agentSkills, agents, skillEntitlements, skillLikes, skillRevisions, skillUsageEvents, skills } from '@herobids/db';
 import { resolvePlanSkillEntitlements } from '../plan-guards.js';
 
@@ -118,6 +118,7 @@ type SkillView = {
   capabilityFamilies: string[];
   suggestedTickIntervalMs: number | null;
   tags: string[];
+  dependsOn: string[];
   createdAt: Date;
   updatedAt: Date;
 };
@@ -353,6 +354,7 @@ async function buildSkillViews(
       capabilityFamilies: currentRevision?.capabilityFamilies ?? row.capabilityFamilies,
       suggestedTickIntervalMs: currentRevision?.suggestedTickIntervalMs ?? row.suggestedTickIntervalMs,
       tags: currentRevision?.tags ?? row.tags ?? [],
+      dependsOn: inferDependsOn(currentRevision?.requiredTools ?? row.requiredTools, row.id),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     });

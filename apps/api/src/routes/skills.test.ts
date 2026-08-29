@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import type { Database } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
+import { inferDependsOn } from '@herobids/domain';
 import { skillsRoutes } from './skills.js';
 
 const TEST_USER_ID = 'user-1';
@@ -399,5 +400,339 @@ describe('skillsRoutes (normalized contract)', () => {
 
     expect(res.statusCode).toBe(403);
     expect(res.json().code).toBe('plan.skills_like_disabled');
+  });
+});
+
+describe('dependsOn in SkillView', () => {
+  it('includes dependsOn derived from requiredTools on POST /skills', async () => {
+    // create_bot is owned by 'bot-management', submit_decision by 'trading'
+    const tools = ['create_bot', 'submit_decision'];
+
+    const createdRow = {
+      id: 'skill-deps-test',
+      authorId: TEST_USER_ID,
+      publicationStatus: 'published',
+      priceCents: 0,
+      likeCount: 0,
+      forkCount: 0,
+      forkOf: null,
+      popularityScore: 0,
+      trendingScore: 0,
+      currentRevisionId: null,
+      name: 'Depends On Test',
+      description: 'Tests dependsOn',
+      instructions: 'inst',
+      requiredTools: tools,
+      contextRequirements: [],
+      requiredGuardrails: [],
+      capabilityFamilies: [],
+      suggestedTickIntervalMs: 900_000,
+      tags: [],
+      promptHint: null,
+      promptTemplate: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    let selectCalls = 0;
+    const db = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => {
+        selectCalls += 1;
+        // Call 1: fetch created row by id (POST handler)
+        if (selectCalls === 1) return makeChain([createdRow]);
+        // Remaining: revisions, viewer context, version queries → empty
+        return makeChain([]);
+      }),
+      selectDistinct: vi.fn().mockImplementation(() => makeChain([])),
+    } as unknown as Database;
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db, makePlansConfig());
+    selectCalls = 0;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/skills',
+      payload: {
+        name: 'Depends On Test',
+        description: 'Tests dependsOn',
+        instructions: 'inst',
+        requiredTools: tools,
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.dependsOn).toBeDefined();
+    expect(Array.isArray(body.dependsOn)).toBe(true);
+    // The exact IDs depend on tool ownership; verify they match the domain function
+    expect(body.dependsOn).toEqual(inferDependsOn(tools, body.id));
+    // Sanity: tools owned by other skills produce non-empty dependsOn
+    expect(body.dependsOn.length).toBeGreaterThan(0);
+  });
+
+  it('returns empty dependsOn when requiredTools is empty', async () => {
+    const createdRow = {
+      id: 'skill-no-deps',
+      authorId: TEST_USER_ID,
+      publicationStatus: 'published',
+      priceCents: 0,
+      likeCount: 0,
+      forkCount: 0,
+      forkOf: null,
+      popularityScore: 0,
+      trendingScore: 0,
+      currentRevisionId: null,
+      name: 'No Deps Skill',
+      description: 'desc',
+      instructions: 'inst',
+      requiredTools: [],
+      contextRequirements: [],
+      requiredGuardrails: [],
+      capabilityFamilies: [],
+      suggestedTickIntervalMs: 900_000,
+      tags: [],
+      promptHint: null,
+      promptTemplate: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    let selectCalls = 0;
+    const db = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => {
+        selectCalls += 1;
+        if (selectCalls === 1) return makeChain([createdRow]);
+        return makeChain([]);
+      }),
+      selectDistinct: vi.fn().mockImplementation(() => makeChain([])),
+    } as unknown as Database;
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db, makePlansConfig());
+    selectCalls = 0;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/skills',
+      payload: {
+        name: 'No Deps Skill',
+        description: 'desc',
+        instructions: 'inst',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json().dependsOn).toEqual([]);
+  });
+
+  it('uses revision requiredTools when a current revision exists', async () => {
+    const revisionId = 'rev-1';
+    const skillId = 'skill-with-rev';
+    // Row has no requiredTools of interest
+    const skillRow = {
+      id: skillId,
+      authorId: TEST_USER_ID,
+      publicationStatus: 'published',
+      priceCents: 0,
+      likeCount: 0,
+      forkCount: 0,
+      forkOf: null,
+      popularityScore: 0,
+      trendingScore: 0,
+      currentRevisionId: revisionId,
+      name: 'Skill With Rev',
+      description: 'desc',
+      instructions: 'inst',
+      requiredTools: [],
+      contextRequirements: [],
+      requiredGuardrails: [],
+      capabilityFamilies: [],
+      suggestedTickIntervalMs: 900_000,
+      tags: [],
+      promptHint: null,
+      promptTemplate: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    // Revision has tools that create dependencies
+    const revisionRow = {
+      id: revisionId,
+      skillId,
+      version: 1,
+      name: 'Skill With Rev',
+      description: 'desc',
+      instructions: 'inst',
+      promptHint: null,
+      promptTemplate: null,
+      requiredTools: ['create_bot'],
+      contextRequirements: [],
+      requiredGuardrails: [],
+      capabilityFamilies: [],
+      suggestedTickIntervalMs: 900_000,
+      tags: [],
+      changeSummary: null,
+      createdByUserId: TEST_USER_ID,
+      publishedAt: null,
+      createdAt: new Date(),
+    };
+
+    // GET /skills/:id makes several select calls in sequence:
+    //   1. fetch skill row (handler)
+    //   2. fetch revision rows by ids (buildSkillViews)
+    //   3. fetch entitlements (loadViewerContext)
+    //   4. fetch likes (loadViewerContext)
+    //   5. fetch latest version per skill (buildSkillViews)
+    let selectCalls = 0;
+    const db = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => {
+        selectCalls += 1;
+        // Call 1: skill row lookup
+        if (selectCalls === 1) return makeChain([skillRow]);
+        // Call 2: revision fetch
+        if (selectCalls === 2) return makeChain([revisionRow]);
+        // Call 3+: viewer context, latest version → empty
+        return makeChain([]);
+      }),
+      selectDistinct: vi.fn().mockImplementation(() => makeChain([])),
+    } as unknown as Database;
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db, makePlansConfig());
+    selectCalls = 0;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/skills/${skillId}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // dependsOn should be derived from the REVISION's requiredTools, not the row's
+    expect(body.dependsOn).toEqual(inferDependsOn(['create_bot'], skillId));
+    expect(body.dependsOn).toContain('bot-management');
+    // And NOT from the row's empty requiredTools
+    expect(body.requiredTools).toEqual(['create_bot']);
+  });
+
+  it('falls back to row requiredTools when no current revision exists', async () => {
+    const skillId = 'skill-no-rev';
+    const skillRow = {
+      id: skillId,
+      authorId: TEST_USER_ID,
+      publicationStatus: 'published',
+      priceCents: 0,
+      likeCount: 0,
+      forkCount: 0,
+      forkOf: null,
+      popularityScore: 0,
+      trendingScore: 0,
+      currentRevisionId: null,
+      name: 'Skill No Rev',
+      description: 'desc',
+      instructions: 'inst',
+      requiredTools: ['submit_decision'],
+      contextRequirements: [],
+      requiredGuardrails: [],
+      capabilityFamilies: [],
+      suggestedTickIntervalMs: 900_000,
+      tags: [],
+      promptHint: null,
+      promptTemplate: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    let selectCalls = 0;
+    const db = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => {
+        selectCalls += 1;
+        if (selectCalls === 1) return makeChain([skillRow]);
+        return makeChain([]);
+      }),
+      selectDistinct: vi.fn().mockImplementation(() => makeChain([])),
+    } as unknown as Database;
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db, makePlansConfig());
+    selectCalls = 0;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/skills/${skillId}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // No revision → dependsOn derived from the row's requiredTools
+    expect(body.dependsOn).toEqual(inferDependsOn(['submit_decision'], skillId));
+    expect(body.dependsOn).toContain('trading');
+  });
+
+  it('does not include self in dependsOn', async () => {
+    // A skill that is actually 'bot-management' shouldn't list itself as a dependency
+    const skillId = 'bot-management';
+    const skillRow = {
+      id: skillId,
+      authorId: null, // system skill
+      publicationStatus: 'published',
+      priceCents: 0,
+      likeCount: 0,
+      forkCount: 0,
+      forkOf: null,
+      popularityScore: 0,
+      trendingScore: 0,
+      currentRevisionId: null,
+      name: 'Bot Management',
+      description: 'desc',
+      instructions: 'inst',
+      requiredTools: ['create_bot', 'list_bots', 'submit_decision'],
+      contextRequirements: [],
+      requiredGuardrails: [],
+      capabilityFamilies: [],
+      suggestedTickIntervalMs: 900_000,
+      tags: [],
+      promptHint: null,
+      promptTemplate: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    let selectCalls = 0;
+    const db = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => {
+        selectCalls += 1;
+        if (selectCalls === 1) return makeChain([skillRow]);
+        return makeChain([]);
+      }),
+      selectDistinct: vi.fn().mockImplementation(() => makeChain([])),
+    } as unknown as Database;
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db, makePlansConfig());
+    selectCalls = 0;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/skills/${skillId}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Self-exclusion: bot-management should not appear in its own dependsOn
+    expect(body.dependsOn).not.toContain('bot-management');
+    // But trading tools (submit_decision) should still create a dependency
+    expect(body.dependsOn).toContain('trading');
   });
 });

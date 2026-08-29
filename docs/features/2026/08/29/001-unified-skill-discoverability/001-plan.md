@@ -181,7 +181,7 @@ The system should report missing dependencies, not silently add them.
 
 ---
 
-## Step 3 — Domain: extend `skillOps` with `search` and derived dependency metadata [PENDING]
+## Step 3 — Domain: extend `skillOps` with `search` and derived dependency metadata [DONE]
 
 **File:** `packages/domain/src/tools.ts`
 
@@ -207,7 +207,7 @@ skillOps?: {
 
 ---
 
-## Step 4 — Domain: add read-time dependency inference helpers [PENDING]
+## Step 4 — Domain: add read-time dependency inference helpers [DONE]
 
 **File:** `packages/domain/src/skills.ts`
 
