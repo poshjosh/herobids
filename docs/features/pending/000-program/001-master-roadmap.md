@@ -59,40 +59,41 @@ pending feature tree.
 
 | Order | Feature | Depends on | Role in the program |
 | --- | --- | --- | --- |
-| 7 | [000-unified-skill-discoverability](../000-unified-skill-discoverability/001-plan.md) | capability-foundations | Make platform and external skill discovery part of the default agent skill surface before more self-managing agent experiences are layered on top. |
-| 8 | [002-blank-slate-agents](../002-blank-slate-agents/001-plan.md) | capability-foundations, unified-skill-discoverability | Add one-click blank-slate agent creation and self-management of prompt and skills on top of the capability-owned runtime. |
-| 9 | [003-agent-chat-sessions](../003-agent-chat-sessions/000-notes.md) | blank-slate-agents | Establish session-centric chat architecture and keep chat semantics separate from tick-driven runtime semantics. |
-| 10 | [007-llm-cost-attribution-metrics](../007-llm-cost-attribution-metrics/001-plan.md) | capability-foundations, agent-chat-sessions | Measure LLM spend by execution path and trigger source before expanding recurring, monetized, or document-heavy agent flows. |
-| 11 | [070-agent-min-tick-interval-extension](../070-agent-min-tick-interval-extension/001-plan.md) | agent-chat-sessions | Add bounded agent-requested tick extensions without weakening operator or user controls. |
-| 12 | [071-skill-driven-tick-interval-defaults](../071-skill-driven-tick-interval-defaults/001-plan.md) | agent-chat-sessions, agent-min-tick-interval-extension | Derive default cadence from selected skills only after the bounded extension model exists. |
+| 7 | [004-tiered-capability-limits](../001-plan-tiered-capability-limits/001-plan.md) | capability-foundations | Move hardcoded capability grants, sandbox defaults, and tool argument ceilings into operator and plan config before broader self-service and monetized agent surfaces rely on them. |
+| 8 | [005-unified-skill-discoverability](../../2026/08/29/001-unified-skill-discoverability/001-plan.md) | capability-foundations | Make platform and external skill discovery part of the default agent skill surface before more self-managing agent experiences are layered on top. |
+| 9 | [002-blank-slate-agents](../002-blank-slate-agents/001-plan.md) | capability-foundations, unified-skill-discoverability | Add one-click blank-slate agent creation and self-management of prompt and skills on top of the capability-owned runtime. |
+| 10 | [003-agent-chat-sessions](../003-agent-chat-sessions/000-notes.md) | blank-slate-agents | Establish session-centric chat architecture and keep chat semantics separate from tick-driven runtime semantics. |
+| 11 | [007-llm-cost-attribution-metrics](../007-llm-cost-attribution-metrics/001-plan.md) | capability-foundations, agent-chat-sessions | Measure LLM spend by execution path and trigger source before expanding recurring, monetized, or document-heavy agent flows. |
+| 12 | [070-agent-min-tick-interval-extension](../070-agent-min-tick-interval-extension/001-plan.md) | agent-chat-sessions | Add bounded agent-requested tick extensions without weakening operator or user controls. |
+| 13 | [071-skill-driven-tick-interval-defaults](../071-skill-driven-tick-interval-defaults/001-plan.md) | agent-chat-sessions, agent-min-tick-interval-extension | Derive default cadence from selected skills only after the bounded extension model exists. |
 
 ### Phase 4: Documents And Messaging
 
 | Order | Feature | Depends on | Role in the program |
 | --- | --- | --- | --- |
-| 13 | [025-agent-message-document-handling](../025-agent-message-document-handling/000-notes.md) | agent-chat-sessions, llm-cost-attribution-metrics | Add inbound multimodal and document support on the session-centric chat surface with cost attribution already in place. |
-| 14 | [056-agent-outbound-message-attachments](../056-agent-outbound-message-attachments/001-plan.md) | agent-message-document-handling | Add outbound email and Telegram attachments backed by the stored-document model rather than a separate capability track. |
+| 14 | [025-agent-message-document-handling](../025-agent-message-document-handling/000-notes.md) | agent-chat-sessions, llm-cost-attribution-metrics | Add inbound multimodal and document support on the session-centric chat surface with cost attribution already in place. |
+| 15 | [056-agent-outbound-message-attachments](../056-agent-outbound-message-attachments/001-plan.md) | agent-message-document-handling | Add outbound email and Telegram attachments backed by the stored-document model rather than a separate capability track. |
 
 ### Phase 5: Skills, Publishing, And Commercialization
 
 | Order | Feature | Depends on | Role in the program |
 | --- | --- | --- | --- |
-| 15 | [075-additional-trading-skills](../075-additional-trading-skills.md/000-notes.md) | capability-foundations, unified-skill-discoverability | Publish additional methodology skills once the capability foundation is stable, while acknowledging the current candle and OHLCV tool gap. |
-| 16 | [015-marketplace-pricing-for-skills-and-blueprints](../015-marketplace-pricing-for-skills-and-blueprints/001-plan.md) | blank-slate-agents, llm-cost-attribution-metrics, unified-skill-discoverability | Finish skill pricing and checkout, then extend the same commerce path to blueprints after the runtime model and cost accounting are stable. |
-| 17 | [010-daily-brief](../010-daily-brief/000-analysis.md) | hyperliquid-perp-preset-tuning, llm-cost-attribution-metrics, additional-trading-skills | Publish recurring market-intelligence digests only after preset quality, execution-path metering, and enough recommendation logic exist to make the brief credible. |
+| 16 | [075-additional-trading-skills](../075-additional-trading-skills.md/000-notes.md) | capability-foundations, unified-skill-discoverability | Publish additional methodology skills once the capability foundation is stable, while acknowledging the current candle and OHLCV tool gap. |
+| 17 | [015-marketplace-pricing-for-skills-and-blueprints](../015-marketplace-pricing-for-skills-and-blueprints/001-plan.md) | blank-slate-agents, llm-cost-attribution-metrics, unified-skill-discoverability | Finish skill pricing and checkout, then extend the same commerce path to blueprints after the runtime model and cost accounting are stable. |
+| 18 | [010-daily-brief](../010-daily-brief/000-analysis.md) | hyperliquid-perp-preset-tuning, llm-cost-attribution-metrics, additional-trading-skills | Publish recurring market-intelligence digests only after preset quality, execution-path metering, and enough recommendation logic exist to make the brief credible. |
 
 ### Phase 6: Localization And Program Hardening
 
 | Order | Feature | Depends on | Role in the program |
 | --- | --- | --- | --- |
-| 18 | [080-i18n-expansion](../080-i18n-expansion/001-plan.md) | agent-chat-sessions, agent-message-document-handling, agent-outbound-message-attachments, external web i18n prerequisite | Localize Telegram, email, and server messaging only after the chat and document flows are stable and the missing web prerequisite is explicitly resolved. |
-| 19 | [099-tests](../099-tests/001-plan.md) | capability-foundations, hyperliquid-perp-preset-tuning, exit-policy-scale-out-trail, advanced-live-limit-order-management, per-trade-level-outage-protection, watch-cleanup-on-position-close, unified-skill-discoverability, blank-slate-agents, agent-chat-sessions, llm-cost-attribution-metrics, agent-min-tick-interval-extension, skill-driven-tick-interval-defaults, agent-message-document-handling, agent-outbound-message-attachments, additional-trading-skills, marketplace-pricing-for-skills-and-blueprints, daily-brief, i18n-expansion | Expand coverage around the accepted boundaries and known failures after the feature surfaces above stop moving. |
+| 19 | [080-i18n-expansion](../080-i18n-expansion/001-plan.md) | agent-chat-sessions, agent-message-document-handling, agent-outbound-message-attachments, external web i18n prerequisite | Localize Telegram, email, and server messaging only after the chat and document flows are stable and the missing web prerequisite is explicitly resolved. |
+| 20 | [099-tests](../099-tests/001-plan.md) | capability-foundations, hyperliquid-perp-preset-tuning, exit-policy-scale-out-trail, advanced-live-limit-order-management, per-trade-level-outage-protection, watch-cleanup-on-position-close, tiered-capability-limits, unified-skill-discoverability, blank-slate-agents, agent-chat-sessions, llm-cost-attribution-metrics, agent-min-tick-interval-extension, skill-driven-tick-interval-defaults, agent-message-document-handling, agent-outbound-message-attachments, additional-trading-skills, marketplace-pricing-for-skills-and-blueprints, daily-brief, i18n-expansion | Expand coverage around the accepted boundaries and known failures after the feature surfaces above stop moving. |
 
 ### Phase 7: Independent Follow-Up Work
 
 | Order | Feature | Depends on | Role in the program |
 | --- | --- | --- | --- |
-| 20 | [027-openaidom-brand-rollout-followup](../027-openaidom-brand-rollout-followup/001-plan.md) | none | Close the remaining Tier 2 brand rollout gaps after the main program path, while keeping the work isolated from capability, trading, and chat sequencing. |
+| 21 | [027-openaidom-brand-rollout-followup](../027-openaidom-brand-rollout-followup/001-plan.md) | none | Close the remaining Tier 2 brand rollout gaps after the main program path, while keeping the work isolated from capability, trading, and chat sequencing. |
 
 ## Fixed Now
 
@@ -108,7 +109,7 @@ still pending.
 3. [003-agent-chat-sessions](../003-agent-chat-sessions/000-notes.md) owns the
    chat model. Later cadence, document, and attachment features must layer on a
    session-centric architecture rather than reusing tick-loop semantics.
-4. [000-unified-skill-discoverability](../000-unified-skill-discoverability/001-plan.md)
+4. [005-unified-skill-discoverability](../../2026/08/29/001-unified-skill-discoverability/001-plan.md)
    is part of the active agent runtime surface and must be treated as a real
    program feature, not an out-of-band parent-plan fragment.
 5. [007-llm-cost-attribution-metrics](../007-llm-cost-attribution-metrics/001-plan.md)
@@ -149,8 +150,9 @@ still pending.
 1. Normalize legacy filenames and irregular folder names in later program tasks;
    do not rename anything in C02.
 2. Split features into canonical `001-overview.md`, `001-roadmap.md`, and
-   `tasks/` shapes only when the later inventory and feature-template work has
-   fixed those authoring rules.
+   `tasks/` shapes according to
+   [005-feature-inventory.md](./005-feature-inventory.md) and
+   [002-feature-doc-template.md](./002-feature-doc-template.md).
 3. Unblock [075-additional-trading-skills](../075-additional-trading-skills.md/000-notes.md)
    by adding the missing candle and OHLCV tool support or by explicitly
    narrowing the feature around that gap.
@@ -181,8 +183,9 @@ still pending.
 This roadmap fixes program order and boundaries. It intentionally leaves the
 following work for later documents:
 
-1. the canonical feature inventory and normalization pass;
+1. the normalization pass that applies
+   [005-feature-inventory.md](./005-feature-inventory.md);
 2. per-feature high-level docs where only legacy notes currently exist;
-3. any deeper phase split for large features beyond
-   [000-capability-foundations](../000-capability-foundations/001-roadmap.md);
+3. the concrete `002+` child docs required by the inventory for large features
+   beyond [000-capability-foundations](../000-capability-foundations/001-roadmap.md);
 4. implementation task lists outside the first executable slices.

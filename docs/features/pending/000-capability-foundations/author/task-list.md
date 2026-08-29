@@ -68,7 +68,7 @@ Definition of success:
 	- defines required validation evidence before a feature can be marked complete;
 	- defines how plan changes are handled when implementation discoveries occur.
 
-### C06. [PENDING] Create the feature inventory
+### C06. [DONE] Create the feature inventory
 
 - Expected output file: `docs/features/pending/000-program/005-feature-inventory.md`
 - Completion criteria:
@@ -76,23 +76,23 @@ Definition of success:
 	- assigns each feature an exact folder name and title;
 	- identifies which features require middle-level phase docs and which do not.
 
-### C07. [PENDING] Normalize Feature 001 as the first executable model
+### C07. [PENDING] Normalize Capability Foundations as the first executable model
 
 - Expected output files:
 	- `docs/features/pending/000-capability-foundations/000-README.md`
 	- `docs/features/pending/000-capability-foundations/001-roadmap.md`
 	- `docs/features/pending/000-capability-foundations/tasks/001-shared-trading-taxonomy-implementation-tasks.md`
 - Completion criteria:
-	- Feature 001 clearly fits the document-tree rules;
+	- Capability Foundations clearly fits the document-tree rules;
 	- active docs and historical docs are clearly separated;
 	- the first executable slice is explicit.
 
-### C08. [PENDING] Create one high-level doc for every remaining feature
+### C08. [PENDING] Create one canonical high-level doc for every remaining feature
 
-- Expected output file pattern: `docs/features/pending/<feature-folder>/001-overview.md`
+- Expected output file pattern: `docs/features/pending/<feature-folder>/001-overview.md` or `docs/features/pending/<feature-folder>/001-roadmap.md`
 - Completion criteria:
 	- every feature listed in `005-feature-inventory.md` has one high-level doc;
-	- each high-level doc follows `002-feature-doc-template.md`.
+	- each high-level doc uses the exact canonical shape assigned in `005-feature-inventory.md` and follows `002-feature-doc-template.md`.
 
 ### C09. [PENDING] Create middle-level phase docs only where required
 
