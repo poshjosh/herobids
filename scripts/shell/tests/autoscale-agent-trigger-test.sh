@@ -297,7 +297,7 @@ FREE_SLOTS="$(echo "${CAPACITY_OUTPUT}" | sed -n 's/.*free_slots=\([0-9][0-9]*\)
 FREE_SLOTS="${FREE_SLOTS:-0}"
 
 # Read the scale-out threshold from the server's systemd config.
-SCALE_OUT_THRESHOLD="$(remote 'set -a; source /etc/herobids/autoscale.env 2>/dev/null; set +a; echo ${NOMAD_SCALE_OUT_SLOT_THRESHOLD:-3}' | tr -d '[:space:]')"
+SCALE_OUT_THRESHOLD="$(remote 'systemctl show nomad-autoscale.service -p Environment 2>/dev/null | tr " " "\n" | grep NOMAD_SCALE_OUT_SLOT_THRESHOLD | cut -d= -f2' | tr -d '[:space:]')"
 if [[ -z "${SCALE_OUT_THRESHOLD}" || "${SCALE_OUT_THRESHOLD}" == "0" ]]; then
   SCALE_OUT_THRESHOLD=3
 fi
