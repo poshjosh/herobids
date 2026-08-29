@@ -68,11 +68,11 @@ All tool responses that surface skill identifiers (`list_skills`, `search_skills
 
 **Decision:** Response fields change from `id` to `skill` (the slug), or include both `id` and `skill` during a transition period. The `missingDependencies` field uses `skill` (the slug) and `requiredBy` (the slug), not `skillId`.
 
-### `includeDependencies` defaults to false
+### `includeDependencies` defaults to true
 
-Auto-resolution is opt-in. The default behavior preserves the current reporting-only approach. The BASE_SKILL instructions guide agents to use it.
+Auto-resolution is the default. Agents that want to control exactly which skills are added can set it to false. This matches the common case — most agents want dependencies resolved automatically.
 
-**Decision:** `add_skills` schema gains `includeDependencies: z.boolean().optional().default(false)`. When true, the tool computes the transitive dependency closure before sending to the broker.
+**Decision:** `add_skills` schema gains `includeDependencies: z.boolean().optional().default(true)`. When true, the tool computes the transitive dependency closure before sending to the broker.
 
 ### External skill routing is slug-based
 
@@ -246,7 +246,7 @@ The response uses `skill` (slug) as the primary identifier. Retain `id` for back
 
 ### 7c. `add_skills` accepts slugs and supports external skills
 
-1. Add `includeDependencies: z.boolean().optional().default(false)` to `SkillMutationParamsSchema` (or a new `AddSkillsParamsSchema` — `remove_skills` doesn't need it).
+1. Add `includeDependencies: z.boolean().optional().default(true)` to `SkillMutationParamsSchema` (or a new `AddSkillsParamsSchema` — `remove_skills` doesn't need it).
 2. Before sending to the broker, resolve input refs:
    - Slugs that match platform skills → collect IDs → send to broker (existing path).
    - Slugs with no platform match (external) → route to `npx skills add <ref>` subprocess.
@@ -354,7 +354,7 @@ Update BASE_SKILL instructions to:
 ```text
 - Use `list_skills` to see what skills you have and what platform skills are available to add. Skills are identified by their slug (e.g. system/trading, system/programming).
 - Use `search_skills` to find skills by keyword. It searches both the platform catalog and external skills via skills.sh.
-- Use `add_skills` to add skills by slug. Set includeDependencies to true to automatically add skills they depend on. For external skills (e.g. twostraws/swiftui-agent-skill), the platform installs them and adds the file-management skill so you can read the installed instructions.
+- Use `add_skills` to add skills by slug. Dependencies are added automatically unless you set includeDependencies to false. For external skills (e.g. twostraws/swiftui-agent-skill), the platform installs them and adds the file-management skill so you can read the installed instructions.
 - Use `remove_skills` to drop skills by slug.
 ```
 
@@ -394,7 +394,8 @@ Update BASE_SKILL instructions to:
 
 ### Worker tools
 - `add_skills` accepts slugs and resolves to IDs.
-- `add_skills` with `includeDependencies: true` auto-adds dependencies.
+- `add_skills` with `includeDependencies: true` (default) auto-adds dependencies.
+- `add_skills` with `includeDependencies: false` reports dependencies without adding them.
 - `add_skills` with external slug routes to subprocess.
 - `add_skills` with mixed platform + external slugs handles both.
 - `remove_skills` accepts slugs.
