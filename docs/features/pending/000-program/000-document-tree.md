@@ -18,8 +18,7 @@ It is grounded in the current repo state:
   `000-README.md`, `001-roadmap.md`, numbered design docs, `tasks/`,
   `diagrams/`, `author/`, and `archive/`;
 - several other pending features still use legacy names such as `001-plan.md`,
-  `000-note.md`, and `000-preamble.md`;
-- there is not yet a `000-program/` folder.
+   `000-note.md`, and `000-preamble.md`.
 
 This step defines the normalized target structure. It does not require renaming
 or moving existing feature docs yet.

@@ -36,7 +36,7 @@ Definition of success:
 	- defines high-level, middle-level, low-level, active, and historical doc tiers;
 	- defines exact naming rules and creation order.
 
-### C02. [PENDING] Create the master program roadmap
+### C02. [DONE] Create the master program roadmap
 
 - Expected output file: `docs/features/pending/000-program/001-master-roadmap.md`
 - Completion criteria:
