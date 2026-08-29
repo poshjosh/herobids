@@ -90,8 +90,8 @@ describe('list_skills', () => {
   });
 
   it('returns assigned and available arrays when skillOps is present', async () => {
-    const assigned = [{ id: 's1', name: 'Trading', description: 'Trade stuff', dependsOn: [] as string[] }];
-    const available = [{ id: 's2', name: 'Monitoring', description: 'Watch stuff', dependsOn: [] as string[] }];
+    const assigned = [{ id: 's1', slug: 'trading', name: 'Trading', description: 'Trade stuff', dependsOn: [] as string[] }];
+    const available = [{ id: 's2', slug: 'monitoring', name: 'Monitoring', description: 'Watch stuff', dependsOn: [] as string[] }];
     const ctx = makeCtx({
       skillOps: {
         listAssigned: vi.fn(async () => assigned),
@@ -112,10 +112,10 @@ describe('list_skills', () => {
 
   it('surfaces dependsOn field in both assigned and available arrays', async () => {
     const assigned = [
-      { id: 's1', name: 'Trading', description: 'Trade stuff', dependsOn: ['s3'] },
+      { id: 's1', slug: 'trading', name: 'Trading', description: 'Trade stuff', dependsOn: ['s3'] },
     ];
     const available = [
-      { id: 's2', name: 'Monitoring', description: 'Watch stuff', dependsOn: ['s1', 's3'] },
+      { id: 's2', slug: 'monitoring', name: 'Monitoring', description: 'Watch stuff', dependsOn: ['s1', 's3'] },
     ];
     const ctx = makeCtx({
       skillOps: {
@@ -135,10 +135,10 @@ describe('list_skills', () => {
 
   it('returns empty dependsOn arrays when skills have no dependencies', async () => {
     const assigned = [
-      { id: 's1', name: 'Trading', description: 'Trade stuff', dependsOn: [] as string[] },
+      { id: 's1', slug: 'trading', name: 'Trading', description: 'Trade stuff', dependsOn: [] as string[] },
     ];
     const available = [
-      { id: 's2', name: 'Monitoring', description: 'Watch stuff', dependsOn: [] as string[] },
+      { id: 's2', slug: 'monitoring', name: 'Monitoring', description: 'Watch stuff', dependsOn: [] as string[] },
     ];
     const ctx = makeCtx({
       skillOps: {
@@ -529,7 +529,7 @@ describe('add_skills', () => {
         redis: makeRedisWithReply(reply),
         skillOps: makeSkillOps({
           listAssigned: vi.fn(async () => [
-            { id: 'skill-1', name: 'Trading', description: 'Trade', dependsOn: ['dep-a', 'dep-b'] },
+            { id: 'skill-1', slug: 'trading', name: 'Trading', description: 'Trade', dependsOn: ['dep-a', 'dep-b'] },
           ]),
         }),
       });
@@ -549,7 +549,7 @@ describe('add_skills', () => {
         redis: makeRedisWithReply(reply),
         skillOps: makeSkillOps({
           listAssigned: vi.fn(async () => [
-            { id: 'skill-1', name: 'Trading', description: 'Trade', dependsOn: ['dep-a', 'dep-b'] },
+            { id: 'skill-1', slug: 'trading', name: 'Trading', description: 'Trade', dependsOn: ['dep-a', 'dep-b'] },
           ]),
         }),
       });
@@ -610,8 +610,8 @@ describe('add_skills', () => {
         redis: makeRedisWithReply(reply),
         skillOps: makeSkillOps({
           listAssigned: vi.fn(async () => [
-            { id: 'skill-a', name: 'A', description: 'Skill A', dependsOn: ['dep-shared', 'dep-only-a'] },
-            { id: 'skill-b', name: 'B', description: 'Skill B', dependsOn: ['dep-shared'] },
+            { id: 'skill-a', slug: 'a', name: 'A', description: 'Skill A', dependsOn: ['dep-shared', 'dep-only-a'] },
+            { id: 'skill-b', slug: 'b', name: 'B', description: 'Skill B', dependsOn: ['dep-shared'] },
           ]),
         }),
       });
@@ -640,7 +640,7 @@ describe('add_skills', () => {
         skillOps: makeSkillOps({
           // listAssigned returns a different skill — 'skill-1' is not in the list
           listAssigned: vi.fn(async () => [
-            { id: 'skill-other', name: 'Other', description: 'Other skill', dependsOn: ['dep-x'] },
+            { id: 'skill-other', slug: 'other', name: 'Other', description: 'Other skill', dependsOn: ['dep-x'] },
           ]),
         }),
       });
@@ -661,7 +661,7 @@ describe('add_skills', () => {
         redis: makeRedisWithReply(reply),
         skillOps: makeSkillOps({
           listAssigned: vi.fn(async () => [
-            { id: 'skill-1', name: 'Trading', description: 'Trade', dependsOn: ['dep-a', 'dep-b'] },
+            { id: 'skill-1', slug: 'trading', name: 'Trading', description: 'Trade', dependsOn: ['dep-a', 'dep-b'] },
           ]),
         }),
       });
@@ -684,7 +684,7 @@ describe('add_skills', () => {
         redis: makeRedisWithReply(reply),
         skillOps: makeSkillOps({
           listAssigned: vi.fn(async () => [
-            { id: 'skill-1', name: 'Simple', description: 'No deps', dependsOn: [] },
+            { id: 'skill-1', slug: 'simple', name: 'Simple', description: 'No deps', dependsOn: [] },
           ]),
         }),
       });
@@ -812,7 +812,7 @@ describe('remove_skills', () => {
 
   it('never computes missingDependencies even when skillOps is available', async () => {
     const listAssigned = vi.fn(async () => [
-      { id: 'skill-1', name: 'Trading', description: 'Trade', dependsOn: ['dep-missing'] },
+      { id: 'skill-1', slug: 'trading', name: 'Trading', description: 'Trade', dependsOn: ['dep-missing'] },
     ]);
     const onSkillsChanged = vi.fn(async () => ['skill-1']);
     const reply = makeBrokerReply({ action: 'remove', skillIds: ['skill-1'] });
@@ -873,8 +873,8 @@ describe('skillOps.search stub contract', () => {
 
   it('accepts search results that include dependsOn and isAssigned fields', async () => {
     const searchResults: SkillSearchResult = [
-      { id: 's1', name: 'Trading', description: 'Trade', isAssigned: true, dependsOn: ['s2'] },
-      { id: 's3', name: 'Analytics', description: 'Analyze', isAssigned: false, dependsOn: [] as string[] },
+      { id: 's1', slug: 'trading', name: 'Trading', description: 'Trade', isAssigned: true, dependsOn: ['s2'] },
+      { id: 's3', slug: 'analytics', name: 'Analytics', description: 'Analyze', isAssigned: false, dependsOn: [] as string[] },
     ];
     const ctx = makeCtx({
       skillOps: {
@@ -913,6 +913,7 @@ describe('skillOps.search limit capping contract', () => {
 
   const pool: SearchResult = Array.from({ length: 25 }, (_, i) => ({
     id: `sk-${i}`,
+    slug: `skill-${i}`,
     name: `Skill ${i}`,
     description: `Skill ${i} desc`,
     isAssigned: i % 3 === 0,
@@ -951,8 +952,8 @@ describe('skillOps.search limit capping contract', () => {
 describe('list_skills dependsOn propagation', () => {
   it('propagates dependsOn from listAssigned through to tool response data', async () => {
     const assigned = [
-      { id: 'sk-trade', name: 'Trading', description: 'Trade', dependsOn: ['sk-market', 'sk-risk'] },
-      { id: 'sk-scan', name: 'Scanner', description: 'Scan', dependsOn: [] as string[] },
+      { id: 'sk-trade', slug: 'trading', name: 'Trading', description: 'Trade', dependsOn: ['sk-market', 'sk-risk'] },
+      { id: 'sk-scan', slug: 'scanner', name: 'Scanner', description: 'Scan', dependsOn: [] as string[] },
     ];
     const ctx = makeCtx({
       skillOps: makeSkillOps({ listAssigned: vi.fn(async () => assigned) }),
@@ -968,7 +969,7 @@ describe('list_skills dependsOn propagation', () => {
 
   it('propagates dependsOn from listAvailable through to tool response data', async () => {
     const available = [
-      { id: 'sk-alerts', name: 'Alerts', description: 'Alert', dependsOn: ['sk-monitor'] },
+      { id: 'sk-alerts', slug: 'alerts', name: 'Alerts', description: 'Alert', dependsOn: ['sk-monitor'] },
     ];
     const ctx = makeCtx({
       skillOps: makeSkillOps({ listAvailable: vi.fn(async () => available) }),
@@ -984,10 +985,10 @@ describe('list_skills dependsOn propagation', () => {
   it('handles large dependsOn arrays from both assigned and available', async () => {
     const manyDeps = Array.from({ length: 8 }, (_, i) => `sk-dep-${i}`);
     const assigned = [
-      { id: 'sk-complex', name: 'Complex', description: 'Many deps', dependsOn: manyDeps },
+      { id: 'sk-complex', slug: 'complex', name: 'Complex', description: 'Many deps', dependsOn: manyDeps },
     ];
     const available = [
-      { id: 'sk-simple', name: 'Simple', description: 'Few deps', dependsOn: ['sk-dep-0'] },
+      { id: 'sk-simple', slug: 'simple', name: 'Simple', description: 'Few deps', dependsOn: ['sk-dep-0'] },
     ];
     const ctx = makeCtx({
       skillOps: makeSkillOps({
@@ -1097,8 +1098,8 @@ describe('search_skills', () => {
   describe('local search', () => {
     it('returns local results when skillOps.search returns data', async () => {
       const searchResults = [
-        { id: 'sk-1', name: 'Trading', description: 'Trade crypto', isAssigned: true, dependsOn: ['sk-2'] },
-        { id: 'sk-3', name: 'Analytics', description: 'Analyze markets', isAssigned: false, dependsOn: [] as string[] },
+        { id: 'sk-1', slug: 'trading', name: 'Trading', description: 'Trade crypto', isAssigned: true, dependsOn: ['sk-2'] },
+        { id: 'sk-3', slug: 'analytics', name: 'Analytics', description: 'Analyze markets', isAssigned: false, dependsOn: [] as string[] },
       ];
       const ctx = makeCtx({
         skillOps: makeSkillOps({ search: vi.fn(async () => searchResults) }),
@@ -1189,7 +1190,7 @@ describe('search_skills', () => {
 
     it('does not cause overall failure when external search fails', async () => {
       const searchResults = [
-        { id: 'sk-1', name: 'Trading', description: 'Trade', isAssigned: false, dependsOn: [] as string[] },
+        { id: 'sk-1', slug: 'trading', name: 'Trading', description: 'Trade', isAssigned: false, dependsOn: [] as string[] },
       ];
       const ctx = makeCtx({
         skillOps: makeSkillOps({ search: vi.fn(async () => searchResults) }),
@@ -1246,7 +1247,7 @@ describe('search_skills', () => {
 
     it('local results array items have expected fields', async () => {
       const searchResults = [
-        { id: 'sk-1', name: 'Trading', description: 'Trade crypto', isAssigned: true, dependsOn: ['sk-dep'] },
+        { id: 'sk-1', slug: 'trading', name: 'Trading', description: 'Trade crypto', isAssigned: true, dependsOn: ['sk-dep'] },
       ];
       const ctx = makeCtx({
         skillOps: makeSkillOps({ search: vi.fn(async () => searchResults) }),
@@ -1270,7 +1271,7 @@ describe('search_skills', () => {
   describe('combined behavior', () => {
     it('returns both local results and external note in a single response', async () => {
       const searchResults = [
-        { id: 'sk-1', name: 'Monitoring', description: 'Watch things', isAssigned: false, dependsOn: [] as string[] },
+        { id: 'sk-1', slug: 'monitoring', name: 'Monitoring', description: 'Watch things', isAssigned: false, dependsOn: [] as string[] },
       ];
       const ctx = makeCtx({
         skillOps: makeSkillOps({ search: vi.fn(async () => searchResults) }),

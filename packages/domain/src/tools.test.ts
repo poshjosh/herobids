@@ -182,14 +182,15 @@ describe('ToolContext.skillOps — type-level and shape tests', () => {
    */
   const mockSkillOps: NonNullable<ToolContext['skillOps']> = {
     listAssigned: async () => [
-      { id: 'sk-1', name: 'Skill A', description: 'Does A things', dependsOn: ['sk-0'] },
+      { id: 'sk-1', slug: 'skill-a', name: 'Skill A', description: 'Does A things', dependsOn: ['sk-0'] },
     ],
     listAvailable: async () => [
-      { id: 'sk-2', name: 'Skill B', description: 'Does B things', dependsOn: [] },
+      { id: 'sk-2', slug: 'skill-b', name: 'Skill B', description: 'Does B things', dependsOn: [] },
     ],
     search: async (_query: string, _limit?: number) => [
       {
         id: 'sk-3',
+        slug: 'skill-c',
         name: 'Skill C',
         description: 'Does C things',
         isAssigned: false,
@@ -286,10 +287,10 @@ describe('ToolContext.skillOps — type-level and shape tests', () => {
   it('supports multiple dependsOn entries in listAssigned and listAvailable', async () => {
     const ops: NonNullable<ToolContext['skillOps']> = {
       listAssigned: async () => [
-        { id: 'sk-x', name: 'X', description: 'X desc', dependsOn: ['sk-a', 'sk-b', 'sk-c'] },
+        { id: 'sk-x', slug: 'x', name: 'X', description: 'X desc', dependsOn: ['sk-a', 'sk-b', 'sk-c'] },
       ],
       listAvailable: async () => [
-        { id: 'sk-y', name: 'Y', description: 'Y desc', dependsOn: ['sk-d'] },
+        { id: 'sk-y', slug: 'y', name: 'Y', description: 'Y desc', dependsOn: ['sk-d'] },
       ],
       search: async () => [],
     };

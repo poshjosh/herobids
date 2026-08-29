@@ -245,10 +245,11 @@ export interface ToolContext {
   db?: unknown;
   /** Skill catalog operations for list_skills and search_skills. */
   skillOps?: {
-    listAssigned(): Promise<Array<{ id: string; name: string; description: string; dependsOn: string[] }>>;
-    listAvailable(): Promise<Array<{ id: string; name: string; description: string; dependsOn: string[] }>>;
+    listAssigned(): Promise<Array<{ id: string; slug: string; name: string; description: string; dependsOn: string[] }>>;
+    listAvailable(): Promise<Array<{ id: string; slug: string; name: string; description: string; dependsOn: string[] }>>;
     search(query: string, limit?: number): Promise<Array<{
       id: string;
+      slug: string;
       name: string;
       description: string;
       isAssigned: boolean;

@@ -1778,6 +1778,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       async listAssigned() {
         const rows = await db.select({
           id: skills.id,
+          slug: skills.slug,
           name: skillRevisions.name,
           description: skillRevisions.description,
           requiredTools: skillRevisions.requiredTools,
@@ -1788,6 +1789,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
         .where(and(eq(agentSkills.agentId, AGENT_ID!), ne(skills.id, 'base')));
         return rows.map(r => ({
           id: r.id,
+          slug: r.slug,
           name: r.name ?? r.id,
           description: r.description ?? '',
           dependsOn: inferDependsOn(r.requiredTools ?? [], r.id),
@@ -1801,6 +1803,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
 
         const allSkills = await db.select({
           id: skills.id,
+          slug: skills.slug,
           name: skills.name,
           description: skills.description,
           requiredTools: skills.requiredTools,
@@ -1815,6 +1818,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
           .filter(s => s.id !== 'base' && !assignedSet.has(s.id))
           .map(s => ({
             id: s.id,
+            slug: s.slug,
             name: s.name ?? s.id,
             description: s.description ?? '',
             dependsOn: inferDependsOn(s.requiredTools ?? [], s.id),
@@ -1843,6 +1847,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
 
         const rows = await db.select({
           id: skills.id,
+          slug: skills.slug,
           name: skills.name,
           description: skills.description,
           requiredTools: skills.requiredTools,
@@ -1858,6 +1863,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
 
         return rows.map(r => ({
           id: r.id,
+          slug: r.slug,
           name: r.name ?? r.id,
           description: r.description ?? '',
           isAssigned: assignedSet.has(r.id),

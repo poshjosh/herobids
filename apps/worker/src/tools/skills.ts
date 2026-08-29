@@ -321,6 +321,7 @@ const searchSkillsTool: AgentTool = {
     // Local platform search
     let localResults: Array<{
       id: string;
+      slug: string;
       name: string;
       description: string;
       isAssigned: boolean;

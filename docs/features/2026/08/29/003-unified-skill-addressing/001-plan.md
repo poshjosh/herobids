@@ -316,7 +316,7 @@ All three return `{ ok: true; output: string } | { ok: false; error: string }`.
 
 ---
 
-## Step 9 — Domain: update `skillOps` interface for slug support — PENDING
+## Step 9 — Domain: update `skillOps` interface for slug support — DONE
 
 **File:** `packages/domain/src/tools.ts`
 
@@ -506,3 +506,7 @@ Parallelizable groups:
 2. **[Medium] No test for hash-match path leaving a pre-existing null slug untouched** — The "skips update" test verifies no mutations, but doesn't cover the scenario where an existing row has `slug = NULL` and content matches. Not a real bug since Step 1 migration backfills all slugs, but worth documenting.
 
 3. **[Low] `config/default.yaml` plan tier renaming is unrelated** — The diff includes an unrelated config change. Should be committed separately per atomic commit guidelines.
+
+### Step 9 — Domain: update `skillOps` interface for slug support
+
+1. **[Low] Comments reference stale "enterprise" tier name** — `packages/domain/src/config/schema.ts` and `apps/worker/src/agents/agent-runtime-launcher.ts` comments still reference "enterprise" as an example tier after config renamed it to "pro". Cosmetic only.
