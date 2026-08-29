@@ -1,9 +1,8 @@
 # Shared Trading Taxonomy Implementation Tasks
 
-**Status:** draft  
+**Status:** ready  
 **Created:** 2026-08-29  
 **Parent docs:** [Capability Implementation Roadmap](../001-roadmap.md), [Shared Capability Taxonomy Revision](../012-shared-capability-taxonomy-revision.md)
-**Normative inputs:** [Cross-Service Capability Execution Design](../008-cross-service-capability-execution-design.md), [Initial Capability Registry And Tool Ownership Manifest](../009-initial-capability-registry-and-tool-ownership-manifest.md), [Capability Activation Model](../010-capability-activation-model.md), [Capability Route And Response Migration Manifest](../011-capability-route-and-response-migration-manifest.md)
 
 ## Purpose
 
@@ -13,7 +12,6 @@ their immediate contract consumers.
 
 Read this task list after [Capability Implementation Roadmap](../001-roadmap.md)
 and [Shared Capability Taxonomy Revision](../012-shared-capability-taxonomy-revision.md).
-Use the normative inputs above only for the slice each task touches.
 
 ## Execution Rules
 
@@ -194,7 +192,7 @@ This task list is complete only when:
 
 1. shared code and public control-plane routes use `trading`, not
    `crypto-trading`
-2. historical docs are the only remaining place where shared `crypto-trading`
-   appears intentionally
+2. any remaining shared `crypto-trading` mentions in active docs exist only as
+   negative migration checks or guardrails, not as live identifiers
 3. tests cover routes, activation rows, and ownership manifest semantics
 4. `pnpm lint` passes

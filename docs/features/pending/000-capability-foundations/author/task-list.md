@@ -76,11 +76,12 @@ Definition of success:
 	- assigns each feature an exact folder name and title;
 	- identifies which features require middle-level phase docs and which do not.
 
-### C07. [PENDING] Normalize Capability Foundations as the first executable model
+### C07. [DONE] Normalize Capability Foundations as the first executable model
 
 - Expected output files:
 	- `docs/features/pending/000-capability-foundations/000-README.md`
 	- `docs/features/pending/000-capability-foundations/001-roadmap.md`
+	- `docs/features/pending/000-capability-foundations/012-shared-capability-taxonomy-revision.md`
 	- `docs/features/pending/000-capability-foundations/tasks/001-shared-trading-taxonomy-implementation-tasks.md`
 - Completion criteria:
 	- Capability Foundations clearly fits the document-tree rules;
@@ -142,6 +143,4 @@ Definition of success:
 
 ## Outstanding Issues
 
-### C01. Create the documentation tree
-
-- low: clarify whether `diagrams/current-architecture.md` is the canonical diagram entrypoint or whether the folder guide should describe the full diagram set more explicitly.
+None.

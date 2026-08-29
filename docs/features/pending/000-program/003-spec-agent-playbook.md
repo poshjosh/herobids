@@ -37,8 +37,7 @@ For the current staged program, that temporary start path resolves to:
 1. [../000-capability-foundations/000-README.md](../000-capability-foundations/000-README.md)
 2. [../000-capability-foundations/001-roadmap.md](../000-capability-foundations/001-roadmap.md)
 3. [../000-capability-foundations/012-shared-capability-taxonomy-revision.md](../000-capability-foundations/012-shared-capability-taxonomy-revision.md)
-4. only the relevant normative inputs from [../000-capability-foundations/008-cross-service-capability-execution-design.md](../000-capability-foundations/008-cross-service-capability-execution-design.md) through [../000-capability-foundations/011-capability-route-and-response-migration-manifest.md](../000-capability-foundations/011-capability-route-and-response-migration-manifest.md), as named by the selected task
-5. [../000-capability-foundations/tasks/001-shared-trading-taxonomy-implementation-tasks.md](../000-capability-foundations/tasks/001-shared-trading-taxonomy-implementation-tasks.md)
+4. [../000-capability-foundations/tasks/001-shared-trading-taxonomy-implementation-tasks.md](../000-capability-foundations/tasks/001-shared-trading-taxonomy-implementation-tasks.md)
 
 Do not start from repo code, `author/` notes, or a legacy file name just
 because it looks nearby or easier.
@@ -94,8 +93,7 @@ Choose the slice with this procedure:
    implementation handoff
 
 For the current capability-foundations example, the active folder guide,
-roadmap, taxonomy revision, the relevant normative inputs from 008 through
-011, and
+roadmap, taxonomy revision, and
 [tasks/001-shared-trading-taxonomy-implementation-tasks.md](../000-capability-foundations/tasks/001-shared-trading-taxonomy-implementation-tasks.md)
 together make the shared `trading` taxonomy slice the first executable low-
 level task surface.
