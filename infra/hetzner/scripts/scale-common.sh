@@ -415,10 +415,6 @@ tf_ensure_ready() {
 # (hcloud_token, deploy_ssh_private_key, etc.). Dynamic overrides are
 # passed as -var arguments.
 #
-# Uses -target to scope changes to agent node resources only, avoiding
-# unnecessary control-plane replacement caused by agent_node_count
-# being embedded in cloud-init user_data (see IMPORTANT-TODO.md).
-#
 # NOTE: Do not pass sensitive values (secrets, API keys, passwords) as -var
 # arguments — they appear in process listings and terraform logs. Use TF_VAR_*
 # environment variables for sensitive inputs instead.
@@ -433,10 +429,6 @@ tf_apply_var() {
     apply_args+=("-var-file=${tfvars_file}")
     log "Using var-file: ${tfvars_file}"
   fi
-
-  # Target only agent node resources to avoid triggering control-plane
-  # replacement from user_data changes (agent_node_count is embedded in cloud-init).
-  apply_args+=("-target=hcloud_server.agent" "-target=hcloud_server_network.agent")
 
   for var_pair in "$@"; do
     apply_args+=("-var" "${var_pair}")

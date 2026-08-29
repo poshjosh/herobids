@@ -180,7 +180,6 @@ resource "hcloud_server" "default" {
     terraform_version              = var.terraform_version
     private_subnet                 = var.subnet_ip_range
     nomad_bootstrap_expect         = 1
-    agent_node_count               = var.agent_node_count
     max_agent_nodes                = var.max_agent_nodes
     min_agent_nodes                = var.min_agent_nodes
     scale_out_cooldown_seconds     = var.scale_out_cooldown_seconds

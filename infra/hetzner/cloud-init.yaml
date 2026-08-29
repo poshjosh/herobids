@@ -458,11 +458,14 @@ runcmd:
         logger -t cloud-init "INFO: /etc/herobids/autoscale.env not found — terraform init deferred to first autoscale run."
       fi
 
-      # Seed the autoscale node count file from the initial agent_node_count.
-      # agent_node_count is set at provision time; the autoscaler will update this
-      # file after each successful terraform apply.
+      # The autoscale node count file is seeded with 0 at first boot.
+      # The autoscaler reads the actual count from the Nomad API on first run
+      # (via current_agent_node_count() fallback) and updates this file after
+      # each successful terraform apply. This avoids embedding agent_node_count
+      # in user_data, which would force control-plane replacement on every
+      # node count change (see IMPORTANT-TODO.md).
       mkdir -p /var/run
-      echo "${agent_node_count}" > /var/run/nomad-autoscale-node-count
+      echo "0" > /var/run/nomad-autoscale-node-count
 
       # Seed the alert failure count file (Phase 8).
       # Initialized to 0 — the autoscaler increments it on failures and
