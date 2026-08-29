@@ -456,6 +456,13 @@
       "when": 1786108951349,
       "tag": "0064_drop_billing_usage_events_session_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1786200000000,
+      "tag": "0065_add_skills_slug",
+      "breakpoints": true
     }
   ]
 }

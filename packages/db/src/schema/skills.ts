@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, index, type AnyPgColumn, boolean, doublePrecision } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, integer, index, uniqueIndex, type AnyPgColumn, boolean, doublePrecision } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { users } from './users.js';
 
@@ -11,6 +11,8 @@ export const skills = pgTable('skills', {
   id: text('id').primaryKey(),
   /** null = system-owned; userId = user-authored */
   authorId: text('author_id').references(() => users.id),
+  /** Human-readable address: 'system/trading', 'alice/my-skill'. */
+  slug: text('slug').notNull(),
   /** draft | private | published | delisted | archived */
   publicationStatus: text('publication_status').notNull().default('draft'),
   publishedAt: timestamp('published_at', { withTimezone: true }),
@@ -55,6 +57,7 @@ export const skills = pgTable('skills', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('idx_skills_author_id').on(t.authorId),
+  uniqueIndex('idx_skills_slug').on(t.slug).where(sql`${t.slug} IS NOT NULL`),
   index('idx_skills_publication_status').on(t.publicationStatus),
   index('idx_skills_popularity_score').on(t.popularityScore),
   index('idx_skills_trending_score').on(t.trendingScore),

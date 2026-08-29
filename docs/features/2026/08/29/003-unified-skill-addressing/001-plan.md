@@ -114,7 +114,7 @@ A data migration computes slugs for all existing rows. System skills get `system
 
 ---
 
-## Step 1 — Schema: add `slug` column to `skills` table
+## Step 1 — Schema: add `slug` column to `skills` table — DONE
 
 **Files:**
 - New migration file
@@ -135,7 +135,7 @@ A data migration computes slugs for all existing rows. System skills get `system
 
 ---
 
-## Step 2 — Domain: add `slugify` helper and update `SkillDefinition`
+## Step 2 — Domain: add `slugify` helper and update `SkillDefinition` — PENDING
 
 **File:** `packages/domain/src/skills.ts`
 
@@ -150,7 +150,7 @@ A data migration computes slugs for all existing rows. System skills get `system
 
 ---
 
-## Step 3 — Seeder: populate `slug` on system skill upsert
+## Step 3 — Seeder: populate `slug` on system skill upsert — PENDING
 
 **File:** `apps/api/src/sync-system-skills.ts`
 
@@ -163,7 +163,7 @@ A data migration computes slugs for all existing rows. System skills get `system
 
 ---
 
-## Step 4 — Domain: add slug resolution helper
+## Step 4 — Domain: add slug resolution helper — PENDING
 
 **File:** `packages/domain/src/skills.ts` or a new `packages/domain/src/skill-resolution.ts`
 
@@ -195,7 +195,7 @@ Also add `resolveSkillRefs(refs: string[], db)` that:
 
 ---
 
-## Step 5 — DB: add slug-based skill lookup
+## Step 5 — DB: add slug-based skill lookup — PENDING
 
 **File:** `packages/db/src/skill-assignment.ts`
 
@@ -211,7 +211,7 @@ Also add `resolveSkillRefs(refs: string[], db)` that:
 
 ---
 
-## Step 6 — API: set `slug` on skill creation and update
+## Step 6 — API: set `slug` on skill creation and update — PENDING
 
 **Files:**
 - `apps/api/src/routes/skills.ts`
@@ -228,7 +228,7 @@ Also add `resolveSkillRefs(refs: string[], db)` that:
 
 ---
 
-## Step 7 — Worker: slug resolution in `skillOps` and skill tools
+## Step 7 — Worker: slug resolution in `skillOps` and skill tools — PENDING
 
 **Files:**
 - `apps/worker/src/agent.ts`
@@ -283,7 +283,7 @@ Local results include `slug` as the primary identifier.
 
 ---
 
-## Step 8 — Worker: external skill install/remove subprocess
+## Step 8 — Worker: external skill install/remove subprocess — PENDING
 
 **File:** `apps/worker/src/tools/skills.ts`
 
@@ -316,7 +316,7 @@ All three return `{ ok: true; output: string } | { ok: false; error: string }`.
 
 ---
 
-## Step 9 — Domain: update `skillOps` interface for slug support
+## Step 9 — Domain: update `skillOps` interface for slug support — PENDING
 
 **File:** `packages/domain/src/tools.ts`
 
@@ -345,7 +345,7 @@ The `dependsOn` arrays also switch to slugs (derived from the ownership map + sl
 
 ---
 
-## Step 10 — Worker: update `ManageAgentSkillsPayload` and broker handler
+## Step 10 — Worker: update `ManageAgentSkillsPayload` and broker handler — PENDING
 
 **Files:**
 - `packages/domain/src/agent-protocol.ts`
@@ -361,7 +361,7 @@ However, the broker handler's error messages should include slugs for better age
 
 ---
 
-## Step 11 — BASE_SKILL instruction update
+## Step 11 — BASE_SKILL instruction update — PENDING
 
 **File:** `packages/domain/src/skills.ts`
 
@@ -380,7 +380,7 @@ Update BASE_SKILL instructions to:
 
 ---
 
-## Step 12 — Frontend: display slugs in skill views
+## Step 12 — Frontend: display slugs in skill views — PENDING
 
 **Files:**
 - `apps/web/src/lib/api-client.ts`
@@ -397,7 +397,7 @@ Update BASE_SKILL instructions to:
 
 ---
 
-## Step 13 — Tests
+## Step 13 — Tests — PENDING
 
 ### Domain
 - `slugify` and `buildSkillSlug` helpers.
@@ -476,3 +476,15 @@ Parallelizable groups:
 | **`includeDependencies` creates unexpected tool visibility** | Auto-resolved skills are reported in `autoResolved` so the agent knows what was added and why. |
 | **Slug computation differences between migration and runtime** | Use the same `slugify` function in both the migration SQL and the application code. For the migration, inline the logic in SQL (`LOWER(REPLACE(name, ' ', '-'))`). |
 | **`base` skill has no slug** | `BASE_SKILL` is not stored in the DB and is auto-injected. It doesn't need a slug — it's never the target of `add_skills`/`remove_skills`. |
+
+---
+
+## Outstanding Issues
+
+### Step 1 — Schema: add `slug` column to `skills` table
+
+1. **[Medium] Partial unique index WHERE clause is redundant after NOT NULL** — The schema defines `uniqueIndex('idx_skills_slug').on(t.slug).where(sql\`...\`)` but since the column is NOT NULL post-migration, the WHERE clause is dead weight. Consider removing `.where()` from the schema (keep it in migration SQL for the transition window). Update the corresponding test assertion if changed.
+
+2. **[Low] Migration `when` timestamp is a round number** — The journal `when` value `1786200000000` looks synthetic vs other entries' high-precision timestamps. Cosmetic only.
+
+3. **[Low] Backfill only handles single-space separators** — `LOWER(REPLACE(name, ' ', '-'))` doesn't handle double spaces, tabs, etc. Acceptable for backfill since current skill names are clean. The application-level `slugify()` (Step 2) should handle edge cases properly.
