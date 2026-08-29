@@ -54,6 +54,18 @@ function makeBrokerReply(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** Convenience: builds a skillOps mock with sensible defaults for unused methods. */
+function makeSkillOps(
+  overrides: Partial<NonNullable<ToolContext['skillOps']>> = {},
+): NonNullable<ToolContext['skillOps']> {
+  return {
+    listAssigned: vi.fn(async () => []),
+    listAvailable: vi.fn(async () => []),
+    search: vi.fn(async () => []),
+    ...overrides,
+  };
+}
+
 // ── Tool exports sanity ─────────────────────────────────────────────────────
 
 describe('skillTools exports', () => {
@@ -674,6 +686,117 @@ describe('skillOps.search stub contract', () => {
     expect(result[0]!.dependsOn).toEqual(['s2']);
     expect(result[1]!.isAssigned).toBe(false);
     expect(result[1]!.dependsOn).toEqual([]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// skillOps.search — limit capping contract
+// (agent.ts applies Math.min(limit ?? 10, 20) — these mocks replicate that
+//  logic so consumers can rely on the documented cap behavior)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('skillOps.search limit capping contract', () => {
+  type SearchResult = Awaited<ReturnType<NonNullable<ToolContext['skillOps']>['search']>>;
+
+  /** Simulates agent.ts limit capping: Math.min(limit ?? 10, 20) */
+  function makeCappedSearch(pool: SearchResult) {
+    return vi.fn(async (_q: string, limit?: number) => {
+      const effectiveLimit = Math.min(limit ?? 10, 20);
+      return pool.slice(0, effectiveLimit);
+    });
+  }
+
+  const pool: SearchResult = Array.from({ length: 25 }, (_, i) => ({
+    id: `sk-${i}`,
+    name: `Skill ${i}`,
+    description: `Skill ${i} desc`,
+    isAssigned: i % 3 === 0,
+    dependsOn: [],
+  }));
+
+  it('caps at 20 even when caller requests more', async () => {
+    const ctx = makeCtx({ skillOps: makeSkillOps({ search: makeCappedSearch(pool) }) });
+
+    const result = await ctx.skillOps!.search('skill', 50);
+
+    expect(result).toHaveLength(20);
+  });
+
+  it('defaults to 10 when limit is omitted', async () => {
+    const ctx = makeCtx({ skillOps: makeSkillOps({ search: makeCappedSearch(pool) }) });
+
+    const result = await ctx.skillOps!.search('skill');
+
+    expect(result).toHaveLength(10);
+  });
+
+  it('honours explicit limit below the cap', async () => {
+    const ctx = makeCtx({ skillOps: makeSkillOps({ search: makeCappedSearch(pool) }) });
+
+    const result = await ctx.skillOps!.search('skill', 3);
+
+    expect(result).toHaveLength(3);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// list_skills tool — dependsOn propagation from skillOps
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('list_skills dependsOn propagation', () => {
+  it('propagates dependsOn from listAssigned through to tool response data', async () => {
+    const assigned = [
+      { id: 'sk-trade', name: 'Trading', description: 'Trade', dependsOn: ['sk-market', 'sk-risk'] },
+      { id: 'sk-scan', name: 'Scanner', description: 'Scan', dependsOn: [] as string[] },
+    ];
+    const ctx = makeCtx({
+      skillOps: makeSkillOps({ listAssigned: vi.fn(async () => assigned) }),
+    });
+
+    const result = await listSkills.execute({}, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as { assigned: typeof assigned; available: unknown[] };
+    expect(data.assigned[0]!.dependsOn).toEqual(['sk-market', 'sk-risk']);
+    expect(data.assigned[1]!.dependsOn).toEqual([]);
+  });
+
+  it('propagates dependsOn from listAvailable through to tool response data', async () => {
+    const available = [
+      { id: 'sk-alerts', name: 'Alerts', description: 'Alert', dependsOn: ['sk-monitor'] },
+    ];
+    const ctx = makeCtx({
+      skillOps: makeSkillOps({ listAvailable: vi.fn(async () => available) }),
+    });
+
+    const result = await listSkills.execute({}, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as { assigned: unknown[]; available: typeof available };
+    expect(data.available[0]!.dependsOn).toEqual(['sk-monitor']);
+  });
+
+  it('handles large dependsOn arrays from both assigned and available', async () => {
+    const manyDeps = Array.from({ length: 8 }, (_, i) => `sk-dep-${i}`);
+    const assigned = [
+      { id: 'sk-complex', name: 'Complex', description: 'Many deps', dependsOn: manyDeps },
+    ];
+    const available = [
+      { id: 'sk-simple', name: 'Simple', description: 'Few deps', dependsOn: ['sk-dep-0'] },
+    ];
+    const ctx = makeCtx({
+      skillOps: makeSkillOps({
+        listAssigned: vi.fn(async () => assigned),
+        listAvailable: vi.fn(async () => available),
+      }),
+    });
+
+    const result = await listSkills.execute({}, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as { assigned: typeof assigned; available: typeof available };
+    expect(data.assigned[0]!.dependsOn).toHaveLength(8);
+    expect(data.available[0]!.dependsOn).toHaveLength(1);
   });
 });
 

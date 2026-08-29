@@ -13,9 +13,9 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal, LlmArtifactRepository, skills, skillRevisions, agentSkills } from '@herobids/db';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml } from '@herobids/domain';
 import { type LlmToolDefinition, type OpenRouterProviderControls, resolveReasoningParams } from '@herobids/llm';
@@ -1780,12 +1780,18 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
           id: skills.id,
           name: skillRevisions.name,
           description: skillRevisions.description,
+          requiredTools: skillRevisions.requiredTools,
         })
         .from(agentSkills)
         .innerJoin(skills, eq(agentSkills.skillId, skills.id))
         .innerJoin(skillRevisions, eq(agentSkills.skillRevisionId, skillRevisions.id))
         .where(and(eq(agentSkills.agentId, AGENT_ID!), ne(skills.id, 'base')));
-        return rows.map(r => ({ id: r.id, name: r.name ?? r.id, description: r.description ?? '', dependsOn: [] as string[] }));
+        return rows.map(r => ({
+          id: r.id,
+          name: r.name ?? r.id,
+          description: r.description ?? '',
+          dependsOn: inferDependsOn(r.requiredTools ?? [], r.id),
+        }));
       },
       async listAvailable() {
         const assignedIds = await db.select({ skillId: agentSkills.skillId })
@@ -1797,6 +1803,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
           id: skills.id,
           name: skills.name,
           description: skills.description,
+          requiredTools: skills.requiredTools,
         })
         .from(skills)
         .where(and(
@@ -1806,10 +1813,48 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
 
         return allSkills
           .filter(s => s.id !== 'base' && !assignedSet.has(s.id))
-          .map(s => ({ id: s.id, name: s.name ?? s.id, description: s.description ?? '', dependsOn: [] as string[] }));
+          .map(s => ({
+            id: s.id,
+            name: s.name ?? s.id,
+            description: s.description ?? '',
+            dependsOn: inferDependsOn(s.requiredTools ?? [], s.id),
+          }));
       },
-      async search(_query: string, _limit?: number) {
-        return [] as Array<{ id: string; name: string; description: string; isAssigned: boolean; dependsOn: string[] }>;
+      async search(query: string, limit?: number) {
+        const effectiveLimit = Math.min(limit ?? 10, 20);
+        const pattern = `%${query}%`;
+
+        const assignedIds = await db.select({ skillId: agentSkills.skillId })
+          .from(agentSkills)
+          .where(eq(agentSkills.agentId, AGENT_ID!));
+        const assignedSet = new Set(assignedIds.map(r => r.skillId));
+
+        const rows = await db.select({
+          id: skills.id,
+          name: skills.name,
+          description: skills.description,
+          requiredTools: skills.requiredTools,
+        })
+        .from(skills)
+        .where(and(
+          eq(skills.publicationStatus, 'published'),
+          eq(skills.priceCents, 0),
+          ne(skills.id, 'base'),
+          or(
+            ilike(skills.name, pattern),
+            ilike(skills.description, pattern),
+            sql`EXISTS (SELECT 1 FROM unnest(${skills.tags}) tag WHERE tag ILIKE ${pattern})`,
+          ),
+        ))
+        .limit(effectiveLimit);
+
+        return rows.map(r => ({
+          id: r.id,
+          name: r.name ?? r.id,
+          description: r.description ?? '',
+          isAssigned: assignedSet.has(r.id),
+          dependsOn: inferDependsOn(r.requiredTools ?? [], r.id),
+        }));
       },
     } : undefined,
     onSkillsChanged: db && agentRepo ? async () => {

@@ -256,7 +256,7 @@ This keeps API responses current without introducing write-time or migration com
 
 ---
 
-## Step 6 — Frontend: display derived dependencies on skill cards [PENDING]
+## Step 6 — Frontend: display derived dependencies on skill cards [DONE]
 
 **Files:**
 - `apps/web/src/lib/api-client.ts`

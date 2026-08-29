@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type { ToolContext } from './tools.js';
 import {
   TOOL_CATALOG,
   TOOL_CATEGORY_LABELS,
@@ -168,5 +169,135 @@ describe('findUnknownSkillTools()', () => {
   it('does not include search_skills as unknown', () => {
     const result = findUnknownSkillTools(['search_skills']);
     expect(result).toEqual([]);
+  });
+});
+
+// ── skillOps interface on ToolContext ────────────────────────────────────────
+
+describe('ToolContext.skillOps — type-level and shape tests', () => {
+  /**
+   * Build a mock skillOps that satisfies the ToolContext['skillOps'] type.
+   * If it compiles, the interface contract is met; the runtime assertions
+   * below verify the shapes are what consumers expect.
+   */
+  const mockSkillOps: NonNullable<ToolContext['skillOps']> = {
+    listAssigned: async () => [
+      { id: 'sk-1', name: 'Skill A', description: 'Does A things', dependsOn: ['sk-0'] },
+    ],
+    listAvailable: async () => [
+      { id: 'sk-2', name: 'Skill B', description: 'Does B things', dependsOn: [] },
+    ],
+    search: async (_query: string, _limit?: number) => [
+      {
+        id: 'sk-3',
+        name: 'Skill C',
+        description: 'Does C things',
+        isAssigned: false,
+        dependsOn: ['sk-1', 'sk-2'],
+      },
+    ],
+  };
+
+  // ── listAssigned ────────────────────────────────────────────────────────
+
+  it('listAssigned() returns items with dependsOn: string[]', async () => {
+    const items = await mockSkillOps.listAssigned();
+    expect(items).toHaveLength(1);
+    const item = items[0]!;
+    expect(item).toHaveProperty('dependsOn');
+    expect(Array.isArray(item.dependsOn)).toBe(true);
+    expect(item.dependsOn).toEqual(['sk-0']);
+  });
+
+  it('listAssigned() returns items with id, name, and description', async () => {
+    const items = await mockSkillOps.listAssigned();
+    const item = items[0]!;
+    expect(item.id).toBe('sk-1');
+    expect(item.name).toBe('Skill A');
+    expect(item.description).toBe('Does A things');
+  });
+
+  // ── listAvailable ──────────────────────────────────────────────────────
+
+  it('listAvailable() returns items with dependsOn: string[]', async () => {
+    const items = await mockSkillOps.listAvailable();
+    expect(items).toHaveLength(1);
+    const item = items[0]!;
+    expect(item).toHaveProperty('dependsOn');
+    expect(Array.isArray(item.dependsOn)).toBe(true);
+    expect(item.dependsOn).toEqual([]);
+  });
+
+  it('listAvailable() returns items with id, name, and description', async () => {
+    const items = await mockSkillOps.listAvailable();
+    const item = items[0]!;
+    expect(item.id).toBe('sk-2');
+    expect(item.name).toBe('Skill B');
+    expect(item.description).toBe('Does B things');
+  });
+
+  // ── search ─────────────────────────────────────────────────────────────
+
+  it('search() exists and accepts (query, limit?) parameters', async () => {
+    // Call with both args
+    const withLimit = await mockSkillOps.search('crypto', 5);
+    expect(withLimit).toHaveLength(1);
+
+    // Call with only the required arg
+    const withoutLimit = await mockSkillOps.search('crypto');
+    expect(withoutLimit).toHaveLength(1);
+  });
+
+  it('search() return items include isAssigned and dependsOn', async () => {
+    const items = await mockSkillOps.search('anything');
+    const item = items[0]!;
+    expect(item).toHaveProperty('isAssigned');
+    expect(typeof item.isAssigned).toBe('boolean');
+    expect(item.isAssigned).toBe(false);
+
+    expect(item).toHaveProperty('dependsOn');
+    expect(Array.isArray(item.dependsOn)).toBe(true);
+    expect(item.dependsOn).toEqual(['sk-1', 'sk-2']);
+  });
+
+  it('search() returns items with id, name, and description', async () => {
+    const items = await mockSkillOps.search('anything');
+    const item = items[0]!;
+    expect(item.id).toBe('sk-3');
+    expect(item.name).toBe('Skill C');
+    expect(item.description).toBe('Does C things');
+  });
+
+  // ── edge: empty results ────────────────────────────────────────────────
+
+  it('handles empty arrays from all skillOps methods', async () => {
+    const emptyOps: NonNullable<ToolContext['skillOps']> = {
+      listAssigned: async () => [],
+      listAvailable: async () => [],
+      search: async () => [],
+    };
+    expect(await emptyOps.listAssigned()).toEqual([]);
+    expect(await emptyOps.listAvailable()).toEqual([]);
+    expect(await emptyOps.search('q')).toEqual([]);
+  });
+
+  // ── edge: multiple dependsOn entries ───────────────────────────────────
+
+  it('supports multiple dependsOn entries in listAssigned and listAvailable', async () => {
+    const ops: NonNullable<ToolContext['skillOps']> = {
+      listAssigned: async () => [
+        { id: 'sk-x', name: 'X', description: 'X desc', dependsOn: ['sk-a', 'sk-b', 'sk-c'] },
+      ],
+      listAvailable: async () => [
+        { id: 'sk-y', name: 'Y', description: 'Y desc', dependsOn: ['sk-d'] },
+      ],
+      search: async () => [],
+    };
+
+    const assigned = await ops.listAssigned();
+    expect(assigned[0]!.dependsOn).toEqual(['sk-a', 'sk-b', 'sk-c']);
+
+    const available = await ops.listAvailable();
+    expect(available[0]!.dependsOn).toEqual(['sk-d']);
   });
 });
