@@ -13,7 +13,7 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal, LlmArtifactRepository, skills, skillRevisions, agentSkills } from '@herobids/db';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
@@ -1822,7 +1822,19 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       },
       async search(query: string, limit?: number) {
         const effectiveLimit = Math.min(limit ?? 10, 20);
-        const pattern = `%${query}%`;
+        const tokens = tokenize(query);
+        if (tokens.length === 0) return [];
+
+        // Build per-token match clauses: each token matches name, description, or any tag.
+        // expandToken adds the stem form so "strategies" also matches "strategy".
+        const tokenClauses = tokens.flatMap(t => expandToken(t)).map(form => {
+          const pattern = `%${form}%`;
+          return or(
+            ilike(skills.name, pattern),
+            ilike(skills.description, pattern),
+            sql`EXISTS (SELECT 1 FROM unnest(${skills.tags}) tag WHERE tag ILIKE ${pattern})`,
+          );
+        });
 
         const assignedIds = await db.select({ skillId: agentSkills.skillId })
           .from(agentSkills)
@@ -1840,11 +1852,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
           eq(skills.publicationStatus, 'published'),
           eq(skills.priceCents, 0),
           ne(skills.id, 'base'),
-          or(
-            ilike(skills.name, pattern),
-            ilike(skills.description, pattern),
-            sql`EXISTS (SELECT 1 FROM unnest(${skills.tags}) tag WHERE tag ILIKE ${pattern})`,
-          ),
+          or(...tokenClauses),
         ))
         .limit(effectiveLimit);
 

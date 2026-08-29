@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import type { PlanSkillsEntitlements, PlansConfig } from '@herobids/domain';
-import { findUnknownSkillTools, inferDependsOn } from '@herobids/domain';
+import { findUnknownSkillTools, inferDependsOn, tokenize, expandToken } from '@herobids/domain';
 import { agentSkills, agents, skillEntitlements, skillLikes, skillRevisions, skillUsageEvents, skills } from '@herobids/db';
 import { resolvePlanSkillEntitlements } from '../plan-guards.js';
 
@@ -563,13 +563,18 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     }
 
     if (query.q) {
-      const pattern = `%${query.q}%`;
-      whereClauses.push(
-        or(
-          sql`${skills.name} ILIKE ${pattern}`,
-          sql`${skills.description} ILIKE ${pattern}`,
-        )!,
-      );
+      const tokens = tokenize(query.q);
+      if (tokens.length > 0) {
+        const tokenClauses = tokens.flatMap(t => expandToken(t)).map(form => {
+          const pattern = `%${form}%`;
+          return or(
+            ilike(skills.name, pattern),
+            ilike(skills.description, pattern),
+            sql`EXISTS (SELECT 1 FROM unnest(${skills.tags}) tag WHERE tag ILIKE ${pattern})`,
+          );
+        });
+        whereClauses.push(or(...tokenClauses)!);
+      }
     }
 
     let rowsQuery = db.select().from(skills).$dynamic();
