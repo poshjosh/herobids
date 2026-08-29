@@ -11,9 +11,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Nomad orchestration enabled on staging — agent containers are scheduled onto dedicated Hetzner agent nodes via Nomad, with autoscale timers and placement-failure safety net active
+- Nomad production scale-in readiness — remediation plan (001) and validation plan (002) complete
+- S3 remote backend for Terraform state — staging and production state isolated by key path in a single bucket
+- Nomad ACL authentication — enabled on server and client, token-aware shell scripts, systemd service integration
+- Externalized autoscale secrets from cloud-init — credentials deployed via `setup-autoscale-env.sh` instead of baked into `user_data`
+- `setup-nomad.sh` — one-time setup script for Nomad-enabled environments (deploys credentials, bootstraps ACLs, verifies health)
+- `setup-autoscale-env.sh` — uploads S3 backend credentials, Nomad ACL token, and tfvars to the server
+- `--backend-env-file` flag for `provision.sh` and `deploy.sh` — load S3/Nomad credentials from a file instead of shell env vars
+- `.env.backend.example` — template for backend credentials file
+- `staging-hooks.sh` — staging-only failure injection hooks for drain timeout and Terraform apply failure validation
+- Shell test suite for autoscale scripts (97+ assertions across 5 test files)
+- `migrate-backend-to-s3.sh` — one-time migration script for moving local Terraform state to S3
 
 ### Fixed
 
+- Fix drain-timeout safety: timed-out nodes are no longer destroyed — excluded from `DRAIN_OK`, re-marked eligible for investigation
+- Fix private IP resolution: replaced hard-coded `10.0.*` regex with dynamic subnet prefix extraction from Terraform `private_subnet` variable
+- Fix `agent_node_count` in cloud-init causing unnecessary control-plane replacement — removed from `user_data`, seeded with 0 instead
+- Add `ignore_changes = [user_data]` to control-plane server — cloud-init only matters at first boot
+- Fix `provision.sh` broken by S3 backend — added `-backend-config` flags and `-reconfigure`
+- Fix `provision.sh` backend env sourcing after workspace select — moved sourcing before any Terraform command
+- Fix `local` keyword outside function scope in `scale-in.sh` — caused crash when non-idle nodes were encountered
+- Fix `${NOMAD_TOKEN:-}` Terraform templatefile escape error in cloud-init
+- Fix Bash 3.2 portability: empty array expansion under `set -u` in `nomad_api()` and `build_alert_context()`
+- Fix default AWS region from `eu-central-1` to `us-east-1` to match actual AWS account
 - Fix Nomad server advertising Docker bridge IP (`172.17.0.1`) instead of Hetzner private network IP — replaced `{{ GetPrivateIP }}` with runtime IP resolution in cloud-init
 - Fix Nomad client `server_join` being ignored — moved from top-level config into `client {}` block, added `servers` list
 - Fix Nomad client giving up on server join after 150s — changed `retry_max` from 30 to 0 (infinite)

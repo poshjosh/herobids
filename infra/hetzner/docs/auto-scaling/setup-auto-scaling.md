@@ -45,7 +45,7 @@ S3 backend credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `TF_BACKEN
 
 ```bash
 # Option 1 (recommended): create a backend env file
-cp backend.env.example .env.backend
+cp .env.backend.example .env.backend
 # fill in TF_BACKEND_BUCKET, AWS_ACCESS_KEY_ID, etc.
 
 # Option 2: export as shell variables

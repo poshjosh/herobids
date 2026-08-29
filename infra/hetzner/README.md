@@ -109,7 +109,7 @@ are baked into cloud-init or stored in Terraform state.
 
 1. **Backend env file** (recommended — one file, reusable across commands):
    ```bash
-   cp backend.env.example .env.backend
+   cp .env.backend.example .env.backend
    # fill in values once
 
    ./scripts/provision.sh --env staging --var-file staging.tfvars --backend-env-file .env.backend
@@ -205,7 +205,7 @@ infra/hetzner/
 ├── terraform.tfvars.example        # Template for terraform variables (single-file setup)
 ├── staging.tfvars.example          # Staging-specific tfvars template
 ├── remote.tfvars.example       # Production-specific tfvars template
-├── backend.env.example             # Template for S3 backend + Nomad ACL credentials
+├── .env.backend.example            # Template for S3 backend + Nomad ACL credentials
 ├── deploy.sh                       # Full deploy orchestrator (env → push → seed → verify)
 ├── README.md                       # This file
 └── scripts/

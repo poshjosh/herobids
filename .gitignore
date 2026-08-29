@@ -18,6 +18,7 @@ build/
 !.env.example
 !.env.ops.dev.example
 !.env.ops.remote.example
+!.env.backend.example
 
 # Config (contains credentials)
 config.yaml
