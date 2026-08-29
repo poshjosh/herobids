@@ -88,7 +88,7 @@ Definition of success:
 	- active docs and historical docs are clearly separated;
 	- the first executable slice is explicit.
 
-### C08. [PENDING] Create one canonical high-level doc for every remaining feature
+### C08. [DONE] Create one canonical high-level doc for every remaining feature
 
 - Expected output file pattern: `docs/features/pending/<feature-folder>/001-overview.md` or `docs/features/pending/<feature-folder>/001-roadmap.md`
 - Completion criteria:
