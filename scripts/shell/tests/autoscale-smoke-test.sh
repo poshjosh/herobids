@@ -155,7 +155,9 @@ echo ""
 # ─── 1. SSH connectivity ─────────────────────────────────────────────────────
 
 echo -e "${BOLD}1. SSH connectivity${RESET}"
-check "SSH to ${SERVER_IP}" remote 'echo ok' | grep -q ok
+SSH_RESULT="$(remote 'echo ok' 2>&1 || true)"
+check "SSH to ${SERVER_IP}" \
+  bash -c "[[ '${SSH_RESULT}' == *ok* ]]"
 
 # ─── 2. Autoscale env file ───────────────────────────────────────────────────
 
@@ -190,7 +192,7 @@ check "At least 1 ready agent node (found: ${READY_COUNT})" \
 
 echo -e "${BOLD}4. Worker runtime backend${RESET}"
 
-WORKER_ENV="$(remote 'cd /opt/herobids && docker compose -f docker-compose.yaml -f docker-compose.*.yaml exec -T worker env 2>/dev/null | grep -E "RUNTIME_BACKEND|NOMAD_ADDR|NOMAD_TOKEN"' || echo "")"
+WORKER_ENV="$(remote 'cd /opt/herobids && docker compose exec -T worker env 2>/dev/null | grep -E "RUNTIME_BACKEND|NOMAD_ADDR|NOMAD_TOKEN"' || echo "")"
 check "RUNTIME_BACKEND=nomad" \
   bash -c "echo '${WORKER_ENV}' | grep -q 'RUNTIME_BACKEND=nomad'"
 check "NOMAD_ADDR is configured" \
