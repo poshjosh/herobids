@@ -140,7 +140,7 @@ export async function syncSystemSkills(db: Database): Promise<void> {
       //    skill_revisions.skill_id → skills.id AND skills.published_revision_id → skill_revisions.id
       //    form a circular FK. We insert skills with null revision pointers, then insert the revision,
       //    then update skills to set the revision pointers.
-      const slug = `system/${skillId}`;
+      const slug = skill.slug ?? `system/${skillId}`;
 
       if (existingSkill) {
         await tx

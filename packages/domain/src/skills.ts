@@ -5,8 +5,8 @@ export function slugify(name: string): string {
   return name
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')  // strip non-alphanumeric (keep spaces & hyphens)
-    .replace(/[\s-]+/g, '-')        // collapse whitespace/hyphens to single hyphen
+    .replace(/[^a-z0-9\s_-]/g, '')  // strip non-alphanumeric (keep spaces, hyphens & underscores)
+    .replace(/[\s_-]+/g, '-')       // collapse whitespace/underscores/hyphens to single hyphen
     .replace(/^-+|-+$/g, '');       // trim leading/trailing hyphens
 }
 
@@ -414,7 +414,12 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   PLATFORM_DOCS_SKILL,
 ];
 
-/** Map from system skill slug → skill ID for fast lookup. */
+/**
+ * Map from system skill slug → skill ID for fast lookup.
+ *
+ * Excludes `BASE_SKILL` — it is auto-injected at runtime and never the
+ * target of `add_skills`/`remove_skills`.
+ */
 export const SYSTEM_SKILL_SLUGS: ReadonlyMap<string, string> = new Map(
   SYSTEM_SKILLS
     .filter((s): s is SkillDefinition & { slug: string } => s.slug != null)

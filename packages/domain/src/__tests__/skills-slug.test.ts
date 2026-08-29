@@ -49,7 +49,7 @@ describe('slugify', () => {
     ['   ', '', 'whitespace-only'],
     ['---', '', 'all-hyphens'],
     ['123', '123', 'numeric-only'],
-    ['hello_world', 'helloworld', 'underscores stripped'],
+    ['hello_world', 'hello-world', 'underscores become hyphens'],
     ['!@#', '', 'all-special-characters'],
   ])('edge case: %s → %s (%s)', (input, expected) => {
     expect(slugify(input)).toBe(expected);

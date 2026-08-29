@@ -38,6 +38,7 @@ export async function resolveSkillIdsBySlugOrId(
   if (refs.length === 0) return new Map();
 
   const unique = [...new Set(refs)];
+  const uniqueSet = new Set(unique);
 
   const rows = await db
     .select({ id: skills.id, slug: skills.slug })
@@ -48,7 +49,7 @@ export async function resolveSkillIdsBySlugOrId(
 
   // First pass: ID matches (lower priority).
   for (const row of rows) {
-    if (unique.includes(row.id)) {
+    if (uniqueSet.has(row.id)) {
       result.set(row.id, row.id);
     }
   }
@@ -56,7 +57,7 @@ export async function resolveSkillIdsBySlugOrId(
   // Second pass: slug matches (higher priority — overwrites if a ref matched
   // both as an ID on one row and a slug on another).
   for (const row of rows) {
-    if (row.slug !== null && unique.includes(row.slug)) {
+    if (row.slug !== null && uniqueSet.has(row.slug)) {
       result.set(row.slug, row.id);
     }
   }

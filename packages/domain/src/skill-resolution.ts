@@ -5,8 +5,14 @@
 // worker tools (add_skills / remove_skills) to decide which lookup strategy
 // to use for each ref.
 
-/** Discriminator for the three kinds of skill reference the platform accepts. */
-export type SkillRefKind = 'slug' | 'legacy-id' | 'external';
+/**
+ * Discriminator for skill reference kinds produced by the pure classifier.
+ *
+ * `'external'` is determined post-DB-resolution (when a slug-like ref has no
+ * DB match), so it is NOT part of this type.  Downstream code that needs all
+ * three variants should define its own union.
+ */
+export type SkillRefKind = 'slug' | 'legacy-id';
 
 export type ClassifiedSkillRef =
   | { kind: 'slug'; slug: string }
@@ -44,7 +50,8 @@ export function partitionSkillRefs(refs: readonly string[]): PartitionedSkillRef
   const legacyIds: string[] = [];
 
   for (const ref of refs) {
-    if (ref.includes('/')) {
+    const classified = classifySkillRef(ref);
+    if (classified.kind === 'slug') {
       slugLike.push(ref);
     } else {
       legacyIds.push(ref);
