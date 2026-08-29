@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { BASE_SKILL, EMAIL_SKILL, SYSTEM_SKILLS, TRADING_SKILL } from './skills.js';
+import {
+  BASE_SKILL,
+  BOT_MANAGEMENT_SKILL,
+  EMAIL_SKILL,
+  PROGRAMMING_SKILL,
+  RISK_MONITORING_SKILL,
+  SYSTEM_SKILLS,
+  TOOL_OWNER_OVERRIDES,
+  TRADING_SKILL,
+  buildToolOwnershipMap,
+  inferDependsOn,
+} from './skills.js';
 
 // ── BASE_SKILL — skill management tools ─────────────────────────────────────
 
@@ -77,5 +88,132 @@ describe('SYSTEM_SKILLS', () => {
   it('does not contain a skill with id gmail', () => {
     const gmailSkill = SYSTEM_SKILLS.find((s) => s.id === 'gmail');
     expect(gmailSkill).toBeUndefined();
+  });
+});
+
+// ── buildToolOwnershipMap ───────────────────────────────────────────────────
+
+describe('buildToolOwnershipMap', () => {
+  const ownershipMap = buildToolOwnershipMap();
+
+  it.each(['send_message', 'get_memory', 'list_skills', 'search_skills'])(
+    'does not contain BASE_SKILL tool %s',
+    (tool) => {
+      expect(ownershipMap.has(tool)).toBe(false);
+    },
+  );
+
+  it.each(['get_analytics', 'list_positions', 'get_price', 'adjust_risk_limits'])(
+    'maps override tool %s to trading',
+    (tool) => {
+      expect(ownershipMap.get(tool)).toBe('trading');
+    },
+  );
+
+  it('maps create_bot to bot-management', () => {
+    expect(ownershipMap.get('create_bot')).toBe('bot-management');
+  });
+
+  it('maps execute_code to programming', () => {
+    expect(ownershipMap.get('execute_code')).toBe('programming');
+  });
+
+  it('returns the same cached instance on repeated calls', () => {
+    // buildToolOwnershipMap uses a module-level singleton; this asserts caching works.
+    expect(buildToolOwnershipMap()).toBe(ownershipMap);
+  });
+});
+
+// ── inferDependsOn ──────────────────────────────────────────────────────────
+
+describe('inferDependsOn', () => {
+  it('returns ["trading"] for bot-management (shared tools overridden to trading)', () => {
+    const deps = inferDependsOn(
+      BOT_MANAGEMENT_SKILL.requiredTools,
+      BOT_MANAGEMENT_SKILL.id,
+    );
+    expect(deps).toEqual(['trading']);
+  });
+
+  it('returns [] for trading (all tools are base or self-owned)', () => {
+    const deps = inferDependsOn(
+      TRADING_SKILL.requiredTools,
+      TRADING_SKILL.id,
+    );
+    expect(deps).toEqual([]);
+  });
+
+  it('returns ["trading"] for risk-monitoring (overridden tools owned by trading)', () => {
+    const deps = inferDependsOn(
+      RISK_MONITORING_SKILL.requiredTools,
+      RISK_MONITORING_SKILL.id,
+    );
+    expect(deps).toEqual(['trading']);
+  });
+
+  it('returns [] for programming (execute_code is its own)', () => {
+    const deps = inferDependsOn(
+      PROGRAMMING_SKILL.requiredTools,
+      PROGRAMMING_SKILL.id,
+    );
+    expect(deps).toEqual([]);
+  });
+
+  it('excludes BASE_SKILL tools from dependency inference', () => {
+    // Synthetic list: send_message is a base tool, create_bot is bot-management.
+    // Only create_bot should produce a dependency.
+    const deps = inferDependsOn(['send_message', 'create_bot'], 'some-skill');
+    expect(deps).toEqual(['bot-management']);
+  });
+
+  it('returns [] for empty requiredTools', () => {
+    expect(inferDependsOn([], 'any-skill')).toEqual([]);
+  });
+
+  it('ignores tools not owned by any skill', () => {
+    expect(inferDependsOn(['nonexistent_tool'], 'x')).toEqual([]);
+  });
+
+  it('returns a sorted array', () => {
+    // Craft a requiredTools list that touches multiple foreign skills in reverse order.
+    const deps = inferDependsOn(
+      ['execute_code', 'create_bot', 'get_analytics'],
+      'some-other-skill',
+    );
+    expect(deps).toEqual(['bot-management', 'programming', 'trading']);
+    // Also verify sort invariant structurally.
+    const sorted = [...deps].sort();
+    expect(deps).toEqual(sorted);
+  });
+});
+
+// ── TOOL_OWNER_OVERRIDES ────────────────────────────────────────────────────
+
+describe('TOOL_OWNER_OVERRIDES', () => {
+  it('contains only the expected override entries', () => {
+    expect(Object.keys(TOOL_OWNER_OVERRIDES).sort()).toEqual([
+      'adjust_risk_limits',
+      'check_watches',
+      'get_analytics',
+      'get_price',
+      'list_positions',
+      'list_watches',
+      'remove_watch',
+      'resolve_watch',
+      'watch_token',
+    ]);
+  });
+
+  it('maps every override to trading', () => {
+    for (const owner of Object.values(TOOL_OWNER_OVERRIDES)) {
+      expect(owner).toBe('trading');
+    }
+  });
+
+  it('every override tool exists in at least one SYSTEM_SKILLS skill', () => {
+    const allSkillTools = new Set(SYSTEM_SKILLS.flatMap(s => s.requiredTools));
+    for (const tool of Object.keys(TOOL_OWNER_OVERRIDES)) {
+      expect(allSkillTools.has(tool), `override tool "${tool}" not found in any SYSTEM_SKILLS skill`).toBe(true);
+    }
   });
 });

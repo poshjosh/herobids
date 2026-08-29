@@ -383,3 +383,82 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   EMAIL_SKILL,
   PLATFORM_DOCS_SKILL,
 ];
+
+
+// ── Read-time dependency inference ──────────────────────────────────────────
+
+/**
+ * Explicit canonical owner for tools that appear in multiple skills.
+ * Exported for testability.
+ */
+export const TOOL_OWNER_OVERRIDES: Readonly<Record<string, string>> = {
+  get_analytics: 'trading',
+  list_positions: 'trading',
+  get_price: 'trading',
+  adjust_risk_limits: 'trading',
+  watch_token: 'trading',
+  list_watches: 'trading',
+  remove_watch: 'trading',
+  resolve_watch: 'trading',
+  check_watches: 'trading',
+};
+
+const baseToolSet = new Set(BASE_SKILL.requiredTools);
+
+let cachedOwnershipMap: ReadonlyMap<string, string> | undefined;
+
+/**
+ * Builds (and caches) a map from tool name → canonical owner skill ID.
+ *
+ * Rules:
+ * 1. BASE_SKILL tools are excluded — they are universal and not "owned".
+ * 2. Explicit overrides in TOOL_OWNER_OVERRIDES take precedence.
+ * 3. For non-overridden tools, the first skill in SYSTEM_SKILLS that lists
+ *    the tool wins.
+ */
+export function buildToolOwnershipMap(): ReadonlyMap<string, string> {
+  if (cachedOwnershipMap) return cachedOwnershipMap;
+
+  const map = new Map<string, string>();
+
+  for (const skill of SYSTEM_SKILLS) {
+    for (const tool of skill.requiredTools) {
+      if (baseToolSet.has(tool)) continue;
+      if (map.has(tool)) continue;
+      map.set(tool, skill.id);
+    }
+  }
+
+  // Apply explicit overrides — they win over first-seen order.
+  for (const [tool, owner] of Object.entries(TOOL_OWNER_OVERRIDES)) {
+    if (!baseToolSet.has(tool)) {
+      map.set(tool, owner);
+    }
+  }
+
+  cachedOwnershipMap = map;
+  return cachedOwnershipMap;
+}
+
+/**
+ * Derives the list of skill IDs that a given skill depends on, based on
+ * which skills canonically own the tools it requires.
+ *
+ * - BASE_SKILL tools are excluded (universal).
+ * - The skill itself is excluded.
+ * - Returns a deduplicated, sorted array.
+ */
+export function inferDependsOn(requiredTools: string[], selfSkillId: string): string[] {
+  const ownershipMap = buildToolOwnershipMap();
+  const deps = new Set<string>();
+
+  for (const tool of requiredTools) {
+    if (baseToolSet.has(tool)) continue;
+    const owner = ownershipMap.get(tool);
+    if (owner && owner !== selfSkillId) {
+      deps.add(owner);
+    }
+  }
+
+  return [...deps].sort();
+}
