@@ -321,6 +321,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'resolve_watch',
   'schedule_reminder',
   'search_app_docs',
+  'search_skills',
   'search_tokens',
   'search_web',
   'send_email',
@@ -371,6 +372,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   find_instrument:     { category: 'read-database',       description: 'Find a tradable instrument by symbol/name. Returns instrumentId (venue-submittable), id (DB internal), symbol, base, quote, type, venue.' },
   resolve_bot:         { category: 'read-database',       description: 'Resolve a bot name/symbol to its bot ID for stop/start/config operations.' },
   list_skills:         { category: 'read-database',       description: 'List skills assigned to this agent and skills available to add.' },
+  search_skills:       { category: 'read-database',       description: 'Search for skills by keyword across the platform catalog and external skills discoverable through skills.sh.' },
   // write-database
   stop_bot:            { category: 'write-database',      description: 'Stop a running bot. Positions remain open unless manually closed.' },
   start_bot:           { category: 'write-database',      description: 'Start a stopped bot. Resumes trading per its configuration.' },

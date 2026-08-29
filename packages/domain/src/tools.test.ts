@@ -64,7 +64,7 @@ describe('getToolCatalogEntry()', () => {
 // ── Skill tool names in KNOWN_AGENT_TOOL_NAMES ──────────────────────────────
 
 describe('KNOWN_AGENT_TOOL_NAMES — skill tools', () => {
-  it.each(['add_skills', 'list_skills', 'remove_skills'])(
+  it.each(['add_skills', 'list_skills', 'remove_skills', 'search_skills'])(
     'includes %s',
     (toolName) => {
       expect(KNOWN_AGENT_TOOL_NAMES).toContain(toolName);
@@ -75,6 +75,7 @@ describe('KNOWN_AGENT_TOOL_NAMES — skill tools', () => {
     expect(isKnownAgentToolName('add_skills')).toBe(true);
     expect(isKnownAgentToolName('list_skills')).toBe(true);
     expect(isKnownAgentToolName('remove_skills')).toBe(true);
+    expect(isKnownAgentToolName('search_skills')).toBe(true);
   });
 
   it('rejects an unknown tool name via isKnownAgentToolName()', () => {
@@ -103,12 +104,43 @@ describe('TOOL_CATALOG — skill tool entries', () => {
     expect(entry!.category).toBe('write-database');
   });
 
+  it('search_skills has category read-database', () => {
+    const entry = getToolCatalogEntry('search_skills');
+    expect(entry).toBeDefined();
+    expect(entry!.category).toBe('read-database');
+  });
+
+  it('search_skills has the correct description', () => {
+    const entry = getToolCatalogEntry('search_skills');
+    expect(entry).toBeDefined();
+    expect(entry!.description).toBe(
+      'Search for skills by keyword across the platform catalog and external skills discoverable through skills.sh.',
+    );
+  });
+
   it('each skill tool has a non-empty description', () => {
-    for (const name of ['add_skills', 'list_skills', 'remove_skills']) {
+    for (const name of ['add_skills', 'list_skills', 'remove_skills', 'search_skills']) {
       const entry = getToolCatalogEntry(name);
       expect(entry).toBeDefined();
       expect(entry!.description.length).toBeGreaterThan(0);
     }
+  });
+});
+
+// ── KNOWN_AGENT_TOOL_NAMES — alphabetical ordering around search_skills ─────
+
+describe('KNOWN_AGENT_TOOL_NAMES — alphabetical ordering', () => {
+  it('maintains search_app_docs < search_skills < search_tokens order', () => {
+    const names = KNOWN_AGENT_TOOL_NAMES as readonly string[];
+    const idxAppDocs = names.indexOf('search_app_docs');
+    const idxSkills = names.indexOf('search_skills');
+    const idxTokens = names.indexOf('search_tokens');
+
+    expect(idxAppDocs).toBeGreaterThanOrEqual(0);
+    expect(idxSkills).toBeGreaterThanOrEqual(0);
+    expect(idxTokens).toBeGreaterThanOrEqual(0);
+    expect(idxAppDocs).toBeLessThan(idxSkills);
+    expect(idxSkills).toBeLessThan(idxTokens);
   });
 });
 
@@ -131,5 +163,10 @@ describe('findUnknownSkillTools()', () => {
   it('returns only the unknown tools when mixed with known ones', () => {
     const result = findUnknownSkillTools(['list_skills', 'unknown_tool', 'add_skills']);
     expect(result).toEqual(['unknown_tool']);
+  });
+
+  it('does not include search_skills as unknown', () => {
+    const result = findUnknownSkillTools(['search_skills']);
+    expect(result).toEqual([]);
   });
 });
