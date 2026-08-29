@@ -6,6 +6,8 @@ import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-mode
 const CAPABILITY_FAMILIES_BY_SKILL_ID = new Map(SYSTEM_SKILLS.map((skill) => [skill.id, skill.capabilityFamilies] as const));
 
 const AGENT_EXECUTION_MODES = new Set(['paper', 'shadow', 'live'] as const);
+/** Test-tier modes for the immutability guard. paper↔shadow is allowed; test↔live is not. */
+const TEST_MODES: ReadonlySet<string> = new Set(['paper', 'shadow']);
 
 type AgentExecutionMode = 'paper' | 'shadow' | 'live';
 type NullableAgentExecutionMode = AgentExecutionMode | null | undefined;
@@ -153,6 +155,26 @@ export function resolveExecutionModeForSkills(input: {
         },
       };
     }
+
+    // Guard: reject explicit mode changes that cross the test/live boundary.
+    // paper↔shadow (both test modes) is allowed; test↔live is not.
+    const currentNormalized = normalizeExecutionMode(input.currentExecutionMode, connectionOpts);
+    if (currentNormalized != null) {
+      const currentIsTest = TEST_MODES.has(currentNormalized);
+      const submittedIsTest = TEST_MODES.has(resolved);
+
+      if (currentIsTest !== submittedIsTest) {
+        return {
+          value: null,
+          issue: {
+            code: 'custom',
+            path: ['executionMode'],
+            message: "Execution mode cannot be changed after creation. Use 'Go Live' to create a live agent from this configuration.",
+          },
+        };
+      }
+    }
+
     return { value: resolved };
   }
 

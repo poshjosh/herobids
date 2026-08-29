@@ -15,7 +15,7 @@ import { listProviderRegistry, getProviderWalletGenerationCapability } from '../
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
 import { resolveExecutionModeForSkills, validateConnectionRequirement, resolveAuthorizationMode, optionalPositiveDecimalStringSchema } from './agent-config-helpers.js';
 import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
-import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from './agents.js';
+import { resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
 import { createProviderLink } from './setup.js';
 import { generateWallet } from '@herobids/venues';
 import { createLogger } from '../logger.js';

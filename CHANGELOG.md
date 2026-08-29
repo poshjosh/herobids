@@ -22,6 +22,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `staging-hooks.sh` — staging-only failure injection hooks for drain timeout and Terraform apply failure validation
 - Shell test suite for autoscale scripts (97+ assertions across 5 test files)
 - `migrate-backend-to-s3.sh` — one-time migration script for moving local Terraform state to S3
+- Dynamic skill management with same-tick hot-reload — agents can discover, add, and remove skills at runtime via `list_skills`, `add_skills`, `remove_skills` tools. Skill changes take effect immediately within the same tick (no 5–15 minute wait). Includes broker handler with sync Redis reply, plan entitlement enforcement, and per-turn tool definition refresh in the judge loop.
+- External skill registry skill — agents can find, install, and manage skills from registries like skills.sh via `execute_code` + `npx skills` CLI.
+- Skill markdown frontmatter standard — skill files in `docs/agents/skills/` now carry YAML frontmatter (name, description, tags, requiredTools). Setup scripts auto-post all skills from the folder.
+
+### Changed
+
+- Moved `docs/skills/` to `docs/agents/skills/` and `security-audit-prompt.md` to `docs/agents/prompts/` for clearer separation of skills vs agent prompts.
+- Setup scripts (`quick-setup.sh`, `quick-setup-remote.sh`) now use a generic loop over `docs/agents/skills/*.md` instead of hardcoded per-skill functions. Adding a new skill only requires dropping a frontmatter-annotated markdown file.
 
 ### Fixed
 

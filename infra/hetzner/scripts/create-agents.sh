@@ -43,7 +43,7 @@ AGENT_HEAVY_MODEL="${AGENT_HEAVY_MODEL:-deepseek/deepseek-v4-pro}"
 AGENT_TICK_INTERVAL_MS="${AGENT_TICK_INTERVAL_MS:-86400000}"
 
 # Security audit prompt loaded from docs (path overridable via env for remote execution)
-SECURITY_AUDIT_PROMPT_FILE="${SECURITY_AUDIT_PROMPT_FILE:-${REPO_ROOT}/docs/skills/security-audit-prompt.md}"
+SECURITY_AUDIT_PROMPT_FILE="${SECURITY_AUDIT_PROMPT_FILE:-${REPO_ROOT}/docs/agents/prompts/security-audit-prompt.md}"
 if [[ ! -f "$SECURITY_AUDIT_PROMPT_FILE" ]]; then
   die "Security audit prompt not found: ${SECURITY_AUDIT_PROMPT_FILE}"
 fi

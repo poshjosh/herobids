@@ -52,8 +52,11 @@ export const BASE_SKILL: SkillDefinition = {
 - Use \`send_message\` to communicate important updates, alerts, or status reports to the user. Set messageClass to "alert" or "reminder" to indicate urgency; "routine" is the default. Use contextRef to link the message to a specific context. Use \`send_email\` for email delivery.
 - Use \`get_risk_limits\` to inspect your effective risk limits, including which are mutable and which are locked by the creator.
 - Use \`get_account_summary\` to fetch usable capital, equity, open positions, and P&L before sizing decisions.
-- Use \`get_schema\` to fetch JSON Schema for a named config parameter or tool sub-schema. Call with name="all" to list available schemas before constructing config payloads.`,
-  requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_risk_limits', 'get_account_summary', 'get_schema'],
+- Use \`get_schema\` to fetch JSON Schema for a named config parameter or tool sub-schema. Call with name="all" to list available schemas before constructing config payloads.
+- Use \`list_skills\` to discover what skills you have and what skills are available to add.
+- Use \`add_skills\` to adopt new skills. The skill's tools become available immediately.
+- Use \`remove_skills\` to drop skills you no longer need.`,
+  requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_risk_limits', 'get_account_summary', 'get_schema', 'list_skills', 'add_skills', 'remove_skills'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],

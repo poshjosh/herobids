@@ -46,7 +46,7 @@ export function projectAgentToBlueprintPayload(agent: {
     intelligence: (uc.intelligence as AgentBlueprintRevisionPayload['intelligence']) ?? undefined,
     capabilityMode: (uc.capabilityMode as AgentBlueprintRevisionPayload['capabilityMode']) ?? 'intelligence',
     hybridMode: (uc.hybridMode as AgentBlueprintRevisionPayload['hybridMode']) ?? undefined,
-    executionPolicy: (uc.executionPolicy as AgentBlueprintRevisionPayload['executionPolicy']) ?? undefined,
+    executionPolicy: (uc.execution as AgentBlueprintRevisionPayload['executionPolicy']) ?? (uc.executionPolicy as AgentBlueprintRevisionPayload['executionPolicy']) ?? undefined,
     runtimePolicyOverrides: (agent.runtimePolicyOverrides as AgentBlueprintRevisionPayload['runtimePolicyOverrides']) ?? undefined,
     toolPolicy: (agent.toolPolicy as AgentBlueprintRevisionPayload['toolPolicy']) ?? undefined,
     modelPolicy: (agent.modelPolicy as AgentBlueprintRevisionPayload['modelPolicy']) ?? undefined,

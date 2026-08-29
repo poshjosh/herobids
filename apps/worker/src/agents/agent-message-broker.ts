@@ -13,8 +13,10 @@ import type {
   ToolPositionRecord,
   AssessStrategyPresetRequestPayload,
   ChangeStrategyPresetRequestPayload,
+  ManageAgentSkillsPayload,
   ToolContext,
   OperatorModelDefaults,
+  PlansConfig,
 } from '@herobids/domain';
 import {
   Decimal,
@@ -29,9 +31,12 @@ import {
   checkModeEscalation,
   resolveEffectiveLlmSelection,
   renderEmail,
+  ManageAgentSkillsPayloadSchema,
+  resolvePlanSkillEntitlements,
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository, Database } from '@herobids/db';
-import { PgJournal } from '@herobids/db';
+import { eq } from 'drizzle-orm';
+import { PgJournal, agentSkills, users, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
 import { forceReply, type TelegramClient } from '../alerting/telegram-client.js';
 import type { EmailClient } from '../alerting/email-client.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
@@ -113,6 +118,7 @@ export class AgentMessageBroker {
     private readonly brandImageUrl?: string,
     private readonly db?: Database,
     private readonly operatorModelDefaults?: OperatorModelDefaults,
+    readonly plansConfig?: PlansConfig,
   ) {}
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
@@ -197,6 +203,7 @@ export class AgentMessageBroker {
       [AGENT_MESSAGE_TYPES.BOT_QUERY]: 'bot_query',
       [AGENT_MESSAGE_TYPES.TOOL_ASSESS_STRATEGY_PRESET]: 'assess_strategy_preset',
       [AGENT_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET]: 'change_strategy_preset',
+      [AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS]: 'manage_agent_skills',
     };
     const capabilityName = capabilityByType[envelope.type];
     // Saved so recordEnd can be called in the finally block on every exit path.
@@ -357,6 +364,14 @@ export class AgentMessageBroker {
 
         case AGENT_MESSAGE_TYPES.TOOL_CHANGE_STRATEGY_PRESET:
           await this.handleChangeStrategyPreset(effectiveAgentId, envelope);
+          break;
+
+        case AGENT_MESSAGE_TYPES.MANAGE_AGENT_SKILLS:
+          await this.handleManageAgentSkills(
+            effectiveAgentId,
+            envelope,
+            envelope.payload as unknown as ManageAgentSkillsPayload,
+          );
           break;
 
         default:
@@ -1247,6 +1262,242 @@ export class AgentMessageBroker {
       agentConfigOps,
       db: db as unknown,
     };
+  }
+
+  /**
+   * Handle a brokered manage_agent_skills request (add/remove skills at runtime).
+   * Validates the payload, enforces base-skill protection, resolves entitlements,
+   * and publishes a synchronous reply via Redis list for the agent tool to BLPOP.
+   */
+  private async handleManageAgentSkills(
+    agentId: string,
+    envelope: MessageEnvelope,
+    payload: ManageAgentSkillsPayload,
+  ): Promise<void> {
+    const requestMessageId = (envelope.payload as Record<string, unknown>).requestMessageId as string | undefined;
+
+    const publishReply = async (result: Parameters<InstanceEventPublisher['publishSkillsReply']>[1]) => {
+      if (requestMessageId) {
+        await this.eventPublisher.publishSkillsReply(requestMessageId, result);
+      }
+    };
+
+    try {
+      // Validate payload (belt-and-suspenders; the broker already validates via schema map)
+      const parsed = ManageAgentSkillsPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        await publishReply({
+          status: 'error',
+          action: payload.action ?? 'add',
+          skillIds: [],
+          warnings: [],
+          error: 'Invalid payload',
+          errorCode: 'validation_error',
+        });
+        return;
+      }
+
+      if (!this.db) {
+        await publishReply({
+          status: 'error',
+          action: parsed.data.action,
+          skillIds: [],
+          warnings: [],
+          error: 'Database not available',
+          errorCode: 'db_unavailable',
+        });
+        return;
+      }
+
+      // Base skill protection
+      if (parsed.data.skillIds.includes('base')) {
+        await publishReply({
+          status: 'error',
+          action: parsed.data.action,
+          skillIds: [],
+          warnings: [],
+          error: 'The base skill cannot be added or removed',
+          errorCode: 'base_skill_protected',
+        });
+        return;
+      }
+
+      if (parsed.data.action === 'add') {
+        await this.handleSkillAdd(agentId, parsed.data, publishReply);
+      } else {
+        await this.handleSkillRemove(agentId, parsed.data, publishReply);
+      }
+    } catch (err) {
+      logger.error({ agentId, err }, 'handleManageAgentSkills failed');
+      await publishReply({
+        status: 'error',
+        action: payload.action ?? 'add',
+        skillIds: [],
+        warnings: [],
+        error: err instanceof Error ? err.message : 'Unexpected broker error',
+        errorCode: 'broker.internal_error',
+      });
+    }
+  }
+
+  private async handleSkillAdd(
+    agentId: string,
+    payload: ManageAgentSkillsPayload,
+    publishReply: (result: Parameters<InstanceEventPublisher['publishSkillsReply']>[1]) => Promise<void>,
+  ): Promise<void> {
+    const db = this.db!;
+
+    // 1. Load agent to get userId
+    const agent = await this.agentRepo.getAgent(agentId);
+    if (!agent) {
+      await publishReply({ status: 'error', action: 'add', skillIds: [], warnings: [], error: 'Agent not found', errorCode: 'agent_not_found' });
+      return;
+    }
+
+    // 2. Load user to get planId and isAdmin
+    const [userRow] = await db
+      .select({ planId: users.planId, isAdmin: users.isAdmin })
+      .from(users)
+      .where(eq(users.id, agent.userId))
+      .limit(1);
+    if (!userRow) {
+      await publishReply({ status: 'error', action: 'add', skillIds: [], warnings: [], error: 'User not found', errorCode: 'user_not_found' });
+      return;
+    }
+
+    // 3. Resolve plan skill entitlements
+    const skillEntitlements = this.plansConfig
+      ? resolvePlanSkillEntitlements(this.plansConfig, userRow.planId, userRow.isAdmin)
+      : { canViewMarketplaceSkills: true };
+
+    // 4. Get currently assigned skillIds
+    const existingRows = await db
+      .select({ skillId: agentSkills.skillId })
+      .from(agentSkills)
+      .where(eq(agentSkills.agentId, agentId));
+    const existingSkillIds = existingRows.map((r) => r.skillId);
+
+    // 5. Resolve assignments for the combined set (existing + new)
+    const combined = [...new Set([...existingSkillIds, ...payload.skillIds])];
+    const resolution = await resolveSkillAssignmentsForUser(
+      db,
+      agent.userId,
+      combined,
+      new Set(existingSkillIds),
+      skillEntitlements.canViewMarketplaceSkills,
+    );
+
+    // 6. If validation error → publish error reply
+    if (resolution.error) {
+      await publishReply({
+        status: 'error',
+        action: 'add',
+        skillIds: [],
+        warnings: [],
+        error: resolution.error.message,
+        errorCode: resolution.error.code,
+      });
+      return;
+    }
+
+    // 7. Sync assignments to DB
+    await syncAgentSkillAssignments(db, agentId, agent.userId, resolution.assignments!, 'agent_self');
+
+    // 8. Publish success reply with the added skillIds
+    const addedSkillIds = payload.skillIds.filter((id) => !existingSkillIds.includes(id));
+    await publishReply({
+      status: 'ok',
+      action: 'add',
+      skillIds: addedSkillIds,
+      warnings: [],
+    });
+  }
+
+  private async handleSkillRemove(
+    agentId: string,
+    payload: ManageAgentSkillsPayload,
+    publishReply: (result: Parameters<InstanceEventPublisher['publishSkillsReply']>[1]) => Promise<void>,
+  ): Promise<void> {
+    const db = this.db!;
+
+    // 1. Load agent to get userId
+    const agent = await this.agentRepo.getAgent(agentId);
+    if (!agent) {
+      await publishReply({ status: 'error', action: 'remove', skillIds: [], warnings: [], error: 'Agent not found', errorCode: 'agent_not_found' });
+      return;
+    }
+
+    // 2. Load current agent skill assignments
+    const existingRows = await db
+      .select({ skillId: agentSkills.skillId })
+      .from(agentSkills)
+      .where(eq(agentSkills.agentId, agentId));
+    const existingSkillIds = new Set(existingRows.map((r) => r.skillId));
+
+    // 3. Validate requested skillIds — collect warnings for not-assigned
+    const toRemove: string[] = [];
+    const warnings: string[] = [];
+    for (const skillId of payload.skillIds) {
+      if (existingSkillIds.has(skillId)) {
+        toRemove.push(skillId);
+      } else {
+        warnings.push(skillId);
+      }
+    }
+
+    // 4. Compute remaining skills and re-resolve assignments
+    const removeSet = new Set(toRemove);
+    const remainingSkillIds = [...existingSkillIds].filter((id) => !removeSet.has(id));
+
+    if (remainingSkillIds.length > 0) {
+      // Load user for entitlement check
+      const [userRow] = await db
+        .select({ planId: users.planId, isAdmin: users.isAdmin })
+        .from(users)
+        .where(eq(users.id, agent.userId))
+        .limit(1);
+      if (!userRow) {
+        await publishReply({ status: 'error', action: 'remove', skillIds: [], warnings: [], error: 'User not found', errorCode: 'user_not_found' });
+        return;
+      }
+
+      const skillEntitlements = this.plansConfig
+        ? resolvePlanSkillEntitlements(this.plansConfig, userRow.planId, userRow.isAdmin)
+        : { canViewMarketplaceSkills: true };
+
+      const resolution = await resolveSkillAssignmentsForUser(
+        db,
+        agent.userId,
+        remainingSkillIds,
+        new Set(remainingSkillIds),
+        skillEntitlements.canViewMarketplaceSkills,
+      );
+
+      if (resolution.error) {
+        await publishReply({
+          status: 'error',
+          action: 'remove',
+          skillIds: [],
+          warnings: [],
+          error: resolution.error.message,
+          errorCode: resolution.error.code,
+        });
+        return;
+      }
+
+      await syncAgentSkillAssignments(db, agentId, agent.userId, resolution.assignments!, 'agent_self');
+    } else {
+      // All skills removed — sync with empty assignments
+      await syncAgentSkillAssignments(db, agentId, agent.userId, [], 'agent_self');
+    }
+
+    // 5. Publish success reply
+    await publishReply({
+      status: 'ok',
+      action: 'remove',
+      skillIds: toRemove,
+      warnings,
+    });
   }
 
   /**

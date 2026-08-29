@@ -10,6 +10,8 @@ export interface StructuredToolLoopOptions {
   tools: LlmToolDefinition[];
   maxTurns: number;
   toolChoice?: 'auto' | 'none' | 'required';
+  /** Per-turn tool definition getter. When provided, called at each turn to get the latest tools. */
+  getTools?: () => LlmToolDefinition[];
   retryPolicy?: {
     maxRetries?: number;
     timeoutBackoffMs?: number[];
@@ -106,12 +108,13 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
     }
 
     turnsUsed = turnIndex + 1;
+    const activeTools = options.getTools ? options.getTools() : options.tools;
     const turnResultWithRetry = await callLlmWithRetry(
       options.providerConfig,
       {
         ...options.requestBase,
         messages,
-        tools: options.tools,
+        tools: activeTools,
         toolChoice: turnToolChoice,
       },
       {

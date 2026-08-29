@@ -14,6 +14,9 @@ export const DATABASE_DEPENDENT_TOOLS = new Set([
   'find_instrument',
   'get_account_summary',
   'resolve_bot',
+  'list_skills',
+  'add_skills',
+  'remove_skills',
 ]);
 
 export const MARKET_DATA_TOOLS = new Set([

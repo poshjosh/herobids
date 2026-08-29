@@ -16,6 +16,7 @@ import type {
   AgentWakePayload,
   AssessStrategyPresetResultPayload,
   ChangeStrategyPresetResultPayload,
+  ManageAgentSkillsResult,
 } from '@herobids/domain';
 import { INSTANCE_MESSAGE_TYPES, MARKET_MONITOR_MESSAGE_TYPES, AGENT_STREAM_MAXLEN } from '@herobids/domain';
 import type { TechnicalScanState } from '../runtime-composition.js';
@@ -178,6 +179,19 @@ export class InstanceEventPublisher {
     const replyKey = `agent:preset:reply:${requestMessageId}`;
     await this.redis.lpush(replyKey, JSON.stringify({ result }));
     // Expire after 60s to prevent leaking keys if the agent never reads
+    await this.redis.expire(replyKey, 60);
+  }
+
+  /**
+   * Publish a skills management reply to a Redis list so the agent container
+   * can BLPOP it and receive the broker's response synchronously.
+   */
+  async publishSkillsReply(
+    requestMessageId: string,
+    result: ManageAgentSkillsResult,
+  ): Promise<void> {
+    const replyKey = `agent:skills:reply:${requestMessageId}`;
+    await this.redis.lpush(replyKey, JSON.stringify(result));
     await this.redis.expire(replyKey, 60);
   }
 

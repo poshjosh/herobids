@@ -236,6 +236,18 @@ export interface ToolContext {
    * cannot depend on @herobids/db.
    */
   db?: unknown;
+  /** Skill catalog operations for list_skills. */
+  skillOps?: {
+    listAssigned(): Promise<Array<{ id: string; name: string; description: string }>>;
+    listAvailable(): Promise<Array<{ id: string; name: string; description: string }>>;
+  };
+  /**
+   * Called by add_skills/remove_skills after the broker confirms the DB write.
+   * Re-resolves the runtime descriptor from DB and applies it to the live
+   * runtime state, refreshing tool visibility and the system prompt.
+   * Returns the updated list of assigned skill IDs (excluding base).
+   */
+  onSkillsChanged?: () => Promise<string[]>;
 }
 
 export interface AgentTool {
@@ -265,6 +277,7 @@ export interface ToolDefinition {
 }
 
 export const KNOWN_AGENT_TOOL_NAMES = [
+  'add_skills',
   'adjust_bot_config',
   'adjust_risk_limits',
   'change_strategy_preset',
@@ -294,12 +307,14 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'list_files',
   'list_memory_keys',
   'list_positions',
+  'list_skills',
   'list_tasks',
   'list_watches',
   'publish_artifact',
   'read_app_docs',
   'read_document',
   'read_file',
+  'remove_skills',
   'remove_watch',
   'resolve_bot',
   'resolve_task',
@@ -355,12 +370,15 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   get_risk_limits:     { category: 'read-database',       description: 'Get effective risk limits: which are mutable vs locked, plus runtime state.' },
   find_instrument:     { category: 'read-database',       description: 'Find a tradable instrument by symbol/name. Returns instrumentId (venue-submittable), id (DB internal), symbol, base, quote, type, venue.' },
   resolve_bot:         { category: 'read-database',       description: 'Resolve a bot name/symbol to its bot ID for stop/start/config operations.' },
+  list_skills:         { category: 'read-database',       description: 'List skills assigned to this agent and skills available to add.' },
   // write-database
   stop_bot:            { category: 'write-database',      description: 'Stop a running bot. Positions remain open unless manually closed.' },
   start_bot:           { category: 'write-database',      description: 'Start a stopped bot. Resumes trading per its configuration.' },
   adjust_bot_config:   { category: 'write-database',      description: 'Update configuration for a specific bot. Changes merged and take effect next tick.' },
   adjust_risk_limits:  { category: 'write-database',      description: 'Adjust mutable risk limits. Only operator-default-derived limits can be changed.' },
   change_strategy_preset: { category: 'write-database', description: 'Apply a strategy preset change using an exact assessment artifact reference from assess_strategy_preset. Supports: entries_only (future entries only) and entries_and_tighten_existing (tighten stops on open positions). Records the transition event for audit.' },
+  add_skills:          { category: 'write-database',      description: 'Add skills to this agent from the skill catalog. Skills become available immediately.' },
+  remove_skills:       { category: 'write-database',      description: 'Remove skills from this agent. Tools from removed skills become unavailable immediately.' },
 
   // read-market-data
   search_tokens:       { category: 'read-market-data',    description: 'Search for tokens by name/symbol on DEX aggregators. Returns liquidity, price, safety metadata, network.' },

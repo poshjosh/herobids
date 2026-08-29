@@ -26,7 +26,7 @@ vi.mock('../routes/agent-config-helpers.js', () => ({
 }));
 
 import { resolveAgentStrategyPreset } from './strategy-preset-resolver.js';
-import { resolveUnifiedConfig } from './agent-create-normalization.js';
+import { resolveUnifiedConfig, deriveToolPolicyFromSkills } from './agent-create-normalization.js';
 import type { Database } from '@herobids/db';
 
 const resolvePresetMock = vi.mocked(resolveAgentStrategyPreset);
@@ -262,5 +262,86 @@ describe('resolveUnifiedConfig', () => {
     expect(result).not.toBeNull();
     expect(result!['technical']).toBeDefined();
     expect(result!['hybridMode']).toBe('scanner_gated');
+  });
+});
+
+
+// ── deriveToolPolicyFromSkills — manage_agent_skills grant ───────────────────
+
+describe('deriveToolPolicyFromSkills — manage_agent_skills', () => {
+  it('always adds manage_agent_skills grant when no existing policy', () => {
+    const result = deriveToolPolicyFromSkills([]);
+
+    expect(result).not.toBeNull();
+    expect(result!['manage_agent_skills']).toEqual({
+      capability: 'manage_agent_skills',
+      tier: 'brokered',
+      enabled: true,
+      limits: { maxPerMinute: 10, maxConcurrent: 1, timeoutMs: 30_000 },
+    });
+  });
+
+  it('adds manage_agent_skills even without bot-management skill', () => {
+    const result = deriveToolPolicyFromSkills(['web-access', 'trading']);
+
+    expect(result).not.toBeNull();
+    expect(result!['manage_agent_skills']).toBeDefined();
+    expect((result!['manage_agent_skills'] as Record<string, unknown>)['enabled']).toBe(true);
+  });
+
+  it('does not overwrite existing manage_agent_skills in the policy', () => {
+    const existingPolicy = {
+      manage_agent_skills: {
+        capability: 'manage_agent_skills',
+        tier: 'brokered',
+        enabled: false,
+        limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 15_000 },
+      },
+    };
+
+    const result = deriveToolPolicyFromSkills([], existingPolicy);
+
+    // Should preserve the existing (disabled) entry, not overwrite
+    expect(result!['manage_agent_skills']).toEqual({
+      capability: 'manage_agent_skills',
+      tier: 'brokered',
+      enabled: false,
+      limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 15_000 },
+    });
+  });
+
+  it('returns both manage_bot and manage_agent_skills when bot-management skill is present', () => {
+    const result = deriveToolPolicyFromSkills(['bot-management']);
+
+    expect(result).not.toBeNull();
+    expect(result!['manage_bot']).toBeDefined();
+    expect((result!['manage_bot'] as Record<string, unknown>)['enabled']).toBe(true);
+    expect(result!['manage_agent_skills']).toBeDefined();
+    expect((result!['manage_agent_skills'] as Record<string, unknown>)['enabled']).toBe(true);
+  });
+
+  it('returns non-null when existingPolicy is explicitly null', () => {
+    const result = deriveToolPolicyFromSkills([], null);
+
+    // manage_agent_skills is always added, so result is never null
+    expect(result).not.toBeNull();
+    expect(result!['manage_agent_skills']).toBeDefined();
+    expect((result!['manage_agent_skills'] as Record<string, unknown>)['enabled']).toBe(true);
+  });
+
+  it('preserves other existing policy entries alongside manage_agent_skills', () => {
+    const existingPolicy = {
+      submit_decision: {
+        capability: 'submit_decision',
+        tier: 'brokered',
+        enabled: true,
+        limits: { maxPerMinute: 20 },
+      },
+    };
+
+    const result = deriveToolPolicyFromSkills([], existingPolicy);
+
+    expect(result!['submit_decision']).toEqual(existingPolicy['submit_decision']);
+    expect(result!['manage_agent_skills']).toBeDefined();
   });
 });

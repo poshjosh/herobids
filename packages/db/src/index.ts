@@ -84,3 +84,5 @@ export {
   hasActiveManualReviewRun,
 } from './manual-review-repository.js';
 export type { ManualReviewRunRow, ManualReviewResultSummary } from './manual-review-repository.js';
+export { isSkillSelectableForUser, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from './skill-assignment.js';
+export type { SkillAssignmentResolution } from './skill-assignment.js';

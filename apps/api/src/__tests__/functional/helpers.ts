@@ -194,7 +194,7 @@ export async function buildApp() {
   await credentialRoutes(app, lifecycleQueue, db);
 
   await authRoutes(app, authConfig, db, redisClient, 'free', testPlansConfig as any);
-  await agentRoutes(app, db);
+  await agentRoutes(app, db, testPlansConfig as any);
   await connectionRoutes(app, db, TEST_BUDGETS, redisClient, testPlansConfig as any);
   await capabilityRoutes(app, db, testPlansConfig as any, TEST_BUDGETS, redisClient);
   await botRoutes(app, lifecycleQueue, db, redisClient, testPlansConfig as any);

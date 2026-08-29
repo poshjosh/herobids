@@ -325,48 +325,4 @@ export async function listAgentConnections(
   }
 }
 
-// ── Set execution mode ────────────────────────────────────────────────────
 
-export async function setExecutionMode(
-  db: Database,
-  agentId: string,
-  userId: string,
-  mode: 'paper' | 'shadow' | 'live',
-): Promise<Result<{ mode: string }, AgentConfigError>> {
-  try {
-    const [agent] = await db
-      .select({ id: agents.id, status: agents.status, executionDefaults: agents.executionDefaults })
-      .from(agents)
-      .where(and(eq(agents.id, agentId), eq(agents.userId, userId)));
-
-    if (!agent) {
-      return err({ code: 'agent.not_found', message: 'Agent not found' });
-    }
-
-    // Agent must be stopped before modifying execution mode
-    if (agent.status !== 'stopped') {
-      return err({
-        code: 'agent.not_stopped' as const,
-        message: 'Agent must be stopped before modifying execution mode',
-        currentStatus: agent.status,
-      });
-    }
-
-    const existingExecDefaults = (agent.executionDefaults as Record<string, unknown> | null) ?? {};
-
-    await db
-      .update(agents)
-      .set({
-        executionDefaults: { ...existingExecDefaults, mode },
-        updatedAt: new Date(),
-      })
-      .where(eq(agents.id, agentId));
-
-    return ok({ mode });
-  } catch (cause) {
-    return err({
-      code: 'config.internal_error',
-      message: cause instanceof Error ? cause.message : 'Unexpected error setting execution mode',
-    });
-  }
-}

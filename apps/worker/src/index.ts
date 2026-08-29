@@ -1489,6 +1489,7 @@ const agentBroker = new AgentMessageBroker(
   appConfig.alerts.email.brandImageUrl,
   undefined, // db — not wired yet
   appConfig.agentRuntime.llm.modelDefaults,
+  appConfig.plans,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);

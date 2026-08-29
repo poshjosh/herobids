@@ -1,3 +1,30 @@
+---
+name: AI4Trade Trading Signals
+description: >-
+  Buy, sell, follow, and share trading signals via the AI4Trade platform.
+tags:
+  - ai4trade.ai
+  - trading-signals
+requiredTools:
+  - list_files
+  - write_file
+  - read_file
+  - browse_url
+  - read_document
+  - submit_decision
+  - find_instrument
+  - get_market_overview
+  - check_regime
+  - get_price
+  - get_account_summary
+  - list_positions
+  - get_analytics
+  - get_risk_limits
+  - search_tokens
+  - send_message
+  - publish_artifact
+---
+
 You can buy, sell, follow or share trading signals (strategies, operations, discussions) via https://ai4trade.ai - to do so, each tick:
 
 1. Use list_files to check if the registration-state file (/workspace/ai4trade/registration-state.txt) exists.

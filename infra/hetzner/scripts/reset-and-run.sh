@@ -300,7 +300,7 @@ scp ${SSH_OPTS} "${SCRIPT_DIR}/create-agents.sh" "root@${SERVER_IP}:/tmp/create-
 
 # Upload the security audit prompt file (not in the deployed commit either)
 log_info "Uploading security-audit-prompt.md to server..."
-scp ${SSH_OPTS} "${REPO_ROOT}/docs/skills/security-audit-prompt.md" "root@${SERVER_IP}:/tmp/security-audit-prompt.md" || \
+scp ${SSH_OPTS} "${REPO_ROOT}/docs/agents/prompts/security-audit-prompt.md" "root@${SERVER_IP}:/tmp/security-audit-prompt.md" || \
   die "Failed to upload security-audit-prompt.md to server."
 
 # Build agent env overrides

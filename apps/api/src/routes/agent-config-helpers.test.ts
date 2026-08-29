@@ -193,6 +193,160 @@ describe('resolveExecutionModeForSkills', () => {
     });
   });
 
+  describe('trading agents — mode immutability guard', () => {
+    const IMMUTABILITY_MSG = "Execution mode cannot be changed after creation. Use 'Go Live' to create a live agent from this configuration.";
+
+    it('rejects paper → live', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'live',
+        executionModeProvided: true,
+        currentExecutionMode: 'paper',
+      });
+      expect(result.issue).toBeDefined();
+      expect(result.issue?.message).toBe(IMMUTABILITY_MSG);
+      expect(result.value).toBeNull();
+    });
+
+    it('rejects shadow → live', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'live',
+        executionModeProvided: true,
+        currentExecutionMode: 'shadow',
+      });
+      expect(result.issue).toBeDefined();
+      expect(result.issue?.message).toBe(IMMUTABILITY_MSG);
+      expect(result.value).toBeNull();
+    });
+
+    it('rejects live → paper', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'paper',
+        executionModeProvided: true,
+        currentExecutionMode: 'live',
+      });
+      expect(result.issue).toBeDefined();
+      expect(result.issue?.message).toBe(IMMUTABILITY_MSG);
+      expect(result.value).toBeNull();
+    });
+
+    it('rejects live → shadow', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'shadow',
+        executionModeProvided: true,
+        currentExecutionMode: 'live',
+      });
+      expect(result.issue).toBeDefined();
+      expect(result.issue?.message).toBe(IMMUTABILITY_MSG);
+      expect(result.value).toBeNull();
+    });
+
+    it('allows paper → shadow (test↔test)', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'shadow',
+        executionModeProvided: true,
+        currentExecutionMode: 'paper',
+      });
+      expect(result.value).toBe('shadow');
+      expect(result.issue).toBeUndefined();
+    });
+
+    it('allows shadow → paper (test↔test)', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'paper',
+        executionModeProvided: true,
+        currentExecutionMode: 'shadow',
+      });
+      expect(result.value).toBe('paper');
+      expect(result.issue).toBeUndefined();
+    });
+
+    it('allows paper → paper (no-op)', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'paper',
+        executionModeProvided: true,
+        currentExecutionMode: 'paper',
+      });
+      expect(result.value).toBe('paper');
+      expect(result.issue).toBeUndefined();
+    });
+
+    it('allows shadow → shadow (no-op)', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'shadow',
+        executionModeProvided: true,
+        currentExecutionMode: 'shadow',
+      });
+      expect(result.value).toBe('shadow');
+      expect(result.issue).toBeUndefined();
+    });
+
+    it('allows live → live (no-op)', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'live',
+        executionModeProvided: true,
+        currentExecutionMode: 'live',
+      });
+      expect(result.value).toBe('live');
+      expect(result.issue).toBeUndefined();
+    });
+
+    it('allows any mode when currentExecutionMode is null (creation path)', () => {
+      for (const mode of ['paper', 'shadow', 'live'] as const) {
+        const result = resolveExecutionModeForSkills({
+          skillIds: [TRADING_SKILL],
+          submittedExecutionMode: mode,
+          executionModeProvided: true,
+          currentExecutionMode: null,
+        });
+        expect(result.value).toBe(mode);
+        expect(result.issue).toBeUndefined();
+      }
+    });
+
+    it('allows any mode when currentExecutionMode is undefined (creation path)', () => {
+      for (const mode of ['paper', 'shadow', 'live'] as const) {
+        const result = resolveExecutionModeForSkills({
+          skillIds: [TRADING_SKILL],
+          submittedExecutionMode: mode,
+          executionModeProvided: true,
+        });
+        expect(result.value).toBe(mode);
+        expect(result.issue).toBeUndefined();
+      }
+    });
+
+    it('allows paper↔shadow auto-transition when executionModeProvided is false (carry-forward path unchanged)', () => {
+      const upgradeResult = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: undefined,
+        executionModeProvided: false,
+        currentExecutionMode: 'paper',
+        hasConnections: true,
+      });
+      expect(upgradeResult.value).toBe('shadow');
+      expect(upgradeResult.issue).toBeUndefined();
+
+      const downgradeResult = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: undefined,
+        executionModeProvided: false,
+        currentExecutionMode: 'shadow',
+        hasConnections: false,
+      });
+      expect(downgradeResult.value).toBe('paper');
+      expect(downgradeResult.issue).toBeUndefined();
+    });
+  });
+
   describe('trading agents — mode not provided', () => {
     it('carries forward existing mode when available', () => {
       const result = resolveExecutionModeForSkills({

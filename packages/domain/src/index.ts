@@ -26,3 +26,4 @@ export * from './market-assessment.js';
 export * from './assessment-billing.js';
 export * from './review-pre-check.js';
 export * from './blueprint.js';
+export * from './plan-entitlements.js';

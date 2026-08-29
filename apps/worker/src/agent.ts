@@ -14,7 +14,8 @@ import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
 import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema } from '@herobids/domain';
-import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal, LlmArtifactRepository } from '@herobids/db';
+import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal, LlmArtifactRepository, skills, skillRevisions, agentSkills } from '@herobids/db';
+import { and, eq, ne } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml } from '@herobids/domain';
 import { type LlmToolDefinition, type OpenRouterProviderControls, resolveReasoningParams } from '@herobids/llm';
@@ -1773,6 +1774,71 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       maxDrawdownPct: agentConfig.agentRiskDefaults!.maxDrawdownPct,
     },
     db: db ?? undefined,
+    skillOps: db && agentRepo ? {
+      async listAssigned() {
+        const rows = await db.select({
+          id: skills.id,
+          name: skillRevisions.name,
+          description: skillRevisions.description,
+        })
+        .from(agentSkills)
+        .innerJoin(skills, eq(agentSkills.skillId, skills.id))
+        .innerJoin(skillRevisions, eq(agentSkills.skillRevisionId, skillRevisions.id))
+        .where(and(eq(agentSkills.agentId, AGENT_ID!), ne(skills.id, 'base')));
+        return rows.map(r => ({ id: r.id, name: r.name ?? r.id, description: r.description ?? '' }));
+      },
+      async listAvailable() {
+        const assignedIds = await db.select({ skillId: agentSkills.skillId })
+          .from(agentSkills)
+          .where(eq(agentSkills.agentId, AGENT_ID!));
+        const assignedSet = new Set(assignedIds.map(r => r.skillId));
+
+        const allSkills = await db.select({
+          id: skills.id,
+          name: skills.name,
+          description: skills.description,
+        })
+        .from(skills)
+        .where(and(
+          eq(skills.publicationStatus, 'published'),
+          eq(skills.priceCents, 0),
+        ));
+
+        return allSkills
+          .filter(s => s.id !== 'base' && !assignedSet.has(s.id))
+          .map(s => ({ id: s.id, name: s.name ?? s.id, description: s.description ?? '' }));
+      },
+    } : undefined,
+    onSkillsChanged: db && agentRepo ? async () => {
+      // Re-resolve the capability descriptor from DB (skill + connection portions)
+      const capabilityDescriptor = await agentRepo.getRuntimeCapabilityDescriptor(AGENT_ID!);
+
+      // Build a full replacement descriptor by merging fresh capability data
+      // with the existing non-capability fields (budgets, guardrails, etc.).
+      // Using spread to create a NEW object reference is critical — the tool
+      // visibility controller uses reference identity to detect changes in
+      // snapshotToolBaselines(). Mutating properties in place would silently
+      // skip the baseline refresh.
+      runtimeState.runtimeDescriptor = {
+        ...runtimeState.runtimeDescriptor,
+        resolvedSkills: capabilityDescriptor.resolvedSkills,
+        grantedConnectionsByFamily: capabilityDescriptor.grantedConnectionsByFamily,
+        readinessByFamily: capabilityDescriptor.readinessByFamily,
+        defaultConnectionByFamily: capabilityDescriptor.defaultConnectionByFamily,
+      };
+
+      // Refresh tool visibility baselines so new tools are visible and removed tools are hidden
+      toolVisibility.snapshotToolBaselines();
+      applyToolVisibility();
+
+      // Refresh capability policy grants (tool policy may reference new tools)
+      refreshCapabilityPolicy();
+
+      // Return the updated skill list for the tool's response
+      return capabilityDescriptor.resolvedSkills
+        .filter(s => s.id !== 'base')
+        .map(s => s.id);
+    } : undefined,
   };
 
   try {
@@ -3422,6 +3488,11 @@ async function runTick(): Promise<void> {
       toolResultMaxStaleChars: runtimeState.runtimeDescriptor.budgets.toolResultMaxStaleChars,
       initialMessages: messages,
       tools: judgeToolDefinitions,
+      getTools: () => toolRegistry.getDefinitions([...allowedTools()]).map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      })),
       retryPolicy: agentRuntimePolicy.llm.retry,
       executeTool: async (toolCall) => executeTool({ tool: toolCall.name, args: toolCall.args }),
       onAssistantTurn: ({ result, assistantResponse, toolCalls, turnIndex }) => {
