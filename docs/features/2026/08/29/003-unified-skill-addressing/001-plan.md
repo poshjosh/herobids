@@ -163,7 +163,7 @@ A data migration computes slugs for all existing rows. System skills get `system
 
 ---
 
-## Step 4 — Domain: add slug resolution helper — PENDING
+## Step 4 — Domain: add slug resolution helper — DONE
 
 **File:** `packages/domain/src/skills.ts` or a new `packages/domain/src/skill-resolution.ts`
 
@@ -510,3 +510,9 @@ Parallelizable groups:
 ### Step 9 — Domain: update `skillOps` interface for slug support
 
 1. **[Low] Comments reference stale "enterprise" tier name** — `packages/domain/src/config/schema.ts` and `apps/worker/src/agents/agent-runtime-launcher.ts` comments still reference "enterprise" as an example tier after config renamed it to "pro". Cosmetic only.
+
+### Step 4 — Domain: add slug resolution helper
+
+1. **[Medium] `SkillRefKind` includes `'external'` but `ClassifiedSkillRef` never produces it** — The type declares `'slug' | 'legacy-id' | 'external'` but the pure classifier only returns slug or legacy-id. External is determined post-DB-resolution. Consider removing `'external'` from `SkillRefKind` and introducing a broader union type when the DB layer is added.
+
+2. **[Low] `partitionSkillRefs` duplicates `classifySkillRef` logic** — Both re-implement `ref.includes('/')` check. Consider implementing `partitionSkillRefs` in terms of `classifySkillRef` to keep source of truth singular.

@@ -7,6 +7,7 @@ export * from './config/index.js';
 export * from './agent-protocol.js';
 export * from './agent-goal.js';
 export * from './skills.js';
+export * from './skill-resolution.js';
 export * from './platform.js';
 export * from './provider-catalog.js';
 export * from './runtime-composition.js';
