@@ -128,7 +128,11 @@ describe('skillsRoutes (normalized contract)', () => {
       ...makeDbMock(),
       select: vi.fn().mockImplementation(() => {
         selectCalls += 1;
-        return makeChain(selectCalls === 1 ? [createdRow] : []);
+        // Call 1: users query for author handle
+        if (selectCalls === 1) return makeChain([{ username: 'testuser' }]);
+        // Call 2: post-create skills fetch
+        if (selectCalls === 2) return makeChain([createdRow]);
+        return makeChain([]);
       }),
       selectDistinct: vi.fn().mockImplementation(() => makeChain([])),
     } as unknown as Database;
@@ -439,8 +443,10 @@ describe('dependsOn in SkillView', () => {
       ...makeDbMock(),
       select: vi.fn().mockImplementation(() => {
         selectCalls += 1;
-        // Call 1: fetch created row by id (POST handler)
-        if (selectCalls === 1) return makeChain([createdRow]);
+        // Call 1: users query for author handle
+        if (selectCalls === 1) return makeChain([{ username: 'testuser' }]);
+        // Call 2: fetch created row by id (POST handler)
+        if (selectCalls === 2) return makeChain([createdRow]);
         // Remaining: revisions, viewer context, version queries → empty
         return makeChain([]);
       }),
@@ -505,7 +511,10 @@ describe('dependsOn in SkillView', () => {
       ...makeDbMock(),
       select: vi.fn().mockImplementation(() => {
         selectCalls += 1;
-        if (selectCalls === 1) return makeChain([createdRow]);
+        // Call 1: users query for author handle
+        if (selectCalls === 1) return makeChain([{ username: 'testuser' }]);
+        // Call 2: fetch created row
+        if (selectCalls === 2) return makeChain([createdRow]);
         return makeChain([]);
       }),
       selectDistinct: vi.fn().mockImplementation(() => makeChain([])),

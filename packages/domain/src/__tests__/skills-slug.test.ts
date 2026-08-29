@@ -69,7 +69,7 @@ describe('buildSkillSlug', () => {
   });
 
   it('does not slugify the authorHandle (pass-through)', () => {
-    expect(buildSkillSlug('Alice', 'Trading')).toBe('Alice/trading');
+    expect(buildSkillSlug('Alice', 'Trading')).toBe('alice/trading');
   });
 });
 

@@ -12,7 +12,7 @@ export function slugify(name: string): string {
 
 /** Build a full skill slug: `<authorHandle>/<slugified-name>`. */
 export function buildSkillSlug(authorHandle: string, name: string): string {
-  return `${authorHandle}/${slugify(name)}`;
+  return `${authorHandle.toLowerCase()}/${slugify(name)}`;
 }
 
 // ── Skill definitions ───────────────────────────────────────────────────────

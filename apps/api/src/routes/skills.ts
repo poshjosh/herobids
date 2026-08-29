@@ -5,8 +5,8 @@ import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from 'd
 import type { SQL } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import type { PlanSkillsEntitlements, PlansConfig } from '@herobids/domain';
-import { findUnknownSkillTools, inferDependsOn, tokenize, expandToken } from '@herobids/domain';
-import { agentSkills, agents, skillEntitlements, skillLikes, skillRevisions, skillUsageEvents, skills } from '@herobids/db';
+import { buildSkillSlug, findUnknownSkillTools, inferDependsOn, slugify, tokenize, expandToken } from '@herobids/domain';
+import { agentSkills, agents, skillEntitlements, skillLikes, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
 import { resolvePlanSkillEntitlements } from '../plan-guards.js';
 
 const PublicationStatusSchema = z.enum(['draft', 'private', 'published', 'delisted', 'archived']);
@@ -92,6 +92,7 @@ type SelectabilityResult = {
 
 type SkillView = {
   id: string;
+  slug: string;
   authorId: string | null;
   sourceKind: 'system' | 'user';
   publicationStatus: 'draft' | 'private' | 'published' | 'delisted' | 'archived';
@@ -328,6 +329,7 @@ async function buildSkillViews(
     const selectability = evaluateSelectability(row, viewerUserId, viewerContext, planPolicy.canViewMarketplaceSkills);
     views.push({
       id: row.id,
+      slug: row.slug,
       authorId: row.authorId,
       sourceKind: sourceKindForSkill(row),
       publicationStatus: row.publicationStatus as SkillView['publicationStatus'],
@@ -647,6 +649,24 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     const revisionId = crypto.randomUUID();
     const createdAt = new Date();
 
+    // Compute slug from author username + skill name
+    const [authorRow] = await db.select({ username: users.username })
+      .from(users).where(eq(users.id, request.userId)).limit(1);
+    if (!authorRow) {
+      return reply.status(500).send({ error: 'internal', message: 'Author user not found' });
+    }
+    const slug = buildSkillSlug(authorRow.username, parsed.data.name);
+
+    // Guard against names that produce an empty slug component (e.g. "!!!")
+    const nameSlug = slugify(parsed.data.name);
+    if (!nameSlug) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        details: [{ code: 'custom', path: ['name'], message: 'Name must contain at least one alphanumeric character' }],
+      });
+    }
+
+    try {
     await db.transaction(async (tx) => {
       // Step 1: Insert skills row with null FK pointers to avoid circular FK
       // (published_revision_id → skill_revisions.id). Revision inserted next,
@@ -654,6 +674,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       await tx.insert(skills).values({
         id,
         authorId: request.userId,
+        slug,
         publicationStatus: publication.publicationStatus,
         publishedAt: publication.publicationStatus === 'published' ? createdAt : null,
         currentRevisionId: null,
@@ -706,6 +727,16 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         })
         .where(eq(skills.id, id));
     });
+    } catch (error: unknown) {
+      if (error instanceof Error && 'code' in error && (error as { code: string }).code === '23505') {
+        return reply.status(409).send({
+          error: 'slug_conflict',
+          message: `A skill with slug "${slug}" already exists`,
+          details: [{ code: 'custom', path: ['name'], message: `Slug "${slug}" is already taken` }],
+        });
+      }
+      throw error;
+    }
 
     const [createdSkill] = await db.select().from(skills).where(eq(skills.id, id));
     const [view] = await buildSkillViews(db, [createdSkill!], request.userId, planPolicy);
@@ -785,6 +816,28 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     let promotedRevisionId: string | null = null;
     const now = new Date();
 
+    // If name changes, recompute slug and validate uniqueness
+    let newSlug: string | null = null;
+    if (parsed.data.name !== undefined && parsed.data.name !== currentRevision.name) {
+      const nameSlug = slugify(parsed.data.name);
+      if (!nameSlug) {
+        return reply.status(400).send({
+          error: 'validation_error',
+          details: [{ code: 'custom', path: ['name'], message: 'Name must contain at least one alphanumeric character' }],
+        });
+      }
+      const [authorRow] = await db.select({ username: users.username })
+        .from(users).where(eq(users.id, request.userId)).limit(1);
+      if (!authorRow) {
+        return reply.status(500).send({ error: 'internal', message: 'Author user not found' });
+      }
+      newSlug = buildSkillSlug(authorRow.username, parsed.data.name);
+      if (newSlug === row.slug) {
+        newSlug = null; // no actual change
+      }
+    }
+
+    try {
     await db.transaction(async (tx) => {
       if (contentChanged) {
         const latestRevision = await getLatestRevisionBySkillId(tx as unknown as Database, row.id);
@@ -822,6 +875,10 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         updatedAt: now,
       };
 
+      if (newSlug) {
+        updatePayload['slug'] = newSlug;
+      }
+
       if (promotedRevisionId) {
         updatePayload['currentRevisionId'] = promotedRevisionId;
         const promotedRevision = await tx.select().from(skillRevisions)
@@ -843,6 +900,16 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
 
       await tx.update(skills).set(updatePayload).where(eq(skills.id, row.id));
     });
+    } catch (error: unknown) {
+      if (newSlug && error instanceof Error && 'code' in error && (error as { code: string }).code === '23505') {
+        return reply.status(409).send({
+          error: 'slug_conflict',
+          message: `A skill with slug "${newSlug}" already exists`,
+          details: [{ code: 'custom', path: ['name'], message: `Slug "${newSlug}" is already taken` }],
+        });
+      }
+      throw error;
+    }
 
     const [updatedRow] = await db.select().from(skills).where(eq(skills.id, row.id)).limit(1);
     const [view] = await buildSkillViews(db, [updatedRow!], request.userId, planPolicy);
@@ -1027,11 +1094,32 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     const forkId = crypto.randomUUID();
     const forkRevisionId = crypto.randomUUID();
     const now = new Date();
+
+    // Compute slug for forked skill
+    const [forkAuthorRow] = await db.select({ username: users.username })
+      .from(users).where(eq(users.id, request.userId)).limit(1);
+    if (!forkAuthorRow) {
+      return reply.status(500).send({ error: 'internal', message: 'Author user not found' });
+    }
+    const forkName = `${sourceRevision.name} (copy)`;
+    const forkSlug = buildSkillSlug(forkAuthorRow.username, forkName);
+
+    // Guard against names that produce an empty slug component
+    const forkNameSlug = slugify(forkName);
+    if (!forkNameSlug) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        details: [{ code: 'custom', path: ['name'], message: 'Name must contain at least one alphanumeric character' }],
+      });
+    }
+
+    try {
     await db.transaction(async (tx) => {
       // Step 1: Insert skills row with null FK pointers (published_revision_id → skill_revisions.id)
       await tx.insert(skills).values({
         id: forkId,
         authorId: request.userId,
+        slug: forkSlug,
         publicationStatus: publication.publicationStatus,
         publishedAt: publication.publicationStatus === 'published' ? now : null,
         currentRevisionId: null,
@@ -1103,6 +1191,16 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         createdAt: now,
       });
     });
+    } catch (error: unknown) {
+      if (error instanceof Error && 'code' in error && (error as { code: string }).code === '23505') {
+        return reply.status(409).send({
+          error: 'slug_conflict',
+          message: `A skill with slug "${forkSlug}" already exists`,
+          details: [{ code: 'custom', path: ['name'], message: `Slug "${forkSlug}" is already taken` }],
+        });
+      }
+      throw error;
+    }
 
     await recomputeSkillScores(db, source.id);
 

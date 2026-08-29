@@ -211,7 +211,7 @@ Also add `resolveSkillRefs(refs: string[], db)` that:
 
 ---
 
-## Step 6 — API: set `slug` on skill creation and update — PENDING
+## Step 6 — API: set `slug` on skill creation and update — DONE
 
 **Files:**
 - `apps/api/src/routes/skills.ts`
@@ -522,3 +522,9 @@ Parallelizable groups:
 1. **[Medium] `unique.includes()` is O(n) per row** — Use a Set for O(1) lookup instead of linear array scan. Keep the array for the `inArray()` SQL call.
 
 2. **[Low] Missing test: ref matching both slug and ID on the same row** — The precedence test covers different rows but not the same-row case (a no-op but worth documenting).
+
+### Step 6 — API: set `slug` on skill creation and update
+
+1. **[Medium] Author lookup repeated 3 times with identical pattern** — The `db.select({ username }).from(users).where(...)` block appears in POST create, PATCH update, and POST fork. Extract to a helper like `getAuthorUsername(db, userId)`.
+
+2. **[Medium] Indentation misalignment in try/catch blocks** — The `try {` and `} catch` blocks are at a different indentation level than the transaction they wrap. Cosmetic but affects readability.

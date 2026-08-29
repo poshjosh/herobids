@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, inArray, notInArray, desc, sql, or, asc, isNull, isNotNull, sum } from 'drizzle-orm';
@@ -26,6 +26,7 @@ import {
   venueAccounts,
   positions,
   resolveSkillAssignmentsForUser,
+  resolveSkillIdsBySlugOrId,
   syncAgentSkillAssignments,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
@@ -299,6 +300,20 @@ function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: st
 
 const DEFAULT_AGENT_RISK_DEFAULTS: AgentRiskDefaultsConfig = AgentRiskDefaultsSchema.parse({});
 
+/** Resolve skill slugs/IDs to canonical IDs. Returns resolved IDs, or null if an error response was sent. */
+async function resolveSkillSlugs(db: Database, skillIds: string[], reply: FastifyReply): Promise<string[] | null> {
+  const resolved = await resolveSkillIdsBySlugOrId(db, skillIds);
+  const unresolved = skillIds.filter((ref) => !resolved.has(ref));
+  if (unresolved.length > 0) {
+    reply.status(400).send({
+      error: 'validation_error',
+      details: [{ code: 'custom', path: ['skillIds'], message: `Unknown skills: ${unresolved.join(', ')}` }],
+    });
+    return null;
+  }
+  return skillIds.map((ref) => resolved.get(ref)!);
+}
+
 
 async function listSkillIdsForAgent(db: Database, agentId: string): Promise<string[]> {
   const rows = await db.select({ skillId: agentSkills.skillId })
@@ -385,6 +400,13 @@ export async function agentRoutes(
         error: 'validation_error',
         details: [{ code: 'custom', path: ['provider'], message: 'Provider is required when economy or premium model fields are set' }],
       });
+    }
+
+    // Resolve skill slugs to IDs so downstream logic works with canonical IDs
+    if (parsed.data.skillIds) {
+      const resolvedIds = await resolveSkillSlugs(db, parsed.data.skillIds, reply);
+      if (!resolvedIds) return;
+      parsed.data.skillIds = resolvedIds;
     }
 
     // Plan enforcement
@@ -870,6 +892,13 @@ export async function agentRoutes(
         error: 'validation_error',
         details: [{ code: 'custom', path: ['provider'], message: 'Provider is required when economy or premium model fields are set' }],
       });
+    }
+
+    // Resolve skill slugs to IDs so downstream logic works with canonical IDs
+    if (parsed.data.skillIds) {
+      const resolvedIds = await resolveSkillSlugs(db, parsed.data.skillIds, reply);
+      if (!resolvedIds) return;
+      parsed.data.skillIds = resolvedIds;
     }
 
     const [agent] = await db.select().from(agents)
