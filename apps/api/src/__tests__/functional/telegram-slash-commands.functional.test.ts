@@ -392,10 +392,10 @@ describe.skipIf(SKIP)('Telegram Slash Commands — Functional E2E', () => {
       expect(lastSentText()).toContain('paper');
     });
 
-    it('/mode set rejects non-stopped agent', async () => {
+    it('/mode set rejects mode change (immutable after creation)', async () => {
       await seedAgent(uid, { name: 'Trader', status: 'active' });
       await send(CHAT, '/mode Trader live');
-      expect(lastSentText()).toContain('Cannot change execution mode');
+      expect(lastSentText()).toContain('Execution mode cannot be changed after creation');
     });
 
     it('/connect rejects non-stopped agent', async () => {

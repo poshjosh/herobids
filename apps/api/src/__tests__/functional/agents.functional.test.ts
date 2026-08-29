@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
-import { agentRuntimeSessions, agentArtifacts, agentOutboundMessages, marketAssessmentRequests, billingAccounts, agents } from '@herobids/db';
+import { agentRuntimeSessions, agentArtifacts, agentOutboundMessages, marketAssessmentRequests, billingAccounts, agents, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 
 describe.skipIf(SKIP)('Agents functional', () => {
@@ -562,7 +562,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
       expect(updated.executionMode).toBe('shadow');
     });
 
-    it('transitions from paper to live without mode leak', async () => {
+    it('transitions from paper to live via go-live without mode leak', async () => {
       // 1. Create agent in paper mode (no venue)
       const createRes = await ctx.app.inject({
         method: 'POST',
@@ -599,32 +599,53 @@ describe.skipIf(SKIP)('Agents functional', () => {
       expect(linkRes.statusCode).toBe(201);
       const connectionId = linkRes.json<{ connection: { id: string } }>().connection.id;
 
-      // 3. Switch to live mode with the connection
-      const patchRes = await ctx.app.inject({
+      // 3. Grant the connection to the source agent
+      const grantRes = await ctx.app.inject({
         method: 'PATCH',
         url: `/agents/${agentId}`,
         headers: authHeader(),
-        payload: {
-          executionDefaults: { mode: 'live' },
-          connectionIds: [connectionId],
-        },
+        payload: { connectionIds: [connectionId] },
       });
-      expect(patchRes.statusCode).toBe(200);
+      expect(grantRes.statusCode).toBe(200);
 
-      // 4. Verify the stored mode is live (no paper/shadow leak)
-      const getRes = await ctx.app.inject({
+      // 4. Go live — promote to admin (plan bypass) and clone source agent as a new live agent
+      const meRes = await ctx.app.inject({ method: 'GET', url: '/auth/me', headers: authHeader() });
+      await ctx.db.update(users).set({ isAdmin: true }).where(eq(users.id, meRes.json<{ id: string }>().id));
+
+      const goLiveRes = await ctx.app.inject({
+        method: 'POST',
+        url: `/agents/${agentId}/go-live`,
+        headers: authHeader(),
+      });
+      expect(goLiveRes.statusCode).toBe(201);
+      const liveAgent = goLiveRes.json<{ id: string; executionMode: string }>();
+      expect(liveAgent.executionMode).toBe('live');
+      const liveAgentId = liveAgent.id;
+      expect(liveAgentId).not.toBe(agentId);
+
+      // 5. Verify the source agent is still in paper/shadow mode (unchanged)
+      const sourceRes = await ctx.app.inject({
         method: 'GET',
         url: `/agents/${agentId}`,
         headers: authHeader(),
       });
-      expect(getRes.statusCode).toBe(200);
-      const updated = getRes.json<{ executionMode: string }>();
-      expect(updated.executionMode).toBe('live');
+      expect(sourceRes.statusCode).toBe(200);
+      expect(['paper', 'shadow']).toContain(sourceRes.json<{ executionMode: string }>().executionMode);
 
-      // 5. Start the agent — live mode with a connection must be allowed
+      // 6. Verify the new live agent is stored correctly
+      const getRes = await ctx.app.inject({
+        method: 'GET',
+        url: `/agents/${liveAgentId}`,
+        headers: authHeader(),
+      });
+      expect(getRes.statusCode).toBe(200);
+      const stored = getRes.json<{ executionMode: string }>();
+      expect(stored.executionMode).toBe('live');
+
+      // 7. Start the live agent — live mode with a connection must be allowed
       const startRes = await ctx.app.inject({
         method: 'POST',
-        url: `/agents/${agentId}/start`,
+        url: `/agents/${liveAgentId}/start`,
         headers: authHeader(),
       });
       expect(startRes.statusCode).toBe(202);

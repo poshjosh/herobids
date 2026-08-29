@@ -13,7 +13,6 @@ import {
   blueprintUsageEvents,
   blueprintLikes,
   bots,
-  agents,
   connections,
   venueAccounts,
   users,
@@ -2216,7 +2215,7 @@ export async function blueprintRoutes(
               telegramChatId,
               fallbackName: bp.name,
             },
-            finalPayload.risk,
+            agentPayloadFinal.risk,
           );
         } else {
           // Bot creation
