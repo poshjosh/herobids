@@ -1,6 +1,6 @@
 # Capability Foundations
 
-**Status:** proposed  
+**Status:** draft
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)
 **Normative inputs:** [Cross-Service Capability Execution Design](./008-cross-service-capability-execution-design.md), [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md)
@@ -26,6 +26,69 @@ This phase does not include:
 2. public route migration
 3. capability service extraction
 4. naming cleanup of legacy persisted fields
+
+## Non-Goals
+
+1. Do not change runtime behavior in this phase.
+2. Do not extract a deployable capability service here.
+3. Do not move public capability routes in this phase.
+4. Do not treat runtime binding families as product capability IDs.
+
+## Dependencies
+
+1. [Capability Implementation Roadmap](./001-roadmap.md) fixes this phase as a
+   later executable phase after the current ready slice.
+2. [012-shared-capability-taxonomy-revision.md](./012-shared-capability-taxonomy-revision.md)
+   and [tasks/001-shared-trading-taxonomy-implementation-tasks.md](./tasks/001-shared-trading-taxonomy-implementation-tasks.md)
+   settle the shared `trading` and `messaging` taxonomy before this broader
+   foundations phase is executed.
+3. [008-cross-service-capability-execution-design.md](./008-cross-service-capability-execution-design.md)
+   and [009-initial-capability-registry-and-tool-ownership-manifest.md](./009-initial-capability-registry-and-tool-ownership-manifest.md)
+   remain binding normative inputs for the contract and ownership details.
+
+## Fixed Decisions
+
+1. This phase establishes shared metadata and contract foundations without
+   changing runtime behavior yet.
+2. The foundation must cover the shared product capability IDs `trading` and
+   `messaging`.
+3. `capabilityFamilies` remains a runtime-binding concept, not product
+   capability membership.
+4. Preset or role metadata remains separate from shared capability membership.
+
+## Open Latitude
+
+Implementation may choose the following without escalation, as long as the
+fixed decisions, dependencies, acceptance criteria, and validation still hold:
+
+1. helper and module boundaries for registry, ownership, and contract code
+2. exact file placement for supporting domain exports and validation helpers
+3. test placement and type-assertion strategy for the shared contract surface
+4. local naming of private helpers that does not change canonical capability,
+   ownership, or contract identifiers
+
+## Acceptance Criteria
+
+This phase is complete only when:
+
+1. the registry compiles and exports the canonical capability metadata for
+   `trading` and `messaging`
+2. the ownership manifest is exhaustive over `KNOWN_AGENT_TOOL_NAMES`
+3. unknown tool names are rejected by tests or validation helpers
+4. the shared capability-tool contract types compile and are usable by both
+   Agent Core and future capability services
+5. no runtime behavior has changed yet
+6. the manifest key set equals `KNOWN_AGENT_TOOL_NAMES` and each capability
+   derived view matches document 009
+
+## Validation
+
+1. add unit tests for registry structure, route IDs and aliases, provider
+   lifecycle fields, and runtime-family mappings
+2. add unit tests for ownership completeness and exactly-one ownership
+3. add compile-level tests or type assertions for the capability-tool contract
+4. run targeted domain tests
+5. run `pnpm lint`
 
 ## Deliverables
 
@@ -73,37 +136,7 @@ including:
 5. typed success payloads
 6. typed failure payloads
 
-## Acceptance Criteria
-
-This phase is complete only when:
-
-1. the registry compiles and exports the canonical capability metadata for
-   `crypto-trading` and `messaging`
-2. the ownership manifest is exhaustive over `KNOWN_AGENT_TOOL_NAMES`
-3. unknown tool names are rejected by tests or validation helpers
-4. the shared capability-tool contract types compile and are usable by both
-   Agent Core and future capability services
-5. no runtime behavior has changed yet
-6. the manifest key set equals `KNOWN_AGENT_TOOL_NAMES` and each capability
-   derived view matches document 009
-
-## Validation And Verification
-
-1. add unit tests for registry structure, route IDs and aliases, provider
-   lifecycle fields, and runtime-family mappings
-2. add unit tests for ownership completeness and exactly-one ownership
-3. add compile-level tests or type assertions for the capability-tool contract
-4. run targeted domain tests
-5. run `pnpm lint`
-
 ## Extraction Pattern
 
 This phase prepares branch-by-abstraction but does not switch implementations
 yet.
-
-## Out Of Scope
-
-1. API behavior changes
-2. worker visibility gating
-3. separate deployable capability services
-4. route migration

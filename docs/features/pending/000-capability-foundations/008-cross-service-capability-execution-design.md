@@ -1,9 +1,9 @@
 # Cross-Service Capability Execution Design
 
-**Status:** proposed  
+**Status:** draft
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)  
-**Applies to:** `crypto-trading` and `messaging`
+**Applies to:** `trading` and `messaging`
 
 ## Purpose
 
@@ -11,6 +11,93 @@ Define the single production boundary through which Agent Core invokes a
 capability-owned tool. This document is normative for both capability-service
 extractions. A service is not considered extracted until it implements this
 contract and the operational requirements below.
+
+## Scope
+
+This doc includes:
+
+1. the shared invocation transport, endpoint shape, and contract envelope for
+   capability-owned tool calls
+2. authentication, authorization, deadline, retry, idempotency, and result
+   mapping rules for that boundary
+3. the operator-config, deployment, and health semantics required for service
+   extraction
+
+This doc does not include:
+
+1. capability-specific business logic inside trading or messaging
+2. public control-plane route migration for capability APIs
+3. user or instance configuration for product behavior
+
+## Non-Goals
+
+1. Do not use Redis or in-process imports as the production execution
+   transport.
+2. Do not define product-specific business payload semantics beyond the shared
+   invocation envelope.
+3. Do not treat Agent Core fallback to the old in-process implementation as an
+   acceptable extraction state.
+
+## Dependencies
+
+1. [Capability Implementation Roadmap](./001-roadmap.md) keeps this doc as an
+   active supporting reference rather than the first-slice gate.
+2. [005-trading-capability-extraction.md](./005-trading-capability-extraction.md)
+   and [006-messaging-capability-extraction.md](./006-messaging-capability-extraction.md)
+   use this doc as a binding normative input for service extraction.
+3. [002-capability-foundations.md](./002-capability-foundations.md) may reuse
+   only the shared contract foundations here without pulling transport,
+   deployment, or service-boundary work into the first slice.
+4. [009-initial-capability-registry-and-tool-ownership-manifest.md](./009-initial-capability-registry-and-tool-ownership-manifest.md)
+   and [010-capability-activation-model.md](./010-capability-activation-model.md)
+   provide complementary ownership and activation inputs for the same boundary.
+
+## Fixed Decisions
+
+1. Tool invocation uses synchronous HTTPS JSON over the private service
+   network.
+2. Agent Core is the caller and selects the target service from the capability
+   registry.
+3. Every capability service exposes the same versioned invocation and status
+   endpoints.
+4. The invocation endpoint is the only execution entry point.
+5. Service health, provider lifecycle, and tenant readiness remain separate
+   concerns.
+6. A capability service that is not ready removes its tools from new runtime
+   visibility snapshots and does not fall back to the old in-process
+   implementation.
+
+## Open Latitude
+
+Implementation may choose the following without escalation, as long as the
+fixed decisions, dependencies, acceptance criteria, and validation still hold:
+
+1. internal package boundaries for the invocation client and per-service
+   adapters
+2. exact storage layout for persisted invocation records
+3. provider-local retry helpers that still satisfy the shared deadline and
+   idempotency rules
+4. test placement across worker, service, and contract suites
+
+## Acceptance Criteria
+
+This supporting reference is ready for later extraction work only when:
+
+1. the shared invocation contract, versioning, and endpoint rules are explicit
+2. authentication, authorization, deadline, and idempotency behavior are
+   explicit and mutually consistent
+3. configuration, deployment, and readiness rules forbid an in-process
+   fallback after extraction
+4. the verification list is specific enough to validate trading and messaging
+   service extraction against one shared contract
+
+## Validation
+
+1. validate the checks listed under `## Required Verification`
+2. confirm [005-trading-capability-extraction.md](./005-trading-capability-extraction.md)
+   and [006-messaging-capability-extraction.md](./006-messaging-capability-extraction.md)
+   reference this doc without contradicting its transport or readiness rules
+3. keep `pnpm lint` as the final repo-wide validation gate for any touched code
 
 ## Decisions
 
@@ -36,7 +123,7 @@ contract and the operational requirements below.
    invocation record reaches a terminal state:
 
    ```text
-   capability.crypto-trading.tool-invocation.completed.v1
+   capability.trading.tool-invocation.completed.v1
    capability.messaging.tool-invocation.completed.v1
    ```
 
@@ -48,7 +135,7 @@ contract and the operational requirements below.
 | --- | --- | --- |
 | Shared DTOs and Zod schemas | `packages/domain/src/capability-tool-contract.ts` | Versioned envelope, terminal result, error codes, and validation schemas. |
 | Agent Core invocation client | `apps/worker/src/capability-invocation/` | Target selection, signing, deadline enforcement, retry policy, and mapping to `ToolResult`. |
-| Trading capability service | `apps/crypto-trading/` | Trading-owned tools, trading readiness, invocation store, and handoff to the authoritative trading instance. |
+| Trading capability service | `apps/trading/` | Trading-owned tools, trading readiness, invocation store, and handoff to the authoritative trading instance. |
 | Messaging capability service | `apps/messaging/` | Messaging-owned tools, delivery routing, invocation store, and delivery state. |
 | Registry and ownership manifest | `packages/domain/src/capability-registry.ts` and `packages/domain/src/tool-ownership.ts` | Static product metadata only. |
 
@@ -80,10 +167,10 @@ type CapabilityToolInvocationV1 = {
     agentId: string;
     sessionId: string;
     actor: { type: 'agent' | 'bot' | 'user' | 'system'; id: string };
-    capabilityId: 'crypto-trading' | 'messaging';
+      capabilityId: 'trading' | 'messaging';
     activationVersion: number;
   };
-  capabilityId: 'crypto-trading' | 'messaging';
+   capabilityId: 'trading' | 'messaging';
   toolName: string;
   payload: unknown;
 };
@@ -248,8 +335,8 @@ capabilityTransport:
   clockSkewMs: 30000
   idempotencyRetentionHours: 168
   services:
-    cryptoTrading:
-      baseUrl: http://crypto-trading:3101
+      trading:
+         baseUrl: http://trading:3101
     messaging:
       baseUrl: http://messaging:3102
   credentials:
@@ -262,7 +349,7 @@ capabilityTransport:
 the config schema. Capability-domain configuration is private to each service:
 
 ```text
-config/capabilities/crypto-trading.yaml
+config/capabilities/trading.yaml
 config/capabilities/messaging.yaml
 ```
 
@@ -272,9 +359,9 @@ be added to Agent Core's user/instance config.
 
 ## Deployment And Health
 
-The root Dockerfile gains `build-crypto-trading`, `build-messaging`,
-`crypto-trading`, and `messaging` targets. `docker-compose.yaml` adds
-`crypto-trading` and `messaging` services on the private default network. They
+The root Dockerfile gains `build-trading`, `build-messaging`,
+`trading`, and `messaging` targets. `docker-compose.yaml` adds
+`trading` and `messaging` services on the private default network. They
 depend on `migrate`, PostgreSQL, and Redis only where their own implementation
 requires them. API and worker use service names and never localhost URLs.
 

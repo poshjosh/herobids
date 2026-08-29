@@ -7,26 +7,31 @@
 ## Purpose
 
 Turn the adopted shared `trading` taxonomy direction into concrete
-implementation work for route IDs, activation rows, ownership manifests, and
-their immediate contract consumers.
+implementation work for shared domain metadata, ownership manifests, and the
+foundational contract surfaces that belong to the first Capability
+Foundations slice.
 
 Read this task list after [Capability Implementation Roadmap](../001-roadmap.md)
 and [Shared Capability Taxonomy Revision](../012-shared-capability-taxonomy-revision.md).
 
 ## Execution Rules
 
-1. Do not reintroduce shared `crypto-trading` capability IDs in code, schemas,
-   or public control-plane routes.
-2. Treat `/capabilities/trading` as the shared canonical control-plane route.
+1. Do not reintroduce shared `crypto-trading` capability IDs in shared domain
+   code, schemas, or ownership metadata.
+2. Treat `/capabilities/trading` only as canonical registry metadata in this
+   slice. Actual API route migration belongs to
+   [../003-capability-resolution-and-route-migration.md](../003-capability-resolution-and-route-migration.md).
 3. Keep deeper trading taxonomy such as `crypto`, `forex`, and `commodities`
    out of the shared platform types unless a later capability-owned contract
    explicitly needs them.
 4. Keep runtime binding family `trading` as an implementation-layer concept,
    separate from shared capability taxonomy.
+5. Defer activation persistence, worker visibility gating, public route
+   migration, and service-backed invocation naming to their later phase docs.
 
 ## Task List
 
-### T1. Introduce shared `trading` capability IDs in domain types
+### T1. Introduce shared `trading` capability IDs in domain metadata
 
 **Status:** `not-started`
 
@@ -34,21 +39,24 @@ Touchpoints:
 
 1. `packages/domain/src/capability-registry.ts`
 2. `packages/domain/src/capability-tool-contract.ts`
-3. `packages/domain/src/tool-ownership.ts`
-4. domain exports that re-export these modules
+3. domain exports that re-export these modules
 
 Work:
 
 1. define `ProductCapabilityId` around `trading | messaging`
-2. ensure registry route IDs use `trading` and `messaging`
+2. ensure registry metadata uses `trading` and `messaging` as the shared
+   capability IDs, including canonical route metadata declarations
 3. ensure contract schemas validate `capabilityId: 'trading' | 'messaging'`
-4. ensure derived ownership views expose `trading`, not `crypto-trading`
+4. ensure shared domain surfaces do not expose `crypto-trading` as a shared
+   capability ID
 
 Validation:
 
-1. targeted domain tests for registry, ownership, and contract types
-2. grep for shared `crypto-trading` literals in `packages/domain`
-3. `pnpm lint`
+1. add or update `packages/domain/src/capability-registry.test.ts` and
+   `packages/domain/src/capability-tool-contract.test.ts`
+2. run `pnpm test -- packages/domain/src/capability-registry.test.ts packages/domain/src/capability-tool-contract.test.ts`
+3. run `rg -n "crypto-trading" packages/domain/src/capability-registry.ts packages/domain/src/capability-tool-contract.ts`
+4. run `pnpm lint`
 
 ### T2. Convert ownership manifest to shared `trading`
 
@@ -69,130 +77,66 @@ Work:
 
 Validation:
 
-1. unit tests for manifest key-set equality with `KNOWN_AGENT_TOOL_NAMES`
-2. unit tests for exactly-one ownership
-3. `pnpm lint`
+1. add or update `packages/domain/src/tool-ownership.test.ts`
+2. run `pnpm test -- packages/domain/src/tool-ownership.test.ts`
+3. run `rg -n "crypto-trading" packages/domain/src/tool-ownership.ts`
+4. run `pnpm lint`
 
-### T3. Convert activation schema and persistence to shared `trading`
-
-**Status:** `not-started`
-
-Touchpoints:
-
-1. `packages/db` activation schema and repositories once added
-2. migration for `agent_capability_activations`
-3. API request validation for capability activation routes
-4. worker capability-activation consumers
-
-Work:
-
-1. accept `trading` and `messaging` as the shared durable capability IDs
-2. backfill `trading` for existing trading-skill agents instead of
-   `crypto-trading`
-3. keep messaging activation rules unchanged
-4. do not add shared per-market rows for `crypto`, `forex`, or `commodities`
-
-Validation:
-
-1. db migration tests for new and existing agents
-2. API tests for activation write and read paths
-3. worker tests for activation-gated visibility
-4. `pnpm lint`
-
-### T4. Keep shared control-plane routes canonical at `/capabilities/trading`
+### T3. Clarify foundational capability metadata boundaries
 
 **Status:** `not-started`
 
 Touchpoints:
 
-1. `apps/api/src/routes/capabilities/trading.ts`
-2. capability route registration and resolver wiring in `apps/api/src/routes/capabilities/`
-3. `apps/web/src/lib/api-client.ts`
-4. route and functional tests under `apps/api/src/__tests__/` and `tests/e2e/`
+1. `packages/domain/src/capability-registry.ts`
+2. `packages/domain/src/agent-presets.ts` or equivalent
+3. domain tests covering capability metadata and preset separation
 
 Work:
 
-1. keep `/capabilities/trading` as the canonical shared capability route
-2. do not introduce `/capabilities/crypto-trading` as the shared public route
-3. migrate response shape toward `capabilityId: 'trading'` plus
-   `runtimeFamily: 'trading'`
-4. retain temporary compatibility fields only where explicitly declared
+1. keep shared capability membership separate from preset or role metadata
+2. document and test that runtime binding families remain implementation-layer
+   requirements rather than shared product capability membership
+3. keep deeper trading classification out of shared capability metadata
+4. fail loudly if new shared metadata attempts to add `segment`, `market`, or
+   similar universal layers without a later active doc
 
 Validation:
 
-1. route tests for canonical trading paths
-2. functional tests for trading capability and positions routes
-3. web client tests for trading capability consumers
-4. grep for `/capabilities/crypto-trading` outside historical docs
-5. `pnpm lint`
+1. add or update `packages/domain/src/config/presets.test.ts` and any domain
+   metadata test that covers capability registry separation
+2. run `pnpm test -- packages/domain/src/config/presets.test.ts`
+3. run `rg -n "\\b(segment|market)\\b" packages/domain/src/capability-registry.ts packages/domain/src/agent-presets.ts`
+4. run `rg -n "crypto-trading" packages/domain/src/capability-registry.ts packages/domain/src/agent-presets.ts packages/domain/src/tool-ownership.ts`
+5. run `pnpm lint`
 
-### T5. Update cross-service trading contract naming
+## Stop And Escalate
 
-**Status:** `not-started`
+Stop and escalate instead of widening this task list when any of the following
+becomes necessary:
 
-Touchpoints:
-
-1. worker capability-invocation client when added
-2. trading capability service when added
-3. event naming docs and capability audit event publishers
-4. operator config schema for capability transport service keys
-
-Work:
-
-1. rename shared contract capability IDs from `crypto-trading` to `trading`
-2. rename service event names from `capability.crypto-trading.*` to
-   `capability.trading.*`
-3. rename transport config service key from `cryptoTrading` to `trading`
-4. keep any crypto-specific market classification inside trading-owned payloads
-   or internal docs only
-
-Validation:
-
-1. contract schema tests
-2. capability invocation integration tests
-3. config schema tests
-4. `pnpm lint`
-
-### T6. Align worker visibility and API resolver against shared `trading`
-
-**Status:** `not-started`
-
-Touchpoints:
-
-1. `apps/worker/src/runtime-tool-visibility.ts`
-2. worker capability resolver or visibility predicate modules when added
-3. API shared capability resolver when added
-
-Work:
-
-1. gate trading-owned tools on shared `trading` activation
-2. keep `send_message` implicit messaging rule unchanged
-3. ensure visibility logic never expects `crypto-trading` as a shared owner or
-   activation value
-
-Validation:
-
-1. worker visibility tests
-2. API capability resolver tests
-3. grep for `crypto-trading` in worker and API implementation modules
-4. `pnpm lint`
+1. activation persistence or durable capability-activation rows
+2. public API route registration, response migration, or web client route work
+3. worker visibility gating or capability-resolution behavior outside shared
+   domain metadata
+4. service-backed invocation clients, event naming, or transport config wiring
+5. any change that would add a shared universal market layer or reintroduce
+   `crypto-trading` as a shared capability ID
 
 ## Suggested Order
 
 1. T1 shared domain types
 2. T2 ownership manifest
-3. T3 activation schema and persistence
-4. T4 control-plane routes
-5. T6 worker visibility and API resolver
-6. T5 cross-service contract naming
+3. T3 foundational capability metadata boundaries
 
 ## Completion Check
 
 This task list is complete only when:
 
-1. shared code and public control-plane routes use `trading`, not
-   `crypto-trading`
-2. any remaining shared `crypto-trading` mentions in active docs exist only as
-   negative migration checks or guardrails, not as live identifiers
-3. tests cover routes, activation rows, and ownership manifest semantics
+1. shared domain metadata, foundational contract types, and ownership manifests
+   use `trading`, not `crypto-trading`
+2. any remaining shared `crypto-trading` mentions in active docs or code exist
+   only as negative guardrail checks or historical references, not as live
+   shared identifiers
+3. tests cover registry, ownership, and foundational contract semantics
 4. `pnpm lint` passes

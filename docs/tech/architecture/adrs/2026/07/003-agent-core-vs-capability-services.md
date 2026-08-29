@@ -9,7 +9,11 @@ ADR 002 established the product taxonomy:
 
 `capability -> family -> provider`
 
-The first product capabilities are `crypto-trading` and `messaging`.
+The first product capabilities are `trading` and `messaging`.
+
+This ADR uses `trading` as the shared product capability name. Deeper
+trading-domain language such as `crypto`, `forex`, and `commodities` belongs to
+the trading boundary, not the shared Agent Core vocabulary.
 
 That solves the naming problem, but it does not yet define the implementation
 boundary between:
@@ -21,7 +25,7 @@ The current platform already contains both kinds of logic:
 
 1. shared runtime concerns such as agent isolation, LLM turns, tool-call
    orchestration, memory, protocol envelopes, and runtime scheduling
-2. crypto-trading-specific concerns such as venue readiness, market data, decision
+2. trading-specific concerns such as venue readiness, market data, decision
    submission, risk enforcement, reconciliation, and execution
 3. messaging-specific concerns such as brokered user messaging, email sending,
    Telegram routing, and delivery tracking
@@ -35,10 +39,10 @@ The stable runtime boundary is already clear in
 
 The chat-session design direction also shows the need for a reusable core. A
 chat session should reuse the agent runtime, tool loop, and model pipeline
-without inheriting crypto-trading-centric behavior.
+without inheriting trading-centric behavior.
 
 Without an explicit boundary, the system drifts toward a trading-shaped core,
-where new capabilities are forced to fit crypto-trading assumptions or duplicate
+where new capabilities are forced to fit trading-specific assumptions or duplicate
 runtime machinery.
 
 ## Decision
@@ -52,7 +56,7 @@ The platform is split conceptually into two layers:
 
 This is both a logical and deployment boundary for isolated capabilities.
 
-For major product capabilities such as `crypto-trading` and `messaging`, the
+For major product capabilities such as `trading` and `messaging`, the
 platform requires true isolation from the start:
 
 1. each capability runs as a separate deployable service
@@ -79,7 +83,7 @@ Agent Core owns:
 
 Agent Core must be able to run:
 
-1. a crypto-trading agent
+1. a trading agent
 2. a chat-backed session
 3. a messaging-focused agent
 4. a future non-trading capability
@@ -159,11 +163,11 @@ For isolated capabilities, the deployment rule is equally strict:
 4. Agent Core and peer capabilities communicate through boundary contracts over
    service boundaries, not direct implementation reuse
 
-### 4. Crypto-trading is a capability service, not part of Agent Core
+### 4. Trading is a capability service, not part of Agent Core
 
-Crypto-trading-specific behavior must stay outside Agent Core.
+Trading-specific behavior must stay outside Agent Core.
 
-The crypto-trading capability service owns:
+The trading capability service owns:
 
 1. market data interpretation and trading context assembly
 2. provider and family mapping for trading providers
@@ -174,8 +178,13 @@ The crypto-trading capability service owns:
 6. trading-specific persistence, journaling, reconciliation, and execution
    state
 
-Agent Core may call crypto-trading tools and render trading context, but it must not
+Agent Core may call trading tools and render trading context, but it must not
 contain market execution logic.
+
+The trading capability may additionally define its own market-specific taxonomy
+such as `crypto`, `forex`, and `commodities`, and may host that language in
+trading-owned docs, contracts, or a separate repository. Agent Core does not
+need those terms as shared platform primitives.
 
 ### 5. Messaging is a capability service, not part of Agent Core
 
@@ -297,7 +306,7 @@ This means:
 In this ADR, the word **service** means both an ownership boundary and a
 deployment boundary for isolated capabilities.
 
-For `crypto-trading` and `messaging`, this means:
+For `trading` and `messaging`, this means:
 
 1. each capability is deployed separately from Agent Core
 2. each capability is deployed separately from other isolated capabilities
@@ -393,13 +402,13 @@ This ADR does not:
 ## Notes For The Next Steps
 
 This ADR is the architectural gate before implementation work that extracts
-crypto-trading as the first explicit capability.
+trading as the first explicit capability.
 
 The next implementation-oriented work should:
 
 1. register product capabilities in shared domain code
-2. expose crypto-trading through that registry first
+2. expose trading through that registry first
 3. keep trading-instance authority intact
-4. let messaging grow under the same boundary without inheriting crypto-trading logic
-5. establish separate deployable service boundaries for `crypto-trading` and
+4. let messaging grow under the same boundary without inheriting trading-only logic
+5. establish separate deployable service boundaries for `trading` and
    `messaging`

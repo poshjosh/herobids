@@ -78,10 +78,15 @@ A capability owns its own:
 - persistence boundary where durable state is required
 - provider and routing logic
 
-Examples of product capabilities include `crypto-trading` and `messaging`.
+Examples of product capabilities include `trading` and `messaging`.
 
 Capabilities are not the same thing as skills, roles, presets, tools, runtime
 binding families, or providers.
+
+The shared platform vocabulary stops at `capability -> family -> provider`.
+Deeper trading-specific taxonomy such as `crypto`, `forex`, and `commodities`
+belongs to trading-owned documentation and contracts, not the shared platform
+domain language.
 
 ---
 
@@ -92,7 +97,7 @@ shape or contract.
 
 Examples:
 - under `messaging`: `email`, `chat`, `inbox`
-- under `crypto-trading`: `swap`, `orderbook`
+- under `trading`: `swap`, `orderbook`
 
 Families are the middle level in the product taxonomy:
 
@@ -107,7 +112,7 @@ The concrete integration behind a capability family.
 Examples:
 - under `messaging/email`: `gmail`, `yahoo`
 - under `messaging/chat`: `telegram`, `whatsapp`
-- under `crypto-trading/orderbook`: `hyperliquid`, `bybit`
+- under `trading/orderbook`: `hyperliquid`, `bybit`
 
 Providers may map to different runtime binding models. That implementation
 detail does not change the product taxonomy.

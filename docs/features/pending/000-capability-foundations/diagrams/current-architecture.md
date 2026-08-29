@@ -68,7 +68,7 @@ C4Container
    check, no capability activation check, and no service health check.
 
 3. **No formal tool ownership.** Tools are grouped by source file (trading.ts,
-   bots.ts, etc.) but no metadata says "this tool belongs to crypto-trading."
+   bots.ts, etc.) but no metadata says "this tool belongs to trading."
    The `TOOL_CATALOG` has categories but categories are display labels, not
    architectural boundaries.
 

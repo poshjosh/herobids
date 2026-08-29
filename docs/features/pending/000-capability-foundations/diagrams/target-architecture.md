@@ -15,7 +15,7 @@ C4Container
   Container_Boundary(platform, "OpenAIdom Platform") {
 
     Container(api, "API (Hono)", "apps/api", "Agent CRUD, capability activation, canonical routes, health")
-    Container(web, "Web App", "apps/web", "SPA consuming canonical /capabilities/crypto-trading and /capabilities/messaging routes")
+    Container(web, "Web App", "apps/web", "SPA consuming canonical /capabilities/trading and /capabilities/messaging routes")
 
     Container_Boundary(agent_core, "Agent Core (apps/worker)") {
       Component(agent_runtime, "Agent Runtime", "agent.ts", "LLM turn loop, protocol, scheduling")
@@ -25,9 +25,9 @@ C4Container
       Component(general_tools, "General Tools", "tools/web-access.ts, tasks.ts, code.ts", "search_web, execute_code, etc.")
     }
 
-    Container_Boundary(crypto_trading_svc, "Crypto-Trading Service (apps/crypto-trading)") {
+    Container_Boundary(trading_svc, "Trading Service (apps/trading)") {
       Component(trading_endpoint, "Invocation Endpoint", "POST /internal/v1/capability-tools:invoke", "Validates contract, dispatches to tool handler")
-      Component(trading_tools, "Trading Tool Handlers", "All crypto-trading-owned tools", "submit_decision, create_bot, get_price, list_positions, ...")
+      Component(trading_tools, "Trading Tool Handlers", "All trading-owned tools", "submit_decision, create_bot, get_price, list_positions, ...")
       Component(trading_store, "Invocation Store", "capability_tool_invocations", "Idempotency, audit, terminal state")
       Component(trading_health, "Health", "/health/live, /health/ready", "Readiness = config + DB + venue connectivity")
     }
@@ -63,11 +63,11 @@ C4Container
   Rel(agent_runtime, visibility_predicate, "Which tools can the LLM see?")
   Rel(visibility_predicate, registry, "Ownership lookup")
   Rel(visibility_predicate, postgres, "Activation rows")
-  Rel(visibility_predicate, crypto_trading_svc, "Service health check")
+  Rel(visibility_predicate, trading_svc, "Service health check")
   Rel(visibility_predicate, messaging_svc, "Service health check")
 
   Rel(agent_runtime, invocation_client, "Invoke capability-owned tool")
-  Rel(invocation_client, crypto_trading_svc, "HTTPS + HMAC — private network")
+  Rel(invocation_client, trading_svc, "HTTPS + HMAC — private network")
   Rel(invocation_client, messaging_svc, "HTTPS + HMAC — private network")
   Rel(agent_runtime, core_tools, "Direct in-process dispatch")
   Rel(agent_runtime, general_tools, "Direct in-process dispatch")
@@ -86,7 +86,7 @@ C4Container
    messaging implementation modules. It dispatches capability-owned tools
    through the invocation client over the private network.
 
-2. **Capability services are independently deployable.** `crypto-trading` and
+2. **Capability services are independently deployable.** `trading` and
    `messaging` each have their own health endpoints, invocation stores, and
    provider connections. A venue outage degrades only the trading service.
 
@@ -102,6 +102,6 @@ C4Container
    table is the single source of truth. Skills request tools, activation
    enables the capability, both are required (two-key model).
 
-6. **Routes are canonical.** Public API uses `/capabilities/crypto-trading`
-   and `/capabilities/messaging`. Legacy `/capabilities/trading` remains as
-   a declared deprecation alias only.
+6. **Routes are canonical.** Shared public control-plane API uses
+  `/capabilities/trading` and `/capabilities/messaging`. Deeper trading-owned
+  route structure, if any, belongs inside the trading boundary.

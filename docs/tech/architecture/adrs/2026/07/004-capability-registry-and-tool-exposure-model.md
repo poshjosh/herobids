@@ -81,7 +81,7 @@ Each capability entry must describe:
 Illustrative shape:
 
 ```ts
-type ProductCapabilityId = 'crypto-trading' | 'messaging';
+type ProductCapabilityId = 'trading' | 'messaging';
 type CapabilityActivationMode = 'implicit' | 'explicit';
 
 interface CapabilityRegistryEntry {
@@ -115,6 +115,10 @@ interface CapabilityProviderEntry {
 The exact TypeScript shape may differ, but the contract must preserve those
 meanings.
 
+The shared registry stops at `family`. If a capability needs richer
+capability-specific classification, that classification belongs inside the
+capability boundary rather than in the shared registry shape by default.
+
 Provider lifecycle in the registry is static product metadata.
 
 Runtime availability is a separate enrichment contract and must distinguish at
@@ -131,13 +135,13 @@ provider whose lifecycle is `planned`, even if the registry already lists it.
 
 The initial registry must cover exactly two product capabilities:
 
-1. `crypto-trading`
+1. `trading`
 2. `messaging`
 
 Illustrative examples:
 
 ```text
-crypto-trading
+trading
   swap
     jupiter
     1inch
@@ -164,9 +168,9 @@ For canonical route identity, product capability IDs win.
 
 Examples:
 
-1. `/capabilities/crypto-trading` is the canonical public route identity
-2. `/capabilities/trading` may exist only as a declared legacy alias during
-   migration
+1. `/capabilities/trading` is the canonical shared control-plane route identity
+2. a deeper trading-owned public surface may define additional route structure
+   without renaming the shared capability ID
 3. canonical public APIs must not use runtime binding-family names as the
    durable product identifier
 
@@ -177,7 +181,7 @@ them in the first slice.
 
 Current compatibility examples:
 
-1. product capability `crypto-trading` maps to runtime binding family `trading`
+1. product capability `trading` maps to runtime binding family `trading`
 2. messaging provider `gmail` maps to runtime binding family `email`
 3. messaging providers `telegram` and `platform` may have no runtime binding
    family because they are brokered or internal today
@@ -202,7 +206,7 @@ Examples under the current design:
 2. Capability-owned:
    - `send_message`, `send_email` -> `messaging`
    - `submit_decision`, `find_instrument`, trading analytics and trading bot
-     lifecycle tools -> `crypto-trading`
+   lifecycle tools -> `trading`
 3. Skill-scoped general tools:
    - `search_web`, `browse_url`, `read_document`
    - task-management tools
@@ -306,7 +310,7 @@ Initial rule:
    messaging path, so `send_message` may remain available through the base skill
 2. provider-linked messaging actions such as `send_email` still require
    messaging activation plus the relevant provider or readiness state
-3. `crypto-trading` is explicitly activated, not implicit
+3. `trading` is explicitly activated, not implicit
 
 This prevents a capability-owned tool from appearing solely because a skill
 listed it, while still allowing platform-brokered user messaging to remain a
@@ -429,8 +433,8 @@ This ADR is the design gate before implementation work that:
 
 1. adds `packages/domain/src/capability-registry.ts`
 2. adds an exhaustive tool-ownership manifest typed against `AgentToolName`
-3. exposes `crypto-trading` and `messaging` from shared domain metadata
-4. maps `crypto-trading` to the existing runtime binding family `trading`
+3. exposes `trading` and `messaging` from shared domain metadata
+4. maps `trading` to the existing runtime binding family `trading`
 5. keeps messaging expressive even where runtime binding families do not exist
    yet for every provider
 6. defines canonical public capability route IDs and temporary legacy aliases

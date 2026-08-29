@@ -42,8 +42,9 @@ This doc does not include:
 1. [Capability Implementation Roadmap](./001-roadmap.md) fixes this document as
    the controlling taxonomy authority for the first executable slice.
 2. [tasks/001-shared-trading-taxonomy-implementation-tasks.md](./tasks/001-shared-trading-taxonomy-implementation-tasks.md)
-   implements this taxonomy in domain types, ownership, activation, and route
-   surfaces.
+   implements this taxonomy in shared domain metadata, ownership, and
+   foundational contract surfaces without pulling route migration, worker
+   gating, or service extraction into the first slice.
 
 ## Fixed Decisions
 
@@ -79,8 +80,9 @@ This taxonomy revision is ready for the first executable slice only when:
 2. active shared-platform docs keep `family` as the deepest shared taxonomy
    term
 3. deeper trading classification remains explicitly capability-owned
-4. the task list derived from this doc can drive route, activation, ownership,
-   and contract updates without needing a contradictory historical note
+4. the task list derived from this doc can drive shared domain, ownership, and
+   foundational contract updates without needing a contradictory historical
+   note
 
 ## Validation
 
@@ -90,9 +92,10 @@ This taxonomy revision is ready for the first executable slice only when:
    the shared capability ID target
 3. active docs in this feature do not promote `segment` or `market` into the
    shared platform taxonomy
-4. any remaining shared `crypto-trading` references in live code, shared
-   schemas, or public control-plane routes are retained only as negative
-   guardrail checks or in historical docs
+4. any remaining shared `crypto-trading` references in active code or shared
+   schemas are retained only as negative guardrail checks or in historical docs
+5. route migration, activation persistence, worker visibility gating, and
+   service-backed invocation naming remain deferred to their later phase docs
 
 ## Shared Capability Examples
 

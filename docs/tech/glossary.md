@@ -55,7 +55,7 @@ One-hundredth of a percentage point (0.01%). 100 BPS = 1%. Used throughout the s
 ## C
 
 ### Capability
-A separately deployable isolated product or service domain boundary. A capability owns its own public contracts, domain-specific configuration, runtime service boundary, and persistence boundary where durable state is required. `crypto-trading` and `messaging` are product capabilities.
+A separately deployable isolated product or service domain boundary. A capability owns its own public contracts, domain-specific configuration, runtime service boundary, and persistence boundary where durable state is required. `trading` and `messaging` are product capabilities.
 
 ### Connection
 A user-owned platform link to an external provider or system. Carries a user-facing label and may reference one Credential. Connections are capability-agnostic — they represent that something external has been linked, not what a specific agent is allowed to do with it.
@@ -98,6 +98,10 @@ A platform rule that may block or constrain trading because proceeding would be 
 
 ### Family
 A capability-specific grouping of providers that share a common interaction shape or contract. Families are the middle level in the product taxonomy: `capability -> family -> provider`.
+
+The shared platform vocabulary stops at `family`. Capability-specific deeper
+taxonomy, such as trading market classifications, belongs inside the owning
+capability's documentation or contracts rather than the shared glossary.
 
 ---
 

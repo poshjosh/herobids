@@ -2,7 +2,7 @@
 
 **Status:** ready  
 **Created:** 2026-07-18  
-**Parent roadmap:** [Pending Program Master Roadmap](../000-program/001-master-roadmap.md)  
+**Parent roadmap:** [Capability Foundations Program Master Roadmap](./program/001-master-roadmap.md)
 **Normative inputs:** [ADR 002](../../../tech/architecture/adrs/2026/07/002-capability-model-and-registry.md), [ADR 003](../../../tech/architecture/adrs/2026/07/003-agent-core-vs-capability-services.md), [ADR 004](../../../tech/architecture/adrs/2026/07/004-capability-registry-and-tool-exposure-model.md)
 
 ## Purpose
@@ -42,7 +42,7 @@ This roadmap does not include:
 
 ## Dependencies
 
-1. [Pending Program Master Roadmap](../000-program/001-master-roadmap.md)
+1. [Capability Foundations Program Master Roadmap](./program/001-master-roadmap.md)
    fixes this feature's place in the staged program.
 2. [ADR 002](../../../tech/architecture/adrs/2026/07/002-capability-model-and-registry.md),
    [ADR 003](../../../tech/architecture/adrs/2026/07/003-agent-core-vs-capability-services.md),
@@ -86,7 +86,12 @@ identifiers, or promote a supporting reference into a controlling doc silently.
 
 ## Child Docs And Sequence
 
-Executable phases:
+Current executable entry slice:
+
+1. [012-shared-capability-taxonomy-revision.md](./012-shared-capability-taxonomy-revision.md)
+2. [tasks/001-shared-trading-taxonomy-implementation-tasks.md](./tasks/001-shared-trading-taxonomy-implementation-tasks.md)
+
+Later executable phases in dependency order after the current ready slice:
 
 1. [002-capability-foundations.md](./002-capability-foundations.md)
 2. [003-capability-resolution-and-route-migration.md](./003-capability-resolution-and-route-migration.md)
@@ -97,20 +102,15 @@ Executable phases:
 
 Supporting references for later phase detail:
 
-7. [008-cross-service-capability-execution-design.md](./008-cross-service-capability-execution-design.md)
-8. [009-initial-capability-registry-and-tool-ownership-manifest.md](./009-initial-capability-registry-and-tool-ownership-manifest.md)
-9. [010-capability-activation-model.md](./010-capability-activation-model.md)
-10. [011-capability-route-and-response-migration-manifest.md](./011-capability-route-and-response-migration-manifest.md)
-
-First ready implementation slice:
-
-11. [012-shared-capability-taxonomy-revision.md](./012-shared-capability-taxonomy-revision.md)
-12. [tasks/001-shared-trading-taxonomy-implementation-tasks.md](./tasks/001-shared-trading-taxonomy-implementation-tasks.md)
+1. [008-cross-service-capability-execution-design.md](./008-cross-service-capability-execution-design.md)
+2. [009-initial-capability-registry-and-tool-ownership-manifest.md](./009-initial-capability-registry-and-tool-ownership-manifest.md)
+3. [010-capability-activation-model.md](./010-capability-activation-model.md)
+4. [011-capability-route-and-response-migration-manifest.md](./011-capability-route-and-response-migration-manifest.md)
 
 Historical context only:
 
-13. [archive/002-shared-trading-taxonomy-delta.md](./archive/002-shared-trading-taxonomy-delta.md)
-14. [archive/003-taxonomy-impact-map.md](./archive/003-taxonomy-impact-map.md)
+1. [archive/002-shared-trading-taxonomy-delta.md](./archive/002-shared-trading-taxonomy-delta.md)
+2. [archive/003-taxonomy-impact-map.md](./archive/003-taxonomy-impact-map.md)
 
 ## Acceptance Criteria
 
@@ -131,7 +131,7 @@ This roadmap is fit for implementation handoff only when:
 1. the folder guide in [000-README.md](./000-README.md) points to the same
    first executable slice and classifies historical material consistently
 2. the playbook in
-   [../000-program/003-spec-agent-playbook.md](../000-program/003-spec-agent-playbook.md)
+   [program/003-spec-agent-playbook.md](./program/003-spec-agent-playbook.md)
    routes an implementation agent through the same current path
 3. the first task list in `tasks/` names only ready controlling docs as
    parents and does not require 008 through 011 to enter the slice

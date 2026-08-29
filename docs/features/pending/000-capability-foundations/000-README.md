@@ -16,6 +16,9 @@ activation, tool ownership, route alignment, and capability-service extraction.
    [002](./002-capability-foundations.md) through
    [011](./011-capability-route-and-response-migration-manifest.md)
 4. supporting diagrams under [diagrams](./diagrams/current-architecture.md)
+5. local coordination, validation, and handoff docs under
+   [program/000-document-tree.md](./program/000-document-tree.md) when working
+   on the documentation system or implementation entry flow
 
 ## Historical Context
 
@@ -64,6 +67,10 @@ platform domain language by default.
 - [diagrams/current-architecture.md](./diagrams/current-architecture.md):
    canonical diagram entrypoint for the active architecture context; other
    diagrams are supporting references when explicitly needed
+- [program/](./program/000-document-tree.md): feature-local coordination,
+   handoff, validation, and implementation-entry docs kept under the same roof
+   as Capability Foundations; supporting authority for navigation and handoff,
+   not the primary feature spec path
 - [archive/002-shared-trading-taxonomy-delta.md](./archive/002-shared-trading-taxonomy-delta.md):
    historical transition rationale retained for history
 - [archive/003-taxonomy-impact-map.md](./archive/003-taxonomy-impact-map.md):

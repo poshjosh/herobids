@@ -44,7 +44,7 @@ flowchart LR
 
 - No ownership check — any skill can expose any tool
 - No capability activation check — a trading skill exposes trading tools
-  even if crypto-trading is not activated for the agent
+  even if trading is not activated for the agent
 - No service health check — tools appear visible even if the backing
   service is unreachable
 - No readiness check at visibility time — readiness is checked at call

@@ -7,7 +7,7 @@
 
 OpenAIdom is no longer only a trading product. The platform direction is an
 agents-as-a-service model where multiple isolated capabilities can coexist as
-separate deployable services, starting with crypto-trading and messaging.
+separate deployable services, starting with trading and messaging.
 
 The current codebase uses the word `capability` for several different things:
 
@@ -55,14 +55,14 @@ when product metadata for that capability is described centrally in the shared
 registry.
 
 The word **family** is intentionally capability-agnostic. It works for
-messaging and crypto-trading without introducing separate naming schemes such as
+messaging and trading without introducing separate naming schemes such as
 "delivery family" for one capability and something else for another.
 
 ### 2. First product capabilities
 
 The first product capabilities are:
 
-1. `crypto-trading`
+1. `trading`
 2. `messaging`
 
 Both are first-class isolated capabilities and therefore must be implemented as
@@ -93,12 +93,12 @@ Interpretation:
 
 This is the product model even when implementation details are transitional.
 
-### 4. Crypto-trading uses the same model
+### 4. Trading uses the same shared model
 
-Crypto-trading follows the same structure:
+Trading follows the same structure:
 
 ```text
-crypto-trading
+trading
   swap
     jupiter
     1inch
@@ -109,6 +109,10 @@ crypto-trading
 
 This is the primary reason to prefer the middle term **family**. It remains
 usable across capabilities.
+
+The shared platform vocabulary stops here. Deeper trading-domain terms such as
+`crypto`, `forex`, and `commodities` belong to the trading boundary rather than
+the shared platform taxonomy.
 
 ### 5. Runtime binding families remain separate from product taxonomy
 
@@ -132,7 +136,7 @@ This means:
    connection-backed runtime binding families
 3. the registry may describe future providers without pretending that every
    provider already has the same runtime binding semantics
-4. `crypto-trading` may exist as the product capability while the current
+4. `trading` may exist as the product capability while the current
    runtime binding family remains `trading` for compatibility with the existing
    implementation
 
@@ -189,10 +193,10 @@ avoids schema churn.
 ### Positive
 
 1. The platform gets one simple product taxonomy that can grow beyond the
-   current crypto-trading implementation.
+   current crypto-specific implementation.
 2. Messaging no longer has to choose between `email` and `telegram` as the
    top-level concept; both sit under `messaging`.
-3. The same model works for crypto-trading and messaging.
+3. The same model works for trading and messaging.
 4. Future providers can be added without redefining the product hierarchy.
 5. Product language becomes easier to align across docs, UI, API, and planning.
 
@@ -217,6 +221,8 @@ avoids schema churn.
 6. Presets and roles must not be described as capabilities.
 7. Canonical public capability route IDs must use product capability IDs.
    Runtime binding-family names may appear only as explicit legacy aliases.
+8. Trading-specific sub-taxonomy belongs in trading-owned docs or contracts,
+   not in the shared platform domain language by default.
 
 ## Explicit Non-Goals
 
@@ -234,7 +240,7 @@ This ADR establishes the vocabulary needed for subsequent work:
 
 1. agent-core vs capability-services boundary
 2. capability registry structure and exposure model
-3. crypto-trading extraction as the first implemented capability
+3. trading extraction as the first implemented capability
 4. messaging architecture and document handling
 
 The next design steps should build on this taxonomy rather than reopening it.

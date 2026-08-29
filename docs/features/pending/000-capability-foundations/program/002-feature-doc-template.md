@@ -67,6 +67,9 @@ This section must:
 1. list the `002+` child docs in reading and execution order
 2. distinguish active executable child docs from supporting inputs
 3. link to `tasks/` only for implementation-ready slices
+4. make any intentional legacy-numbering exception explicit when a
+   later-numbered active child doc is the current executable slice and
+   lower-numbered root docs remain later phases or supporting references
 
 ## Middle-Level Inheritance Rules
 

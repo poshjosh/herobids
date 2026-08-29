@@ -13,7 +13,7 @@ stateDiagram-v2
   state "Phase 2\nFoundations" as p2
   state "Phase 3\nResolution &\nRoute Migration" as p3
   state "Phase 4\nWorker Visibility\nEnforcement" as p4
-  state "Phase 5\nCrypto-Trading\nExtraction" as p5
+  state "Phase 5\nTrading\nExtraction" as p5
   state "Phase 6\nMessaging\nExtraction" as p6
   state "Phase 7\nNaming\nCleanup" as p7
   state "Target State" as target
@@ -53,7 +53,7 @@ stateDiagram-v2
   end note
 
   note right of p5
-    crypto-trading service
+    trading service
     deployed separately
     HMAC-signed invocations
   end note
@@ -76,7 +76,7 @@ stateDiagram-v2
 ```mermaid
 flowchart TB
   subgraph "Gate 1: Foundations Complete"
-    g1_registry[Shared registry exists<br/>and exports crypto-trading + messaging]
+    g1_registry[Shared registry exists<br/>and exports trading + messaging]
     g1_ownership[Exhaustive ownership manifest<br/>key set === KNOWN_AGENT_TOOL_NAMES]
     g1_contract[Cross-service contract types<br/>compile and are importable]
     g1_presets[Preset/role metadata<br/>conceptually separated from capabilities]
@@ -85,7 +85,7 @@ flowchart TB
 
   subgraph "Gate 2: Resolution Complete"
     g2_resolver[Shared capability resolver<br/>consumed by API surfaces]
-    g2_routes[Canonical route IDs exist<br/>/capabilities/crypto-trading<br/>/capabilities/messaging]
+    g2_routes[Canonical route IDs exist<br/>/capabilities/trading<br/>/capabilities/messaging]
     g2_aliases[Route alias policy explicit<br/>/capabilities/trading is declared alias]
     g2_lifecycle[Provider lifecycle enrichment<br/>distinct from service health and readiness]
     g2_activation[Activation follows doc 010<br/>routes follow doc 011]
@@ -98,11 +98,11 @@ flowchart TB
     g3_activation_src[Activation resolved from<br/>durable DB source only]
   end
 
-  subgraph "Gate 4: Crypto-Trading Extracted"
-    g4_invocation[All crypto-trading tools<br/>invoke through stable abstraction]
+  subgraph "Gate 4: Trading Extracted"
+    g4_invocation[All trading tools<br/>invoke through stable abstraction]
     g4_security[Auth, idempotency, deadlines,<br/>typed failures are real]
     g4_authority[Trading-instance authority<br/>preserved behind service]
-    g4_complete[Every tool in doc 009<br/>executes through service —<br/>no partial slice]
+    g4_complete[Every trading-owned tool in doc 009<br/>executes through service —<br/>no partial slice]
   end
 
   subgraph "Gate 5: Messaging Extracted"
@@ -125,7 +125,7 @@ flowchart TB
 
 ## What Exists At Each Phase
 
-| Phase | packages/domain | apps/worker | apps/api | apps/crypto-trading | apps/messaging | DB |
+| Phase | packages/domain | apps/worker | apps/api | apps/trading | apps/messaging | DB |
 |-------|----------------|-------------|----------|--------------------|-----------------|----|
 | Current | tools.ts, skills.ts | All tools in-process, skill visibility | /capabilities/trading (hardcoded) | - | - | No activation table |
 | After Phase 2 | + registry, ownership, contract | Unchanged | Unchanged | - | - | Unchanged |
@@ -162,7 +162,7 @@ gantt
     Phase 4 — Worker Gating       :p4, 3, 5
 
   section Extraction
-    Phase 5 — Crypto-Trading      :crit, p5, 5, 9
+    Phase 5 — Trading             :crit, p5, 5, 9
     Phase 6 — Messaging           :p6, 9, 12
 
   section Cleanup

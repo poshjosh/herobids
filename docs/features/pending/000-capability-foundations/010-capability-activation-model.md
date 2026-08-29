@@ -1,15 +1,90 @@
 # Capability Activation Model
 
-**Status:** proposed  
+**Status:** draft
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)  
-**Depends on:** [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md)
+**Prerequisite:** [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md)
 
 ## Purpose
 
 Define the durable, authoritative state that activates a product capability for
 an agent. Product capability activation is distinct from a resolved skill,
 runtime binding family, connection readiness, and `capabilityMode`.
+
+## Scope
+
+This doc includes:
+
+1. the authoritative activation state and persistence model for product
+   capabilities
+2. the API write lifecycle, migration rules, resolver inputs, and runtime
+   propagation behavior for activation
+3. the explicit activation predicates for `trading`, `send_message`, and
+   `send_email`
+
+This doc does not include:
+
+1. shared capability taxonomy design
+2. capability-service transport or extraction mechanics
+3. public route compatibility policy outside activation endpoints
+
+## Non-Goals
+
+1. Do not infer activation from `capabilityMode`, connections, bots, or past
+   trades.
+2. Do not let resolved skills alone activate a product capability.
+3. Do not collapse provider readiness or service health into activation state.
+
+## Dependencies
+
+1. [Capability Implementation Roadmap](./001-roadmap.md) keeps this doc as an
+   active supporting reference for capability resolution, worker visibility,
+   and messaging readiness behavior.
+2. [009-initial-capability-registry-and-tool-ownership-manifest.md](./009-initial-capability-registry-and-tool-ownership-manifest.md)
+   defines the capability IDs and ownership data this activation model uses.
+3. [003-capability-resolution-and-route-migration.md](./003-capability-resolution-and-route-migration.md),
+   [004-worker-tool-visibility-enforcement.md](./004-worker-tool-visibility-enforcement.md),
+   and [006-messaging-capability-extraction.md](./006-messaging-capability-extraction.md)
+   consume this model directly.
+
+## Fixed Decisions
+
+1. The authoritative state is the `agent_capability_activations` table.
+2. Only registered product capability IDs may be written.
+3. `UnifiedAgentConfig.capabilityMode` does not read from or write to
+   activation state.
+4. `trading` activation is explicit, while `send_message` retains its explicit
+   documented implicit platform-inbox rule.
+5. `send_email` requires explicit messaging activation plus ready email
+   binding.
+
+## Open Latitude
+
+Implementation may choose the following without escalation, as long as the
+fixed decisions, dependencies, acceptance criteria, and validation still hold:
+
+1. exact repository boundaries for activation writes and reload events
+2. event payload shape beyond the required identity and version fields
+3. test placement across db, API, and worker suites
+
+## Acceptance Criteria
+
+This supporting reference is fit for implementation use only when:
+
+1. the activation authority, write lifecycle, and resolver predicate are
+   explicit and mutually consistent
+2. explicit activation, implicit messaging, and readiness-gated email behavior
+   are all defined without overlap
+3. migration behavior for existing agents is explicit
+4. required verification is specific enough to validate later resolution and
+   worker-gating phases
+
+## Validation
+
+1. validate the checks listed under `## Required Verification`
+2. confirm later phase docs that reference activation do not infer activation
+   from `capabilityMode`, connections, or skills alone
+3. keep `pnpm lint` as the final repo-wide validation gate for any touched code
 
 ## Authority And Persistence
 
@@ -38,7 +113,7 @@ must not read from or write to this table.
 
 | Capability | Activation mode | Active when | Inactive when |
 | --- | --- | --- | --- |
-| `crypto-trading` | explicit | the agent's `crypto-trading` activation row is enabled | no row exists or the row is disabled |
+| `trading` | explicit | the agent's `trading` activation row is enabled | no row exists or the row is disabled |
 | `messaging` | implicit for platform inbox | the requested tool is `send_message` or `publish_artifact` and the platform inbox rule applies | the session has no brokered platform messaging surface |
 | `messaging` | explicit provider action | the messaging row is enabled and tool-specific provider readiness is satisfied | no enabled row or readiness is not satisfied |
 
@@ -76,7 +151,7 @@ not claim readiness merely because activation succeeded.
 ## Migration And Existing Agents
 
 The database migration creates the table with no implicit enabled rows. A
-follow-up data migration enables `crypto-trading` only for an existing agent
+follow-up data migration enables `trading` only for an existing agent
 whose assigned skill revision declares runtime binding family `trading`. The
 migration writes `updated_by_actor_type: 'system'` and an audit record. It does
 not infer activation from a connection alone, `capabilityMode`, a bot, or a
@@ -84,7 +159,7 @@ past trade.
 
 This preserves the intent of existing trading-skill agents while making all
 future activation decisions explicit. Agents without such a skill begin with
-crypto trading inactive.
+trading inactive.
 
 ## Resolver Inputs And Predicate
 
@@ -135,7 +210,7 @@ Disabling a capability:
 Tests must prove that:
 
 1. a trading skill alone cannot expose a trading-owned tool;
-2. an enabled crypto-trading activation without a requesting skill does not
+2. an enabled trading activation without a requesting skill does not
    expose a trading tool;
 3. an enabled activation plus a requesting skill exposes the tool only when
    the relevant readiness and service-health conditions hold;
