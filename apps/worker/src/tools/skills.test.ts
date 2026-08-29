@@ -103,7 +103,11 @@ describe('list_skills', () => {
     const result = await listSkills.execute({}, ctx);
 
     expect(result.success).toBe(true);
-    expect(result.data).toEqual({ assigned, available });
+    expect(result.data).toEqual({
+      assigned,
+      available,
+      hint: 'For capabilities not listed here, use search_skills to search both platform skills and external skills discoverable through skills.sh.',
+    });
   });
 
   it('surfaces dependsOn field in both assigned and available arrays', async () => {
@@ -513,6 +517,185 @@ describe('add_skills', () => {
     expect(result.success).toBe(false);
     expect(result.errorCode).toBe('broker.malformed_reply');
   });
+
+  // ── missingDependencies after add ─────────────────────────────────────
+
+  describe('missingDependencies', () => {
+    it('omits missingDependencies when all dependencies are satisfied', async () => {
+      const onSkillsChanged = vi.fn(async () => ['skill-1', 'dep-a', 'dep-b']);
+      const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+      const ctx = makeCtx({
+        onSkillsChanged,
+        redis: makeRedisWithReply(reply),
+        skillOps: makeSkillOps({
+          listAssigned: vi.fn(async () => [
+            { id: 'skill-1', name: 'Trading', description: 'Trade', dependsOn: ['dep-a', 'dep-b'] },
+          ]),
+        }),
+      });
+
+      const result = await addSkills.execute({ skillIds: ['skill-1'] }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as Record<string, unknown>;
+      expect(data.missingDependencies).toBeUndefined();
+    });
+
+    it('includes missingDependencies when some dependencies are not active', async () => {
+      const onSkillsChanged = vi.fn(async () => ['skill-1']);
+      const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+      const ctx = makeCtx({
+        onSkillsChanged,
+        redis: makeRedisWithReply(reply),
+        skillOps: makeSkillOps({
+          listAssigned: vi.fn(async () => [
+            { id: 'skill-1', name: 'Trading', description: 'Trade', dependsOn: ['dep-a', 'dep-b'] },
+          ]),
+        }),
+      });
+
+      const result = await addSkills.execute({ skillIds: ['skill-1'] }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as Record<string, unknown>;
+      expect(data.missingDependencies).toEqual([
+        { skillId: 'dep-a', requiredBy: 'skill-1' },
+        { skillId: 'dep-b', requiredBy: 'skill-1' },
+      ]);
+    });
+
+    it('skips missingDependencies computation when skillOps is not available', async () => {
+      const onSkillsChanged = vi.fn(async () => ['skill-1']);
+      const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+      const ctx = makeCtx({
+        onSkillsChanged,
+        redis: makeRedisWithReply(reply),
+        skillOps: undefined,
+      });
+
+      const result = await addSkills.execute({ skillIds: ['skill-1'] }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as Record<string, unknown>;
+      expect(data.missingDependencies).toBeUndefined();
+      expect(data.added).toEqual(['skill-1']);
+    });
+
+    it('fails silently when skillOps.listAssigned throws during dependency check', async () => {
+      const onSkillsChanged = vi.fn(async () => ['skill-1']);
+      const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+      const ctx = makeCtx({
+        onSkillsChanged,
+        redis: makeRedisWithReply(reply),
+        skillOps: makeSkillOps({
+          listAssigned: vi.fn(async () => { throw new Error('DB connection lost'); }),
+        }),
+      });
+
+      const result = await addSkills.execute({ skillIds: ['skill-1'] }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as Record<string, unknown>;
+      // Dependency check failed silently — no missingDependencies in output
+      expect(data.missingDependencies).toBeUndefined();
+      expect(data.added).toEqual(['skill-1']);
+      expect(data.activeSkills).toEqual(['skill-1']);
+    });
+
+    it('handles multiple added skills with overlapping unmet dependencies', async () => {
+      const onSkillsChanged = vi.fn(async () => ['skill-a', 'skill-b']);
+      const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-a', 'skill-b'] });
+      const ctx = makeCtx({
+        onSkillsChanged,
+        redis: makeRedisWithReply(reply),
+        skillOps: makeSkillOps({
+          listAssigned: vi.fn(async () => [
+            { id: 'skill-a', name: 'A', description: 'Skill A', dependsOn: ['dep-shared', 'dep-only-a'] },
+            { id: 'skill-b', name: 'B', description: 'Skill B', dependsOn: ['dep-shared'] },
+          ]),
+        }),
+      });
+
+      const result = await addSkills.execute({ skillIds: ['skill-a', 'skill-b'] }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as Record<string, unknown>;
+      const missing = data.missingDependencies as Array<{ skillId: string; requiredBy: string }>;
+      expect(missing).toBeDefined();
+      // dep-shared is unmet for both skill-a and skill-b; dep-only-a is unmet for skill-a only
+      expect(missing).toEqual(expect.arrayContaining([
+        { skillId: 'dep-shared', requiredBy: 'skill-a' },
+        { skillId: 'dep-only-a', requiredBy: 'skill-a' },
+        { skillId: 'dep-shared', requiredBy: 'skill-b' },
+      ]));
+      expect(missing).toHaveLength(3);
+    });
+
+    it('skips added skill not found in assigned list (no dependsOn to check)', async () => {
+      const onSkillsChanged = vi.fn(async () => ['skill-1']);
+      const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+      const ctx = makeCtx({
+        onSkillsChanged,
+        redis: makeRedisWithReply(reply),
+        skillOps: makeSkillOps({
+          // listAssigned returns a different skill — 'skill-1' is not in the list
+          listAssigned: vi.fn(async () => [
+            { id: 'skill-other', name: 'Other', description: 'Other skill', dependsOn: ['dep-x'] },
+          ]),
+        }),
+      });
+
+      const result = await addSkills.execute({ skillIds: ['skill-1'] }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as Record<string, unknown>;
+      // skill-1 not found in assigned → no dependency entries emitted
+      expect(data.missingDependencies).toBeUndefined();
+    });
+
+    it('only reports dependencies that are not in the activeSkills set', async () => {
+      const onSkillsChanged = vi.fn(async () => ['skill-1', 'dep-a']);
+      const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+      const ctx = makeCtx({
+        onSkillsChanged,
+        redis: makeRedisWithReply(reply),
+        skillOps: makeSkillOps({
+          listAssigned: vi.fn(async () => [
+            { id: 'skill-1', name: 'Trading', description: 'Trade', dependsOn: ['dep-a', 'dep-b'] },
+          ]),
+        }),
+      });
+
+      const result = await addSkills.execute({ skillIds: ['skill-1'] }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as Record<string, unknown>;
+      // dep-a is active, dep-b is not → only dep-b reported
+      expect(data.missingDependencies).toEqual([
+        { skillId: 'dep-b', requiredBy: 'skill-1' },
+      ]);
+    });
+
+    it('omits missingDependencies when skill has empty dependsOn', async () => {
+      const onSkillsChanged = vi.fn(async () => ['skill-1']);
+      const reply = makeBrokerReply({ action: 'add', skillIds: ['skill-1'] });
+      const ctx = makeCtx({
+        onSkillsChanged,
+        redis: makeRedisWithReply(reply),
+        skillOps: makeSkillOps({
+          listAssigned: vi.fn(async () => [
+            { id: 'skill-1', name: 'Simple', description: 'No deps', dependsOn: [] },
+          ]),
+        }),
+      });
+
+      const result = await addSkills.execute({ skillIds: ['skill-1'] }, ctx);
+
+      expect(result.success).toBe(true);
+      const data = result.data as Record<string, unknown>;
+      expect(data.missingDependencies).toBeUndefined();
+    });
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -625,6 +808,27 @@ describe('remove_skills', () => {
 
     expect(result.success).toBe(false);
     expect(result.errorCode).toBe('broker.malformed_reply');
+  });
+
+  it('never computes missingDependencies even when skillOps is available', async () => {
+    const listAssigned = vi.fn(async () => [
+      { id: 'skill-1', name: 'Trading', description: 'Trade', dependsOn: ['dep-missing'] },
+    ]);
+    const onSkillsChanged = vi.fn(async () => ['skill-1']);
+    const reply = makeBrokerReply({ action: 'remove', skillIds: ['skill-1'] });
+    const ctx = makeCtx({
+      onSkillsChanged,
+      redis: makeRedisWithReply(reply),
+      skillOps: makeSkillOps({ listAssigned }),
+    });
+
+    const result = await removeSkills.execute({ skillIds: ['skill-1'] }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.missingDependencies).toBeUndefined();
+    // listAssigned should NOT be called for dependency check during remove
+    expect(listAssigned).not.toHaveBeenCalled();
   });
 });
 
@@ -1103,7 +1307,7 @@ describe('DATABASE_DEPENDENT_TOOLS includes skill tools', () => {
   // will properly degrade skill tools when database goes offline.
   // The actual degradation behavior is tested in runtime-tool-visibility.test.ts.
 
-  it.each(['list_skills', 'add_skills', 'remove_skills'])(
+  it.each(['list_skills', 'add_skills', 'remove_skills', 'search_skills'])(
     '%s is in DATABASE_DEPENDENT_TOOLS',
     async (toolName) => {
       // Dynamic import to avoid coupling test file ordering

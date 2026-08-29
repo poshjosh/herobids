@@ -295,7 +295,7 @@ Implementation notes:
 
 ---
 
-## Step 8 — Worker: implement `search_skills` with local search + skills.sh discovery [PENDING]
+## Step 8 — Worker: implement `search_skills` with local search + skills.sh discovery [DONE]
 
 **File:** `apps/worker/src/tools/skills.ts`
 

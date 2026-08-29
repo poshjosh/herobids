@@ -38,7 +38,11 @@ const listSkillsTool: AgentTool = {
 
       return {
         success: true,
-        data: { assigned, available },
+        data: {
+          assigned,
+          available,
+          hint: 'For capabilities not listed here, use search_skills to search both platform skills and external skills discoverable through skills.sh.',
+        },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown error';
@@ -128,12 +132,41 @@ async function executeSkillMutation(
     if (ctx.onSkillsChanged) {
       try {
         const activeSkills = await ctx.onSkillsChanged();
+
+        // Compute missing dependencies for add action
+        let missingDependencies: Array<{ skillId: string; requiredBy: string }> | undefined;
+        if (action === 'add' && ctx.skillOps) {
+          try {
+            const assignedSkills = await ctx.skillOps.listAssigned();
+            const activeSet = new Set(activeSkills);
+            const missing: Array<{ skillId: string; requiredBy: string }> = [];
+
+            for (const addedId of result.skillIds) {
+              const skill = assignedSkills.find(s => s.id === addedId);
+              if (skill) {
+                for (const dep of skill.dependsOn) {
+                  if (!activeSet.has(dep)) {
+                    missing.push({ skillId: dep, requiredBy: addedId });
+                  }
+                }
+              }
+            }
+
+            if (missing.length > 0) {
+              missingDependencies = missing;
+            }
+          } catch (err) {
+            logger.warn({ err, agentId: ctx.agentId }, 'Failed to compute missing dependencies after add_skills');
+          }
+        }
+
         return {
           success: true,
           data: {
             [responseKey]: result.skillIds,
             activeSkills,
             ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
+            ...(missingDependencies ? { missingDependencies } : {}),
           },
         };
       } catch (reloadErr) {

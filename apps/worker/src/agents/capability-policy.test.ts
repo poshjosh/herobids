@@ -159,3 +159,106 @@ describe('buildCapabilityGrants — manage_agent_skills', () => {
     }));
   });
 });
+
+// ── search_skills in DEFAULT_CAPABILITY_GRANTS ───────────────────────────
+
+describe('DEFAULT_CAPABILITY_GRANTS — search_skills', () => {
+  it('includes search_skills as a direct, enabled grant', () => {
+    const engine = buildCapabilityPolicyEngine();
+    const grant = engine.getGrant('search_skills');
+
+    expect(grant).toBeDefined();
+    expect(grant).toEqual(expect.objectContaining({
+      capability: 'search_skills',
+      tier: 'direct',
+      enabled: true,
+    }));
+  });
+
+  it('has correct rate limits for search_skills', () => {
+    const engine = buildCapabilityPolicyEngine();
+    const grant = engine.getGrant('search_skills');
+
+    expect(grant!.limits).toEqual(expect.objectContaining({
+      maxPerMinute: 10,
+      maxConcurrent: 2,
+      timeoutMs: 20_000,
+    }));
+  });
+
+  it('allows access to search_skills with default grants', () => {
+    const engine = buildCapabilityPolicyEngine();
+    const denied = engine.checkAccess('search_skills', 'agent-1', 'session-1');
+    expect(denied).toBeUndefined(); // No denial reason → access allowed
+  });
+
+  it('allows per-agent override of search_skills', () => {
+    const engine = buildCapabilityPolicyEngine({
+      search_skills: {
+        enabled: false,
+        tier: 'direct',
+        limits: { maxPerMinute: 3 },
+      },
+    });
+
+    const grant = engine.getGrant('search_skills');
+    expect(grant).toEqual(expect.objectContaining({
+      capability: 'search_skills',
+      enabled: false,
+      tier: 'direct',
+    }));
+    expect(grant!.limits).toEqual(expect.objectContaining({
+      maxPerMinute: 3,
+      maxConcurrent: 2,   // inherited from default
+      timeoutMs: 20_000,  // inherited from default
+    }));
+  });
+
+  it('denies access when search_skills is disabled via override', () => {
+    const engine = buildCapabilityPolicyEngine({
+      search_skills: {
+        enabled: false,
+        tier: 'direct',
+      },
+    });
+
+    const denied = engine.checkAccess('search_skills', 'agent-1', 'session-1');
+    expect(denied).toBe('capability_disabled');
+  });
+});
+
+describe('buildCapabilityGrants — search_skills', () => {
+  it('includes search_skills in default grants when no overrides', () => {
+    const grants = buildCapabilityGrants();
+    const grant = grants.find((g) => g.capability === 'search_skills');
+
+    expect(grant).toBeDefined();
+    expect(grant).toEqual(expect.objectContaining({
+      capability: 'search_skills',
+      tier: 'direct',
+      enabled: true,
+    }));
+  });
+
+  it('merges per-agent search_skills override with default limits', () => {
+    const grants = buildCapabilityGrants({
+      search_skills: {
+        capability: 'search_skills',
+        tier: 'direct',
+        enabled: false,
+        limits: { maxPerMinute: 5 },
+      },
+    });
+    const grant = grants.find((g) => g.capability === 'search_skills');
+
+    expect(grant).toEqual(expect.objectContaining({
+      capability: 'search_skills',
+      enabled: false,
+      limits: expect.objectContaining({
+        maxPerMinute: 5,
+        maxConcurrent: 2,
+        timeoutMs: 20_000,
+      }),
+    }));
+  });
+});

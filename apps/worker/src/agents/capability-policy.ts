@@ -161,6 +161,12 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     limits: { maxPerMinute: 10, maxConcurrent: 1, timeoutMs: 30_000 },
   },
   {
+    capability: 'search_skills',
+    tier: 'direct',
+    enabled: true,
+    limits: { maxPerMinute: 10, maxConcurrent: 2, timeoutMs: 20_000 },
+  },
+  {
     capability: 'venue_api',
     tier: 'never',
     enabled: false,
