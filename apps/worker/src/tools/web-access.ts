@@ -6,6 +6,7 @@ import { createLogger } from '../logger.js';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { PdfTextExtractor } from '@herobids/documents/document-text-extractors';
+import { capabilityDeniedResult } from './tool-errors.js';
 
 // @mozilla/readability is CJS-only — use createRequire to load from ESM.
 const _require = createRequire(import.meta.url);
@@ -219,8 +220,8 @@ const webSearchTool: AgentTool = {
     if (ctx.capabilityEngine) {
       const denied = ctx.capabilityEngine.checkAccess('search_web', ctx.agentId, ctx.sessionId);
       if (denied) {
-        logger.warn({ agentId: ctx.agentId, reason: denied }, 'search_web denied by capability policy');
-        return nonFaultError(denied.message);
+        logger.warn({ agentId: ctx.agentId, reason: denied.reason }, 'search_web denied by capability policy');
+        return capabilityDeniedResult('search_web', denied);
       }
       ctx.capabilityEngine.recordStart('search_web', ctx.sessionId);
     }
@@ -330,8 +331,8 @@ const browseUrlTool: AgentTool = {
     if (ctx.capabilityEngine) {
       const denied = ctx.capabilityEngine.checkAccess('browse_url', ctx.agentId, ctx.sessionId);
       if (denied) {
-        logger.warn({ agentId: ctx.agentId, reason: denied }, 'browse_url denied by capability policy');
-        return nonFaultError(denied.message);
+        logger.warn({ agentId: ctx.agentId, reason: denied.reason }, 'browse_url denied by capability policy');
+        return capabilityDeniedResult('browse_url', denied);
       }
       ctx.capabilityEngine.recordStart('browse_url', ctx.sessionId);
     }
@@ -549,8 +550,8 @@ const readDocumentTool: AgentTool = {
     if (ctx.capabilityEngine) {
       const denied = ctx.capabilityEngine.checkAccess('read_document', ctx.agentId, ctx.sessionId);
       if (denied) {
-        logger.warn({ agentId: ctx.agentId, reason: denied }, 'read_document denied by capability policy');
-        return nonFaultError(denied.message);
+        logger.warn({ agentId: ctx.agentId, reason: denied.reason }, 'read_document denied by capability policy');
+        return capabilityDeniedResult('read_document', denied);
       }
       ctx.capabilityEngine.recordStart('read_document', ctx.sessionId);
     }

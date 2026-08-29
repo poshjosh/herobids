@@ -116,7 +116,7 @@ describe('search_web tool', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('Rate limited');
     expect(result.error).not.toContain('[object Object]');
-    expect(result.retryable).toBe(false);
+    expect(result.retryable).toBe(true);
     expect(result.fault).toBe(false);
   });
 

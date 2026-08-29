@@ -6,6 +6,7 @@ import { createLogger } from '../logger.js';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { getWorkspacePaths, ensureWorkspaceDirs } from './workspace.js';
+import { capabilityDeniedResult } from './tool-errors.js';
 
 const execAsync = promisify(execCb);
 const logger = createLogger('tools:code');
@@ -64,8 +65,8 @@ const codeExecuteTool: AgentTool = {
     if (ctx.capabilityEngine) {
       const policyDenied = ctx.capabilityEngine.checkAccess('execute_code', ctx.agentId, ctx.sessionId);
       if (policyDenied) {
-        logger.warn({ agentId: ctx.agentId, reason: policyDenied }, 'execute_code denied by capability policy');
-          return { success: false, error: policyDenied.message, errorCode: 'capability.policy_denied', retryable: policyDenied.retryAfterMs !== undefined, fault: false };
+        logger.warn({ agentId: ctx.agentId, reason: policyDenied.reason }, 'execute_code denied by capability policy');
+        return capabilityDeniedResult('execute_code', policyDenied);
       }
       // recordStart is deferred until after all validation so that early-exit
       // paths (invalid deps, missing config) don't leave the concurrency counter
