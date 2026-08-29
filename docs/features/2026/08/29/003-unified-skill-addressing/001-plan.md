@@ -345,7 +345,7 @@ The `dependsOn` arrays also switch to slugs (derived from the ownership map + sl
 
 ---
 
-## Step 10 — Worker: update `ManageAgentSkillsPayload` and broker handler — PENDING
+## Step 10 — Worker: update `ManageAgentSkillsPayload` and broker handler — DONE
 
 **Files:**
 - `packages/domain/src/agent-protocol.ts`

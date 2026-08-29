@@ -35,8 +35,8 @@ import {
   resolvePlanSkillEntitlements,
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository, Database } from '@herobids/db';
-import { eq } from 'drizzle-orm';
-import { PgJournal, agentSkills, users, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
+import { eq, inArray } from 'drizzle-orm';
+import { PgJournal, agentSkills, skills, users, resolveSkillAssignmentsForUser, syncAgentSkillAssignments } from '@herobids/db';
 import { forceReply, type TelegramClient } from '../alerting/telegram-client.js';
 import type { EmailClient } from '../alerting/email-client.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
@@ -1287,6 +1287,20 @@ export class AgentMessageBroker {
     };
   }
 
+  /** Look up slug values for a set of skill IDs. Returns a map of id → slug. Best-effort: returns empty map on failure. */
+  private async lookupSlugsForIds(db: Database, ids: string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    try {
+      const rows = await db
+        .select({ id: skills.id, slug: skills.slug })
+        .from(skills)
+        .where(inArray(skills.id, ids));
+      return new Map(rows.map(r => [r.id, r.slug]));
+    } catch {
+      return new Map();
+    }
+  }
+
   /**
    * Handle a brokered manage_agent_skills request (add/remove skills at runtime).
    * Validates the payload, enforces base-skill protection, resolves entitlements,
@@ -1410,14 +1424,30 @@ export class AgentMessageBroker {
       skillEntitlements.canViewMarketplaceSkills,
     );
 
-    // 6. If validation error → publish error reply
+    // 6. If validation error → publish error reply (enrich IDs with slugs for diagnostics)
     if (resolution.error) {
+      let errorMessage = resolution.error.message;
+      if (resolution.error.details && Array.isArray(resolution.error.details)) {
+        const slugMap = await this.lookupSlugsForIds(db, combined);
+        const enrichedDetails = (resolution.error.details as Array<{ message?: string }>).map(d => {
+          if (!d.message) return d;
+          let msg = d.message;
+          for (const [id, slug] of slugMap) {
+            msg = msg.replaceAll(id, slug);
+          }
+          return { ...d, message: msg };
+        });
+        const firstDetail = enrichedDetails[0] as { message?: string } | undefined;
+        if (firstDetail?.message) {
+          errorMessage = `${resolution.error.message} — ${firstDetail.message}`;
+        }
+      }
       await publishReply({
         status: 'error',
         action: 'add',
         skillIds: [],
         warnings: [],
-        error: resolution.error.message,
+        error: errorMessage,
         errorCode: resolution.error.code,
       });
       return;
@@ -1457,15 +1487,24 @@ export class AgentMessageBroker {
       .where(eq(agentSkills.agentId, agentId));
     const existingSkillIds = new Set(existingRows.map((r) => r.skillId));
 
-    // 3. Validate requested skillIds — collect warnings for not-assigned
+    // 3. Validate requested skillIds — collect warnings for not-assigned (use slugs for diagnostics)
     const toRemove: string[] = [];
-    const warnings: string[] = [];
+    const warningIds: string[] = [];
     for (const skillId of payload.skillIds) {
       if (existingSkillIds.has(skillId)) {
         toRemove.push(skillId);
       } else {
-        warnings.push(skillId);
+        warningIds.push(skillId);
       }
+    }
+
+    // Resolve warning IDs to slugs for agent-facing messages
+    let warnings: string[];
+    if (warningIds.length > 0) {
+      const slugMap = await this.lookupSlugsForIds(db, warningIds);
+      warnings = warningIds.map(id => slugMap.get(id) ?? id);
+    } else {
+      warnings = [];
     }
 
     // 4. Compute remaining skills and re-resolve assignments
@@ -1497,12 +1536,30 @@ export class AgentMessageBroker {
       );
 
       if (resolution.error) {
+        // Enrich error with slugs for agent-facing diagnostics
+        let errorMessage = resolution.error.message;
+        if (resolution.error.details && Array.isArray(resolution.error.details)) {
+          const allIds = [...remainingSkillIds, ...payload.skillIds];
+          const slugMap = await this.lookupSlugsForIds(db, allIds);
+          const enrichedDetails = (resolution.error.details as Array<{ message?: string }>).map(d => {
+            if (!d.message) return d;
+            let msg = d.message;
+            for (const [id, slug] of slugMap) {
+              msg = msg.replaceAll(id, slug);
+            }
+            return { ...d, message: msg };
+          });
+          const firstDetail = enrichedDetails[0] as { message?: string } | undefined;
+          if (firstDetail?.message) {
+            errorMessage = `${resolution.error.message} — ${firstDetail.message}`;
+          }
+        }
         await publishReply({
           status: 'error',
           action: 'remove',
           skillIds: [],
           warnings: [],
-          error: resolution.error.message,
+          error: errorMessage,
           errorCode: resolution.error.code,
         });
         return;

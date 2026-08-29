@@ -3572,3 +3572,592 @@ describe('AgentMessageBroker — plansConfig constructor parameter', () => {
     expect(broker.plansConfig).toBeUndefined();
   });
 });
+
+
+// ── lookupSlugsForIds enrichment tests ───────────────────────────────────────
+
+describe('handleManageAgentSkills — slug enrichment', () => {
+  const resolveSkillAssignmentsMock = vi.mocked(resolveSkillAssignmentsForUser);
+  const syncAgentSkillAssignmentsMock = vi.mocked(syncAgentSkillAssignments);
+
+  function makeSkillsEnvelope(overrides: Record<string, unknown> = {}) {
+    return {
+      schemaVersion: 'v1',
+      messageId: `msg-${Math.random().toString(36).slice(2)}`,
+      correlationId: 'corr-001',
+      initiatorType: 'agent',
+      initiatorId: 'agent-123',
+      agentId: 'agent-123',
+      type: 'agent.manage_skills',
+      createdAt: new Date().toISOString(),
+      payload: {
+        action: 'add',
+        skillIds: ['trading'],
+        requestMessageId: 'req-slug-test',
+      },
+      ...overrides,
+    };
+  }
+
+  function makeSkillsEventPublisher() {
+    return {
+      emitDecisionAccepted: vi.fn().mockResolvedValue(undefined),
+      emitDecisionRejected: vi.fn().mockResolvedValue(undefined),
+      emitInstanceStatus: vi.fn().mockResolvedValue(undefined),
+      emitToolResult: vi.fn().mockResolvedValue(undefined),
+      publishSkillsReply: vi.fn().mockResolvedValue(undefined),
+    } as unknown as InstanceEventPublisher;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolveSkillAssignmentsMock.mockResolvedValue({
+      assignments: [{ skillId: 'trading', skillRevisionId: 'rev-1' }],
+    });
+    syncAgentSkillAssignmentsMock.mockResolvedValue(undefined);
+  });
+
+  // ── Helpers for extended DB mocks that support the skills table lookup ──
+
+  /**
+   * Extended add DB mock supporting 3 select calls:
+   *   1. users query (.limit(1))
+   *   2. agentSkills query (no .limit())
+   *   3. skills slug lookup (no .limit()) → returns skillSlugRows
+   */
+  function makeAddDbMockWithSlugs(
+    userRow: Record<string, unknown> = { planId: 'plan-free', isAdmin: false },
+    existingSkillRows: Array<{ skillId: string }> = [],
+    skillSlugRows: Array<{ id: string; slug: string }> = [],
+  ) {
+    let callIndex = 0;
+    const selectFn = vi.fn().mockImplementation(() => {
+      const idx = callIndex++;
+      if (idx === 0) {
+        // users table query — has .limit()
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([userRow]),
+            }),
+          }),
+        };
+      }
+      if (idx === 1) {
+        // agentSkills table query — no .limit()
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(existingSkillRows),
+          }),
+        };
+      }
+      // skills slug lookup — no .limit()
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(skillSlugRows),
+        }),
+      };
+    });
+    return { select: selectFn, transaction: vi.fn() } as any;
+  }
+
+  /**
+   * Extended remove DB mock supporting up to 4 select calls:
+   *   1. agentSkills query (no .limit())
+   *   2. skills slug lookup for warnings (no .limit()) — only if warningIds.length > 0
+   *   3. users query (.limit(1)) — only if remaining skills > 0
+   *   4. skills slug lookup for error enrichment (no .limit()) — only if resolution error with details
+   *
+   * When there are no warnings, the order shifts:
+   *   1. agentSkills query
+   *   2. users query (.limit(1))
+   *   3. skills slug lookup for error enrichment
+   *
+   * Callers define the exact call sequence via the `callSequence` array.
+   */
+  function makeRemoveDbMockWithSlugs(
+    callSequence: Array<{ type: 'agentSkills'; data: Array<{ skillId: string }> }
+      | { type: 'slugLookup'; data: Array<{ id: string; slug: string }> }
+      | { type: 'users'; data: Array<Record<string, unknown>> }>,
+  ) {
+    let callIndex = 0;
+    const selectFn = vi.fn().mockImplementation(() => {
+      const call = callSequence[callIndex++];
+      if (!call) {
+        // Fallback — return empty
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([]),
+          }),
+        };
+      }
+      if (call.type === 'users') {
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue(call.data),
+            }),
+          }),
+        };
+      }
+      // Both agentSkills and slugLookup don't use .limit()
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(call.data),
+        }),
+      };
+    });
+    return { select: selectFn, transaction: vi.fn() } as any;
+  }
+
+  // ── handleSkillAdd error enrichment ──────────────────────────────────────
+
+  describe('add action — error enrichment with slugs', () => {
+    it('enriches error message with slugs when resolution returns error with details', async () => {
+      // resolveSkillAssignmentsForUser returns an error containing the raw skill ID in its details
+      resolveSkillAssignmentsMock.mockResolvedValue({
+        error: {
+          code: 'validation_error',
+          message: 'Some selected skills do not exist',
+          details: [{ message: 'Unknown skillIds: skill-id-abc' }],
+        },
+      });
+
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      // DB mock returns slug mapping for the requested skill ID
+      const db = makeAddDbMockWithSlugs(
+        { planId: 'plan-free', isAdmin: false },
+        [],
+        [{ id: 'skill-id-abc', slug: 'system/trading' }],
+      );
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'add', skillIds: ['skill-id-abc'], requestMessageId: 'req-slug-add' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect(syncAgentSkillAssignmentsMock).not.toHaveBeenCalled();
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-slug-add',
+        expect.objectContaining({
+          status: 'error',
+          action: 'add',
+          errorCode: 'validation_error',
+          // The enriched error should contain the slug replacing the ID
+          error: expect.stringContaining('system/trading'),
+        }),
+      );
+      // The enriched message should include the original message followed by a dash and the detail
+      const call = (eventPublisher as any).publishSkillsReply.mock.calls[0];
+      expect(call[1].error).toMatch(/Some selected skills do not exist — Unknown skillIds: system\/trading/);
+    });
+
+    it('falls back to raw IDs when slug lookup fails (lookupSlugsForIds degrades gracefully)', async () => {
+      resolveSkillAssignmentsMock.mockResolvedValue({
+        error: {
+          code: 'validation_error',
+          message: 'Some selected skills do not exist',
+          details: [{ message: 'Unknown skillIds: skill-id-abc' }],
+        },
+      });
+
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      // DB mock that throws on the 3rd call (slug lookup), simulating a DB error
+      let callIndex = 0;
+      const db = {
+        select: vi.fn().mockImplementation(() => {
+          const idx = callIndex++;
+          if (idx === 0) {
+            return {
+              from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockResolvedValue([{ planId: 'plan-free', isAdmin: false }]),
+                }),
+              }),
+            };
+          }
+          if (idx === 1) {
+            return {
+              from: vi.fn().mockReturnValue({
+                where: vi.fn().mockResolvedValue([]),
+              }),
+            };
+          }
+          // 3rd call — slug lookup throws
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockRejectedValue(new Error('skills table unavailable')),
+            }),
+          };
+        }),
+        transaction: vi.fn(),
+      } as any;
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'add', skillIds: ['skill-id-abc'], requestMessageId: 'req-slug-fallback' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      // Should still produce the error reply, but with raw IDs since slug lookup failed
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-slug-fallback',
+        expect.objectContaining({
+          status: 'error',
+          // The message still contains the raw ID since slug map is empty
+          error: expect.stringContaining('skill-id-abc'),
+        }),
+      );
+    });
+
+    it('enriches multiple skill IDs with their respective slugs', async () => {
+      resolveSkillAssignmentsMock.mockResolvedValue({
+        error: {
+          code: 'validation_error',
+          message: 'Some selected skills do not exist',
+          details: [{ message: 'Unknown skillIds: skill-id-1, skill-id-2' }],
+        },
+      });
+
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      const db = makeAddDbMockWithSlugs(
+        { planId: 'plan-free', isAdmin: false },
+        [],
+        [
+          { id: 'skill-id-1', slug: 'system/trading' },
+          { id: 'skill-id-2', slug: 'community/analytics' },
+        ],
+      );
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'add', skillIds: ['skill-id-1', 'skill-id-2'], requestMessageId: 'req-multi-slug' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      const call = (eventPublisher as any).publishSkillsReply.mock.calls[0];
+      expect(call[1].error).toContain('system/trading');
+      expect(call[1].error).toContain('community/analytics');
+      expect(call[1].error).not.toContain('skill-id-1');
+      expect(call[1].error).not.toContain('skill-id-2');
+    });
+
+    it('does not enrich when resolution error has no details array', async () => {
+      resolveSkillAssignmentsMock.mockResolvedValue({
+        error: {
+          code: 'validation_error',
+          message: 'Some selected skills are not selectable for this user',
+          // No details array
+        },
+      });
+
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+      const db = makeAddDbMockWithSlugs(
+        { planId: 'plan-free', isAdmin: false },
+        [],
+        [{ id: 'skill-id-abc', slug: 'system/trading' }],
+      );
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'add', skillIds: ['skill-id-abc'], requestMessageId: 'req-no-details' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      const call = (eventPublisher as any).publishSkillsReply.mock.calls[0];
+      // Error message is the original, not enriched (no " — " separator)
+      expect(call[1].error).toBe('Some selected skills are not selectable for this user');
+    });
+  });
+
+  // ── handleSkillRemove warning enrichment ─────────────────────────────────
+
+  describe('remove action — warning enrichment with slugs', () => {
+    it('maps warning IDs to slugs when skill is not assigned', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+
+      // Remove path: skill-id-xyz is NOT in existing skills → becomes a warning
+      // Call sequence:
+      //   1. agentSkills query → empty (no existing skills)
+      //   2. slug lookup for warnings → returns slug
+      const db = makeRemoveDbMockWithSlugs(
+        [
+          { type: 'agentSkills', data: [] },
+          { type: 'slugLookup', data: [{ id: 'skill-id-xyz', slug: 'community/research' }] },
+        ],
+      );
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'remove', skillIds: ['skill-id-xyz'], requestMessageId: 'req-warn-slug' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-warn-slug',
+        expect.objectContaining({
+          status: 'ok',
+          action: 'remove',
+          skillIds: [],
+          warnings: ['community/research'],
+        }),
+      );
+    });
+
+    it('falls back to raw IDs in warnings when slug lookup fails', async () => {
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+
+      // The existing makeRemoveDbMock doesn't support the skills query,
+      // so lookupSlugsForIds will throw and degrade to an empty map
+      let callIndex = 0;
+      const db = {
+        select: vi.fn().mockImplementation(() => {
+          const idx = callIndex++;
+          if (idx === 0) {
+            // agentSkills query → empty
+            return {
+              from: vi.fn().mockReturnValue({
+                where: vi.fn().mockResolvedValue([]),
+              }),
+            };
+          }
+          // slug lookup → throws
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockRejectedValue(new Error('skills table unavailable')),
+            }),
+          };
+        }),
+        transaction: vi.fn(),
+      } as any;
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'remove', skillIds: ['nonexistent-skill'], requestMessageId: 'req-warn-raw' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect((eventPublisher as any).publishSkillsReply).toHaveBeenCalledWith(
+        'req-warn-raw',
+        expect.objectContaining({
+          status: 'ok',
+          action: 'remove',
+          skillIds: [],
+          // Falls back to raw ID since slug lookup failed
+          warnings: ['nonexistent-skill'],
+        }),
+      );
+    });
+  });
+
+  // ── handleSkillRemove error enrichment ───────────────────────────────────
+
+  describe('remove action — error enrichment with slugs', () => {
+    it('enriches resolution error message with slugs during remove', async () => {
+      // Agent has 'trading' and 'analytics' — we remove 'trading', leaving 'analytics'
+      // resolveSkillAssignmentsForUser returns an error for the remaining skills
+      resolveSkillAssignmentsMock.mockResolvedValue({
+        error: {
+          code: 'validation_error',
+          message: 'Some selected skills do not exist',
+          details: [{ message: 'Unknown skillIds: skill-id-analytics' }],
+        },
+      });
+
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+
+      // Remove path with remaining skills:
+      //   1. agentSkills query → existing skills
+      //   2. users query (.limit(1)) — remaining > 0
+      //   3. slug lookup for error enrichment → returns slug
+      const db = makeRemoveDbMockWithSlugs(
+        [
+          { type: 'agentSkills', data: [{ skillId: 'skill-id-trading' }, { skillId: 'skill-id-analytics' }] },
+          { type: 'users', data: [{ planId: 'plan-free', isAdmin: false }] },
+          { type: 'slugLookup', data: [
+            { id: 'skill-id-analytics', slug: 'system/analytics' },
+            { id: 'skill-id-trading', slug: 'system/trading' },
+          ]},
+        ],
+      );
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'remove', skillIds: ['skill-id-trading'], requestMessageId: 'req-remove-enrich' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      expect(syncAgentSkillAssignmentsMock).not.toHaveBeenCalled();
+      const call = (eventPublisher as any).publishSkillsReply.mock.calls[0];
+      expect(call[1].status).toBe('error');
+      expect(call[1].action).toBe('remove');
+      expect(call[1].errorCode).toBe('validation_error');
+      // The enriched error should contain the slug replacing the ID
+      expect(call[1].error).toMatch(/Some selected skills do not exist — Unknown skillIds: system\/analytics/);
+    });
+
+    it('degrades gracefully when slug lookup fails during remove error enrichment', async () => {
+      resolveSkillAssignmentsMock.mockResolvedValue({
+        error: {
+          code: 'validation_error',
+          message: 'Some selected skills do not exist',
+          details: [{ message: 'Unknown skillIds: skill-id-analytics' }],
+        },
+      });
+
+      const agentRepo = mockAgentRepo();
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+
+      const eventPublisher = makeSkillsEventPublisher();
+
+      // Remove path where slug lookup fails:
+      //   1. agentSkills query → existing skills
+      //   2. users query
+      //   3. slug lookup → throws
+      let callIndex = 0;
+      const db = {
+        select: vi.fn().mockImplementation(() => {
+          const idx = callIndex++;
+          if (idx === 0) {
+            // agentSkills query
+            return {
+              from: vi.fn().mockReturnValue({
+                where: vi.fn().mockResolvedValue([{ skillId: 'skill-id-trading' }, { skillId: 'skill-id-analytics' }]),
+              }),
+            };
+          }
+          if (idx === 1) {
+            // users query
+            return {
+              from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockResolvedValue([{ planId: 'plan-free', isAdmin: false }]),
+                }),
+              }),
+            };
+          }
+          // slug lookup → throws
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockRejectedValue(new Error('skills table unavailable')),
+            }),
+          };
+        }),
+        transaction: vi.fn(),
+      } as any;
+
+      const broker = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        mockDecisionHandler(),
+        mockSessionManager(),
+        eventPublisher,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        db,
+      );
+
+      const envelope = makeSkillsEnvelope({
+        payload: { action: 'remove', skillIds: ['skill-id-trading'], requestMessageId: 'req-remove-degrade' },
+      });
+      const result = await broker.processInbound(envelope);
+
+      expect(result.accepted).toBe(true);
+      const call = (eventPublisher as any).publishSkillsReply.mock.calls[0];
+      expect(call[1].status).toBe('error');
+      // Error still contains the raw ID since slug map is empty
+      expect(call[1].error).toContain('skill-id-analytics');
+    });
+  });
+});
