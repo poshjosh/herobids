@@ -24,6 +24,9 @@
 #                                     (default: staging.openaidom.com).
 #                                     Pre-check: curl to CADDY_BASE_URL/health.
 #
+# autoscale-smoke             Tier 6  Requires SSH to control plane and .env.backend.
+#                                     Pre-check: .env.backend file exists.
+#
 # telegram-messaging          Tier 6  Requires TELEGRAM_WEBHOOK_URL set.
 #                                     Webhook absence is a config choice; the
 #                                     test treats it as informational (non-fatal).
@@ -221,7 +224,9 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   tier_enabled 5 && echo -e "                                          → platform-preset-assessment-test.sh"
   tier_enabled 5 && echo -e "                                          → preset-review-gap-closure-test.sh"
   tier_enabled 5 && echo -e "                                          → scanner-provider-smoke-test.sh"
-  tier_enabled 6 && echo -e "  ${BLUE}Tier 6${RESET} (external infra)     → caddy-routing-smoke-test.sh"
+  tier_enabled 6 && echo -e "  ${BLUE}Tier 6${RESET} (external infra)     → autoscale-smoke-test.sh"
+  tier_enabled 6 && echo -e "                                          → autoscale-capacity-trigger-test.sh (AUTOSCALE_DESTRUCTIVE=true)"
+  tier_enabled 6 && echo -e "                                          → caddy-routing-smoke-test.sh"
   tier_enabled 6 && echo -e "                                          → test-telegram-messaging.sh"
 
   echo ""
@@ -237,7 +242,8 @@ if [[ "${DRY_RUN}" == "true" ]]; then
     echo -e "${YELLOW}⚠  Tier 5 requires Hyperliquid credentials (HL_API_KEY, HL_SECRET, HL_WALLET_ADDRESS)${RESET}"
   fi
   if tier_enabled 6; then
-    echo -e "${YELLOW}⚠  Tier 6 requires TELEGRAM_BOT_TOKEN, TEST_CHAT_IDS, and network access to CADDY_BASE_URL${RESET}"
+    echo -e "${YELLOW}⚠  Tier 6 requires TELEGRAM_BOT_TOKEN, TEST_CHAT_IDS, network access to CADDY_BASE_URL,${RESET}"
+    echo -e "${YELLOW}   and BACKEND_ENV_FILE (autoscale tests)${RESET}"
   fi
 
   echo ""
@@ -529,6 +535,23 @@ fi
 
 if tier_enabled 6; then
   header "Tier 6 / External infra checks"
+
+  # --- Autoscale smoke test ---
+  AUTOSCALE_BACKEND_ENV="${BACKEND_ENV_FILE:-${ROOT}/infra/hetzner/.env.backend}"
+  if [[ -f "${AUTOSCALE_BACKEND_ENV}" ]]; then
+    run_script "autoscale-smoke (Nomad cluster + capacity + scale-in dry-run)" \
+      "${TESTS_DIR}/autoscale-smoke-test.sh" --env "${HEROBIDS_ENV:-staging}" --backend-env-file "${AUTOSCALE_BACKEND_ENV}"
+  else
+    warn "Skipping autoscale-smoke-test: ${AUTOSCALE_BACKEND_ENV} not found"
+  fi
+
+  # --- Autoscale capacity trigger test (destructive, opt-in) ---
+  if [[ "${AUTOSCALE_DESTRUCTIVE:-false}" == "true" ]] && [[ -f "${AUTOSCALE_BACKEND_ENV}" ]]; then
+    run_script "autoscale-capacity-trigger (dummy jobs → scale-out → cleanup)" \
+      "${TESTS_DIR}/autoscale-capacity-trigger-test.sh" --env "${HEROBIDS_ENV:-staging}" --backend-env-file "${AUTOSCALE_BACKEND_ENV}"
+  elif [[ "${AUTOSCALE_DESTRUCTIVE:-false}" == "true" ]]; then
+    warn "Skipping autoscale-capacity-trigger: ${AUTOSCALE_BACKEND_ENV} not found"
+  fi
 
   # --- Caddy routing smoke test ---
   run_script "caddy-routing-smoke (OAuth routing)" \
