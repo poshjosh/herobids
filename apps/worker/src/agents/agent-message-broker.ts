@@ -222,7 +222,14 @@ export class AgentMessageBroker {
       const sessionId = activeSession?.id ?? effectiveAgentId;
       const denied = engine.checkAccess(capabilityName, effectiveAgentId, sessionId);
       if (denied) {
-        logger.warn({ agentId: effectiveAgentId, capability: capabilityName, reason: denied.reason }, 'Capability policy denied');
+        logger.warn({
+          agentId: effectiveAgentId,
+          capability: capabilityName,
+          reason: denied.reason,
+          limit: denied.limit,
+          used: denied.used,
+          retryAfterMs: denied.retryAfterMs,
+        }, 'Capability policy denied');
 
         // Push a denial reply to the Redis reply key so the tool's blpop doesn't time out.
         const replyKey = this.extractDenialReplyKey(envelope);

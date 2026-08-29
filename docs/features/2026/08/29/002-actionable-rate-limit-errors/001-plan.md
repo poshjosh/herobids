@@ -215,7 +215,7 @@ logger.warn({
 
 ## Implementation Phases
 
-### Phase 1: Structured `checkAccess` Return Type — PENDING
+### Phase 1: Structured `checkAccess` Return Type — DONE
 
 **Effort:** ~0.5 day
 **Risk:** Low (internal API change, all callers updated in same PR)
@@ -244,7 +244,7 @@ The `capabilityEngine.checkAccess` type in the `ToolContext` interface also retu
 - All denial objects include a human-readable `message`.
 - `pnpm lint` passes.
 
-### Phase 2: Direct Tool Error Responses — PENDING
+### Phase 2: Direct Tool Error Responses — DONE
 
 **Effort:** ~0.5 day
 **Risk:** Low (changes error message content, not control flow)
@@ -263,7 +263,7 @@ The `capabilityEngine.checkAccess` type in the `ToolContext` interface also retu
 - `fault` is `false` for all capability denials (not a tool infrastructure fault).
 - `pnpm lint` passes.
 
-### Phase 3: Broker Denial Replies — PENDING
+### Phase 3: Broker Denial Replies — DONE
 
 **Effort:** ~1 day
 **Risk:** Medium (changes broker behavior for brokered tools)

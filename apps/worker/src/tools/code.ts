@@ -65,7 +65,14 @@ const codeExecuteTool: AgentTool = {
     if (ctx.capabilityEngine) {
       const policyDenied = ctx.capabilityEngine.checkAccess('execute_code', ctx.agentId, ctx.sessionId);
       if (policyDenied) {
-        logger.warn({ agentId: ctx.agentId, reason: policyDenied.reason }, 'execute_code denied by capability policy');
+        logger.warn({
+          agentId: ctx.agentId,
+          capability: 'execute_code',
+          reason: policyDenied.reason,
+          limit: policyDenied.limit,
+          used: policyDenied.used,
+          retryAfterMs: policyDenied.retryAfterMs,
+        }, 'Capability policy denied');
         return capabilityDeniedResult('execute_code', policyDenied);
       }
       // recordStart is deferred until after all validation so that early-exit

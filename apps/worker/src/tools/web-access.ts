@@ -220,7 +220,14 @@ const webSearchTool: AgentTool = {
     if (ctx.capabilityEngine) {
       const denied = ctx.capabilityEngine.checkAccess('search_web', ctx.agentId, ctx.sessionId);
       if (denied) {
-        logger.warn({ agentId: ctx.agentId, reason: denied.reason }, 'search_web denied by capability policy');
+        logger.warn({
+          agentId: ctx.agentId,
+          capability: 'search_web',
+          reason: denied.reason,
+          limit: denied.limit,
+          used: denied.used,
+          retryAfterMs: denied.retryAfterMs,
+        }, 'Capability policy denied');
         return capabilityDeniedResult('search_web', denied);
       }
       ctx.capabilityEngine.recordStart('search_web', ctx.sessionId);
@@ -331,7 +338,14 @@ const browseUrlTool: AgentTool = {
     if (ctx.capabilityEngine) {
       const denied = ctx.capabilityEngine.checkAccess('browse_url', ctx.agentId, ctx.sessionId);
       if (denied) {
-        logger.warn({ agentId: ctx.agentId, reason: denied.reason }, 'browse_url denied by capability policy');
+        logger.warn({
+          agentId: ctx.agentId,
+          capability: 'browse_url',
+          reason: denied.reason,
+          limit: denied.limit,
+          used: denied.used,
+          retryAfterMs: denied.retryAfterMs,
+        }, 'Capability policy denied');
         return capabilityDeniedResult('browse_url', denied);
       }
       ctx.capabilityEngine.recordStart('browse_url', ctx.sessionId);
@@ -550,7 +564,14 @@ const readDocumentTool: AgentTool = {
     if (ctx.capabilityEngine) {
       const denied = ctx.capabilityEngine.checkAccess('read_document', ctx.agentId, ctx.sessionId);
       if (denied) {
-        logger.warn({ agentId: ctx.agentId, reason: denied.reason }, 'read_document denied by capability policy');
+        logger.warn({
+          agentId: ctx.agentId,
+          capability: 'read_document',
+          reason: denied.reason,
+          limit: denied.limit,
+          used: denied.used,
+          retryAfterMs: denied.retryAfterMs,
+        }, 'Capability policy denied');
         return capabilityDeniedResult('read_document', denied);
       }
       ctx.capabilityEngine.recordStart('read_document', ctx.sessionId);
