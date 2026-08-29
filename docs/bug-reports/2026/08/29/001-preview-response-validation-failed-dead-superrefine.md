@@ -1,6 +1,6 @@
 # Bug Report: "Preview response validation failed" when using marketplace agents
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-08-29
 - **Environment:** local development (docker compose)

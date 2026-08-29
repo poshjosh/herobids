@@ -3,6 +3,7 @@ import {
   AgentBlueprintRevisionPayloadSchema,
   BotBlueprintRevisionPayloadSchema,
   BlueprintRevisionPayloadSchema,
+  BlueprintInstantiatePreviewResponseSchema,
   CreateBlueprintSchema,
   BlueprintBindingSchema,
   BlueprintKindSchema,
@@ -653,5 +654,164 @@ describe('ExecutionPolicySchema — takeProfitPct null tolerance', () => {
 
   it('rejects a negative takeProfitPct', () => {
     expect(() => ExecutionPolicySchema.parse({ takeProfitPct: -1 })).toThrow();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Regression: bug-reports/2026/08/29/001 — dead superRefine invariant
+// Intelligence-mode agents without explicit technical/intelligence blocks must
+// validate successfully through all schema layers. The removed check
+// ("at least one of technical or intelligence must be configured") was
+// incorrect — intelligence agents are driven by prompt, model policy, and
+// skills, not by the optional IntelligenceConfig block.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('Regression: intelligence-mode agents without technical/intelligence blocks (bug 2026-08-29-001)', () => {
+  /**
+   * Minimal intelligence-mode payload with neither `technical` nor `intelligence`.
+   * This mirrors what `resolveUnifiedConfig()` + `projectAgentToBlueprintPayload()`
+   * produce for marketplace agents like `tintel` and `skills-sh-tester`.
+   */
+  const intelligenceOnlyPayload = {
+    kind: 'agent' as const,
+    name: 'Marketplace Intelligence Agent',
+    description: 'An intelligence-mode agent without explicit intelligence config',
+    tags: ['marketplace'],
+    prompt: 'You are an intelligence-mode agent',
+    style: 'balanced' as const,
+    strategy: null,
+    risk: null,
+    executionDefaults: null,
+    capabilityMode: 'intelligence' as const,
+    openPositionEscalationToJudgePolicy: 'never' as const,
+    authorizationMode: null,
+    capital: null,
+    maxBots: null,
+    tickIntervalMs: null,
+  };
+
+  it('AgentBlueprintRevisionPayloadSchema accepts intelligence agent without technical or intelligence block', () => {
+    const result = AgentBlueprintRevisionPayloadSchema.safeParse(intelligenceOnlyPayload);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.technical).toBeUndefined();
+      expect(result.data.intelligence).toBeUndefined();
+    }
+  });
+
+  it('BlueprintRevisionPayloadSchema (discriminated union) accepts intelligence agent without either block', () => {
+    const result = BlueprintRevisionPayloadSchema.safeParse(intelligenceOnlyPayload);
+    expect(result.success).toBe(true);
+  });
+
+  it('BlueprintInstantiatePreviewResponseSchema accepts preview response with intelligence-only rawPayload', () => {
+    const riskField = {
+      effectiveValue: null,
+      source: 'default' as const,
+      mutable: true,
+      enforced: false,
+    };
+    const previewResponse = {
+      blueprintId: 'bp_marketplace_001',
+      revisionId: 'rev_001',
+      kind: 'agent' as const,
+      rawPayload: intelligenceOnlyPayload,
+      rawRisk: null,
+      effectiveRisk: {
+        maxOpenPositions: riskField,
+        maxPositionSizePct: riskField,
+        stopLossPct: riskField,
+        stopLossCooldownMs: riskField,
+        maxDrawdownPct: riskField,
+        dailyMaxLossPct: riskField,
+        maxNewPositionsPerDay: riskField,
+        avoidParabolicMovePct: riskField,
+        maxOrderNotional: riskField,
+      },
+      requiredPrivateInputs: [],
+      compatibleExecutionModes: ['paper', 'shadow'],
+      selectedResolvedMode: 'paper',
+      validationWarnings: [],
+      modelSelectionReady: true,
+    };
+
+    const result = BlueprintInstantiatePreviewResponseSchema.safeParse(previewResponse);
+    expect(result.success).toBe(true);
+  });
+
+  it('BlueprintInstantiatePreviewResponseSchema accepts null selectedResolvedMode', () => {
+    const riskField = {
+      effectiveValue: null,
+      source: 'default' as const,
+      mutable: true,
+      enforced: false,
+    };
+    const previewResponse = {
+      blueprintId: 'bp_marketplace_002',
+      revisionId: 'rev_002',
+      kind: 'agent' as const,
+      rawPayload: intelligenceOnlyPayload,
+      rawRisk: null,
+      effectiveRisk: {
+        maxOpenPositions: riskField,
+        maxPositionSizePct: riskField,
+        stopLossPct: riskField,
+        stopLossCooldownMs: riskField,
+        maxDrawdownPct: riskField,
+        dailyMaxLossPct: riskField,
+        maxNewPositionsPerDay: riskField,
+        avoidParabolicMovePct: riskField,
+        maxOrderNotional: riskField,
+      },
+      requiredPrivateInputs: [],
+      compatibleExecutionModes: ['paper'],
+      selectedResolvedMode: null,
+      validationWarnings: [],
+      modelSelectionReady: false,
+    };
+
+    const result = BlueprintInstantiatePreviewResponseSchema.safeParse(previewResponse);
+    expect(result.success).toBe(true);
+  });
+
+  it('hybrid-mode agent still requires technical config', () => {
+    const hybridWithoutTechnical = {
+      ...intelligenceOnlyPayload,
+      capabilityMode: 'hybrid' as const,
+    };
+    const result = AgentBlueprintRevisionPayloadSchema.safeParse(hybridWithoutTechnical);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msgs = result.error.issues.map((i) => i.message);
+      expect(msgs).toContain('"technical" config is required when capabilityMode is "hybrid"');
+    }
+  });
+
+  it('intelligence-mode agent rejects hybridMode being set', () => {
+    const intelligenceWithHybridMode = {
+      ...intelligenceOnlyPayload,
+      hybridMode: 'scanner_gated' as const,
+    };
+    const result = AgentBlueprintRevisionPayloadSchema.safeParse(intelligenceWithHybridMode);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msgs = result.error.issues.map((i) => i.message);
+      expect(msgs).toContain('"hybridMode" must not be set when capabilityMode is "intelligence"');
+    }
+  });
+
+  it('only produces a single issue for hybrid without technical (no redundant "at least one" error)', () => {
+    const hybridWithoutTechnical = {
+      ...intelligenceOnlyPayload,
+      capabilityMode: 'hybrid' as const,
+    };
+    const result = AgentBlueprintRevisionPayloadSchema.safeParse(hybridWithoutTechnical);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      // Before the fix, this produced two issues: the generic "at least one"
+      // AND the specific "technical required for hybrid". Now only the specific one.
+      expect(result.error.issues).toHaveLength(1);
+      expect(result.error.issues[0]!.message).toBe('"technical" config is required when capabilityMode is "hybrid"');
+    }
   });
 });
