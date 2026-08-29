@@ -407,6 +407,7 @@ export interface AgentActivityFeedResponse {
 
 export interface Skill {
   id: string;
+  slug: string;
   authorId: string | null;
   sourceKind: 'system' | 'user';
   publicationStatus: 'draft' | 'private' | 'published' | 'delisted' | 'archived';

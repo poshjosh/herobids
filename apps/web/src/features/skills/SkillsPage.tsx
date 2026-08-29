@@ -13,7 +13,8 @@ function filterSkillsBySearch(skills: Skill[], term: string): Skill[] {
   return skills.filter(
     (skill) =>
       skill.name.toLowerCase().includes(t) ||
-      skill.description.toLowerCase().includes(t),
+      skill.description.toLowerCase().includes(t) ||
+      skill.slug.toLowerCase().includes(t),
   );
 }
 
@@ -579,7 +580,7 @@ function SkillCard({
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: '12px', ...(isEditing ? { gridColumn: '1 / -1' } : {}) }}>
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
           <div style={{ fontSize: '0.9375rem', fontWeight: '600', color: 'var(--color-text-primary)' }}>{skill.name}</div>
           <span style={{ fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
             {statusLabel}
@@ -588,6 +589,7 @@ function SkillCard({
             {priceLabel}
           </span>
         </div>
+        <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginBottom: '4px', fontFamily: 'monospace' }}>{skill.slug}</div>
         <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>{skill.description}</div>
       </div>
 

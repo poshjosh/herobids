@@ -380,7 +380,7 @@ Update BASE_SKILL instructions to:
 
 ---
 
-## Step 12 — Frontend: display slugs in skill views — PENDING
+## Step 12 — Frontend: display slugs in skill views — DONE
 
 **Files:**
 - `apps/web/src/lib/api-client.ts`

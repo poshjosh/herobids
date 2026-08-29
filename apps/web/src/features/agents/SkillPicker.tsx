@@ -24,7 +24,8 @@ export function SkillPicker({ skills, selectedSkillIds, onChange, loading = fals
     return selectableSkills.filter(
       (skill) =>
         skill.name.toLowerCase().includes(term) ||
-        skill.description.toLowerCase().includes(term),
+        skill.description.toLowerCase().includes(term) ||
+        skill.slug.toLowerCase().includes(term),
     );
   }, [selectableSkills, searchTerm]);
 
@@ -91,6 +92,7 @@ export function SkillPicker({ skills, selectedSkillIds, onChange, loading = fals
                 />
                 <div>
                   <div style={{ fontWeight: '400', fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>{skill.name}</div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>{skill.slug}</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px', lineHeight: '1.45' }}>
                     {skill.description.length > 50 ? `${skill.description.slice(0, 50)}…` : skill.description}
                   </div>
