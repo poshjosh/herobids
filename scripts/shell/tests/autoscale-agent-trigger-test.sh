@@ -219,9 +219,22 @@ cleanup() {
     done
     ok "Agents stopped and deleted."
 
-    # Wait for Nomad allocations to clear, then scale in the extra node.
-    log "Waiting 30s for allocations to clear..."
-    sleep 30
+    # Wait for Nomad allocations to clear before scale-in.
+    # Scale-in only removes idle nodes, so we need allocations gone first.
+    log "Waiting for Nomad allocations to clear..."
+    ALLOC_TIMEOUT=120
+    ALLOC_POLL=10
+    ALLOC_WAITED=0
+    while [[ ${ALLOC_WAITED} -lt ${ALLOC_TIMEOUT} ]]; do
+      RUNNING_ALLOCS="$(remote_with_env 'NOMAD_TOKEN=$NOMAD_TOKEN nomad job status -short 2>/dev/null | grep -c running' || echo "0")"
+      if [[ "${RUNNING_ALLOCS}" == "0" ]]; then
+        ok "All allocations cleared."
+        break
+      fi
+      log "  ${RUNNING_ALLOCS} running allocation(s) remaining (${ALLOC_WAITED}s elapsed)"
+      sleep ${ALLOC_POLL}
+      (( ALLOC_WAITED += ALLOC_POLL ))
+    done
     log "Triggering scale-in to remove extra node..."
     remote_with_env "
       rm -f /var/run/nomad-autoscale.lock
