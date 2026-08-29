@@ -160,6 +160,22 @@ cleanup() {
     done
     ok "Dummy jobs stopped."
 
+    # Wait for Nomad allocations to clear before scale-in.
+    log "Waiting for Nomad allocations to clear..."
+    ALLOC_TIMEOUT=120
+    ALLOC_POLL=10
+    ALLOC_WAITED=0
+    while [[ ${ALLOC_WAITED} -lt ${ALLOC_TIMEOUT} ]]; do
+      RUNNING_ALLOCS="$(remote_with_env 'NOMAD_TOKEN=$NOMAD_TOKEN nomad status 2>/dev/null | grep -c running' || echo "0")"
+      if [[ "${RUNNING_ALLOCS}" == "0" ]]; then
+        ok "All allocations cleared."
+        break
+      fi
+      log "  ${RUNNING_ALLOCS} running job(s) remaining (${ALLOC_WAITED}s elapsed)"
+      sleep ${ALLOC_POLL}
+      (( ALLOC_WAITED += ALLOC_POLL ))
+    done
+
     # Scale in the extra node that was provisioned during the test.
     log "Triggering scale-in to remove extra node..."
     remote_with_env "
