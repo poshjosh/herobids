@@ -168,7 +168,8 @@ export interface ToolContext {
   /** Capability policy enforcement */
   capabilityEngine?: {
     checkAccess: (capability: string, agentId: string, sessionId: string) => {
-      reason: string;
+      reason: 'kill_switch_active' | 'unknown_capability' | 'capability_disabled'
+        | 'capability_never_allowed' | 'rate_limit_exceeded' | 'max_concurrent_exceeded';
       retryAfterMs?: number;
       limit?: number;
       used?: number;
