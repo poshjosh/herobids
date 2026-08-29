@@ -33,6 +33,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Fix marketplace "Use this agent" returning 500 ("Preview response validation failed") for intelligence-mode agents — removed dead `superRefine` invariant requiring `technical` or `intelligence` in blueprint and unified config schemas; intelligence-only agents legitimately have neither
 - Fix drain-timeout safety: timed-out nodes are no longer destroyed — excluded from `DRAIN_OK`, re-marked eligible for investigation
 - Fix private IP resolution: replaced hard-coded `10.0.*` regex with dynamic subnet prefix extraction from Terraform `private_subnet` variable
 - Fix `agent_node_count` in cloud-init causing unnecessary control-plane replacement — removed from `user_data`, seeded with 0 instead

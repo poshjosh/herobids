@@ -1480,13 +1480,26 @@ describe('UnifiedAgentConfigSchema — capabilityMode / hybridMode', () => {
     }
   });
 
-  it('preserves existing "at least one of technical or intelligence" validation', () => {
+  it('rejects capabilityMode "hybrid" without technical config (no intelligence either)', () => {
     const result = UnifiedAgentConfigSchema.safeParse({
       capabilityMode: 'hybrid',
     });
     expect(result.success).toBe(false);
-    // Should have both errors: missing technical/intelligence AND missing technical for hybrid
-    expect(result.error!.issues.length).toBeGreaterThanOrEqual(2);
+    // Only the "technical required for hybrid" error — the generic
+    // "at least one of technical or intelligence" check was removed
+    // because intelligence-only agents legitimately have neither.
+    expect(result.error!.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: ['capabilityMode'] }),
+      ]),
+    );
+  });
+
+  it('accepts intelligence-mode agent with neither technical nor intelligence', () => {
+    const result = UnifiedAgentConfigSchema.safeParse({
+      capabilityMode: 'intelligence',
+    });
+    expect(result.success).toBe(true);
   });
 
   it('rejects invalid capabilityMode value', () => {

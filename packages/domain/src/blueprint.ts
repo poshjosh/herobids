@@ -49,13 +49,6 @@ function agentSuperRefine(
   data: { kind: string; technical?: unknown; intelligence?: unknown; capabilityMode: string; hybridMode?: string },
   ctx: z.RefinementCtx,
 ) {
-  if (!data.technical && !data.intelligence) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'At least one of "technical" or "intelligence" must be configured',
-    });
-  }
-
   if (data.capabilityMode === 'hybrid' && !data.technical) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

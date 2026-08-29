@@ -2442,13 +2442,6 @@ export const UnifiedAgentConfigSchema = z.object({
   platformAssessment: PlatformAssessmentOptInSchema.optional(),
   authorizationMode: AuthorizationModeSchema.default('direct'),
 }).superRefine((data, ctx) => {
-  if (!data.technical && !data.intelligence) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'At least one of "technical" or "intelligence" must be configured',
-    });
-  }
-
   // 004: capabilityMode='hybrid' requires technical config (the scanner)
   if (data.capabilityMode === 'hybrid' && !data.technical) {
     ctx.addIssue({
