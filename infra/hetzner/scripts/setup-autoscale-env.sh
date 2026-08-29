@@ -182,6 +182,19 @@ if [[ -f "${TFVARS_FILE}" ]]; then
   echo "==> Uploading ${HEROBIDS_ENV}.tfvars to server..."
   scp ${SSH_OPTS} "${TFVARS_FILE}" "root@${SERVER_IP}:/opt/herobids/infra/hetzner/${HEROBIDS_ENV}.tfvars"
   ssh ${SSH_OPTS} "root@${SERVER_IP}" "chmod 0600 /opt/herobids/infra/hetzner/${HEROBIDS_ENV}.tfvars"
+
+  # Fix ssh_public_key_path: replace ~ with /root on the server-side copy.
+  # The file() function in Terraform doesn't expand ~ on the server.
+  ssh ${SSH_OPTS} "root@${SERVER_IP}" "sed -i 's|~/.ssh|/root/.ssh|g' /opt/herobids/infra/hetzner/${HEROBIDS_ENV}.tfvars"
+
+  # Upload the SSH public key if the tfvars references one.
+  SSH_PUB_KEY_PATH="$(grep -m1 'ssh_public_key_path' "${TFVARS_FILE}" 2>/dev/null | sed 's/.*"\(.*\)".*/\1/' | sed "s|~|${HOME}|")"
+  if [[ -n "${SSH_PUB_KEY_PATH}" && -f "${SSH_PUB_KEY_PATH}" ]]; then
+    echo "==> Uploading SSH public key to server..."
+    ssh ${SSH_OPTS} "root@${SERVER_IP}" 'mkdir -p /root/.ssh'
+    scp ${SSH_OPTS} "${SSH_PUB_KEY_PATH}" "root@${SERVER_IP}:/root/.ssh/$(basename "${SSH_PUB_KEY_PATH}")"
+  fi
+
   echo "    Uploaded: /opt/herobids/infra/hetzner/${HEROBIDS_ENV}.tfvars (0600)"
 else
   echo "WARNING: ${TFVARS_FILE} not found locally — terraform apply on the server may fail."
