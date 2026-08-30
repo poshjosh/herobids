@@ -33,6 +33,7 @@ describe('ExternalSkillsConfigSchema', () => {
       if (result.success) {
         expect(result.data.enabled).toBe(true);
         expect(result.data.apiBaseUrl).toBe('http://skills-api:3456');
+        expect(result.data.searchApiBaseUrl).toBe('https://skills.sh');
         expect(result.data.searchTimeoutMs).toBe(5000);
         expect(result.data.browseTimeoutMs).toBe(5000);
         expect(result.data.statsTimeoutMs).toBe(3000);
@@ -45,6 +46,7 @@ describe('ExternalSkillsConfigSchema', () => {
       if (result.success) {
         expect(result.data.enabled).toBe(false);
         expect(result.data.apiBaseUrl).toBe('http://skills-api:3456');
+        expect(result.data.searchApiBaseUrl).toBe('https://skills.sh');
         expect(result.data.searchTimeoutMs).toBe(5000);
         expect(result.data.browseTimeoutMs).toBe(5000);
         expect(result.data.statsTimeoutMs).toBe(3000);
@@ -59,6 +61,7 @@ describe('ExternalSkillsConfigSchema', () => {
       const result = ExternalSkillsSchema.safeParse({
         enabled: false,
         apiBaseUrl: 'https://skills.example.com',
+        searchApiBaseUrl: 'https://custom-search.example.com',
         searchTimeoutMs: 10000,
         browseTimeoutMs: 15000,
         statsTimeoutMs: 8000,
@@ -67,6 +70,7 @@ describe('ExternalSkillsConfigSchema', () => {
       if (result.success) {
         expect(result.data.enabled).toBe(false);
         expect(result.data.apiBaseUrl).toBe('https://skills.example.com');
+        expect(result.data.searchApiBaseUrl).toBe('https://custom-search.example.com');
         expect(result.data.searchTimeoutMs).toBe(10000);
         expect(result.data.browseTimeoutMs).toBe(15000);
         expect(result.data.statsTimeoutMs).toBe(8000);
@@ -115,6 +119,20 @@ describe('ExternalSkillsConfigSchema', () => {
     it('rejects empty string for apiBaseUrl', () => {
       const result = ExternalSkillsSchema.safeParse({
         apiBaseUrl: '',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects invalid URL for searchApiBaseUrl', () => {
+      const result = ExternalSkillsSchema.safeParse({
+        searchApiBaseUrl: 'not-a-url',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects empty string for searchApiBaseUrl', () => {
+      const result = ExternalSkillsSchema.safeParse({
+        searchApiBaseUrl: '',
       });
       expect(result.success).toBe(false);
     });

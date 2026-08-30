@@ -277,6 +277,7 @@ await skillsRoutes(app, db, appConfig.plans, (() => {
   if (!ext.enabled) return null;
   return new ExternalSkillProviderHttp({
     baseUrl: ext.apiBaseUrl,
+    searchApiBaseUrl: ext.searchApiBaseUrl,
     searchTimeoutMs: ext.searchTimeoutMs,
     browseTimeoutMs: ext.browseTimeoutMs,
     statsTimeoutMs: ext.statsTimeoutMs,

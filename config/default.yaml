@@ -1049,8 +1049,10 @@ integrations:
 # Discovery/search routes through this HTTP API; install/remove use the CLI.
 externalSkills:
   enabled: true                       # master switch — disables all external skill features
-  apiBaseUrl: http://skills-api:3456  # Compose service name for local dev; override for prod/staging
+  apiBaseUrl: http://skills-api:3456  # self-hosted @mastra/skills-api for browse + stats
                                       # override: EXTERNAL_SKILLS_API_BASE_URL
+  searchApiBaseUrl: https://skills.sh # Vercel public search API (600k+ skills, no auth)
+                                      # override: EXTERNAL_SKILLS_SEARCH_API_BASE_URL
   searchTimeoutMs: 5000               # timeout for keyword search requests
                                       # override: EXTERNAL_SKILLS_SEARCH_TIMEOUT_MS
   browseTimeoutMs: 5000               # timeout for browse/popular listing requests

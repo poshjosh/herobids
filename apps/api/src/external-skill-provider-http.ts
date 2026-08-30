@@ -1,9 +1,11 @@
 /**
- * HTTP-based ExternalSkillProvider implementation.
+ * Hybrid ExternalSkillProvider implementation.
  *
- * Calls a self-hosted @mastra/skills-api instance for external skill
- * discovery. All methods degrade gracefully — network errors, timeouts,
- * and invalid responses return empty pages / null stats instead of throwing.
+ * Search: routes through the public skills.sh API (600k+ skills, no auth).
+ * Browse + stats: routes through a self-hosted @mastra/skills-api instance (34k+).
+ *
+ * All methods degrade gracefully — network errors, timeouts, and invalid
+ * responses return empty pages / null stats instead of throwing.
  */
 
 import { z } from 'zod';
@@ -15,9 +17,10 @@ import type {
   ExternalSkillSummary,
 } from '@herobids/domain';
 
-// ── Zod schemas for @mastra/skills-api response validation ──────────────
+// ── Zod schemas ─────────────────────────────────────────────────────────
 
-const RegistrySkillSchema = z.object({
+// Self-hosted @mastra/skills-api response (browse)
+const MastraSkillSchema = z.object({
   source: z.string(),
   skillId: z.string(),
   name: z.string(),
@@ -28,8 +31,8 @@ const RegistrySkillSchema = z.object({
   displayName: z.string().optional(),
 }).passthrough();
 
-const SkillsPageResponseSchema = z.object({
-  skills: z.array(RegistrySkillSchema),
+const MastraPageResponseSchema = z.object({
+  skills: z.array(MastraSkillSchema),
   total: z.number(),
   page: z.number(),
   pageSize: z.number(),
@@ -44,10 +47,31 @@ const StatsResponseSchema = z.object({
   totalInstalls: z.number().optional(),
 });
 
+// Public skills.sh /api/search response
+const SkillsShSkillSchema = z.object({
+  id: z.string(),
+  skillId: z.string(),
+  name: z.string(),
+  installs: z.number(),
+  source: z.string(),
+}).passthrough();
+
+const SkillsShSearchResponseSchema = z.object({
+  skills: z.array(SkillsShSkillSchema),
+  count: z.number(),
+  query: z.string().optional(),
+  searchType: z.string().optional(),
+  searchVersion: z.string().optional(),
+  duration_ms: z.number().optional(),
+});
+
 // ── Config type ─────────────────────────────────────────────────────────
 
 export interface ExternalSkillProviderHttpConfig {
+  /** Self-hosted @mastra/skills-api base URL (browse + stats). */
   baseUrl: string;
+  /** Public skills.sh base URL (search). */
+  searchApiBaseUrl: string;
   searchTimeoutMs: number;
   browseTimeoutMs: number;
   statsTimeoutMs: number;
@@ -62,18 +86,51 @@ interface StatsCache {
   fetchedAt: number;
 }
 
-// ── Mapping helper ──────────────────────────────────────────────────────
+// ── Search result cache ─────────────────────────────────────────────────
+// skills.sh /api/search has no pagination. We request up to 200 results
+// (its max) and slice pages locally. Cache briefly to avoid re-fetching
+// for adjacent pages of the same query.
 
-type RegistrySkill = z.infer<typeof RegistrySkillSchema>;
+const SEARCH_CACHE_TTL_MS = 60 * 1000; // 1 minute
+const SKILLS_SH_MAX_LIMIT = 200;
 
-function mapToSummary(skill: RegistrySkill): ExternalSkillSummary {
+interface SearchCache {
+  query: string;
+  results: ExternalSkillSummary[];
+  fetchedAt: number;
+}
+
+// ── Mapping helpers ─────────────────────────────────────────────────────
+
+type MastraSkill = z.infer<typeof MastraSkillSchema>;
+
+function mapMastraToSummary(skill: MastraSkill): ExternalSkillSummary {
   return {
     ref: `${skill.owner}/${skill.repo}/${skill.skillId}`,
     skillId: skill.skillId,
     name: skill.displayName ?? skill.name,
-    description: '', // skills-api does not provide a description field
+    description: '',
     owner: skill.owner,
     repo: skill.repo,
+    installs: skill.installs,
+  };
+}
+
+type SkillsShSkill = z.infer<typeof SkillsShSkillSchema>;
+
+function mapSkillsShToSummary(skill: SkillsShSkill): ExternalSkillSummary {
+  // source is "owner/repo" — split it
+  const slashIdx = skill.source.indexOf('/');
+  const owner = slashIdx > 0 ? skill.source.slice(0, slashIdx) : skill.source;
+  const repo = slashIdx > 0 ? skill.source.slice(slashIdx + 1) : '';
+
+  return {
+    ref: skill.id, // already "owner/repo/skillId"
+    skillId: skill.skillId,
+    name: skill.name,
+    description: '',
+    owner,
+    repo,
     installs: skill.installs,
   };
 }
@@ -88,33 +145,54 @@ function emptyPage(page: number, pageSize: number): ExternalSkillPage {
 
 export class ExternalSkillProviderHttp implements ExternalSkillProvider {
   private readonly baseUrl: string;
+  private readonly searchApiBaseUrl: string;
   private readonly searchTimeoutMs: number;
   private readonly browseTimeoutMs: number;
   private readonly statsTimeoutMs: number;
   private readonly log: FastifyBaseLogger;
   private statsCache: StatsCache | null = null;
+  private searchCache: SearchCache | null = null;
 
   constructor(config: ExternalSkillProviderHttpConfig, logger: FastifyBaseLogger) {
-    // Strip trailing slash so path concatenation is clean
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
+    this.searchApiBaseUrl = config.searchApiBaseUrl.replace(/\/+$/, '');
     this.searchTimeoutMs = config.searchTimeoutMs;
     this.browseTimeoutMs = config.browseTimeoutMs;
     this.statsTimeoutMs = config.statsTimeoutMs;
     this.log = logger;
   }
 
+  /**
+   * Search via the public skills.sh /api/search endpoint (600k+ skills).
+   *
+   * skills.sh has no server-side pagination. We fetch up to 200 results
+   * (the API max), cache them briefly, and slice the requested page locally.
+   */
   async search(
     query: string,
     opts: { page: number; pageSize: number },
   ): Promise<ExternalSkillPage> {
-    const url = new URL(`${this.baseUrl}/api/skills`);
-    url.searchParams.set('query', query);
-    url.searchParams.set('page', String(opts.page));
-    url.searchParams.set('pageSize', String(opts.pageSize));
+    const results = await this.fetchSkillsShSearch(query);
+    if (results.length === 0) {
+      return emptyPage(opts.page, opts.pageSize);
+    }
 
-    return this.fetchSkillsPage(url, this.searchTimeoutMs, opts.page, opts.pageSize);
+    const offset = (opts.page - 1) * opts.pageSize;
+    const slice = results.slice(offset, offset + opts.pageSize);
+
+    return {
+      results: slice,
+      // We know at least this many matched. The true total may be higher
+      // but skills.sh caps at 200 results with no total count field.
+      totalCount: results.length,
+      page: opts.page,
+      pageSize: opts.pageSize,
+    };
   }
 
+  /**
+   * Browse via the self-hosted @mastra/skills-api (34k+ skills, paginated).
+   */
   async browse(opts: { page: number; pageSize: number }): Promise<ExternalSkillPage> {
     const url = new URL(`${this.baseUrl}/api/skills`);
     url.searchParams.set('sortBy', 'installs');
@@ -122,9 +200,12 @@ export class ExternalSkillProviderHttp implements ExternalSkillProvider {
     url.searchParams.set('page', String(opts.page));
     url.searchParams.set('pageSize', String(opts.pageSize));
 
-    return this.fetchSkillsPage(url, this.browseTimeoutMs, opts.page, opts.pageSize);
+    return this.fetchMastraPage(url, this.browseTimeoutMs, opts.page, opts.pageSize);
   }
 
+  /**
+   * Stats from the self-hosted @mastra/skills-api. Cached for 5 minutes.
+   */
   async getStats(): Promise<ExternalSkillStats | null> {
     const now = Date.now();
     if (this.statsCache && now - this.statsCache.fetchedAt < STATS_CACHE_TTL_MS) {
@@ -163,9 +244,52 @@ export class ExternalSkillProviderHttp implements ExternalSkillProvider {
     }
   }
 
-  // ── Private helpers ─────────────────────────────────────────────────
+  // ── Private: skills.sh search ─────────────────────────────────────
 
-  private async fetchSkillsPage(
+  private async fetchSkillsShSearch(query: string): Promise<ExternalSkillSummary[]> {
+    const now = Date.now();
+    if (
+      this.searchCache
+      && this.searchCache.query === query
+      && now - this.searchCache.fetchedAt < SEARCH_CACHE_TTL_MS
+    ) {
+      return this.searchCache.results;
+    }
+
+    try {
+      const url = new URL(`${this.searchApiBaseUrl}/api/search`);
+      url.searchParams.set('q', query);
+      url.searchParams.set('limit', String(SKILLS_SH_MAX_LIMIT));
+
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(this.searchTimeoutMs),
+      });
+
+      if (!res.ok) {
+        this.log.warn({ status: res.status }, 'skills.sh search returned non-2xx');
+        return this.searchCache?.query === query ? this.searchCache.results : [];
+      }
+
+      const body: unknown = await res.json();
+      const parsed = SkillsShSearchResponseSchema.safeParse(body);
+      if (!parsed.success) {
+        this.log.warn({ issues: parsed.error.issues }, 'skills.sh search response validation failed');
+        return this.searchCache?.query === query ? this.searchCache.results : [];
+      }
+
+      const results = parsed.data.skills.map(mapSkillsShToSummary);
+      this.searchCache = { query, results, fetchedAt: Date.now() };
+      return results;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.log.warn({ err: msg }, 'skills.sh search fetch failed');
+      return this.searchCache?.query === query ? this.searchCache.results : [];
+    }
+  }
+
+  // ── Private: @mastra/skills-api browse ────────────────────────────
+
+  private async fetchMastraPage(
     url: URL,
     timeoutMs: number,
     page: number,
@@ -182,14 +306,14 @@ export class ExternalSkillProviderHttp implements ExternalSkillProvider {
       }
 
       const body: unknown = await res.json();
-      const parsed = SkillsPageResponseSchema.safeParse(body);
+      const parsed = MastraPageResponseSchema.safeParse(body);
       if (!parsed.success) {
         this.log.warn({ issues: parsed.error.issues, url: url.pathname }, 'external skills response validation failed');
         return emptyPage(page, pageSize);
       }
 
       return {
-        results: parsed.data.skills.map(mapToSummary),
+        results: parsed.data.skills.map(mapMastraToSummary),
         totalCount: parsed.data.total,
         page: parsed.data.page,
         pageSize: parsed.data.pageSize,

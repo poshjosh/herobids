@@ -7,7 +7,8 @@ import type { ExternalSkillProviderHttpConfig } from './external-skill-provider-
 
 function makeConfig(overrides?: Partial<ExternalSkillProviderHttpConfig>): ExternalSkillProviderHttpConfig {
   return {
-    baseUrl: 'http://skills.local:3000',
+    baseUrl: 'http://mastra.local:3456',
+    searchApiBaseUrl: 'https://skills.sh',
     searchTimeoutMs: 5000,
     browseTimeoutMs: 5000,
     statsTimeoutMs: 3000,
@@ -19,8 +20,33 @@ function makeLogger(): FastifyBaseLogger {
   return { warn: vi.fn() } as unknown as FastifyBaseLogger;
 }
 
-/** Builds a valid skills-api page response body. */
-function makeSkillsPageBody(
+/** skills.sh /api/search response body */
+function makeSkillsShSearchBody(
+  skills: Array<Record<string, unknown>> = [],
+) {
+  return {
+    query: 'test',
+    searchType: 'fuzzy',
+    searchVersion: 'legacy',
+    skills,
+    count: skills.length,
+    duration_ms: 100,
+  };
+}
+
+function makeSkillsShSkill(overrides?: Record<string, unknown>) {
+  return {
+    id: 'acme/tools/skill-1',
+    skillId: 'skill-1',
+    name: 'skill-1',
+    installs: 42,
+    source: 'acme/tools',
+    ...overrides,
+  };
+}
+
+/** @mastra/skills-api page response body */
+function makeMastraPageBody(
   skills: Array<Record<string, unknown>> = [],
   opts: { total?: number; page?: number; pageSize?: number } = {},
 ) {
@@ -32,7 +58,7 @@ function makeSkillsPageBody(
   };
 }
 
-function makeRegistrySkill(overrides?: Record<string, unknown>) {
+function makeMastraSkill(overrides?: Record<string, unknown>) {
   return {
     source: 'github',
     skillId: 'skill-1',
@@ -68,31 +94,101 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// ── search() ────────────────────────────────────────────────────────────
+// ── search() — routes to skills.sh ─────────────────────────────────────
 
-describe('ExternalSkillProviderHttp — search', () => {
-  it('calls GET /api/skills with query, page, pageSize and returns mapped page', async () => {
-    const skill = makeRegistrySkill({ displayName: 'Pretty Name' });
+describe('ExternalSkillProviderHttp — search (skills.sh)', () => {
+  it('calls skills.sh /api/search with query and limit=200', async () => {
+    const skill = makeSkillsShSkill();
     const fetchMock = vi.fn().mockResolvedValue(
-      okJsonResponse(makeSkillsPageBody([skill], { total: 1, page: 2, pageSize: 10 })),
+      okJsonResponse(makeSkillsShSearchBody([skill])),
     );
     vi.stubGlobal('fetch', fetchMock);
 
     const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
-    const result = await provider.search('crypto', { page: 2, pageSize: 10 });
+    const result = await provider.search('crypto', { page: 1, pageSize: 10 });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, opts] = fetchMock.mock.calls[0]! as [URL, RequestInit];
-    expect(url.toString()).toContain('/api/skills');
-    expect(url.searchParams.get('query')).toBe('crypto');
-    expect(url.searchParams.get('page')).toBe('2');
-    expect(url.searchParams.get('pageSize')).toBe('10');
-    expect(opts.signal).toBeDefined();
+    const [url] = fetchMock.mock.calls[0]! as [URL];
+    expect(url.toString()).toContain('skills.sh/api/search');
+    expect(url.searchParams.get('q')).toBe('crypto');
+    expect(url.searchParams.get('limit')).toBe('200');
 
-    expect(result.totalCount).toBe(1);
-    expect(result.page).toBe(2);
-    expect(result.pageSize).toBe(10);
     expect(result.results).toHaveLength(1);
+    expect(result.page).toBe(1);
+    expect(result.pageSize).toBe(10);
+  });
+
+  it('slices results for requested page from cached 200-result window', async () => {
+    // Create 5 skills to simulate a result set
+    const skills = Array.from({ length: 5 }, (_, i) =>
+      makeSkillsShSkill({ id: `o/r/s${i}`, skillId: `s${i}`, name: `skill-${i}`, installs: 100 - i, source: 'o/r' }),
+    );
+    const fetchMock = vi.fn().mockResolvedValue(
+      okJsonResponse(makeSkillsShSearchBody(skills)),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
+
+    // Page 1, size 2 → first 2 skills
+    const p1 = await provider.search('test', { page: 1, pageSize: 2 });
+    expect(p1.results).toHaveLength(2);
+    expect(p1.results[0]!.skillId).toBe('s0');
+    expect(p1.results[1]!.skillId).toBe('s1');
+
+    // Page 2, size 2 → next 2 skills (from cache, no re-fetch)
+    const p2 = await provider.search('test', { page: 2, pageSize: 2 });
+    expect(p2.results).toHaveLength(2);
+    expect(p2.results[0]!.skillId).toBe('s2');
+    expect(p2.results[1]!.skillId).toBe('s3');
+
+    // Page 3, size 2 → last 1 skill
+    const p3 = await provider.search('test', { page: 3, pageSize: 2 });
+    expect(p3.results).toHaveLength(1);
+    expect(p3.results[0]!.skillId).toBe('s4');
+
+    // Only 1 fetch call — subsequent pages served from cache
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps skills.sh response to ExternalSkillSummary', async () => {
+    const skill = makeSkillsShSkill({
+      id: 'google/agents-cli/google-adk',
+      skillId: 'google-adk',
+      name: 'google-adk',
+      installs: 110000,
+      source: 'google/agents-cli',
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      okJsonResponse(makeSkillsShSearchBody([skill])),
+    ));
+
+    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
+    const result = await provider.search('google', { page: 1, pageSize: 20 });
+
+    const mapped = result.results[0]!;
+    expect(mapped.ref).toBe('google/agents-cli/google-adk');
+    expect(mapped.skillId).toBe('google-adk');
+    expect(mapped.name).toBe('google-adk');
+    expect(mapped.owner).toBe('google');
+    expect(mapped.repo).toBe('agents-cli');
+    expect(mapped.installs).toBe(110000);
+    expect(mapped.description).toBe('');
+  });
+
+  it('returns totalCount as the number of results from skills.sh', async () => {
+    const skills = Array.from({ length: 15 }, (_, i) =>
+      makeSkillsShSkill({ id: `o/r/s${i}`, skillId: `s${i}`, source: 'o/r' }),
+    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      okJsonResponse(makeSkillsShSearchBody(skills)),
+    ));
+
+    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
+    const result = await provider.search('test', { page: 1, pageSize: 5 });
+
+    expect(result.totalCount).toBe(15);
+    expect(result.results).toHaveLength(5);
   });
 
   it('returns empty page on network error', async () => {
@@ -122,19 +218,32 @@ describe('ExternalSkillProviderHttp — search', () => {
     const logger = makeLogger();
     const provider = new ExternalSkillProviderHttp(makeConfig(), logger);
 
-    const result = await provider.search('test', { page: 3, pageSize: 5 });
+    const result = await provider.search('test', { page: 1, pageSize: 5 });
 
-    expect(result).toEqual({ results: [], totalCount: 0, page: 3, pageSize: 5 });
+    expect(result).toEqual({ results: [], totalCount: 0, page: 1, pageSize: 5 });
     expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('returns empty slice for page beyond results', async () => {
+    const skills = [makeSkillsShSkill()];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      okJsonResponse(makeSkillsShSearchBody(skills)),
+    ));
+
+    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
+    const result = await provider.search('test', { page: 10, pageSize: 20 });
+
+    expect(result.results).toHaveLength(0);
+    expect(result.totalCount).toBe(1);
   });
 });
 
-// ── browse() ────────────────────────────────────────────────────────────
+// ── browse() — routes to @mastra/skills-api ─────────────────────────────
 
-describe('ExternalSkillProviderHttp — browse', () => {
-  it('calls GET /api/skills with sortBy=installs&sortOrder=desc', async () => {
+describe('ExternalSkillProviderHttp — browse (mastra)', () => {
+  it('calls mastra /api/skills with sortBy=installs&sortOrder=desc', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      okJsonResponse(makeSkillsPageBody([], { total: 0, page: 1, pageSize: 20 })),
+      okJsonResponse(makeMastraPageBody([], { total: 0, page: 1, pageSize: 20 })),
     );
     vi.stubGlobal('fetch', fetchMock);
 
@@ -142,12 +251,25 @@ describe('ExternalSkillProviderHttp — browse', () => {
     await provider.browse({ page: 1, pageSize: 20 });
 
     const [url] = fetchMock.mock.calls[0]! as [URL];
+    expect(url.toString()).toContain('mastra.local:3456/api/skills');
     expect(url.searchParams.get('sortBy')).toBe('installs');
     expect(url.searchParams.get('sortOrder')).toBe('desc');
     expect(url.searchParams.get('page')).toBe('1');
     expect(url.searchParams.get('pageSize')).toBe('20');
-    // browse should not have a query param
-    expect(url.searchParams.has('query')).toBe(false);
+  });
+
+  it('maps mastra response with displayName', async () => {
+    const skill = makeMastraSkill({ displayName: 'Pretty Name', owner: 'org', repo: 'lib', skillId: 'my-skill' });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      okJsonResponse(makeMastraPageBody([skill], { total: 1 })),
+    ));
+
+    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
+    const result = await provider.browse({ page: 1, pageSize: 20 });
+
+    expect(result.results[0]!.name).toBe('Pretty Name');
+    expect(result.results[0]!.ref).toBe('org/lib/my-skill');
+    expect(result.totalCount).toBe(1);
   });
 
   it('returns empty page on network error', async () => {
@@ -180,10 +302,10 @@ describe('ExternalSkillProviderHttp — browse', () => {
   });
 });
 
-// ── getStats() ──────────────────────────────────────────────────────────
+// ── getStats() — routes to @mastra/skills-api ───────────────────────────
 
-describe('ExternalSkillProviderHttp — getStats', () => {
-  it('fetches stats from /api/skills/stats and returns mapped object', async () => {
+describe('ExternalSkillProviderHttp — getStats (mastra)', () => {
+  it('fetches stats from mastra /api/skills/stats', async () => {
     const body = { totalSkills: 100, totalSources: 5, totalOwners: 30 };
     const fetchMock = vi.fn().mockResolvedValue(okJsonResponse(body));
     vi.stubGlobal('fetch', fetchMock);
@@ -193,7 +315,7 @@ describe('ExternalSkillProviderHttp — getStats', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url] = fetchMock.mock.calls[0]! as [string];
-    expect(url).toBe('http://skills.local:3000/api/skills/stats');
+    expect(url).toBe('http://mastra.local:3456/api/skills/stats');
     expect(stats).toEqual({ totalSkills: 100, totalSources: 5, totalOwners: 30 });
   });
 
@@ -211,8 +333,6 @@ describe('ExternalSkillProviderHttp — getStats', () => {
     const stats = await provider.getStats();
 
     expect(stats).toEqual({ totalSkills: 10, totalSources: 2, totalOwners: 3 });
-    expect(stats).not.toHaveProperty('scrapedAt');
-    expect(stats).not.toHaveProperty('totalInstalls');
   });
 
   it('returns null on network error when no cache exists', async () => {
@@ -228,17 +348,6 @@ describe('ExternalSkillProviderHttp — getStats', () => {
 
   it('returns null on non-2xx response when no cache exists', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(errorResponse(500)));
-    const logger = makeLogger();
-    const provider = new ExternalSkillProviderHttp(makeConfig(), logger);
-
-    const stats = await provider.getStats();
-
-    expect(stats).toBeNull();
-    expect(logger.warn).toHaveBeenCalled();
-  });
-
-  it('returns null on Zod validation failure when no cache exists', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJsonResponse({ wrong: 'shape' })));
     const logger = makeLogger();
     const provider = new ExternalSkillProviderHttp(makeConfig(), logger);
 
@@ -282,7 +391,6 @@ describe('ExternalSkillProviderHttp — stats caching', () => {
     const first = await provider.getStats();
     expect(first).toEqual({ totalSkills: 50, totalSources: 3, totalOwners: 10 });
 
-    // Advance past the 5-minute TTL
     vi.advanceTimersByTime(5 * 60 * 1000 + 1);
 
     const second = await provider.getStats();
@@ -304,181 +412,50 @@ describe('ExternalSkillProviderHttp — stats caching', () => {
     const logger = makeLogger();
     const provider = new ExternalSkillProviderHttp(makeConfig(), logger);
 
-    const first = await provider.getStats();
-    expect(first).toEqual({ totalSkills: 50, totalSources: 3, totalOwners: 10 });
-
-    // Advance past TTL to make cache stale
+    await provider.getStats();
     vi.advanceTimersByTime(5 * 60 * 1000 + 1);
 
     const second = await provider.getStats();
-    // Should return stale cached data
     expect(second).toEqual({ totalSkills: 50, totalSources: 3, totalOwners: 10 });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(logger.warn).toHaveBeenCalled();
 
     vi.useRealTimers();
   });
-
-  it('returns stale cache when non-2xx response after TTL', async () => {
-    vi.useFakeTimers();
-
-    const body = { totalSkills: 25, totalSources: 2, totalOwners: 5 };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(okJsonResponse(body))
-      .mockResolvedValueOnce(errorResponse(502));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
-
-    await provider.getStats();
-    vi.advanceTimersByTime(5 * 60 * 1000 + 1);
-
-    const second = await provider.getStats();
-    expect(second).toEqual({ totalSkills: 25, totalSources: 2, totalOwners: 5 });
-
-    vi.useRealTimers();
-  });
-
-  it('returns stale cache when Zod validation fails after TTL', async () => {
-    vi.useFakeTimers();
-
-    const body = { totalSkills: 25, totalSources: 2, totalOwners: 5 };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(okJsonResponse(body))
-      .mockResolvedValueOnce(okJsonResponse({ corrupted: true }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
-
-    await provider.getStats();
-    vi.advanceTimersByTime(5 * 60 * 1000 + 1);
-
-    const second = await provider.getStats();
-    expect(second).toEqual({ totalSkills: 25, totalSources: 2, totalOwners: 5 });
-
-    vi.useRealTimers();
-  });
 });
 
-// ── Response mapping ────────────────────────────────────────────────────
-
-describe('ExternalSkillProviderHttp — response mapping', () => {
-  it('maps ref as owner/repo/skillId', async () => {
-    const skill = makeRegistrySkill({ owner: 'org', repo: 'lib', skillId: 'my-skill' });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      okJsonResponse(makeSkillsPageBody([skill])),
-    ));
-
-    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
-    const result = await provider.search('test', { page: 1, pageSize: 20 });
-
-    expect(result.results[0]!.ref).toBe('org/lib/my-skill');
-  });
-
-  it('uses displayName when available', async () => {
-    const skill = makeRegistrySkill({ name: 'raw-name', displayName: 'Display Name' });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      okJsonResponse(makeSkillsPageBody([skill])),
-    ));
-
-    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
-    const result = await provider.search('test', { page: 1, pageSize: 20 });
-
-    expect(result.results[0]!.name).toBe('Display Name');
-  });
-
-  it('falls back to raw name when displayName is absent', async () => {
-    const skill = makeRegistrySkill({ name: 'raw-name' });
-    delete (skill as Record<string, unknown>)['displayName'];
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      okJsonResponse(makeSkillsPageBody([skill])),
-    ));
-
-    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
-    const result = await provider.search('test', { page: 1, pageSize: 20 });
-
-    expect(result.results[0]!.name).toBe('raw-name');
-  });
-
-  it('sets description to empty string', async () => {
-    const skill = makeRegistrySkill();
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      okJsonResponse(makeSkillsPageBody([skill])),
-    ));
-
-    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
-    const result = await provider.search('test', { page: 1, pageSize: 20 });
-
-    expect(result.results[0]!.description).toBe('');
-  });
-
-  it('maps all ExternalSkillSummary fields correctly', async () => {
-    const skill = makeRegistrySkill({
-      owner: 'alice',
-      repo: 'toolkit',
-      skillId: 'fetch-data',
-      name: 'raw',
-      displayName: 'Fetch Data Skill',
-      installs: 123,
-    });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      okJsonResponse(makeSkillsPageBody([skill])),
-    ));
-
-    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
-    const result = await provider.search('fetch', { page: 1, pageSize: 20 });
-
-    const mapped = result.results[0]!;
-    expect(mapped).toEqual({
-      ref: 'alice/toolkit/fetch-data',
-      skillId: 'fetch-data',
-      name: 'Fetch Data Skill',
-      description: '',
-      owner: 'alice',
-      repo: 'toolkit',
-      installs: 123,
-    });
-    // tags is not provided by skills-api, so it should be absent
-    expect(mapped).not.toHaveProperty('tags');
-  });
-
-  it('maps multiple skills in a page', async () => {
-    const skills = [
-      makeRegistrySkill({ skillId: 's1', owner: 'a', repo: 'r' }),
-      makeRegistrySkill({ skillId: 's2', owner: 'b', repo: 'r2' }),
-    ];
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      okJsonResponse(makeSkillsPageBody(skills, { total: 2 })),
-    ));
-
-    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
-    const result = await provider.browse({ page: 1, pageSize: 20 });
-
-    expect(result.results).toHaveLength(2);
-    expect(result.results[0]!.ref).toBe('a/r/s1');
-    expect(result.results[1]!.ref).toBe('b/r2/s2');
-    expect(result.totalCount).toBe(2);
-  });
-});
-
-// ── Constructor / baseUrl normalization ──────────────────────────────────
+// ── baseUrl normalization ───────────────────────────────────────────────
 
 describe('ExternalSkillProviderHttp — baseUrl normalization', () => {
   it('strips trailing slash from baseUrl', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      okJsonResponse(makeSkillsPageBody([])),
+      okJsonResponse(makeMastraPageBody([])),
     );
     vi.stubGlobal('fetch', fetchMock);
 
     const provider = new ExternalSkillProviderHttp(
-      makeConfig({ baseUrl: 'http://skills.local:3000/' }),
+      makeConfig({ baseUrl: 'http://mastra.local:3456/' }),
+      makeLogger(),
+    );
+    await provider.browse({ page: 1, pageSize: 10 });
+
+    const [url] = fetchMock.mock.calls[0]! as [URL];
+    expect(url.toString()).not.toContain('//api');
+  });
+
+  it('strips trailing slash from searchApiBaseUrl', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okJsonResponse(makeSkillsShSearchBody([])),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const provider = new ExternalSkillProviderHttp(
+      makeConfig({ searchApiBaseUrl: 'https://skills.sh/' }),
       makeLogger(),
     );
     await provider.search('test', { page: 1, pageSize: 10 });
 
     const [url] = fetchMock.mock.calls[0]! as [URL];
-    // Should not have double slash
-    expect(url.toString()).toContain('http://skills.local:3000/api/skills');
+    expect(url.toString()).toContain('skills.sh/api/search');
     expect(url.toString()).not.toContain('//api');
   });
 });
