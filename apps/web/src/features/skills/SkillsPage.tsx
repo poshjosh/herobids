@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { skills as skillsApi, agentTools, type CreateSkillRequest, type Skill, type SkillMetrics } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel, Button, ErrorBanner, ToolTagPicker } from '../../lib/ui.js';
@@ -72,6 +72,7 @@ export function SkillsPage() {
   const selectableQuery = useQuery({
     queryKey: ['skills', 'selectable', allPage, debouncedSearch],
     queryFn: () => skillsApi.list({ scope: 'selectable', page: allPage, pageSize: PAGE_SIZE, q: debouncedSearch || undefined }),
+    placeholderData: keepPreviousData,
   });
 
   const mineQuery = useQuery({
@@ -88,6 +89,7 @@ export function SkillsPage() {
     queryKey: ['skills', 'marketplace', marketplacePage, debouncedSearch],
     queryFn: () => skillsApi.list({ scope: 'marketplace', sort: 'popular', page: marketplacePage, pageSize: PAGE_SIZE, q: debouncedSearch || undefined }),
     enabled: canViewMarketplace,
+    placeholderData: keepPreviousData,
   });
 
   const toolsQuery = useQuery({
@@ -146,6 +148,8 @@ export function SkillsPage() {
   const catalogTotalCount = allTabTotalCount;
 
   const hasAnySkills = (allTabSkills.length > 0) || mySkills.length > 0 || builtIn.length > 0 || marketplaceSkills.length > 0;
+  // Show the search/tab UI whenever we have skills OR the user is actively searching
+  const showSkillsUI = hasAnySkills || debouncedSearch.length > 0 || searchTerm.length > 0;
   const isLoading = selectableQuery.isLoading || mineQuery.isLoading || builtInQuery.isLoading || (canViewMarketplace && marketplaceQuery.isLoading);
   const queryError = selectableQuery.error ?? mineQuery.error ?? builtInQuery.error ?? (canViewMarketplace ? marketplaceQuery.error : null);
 
@@ -503,7 +507,7 @@ export function SkillsPage() {
         />
       )}
 
-      {!isLoading && !queryError && !hasAnySkills && (
+      {!isLoading && !queryError && !showSkillsUI && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <EmptyState
             title={intl.formatMessage({ id: 'skills.empty.all.title', defaultMessage: 'No skills yet' })}
@@ -515,7 +519,7 @@ export function SkillsPage() {
         </div>
       )}
 
-      {!isLoading && !queryError && hasAnySkills && (
+      {!isLoading && !queryError && showSkillsUI && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
           <input
             type="text"
