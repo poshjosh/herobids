@@ -71,8 +71,22 @@ function runExternalSubprocess(
   });
 }
 
+/**
+ * Normalize an external skill ref: if the ref has exactly 3 slash-separated
+ * segments (owner/repo/skill), rewrite to owner/repo@skill which is the
+ * format the skills CLI expects.
+ */
+function normalizeExternalRef(ref: string): { ref: string; wasNormalized: boolean } {
+  const parts = ref.split('/');
+  if (parts.length === 3 && !ref.includes('@')) {
+    return { ref: `${parts[0]}/${parts[1]}@${parts[2]}`, wasNormalized: true };
+  }
+  return { ref, wasNormalized: false };
+}
+
 async function runExternalSkillInstall(ref: string, cwd: string): Promise<ExternalSubprocessResult> {
-  return runExternalSubprocess(['add', ref, '--yes'], cwd, EXTERNAL_INSTALL_TIMEOUT_MS);
+  const normalized = normalizeExternalRef(ref);
+  return runExternalSubprocess(['add', normalized.ref, '--yes'], cwd, EXTERNAL_INSTALL_TIMEOUT_MS);
 }
 
 async function runExternalSkillRemove(name: string, cwd: string): Promise<ExternalSubprocessResult> {
@@ -252,7 +266,7 @@ async function sendBrokerSkillMutation(
 const addSkillsTool: AgentTool = {
   name: 'add_skills',
   description:
-    'Add skills to this agent by slug (e.g. system/trading) or ID. Dependencies are added automatically by default. External skills (e.g. owner/repo) are installed via skills.sh.',
+    'Add skills to this agent by slug (e.g. system/trading) or ID. Dependencies are added automatically by default. External skills use owner/repo@skill format (e.g. tychohq/agent-skills@flights). The @ separates the repo from the skill name.',
   parametersSchema: AddSkillsParamsSchema,
   parameters: convertZodToJsonSchema(AddSkillsParamsSchema),
   category: 'write-database',
@@ -297,11 +311,15 @@ const addSkillsTool: AgentTool = {
 
       const platformIds: string[] = [];
       const externalRefs: string[] = [];
+      const rejectedRefs: Array<{ ref: string; reason: string }> = [];
 
       for (const ref of inputRefs) {
         const id = resolved.get(ref);
         if (id) {
           platformIds.push(id);
+        } else if (ref.startsWith('system/')) {
+          // Unresolved system/ slug — don't route to external CLI
+          rejectedRefs.push({ ref, reason: `${ref} is not a recognized platform skill. Use search_skills to find available skills.` });
         } else if (ref.includes('/')) {
           externalRefs.push(ref);
         } else {
@@ -390,15 +408,17 @@ const addSkillsTool: AgentTool = {
         try {
           const { getWorkspacePaths } = await import('./workspace.js');
           const cwd = getWorkspacePaths(ctx.agentId).root;
-          const results = await Promise.all(
-            externalRefs.map(async (ref) => {
-              const result = await runExternalSkillInstall(ref, cwd);
-              if (result.ok) {
-                return { ref, ok: true as const, output: result.output };
-              }
-              return { ref, ok: false as const, error: result.error };
-            }),
-          );
+          // Run external installs sequentially — the skills CLI is not
+          // safe to run in parallel within the same workspace directory.
+          const results: Array<{ ref: string; ok: boolean; output?: string; error?: string }> = [];
+          for (const ref of externalRefs) {
+            const result = await runExternalSkillInstall(ref, cwd);
+            if (result.ok) {
+              results.push({ ref, ok: true as const, output: result.output });
+            } else {
+              results.push({ ref, ok: false as const, error: result.error });
+            }
+          }
           return results;
         } catch (err) {
           return externalRefs.map(ref => ({
@@ -448,7 +468,13 @@ const addSkillsTool: AgentTool = {
       const addedSlugs = (platformResult?.added ?? []).map(id => idToSlug.get(id) ?? id);
       const allWarnings = [
         ...(platformResult?.warnings ?? []),
-        ...externalResults.filter(r => !r.ok).map(r => `External add ${r.ref}: ${r.error}`),
+        ...rejectedRefs.map(r => r.reason),
+        ...externalResults.filter(r => !r.ok).map(r => {
+          const formatHint = !r.ref.includes('@') && r.ref.split('/').length >= 3
+            ? ` (hint: external skills use owner/repo@skill format, e.g. tychohq/agent-skills@flights)`
+            : '';
+          return `External add ${r.ref}: ${r.error}${formatHint}`;
+        }),
       ];
       const externalAdded = externalResults.filter(r => r.ok).map(r => r.ref);
 
@@ -551,16 +577,18 @@ const removeSkillsTool: AgentTool = {
         try {
           const { getWorkspacePaths } = await import('./workspace.js');
           const cwd = getWorkspacePaths(ctx.agentId).root;
-          const results = await Promise.all(
-            externalRefs.map(async (ref) => {
-              const name = ref.split('/').pop()!;
-              const result = await runExternalSkillRemove(name, cwd);
-              if (result.ok) {
-                return { ref, ok: true as const, output: result.output };
-              }
-              return { ref, ok: false as const, error: result.error };
-            }),
-          );
+          // Run external removes sequentially — the skills CLI is not
+          // safe to run in parallel within the same workspace directory.
+          const results: Array<{ ref: string; ok: boolean; output?: string; error?: string }> = [];
+          for (const ref of externalRefs) {
+            const name = ref.split('/').pop()!;
+            const result = await runExternalSkillRemove(name, cwd);
+            if (result.ok) {
+              results.push({ ref, ok: true as const, output: result.output });
+            } else {
+              results.push({ ref, ok: false as const, error: result.error });
+            }
+          }
           return results;
         } catch (err) {
           return externalRefs.map(ref => ({
