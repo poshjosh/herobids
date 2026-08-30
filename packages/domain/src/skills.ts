@@ -284,15 +284,16 @@ export const WEB_ACCESS_SKILL: SkillDefinition = {
   id: 'web-access',
   slug: 'system/web-access',
   name: 'Web Access',
-  description: 'Search the internet, read web pages, and fetch documents for research and information gathering.',
+  description: 'Search the internet, read web pages, fetch documents, and make structured HTTP requests for research and information gathering.',
   instructions: `You have access to internet research tools.
 
 - Use \`search_web(query)\` to search the internet. Returns a list of results with titles, URLs, and text extracts.
 - Use \`browse_url(url)\` to fetch and read the contents of a specific web page. Only \`https://\` URLs are allowed.
 - Use \`read_document(url)\` to fetch and extract text from a document URL (e.g. PDF). Only \`https://\` URLs are allowed.
+- Use \`http_request\` to make structured HTTP requests (GET, POST, PUT, PATCH, DELETE, HEAD) to external APIs. Returns status, headers, and truncated body. Useful for calling REST or GraphQL APIs with custom headers and authentication.
 - Use \`send_message\` to share findings with the user.
 - Use \`publish_artifact\` when findings are substantial enough to warrant a structured output.`,
-  requiredTools: ['search_web', 'browse_url', 'read_document', 'send_message', 'publish_artifact'],
+  requiredTools: ['search_web', 'browse_url', 'read_document', 'http_request', 'send_message', 'publish_artifact'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],
@@ -399,6 +400,42 @@ Use these tools to answer user questions about platform capabilities, guide them
 };
 
 /**
+ * `browser` skill — interactive browser automation via a shared browser pool.
+ * Separate from web-access because browser sessions have different resource
+ * requirements and cost — the agent should explicitly opt in.
+ */
+export const BROWSER_SKILL: SkillDefinition = {
+  id: 'browser',
+  slug: 'system/browser',
+  name: 'Browser',
+  description: 'Interactive browser automation: open pages, click, fill forms, take screenshots, and read page content.',
+  instructions: `You have access to interactive browser automation tools.
+
+- Use \`browse_interactive\` to interact with web pages programmatically.
+  - action "open" — open a URL in a browser session.
+  - action "snapshot" — get the accessibility tree of the current page.
+  - action "click" — click an element by CSS selector.
+  - action "fill" — fill a form field by CSS selector.
+  - action "screenshot" — take a screenshot of the current page (returns base64).
+  - action "get_text" — extract text content from an element by CSS selector.
+  - action "close" — close the browser session and release resources.
+
+Workflow: open → snapshot/click/fill/get_text → ... → close.
+Always close the session when done to free resources.
+Browser sessions are stateless — cookies are not preserved across sessions unless explicitly saved.`,
+  promptHint: "e.g. 'Navigate to a website, fill out a form, and capture the results'",
+  requiredTools: ['browse_interactive', 'send_message', 'publish_artifact'],
+  capabilityFamilies: [],
+  bindingRequirements: {},
+  contextRequirements: ['costs', 'session_elapsed'],
+  requiredContextBlocks: ['corePlatformContext'],
+  promptRendererHints: ['core-system'],
+  requiredGuardrails: ['token-budget'],
+  suggestedTickIntervalMs: 900_000,
+  visibility: 'public',
+};
+
+/**
  * Preset → skill ID mapping.
  * When a user selects a preset in the UI, this is what gets stored as skillIds.
  */
@@ -421,6 +458,7 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   TASK_MANAGEMENT_SKILL,
   EMAIL_SKILL,
   PLATFORM_DOCS_SKILL,
+  BROWSER_SKILL,
 ];
 
 /**

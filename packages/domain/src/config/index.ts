@@ -72,6 +72,8 @@ export {
   CreemConfigSchema,
   TelegramChannelConfigSchema,
   WebAccessToolsConfigSchema,
+  BrowserPoolConfigSchema,
+  HttpClientConfigSchema,
   AgentRiskDefaultsSchema,
   AgentCostEstimatesSchema,
   AgentRuntimePolicyOverridesSchema,
@@ -214,6 +216,8 @@ export type {
   PlatformAssessorConfig,
   PlatformAssessmentLlmConfig,
   WakeGateConfig,
+  BrowserPoolConfig,
+  HttpClientConfig,
 } from './schema.js';
 
 export type { ProvidersYaml, ProviderConfig } from '../models/llm-models.js';

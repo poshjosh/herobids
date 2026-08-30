@@ -61,7 +61,7 @@ A new `http_request` tool in the agent tool registry. No external service needed
 
 ## Detailed Plan
 
-### 1. Browser Pool — Nomad Job Definition
+### 1. Browser Pool — Nomad Job Definition [PENDING]
 
 **File:** `infra/nomad/browser-pool.nomad.hcl` (new)
 
@@ -126,7 +126,7 @@ browserPool:
     height: 720
 ```
 
-### 2. Domain — Browser Pool Port
+### 2. Domain — Browser Pool Port [PENDING]
 
 **File:** `packages/domain/src/ports/browser-pool.ts` (new)
 
@@ -144,7 +144,7 @@ export interface BrowserPoolPort {
 
 This is the abstraction the agent tool talks to. The initial adapter calls Browserless's HTTP API to get a CDP endpoint.
 
-### 3. Infrastructure Adapter — Browserless Adapter
+### 3. Infrastructure Adapter — Browserless Adapter [PENDING]
 
 **File:** `packages/venues/src/browser-pool/browserless-adapter.ts` (new, or a new package)
 
@@ -153,7 +153,7 @@ Implements `BrowserPoolPort`:
 - `releaseSession()`: closes the CDP connection (Browserless auto-cleans).
 - Handles connection errors, timeouts, queue-full responses.
 
-### 4. Agent Tool — `browse_interactive`
+### 4. Agent Tool — `browse_interactive` [PENDING]
 
 **File:** `apps/worker/src/tools/browser.ts` (new)
 
@@ -180,7 +180,7 @@ The tool:
 
 **Skill gating:** The tool is gated behind `system/web-access` (extend the existing skill) or a new `system/browser` skill. The agent must add the skill before the tool becomes available.
 
-### 5. Agent Tool — `http_request`
+### 5. Agent Tool — `http_request` [PENDING]
 
 **File:** `apps/worker/src/tools/http-client.ts` (new)
 
@@ -203,7 +203,7 @@ The tool:
 
 **Skill gating:** Gated behind a new `system/http` skill or added to `system/web-access`.
 
-### 6. Domain — Skill Definitions
+### 6. Domain — Skill Definitions [PENDING]
 
 **File:** `packages/domain/src/skills.ts` (modify)
 
@@ -217,13 +217,13 @@ Option B — new skills:
 
 **Recommendation:** Option A for `http_request` (it's a natural extension of web access). New `system/browser` skill for `browse_interactive` (it has different resource requirements and the agent should explicitly opt in to browser sessions which cost money).
 
-### 7. Tool Registration and Catalog
+### 7. Tool Registration and Catalog [PENDING]
 
 **Files:**
 - `packages/domain/src/tools.ts` — add `browse_interactive` and `http_request` to `KNOWN_AGENT_TOOL_NAMES` and `TOOL_CATALOG`.
 - `apps/worker/src/agent.ts` — register the new tools in the tool registry, wire `BrowserPoolPort` into the tool context.
 
-### 8. Cost Metering
+### 8. Cost Metering [PENDING]
 
 **File:** `apps/worker/src/agent.ts` (modify, in the tool execution path)
 
@@ -234,7 +234,7 @@ After `browse_interactive` completes:
 After `http_request` completes:
 - Record as a lightweight event (URL, status, response size). Low cost — primarily for observability, not billing.
 
-### 9. Operator Config Validation
+### 9. Operator Config Validation [PENDING]
 
 **File:** `config/default.yaml` + config schema in `packages/domain/`
 
@@ -259,7 +259,7 @@ httpClient:
     - "127.0.0.1"
 ```
 
-### 10. Docker Compose (Local Dev)
+### 10. Docker Compose (Local Dev) [PENDING]
 
 **File:** `docker-compose.dev.yaml` (modify)
 

@@ -657,6 +657,33 @@ agentRuntime:
       browseUrl:
         maxResponseBytes: 524288   # 512 KB
         timeoutMs: 15000
+    httpClient:
+      enabled: true
+      maxResponseBytes: 51200
+      denyList:
+        - "10.*"
+        - "172.16.*"
+        - "172.17.*"
+        - "172.18.*"
+        - "172.19.*"
+        - "172.20.*"
+        - "172.21.*"
+        - "172.22.*"
+        - "172.23.*"
+        - "172.24.*"
+        - "172.25.*"
+        - "172.26.*"
+        - "172.27.*"
+        - "172.28.*"
+        - "172.29.*"
+        - "172.30.*"
+        - "172.31.*"
+        - "192.168.*"
+        - "169.254.*"
+        - "127.*"
+        - "localhost"
+        - "0.0.0.0"
+        - "[::1]"
 
 llmValidation:
   requirePinnedModel: true
@@ -1058,3 +1085,14 @@ externalSkills:
   browseTimeoutMs: 5000               # timeout for browse/popular listing requests
                                       # override: EXTERNAL_SKILLS_BROWSE_TIMEOUT_MS
   statsTimeoutMs: 3000                # timeout for stats/total-count requests
+
+# ── Browser Pool ──────────────────────────────────────────────────────────
+# Shared browser automation service (Browserless). Infrastructure-level config.
+# Agents acquire CDP sessions from this pool via the BrowserPoolPort.
+browserPool:
+  enabled: false
+  url: ""
+  maxSessionDurationMs: 60000
+  defaultViewport:
+    width: 1280
+    height: 720

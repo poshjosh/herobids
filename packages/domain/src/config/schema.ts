@@ -1085,6 +1085,42 @@ export const WebAccessToolsConfigSchema = z.object({
   }).default({}),
 });
 
+export const BrowserPoolConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  url: z.string().default(''),
+  maxSessionDurationMs: z.number().int().positive().default(60_000),
+  defaultViewport: z.object({
+    width: z.number().int().positive().default(1280),
+    height: z.number().int().positive().default(720),
+  }).default({}),
+}).superRefine((data, ctx) => {
+  if (data.enabled && !data.url) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['url'],
+      message: 'browserPool.url is required when browserPool.enabled is true',
+    });
+  }
+}).default({});
+
+export const HttpClientConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  maxResponseBytes: z.number().int().positive().default(51_200),
+  denyList: z.array(z.string()).default([
+    '10.*',
+    '172.16.*', '172.17.*', '172.18.*', '172.19.*',
+    '172.20.*', '172.21.*', '172.22.*', '172.23.*',
+    '172.24.*', '172.25.*', '172.26.*', '172.27.*',
+    '172.28.*', '172.29.*', '172.30.*', '172.31.*',
+    '192.168.*',
+    '169.254.*',
+    '127.*',
+    'localhost',
+    '0.0.0.0',
+    '[::1]',
+  ]),
+}).default({});
+
 export const SessionCircuitBreakerSchema = z.object({
   enabled: z.boolean().default(true),
   strategyError: z.object({
@@ -1283,6 +1319,7 @@ export const AgentRuntimeConfigSchema = z.object({
       defaultMaxOutputBytes: z.number().int().min(1).default(51_200),
     }).default({}),
     webAccess: WebAccessToolsConfigSchema.default({}),
+    httpClient: HttpClientConfigSchema,
   }).default({}),
 });
 
@@ -1660,6 +1697,7 @@ export const AppConfigSchema = z.object({
     browseTimeoutMs: z.number().int().min(500).max(30000).default(5000),
     statsTimeoutMs: z.number().int().min(500).max(10000).default(3000),
   }).default({}),
+  browserPool: BrowserPoolConfigSchema,
 }).superRefine((data, ctx) => {
   const oneInchConfig = data.venues['1inch'];
   if (
@@ -1850,6 +1888,8 @@ export type StripeConfig = z.infer<typeof StripeConfigSchema>;
 export type CreemConfig = z.infer<typeof CreemConfigSchema>;
 export type TelegramChannelConfig = z.infer<typeof TelegramChannelConfigSchema>;
 export type GmailIntegrationConfig = z.infer<typeof GmailIntegrationConfigSchema>;
+export type BrowserPoolConfig = z.infer<typeof BrowserPoolConfigSchema>;
+export type HttpClientConfig = z.infer<typeof HttpClientConfigSchema>;
 export type UsageBillingConfig = z.infer<typeof UsageBillingConfigSchema>;
 export type PlanUsagePackaging = z.infer<typeof PlanUsagePackagingSchema>;
 export type PlanEntitlements = z.infer<typeof PlanEntitlementsSchema>;
