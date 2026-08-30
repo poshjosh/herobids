@@ -32,6 +32,8 @@ export interface AgentEnvConfig {
   openRouterProviderControlsJson?: string;
   /** Serialised external skills config (JSON) forwarded to agent containers. */
   externalSkillsConfigJson?: string;
+  /** Browser pool URL forwarded to agent containers when browser pool is enabled. */
+  browserPoolUrl?: string;
   /**
    * Optional: Shared services cluster addresses for agent runtime connectivity.
    * When provided, REDIS_URL and DATABASE_URL are constructed from these
@@ -142,6 +144,9 @@ export function buildAgentEnv(
 
   // External skills config — forwarded so agents can use the search_skills tool.
   if (config.externalSkillsConfigJson) envOut['EXTERNAL_SKILLS_CONFIG_JSON'] = config.externalSkillsConfigJson;
+
+  // Browser pool URL — forwarded so agents can use the browse_interactive tool.
+  if (config.browserPoolUrl) envOut['BROWSER_POOL_URL'] = config.browserPoolUrl;
 
   return envOut;
 }

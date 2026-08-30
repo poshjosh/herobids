@@ -97,6 +97,11 @@ const httpRequestTool: AgentTool = {
       ctx.capabilityEngine.recordStart('http_request', ctx.sessionId);
     }
 
+    // Check enabled flag
+    if (_httpClientConfig && _httpClientConfig.enabled === false) {
+      return nonFaultError('http_request: tool is disabled by operator configuration');
+    }
+
     const startMs = Date.now();
     let requestSuccess = false;
     let errorCode: string | undefined;

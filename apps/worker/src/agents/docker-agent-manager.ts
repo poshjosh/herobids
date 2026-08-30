@@ -70,6 +70,8 @@ export interface DockerAgentManagerConfig {
   onAgentCrashed?: (agentId: string, sessionId?: string) => Promise<void>;
   /** Serialised external skills config (JSON) forwarded to agent containers. */
   externalSkillsConfigJson?: string;
+  /** Browser pool URL forwarded to agent containers when browser pool is enabled. */
+  browserPoolUrl?: string;
 }
 
 export interface DockerContainerSpec {
@@ -136,6 +138,7 @@ export class DockerAgentManager {
   private readonly marketDataTimeoutMs: number | undefined;
   private readonly databaseUrl: string | undefined;
   private readonly externalSkillsConfigJson: string | undefined;
+  private readonly browserPoolUrl: string | undefined;
   private readonly memoryBytes: number;
   private readonly cpuShares: number;
   private readonly tempStorageMb: number;
@@ -178,6 +181,7 @@ export class DockerAgentManager {
     this.marketDataTimeoutMs = _config.marketDataTimeoutMs;
     this.databaseUrl = _config.databaseUrl;
     this.externalSkillsConfigJson = _config.externalSkillsConfigJson;
+    this.browserPoolUrl = _config.browserPoolUrl;
     this.memoryBytes = (_config.memoryLimitMb ?? 512) * 1024 * 1024;
     this.cpuShares = _config.cpuShares ?? 512;
     this.tempStorageMb = _config.tempStorageMb ?? 100;
@@ -271,6 +275,7 @@ export class DockerAgentManager {
         ...(process.env['USAGE_BILLING_RATE_CARD'] ? [`USAGE_BILLING_RATE_CARD=${process.env['USAGE_BILLING_RATE_CARD']}`] : []),
         ...(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ? [`USAGE_BILLING_RUNTIME_WINDOW_MS=${process.env['USAGE_BILLING_RUNTIME_WINDOW_MS']}`] : []),
         ...(this.externalSkillsConfigJson ? [`EXTERNAL_SKILLS_CONFIG_JSON=${this.externalSkillsConfigJson}`] : []),
+        ...(this.browserPoolUrl ? [`BROWSER_POOL_URL=${this.browserPoolUrl}`] : []),
       ];
     })();
 

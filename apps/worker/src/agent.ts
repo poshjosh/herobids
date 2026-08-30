@@ -80,8 +80,10 @@ import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET
 import { buildTickGateState } from './tick-gate-state.js';
 import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
+import { BrowserlessAdapter } from '@herobids/venues';
 import { createToolRegistry } from './tools/index.js';
 import { initEmailTools } from './tools/email.js';
+import { cleanupBrowserSessions } from './tools/browser.js';
 import { extractCeilings, extractCreatorInput, resolveProfile } from './agent-risk-limits.js';
 import { getWorkspacePaths } from './tools/workspace.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
@@ -123,6 +125,7 @@ const HEARTBEAT_INTERVAL_MS = parseInt(process.env['HEARTBEAT_INTERVAL_MS'] ?? '
 const SERVER_COST_USD_PER_HOUR = Number(process.env['LLM_SERVER_COST_USD_PER_HOUR'] ?? '0.02');
 const TRADING_HOURS_RAW = process.env['TRADING_HOURS_JSON'];
 const EXTERNAL_SKILLS_CONFIG_JSON = process.env['EXTERNAL_SKILLS_CONFIG_JSON'];
+const BROWSER_POOL_URL = process.env['BROWSER_POOL_URL'];
 
 // ── HTTP/1.1 fetch for sites that block HTTP/2 (e.g. Forex Factory) ─────
 
@@ -946,14 +949,14 @@ if (marketDataConfig?.economicCalendar?.enabled) {
 // Tool Registry
 // ---------------------------------------------------------------------------
 
-// TODO(browser-pool): Wire BrowserlessAdapter here when browserPool infrastructure is deployed.
-// When browserPool config is enabled:
-//   import { BrowserlessAdapter } from '@herobids/venues';
-//   const browserPool = config.browserPool?.enabled
-//     ? new BrowserlessAdapter({ url: config.browserPool.url })
-//     : undefined;
-//   const toolRegistry = createToolRegistry({ browserPool });
-const toolRegistry = createToolRegistry();
+// Browser pool: instantiate adapter when enabled, otherwise undefined (browse_interactive returns a clear error).
+const browserPool = BROWSER_POOL_URL
+  ? new BrowserlessAdapter({ url: BROWSER_POOL_URL })
+  : undefined;
+if (browserPool) {
+  logger.info({ url: BROWSER_POOL_URL }, 'Browser pool adapter initialized');
+}
+const toolRegistry = createToolRegistry({ browserPool });
 
 // Initialize email tools if Gmail integration is configured.
 // Gmail client credentials and encryption key are forwarded from the worker
@@ -2265,6 +2268,12 @@ async function shutdown(reason: string): Promise<void> {
   }
 
   usageBillingService?.closeRuntimeWindow();
+
+  // Clean up any active browser sessions to release pool resources.
+  await cleanupBrowserSessions(AGENT_ID!).catch((err: unknown) => {
+    logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Failed to clean up browser sessions on shutdown');
+  });
+
   await sendHeartbeat('degraded', reason).catch(() => { /* ignore */ });
   await publishToInbound(AGENT_MESSAGE_TYPES.RUNTIME_SESSION_ENDED, {
     sessionId: SESSION_ID!,

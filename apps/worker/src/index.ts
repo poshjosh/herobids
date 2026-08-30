@@ -556,6 +556,9 @@ const agentRuntimeLauncher = (() => {
     ...(appConfig.externalSkills.enabled
       ? { externalSkillsConfigJson: JSON.stringify(appConfig.externalSkills) }
       : {}),
+    ...(appConfig.browserPool.enabled
+      ? { browserPoolUrl: appConfig.browserPool.url }
+      : {}),
   };
 
   const defaultResources = {
@@ -599,6 +602,9 @@ const agentRuntimeLauncher = (() => {
           : {}),
         ...(appConfig.externalSkills.enabled
           ? { externalSkillsConfigJson: JSON.stringify(appConfig.externalSkills) }
+          : {}),
+        ...(appConfig.browserPool.enabled
+          ? { browserPoolUrl: appConfig.browserPool.url }
           : {}),
         onAgentCrashed: async (agentId, sessionId?) => {
           await cascadeStopAgentBots(agentId);
