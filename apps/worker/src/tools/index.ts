@@ -22,6 +22,9 @@ import { changeStrategyPresetTool } from './change-strategy-preset.js';
 import { assessStrategyPresetTool } from './assess-strategy-preset.js';
 import { platformDocsTools } from './platform-docs.js';
 import { skillTools } from './skills.js';
+import { createBrowserTools } from './browser.js';
+import { httpClientTools } from './http-client.js';
+import type { BrowserPoolPort } from '@herobids/domain';
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
   const registeredTools = registry.list();
@@ -77,8 +80,12 @@ function assertBuiltInSkillToolsAreKnown(): void {
   }
 }
 
+export interface ToolRegistryDeps {
+  browserPool?: BrowserPoolPort;
+}
+
 /** Create a registry with all agent tools pre-registered. */
-export function createToolRegistry(): ToolRegistry {
+export function createToolRegistry(deps?: ToolRegistryDeps): ToolRegistry {
   assertBuiltInSkillToolsAreKnown();
   const registry = new ToolRegistry();
 
@@ -94,6 +101,8 @@ export function createToolRegistry(): ToolRegistry {
     ...priceTools,
     ...watchTools,
     ...webAccessTools,
+    ...createBrowserTools(deps?.browserPool),
+    ...httpClientTools,
     ...taskTools,
     ...riskLimitsTools,
     ...schemaTools,

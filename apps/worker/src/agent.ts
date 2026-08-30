@@ -946,6 +946,13 @@ if (marketDataConfig?.economicCalendar?.enabled) {
 // Tool Registry
 // ---------------------------------------------------------------------------
 
+// TODO(browser-pool): Wire BrowserlessAdapter here when browserPool infrastructure is deployed.
+// When browserPool config is enabled:
+//   import { BrowserlessAdapter } from '@herobids/venues';
+//   const browserPool = config.browserPool?.enabled
+//     ? new BrowserlessAdapter({ url: config.browserPool.url })
+//     : undefined;
+//   const toolRegistry = createToolRegistry({ browserPool });
 const toolRegistry = createToolRegistry();
 
 // Initialize email tools if Gmail integration is configured.

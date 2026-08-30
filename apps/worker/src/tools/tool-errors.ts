@@ -2,6 +2,11 @@ import type { ToolResult } from '@herobids/domain';
 
 import type { CapabilityDenial } from '../agents/capability-policy.js';
 
+/** Build a non-fault ToolResult for content-level errors. */
+export function nonFaultError(error: string, retryable = false): ToolResult {
+  return { success: false, error, retryable, fault: false };
+}
+
 /** Reasons that represent transient conditions the caller can retry. */
 const TRANSIENT_REASONS = new Set<CapabilityDenial['reason']>(['rate_limit_exceeded', 'max_concurrent_exceeded']);
 

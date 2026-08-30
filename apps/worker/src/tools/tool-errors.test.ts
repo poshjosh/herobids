@@ -1,7 +1,94 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CapabilityDenial } from '../agents/capability-policy.js';
-import { capabilityDeniedResult, parseBrokerDenialReply } from './tool-errors.js';
+import { capabilityDeniedResult, nonFaultError, parseBrokerDenialReply } from './tool-errors.js';
+
+// ── nonFaultError ───────────────────────────────────────────────────────────
+
+describe('nonFaultError', () => {
+  // ── Structural invariants ────────────────────────────────
+
+  it('always returns success: false', () => {
+    const result = nonFaultError('something went wrong');
+    expect(result.success).toBe(false);
+  });
+
+  it('always sets fault to false', () => {
+    const result = nonFaultError('bad input');
+    expect(result.fault).toBe(false);
+  });
+
+  it('copies the error string into the error field', () => {
+    const msg = 'browse_interactive: invalid URL';
+    const result = nonFaultError(msg);
+    expect(result.error).toBe(msg);
+  });
+
+  // ── Default retryable ────────────────────────────────────
+
+  it('defaults retryable to false when omitted', () => {
+    const result = nonFaultError('not retryable by default');
+    expect(result.retryable).toBe(false);
+  });
+
+  // ── Explicit retryable ───────────────────────────────────
+
+  it('sets retryable to true when explicitly passed', () => {
+    const result = nonFaultError('try again later', true);
+    expect(result.retryable).toBe(true);
+  });
+
+  it('sets retryable to false when explicitly passed false', () => {
+    const result = nonFaultError('permanent failure', false);
+    expect(result.retryable).toBe(false);
+  });
+
+  // ── Full snapshot — default retryable ────────────────────
+
+  it('returns the complete expected shape with default retryable', () => {
+    const result = nonFaultError('something broke');
+    expect(result).toEqual({
+      success: false,
+      error: 'something broke',
+      retryable: false,
+      fault: false,
+    });
+  });
+
+  // ── Full snapshot — retryable true ───────────────────────
+
+  it('returns the complete expected shape with retryable true', () => {
+    const result = nonFaultError('temporary issue', true);
+    expect(result).toEqual({
+      success: false,
+      error: 'temporary issue',
+      retryable: true,
+      fault: false,
+    });
+  });
+
+  // ── Edge cases ───────────────────────────────────────────
+
+  it('handles empty string error', () => {
+    const result = nonFaultError('');
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('');
+    expect(result.fault).toBe(false);
+  });
+
+  it('handles long error messages', () => {
+    const longMsg = 'x'.repeat(10_000);
+    const result = nonFaultError(longMsg);
+    expect(result.error).toBe(longMsg);
+  });
+
+  it('does not include data, errorCode, or extra fields', () => {
+    const result = nonFaultError('clean result');
+    expect(result).not.toHaveProperty('data');
+    expect(result).not.toHaveProperty('errorCode');
+    expect(Object.keys(result).sort()).toEqual(['error', 'fault', 'retryable', 'success']);
+  });
+});
 
 describe('capabilityDeniedResult', () => {
   // ── Structural invariants ────────────────────────────────
