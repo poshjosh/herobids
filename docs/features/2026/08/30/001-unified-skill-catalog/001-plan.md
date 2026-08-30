@@ -458,7 +458,7 @@ This enables the UI to implement the "Built-in" tab without a separate endpoint.
 
 ---
 
-## Step 10 — Worker: replace `npx skills find` with HTTP call in `search_skills` [PENDING]
+## Step 10 — Worker: replace `npx skills find` with HTTP call in `search_skills` [DONE]
 
 **File:** `apps/worker/src/tools/skills.ts`
 

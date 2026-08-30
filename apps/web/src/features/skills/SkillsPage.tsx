@@ -7,6 +7,17 @@ import { useSession } from '../../app/providers/SessionProvider.js';
 
 type SkillCategoryTab = 'all' | 'mine' | 'built-in' | 'marketplace';
 
+const PAGE_SIZE = 20;
+
+/** Format a totalCount for display, e.g. "34,000+" or "12". */
+export function formatCatalogCount(total: number, intl: { formatNumber: (n: number) => string }): string {
+  if (total >= 1000) {
+    const rounded = Math.floor(total / 1000) * 1000;
+    return `${intl.formatNumber(rounded)}+`;
+  }
+  return intl.formatNumber(total);
+}
+
 function filterSkillsBySearch(skills: Skill[], term: string): Skill[] {
   const t = term.trim().toLowerCase();
   if (!t) return skills;
@@ -35,6 +46,8 @@ export function SkillsPage() {
 
   const [activeCategory, setActiveCategory] = useState<SkillCategoryTab>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [allPage, setAllPage] = useState(1);
+  const [marketplacePage, setMarketplacePage] = useState(1);
   const [showCreateComposer, setShowCreateComposer] = useState(false);
   const [createDraft, setCreateDraft] = useState<CreateSkillRequest>({
     name: '',
@@ -46,8 +59,8 @@ export function SkillsPage() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const selectableQuery = useQuery({
-    queryKey: ['skills', 'selectable'],
-    queryFn: () => skillsApi.list({ scope: 'selectable' }),
+    queryKey: ['skills', 'selectable', allPage],
+    queryFn: () => skillsApi.list({ scope: 'selectable', page: allPage, pageSize: PAGE_SIZE }),
   });
 
   const mineQuery = useQuery({
@@ -55,9 +68,14 @@ export function SkillsPage() {
     queryFn: () => skillsApi.list({ scope: 'mine', sort: 'newest' }),
   });
 
+  const builtInQuery = useQuery({
+    queryKey: ['skills', 'built-in'],
+    queryFn: () => skillsApi.list({ scope: 'selectable', sourceKind: 'system' }),
+  });
+
   const marketplaceQuery = useQuery({
-    queryKey: ['skills', 'marketplace'],
-    queryFn: () => skillsApi.list({ scope: 'marketplace', sort: 'popular' }),
+    queryKey: ['skills', 'marketplace', marketplacePage],
+    queryFn: () => skillsApi.list({ scope: 'marketplace', sort: 'popular', page: marketplacePage, pageSize: PAGE_SIZE }),
     enabled: canViewMarketplace,
   });
 
@@ -94,34 +112,42 @@ export function SkillsPage() {
     },
   });
 
-  const rawBuiltIn = (selectableQuery.data?.skills ?? []).filter((skill) => skill.sourceKind === 'system');
+  const rawBuiltIn = builtInQuery.data?.skills ?? [];
   const rawMySkills = mineQuery.data?.skills ?? [];
   const rawMarketplaceSkills = canViewMarketplace
-    ? (marketplaceQuery.data?.skills ?? []).filter((skill) => skill.sourceKind === 'user')
+    ? (marketplaceQuery.data?.skills ?? [])
     : [];
   const builtIn = filterSkillsBySearch(rawBuiltIn, searchTerm);
   const mySkills = filterSkillsBySearch(rawMySkills, searchTerm);
   const marketplaceSkills = filterSkillsBySearch(rawMarketplaceSkills, searchTerm);
-  const hasAnySkills = builtIn.length > 0 || mySkills.length > 0 || marketplaceSkills.length > 0;
-  const isLoading = selectableQuery.isLoading || mineQuery.isLoading || (canViewMarketplace && marketplaceQuery.isLoading);
-  const queryError = selectableQuery.error ?? mineQuery.error ?? (canViewMarketplace ? marketplaceQuery.error : null);
+
+  // Paginated data for tabs that include external skills
+  const allTabSkills = selectableQuery.data?.skills ?? [];
+  const allTabTotalCount = selectableQuery.data?.totalCount ?? 0;
+  const allTabPageCount = Math.max(1, Math.ceil(allTabTotalCount / PAGE_SIZE));
+
+  const marketplaceTotalCount = marketplaceQuery.data?.totalCount ?? 0;
+  const marketplacePageCount = Math.max(1, Math.ceil(marketplaceTotalCount / PAGE_SIZE));
+
+  // Degradation: show a banner when external skills are unavailable
+  const degradation = selectableQuery.data?.degradation ?? marketplaceQuery.data?.degradation ?? null;
+
+  // Headline total count — largest of the available totals, representing catalog breadth
+  const catalogTotalCount = allTabTotalCount;
+
+  const hasAnySkills = (allTabSkills.length > 0) || mySkills.length > 0 || builtIn.length > 0 || marketplaceSkills.length > 0;
+  const isLoading = selectableQuery.isLoading || mineQuery.isLoading || builtInQuery.isLoading || (canViewMarketplace && marketplaceQuery.isLoading);
+  const queryError = selectableQuery.error ?? mineQuery.error ?? builtInQuery.error ?? (canViewMarketplace ? marketplaceQuery.error : null);
 
   const allSkills = useMemo(() => {
-    const seen = new Set<string>();
-    const result: Array<{ skill: Skill; mode: 'built-in' | 'mine' | 'marketplace' }> = [];
-    for (const skill of mySkills) {
-      if (!seen.has(skill.id)) { seen.add(skill.id); result.push({ skill, mode: 'mine' as const }); }
-    }
-    for (const skill of builtIn) {
-      if (!seen.has(skill.id)) { seen.add(skill.id); result.push({ skill, mode: 'built-in' as const }); }
-    }
-    if (canViewMarketplace) {
-      for (const skill of marketplaceSkills) {
-        if (!seen.has(skill.id)) { seen.add(skill.id); result.push({ skill, mode: 'marketplace' as const }); }
-      }
-    }
-    return result;
-  }, [mySkills, builtIn, marketplaceSkills, canViewMarketplace]);
+    return filterSkillsBySearch(allTabSkills, searchTerm).map((skill) => {
+      const mode: 'built-in' | 'mine' | 'marketplace' =
+        skill.sourceKind === 'system' ? 'built-in'
+        : skill.authorId ? 'mine'
+        : 'marketplace';
+      return { skill, mode };
+    });
+  }, [allTabSkills, searchTerm]);
 
   const skillTabs: Array<{ key: SkillCategoryTab; label: string }> = [
     { key: 'all', label: intl.formatMessage({ id: 'skills.tab.all', defaultMessage: 'All skills' }) },
@@ -151,14 +177,67 @@ export function SkillsPage() {
     </section>
   );
 
+  const renderPaginationControls = (currentPage: number, pageCount: number, onPageChange: (page: number) => void) => {
+    if (pageCount <= 1) return null;
+    return (
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'center', marginTop: '12px' }}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage <= 1}
+        >
+          {intl.formatMessage({ id: 'common.previous', defaultMessage: 'Previous' })}
+        </Button>
+        <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
+          {intl.formatMessage(
+            { id: 'skills.pagination.pageOf', defaultMessage: 'Page {current} of {total}' },
+            { current: currentPage, total: pageCount },
+          )}
+        </span>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage >= pageCount}
+        >
+          {intl.formatMessage({ id: 'common.next', defaultMessage: 'Next' })}
+        </Button>
+      </div>
+    );
+  };
+
+  const renderDegradationBanner = () => {
+    if (!degradation) return null;
+    return (
+      <div style={{
+        padding: '8px 12px',
+        fontSize: '0.8125rem',
+        color: 'var(--color-text-muted)',
+        background: 'var(--color-surface-2)',
+        borderRadius: '6px',
+        lineHeight: '1.5',
+      }}>
+        {intl.formatMessage({
+          id: 'skills.degradation.externalUnavailable',
+          defaultMessage: 'Some skills from the extended catalog are temporarily unavailable. Showing local skills only.',
+        })}
+      </div>
+    );
+  };
+
   const renderAllSkills = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {renderDegradationBanner()}
       {allSkills.length > 0 ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', alignItems: 'start' }}>
-          {allSkills.map(({ skill, mode }) => (
-            <SkillCard key={skill.id} skill={skill} mode={mode} onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} tools={toolsQuery.data?.tools ?? []} categories={toolsQuery.data?.categories ?? []} toolsLoading={toolsQuery.isLoading} toolsError={toolsQuery.error} />
-          ))}
-        </div>
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', alignItems: 'start' }}>
+            {allSkills.map(({ skill, mode }) => (
+              <SkillCard key={skill.id} skill={skill} mode={mode} onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} tools={toolsQuery.data?.tools ?? []} categories={toolsQuery.data?.categories ?? []} toolsLoading={toolsQuery.isLoading} toolsError={toolsQuery.error} />
+            ))}
+          </div>
+          {renderPaginationControls(allPage, allTabPageCount, setAllPage)}
+        </>
       ) : (
         <EmptyState
           title={intl.formatMessage({ id: 'skills.empty.all.title', defaultMessage: 'No skills yet' })}
@@ -210,12 +289,22 @@ export function SkillsPage() {
         );
       }
 
-      return renderCategorySection(
-        intl.formatMessage({ id: 'skills.tab.marketplace', defaultMessage: 'Marketplace' }),
-        marketplaceSkills,
-        'marketplace',
-        intl.formatMessage({ id: 'skills.empty.marketplace.title', defaultMessage: 'No marketplace skills' }),
-        intl.formatMessage({ id: 'skills.empty.marketplace.message', defaultMessage: 'Public skills from the marketplace will appear here when they are available for your plan.' }),
+      return (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <SectionLabel>{intl.formatMessage({ id: 'skills.tab.marketplace', defaultMessage: 'Marketplace' })}</SectionLabel>
+          {renderDegradationBanner()}
+          {marketplaceSkills.length > 0 ? (
+            <>
+              {renderSkillGrid(marketplaceSkills, 'marketplace')}
+              {renderPaginationControls(marketplacePage, marketplacePageCount, setMarketplacePage)}
+            </>
+          ) : (
+            <EmptyState
+              title={intl.formatMessage({ id: 'skills.empty.marketplace.title', defaultMessage: 'No marketplace skills' })}
+              message={intl.formatMessage({ id: 'skills.empty.marketplace.message', defaultMessage: 'Public skills from the marketplace will appear here when they are available for your plan.' })}
+            />
+          )}
+        </section>
       );
     }
 
@@ -227,7 +316,12 @@ export function SkillsPage() {
     <PageShell>
       <PageHeader
         title={intl.formatMessage({ id: 'skills.title', defaultMessage: 'Skills' })}
-        subtitle={intl.formatMessage({ id: 'skills.subtitle', defaultMessage: 'Skills extend what AI agents know and can do' })}
+        subtitle={catalogTotalCount > 0
+          ? intl.formatMessage(
+              { id: 'skills.subtitleWithCount', defaultMessage: '{count} skills — extend what AI agents know and can do' },
+              { count: formatCatalogCount(catalogTotalCount, intl) },
+            )
+          : intl.formatMessage({ id: 'skills.subtitle', defaultMessage: 'Skills extend what AI agents know and can do' })}
         action={(
           <Button
             variant={showCreateComposer ? 'secondary' : 'primary'}
@@ -391,6 +485,7 @@ export function SkillsPage() {
           onRetry={() => {
             void selectableQuery.refetch();
             void mineQuery.refetch();
+            void builtInQuery.refetch();
             if (canViewMarketplace) {
               void marketplaceQuery.refetch();
             }
@@ -425,7 +520,11 @@ export function SkillsPage() {
                 key={tab.key}
                 variant={activeCategory === tab.key ? 'primary' : 'secondary'}
                 size="sm"
-                onClick={() => setActiveCategory(tab.key)}
+                onClick={() => {
+                  setActiveCategory(tab.key);
+                  setAllPage(1);
+                  setMarketplacePage(1);
+                }}
               >
                 {tab.label}
               </Button>
