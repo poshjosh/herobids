@@ -378,7 +378,7 @@ Implement `ExternalSkillProvider` using `fetch` calls to the self-hosted `@mastr
 
 ---
 
-## Step 7 — API: add pagination to `GET /skills` [PENDING]
+## Step 7 — API: add pagination to `GET /skills` [DONE]
 
 **File:** `apps/api/src/routes/skills.ts`
 
