@@ -525,7 +525,7 @@ Env overrides documented inline. For production/staging YAML overrides or `EXTER
 
 ---
 
-## Step 13 — Tests [PENDING]
+## Step 13 — Tests [DONE]
 
 ### Domain tests
 
