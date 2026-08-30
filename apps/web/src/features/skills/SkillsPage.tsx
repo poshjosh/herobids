@@ -662,9 +662,12 @@ function SkillCard({
     onError: (error: Error) => setActionError(error.message),
   });
 
+  const isExternal = skill.sourceKind === 'external';
+
   const metricsQuery = useQuery({
     queryKey: ['skills', 'metrics', skill.id],
     queryFn: () => skillsApi.metrics(skill.id),
+    enabled: !isExternal,
   });
 
   const statusLabel = formatSkillStatusLabel(intl, skill.sourceKind, skill.publicationStatus);
@@ -681,7 +684,7 @@ function SkillCard({
   const canPublishByPlan = skillsEntitlements?.canPublishToMarketplace ?? true;
   const canCreatePrivateSkills = skillsEntitlements?.canCreatePrivateSkills ?? true;
   const canLike = mode === 'marketplace' && skill.sourceKind === 'user' && canLikeByPlan;
-  const canFork = mode === 'built-in' || mode === 'marketplace';
+  const canFork = !isExternal && (mode === 'built-in' || mode === 'marketplace');
   const canPublish = canManage
     && canPublishByPlan
     && skill.publicationStatus !== 'archived'
@@ -991,6 +994,11 @@ function SkillCard({
             <span>usage: {intl.formatNumber(metrics.usage30d)}</span>
             <span>likes: {intl.formatNumber(metrics.likes30d)}</span>
             <span>copies: {intl.formatNumber(metrics.forks30d)}</span>
+          </div>
+        )}
+        {isExternal && skill.likeCount > 0 && (
+          <div style={{ display: 'flex', gap: '20px' }}>
+            <span>{intl.formatNumber(skill.likeCount)} installs</span>
           </div>
         )}
       </div>
