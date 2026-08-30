@@ -15,3 +15,4 @@ export * from './assessment-identity-resolver.js';
 export * from './assessment-request.js';
 export * from './preset-transition.js';
 export * from './blueprint-execution-capability.js';
+export * from './external-skill-provider.js';

@@ -17,6 +17,12 @@ services:
   redis:
     restart: unless-stopped
 
+  skills-api:
+    restart: unless-stopped
+    environment:
+      S3_BUCKET: herobids-skills-data-staging
+      S3_REGION: eu-central-1
+
   api:
     environment:
       NODE_ENV: staging

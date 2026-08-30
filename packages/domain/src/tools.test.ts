@@ -115,7 +115,7 @@ describe('TOOL_CATALOG — skill tool entries', () => {
     const entry = getToolCatalogEntry('search_skills');
     expect(entry).toBeDefined();
     expect(entry!.description).toBe(
-      'Search for skills by keyword across the platform catalog and external skills discoverable through skills.sh.',
+      'Search for skills by keyword across the platform catalog and the external skill registry.',
     );
   });
 

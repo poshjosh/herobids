@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import type { PlanSkillsEntitlements, PlansConfig } from '@herobids/domain';
+import type { PlanSkillsEntitlements, PlansConfig, ExternalSkillProvider, ExternalSkillSummary, SourceKind } from '@herobids/domain';
 import { buildSkillSlug, findUnknownSkillTools, inferDependsOn, slugify, tokenize, expandToken } from '@herobids/domain';
 import { agentSkills, agents, skillEntitlements, skillLikes, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
 import { resolvePlanSkillEntitlements } from '../plan-guards.js';
@@ -46,6 +46,7 @@ const UpdateSkillSchema = z.object({
 
 const ListSkillsQuerySchema = z.object({
   scope: z.enum(['mine', 'marketplace', 'selectable', 'admin']).optional().default('selectable'),
+  sourceKind: z.enum(['system', 'user', 'external']).optional(),
   publicationStatus: PublicationStatusSchema.optional(),
   sort: z.enum(['popular', 'trending', 'newest', 'price_asc', 'price_desc']).optional(),
   priceMin: z.coerce.number().int().min(0).optional(),
@@ -53,6 +54,8 @@ const ListSkillsQuerySchema = z.object({
   likedByMe: z.coerce.boolean().optional(),
   tag: z.string().min(1).optional(),
   q: z.string().min(1).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
 const PublishSkillSchema = z.object({
@@ -94,7 +97,7 @@ type SkillView = {
   id: string;
   slug: string;
   authorId: string | null;
-  sourceKind: 'system' | 'user';
+  sourceKind: SourceKind;
   publicationStatus: 'draft' | 'private' | 'published' | 'delisted' | 'archived';
   hasStagedRevision: boolean;
   priceCents: number;
@@ -489,7 +492,48 @@ function hasContentChange(
     || JSON.stringify(currentRevision.tags) !== JSON.stringify(updates.tags ?? currentRevision.tags);
 }
 
-export async function skillsRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig): Promise<void> {
+function mapExternalToSkillView(ext: ExternalSkillSummary): SkillView {
+  return {
+    id: `ext:${ext.ref}`,
+    slug: `${ext.owner}/${ext.repo}@${ext.skillId}`,
+    name: ext.name,
+    description: ext.description,
+    authorId: null,
+    sourceKind: 'external',
+    publicationStatus: 'published',
+    hasStagedRevision: false,
+    priceCents: 0,
+    likeCount: ext.installs,
+    forkCount: 0,
+    forkOf: null,
+    popularityScore: Math.log1p(ext.installs),
+    trendingScore: 0,
+    isLikedByViewer: false,
+    isSelectable: true,
+    selectabilityReason: 'external',
+    currentRevisionId: null,
+    currentRevisionVersion: null,
+    promptTemplate: null,
+    instructions: '',
+    promptHint: null,
+    requiredTools: [],
+    contextRequirements: [],
+    requiredGuardrails: [],
+    capabilityFamilies: [],
+    suggestedTickIntervalMs: null,
+    tags: ext.tags ?? [],
+    dependsOn: [],
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  };
+}
+
+export async function skillsRoutes(
+  app: FastifyInstance,
+  db: Database,
+  plansConfig?: PlansConfig,
+  externalSkillProvider?: ExternalSkillProvider | null,
+): Promise<void> {
   const scoreRefreshTimer = setInterval(() => {
     void recomputeAllSkillScores(db).catch((error: unknown) => {
       app.log.error({ err: error }, '[skills] failed periodic score recomputation');
@@ -520,6 +564,45 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       return reply.status(403).send({ error: 'forbidden' });
     }
 
+    // ── sourceKind=external: skip local DB entirely ───────────────────────
+    if (query.sourceKind === 'external') {
+      if (!externalSkillProvider) {
+        return reply.send({ skills: [], totalCount: 0, page: query.page, pageSize: query.pageSize });
+      }
+
+      let externalViews: SkillView[] = [];
+      let externalTotal = 0;
+      let degradation: { external: string; reason: string } | undefined;
+
+      try {
+        const externalResult = query.q
+          ? await externalSkillProvider.search(query.q, { page: query.page, pageSize: query.pageSize })
+          : await externalSkillProvider.browse({ page: query.page, pageSize: query.pageSize });
+
+        externalTotal = externalResult.totalCount;
+        externalViews = externalResult.results.map(mapExternalToSkillView);
+
+        if (externalResult.totalCount === 0 && externalResult.results.length === 0) {
+          degradation = { external: 'unavailable', reason: 'external catalog returned empty' };
+        }
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        app.log.warn({ err: reason }, '[skills] external skill fetch failed');
+        degradation = { external: 'unavailable', reason };
+      }
+
+      const response: Record<string, unknown> = {
+        skills: externalViews,
+        totalCount: externalTotal,
+        page: query.page,
+        pageSize: query.pageSize,
+      };
+      if (degradation) {
+        response['degradation'] = degradation;
+      }
+      return reply.send(response);
+    }
+
     const whereClauses: SQL[] = [];
     if (query.scope === 'mine') {
       whereClauses.push(eq(skills.authorId, request.userId));
@@ -546,6 +629,13 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         planPolicy.canViewMarketplaceSkills ? eq(skills.publicationStatus, 'published') : sql`false`,
         explicitlySelectableIds.length > 0 ? inArray(skills.id, explicitlySelectableIds) : sql`false`,
       )!);
+    }
+
+    // sourceKind filter: restrict to system or user skills (external handled above)
+    if (query.sourceKind === 'system') {
+      whereClauses.push(isNull(skills.authorId));
+    } else if (query.sourceKind === 'user') {
+      whereClauses.push(sql`${skills.authorId} IS NOT NULL`);
     }
 
     if (query.publicationStatus) {
@@ -579,11 +669,21 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       }
     }
 
+    const whereClause = whereClauses.length === 1
+      ? whereClauses[0]!
+      : whereClauses.length > 1
+        ? and(...whereClauses)!
+        : undefined;
+
+    // Count query — same WHERE as the rows query, runs in parallel with the data fetch.
+    let countQuery = db.select({ total: sql<number>`count(*)::int` }).from(skills).$dynamic();
+    if (whereClause) {
+      countQuery = countQuery.where(whereClause);
+    }
+
     let rowsQuery = db.select().from(skills).$dynamic();
-    if (whereClauses.length === 1) {
-      rowsQuery = rowsQuery.where(whereClauses[0]!);
-    } else if (whereClauses.length > 1) {
-      rowsQuery = rowsQuery.where(and(...whereClauses)!);
+    if (whereClause) {
+      rowsQuery = rowsQuery.where(whereClause);
     }
 
     if (query.sort === 'price_asc') {
@@ -598,9 +698,15 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       rowsQuery = rowsQuery.orderBy(desc(skills.popularityScore), desc(skills.createdAt));
     }
 
-    const rows = await rowsQuery;
+    rowsQuery = rowsQuery.limit(query.pageSize).offset((query.page - 1) * query.pageSize);
+
+    const [countResult, rows] = await Promise.all([countQuery, rowsQuery]);
+    const localTotal = countResult[0]?.total ?? 0;
     let views = await buildSkillViews(db, rows, request.userId, planPolicy);
 
+    // Post-query filters: these operate on already-fetched rows so totalCount
+    // may overcount when these filters are active. This is a known limitation —
+    // Step 8 will refine the total when external skills are merged.
     if (query.scope === 'selectable') {
       views = views.filter((skill) => skill.isSelectable);
     }
@@ -613,7 +719,95 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       views = views.filter((skill) => skill.sourceKind === 'user' && skill.publicationStatus === 'published');
     }
 
-    return reply.send({ skills: views });
+    // ── External skill merging ────────────────────────────────────────────
+    // For 'selectable' and 'marketplace' scopes, merge external skills from
+    // the provider into the paginated response. Local skills appear first;
+    // external skills fill remaining page slots.
+    //
+    // Limitation: if the local skill set changes between page requests, the
+    // offset boundary between local and external results shifts. A skill may
+    // be duplicated or skipped across pages. This is a known trade-off of
+    // offset-based pagination over two independent sources.
+    const includeExternal = externalSkillProvider
+      && (query.scope === 'selectable' || query.scope === 'marketplace')
+      && !query.sourceKind;
+
+    if (!includeExternal) {
+      return reply.send({ skills: views, totalCount: localTotal, page: query.page, pageSize: query.pageSize });
+    }
+
+    const offset = (query.page - 1) * query.pageSize;
+    const remaining = query.pageSize - views.length;
+
+    let externalOffset: number;
+    if (offset < localTotal) {
+      // Page still has local results — external starts from the beginning
+      externalOffset = 0;
+    } else {
+      // Past all local results — shift external offset accordingly
+      externalOffset = offset - localTotal;
+    }
+
+    // Only fetch external skills if there are remaining page slots to fill
+    let externalViews: SkillView[] = [];
+    let externalTotal = 0;
+    let degradation: { external: string; reason: string } | undefined;
+
+    if (remaining > 0) {
+      try {
+        // Convert to 1-based page for the external provider
+        const extPage = Math.floor(externalOffset / remaining) + 1;
+        const extPageSize = remaining;
+        const externalResult = query.q
+          ? await externalSkillProvider.search(query.q, { page: extPage, pageSize: extPageSize })
+          : await externalSkillProvider.browse({ page: extPage, pageSize: extPageSize });
+
+        externalTotal = externalResult.totalCount;
+
+        // Deduplicate: exclude external skills whose slug matches a local skill's slug
+        const localSlugs = new Set(views.map(v => v.slug));
+        externalViews = externalResult.results
+          .map(mapExternalToSkillView)
+          .filter(ev => !localSlugs.has(ev.slug));
+
+        // Trim to remaining slots (dedup may have already reduced the count)
+        externalViews = externalViews.slice(0, remaining);
+
+        // Flag degradation when the provider is configured but returns suspiciously empty
+        if (externalResult.totalCount === 0 && externalResult.results.length === 0) {
+          degradation = { external: 'unavailable', reason: 'external catalog returned empty' };
+        }
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        app.log.warn({ err: reason }, '[skills] external skill fetch failed, degrading to local-only');
+        degradation = { external: 'unavailable', reason };
+      }
+    } else {
+      // Full page of local results — still need external total for the combined count.
+      // Use getStats for an efficient count without fetching a full page.
+      try {
+        const stats = await externalSkillProvider.getStats();
+        externalTotal = stats?.totalSkills ?? 0;
+      } catch {
+        // Stats failure is non-critical; local totalCount is still correct
+        externalTotal = 0;
+      }
+    }
+
+    const mergedViews = [...views, ...externalViews];
+    const totalCount = localTotal + externalTotal;
+
+    const response: Record<string, unknown> = {
+      skills: mergedViews,
+      totalCount,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
+    if (degradation) {
+      response['degradation'] = degradation;
+    }
+
+    return reply.send(response);
   });
 
   app.post<{ Body: unknown }>('/skills', async (request, reply) => {

@@ -15,6 +15,10 @@ export function buildSkillSlug(authorHandle: string, name: string): string {
   return `${authorHandle.toLowerCase()}/${slugify(name)}`;
 }
 
+// ── Source kind ──────────────────────────────────────────────────────────────
+
+export type SourceKind = 'system' | 'user' | 'external';
+
 // ── Skill definitions ───────────────────────────────────────────────────────
 
 /**

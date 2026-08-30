@@ -61,6 +61,7 @@ export function listSelectableSkills(skills: Skill[]): Skill[] {
       const sourceOrder: Record<Skill['sourceKind'], number> = {
         system: 0,
         user: 1,
+        external: 2,
       };
 
       const sourceDelta = sourceOrder[left.sourceKind] - sourceOrder[right.sourceKind];

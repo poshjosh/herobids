@@ -409,7 +409,7 @@ export interface Skill {
   id: string;
   slug: string;
   authorId: string | null;
-  sourceKind: 'system' | 'user';
+  sourceKind: 'system' | 'user' | 'external';
   publicationStatus: 'draft' | 'private' | 'published' | 'delisted' | 'archived';
   hasStagedRevision: boolean;
   priceCents: number;
@@ -498,6 +498,7 @@ export const skills = {
     }),
   list: (params?: {
     scope?: 'mine' | 'marketplace' | 'selectable' | 'admin';
+    sourceKind?: 'system' | 'user' | 'external';
     publicationStatus?: 'draft' | 'private' | 'published' | 'delisted' | 'archived';
     sort?: 'popular' | 'trending' | 'newest' | 'price_asc' | 'price_desc';
     priceMin?: number;
@@ -505,9 +506,12 @@ export const skills = {
     likedByMe?: boolean;
     tag?: string;
     q?: string;
+    page?: number;
+    pageSize?: number;
   }) => {
     const qs = new URLSearchParams();
     if (params?.scope) qs.set('scope', params.scope);
+    if (params?.sourceKind) qs.set('sourceKind', params.sourceKind);
     if (params?.publicationStatus) qs.set('publicationStatus', params.publicationStatus);
     if (params?.sort) qs.set('sort', params.sort);
     if (params?.priceMin !== undefined) qs.set('priceMin', String(params.priceMin));
@@ -515,12 +519,14 @@ export const skills = {
     if (params?.likedByMe !== undefined) qs.set('likedByMe', String(params.likedByMe));
     if (params?.tag) qs.set('tag', params.tag);
     if (params?.q) qs.set('q', params.q);
+    if (params?.page !== undefined) qs.set('page', String(params.page));
+    if (params?.pageSize !== undefined) qs.set('pageSize', String(params.pageSize));
     const query = qs.toString() ? `?${qs.toString()}` : '';
-    return request<{ skills: Skill[] }>(`/skills${query}`);
+    return request<{ skills: Skill[]; totalCount: number; page: number; pageSize: number; degradation?: { external: string; reason: string } }>(`/skills${query}`);
   },
   listAdminIfAllowed: async () => {
     try {
-      return await request<{ skills: Skill[] }>('/skills?scope=admin');
+      return await request<{ skills: Skill[]; totalCount: number; page: number; pageSize: number }>('/skills?scope=admin');
     } catch (error) {
       if (error instanceof ApiError && error.status === 403) {
         return null;

@@ -1652,6 +1652,13 @@ export const AppConfigSchema = z.object({
   plans: PlansConfigSchema.default({}),
   billing: BillingConfigSchema.default({}),
   usageBilling: UsageBillingConfigSchema.default({}),
+  externalSkills: z.object({
+    enabled: z.boolean().default(true),
+    apiBaseUrl: z.string().url().default('http://skills-api:3456'),
+    searchTimeoutMs: z.number().int().min(500).max(30000).default(5000),
+    browseTimeoutMs: z.number().int().min(500).max(30000).default(5000),
+    statsTimeoutMs: z.number().int().min(500).max(10000).default(3000),
+  }).default({}),
 }).superRefine((data, ctx) => {
   const oneInchConfig = data.venues['1inch'];
   if (
