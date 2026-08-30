@@ -62,6 +62,8 @@ function runExternalSubprocess(
         resolve({ ok: true, output: '' });
       } else if (stderr.trim().length > 0) {
         resolve({ ok: false, error: `skills.sh exited with code ${code}: ${stderr.trim().slice(0, 500)}` });
+      } else if (stdout.trim().length > 0) {
+        resolve({ ok: false, error: `skills.sh exited with code ${code}: ${stdout.trim().slice(0, 500)}` });
       } else {
         resolve({ ok: false, error: `skills.sh exited with code ${code} (no output)` });
       }
@@ -70,15 +72,15 @@ function runExternalSubprocess(
 }
 
 async function runExternalSkillInstall(ref: string, cwd: string): Promise<ExternalSubprocessResult> {
-  return runExternalSubprocess(['add', ref], cwd, EXTERNAL_INSTALL_TIMEOUT_MS);
+  return runExternalSubprocess(['add', ref, '--yes'], cwd, EXTERNAL_INSTALL_TIMEOUT_MS);
 }
 
 async function runExternalSkillRemove(name: string, cwd: string): Promise<ExternalSubprocessResult> {
-  return runExternalSubprocess(['remove', name], cwd, EXTERNAL_REMOVE_TIMEOUT_MS);
+  return runExternalSubprocess(['remove', name, '--yes'], cwd, EXTERNAL_REMOVE_TIMEOUT_MS);
 }
 
 async function runExternalSkillList(cwd: string): Promise<ExternalSubprocessResult> {
-  return runExternalSubprocess(['list'], cwd, EXTERNAL_LIST_TIMEOUT_MS);
+  return runExternalSubprocess(['list', '--json'], cwd, EXTERNAL_LIST_TIMEOUT_MS);
 }
 
 // ── Slug resolution helpers ─────────────────────────────────────────────────
@@ -115,7 +117,7 @@ const ListSkillsParamsSchema = z.object({});
 const listSkillsTool: AgentTool = {
   name: 'list_skills',
   description:
-    'List skills assigned to this agent and skills available to add. Skills are identified by their slug (e.g. system/trading).',
+    'List skills currently assigned to this agent. Use search_skills to discover new skills to add.',
   parametersSchema: ListSkillsParamsSchema,
   parameters: convertZodToJsonSchema(ListSkillsParamsSchema),
   category: 'read-database',
@@ -129,20 +131,10 @@ const listSkillsTool: AgentTool = {
     }
 
     try {
-      const [assigned, available] = await Promise.all([
-        ctx.skillOps.listAssigned(),
-        ctx.skillOps.listAvailable(),
-      ]);
+      const assigned = await ctx.skillOps.listAssigned();
 
       // Map to response format with `skill` (slug) as primary identifier
       const assignedResponse = assigned.map(s => ({
-        id: s.id,
-        skill: s.slug,
-        name: s.name,
-        description: s.description,
-        dependsOn: s.dependsOn,
-      }));
-      const availableResponse = available.map(s => ({
         id: s.id,
         skill: s.slug,
         name: s.name,
@@ -167,13 +159,16 @@ const listSkillsTool: AgentTool = {
         installedExternal = { note: `External skill listing unavailable: ${err instanceof Error ? err.message : 'unknown error'}` };
       }
 
+      const hint = assignedResponse.length === 0
+        ? 'You have no skills. Use search_skills with keywords from your goal to find and add relevant skills.'
+        : 'Use search_skills to discover and add more skills.';
+
       return {
         success: true,
         data: {
           assigned: assignedResponse,
-          available: availableResponse,
           installedExternal,
-          hint: 'For capabilities not listed here, use search_skills to search both platform skills and external skills discoverable through skills.sh.',
+          hint,
         },
       };
     } catch (err) {

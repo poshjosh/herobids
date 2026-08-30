@@ -89,15 +89,10 @@ describe('list_skills', () => {
     expect(listSkills.category).toBe('read-database');
   });
 
-  it('returns assigned and available arrays when skillOps is present', async () => {
+  it('returns only assigned skills when skillOps is present', async () => {
     const assigned = [{ id: 's1', slug: 'trading', name: 'Trading', description: 'Trade stuff', dependsOn: [] as string[] }];
-    const available = [{ id: 's2', slug: 'monitoring', name: 'Monitoring', description: 'Watch stuff', dependsOn: [] as string[] }];
     const ctx = makeCtx({
-      skillOps: {
-        listAssigned: vi.fn(async () => assigned),
-        listAvailable: vi.fn(async () => available),
-        search: vi.fn(async () => []),
-      },
+      skillOps: makeSkillOps({ listAssigned: vi.fn(async () => assigned) }),
     });
 
     const result = await listSkills.execute({}, ctx);
@@ -107,57 +102,52 @@ describe('list_skills', () => {
     expect(data.assigned).toEqual([
       { id: 's1', skill: 'trading', name: 'Trading', description: 'Trade stuff', dependsOn: [] },
     ]);
-    expect(data.available).toEqual([
-      { id: 's2', skill: 'monitoring', name: 'Monitoring', description: 'Watch stuff', dependsOn: [] },
-    ]);
-    expect(data.hint).toEqual('For capabilities not listed here, use search_skills to search both platform skills and external skills discoverable through skills.sh.');
+    expect(data).not.toHaveProperty('available');
+    expect(data.hint).toEqual('Use search_skills to discover and add more skills.');
     expect(data.installedExternal).toBeDefined();
   });
 
-  it('surfaces dependsOn field in both assigned and available arrays', async () => {
-    const assigned = [
-      { id: 's1', slug: 'trading', name: 'Trading', description: 'Trade stuff', dependsOn: ['s3'] },
-    ];
-    const available = [
-      { id: 's2', slug: 'monitoring', name: 'Monitoring', description: 'Watch stuff', dependsOn: ['s1', 's3'] },
-    ];
+  it('returns search hint when no skills are assigned', async () => {
     const ctx = makeCtx({
-      skillOps: {
-        listAssigned: vi.fn(async () => assigned),
-        listAvailable: vi.fn(async () => available),
-        search: vi.fn(async () => []),
-      },
+      skillOps: makeSkillOps({ listAssigned: vi.fn(async () => []) }),
     });
 
     const result = await listSkills.execute({}, ctx);
 
     expect(result.success).toBe(true);
-    const data = result.data as { assigned: typeof assigned; available: typeof available };
+    const data = result.data as Record<string, unknown>;
+    expect(data.assigned).toEqual([]);
+    expect(data.hint).toEqual('You have no skills. Use search_skills with keywords from your goal to find and add relevant skills.');
+  });
+
+  it('surfaces dependsOn field in assigned array', async () => {
+    const assigned = [
+      { id: 's1', slug: 'trading', name: 'Trading', description: 'Trade stuff', dependsOn: ['s3'] },
+    ];
+    const ctx = makeCtx({
+      skillOps: makeSkillOps({ listAssigned: vi.fn(async () => assigned) }),
+    });
+
+    const result = await listSkills.execute({}, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as { assigned: typeof assigned };
     expect(data.assigned[0]!.dependsOn).toEqual(['s3']);
-    expect(data.available[0]!.dependsOn).toEqual(['s1', 's3']);
   });
 
   it('returns empty dependsOn arrays when skills have no dependencies', async () => {
     const assigned = [
       { id: 's1', slug: 'trading', name: 'Trading', description: 'Trade stuff', dependsOn: [] as string[] },
     ];
-    const available = [
-      { id: 's2', slug: 'monitoring', name: 'Monitoring', description: 'Watch stuff', dependsOn: [] as string[] },
-    ];
     const ctx = makeCtx({
-      skillOps: {
-        listAssigned: vi.fn(async () => assigned),
-        listAvailable: vi.fn(async () => available),
-        search: vi.fn(async () => []),
-      },
+      skillOps: makeSkillOps({ listAssigned: vi.fn(async () => assigned) }),
     });
 
     const result = await listSkills.execute({}, ctx);
 
     expect(result.success).toBe(true);
-    const data = result.data as { assigned: typeof assigned; available: typeof available };
+    const data = result.data as { assigned: typeof assigned };
     expect(data.assigned[0]!.dependsOn).toEqual([]);
-    expect(data.available[0]!.dependsOn).toEqual([]);
   });
 
   it('returns error when skillOps is not wired', async () => {
@@ -185,21 +175,6 @@ describe('list_skills', () => {
     expect(result.error).toContain('Redis down');
   });
 
-  it('returns error when listAvailable throws', async () => {
-    const ctx = makeCtx({
-      skillOps: {
-        listAssigned: vi.fn(async () => []),
-        listAvailable: vi.fn(async () => { throw new Error('DB timeout'); }),
-        search: vi.fn(async () => []),
-      },
-    });
-
-    const result = await listSkills.execute({}, ctx);
-
-    expect(result.success).toBe(false);
-    expect(result.errorCode).toBe('skill.list_failed');
-    expect(result.error).toContain('DB timeout');
-  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -971,47 +946,27 @@ describe('list_skills dependsOn propagation', () => {
     const result = await listSkills.execute({}, ctx);
 
     expect(result.success).toBe(true);
-    const data = result.data as { assigned: typeof assigned; available: unknown[] };
+    const data = result.data as { assigned: typeof assigned };
     expect(data.assigned[0]!.dependsOn).toEqual(['sk-market', 'sk-risk']);
     expect(data.assigned[1]!.dependsOn).toEqual([]);
   });
 
-  it('propagates dependsOn from listAvailable through to tool response data', async () => {
-    const available = [
-      { id: 'sk-alerts', slug: 'alerts', name: 'Alerts', description: 'Alert', dependsOn: ['sk-monitor'] },
-    ];
-    const ctx = makeCtx({
-      skillOps: makeSkillOps({ listAvailable: vi.fn(async () => available) }),
-    });
-
-    const result = await listSkills.execute({}, ctx);
-
-    expect(result.success).toBe(true);
-    const data = result.data as { assigned: unknown[]; available: typeof available };
-    expect(data.available[0]!.dependsOn).toEqual(['sk-monitor']);
-  });
-
-  it('handles large dependsOn arrays from both assigned and available', async () => {
+  it('handles large dependsOn arrays in assigned skills', async () => {
     const manyDeps = Array.from({ length: 8 }, (_, i) => `sk-dep-${i}`);
     const assigned = [
       { id: 'sk-complex', slug: 'complex', name: 'Complex', description: 'Many deps', dependsOn: manyDeps },
     ];
-    const available = [
-      { id: 'sk-simple', slug: 'simple', name: 'Simple', description: 'Few deps', dependsOn: ['sk-dep-0'] },
-    ];
     const ctx = makeCtx({
       skillOps: makeSkillOps({
         listAssigned: vi.fn(async () => assigned),
-        listAvailable: vi.fn(async () => available),
       }),
     });
 
     const result = await listSkills.execute({}, ctx);
 
     expect(result.success).toBe(true);
-    const data = result.data as { assigned: typeof assigned; available: typeof available };
+    const data = result.data as { assigned: typeof assigned };
     expect(data.assigned[0]!.dependsOn).toHaveLength(8);
-    expect(data.available[0]!.dependsOn).toHaveLength(1);
   });
 });
 
@@ -1546,25 +1501,6 @@ describe('list_skills — installedExternal field', () => {
     expect(data.assigned[0]).toHaveProperty('dependsOn');
     // Should NOT have a 'slug' key in the output — it's mapped to 'skill'
     expect(data.assigned[0]).not.toHaveProperty('slug');
-  });
-
-  it('response uses skill field (slug) instead of slug in available items', async () => {
-    const available = [
-      { id: 'risk-monitoring', slug: 'system/risk-monitoring', name: 'Risk Monitoring', description: 'Monitor', dependsOn: ['trading'] },
-    ];
-    const ctx = makeCtx({
-      skillOps: makeSkillOps({
-        listAssigned: vi.fn(async () => []),
-        listAvailable: vi.fn(async () => available),
-      }),
-    });
-
-    const result = await listSkills.execute({}, ctx);
-
-    expect(result.success).toBe(true);
-    const data = result.data as { available: Array<Record<string, unknown>> };
-    expect(data.available[0]).toHaveProperty('skill', 'system/risk-monitoring');
-    expect(data.available[0]).not.toHaveProperty('slug');
   });
 });
 

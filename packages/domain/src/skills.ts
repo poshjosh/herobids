@@ -75,7 +75,7 @@ Use memory to remember information. For example, if you need find information fr
 You can use skills to gain additional capabilities/expertise. For example, if you have a task but are not sure how to accomplish it, you can search for, then add skills related to the task:
 - Use \`search_skills\` to find skills by keyword. It searches both the platform catalog and external skills.
 - Use \`add_skills\` to add skills by slug. Dependencies are added automatically unless you set includeDependencies to false. For external skills (e.g. twostraws/swiftui-agent-skill), the platform installs them and adds the file-management skill so you can read the installed instructions.
-- Use \`list_skills\` to see what skills you have and what platform skills are available to add. Skills are identified by their slug (e.g. system/trading, system/programming).
+- Use \`list_skills\` to see what skills you currently have. Skills are identified by their slug (e.g. system/trading, system/programming).
 - Use \`remove_skills\` to drop skills by slug.
 
 You can also:

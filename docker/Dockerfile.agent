@@ -28,7 +28,7 @@ RUN echo "inject-workspace-packages=true" >> .npmrc && \
 # CAP_NET_ADMIN is required at container run-time for namespace creation.
 FROM node:22-alpine AS runtime
 
-RUN apk add --no-cache iproute2 iptables ip6tables python3 py3-pip
+RUN apk add --no-cache iproute2 iptables ip6tables python3 py3-pip git
 
 WORKDIR /app/apps/worker
 
