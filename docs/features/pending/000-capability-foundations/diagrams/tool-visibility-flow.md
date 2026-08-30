@@ -44,25 +44,25 @@ flowchart LR
 
 - No ownership check — any skill can expose any tool
 - No capability activation check — a trading skill exposes trading tools
-  even if trading is not activated for the agent
-- No service health check — tools appear visible even if the backing
-  service is unreachable
+  even if the trading external backend is not registered or dispatchable
+- No backend health check — tools appear visible even if the backing
+  external backend is unreachable
 - No readiness check at visibility time — readiness is checked at call
   time only, so the LLM may attempt tools it cannot use
 
 ---
 
-## Target State: Ownership + Activation Visibility Predicate
+## Target State: Ownership + Activation + Backend Dispatchability Visibility Predicate
 
 ```mermaid
 flowchart LR
   subgraph Inputs
     skills[Resolved Skills]
     budget[maxVisibleToolSchemas budget]
-    ownership[Tool Ownership Manifest<br/>core / general / capability-owned]
-    activation[Activation Rows<br/>agent_capability_activations table]
+    ownership[Tool Ownership Manifest<br/>core / general / native-capability / external-backend]
+    activation[Native Activation Rows<br/>agent_capability_activations table]
+    backend_state[External Backend State<br/>registration + entitlement + health + readiness]
     readiness[Runtime Binding Readiness<br/>connection + provider state]
-    health[Capability Service Health<br/>/health/ready per service]
     session[Session Mode + Platform Rules<br/>implicit messaging rule]
     degradation[Dependency Degradation]
     circuit[Circuit Breaker]
@@ -73,9 +73,10 @@ flowchart LR
     requested{Requested by<br/>baseline or skill?}
     owner_check{Owner type?}
     core_general[Core / General:<br/>pass]
-    cap_active{Capability<br/>activated?}
+    native_active{Native capability<br/>activated?}
+    backend_dispatch{External backend<br/>dispatchable?}
     readiness_check{Tool-specific<br/>readiness OK?}
-    health_check{Service<br/>healthy?}
+    health_check{Backend or<br/>platform healthy?}
     policy{Runtime policy<br/>or degradation<br/>excludes?}
     visible_yes[VISIBLE]
     visible_no[HIDDEN]
@@ -88,10 +89,10 @@ flowchart LR
 
   skills --> requested
   ownership --> owner_check
-  activation --> cap_active
+  activation --> native_active
+  backend_state --> backend_dispatch
   readiness --> readiness_check
-  health --> health_check
-  session --> cap_active
+  session --> native_active
   degradation --> policy
   circuit --> policy
 
@@ -100,9 +101,12 @@ flowchart LR
   requested -->|no| visible_no
   requested -->|yes| owner_check
   owner_check -->|core/general| readiness_check
-  owner_check -->|capability| cap_active
-  cap_active -->|inactive| visible_no
-  cap_active -->|active| readiness_check
+  owner_check -->|native capability| native_active
+  owner_check -->|external backend| backend_dispatch
+  native_active -->|inactive| visible_no
+  native_active -->|active| readiness_check
+  backend_dispatch -->|not dispatchable| visible_no
+  backend_dispatch -->|dispatchable| readiness_check
   readiness_check -->|not ready| visible_no
   readiness_check -->|ready| health_check
   health_check -->|unhealthy| visible_no
@@ -117,7 +121,7 @@ flowchart LR
   style skills fill:#e3f2fd
   style ownership fill:#fff3e0
   style activation fill:#fff3e0
-  style health fill:#fff3e0
+  style backend_state fill:#fff3e0
   style visible_set fill:#c8e6c9
   style llm fill:#c8e6c9
   style visible_no fill:#ffcdd2
@@ -125,23 +129,29 @@ flowchart LR
 
 ### The two-key model
 
-Neither key alone is sufficient:
+Neither key alone is sufficient. Native capabilities and external backends use
+different owner-state checks:
 
 | Condition | Visible? |
 |-----------|----------|
-| Skill requests tool + capability active + ready + healthy | Yes |
-| Skill requests tool + capability NOT active | No |
-| Capability active + tool NOT requested by any skill | No |
-| Capability active + skill requests + service unhealthy | No |
+| Skill requests tool + native capability active + ready + healthy | Yes |
+| Skill requests tool + native capability NOT active | No |
+| Skill requests tool + external backend dispatchable + ready + healthy | Yes |
+| Skill requests tool + external backend NOT dispatchable | No |
+| Owner state satisfied + tool NOT requested by any skill | No |
+| Owner state satisfied + skill requests + backend unhealthy | No |
 
 ### Special cases
 
-- **`send_message`** — messaging-owned but implicitly active through the
+- **`send_message`** — native messaging-owned but implicitly active through the
   platform-inbox rule. Does not require an explicit activation row.
-- **`send_email`** — requires explicit messaging activation AND a ready
+- **`send_email`** — requires explicit native messaging activation AND a ready
   email binding (connection + provider).
-- **Core/general tools** — skip the capability activation and service health
-  checks. They execute in-process in Agent Core.
+- **External trading tools** — do not use native activation rows. They require
+  external-backend registration, entitlement, health, and readiness.
+- **Core/general tools** — skip the native activation, external-backend
+  dispatchability, and service health checks. They execute in-process in Agent
+  Core.
 
 ---
 
@@ -149,10 +159,11 @@ Neither key alone is sufficient:
 
 | Aspect | Current | Target |
 |--------|---------|--------|
-| Inputs to visibility | Skills + degradation + circuit | Skills + ownership + activation + readiness + health + policy |
+| Inputs to visibility | Skills + degradation + circuit | Skills + ownership + native activation + external-backend dispatchability + readiness + health + policy |
 | Ownership awareness | None | Exhaustive manifest, CI-enforced |
-| Activation gating | None | Durable DB row per agent per capability |
-| Service health gating | None | Per-capability /health/ready |
+| Native activation gating | None | Durable DB row per agent per native capability |
+| External backend gating | None | Registration + entitlement + health + readiness |
+| Service health gating | None | Per-external-backend /health/ready; native capabilities use platform health |
 | Implicit rules | None | Platform-inbox rule for send_message |
 | Failure mode | Tool visible but call fails at runtime | Tool hidden if it cannot succeed |
 | Where logic lives | `runtime-tool-visibility.ts` | Shared visibility predicate consuming domain types |

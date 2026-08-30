@@ -3,7 +3,7 @@
 **Status:** ready  
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Foundations Program Master Roadmap](./program/001-master-roadmap.md)
-**Normative inputs:** [ADR 002](../../../tech/architecture/adrs/2026/07/002-capability-model-and-registry.md), [ADR 003](../../../tech/architecture/adrs/2026/07/003-agent-core-vs-capability-services.md), [ADR 004](../../../tech/architecture/adrs/2026/07/004-capability-registry-and-tool-exposure-model.md)
+**Normative inputs:** [ADR 008](../../../tech/architecture/adrs/2026/08/008-native-capabilities-and-external-backends.md)
 
 ## Purpose
 
@@ -44,10 +44,9 @@ This roadmap does not include:
 
 1. [Capability Foundations Program Master Roadmap](./program/001-master-roadmap.md)
    fixes this feature's place in the staged program.
-2. [ADR 002](../../../tech/architecture/adrs/2026/07/002-capability-model-and-registry.md),
-   [ADR 003](../../../tech/architecture/adrs/2026/07/003-agent-core-vs-capability-services.md),
-   and [ADR 004](../../../tech/architecture/adrs/2026/07/004-capability-registry-and-tool-exposure-model.md)
-   fix the architecture boundary this roadmap implements.
+2. [ADR 008](../../../tech/architecture/adrs/2026/08/008-native-capabilities-and-external-backends.md)
+   fixes the architecture boundary this roadmap implements. ADR 008 supersedes
+   the earlier ADRs 002–004 from July 2026.
 3. The first executable slice in this feature is controlled by
    [013-native-capabilities-and-external-backends.md](./013-native-capabilities-and-external-backends.md)
    and [tasks/002-external-backend-boundary-implementation-tasks.md](./tasks/002-external-backend-boundary-implementation-tasks.md).

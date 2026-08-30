@@ -1,3 +1,14 @@
+Much has been implemented since this was written. See:
+
+- docs/features/2026/08/23/001-relaxed-agent-creation-form/001-plan.md
+- docs/features/2026/08/28/002-dynamic-skill-management/001-plan.md
+- docs/features/2026/08/28/003-execution-mode-immutability-and-go-live/001-plan.md
+- docs/features/2026/08/29/001-unified-skill-discoverability/001-plan.md
+- docs/features/2026/08/29/003-unified-skill-addressing/001-plan.md
+- docs/features/2026/08/30/001-unified-skill-catalog/001-plan.md
+
+---
+
 We want agents to be able to dynamically manage skills. Read:
 
 - docs/features/pending/002-blank-slate-agents/000-preamble.md

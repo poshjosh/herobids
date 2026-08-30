@@ -1,3 +1,14 @@
+Much has been implemented since this was written. See:
+
+- docs/features/2026/08/23/001-relaxed-agent-creation-form/001-plan.md
+- docs/features/2026/08/28/002-dynamic-skill-management/001-plan.md
+- docs/features/2026/08/28/003-execution-mode-immutability-and-go-live/001-plan.md
+- docs/features/2026/08/29/001-unified-skill-discoverability/001-plan.md
+- docs/features/2026/08/29/003-unified-skill-addressing/001-plan.md
+- docs/features/2026/08/30/001-unified-skill-catalog/001-plan.md
+
+---
+
 The future of prompts, skills and connections
 
 - Granting some connections should automatically add a skill to the granted agent. For example, granting an agent a Gmail connection should automatically assign the email skill. What do you think? Any caveats? What other skill could be automatically assigned?

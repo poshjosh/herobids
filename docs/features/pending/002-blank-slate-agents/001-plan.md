@@ -2,6 +2,15 @@
 
 **Status:** Pending (depends on `docs/features/2026/08/23/001-relaxed-agent-creation-form/001-plan.md`)
 
+Much has been implemented since this was written. See:
+
+- docs/features/2026/08/23/001-relaxed-agent-creation-form/001-plan.md
+- docs/features/2026/08/28/002-dynamic-skill-management/001-plan.md
+- docs/features/2026/08/28/003-execution-mode-immutability-and-go-live/001-plan.md
+- docs/features/2026/08/29/001-unified-skill-discoverability/001-plan.md
+- docs/features/2026/08/29/003-unified-skill-addressing/001-plan.md
+- docs/features/2026/08/30/001-unified-skill-catalog/001-plan.md
+
 ## Summary
 
 Reduce agent creation to a single click. The user clicks "Create Agent" on the agents page and immediately gets a blank-slate agent with sensible server-side defaults. Everything else — goal, skills, strategy, connections — happens after creation, either through the edit form, through messaging (Telegram/chat), or by the agent itself via new self-management tools.

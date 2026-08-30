@@ -288,8 +288,8 @@ Under this tree spec:
 1. `000-README.md` remains the active folder guide.
 2. `001-roadmap.md` remains the canonical high-level roadmap.
 3. `002` through the active numbered design docs are the middle-level tier.
-4. `tasks/001-shared-trading-taxonomy-implementation-tasks.md` is the low-level
-   execution tier.
+4. `tasks/002-external-backend-boundary-implementation-tasks.md` is the
+   current low-level execution tier. (`tasks/001` is superseded.)
 5. `diagrams/` remains a support directory.
 6. `author/` remains non-authoritative preparation material.
 7. historical transition notes belong under `archive/` and are not part of the
