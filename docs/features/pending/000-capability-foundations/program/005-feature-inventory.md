@@ -88,6 +88,7 @@ readiness gate for entering the first executable slice.
 | [009-initial-capability-registry-and-tool-ownership-manifest.md](../009-initial-capability-registry-and-tool-ownership-manifest.md) | supporting reference | Reference manifest for native capability rows, external backend rows, and exhaustive tool ownership. |
 | [010-capability-activation-model.md](../010-capability-activation-model.md) | supporting reference | Reference model for native capability activation and external-backend dispatchability state. |
 | [011-capability-route-and-response-migration-manifest.md](../011-capability-route-and-response-migration-manifest.md) | supporting reference | Reference manifest for native capability and external-backend route and response migration. |
+| [014-operational-readiness-for-external-backends.md](../014-operational-readiness-for-external-backends.md) | supporting reference | Reference requirements for latency budgets, shadow-mode validation, restart resilience, load testing, and cutover criteria for any external backend. Referenced as a normative input by 005. |
 
 ## Excluded From The Active Inventory
 

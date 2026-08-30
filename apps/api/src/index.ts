@@ -48,6 +48,7 @@ import { providerRoutes } from './routes/providers.js';
 import { authPlugin } from './plugins/auth.js';
 import { createAuthMailer } from './auth-mailer.js';
 import { loadConfig } from './config.js';
+import { ExternalSkillProviderHttp } from './external-skill-provider-http.js';
 import { createFastifyLogger } from './logger.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -271,7 +272,16 @@ const chatUsageBillingRecorder = new ChatUsageBillingRecorder(
   appConfig.usageBilling?.defaultRateCardName ?? 'default',
 );
 await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.agentRiskDefaults, appConfig.venues);
-await skillsRoutes(app, db, appConfig.plans);
+await skillsRoutes(app, db, appConfig.plans, (() => {
+  const ext = appConfig.externalSkills;
+  if (!ext.enabled) return null;
+  return new ExternalSkillProviderHttp({
+    baseUrl: ext.apiBaseUrl,
+    searchTimeoutMs: ext.searchTimeoutMs,
+    browseTimeoutMs: ext.browseTimeoutMs,
+    statsTimeoutMs: ext.statsTimeoutMs,
+  }, app.log);
+})());
 await datasetRoutes(app, db, redisClient);
 await agentDocumentRoutes(app, db);
 await exportRoutes(app, db);

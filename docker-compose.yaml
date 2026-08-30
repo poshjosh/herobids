@@ -170,7 +170,7 @@ services:
   skills-api:
     image: node:22-alpine
     working_dir: /app
-    command: ['npx', '@mastra/skills-api@0.1.0']
+    command: ['sh', '-c', 'if [ ! -d repo ]; then apk add --no-cache git && git clone --depth 1 https://github.com/mastra-ai/skills-api.git repo; fi && cd repo && npm install && npm run build && npm start']
     ports:
       - '3456:3456'
     environment:
@@ -178,12 +178,14 @@ services:
       HOST: '0.0.0.0'
       AUTO_REFRESH: 'true'
       REFRESH_INTERVAL: '60'
+    volumes:
+      - skills-api-data:/app
     healthcheck:
       test: ['CMD-SHELL', 'node -e "fetch(\"http://localhost:3456/api/skills/stats\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"']
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
     restart: unless-stopped
     logging:
       driver: json-file
@@ -209,3 +211,4 @@ services:
 volumes:
   pgdata:
   evaldata:
+  skills-api-data:

@@ -7,7 +7,7 @@
  */
 
 import { z } from 'zod';
-import type { Logger } from 'pino';
+import type { FastifyBaseLogger } from 'fastify';
 import type {
   ExternalSkillPage,
   ExternalSkillProvider,
@@ -91,10 +91,10 @@ export class ExternalSkillProviderHttp implements ExternalSkillProvider {
   private readonly searchTimeoutMs: number;
   private readonly browseTimeoutMs: number;
   private readonly statsTimeoutMs: number;
-  private readonly log: Logger;
+  private readonly log: FastifyBaseLogger;
   private statsCache: StatsCache | null = null;
 
-  constructor(config: ExternalSkillProviderHttpConfig, logger: Logger) {
+  constructor(config: ExternalSkillProviderHttpConfig, logger: FastifyBaseLogger) {
     // Strip trailing slash so path concatenation is clean
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.searchTimeoutMs = config.searchTimeoutMs;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import type { Logger } from 'pino';
+import type { FastifyBaseLogger } from 'fastify';
 import { ExternalSkillProviderHttp } from './external-skill-provider-http.js';
 import type { ExternalSkillProviderHttpConfig } from './external-skill-provider-http.js';
 
@@ -15,8 +15,8 @@ function makeConfig(overrides?: Partial<ExternalSkillProviderHttpConfig>): Exter
   };
 }
 
-function makeLogger(): Logger {
-  return { warn: vi.fn() } as unknown as Logger;
+function makeLogger(): FastifyBaseLogger {
+  return { warn: vi.fn() } as unknown as FastifyBaseLogger;
 }
 
 /** Builds a valid skills-api page response body. */
