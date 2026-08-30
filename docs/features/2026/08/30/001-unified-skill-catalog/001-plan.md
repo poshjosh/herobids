@@ -169,13 +169,14 @@ For production/staging, `apiBaseUrl` is overridden to point to the private IP or
 
 ---
 
-## Step 1 — Infrastructure: add `@mastra/skills-api` to docker-compose
+## Step 1 — Infrastructure: add `@mastra/skills-api` to docker-compose [DONE]
 
 **Files:**
 - `docker-compose.yaml` (local dev)
-- `docker-compose.dev.yaml`
 - `docker-compose.prod.yaml`
 - `docker-compose.staging.yaml`
+
+> `docker-compose.dev.yaml` is not modified — `skills-api` inherits from the base compose unchanged, same as postgres and redis.
 
 **Changes:**
 
@@ -230,7 +231,7 @@ api:
 
 ---
 
-## Step 2 — Domain: define `ExternalSkillProvider` port and types
+## Step 2 — Domain: define `ExternalSkillProvider` port and types [PENDING]
 
 **File:** `packages/domain/src/ports/external-skill-provider.ts` (new)
 
@@ -297,7 +298,7 @@ Re-export from `packages/domain/src/ports/index.ts`.
 
 ---
 
-## Step 3 — Domain: add `sourceKind: 'external'` to the type system
+## Step 3 — Domain: add `sourceKind: 'external'` to the type system [PENDING]
 
 **File:** `packages/domain/src/skills.ts`
 
@@ -310,7 +311,7 @@ Re-export from `packages/domain/src/ports/index.ts`.
 
 ---
 
-## Step 4 — Domain: add external skills config to `AppConfigSchema`
+## Step 4 — Domain: add external skills config to `AppConfigSchema` [PENDING]
 
 **File:** `packages/domain/src/config.ts`
 
@@ -332,7 +333,7 @@ externalSkills: z.object({
 
 ---
 
-## Step 5 — Domain: add pagination types
+## Step 5 — Domain: add pagination types [PENDING]
 
 **File:** `packages/domain/src/pagination.ts` (new)
 
@@ -355,7 +356,7 @@ Re-export from `packages/domain/src/index.ts`.
 
 ---
 
-## Step 6 — Infrastructure: implement HTTP-based `ExternalSkillProvider`
+## Step 6 — Infrastructure: implement HTTP-based `ExternalSkillProvider` [PENDING]
 
 **File:** `apps/api/src/external-skill-provider-http.ts` (new)
 
@@ -377,7 +378,7 @@ Implement `ExternalSkillProvider` using `fetch` calls to the self-hosted `@mastr
 
 ---
 
-## Step 7 — API: add pagination to `GET /skills`
+## Step 7 — API: add pagination to `GET /skills` [PENDING]
 
 **File:** `apps/api/src/routes/skills.ts`
 
@@ -411,7 +412,7 @@ Implement `ExternalSkillProvider` using `fetch` calls to the self-hosted `@mastr
 
 ---
 
-## Step 8 — API: merge external skills into paginated response
+## Step 8 — API: merge external skills into paginated response [PENDING]
 
 **File:** `apps/api/src/routes/skills.ts`
 
@@ -434,7 +435,7 @@ Implement `ExternalSkillProvider` using `fetch` calls to the self-hosted `@mastr
 
 ---
 
-## Step 9 — API: add `sourceKind` filter to query schema
+## Step 9 — API: add `sourceKind` filter to query schema [PENDING]
 
 **File:** `apps/api/src/routes/skills.ts`
 
@@ -457,7 +458,7 @@ This enables the UI to implement the "Built-in" tab without a separate endpoint.
 
 ---
 
-## Step 10 — Worker: replace `npx skills find` with HTTP call in `search_skills`
+## Step 10 — Worker: replace `npx skills find` with HTTP call in `search_skills` [PENDING]
 
 **File:** `apps/worker/src/tools/skills.ts`
 
@@ -480,7 +481,7 @@ Replace the `runExternalSkillSearch` subprocess function with an HTTP call to th
 
 ---
 
-## Step 11 — Frontend: update skills page for paginated + merged catalog
+## Step 11 — Frontend: update skills page for paginated + merged catalog [PENDING]
 
 **Files:**
 - `apps/web/src/lib/api-client.ts`
@@ -503,7 +504,7 @@ Replace the `runExternalSkillSearch` subprocess function with an HTTP call to th
 
 ---
 
-## Step 12 — Config: add defaults to `config/default.yaml`
+## Step 12 — Config: add defaults to `config/default.yaml` [PENDING]
 
 **File:** `config/default.yaml`
 
@@ -524,7 +525,7 @@ Env overrides documented inline. For production/staging YAML overrides or `EXTER
 
 ---
 
-## Step 13 — Tests
+## Step 13 — Tests [PENDING]
 
 ### Domain tests
 
