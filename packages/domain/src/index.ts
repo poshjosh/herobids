@@ -28,5 +28,6 @@ export * from './assessment-billing.js';
 export * from './review-pre-check.js';
 export * from './blueprint.js';
 export * from './plan-entitlements.js';
+export * from './external-skill-provider-http.js';
 export * from './text-search.js';
 export * from './pagination.js';

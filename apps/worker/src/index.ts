@@ -553,6 +553,9 @@ const agentRuntimeLauncher = (() => {
     // Pass shared-service cluster addresses so agent containers on
     // remote Nomad nodes can reach Redis/Postgres via private IPs.
     sharedServices: appConfig.sharedServices,
+    ...(appConfig.externalSkills.enabled
+      ? { externalSkillsConfigJson: JSON.stringify(appConfig.externalSkills) }
+      : {}),
   };
 
   const defaultResources = {
@@ -593,6 +596,9 @@ const agentRuntimeLauncher = (() => {
           : {}),
         ...(appConfig.marketData
           ? { marketDataConfigJson: JSON.stringify(appConfig.marketData) }
+          : {}),
+        ...(appConfig.externalSkills.enabled
+          ? { externalSkillsConfigJson: JSON.stringify(appConfig.externalSkills) }
           : {}),
         onAgentCrashed: async (agentId, sessionId?) => {
           await cascadeStopAgentBots(agentId);

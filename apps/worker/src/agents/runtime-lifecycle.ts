@@ -30,6 +30,8 @@ export interface AgentEnvConfig {
   providersYamlJson?: string;
   /** OpenRouter provider controls (JSON) forwarded to agent for privacy enforcement. */
   openRouterProviderControlsJson?: string;
+  /** Serialised external skills config (JSON) forwarded to agent containers. */
+  externalSkillsConfigJson?: string;
   /**
    * Optional: Shared services cluster addresses for agent runtime connectivity.
    * When provided, REDIS_URL and DATABASE_URL are constructed from these
@@ -137,6 +139,9 @@ export function buildAgentEnv(
   if (resolvedEnv['GMAIL_CLIENT_SECRET']) envOut['GMAIL_CLIENT_SECRET'] = resolvedEnv['GMAIL_CLIENT_SECRET']!;
   if (resolvedEnv['GMAIL_REDIRECT_URI']) envOut['GMAIL_REDIRECT_URI'] = resolvedEnv['GMAIL_REDIRECT_URI']!;
   if (resolvedEnv['GMAIL_DAILY_SEND_LIMIT']) envOut['GMAIL_DAILY_SEND_LIMIT'] = resolvedEnv['GMAIL_DAILY_SEND_LIMIT']!;
+
+  // External skills config — forwarded so agents can use the search_skills tool.
+  if (config.externalSkillsConfigJson) envOut['EXTERNAL_SKILLS_CONFIG_JSON'] = config.externalSkillsConfigJson;
 
   return envOut;
 }

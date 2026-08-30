@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import type { FastifyBaseLogger } from 'fastify';
 import { ExternalSkillProviderHttp } from './external-skill-provider-http.js';
-import type { ExternalSkillProviderHttpConfig } from './external-skill-provider-http.js';
+import type { ExternalSkillProviderHttpConfig, ProviderLogger } from './external-skill-provider-http.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -16,8 +15,8 @@ function makeConfig(overrides?: Partial<ExternalSkillProviderHttpConfig>): Exter
   };
 }
 
-function makeLogger(): FastifyBaseLogger {
-  return { warn: vi.fn() } as unknown as FastifyBaseLogger;
+function makeLogger(): ProviderLogger {
+  return { warn: vi.fn() } as unknown as ProviderLogger;
 }
 
 /** skills.sh /api/search response body */

@@ -13,7 +13,7 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal, LlmArtifactRepository, skills, skillRevisions, agentSkills } from '@herobids/db';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
@@ -122,6 +122,7 @@ const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '900000', 1
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env['HEARTBEAT_INTERVAL_MS'] ?? '5000', 10);
 const SERVER_COST_USD_PER_HOUR = Number(process.env['LLM_SERVER_COST_USD_PER_HOUR'] ?? '0.02');
 const TRADING_HOURS_RAW = process.env['TRADING_HOURS_JSON'];
+const EXTERNAL_SKILLS_CONFIG_JSON = process.env['EXTERNAL_SKILLS_CONFIG_JSON'];
 
 // ── HTTP/1.1 fetch for sites that block HTTP/2 (e.g. Forex Factory) ─────
 
@@ -1719,6 +1720,32 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       }
     : undefined;
 
+  // Build external skill provider from forwarded config (if present)
+  const externalSkillProvider = (() => {
+    if (!EXTERNAL_SKILLS_CONFIG_JSON) return undefined;
+    try {
+      const cfg = JSON.parse(EXTERNAL_SKILLS_CONFIG_JSON) as {
+        enabled?: boolean;
+        apiBaseUrl?: string;
+        searchApiBaseUrl?: string;
+        searchTimeoutMs?: number;
+        browseTimeoutMs?: number;
+        statsTimeoutMs?: number;
+      };
+      if (!cfg.enabled) return undefined;
+      return new ExternalSkillProviderHttp({
+        baseUrl: cfg.apiBaseUrl ?? 'http://skills-api:3456',
+        searchApiBaseUrl: cfg.searchApiBaseUrl ?? 'https://skills.sh',
+        searchTimeoutMs: cfg.searchTimeoutMs ?? 5000,
+        browseTimeoutMs: cfg.browseTimeoutMs ?? 5000,
+        statsTimeoutMs: cfg.statsTimeoutMs ?? 3000,
+      }, logger);
+    } catch {
+      logger.warn('Failed to parse EXTERNAL_SKILLS_CONFIG_JSON — external skill search disabled');
+      return undefined;
+    }
+  })();
+
   // Build tool context from agent runtime state
   const toolContext: ToolContext = {
     agentId: AGENT_ID!,
@@ -1774,6 +1801,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       maxDrawdownPct: agentConfig.agentRiskDefaults!.maxDrawdownPct,
     },
     db: db ?? undefined,
+    externalSkillProvider,
     skillOps: db && agentRepo ? {
       async listAssigned() {
         const rows = await db.select({

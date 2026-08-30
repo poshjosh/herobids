@@ -184,6 +184,54 @@ describe('buildAgentEnv', () => {
     expect(env['PROVIDERS_YAML']).toBe(JSON.stringify({ providers: { openai: {} } }));
   });
 
+  it('includes EXTERNAL_SKILLS_CONFIG_JSON when externalSkillsConfigJson is set', () => {
+    const externalSkillsJson = JSON.stringify({
+      baseUrl: 'http://mastra.local:3456',
+      searchApiBaseUrl: 'https://skills.sh',
+      searchTimeoutMs: 5000,
+      browseTimeoutMs: 5000,
+      statsTimeoutMs: 3000,
+    });
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      externalSkillsConfigJson: externalSkillsJson,
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['EXTERNAL_SKILLS_CONFIG_JSON']).toBe(externalSkillsJson);
+  });
+
+  it('omits EXTERNAL_SKILLS_CONFIG_JSON when externalSkillsConfigJson is undefined', () => {
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      // externalSkillsConfigJson not set
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['EXTERNAL_SKILLS_CONFIG_JSON']).toBeUndefined();
+  });
+
+  it('includes OPENROUTER_PROVIDER_CONTROLS when openRouterProviderControlsJson is set', () => {
+    const controlsJson = JSON.stringify({ dataPolicy: 'deny-all' });
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      openRouterProviderControlsJson: controlsJson,
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['OPENROUTER_PROVIDER_CONTROLS']).toBe(controlsJson);
+  });
+
+  it('omits OPENROUTER_PROVIDER_CONTROLS when openRouterProviderControlsJson is undefined', () => {
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      // openRouterProviderControlsJson not set
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['OPENROUTER_PROVIDER_CONTROLS']).toBeUndefined();
+  });
+
   it('constructs REDIS_URL from sharedServices when provided', () => {
     const sharedServices: SharedServicesConfig = {
       redisHost: 'redis.internal',

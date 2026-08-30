@@ -48,7 +48,7 @@ import { providerRoutes } from './routes/providers.js';
 import { authPlugin } from './plugins/auth.js';
 import { createAuthMailer } from './auth-mailer.js';
 import { loadConfig } from './config.js';
-import { ExternalSkillProviderHttp } from './external-skill-provider-http.js';
+import { ExternalSkillProviderHttp } from '@herobids/domain';
 import { createFastifyLogger } from './logger.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

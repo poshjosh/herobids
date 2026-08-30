@@ -9,13 +9,18 @@
  */
 
 import { z } from 'zod';
-import type { FastifyBaseLogger } from 'fastify';
 import type {
   ExternalSkillPage,
   ExternalSkillProvider,
   ExternalSkillStats,
   ExternalSkillSummary,
-} from '@herobids/domain';
+} from './ports/external-skill-provider.js';
+
+/** Minimal logger contract compatible with pino, Fastify, and other structured loggers. */
+export interface ProviderLogger {
+  warn(obj: Record<string, unknown>, msg: string): void;
+  warn(msg: string): void;
+}
 
 // ── Zod schemas ─────────────────────────────────────────────────────────
 
@@ -149,11 +154,11 @@ export class ExternalSkillProviderHttp implements ExternalSkillProvider {
   private readonly searchTimeoutMs: number;
   private readonly browseTimeoutMs: number;
   private readonly statsTimeoutMs: number;
-  private readonly log: FastifyBaseLogger;
+  private readonly log: ProviderLogger;
   private statsCache: StatsCache | null = null;
   private searchCache: SearchCache | null = null;
 
-  constructor(config: ExternalSkillProviderHttpConfig, logger: FastifyBaseLogger) {
+  constructor(config: ExternalSkillProviderHttpConfig, logger: ProviderLogger) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.searchApiBaseUrl = config.searchApiBaseUrl.replace(/\/+$/, '');
     this.searchTimeoutMs = config.searchTimeoutMs;

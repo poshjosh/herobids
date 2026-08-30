@@ -68,6 +68,8 @@ export interface DockerAgentManagerConfig {
   maxProcesses?: number;
   /** Called after a container crash is confirmed and the DB is updated. */
   onAgentCrashed?: (agentId: string, sessionId?: string) => Promise<void>;
+  /** Serialised external skills config (JSON) forwarded to agent containers. */
+  externalSkillsConfigJson?: string;
 }
 
 export interface DockerContainerSpec {
@@ -133,6 +135,7 @@ export class DockerAgentManager {
   private readonly marketDataBinanceRpm: number | undefined;
   private readonly marketDataTimeoutMs: number | undefined;
   private readonly databaseUrl: string | undefined;
+  private readonly externalSkillsConfigJson: string | undefined;
   private readonly memoryBytes: number;
   private readonly cpuShares: number;
   private readonly tempStorageMb: number;
@@ -174,6 +177,7 @@ export class DockerAgentManager {
     this.marketDataBinanceRpm = _config.marketDataBinanceRpm;
     this.marketDataTimeoutMs = _config.marketDataTimeoutMs;
     this.databaseUrl = _config.databaseUrl;
+    this.externalSkillsConfigJson = _config.externalSkillsConfigJson;
     this.memoryBytes = (_config.memoryLimitMb ?? 512) * 1024 * 1024;
     this.cpuShares = _config.cpuShares ?? 512;
     this.tempStorageMb = _config.tempStorageMb ?? 100;
@@ -266,6 +270,7 @@ export class DockerAgentManager {
         ...(process.env['GMAIL_DAILY_SEND_LIMIT'] ? [`GMAIL_DAILY_SEND_LIMIT=${process.env['GMAIL_DAILY_SEND_LIMIT']}`] : []),
         ...(process.env['USAGE_BILLING_RATE_CARD'] ? [`USAGE_BILLING_RATE_CARD=${process.env['USAGE_BILLING_RATE_CARD']}`] : []),
         ...(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ? [`USAGE_BILLING_RUNTIME_WINDOW_MS=${process.env['USAGE_BILLING_RUNTIME_WINDOW_MS']}`] : []),
+        ...(this.externalSkillsConfigJson ? [`EXTERNAL_SKILLS_CONFIG_JSON=${this.externalSkillsConfigJson}`] : []),
       ];
     })();
 
