@@ -53,6 +53,8 @@ const ListSkillsQuerySchema = z.object({
   likedByMe: z.coerce.boolean().optional(),
   tag: z.string().min(1).optional(),
   q: z.string().min(1).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
 const PublishSkillSchema = z.object({
@@ -579,11 +581,21 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       }
     }
 
+    const whereClause = whereClauses.length === 1
+      ? whereClauses[0]!
+      : whereClauses.length > 1
+        ? and(...whereClauses)!
+        : undefined;
+
+    // Count query — same WHERE as the rows query, runs in parallel with the data fetch.
+    let countQuery = db.select({ total: sql<number>`count(*)::int` }).from(skills).$dynamic();
+    if (whereClause) {
+      countQuery = countQuery.where(whereClause);
+    }
+
     let rowsQuery = db.select().from(skills).$dynamic();
-    if (whereClauses.length === 1) {
-      rowsQuery = rowsQuery.where(whereClauses[0]!);
-    } else if (whereClauses.length > 1) {
-      rowsQuery = rowsQuery.where(and(...whereClauses)!);
+    if (whereClause) {
+      rowsQuery = rowsQuery.where(whereClause);
     }
 
     if (query.sort === 'price_asc') {
@@ -598,9 +610,15 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       rowsQuery = rowsQuery.orderBy(desc(skills.popularityScore), desc(skills.createdAt));
     }
 
-    const rows = await rowsQuery;
+    rowsQuery = rowsQuery.limit(query.pageSize).offset((query.page - 1) * query.pageSize);
+
+    const [countResult, rows] = await Promise.all([countQuery, rowsQuery]);
+    const localTotal = countResult[0]?.total ?? 0;
     let views = await buildSkillViews(db, rows, request.userId, planPolicy);
 
+    // Post-query filters: these operate on already-fetched rows so totalCount
+    // may overcount when these filters are active. This is a known limitation —
+    // Step 8 will refine the total when external skills are merged.
     if (query.scope === 'selectable') {
       views = views.filter((skill) => skill.isSelectable);
     }
@@ -613,7 +631,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       views = views.filter((skill) => skill.sourceKind === 'user' && skill.publicationStatus === 'published');
     }
 
-    return reply.send({ skills: views });
+    return reply.send({ skills: views, totalCount: localTotal, page: query.page, pageSize: query.pageSize });
   });
 
   app.post<{ Body: unknown }>('/skills', async (request, reply) => {

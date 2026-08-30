@@ -31,7 +31,7 @@ function makeInsertMock() {
 
 function makeChain(value: unknown[]) {
   const chain: Record<string, unknown> = {};
-  for (const method of ['from', 'where', 'orderBy', 'limit', 'innerJoin', 'groupBy', '$dynamic']) {
+  for (const method of ['from', 'where', 'orderBy', 'limit', 'offset', 'innerJoin', 'groupBy', '$dynamic']) {
     chain[method] = vi.fn(() => chain);
   }
   (chain as { then: unknown }).then = (
@@ -218,6 +218,9 @@ describe('skillsRoutes (normalized contract)', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json().skills).toEqual([]);
+    expect(res.json().totalCount).toBe(0);
+    expect(res.json().page).toBe(1);
+    expect(res.json().pageSize).toBe(20);
   });
 
   it('blocks marketplace scope when plan disallows marketplace visibility', async () => {
@@ -404,6 +407,124 @@ describe('skillsRoutes (normalized contract)', () => {
 
     expect(res.statusCode).toBe(403);
     expect(res.json().code).toBe('plan.skills_like_disabled');
+  });
+});
+
+describe('GET /skills pagination', () => {
+  it('returns custom page and pageSize in the response', async () => {
+    const app = Fastify();
+    decorateWithAuth(app, true);
+    await skillsRoutes(app, makeDbMock(), makePlansConfig());
+
+    const res = await app.inject({ method: 'GET', url: '/skills?scope=admin&page=2&pageSize=5' });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.page).toBe(2);
+    expect(body.pageSize).toBe(5);
+    expect(body.totalCount).toBe(0);
+    expect(body.skills).toEqual([]);
+  });
+
+  it('rejects page below minimum (page=0) with 400', async () => {
+    const app = Fastify();
+    decorateWithAuth(app, true);
+    await skillsRoutes(app, makeDbMock(), makePlansConfig());
+
+    const res = await app.inject({ method: 'GET', url: '/skills?scope=admin&page=0' });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
+
+  it('rejects pageSize above maximum (pageSize=101) with 400', async () => {
+    const app = Fastify();
+    decorateWithAuth(app, true);
+    await skillsRoutes(app, makeDbMock(), makePlansConfig());
+
+    const res = await app.inject({ method: 'GET', url: '/skills?scope=admin&pageSize=101' });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
+
+  it('rejects pageSize below minimum (pageSize=0) with 400', async () => {
+    const app = Fastify();
+    decorateWithAuth(app, true);
+    await skillsRoutes(app, makeDbMock(), makePlansConfig());
+
+    const res = await app.inject({ method: 'GET', url: '/skills?scope=admin&pageSize=0' });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
+
+  it('applies LIMIT and OFFSET to the data query', async () => {
+    const dataChain = makeChain([]);
+    const countChain = makeChain([]);
+    let selectCallCount = 0;
+    const db = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => {
+        selectCallCount += 1;
+        // Call 1: count query (from Promise.all), Call 2: data rows query
+        if (selectCallCount === 1) return countChain;
+        return dataChain;
+      }),
+    } as unknown as Database;
+
+    const app = Fastify();
+    decorateWithAuth(app, true);
+    await skillsRoutes(app, db, makePlansConfig());
+    selectCallCount = 0;
+
+    const res = await app.inject({ method: 'GET', url: '/skills?scope=admin&page=3&pageSize=10' });
+
+    expect(res.statusCode).toBe(200);
+    // The data chain should have .limit(10) and .offset(20) called on it
+    // page=3, pageSize=10 → offset = (3-1)*10 = 20
+    expect(dataChain.limit).toHaveBeenCalledWith(10);
+    expect(dataChain.offset).toHaveBeenCalledWith(20);
+  });
+
+  it('accepts pageSize at the maximum boundary (pageSize=100)', async () => {
+    const app = Fastify();
+    decorateWithAuth(app, true);
+    await skillsRoutes(app, makeDbMock(), makePlansConfig());
+
+    const res = await app.inject({ method: 'GET', url: '/skills?scope=admin&pageSize=100' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().pageSize).toBe(100);
+  });
+
+  it('defaults to page=1 and pageSize=20 when not provided', async () => {
+    const dataChain = makeChain([]);
+    const countChain = makeChain([]);
+    let selectCallCount = 0;
+    const db = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => {
+        selectCallCount += 1;
+        if (selectCallCount === 1) return countChain;
+        return dataChain;
+      }),
+    } as unknown as Database;
+
+    const app = Fastify();
+    decorateWithAuth(app, true);
+    await skillsRoutes(app, db, makePlansConfig());
+    selectCallCount = 0;
+
+    const res = await app.inject({ method: 'GET', url: '/skills?scope=admin' });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(20);
+    // Default: limit=20, offset=0 (page 1)
+    expect(dataChain.limit).toHaveBeenCalledWith(20);
+    expect(dataChain.offset).toHaveBeenCalledWith(0);
   });
 });
 

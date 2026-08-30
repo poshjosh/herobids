@@ -231,7 +231,7 @@ api:
 
 ---
 
-## Step 2 — Domain: define `ExternalSkillProvider` port and types [PENDING]
+## Step 2 — Domain: define `ExternalSkillProvider` port and types [DONE]
 
 **File:** `packages/domain/src/ports/external-skill-provider.ts` (new)
 
@@ -298,7 +298,7 @@ Re-export from `packages/domain/src/ports/index.ts`.
 
 ---
 
-## Step 3 — Domain: add `sourceKind: 'external'` to the type system [PENDING]
+## Step 3 — Domain: add `sourceKind: 'external'` to the type system [DONE]
 
 **File:** `packages/domain/src/skills.ts`
 
@@ -311,7 +311,7 @@ Re-export from `packages/domain/src/ports/index.ts`.
 
 ---
 
-## Step 4 — Domain: add external skills config to `AppConfigSchema` [PENDING]
+## Step 4 — Domain: add external skills config to `AppConfigSchema` [DONE]
 
 **File:** `packages/domain/src/config.ts`
 
@@ -333,7 +333,7 @@ externalSkills: z.object({
 
 ---
 
-## Step 5 — Domain: add pagination types [PENDING]
+## Step 5 — Domain: add pagination types [DONE]
 
 **File:** `packages/domain/src/pagination.ts` (new)
 
@@ -356,7 +356,7 @@ Re-export from `packages/domain/src/index.ts`.
 
 ---
 
-## Step 6 — Infrastructure: implement HTTP-based `ExternalSkillProvider` [PENDING]
+## Step 6 — Infrastructure: implement HTTP-based `ExternalSkillProvider` [DONE]
 
 **File:** `apps/api/src/external-skill-provider-http.ts` (new)
 
