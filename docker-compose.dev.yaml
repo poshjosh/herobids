@@ -56,3 +56,21 @@ services:
       # dev-only env var that tells Vite's dev server where to forward /api requests
       # Proxy in vite.config.ts reads this to forward /api to the api service
       VITE_API_PROXY_TARGET: http://api:3000
+
+  # Headless Chromium for agent web browsing (browserless/chromium, GPL — unmodified standalone service).
+  # Host port 3001 avoids conflict with the API on 3000.
+  browser-pool:
+    image: ghcr.io/browserless/chromium:latest
+    environment:
+      MAX_CONCURRENT_SESSIONS: "2"
+      TIMEOUT: "60000"
+      QUEUE_LENGTH: "10"
+      DEFAULT_LAUNCH_ARGS: '["--no-sandbox","--disable-dev-shm-usage"]'
+    ports:
+      - "3001:3000"
+    # deploy.resources.limits is respected by Docker Compose v2 with the default
+    # (local) provider. Older v1 or certain remote contexts may silently ignore it.
+    deploy:
+      resources:
+        limits:
+          memory: 2G
