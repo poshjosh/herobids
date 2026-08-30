@@ -1470,6 +1470,289 @@ describe('GET /skills sourceKind filter', () => {
     });
   });
 
+  // ── Graceful degradation on selectable scope ─────────────────────────
+  describe('graceful degradation on selectable scope', () => {
+    it('returns local results with degradation field when external provider throws', async () => {
+      const localSkill = makeSkillRow({
+        id: 'local-1',
+        slug: 'system/local-skill',
+        authorId: null,
+        name: 'Local Skill',
+        description: 'A local system skill',
+        instructions: 'do local things',
+      });
+
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          // Call 1: entitlement rows for selectable scope
+          if (selectCalls === 1) return makeChain([]);
+          // Call 2: count query
+          if (selectCalls === 2) return makeChain([{ total: 1 }]);
+          // Call 3: data rows
+          if (selectCalls === 3) return makeChain([localSkill]);
+          // Remaining: buildSkillViews internals
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock({
+        browseError: new Error('ECONNREFUSED'),
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=selectable' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      // Local results are still returned
+      expect(body.skills).toHaveLength(1);
+      expect(body.skills[0].id).toBe('local-1');
+      // totalCount reflects local-only
+      expect(body.totalCount).toBe(1);
+      // degradation field is present
+      expect(body.degradation).toBeDefined();
+      expect(body.degradation.external).toBe('unavailable');
+      expect(body.degradation.reason).toBe('ECONNREFUSED');
+    });
+  });
+
+  // ── Deduplication ───────────────────────────────────────────────────────
+  describe('deduplication', () => {
+    it('excludes external skills whose slug matches a local skill slug', async () => {
+      const localSkill = makeSkillRow({
+        id: 'local-dup',
+        slug: 'acme/tools@crypto-trader',
+        authorId: null,
+        name: 'Crypto Trader',
+        description: 'Local version',
+        instructions: 'trade locally',
+      });
+
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          if (selectCalls === 1) return makeChain([]);
+          if (selectCalls === 2) return makeChain([{ total: 1 }]);
+          if (selectCalls === 3) return makeChain([localSkill]);
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock({
+        browseResult: {
+          results: [
+            // This external skill has the same slug as the local skill
+            { ref: 'acme/tools/crypto-trader', skillId: 'crypto-trader', name: 'Crypto Trader', description: 'External version', owner: 'acme', repo: 'tools', installs: 100 },
+            // This external skill is unique
+            { ref: 'acme/tools/unique-skill', skillId: 'unique-skill', name: 'Unique Skill', description: 'No local match', owner: 'acme', repo: 'tools', installs: 50 },
+          ],
+          totalCount: 2,
+          page: 1,
+          pageSize: 20,
+        },
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=selectable&pageSize=20' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      // Should have the local skill + only the unique external skill (deduped the other)
+      expect(body.skills).toHaveLength(2);
+      expect(body.skills[0].id).toBe('local-dup');
+      expect(body.skills[1].id).toBe('ext:acme/tools/unique-skill');
+      // The duplicated external skill should not appear
+      const extIds = body.skills.map((s: { id: string }) => s.id);
+      expect(extIds).not.toContain('ext:acme/tools/crypto-trader');
+    });
+  });
+
+  // ── Merged pagination boundary ──────────────────────────────────────────
+  describe('merged pagination boundary', () => {
+    it('fills remaining page slots with external skills when local results partially fill the page', async () => {
+      // 3 local skills, pageSize=5 → 2 remaining slots filled by external
+      const localSkills = [
+        makeSkillRow({ id: 'l1', slug: 'system/l1', authorId: null, name: 'L1' }),
+        makeSkillRow({ id: 'l2', slug: 'system/l2', authorId: null, name: 'L2' }),
+        makeSkillRow({ id: 'l3', slug: 'system/l3', authorId: null, name: 'L3' }),
+      ];
+
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          if (selectCalls === 1) return makeChain([]);
+          if (selectCalls === 2) return makeChain([{ total: 3 }]);
+          if (selectCalls === 3) return makeChain(localSkills);
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock({
+        browseResult: {
+          results: [
+            { ref: 'e/r/e1', skillId: 'e1', name: 'E1', description: 'ext', owner: 'e', repo: 'r', installs: 10 },
+            { ref: 'e/r/e2', skillId: 'e2', name: 'E2', description: 'ext', owner: 'e', repo: 'r', installs: 5 },
+          ],
+          totalCount: 100,
+          page: 1,
+          pageSize: 2,
+        },
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=selectable&pageSize=5' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      // 3 local + 2 external = 5 total on this page
+      expect(body.skills).toHaveLength(5);
+      // Local skills come first
+      expect(body.skills[0].id).toBe('l1');
+      expect(body.skills[1].id).toBe('l2');
+      expect(body.skills[2].id).toBe('l3');
+      // External skills fill remaining
+      expect(body.skills[3].sourceKind).toBe('external');
+      expect(body.skills[4].sourceKind).toBe('external');
+    });
+
+    it('does not fetch external skills when local results fill the entire page', async () => {
+      // 5 local skills, pageSize=5 → no remaining slots
+      const localSkills = Array.from({ length: 5 }, (_, i) =>
+        makeSkillRow({ id: `full-${i}`, slug: `system/full-${i}`, authorId: null, name: `Full ${i}` }),
+      );
+
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          if (selectCalls === 1) return makeChain([]);
+          if (selectCalls === 2) return makeChain([{ total: 5 }]);
+          if (selectCalls === 3) return makeChain(localSkills);
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock({
+        statsResult: { totalSkills: 200, totalSources: 10, totalOwners: 50 },
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=selectable&pageSize=5' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.skills).toHaveLength(5);
+      // browse/search should NOT have been called — full page of local results
+      expect(externalProvider.browse).not.toHaveBeenCalled();
+      expect(externalProvider.search).not.toHaveBeenCalled();
+      // getStats should have been called to get external total for the combined count
+      expect(externalProvider.getStats).toHaveBeenCalled();
+      // totalCount includes external stats
+      expect(body.totalCount).toBe(5 + 200);
+    });
+  });
+
+  // ── totalCount sums local and external ──────────────────────────────────
+  describe('totalCount sums local and external', () => {
+    it('combines local count with external totalCount from provider response', async () => {
+      const localSkill = makeSkillRow({
+        id: 'count-local',
+        slug: 'system/count-local',
+        authorId: null,
+        name: 'Count Local',
+      });
+
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          if (selectCalls === 1) return makeChain([]);
+          if (selectCalls === 2) return makeChain([{ total: 8 }]);
+          if (selectCalls === 3) return makeChain([localSkill]);
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock({
+        browseResult: {
+          results: [
+            { ref: 'o/r/s', skillId: 's', name: 'Ext', description: 'd', owner: 'o', repo: 'r', installs: 1 },
+          ],
+          totalCount: 34000,
+          page: 1,
+          pageSize: 20,
+        },
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=selectable&pageSize=20' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      // totalCount = localTotal (8) + externalTotal (34000)
+      expect(body.totalCount).toBe(8 + 34000);
+    });
+
+    it('totalCount reflects only local count when external provider fails on selectable scope', async () => {
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          if (selectCalls === 1) return makeChain([]);
+          if (selectCalls === 2) return makeChain([{ total: 5 }]);
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock({
+        browseError: new Error('timeout'),
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=selectable' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      // When external fails, totalCount = localTotal only
+      expect(body.totalCount).toBe(5);
+      expect(body.degradation).toBeDefined();
+    });
+  });
+
   // ── Validation ─────────────────────────────────────────────────────────
   describe('sourceKind validation', () => {
     it('rejects invalid sourceKind values with 400', async () => {

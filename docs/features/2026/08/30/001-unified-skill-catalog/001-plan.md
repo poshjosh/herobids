@@ -481,7 +481,7 @@ Replace the `runExternalSkillSearch` subprocess function with an HTTP call to th
 
 ---
 
-## Step 11 — Frontend: update skills page for paginated + merged catalog [PENDING]
+## Step 11 — Frontend: update skills page for paginated + merged catalog [DONE]
 
 **Files:**
 - `apps/web/src/lib/api-client.ts`
@@ -504,7 +504,7 @@ Replace the `runExternalSkillSearch` subprocess function with an HTTP call to th
 
 ---
 
-## Step 12 — Config: add defaults to `config/default.yaml` [PENDING]
+## Step 12 — Config: add defaults to `config/default.yaml` [DONE]
 
 **File:** `config/default.yaml`
 

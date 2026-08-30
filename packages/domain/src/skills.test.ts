@@ -50,7 +50,7 @@ describe('BASE_SKILL', () => {
   });
 
   it('instructions describe external skill support', () => {
-    expect(BASE_SKILL.instructions).toContain('external skills via skills.sh');
+    expect(BASE_SKILL.instructions).toContain('external skills');
     expect(BASE_SKILL.instructions).toContain('twostraws/swiftui-agent-skill');
     expect(BASE_SKILL.instructions).toContain('the platform installs them');
     expect(BASE_SKILL.instructions).toContain('file-management skill');
@@ -61,9 +61,9 @@ describe('BASE_SKILL', () => {
     expect(BASE_SKILL.instructions).toContain('drop skills by slug');
   });
 
-  it('instructions reference search_skills and skills.sh', () => {
+  it('instructions reference search_skills and external skills', () => {
     expect(BASE_SKILL.instructions).toContain('search_skills');
-    expect(BASE_SKILL.instructions).toContain('skills.sh');
+    expect(BASE_SKILL.instructions).toContain('external skills');
   });
 
   it('instructions no longer contain old skill management phrases', () => {
