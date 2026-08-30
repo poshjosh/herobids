@@ -412,7 +412,7 @@ Implement `ExternalSkillProvider` using `fetch` calls to the self-hosted `@mastr
 
 ---
 
-## Step 8 — API: merge external skills into paginated response [PENDING]
+## Step 8 — API: merge external skills into paginated response [DONE]
 
 **File:** `apps/api/src/routes/skills.ts`
 
@@ -435,7 +435,7 @@ Implement `ExternalSkillProvider` using `fetch` calls to the self-hosted `@mastr
 
 ---
 
-## Step 9 — API: add `sourceKind` filter to query schema [PENDING]
+## Step 9 — API: add `sourceKind` filter to query schema [DONE]
 
 **File:** `apps/api/src/routes/skills.ts`
 

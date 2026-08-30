@@ -866,3 +866,621 @@ describe('dependsOn in SkillView', () => {
     expect(body.dependsOn).toContain('trading');
   });
 });
+
+
+// ── sourceKind filter ────────────────────────────────────────────────────
+describe('GET /skills sourceKind filter', () => {
+  function makeSkillRow(overrides: Partial<{
+    id: string;
+    slug: string;
+    authorId: string | null;
+    publicationStatus: string;
+    priceCents: number;
+    likeCount: number;
+    forkCount: number;
+    forkOf: string | null;
+    popularityScore: number;
+    trendingScore: number;
+    currentRevisionId: string | null;
+    name: string;
+    description: string;
+    instructions: string;
+    promptHint: string | null;
+    promptTemplate: string | null;
+    requiredTools: string[];
+    contextRequirements: string[];
+    requiredGuardrails: string[];
+    capabilityFamilies: string[];
+    suggestedTickIntervalMs: number;
+    tags: string[];
+    createdAt: Date;
+    updatedAt: Date;
+  }> = {}) {
+    return {
+      id: overrides.id ?? 'skill-default',
+      slug: overrides.slug ?? 'default/skill',
+      authorId: overrides.authorId ?? null,
+      publicationStatus: overrides.publicationStatus ?? 'published',
+      priceCents: overrides.priceCents ?? 0,
+      likeCount: overrides.likeCount ?? 0,
+      forkCount: overrides.forkCount ?? 0,
+      forkOf: overrides.forkOf ?? null,
+      popularityScore: overrides.popularityScore ?? 0,
+      trendingScore: overrides.trendingScore ?? 0,
+      currentRevisionId: overrides.currentRevisionId ?? null,
+      name: overrides.name ?? 'Default Skill',
+      description: overrides.description ?? 'desc',
+      instructions: overrides.instructions ?? 'inst',
+      promptHint: overrides.promptHint ?? null,
+      promptTemplate: overrides.promptTemplate ?? null,
+      requiredTools: overrides.requiredTools ?? [],
+      contextRequirements: overrides.contextRequirements ?? [],
+      requiredGuardrails: overrides.requiredGuardrails ?? [],
+      capabilityFamilies: overrides.capabilityFamilies ?? [],
+      suggestedTickIntervalMs: overrides.suggestedTickIntervalMs ?? 900_000,
+      tags: overrides.tags ?? [],
+      createdAt: overrides.createdAt ?? new Date(),
+      updatedAt: overrides.updatedAt ?? new Date(),
+    };
+  }
+  function makeExternalProviderMock(overrides: {
+    searchResult?: { results: Array<{ ref: string; skillId: string; name: string; description: string; owner: string; repo: string; installs: number; tags?: string[] }>; totalCount: number; page: number; pageSize: number };
+    browseResult?: { results: Array<{ ref: string; skillId: string; name: string; description: string; owner: string; repo: string; installs: number; tags?: string[] }>; totalCount: number; page: number; pageSize: number };
+    statsResult?: { totalSkills: number; totalSources: number; totalOwners: number } | null;
+    searchError?: Error;
+    browseError?: Error;
+  } = {}) {
+    return {
+      search: overrides.searchError
+        ? vi.fn().mockRejectedValue(overrides.searchError)
+        : vi.fn().mockResolvedValue(overrides.searchResult ?? { results: [], totalCount: 0, page: 1, pageSize: 20 }),
+      browse: overrides.browseError
+        ? vi.fn().mockRejectedValue(overrides.browseError)
+        : vi.fn().mockResolvedValue(overrides.browseResult ?? { results: [], totalCount: 0, page: 1, pageSize: 20 }),
+      getStats: vi.fn().mockResolvedValue(overrides.statsResult ?? null),
+    };
+  }
+
+  // ── sourceKind=system ──────────────────────────────────────────────────
+  describe('sourceKind=system', () => {
+    it('returns only system skills (authorId IS NULL) and skips external fetch', async () => {
+      const systemSkill = makeSkillRow({
+        id: 'sys-1',
+        slug: 'system/trading',
+        authorId: null,
+        name: 'Trading',
+        description: 'System trading skill',
+        instructions: 'trade',
+      });
+
+      // scope=selectable issues:
+      //   select call 1: entitlement rows
+      //   selectDistinct call: assignment rows (separate mock)
+      //   select call 2: count query
+      //   select call 3: data rows query
+      //   select calls 4+: buildSkillViews viewer context
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          // Call 1: entitlement rows for selectable scope
+          if (selectCalls === 1) return makeChain([]);
+          // Call 2: count query
+          if (selectCalls === 2) return makeChain([{ total: 1 }]);
+          // Call 3: data rows
+          if (selectCalls === 3) return makeChain([systemSkill]);
+          // Remaining: buildSkillViews internals
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock({
+        browseResult: { results: [{ ref: 'ext/repo/s1', skillId: 's1', name: 'Ext', description: 'ext', owner: 'ext', repo: 'repo', installs: 10 }], totalCount: 1, page: 1, pageSize: 20 },
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=selectable&sourceKind=system' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.totalCount).toBe(1);
+      // External provider should not have been called
+      expect(externalProvider.browse).not.toHaveBeenCalled();
+      expect(externalProvider.search).not.toHaveBeenCalled();
+      // All returned skills should be system skills
+      for (const skill of body.skills) {
+        expect(skill.sourceKind).toBe('system');
+      }
+    });
+
+    it('reflects only local totalCount when sourceKind=system', async () => {
+      // scope=selectable: select call 1 = entitlements, call 2 = count, call 3 = data
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          // Call 1: entitlement rows
+          if (selectCalls === 1) return makeChain([]);
+          // Call 2: count query
+          if (selectCalls === 2) return makeChain([{ total: 3 }]);
+          // Call 3+: data rows and buildSkillViews
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock({
+        statsResult: { totalSkills: 50, totalSources: 5, totalOwners: 10 },
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=selectable&sourceKind=system' });
+
+      expect(res.statusCode).toBe(200);
+      // totalCount should be from local DB only, not merged with external
+      expect(res.json().totalCount).toBe(3);
+      expect(externalProvider.getStats).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── sourceKind=user ────────────────────────────────────────────────────
+  describe('sourceKind=user', () => {
+    it('returns only user-authored skills (authorId IS NOT NULL) and skips external fetch', async () => {
+      const userSkill = makeSkillRow({
+        id: 'usr-1',
+        slug: 'testuser/my-skill',
+        authorId: TEST_USER_ID,
+        name: 'My Skill',
+        description: 'A user skill',
+        instructions: 'do stuff',
+      });
+
+      // scope=selectable issues:
+      //   select call 1: entitlement rows
+      //   selectDistinct: assignment rows (separate mock)
+      //   select call 2: count query
+      //   select call 3: data rows query
+      //   select calls 4+: buildSkillViews viewer context
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          // Call 1: entitlement rows for selectable scope
+          if (selectCalls === 1) return makeChain([]);
+          // Call 2: count query
+          if (selectCalls === 2) return makeChain([{ total: 1 }]);
+          // Call 3: data rows
+          if (selectCalls === 3) return makeChain([userSkill]);
+          // Remaining: buildSkillViews internals
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock({
+        browseResult: { results: [{ ref: 'ext/repo/s1', skillId: 's1', name: 'Ext', description: 'ext', owner: 'ext', repo: 'repo', installs: 10 }], totalCount: 1, page: 1, pageSize: 20 },
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=selectable&sourceKind=user' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.totalCount).toBe(1);
+      expect(body.skills).toHaveLength(1);
+      // External provider should not have been called
+      expect(externalProvider.browse).not.toHaveBeenCalled();
+      expect(externalProvider.search).not.toHaveBeenCalled();
+      // All returned skills should be user-authored
+      for (const skill of body.skills) {
+        expect(skill.sourceKind).toBe('user');
+      }
+    });
+  });
+
+  // ── sourceKind=external ────────────────────────────────────────────────
+  describe('sourceKind=external', () => {
+    it('returns empty results with totalCount 0 when no provider is configured', async () => {
+      const app = Fastify();
+      decorateWithAuth(app);
+      // No externalSkillProvider passed (undefined)
+      await skillsRoutes(app, makeDbMock(), makePlansConfig());
+
+      const res = await app.inject({ method: 'GET', url: '/skills?sourceKind=external' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.skills).toEqual([]);
+      expect(body.totalCount).toBe(0);
+      expect(body.page).toBe(1);
+      expect(body.pageSize).toBe(20);
+    });
+
+    it('returns empty results with totalCount 0 when provider is null', async () => {
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, makeDbMock(), makePlansConfig(), null);
+
+      const res = await app.inject({ method: 'GET', url: '/skills?sourceKind=external' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.skills).toEqual([]);
+      expect(body.totalCount).toBe(0);
+    });
+
+    it('returns external-only results from the provider', async () => {
+      const extSkill = {
+        ref: 'acme/tools/crypto-trader',
+        skillId: 'crypto-trader',
+        name: 'Crypto Trader',
+        description: 'External crypto skill',
+        owner: 'acme',
+        repo: 'tools',
+        installs: 42,
+        tags: ['crypto', 'trading'],
+      };
+      const externalProvider = makeExternalProviderMock({
+        browseResult: { results: [extSkill], totalCount: 1, page: 1, pageSize: 20 },
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      // Pass a DB mock — it should NOT be queried for skills data
+      const db = makeDbMock();
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+
+      const res = await app.inject({ method: 'GET', url: '/skills?sourceKind=external' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.totalCount).toBe(1);
+      expect(body.skills).toHaveLength(1);
+      expect(body.skills[0].sourceKind).toBe('external');
+      expect(body.skills[0].id).toBe('ext:acme/tools/crypto-trader');
+      expect(body.skills[0].name).toBe('Crypto Trader');
+      expect(body.skills[0].tags).toEqual(['crypto', 'trading']);
+      expect(body.page).toBe(1);
+      expect(body.pageSize).toBe(20);
+      // Local DB select should NOT have been invoked for listing data
+      expect(db.select).not.toHaveBeenCalled();
+    });
+
+    it('uses search instead of browse when q parameter is provided', async () => {
+      const externalProvider = makeExternalProviderMock({
+        searchResult: { results: [], totalCount: 0, page: 1, pageSize: 20 },
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, makeDbMock(), makePlansConfig(), externalProvider);
+
+      await app.inject({ method: 'GET', url: '/skills?sourceKind=external&q=crypto' });
+
+      expect(externalProvider.search).toHaveBeenCalledWith('crypto', { page: 1, pageSize: 20 });
+      expect(externalProvider.browse).not.toHaveBeenCalled();
+    });
+
+    it('returns empty results with degradation field when provider throws', async () => {
+      const externalProvider = makeExternalProviderMock({
+        browseError: new Error('Connection refused'),
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, makeDbMock(), makePlansConfig(), externalProvider);
+
+      const res = await app.inject({ method: 'GET', url: '/skills?sourceKind=external' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.skills).toEqual([]);
+      expect(body.totalCount).toBe(0);
+      expect(body.degradation).toBeDefined();
+      expect(body.degradation.external).toBe('unavailable');
+      expect(body.degradation.reason).toBe('Connection refused');
+    });
+
+    it('passes page and pageSize to the external provider', async () => {
+      const externalProvider = makeExternalProviderMock();
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, makeDbMock(), makePlansConfig(), externalProvider);
+
+      await app.inject({ method: 'GET', url: '/skills?sourceKind=external&page=3&pageSize=10' });
+
+      expect(externalProvider.browse).toHaveBeenCalledWith({ page: 3, pageSize: 10 });
+    });
+
+    it('flags degradation when external provider returns empty results successfully', async () => {
+      const externalProvider = makeExternalProviderMock({
+        browseResult: { results: [], totalCount: 0, page: 1, pageSize: 20 },
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, makeDbMock(), makePlansConfig(), externalProvider);
+
+      const res = await app.inject({ method: 'GET', url: '/skills?sourceKind=external' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.skills).toEqual([]);
+      expect(body.totalCount).toBe(0);
+      expect(body.degradation).toBeDefined();
+      expect(body.degradation.external).toBe('unavailable');
+      expect(body.degradation.reason).toBe('external catalog returned empty');
+    });
+
+    it('returns degradation when search throws with sourceKind=external and q parameter', async () => {
+      const externalProvider = makeExternalProviderMock({
+        searchError: new Error('Search service timeout'),
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, makeDbMock(), makePlansConfig(), externalProvider);
+
+      const res = await app.inject({ method: 'GET', url: '/skills?sourceKind=external&q=crypto' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.skills).toEqual([]);
+      expect(body.totalCount).toBe(0);
+      expect(body.degradation).toBeDefined();
+      expect(body.degradation.external).toBe('unavailable');
+      expect(body.degradation.reason).toBe('Search service timeout');
+    });
+  });
+
+  // ── sourceKind combined with scope ─────────────────────────────────────
+  describe('sourceKind combined with scope', () => {
+    it('scope=selectable&sourceKind=system returns only system skills (Built-in tab use case)', async () => {
+      const systemSkill = makeSkillRow({
+        id: 'sys-builtin',
+        slug: 'system/builtin',
+        authorId: null,
+        name: 'Built-in Skill',
+        description: 'System builtin',
+        instructions: 'builtin',
+      });
+
+      // scope=selectable: call 1 = entitlements, call 2 = count, call 3 = data
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          // Call 1: entitlement rows for selectable scope
+          if (selectCalls === 1) return makeChain([]);
+          // Call 2: count query
+          if (selectCalls === 2) return makeChain([{ total: 1 }]);
+          // Call 3: data rows
+          if (selectCalls === 3) return makeChain([systemSkill]);
+          // Remaining: buildSkillViews internals
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock({
+        browseResult: { results: [{ ref: 'ext/repo/s1', skillId: 's1', name: 'Ext', description: 'ext', owner: 'ext', repo: 'repo', installs: 5 }], totalCount: 1, page: 1, pageSize: 20 },
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=selectable&sourceKind=system' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      // No external skills should be mixed in
+      expect(externalProvider.browse).not.toHaveBeenCalled();
+      for (const skill of body.skills) {
+        expect(skill.sourceKind).toBe('system');
+      }
+    });
+
+    it('scope=admin&sourceKind=system works for admin users', async () => {
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          if (selectCalls === 1) return makeChain([{ total: 0 }]);
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const app = Fastify();
+      decorateWithAuth(app, true);
+      await skillsRoutes(app, db, makePlansConfig());
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=admin&sourceKind=system' });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().totalCount).toBe(0);
+      expect(res.json().skills).toEqual([]);
+    });
+
+    it('scope=mine&sourceKind=user returns only the current user\'s skills', async () => {
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          if (selectCalls === 1) return makeChain([{ total: 0 }]);
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock();
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=mine&sourceKind=user' });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().skills).toEqual([]);
+      // External should not be fetched for scope=mine
+      expect(externalProvider.browse).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Default behavior (no sourceKind) ───────────────────────────────────
+  describe('default behavior without sourceKind', () => {
+    it('merges external skills for selectable scope when no sourceKind is specified', async () => {
+      let selectCalls = 0;
+      const countChain = makeChain([{ total: 0 }]);
+      const dataChain = makeChain([]);
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          if (selectCalls === 1) return countChain;
+          if (selectCalls === 2) return dataChain;
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const extSkill = {
+        ref: 'acme/tools/helper',
+        skillId: 'helper',
+        name: 'Helper',
+        description: 'External helper',
+        owner: 'acme',
+        repo: 'tools',
+        installs: 5,
+      };
+      const externalProvider = makeExternalProviderMock({
+        browseResult: { results: [extSkill], totalCount: 1, page: 1, pageSize: 20 },
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=selectable' });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      // External provider should have been called to merge results
+      expect(externalProvider.browse).toHaveBeenCalled();
+      // The totalCount should include external results
+      expect(body.totalCount).toBe(1);
+      expect(body.skills).toHaveLength(1);
+      expect(body.skills[0].sourceKind).toBe('external');
+    });
+
+    it('merges external skills for marketplace scope when no sourceKind is specified', async () => {
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          if (selectCalls === 1) return makeChain([{ total: 0 }]);
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock({
+        browseResult: { results: [{ ref: 'o/r/s', skillId: 's', name: 'S', description: 'd', owner: 'o', repo: 'r', installs: 1 }], totalCount: 1, page: 1, pageSize: 20 },
+      });
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=marketplace' });
+
+      expect(res.statusCode).toBe(200);
+      // External should be merged for marketplace scope without sourceKind
+      expect(externalProvider.browse).toHaveBeenCalled();
+    });
+
+    it('does not merge external skills for admin scope even without sourceKind', async () => {
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          if (selectCalls === 1) return makeChain([{ total: 0 }]);
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock();
+
+      const app = Fastify();
+      decorateWithAuth(app, true);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=admin' });
+
+      expect(res.statusCode).toBe(200);
+      expect(externalProvider.browse).not.toHaveBeenCalled();
+      expect(externalProvider.search).not.toHaveBeenCalled();
+    });
+
+    it('does not merge external skills for mine scope even without sourceKind', async () => {
+      let selectCalls = 0;
+      const db = {
+        ...makeDbMock(),
+        select: vi.fn().mockImplementation(() => {
+          selectCalls += 1;
+          if (selectCalls === 1) return makeChain([{ total: 0 }]);
+          return makeChain([]);
+        }),
+      } as unknown as Database;
+
+      const externalProvider = makeExternalProviderMock();
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, db, makePlansConfig(), externalProvider);
+      selectCalls = 0;
+
+      const res = await app.inject({ method: 'GET', url: '/skills?scope=mine' });
+
+      expect(res.statusCode).toBe(200);
+      expect(externalProvider.browse).not.toHaveBeenCalled();
+      expect(externalProvider.search).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Validation ─────────────────────────────────────────────────────────
+  describe('sourceKind validation', () => {
+    it('rejects invalid sourceKind values with 400', async () => {
+      const app = Fastify();
+      decorateWithAuth(app);
+      await skillsRoutes(app, makeDbMock(), makePlansConfig());
+
+      const res = await app.inject({ method: 'GET', url: '/skills?sourceKind=invalid' });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe('validation_error');
+    });
+  });
+});

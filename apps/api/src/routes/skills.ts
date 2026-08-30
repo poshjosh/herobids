@@ -46,6 +46,7 @@ const UpdateSkillSchema = z.object({
 
 const ListSkillsQuerySchema = z.object({
   scope: z.enum(['mine', 'marketplace', 'selectable', 'admin']).optional().default('selectable'),
+  sourceKind: z.enum(['system', 'user', 'external']).optional(),
   publicationStatus: PublicationStatusSchema.optional(),
   sort: z.enum(['popular', 'trending', 'newest', 'price_asc', 'price_desc']).optional(),
   priceMin: z.coerce.number().int().min(0).optional(),
@@ -563,6 +564,45 @@ export async function skillsRoutes(
       return reply.status(403).send({ error: 'forbidden' });
     }
 
+    // ── sourceKind=external: skip local DB entirely ───────────────────────
+    if (query.sourceKind === 'external') {
+      if (!externalSkillProvider) {
+        return reply.send({ skills: [], totalCount: 0, page: query.page, pageSize: query.pageSize });
+      }
+
+      let externalViews: SkillView[] = [];
+      let externalTotal = 0;
+      let degradation: { external: string; reason: string } | undefined;
+
+      try {
+        const externalResult = query.q
+          ? await externalSkillProvider.search(query.q, { page: query.page, pageSize: query.pageSize })
+          : await externalSkillProvider.browse({ page: query.page, pageSize: query.pageSize });
+
+        externalTotal = externalResult.totalCount;
+        externalViews = externalResult.results.map(mapExternalToSkillView);
+
+        if (externalResult.totalCount === 0 && externalResult.results.length === 0) {
+          degradation = { external: 'unavailable', reason: 'external catalog returned empty' };
+        }
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        app.log.warn({ err: reason }, '[skills] external skill fetch failed');
+        degradation = { external: 'unavailable', reason };
+      }
+
+      const response: Record<string, unknown> = {
+        skills: externalViews,
+        totalCount: externalTotal,
+        page: query.page,
+        pageSize: query.pageSize,
+      };
+      if (degradation) {
+        response['degradation'] = degradation;
+      }
+      return reply.send(response);
+    }
+
     const whereClauses: SQL[] = [];
     if (query.scope === 'mine') {
       whereClauses.push(eq(skills.authorId, request.userId));
@@ -589,6 +629,13 @@ export async function skillsRoutes(
         planPolicy.canViewMarketplaceSkills ? eq(skills.publicationStatus, 'published') : sql`false`,
         explicitlySelectableIds.length > 0 ? inArray(skills.id, explicitlySelectableIds) : sql`false`,
       )!);
+    }
+
+    // sourceKind filter: restrict to system or user skills (external handled above)
+    if (query.sourceKind === 'system') {
+      whereClauses.push(isNull(skills.authorId));
+    } else if (query.sourceKind === 'user') {
+      whereClauses.push(sql`${skills.authorId} IS NOT NULL`);
     }
 
     if (query.publicationStatus) {
@@ -682,7 +729,8 @@ export async function skillsRoutes(
     // be duplicated or skipped across pages. This is a known trade-off of
     // offset-based pagination over two independent sources.
     const includeExternal = externalSkillProvider
-      && (query.scope === 'selectable' || query.scope === 'marketplace');
+      && (query.scope === 'selectable' || query.scope === 'marketplace')
+      && !query.sourceKind;
 
     if (!includeExternal) {
       return reply.send({ skills: views, totalCount: localTotal, page: query.page, pageSize: query.pageSize });
