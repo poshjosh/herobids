@@ -613,7 +613,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
           {skillPreset === 'custom' && (
             <div style={{ marginBottom: '20px' }}>
               <SkillPicker
-                skills={selectableSkills}
+                initialSkills={selectableSkills}
                 selectedSkillIds={form.skillIds}
                 onChange={(skillIds) => setForm((prev) => ({ ...prev, skillIds }))}
                 loading={skillsQuery.isLoading}

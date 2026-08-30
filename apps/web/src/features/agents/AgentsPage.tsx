@@ -862,7 +862,7 @@ export function CreateAgentFlow({
             {skillsExpanded && (
               <div style={{ marginTop: '12px' }}>
                 <SkillPicker
-                  skills={skills}
+                  initialSkills={skills}
                   selectedSkillIds={intent.skillIds}
                   onChange={(skillIds) => setIntent((state) => ({ ...state, skillIds }))}
                   loading={skillsLoading}
