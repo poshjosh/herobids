@@ -75,10 +75,10 @@ function renderPage(skills: Skill[]): string {
 
   const paginatedSkills = { skills, totalCount: skills.length, page: 1, pageSize: 20 };
   const emptyPage = { skills: [], totalCount: 0, page: 1, pageSize: 20 };
-  queryClient.setQueryData(['skills', 'selectable', 1], paginatedSkills);
+  queryClient.setQueryData(['skills', 'selectable', 1, ''], paginatedSkills);
   queryClient.setQueryData(['skills', 'mine'], emptyPage);
   queryClient.setQueryData(['skills', 'built-in'], emptyPage);
-  queryClient.setQueryData(['skills', 'marketplace', 1], emptyPage);
+  queryClient.setQueryData(['skills', 'marketplace', 1, ''], emptyPage);
   queryClient.setQueryData(['agent-tools'], { tools: [], categories: [] });
 
   return renderToStaticMarkup(

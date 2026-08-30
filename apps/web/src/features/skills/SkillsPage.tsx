@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { skills as skillsApi, agentTools, type CreateSkillRequest, type Skill, type SkillMetrics } from '../../lib/api-client.js';
@@ -46,8 +46,19 @@ export function SkillsPage() {
 
   const [activeCategory, setActiveCategory] = useState<SkillCategoryTab>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [allPage, setAllPage] = useState(1);
   const [marketplacePage, setMarketplacePage] = useState(1);
+
+  // Debounce search input: wait 300ms after last keystroke before triggering API call
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm.trim());
+      setAllPage(1);
+      setMarketplacePage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
   const [showCreateComposer, setShowCreateComposer] = useState(false);
   const [createDraft, setCreateDraft] = useState<CreateSkillRequest>({
     name: '',
@@ -59,8 +70,8 @@ export function SkillsPage() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const selectableQuery = useQuery({
-    queryKey: ['skills', 'selectable', allPage],
-    queryFn: () => skillsApi.list({ scope: 'selectable', page: allPage, pageSize: PAGE_SIZE }),
+    queryKey: ['skills', 'selectable', allPage, debouncedSearch],
+    queryFn: () => skillsApi.list({ scope: 'selectable', page: allPage, pageSize: PAGE_SIZE, q: debouncedSearch || undefined }),
   });
 
   const mineQuery = useQuery({
@@ -74,8 +85,8 @@ export function SkillsPage() {
   });
 
   const marketplaceQuery = useQuery({
-    queryKey: ['skills', 'marketplace', marketplacePage],
-    queryFn: () => skillsApi.list({ scope: 'marketplace', sort: 'popular', page: marketplacePage, pageSize: PAGE_SIZE }),
+    queryKey: ['skills', 'marketplace', marketplacePage, debouncedSearch],
+    queryFn: () => skillsApi.list({ scope: 'marketplace', sort: 'popular', page: marketplacePage, pageSize: PAGE_SIZE, q: debouncedSearch || undefined }),
     enabled: canViewMarketplace,
   });
 
@@ -114,12 +125,11 @@ export function SkillsPage() {
 
   const rawBuiltIn = builtInQuery.data?.skills ?? [];
   const rawMySkills = mineQuery.data?.skills ?? [];
-  const rawMarketplaceSkills = canViewMarketplace
-    ? (marketplaceQuery.data?.skills ?? [])
-    : [];
   const builtIn = filterSkillsBySearch(rawBuiltIn, searchTerm);
   const mySkills = filterSkillsBySearch(rawMySkills, searchTerm);
-  const marketplaceSkills = filterSkillsBySearch(rawMarketplaceSkills, searchTerm);
+  const marketplaceSkills = canViewMarketplace
+    ? (marketplaceQuery.data?.skills ?? [])
+    : [];
 
   // Paginated data for tabs that include external skills
   const allTabSkills = selectableQuery.data?.skills ?? [];
@@ -140,14 +150,14 @@ export function SkillsPage() {
   const queryError = selectableQuery.error ?? mineQuery.error ?? builtInQuery.error ?? (canViewMarketplace ? marketplaceQuery.error : null);
 
   const allSkills = useMemo(() => {
-    return filterSkillsBySearch(allTabSkills, searchTerm).map((skill) => {
+    return allTabSkills.map((skill) => {
       const mode: 'built-in' | 'mine' | 'marketplace' =
         skill.sourceKind === 'system' ? 'built-in'
         : skill.authorId ? 'mine'
         : 'marketplace';
       return { skill, mode };
     });
-  }, [allTabSkills, searchTerm]);
+  }, [allTabSkills]);
 
   const skillTabs: Array<{ key: SkillCategoryTab; label: string }> = [
     { key: 'all', label: intl.formatMessage({ id: 'skills.tab.all', defaultMessage: 'All skills' }) },
