@@ -103,12 +103,35 @@ later execution resumes:
 5. [006-messaging-capability-extraction.md](./006-messaging-capability-extraction.md)
 6. [007-capability-naming-cleanup.md](./007-capability-naming-cleanup.md)
 
+### Draft-To-Ready Reconciliation Rule
+
+Before any draft phase doc (002–007) moves to `ready`, it must pass a
+reconciliation check confirming its scope, fixed decisions, acceptance
+criteria, and validation are consistent with
+[013-native-capabilities-and-external-backends.md](./013-native-capabilities-and-external-backends.md)
+and the external-backend boundary model established by ADR 008.
+
+Reconciliation must verify:
+
+1. the doc does not treat the first external domain as a native capability
+2. the doc's acceptance criteria and validation do not assume platform-core
+   ownership of external-domain business semantics
+3. the doc's fixed decisions do not conflict with the separation rules in 013
+4. any normative inputs listed in the doc's header are still active and
+   unsuperseded
+
+The reconciliation evidence is recorded inside the doc itself, either as a
+note in the `## Validation` section or as an inline `**Reconciled:**` line
+in the header. A phase gate cannot be entered while its governing doc is
+still `draft`.
+
 Supporting references for later phase detail and rewrite:
 
 1. [008-cross-service-capability-execution-design.md](./008-cross-service-capability-execution-design.md)
 2. [009-initial-capability-registry-and-tool-ownership-manifest.md](./009-initial-capability-registry-and-tool-ownership-manifest.md)
 3. [010-capability-activation-model.md](./010-capability-activation-model.md)
 4. [011-capability-route-and-response-migration-manifest.md](./011-capability-route-and-response-migration-manifest.md)
+5. [014-operational-readiness-for-external-backends.md](./014-operational-readiness-for-external-backends.md)
 
 Historical context only:
 
@@ -185,36 +208,44 @@ Two boundary patterns are mandatory in this roadmap:
 
 Required before implementation spreads beyond the first slice:
 
-1. native capabilities and external backends are explicitly distinguished
-2. the repo-local external service model is explicit
-3. allowed shared modules and forbidden import directions are explicit
-4. direct API is accepted as the first registration mechanism
+1. the governing phase doc has passed the draft-to-ready reconciliation check
+   and is at status `ready`
+2. native capabilities and external backends are explicitly distinguished
+3. the repo-local external service model is explicit
+4. allowed shared modules and forbidden import directions are explicit
+5. direct API is accepted as the first registration mechanism
 
 ### Gate 2: Repo-local external service boundary complete
 
 Required before later phase rewrites or execution:
 
-1. `externals/<domain>/` exists as its own runtime boundary
-2. the platform reaches it only over the shared boundary contract
-3. the service has its own config, health, and compose wiring
-4. no direct platform-core imports of external-service implementation remain
+1. the governing phase doc has passed the draft-to-ready reconciliation check
+   and is at status `ready`
+2. `externals/<domain>/` exists as its own runtime boundary
+3. the platform reaches it only over the shared boundary contract
+4. the service has its own config, health, and compose wiring
+5. no direct platform-core imports of external-service implementation remain
 
 ### Gate 3: Generic platform integration complete
 
 Required before native-capability cleanup and later route or visibility work:
 
-1. the platform client adapter is transport-only
-2. visibility and health gating stay generic for external backends
-3. auth, timeout, retry, and audit rules are generic rather than domain-owned
+1. the governing phase doc has passed the draft-to-ready reconciliation check
+   and is at status `ready`
+2. the platform client adapter is transport-only
+3. visibility and health gating stay generic for external backends
+4. auth, timeout, retry, and audit rules are generic rather than domain-owned
 
 ### Gate 4: Native capability cleanup complete
 
 Required before feature completion:
 
-1. any remaining native capability behavior is explicit and justified
-2. messaging can remain native without forcing the same model on external
+1. the governing phase doc has passed the draft-to-ready reconciliation check
+   and is at status `ready`
+2. any remaining native capability behavior is explicit and justified
+3. messaging can remain native without forcing the same model on external
    domains
-3. later phase docs have been rewritten to stop assuming the platform owns the
+4. later phase docs have been rewritten to stop assuming the platform owns the
    external domain as a native capability
 
 ## Completion Condition

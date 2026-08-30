@@ -52,8 +52,8 @@ This phase does not include:
 
 ## Fixed Decisions
 
-1. `messaging` remains a native platform capability unless a later doc changes
-   that explicitly.
+1. `messaging` remains a native platform capability. This phase hardens that
+   boundary. It does not plan or prepare for messaging extraction.
 2. `send_message`, `send_email`, and `publish_artifact` remain
    messaging-owned.
 3. `send_message` stays available through the documented implicit
@@ -119,8 +119,9 @@ This phase is complete only when:
 
 1. Messaging may move into its own platform package or module, but the
    platform still owns its business semantics.
-2. If a future extraction is desired, it must be planned separately and must
-   not redefine messaging as an external domain by accident.
+2. Messaging extraction is not planned. If a future need arises, it must be
+   justified in a new active doc with its own phase gate, not assumed from
+   this phase.
 
 ### Coexistence rule
 

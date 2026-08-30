@@ -14,7 +14,8 @@ activation, tool ownership, route alignment, and capability-service extraction.
    [tasks/002](./tasks/002-external-backend-boundary-implementation-tasks.md)
 3. broader feature-phase context and later supporting references when needed:
    [002](./002-capability-foundations.md) through
-   [011](./011-capability-route-and-response-migration-manifest.md)
+   [011](./011-capability-route-and-response-migration-manifest.md) and
+   [014](./014-operational-readiness-for-external-backends.md)
 4. supporting diagrams under [diagrams](./diagrams/current-architecture.md)
 5. local coordination, validation, and handoff docs under
    [program/000-document-tree.md](./program/000-document-tree.md) when working
@@ -56,6 +57,9 @@ logic.
    [011](./011-capability-route-and-response-migration-manifest.md): supporting
    reference docs for later phase detail; not required to enter the first ready
    slice
+- [014](./014-operational-readiness-for-external-backends.md): supporting
+   reference for operational readiness requirements that apply to any external
+   backend before full cutover; referenced as a normative input by 005
 - [013](./013-native-capabilities-and-external-backends.md): implementation-
    ready boundary authority for the current executable rewrite slice
 - [tasks/002](./tasks/002-external-backend-boundary-implementation-tasks.md):

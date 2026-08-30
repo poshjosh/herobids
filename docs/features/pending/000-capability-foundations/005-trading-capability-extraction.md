@@ -4,7 +4,7 @@
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Implementation Roadmap](./001-roadmap.md)  
 **Prerequisite:** [Worker Tool Visibility Enforcement](./004-worker-tool-visibility-enforcement.md)
-**Normative inputs:** [Native Capabilities And External Backends](./013-native-capabilities-and-external-backends.md), [Cross-Service Capability Execution Design](./008-cross-service-capability-execution-design.md), [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md)
+**Normative inputs:** [Native Capabilities And External Backends](./013-native-capabilities-and-external-backends.md), [Cross-Service Capability Execution Design](./008-cross-service-capability-execution-design.md), [Initial Capability Registry And Tool Ownership Manifest](./009-initial-capability-registry-and-tool-ownership-manifest.md), [Operational Readiness For External Backends](./014-operational-readiness-for-external-backends.md)
 
 ## Purpose
 
@@ -98,6 +98,18 @@ This phase is complete only when:
    rewrites in platform-core code
 7. every tool owned by `external:trading` in document 009 executes through the
    boundary; a partial first-tool slice is not complete extraction
+8. end-to-end latency for external-backend tool invocation (platform dispatch
+   to backend response to agent tool result) has been measured under concurrent
+   agent load and the p95 does not exceed the operator-configurable latency
+   budget defined in
+   [014-operational-readiness-for-external-backends.md](./014-operational-readiness-for-external-backends.md)
+9. a shadow-mode or dual-path validation has run before full cutover: both the
+   in-process path and the external-backend boundary were exercised for the
+   same tool calls, results were compared, and discrepancies were resolved
+   before the in-process path was removed
+10. the external trading backend survives an independent restart without
+    causing agent-visible errors beyond the health-gating window: tools become
+    hidden during restart and visible again after `/health/ready` returns
 
 ## Validation
 
@@ -110,6 +122,18 @@ This phase is complete only when:
 5. run targeted trading, API, worker, and domain tests
 6. run `pnpm lint`
 7. validate local or staging compose wiring for the repo-local backend
+8. add a load test exercising the external-backend invocation path for
+   `submit_decision` and at least one read-heavy tool (`get_price` or
+   `list_positions`) under concurrent agent load; record p50, p95, and p99
+   latencies; fail if p95 exceeds the latency budget from document 014
+9. add an integration test that restarts the trading backend mid-session and
+   confirms that: (a) in-flight invocations return `upstream.transient` or
+   `deadline.expired`, (b) the platform removes trading tools from visibility
+   within one health-check cycle, (c) tools reappear after the backend is
+   healthy again
+10. add a shadow-mode validation step (may be manual or scripted) that runs
+    both in-process and external-backend paths for a defined period and reports
+    result-equivalence metrics before the in-process path is removed
 
 ## Deliverables
 
@@ -148,3 +172,21 @@ This phase is complete only when:
    policy, and durable side-effect rules stay in `externals/trading/`.
 2. Platform-core code owns only generic dispatch, auth, entitlement,
    health or readiness gating, visibility composition, and audit plumbing.
+
+### Operational readiness
+
+1. The latency budget, shadow-mode protocol, and restart-resilience
+   requirements follow
+   [014-operational-readiness-for-external-backends.md](./014-operational-readiness-for-external-backends.md).
+2. Shadow mode runs both the in-process path and the external-backend boundary
+   for the same tool calls. Discrepancies are logged and must be resolved
+   before the in-process path is removed. The shadow period length is an
+   implementation choice within open latitude, but it must cover at least one
+   full trading session under realistic agent load.
+3. The load test must exercise at least one write-path tool (`submit_decision`)
+   and at least one read-path tool (`get_price` or `list_positions`) under
+   concurrent simulated agent sessions.
+4. The restart-resilience test must confirm that the health-gating window
+   behaves as designed: tools disappear from visibility when the backend is
+   down, reappear when it recovers, and no agent session crashes or hangs
+   during the transition.

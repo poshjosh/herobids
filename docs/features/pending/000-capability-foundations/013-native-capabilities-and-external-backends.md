@@ -60,9 +60,13 @@ This doc does not include:
 4. Platform code may call the external domain over an explicit boundary
    contract by direct API first; skills or MCP may later become registration
    and packaging layers over the same boundary.
-5. Messaging may remain a native platform capability. Other domains may remain
-   external unless the platform explicitly chooses to own them.
-6. Native capability semantics, external-backend registration, and execution
+5. Messaging remains a native platform capability. This decision is not
+   provisional and does not require a later doc to confirm it. A future change
+   to extract messaging would require a new active doc with its own
+   justification and phase gate.
+6. Other domains may remain external unless the platform explicitly chooses to
+   own them.
+7. Native capability semantics, external-backend registration, and execution
    backend location are separate concerns and must not be collapsed into one
    type or one field.
 
