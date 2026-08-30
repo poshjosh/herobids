@@ -243,6 +243,8 @@ export interface ToolContext {
    * cannot depend on @herobids/db.
    */
   db?: unknown;
+  /** External skill provider for search/browse (optional — absent when external skills are disabled) */
+  externalSkillProvider?: import('./ports/external-skill-provider.js').ExternalSkillProvider;
   /** Skill catalog operations for list_skills and search_skills. */
   skillOps?: {
     listAssigned(): Promise<Array<{ id: string; slug: string; name: string; description: string; dependsOn: string[] }>>;
@@ -387,7 +389,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   find_instrument:     { category: 'read-database',       description: 'Find a tradable instrument by symbol/name. Returns instrumentId (venue-submittable), id (DB internal), symbol, base, quote, type, venue.' },
   resolve_bot:         { category: 'read-database',       description: 'Resolve a bot name/symbol to its bot ID for stop/start/config operations.' },
   list_skills:         { category: 'read-database',       description: 'List skills assigned to this agent and skills available to add.' },
-  search_skills:       { category: 'read-database',       description: 'Search for skills by keyword across the platform catalog and external skills discoverable through skills.sh.' },
+  search_skills:       { category: 'read-database',       description: 'Search for skills by keyword across the platform catalog and the external skill registry.' },
   // write-database
   stop_bot:            { category: 'write-database',      description: 'Stop a running bot. Positions remain open unless manually closed.' },
   start_bot:           { category: 'write-database',      description: 'Start a stopped bot. Resumes trading per its configuration.' },

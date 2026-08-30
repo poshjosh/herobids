@@ -668,69 +668,12 @@ const SearchSkillsParamsSchema = z.object({
   query: z.string().min(1).max(200),
 });
 
-const EXTERNAL_SEARCH_TIMEOUT_MS = 15_000;
-const EXTERNAL_OUTPUT_MAX_BYTES = 8192;
 
-function tokenizeQuery(query: string): string[] {
-  return query.trim().split(/\s+/).filter(t => t.length > 0);
-}
-
-async function runExternalSkillSearch(
-  tokens: string[],
-  cwd: string,
-): Promise<{ output: string } | { error: string }> {
-  const sanitized = tokens
-    .map(t => t.trim())
-    .filter(t => t.length > 0)
-    .slice(0, 10);
-
-  if (sanitized.length === 0) {
-    return { error: 'No valid search tokens after sanitization' };
-  }
-
-  return new Promise((resolve) => {
-    const child = spawn('npx', ['skills', 'find', ...sanitized], {
-      cwd,
-      env: { ...process.env, CI: '1' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: EXTERNAL_SEARCH_TIMEOUT_MS,
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      if (stdout.length < EXTERNAL_OUTPUT_MAX_BYTES) {
-        stdout += chunk.toString('utf-8').slice(0, EXTERNAL_OUTPUT_MAX_BYTES - stdout.length);
-      }
-    });
-
-    child.stderr.on('data', (chunk: Buffer) => {
-      if (stderr.length < EXTERNAL_OUTPUT_MAX_BYTES) {
-        stderr += chunk.toString('utf-8').slice(0, EXTERNAL_OUTPUT_MAX_BYTES - stderr.length);
-      }
-    });
-
-    child.on('error', (err) => {
-      resolve({ error: `skills.sh CLI unavailable: ${err.message}` });
-    });
-
-    child.on('close', (code) => {
-      if (code === 0 && stdout.trim().length > 0) {
-        resolve({ output: stdout.trim() });
-      } else if (stderr.trim().length > 0) {
-        resolve({ error: `skills.sh exited with code ${code}: ${stderr.trim().slice(0, 500)}` });
-      } else {
-        resolve({ error: `skills.sh exited with code ${code} (no output)` });
-      }
-    });
-  });
-}
 
 const searchSkillsTool: AgentTool = {
   name: 'search_skills',
   description:
-    'Search for skills by keyword across the platform catalog and external skills discoverable through skills.sh.',
+    'Search for skills by keyword across the platform catalog and the external skill registry.',
   parametersSchema: SearchSkillsParamsSchema,
   parameters: convertZodToJsonSchema(SearchSkillsParamsSchema),
   category: 'read-database',
@@ -762,22 +705,34 @@ const searchSkillsTool: AgentTool = {
       }
     }
 
-    // External search via skills.sh (best-effort)
-    const tokens = tokenizeQuery(query);
-    let external: { results: string } | { note: string };
+    // External search via HTTP provider (best-effort)
+    let external: {
+      results: Array<{
+        ref: string;
+        name: string;
+        description: string;
+        installs: number;
+      }>;
+      totalCount: number;
+    } | { note: string };
 
-    try {
-      const { getWorkspacePaths } = await import('./workspace.js');
-      const cwd = getWorkspacePaths(ctx.agentId).root;
-
-      const extResult = await runExternalSkillSearch(tokens, cwd);
-      if ('output' in extResult) {
-        external = { results: extResult.output };
-      } else {
-        external = { note: extResult.error };
+    if (ctx.externalSkillProvider) {
+      try {
+        const page = await ctx.externalSkillProvider.search(query, { page: 1, pageSize: 10 });
+        external = {
+          results: page.results.map(s => ({
+            ref: s.ref,
+            name: s.name,
+            description: s.description,
+            installs: s.installs,
+          })),
+          totalCount: page.totalCount,
+        };
+      } catch (err) {
+        external = { note: `External search failed: ${err instanceof Error ? err.message : 'unknown error'}` };
       }
-    } catch (err) {
-      external = { note: `External search unavailable: ${err instanceof Error ? err.message : 'unknown error'}` };
+    } else {
+      external = { note: 'External skill search not configured' };
     }
 
     return {
