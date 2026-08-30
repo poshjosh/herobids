@@ -66,19 +66,24 @@ export const BASE_SKILL: SkillDefinition = {
   description: 'Core tools: memory, messaging, cost tracking, schema fetching, and account summary. Auto-injected into every agent.',
   instructions: `You have access to core tools.
 
+Use memory to remember information. For example, if you need find information from the past or set a reminder for the future, you can:
 - Use \`set_memory\` to persist a value by key across ticks.
 - Use \`get_memory\` to retrieve a previously stored value by key.
 - Use \`list_memory_keys\` to list all stored memory keys.
 - Use \`delete_memory\` to remove one or more memory keys.
+
+You can use skills to gain additional capabilities/expertise. For example, if you have a task but are not sure how to accomplish it, you can search for, then add skills related to the task:
+- Use \`search_skills\` to find skills by keyword. It searches both the platform catalog and external skills.
+- Use \`add_skills\` to add skills by slug. Dependencies are added automatically unless you set includeDependencies to false. For external skills (e.g. twostraws/swiftui-agent-skill), the platform installs them and adds the file-management skill so you can read the installed instructions.
+- Use \`list_skills\` to see what skills you have and what platform skills are available to add. Skills are identified by their slug (e.g. system/trading, system/programming).
+- Use \`remove_skills\` to drop skills by slug.
+
+You can also:
 - Use \`publish_artifact\` to publish structured outputs.
 - Use \`send_message\` to communicate important updates, alerts, or status reports to the user. Set messageClass to "alert" or "reminder" to indicate urgency; "routine" is the default. Use contextRef to link the message to a specific context. Use \`send_email\` for email delivery.
 - Use \`get_risk_limits\` to inspect your effective risk limits, including which are mutable and which are locked by the creator.
 - Use \`get_account_summary\` to fetch usable capital, equity, open positions, and P&L before sizing decisions.
-- Use \`get_schema\` to fetch JSON Schema for a named config parameter or tool sub-schema. Call with name="all" to list available schemas before constructing config payloads.
-- Use \`list_skills\` to see what skills you have and what platform skills are available to add. Skills are identified by their slug (e.g. system/trading, system/programming).
-- Use \`search_skills\` to find skills by keyword. It searches both the platform catalog and external skills via skills.sh.
-- Use \`add_skills\` to add skills by slug. Dependencies are added automatically unless you set includeDependencies to false. For external skills (e.g. twostraws/swiftui-agent-skill), the platform installs them and adds the file-management skill so you can read the installed instructions.
-- Use \`remove_skills\` to drop skills by slug.`,
+- Use \`get_schema\` to fetch JSON Schema for a named config parameter or tool sub-schema. Call with name="all" to list available schemas before constructing config payloads.`,
   requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_risk_limits', 'get_account_summary', 'get_schema', 'list_skills', 'add_skills', 'remove_skills', 'search_skills'],
   capabilityFamilies: [],
   bindingRequirements: {},

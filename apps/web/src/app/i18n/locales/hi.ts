@@ -32,7 +32,6 @@ export const messages: Record<string, string> = {
   'nav.settings': 'सेटिंग्स',
   'nav.bots': 'बॉट्स',
   'nav.tradingSetup': 'ट्रेडिंग सेटअप',
-  'nav.exposure': 'एक्सपोज़र',
   'nav.openNavigation': 'नेविगेशन खोलें',
   'nav.closeNavigation': 'नेविगेशन बंद करें',
   'nav.signOut': 'साइन आउट',
@@ -165,6 +164,7 @@ export const messages: Record<string, string> = {
   'skills.status.archived': 'संग्रहित',
   'skills.price.free': 'निःशुल्क',
   'skills.capability.base': 'आधार',
+  'skills.card.dependsOn': 'निर्भर करता है:',
   'skills.metrics.loading': 'मेट्रिक्स लोड हो रहे हैं...',
   'skills.metrics.loadError': 'मेट्रिक्स लोड नहीं हो सके: {message}',
 

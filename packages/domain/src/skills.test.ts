@@ -38,13 +38,41 @@ describe('BASE_SKILL', () => {
     expect(BASE_SKILL.instructions).toContain('remove_skills');
   });
 
-  it('instructions contain skill management guidance text', () => {
-    // Verify the instructions provide meaningful guidance about skill operations
-    expect(BASE_SKILL.instructions).toContain('what skills you have');
-    expect(BASE_SKILL.instructions).toContain('adopt platform skills');
-    expect(BASE_SKILL.instructions).toContain('drop skills you no longer need');
+  it('instructions describe slug-based skill addressing', () => {
+    expect(BASE_SKILL.instructions).toContain('Skills are identified by their slug');
+    expect(BASE_SKILL.instructions).toContain('system/trading');
+    expect(BASE_SKILL.instructions).toContain('system/programming');
+  });
+
+  it('instructions describe automatic dependency inclusion with opt-out', () => {
+    expect(BASE_SKILL.instructions).toContain('Dependencies are added automatically');
+    expect(BASE_SKILL.instructions).toContain('includeDependencies');
+  });
+
+  it('instructions describe external skill support', () => {
+    expect(BASE_SKILL.instructions).toContain('external skills via skills.sh');
+    expect(BASE_SKILL.instructions).toContain('twostraws/swiftui-agent-skill');
+    expect(BASE_SKILL.instructions).toContain('the platform installs them');
+    expect(BASE_SKILL.instructions).toContain('file-management skill');
+  });
+
+  it('instructions mention add by slug and drop by slug', () => {
+    expect(BASE_SKILL.instructions).toContain('add skills by slug');
+    expect(BASE_SKILL.instructions).toContain('drop skills by slug');
+  });
+
+  it('instructions reference search_skills and skills.sh', () => {
     expect(BASE_SKILL.instructions).toContain('search_skills');
     expect(BASE_SKILL.instructions).toContain('skills.sh');
+  });
+
+  it('instructions no longer contain old skill management phrases', () => {
+    // These phrases were replaced in the slug-based addressing update
+    expect(BASE_SKILL.instructions).not.toContain('adopt platform skills');
+    expect(BASE_SKILL.instructions).not.toContain('drop skills you no longer need');
+    expect(BASE_SKILL.instructions).not.toContain('the standard skills.sh discovery flow');
+    expect(BASE_SKILL.instructions).not.toContain('dependency skills you should also add');
+    expect(BASE_SKILL.instructions).not.toContain('External skills are instruction bundles');
   });
 
   it('retains existing core tools alongside skill tools', () => {

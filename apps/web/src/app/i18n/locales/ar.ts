@@ -32,7 +32,6 @@ export const messages: Record<string, string> = {
   'nav.settings': 'الإعدادات',
   'nav.bots': 'البوتات',
   'nav.tradingSetup': 'إعداد التداول',
-  'nav.exposure': 'التعرض',
   'nav.openNavigation': 'فتح التنقل',
   'nav.closeNavigation': 'إغلاق التنقل',
   'nav.signOut': 'تسجيل الخروج',
@@ -165,6 +164,7 @@ export const messages: Record<string, string> = {
   'skills.status.archived': 'مؤرشف',
   'skills.price.free': 'مجاني',
   'skills.capability.base': 'أساسي',
+  'skills.card.dependsOn': 'يعتمد على:',
   'skills.metrics.loading': 'جارٍ تحميل المقاييس...',
   'skills.metrics.loadError': 'تعذر تحميل المقاييس: {message}',
 

@@ -25,6 +25,7 @@ vi.mock('../../app/providers/SessionProvider.js', () => ({
 function makeSkill(overrides: Partial<Skill> = {}): Skill {
   return {
     id: 'skill-1',
+    slug: 'test-skill',
     authorId: null,
     sourceKind: 'system',
     publicationStatus: 'published',
