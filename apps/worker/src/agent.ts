@@ -1984,6 +1984,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
         // Preserve fault classification: default to true (assume fault) unless explicitly false.
         fault: result.fault !== false,
       });
+      logger.debug({ tool: call.tool, error: result.error, errorCode: result.errorCode }, 'Tool returned error');
       emitToolResultEvent({
         phase,
         toolName: call.tool,
@@ -1996,6 +1997,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
 
     // For tools that return ToolResult, serialize the data
     const serialized = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+    logger.debug({ tool: call.tool, result: serialized.slice(0, 500) }, 'Tool result');
     emitToolResultEvent({
       phase,
       toolName: call.tool,

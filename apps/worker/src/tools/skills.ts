@@ -438,6 +438,7 @@ const addSkillsTool: AgentTool = {
       if (platformResult && platformResult.added.length > 0 && ctx.onSkillsChanged) {
         try {
           activeSkills = await ctx.onSkillsChanged();
+          logger.debug({ agentId: ctx.agentId, activeSkills }, 'Skill hot-reload succeeded after add_skills');
         } catch (reloadErr) {
           logger.warn({ err: reloadErr, agentId: ctx.agentId }, 'onSkillsChanged failed after add_skills');
         }
@@ -599,6 +600,7 @@ const removeSkillsTool: AgentTool = {
       if (platformResult && platformResult.removed.length > 0 && ctx.onSkillsChanged) {
         try {
           activeSkills = await ctx.onSkillsChanged();
+          logger.debug({ agentId: ctx.agentId, activeSkills }, 'Skill hot-reload succeeded after remove_skills');
         } catch (reloadErr) {
           logger.warn({ err: reloadErr, agentId: ctx.agentId }, 'onSkillsChanged failed after remove_skills');
         }
