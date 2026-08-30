@@ -173,7 +173,7 @@ There is currently no shared volume mount and no existing document-copy path int
 
 The current webhook ignores non-text messages, as documented in:
 
-- `docs/features/pending/025-agent-message-document-handling/000-notes.md`
+- `docs/features/pending/003b-agent-message-document-handling/000-notes.md`
 
 ### 3. Message/LLM pipeline is text-only
 

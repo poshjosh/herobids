@@ -2,7 +2,6 @@
 
 **Status:** draft  
 **Created:** 2026-07-13  
-**Feature ID:** 056-agent-outbound-message-attachments
 
 ## Problem
 

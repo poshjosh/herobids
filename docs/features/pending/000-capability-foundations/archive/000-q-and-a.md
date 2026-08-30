@@ -51,7 +51,7 @@ Read:
 
 Read: 
 
-- docs/features/pending/025-agent-message-document-handling/000-notes.md
+- docs/features/pending/003b-agent-message-document-handling/000-notes.md
 
 - docs/features/pending/010-agent-blueprint-marketplace/000-vision-and-current-state.md
 
