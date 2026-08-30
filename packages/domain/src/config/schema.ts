@@ -1656,7 +1656,7 @@ export const AppConfigSchema = z.object({
     enabled: z.boolean().default(true),
     apiBaseUrl: z.string().url().default('http://skills-api:3456'),
     searchApiBaseUrl: z.string().url().default('https://skills.sh'),
-    searchTimeoutMs: z.number().int().min(500).max(30000).default(5000),
+    searchTimeoutMs: z.number().int().min(500).max(30000).default(10000),
     browseTimeoutMs: z.number().int().min(500).max(30000).default(5000),
     statsTimeoutMs: z.number().int().min(500).max(10000).default(3000),
   }).default({}),

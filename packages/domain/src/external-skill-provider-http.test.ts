@@ -190,36 +190,28 @@ describe('ExternalSkillProviderHttp — search (skills.sh)', () => {
     expect(result.results).toHaveLength(5);
   });
 
-  it('returns empty page on network error', async () => {
+  it('throws on network error', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
-    const logger = makeLogger();
-    const provider = new ExternalSkillProviderHttp(makeConfig(), logger);
+    const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
 
-    const result = await provider.search('test', { page: 1, pageSize: 20 });
-
-    expect(result).toEqual({ results: [], totalCount: 0, page: 1, pageSize: 20 });
-    expect(logger.warn).toHaveBeenCalled();
+    await expect(provider.search('test', { page: 1, pageSize: 20 })).rejects.toThrow('ECONNREFUSED');
   });
 
-  it('returns empty page on non-2xx response', async () => {
+  it('throws on non-2xx response', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(errorResponse(500)));
     const logger = makeLogger();
     const provider = new ExternalSkillProviderHttp(makeConfig(), logger);
 
-    const result = await provider.search('test', { page: 1, pageSize: 20 });
-
-    expect(result).toEqual({ results: [], totalCount: 0, page: 1, pageSize: 20 });
+    await expect(provider.search('test', { page: 1, pageSize: 20 })).rejects.toThrow('skills.sh search returned 500');
     expect(logger.warn).toHaveBeenCalled();
   });
 
-  it('returns empty page on Zod validation failure', async () => {
+  it('throws on Zod validation failure', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJsonResponse({ bad: 'shape' })));
     const logger = makeLogger();
     const provider = new ExternalSkillProviderHttp(makeConfig(), logger);
 
-    const result = await provider.search('test', { page: 1, pageSize: 5 });
-
-    expect(result).toEqual({ results: [], totalCount: 0, page: 1, pageSize: 5 });
+    await expect(provider.search('test', { page: 1, pageSize: 5 })).rejects.toThrow('validation failed');
     expect(logger.warn).toHaveBeenCalled();
   });
 

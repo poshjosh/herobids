@@ -34,7 +34,7 @@ describe('ExternalSkillsConfigSchema', () => {
         expect(result.data.enabled).toBe(true);
         expect(result.data.apiBaseUrl).toBe('http://skills-api:3456');
         expect(result.data.searchApiBaseUrl).toBe('https://skills.sh');
-        expect(result.data.searchTimeoutMs).toBe(5000);
+        expect(result.data.searchTimeoutMs).toBe(10000);
         expect(result.data.browseTimeoutMs).toBe(5000);
         expect(result.data.statsTimeoutMs).toBe(3000);
       }
@@ -47,7 +47,7 @@ describe('ExternalSkillsConfigSchema', () => {
         expect(result.data.enabled).toBe(false);
         expect(result.data.apiBaseUrl).toBe('http://skills-api:3456');
         expect(result.data.searchApiBaseUrl).toBe('https://skills.sh');
-        expect(result.data.searchTimeoutMs).toBe(5000);
+        expect(result.data.searchTimeoutMs).toBe(10000);
         expect(result.data.browseTimeoutMs).toBe(5000);
         expect(result.data.statsTimeoutMs).toBe(3000);
       }

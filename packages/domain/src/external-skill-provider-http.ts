@@ -271,24 +271,28 @@ export class ExternalSkillProviderHttp implements ExternalSkillProvider {
       });
 
       if (!res.ok) {
-        this.log.warn({ status: res.status }, 'skills.sh search returned non-2xx');
-        return this.searchCache?.query === query ? this.searchCache.results : [];
+        const msg = `skills.sh search returned ${res.status}`;
+        this.log.warn({ status: res.status }, msg);
+        throw new Error(msg);
       }
 
       const body: unknown = await res.json();
       const parsed = SkillsShSearchResponseSchema.safeParse(body);
       if (!parsed.success) {
         this.log.warn({ issues: parsed.error.issues }, 'skills.sh search response validation failed');
-        return this.searchCache?.query === query ? this.searchCache.results : [];
+        throw new Error('skills.sh search response validation failed');
       }
 
       const results = parsed.data.skills.map(mapSkillsShToSummary);
       this.searchCache = { query, results, fetchedAt: Date.now() };
       return results;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      this.log.warn({ err: msg }, 'skills.sh search fetch failed');
-      return this.searchCache?.query === query ? this.searchCache.results : [];
+      // Return stale cache for the same query if available
+      if (this.searchCache?.query === query) {
+        return this.searchCache.results;
+      }
+      // Re-throw so callers (API route, worker tool) can handle appropriately
+      throw e;
     }
   }
 

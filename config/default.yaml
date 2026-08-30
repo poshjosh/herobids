@@ -1053,7 +1053,7 @@ externalSkills:
                                       # override: EXTERNAL_SKILLS_API_BASE_URL
   searchApiBaseUrl: https://skills.sh # Vercel public search API (600k+ skills, no auth)
                                       # override: EXTERNAL_SKILLS_SEARCH_API_BASE_URL
-  searchTimeoutMs: 5000               # timeout for keyword search requests
+  searchTimeoutMs: 10000              # timeout for keyword search requests (skills.sh can be slow)
                                       # override: EXTERNAL_SKILLS_SEARCH_TIMEOUT_MS
   browseTimeoutMs: 5000               # timeout for browse/popular listing requests
                                       # override: EXTERNAL_SKILLS_BROWSE_TIMEOUT_MS
