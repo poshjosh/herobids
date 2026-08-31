@@ -16,8 +16,11 @@ activation, tool ownership, route alignment, and capability-service extraction.
    [002](./002-capability-foundations.md) through
    [011](./011-capability-route-and-response-migration-manifest.md) and
    [014](./014-operational-readiness-for-external-backends.md)
-4. supporting diagrams under [diagrams](./diagrams/current-architecture.md)
-5. local coordination, validation, and handoff docs under
+4. automation extraction and MCP registration phases:
+   [015](./015-automation-backend-extraction.md) and
+   [016](./016-mcp-registration-layer.md)
+5. supporting diagrams under [diagrams](./diagrams/current-architecture.md)
+6. local coordination, validation, and handoff docs under
    [program/000-document-tree.md](./program/000-document-tree.md) when working
    on the documentation system or implementation entry flow
 
@@ -42,7 +45,9 @@ The platform direction now distinguishes:
 
 Messaging may remain native. A repo-local service such as `externals/trading/`
 is treated as an external backend from day one rather than as native platform
-logic.
+logic. `automation` is the second planned external backend
+(`externals/automation/`), with `browser-use` as its first family. MCP is a
+registration and transport mechanism, not a capability or backend.
 
 ## Document Roles
 
@@ -60,6 +65,15 @@ logic.
 - [014](./014-operational-readiness-for-external-backends.md): supporting
    reference for operational readiness requirements that apply to any external
    backend before full cutover; referenced as a normative input by 005
+- [015](./015-automation-backend-extraction.md): draft phase doc for the
+   second repo-local external backend (`automation`); governs browser-use
+   extraction, family-based internal structure, session persistence, and
+   automation-specific billing; controlled by [001-roadmap.md](./001-roadmap.md)
+   and [ADR 009](../../tech/architecture/adrs/2026/08/009-automation-as-external-backend.md)
+- [016](./016-mcp-registration-layer.md): draft phase doc for MCP as the
+   third registration and transport mechanism; covers MCP client, tool
+   namespacing, operator allowlists, and credential management; controlled by
+   [001-roadmap.md](./001-roadmap.md)
 - [013](./013-native-capabilities-and-external-backends.md): implementation-
    ready boundary authority for the current executable rewrite slice
 - [tasks/002](./tasks/002-external-backend-boundary-implementation-tasks.md):

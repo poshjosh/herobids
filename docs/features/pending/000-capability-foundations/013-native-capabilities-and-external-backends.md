@@ -27,6 +27,8 @@ This doc does not include:
 2. a requirement to package the first external backend through skills or MCP
    immediately
 3. the final extracted repository layout for the remote service
+4. automation-specific extraction details (see
+   [015-automation-backend-extraction.md](./015-automation-backend-extraction.md))
 
 ## Non-Goals
 
@@ -69,6 +71,12 @@ This doc does not include:
 7. Native capability semantics, external-backend registration, and execution
    backend location are separate concerns and must not be collapsed into one
    type or one field.
+8. `automation` is the second planned external backend, expected under
+   `externals/automation/`. Its first family is `browser-use`. Only tools
+   requiring an external stateful resource with provider lifecycle belong to
+   `external:automation`; stateless web tools remain `general`. See
+   [ADR 009](../../../tech/architecture/adrs/2026/08/009-automation-as-external-backend.md)
+   and [015-automation-backend-extraction.md](./015-automation-backend-extraction.md).
 
 ## Open Latitude
 
@@ -83,6 +91,9 @@ fixed decisions, dependencies, acceptance criteria, and validation still hold:
    shared generic integration package, as long as it remains transport-only
 4. the exact future packaging path for skills or MCP over the same external
    backend contract
+5. whether automation extraction runs in parallel with or after trading
+   extraction, as long as the trading boundary proves the generic contract
+   first
 
 ## Separation Rules
 
@@ -145,6 +156,23 @@ The platform core may own only:
 
 The external backend owns domain policy, domain persistence, provider-specific
 rules, and domain-specific tool semantics.
+
+## Future Direction: Universal Skill Interfaces
+
+The internal boundary contract (document 008) is the transport for the
+repo-local phase. External backends are expected to eventually publish
+universal skill interfaces — consumable by any agent platform, not just this
+one — with their own public API, auth (API keys, OAuth), and billing.
+
+The internal contract should not accumulate platform-specific semantics that
+would be hard to bridge to a public API later. When designing the contract
+envelope, prefer generic patterns (API key auth, standard HTTP semantics) over
+platform-specific ones where the generic version is equally effective.
+
+This section is directional, not a fixed decision. It does not change the
+current boundary contract or acceptance criteria. It signals intent so the
+implementer does not over-invest in the internal contract as the permanent API
+surface.
 
 ## Acceptance Criteria
 

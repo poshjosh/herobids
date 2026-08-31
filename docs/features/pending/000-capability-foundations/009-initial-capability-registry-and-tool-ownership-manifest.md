@@ -45,19 +45,24 @@ This doc does not include:
    [004-worker-tool-visibility-enforcement.md](./004-worker-tool-visibility-enforcement.md),
    [005-trading-capability-extraction.md](./005-trading-capability-extraction.md),
    [006-messaging-capability-extraction.md](./006-messaging-capability-extraction.md),
-   and [007-capability-naming-cleanup.md](./007-capability-naming-cleanup.md)
+   [007-capability-naming-cleanup.md](./007-capability-naming-cleanup.md),
+   and [015-automation-backend-extraction.md](./015-automation-backend-extraction.md)
    all consume this registry and ownership data.
 
 ## Fixed Decisions
 
 1. The initial control plane contains exactly one native capability,
-   `messaging`, and one external backend, `trading`.
+   `messaging`, and two external backends, `trading` and `automation`.
 2. Every current `AgentToolName` has exactly one owner in the table below.
 3. `general` is an explicit temporary ownership category, not an unclassified
    fallback.
 4. `core` tools remain in platform core until a later active doc changes that.
 5. External-backend rows carry generic registration, transport, and readiness
    metadata only. Domain-specific provider rules stay in the external backend.
+6. `automation` is an external backend whose first family is `browser-use`.
+   Only tools requiring an external stateful resource with provider lifecycle
+   belong to `external:automation`. Stateless web tools remain `general`.
+   See [ADR 009](../../../tech/architecture/adrs/2026/08/009-automation-as-external-backend.md).
 
 ## Open Latitude
 
@@ -92,7 +97,7 @@ This supporting reference is fit for implementation use only when:
 ## Rules
 
 1. The initial control plane contains exactly one native capability,
-   `messaging`, and one external backend, `trading`.
+   `messaging`, and two external backends, `trading` and `automation`.
 2. Every current `AgentToolName` has exactly one owner in the table below.
 3. `general` is an explicit temporary ownership category for skill-scoped tools
    that no native capability or external backend owns. It is not an
@@ -124,10 +129,11 @@ readiness.
 | Backend | Canonical route ID | Registration mechanism | Dispatch mode | Health source | Agent prerequisites | Legacy runtime compatibility family | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `trading` | `trading` | direct API first; skill or MCP later may wrap the same boundary | shared external-backend contract | `/health/ready` | entitlement plus connection-backed readiness summary | `trading` | first repo-local backend expected under `externals/trading/` |
+| `automation` | `automation` | direct API first; skill or MCP later may wrap the same boundary | shared external-backend contract | `/health/ready` | skill-gated (`system/browser`); provider health (browser pool capacity) | none | second repo-local backend expected under `externals/automation/`; first family is `browser-use` |
 
 Canonical public paths are `/capabilities/messaging` for native-capability
-routes and `/external-backends/trading` for external-backend control-plane
-routes.
+routes and `/external-backends/trading` and `/external-backends/automation` for
+external-backend control-plane routes.
 
 ## Exhaustive Tool Ownership
 
@@ -139,6 +145,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `adjust_bot_config` | `external:trading` | Trading bot configuration. |
 | `adjust_risk_limits` | `external:trading` | Trading risk policy. |
 | `browse_url` | `general` | Reusable web-research expertise. |
+| `browse_interactive` | `external:automation` | Interactive browser automation — requires external stateful resource with provider lifecycle. |
 | `check_regime` | `external:trading` | Trading market-regime analysis. |
 | `check_watches` | `external:trading` | Trading price-watch evaluation. |
 | `complete_task` | `general` | Reusable task-management expertise. |
@@ -164,6 +171,7 @@ ToolOwnershipEntry>` rather than deriving it from skills or categories.
 | `list_positions` | `external:trading` | Trading position state. |
 | `list_tasks` | `general` | Reusable task-management expertise. |
 | `list_watches` | `external:trading` | Trading price-watch state. |
+| `make_http_request` | `general` | Structured HTTP client — stateless in-process fetch, no provider model. |
 | `publish_artifact` | `native:messaging` | User-facing artifact delivery. |
 | `read_document` | `general` | Reusable document-reading expertise. |
 | `read_file` | `core` | Agent workspace operation. |
@@ -200,5 +208,6 @@ Validation must fail on:
 
 Tests must assert that the manifest key set equals `KNOWN_AGENT_TOOL_NAMES`,
 that the native messaging view contains every tool marked `native:messaging`,
-and that the trading backend view contains every tool marked
-`external:trading`.
+that the trading backend view contains every tool marked
+`external:trading`, and that the automation backend view contains every tool
+marked `external:automation`.

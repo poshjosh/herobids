@@ -3,7 +3,7 @@
 **Status:** ready  
 **Created:** 2026-07-18  
 **Parent roadmap:** [Capability Foundations Program Master Roadmap](./program/001-master-roadmap.md)
-**Normative inputs:** [ADR 008](../../../tech/architecture/adrs/2026/08/008-native-capabilities-and-external-backends.md)
+**Normative inputs:** [ADR 008](../../../tech/architecture/adrs/2026/08/008-native-capabilities-and-external-backends.md), [ADR 009](../../../tech/architecture/adrs/2026/08/009-automation-as-external-backend.md)
 
 ## Purpose
 
@@ -22,6 +22,10 @@ This roadmap includes:
    this feature
 3. the phase gates, extraction strategy, and cross-phase invariants that keep
    implementation order stable
+4. automation backend extraction as the second external backend, validating the
+   generic boundary contract
+5. MCP as the third registration and transport mechanism, completing the
+   registration story (direct API, skills, MCP)
 
 This roadmap does not include:
 
@@ -47,10 +51,13 @@ This roadmap does not include:
 2. [ADR 008](../../../tech/architecture/adrs/2026/08/008-native-capabilities-and-external-backends.md)
    fixes the architecture boundary this roadmap implements. ADR 008 supersedes
    the earlier ADRs 002–004 from July 2026.
-3. The first executable slice in this feature is controlled by
+3. [ADR 009](../../../tech/architecture/adrs/2026/08/009-automation-as-external-backend.md)
+   establishes automation as the second external backend and defines tool
+   ownership for `browse_interactive`.
+4. The first executable slice in this feature is controlled by
    [013-native-capabilities-and-external-backends.md](./013-native-capabilities-and-external-backends.md)
    and [tasks/002-external-backend-boundary-implementation-tasks.md](./tasks/002-external-backend-boundary-implementation-tasks.md).
-4. Documents 002 through 011 remain draft phase or supporting docs that must be
+5. Documents 002 through 011 remain draft phase or supporting docs that must be
    interpreted through the external-backend boundary rule set before later
    execution resumes.
 
@@ -102,10 +109,12 @@ later execution resumes:
 4. [005-trading-capability-extraction.md](./005-trading-capability-extraction.md)
 5. [006-messaging-capability-extraction.md](./006-messaging-capability-extraction.md)
 6. [007-capability-naming-cleanup.md](./007-capability-naming-cleanup.md)
+7. [015-automation-backend-extraction.md](./015-automation-backend-extraction.md)
+8. [016-mcp-registration-layer.md](./016-mcp-registration-layer.md)
 
 ### Draft-To-Ready Reconciliation Rule
 
-Before any draft phase doc (002–007) moves to `ready`, it must pass a
+Before any draft phase doc (002–007, 015–016) moves to `ready`, it must pass a
 reconciliation check confirming its scope, fixed decisions, acceptance
 criteria, and validation are consistent with
 [013-native-capabilities-and-external-backends.md](./013-native-capabilities-and-external-backends.md)
@@ -248,6 +257,36 @@ Required before feature completion:
 4. later phase docs have been rewritten to stop assuming the platform owns the
    external domain as a native capability
 
+### Gate 5: Second external backend (automation) boundary complete
+
+Required before the generic boundary contract is considered proven:
+
+1. the governing phase doc
+   ([015-automation-backend-extraction.md](./015-automation-backend-extraction.md))
+   has passed the draft-to-ready reconciliation check and is at status `ready`
+2. `externals/automation/` exists as its own runtime boundary with family-based
+   internal structure
+3. the same generic boundary contract used for trading works for automation
+   without domain-specific extensions in the generic envelope
+4. `browse_interactive` executes through the boundary contract
+5. the automation backend has its own health, config, compose wiring, and
+   billing
+6. no direct platform-core imports of `externals/automation/` implementation
+   remain
+
+### Gate 6: MCP registration layer complete
+
+Required before the registration story is considered complete:
+
+1. the governing phase doc
+   ([016-mcp-registration-layer.md](./016-mcp-registration-layer.md))
+   has passed the draft-to-ready reconciliation check and is at status `ready`
+2. agents can connect to MCP servers and use their tools through the platform
+3. MCP-surfaced tools pass through the existing skill gating and visibility
+   model
+4. MCP server connections respect an operator-configured allowlist
+5. MCP tool names are namespaced to avoid collisions with platform tools
+
 ## Completion Condition
 
 The roadmap's governed capability rollout is complete only when:
@@ -264,3 +303,7 @@ The roadmap's governed capability rollout is complete only when:
    rewrite
 6. native capability behavior remains explicit and limited to domains the
    platform intentionally keeps native
+7. the generic boundary contract is validated by at least two external backends
+   (trading and automation) with different domain characteristics
+8. the platform supports three registration mechanisms (direct API, skills,
+   MCP) over the same boundary contracts
