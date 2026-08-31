@@ -37,7 +37,9 @@ import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
 import crypto from 'node:crypto';
 import { lookup } from 'node:dns/promises';
-import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadConfig, MONOREPO_CONFIG_DIR } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
 import { resolveSwapAssetsFromBinding, resolveSwapNetwork } from './resolve-swap-assets.js';
@@ -78,6 +80,7 @@ import { createEvidencePorts } from './market-intelligence/evidence-adapters.js'
 import { AssessmentRequestService } from './market-intelligence/assessment-request-service.js';
 import { setAssessmentRequestPort } from './tools/assess-strategy-preset.js';
 import { setPresetTransitionPort } from './tools/change-strategy-preset.js';
+import { BrowserPoolHealthPublisher } from './browser-pool-health-publisher.js';
 import { createProviderRegistry, createPriceService, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type ProviderRegistry, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
@@ -201,6 +204,7 @@ const redisClient = new Redis(redisConnection);
 let botStopSubscriber: Redis | undefined;
 let agentCleanupSubscriber: Redis | undefined;
 let approvalExecuteSubscriber: Redis | undefined;
+let browserPoolHealthPublisher: { stop(): void } | undefined;
 const workerId = `worker-${crypto.randomUUID().slice(0, 8)}`;
 const lease = new InstanceLease(redisClient, workerId, 30);
 
@@ -579,6 +583,25 @@ const agentRuntimeLauncher = await (async () => {
       logger.warn({ err, url: resolvedBrowserPoolUrl }, 'Failed to resolve browser pool hostname for sandbox allowlist');
     }
   }
+
+  // Browser-pool health publisher — polls Browserless instances and publishes
+  // health snapshots to Redis so they appear on the admin dashboard.
+  const workerDir = dirname(fileURLToPath(import.meta.url));
+  let workerAppVersion = 'unknown';
+  try {
+    const rootPkg = resolve(workerDir, '../../../package.json');
+    workerAppVersion = JSON.parse(readFileSync(rootPkg, 'utf8')).version ?? 'unknown';
+  } catch { /* keep default */ }
+
+  const bpHealthPublisher = new BrowserPoolHealthPublisher({
+    redis: redisClient,
+    browserPool: appConfig.browserPool,
+    nomadClient,
+    logger,
+    appVersion: workerAppVersion,
+  });
+  bpHealthPublisher.start();
+  browserPoolHealthPublisher = bpHealthPublisher;
 
   // Shared env config used by both Docker and Nomad paths
   const envConfig = {
@@ -2848,6 +2871,7 @@ process.on('SIGTERM', async () => {
   clearInterval(botOrphanSweepInterval);
   clearInterval(approvalExpiryInterval);
   clearInterval(economicCalendarRefreshInterval);
+  browserPoolHealthPublisher?.stop();
   instrumentCache.stop();
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
@@ -2882,6 +2906,7 @@ process.on('SIGINT', async () => {
   clearInterval(botOrphanSweepInterval);
   clearInterval(approvalExpiryInterval);
   clearInterval(economicCalendarRefreshInterval);
+  browserPoolHealthPublisher?.stop();
   instrumentCache.stop();
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();

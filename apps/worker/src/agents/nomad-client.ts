@@ -93,6 +93,40 @@ export class NomadClient {
       return null;
     }
   }
+
+  /**
+   * Resolve ALL healthy instances of a Nomad-registered service.
+   *
+   * Same endpoint as {@link resolveService} but returns every entry instead of
+   * just the first. Needed when the caller must iterate over all instances
+   * (e.g. polling each browser-pool container for health metrics).
+   */
+  async resolveAllServices(serviceName: string): Promise<{ address: string; port: number }[]> {
+    try {
+      const response = await this.request(
+        `/v1/service/${encodeURIComponent(serviceName)}`,
+        { method: 'GET' },
+      );
+
+      if (!response.ok) {
+        logger.warn({ serviceName, status: response.status }, 'Nomad service lookup failed (all)');
+        return [];
+      }
+
+      const entries = (await response.json()) as NomadServiceEntry[];
+      if (entries.length === 0) {
+        logger.debug({ serviceName }, 'Nomad service has no registered instances (all)');
+        return [];
+      }
+
+      logger.debug({ serviceName, count: entries.length }, 'Nomad service resolved (all instances)');
+      return entries.map(e => ({ address: e.Address, port: e.Port }));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn({ serviceName, error: message }, 'Nomad service resolution error (all)');
+      return [];
+    }
+  }
 }
 
 // ── Types ───────────────────────────────────────────────────────────────────

@@ -294,7 +294,7 @@ If `AdminOverviewSection` or other consumers still reference `memory`/`disk` fro
 
 ---
 
-### Phase 3: Agent-server reporting — PENDING
+### Phase 3: Agent-server reporting — DONE
 
 **Effort:** ~2 hours
 **Risk:** Low — runs on Nomad client nodes, no impact on control-plane.
