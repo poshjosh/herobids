@@ -225,14 +225,18 @@ Option B — new skills:
 
 ### 8. Cost Metering [DONE]
 
-**File:** `apps/worker/src/agent.ts` (modify, in the tool execution path)
+**File:** `apps/worker/src/usage-billing-service.ts`, `apps/worker/src/tools/browser.ts`, `apps/worker/src/agent.ts`
 
-After `browse_interactive` completes:
-- Record session duration via `usageBillingService.recordBrowserSession({ agentId, durationMs })`.
-- The billing service already supports extensible event types — add a `browser_session` event type.
+Implemented:
+- New `browser.session_ms` meter key in `UsageBillingConfigSchema` and `config/default.yaml` rate card ($0.0002/min).
+- `UsageBillingService.recordBrowserSession({ durationMs, browserSessionId })` — fire-and-forget, same pattern as runtime window metering.
+- `ActiveSession.startedAt` tracks session start time; duration computed on close.
+- `handleClose` records billing via `ctx.usageBilling.recordBrowserSession()`.
+- `cleanupBrowserSessions` accepts an `onSessionClosed` callback for shutdown billing.
+- `ToolContext.usageBilling` interface threads the billing service to tools without coupling the domain to the worker.
 
-After `http_request` completes:
-- Record as a lightweight event (URL, status, response size). Low cost — primarily for observability, not billing.
+After `make_http_request` completes:
+- Observability only via capability engine `recordStart`/`recordEnd`. No dedicated billing event — low cost, not worth metering.
 
 ### 9. Operator Config Validation [DONE]
 

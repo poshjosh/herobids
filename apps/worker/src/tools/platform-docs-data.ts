@@ -2114,6 +2114,16 @@ Each running agent costs a flat rate per minute to cover infrastructure (server 
 
 This is billed continuously while your agent is running. If your agent is stopped, you are not charged.
 
+## Browser sessions
+
+When an agent uses the \`browse_interactive\` tool (via the \`system/browser\` skill), browser time is billed separately from agent runtime.
+
+| | Rate |
+|---|---|
+| **Per browser session, per minute** | \$0.0002 |
+
+Browser sessions are billed for the duration between opening and closing a session. Sessions are automatically closed and billed when an agent stops.
+
 ## LLM usage
 
 Your agents use large language models (LLMs) to reason about their tasks. LLM costs depend on the LLM you select. The cost of LLM is not set by OpenAIdom. You pay whatever the LLM provider set as the cost of its llm. OpenAIdom uses LLM gateways/aggregators (e.g. openrouter) which simplifies serving/paying for multiple LLMs. LLM costs also depend on your agent's **style**. The table below provides example cost for heavy use across various **styles**:

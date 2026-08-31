@@ -34,6 +34,7 @@ const METER_LABELS: Record<string, string> = {
   'llm.reasoning_tokens': 'llm reasoning tokens',
   'agent.runtime_ms': 'agent runtime (milliseconds)',
   'assessment.request': 'strategy assessment',
+  'browser.session_ms': 'browser session (milliseconds)',
 };
 
 function formatMeterLabel(meterKey: string): string {
