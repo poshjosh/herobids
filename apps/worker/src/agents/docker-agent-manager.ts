@@ -1,5 +1,5 @@
 import { createLogger } from '../logger.js';
-import type { RuntimeDescriptor, RuntimeReconcileResult } from '@herobids/domain';
+import type { RuntimeDescriptor, RuntimeReconcileResult, PermissionLevel } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
 import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
 import { PLATFORM_ALERT_EVENTS } from '../alerting/platform-alert-service.js';
@@ -80,6 +80,8 @@ export interface DockerContainerSpec {
   agentConfig: Record<string, unknown>;
   runtimeDescriptor?: RuntimeDescriptor;
   toolPolicy: Record<string, unknown>;
+  /** Agent permission level — also present inside agentConfig, surfaced here for documentation clarity. */
+  permissionLevel?: PermissionLevel;
 }
 
 /**

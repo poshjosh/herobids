@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 import { access } from 'node:fs/promises';
 import { createLogger } from '../logger.js';
-import type { AgentTool, ToolResult, ToolContext, PermissionLevel } from '@herobids/domain';
+import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { getWorkspacePaths, resolveWorkspacePath } from './workspace.js';
 import { capabilityDeniedResult } from './tool-errors.js';
@@ -16,21 +16,6 @@ import {
 
 const execAsync = promisify(execCb);
 const logger = createLogger('tools:shell');
-
-// Read permissionLevel from AGENT_CONFIG env var.
-// Phase 3 will add this to ToolContext; until then, read from env.
-function getPermissionLevel(): PermissionLevel {
-  try {
-    const raw = process.env['AGENT_CONFIG'];
-    if (!raw) return 'standard';
-    const parsed = JSON.parse(raw) as { permissionLevel?: string };
-    const level = parsed.permissionLevel;
-    if (level === 'restricted' || level === 'standard' || level === 'full') return level;
-    return 'standard';
-  } catch {
-    return 'standard';
-  }
-}
 
 const ShellExecuteParamsSchema = z.object({
   command: z.string().min(1).describe('Shell command to execute'),
@@ -73,7 +58,7 @@ const executeShellTool: AgentTool = {
 
     const { command, timeoutMs, workingDir, description } = params as z.infer<typeof ShellExecuteParamsSchema>;
 
-    const permissionLevel = getPermissionLevel();
+    const permissionLevel = ctx.permissionLevel;
 
     // Fail-closed: restricted agents must never reach this tool (gated by visibility),
     // but reject if somehow invoked.

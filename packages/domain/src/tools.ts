@@ -112,6 +112,8 @@ export interface ToolContext {
   executionMode: 'paper' | 'shadow' | 'live';
   /** Authorization mode for agent-direct trade decisions: 'direct' (execute immediately) or 'approval_required' (require user approval). */
   authorizationMode: 'direct' | 'approval_required';
+  /** Agent permission level — controls tool visibility and sandbox behavior. */
+  permissionLevel: import('./config/schema.js').PermissionLevel;
   /** Redis client for agent memory, watches, and pub/sub */
   redis: {
     hset: (key: string, field: string, value: string) => Promise<number>;

@@ -13,11 +13,11 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal, LlmArtifactRepository, skills, skillRevisions, agentSkills } from '@herobids/db';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
-import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml } from '@herobids/domain';
+import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml, PermissionLevel } from '@herobids/domain';
 import { type LlmToolDefinition, type OpenRouterProviderControls, resolveReasoningParams } from '@herobids/llm';
 import {
   CompositeEconomicCalendarProvider,
@@ -298,6 +298,8 @@ interface AgentConfig {
   hybridMode?: 'mixed' | 'scanner_gated';
   /** Authorization mode from UnifiedAgentConfig ('direct' | 'approval_required'). Controls whether agent-direct trade decisions execute immediately or require user approval. */
   authorizationMode?: 'direct' | 'approval_required';
+  /** Agent permission level — controls tool visibility and sandbox config. */
+  permissionLevel?: PermissionLevel;
   /** Risk posture JSONB — canonical source for creator-configured risk limits. Falls back to legacy columns when absent. */
   risk?: RiskPosture | null;
   /** Per-agent open position escalation to judge policy: never | uncovered_or_triggered | always */
@@ -566,6 +568,14 @@ runtimeState.metrics.sessionCosts.estimatedServerCostUsdPerHour = Number.isFinit
 const sessionMetrics = runtimeState.metrics;
 let capabilityEngine = buildCapabilityPolicyEngine(runtimeState.runtimeDescriptor.toolPolicy);
 const permanentlyExcludedTools = new Set<string>();
+
+// Gate execute_shell visibility by permission level.
+// Restricted agents cannot see or invoke execute_shell; standard and full can.
+const agentPermissionLevel: PermissionLevel = agentConfig.permissionLevel ?? DEFAULT_PERMISSION_LEVEL;
+if (agentPermissionLevel === 'restricted') {
+  permanentlyExcludedTools.add('execute_shell');
+}
+
 const toolCircuitBreaker = new ToolCircuitBreaker({
   failureThreshold: agentRuntimePolicy.toolCircuitBreaker?.failureThreshold,
   reopenAfterTicks: agentRuntimePolicy.toolCircuitBreaker?.reopenAfterTicks,
@@ -1763,6 +1773,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     phase,
     executionMode: (agentConfig.executionMode ?? 'paper') as 'paper' | 'shadow' | 'live',
     authorizationMode: (agentConfig.authorizationMode ?? 'direct') as 'direct' | 'approval_required',
+    permissionLevel: agentPermissionLevel,
     redis: {
       hset: redis.hset.bind(redis),
       hget: redis.hget.bind(redis),

@@ -540,6 +540,7 @@ export class AgentSessionManager {
           capabilityMode: agent.unifiedConfig?.capabilityMode ?? 'intelligence',
           hybridMode: agent.unifiedConfig?.hybridMode
             ?? (agent.unifiedConfig?.capabilityMode === 'hybrid' ? 'mixed' : undefined),
+          permissionLevel: agent.permissionLevel ?? 'standard',
           openPositionEscalationToJudgePolicy: agent.openPositionEscalationToJudgePolicy,
           // Per-agent runtime policy — resolved from style + overrides, sent as env var to container
           resolvedRuntimePolicy: resolveAgentRuntimePolicy(

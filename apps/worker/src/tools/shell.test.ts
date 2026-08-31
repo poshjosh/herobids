@@ -19,6 +19,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     phase: 'scout',
     executionMode: 'paper',
     authorizationMode: 'direct',
+    permissionLevel: 'full',
     redis: {
       hset: vi.fn(async () => 1),
       hget: vi.fn(async () => null),
@@ -129,8 +130,7 @@ describe('execute_shell tool', () => {
   // ── Permission level gating ───────────────────────────────────────────────
 
   it('rejects execution for restricted permission level', async () => {
-    process.env['AGENT_CONFIG'] = JSON.stringify({ permissionLevel: 'restricted' });
-    const ctx = makeCtx();
+    const ctx = makeCtx({ permissionLevel: 'restricted' });
     const result = await executeShellTool.execute(
       { command: 'echo test' },
       ctx,
@@ -144,8 +144,7 @@ describe('execute_shell tool', () => {
   });
 
   it('allows execution for standard permission level', async () => {
-    process.env['AGENT_CONFIG'] = JSON.stringify({ permissionLevel: 'standard' });
-    const ctx = makeCtx();
+    const ctx = makeCtx({ permissionLevel: 'standard' });
     const result = await executeShellTool.execute(
       { command: 'echo standard' },
       ctx,
@@ -156,8 +155,7 @@ describe('execute_shell tool', () => {
   });
 
   it('allows execution for full permission level', async () => {
-    process.env['AGENT_CONFIG'] = JSON.stringify({ permissionLevel: 'full' });
-    const ctx = makeCtx();
+    const ctx = makeCtx({ permissionLevel: 'full' });
     const result = await executeShellTool.execute(
       { command: 'echo full' },
       ctx,
@@ -167,15 +165,16 @@ describe('execute_shell tool', () => {
     expect(result.errorCode).not.toBe('execute_shell.permission_denied');
   });
 
-  it('defaults to standard when AGENT_CONFIG is missing', async () => {
+  it('uses permissionLevel from context (not env) to determine behavior', async () => {
+    // Even when AGENT_CONFIG is absent, the tool reads ctx.permissionLevel.
     delete process.env['AGENT_CONFIG'];
-    const ctx = makeCtx();
+    const ctx = makeCtx({ permissionLevel: 'standard' });
     const result = await executeShellTool.execute(
       { command: 'echo default' },
       ctx,
     );
 
-    // Defaults to standard — may fail if 'agent' user does not exist in test env,
+    // standard → may fail if 'agent' user does not exist in test env,
     // but should not be permission_denied
     expect(result.errorCode).not.toBe('execute_shell.permission_denied');
   });
@@ -212,8 +211,7 @@ describe('execute_shell tool', () => {
   // ── Working directory ─────────────────────────────────────────────────────
 
   it('rejects path traversal in workingDir for standard permission level', async () => {
-    process.env['AGENT_CONFIG'] = JSON.stringify({ permissionLevel: 'standard' });
-    const ctx = makeCtx();
+    const ctx = makeCtx({ permissionLevel: 'standard' });
     const result = await executeShellTool.execute(
       { command: 'pwd', workingDir: '../../etc' },
       ctx,
@@ -224,8 +222,7 @@ describe('execute_shell tool', () => {
   });
 
   it('rejects absolute path in workingDir for standard permission level', async () => {
-    process.env['AGENT_CONFIG'] = JSON.stringify({ permissionLevel: 'standard' });
-    const ctx = makeCtx();
+    const ctx = makeCtx({ permissionLevel: 'standard' });
     const result = await executeShellTool.execute(
       { command: 'pwd', workingDir: '/etc' },
       ctx,
@@ -307,19 +304,18 @@ describe('execute_shell tool', () => {
   });
 
   it('restricted permission level does not leak the concurrency counter', async () => {
-    process.env['AGENT_CONFIG'] = JSON.stringify({ permissionLevel: 'restricted' });
     const engine = new CapabilityPolicyEngine([
       { capability: 'execute_shell', tier: 'direct', enabled: true, limits: { maxConcurrent: 1 } },
     ]);
-    const ctx = makeCtx({ capabilityEngine: engine });
+    const ctx = makeCtx({ capabilityEngine: engine, permissionLevel: 'restricted' });
 
     const first = await executeShellTool.execute({ command: 'echo test' }, ctx);
     expect(first.success).toBe(false);
     expect(first.errorCode).toBe('execute_shell.permission_denied');
 
     // Restore full permission (works without agent user) and verify concurrency slot is free.
-    process.env['AGENT_CONFIG'] = JSON.stringify({ permissionLevel: 'full' });
-    const second = await executeShellTool.execute({ command: 'echo ok' }, ctx);
+    const ctx2 = makeCtx({ capabilityEngine: engine, permissionLevel: 'full' });
+    const second = await executeShellTool.execute({ command: 'echo ok' }, ctx2);
     expect(second.success).toBe(true);
     expect((second.data as Record<string, unknown>)['stdout']).toContain('ok');
   });
@@ -523,7 +519,7 @@ describe('execute_shell tool', () => {
 
       const result = await freshExecuteShell!.execute(
         { command: 'whoami' },
-        makeCtx(),
+        makeCtx({ permissionLevel: 'full' }),
       );
 
       expect(result.success).toBe(true);
@@ -569,7 +565,7 @@ describe('execute_shell tool', () => {
 
       const result = await freshExecuteShell!.execute(
         { command: 'whoami' },
-        makeCtx(),
+        makeCtx({ permissionLevel: 'standard' }),
       );
 
       expect(result.success).toBe(true);
@@ -616,7 +612,7 @@ describe('execute_shell tool', () => {
 
       const result = await freshExecuteShell!.execute(
         { command: 'ls -la' },
-        makeCtx(),
+        makeCtx({ permissionLevel: 'full' }),
       );
 
       expect(result.success).toBe(true);
@@ -666,7 +662,7 @@ describe('execute_shell tool', () => {
 
       const result = await freshExecuteShell!.execute(
         { command: 'ls', workingDir: '/tmp' },
-        makeCtx(),
+        makeCtx({ permissionLevel: 'full' }),
       );
 
       expect(result.success).toBe(true);
@@ -710,7 +706,7 @@ describe('execute_shell tool', () => {
 
       const result = await freshExecuteShell!.execute(
         { command: 'ls', workingDir: 'subdir' },
-        makeCtx(),
+        makeCtx({ permissionLevel: 'full' }),
       );
 
       expect(result.success).toBe(true);
@@ -810,27 +806,27 @@ describe('execute_shell tool', () => {
 
   // ── Permission level edge cases ─────────────────────────────────────────
 
-  it('defaults to standard when AGENT_CONFIG has invalid JSON', async () => {
+  it('ctx.permissionLevel takes precedence even when AGENT_CONFIG has invalid JSON', async () => {
     process.env['AGENT_CONFIG'] = '{{invalid json';
-    const ctx = makeCtx();
+    const ctx = makeCtx({ permissionLevel: 'full' });
     const result = await executeShellTool.execute(
       { command: 'echo fallback' },
       ctx,
     );
 
-    // Should not be permission_denied (restricted); invalid JSON → standard
+    // permissionLevel comes from ctx, not env — full level should succeed
     expect(result.errorCode).not.toBe('execute_shell.permission_denied');
   });
 
-  it('defaults to standard when AGENT_CONFIG has unknown permission level', async () => {
+  it('ctx.permissionLevel takes precedence even when AGENT_CONFIG has unknown permission level', async () => {
     process.env['AGENT_CONFIG'] = JSON.stringify({ permissionLevel: 'superadmin' });
-    const ctx = makeCtx();
+    const ctx = makeCtx({ permissionLevel: 'standard' });
     const result = await executeShellTool.execute(
       { command: 'echo fallback' },
       ctx,
     );
 
-    // Unknown level → standard → allowed
+    // permissionLevel comes from ctx — standard level is allowed
     expect(result.errorCode).not.toBe('execute_shell.permission_denied');
   });
 
