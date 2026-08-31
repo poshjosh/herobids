@@ -578,7 +578,7 @@ agentRuntime:
     memoryMb: 512              # Docker Memory limit in MB (cgroup hard limit)
     maxWallClockMs: 0          # how long an agent session lives. 0 = unlimited
     tempStorageMb: 100         # Docker tmpfs/storage limit in MB
-    maxProcesses: 50           # ulimit nproc: max concurrent processes inside container
+    maxProcesses: 128          # ulimit nproc: max concurrent processes inside container
     maxRequestsPerMinute: 60   # in-process outbound request rate limit
     maxConcurrentConnections: 10  # in-process concurrent connection limit
     maxResponseBytes: 10485760    # max single response size (10 MB)
@@ -629,21 +629,21 @@ agentRuntime:
       memoryLimitMb: 512
       memoryReservationMb: 256
       cpuShares: 256
-      maxProcesses: 50
+      maxProcesses: 128
       tempStorageMb: 100
       maxWallClockMs: 0
     starter:
       memoryLimitMb: 512
       memoryReservationMb: 256
       cpuShares: 256
-      maxProcesses: 50
+      maxProcesses: 128
       tempStorageMb: 100
       maxWallClockMs: 0
     pro:
       memoryLimitMb: 2048
       memoryReservationMb: 1024
       cpuShares: 512
-      maxProcesses: 100
+      maxProcesses: 200
       tempStorageMb: 500
       maxWallClockMs: 0
   tools:

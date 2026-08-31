@@ -146,7 +146,19 @@ const executeShellTool: AgentTool = {
         maxBuffer: Math.max(MAX_OUTPUT * 2, 2 * 1_048_576),
         cwd,
         env: hasSandbox
-          ? { PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', TIMEOUT: String(Math.ceil(TIMEOUT_MS / 1000)) }
+          ? {
+            PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+            TIMEOUT: String(Math.ceil(TIMEOUT_MS / 1000)),
+            // HOME is required so agent-browser resolves ~/.agent-browser/config.json correctly.
+            // AGENT_BROWSER_CONFIG is the explicit config path set by the entrypoint.
+            // Neither is a secret — safe to pass through the sandbox boundary.
+            HOME: '/home/agent',
+            ...(process.env['AGENT_BROWSER_CONFIG'] ? { AGENT_BROWSER_CONFIG: process.env['AGENT_BROWSER_CONFIG'] } : {}),
+            // SANDBOX_ALLOWED_HOSTS is read by sandbox-exec.sh to add iptables allow
+            // rules for specific IPs (e.g. the browser pool). Without it the sandbox
+            // blocks all RFC 1918 traffic and agent-browser CDP connections time out.
+            ...(process.env['SANDBOX_ALLOWED_HOSTS'] ? { SANDBOX_ALLOWED_HOSTS: process.env['SANDBOX_ALLOWED_HOSTS'] } : {}),
+          }
           : process.env,
       });
       stdout = String(result.stdout || '').slice(0, MAX_OUTPUT);

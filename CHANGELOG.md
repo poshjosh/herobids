@@ -8,6 +8,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Update production Creem product IDs to new live store
 
+### Changed
+
+- Agent container PID limits raised — `sandboxDefaults.maxProcesses` from 50 to 128, `free`/`starter` profiles from 50 to 128, `pro` from 100 to 200. The previous limit of 50 was too low for workflows using `agent-browser` (which spawns daemon processes) combined with the sandbox network namespace overhead.
+- Sandbox environment for `execute_shell` and `execute_code` now passes `HOME=/home/agent`, `AGENT_BROWSER_CONFIG`, and `SANDBOX_ALLOWED_HOSTS` (when set) through to child processes. These are non-secret values required by the `agent-browser` CLI and `sandbox-exec.sh` to function correctly inside the sandbox.
+
+### Fixed
+
+- `agent-browser` socket directory owned by root — the agent container entrypoint created `/home/agent/.agent-browser/` as root, making it unwritable by the `agent` user (uid 1001). The CLI requires a writable socket directory and failed before reading any config. The entrypoint now `chown`s the directory to `agent:agent` after creation.
+
+- `agent-browser` CDP config missing for root context — `execute_code` runs as root (`HOME=/root`) but the entrypoint only wrote the CDP config to `/home/agent/.agent-browser/config.json`. The CLI resolved `~/.agent-browser/config.json` to `/root/.agent-browser/config.json` (not found) and fell back to local Chromium launch, which failed. The entrypoint now writes the config to both `/home/agent/` and `/root/` paths.
+
 ### Added
 
 - `NomadClient` — shared Nomad HTTP client extracted from `NomadRuntimeAdapter`. Encapsulates base URL, ACL token, and timeout. Includes `resolveService()` for Nomad native service discovery (`GET /v1/service/<name>`).
