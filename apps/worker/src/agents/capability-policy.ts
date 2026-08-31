@@ -201,6 +201,12 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     tier: 'never',
     enabled: false,
   },
+  {
+    capability: 'browse_interactive',
+    tier: 'direct',
+    enabled: true,
+    limits: { maxPerMinute: 10, maxConcurrent: 2, timeoutMs: 60_000, maxResponseBytes: 512 * 1024 },
+  },  
 ];
 
 export function buildCapabilityPolicyEngine(toolPolicy?: Record<string, unknown> | null): CapabilityPolicyEngine {

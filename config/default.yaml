@@ -1093,8 +1093,8 @@ externalSkills:
 # Shared browser automation service (Browserless). Infrastructure-level config.
 # Agents acquire CDP sessions from this pool via the BrowserPoolPort.
 browserPool:
-  enabled: false
-  url: ""
+  enabled: true
+  url: "http://browser-pool:3000"
   maxSessionDurationMs: 60000
   defaultViewport:
     width: 1280
