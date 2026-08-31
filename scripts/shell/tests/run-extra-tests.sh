@@ -220,6 +220,7 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   tier_enabled 4 && echo -e "  ${BLUE}Tier 4${RESET} (full stack, no keys) → agent-document-handling-test.sh"
   tier_enabled 4 && echo -e "                                          → agent-scanner-gated-lifecycle-test.sh"
   tier_enabled 4 && echo -e "                                          → browser-pool-agent-browser-smoke-test.sh"
+  tier_enabled 4 && echo -e "                                          → sandbox-allowlist-smoke-test.sh"
   tier_enabled 5 && echo -e "  ${BLUE}Tier 5${RESET} (full stack + venue)  → agent-trade-test.sh"
   tier_enabled 5 && echo -e "                                          → bot-trade-test.sh"
   tier_enabled 5 && echo -e "                                          → platform-preset-assessment-test.sh"
@@ -492,6 +493,9 @@ if tier_enabled 4; then
 
   run_script "browser-pool-agent-browser-smoke (CLI → Browserless → CDP)" \
     "${TESTS_DIR}/browser-pool-agent-browser-smoke-test.sh"
+
+  run_script "sandbox-allowlist-smoke (SANDBOX_ALLOWED_HOSTS iptables)" \
+    "${TESTS_DIR}/sandbox-allowlist-smoke-test.sh"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
