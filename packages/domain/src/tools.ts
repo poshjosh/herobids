@@ -314,6 +314,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'delete_memory',
   'discover_tokens',
   'execute_code',
+  'execute_shell',
   'find_instrument',
   'get_account_summary',
   'get_analytics',
@@ -461,6 +462,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
 
   // execute-filesystem
   execute_code:        { category: 'execute-filesystem',  description: 'Execute JavaScript (Node.js) or Python code in a workspace-backed environment. Supports optional package installation.' },
+  execute_shell:       { category: 'execute-filesystem',  description: 'Execute arbitrary shell commands in the agent workspace. Available at standard and full permission levels.' },
 };
 
 /** Look up a tool's catalog entry by name. Returns undefined for unknown tools. */

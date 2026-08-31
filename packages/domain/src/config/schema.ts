@@ -285,6 +285,10 @@ export type AgentRuntimePolicyOverrides = z.infer<typeof AgentRuntimePolicyOverr
 export const AgentStyleSchema = z.enum(['careful', 'balanced', 'bold']);
 export type AgentStyleValue = z.infer<typeof AgentStyleSchema>;
 
+/** Agent permission level — controls tool visibility and sandbox config. */
+export const PermissionLevelSchema = z.enum(['restricted', 'standard', 'full']);
+export type PermissionLevel = z.infer<typeof PermissionLevelSchema>;
+
 /**
  * Full resolved runtime policy for an agent.
  * Every field is guaranteed present — resolved from style defaults + overrides.

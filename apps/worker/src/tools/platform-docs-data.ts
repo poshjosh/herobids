@@ -2161,7 +2161,7 @@ Your agent will typically use less than its daily limit/budget and will never ex
 See [Agent Style](/docs/agents/agent-style) for the full breakdown of what each style controls.
 
 See [Agent Billing Limits](/docs/agents/billing-limits) for how we prevent surprise bills.`,
-    headings: ['Subscription Plans', 'Agent runtime', 'LLM usage', 'Cost limits', 'Related'],
+    headings: ['Subscription Plans', 'Agent runtime', 'Browser sessions', 'LLM usage', 'Cost limits', 'Related'],
     tags: ['help', 'pricing'],
   },
   {

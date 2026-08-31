@@ -145,6 +145,57 @@ describe('KNOWN_AGENT_TOOL_NAMES — alphabetical ordering', () => {
   });
 });
 
+// ── KNOWN_AGENT_TOOL_NAMES — execute_shell ──────────────────────────────────
+
+describe('KNOWN_AGENT_TOOL_NAMES — execute_shell', () => {
+  it('includes execute_shell', () => {
+    expect(KNOWN_AGENT_TOOL_NAMES).toContain('execute_shell');
+  });
+
+  it('recognises execute_shell via isKnownAgentToolName()', () => {
+    expect(isKnownAgentToolName('execute_shell')).toBe(true);
+  });
+
+  it('maintains execute_code < execute_shell alphabetical order', () => {
+    const names = KNOWN_AGENT_TOOL_NAMES as readonly string[];
+    const idxCode = names.indexOf('execute_code');
+    const idxShell = names.indexOf('execute_shell');
+    expect(idxCode).toBeGreaterThanOrEqual(0);
+    expect(idxShell).toBeGreaterThanOrEqual(0);
+    expect(idxCode).toBeLessThan(idxShell);
+  });
+});
+
+// ── TOOL_CATALOG — execute_shell entry ──────────────────────────────────────
+
+describe('TOOL_CATALOG — execute_shell entry', () => {
+  it('has an entry for execute_shell', () => {
+    const entry = getToolCatalogEntry('execute_shell');
+    expect(entry).toBeDefined();
+  });
+
+  it('execute_shell has category execute-filesystem', () => {
+    const entry = getToolCatalogEntry('execute_shell');
+    expect(entry!.category).toBe('execute-filesystem');
+  });
+
+  it('execute_shell has a non-empty description', () => {
+    const entry = getToolCatalogEntry('execute_shell');
+    expect(entry!.description.length).toBeGreaterThan(0);
+  });
+
+  it('execute_shell description mentions permission levels', () => {
+    const entry = getToolCatalogEntry('execute_shell');
+    expect(entry!.description).toContain('permission level');
+  });
+
+  it('execute_shell shares execute-filesystem category with execute_code', () => {
+    const shellEntry = getToolCatalogEntry('execute_shell');
+    const codeEntry = getToolCatalogEntry('execute_code');
+    expect(shellEntry!.category).toBe(codeEntry!.category);
+  });
+});
+
 // ── findUnknownSkillTools ───────────────────────────────────────────────────
 
 describe('findUnknownSkillTools()', () => {

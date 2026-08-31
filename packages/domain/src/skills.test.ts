@@ -245,3 +245,32 @@ describe('TOOL_OWNER_OVERRIDES', () => {
     }
   });
 });
+
+// ── PROGRAMMING_SKILL — execute_shell ───────────────────────────────────────
+
+describe('PROGRAMMING_SKILL', () => {
+  it('has id "programming"', () => {
+    expect(PROGRAMMING_SKILL.id).toBe('programming');
+  });
+
+  it('requiredTools includes execute_code', () => {
+    expect(PROGRAMMING_SKILL.requiredTools).toContain('execute_code');
+  });
+
+  it('requiredTools includes execute_shell', () => {
+    expect(PROGRAMMING_SKILL.requiredTools).toContain('execute_shell');
+  });
+
+  it('requiredTools contains exactly execute_code and execute_shell', () => {
+    expect(PROGRAMMING_SKILL.requiredTools).toEqual(['execute_code', 'execute_shell']);
+  });
+
+  it('instructions mention execute_shell', () => {
+    expect(PROGRAMMING_SKILL.instructions).toContain('execute_shell');
+  });
+
+  it('instructions mention permission level fallback to execute_code', () => {
+    expect(PROGRAMMING_SKILL.instructions).toContain('permission level');
+    expect(PROGRAMMING_SKILL.instructions).toContain('execute_code');
+  });
+});

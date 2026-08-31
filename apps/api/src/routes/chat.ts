@@ -1413,6 +1413,7 @@ export async function executeChatAction(
             prompt,
             status: 'stopped',
             style: style as 'careful' | 'balanced' | 'bold' | null,
+            permissionLevel: 'standard',
             capital: parsed.data.capital ?? null,
             strategy: createFields.strategy as Record<string, unknown> | null,
             executionDefaults: createFields.executionDefaults as { mode: string; slippageBps: number } | null,

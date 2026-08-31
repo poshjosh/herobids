@@ -24,6 +24,7 @@ import { platformDocsTools } from './platform-docs.js';
 import { skillTools } from './skills.js';
 import { createBrowserTools } from './browser.js';
 import { httpClientTools } from './http-client.js';
+import { shellTools } from './shell.js';
 import type { BrowserPoolPort } from '@herobids/domain';
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
@@ -96,6 +97,7 @@ export function createToolRegistry(deps?: ToolRegistryDeps): ToolRegistry {
     ...botManagementTools,
     ...analyticsTools,
     ...codeTools,
+    ...shellTools,
     ...filesystemTools,
     ...marketDataTools,
     ...priceTools,

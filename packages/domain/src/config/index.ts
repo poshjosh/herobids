@@ -85,6 +85,8 @@ export {
   TRADING_SESSION_NAMES,
   TradingSessionNameSchema,
   AgentStyleSchema,
+  PermissionLevelSchema,
+  type PermissionLevel,
   RUNTIME_POLICY_CEILINGS,
   AGENT_STYLE_RUNTIME_DEFAULTS,
   resolveAgentRuntimePolicy,

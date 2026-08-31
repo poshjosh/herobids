@@ -14,6 +14,10 @@ export type OrderStatus =
 
 export type ExecutionMode = 'paper' | 'shadow' | 'live';
 
+export type { PermissionLevel } from './config/schema.js';
+
+export const DEFAULT_PERMISSION_LEVEL = 'standard' as const;
+
 export type VenueType = 'orderbook' | 'swap';
 
 export type DecisionIntent =

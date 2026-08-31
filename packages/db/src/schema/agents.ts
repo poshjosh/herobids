@@ -13,6 +13,8 @@ export const agents = pgTable('agents', {
   name: text('name').notNull(),
   /** UX style hint used to derive defaults (careful, balanced, bold). Informational only. */
   style: varchar('style', { length: 16 }),
+  /** Agent permission level: restricted, standard, or full. Controls tool visibility and sandbox config. */
+  permissionLevel: varchar('permission_level', { length: 16 }).notNull().default('standard'),
   /** Per-agent runtime policy overrides — sparse JSONB of fields the user explicitly set beyond the style default. */
   runtimePolicyOverrides: jsonb('runtime_policy_overrides').$type<AgentRuntimePolicyOverrides | null>(),
   /** High-level goal injected into every agent prompt tick */

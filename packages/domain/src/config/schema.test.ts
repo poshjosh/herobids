@@ -12,6 +12,7 @@ import {
   AgentRuntimePolicyOverridesSchema,
   AgentStyleSchema,
   ReasoningLevelSchema,
+  PermissionLevelSchema,
   RUNTIME_POLICY_CEILINGS,
   AGENT_STYLE_RUNTIME_DEFAULTS,
   resolveAgentRuntimePolicy,
@@ -1702,5 +1703,40 @@ describe('ExecutionDefaultsSchema — sliageBps null tolerance', () => {
 
   it('rejects a negative slippageBps', () => {
     expect(() => ExecutionDefaultsSchema.parse({ mode: 'paper', slippageBps: -1 })).toThrow();
+  });
+});
+
+// ── PermissionLevelSchema ───────────────────────────────────────────────────
+
+describe('PermissionLevelSchema', () => {
+  it.each(['restricted', 'standard', 'full'])(
+    'accepts valid permission level "%s"',
+    (level) => {
+      expect(PermissionLevelSchema.parse(level)).toBe(level);
+    },
+  );
+
+  it('rejects an invalid permission level', () => {
+    expect(() => PermissionLevelSchema.parse('admin')).toThrow();
+  });
+
+  it('rejects an empty string', () => {
+    expect(() => PermissionLevelSchema.parse('')).toThrow();
+  });
+
+  it('rejects numeric input', () => {
+    expect(() => PermissionLevelSchema.parse(1)).toThrow();
+  });
+
+  it('rejects null', () => {
+    expect(() => PermissionLevelSchema.parse(null)).toThrow();
+  });
+
+  it('rejects undefined', () => {
+    expect(() => PermissionLevelSchema.parse(undefined)).toThrow();
+  });
+
+  it('has exactly three valid values', () => {
+    expect(PermissionLevelSchema.options).toEqual(['restricted', 'standard', 'full']);
   });
 });

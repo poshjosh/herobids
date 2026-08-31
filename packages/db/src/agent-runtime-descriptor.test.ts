@@ -56,7 +56,7 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
 
     expect(descriptor.resolvedSkills.map((skill) => skill.id)).toEqual(['base', 'programming']);
     expect(descriptor.resolvedSkills[1]?.requiredTools).toEqual(PROGRAMMING_SKILL.requiredTools);
-    expect(descriptor.resolvedSkills[1]?.requiredTools).toEqual(['execute_code']);
+    expect(descriptor.resolvedSkills[1]?.requiredTools).toEqual(['execute_code', 'execute_shell']);
   });
 
   it('resolves the built-in file-management skill with workspace tools', async () => {

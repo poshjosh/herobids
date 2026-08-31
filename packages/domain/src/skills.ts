@@ -229,10 +229,12 @@ export const PROGRAMMING_SKILL: SkillDefinition = {
   instructions: `You have access to programming tools for code-driven automation, external API calls etc.
 
 - Use \`execute_code\` to run JavaScript or Python for custom automation, external API calls, analysis, data processing etc.
-- The tool supports JavaScript/Node.js and Python runtimes as well as optional dependency installation.
-- The tool returns stdout/stderr so you can inspect execution results directly.
+- Use \`execute_shell\` to run shell commands for git operations, build tools, package management, and system tasks.
+- The tools available to you depend on your permission level. If \`execute_shell\` is not available, use \`execute_code\` instead.
+- The tools support JavaScript/Node.js and Python runtimes as well as optional dependency installation.
+- The tools return stdout/stderr so you can inspect execution results directly.
 - Code can access the public internet.`,
-  requiredTools: ['execute_code'],
+  requiredTools: ['execute_code', 'execute_shell'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],

@@ -37,6 +37,7 @@ import {
   CapabilityModeSchema,
   ExecutionDefaultsSchema,
   HybridModeSchema,
+  PermissionLevelSchema,
   RiskPostureSchema,
   RUNTIME_POLICY_CEILINGS,
   StrategyIdentitySchema,
@@ -134,6 +135,7 @@ const CreateAgentSchema = z.object({
     'contrarian',
   ]).optional(),
   runtimePolicyOverrides: AgentRuntimePolicyOverridesSchema.optional(),
+  permissionLevel: PermissionLevelSchema.optional(),
   openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
   connectionIds: z.array(z.string().min(1)).max(20).optional(),
   wakePreferences: WakePreferencesSchema.optional(),
@@ -223,6 +225,7 @@ const UpdateAgentSchema = z.object({
     'contrarian',
   ]).nullable().optional(),
   runtimePolicyOverrides: AgentRuntimePolicyOverridesSchema.nullable().optional(),
+  permissionLevel: PermissionLevelSchema.optional(),
   openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
   connectionIds: z.array(z.string().min(1)).max(20).optional(),
   wakePreferences: WakePreferencesSchema.nullable().optional(),
@@ -280,6 +283,7 @@ function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: st
   platformAssessment: { enabled?: boolean; reviewIntervalMs?: number } | null;
   authorizationMode: string | null;
   skillPresetId: string | null;
+  permissionLevel: string;
 } {
   const { strategyPreset, strategyPresetName, skillPresetId } = extractPresetMeta(agent.unifiedConfig);
   const uc = agent.unifiedConfig as Record<string, unknown> | null;
@@ -294,6 +298,7 @@ function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: st
     platformAssessment: pa ? { enabled: pa['enabled'] as boolean | undefined, reviewIntervalMs: pa['reviewIntervalMs'] as number | undefined } : null,
     authorizationMode: typeof authMode === 'string' && authMode.length > 0 ? authMode : null,
     skillPresetId,
+    permissionLevel: agent.permissionLevel,
   };
 }
 
@@ -550,6 +555,7 @@ export async function agentRoutes(
       strategy: parsed.data.strategy,
       executionVenue: parsed.data.executionVenue,
       runtimePolicyOverrides: parsed.data.runtimePolicyOverrides ?? null,
+      permissionLevel: parsed.data.permissionLevel,
       notificationPolicy: parsed.data.notificationPolicy !== undefined
         ? (parsed.data.notificationPolicy === null ? null : parsed.data.notificationPolicy)
         : null,
@@ -602,6 +608,7 @@ export async function agentRoutes(
           tickIntervalMs: parsed.data.tickIntervalMs ?? null,
           capital: parsed.data.capital ?? null,
           style: parsed.data.style ?? null,
+          permissionLevel: parsed.data.permissionLevel ?? 'standard',
           runtimePolicyOverrides: createFields.runtimePolicyOverrides,
           openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
           ...(createFields.unifiedConfig ? { unifiedConfig: createFields.unifiedConfig } : {}),
@@ -1101,6 +1108,7 @@ export async function agentRoutes(
       strategyPreset: strategyPresetUpdate,
       capabilityMode: capabilityModeUpdate,
       hybridMode: hybridModeUpdate,
+      permissionLevel: rawPermissionLevel,
       ...agentUpdates
     } = parsed.data;
     void _skillIds;
@@ -1522,6 +1530,7 @@ export async function agentRoutes(
         await tx.update(agents).set({
           ...agentUpdates,
           ...(rawTelegramChatId !== undefined ? { telegramChatId: rawTelegramChatId?.trim() || null } : {}),
+          ...(rawPermissionLevel !== undefined ? { permissionLevel: rawPermissionLevel ?? 'standard' } : {}),
           ...resolvedMaxBotsPatch,
           ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
           ...(unifiedConfigPatch !== undefined ? { unifiedConfig: unifiedConfigPatch } : {}),
