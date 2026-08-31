@@ -190,29 +190,102 @@ describe('ExternalSkillProviderHttp — search (skills.sh)', () => {
     expect(result.results).toHaveLength(5);
   });
 
-  it('throws on network error', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+  it('falls back to mastra search on network error', async () => {
+    const mastraSkill = makeMastraSkill({ skillId: 'fallback-skill', displayName: 'Fallback' });
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new Error('ECONNREFUSED'))                              // skills.sh fails
+      .mockResolvedValueOnce(okJsonResponse(makeMastraPageBody([mastraSkill], { total: 1 }))); // mastra fallback
+    vi.stubGlobal('fetch', fetchMock);
+
+    const logger = makeLogger();
+    const provider = new ExternalSkillProviderHttp(makeConfig(), logger);
+    const result = await provider.search('test', { page: 1, pageSize: 20 });
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]!.skillId).toBe('fallback-skill');
+    expect(logger.warn).toHaveBeenCalled();
+    // Two fetch calls: skills.sh (failed) + mastra (fallback)
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [mastraUrl] = fetchMock.mock.calls[1]! as [URL];
+    expect(mastraUrl.toString()).toContain('mastra.local:3456/api/skills');
+    expect(mastraUrl.searchParams.get('query')).toBe('test');
+  });
+
+  it('falls back to mastra search on non-2xx response', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(errorResponse(429))                                       // skills.sh 429
+      .mockResolvedValueOnce(okJsonResponse(makeMastraPageBody([], { total: 0 })));    // mastra fallback
+    vi.stubGlobal('fetch', fetchMock);
+
+    const logger = makeLogger();
+    const provider = new ExternalSkillProviderHttp(makeConfig(), logger);
+    const result = await provider.search('test', { page: 1, pageSize: 20 });
+
+    expect(result.results).toHaveLength(0);
+    expect(logger.warn).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back to mastra search on Zod validation failure', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okJsonResponse({ bad: 'shape' }))                          // skills.sh bad response
+      .mockResolvedValueOnce(okJsonResponse(makeMastraPageBody([], { total: 0 })));     // mastra fallback
+    vi.stubGlobal('fetch', fetchMock);
+
+    const logger = makeLogger();
+    const provider = new ExternalSkillProviderHttp(makeConfig(), logger);
+    const result = await provider.search('test', { page: 1, pageSize: 5 });
+
+    expect(result.results).toHaveLength(0);
+    expect(logger.warn).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns stale cache instead of falling back to mastra when cache exists for same query', async () => {
+    vi.useFakeTimers();
+
+    const cachedSkill = makeSkillsShSkill({ id: 'o/r/cached', skillId: 'cached', source: 'o/r' });
+    const fetchMock = vi.fn()
+      // First call: skills.sh succeeds → populates cache
+      .mockResolvedValueOnce(okJsonResponse(makeSkillsShSearchBody([cachedSkill])))
+      // Second call: skills.sh fails (cache is stale but still present)
+      .mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    vi.stubGlobal('fetch', fetchMock);
+
     const provider = new ExternalSkillProviderHttp(makeConfig(), makeLogger());
 
-    await expect(provider.search('test', { page: 1, pageSize: 20 })).rejects.toThrow('ECONNREFUSED');
+    // Populate the cache
+    const first = await provider.search('test', { page: 1, pageSize: 20 });
+    expect(first.results).toHaveLength(1);
+    expect(first.results[0]!.skillId).toBe('cached');
+
+    // Advance past the 60s search cache TTL so fetchSkillsShSearch re-fetches
+    vi.advanceTimersByTime(61_000);
+
+    // skills.sh fails but stale cache is returned — no mastra fallback
+    const second = await provider.search('test', { page: 1, pageSize: 20 });
+    expect(second.results).toHaveLength(1);
+    expect(second.results[0]!.skillId).toBe('cached');
+
+    // 2 fetch calls: initial skills.sh + failed retry after TTL. No mastra call.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
   });
 
-  it('throws on non-2xx response', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(errorResponse(500)));
+  it('returns empty page when both skills.sh and mastra fail', async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new Error('skills.sh down'))                             // skills.sh fails
+      .mockRejectedValueOnce(new Error('mastra down'));                               // mastra fallback also fails
+    vi.stubGlobal('fetch', fetchMock);
+
     const logger = makeLogger();
     const provider = new ExternalSkillProviderHttp(makeConfig(), logger);
+    const result = await provider.search('test', { page: 1, pageSize: 20 });
 
-    await expect(provider.search('test', { page: 1, pageSize: 20 })).rejects.toThrow('skills.sh search returned 500');
+    expect(result).toEqual({ results: [], totalCount: 0, page: 1, pageSize: 20 });
     expect(logger.warn).toHaveBeenCalled();
-  });
-
-  it('throws on Zod validation failure', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJsonResponse({ bad: 'shape' })));
-    const logger = makeLogger();
-    const provider = new ExternalSkillProviderHttp(makeConfig(), logger);
-
-    await expect(provider.search('test', { page: 1, pageSize: 5 })).rejects.toThrow('validation failed');
-    expect(logger.warn).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('returns empty slice for page beyond results', async () => {

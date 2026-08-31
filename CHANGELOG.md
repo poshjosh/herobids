@@ -12,6 +12,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Agent container PID limits raised — `sandboxDefaults.maxProcesses` from 50 to 128, `free`/`starter` profiles from 50 to 128, `pro` from 100 to 200. The previous limit of 50 was too low for workflows using `agent-browser` (which spawns daemon processes) combined with the sandbox network namespace overhead.
 - Sandbox environment for `execute_shell` and `execute_code` now passes `HOME=/home/agent`, `AGENT_BROWSER_CONFIG`, and `SANDBOX_ALLOWED_HOSTS` (when set) through to child processes. These are non-secret values required by the `agent-browser` CLI and `sandbox-exec.sh` to function correctly inside the sandbox.
+- `execute_shell` and `execute_code` error messages now include up to 200 characters of stderr (e.g. `execute_shell failed with exit code 1: ✗ Element @e33 not found`) instead of the generic `execute_shell failed with exit code 1`. Gives the agent actionable diagnostic context and improves the audit trail.
+- External skill search (`search_skills`) falls back to the self-hosted `@mastra/skills-api` when skills.sh is unavailable (429, timeout, network error). The fallback uses the `query` parameter on `/api/skills` (34k skills vs 600k) but is fully self-hosted with no third-party rate limits.
 
 ### Fixed
 

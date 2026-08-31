@@ -172,12 +172,25 @@ export class ExternalSkillProviderHttp implements ExternalSkillProvider {
    *
    * skills.sh has no server-side pagination. We fetch up to 200 results
    * (the API max), cache them briefly, and slice the requested page locally.
+   *
+   * Falls back to the self-hosted @mastra/skills-api (34k+ skills) when
+   * skills.sh is unavailable (429, timeout, network error). The fallback
+   * uses the `query` parameter on the `/api/skills` endpoint.
    */
   async search(
     query: string,
     opts: { page: number; pageSize: number },
   ): Promise<ExternalSkillPage> {
-    const results = await this.fetchSkillsShSearch(query);
+    let results: ExternalSkillSummary[];
+    try {
+      results = await this.fetchSkillsShSearch(query);
+    } catch (e) {
+      // skills.sh failed and no stale cache — fall back to self-hosted Mastra API.
+      const reason = e instanceof Error ? e.message : String(e);
+      this.log.warn({ query, reason }, 'skills.sh search failed, falling back to self-hosted skills-api');
+      return this.fetchMastraSearch(query, opts.page, opts.pageSize);
+    }
+
     if (results.length === 0) {
       return emptyPage(opts.page, opts.pageSize);
     }
@@ -297,6 +310,23 @@ export class ExternalSkillProviderHttp implements ExternalSkillProvider {
   }
 
   // ── Private: @mastra/skills-api browse ────────────────────────────
+
+  /**
+   * Search fallback via the self-hosted @mastra/skills-api `query` parameter.
+   * Smaller catalog (34k vs 600k) but fully self-hosted — no third-party rate limits.
+   */
+  private async fetchMastraSearch(
+    query: string,
+    page: number,
+    pageSize: number,
+  ): Promise<ExternalSkillPage> {
+    const url = new URL(`${this.baseUrl}/api/skills`);
+    url.searchParams.set('query', query);
+    url.searchParams.set('page', String(page));
+    url.searchParams.set('pageSize', String(pageSize));
+
+    return this.fetchMastraPage(url, this.searchTimeoutMs, page, pageSize);
+  }
 
   private async fetchMastraPage(
     url: URL,
