@@ -36,6 +36,7 @@ import { BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, AGENT_STREAM_MAXLEN, Technic
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
 import crypto from 'node:crypto';
+import { lookup } from 'node:dns/promises';
 import { resolve } from 'node:path';
 import { loadConfig, MONOREPO_CONFIG_DIR } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
@@ -560,6 +561,25 @@ const agentRuntimeLauncher = await (async () => {
     }
   }
 
+  // Resolve browser pool hostname to IP for sandbox allowlist.
+  // Docker service names can't resolve inside the sandbox network namespace (uses public DNS).
+  let browserPoolResolvedHost: string | undefined;
+  if (resolvedBrowserPoolUrl) {
+    try {
+      const hostname = new URL(resolvedBrowserPoolUrl).hostname;
+      const isIp = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname);
+      if (isIp) {
+        browserPoolResolvedHost = hostname;
+      } else {
+        const result = await lookup(hostname);
+        browserPoolResolvedHost = result.address;
+        logger.info({ hostname, resolvedIp: browserPoolResolvedHost }, 'Resolved browser pool hostname to IP for sandbox allowlist');
+      }
+    } catch (err) {
+      logger.warn({ err, url: resolvedBrowserPoolUrl }, 'Failed to resolve browser pool hostname for sandbox allowlist');
+    }
+  }
+
   // Shared env config used by both Docker and Nomad paths
   const envConfig = {
     redisUrl: appConfig.redis.url,
@@ -594,6 +614,12 @@ const agentRuntimeLauncher = await (async () => {
       : {}),
     ...(resolvedBrowserPoolUrl
       ? { browserPoolUrl: resolvedBrowserPoolUrl }
+      : {}),
+    ...(browserPoolResolvedHost
+      ? { browserPoolResolvedHost }
+      : {}),
+    ...(appConfig.browserPool.apiKey
+      ? { browserPoolApiKey: appConfig.browserPool.apiKey }
       : {}),
   };
 
@@ -641,6 +667,12 @@ const agentRuntimeLauncher = await (async () => {
           : {}),
         ...(resolvedBrowserPoolUrl
           ? { browserPoolUrl: resolvedBrowserPoolUrl }
+          : {}),
+        ...(browserPoolResolvedHost
+          ? { browserPoolResolvedHost }
+          : {}),
+        ...(appConfig.browserPool.apiKey
+          ? { browserPoolApiKey: appConfig.browserPool.apiKey }
           : {}),
         onAgentCrashed: async (agentId, sessionId?) => {
           await cascadeStopAgentBots(agentId);

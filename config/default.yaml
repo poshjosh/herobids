@@ -1104,6 +1104,7 @@ services:
 browserPool:
   enabled: true
   url: "http://browser-pool:3000"
+  apiKey: ""
   maxSessionDurationMs: 60000
   defaultViewport:
     width: 1280

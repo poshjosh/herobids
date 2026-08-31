@@ -29,6 +29,7 @@ describe('BrowserPoolConfigSchema', () => {
     if (result.success) {
       expect(result.data.enabled).toBe(false);
       expect(result.data.url).toBe('');
+      expect(result.data.apiKey).toBe('');
       expect(result.data.maxSessionDurationMs).toBe(60_000);
       expect(result.data.defaultViewport).toEqual({ width: 1280, height: 720 });
     }
@@ -95,6 +96,42 @@ describe('BrowserPoolConfigSchema', () => {
       url: 'ws://browserless:3000',
     });
     expect(result.success).toBe(true);
+  });
+
+  it('defaults apiKey to empty string when omitted', () => {
+    const result = BrowserPoolConfigSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.apiKey).toBe('');
+    }
+  });
+
+  it('accepts an explicit apiKey value', () => {
+    const result = BrowserPoolConfigSchema.safeParse({
+      apiKey: 'my-secret-key',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.apiKey).toBe('my-secret-key');
+    }
+  });
+
+  it('includes apiKey in parsed output alongside other fields', () => {
+    const result = BrowserPoolConfigSchema.safeParse({
+      enabled: true,
+      url: 'ws://browserless:3000',
+      apiKey: 'browser-key-123',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({
+        enabled: true,
+        url: 'ws://browserless:3000',
+        apiKey: 'browser-key-123',
+        maxSessionDurationMs: 60_000,
+        defaultViewport: { width: 1280, height: 720 },
+      });
+    }
   });
 
   it('accepts enabled: false with empty url (no validation needed)', () => {
@@ -282,6 +319,26 @@ describe('BROWSER_SKILL', () => {
 
   it('instructions mention close action', () => {
     expect(BROWSER_SKILL.instructions).toContain('close');
+  });
+
+  it('instructions mention agent-browser CLI', () => {
+    expect(BROWSER_SKILL.instructions).toContain('agent-browser');
+  });
+
+  it('instructions mention execute_shell for running agent-browser', () => {
+    expect(BROWSER_SKILL.instructions).toContain('execute_shell');
+  });
+
+  it('instructions mention agent-browser close for resource cleanup', () => {
+    expect(BROWSER_SKILL.instructions).toContain('agent-browser close');
+  });
+
+  it('instructions describe agent-browser session support', () => {
+    expect(BROWSER_SKILL.instructions).toContain('session');
+  });
+
+  it('instructions mention system/programming skill dependency for CLI', () => {
+    expect(BROWSER_SKILL.instructions).toContain('system/programming');
   });
 
   it('has empty capabilityFamilies', () => {

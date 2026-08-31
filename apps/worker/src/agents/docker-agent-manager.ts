@@ -72,6 +72,13 @@ export interface DockerAgentManagerConfig {
   externalSkillsConfigJson?: string;
   /** Browser pool URL forwarded to agent containers when browser pool is enabled. */
   browserPoolUrl?: string;
+  /** Browserless API key forwarded to agent containers when browser pool is enabled. */
+  browserPoolApiKey?: string;
+  /**
+   * Pre-resolved IP address for the browser pool hostname.
+   * Docker service names cannot resolve inside the sandbox network namespace.
+   */
+  browserPoolResolvedHost?: string;
 }
 
 export interface DockerContainerSpec {
@@ -141,6 +148,8 @@ export class DockerAgentManager {
   private readonly databaseUrl: string | undefined;
   private readonly externalSkillsConfigJson: string | undefined;
   private readonly browserPoolUrl: string | undefined;
+  private readonly browserPoolApiKey: string | undefined;
+  private readonly browserPoolResolvedHost: string | undefined;
   private readonly memoryBytes: number;
   private readonly cpuShares: number;
   private readonly tempStorageMb: number;
@@ -184,6 +193,8 @@ export class DockerAgentManager {
     this.databaseUrl = _config.databaseUrl;
     this.externalSkillsConfigJson = _config.externalSkillsConfigJson;
     this.browserPoolUrl = _config.browserPoolUrl;
+    this.browserPoolApiKey = _config.browserPoolApiKey;
+    this.browserPoolResolvedHost = _config.browserPoolResolvedHost;
     this.memoryBytes = (_config.memoryLimitMb ?? 512) * 1024 * 1024;
     this.cpuShares = _config.cpuShares ?? 512;
     this.tempStorageMb = _config.tempStorageMb ?? 100;
@@ -277,7 +288,13 @@ export class DockerAgentManager {
         ...(process.env['USAGE_BILLING_RATE_CARD'] ? [`USAGE_BILLING_RATE_CARD=${process.env['USAGE_BILLING_RATE_CARD']}`] : []),
         ...(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ? [`USAGE_BILLING_RUNTIME_WINDOW_MS=${process.env['USAGE_BILLING_RUNTIME_WINDOW_MS']}`] : []),
         ...(this.externalSkillsConfigJson ? [`EXTERNAL_SKILLS_CONFIG_JSON=${this.externalSkillsConfigJson}`] : []),
-        ...(this.browserPoolUrl ? [`BROWSER_POOL_URL=${this.browserPoolUrl}`] : []),
+        ...(this.browserPoolUrl ? [
+          `BROWSER_POOL_URL=${this.browserPoolUrl}`,
+          `AGENT_BROWSER_PROVIDER=browserless`,
+          `BROWSERLESS_API_URL=${this.browserPoolUrl}`,
+          `SANDBOX_ALLOWED_HOSTS=${this.browserPoolResolvedHost ?? new URL(this.browserPoolUrl).hostname}`,
+        ] : []),
+        ...(this.browserPoolApiKey ? [`BROWSERLESS_API_KEY=${this.browserPoolApiKey}`] : []),
       ];
     })();
 

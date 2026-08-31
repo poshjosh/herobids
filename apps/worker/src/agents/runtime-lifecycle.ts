@@ -34,6 +34,15 @@ export interface AgentEnvConfig {
   externalSkillsConfigJson?: string;
   /** Browser pool URL forwarded to agent containers when browser pool is enabled. */
   browserPoolUrl?: string;
+  /** Browserless API key forwarded to agent containers when browser pool is enabled. */
+  browserPoolApiKey?: string;
+  /**
+   * Pre-resolved IP address for the browser pool hostname.
+   * Docker service names (e.g. `browserless`) cannot resolve inside the sandbox
+   * network namespace which uses public DNS. The caller resolves the hostname
+   * to an IP before calling `buildAgentEnv()` so iptables rules work correctly.
+   */
+  browserPoolResolvedHost?: string;
   /**
    * Optional: Shared services cluster addresses for agent runtime connectivity.
    * When provided, REDIS_URL and DATABASE_URL are constructed from these
@@ -151,7 +160,21 @@ export function buildAgentEnv(
   if (config.externalSkillsConfigJson) envOut['EXTERNAL_SKILLS_CONFIG_JSON'] = config.externalSkillsConfigJson;
 
   // Browser pool URL — forwarded so agents can use the browse_interactive tool.
-  if (config.browserPoolUrl) envOut['BROWSER_POOL_URL'] = config.browserPoolUrl;
+  if (config.browserPoolUrl) {
+    envOut['BROWSER_POOL_URL'] = config.browserPoolUrl;
+
+    // agent-browser CLI — Browserless provider configuration.
+    envOut['AGENT_BROWSER_PROVIDER'] = 'browserless';
+    envOut['BROWSERLESS_API_URL'] = config.browserPoolUrl;
+
+    // Use pre-resolved IP for sandbox allowlist (Docker hostnames can't resolve inside sandbox).
+    // Fall back to hostname extraction if no pre-resolved value (e.g. when URL is already an IP).
+    const sandboxHost = config.browserPoolResolvedHost ?? new URL(config.browserPoolUrl).hostname;
+    envOut['SANDBOX_ALLOWED_HOSTS'] = sandboxHost;
+  }
+  if (config.browserPoolApiKey) {
+    envOut['BROWSERLESS_API_KEY'] = config.browserPoolApiKey;
+  }
 
   return envOut;
 }

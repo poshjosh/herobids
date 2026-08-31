@@ -1116,6 +1116,7 @@ export const ServicesConfigSchema = z.object({
 export const BrowserPoolConfigSchema = z.object({
   enabled: z.boolean().default(false),
   url: z.string().default(''),
+  apiKey: z.string().default(''),
   maxSessionDurationMs: z.number().int().positive().default(60_000),
   defaultViewport: z.object({
     width: z.number().int().positive().default(1280),

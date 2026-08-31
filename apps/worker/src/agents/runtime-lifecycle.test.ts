@@ -302,6 +302,123 @@ describe('buildAgentEnv', () => {
     expect(env['DATABASE_URL']).toBe('postgres://herobids:herobids@pg.shared:5432/herobids');
     expect(env['REDIS_URL']).toBe('redis://redis.shared:6379');
   });
+
+  // ── Browser pool env vars ───────────────────────────────────────────────
+
+  it('omits browser pool env vars when browserPoolUrl is not set', () => {
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', BASE_ENV_CONFIG);
+    expect(env['BROWSER_POOL_URL']).toBeUndefined();
+    expect(env['AGENT_BROWSER_PROVIDER']).toBeUndefined();
+    expect(env['BROWSERLESS_API_URL']).toBeUndefined();
+    expect(env['SANDBOX_ALLOWED_HOSTS']).toBeUndefined();
+    expect(env['BROWSERLESS_API_KEY']).toBeUndefined();
+  });
+
+  it('sets browser pool env vars when browserPoolUrl is set', () => {
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      browserPoolUrl: 'http://browserless:3000',
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['BROWSER_POOL_URL']).toBe('http://browserless:3000');
+    expect(env['AGENT_BROWSER_PROVIDER']).toBe('browserless');
+    expect(env['BROWSERLESS_API_URL']).toBe('http://browserless:3000');
+    expect(env['SANDBOX_ALLOWED_HOSTS']).toBe('browserless');
+  });
+
+  it('extracts hostname from browserPoolUrl with port for SANDBOX_ALLOWED_HOSTS', () => {
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      browserPoolUrl: 'http://browser.internal:8080',
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['SANDBOX_ALLOWED_HOSTS']).toBe('browser.internal');
+  });
+
+  it('passes IP address through for SANDBOX_ALLOWED_HOSTS when URL uses IP', () => {
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      browserPoolUrl: 'http://172.18.0.5:3000',
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['SANDBOX_ALLOWED_HOSTS']).toBe('172.18.0.5');
+  });
+
+  it('uses browserPoolResolvedHost for SANDBOX_ALLOWED_HOSTS when provided', () => {
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      browserPoolUrl: 'http://browserless:3000',
+      browserPoolResolvedHost: '172.18.0.5',
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['SANDBOX_ALLOWED_HOSTS']).toBe('172.18.0.5');
+  });
+
+  it('falls back to hostname extraction when browserPoolResolvedHost is not set', () => {
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      browserPoolUrl: 'http://browserless:3000',
+      // browserPoolResolvedHost intentionally omitted
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['SANDBOX_ALLOWED_HOSTS']).toBe('browserless');
+  });
+
+  it('omits BROWSERLESS_API_KEY when browserPoolApiKey is not set', () => {
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      browserPoolUrl: 'http://browserless:3000',
+      // browserPoolApiKey intentionally omitted
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['BROWSERLESS_API_KEY']).toBeUndefined();
+  });
+
+  it('sets BROWSERLESS_API_KEY when browserPoolApiKey is provided', () => {
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      browserPoolUrl: 'http://browserless:3000',
+      browserPoolApiKey: 'my-api-key',
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['BROWSERLESS_API_KEY']).toBe('my-api-key');
+  });
+
+  it('sets BROWSERLESS_API_KEY even without browserPoolUrl', () => {
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      browserPoolApiKey: 'standalone-key',
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['BROWSERLESS_API_KEY']).toBe('standalone-key');
+    // Without browserPoolUrl, the other browser vars should be absent
+    expect(env['AGENT_BROWSER_PROVIDER']).toBeUndefined();
+    expect(env['BROWSERLESS_API_URL']).toBeUndefined();
+    expect(env['SANDBOX_ALLOWED_HOSTS']).toBeUndefined();
+  });
+
+  it('sets all browser pool env vars when both url and apiKey are provided', () => {
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      browserPoolUrl: 'http://browserless.prod:3000',
+      browserPoolApiKey: 'prod-key-123',
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['BROWSER_POOL_URL']).toBe('http://browserless.prod:3000');
+    expect(env['AGENT_BROWSER_PROVIDER']).toBe('browserless');
+    expect(env['BROWSERLESS_API_URL']).toBe('http://browserless.prod:3000');
+    expect(env['SANDBOX_ALLOWED_HOSTS']).toBe('browserless.prod');
+    expect(env['BROWSERLESS_API_KEY']).toBe('prod-key-123');
+  });
 });
 
 describe('buildAgentLabels', () => {

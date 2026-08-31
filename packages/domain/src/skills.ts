@@ -411,20 +411,34 @@ export const BROWSER_SKILL: SkillDefinition = {
   slug: 'system/browser',
   name: 'Browser',
   description: 'Interactive browser automation: open pages, click, fill forms, take screenshots, and read page content.',
-  instructions: `You have access to interactive browser automation tools.
+  instructions: `You have access to browser automation tools.
 
-- Use \`browse_interactive\` to interact with web pages programmatically.
-  - action "open" — open a URL in a browser session.
-  - action "snapshot" — get the accessibility tree of the current page.
-  - action "click" — click an element by CSS selector.
-  - action "fill" — fill a form field by CSS selector.
-  - action "screenshot" — take a screenshot of the current page (returns base64).
-  - action "get_text" — extract text content from an element by CSS selector.
-  - action "close" — close the browser session and release resources.
+## Platform browser tool
 
-Workflow: open → snapshot/click/fill/get_text → ... → close.
-Always close the session when done to free resources.
-Browser sessions are stateless — cookies are not preserved across sessions unless explicitly saved.`,
+- Use \`browse_interactive\` for structured browser automation via the platform.
+  Actions: open, snapshot, click, fill, screenshot, get_text, close.
+
+## agent-browser CLI
+
+If you have the \`system/programming\` skill (which provides \`execute_shell\`),
+you can also run \`agent-browser\` commands via \`execute_shell\`:
+
+\`\`\`
+execute_shell({ command: 'agent-browser open https://example.com' })
+execute_shell({ command: 'agent-browser snapshot -i' })
+execute_shell({ command: 'agent-browser click @e2' })
+execute_shell({ command: 'agent-browser close' })
+\`\`\`
+
+The CLI connects to a shared browser pool — no local Chrome needed.
+It supports sessions (\`--session <name>\`), accessibility snapshots,
+element refs (@eN), screenshots, and all standard agent-browser commands.
+Run \`agent-browser --help\` for the full command list.
+
+When using external skills that reference \`agent-browser\`, use
+\`execute_shell\` to run their commands.
+
+Always close browser sessions when done to free resources.`,
   promptHint: "e.g. 'Navigate to a website, fill out a form, and capture the results'",
   requiredTools: ['browse_interactive', 'send_message', 'publish_artifact'],
   capabilityFamilies: [],

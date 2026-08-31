@@ -53,6 +53,27 @@ ip netns exec "$NS" ip route add default via 10.200.0.1
 iptables -t nat -A POSTROUTING -s 10.200.0.0/30 -j MASQUERADE 2>/dev/null || true
 echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
 
+# Allow operator-configured hosts (e.g. Browserless pool on Docker network).
+# SANDBOX_ALLOWED_HOSTS is a comma-separated list of IPs or CIDRs.
+if [ -n "${SANDBOX_ALLOWED_HOSTS:-}" ]; then
+  _remaining="$SANDBOX_ALLOWED_HOSTS"
+  while [ -n "$_remaining" ]; do
+    _host="${_remaining%%,*}"
+    if [ "$_host" = "$_remaining" ]; then
+      _remaining=""
+    else
+      _remaining="${_remaining#*,}"
+    fi
+    if [ -n "$_host" ]; then
+      # Validate: must look like an IP, CIDR, or hostname (no shell metacharacters)
+      case "$_host" in
+        *[!0-9a-zA-Z.:/\-]*) ;; # skip invalid entries
+        *) ip netns exec "$NS" iptables -A OUTPUT -d "$_host" -j ACCEPT 2>/dev/null || true ;;
+      esac
+    fi
+  done
+fi
+
 # Block RFC 1918 and link-local within the namespace
 ip netns exec "$NS" iptables -A OUTPUT -d 10.0.0.0/8 -j REJECT 2>/dev/null || true
 ip netns exec "$NS" iptables -A OUTPUT -d 172.16.0.0/12 -j REJECT 2>/dev/null || true

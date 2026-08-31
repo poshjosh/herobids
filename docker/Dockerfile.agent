@@ -30,6 +30,10 @@ FROM node:22-alpine AS runtime
 
 RUN apk add --no-cache iproute2 iptables ip6tables python3 py3-pip git sudo
 
+# Install agent-browser CLI (Rust binary, connects to remote Browserless —
+# no local Chrome needed). Pinned to a specific version for reproducibility.
+RUN npm install -g agent-browser@0.14.0
+
 # Non-root agent user with passwordless sudo for full permission level.
 # The container still starts as root because sandbox-exec.sh requires
 # CAP_NET_ADMIN for network namespace creation. The execute_shell tool
