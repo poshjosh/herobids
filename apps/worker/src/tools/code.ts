@@ -215,7 +215,7 @@ const codeExecuteTool: AgentTool = {
       success: false,
       data: { stdout, stderr, exitCode, durationMs },
       errorCode: 'execute_code.execution_failed',
-      error: `execute_code${label} failed with exit code ${exitCode}`,
+      error: `execute_code${label} failed with exit code ${exitCode}${stderr ? `: ${stderr.slice(0, 200)}` : ''}`,
       retryable: false,
       fault: false,
     };

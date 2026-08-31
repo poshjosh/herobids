@@ -214,7 +214,7 @@ const executeShellTool: AgentTool = {
       success: false,
       data: { stdout, stderr, exitCode, durationMs },
       errorCode: 'execute_shell.execution_failed',
-      error: `execute_shell failed with exit code ${exitCode}`,
+      error: `execute_shell failed with exit code ${exitCode}${stderr ? `: ${stderr.slice(0, 200)}` : ''}`,
       retryable: false,
       fault: false,
     };
