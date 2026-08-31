@@ -71,7 +71,7 @@ function truncateBody(body: string, maxBytes: number): { text: string; truncated
 // ── Tool implementation ─────────────────────────────────────────────────────
 
 const httpRequestTool: AgentTool = {
-  name: 'http_request',
+  name: 'make_http_request',
   description:
     'Make structured HTTP requests to external APIs. Supports GET, POST, PUT, PATCH, DELETE, HEAD. ' +
     'Returns status code, response headers, and response body (truncated to configured limit). ' +
@@ -82,24 +82,24 @@ const httpRequestTool: AgentTool = {
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     // Capability gating
     if (ctx.capabilityEngine) {
-      const denied = ctx.capabilityEngine.checkAccess('http_request', ctx.agentId, ctx.sessionId);
+      const denied = ctx.capabilityEngine.checkAccess('make_http_request', ctx.agentId, ctx.sessionId);
       if (denied) {
         logger.warn({
           agentId: ctx.agentId,
-          capability: 'http_request',
+          capability: 'make_http_request',
           reason: denied.reason,
           limit: denied.limit,
           used: denied.used,
           retryAfterMs: denied.retryAfterMs,
         }, 'Capability policy denied');
-        return capabilityDeniedResult('http_request', denied);
+        return capabilityDeniedResult('make_http_request', denied);
       }
-      ctx.capabilityEngine.recordStart('http_request', ctx.sessionId);
+      ctx.capabilityEngine.recordStart('make_http_request', ctx.sessionId);
     }
 
     // Check enabled flag
     if (_httpClientConfig && _httpClientConfig.enabled === false) {
-      return nonFaultError('http_request: tool is disabled by operator configuration');
+      return nonFaultError('make_http_request: tool is disabled by operator configuration');
     }
 
     const startMs = Date.now();
@@ -114,12 +114,12 @@ const httpRequestTool: AgentTool = {
       });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
-      errorCode = 'http_request.internal_error';
-      return { success: false, error: `http_request failed: ${msg}`, retryable: false };
+      errorCode = 'make_http_request.internal_error';
+      return { success: false, error: `make_http_request failed: ${msg}`, retryable: false };
     } finally {
       if (ctx.capabilityEngine) {
-        ctx.capabilityEngine.recordEnd('http_request', ctx.sessionId, {
-          capability: 'http_request',
+        ctx.capabilityEngine.recordEnd('make_http_request', ctx.sessionId, {
+          capability: 'make_http_request',
           agentId: ctx.agentId,
           sessionId: ctx.sessionId,
           timestamp: new Date().toISOString(),
@@ -144,14 +144,14 @@ async function executeHttpRequest(
   try {
     parsedUrl = new URL(parsed.url);
   } catch {
-    report(false, 'http_request.invalid_url');
-    return nonFaultError('http_request: invalid URL');
+    report(false, 'make_http_request.invalid_url');
+    return nonFaultError('make_http_request: invalid URL');
   }
 
   // Only allow HTTP/HTTPS schemes
   if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
-    report(false, 'http_request.unsupported_protocol');
-    return nonFaultError(`http_request: unsupported protocol "${parsedUrl.protocol}"`);
+    report(false, 'make_http_request.unsupported_protocol');
+    return nonFaultError(`make_http_request: unsupported protocol "${parsedUrl.protocol}"`);
   }
 
   const hostname = parsedUrl.hostname;
@@ -159,42 +159,116 @@ async function executeHttpRequest(
   // Check deny list
   const denyList = _httpClientConfig?.denyList ?? [];
   if (isHostDenied(hostname, denyList)) {
-    logger.warn({ agentId: ctx.agentId, hostname }, 'http_request blocked by deny list');
-    report(false, 'http_request.denied');
-    return nonFaultError(`http_request blocked: hostname "${hostname}" is on the deny list`);
+    logger.warn({ agentId: ctx.agentId, hostname }, 'make_http_request blocked by deny list');
+    report(false, 'make_http_request.denied');
+    return nonFaultError(`make_http_request blocked: hostname "${hostname}" is on the deny list`);
   }
 
   // SSRF check — resolve DNS and block private IPs
   const isPrivate = await isHostPrivate(hostname);
   if (isPrivate) {
-    logger.warn({ agentId: ctx.agentId, hostname }, 'http_request blocked private/unresolvable hostname');
-    report(false, 'http_request.ssrf_blocked');
-    return nonFaultError('http_request blocked: hostname resolves to a private or reserved IP address');
+    logger.warn({ agentId: ctx.agentId, hostname }, 'make_http_request blocked private/unresolvable hostname');
+    report(false, 'make_http_request.ssrf_blocked');
+    return nonFaultError('make_http_request blocked: hostname resolves to a private or reserved IP address');
   }
 
   // Determine response byte limit
-  const grant = ctx.capabilityEngine?.getGrant('http_request');
+  const grant = ctx.capabilityEngine?.getGrant('make_http_request');
   const maxResponseBytes = grant?.limits?.maxResponseBytes ?? _httpClientConfig?.maxResponseBytes ?? 256 * 1024;
   const effectiveTimeoutMs = grant?.limits?.timeoutMs ?? parsed.timeoutMs;
 
-  // Execute request
+  // Execute request with manual redirect following to re-validate SSRF on each hop.
+  const MAX_REDIRECTS = 5;
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), effectiveTimeoutMs);
 
   try {
-    const fetchInit: RequestInit = {
-      method: parsed.method,
-      headers: parsed.headers,
-      signal: controller.signal,
-      redirect: 'follow',
-    };
+    let currentUrl = parsed.url;
 
-    // Only attach body for methods that support it
-    if (parsed.body && parsed.method !== 'GET' && parsed.method !== 'HEAD') {
-      fetchInit.body = parsed.body;
+    // First request carries the original method, headers, and body.
+    // Subsequent redirect-following requests are GET (per HTTP spec for 301/302/303).
+    let currentMethod = parsed.method;
+    let currentBody = parsed.body && currentMethod !== 'GET' && currentMethod !== 'HEAD'
+      ? parsed.body
+      : undefined;
+    let currentHeaders = parsed.headers;
+
+    let response: Response | undefined;
+
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      const fetchInit: RequestInit = {
+        method: currentMethod,
+        headers: currentHeaders,
+        signal: controller.signal,
+        redirect: 'manual',  // handle redirects ourselves for SSRF re-validation
+      };
+
+      if (currentBody) {
+        fetchInit.body = currentBody;
+      }
+
+      response = await fetch(currentUrl, fetchInit);
+
+      // Check for redirect (3xx with Location header)
+      const isRedirect = response.status >= 300 && response.status < 400;
+      const location = response.headers.get('location');
+
+      if (!isRedirect || !location) {
+        break; // Not a redirect — proceed with this response
+      }
+
+      if (hop === MAX_REDIRECTS) {
+        report(false, 'make_http_request.too_many_redirects');
+        return nonFaultError(`make_http_request: exceeded maximum of ${MAX_REDIRECTS} redirects`);
+      }
+
+      // Resolve the redirect target (may be relative)
+      let redirectUrl: URL;
+      try {
+        redirectUrl = new URL(location, currentUrl);
+      } catch {
+        report(false, 'make_http_request.invalid_redirect');
+        return nonFaultError(`make_http_request: redirect target is not a valid URL: ${location.slice(0, 200)}`);
+      }
+
+      // Re-validate protocol
+      if (redirectUrl.protocol !== 'https:' && redirectUrl.protocol !== 'http:') {
+        report(false, 'make_http_request.redirect_ssrf_blocked');
+        return nonFaultError(`make_http_request: redirect to unsupported protocol "${redirectUrl.protocol}"`);
+      }
+
+      // Re-validate deny list
+      if (isHostDenied(redirectUrl.hostname, denyList)) {
+        logger.warn({ agentId: ctx.agentId, hostname: redirectUrl.hostname, hop }, 'make_http_request redirect blocked by deny list');
+        report(false, 'make_http_request.redirect_ssrf_blocked');
+        return nonFaultError(`make_http_request: redirect blocked — hostname "${redirectUrl.hostname}" is on the deny list`);
+      }
+
+      // Re-validate SSRF via DNS resolution
+      const redirectIsPrivate = await isHostPrivate(redirectUrl.hostname);
+      if (redirectIsPrivate) {
+        logger.warn({ agentId: ctx.agentId, hostname: redirectUrl.hostname, hop }, 'make_http_request redirect blocked — private IP');
+        report(false, 'make_http_request.redirect_ssrf_blocked');
+        return nonFaultError('make_http_request: redirect blocked — target resolves to a private or reserved IP address');
+      }
+
+      // Per HTTP spec: 301/302/303 redirects convert to GET and drop the body.
+      // 307/308 preserve the original method and body.
+      if (response.status === 307 || response.status === 308) {
+        // Preserve method and body
+      } else {
+        currentMethod = 'GET';
+        currentBody = undefined;
+        currentHeaders = undefined;
+      }
+
+      currentUrl = redirectUrl.href;
     }
 
-    const response = await fetch(parsed.url, fetchInit);
+    if (!response) {
+      report(false, 'make_http_request.fetch_error');
+      return nonFaultError('make_http_request: no response received');
+    }
 
     // Collect response headers
     const responseHeaders: Record<string, string> = {};
@@ -226,12 +300,12 @@ async function executeHttpRequest(
   } catch (error: unknown) {
     const isTimeout = error instanceof DOMException && error.name === 'AbortError';
     if (isTimeout) {
-      report(false, 'http_request.timeout');
-      return { success: false, error: `http_request timed out after ${effectiveTimeoutMs}ms`, retryable: true, fault: false };
+      report(false, 'make_http_request.timeout');
+      return { success: false, error: `make_http_request timed out after ${effectiveTimeoutMs}ms`, retryable: true, fault: false };
     }
     const msg = error instanceof Error ? error.message : String(error);
-    report(false, 'http_request.fetch_error');
-    return nonFaultError(`http_request failed: ${msg}`);
+    report(false, 'make_http_request.fetch_error');
+    return nonFaultError(`make_http_request failed: ${msg}`);
   } finally {
     clearTimeout(timeoutHandle);
   }

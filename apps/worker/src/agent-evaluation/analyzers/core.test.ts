@@ -103,7 +103,7 @@ describe('analyzeCore', () => {
     // 50 total events, 15 tool failures = 30% > 20% threshold
     const journalEntries: Array<Record<string, unknown>> = [];
     for (let i = 0; i < 15; i++) {
-      journalEntries.push({ id: `fail-${i}`, type: 'tool.http_request', actorType: 'agent', actorId: 'agent-1', payload: { error: 'timeout' }, createdAt: new Date().toISOString() });
+      journalEntries.push({ id: `fail-${i}`, type: 'tool.make_http_request', actorType: 'agent', actorId: 'agent-1', payload: { error: 'timeout' }, createdAt: new Date().toISOString() });
     }
     for (let i = 0; i < 35; i++) {
       journalEntries.push({ id: `ok-${i}`, type: 'agent.tick', actorType: 'agent', actorId: 'agent-1', payload: {}, createdAt: new Date().toISOString() });
@@ -124,7 +124,7 @@ describe('analyzeCore', () => {
     // 50 total events, 5 tool failures = 10% < 20% threshold
     const journalEntries: Array<Record<string, unknown>> = [];
     for (let i = 0; i < 5; i++) {
-      journalEntries.push({ id: `fail-${i}`, type: 'tool.http_request', actorType: 'agent', actorId: 'agent-1', payload: { error: 'timeout' }, createdAt: new Date().toISOString() });
+      journalEntries.push({ id: `fail-${i}`, type: 'tool.make_http_request', actorType: 'agent', actorId: 'agent-1', payload: { error: 'timeout' }, createdAt: new Date().toISOString() });
     }
     for (let i = 0; i < 45; i++) {
       journalEntries.push({ id: `ok-${i}`, type: 'agent.tick', actorType: 'agent', actorId: 'agent-1', payload: {}, createdAt: new Date().toISOString() });

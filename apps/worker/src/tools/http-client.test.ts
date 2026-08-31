@@ -10,7 +10,7 @@ vi.mock('node:dns/promises', () => ({
 import { resolve4, resolve6 } from 'node:dns/promises';
 import { httpClientTools, matchesDenyPattern, isHostDenied } from './http-client.js';
 
-const httpRequestTool = httpClientTools.find((t) => t.name === 'http_request')!;
+const httpRequestTool = httpClientTools.find((t) => t.name === 'make_http_request')!;
 
 function makeContext(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -52,13 +52,13 @@ afterEach(() => {
 
 // ── Tool registration ───────────────────────────────────────────────────────
 
-describe('http_request tool — registration', () => {
+describe('make_http_request tool — registration', () => {
   it('exports exactly one tool', () => {
     expect(httpClientTools).toHaveLength(1);
   });
 
-  it('has name http_request', () => {
-    expect(httpRequestTool.name).toBe('http_request');
+  it('has name make_http_request', () => {
+    expect(httpRequestTool.name).toBe('make_http_request');
   });
 
   it('has category read-web', () => {
@@ -89,12 +89,12 @@ describe('http_request tool — registration', () => {
 
 // ── Capability gating ───────────────────────────────────────────────────────
 
-describe('http_request tool — capability gating', () => {
+describe('make_http_request tool — capability gating', () => {
   it('returns capability denied result when policy denies access', async () => {
     const capabilityEngine = makeCapabilityEngine({
       checkAccess: vi.fn(() => ({
         reason: 'capability_disabled' as const,
-        message: 'Capability http_request is disabled.',
+        message: 'Capability make_http_request is disabled.',
       })),
     });
 
@@ -132,7 +132,7 @@ describe('http_request tool — capability gating', () => {
 
 // ── URL validation ──────────────────────────────────────────────────────────
 
-describe('http_request tool — URL validation', () => {
+describe('make_http_request tool — URL validation', () => {
   it('rejects unsupported protocols (ftp://)', async () => {
     const result = await httpRequestTool.execute(
       { method: 'GET', url: 'ftp://example.com/file' },
@@ -223,7 +223,7 @@ describe('isHostDenied', () => {
 
 // ── SSRF blocking ───────────────────────────────────────────────────────────
 
-describe('http_request tool — SSRF blocking', () => {
+describe('make_http_request tool — SSRF blocking', () => {
   it('blocks hostname resolving to private IPv4 (192.168.x)', async () => {
     vi.mocked(resolve4).mockResolvedValue(['192.168.1.1']);
     vi.mocked(resolve6).mockResolvedValue([]);
@@ -265,9 +265,209 @@ describe('http_request tool — SSRF blocking', () => {
   });
 });
 
+// ── Redirect SSRF protection ────────────────────────────────────────────────
+
+describe('make_http_request tool — redirect SSRF protection', () => {
+  it('blocks redirect to private IP (169.254.169.254 — cloud metadata)', async () => {
+    // First call: 302 redirect to metadata endpoint
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      status: 302,
+      statusText: 'Found',
+      headers: new Headers({ location: 'http://169.254.169.254/latest/meta-data/' }),
+      text: async () => '',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // 169.254.169.254 is a raw IPv4 literal — isHostPrivate checks it directly
+    // without DNS resolution. The initial URL still needs DNS to resolve to public.
+    vi.mocked(resolve4).mockResolvedValue(['93.184.216.34']);
+    vi.mocked(resolve6).mockResolvedValue([]);
+
+    const result = await httpRequestTool.execute(
+      { method: 'GET', url: 'https://evil.example.com/redirect-me' },
+      makeContext(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('redirect blocked');
+    expect(result.error).toContain('private or reserved IP');
+    expect(result.fault).toBe(false);
+  });
+
+  it('blocks redirect to deny-listed hostname', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      status: 301,
+      statusText: 'Moved Permanently',
+      headers: new Headers({ location: 'https://internal.corp/secret' }),
+      text: async () => '',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // Initial URL resolves to public IP; redirect target resolves to private IP.
+    // Use a dynamic implementation to distinguish hostnames.
+    vi.mocked(resolve4).mockImplementation(async (hostname: string) => {
+      if (hostname === 'internal.corp') return ['10.0.0.1'];
+      return ['93.184.216.34'];
+    });
+    vi.mocked(resolve6).mockResolvedValue([]);
+
+    const result = await httpRequestTool.execute(
+      { method: 'GET', url: 'https://example.com/redir' },
+      makeContext(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('redirect blocked');
+  });
+
+  it('blocks redirect to unsupported protocol (file://)', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      status: 302,
+      statusText: 'Found',
+      headers: new Headers({ location: 'file:///etc/passwd' }),
+      text: async () => '',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await httpRequestTool.execute(
+      { method: 'GET', url: 'https://example.com/sneaky' },
+      makeContext(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('unsupported protocol');
+  });
+
+  it('follows safe redirects and returns final response', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        status: 301,
+        statusText: 'Moved Permanently',
+        headers: new Headers({ location: 'https://new.example.com/api' }),
+        text: async () => '',
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        text: async () => '{"ok":true}',
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // Both the initial and redirect hostnames resolve to public IPs
+    vi.mocked(resolve4).mockResolvedValue(['93.184.216.34']);
+
+    const result = await httpRequestTool.execute(
+      { method: 'GET', url: 'https://old.example.com/api' },
+      makeContext(),
+    );
+
+    expect(result.success).toBe(true);
+    const data = result.data as { status: number; body: string };
+    expect(data.status).toBe(200);
+    expect(data.body).toBe('{"ok":true}');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails after exceeding max redirects (5)', async () => {
+    // Return 302 forever
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 302,
+      statusText: 'Found',
+      headers: new Headers({ location: 'https://example.com/loop' }),
+      text: async () => '',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // All hostnames resolve to public IPs
+    vi.mocked(resolve4).mockResolvedValue(['93.184.216.34']);
+
+    const result = await httpRequestTool.execute(
+      { method: 'GET', url: 'https://example.com/loop' },
+      makeContext(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('exceeded maximum');
+    expect(result.error).toContain('5');
+    // 1 initial + 5 redirect attempts = 6 calls
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+
+  it('preserves method and body on 307 redirect', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        status: 307,
+        statusText: 'Temporary Redirect',
+        headers: new Headers({ location: 'https://new.example.com/submit' }),
+        text: async () => '',
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers(),
+        text: async () => 'accepted',
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    vi.mocked(resolve4).mockResolvedValue(['93.184.216.34']);
+
+    await httpRequestTool.execute(
+      {
+        method: 'POST',
+        url: 'https://old.example.com/submit',
+        body: '{"data":"value"}',
+        headers: { 'Content-Type': 'application/json' },
+      },
+      makeContext(),
+    );
+
+    // Second call should still be POST with body
+    const secondCall = fetchMock.mock.calls[1]!;
+    const secondInit = secondCall[1] as RequestInit;
+    expect(secondInit.method).toBe('POST');
+    expect(secondInit.body).toBe('{"data":"value"}');
+  });
+
+  it('converts POST to GET on 302 redirect (drops body and headers)', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        status: 302,
+        statusText: 'Found',
+        headers: new Headers({ location: 'https://new.example.com/result' }),
+        text: async () => '',
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers(),
+        text: async () => 'redirected',
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    vi.mocked(resolve4).mockResolvedValue(['93.184.216.34']);
+
+    await httpRequestTool.execute(
+      {
+        method: 'POST',
+        url: 'https://old.example.com/action',
+        body: '{"data":"value"}',
+        headers: { 'Content-Type': 'application/json' },
+      },
+      makeContext(),
+    );
+
+    // Second call should be GET without body
+    const secondCall = fetchMock.mock.calls[1]!;
+    const secondInit = secondCall[1] as RequestInit;
+    expect(secondInit.method).toBe('GET');
+    expect(secondInit.body).toBeUndefined();
+  });
+});
+
 // ── Successful request execution ────────────────────────────────────────────
 
-describe('http_request tool — request execution', () => {
+describe('make_http_request tool — request execution', () => {
   it('returns status, headers, and body on successful GET', async () => {
     const responseHeaders = new Headers({
       'content-type': 'application/json',
@@ -374,7 +574,7 @@ describe('http_request tool — request execution', () => {
 
 // ── Response truncation ─────────────────────────────────────────────────────
 
-describe('http_request tool — response truncation', () => {
+describe('make_http_request tool — response truncation', () => {
   it('truncates response body exceeding maxResponseBytes', async () => {
     const bigBody = 'a'.repeat(500_000);
 
@@ -421,7 +621,7 @@ describe('http_request tool — response truncation', () => {
 
 // ── Timeout handling ────────────────────────────────────────────────────────
 
-describe('http_request tool — timeout handling', () => {
+describe('make_http_request tool — timeout handling', () => {
   it('returns retryable error on timeout (AbortError)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(
       new DOMException('The operation was aborted', 'AbortError'),
@@ -453,7 +653,7 @@ describe('http_request tool — timeout handling', () => {
 
 // ── Capability engine telemetry ─────────────────────────────────────────────
 
-describe('http_request tool — telemetry', () => {
+describe('make_http_request tool — telemetry', () => {
   it('records start and end when capability engine is present', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
@@ -470,12 +670,12 @@ describe('http_request tool — telemetry', () => {
       makeContext({ capabilityEngine }),
     );
 
-    expect(capabilityEngine!.recordStart).toHaveBeenCalledWith('http_request', 'session-http-test');
+    expect(capabilityEngine!.recordStart).toHaveBeenCalledWith('make_http_request', 'session-http-test');
     expect(capabilityEngine!.recordEnd).toHaveBeenCalledWith(
-      'http_request',
+      'make_http_request',
       'session-http-test',
       expect.objectContaining({
-        capability: 'http_request',
+        capability: 'make_http_request',
         agentId: 'agent-http-test',
         success: true,
       }),
@@ -494,7 +694,7 @@ describe('http_request tool — telemetry', () => {
     );
 
     expect(capabilityEngine!.recordEnd).toHaveBeenCalledWith(
-      'http_request',
+      'make_http_request',
       'session-http-test',
       expect.objectContaining({ success: false }),
     );

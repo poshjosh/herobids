@@ -290,10 +290,10 @@ export const WEB_ACCESS_SKILL: SkillDefinition = {
 - Use \`search_web(query)\` to search the internet. Returns a list of results with titles, URLs, and text extracts.
 - Use \`browse_url(url)\` to fetch and read the contents of a specific web page. Only \`https://\` URLs are allowed.
 - Use \`read_document(url)\` to fetch and extract text from a document URL (e.g. PDF). Only \`https://\` URLs are allowed.
-- Use \`http_request\` to make structured HTTP requests (GET, POST, PUT, PATCH, DELETE, HEAD) to external APIs. Returns status, headers, and truncated body. Useful for calling REST or GraphQL APIs with custom headers and authentication.
+- Use \`make_http_request\` to make structured HTTP requests (GET, POST, PUT, PATCH, DELETE, HEAD) to external APIs. Returns status, headers, and truncated body. Useful for calling REST or GraphQL APIs with custom headers and authentication.
 - Use \`send_message\` to share findings with the user.
 - Use \`publish_artifact\` when findings are substantial enough to warrant a structured output.`,
-  requiredTools: ['search_web', 'browse_url', 'read_document', 'http_request', 'send_message', 'publish_artifact'],
+  requiredTools: ['search_web', 'browse_url', 'read_document', 'make_http_request', 'send_message', 'publish_artifact'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],

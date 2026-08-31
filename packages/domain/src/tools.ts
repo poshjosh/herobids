@@ -320,7 +320,6 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'get_price',
   'get_risk_limits',
   'get_schema',
-  'http_request',
   'list_app_docs',
   'list_bots',
   'list_files',
@@ -329,6 +328,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'list_skills',
   'list_tasks',
   'list_watches',
+  'make_http_request',
   'publish_artifact',
   'read_app_docs',
   'read_document',
@@ -414,7 +414,7 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   search_web:          { category: 'read-web',            description: 'Search the internet using Tavily. Returns top results with titles, URLs, text extracts.' },
   browse_url:          { category: 'read-web',            description: 'Fetch and read contents of a web page. HTTPS only; private IPs/loopback blocked.' },
   browse_interactive:  { category: 'read-web',            description: 'Interactive browser automation: open pages, click elements, fill forms, take screenshots, read accessibility trees. Requires a browser pool session.' },
-  http_request:        { category: 'read-web',            description: 'Make structured HTTP requests (GET/POST/PUT/PATCH/DELETE/HEAD) to external APIs. Returns status, headers, and truncated body.' },
+  make_http_request:   { category: 'read-web',            description: 'Make structured HTTP requests (GET/POST/PUT/PATCH/DELETE/HEAD) to external APIs. Returns status, headers, and truncated body.' },
   read_document:       { category: 'read-web',            description: 'Fetch and extract text from a document URL (currently PDF). HTTPS only; SSRF protected.' },
 
   // read-config

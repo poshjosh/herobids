@@ -322,15 +322,15 @@ describe('SYSTEM_SKILLS — browser skill', () => {
   });
 });
 
-// ── WEB_ACCESS_SKILL includes http_request ──────────────────────────────────
+// ── WEB_ACCESS_SKILL includes make_http_request ──────────────────────────────────
 
-describe('WEB_ACCESS_SKILL — http_request', () => {
-  it('requiredTools includes http_request', () => {
-    expect(WEB_ACCESS_SKILL.requiredTools).toContain('http_request');
+describe('WEB_ACCESS_SKILL — make_http_request', () => {
+  it('requiredTools includes make_http_request', () => {
+    expect(WEB_ACCESS_SKILL.requiredTools).toContain('make_http_request');
   });
 
-  it('instructions mention http_request', () => {
-    expect(WEB_ACCESS_SKILL.instructions).toContain('http_request');
+  it('instructions mention make_http_request', () => {
+    expect(WEB_ACCESS_SKILL.instructions).toContain('make_http_request');
   });
 });
 
@@ -341,16 +341,16 @@ describe('KNOWN_AGENT_TOOL_NAMES — browser pool tools', () => {
     expect(KNOWN_AGENT_TOOL_NAMES).toContain('browse_interactive');
   });
 
-  it('includes http_request', () => {
-    expect(KNOWN_AGENT_TOOL_NAMES).toContain('http_request');
+  it('includes make_http_request', () => {
+    expect(KNOWN_AGENT_TOOL_NAMES).toContain('make_http_request');
   });
 
   it('isKnownAgentToolName recognises browse_interactive', () => {
     expect(isKnownAgentToolName('browse_interactive')).toBe(true);
   });
 
-  it('isKnownAgentToolName recognises http_request', () => {
-    expect(isKnownAgentToolName('http_request')).toBe(true);
+  it('isKnownAgentToolName recognises make_http_request', () => {
+    expect(isKnownAgentToolName('make_http_request')).toBe(true);
   });
 });
 
@@ -368,15 +368,15 @@ describe('KNOWN_AGENT_TOOL_NAMES — alphabetical ordering for new tools', () =>
     expect(idxBrowseUrl).toBeLessThan(idxCheckRegime);
   });
 
-  it('http_request appears between get_schema and list_app_docs', () => {
+  it('make_http_request appears between list_watches and publish_artifact', () => {
     const names = KNOWN_AGENT_TOOL_NAMES as readonly string[];
-    const idxGetSchema = names.indexOf('get_schema');
-    const idxHttpRequest = names.indexOf('http_request');
-    const idxListAppDocs = names.indexOf('list_app_docs');
+    const idxListWatches = names.indexOf('list_watches');
+    const idxMakeHttpRequest = names.indexOf('make_http_request');
+    const idxPublishArtifact = names.indexOf('publish_artifact');
 
-    expect(idxHttpRequest).toBeGreaterThanOrEqual(0);
-    expect(idxGetSchema).toBeLessThan(idxHttpRequest);
-    expect(idxHttpRequest).toBeLessThan(idxListAppDocs);
+    expect(idxMakeHttpRequest).toBeGreaterThanOrEqual(0);
+    expect(idxListWatches).toBeLessThan(idxMakeHttpRequest);
+    expect(idxMakeHttpRequest).toBeLessThan(idxPublishArtifact);
   });
 });
 
@@ -397,8 +397,8 @@ describe('TOOL_CATALOG — browse_interactive', () => {
   });
 });
 
-describe('TOOL_CATALOG — http_request', () => {
-  const entry = getToolCatalogEntry('http_request');
+describe('TOOL_CATALOG — make_http_request', () => {
+  const entry = getToolCatalogEntry('make_http_request');
 
   it('exists in TOOL_CATALOG with category read-web', () => {
     expect(entry).toBeDefined();
@@ -423,11 +423,11 @@ describe('buildToolOwnershipMap — browser tools', () => {
     expect(ownershipMap.get('browse_interactive')).toBe('browser');
   });
 
-  it('maps http_request to web-access skill (first-seen before browser)', () => {
-    // http_request is in WEB_ACCESS_SKILL.requiredTools which appears before
+  it('maps make_http_request to web-access skill (first-seen before browser)', () => {
+    // make_http_request is in WEB_ACCESS_SKILL.requiredTools which appears before
     // BROWSER_SKILL in SYSTEM_SKILLS array. First-seen wins.
-    // Actually http_request is NOT in BROWSER_SKILL.requiredTools, only in WEB_ACCESS_SKILL.
-    expect(ownershipMap.get('http_request')).toBe('web-access');
+    // Actually make_http_request is NOT in BROWSER_SKILL.requiredTools, only in WEB_ACCESS_SKILL.
+    expect(ownershipMap.get('make_http_request')).toBe('web-access');
   });
 });
 
