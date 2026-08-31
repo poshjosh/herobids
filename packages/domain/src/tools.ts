@@ -265,6 +265,10 @@ export interface ToolContext {
    * Returns the updated list of assigned skill IDs (excluding base).
    */
   onSkillsChanged?: () => Promise<string[]>;
+  /** Usage billing service for recording metered events (browser sessions, etc.). */
+  usageBilling?: {
+    recordBrowserSession(input: { durationMs: number; browserSessionId: string }): void;
+  };
 }
 
 export interface AgentTool {

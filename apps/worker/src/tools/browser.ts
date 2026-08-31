@@ -123,6 +123,7 @@ interface ActiveSession {
   cdp: CdpClient;
   browserSessionId: string;
   browserPool: BrowserPoolPort;
+  startedAt: number;
 }
 
 // Key: `${agentId}:${sessionId}`
@@ -214,6 +215,7 @@ async function handleOpen(
       cdp,
       browserSessionId: sessionResult.data.sessionId,
       browserPool,
+      startedAt: Date.now(),
     });
 
     return { success: true, data: { message: `Opened ${params.url}`, sessionActive: true } };
@@ -424,19 +426,28 @@ async function handleClose(ctx: ToolContext): Promise<ToolResult> {
     return { success: true, data: { message: 'No active session to close' } };
   }
 
+  const durationMs = Date.now() - session.startedAt;
   session.cdp.close();
   await session.browserPool.releaseSession(session.browserSessionId);
   activeSessions.delete(key);
-  return { success: true, data: { message: 'Browser session closed' } };
+
+  ctx.usageBilling?.recordBrowserSession({ durationMs, browserSessionId: session.browserSessionId });
+
+  return { success: true, data: { message: 'Browser session closed', durationMs } };
 }
 
 /** Clean up any active browser sessions for the given agent. Call on agent session teardown. */
-export async function cleanupBrowserSessions(agentId: string): Promise<void> {
+export async function cleanupBrowserSessions(
+  agentId: string,
+  onSessionClosed?: (input: { durationMs: number; browserSessionId: string }) => void,
+): Promise<void> {
   const keysToDelete: string[] = [];
   for (const [key, session] of activeSessions) {
     if (key.startsWith(`${agentId}:`)) {
+      const durationMs = Date.now() - session.startedAt;
       session.cdp.close();
       await session.browserPool.releaseSession(session.browserSessionId);
+      onSessionClosed?.({ durationMs, browserSessionId: session.browserSessionId });
       keysToDelete.push(key);
     }
   }

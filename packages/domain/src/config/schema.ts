@@ -745,7 +745,7 @@ export const UsageBillingConfigSchema = z.object({
   defaultRateCardName: z.string().default('default'),
   /** Seed items for the default rate card — priceMicrousd per perUnit quantity */
   defaultRateCardItems: z.array(z.object({
-    meterKey: z.enum(['llm.input_tokens', 'llm.cached_input_tokens', 'llm.output_tokens', 'llm.reasoning_tokens', 'agent.runtime_ms', 'assessment.request']),
+    meterKey: z.enum(['llm.input_tokens', 'llm.cached_input_tokens', 'llm.output_tokens', 'llm.reasoning_tokens', 'agent.runtime_ms', 'assessment.request', 'browser.session_ms']),
     /** Scope to a specific provider — omit to apply to all providers */
     provider: z.string().optional(),
     /** Exact model ID or glob with trailing * — omit to apply to all models */

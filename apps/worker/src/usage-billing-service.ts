@@ -397,6 +397,47 @@ export class UsageBillingService {
     });
   }
 
+  /** Record a browser session usage event. Fire-and-forget. */
+  recordBrowserSession(input: { durationMs: number; browserSessionId: string }): void {
+    if (!this.config.enabled) return;
+    if (input.durationMs <= 0) return;
+
+    void this.doRecordBrowserSession(input).catch((err: unknown) => {
+      logger.warn({ err, durationMs: input.durationMs }, 'Failed to record browser session usage event');
+    });
+  }
+
+  private async doRecordBrowserSession(input: { durationMs: number; browserSessionId: string }): Promise<void> {
+    const now = new Date();
+    const ok = await this.ensureAccount(now);
+    if (!ok || !this.accountId) return;
+
+    const event = {
+      id: `ue_${crypto.randomUUID().replace(/-/g, '')}`,
+      accountId: this.accountId,
+      userId: this.config.userId,
+      agentId: this.config.agentId,
+      sessionId: this.config.sessionId,
+      skillId: this.config.skillId ?? null,
+      sourceType: 'browser_session',
+      meterKey: 'browser.session_ms',
+      provider: null as string | null,
+      model: null as string | null,
+      quantity: input.durationMs,
+      unit: 'milliseconds',
+      idempotencyKey: `browser_${this.config.sessionId}_${input.browserSessionId}`,
+      occurredAt: now,
+      metadata: { browserSessionId: input.browserSessionId },
+    };
+
+    if (this.periodId && this.rateCardId) {
+      const items = await this.repo.getRateCardItems(this.rateCardId);
+      await this.repo.recordAndRateUsageBatch([event], this.periodId, this.accountId, items);
+    } else {
+      await this.repo.recordUsageEvents([event]);
+    }
+  }
+
   /** Close the final partial runtime window on session stop. */
   closeRuntimeWindow(): void {
     this.flushRuntimeWindow(true);

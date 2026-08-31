@@ -10,6 +10,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Browser pool service — shared Browserless chromium container for agent web browsing (Nomad service job + Docker Compose local dev). Agents get interactive browser automation without Chrome in their container.
+- `browse_interactive` tool — open pages, click elements, fill forms, take screenshots, read accessibility trees via CDP. Gated behind `system/browser` skill. SSRF-protected.
+- `make_http_request` tool — structured HTTP client (GET/POST/PUT/PATCH/DELETE/HEAD) with SSRF protection (deny-list + DNS resolution), response truncation, and manual redirect following with per-hop re-validation. Added to `system/web-access` skill.
+- `BrowserPoolPort` domain interface and `BrowserlessAdapter` infrastructure adapter (packages/venues)
+- `BrowserPoolConfigSchema` and `HttpClientConfigSchema` operator config with Zod validation
+- `BROWSER_SKILL` system skill definition for browser automation opt-in
+- Browser session cost metering — `browser.session_ms` meter key, `UsageBillingService.recordBrowserSession()`, session duration tracked and billed on close/cleanup
+- SSRF guard shared module (`ssrf-guard.ts`) extracted from web-access for reuse across tools
 - Nomad orchestration enabled on staging — agent containers are scheduled onto dedicated Hetzner agent nodes via Nomad, with autoscale timers and placement-failure safety net active
 - Nomad production scale-in readiness — remediation plan (001) and validation plan (002) complete
 - S3 remote backend for Terraform state — staging and production state isolated by key path in a single bucket

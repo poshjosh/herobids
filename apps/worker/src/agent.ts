@@ -1958,6 +1958,9 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
         .filter(s => s.id !== 'base')
         .map(s => s.id);
     } : undefined,
+    usageBilling: usageBillingService
+      ? { recordBrowserSession: usageBillingService.recordBrowserSession.bind(usageBillingService) }
+      : undefined,
   };
 
   try {
@@ -2270,7 +2273,9 @@ async function shutdown(reason: string): Promise<void> {
   usageBillingService?.closeRuntimeWindow();
 
   // Clean up any active browser sessions to release pool resources.
-  await cleanupBrowserSessions(AGENT_ID!).catch((err: unknown) => {
+  await cleanupBrowserSessions(AGENT_ID!, (input) => {
+    usageBillingService?.recordBrowserSession(input);
+  }).catch((err: unknown) => {
     logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Failed to clean up browser sessions on shutdown');
   });
 

@@ -1045,6 +1045,9 @@ usageBilling:
     - meterKey: "assessment.request"
       priceMicrousd: 200000
       perUnit: 1
+    - meterKey: "browser.session_ms"
+      priceMicrousd: 200
+      perUnit: 60000
 
 # ---------------------------------------------------------------------------
 # Env-only overrides — read directly from process.env, not part of AppConfigSchema
