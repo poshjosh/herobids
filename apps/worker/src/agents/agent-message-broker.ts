@@ -1284,6 +1284,7 @@ export class AgentMessageBroker {
       publishToInbound: async () => {},
       agentConfigOps,
       db: db as unknown,
+      permissionLevel: 'standard',
     };
   }
 

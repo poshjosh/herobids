@@ -555,7 +555,6 @@ export async function agentRoutes(
       strategy: parsed.data.strategy,
       executionVenue: parsed.data.executionVenue,
       runtimePolicyOverrides: parsed.data.runtimePolicyOverrides ?? null,
-      permissionLevel: parsed.data.permissionLevel,
       notificationPolicy: parsed.data.notificationPolicy !== undefined
         ? (parsed.data.notificationPolicy === null ? null : parsed.data.notificationPolicy)
         : null,
