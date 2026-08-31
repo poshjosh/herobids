@@ -1,13 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import * as os from 'node:os';
-import * as fs from 'node:fs';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 import { eq, count, sql, gte, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { users, bots, agents, agentRuntimeSessions, billingWebhookEvents } from '@herobids/db';
 import type { MarketDataConfig } from '@herobids/domain';
+import { checkPostgres, checkRedis, getDiskStats, parseAppVersion } from '../admin-utils.js';
 
 /** Options passed to adminRoutes for market-data provisioning endpoints. */
 export interface AdminRoutesOptions {
@@ -17,26 +14,6 @@ export interface AdminRoutesOptions {
 const AGENT_CONTAINER_FILTER = encodeURIComponent(JSON.stringify({ label: ['herobids.role=agent'] }));
 const PROVIDER_COUNTERS_HASH_KEY = 'market-intel:provider-counters:v2';
 const LEGACY_PROVIDER_COUNTERS_KEY = 'market-intel:provider-counters';
-
-function parseAppVersion(): string {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = dirname(__filename);
-  // Try monorepo root package.json first (../ from apps/api/src/routes or dist/routes).
-  // In production Docker images the root package.json is copied into the runtime image
-  // for this purpose. Fall back to the API's own package.json if the root is missing.
-  const candidates = [
-    join(__dirname, '../../../../package.json'),  // monorepo root (works in dev + Docker with COPY)
-    join(__dirname, '../../package.json'),          // API package (pnpm deploy output)
-  ];
-  for (const pkgPath of candidates) {
-    try {
-      return JSON.parse(readFileSync(pkgPath, 'utf8')).version;
-    } catch {
-      // try next candidate
-    }
-  }
-  return 'parse-failed';
-}
 
 const VERSION = parseAppVersion();
 
@@ -145,45 +122,6 @@ async function readProviderCounters(redis: {
   }
 
   return parseLegacyProviderCounters(await redis.get(LEGACY_PROVIDER_COUNTERS_KEY));
-}
-
-/** Get disk usage for the root filesystem (or a configured path). */
-function getDiskStats(): { totalBytes: number; freeBytes: number; usedBytes: number } | null {
-  try {
-    const stat = fs.statfsSync('/');
-    const totalBytes = stat.blocks * stat.bsize;
-    const freeBytes = stat.bfree * stat.bsize;
-    return { totalBytes, freeBytes, usedBytes: totalBytes - freeBytes };
-  } catch {
-    // statfsSync not available on all Node.js versions / platforms (added in v19)
-    return null;
-  }
-}
-
-/** Check database connectivity with a timeout. */
-async function checkPostgres(db: Database): Promise<'ok' | 'timeout' | 'error'> {
-  try {
-    const result = await Promise.race<'ok' | 'timeout'>([
-      db.execute(sql`SELECT 1`).then(() => 'ok' as const),
-      new Promise<'timeout'>((res) => setTimeout(() => res('timeout'), 1500)),
-    ]);
-    return result;
-  } catch {
-    return 'error';
-  }
-}
-
-/** Check Redis connectivity with a timeout. */
-async function checkRedis(redis: { ping(): Promise<string> }): Promise<'ok' | 'timeout' | 'error'> {
-  try {
-    const result = await Promise.race<'ok' | 'timeout'>([
-      redis.ping().then(() => 'ok' as const),
-      new Promise<'timeout'>((res) => setTimeout(() => res('timeout'), 1500)),
-    ]);
-    return result;
-  } catch {
-    return 'error';
-  }
 }
 
 /** Middleware that returns 403 unless the authenticated request is marked as admin. */

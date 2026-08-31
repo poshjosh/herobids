@@ -52,8 +52,11 @@ import { ExternalSkillProviderHttp } from '@herobids/domain';
 import { createFastifyLogger } from './logger.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as os from 'node:os';
 import type { LifecycleJob, BacktestJob } from './types.js';
 import { syncSystemSkills } from './sync-system-skills.js';
+import { ServerHealthPublisher } from '@herobids/domain';
+import { parseAppVersion, checkPostgres, checkRedis, getRunningSessionCount } from './admin-utils.js';
 
 // ---------------------------------------------------------------------------
 // Process-level error handlers
@@ -74,13 +77,18 @@ process.on('uncaughtException', (error: Error) => {
   process.exit(1);
 });
 
+// Mutable reference so signal handlers can stop resources declared later.
+let serverHealthPublisher: { start(): void; stop(): void } | undefined;
+
 process.on('SIGTERM', () => {
+  serverHealthPublisher?.stop();
   // eslint-disable-next-line no-console
   console.error('[FATAL] SIGTERM received — the process will exit.');
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
+  serverHealthPublisher?.stop();
   // eslint-disable-next-line no-console
   console.error('[FATAL] SIGINT received — the process will exit.');
   process.exit(0);
@@ -332,6 +340,21 @@ await eventsRoutes(app, appConfig.auth, () => {
 
 const port = appConfig.app.port;
 
+// ── Server health publisher ───────────────────────────────────────────────
+serverHealthPublisher = new ServerHealthPublisher({
+  redis: redisClient,
+  serverType: 'control-plane',
+  serverId: process.env['SERVER_ID'] ?? os.hostname(),
+  version: parseAppVersion(),
+  collectMetadata: async () => ({
+    runningAgentSessions: await getRunningSessionCount(db),
+    postgresStatus: await checkPostgres(db),
+    redisStatus: await checkRedis(redisClient),
+  }),
+  logger: { warn: (obj, msg) => app.log.warn(obj, msg) },
+});
+
 app.listen({ port, host: '0.0.0.0' }).then(() => {
   app.log.info(`API server listening on port ${port}`);
+  serverHealthPublisher.start();
 });

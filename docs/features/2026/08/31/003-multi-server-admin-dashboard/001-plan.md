@@ -1,6 +1,6 @@
 # Multi-Server Admin Dashboard
 
-**Status:** Draft
+**Status:** In Progress
 **Created:** 2026-08-31
 **Area:** Admin dashboard, infrastructure observability, Redis
 
@@ -129,7 +129,7 @@ Empty arrays for types with no reporting servers.
 
 ## Implementation
 
-### Phase 1: Domain types and Redis publisher for control-plane
+### Phase 1: Domain types and Redis publisher for control-plane — PENDING
 
 **Effort:** ~2 hours
 **Risk:** Low — additive, no existing behaviour changes.
@@ -223,7 +223,7 @@ The metadata callback queries running session count from DB (lightweight, alread
 
 ---
 
-### Phase 2: API endpoint and frontend
+### Phase 2: API endpoint and frontend — PENDING
 
 **Effort:** ~3 hours
 **Risk:** Low — additive endpoint, replaces one dashboard section.
@@ -294,7 +294,7 @@ If `AdminOverviewSection` or other consumers still reference `memory`/`disk` fro
 
 ---
 
-### Phase 3: Agent-server reporting
+### Phase 3: Agent-server reporting — PENDING
 
 **Effort:** ~2 hours
 **Risk:** Low — runs on Nomad client nodes, no impact on control-plane.
@@ -339,7 +339,7 @@ Add `redis-tools` (or `redis`) to the `packages` list in `cloud-init-nomad-clien
 
 ---
 
-### Phase 4: Browser-pool reporting
+### Phase 4: Browser-pool reporting — PENDING
 
 **Effort:** ~1.5 hours
 **Risk:** Low — reads from existing Browserless `/pressure` endpoint; additive.
@@ -377,7 +377,7 @@ In development (Docker Compose), browser-pool runs as a single container at a st
 
 ---
 
-### Phase 5: Trading server reporting (future)
+### Phase 5: Trading server reporting (future) — PENDING
 
 **Effort:** ~30 min when the trading server exists.
 **Risk:** N/A — not yet applicable.
