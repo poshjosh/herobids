@@ -60,6 +60,7 @@ function renderMetadata(serverType: string, metadata: Record<string, unknown>): 
   const labelMap: Record<string, Record<string, string>> = {
     'control-plane': {
       runningAgentSessions: 'Active Sessions',
+      runningContainers: 'Containers',
       postgresStatus: 'Postgres',
       redisStatus: 'Redis',
     },
@@ -89,7 +90,7 @@ function renderMetadata(serverType: string, metadata: Record<string, unknown>): 
 
   for (const [key, value] of entries) {
     // Skip already-handled browser-pool session fields
-    if (serverType === 'browser-pool' && (key === 'activeSessions' || key === 'maxConcurrentSessions')) continue;
+    if (serverType === 'browser-pool' && (key === 'activeSessions' || key === 'maxConcurrentSessions' || key === 'memoryPressure')) continue;
 
     const label = typeLabels[key] ?? key;
     const display = typeof value === 'boolean' ? (value ? 'yes' : 'no') : String(value ?? '—');
@@ -106,14 +107,81 @@ function renderMetadata(serverType: string, metadata: Record<string, unknown>): 
 }
 
 // ---------------------------------------------------------------------------
-// Server card
+// Resource bar layouts — standard (most server types) vs browser-pool
 // ---------------------------------------------------------------------------
 
-function ServerCard({ server }: { server: ServerHealthSnapshot }) {
+function StandardResourceBars({ server }: { server: ServerHealthSnapshot }) {
   const memPct = server.memory.totalBytes > 0
     ? Math.round((server.memory.usedBytes / server.memory.totalBytes) * 100)
     : 0;
 
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+      {/* CPU */}
+      <div>
+        {server.cpuPct != null ? (
+          <UsageBar used={server.cpuPct} total={100} label="CPU" />
+        ) : (
+          <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>CPU —</div>
+        )}
+        <div style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+          Load: {server.loadAvg.map((v) => v.toFixed(2)).join(' / ')}
+        </div>
+      </div>
+
+      {/* Memory */}
+      <div>
+        <UsageBar used={server.memory.usedBytes} total={server.memory.totalBytes} label="Memory" />
+        <div style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+          {fmtBytes(server.memory.usedBytes)} / {fmtBytes(server.memory.totalBytes)} ({memPct}%)
+        </div>
+      </div>
+
+      {/* Disk */}
+      <div>
+        {server.disk != null ? (
+          <>
+            <UsageBar used={server.disk.usedBytes} total={server.disk.totalBytes} label="Disk" />
+            <div style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+              {fmtBytes(server.disk.usedBytes)} / {fmtBytes(server.disk.totalBytes)}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>Disk unavailable</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BrowserPoolResourceBars({ server }: { server: ServerHealthSnapshot }) {
+  const memPressure = server.metadata['memoryPressure'];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+      {/* CPU — cpuPressure maps to cpuPct */}
+      <div>
+        {server.cpuPct != null ? (
+          <UsageBar used={server.cpuPct} total={100} label="CPU" />
+        ) : (
+          <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>CPU —</div>
+        )}
+      </div>
+
+      {/* Memory pressure (text, not a byte-based bar) */}
+      <div>
+        <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
+          Mem pressure: {memPressure != null ? `${memPressure}%` : '—'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Server card
+// ---------------------------------------------------------------------------
+
+function ServerCard({ server }: { server: ServerHealthSnapshot }) {
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
       {/* Header: ID + hostname + version + uptime */}
@@ -134,42 +202,12 @@ function ServerCard({ server }: { server: ServerHealthSnapshot }) {
         </div>
       </div>
 
-      {/* Resource bars */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
-        {/* CPU */}
-        <div>
-          {server.cpuPct != null ? (
-            <UsageBar used={server.cpuPct} total={100} label="CPU" />
-          ) : (
-            <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>CPU —</div>
-          )}
-          <div style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-            Load: {server.loadAvg.map((v) => v.toFixed(2)).join(' / ')}
-          </div>
-        </div>
-
-        {/* Memory */}
-        <div>
-          <UsageBar used={server.memory.usedBytes} total={server.memory.totalBytes} label="Memory" />
-          <div style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-            {fmtBytes(server.memory.usedBytes)} / {fmtBytes(server.memory.totalBytes)} ({memPct}%)
-          </div>
-        </div>
-
-        {/* Disk */}
-        <div>
-          {server.disk != null ? (
-            <>
-              <UsageBar used={server.disk.usedBytes} total={server.disk.totalBytes} label="Disk" />
-              <div style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                {fmtBytes(server.disk.usedBytes)} / {fmtBytes(server.disk.totalBytes)}
-              </div>
-            </>
-          ) : (
-            <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>Disk unavailable</div>
-          )}
-        </div>
-      </div>
+      {/* Resource bars — specialized layout for browser-pool */}
+      {server.serverType === 'browser-pool' ? (
+        <BrowserPoolResourceBars server={server} />
+      ) : (
+        <StandardResourceBars server={server} />
+      )}
 
       {/* Type-specific metadata */}
       {renderMetadata(server.serverType, server.metadata)}

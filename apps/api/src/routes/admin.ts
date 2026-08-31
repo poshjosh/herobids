@@ -4,93 +4,17 @@ import type { Database } from '@herobids/db';
 import { users, bots, agents, agentRuntimeSessions, billingWebhookEvents } from '@herobids/db';
 import type { MarketDataConfig, ServerHealthSnapshot } from '@herobids/domain';
 import { SERVER_TYPES, serverHealthKeyPattern } from '@herobids/domain';
-import { checkPostgres, checkRedis, parseAppVersion } from '../admin-utils.js';
+import { checkPostgres, checkRedis, parseAppVersion, dockerSocketGetAgentContainers, getRunningContainerCount } from '../admin-utils.js';
 
 /** Options passed to adminRoutes for market-data provisioning endpoints. */
 export interface AdminRoutesOptions {
   marketDataConfig?: MarketDataConfig;
 }
 
-const AGENT_CONTAINER_FILTER = encodeURIComponent(JSON.stringify({ label: ['herobids.role=agent'] }));
 const PROVIDER_COUNTERS_HASH_KEY = 'market-intel:provider-counters:v2';
 const LEGACY_PROVIDER_COUNTERS_KEY = 'market-intel:provider-counters';
 
 const VERSION = parseAppVersion();
-
-// Unix socket path — used as local-dev fallback when DOCKER_HOST is not set.
-const DOCKER_SOCKET = process.env['DOCKER_SOCKET_PATH'] ?? '/var/run/docker.sock';
-
-// Parse DOCKER_HOST for TCP connections (e.g. tcp://docker-proxy:2375).
-// When set, requests go through the restricted TCP proxy instead of the raw Unix socket.
-function parseDockerTcpHost(): { hostname: string; port: number } | null {
-  const host = process.env['DOCKER_HOST'];
-  if (!host?.startsWith('tcp://')) return null;
-  const parts = host.slice(6).split(':');
-  const hostname = parts[0];
-  if (!hostname) return null;
-  return { hostname, port: parseInt(parts[1] ?? '2375', 10) };
-}
-
-const DOCKER_TCP_HOST = parseDockerTcpHost();
-
-/** Send a single HTTP GET and return the parsed JSON body.
- * Uses TCP (docker-proxy) when DOCKER_HOST=tcp://... is set; falls back to Unix socket. */
-async function dockerSocketGet(path: string): Promise<unknown> {
-  if (DOCKER_TCP_HOST) {
-    // TCP path — goes through the restricted docker-proxy service.
-    const { default: http } = await import('node:http');
-    return new Promise((resolve, reject) => {
-      const req = http.get(
-        { hostname: DOCKER_TCP_HOST.hostname, port: DOCKER_TCP_HOST.port, path, timeout: 3000 },
-        (res) => {
-          let rawData = '';
-          res.on('data', (chunk: Buffer) => { rawData += chunk.toString(); });
-          res.on('end', () => {
-            try { resolve(JSON.parse(rawData)); }
-            catch { reject(new Error('Non-JSON response from Docker TCP')); }
-          });
-          res.on('error', reject);
-        },
-      );
-      req.on('error', reject);
-      req.on('timeout', () => { req.destroy(new Error('Docker TCP timeout')); });
-    });
-  }
-
-  // Unix socket fallback — local dev or explicit DOCKER_SOCKET_PATH override.
-  const { default: net } = await import('node:net');
-  return new Promise((resolve, reject) => {
-    const socket = net.createConnection(DOCKER_SOCKET);
-    let rawData = '';
-    socket.on('connect', () => {
-      socket.write(
-        `GET ${path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n`,
-      );
-    });
-    socket.on('data', (chunk: Buffer) => { rawData += chunk.toString(); });
-    socket.on('end', () => {
-      const bodyStart = rawData.indexOf('\r\n\r\n');
-      if (bodyStart === -1) return reject(new Error('Malformed HTTP response'));
-      try {
-        resolve(JSON.parse(rawData.slice(bodyStart + 4)));
-      } catch {
-        reject(new Error('Non-JSON response from Docker socket'));
-      }
-    });
-    socket.on('error', reject);
-    // Abort if the socket call takes too long
-    socket.setTimeout(3000, () => {
-      socket.destroy(new Error('Docker socket timeout'));
-    });
-  });
-}
-
-async function dockerSocketGetAgentContainers(): Promise<unknown[]> {
-  // size=1 adds SizeRw (writable layer bytes, i.e. agent-specific writes) and SizeRootFs
-  // per container. The dashboard shows SizeRw as the per-agent disk figure.
-  const result = await dockerSocketGet(`/containers/json?all=false&size=1&filters=${AGENT_CONTAINER_FILTER}`);
-  return Array.isArray(result) ? result : [];
-}
 
 function parseLegacyProviderCounters(raw: string | null): Record<string, Record<string, unknown>> {
   if (!raw) return {};
@@ -192,13 +116,7 @@ export async function adminRoutes(
     ]);
 
     // Running container count — best-effort from Docker socket
-    let runningContainerCount: number | null = null;
-    try {
-      const containers = await dockerSocketGetAgentContainers();
-      runningContainerCount = containers.length;
-    } catch {
-      // Docker unavailable — leave as null
-    }
+    const runningContainerCount = await getRunningContainerCount();
 
     return reply.send({
       version: VERSION,

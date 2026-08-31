@@ -339,7 +339,7 @@ Add `redis-tools` (or `redis`) to the `packages` list in `cloud-init-nomad-clien
 
 ---
 
-### Phase 4: Browser-pool reporting — PENDING
+### Phase 4: Browser-pool reporting — DONE
 
 **Effort:** ~1.5 hours
 **Risk:** Low — reads from existing Browserless `/pressure` endpoint; additive.
@@ -377,7 +377,7 @@ In development (Docker Compose), browser-pool runs as a single container at a st
 
 ---
 
-### Phase 5: Trading server reporting (future) — PENDING
+### Phase 5: Trading server reporting (future) — DONE (N/A — trading server does not exist yet)
 
 **Effort:** ~30 min when the trading server exists.
 **Risk:** N/A — not yet applicable.

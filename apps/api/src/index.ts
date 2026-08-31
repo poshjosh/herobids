@@ -56,7 +56,7 @@ import * as os from 'node:os';
 import type { LifecycleJob, BacktestJob } from './types.js';
 import { syncSystemSkills } from './sync-system-skills.js';
 import { ServerHealthPublisher } from '@herobids/domain';
-import { parseAppVersion, checkPostgres, checkRedis, getRunningSessionCount } from './admin-utils.js';
+import { parseAppVersion, checkPostgres, checkRedis, getRunningSessionCount, getRunningContainerCount } from './admin-utils.js';
 
 // ---------------------------------------------------------------------------
 // Process-level error handlers
@@ -348,6 +348,7 @@ serverHealthPublisher = new ServerHealthPublisher({
   version: parseAppVersion(),
   collectMetadata: async () => ({
     runningAgentSessions: await getRunningSessionCount(db),
+    runningContainers: await getRunningContainerCount(),
     postgresStatus: await checkPostgres(db),
     redisStatus: await checkRedis(redisClient),
   }),
