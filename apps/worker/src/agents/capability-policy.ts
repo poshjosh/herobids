@@ -213,7 +213,9 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     capability: 'browse_interactive',
     tier: 'direct',
     enabled: true,
-    limits: { maxPerMinute: 25, maxConcurrent: 2, timeoutMs: 60_000, maxResponseBytes: 2 * 1024 * 1024 },
+    // We increased this from 60 secs to 180 secs because of vision handling
+    // We have a plan in the backlog to introduce different timeouts for: llm.timeoutMs, browserPool.actionTimeouts etc
+    limits: { maxPerMinute: 25, maxConcurrent: 2, timeoutMs: 180_000, maxResponseBytes: 2 * 1024 * 1024 },
   },  
 ];
 

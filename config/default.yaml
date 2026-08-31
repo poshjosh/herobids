@@ -378,7 +378,9 @@ llm:
   model: qwen3.6:35b-a3b-q4_K_M # Model for non-agent API calls (e.g. /ai/generate-config). Agent model is set in agent config or user AI settings.
   baseUrl: http://host.docker.internal:11434/v1  # Ollama: use host.docker.internal, NOT localhost inside Docker
   maxTokens: 4096               # Max tokens per LLM call
-  timeoutMs: 60000              # LLM call timeout in ms
+  # We increased this from 60 secs to 180 secs because of vision handling
+  # We have a plan in the backlog to introduce different timeouts for: llm.timeoutMs, browserPool.actionTimeouts etc
+  timeoutMs: 180000             # LLM call timeout in ms
   # OpenRouter request-level privacy & routing controls.
   # These are emitted in the `provider` object of every OpenRouter request body.
   # See docs/best-practices/llm-providers.md for rationale.
@@ -1105,7 +1107,9 @@ browserPool:
   enabled: true
   url: "http://browser-pool:3000"
   apiKey: ""
-  maxSessionDurationMs: 60000
+  # We increased this from 60 secs to 180 secs because of vision handling
+  # We have a plan in the backlog to introduce different timeouts for: llm.timeoutMs, browserPool.actionTimeouts etc
+  maxSessionDurationMs: 180000
   defaultViewport:
     width: 1280
     height: 720
