@@ -67,6 +67,9 @@ export interface AgentFormState {
 
   /** Authorization mode: 'direct' | 'approval_required'. Only meaningful for trading agents. */
   authorizationMode: 'direct' | 'approval_required';
+
+  /** Container permission level controlling what the agent can do inside its container. */
+  permissionLevel: 'restricted' | 'standard' | 'full';
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +173,9 @@ export function agentToFormState(agent: Agent): AgentFormState {
     authorizationMode: (
       agent.authorizationMode === 'direct' || agent.authorizationMode === 'approval_required'
     ) ? agent.authorizationMode : 'direct',
+    permissionLevel: (
+      agent.permissionLevel === 'restricted' || agent.permissionLevel === 'standard' || agent.permissionLevel === 'full'
+    ) ? agent.permissionLevel : 'standard',
   };
 }
 
@@ -212,6 +218,7 @@ export function intentToFormState(intent: {
   subscribedSources: string[];
   pendingFiles: File[];
   authorizationMode: 'direct' | 'approval_required';
+  permissionLevel?: 'restricted' | 'standard' | 'full';
 }): AgentFormState {
   const {
     name,
@@ -243,6 +250,7 @@ export function intentToFormState(intent: {
     subscribedSources,
     pendingFiles,
     authorizationMode,
+    permissionLevel,
   } = intent;
   return {
     name,
@@ -274,5 +282,6 @@ export function intentToFormState(intent: {
     subscribedSources,
     pendingFiles,
     authorizationMode,
+    permissionLevel: permissionLevel ?? 'standard',
   };
 }

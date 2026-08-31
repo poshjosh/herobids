@@ -85,6 +85,7 @@ interface IntentState {
   platformAssessmentReviewIntervalHours: string;
   subscribedSources: string[];
   pendingFiles: File[];
+  permissionLevel: 'restricted' | 'standard' | 'full';
 }
 
 type CreateAgentOAuthDraft = {
@@ -323,6 +324,7 @@ export function CreateAgentFlow({
     platformAssessmentReviewIntervalHours: '24',
     subscribedSources: ['watch_threshold', 'discovery_delta', 'regime_change'],
     pendingFiles: [],
+    permissionLevel: 'standard',
     };
   });
   const [modelTouched, setModelTouched] = useState(false);
@@ -672,6 +674,7 @@ export function CreateAgentFlow({
         platformAssessmentReviewIntervalHours: intent.platformAssessmentReviewIntervalHours,
         skillPresetId: intent.skillPreset !== 'custom' ? intent.skillPreset : undefined,
         authorizationMode: intent.authorizationMode,
+        permissionLevel: intent.permissionLevel,
       }));
 
       // Upload any documents selected during creation

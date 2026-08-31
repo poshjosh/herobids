@@ -493,6 +493,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         platformAssessmentReviewIntervalHours: form.platformAssessmentReviewIntervalHours,
         skillPresetId: skillPreset !== 'custom' ? skillPreset : undefined,
         authorizationMode: form.authorizationMode,
+        permissionLevel: form.permissionLevel,
       }));
 
       if (form.pendingFiles.length > 0) {

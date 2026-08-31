@@ -11,6 +11,7 @@ import { AgentControlsSection } from './AgentControlsSection.js';
 import { WakeSourceSection, TRADING_WAKE_SOURCES } from './WakeSourceSection.js';
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
 import { presetParamsToFormState } from './technical-config-helpers.js';
+import { PermissionLevelSelector } from './PermissionLevelSelector.js';
 
 // ---------------------------------------------------------------------------
 // ADVANCED_FIELD_TAB — maps validated field names to Advanced Settings tab index
@@ -45,6 +46,7 @@ export const ADVANCED_FIELD_TAB: Record<string, number> = {
   // AI
   tickIntervalMins: 0,
   dailySpendBudgetUsd: 0,
+  permissionLevel: 0,
   // Trading Setup
   authorizationMode: 1,
   executionMode: 1,
@@ -339,6 +341,10 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         aiConfig={
           <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
             {props.modelSlot}
+            <PermissionLevelSelector
+              value={props.value.permissionLevel}
+              onChange={(level) => props.onChange({ permissionLevel: level })}
+            />
             <AgentControlsSection
               value={{
                 costPreset: props.value.costPreset,

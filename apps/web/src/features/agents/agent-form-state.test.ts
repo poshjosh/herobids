@@ -143,3 +143,100 @@ describe('agentToFormState — emailDelivery hydration', () => {
     expect(agentToFormState(agent).emailDelivery).toBe('disable');
   });
 });
+
+import { intentToFormState } from './agent-form-state.js';
+import { defaultTechnicalConfigFormState } from './technical-config-helpers.js';
+
+// ---------------------------------------------------------------------------
+// agentToFormState — permissionLevel hydration
+// ---------------------------------------------------------------------------
+
+describe('agentToFormState — permissionLevel hydration', () => {
+  it('hydrates "restricted" from the agent object', () => {
+    const agent = makeAgent({ permissionLevel: 'restricted' });
+    expect(agentToFormState(agent).permissionLevel).toBe('restricted');
+  });
+
+  it('hydrates "standard" from the agent object', () => {
+    const agent = makeAgent({ permissionLevel: 'standard' });
+    expect(agentToFormState(agent).permissionLevel).toBe('standard');
+  });
+
+  it('hydrates "full" from the agent object', () => {
+    const agent = makeAgent({ permissionLevel: 'full' });
+    expect(agentToFormState(agent).permissionLevel).toBe('full');
+  });
+
+  it('defaults to "standard" when permissionLevel is null', () => {
+    const agent = makeAgent({ permissionLevel: null });
+    expect(agentToFormState(agent).permissionLevel).toBe('standard');
+  });
+
+  it('defaults to "standard" when permissionLevel is undefined', () => {
+    const agent = makeAgent({ permissionLevel: undefined });
+    expect(agentToFormState(agent).permissionLevel).toBe('standard');
+  });
+
+  it('defaults to "standard" when permissionLevel is an invalid string', () => {
+    const agent = makeAgent({ permissionLevel: 'admin' as any });
+    expect(agentToFormState(agent).permissionLevel).toBe('standard');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// intentToFormState — permissionLevel passthrough
+// ---------------------------------------------------------------------------
+
+const BASE_INTENT = {
+  name: 'test',
+  goal: 'trade',
+  capabilityMode: 'intelligence' as const,
+  hybridMode: undefined,
+  technicalPreFilterEnabled: false,
+  technicalConfig: defaultTechnicalConfigFormState(),
+  skillIds: [],
+  connectionIds: [],
+  executionMode: 'test' as const,
+  capital: '',
+  telegramChatId: '',
+  emailDelivery: 'inherit' as const,
+  costPreset: '' as const,
+  dailySpendBudgetUsd: '',
+  tickIntervalMins: '',
+  dailyMaxLossPct: '',
+  maxDrawdownPct: '',
+  maxSlippageBps: '',
+  maxOpenPositions: '',
+  maxPositionSizePct: '',
+  stopLossPct: '',
+  stopLossCooldownSecs: '',
+  openPositionEscalationToJudgePolicy: 'uncovered_or_triggered' as const,
+  strategyPreset: '',
+  platformAssessmentEnabled: false,
+  platformAssessmentReviewIntervalHours: '',
+  subscribedSources: [] as string[],
+  pendingFiles: [] as File[],
+  authorizationMode: 'direct' as const,
+};
+
+describe('intentToFormState — permissionLevel passthrough', () => {
+  it('passes through "restricted" from intent', () => {
+    const result = intentToFormState({ ...BASE_INTENT, permissionLevel: 'restricted' });
+    expect(result.permissionLevel).toBe('restricted');
+  });
+
+  it('passes through "standard" from intent', () => {
+    const result = intentToFormState({ ...BASE_INTENT, permissionLevel: 'standard' });
+    expect(result.permissionLevel).toBe('standard');
+  });
+
+  it('passes through "full" from intent', () => {
+    const result = intentToFormState({ ...BASE_INTENT, permissionLevel: 'full' });
+    expect(result.permissionLevel).toBe('full');
+  });
+
+  it('defaults to "standard" when permissionLevel is undefined', () => {
+    const result = intentToFormState({ ...BASE_INTENT });
+    expect(result.permissionLevel).toBe('standard');
+  });
+});

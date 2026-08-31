@@ -183,3 +183,38 @@ describe('setup flow copy changes', () => {
     expect(tradingReturnBlock).not.toContain("path: '/connections'");
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// Permission level i18n keys — explicit coverage
+// ---------------------------------------------------------------------------
+
+describe('permission level i18n keys', () => {
+  const PERMISSION_LEVEL_KEYS = [
+    'agents.permissionLevel.label',
+    'agents.permissionLevel.restricted.label',
+    'agents.permissionLevel.restricted.description',
+    'agents.permissionLevel.standard.label',
+    'agents.permissionLevel.standard.description',
+    'agents.permissionLevel.full.label',
+    'agents.permissionLevel.full.description',
+    'agents.permissionLevel.default',
+  ] as const;
+
+  it('all permission level keys exist in the English locale', () => {
+    for (const key of PERMISSION_LEVEL_KEYS) {
+      expect(enMessages, `Missing en key: ${key}`).toHaveProperty(key);
+      expect(enMessages[key]).toBeTruthy();
+    }
+  });
+
+  it('all permission level keys exist in every non-English locale', () => {
+    const otherLocales: Record<string, Record<string, string>> = { ar: arMessages, hi: hiMessages };
+    for (const [lang, messages] of Object.entries(otherLocales)) {
+      for (const key of PERMISSION_LEVEL_KEYS) {
+        expect(messages, `Missing key "${key}" in ${lang}`).toHaveProperty(key);
+        expect(messages[key]).toBeTruthy();
+      }
+    }
+  });
+});

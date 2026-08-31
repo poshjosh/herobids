@@ -1107,6 +1107,8 @@ export interface Agent {
   authorizationMode?: string | null;
   /** Skill preset identifier persisted in unifiedConfig.metadata. */
   skillPresetId?: string | null;
+  /** Permission level: 'restricted' | 'standard' | 'full'. Controls agent container capabilities. */
+  permissionLevel?: string | null;
   createdAt: string;
   updatedAt: string;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;

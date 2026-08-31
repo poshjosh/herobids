@@ -1288,3 +1288,55 @@ describe('buildCreateAgentPayload — DEFAULT_BLANK_PROMPT fallback', () => {
     expect(payload.prompt).toBe('Trade aggressively');
   });
 });
+
+// ---------------------------------------------------------------------------
+// permissionLevel — create payload
+// ---------------------------------------------------------------------------
+
+describe('buildCreateAgentPayload — permissionLevel', () => {
+  it('includes permissionLevel when explicitly set to "restricted"', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, permissionLevel: 'restricted' });
+    expect(payload.permissionLevel).toBe('restricted');
+  });
+
+  it('includes permissionLevel when explicitly set to "standard"', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, permissionLevel: 'standard' });
+    expect(payload.permissionLevel).toBe('standard');
+  });
+
+  it('includes permissionLevel when explicitly set to "full"', () => {
+    const payload = buildCreateAgentPayload({ ...BASE_CREATE_INPUT, permissionLevel: 'full' });
+    expect(payload.permissionLevel).toBe('full');
+  });
+
+  it('defaults permissionLevel to "standard" when undefined', () => {
+    const payload = buildCreateAgentPayload(BASE_CREATE_INPUT);
+    expect(payload.permissionLevel).toBe('standard');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// permissionLevel — update payload
+// ---------------------------------------------------------------------------
+
+describe('buildUpdateAgentPayload — permissionLevel', () => {
+  it('includes permissionLevel when explicitly set to "restricted"', () => {
+    const payload = buildUpdateAgentPayload({ ...BASE_UPDATE_INPUT, permissionLevel: 'restricted' });
+    expect(payload.permissionLevel).toBe('restricted');
+  });
+
+  it('includes permissionLevel when explicitly set to "standard"', () => {
+    const payload = buildUpdateAgentPayload({ ...BASE_UPDATE_INPUT, permissionLevel: 'standard' });
+    expect(payload.permissionLevel).toBe('standard');
+  });
+
+  it('includes permissionLevel when explicitly set to "full"', () => {
+    const payload = buildUpdateAgentPayload({ ...BASE_UPDATE_INPUT, permissionLevel: 'full' });
+    expect(payload.permissionLevel).toBe('full');
+  });
+
+  it('defaults permissionLevel to "standard" when undefined', () => {
+    const payload = buildUpdateAgentPayload(BASE_UPDATE_INPUT);
+    expect(payload.permissionLevel).toBe('standard');
+  });
+});

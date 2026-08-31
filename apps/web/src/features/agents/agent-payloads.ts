@@ -136,6 +136,8 @@ export interface CreateAgentIntentPayloadInput {
   skillPresetId?: string;
   /** Authorization mode: 'direct' or 'approval_required'. Only meaningful for trading agents. */
   authorizationMode?: 'direct' | 'approval_required';
+  /** Container permission level. */
+  permissionLevel?: 'restricted' | 'standard' | 'full';
 }
 
 export interface UpdateAgentPayloadInput {
@@ -184,6 +186,8 @@ export interface UpdateAgentPayloadInput {
   skillPresetId?: string;
   /** Authorization mode: 'direct' or 'approval_required'. Only meaningful for trading agents. */
   authorizationMode?: 'direct' | 'approval_required';
+  /** Container permission level. */
+  permissionLevel?: 'restricted' | 'standard' | 'full';
 }
 
 export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
@@ -214,6 +218,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   platformAssessment?: { enabled?: boolean; reviewIntervalMs?: number };
   skillPresetId?: string;
   authorizationMode?: 'direct' | 'approval_required';
+  permissionLevel?: 'restricted' | 'standard' | 'full';
 } {
   // Build canonical risk posture (WP4 shared value object)
   const risk: Record<string, unknown> = {};
@@ -270,6 +275,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(platformAssessment ? { platformAssessment } : {}),
     ...(input.skillPresetId ? { skillPresetId: input.skillPresetId } : {}),
     ...(includeAuthorizationMode && input.authorizationMode ? { authorizationMode: input.authorizationMode } : {}),
+    permissionLevel: input.permissionLevel ?? 'standard',
   };
 }
 
@@ -304,6 +310,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   platformAssessment?: { enabled?: boolean; reviewIntervalMs?: number } | null;
   skillPresetId?: string | null;
   authorizationMode?: 'direct' | 'approval_required' | null;
+  permissionLevel?: 'restricted' | 'standard' | 'full';
 } {
   // Build canonical risk posture (WP4 shared value object)
   const risk: Record<string, unknown> = {};
@@ -377,5 +384,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     platformAssessment: buildPlatformAssessmentPayload(input.platformAssessmentEnabled, input.platformAssessmentReviewIntervalHours),
     ...(input.skillPresetId !== undefined ? { skillPresetId: input.skillPresetId } : {}),
     ...(includeAuthorizationMode && input.authorizationMode !== undefined ? { authorizationMode: input.authorizationMode } : {}),
+    permissionLevel: input.permissionLevel ?? 'standard',
   };
 }

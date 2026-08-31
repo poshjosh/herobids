@@ -4,7 +4,7 @@ import { IntlProvider } from 'react-intl';
 import { describe, expect, it } from 'vitest';
 import { messages } from '../../app/i18n/locales/en.js';
 import type { AgentFormState } from './agent-form-state.js';
-import { AgentFormBody } from './AgentFormBody.js';
+import { AgentFormBody, ADVANCED_FIELD_TAB } from './AgentFormBody.js';
 import { defaultTechnicalConfigFormState } from './technical-config-helpers.js';
 
 const BASE_FORM_STATE: AgentFormState = {
@@ -37,6 +37,7 @@ const BASE_FORM_STATE: AgentFormState = {
   subscribedSources: [],
   pendingFiles: [],
   authorizationMode: 'direct',
+  permissionLevel: 'standard',
 };
 
 function renderBody(overrides: Partial<Parameters<typeof AgentFormBody>[0]> = {}): string {
@@ -83,5 +84,30 @@ describe('AgentFormBody', () => {
     const html = renderBody();
 
     expect(html).toContain('Connection slot marker');
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// ADVANCED_FIELD_TAB — permissionLevel mapping
+// ---------------------------------------------------------------------------
+
+describe('ADVANCED_FIELD_TAB', () => {
+  it('maps permissionLevel to the AI tab (index 0)', () => {
+    expect(ADVANCED_FIELD_TAB['permissionLevel']).toBe(0);
+  });
+
+  it('groups permissionLevel with other AI-tab fields', () => {
+    const aiTabFields = Object.entries(ADVANCED_FIELD_TAB)
+      .filter(([, tabIdx]) => tabIdx === 0)
+      .map(([field]) => field);
+
+    expect(aiTabFields).toContain('permissionLevel');
+    expect(aiTabFields).toContain('tickIntervalMins');
+    expect(aiTabFields).toContain('dailySpendBudgetUsd');
+  });
+
+  it('does not map permissionLevel to Trading Setup tab (index 1)', () => {
+    expect(ADVANCED_FIELD_TAB['permissionLevel']).not.toBe(1);
   });
 });
