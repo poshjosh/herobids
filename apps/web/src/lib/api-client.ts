@@ -1531,8 +1531,6 @@ export interface AdminStatsResponse {
   version: string;
   postgres: 'ok' | 'timeout' | 'error';
   redis: 'ok' | 'timeout' | 'error';
-  memory: { totalBytes: number; freeBytes: number; usedBytes: number };
-  disk: { totalBytes: number; freeBytes: number; usedBytes: number } | null;
   counts: {
     users: number;
     bots: number;
@@ -1543,6 +1541,24 @@ export interface AdminStatsResponse {
     newUsersLast24h: number;
     newAgentsLast24h: number;
   };
+}
+
+export interface ServerHealthSnapshot {
+  serverType: 'control-plane' | 'agent-server' | 'browser-pool' | 'trading';
+  serverId: string;
+  hostname: string;
+  memory: { totalBytes: number; usedBytes: number; freeBytes: number };
+  disk: { totalBytes: number; usedBytes: number; freeBytes: number } | null;
+  cpuPct: number | null;
+  loadAvg: [number, number, number];
+  uptimeSeconds: number;
+  version: string;
+  updatedAt: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface AdminServersResponse {
+  servers: Record<string, ServerHealthSnapshot[]>;
 }
 
 export interface AdminUserRow {
@@ -1638,6 +1654,7 @@ export interface AdminProviderRow {
 
 export const admin = {
   stats: () => request<AdminStatsResponse>('/admin/stats'),
+  servers: () => request<AdminServersResponse>('/admin/servers'),
   users: (params?: { limit?: number; offset?: number }) => {
     const qs = new URLSearchParams();
     if (params?.limit !== undefined) qs.set('limit', String(params.limit));

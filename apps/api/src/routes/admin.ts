@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import * as os from 'node:os';
 import { eq, count, sql, gte, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { users, bots, agents, agentRuntimeSessions, billingWebhookEvents } from '@herobids/db';
-import type { MarketDataConfig } from '@herobids/domain';
-import { checkPostgres, checkRedis, getDiskStats, parseAppVersion } from '../admin-utils.js';
+import type { MarketDataConfig, ServerHealthSnapshot } from '@herobids/domain';
+import { SERVER_TYPES, serverHealthKeyPattern } from '@herobids/domain';
+import { checkPostgres, checkRedis, parseAppVersion } from '../admin-utils.js';
 
 /** Options passed to adminRoutes for market-data provisioning endpoints. */
 export interface AdminRoutesOptions {
@@ -141,6 +141,7 @@ export async function adminRoutes(
     ping(): Promise<string>;
     get(key: string): Promise<string | null>;
     hgetall?(key: string): Promise<Record<string, string>>;
+    scan(cursor: string | number, ...args: unknown[]): Promise<[cursor: string, keys: string[]]>;
   },
   options: AdminRoutesOptions = {},
 ): Promise<void> {
@@ -199,19 +200,10 @@ export async function adminRoutes(
       // Docker unavailable — leave as null
     }
 
-    const totalMemBytes = os.totalmem();
-    const freeMemBytes = os.freemem();
-
     return reply.send({
       version: VERSION,
       postgres: postgresStatus,
       redis: redisStatus,
-      memory: {
-        totalBytes: totalMemBytes,
-        freeBytes: freeMemBytes,
-        usedBytes: totalMemBytes - freeMemBytes,
-      },
-      disk: getDiskStats(),
       counts: {
         users: userCount,
         bots: botCount,
@@ -223,6 +215,38 @@ export async function adminRoutes(
         newAgentsLast24h: newAgentCount,
       },
     });
+  });
+
+  // GET /admin/servers — server health snapshots grouped by type
+  app.get('/admin/servers', { preHandler: adminPreHandler }, async (_request, reply) => {
+    const pattern = serverHealthKeyPattern();
+    const servers: Record<string, ServerHealthSnapshot[]> = {};
+    for (const t of SERVER_TYPES) {
+      servers[t] = [];
+    }
+
+    // Cursor-based SCAN to collect all server health keys
+    let cursor = '0';
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', '100');
+      cursor = nextCursor;
+
+      const values = await Promise.all(keys.map((key) => redis.get(key)));
+      for (const raw of values) {
+        if (!raw) continue;
+        try {
+          const snapshot = JSON.parse(raw) as ServerHealthSnapshot;
+          const group = servers[snapshot.serverType];
+          if (group) {
+            group.push(snapshot);
+          }
+        } catch {
+          // Skip malformed entries
+        }
+      }
+    } while (cursor !== '0');
+
+    return reply.send({ servers });
   });
 
   // GET /admin/users — all users with bot and agent counts

@@ -129,7 +129,7 @@ Empty arrays for types with no reporting servers.
 
 ## Implementation
 
-### Phase 1: Domain types and Redis publisher for control-plane — PENDING
+### Phase 1: Domain types and Redis publisher for control-plane — DONE
 
 **Effort:** ~2 hours
 **Risk:** Low — additive, no existing behaviour changes.

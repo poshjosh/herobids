@@ -7,7 +7,7 @@ import { AdminOverviewSection } from './AdminOverviewSection.js';
 import { AdminUsersSection } from './AdminUsersSection.js';
 import { AdminBillingSection } from './AdminBillingSection.js';
 import { AdminRuntimeSection } from './AdminRuntimeSection.js';
-import { AdminResourcesSection } from './AdminResourcesSection.js';
+import { AdminServersSection } from './AdminServersSection.js';
 import { AdminMarketDataSection } from './AdminMarketDataSection.js';
 
 export function AdminPage() {
@@ -39,6 +39,12 @@ export function AdminPage() {
     queryKey: ['admin', 'containers'],
     queryFn: () => adminApi.containers(),
     refetchInterval: 30_000,
+  });
+
+  const serversQuery = useQuery({
+    queryKey: ['admin', 'servers'],
+    queryFn: () => adminApi.servers(),
+    refetchInterval: 15_000,
   });
 
   const marketDataOverviewQuery = useQuery({
@@ -128,13 +134,15 @@ export function AdminPage() {
           )}
         </section>
 
-        {/* 5. Resources */}
+        {/* 5. Servers */}
         <section>
-          <SectionHeading>Resources</SectionHeading>
-          {statsQuery.isPending ? (
+          <SectionHeading>Servers</SectionHeading>
+          {serversQuery.isPending ? (
             <LoadingCard />
-          ) : statsQuery.data ? (
-            <AdminResourcesSection stats={statsQuery.data} />
+          ) : serversQuery.isError ? (
+            <ErrorCard message="Failed to load server data" onRetry={() => { void serversQuery.refetch(); }} />
+          ) : serversQuery.data ? (
+            <AdminServersSection data={serversQuery.data} />
           ) : null}
         </section>
 
