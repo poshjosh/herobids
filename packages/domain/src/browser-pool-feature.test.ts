@@ -341,6 +341,12 @@ describe('BROWSER_SKILL', () => {
     expect(BROWSER_SKILL.instructions).toContain('system/programming');
   });
 
+  it('instructions contain guidance about following skill instructions', () => {
+    expect(BROWSER_SKILL.instructions).toContain(
+      'prefer whichever browser automation option the skill suggests',
+    );
+  });
+
   it('has empty capabilityFamilies', () => {
     expect(BROWSER_SKILL.capabilityFamilies).toEqual([]);
   });

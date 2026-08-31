@@ -7,6 +7,8 @@ import { parseBrokerDenialReply } from './tool-errors.js';
 import { createLogger } from '../logger.js';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const logger = createLogger('tools:skills');
 
@@ -17,6 +19,9 @@ const EXTERNAL_REMOVE_TIMEOUT_MS = 15_000;
 
 const FILE_MANAGEMENT_SKILL_ID = 'file-management';
 const FILE_MANAGEMENT_SLUG = 'system/file-management';
+
+const PROGRAMMING_SKILL_ID = 'programming';
+const PROGRAMMING_SKILL_SLUG = 'system/programming';
 
 // ── External skill subprocess helpers ───────────────────────────────────────
 
@@ -95,6 +100,64 @@ async function runExternalSkillRemove(name: string, cwd: string): Promise<Extern
 
 async function runExternalSkillList(cwd: string): Promise<ExternalSubprocessResult> {
   return runExternalSubprocess(['list', '--json'], cwd, EXTERNAL_LIST_TIMEOUT_MS);
+}
+
+// ── External skill frontmatter helpers ──────────────────────────────────────
+
+/**
+ * Parse simple YAML frontmatter (key: value pairs between `---` delimiters).
+ * Does not handle nested structures — sufficient for SKILL.md metadata.
+ */
+export function parseSkillFrontmatter(content: string): Record<string, string> {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return {};
+  const result: Record<string, string> = {};
+  for (const line of match[1]!.split(/\r?\n/)) {
+    const colonIdx = line.indexOf(':');
+    if (colonIdx > 0) {
+      result[line.slice(0, colonIdx).trim()] = line.slice(colonIdx + 1).trim();
+    }
+  }
+  return result;
+}
+
+/**
+ * Derive the skill directory name from an external ref.
+ *
+ * - `owner/repo@skill` → `skill`
+ * - `owner/repo/skill` (pre-normalization) → `skill`
+ */
+function deriveSkillDirName(ref: string): string {
+  if (ref.includes('@')) {
+    return ref.split('@').pop()!;
+  }
+  return ref.split('/').pop()!;
+}
+
+/**
+ * Check if any successfully installed external skills declare Bash in their
+ * `allowed-tools` frontmatter. Returns the first matching ref, or `null` if
+ * none declare a Bash dependency.
+ */
+export async function detectExternalSkillBashDependency(
+  workspaceRoot: string,
+  installedRefs: string[],
+): Promise<string | null> {
+  for (const ref of installedRefs) {
+    const name = deriveSkillDirName(ref);
+    const skillMdPath = join(workspaceRoot, '.agents', 'skills', name, 'SKILL.md');
+    try {
+      const content = await readFile(skillMdPath, 'utf-8');
+      const frontmatter = parseSkillFrontmatter(content);
+      const allowedTools = frontmatter['allowed-tools'] ?? '';
+      if (allowedTools.includes('Bash(')) {
+        return ref;
+      }
+    } catch (err) {
+      logger.debug({ err, ref, skillMdPath }, 'Could not read SKILL.md frontmatter for bash dependency detection');
+    }
+  }
+  return null;
 }
 
 // ── Slug resolution helpers ─────────────────────────────────────────────────
@@ -453,9 +516,44 @@ const addSkillsTool: AgentTool = {
           ref, ok: false, error: `External install failed: ${externalSettled.reason instanceof Error ? externalSettled.reason.message : 'unknown error'}`,
         }));
 
+      // 5b. Auto-resolve system/programming for external skills that declare Bash
+      let postInstallBrokerResult: { added: string[]; warnings: string[] } | undefined;
+      if (includeDependencies && externalResults.length > 0) {
+        const successfulExternalRefs = externalResults.filter(r => r.ok).map(r => r.ref);
+        if (successfulExternalRefs.length > 0) {
+          const assignedSet = new Set(cachedAssigned.map(s => s.id));
+          const alreadyAdded = new Set(platformResult?.added ?? []);
+          if (
+            !assignedSet.has(PROGRAMMING_SKILL_ID)
+            && !alreadyAdded.has(PROGRAMMING_SKILL_ID)
+            && !allPlatformIds.includes(PROGRAMMING_SKILL_ID)
+          ) {
+            try {
+              const { getWorkspacePaths } = await import('./workspace.js');
+              const cwd = getWorkspacePaths(ctx.agentId).root;
+              const needsBash = await detectExternalSkillBashDependency(cwd, successfulExternalRefs);
+              if (needsBash) {
+                const bashBrokerResult = await sendBrokerSkillMutation('add', [PROGRAMMING_SKILL_ID], ctx);
+                if (bashBrokerResult.success && bashBrokerResult._brokerResult) {
+                  postInstallBrokerResult = {
+                    added: bashBrokerResult._brokerResult.skillIds,
+                    warnings: bashBrokerResult._brokerResult.warnings,
+                  };
+                  autoResolved.push({ skill: PROGRAMMING_SKILL_SLUG, requiredBy: needsBash });
+                }
+              }
+            } catch (err) {
+              logger.warn({ err, agentId: ctx.agentId }, 'Failed to detect bash dependency for external skills');
+            }
+          }
+        }
+      }
+
       // 6. Hot-reload after platform changes
+      const hadPlatformAdds = (platformResult && platformResult.added.length > 0)
+        || (postInstallBrokerResult && postInstallBrokerResult.added.length > 0);
       let activeSkills: string[] | undefined;
-      if (platformResult && platformResult.added.length > 0 && ctx.onSkillsChanged) {
+      if (hadPlatformAdds && ctx.onSkillsChanged) {
         try {
           activeSkills = await ctx.onSkillsChanged();
           logger.debug({ agentId: ctx.agentId, activeSkills }, 'Skill hot-reload succeeded after add_skills');
@@ -465,9 +563,13 @@ const addSkillsTool: AgentTool = {
       }
 
       // 7. Build response using slugs
-      const addedSlugs = (platformResult?.added ?? []).map(id => idToSlug.get(id) ?? id);
+      const addedSlugs = [
+        ...(platformResult?.added ?? []).map(id => idToSlug.get(id) ?? id),
+        ...(postInstallBrokerResult?.added ?? []).map(id => idToSlug.get(id) ?? id),
+      ];
       const allWarnings = [
         ...(platformResult?.warnings ?? []),
+        ...(postInstallBrokerResult?.warnings ?? []),
         ...rejectedRefs.map(r => r.reason),
         ...externalResults.filter(r => !r.ok).map(r => {
           const formatHint = !r.ref.includes('@') && r.ref.split('/').length >= 3
@@ -484,7 +586,7 @@ const addSkillsTool: AgentTool = {
         ...(missingDependencies.length > 0 ? { missingDependencies } : {}),
         ...(activeSkills ? { activeSkills } : {}),
         ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
-        ...(!activeSkills && platformResult && platformResult.added.length > 0 ? { note: 'Skill change saved. Hot-reload failed — changes take effect next tick.' } : {}),
+        ...(!activeSkills && hadPlatformAdds ? { note: 'Skill change saved. Hot-reload failed — changes take effect next tick.' } : {}),
         ...(externalResults.length > 0 ? { external: externalResults.map(r => ({ ref: r.ref, ok: r.ok, ...(r.output ? { output: r.output } : {}), ...(r.error ? { error: r.error } : {}) })) } : {}),
       };
 

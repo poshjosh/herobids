@@ -411,22 +411,26 @@ export const BROWSER_SKILL: SkillDefinition = {
   slug: 'system/browser',
   name: 'Browser',
   description: 'Interactive browser automation: open pages, click, fill forms, take screenshots, and read page content.',
-  instructions: `You have access to browser automation tools.
+  instructions: `You have two browser automation options.
 
-## Platform browser tool
+**browse_interactive**
 
-- Use \`browse_interactive\` for structured browser automation via the platform.
-  Actions: open, snapshot, click, fill, screenshot, get_text, close.
-- **You may use either snapshot or screenshot** for understanding page content.
-  Snapshot returns a compact accessibility tree (element roles and names) —
-  cheap, fast, and directly actionable. Screenshot returns a large base64 PNG —
-  use it only when you need to verify visual layout or appearance.
-  Screenshot requires vision capability to interpret the result.
+Actions: open, snapshot, click, fill, screenshot, get_text, close.
+Single session per agent. Structured JSON responses.
 
-## agent-browser CLI
+Strengths:
+- Native tool — no shell needed
+- Snapshot returns a compact accessibility tree (cheap, fast, directly actionable)
+- Screenshot returns base64 PNG (use when you need visual verification; requires vision)
 
-If you have the \`system/programming\` skill (which provides \`execute_shell\`),
-you can also run \`agent-browser\` commands via \`execute_shell\`:
+Limitations:
+- Single session only — cannot run parallel browser sessions
+- No command chaining or background execution
+- No named sessions
+
+**agent-browser CLI**
+
+Requires the system/programming skill. Run commands via execute_shell.
 
 \`\`\`
 execute_shell({ command: 'agent-browser open https://example.com' })
@@ -435,15 +439,20 @@ execute_shell({ command: 'agent-browser click @e2' })
 execute_shell({ command: 'agent-browser close' })
 \`\`\`
 
-The CLI connects to a shared browser pool — no local Chrome needed.
-It supports sessions (\`--session <name>\`), accessibility snapshots,
-element refs (@eN), screenshots, and all standard agent-browser commands.
-Run \`agent-browser --help\` for the full command list.
+Strengths:
+- Named sessions (--session <name>) — run multiple independent browser contexts
+- Command chaining (&&) and parallel execution (&, wait)
+- Element refs (@eN) from snapshots for precise interaction
+- Full command set (hover, drag, scroll, pdf, eval, etc.)
 
-When using external skills that reference \`agent-browser\`, use
-\`execute_shell\` to run their commands.
+Limitations:
+- Requires system/programming skill for execute_shell access
+- Output is plain text (stdout/stderr), not structured JSON
 
-Always close browser sessions when done to free resources.`,
+Run agent-browser --help for the full command list.
+Always close browser sessions when done to free resources.
+
+When following a skill's instructions, prefer whichever browser automation option the skill suggests.`,
   promptHint: "e.g. 'Navigate to a website, fill out a form, and capture the results'",
   requiredTools: ['browse_interactive', 'send_message', 'publish_artifact'],
   capabilityFamilies: [],

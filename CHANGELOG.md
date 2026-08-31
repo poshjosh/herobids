@@ -18,6 +18,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `add_skills` auto-resolves `system/programming` when an external skill declares `Bash(...)` in its `allowed-tools` frontmatter — agents no longer need the user to manually add the programming skill to run CLI-based skill instructions (e.g. `agent-browser` commands from the Google Flights skill).
+- `system/browser` skill instructions rewritten — now lists strengths and limitations of both `browse_interactive` (platform tool) and `agent-browser` CLI neutrally, instead of presenting `browse_interactive` as primary. Ends with: "prefer whichever browser automation option the skill suggests."
 - `NomadRuntimeAdapter` now accepts a shared `NomadClient` via config (backward-compatible — creates its own if not provided). HTTP logic delegated to the client instead of private `nomadRequest()` method.
 - Browser pool URL resolution uses `ServiceRegistry` — static config URL wins, Nomad discovery fills gaps. `browserPool.url` no longer required when `browserPool.enabled` is true (the registry can resolve it dynamically).
 - `BrowserPoolConfigSchema` relaxed — removed `superRefine` that rejected empty `url` when `enabled`. The worker logs a warning if no URL is resolved at runtime.
