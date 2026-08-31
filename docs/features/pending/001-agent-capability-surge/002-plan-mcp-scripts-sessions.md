@@ -122,6 +122,19 @@ Two new tool actions added to `browse_interactive` (from Phase 1):
 
 This keeps session persistence explicit and agent-controlled — no magic persistence layer, no hidden state. The agent decides what to save, when to save it, and when to restore it.
 
+### Browser Security Hardening (carried from Phase 1)
+
+**Redirect SSRF in `browse_interactive`:** CDP's `Page.navigate` follows server-side redirects internally in Chrome without agent-side re-validation. A malicious page could redirect to `http://169.254.169.254/latest/meta-data/` or other internal endpoints. Phase 1's `make_http_request` tool already handles this (manual redirect following with per-hop SSRF re-validation), but the browser tool cannot use the same approach — it requires intercepting network requests via the CDP `Fetch.requestPaused` event.
+
+**Fix approach:**
+1. Enable CDP `Fetch` domain after `Page.enable`.
+2. Subscribe to `Fetch.requestPaused` events.
+3. For each paused request, extract the URL, validate protocol + hostname against the SSRF guard (`isHostPrivate` + deny-list).
+4. Call `Fetch.continueRequest` for safe URLs, `Fetch.failRequest` for blocked ones.
+5. Return a clear error to the agent when a navigation is blocked by SSRF.
+
+**Estimated effort:** ~1 day (CDP event handling + tests).
+
 ---
 
 ## Risks (preliminary)
@@ -131,6 +144,7 @@ This keeps session persistence explicit and agent-controlled — no magic persis
 | MCP server security | Arbitrary MCP servers could exfiltrate agent context. Operator allowlist is essential. |
 | Script execution escape | Even with sandbox-exec.sh, scripts could consume excessive CPU/memory. Need per-script resource limits. |
 | Session state leaking sensitive data | Saved cookies may contain auth tokens. Must not be logged or exposed in tool results beyond the agent's own context. |
+| Browser redirect SSRF | `browse_interactive` follows redirects inside Chrome without SSRF re-validation. Fix planned above (CDP `Fetch.requestPaused` interception). |
 | Scope creep | Each of these three capabilities could be a standalone feature. Strict scoping needed. |
 
 ---
