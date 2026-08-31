@@ -28,7 +28,15 @@ RUN echo "inject-workspace-packages=true" >> .npmrc && \
 # CAP_NET_ADMIN is required at container run-time for namespace creation.
 FROM node:22-alpine AS runtime
 
-RUN apk add --no-cache iproute2 iptables ip6tables python3 py3-pip git
+RUN apk add --no-cache iproute2 iptables ip6tables python3 py3-pip git sudo
+
+# Non-root agent user with passwordless sudo for full permission level.
+# The container still starts as root because sandbox-exec.sh requires
+# CAP_NET_ADMIN for network namespace creation. The execute_shell tool
+# drops to the 'agent' user for standard mode and stays root for full mode.
+RUN adduser -D -h /home/agent agent && \
+    echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent && \
+    chmod 0440 /etc/sudoers.d/agent
 
 WORKDIR /app/apps/worker
 
@@ -39,7 +47,8 @@ COPY scripts/sandbox-exec.sh /usr/local/bin/sandbox-exec.sh
 RUN chmod +x /usr/local/bin/sandbox-exec.sh
 
 # Workspace root: persists for the lifetime of the container (across ticks)
-RUN mkdir -p /workspace /workspace/sandbox
+RUN mkdir -p /workspace /workspace/sandbox && \
+    chown agent:agent /workspace /workspace/sandbox
 
 # Config is read via environment variables — no YAML file needed in agent container.
 # All sensitive values come from env (REDIS_URL, LLM_API_KEY, etc.).

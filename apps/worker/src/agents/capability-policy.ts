@@ -133,6 +133,14 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 60_000, maxResponseBytes: 1024 * 1024 },
   },
   {
+    // execute_shell runs locally inside the agent container (network-sandboxed by sandbox-exec.sh).
+    // Visibility is controlled by permission level (standard/full only), not by enabled flag.
+    capability: 'execute_shell',
+    tier: 'direct',
+    enabled: true,
+    limits: { maxPerMinute: 10, maxConcurrent: 2, timeoutMs: 120_000, maxResponseBytes: 1024 * 1024 },
+  },
+  {
     capability: 'publish_artifact',
     tier: 'brokered',
     enabled: true,
