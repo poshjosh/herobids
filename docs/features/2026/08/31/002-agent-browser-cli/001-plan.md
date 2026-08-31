@@ -1,6 +1,6 @@
 # Install agent-browser CLI in Agent Containers
 
-**Status:** In Progress
+**Status:** Done
 **Estimated effort:** ~2 days
 **Dependencies:** [Agent Permission Levels](../001-agent-permission-levels/001-plan.md) (provides `execute_shell`)
 

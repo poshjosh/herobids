@@ -1,6 +1,6 @@
 # Agent Permission Levels
 
-**Status:** In Progress
+**Status:** Done
 
 ## Summary
 
