@@ -92,6 +92,11 @@ export function buildAgentEnv(
     AGENT_WORKSPACE_ROOT: '/workspace',
   };
 
+  // Forward NODE_ENV so agent containers inherit the worker's environment
+  // classification (development → pretty logs + debug level, etc.).
+  const nodeEnv = resolvedEnv['NODE_ENV'];
+  if (nodeEnv) envOut['NODE_ENV'] = nodeEnv;
+
   if (config.llmProvider) envOut['LLM_PROVIDER'] = config.llmProvider;
   if (config.llmBaseUrl) envOut['LLM_BASE_URL'] = config.llmBaseUrl;
   if (config.llmModel) envOut['LLM_MODEL'] = config.llmModel;

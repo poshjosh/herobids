@@ -125,6 +125,21 @@ docker compose ${COMPOSE_FILES} restart caddy
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pruning dangling images..."
 docker image prune -f
+
+# ── Nomad infrastructure jobs ────────────────────────────────────────────────
+# Submit standalone Nomad jobs (browser-pool, etc.) when the Nomad server is
+# running on this host. Skipped silently on Docker-only deploys.
+# nomad job run is idempotent — existing jobs are updated in place.
+if command -v nomad &>/dev/null && nomad server members &>/dev/null 2>&1; then
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Submitting Nomad infrastructure jobs..."
+  for job in infra/nomad/*.nomad.hcl; do
+    [ -f "$job" ] || continue
+    echo "  → $(basename "$job")"
+    nomad job run "$job" || echo "  WARNING: $(basename "$job") failed to submit (non-fatal)"
+  done
+else
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Nomad not running — skipping infrastructure job submission."
+fi
 DEPLOY
 
 # ─── Done ─────────────────────────────────────────────────────────────────────

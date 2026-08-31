@@ -205,7 +205,7 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     capability: 'browse_interactive',
     tier: 'direct',
     enabled: true,
-    limits: { maxPerMinute: 10, maxConcurrent: 2, timeoutMs: 60_000, maxResponseBytes: 512 * 1024 },
+    limits: { maxPerMinute: 25, maxConcurrent: 2, timeoutMs: 60_000, maxResponseBytes: 2 * 1024 * 1024 },
   },  
 ];
 

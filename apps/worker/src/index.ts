@@ -58,6 +58,8 @@ import {
   InstanceEventPublisher,
   DockerRuntimeAdapter,
   NomadRuntimeAdapter,
+  NomadClient,
+  buildServiceRegistry,
 } from './agents/index.js';
 import { ApprovalService } from './services/approval-service.js';
 import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/index.js';
@@ -523,7 +525,41 @@ const agentRuntimeConfigJson = JSON.stringify({
   },
 });
 
-const agentRuntimeLauncher = (() => {
+const agentRuntimeLauncher = await (async () => {
+  // ── Service Registry ──────────────────────────────────────────────────
+  // Build a NomadClient when running on Nomad — shared by the runtime
+  // adapter and the service registry.
+  const nomadClient = runtimeBackend === 'nomad'
+    ? new NomadClient({
+      addr: appConfig.nomad.addr,
+      token: appConfig.nomad.token,
+      timeoutMs: appConfig.nomad.requestTimeoutMs,
+    })
+    : undefined;
+
+  // Static URLs from operator config — the ServiceRegistry uses these as
+  // overrides before falling back to Nomad service discovery.
+  const staticServiceUrls: Record<string, string> = {};
+  for (const [name, entry] of Object.entries(appConfig.services)) {
+    if (entry.url) staticServiceUrls[name] = entry.url;
+  }
+
+  const serviceRegistry = buildServiceRegistry(runtimeBackend, staticServiceUrls, nomadClient);
+
+  // Resolve the browser pool URL from the registry (static or Nomad discovery).
+  // This replaces the previous static `appConfig.browserPool.url` path for env
+  // forwarding while keeping `browserPool.enabled` as the feature gate.
+  let resolvedBrowserPoolUrl: string | undefined;
+  if (appConfig.browserPool.enabled) {
+    resolvedBrowserPoolUrl = appConfig.browserPool.url
+      || ((await serviceRegistry.resolve('browser-pool')) ?? undefined);
+    if (resolvedBrowserPoolUrl) {
+      logger.info({ browserPoolUrl: resolvedBrowserPoolUrl }, 'Browser pool URL resolved');
+    } else {
+      logger.warn('browserPool.enabled is true but no URL could be resolved — browse_interactive will be unavailable');
+    }
+  }
+
   // Shared env config used by both Docker and Nomad paths
   const envConfig = {
     redisUrl: appConfig.redis.url,
@@ -556,8 +592,8 @@ const agentRuntimeLauncher = (() => {
     ...(appConfig.externalSkills.enabled
       ? { externalSkillsConfigJson: JSON.stringify(appConfig.externalSkills) }
       : {}),
-    ...(appConfig.browserPool.enabled
-      ? { browserPoolUrl: appConfig.browserPool.url }
+    ...(resolvedBrowserPoolUrl
+      ? { browserPoolUrl: resolvedBrowserPoolUrl }
       : {}),
   };
 
@@ -603,8 +639,8 @@ const agentRuntimeLauncher = (() => {
         ...(appConfig.externalSkills.enabled
           ? { externalSkillsConfigJson: JSON.stringify(appConfig.externalSkills) }
           : {}),
-        ...(appConfig.browserPool.enabled
-          ? { browserPoolUrl: appConfig.browserPool.url }
+        ...(resolvedBrowserPoolUrl
+          ? { browserPoolUrl: resolvedBrowserPoolUrl }
           : {}),
         onAgentCrashed: async (agentId, sessionId?) => {
           await cascadeStopAgentBots(agentId);
@@ -648,6 +684,7 @@ const agentRuntimeLauncher = (() => {
       },
       terminationPollIntervalMs: appConfig.nomad.terminationPollIntervalMs,
       requestTimeoutMs: appConfig.nomad.requestTimeoutMs,
+      nomadClient,
     });
     return new AgentRuntimeLauncher({
       port: nomadAdapter,

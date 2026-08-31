@@ -74,6 +74,8 @@ export {
   WebAccessToolsConfigSchema,
   BrowserPoolConfigSchema,
   HttpClientConfigSchema,
+  ServicesConfigSchema,
+  ServiceEntrySchema,
   AgentRiskDefaultsSchema,
   AgentCostEstimatesSchema,
   AgentRuntimePolicyOverridesSchema,

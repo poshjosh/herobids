@@ -10,6 +10,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `NomadClient` — shared Nomad HTTP client extracted from `NomadRuntimeAdapter`. Encapsulates base URL, ACL token, and timeout. Includes `resolveService()` for Nomad native service discovery (`GET /v1/service/<name>`).
+- `ServiceRegistry` abstraction — resolves infrastructure service URLs at runtime. Three implementations: `StaticServiceRegistry` (Docker Compose), `NomadServiceRegistry` (Nomad service catalog with 60s TTL cache), `CompositeServiceRegistry` (static first, Nomad fallback). Factory `buildServiceRegistry()` selects the right impl by runtime backend.
+- `ServicesConfigSchema` — declarative service URL map in operator config (`config/default.yaml → services`). Adding a new pool service means adding a key here and a Nomad job — no new resolution code needed.
+- Nomad infrastructure job submission in `push.sh` — after Docker Compose services start, `push.sh` iterates `infra/nomad/*.nomad.hcl` and submits them via `nomad job run` when Nomad is running. Idempotent, skipped silently on Docker-only deploys.
+- `NODE_ENV` forwarded to agent containers — `buildAgentEnv()` now passes the worker's `NODE_ENV` so agent containers in dev get pretty logs and debug-level output.
+
+### Changed
+
+- `NomadRuntimeAdapter` now accepts a shared `NomadClient` via config (backward-compatible — creates its own if not provided). HTTP logic delegated to the client instead of private `nomadRequest()` method.
+- Browser pool URL resolution uses `ServiceRegistry` — static config URL wins, Nomad discovery fills gaps. `browserPool.url` no longer required when `browserPool.enabled` is true (the registry can resolve it dynamically).
+- `BrowserPoolConfigSchema` relaxed — removed `superRefine` that rejected empty `url` when `enabled`. The worker logs a warning if no URL is resolved at runtime.
+- `BrowserlessAdapter` rewrites CDP WebSocket URLs — Browserless returns `ws://0.0.0.0:3000/...` which is unreachable from other containers. The adapter now replaces the host/port with the configured Browserless address.
+- `browse_interactive` capability grant limits raised — `maxPerMinute` from 10 to 25, `maxResponseBytes` from 512 KB to 2 MB (accessibility snapshots can be large).
+- Worker startup IIFE (`agentRuntimeLauncher`) converted to async to support service resolution at startup.
+
+### Fixed
+
+- Browser pool CDP WebSocket connection failure — agent containers couldn't connect to `ws://0.0.0.0:3000/...` returned by Browserless. The adapter now rewrites the hostname to match the configured pool URL.
+
 - Browser pool service — shared Browserless chromium container for agent web browsing (Nomad service job + Docker Compose local dev). Agents get interactive browser automation without Chrome in their container.
 - `browse_interactive` tool — open pages, click elements, fill forms, take screenshots, read accessibility trees via CDP. Gated behind `system/browser` skill. SSRF-protected.
 - `make_http_request` tool — structured HTTP client (GET/POST/PUT/PATCH/DELETE/HEAD) with SSRF protection (deny-list + DNS resolution), response truncation, and manual redirect following with per-hop re-validation. Added to `system/web-access` skill.

@@ -27,3 +27,13 @@ alerts:
   email:
     brandImageUrl: http://localhost:8080/brand/compact-mark.png
 
+# ── Infrastructure Services ────────────────────────────────────────────────
+# Declarative service URL map. Each key is a Nomad service name.
+# When url is non-empty, the worker uses it directly (Docker Compose path).
+# When url is empty and runtimeBackend is 'nomad', the worker resolves the
+# address from the Nomad service catalog at startup.
+services:
+  browser-pool:
+    url: "http://browser-pool:3000"   # Docker Compose; leave empty for Nomad discovery
+
+

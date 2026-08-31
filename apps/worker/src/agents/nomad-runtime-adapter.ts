@@ -11,6 +11,7 @@ import type {
 } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
 import { RUNTIME_ERROR_CODES } from '@herobids/domain';
+import { NomadClient as NomadClientImpl } from './nomad-client.js';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('nomad-runtime-adapter');
@@ -69,6 +70,14 @@ export interface NomadRuntimeAdapterConfig {
   terminationPollIntervalMs?: number;
   /** Nomad API request timeout in ms. */
   requestTimeoutMs?: number;
+  /**
+   * Shared Nomad HTTP client. When provided, the adapter delegates all Nomad
+   * API calls through this client instead of building its own fetch logic.
+   * This allows the client to be shared with other consumers (e.g. service
+   * discovery). If omitted, the adapter creates an internal client from
+   * `nomadAddr`, `token`, and `requestTimeoutMs`.
+   */
+  nomadClient?: NomadClientImpl;
 }
 
 // ── Nomad API Response Types ────────────────────────────────────────────────
@@ -343,12 +352,27 @@ export class NomadRuntimeAdapter implements RuntimePort {
   private terminationTimer: ReturnType<typeof setInterval> | null = null;
   private readonly requestTimeoutMs: number;
   private readonly pollIntervalMs: number;
+  private readonly client: NomadClientImpl;
 
   constructor(config: NomadRuntimeAdapterConfig) {
     this.config = config;
     this.nomadAddr = config.nomadAddr.replace(/\/+$/, ''); // strip trailing slashes
     this.requestTimeoutMs = config.requestTimeoutMs ?? 10_000;
     this.pollIntervalMs = config.terminationPollIntervalMs ?? 30_000;
+
+    // Use the shared NomadClient when provided, otherwise build one internally
+    // from the config fields (backward-compatible with callers that don't pass
+    // a shared client).
+    if (config.nomadClient) {
+      this.client = config.nomadClient;
+    } else {
+      this.client = new NomadClientImpl({
+        addr: config.nomadAddr,
+        token: config.token,
+        timeoutMs: this.requestTimeoutMs,
+      });
+    }
+
     logger.info({ nomadAddr: this.nomadAddr, namespace: config.namespace }, 'NomadRuntimeAdapter initialized');
   }
 
@@ -683,29 +707,7 @@ export class NomadRuntimeAdapter implements RuntimePort {
     path: string,
     options: { method: string; body?: string },
   ): Promise<Response> {
-    const url = `${this.nomadAddr}${path}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    };
-    if (this.config.token) {
-      headers['X-Nomad-Token'] = this.config.token;
-    }
-
-    try {
-      const response = await fetch(url, {
-        method: options.method,
-        headers,
-        body: options.body,
-        signal: controller.signal,
-      });
-      return response;
-    } finally {
-      clearTimeout(timeout);
-    }
+    return this.client.request(path, options);
   }
 
   private async fetchJob(jobId: string): Promise<NomadJob | null> {

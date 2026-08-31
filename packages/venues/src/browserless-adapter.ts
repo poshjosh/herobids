@@ -35,11 +35,26 @@ export class BrowserlessAdapter implements BrowserPoolPort {
       }
 
       const json = await response.json() as { webSocketDebuggerUrl?: string; id?: string };
-      const cdpEndpoint = json.webSocketDebuggerUrl;
+      let cdpEndpoint = json.webSocketDebuggerUrl;
       const sessionId = json.id;
 
       if (!cdpEndpoint || !sessionId) {
         return err({ code: 'browser_pool.unavailable' as const, message: 'Browserless returned incomplete session data' });
+      }
+
+      // Browserless advertises its WebSocket URL using its bind address (typically
+      // 0.0.0.0), which is unreachable from other containers. Rewrite the host to
+      // match the configured Browserless URL so the CDP client connects to the
+      // correct network address.
+      try {
+        const configuredHost = new URL(this.url);
+        const wsUrl = new URL(cdpEndpoint);
+        wsUrl.hostname = configuredHost.hostname;
+        wsUrl.port = configuredHost.port;
+        cdpEndpoint = wsUrl.toString();
+      } catch {
+        // If URL parsing fails, use the endpoint as-is and let the CDP client
+        // surface a more specific connection error.
       }
 
       return ok({ cdpEndpoint, sessionId });

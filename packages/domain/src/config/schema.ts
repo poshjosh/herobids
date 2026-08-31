@@ -1085,6 +1085,30 @@ export const WebAccessToolsConfigSchema = z.object({
   }).default({}),
 });
 
+// ── Infrastructure Services ──────────────────────────────────────────────────
+
+/**
+ * Per-service entry: an optional static URL override.
+ *
+ * When `url` is non-empty, the worker uses it directly (Docker Compose path).
+ * When `url` is empty and the runtime backend is Nomad, the worker resolves
+ * the service address from the Nomad service catalog at startup.
+ */
+export const ServiceEntrySchema = z.object({
+  /** Static URL override (e.g. 'http://browser-pool:3000'). Empty = resolve dynamically. */
+  url: z.string().default(''),
+}).default({});
+
+/**
+ * Declarative map of infrastructure service names to their config.
+ *
+ * Adding a new pool service means adding a key here and a corresponding
+ * Nomad job — the ServiceRegistry resolves it automatically.
+ */
+export const ServicesConfigSchema = z.object({
+  'browser-pool': ServiceEntrySchema,
+}).default({});
+
 export const BrowserPoolConfigSchema = z.object({
   enabled: z.boolean().default(false),
   url: z.string().default(''),
@@ -1093,15 +1117,10 @@ export const BrowserPoolConfigSchema = z.object({
     width: z.number().int().positive().default(1280),
     height: z.number().int().positive().default(720),
   }).default({}),
-}).superRefine((data, ctx) => {
-  if (data.enabled && !data.url) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['url'],
-      message: 'browserPool.url is required when browserPool.enabled is true',
-    });
-  }
 }).default({});
+// Note: browserPool.url is not strictly required when enabled — the worker's
+// ServiceRegistry can resolve it dynamically from Nomad service discovery.
+// The worker logs a warning if enabled but no URL is resolved at runtime.
 
 export const HttpClientConfigSchema = z.object({
   enabled: z.boolean().default(true),
@@ -1698,6 +1717,8 @@ export const AppConfigSchema = z.object({
     statsTimeoutMs: z.number().int().min(500).max(10000).default(3000),
   }).default({}),
   browserPool: BrowserPoolConfigSchema,
+  /** Declarative service URL map — used by the ServiceRegistry for dynamic resolution. */
+  services: ServicesConfigSchema,
 }).superRefine((data, ctx) => {
   const oneInchConfig = data.venues['1inch'];
   if (
@@ -1889,6 +1910,8 @@ export type CreemConfig = z.infer<typeof CreemConfigSchema>;
 export type TelegramChannelConfig = z.infer<typeof TelegramChannelConfigSchema>;
 export type GmailIntegrationConfig = z.infer<typeof GmailIntegrationConfigSchema>;
 export type BrowserPoolConfig = z.infer<typeof BrowserPoolConfigSchema>;
+export type ServiceEntry = z.infer<typeof ServiceEntrySchema>;
+export type ServicesConfig = z.infer<typeof ServicesConfigSchema>;
 export type HttpClientConfig = z.infer<typeof HttpClientConfigSchema>;
 export type UsageBillingConfig = z.infer<typeof UsageBillingConfigSchema>;
 export type PlanUsagePackaging = z.infer<typeof PlanUsagePackagingSchema>;

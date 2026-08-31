@@ -1089,6 +1089,15 @@ externalSkills:
                                       # override: EXTERNAL_SKILLS_BROWSE_TIMEOUT_MS
   statsTimeoutMs: 3000                # timeout for stats/total-count requests
 
+# ── Infrastructure Services ────────────────────────────────────────────────
+# Declarative service URL map. Each key is a Nomad service name.
+# When url is non-empty, the worker uses it directly (Docker Compose path).
+# When url is empty and runtimeBackend is 'nomad', the worker resolves the
+# address from the Nomad service catalog at startup.
+services:
+  browser-pool:
+    url: ""   # Docker Compose; leave empty for Nomad discovery
+
 # ── Browser Pool ──────────────────────────────────────────────────────────
 # Shared browser automation service (Browserless). Infrastructure-level config.
 # Agents acquire CDP sessions from this pool via the BrowserPoolPort.
