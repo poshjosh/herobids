@@ -163,13 +163,17 @@ export function buildAgentEnv(
   if (config.browserPoolUrl) {
     envOut['BROWSER_POOL_URL'] = config.browserPoolUrl;
 
-    // agent-browser CLI — Browserless provider configuration.
-    envOut['AGENT_BROWSER_PROVIDER'] = 'browserless';
-    envOut['BROWSERLESS_API_URL'] = config.browserPoolUrl;
+    // agent-browser CLI — connect via CDP (Chrome DevTools Protocol).
+    // The browserPool URL is an HTTP endpoint; the CDP websocket is at the same host.
+    // agent-browser reads cdp from AGENT_BROWSER_CONFIG or --cdp flag.
+    // We construct a ws:// URL from the browserPool URL for CDP connection.
+    const browserUrl = new URL(config.browserPoolUrl);
+    const cdpUrl = `ws://${browserUrl.host}`;
+    envOut['AGENT_BROWSER_CDP_URL'] = cdpUrl;
 
     // Use pre-resolved IP for sandbox allowlist (Docker hostnames can't resolve inside sandbox).
     // Fall back to hostname extraction if no pre-resolved value (e.g. when URL is already an IP).
-    const sandboxHost = config.browserPoolResolvedHost ?? new URL(config.browserPoolUrl).hostname;
+    const sandboxHost = config.browserPoolResolvedHost ?? browserUrl.hostname;
     envOut['SANDBOX_ALLOWED_HOSTS'] = sandboxHost;
   }
   if (config.browserPoolApiKey) {

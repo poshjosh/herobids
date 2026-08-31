@@ -308,8 +308,7 @@ describe('buildAgentEnv', () => {
   it('omits browser pool env vars when browserPoolUrl is not set', () => {
     const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', BASE_ENV_CONFIG);
     expect(env['BROWSER_POOL_URL']).toBeUndefined();
-    expect(env['AGENT_BROWSER_PROVIDER']).toBeUndefined();
-    expect(env['BROWSERLESS_API_URL']).toBeUndefined();
+    expect(env['AGENT_BROWSER_CDP_URL']).toBeUndefined();
     expect(env['SANDBOX_ALLOWED_HOSTS']).toBeUndefined();
     expect(env['BROWSERLESS_API_KEY']).toBeUndefined();
   });
@@ -322,8 +321,7 @@ describe('buildAgentEnv', () => {
 
     const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
     expect(env['BROWSER_POOL_URL']).toBe('http://browserless:3000');
-    expect(env['AGENT_BROWSER_PROVIDER']).toBe('browserless');
-    expect(env['BROWSERLESS_API_URL']).toBe('http://browserless:3000');
+    expect(env['AGENT_BROWSER_CDP_URL']).toBe('ws://browserless:3000');
     expect(env['SANDBOX_ALLOWED_HOSTS']).toBe('browserless');
   });
 
@@ -400,8 +398,7 @@ describe('buildAgentEnv', () => {
     const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
     expect(env['BROWSERLESS_API_KEY']).toBe('standalone-key');
     // Without browserPoolUrl, the other browser vars should be absent
-    expect(env['AGENT_BROWSER_PROVIDER']).toBeUndefined();
-    expect(env['BROWSERLESS_API_URL']).toBeUndefined();
+    expect(env['AGENT_BROWSER_CDP_URL']).toBeUndefined();
     expect(env['SANDBOX_ALLOWED_HOSTS']).toBeUndefined();
   });
 
@@ -414,8 +411,7 @@ describe('buildAgentEnv', () => {
 
     const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
     expect(env['BROWSER_POOL_URL']).toBe('http://browserless.prod:3000');
-    expect(env['AGENT_BROWSER_PROVIDER']).toBe('browserless');
-    expect(env['BROWSERLESS_API_URL']).toBe('http://browserless.prod:3000');
+    expect(env['AGENT_BROWSER_CDP_URL']).toBe('ws://browserless.prod:3000');
     expect(env['SANDBOX_ALLOWED_HOSTS']).toBe('browserless.prod');
     expect(env['BROWSERLESS_API_KEY']).toBe('prod-key-123');
   });

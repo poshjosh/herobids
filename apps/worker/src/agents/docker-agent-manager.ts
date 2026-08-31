@@ -288,12 +288,16 @@ export class DockerAgentManager {
         ...(process.env['USAGE_BILLING_RATE_CARD'] ? [`USAGE_BILLING_RATE_CARD=${process.env['USAGE_BILLING_RATE_CARD']}`] : []),
         ...(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ? [`USAGE_BILLING_RUNTIME_WINDOW_MS=${process.env['USAGE_BILLING_RUNTIME_WINDOW_MS']}`] : []),
         ...(this.externalSkillsConfigJson ? [`EXTERNAL_SKILLS_CONFIG_JSON=${this.externalSkillsConfigJson}`] : []),
-        ...(this.browserPoolUrl ? [
-          `BROWSER_POOL_URL=${this.browserPoolUrl}`,
-          `AGENT_BROWSER_PROVIDER=browserless`,
-          `BROWSERLESS_API_URL=${this.browserPoolUrl}`,
-          `SANDBOX_ALLOWED_HOSTS=${this.browserPoolResolvedHost ?? new URL(this.browserPoolUrl).hostname}`,
-        ] : []),
+        ...(this.browserPoolUrl ? (() => {
+          const browserUrl = new URL(this.browserPoolUrl);
+          const cdpUrl = `ws://${browserUrl.host}`;
+          const sandboxHost = this.browserPoolResolvedHost ?? browserUrl.hostname;
+          return [
+            `BROWSER_POOL_URL=${this.browserPoolUrl}`,
+            `AGENT_BROWSER_CDP_URL=${cdpUrl}`,
+            `SANDBOX_ALLOWED_HOSTS=${sandboxHost}`,
+          ];
+        })() : []),
         ...(this.browserPoolApiKey ? [`BROWSERLESS_API_KEY=${this.browserPoolApiKey}`] : []),
       ];
     })();

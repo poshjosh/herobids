@@ -32,7 +32,8 @@ RUN apk add --no-cache iproute2 iptables ip6tables python3 py3-pip git sudo
 
 # Install agent-browser CLI (Rust binary, connects to remote Browserless —
 # no local Chrome needed). Pinned to a specific version for reproducibility.
-RUN npm install -g agent-browser@0.14.0
+# Requires gcompat (glibc shim) because the pre-built binary links against glibc.
+RUN apk add --no-cache gcompat && npm install -g agent-browser@0.14.0
 
 # Non-root agent user with passwordless sudo for full permission level.
 # The container still starts as root because sandbox-exec.sh requires
@@ -50,6 +51,10 @@ COPY --from=deploy /deploy/agent ./
 COPY scripts/sandbox-exec.sh /usr/local/bin/sandbox-exec.sh
 RUN chmod +x /usr/local/bin/sandbox-exec.sh
 
+# Agent entrypoint — writes runtime config (e.g. agent-browser CDP), then execs CMD.
+COPY scripts/agent-entrypoint.sh /usr/local/bin/agent-entrypoint.sh
+RUN chmod +x /usr/local/bin/agent-entrypoint.sh
+
 # Workspace root: persists for the lifetime of the container (across ticks)
 RUN mkdir -p /workspace /workspace/sandbox && \
     chown agent:agent /workspace /workspace/sandbox
@@ -57,4 +62,5 @@ RUN mkdir -p /workspace /workspace/sandbox && \
 # Config is read via environment variables — no YAML file needed in agent container.
 # All sensitive values come from env (REDIS_URL, LLM_API_KEY, etc.).
 # The agent entry point reads AGENT_ID, SESSION_ID, AGENT_CONFIG from env.
+ENTRYPOINT ["/usr/local/bin/agent-entrypoint.sh"]
 CMD ["node", "dist/agent.js"]
