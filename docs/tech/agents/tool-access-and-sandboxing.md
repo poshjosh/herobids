@@ -42,6 +42,15 @@ These capabilities must stay behind platform mediation:
 - artifact persistence and retention-controlled storage operations
 - writes to any durable internal system
 
+### Direct (sandbox-wrapped)
+
+These capabilities execute directly inside the agent container, wrapped by `sandbox-exec.sh` for network isolation:
+
+- `execute_code` — structured JS/Python execution (all permission levels)
+- `execute_shell` — arbitrary shell commands (`standard` and `full` permission levels only)
+- `browse_interactive` — browser automation via the shared Browserless pool
+- `make_http_request` — structured HTTP client with SSRF protection
+
 ### Open internet read and research access
 
 These capabilities may execute directly from the sandbox runtime:
@@ -115,6 +124,8 @@ These controls must be configuration-driven, with conservative defaults and a ru
 
 Internal systems, mutable stores, and secret-bearing services remain blocked unless the access path is explicitly brokered.
 
+Targeted exceptions for operator-configured infrastructure (e.g. the Browserless browser pool) are managed via `SANDBOX_ALLOWED_HOSTS`. This inserts specific `iptables ACCEPT` rules before the RFC 1918 reject block, allowing the agent to reach only the listed IPs while keeping all other internal addresses blocked. See the `SANDBOX_ALLOWED_HOSTS` section above.
+
 ## Filesystem And Process Policy
 
 Agent runtimes must run with:
@@ -155,3 +166,49 @@ These remain implementation choices under the policy above:
 - how any readonly internal credential surfaces, if they ever exist, are rotated and revoked
 
 Those decisions must not weaken the baseline guarantees in this document.
+
+
+## Permission Levels
+
+Agent containers support three permission levels that control tool visibility and execution privileges. All three levels run inside the same isolated Docker container — the container is the security boundary. Permission levels control agent behavior complexity, not host safety.
+
+| Level | Default | Tool access | Execution user |
+|---|---|---|---|
+| `restricted` | No | `execute_code` only (JS/Python via sandbox) | Container default |
+| `standard` | **Yes** | `execute_code` + `execute_shell` | Non-root `agent` user |
+| `full` | No | `execute_code` + `execute_shell` | Root (via passwordless `sudo`) |
+
+All three levels use `sandbox-exec.sh` for network isolation during tool execution. The sandbox blocks RFC 1918 addresses and cloud metadata endpoints regardless of permission level. This protects platform services (Postgres, Redis, docker-proxy) that share the Docker network.
+
+The user selects a permission level when creating or editing an agent. The platform gates tool visibility at startup via `permanentlyExcludedTools` in the `RuntimeToolVisibilityController` — `restricted` agents never see `execute_shell`.
+
+See [Permission Levels Reference](./tools/permission-levels.md) for the full capability matrix and implementation details.
+
+## `execute_shell` Tool
+
+`execute_shell` is a direct-tier tool that runs arbitrary shell commands inside the agent container. It is available at `standard` and `full` permission levels; `restricted` agents cannot see or call it.
+
+Execution flow:
+1. Capability policy check (rate limit, concurrency).
+2. Working directory resolution — `standard` validates paths stay inside the workspace; `full` allows the entire container filesystem.
+3. Command wrapping with `sandbox-exec.sh` for network isolation (all levels).
+4. User privilege selection: `standard` runs as the non-root `agent` user via `sudo -u agent`; `full` runs as root.
+5. Output capture with configurable timeout and size limits.
+6. Audit logging via `capabilityEngine.recordEnd()`.
+
+The tool returns `{ stdout, stderr, exitCode, durationMs }`. It uses the same runtime policy and capability grants as `execute_code`.
+
+## `SANDBOX_ALLOWED_HOSTS`
+
+The sandbox (`sandbox-exec.sh`) blocks all RFC 1918 addresses by default. Some operator-configured internal services — notably the Browserless browser pool — need to be reachable from inside the sandbox. The `SANDBOX_ALLOWED_HOSTS` environment variable provides a targeted allowlist.
+
+Format: comma-separated list of IPs or CIDRs (e.g. `172.18.0.5` or `172.18.0.5,10.0.1.100`).
+
+The sandbox script inserts `iptables -A OUTPUT -d <host> -j ACCEPT` rules **before** the RFC 1918 reject rules. This means:
+- Listed hosts are reachable even though they fall in RFC 1918 ranges.
+- All other RFC 1918 and link-local addresses remain blocked.
+- Input validation skips entries containing shell metacharacters.
+
+The worker resolves the `browserPool.url` hostname to an IP at container startup and passes it via `SANDBOX_ALLOWED_HOSTS`. If `browserPool.enabled` is false, no allowlist is injected and the sandbox behaves identically to previous versions.
+
+This mechanism is intentionally narrow: it allows specific infrastructure endpoints, not broad network access. The agent still cannot reach Postgres, Redis, or other platform services unless explicitly allowlisted by the operator.

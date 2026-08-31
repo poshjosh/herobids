@@ -2,17 +2,17 @@
 # browser-pool-agent-browser-smoke-test.sh — Smoke test for agent-browser CLI
 # connecting to the local Browserless browser-pool.
 #
-# Verifies the full chain: agent-browser CLI → Browserless HTTP API → CDP
-# session → page interaction → cleanup. This catches:
+# Verifies the full chain: agent-browser CLI → Browserless CDP → page
+# interaction → cleanup. This catches:
 #   - Browserless API v1/v2 incompatibility with agent-browser
 #   - Network reachability from a Docker container to browser-pool
-#   - agent-browser binary compatibility on Alpine (musl libc)
+#   - agent-browser binary compatibility on Alpine (musl libc + gcompat shim)
 #   - Session acquire / snapshot / close lifecycle
 #
 # Tests:
 #   1. browser-pool healthcheck (/json/version reachable)
-#   2. agent-browser install + version check (binary runs on Alpine)
-#   3. agent-browser open (acquires CDP session via Browserless provider)
+#   2. agent-browser install + version check (binary runs on Alpine with gcompat)
+#   3. agent-browser open (acquires CDP session via --cdp flag)
 #   4. agent-browser snapshot (DOM snapshot via CDP)
 #   5. agent-browser close (session released)
 #
@@ -184,16 +184,25 @@ log "Using Docker network: ${DOCKER_NETWORK}"
 log "Browser pool address (in-container): http://${BROWSER_POOL_HOST}"
 
 # Build the test script that runs inside the container.
-# agent-browser is installed via npm, configured to use our self-hosted
-# Browserless instance via environment variables.
+# agent-browser is installed via npm. It connects to our self-hosted
+# Browserless instance via --cdp flag (not -p browserless, which is not
+# available in agent-browser v0.14.0).
+# gcompat is required because the pre-built Rust binary links against glibc.
 CONTAINER_SCRIPT='#!/bin/sh
 
+echo "[container] Installing gcompat (glibc shim for agent-browser)…"
+apk add --no-cache gcompat 2>&1 | tail -3
+
 echo "[container] Installing agent-browser…"
-npm install -g agent-browser 2>&1 | tail -3
+npm install -g agent-browser@0.14.0 2>&1 | tail -3
 INSTALL_RC=$?
 if [ "$INSTALL_RC" -ne 0 ]; then
   echo "INSTALL_FAILED:npm install exited with code $INSTALL_RC"
 fi
+
+# CDP URL for connecting to Browserless (not -p browserless which does not
+# exist in v0.14.0).
+CDP_URL="ws://${BROWSERLESS_HOST}/"
 
 # ── Test 2: version check ──────────────────────────────────────────────────
 echo ""
@@ -209,7 +218,7 @@ echo "TEST_2_END"
 # ── Test 3: open page ─────────────────────────────────────────────────────
 echo ""
 echo "TEST_3_START"
-OPEN_OUT=$(agent-browser --cdp "ws://${BROWSERLESS_HOST}/" open https://example.com 2>&1) || true
+OPEN_OUT=$(agent-browser --cdp "${CDP_URL}" open https://example.com 2>&1) || true
 if echo "${OPEN_OUT}" | grep -qi "opened\|navigat\|ready\|success\|example\.com"; then
   echo "RESULT:PASS:agent-browser open succeeded"
 else
@@ -220,7 +229,7 @@ echo "TEST_3_END"
 # ── Test 4: snapshot ──────────────────────────────────────────────────────
 echo ""
 echo "TEST_4_START"
-SNAP_OUT=$(agent-browser --cdp "ws://${BROWSERLESS_HOST}/" snapshot 2>&1) || true
+SNAP_OUT=$(agent-browser --cdp "${CDP_URL}" snapshot 2>&1) || true
 if echo "${SNAP_OUT}" | grep -qi "example\|domain\|more information\|illustrative\|iana"; then
   echo "RESULT:PASS:snapshot contains expected content from example.com"
 else
@@ -231,7 +240,7 @@ echo "TEST_4_END"
 # ── Test 5: close ─────────────────────────────────────────────────────────
 echo ""
 echo "TEST_5_START"
-CLOSE_OUT=$(agent-browser --cdp "ws://${BROWSERLESS_HOST}/" close 2>&1) || true
+CLOSE_OUT=$(agent-browser --cdp "${CDP_URL}" close 2>&1) || true
 if echo "${CLOSE_OUT}" | grep -qi "close\|stopped\|session\|done\|bye\|success"; then
   echo "RESULT:PASS:agent-browser close succeeded"
 else

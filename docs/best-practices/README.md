@@ -17,3 +17,4 @@ Conventions and guidelines for the herobids codebase.
 - [LLM Providers](llm-providers.md) — how to add/remove LLM providers via the provider registry
 - [Shared-Wallet Accounting Boundary](shared-wallet-accounting-boundary.md) — authoritative records vs observational wallet telemetry
 - [Agent Runtime](agent-runtime.md) — wake taxonomy, non-wakeable events, session circuit breaker, context snapshot discipline
+- [Docker Conventions](docker.md) — shared Dockerfile, build targets, cache rules, agent image conventions
