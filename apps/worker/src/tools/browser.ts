@@ -463,9 +463,11 @@ export function createBrowserTools(browserPool: BrowserPoolPort | undefined): Ag
     name: 'browse_interactive',
     description:
       'Interactive browser automation: open pages, click elements, fill forms, take screenshots, and read accessibility trees. ' +
-      'Actions: open (navigate to URL), snapshot (get accessibility tree), click (click element by CSS selector), ' +
+      'Actions: open (navigate to URL), snapshot (get accessibility tree as structured text), click (click element by CSS selector), ' +
       'fill (fill form field by CSS selector), screenshot (capture page as base64 PNG), get_text (read element text), ' +
-      'close (release browser session). Call "open" first to start a session.',
+      'close (release browser session). Call "open" first to start a session. ' +
+      'You may use either snapshot or screenshot for page understanding — snapshot returns compact structured text (element roles and names), ' +
+      'while screenshot returns a large base64 image and requires vision capability to interpret. Use screenshot only when visual layout matters.',
     parametersSchema: BrowseInteractiveParamsSchema,
     parameters: convertZodToJsonSchema(BrowseInteractiveParamsSchema),
     category: 'read-web',

@@ -417,6 +417,11 @@ export const BROWSER_SKILL: SkillDefinition = {
 
 - Use \`browse_interactive\` for structured browser automation via the platform.
   Actions: open, snapshot, click, fill, screenshot, get_text, close.
+- **You may use either snapshot or screenshot** for understanding page content.
+  Snapshot returns a compact accessibility tree (element roles and names) —
+  cheap, fast, and directly actionable. Screenshot returns a large base64 PNG —
+  use it only when you need to verify visual layout or appearance.
+  Screenshot requires vision capability to interpret the result.
 
 ## agent-browser CLI
 
