@@ -9,6 +9,7 @@
 #   ${node_index}         — Zero-based index within the node pool
 #   ${nomad_version}      — Nomad version to install
 #   ${private_subnet}     — Private network subnet CIDR for UFW rules
+#   ${redis_url}          — Redis connection URL for health reporting
 
 package_update: true
 package_upgrade: true
@@ -20,6 +21,7 @@ packages:
   - curl
   - gnupg
   - jq
+  - redis-tools
   - ufw
   - fail2ban
   - unattended-upgrades
@@ -105,6 +107,210 @@ write_files:
       [Install]
       WantedBy=multi-user.target
 
+  - path: /opt/herobids/infra/hetzner/scripts/agent-node-health.sh
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      # agent-node-health.sh — Publish agent-node health snapshot to Redis.
+      # NOTE: Standalone reference copy at infra/hetzner/scripts/agent-node-health.sh
+      set -euo pipefail
+
+      if [[ "$${1:-}" == "--help" || "$${1:-}" == "-h" ]]; then
+        echo "Usage: $0 [--help]"
+        echo ""
+        echo "Publish agent-node health snapshot to Redis."
+        echo ""
+        echo "Environment variables:"
+        echo "  REDIS_URL                   Redis connection URL (required)."
+        echo "  AGENT_NODE_HEALTH_ENABLED   Feature flag (default: true)."
+        exit 0
+      fi
+
+      ENABLED="$${AGENT_NODE_HEALTH_ENABLED:-true}"
+      if [[ "$${ENABLED}" != "true" ]]; then
+        exit 2
+      fi
+
+      if [[ -z "$${REDIS_URL:-}" ]]; then
+        echo "ERROR: REDIS_URL is not set." >&2
+        exit 1
+      fi
+
+      HOST="$(hostname 2>/dev/null || echo "unknown")"
+
+      # ── Memory ──
+      MEM_TOTAL=0
+      MEM_USED=0
+      MEM_FREE=0
+      MEM_AVAILABLE_MB=0
+
+      if FREE_OUTPUT="$(free -b 2>/dev/null)"; then
+        MEM_LINE="$(echo "$${FREE_OUTPUT}" | grep '^Mem:')"
+        MEM_TOTAL="$(echo "$${MEM_LINE}" | awk '{print $2}')"
+        MEM_USED="$(echo "$${MEM_LINE}" | awk '{print $3}')"
+        MEM_FREE="$(echo "$${MEM_LINE}" | awk '{print $4}')"
+        MEM_AVAILABLE_BYTES="$(echo "$${MEM_LINE}" | awk '{print $7}')"
+        if [[ -n "$${MEM_AVAILABLE_BYTES}" && "$${MEM_AVAILABLE_BYTES}" != "0" ]]; then
+          MEM_AVAILABLE_MB=$(( MEM_AVAILABLE_BYTES / 1024 / 1024 ))
+        fi
+      fi
+
+      # ── Disk ──
+      DISK_AVAILABLE=false
+      DISK_TOTAL=0
+      DISK_USED=0
+      DISK_FREE=0
+
+      if DF_OUTPUT="$(df -B1 / 2>/dev/null)"; then
+        DISK_LINE="$(echo "$${DF_OUTPUT}" | tail -1)"
+        DISK_TOTAL="$(echo "$${DISK_LINE}" | awk '{print $2}')"
+        DISK_USED="$(echo "$${DISK_LINE}" | awk '{print $3}')"
+        DISK_FREE="$(echo "$${DISK_LINE}" | awk '{print $4}')"
+        DISK_AVAILABLE=true
+      fi
+
+      if [[ "$${DISK_AVAILABLE}" == "true" ]]; then
+        DISK_JSON="$(jq -n --argjson t "$${DISK_TOTAL}" --argjson u "$${DISK_USED}" --argjson f "$${DISK_FREE}" \
+          '{ totalBytes: $t, usedBytes: $u, freeBytes: $f }')"
+      else
+        DISK_JSON="null"
+      fi
+
+      # ── CPU% via /proc/stat delta ──
+      CPU_PCT="null"
+
+      read_cpu_stats() {
+        local line
+        line="$(head -1 /proc/stat 2>/dev/null || echo "")"
+        if [[ -n "$${line}" ]]; then
+          echo "$${line}" | awk '{print $2, $3, $4, $5, $6, $7, $8, $9}'
+        fi
+      }
+
+      CPU_BEFORE="$(read_cpu_stats)"
+      if [[ -n "$${CPU_BEFORE}" ]]; then
+        sleep 1
+        CPU_AFTER="$(read_cpu_stats)"
+        if [[ -n "$${CPU_AFTER}" ]]; then
+          read -r b1 b2 b3 b4 b5 b6 b7 b8 <<< "$${CPU_BEFORE}"
+          read -r a1 a2 a3 a4 a5 a6 a7 a8 <<< "$${CPU_AFTER}"
+          IDLE_DELTA=$(( (a4 + a5) - (b4 + b5) ))
+          TOTAL_DELTA=$(( (a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8) - (b1 + b2 + b3 + b4 + b5 + b6 + b7 + b8) ))
+          if [[ "$${TOTAL_DELTA}" -gt 0 ]]; then
+            NON_IDLE_DELTA=$(( TOTAL_DELTA - IDLE_DELTA ))
+            CPU_PCT=$(( NON_IDLE_DELTA * 100 / TOTAL_DELTA ))
+          fi
+        fi
+      fi
+
+      # ── Load average ──
+      LOAD1="0"
+      LOAD5="0"
+      LOAD15="0"
+
+      if [[ -f /proc/loadavg ]]; then
+        read -r LOAD1 LOAD5 LOAD15 _ < /proc/loadavg 2>/dev/null || true
+      fi
+
+      # ── Uptime ──
+      UPTIME_SECONDS=0
+
+      if [[ -f /proc/uptime ]]; then
+        RAW_UPTIME="$(awk '{print $1}' /proc/uptime 2>/dev/null || echo "0")"
+        UPTIME_SECONDS="$${RAW_UPTIME%%.*}"
+      fi
+
+      # ── Nomad allocations ──
+      # NOTE: `nomad node status -self` requires a read-capable token on ACL-enabled
+      # clusters. Without NOMAD_TOKEN set, nomadAllocations will report 0.
+      # A read-only token can be provisioned in a follow-up.
+      NOMAD_ALLOCS=0
+
+      if command -v nomad >/dev/null 2>&1; then
+        NOMAD_ALLOCS="$(nomad node status -self -json 2>/dev/null | jq '.Allocations | length' 2>/dev/null || echo "0")"
+        if [[ -z "$${NOMAD_ALLOCS}" || "$${NOMAD_ALLOCS}" == "null" ]]; then
+          NOMAD_ALLOCS=0
+        fi
+      fi
+
+      UPDATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      # ── Build JSON ──
+      JSON="$(jq -n \
+        --arg serverType "agent-server" \
+        --arg serverId "$${HOST}" \
+        --arg hostname "$${HOST}" \
+        --argjson memTotal "$${MEM_TOTAL}" \
+        --argjson memUsed "$${MEM_USED}" \
+        --argjson memFree "$${MEM_FREE}" \
+        --argjson disk "$${DISK_JSON}" \
+        --argjson cpuPct "$${CPU_PCT}" \
+        --argjson load1 "$${LOAD1}" \
+        --argjson load5 "$${LOAD5}" \
+        --argjson load15 "$${LOAD15}" \
+        --argjson uptimeSeconds "$${UPTIME_SECONDS}" \
+        --arg version "n/a" \
+        --arg updatedAt "$${UPDATED_AT}" \
+        --argjson nomadAllocs "$${NOMAD_ALLOCS}" \
+        --argjson availMemMb "$${MEM_AVAILABLE_MB}" \
+        '{
+          serverType: $serverType,
+          serverId: $serverId,
+          hostname: $hostname,
+          memory: { totalBytes: $memTotal, usedBytes: $memUsed, freeBytes: $memFree },
+          disk: $disk,
+          cpuPct: $cpuPct,
+          loadAvg: [$load1, $load5, $load15],
+          uptimeSeconds: $uptimeSeconds,
+          version: $version,
+          updatedAt: $updatedAt,
+          metadata: { nomadAllocations: $nomadAllocs, availableMemoryMb: $availMemMb }
+        }'
+      )"
+
+      REDIS_KEY="herobids:server-health:agent-server:$${HOST}"
+
+      if ! redis-cli -u "$${REDIS_URL}" SET "$${REDIS_KEY}" "$${JSON}" EX 60 >/dev/null 2>&1; then
+        echo "ERROR: Failed to write health snapshot to Redis." >&2
+        exit 1
+      fi
+
+      exit 0
+
+  - path: /etc/systemd/system/agent-node-health.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Agent Node Health Publisher
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/opt/herobids/infra/hetzner/scripts/agent-node-health.sh
+      StandardOutput=journal
+      StandardError=journal
+      SyslogIdentifier=agent-node-health
+      Environment=REDIS_URL=${redis_url}
+      Environment=AGENT_NODE_HEALTH_ENABLED=true
+      NoNewPrivileges=true
+      PrivateTmp=true
+
+  - path: /etc/systemd/system/agent-node-health.timer
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Agent Node Health Publisher Timer
+
+      [Timer]
+      OnUnitActiveSec=15s
+      OnBootSec=60s
+      RandomizedDelaySec=5s
+      Unit=agent-node-health.service
+
+      [Install]
+      WantedBy=timers.target
+
 # ── Boot commands (all POSIX sh — NO bash-isms, NO pipefail) ──
 
 runcmd:
@@ -157,5 +363,9 @@ runcmd:
   - systemctl daemon-reload
   - systemctl enable nomad
   - systemctl start nomad
+
+  # ── Enable agent-node health publisher ───────────────────
+  - systemctl enable agent-node-health.timer
+  - systemctl start agent-node-health.timer
 
 final_message: "Cloud-init complete (${environment} agent node ${server_name}). Nomad client joined cluster at ${nomad_server_addr}."

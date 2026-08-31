@@ -433,3 +433,11 @@ variable "alert_smtp_pass" {
   sensitive   = true
   default     = ""
 }
+
+# ── Agent Node Health Reporting ────────────────────────────
+
+variable "redis_url" {
+  type        = string
+  description = "Redis connection URL for agent-node health reporting (e.g. redis://10.0.0.1:6379). Passed to agent nodes via cloud-init. Leave empty to skip health publishing."
+  default     = ""
+}

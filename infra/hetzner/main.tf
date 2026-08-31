@@ -258,6 +258,7 @@ resource "hcloud_server" "agent" {
     node_index        = count.index
     nomad_version     = var.nomad_version
     private_subnet    = var.subnet_ip_range
+    redis_url         = var.redis_url
   })
 
   labels = {
@@ -271,6 +272,11 @@ resource "hcloud_server" "agent" {
   # Only prevent_destroy in production if explicitly protecting capacity.
   lifecycle {
     prevent_destroy = false
+
+    precondition {
+      condition     = length(var.redis_url) > 0
+      error_message = "redis_url must be set when agent nodes are provisioned. Agent nodes need it for health reporting to Redis."
+    }
   }
 }
 

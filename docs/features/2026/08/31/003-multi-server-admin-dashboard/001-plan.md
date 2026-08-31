@@ -223,7 +223,7 @@ The metadata callback queries running session count from DB (lightweight, alread
 
 ---
 
-### Phase 2: API endpoint and frontend — PENDING
+### Phase 2: API endpoint and frontend — DONE
 
 **Effort:** ~3 hours
 **Risk:** Low — additive endpoint, replaces one dashboard section.
