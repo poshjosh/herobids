@@ -27,6 +27,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `agent-browser` CDP connection failure inside sandbox — the CLI received a Docker hostname (`ws://browser-pool:3000`) as its CDP URL, but the sandbox network namespace uses public DNS (8.8.8.8) which cannot resolve Docker-internal hostnames. Both `buildAgentEnv()` and `DockerAgentManager` now construct the CDP URL from the pre-resolved IP that was already used for `SANDBOX_ALLOWED_HOSTS`.
+
 - Browser pool CDP WebSocket connection failure — agent containers couldn't connect to `ws://0.0.0.0:3000/...` returned by Browserless. The adapter now rewrites the hostname to match the configured pool URL.
 
 - Browser pool service — shared Browserless chromium container for agent web browsing (Nomad service job + Docker Compose local dev). Agents get interactive browser automation without Chrome in their container.

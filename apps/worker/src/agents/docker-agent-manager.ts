@@ -290,8 +290,11 @@ export class DockerAgentManager {
         ...(this.externalSkillsConfigJson ? [`EXTERNAL_SKILLS_CONFIG_JSON=${this.externalSkillsConfigJson}`] : []),
         ...(this.browserPoolUrl ? (() => {
           const browserUrl = new URL(this.browserPoolUrl);
-          const cdpUrl = `ws://${browserUrl.host}`;
+          // Use pre-resolved IP (not Docker hostname) for the CDP URL so that
+          // agent-browser works inside the sandbox network namespace, which
+          // switches DNS to public nameservers that can't resolve Docker hostnames.
           const sandboxHost = this.browserPoolResolvedHost ?? browserUrl.hostname;
+          const cdpUrl = `ws://${sandboxHost}:${browserUrl.port || '3000'}`;
           return [
             `BROWSER_POOL_URL=${this.browserPoolUrl}`,
             `AGENT_BROWSER_CDP_URL=${cdpUrl}`,

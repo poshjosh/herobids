@@ -321,6 +321,7 @@ describe('buildAgentEnv', () => {
 
     const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
     expect(env['BROWSER_POOL_URL']).toBe('http://browserless:3000');
+    // Falls back to hostname when no resolved IP is provided
     expect(env['AGENT_BROWSER_CDP_URL']).toBe('ws://browserless:3000');
     expect(env['SANDBOX_ALLOWED_HOSTS']).toBe('browserless');
   });
@@ -332,7 +333,19 @@ describe('buildAgentEnv', () => {
     };
 
     const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['AGENT_BROWSER_CDP_URL']).toBe('ws://browser.internal:8080');
     expect(env['SANDBOX_ALLOWED_HOSTS']).toBe('browser.internal');
+  });
+
+  it('defaults to port 3000 in CDP URL when browserPoolUrl has no explicit port', () => {
+    const config: AgentEnvConfig = {
+      ...BASE_ENV_CONFIG,
+      browserPoolUrl: 'http://browserless',
+    };
+
+    const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
+    expect(env['AGENT_BROWSER_CDP_URL']).toBe('ws://browserless:3000');
+    expect(env['SANDBOX_ALLOWED_HOSTS']).toBe('browserless');
   });
 
   it('passes IP address through for SANDBOX_ALLOWED_HOSTS when URL uses IP', () => {
@@ -354,6 +367,9 @@ describe('buildAgentEnv', () => {
 
     const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
     expect(env['SANDBOX_ALLOWED_HOSTS']).toBe('172.18.0.5');
+    // CDP URL must use the resolved IP so agent-browser works inside the sandbox
+    // (sandbox DNS can't resolve Docker hostnames)
+    expect(env['AGENT_BROWSER_CDP_URL']).toBe('ws://172.18.0.5:3000');
   });
 
   it('falls back to hostname extraction when browserPoolResolvedHost is not set', () => {
@@ -411,6 +427,7 @@ describe('buildAgentEnv', () => {
 
     const env = buildAgentEnv('agent-1', 'sess-1', '{}', '{}', config);
     expect(env['BROWSER_POOL_URL']).toBe('http://browserless.prod:3000');
+    // Falls back to hostname when no resolved IP is provided
     expect(env['AGENT_BROWSER_CDP_URL']).toBe('ws://browserless.prod:3000');
     expect(env['SANDBOX_ALLOWED_HOSTS']).toBe('browserless.prod');
     expect(env['BROWSERLESS_API_KEY']).toBe('prod-key-123');
