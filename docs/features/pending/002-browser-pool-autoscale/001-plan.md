@@ -8,40 +8,57 @@
 
 ## Problem Statement
 
-The browser-pool service (`ghcr.io/browserless/chromium`) runs as a single Nomad job instance with `count = 1` and `MAX_CONCURRENT_SESSIONS = 2`. When all sessions are occupied, additional requests queue (up to `QUEUE_LENGTH = 10`), and beyond that Browserless returns HTTP 429. The `BrowserlessAdapter` maps this to `browser_pool.queue_full`, and the agent receives an error with no automatic recovery.
+The browser-pool service (`ghcr.io/browserless/chromium`) currently runs as a single Nomad job instance with `count = 1` and `MAX_CONCURRENT_SESSIONS = 2`. When both sessions are occupied, additional requests queue (up to `QUEUE_LENGTH = 10`), and beyond that Browserless returns HTTP 429. The `BrowserlessAdapter` maps this to `browser_pool.queue_full`, and the agent receives an error with no automatic recovery.
 
-Scaling is entirely manual: an operator edits `browser-pool.nomad.hcl` (bumping `count` or `MAX_CONCURRENT_SESSIONS`) and re-deploys the Nomad job. There is no monitoring, no alerting, and no automatic response to demand changes.
+Today, browser-pool capacity is adjusted manually by editing `browser-pool.nomad.hcl` and re-deploying the job. We already have browser-pool observability in the worker/admin surfaces, but we do not have a dedicated browser-pool autoscale loop that reacts to demand spikes or browser-pool-specific failures.
 
-As agent usage of `browse_interactive` grows, this becomes a bottleneck. A single stuck or slow browsing session consumes 50% of the pool's capacity.
+As agent usage of `browse_interactive` grows, this becomes a bottleneck. A single slow or stuck browser session can consume roughly half of the pool's effective capacity.
 
 ### Why not clone the agent-node autoscaler?
 
-The agent-node autoscaler provisions Hetzner servers via Terraform — a heavyweight, multi-minute operation that justifies its complexity (5+ shell scripts, S3 state backend, flock serialization, cooldown files, systemd timers). Browser-pool scaling is fundamentally different: it changes the `count` on an existing Nomad job, which takes seconds via the Nomad API. The infrastructure complexity of the agent-node approach would be disproportionate.
+The agent-node autoscaler and the browser-pool autoscaler operate on different things.
+
+The agent-node autoscaler provisions and destroys Hetzner servers via Terraform. That is a server-supply problem: it has to deal with remote state, locking, node lifecycle, drain safety, and multi-minute provisioning delays. The browser-pool autoscaler is primarily an in-cluster workload-supply problem: it changes the count of an existing Nomad job so Nomad can place more browser allocations on agent-node servers that already exist.
+
+That difference is what justifies a different design. Browser-pool scale-out should first be a fast Nomad-level action. Only when Nomad cannot place the additional browser allocations should the heavier agent-node autoscaler wake up and add more servers.
 
 ## Goals
 
 1. Automatically scale browser-pool instances up when utilization is high or requests are queuing.
-2. Automatically scale browser-pool instances down when utilization is consistently low.
+2. Compose with the existing agent-node autoscaler as a second-level fallback when Nomad cannot place more browser-pool instances.
 3. Respect configurable min/max bounds and cooldowns.
-4. Compose with the existing agent-node autoscaler — if browser-pool needs more instances than Nomad agent nodes can host, the placement-failure watcher triggers agent-node scale-out.
-5. Reuse existing infrastructure (scale-common.sh, alert-common.sh, Nomad ACL token, systemd patterns).
+4. Distribute new browser sessions across browser-pool instances in a way that keeps each session pinned to one concrete Browserless backend.
+5. Reuse existing infrastructure where it genuinely fits (`scale-common.sh`, `alert-common.sh`, Nomad ACL token, systemd patterns).
+6. Preserve runtime browser-pool capacity across deploys instead of accepting a reset to `count = 1`.
 
 ## Non-Goals
 
 - Vertical scaling (changing `MAX_CONCURRENT_SESSIONS` per instance at runtime). This requires restarting the Browserless container and is better handled by operator config changes.
 - Replacing the agent-node autoscaler. The two systems are complementary.
+- Automatic browser-pool scale-in in the initial rollout. We will not remove browser-pool instances automatically until we can prove that doing so will not kill live sessions.
+- Proxy-based or load-balancer-based browser session routing in v1. The initial design keeps browser instance selection in application code.
 - Multi-datacenter or cross-region browser-pool placement.
 - Browser-pool authentication (Browserless `TOKEN` env var). This is orthogonal to autoscaling and can be added independently.
 
 ## Design Decisions
 
-### D1. Scale via Nomad job scale API, not Terraform
+### D1. Use a two-level scaling model
 
-**Decision:** Use `POST /v1/job/browser-pool/scale` to change the task group count.
+**Decision:** Browser-pool autoscaling is a two-level system.
 
-**Rationale:** This is the native Nomad mechanism for adjusting task group count. It takes seconds (vs minutes for Terraform + Hetzner provisioning), requires no Terraform state, no S3 backend, and no flock serialization against the agent-node autoscaler's Terraform operations. The Nomad service catalog automatically registers/deregisters instances.
+- **Level 1:** Scale the browser-pool Nomad job on existing agent-node servers.
+- **Level 2:** If Nomad cannot place the new browser-pool allocations, rely on the existing placement-failure watcher to trigger agent-node scale-out.
+
+**Rationale:** Browser-pool instances run on agent-node servers. The fastest response is therefore to add more browser allocations on capacity that already exists. Only when that capacity is exhausted do we need to provision more machines.
+
+### D2. Scale browser-pool allocations via the Nomad job scale API, not Terraform
+
+**Decision:** Use `POST /v1/job/browser-pool/scale` to change the browser task-group count.
+
+**Rationale:** This is the native Nomad mechanism for adjusting workload count inside the cluster. It completes in seconds, does not require Terraform state, and avoids reusing agent-node server lifecycle machinery for a problem that is usually just a scheduler mutation.
 
 The `POST /v1/job/{job_id}/scale` endpoint accepts:
+
 ```json
 {
   "Count": 3,
@@ -50,93 +67,54 @@ The `POST /v1/job/{job_id}/scale` endpoint accepts:
 }
 ```
 
-This means the static `count = 1` in `browser-pool.nomad.hcl` is only the initial deployment value. Runtime scaling via the API overrides it until the next `nomad job run` re-deploys the HCL file. A re-deploy resets the count to 1, but the autoscaler recovers within 60-120 seconds (see RQ3).
+### D3. Use Browserless `/pressure` as the primary metric source, with a fallback path
 
-### D2. Use Browserless `/pressure` endpoint as the metric source
+**Decision:** Poll each Browserless instance's `GET /pressure` endpoint for real-time load data. If it is unavailable, fall back to `GET /config` plus `GET /sessions`.
 
-**Decision:** Poll each Browserless instance's `GET /pressure` endpoint for real-time utilization data.
+**Rationale:** `/pressure` gives the best live signal for scale-out: `running`, `maxConcurrent`, `queued`, and `recentlyRejected`.
 
-**Rationale:** The open-source Browserless image exposes `/pressure` which returns:
-```json
-{
-  "pressure": {
-    "cpu": 45,
-    "memory": 62,
-    "isAvailable": true,
-    "maxConcurrent": 2,
-    "maxQueued": 10,
-    "running": 1,
-    "queued": 0,
-    "reason": "",
-    "recentlyRejected": 0,
-    "date": 1711468800000,
-    "message": ""
-  }
-}
-```
+The script will treat `recentlyRejected` as a recent-window signal, not as a durable cumulative counter. It is useful as a scale-out hint, but it should not be treated as an accounting metric.
 
-This gives us direct, authoritative metrics: `running` (active sessions), `maxConcurrent` (capacity), `queued` (backpressure), and `recentlyRejected` (demand overflow). No need to infer load from Nomad memory allocation like the agent-node autoscaler does.
+If `/pressure` is unavailable on the deployed image, the fallback path still supports utilization-based scale-out. In fallback mode, `queued` and `recentlyRejected` are unavailable.
 
-**Fallback if `/pressure` is unavailable on the open-source image:** The open-source image docs list `/pressure` as a management endpoint. If testing reveals it's enterprise-only, fall back to `GET /config` (returns `maxConcurrent`) combined with `GET /sessions` (returns active session list). The script should attempt `/pressure` first on each instance and cache whether it's available, so the fallback path doesn't add latency on every poll. If the fallback is needed, `queued` and `recentlyRejected` won't be available — scale-out triggers only on utilization % (session count / max concurrent). This is less responsive but still functional. See Resolved Question RQ1.
+### D4. Do browser instance selection in application code, per new session
 
-### D3. Single bidirectional script
+**Decision:** Do not rely on a generic proxy or a one-time startup-time URL lookup to spread browser traffic. For each new browser session, the worker selects one concrete Browserless instance and uses that same instance for both session acquisition and the subsequent CDP WebSocket connection.
 
-**Decision:** One script (`browser-pool-autoscale.sh`) handles both scale-out and scale-in.
+**Rationale:** Browserless sessions are a two-step flow: acquire the session over HTTP, then continue it over WebSocket. Generic round-robin in front of multiple Browserless instances is risky because the HTTP request and the WebSocket upgrade can land on different backends. Startup-time randomization is also insufficient because it pins an agent process to one chosen endpoint until restart.
 
-**Rationale:** The agent-node autoscaler separates scale-out (every 60s) from scale-in (nightly at 3 AM) because scale-in requires draining nodes, waiting for allocations to migrate, and running Terraform — operations that are slow and risky. Browser-pool scale-in is trivial: reduce the Nomad job count, and Nomad gracefully stops the excess allocation (Browserless sessions drain naturally via `TIMEOUT`). A single script with bidirectional logic is simpler and reduces the number of systemd units.
+The v1 rollout should therefore keep local/dev static URLs, but in Nomad it should resolve all healthy browser-pool instances and choose a concrete target per new session.
 
-### D4. Scale-in hysteresis via streak counter
+### D5. Phase 1 is scale-out only
 
-**Decision:** Require N consecutive low-utilization checks before scaling in.
+**Decision:** The initial browser-pool autoscaler automatically scales out but does not automatically scale in.
 
-**Rationale:** Scale-out should be reactive (respond immediately to demand). Scale-in should be conservative (avoid flapping when utilization oscillates around the threshold). A streak counter — reset on any check where utilization exceeds the low watermark — provides this asymmetry without a separate timer or state machine.
+**Rationale:** Browser-pool scale-out is cheap and safe compared to scale-in. Scale-in is not trivial: reducing Nomad job count can terminate a Browserless allocation that still has live CDP sessions. We should not ship automatic scale-in until we have session-aware removal semantics and validation to prove that an instance can be removed safely.
 
-The streak counter is stored in a single file (`/var/run/browser-pool-autoscale-low-streak`). Reset to 0 on any scale-out or when utilization rises above the low watermark.
+### D6. Reuse the existing shell autoscale infrastructure, including locking and alerting
 
-### D5. Instance discovery via Nomad service catalog
+**Decision:** Reuse `scale-common.sh` and `alert-common.sh`, and take a dedicated browser-pool lock file.
 
-**Decision:** Resolve browser-pool instance addresses by querying `GET /v1/service/browser-pool` from the Nomad service catalog, not from static config.
+**Rationale:** We still want the lightweight script shape and the existing alerting pipeline, but there is no reason to skip locking entirely. A dedicated lock avoids overlapping timer runs and serializes local state-file updates.
 
-**Rationale:** As the job scales, new instances register and removed instances deregister in the Nomad service catalog automatically. The script needs to poll `/pressure` on every running instance to compute aggregate utilization. Querying the service catalog gives the current, accurate set of instance addresses without maintaining a separate registry.
+### D7. Preserve runtime counts on deploy
 
-### D6. Compose with agent-node autoscaler via placement failures
+**Decision:** Re-deploying the browser-pool Nomad job must preserve the existing task-group count instead of resetting it to the static `count = 1` in HCL.
 
-**Decision:** No direct integration between browser-pool autoscaling and agent-node autoscaling.
+**Rationale:** The current "accept the brief dip" approach creates avoidable capacity loss during deploys. The deploy path should preserve runtime counts when re-registering the job, rather than relying on the autoscaler to repair capacity after the fact.
 
-**Rationale:** When the browser-pool autoscaler increases `count` beyond what current Nomad agent nodes can host, Nomad marks the evaluation as blocked (resource exhaustion). The existing placement-failure watcher (`check-placement-failures.sh`) detects this and triggers agent-node scale-out. The two systems compose through Nomad's native scheduling — no coupling needed.
+Implementation preference:
 
-### D7. Add a `scaling` block to the Nomad job
+1. Use the Nomad CLI preserve-counts path first, because it stays closest to the existing deploy workflow and is easier for operators to understand and debug.
+2. Fall back to direct API submission only if the CLI path cannot reliably preserve the browser task-group count in the real deploy flow.
 
-**Decision:** Add a `scaling` block to `browser-pool.nomad.hcl` to declare min/max bounds in the job spec itself.
+We are not leaving this choice entirely to the implementer. The requirement is fixed, and the order of preference is fixed.
 
-**Rationale:** Nomad's `scaling` block provides declarative min/max enforcement at the scheduler level, preventing the API from setting count outside bounds even if the script has a bug. It also makes the scaling policy visible in `nomad job inspect`.
+### D8. Add a `scaling` block as a scheduler guardrail, but render bounds from one place
 
-```hcl
-scaling {
-  min     = 1
-  max     = 5
-  enabled = true
+**Decision:** Add a `scaling` block to `browser-pool.nomad.hcl`, but ensure the job-spec bounds and autoscaler bounds come from the same Terraform variables.
 
-  policy {}  # empty — we use an external script, not Nomad Autoscaler
-}
-```
-
-The script reads min/max from its environment variables (injected via systemd), not from the job spec. The `scaling` block is a safety net, not the source of truth. The operator must keep both in sync — a mismatch means the tighter bound wins (which is safe).
-
----
-
-## Implementation
-
-### Phase 1: Autoscale script + systemd deployment
-
-**Effort:** ~1 day
-**Risk:** Low — additive infrastructure change. Browser-pool continues to work if the autoscaler fails (it just won't scale).
-
-#### Tasks
-
-**1.1 — Add `scaling` block to `browser-pool.nomad.hcl`**
-
-Add a `scaling` block to the `browser` task group:
+**Rationale:** The `scaling` block is still useful as a guardrail and for operator visibility. The mistake to avoid is manual dual-entry of the same bounds in two different places.
 
 ```hcl
 scaling {
@@ -148,72 +126,64 @@ scaling {
 }
 ```
 
-This is purely declarative — it doesn't change runtime behavior until the script starts scaling.
+---
 
-**1.2 — Create `browser-pool-autoscale.sh`**
+## Implementation
+
+### Phase 1: Scale-out only + deploy-safe changes
+
+**Effort:** ~1 day
+**Risk:** Low to medium — additive infra change plus a small worker-side routing change.
+
+#### Tasks
+
+**1.1 — Add `scaling` block to `browser-pool.nomad.hcl`**
+
+Add a `scaling` block to the `browser` task group. Its `min`/`max` values must be rendered from the same Terraform variables the autoscale script reads.
+
+**1.2 — Create `browser-pool-autoscale.sh` for scale-out only**
 
 New file: `infra/hetzner/scripts/browser-pool-autoscale.sh`
 
-The script sources `scale-common.sh` (reusing `log`, `die`, `nomad_api`, cooldown helpers) and `alert-common.sh` (reusing failure tracking and alerting).
+The script sources `scale-common.sh` and `alert-common.sh` and performs scale-out only.
 
 Logic flow:
 
 ```
-1.  Read config from env vars (thresholds, min/max, cooldown, streak threshold)
-2.  GET /v1/job/browser-pool → extract current count from .TaskGroups[0].Count
-3.  GET /v1/service/browser-pool → list all registered instance addresses
-4.  For each instance address:
-      GET http://<address>/pressure → extract running, maxConcurrent, queued, recentlyRejected
-      (If /pressure returns 404, fall back to /config + /sessions — see D2 / RQ1)
-5.  Aggregate across all instances:
-      total_running    = sum of running
-      total_capacity   = sum of maxConcurrent
-      total_queued     = sum of queued
-      total_rejected   = sum of recentlyRejected
-      utilization_pct  = (total_running * 100) / total_capacity  (0 if total_capacity == 0)
-6.  SCALE-OUT check:
-      if utilization_pct > SCALE_OUT_THRESHOLD  OR  total_queued > 0  OR  total_rejected > 0:
-        if current_count < MAX_INSTANCES:
-          if cooldown expired:
-            new_count = min(current_count + 1, MAX_INSTANCES)
-            POST /v1/job/browser-pool/scale { Count: new_count, Target: { Group: "browser" }, Message: "..." }
-            touch cooldown file
-            reset low-streak counter to 0
-            clear failure count
-          else:
-            log "cooldown active"
-        else:
-            log "already at max"
-7.  SCALE-IN check:
-      elif utilization_pct < SCALE_IN_THRESHOLD  AND  total_queued == 0  AND  total_rejected == 0:
-        increment low-streak counter
-        if streak >= STABLE_CHECKS:
-          if current_count > MIN_INSTANCES:
-            if cooldown expired:
-              new_count = max(current_count - 1, MIN_INSTANCES)
-              POST /v1/job/browser-pool/scale { Count: new_count, Target: { Group: "browser" }, Message: "..." }
-              touch cooldown file
-              reset low-streak counter to 0
-              clear failure count
-            else:
-              log "cooldown active"
-          else:
-            log "already at min"
+1.  Read config from env vars (enabled, min/max, scale-out threshold, cooldown)
+2.  Acquire a dedicated browser-pool autoscale lock
+3.  GET /v1/job/browser-pool and read the count for task group "browser"
+4.  GET /v1/service/browser-pool and list all registered instance addresses
+5.  For each instance address:
+      GET http://<address>/pressure
+      (If /pressure is unavailable, fall back to /config + /sessions)
+6.  Aggregate across all instances:
+      total_running
+      total_capacity
+      total_queued
+      total_recently_rejected
+      utilization_pct = (total_running * 100) / total_capacity
+7.  If utilization is above threshold OR queued > 0 OR recentlyRejected > 0:
+      if current_count < MAX_INSTANCES and cooldown expired:
+        POST /v1/job/browser-pool/scale with Count = current_count + 1
+        touch cooldown file
+        clear failure count
       else:
-        reset low-streak counter to 0  (utilization in normal range)
-8.  On any failure: track via alert_failure; send alert if threshold crossed
+        log why no scale happened
+8.  On failure: track via alert_failure and send alerts if threshold crossed
 ```
 
 Exit codes:
+
 - 0: success (scaled or no action needed)
 - 1: configuration or runtime error
 - 2: feature disabled (`BROWSER_POOL_AUTOSCALE_ENABLED != true`)
 
-Supports `--dry-run` and `--help` flags (same pattern as existing scripts).
+Supports `--dry-run` and `--help`.
 
 **1.3 — Add Terraform variables**
 
-New variables in `infra/hetzner/variables.tf`:
+Add only the variables required for the scale-out-first rollout:
 
 | Variable | Type | Default | Description |
 |---|---|---|---|
@@ -221,132 +191,82 @@ New variables in `infra/hetzner/variables.tf`:
 | `browser_pool_min_instances` | number | 1 | Minimum task group count |
 | `browser_pool_max_instances` | number | 5 | Maximum task group count |
 | `browser_pool_scale_out_utilization_pct` | number | 70 | Scale out above this utilization % |
-| `browser_pool_scale_in_utilization_pct` | number | 20 | Scale in below this utilization % |
-| `browser_pool_scale_in_stable_checks` | number | 5 | Consecutive low-util checks before scale-in |
 | `browser_pool_cooldown_seconds` | number | 120 | Minimum seconds between scale events |
 
-Add corresponding entries to `staging.tfvars` (enabled, tighter thresholds for testing) and `production.tfvars` (disabled initially, conservative thresholds).
+Stage scale-in-specific variables for a later phase rather than shipping them now.
 
 **1.4 — Add systemd units to `cloud-init.yaml`**
 
-Two new units, following the exact pattern of the existing autoscale units:
+Add `browser-pool-autoscale.service` and `browser-pool-autoscale.timer`, following the existing autoscale unit pattern.
 
-`browser-pool-autoscale.service`:
-```ini
-[Unit]
-Description=Browser-Pool Autoscale Loop
-Wants=network-online.target nomad.service
-After=network-online.target nomad.service
-Requires=nomad.service
+Key differences from the previous draft:
 
-[Service]
-Type=oneshot
-WorkingDirectory=/opt/herobids/infra/hetzner
-ExecStart=/opt/herobids/infra/hetzner/scripts/browser-pool-autoscale.sh
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=browser-pool-autoscale
+- Include a dedicated lock-file path.
+- Do not include scale-in-only environment variables yet.
+- Reuse `EnvironmentFile=-/etc/herobids/autoscale.env` for `NOMAD_TOKEN`.
 
-Environment=NOMAD_ADDR=http://127.0.0.1:4646
-Environment=BROWSER_POOL_AUTOSCALE_ENABLED=${browser_pool_autoscale_enabled}
-Environment=BROWSER_POOL_MIN_INSTANCES=${browser_pool_min_instances}
-Environment=BROWSER_POOL_MAX_INSTANCES=${browser_pool_max_instances}
-Environment=BROWSER_POOL_SCALE_OUT_UTILIZATION_PCT=${browser_pool_scale_out_utilization_pct}
-Environment=BROWSER_POOL_SCALE_IN_UTILIZATION_PCT=${browser_pool_scale_in_utilization_pct}
-Environment=BROWSER_POOL_SCALE_IN_STABLE_CHECKS=${browser_pool_scale_in_stable_checks}
-Environment=BROWSER_POOL_COOLDOWN_SECONDS=${browser_pool_cooldown_seconds}
-Environment=BROWSER_POOL_AUTOSCALE_LOG_FILE=/var/log/browser-pool-autoscale.log
-Environment=BROWSER_POOL_AUTOSCALE_COOLDOWN_FILE=/var/run/browser-pool-autoscale-last-scale
-Environment=BROWSER_POOL_AUTOSCALE_LOW_STREAK_FILE=/var/run/browser-pool-autoscale-low-streak
-Environment=HEROBIDS_ENV=${environment}
+**1.5 — Implement per-session browser instance selection in the worker**
 
-# Alerting (reuse existing alert config)
-Environment=NOMAD_AUTOSCALE_FAILURE_COUNT_FILE=/var/run/browser-pool-autoscale-failure-count
-Environment=NOMAD_AUTOSCALE_LAST_ALERT_FILE=/var/run/browser-pool-autoscale-last-alert
-Environment=ALERT_FAILURE_THRESHOLD=${alert_failure_threshold}
-Environment=ALERT_RATE_LIMIT_SECONDS=${alert_rate_limit_seconds}
-Environment=ALERT_SEND_RECOVERY=${alert_send_recovery}
-Environment=ALERT_SMTP_HOST=${alert_smtp_host}
-Environment=ALERT_SMTP_PORT=${alert_smtp_port}
-Environment=ALERT_SMTP_USE_TLS=${alert_smtp_use_tls}
-Environment=ALERT_FROM=${alert_from}
-Environment=ALERT_TO=${alert_to}
-Environment=ALERT_SMTP_USER=${alert_smtp_user}
-Environment=ALERT_SMTP_PASS=${alert_smtp_pass}
+Replace the previous plan to randomize `NomadServiceRegistry.resolve()` at startup.
 
-EnvironmentFile=-/etc/herobids/autoscale.env
+Instead:
 
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/run /var/log
+- In Docker/local dev, keep using the static browser URL.
+- In Nomad, resolve all healthy browser-pool instances for each new browser session.
+- Choose one concrete instance for that session.
+- Use that same instance for both `PUT /json/new` and the returned CDP WebSocket URL.
 
-[Install]
-WantedBy=multi-user.target
-```
+This is the minimum change that actually spreads browser load without relying on proxy stickiness.
 
-`browser-pool-autoscale.timer`:
-```ini
-[Unit]
-Description=Browser-Pool Autoscale Timer
+**1.6 — Preserve browser-pool count on deploy**
 
-[Timer]
-OnUnitActiveSec=60s
-OnBootSec=180s
-RandomizedDelaySec=15s
-Unit=browser-pool-autoscale.service
+Update the deploy path for Nomad infrastructure jobs so re-registering `browser-pool.nomad.hcl` preserves the current task-group count instead of forcing the static count from HCL.
 
-[Install]
-WantedBy=timers.target
-```
+Implementation order:
 
-The `runcmd` section in `cloud-init.yaml` conditionally enables the timer:
-```bash
-if [ "${browser_pool_autoscale_enabled}" = "true" ]; then
-  systemctl enable browser-pool-autoscale.timer
-  systemctl start browser-pool-autoscale.timer
-fi
-```
+1. First try the Nomad CLI preserve-counts path.
+2. Only use direct API submission if the CLI path cannot reliably preserve the browser task-group count in the real deploy flow.
 
-**1.5 — Randomize `NomadServiceRegistry.resolve()` instance selection**
+The requirement is fixed: deploys must not drop runtime browser-pool capacity.
 
-`NomadServiceRegistry.resolve()` currently returns the first healthy instance from the Nomad service catalog. With multiple browser-pool instances, this creates an unbalanced pool. Change `resolve()` to return a random healthy instance from the catalog result set. This gives statistical load distribution with a one-line change (no API change, no new methods).
+**1.7 — Update operator docs**
 
-A full `resolveAll()` + round-robin approach is a cleaner follow-up if needed, but random selection is sufficient for the initial rollout. See RQ2.
+Update `infra/hetzner/README.md` to document:
 
-**1.6 — Update README.md**
-
-Add a "Browser-Pool Autoscaling" section to `infra/hetzner/README.md` documenting:
-- How it works (single script, Nomad scale API, Browserless `/pressure` metrics).
-- Configuration variables table.
+- The two-level scaling model.
+- Scale-out-only initial rollout.
+- Browserless `/pressure` metrics and fallback behavior.
+- Per-session instance selection in the worker.
 - Manual override commands (`--dry-run`, `--help`).
-- Systemd unit names and log locations.
-- Relationship to agent-node autoscaling (composition via placement failures).
-- Deploy-resets-count behavior: a `nomad job run` re-deploy resets count to 1; the autoscaler recovers within 60-120 seconds (see RQ3).
+- Systemd unit names, lock file, and log locations.
+- Count-preserving deploy behavior.
 
 #### Files Modified
 
 | File | Changes |
 |---|---|
 | `infra/nomad/browser-pool.nomad.hcl` | Add `scaling` block |
-| `infra/hetzner/scripts/browser-pool-autoscale.sh` | New file — autoscale script |
-| `infra/hetzner/variables.tf` | Add 7 new variables |
-| `infra/hetzner/staging.tfvars` | Add browser-pool autoscale config (enabled) |
-| `infra/hetzner/production.tfvars` | Add browser-pool autoscale config (disabled initially) |
-| `infra/hetzner/cloud-init.yaml` | Add 2 systemd unit files + conditional timer enable |
-| `apps/worker/src/agents/service-registry.ts` | Randomize instance selection in `NomadServiceRegistry.resolve()` |
-| `infra/hetzner/README.md` | Add browser-pool autoscaling section |
+| `infra/hetzner/scripts/browser-pool-autoscale.sh` | New file — scale-out-only autoscale script |
+| `infra/hetzner/variables.tf` | Add scale-out variables |
+| `infra/hetzner/staging.tfvars` | Add browser-pool autoscale config |
+| `infra/hetzner/production.tfvars` | Add browser-pool autoscale config |
+| `infra/hetzner/cloud-init.yaml` | Add browser-pool autoscale service/timer |
+| `apps/worker/src/index.ts` | Remove one-time browser-pool pinning in Nomad path |
+| `apps/worker/src/agents/service-registry.ts` | Support resolving multiple browser-pool instances |
+| `packages/venues/src/browserless-adapter.ts` | Choose a concrete instance per new browser session |
+| `infra/hetzner/scripts/push.sh` | Preserve browser-pool counts on Nomad job re-submit |
+| `infra/hetzner/README.md` | Document browser-pool autoscaling |
 
 #### Acceptance Criteria
 
 - `browser-pool-autoscale.sh --dry-run` runs without error on a machine with `curl` and `jq`.
-- `browser-pool-autoscale.sh --help` prints usage information.
 - With `BROWSER_POOL_AUTOSCALE_ENABLED=false`, the script exits 2 immediately.
-- With `--dry-run`, the script logs the utilization snapshot, the scale decision, and what it would do — without calling the Nomad scale API.
-- The `scaling` block in `browser-pool.nomad.hcl` is accepted by `nomad job validate`.
-- `pnpm lint` passes (no application code changes, but verify no drift).
-- The systemd units in `cloud-init.yaml` are syntactically valid YAML (use `cloud-init devel schema --config-file` if available).
+- With `--dry-run`, the script logs the utilization snapshot, the scale decision, and what it would do without calling the Nomad scale API.
+- The script reads the `browser` task-group count by name, not by array index.
+- `browser-pool.nomad.hcl` validates with the added `scaling` block.
+- On Nomad, new browser sessions are distributed across multiple browser-pool instances by choosing a concrete instance per session.
+- Re-deploying the browser-pool job preserves the runtime task-group count.
+- `pnpm lint` passes.
 
 ### Phase 2: Validation in staging
 
@@ -357,81 +277,109 @@ Add a "Browser-Pool Autoscaling" section to `infra/hetzner/README.md` documentin
 
 **2.1 — Deploy to staging**
 
-Re-provision the staging control plane to pick up the new cloud-init (or manually deploy the script and systemd units for faster iteration).
+Deploy the scale-out loop, the worker-side per-session selection, and the deploy-path count-preservation change.
 
 **2.2 — Verify `/pressure` availability**
 
-Confirm the open-source Browserless image exposes `/pressure`. If it returns 404, implement the fallback path (`/config` + `/sessions`) per D2 / RQ1.
+Confirm the deployed Browserless image exposes `/pressure`. If not, verify the fallback path (`/config` + `/sessions`) works correctly.
 
 **2.3 — Test scale-out**
 
-Saturate the browser-pool by running concurrent `browse_interactive` calls. Verify:
-- The autoscaler detects high utilization or queued requests.
+Saturate the browser-pool with concurrent browser requests. Verify:
+
+- The autoscaler detects high utilization or queue pressure.
 - It scales from count=1 to count=2 via the Nomad scale API.
 - The new instance registers in the Nomad service catalog.
-- The `ServiceRegistry` in the worker resolves instances with random selection across healthy instances (per task 1.5).
+- New browser sessions are distributed across concrete browser-pool instances.
 
-**2.4 — Test scale-in**
+**2.4 — Test composition with the agent-node autoscaler**
 
-Let the pool go idle. Verify:
-- The low-utilization streak counter increments each check.
-- After N consecutive checks (default 5), the autoscaler scales from count=2 to count=1.
-- The removed instance deregisters from the Nomad service catalog.
+Set `BROWSER_POOL_MAX_INSTANCES` high enough that Nomad cannot place all desired browser-pool instances. Verify:
 
-**2.5 — Test composition with agent-node autoscaler**
-
-Set `BROWSER_POOL_MAX_INSTANCES` high enough that Nomad can't place all instances. Verify:
-- The browser-pool autoscaler increases count.
+- The browser-pool autoscaler increases the desired count.
 - Nomad marks the evaluation as blocked.
 - The placement-failure watcher detects it and triggers agent-node scale-out.
 
-**2.6 — Test alerting**
+**2.5 — Test alerting**
 
-Simulate a failure (e.g., stop Nomad) and verify the alert pipeline fires after the configured failure threshold.
+Simulate a failure (for example, stop Nomad) and verify the browser-pool autoscale alert pipeline fires after the configured failure threshold.
 
 #### Acceptance Criteria
 
-- Scale-out and scale-in both work end-to-end on staging.
+- Scale-out works end-to-end on staging.
+- New sessions spread across multiple browser-pool instances in Nomad.
+- Placement failures trigger the existing agent-node autoscaler.
 - Alerts fire on repeated failures.
-- The system composes with agent-node autoscaling (placement failures trigger node provisioning).
 
-### Phase 3: Production rollout
+### Phase 3: Safe scale-in design
 
-**Effort:** ~0.5 day
-**Risk:** Low — feature-flagged, starts disabled.
+**Effort:** ~0.5 day design + validation
+**Risk:** Medium — scale-in can terminate live sessions if done incorrectly.
 
 #### Tasks
 
-**3.1 — Enable in production**
+**3.1 — Define session-aware scale-in semantics**
 
-Set `browser_pool_autoscale_enabled = true` in `production.tfvars` with conservative thresholds:
-- `browser_pool_max_instances = 3` (start small)
+Choose a scale-in strategy that proves an instance is safe to remove before reducing count. Examples:
+
+- only scale in when a chosen instance reports zero live sessions,
+- add an operator or scheduler drain step for browser allocations,
+- or add explicit worker/browser-pool coordination for shutdown.
+
+**3.2 — Add conservative hysteresis**
+
+Only after safe removal semantics exist, add scale-in thresholds, streak counters, and validation.
+
+**3.3 — Validate end to end in staging**
+
+Verify a browser-pool instance can be removed without killing a live CDP session.
+
+#### Acceptance Criteria
+
+- Automatic scale-in is not enabled until staging proves safe removal.
+- The final scale-in logic is session-aware, not just utilization-aware.
+
+### Phase 4: Production rollout
+
+**Effort:** ~0.5 day
+**Risk:** Low for scale-out-only rollout; revisit risk before enabling automatic scale-in.
+
+#### Tasks
+
+**4.1 — Enable scale-out in production**
+
+Set `browser_pool_autoscale_enabled = true` in `production.tfvars` with conservative values:
+
+- `browser_pool_max_instances = 3`
 - `browser_pool_scale_out_utilization_pct = 70`
-- `browser_pool_scale_in_utilization_pct = 20`
-- `browser_pool_scale_in_stable_checks = 10` (more conservative than staging)
 - `browser_pool_cooldown_seconds = 300`
 
-**3.2 — Monitor**
+**4.2 — Monitor**
 
-Watch `journalctl -u browser-pool-autoscale` and `/var/log/browser-pool-autoscale.log` for the first few days. Verify scaling events are reasonable and not flapping.
+Watch `journalctl -u browser-pool-autoscale` and `/var/log/browser-pool-autoscale.log` for the first few days. Verify scale-out events are reasonable and that deploys preserve count.
 
-**3.3 — Tune thresholds**
+**4.3 — Tune thresholds**
 
 Adjust thresholds based on observed production traffic patterns.
+
+**4.4 — Enable scale-in only after Phase 3 is complete**
+
+Automatic browser-pool scale-in is a separate rollout decision, not part of the initial enablement.
 
 ---
 
 ## State Files
 
-The script uses three state files (all in `/var/run/`, cleared on reboot):
+The scale-out loop uses dedicated browser-pool state files in `/var/run/`:
 
 | File | Purpose |
 |---|---|
+| `/var/run/browser-pool-autoscale.lock` | Serializes overlapping timer runs and local state updates |
 | `/var/run/browser-pool-autoscale-last-scale` | Unix timestamp of last scale event (cooldown) |
-| `/var/run/browser-pool-autoscale-low-streak` | Integer count of consecutive low-utilization checks |
-| `/var/run/browser-pool-autoscale-failure-count` | Consecutive failure count (alert tracking, via alert-common.sh) |
+| `/var/run/browser-pool-autoscale-failure-count` | Consecutive failure count (alert tracking, via `alert-common.sh`) |
+| `/var/run/browser-pool-autoscale-last-alert` | Alert rate-limit timestamp |
 
-No Terraform state, no S3 backend, no flock file. The Nomad job scale API is idempotent — concurrent runs (unlikely given the 60s timer) would set the same count, which is harmless.
+The browser-pool autoscaler does not need Terraform state or an S3 backend because it does not provision servers directly. It still uses a lock file because it mutates local cooldown and alert state.
 
 ---
 
@@ -439,54 +387,38 @@ No Terraform state, no S3 backend, no flock file. The Nomad job scale API is ide
 
 | Component | What it provides |
 |---|---|
-| `scale-common.sh` | `log`, `die`, `nomad_api`, cooldown helpers (`check_cooldown_expired`, `touch_cooldown`), `is_dry_run` |
+| `scale-common.sh` | `log`, `die`, `nomad_api`, cooldown helpers, dry-run helpers, lock helpers |
 | `alert-common.sh` | `alert_failure`, `clear_failure_count`, `send_alert`, `send_recovery_alert` |
 | `/etc/herobids/autoscale.env` | `NOMAD_TOKEN` for authenticated Nomad API calls |
-| `cloud-init.yaml` template flow | Terraform variables → cloud-init → systemd Environment directives |
-| `nomad-placement-failure-watcher` | Detects blocked browser-pool evaluations → triggers agent-node scale-out |
+| `cloud-init.yaml` template flow | Terraform variables -> cloud-init -> systemd environment |
+| `nomad-placement-failure-watcher` | Level-2 fallback: blocked browser-pool placements -> agent-node scale-out |
 
 ---
 
 ## Resolved Questions
 
-### RQ1. Does the open-source Browserless image expose `/pressure`?
+### RQ1. Does the deployed Browserless image expose `/pressure`?
 
-**Status:** Resolved — build the fallback path regardless.
+**Status:** Resolved enough for implementation — build the fallback path regardless.
 
-The docs are ambiguous: `/pressure` is listed as a management endpoint for the open-source image, but the dedicated API page says "Private Deployment and Enterprise Docker plans." We will attempt `/pressure` first and cache availability per instance. If it returns 404 or non-JSON, the script falls back to `GET /config` (returns `maxConcurrent`) combined with `GET /sessions` (returns active session array — `length` gives `running`).
+We will attempt `/pressure` first and cache availability per instance. If it returns 404 or otherwise fails, the script falls back to `GET /config` plus `GET /sessions`.
 
-In fallback mode, `queued` and `recentlyRejected` are unavailable. Scale-out triggers only on utilization % (session count / max concurrent). This is less responsive than having queue depth but still functional. Phase 2.2 confirms which path is actually used in practice.
+When `/pressure` is available, treat `recentlyRejected` as a recent-window scale-out signal, not as an all-time counter.
 
 ### RQ2. Worker-side instance resolution — single vs multiple addresses
 
-**Status:** Resolved — randomize `NomadServiceRegistry.resolve()`.
+**Status:** Resolved — do per-session concrete instance selection in application code.
 
-Change `NomadServiceRegistry.resolve()` to return a random healthy instance from the Nomad service catalog result set instead of the first one. This gives statistical load distribution with a minimal code change — no new API methods, no interface changes to `ServiceRegistry` or `BrowserlessAdapter`.
-
-A full `resolveAll()` + round-robin approach is a cleaner follow-up if empirical observation shows uneven distribution, but random selection is sufficient for the initial rollout.
-
-Implementation is in Phase 1, task 1.5.
+The earlier idea of randomizing `NomadServiceRegistry.resolve()` is not sufficient because browser sessions are created over HTTP and then continued over WebSocket. The worker must choose one concrete Browserless instance per new session and keep that session pinned to it.
 
 ### RQ3. Nomad job re-deploy resets count
 
-**Status:** Resolved — accept the brief capacity dip.
+**Status:** Resolved — do not accept the dip.
 
-When `nomad job run browser-pool.nomad.hcl` is executed during a deploy, the `count = 1` in the HCL file overrides whatever the autoscaler set via the API. The autoscaler recovers within 60-120 seconds (one or two timer cycles). During that window, the pool operates at minimum capacity.
+The deploy path must preserve runtime task-group counts when re-registering the job. A deploy should not intentionally reduce browser-pool capacity and wait for the autoscaler to repair it.
 
-This is acceptable because:
-- Deploys are infrequent.
-- The autoscaler reacts on the very next 60s timer tick.
-- The brief dip is bounded (at worst, a few browse_interactive calls queue or get 429'd, which the agent retries).
+### RQ4. Browser-pool autoscaling composes with agent-node autoscaling
 
-This behavior is documented in the README (task 1.6).
+**Status:** Resolved — yes, as a two-level model.
 
-### RQ4. Cooldown file path — separate from agent-node autoscaler
-
-**Status:** Resolved — confirmed correct.
-
-The browser-pool autoscaler uses its own state files, independent from the agent-node autoscaler:
-- Cooldown: `/var/run/browser-pool-autoscale-last-scale` (not `/var/run/nomad-autoscale-last-scale-out`)
-- Failure count: `/var/run/browser-pool-autoscale-failure-count` (not `/var/run/nomad-autoscale-failure-count`)
-- Last alert: `/var/run/browser-pool-autoscale-last-alert` (not `/var/run/nomad-autoscale-last-alert`)
-
-The systemd unit overrides `NOMAD_AUTOSCALE_FAILURE_COUNT_FILE` and `NOMAD_AUTOSCALE_LAST_ALERT_FILE` to browser-pool-specific paths, so `alert-common.sh` operates on the correct files. A browser-pool scale event does not affect agent-node cooldowns, and vice versa.
+Browser-pool autoscaling is level 1: add browser allocations on existing agent-node servers. Agent-node autoscaling is level 2: add more servers when Nomad cannot place those allocations.

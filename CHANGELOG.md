@@ -17,6 +17,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Sandbox network namespace cleanup — `sandbox-exec.sh` used `exec` to run the child command, which replaced the shell and prevented the EXIT trap from firing. Each invocation leaked a veth pair and namespace, all sharing the same `10.200.0.0/30` subnet. After a few sandbox invocations, the kernel routed return traffic to a stale veth, black-holing all sandbox networking (CDP timeouts, DNS failures). Replaced `exec` with a foreground run that preserves the exit code and lets the trap clean up.
+
 - `agent-browser` socket directory owned by root — the agent container entrypoint created `/home/agent/.agent-browser/` as root, making it unwritable by the `agent` user (uid 1001). The CLI requires a writable socket directory and failed before reading any config. The entrypoint now `chown`s the directory to `agent:agent` after creation.
 
 - `agent-browser` CDP config missing for root context — `execute_code` runs as root (`HOME=/root`) but the entrypoint only wrote the CDP config to `/home/agent/.agent-browser/config.json`. The CLI resolved `~/.agent-browser/config.json` to `/root/.agent-browser/config.json` (not found) and fell back to local Chromium launch, which failed. The entrypoint now writes the config to both `/home/agent/` and `/root/` paths.

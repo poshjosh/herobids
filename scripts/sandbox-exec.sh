@@ -85,5 +85,11 @@ mkdir -p "/etc/netns/$NS"
 echo "nameserver 8.8.8.8" > "/etc/netns/$NS/resolv.conf"
 echo "nameserver 8.8.4.4" >> "/etc/netns/$NS/resolv.conf"
 
-# Execute the command inside the sandbox namespace
-exec ip netns exec "$NS" "$@"
+# Execute the command inside the sandbox namespace.
+# Run in the foreground (not exec) so the EXIT trap fires and cleans up
+# the namespace + veth pair. Using exec would replace the shell, preventing
+# the trap from running and leaking veth interfaces that share the same
+# 10.200.0.0/30 subnet — breaking routing for subsequent sandbox invocations.
+ip netns exec "$NS" "$@"
+_exit_code=$?
+exit "$_exit_code"
