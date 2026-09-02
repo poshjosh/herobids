@@ -77,7 +77,7 @@ import { classifyRuntimeError } from './runtime-errors.js';
 import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailure, SessionCircuitBreaker } from './runtime-resilience.js';
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
-import { buildTickGateState } from './tick-gate-state.js';
+import { buildTickGateState, isUserMessageType, extractUserMessageText } from './tick-gate-state.js';
 import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScoutReasoningLevel, resolveJudgeThinkingLevel } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { BrowserlessAdapter } from '@herobids/venues';
@@ -1403,7 +1403,10 @@ async function readOutboundMessages(): Promise<Array<Record<string, unknown>>> {
     consumerGroup: CONSUMER_GROUP,
     consumerName: CONSUMER_NAME,
     blockMs: OUTBOUND_READ_BLOCK_MS,
-    count: 10,
+    // Drain backlog in one read so user messages / current market context are
+    // never left buried behind older entries (which would keep the tick gated
+    // as context_unchanged and never surface the user message to the LLM).
+    maxDrain: 200,
   });
 }
 
@@ -1495,6 +1498,17 @@ async function pollWakeSignals(): Promise<void> {
                 pendingWakeSignalBuffer.push(buffered);
               }
               requestWakeDrivenTick('Received market wake signal between ticks');
+            } else if (isUserMessageType(envelope['type'])) {
+              // A user message must be handled promptly rather than waiting for
+              // the next scheduled tick (which can be many minutes away on the
+              // standard/minimal cost presets). The runtime consumer group reads
+              // the stream oldest-first and can lag behind a backlog, so the
+              // user.message may not be in the immediately-scheduled tick's read
+              // batch. Set a pending flag (drained at tick start) so that tick
+              // sets hasWakeSignal and bypasses the context_hash gate regardless
+              // of the runtime group's cursor position, then schedule the tick.
+              pendingUserMessage = true;
+              requestWakeDrivenTick('Received user message between ticks');
             }
           } catch {
             // Ignore malformed envelopes.
@@ -2147,6 +2161,13 @@ const WAKE_MIN_INTERVAL_MS = agentRuntimePolicy.wake.minIntervalMs; // sourced f
 let lastWakeTickAt = 0;
 let nextTickDueAt = 0;
 let wakePollInFlight = false;
+// Set by the wake-signal poll loop when it observes a user message on the
+// outbound stream, and drained at the start of the next tick. The wake group
+// stays caught up even when the runtime group's cursor lags behind a backlog,
+// so this flag guarantees the user-message-driven tick bypasses the
+// context_hash gate (hasWakeSignal) even if readOutboundMessages has not yet
+// reached the user.message entry. See docs/tech/agents/wake-signal-and-technical-scan.md.
+let pendingUserMessage = false;
 
 async function handleRuntimeFailure(
   source: Parameters<typeof classifyRuntimeError>[0],
@@ -2478,8 +2499,12 @@ async function runTick(): Promise<void> {
     if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.activityTimeline.enabled) {
       const maxEvents = agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents;
       for (const message of incomingMessages) {
-        if (message['type'] === 'agent.user.message' || message['type'] === 'user.message') {
-          const text = typeof message['content'] === 'string' ? message['content'] : JSON.stringify(message['content'] ?? '');
+        if (isUserMessageType(message['type'])) {
+          // The user.message envelope carries the text at payload.message, not a
+          // top-level `content` field. extractUserMessageText reads the correct
+          // field (with a `content` fallback) so the LLM sees the actual text.
+          const text = extractUserMessageText(message);
+          if (text.length === 0) continue; // skip empty user messages
           runtimeState.metrics.activityTimeline.push({ kind: 'USER', text, timestamp: Date.now() });
         }
       }
@@ -2548,11 +2573,17 @@ async function runTick(): Promise<void> {
     // New context-only events change the digest → context hash changes → skip prevented.
     const marketEventDigest = computeMarketEventDigest(runtimeState.metrics.pendingMarketContext);
 
+    // Drain the pending-user-message flag set by the wake-signal poll loop.
+    // This ensures a user message bypasses the context_hash gate even when the
+    // runtime group's cursor has not yet reached the user.message entry.
+    const hasPendingUserMessage = pendingUserMessage;
+    pendingUserMessage = false;
+
     const tickGateState = buildTickGateState({
       tickNumber: tickCount,
       incomingMessages,
       hasOpenPositions,
-      hasBufferedWake,
+      hasBufferedWake: hasBufferedWake || hasPendingUserMessage,
       lastKnownPositionSide: sessionMetrics.lastPositionSide,
       tradingHours,
       now: new Date(),
@@ -3249,6 +3280,11 @@ async function runTick(): Promise<void> {
     const preScoutResolution = resolvePreScoutDecision({
       tickCount,
       reminderScheduledBy,
+      // A user message (present in this tick's drained messages, or flagged by
+      // the wake-signal poll loop even if the runtime group's cursor has not yet
+      // reached it) must always escalate to the judge so the agent can reply.
+      userMessageReceived: hasPendingUserMessage
+        || incomingMessages.some((message) => isUserMessageType(message['type'])),
       hasOpenPositions,
       openPositionEscalationToJudgePolicy: agentConfig.openPositionEscalationToJudgePolicy,
       hasTriggeredWatch,
@@ -3305,7 +3341,7 @@ async function runTick(): Promise<void> {
           previousRegimePass,
           regimePass: skipDecision.regime?.pass ?? null,
           incomingMessagesCount: incomingMessages.length,
-          userMessageReceived: incomingMessages.some((message) => message['type'] === 'agent.user.message' || message['type'] === 'user.message'),
+          userMessageReceived: incomingMessages.some((message) => isUserMessageType(message['type'])),
           drawdownPct: sessionMetrics.performance.drawdownPct ?? extractDrawdownPct(sessionMetrics.lastPnlSummary),
           drawdownThresholdPct: agentRuntimePolicy.thinking.drawdownThresholdPct,
         })

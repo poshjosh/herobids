@@ -1077,7 +1077,15 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
       if (!binding) {
         logger.debug({ agentId }, 'No active binding for agent — grant fallback remains disabled');
         agentState.clearPending(agentId, sessionId);
-        return false;
+        // The session IS successfully activated — it simply has no trading actor
+        // (e.g. a personal-assistant agent with no trading connection). Return
+        // true so the session manager records the session as active, stops the
+        // per-heartbeat reconnect loop, and fires onSessionStarted (the Telegram
+        // reply anchor). Returning false here would (incorrectly) signal
+        // "activation not established, retry later", which suppressed the anchor
+        // and left non-trading agents unable to receive Telegram replies.
+        // The transient "session superseded" case above still returns false.
+        return true;
       }
 
       try {

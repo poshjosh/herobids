@@ -428,7 +428,10 @@ console.log(exists ? 'found' : 'not found');
 
       expect(result.success).toBe(false);
       expect(result.errorCode).toBe('execute_code.execution_failed');
-      expect(result.error).toBe('execute_code failed with exit code 1');
+      // The error string surfaces the script's stderr for context, but the
+      // failure is still classified as an ordinary script error (fault=false),
+      // NOT a sandbox infrastructure failure.
+      expect(result.error).toBe('execute_code failed with exit code 1: User script error: Permission denied while opening ./output.txt');
       expect(result.fault).toBe(false);
     } finally {
       vi.doUnmock('node:child_process');

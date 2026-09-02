@@ -3,6 +3,7 @@ import type { RegimeResult } from '@herobids/market-data';
 import { calculateAtrPercent, computeDecisionContextHash, computeRiskPlaybookDigest, computeWakeSignalDigest, computeWatchSummaryDigest, isWithinTradingHours, resolveAdaptiveIntervalMs, shouldSkipTick } from './tick-gates.js';
 import type { RuntimeActiveWatchSummary } from './runtime-composition.js';
 import { computeMarketEventDigest } from './runtime-composition.js';
+import { buildTickGateState } from './tick-gate-state.js';
 
 function makeRegimeResult(pass: boolean, reasons: string[]): RegimeResult {
   return {
@@ -512,6 +513,32 @@ describe('shouldSkipTick', () => {
     );
 
     expect(wakeTickResult.skip).toBe(false);
+  });
+
+  it('does not skip a tick carrying a user message even when the decision context is unchanged (end-to-end via buildTickGateState)', async () => {
+    // Tick 1: establish a baseline context hash with no incoming messages.
+    const first = await shouldSkipTick(
+      { tickNumber: 1, hasOpenPositions: false, positionSide: 'flat', latestPrice: 100, portfolioPnlUsd: 0 },
+      {},
+    );
+
+    // Tick 2: the ONLY change is an inbound user.message — market context is
+    // identical. buildTickGateState must set hasWakeSignal so shouldSkipTick
+    // does not skip as context_unchanged. This is the regression guard for
+    // "user message gets no response until an unrelated context change".
+    const gateState = buildTickGateState({
+      tickNumber: 2,
+      incomingMessages: [{ type: 'user.message', payload: { message: 'what is my pnl?' } }],
+      hasOpenPositions: false,
+      lastKnownPositionSide: 'flat',
+      previousContextHash: first.contextHash,
+      enabledGates: { contextHash: true, regime: false, session: false, adaptiveInterval: false },
+    });
+
+    expect(gateState.hasWakeSignal).toBe(true);
+
+    const result = await shouldSkipTick(gateState, {});
+    expect(result.skip).toBe(false);
   });
 
   it('forces a full evaluation every tenth tick even when the context hash matches', async () => {

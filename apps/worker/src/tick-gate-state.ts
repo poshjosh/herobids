@@ -1,6 +1,52 @@
 import type { InstrumentHashEntry, TickGateState } from './tick-gates.js';
 import { computePriceBucket, computePnlBucket } from './tick-gates.js';
 
+/** Message type for a user message delivered via the API/web channel. */
+export const USER_MESSAGE_TYPE = 'user.message';
+/** Message type for a user message delivered via the agent channel (e.g. Telegram). */
+export const AGENT_USER_MESSAGE_TYPE = 'agent.user.message';
+/** Market/reminder/scanner wake signal that drives an event-driven tick. */
+export const AGENT_WAKE_TYPE = 'agent.wake';
+
+/**
+ * A message type that must force the agent to run an LLM tick promptly:
+ * either a wake signal or an inbound user message. Both schedule an early tick
+ * (see pollWakeSignals) and bypass the context_hash gate (see buildTickGateState
+ * / shouldSkipTick) so the agent responds without waiting for the next scheduled
+ * tick and is not skipped as `context_unchanged`.
+ */
+export function isEarlyTickTriggerType(type: unknown): boolean {
+  return type === AGENT_WAKE_TYPE
+    || type === USER_MESSAGE_TYPE
+    || type === AGENT_USER_MESSAGE_TYPE;
+}
+
+/** True when an incoming message is a user message (either channel). */
+export function isUserMessageType(type: unknown): boolean {
+  return type === USER_MESSAGE_TYPE || type === AGENT_USER_MESSAGE_TYPE;
+}
+
+/**
+ * Extract the human-readable text from a user-message envelope.
+ *
+ * The user.message envelope carries its text at `payload.message` (set by the
+ * API and Telegram producers). A legacy/top-level `content` string is accepted
+ * as a fallback. Returns a trimmed string, or '' when no text is present.
+ *
+ * Reading the wrong field previously surfaced an empty user message to the LLM
+ * (the prompt showed `[USER] ""`), so the agent had nothing to respond to.
+ */
+export function extractUserMessageText(message: Record<string, unknown>): string {
+  const payload = message['payload'] as { message?: unknown } | undefined;
+  if (typeof payload?.message === 'string') {
+    return payload.message.trim();
+  }
+  if (typeof message['content'] === 'string') {
+    return (message['content'] as string).trim();
+  }
+  return '';
+}
+
 export interface BuildTickGateStateParams {
   tickNumber: number;
   incomingMessages: Array<Record<string, unknown>>;
@@ -140,13 +186,20 @@ function extractTickSignals(
 
 export function buildTickGateState(params: BuildTickGateStateParams): TickGateState {
   const tickSignals = extractTickSignals(params.incomingMessages, params.lastKnownPositionSide);
-  // hasWakeSignal gates hybrid LLM dispatch. It is normally derived from the
-  // runtime group's incomingMessages, but in the two-consumer-group race the
-  // wake group may consume an `agent.wake` before the runtime group sees it.
-  // In that case the wake is buffered and drained into currentMarketWake, and
-  // runTick passes hasBufferedWake=true so the gate still unblocks.
+  // hasWakeSignal gates hybrid LLM dispatch and bypasses the context_hash gate
+  // (see shouldSkipTick). It is normally derived from the runtime group's
+  // incomingMessages, but in the two-consumer-group race the wake group may
+  // consume an `agent.wake` before the runtime group sees it. In that case the
+  // wake is buffered and drained into currentMarketWake, and runTick passes
+  // hasBufferedWake=true so the gate still unblocks.
+  //
+  // A user message must also unblock the tick: without this, an inbound
+  // `user.message` would be skipped as `context_unchanged` (it does not change
+  // the decision-context hash), so the agent would never reply until an
+  // unrelated context change happened to force a tick. Treating it as a wake
+  // signal guarantees the LLM runs and the user gets a response.
   // See docs/tech/agents/wake-signal-and-technical-scan.md.
-  const hasWakeSignal = params.incomingMessages.some((message) => message['type'] === 'agent.wake')
+  const hasWakeSignal = params.incomingMessages.some((message) => isEarlyTickTriggerType(message['type']))
     || params.hasBufferedWake === true;
 
   return {

@@ -21,17 +21,63 @@ describe('readOutboundMessages', () => {
       consumerGroup: 'agent-runtime',
       consumerName: 'agent-1-123',
       blockMs: OUTBOUND_READ_BLOCK_MS,
-      count: 10,
+      maxDrain: 50,
     });
 
     expect(xreadgroup).toHaveBeenCalledWith(
       'GROUP', 'agent-runtime', 'agent-1-123',
-      'COUNT', 10,
+      'COUNT', 50,
       'BLOCK', OUTBOUND_READ_BLOCK_MS,
       'STREAMS', 'agent:outbound:agent-1', '>',
     );
     expect(xack).toHaveBeenCalledWith('agent:outbound:agent-1', 'agent-runtime', 'msg-1');
     expect(messages).toEqual([{ messageId: 'm-1', type: 'instance.status' }]);
+  });
+
+  it('defaults COUNT to a large drain cap so backlog is caught up in one read', async () => {
+    const xgroup = vi.fn().mockResolvedValue(undefined);
+    const xreadgroup = vi.fn().mockResolvedValue(null);
+    const redis = { xgroup, xreadgroup, xack: vi.fn().mockResolvedValue(1) } as any;
+
+    await readOutboundMessages(redis, {
+      outboundStream: 'agent:outbound:agent-1',
+      consumerGroup: 'agent-runtime',
+      consumerName: 'agent-1-123',
+      blockMs: OUTBOUND_READ_BLOCK_MS,
+    });
+
+    // No explicit maxDrain → default (200), a single blocking read (one round-trip).
+    expect(xreadgroup).toHaveBeenCalledTimes(1);
+    expect(xreadgroup).toHaveBeenCalledWith(
+      'GROUP', 'agent-runtime', 'agent-1-123',
+      'COUNT', 200,
+      'BLOCK', OUTBOUND_READ_BLOCK_MS,
+      'STREAMS', 'agent:outbound:agent-1', '>',
+    );
+  });
+
+  it('drains and acknowledges an entire backlog batch in one read', async () => {
+    const xgroup = vi.fn().mockResolvedValue(undefined);
+    const entries = Array.from({ length: 25 }, (_, i) => [
+      `msg-${i}`, ['envelope', JSON.stringify({ messageId: `m-${i}`, type: i === 12 ? 'user.message' : 'instance.status' })],
+    ]);
+    const xreadgroup = vi.fn().mockResolvedValue([['agent:outbound:agent-1', entries]]);
+    const xack = vi.fn().mockResolvedValue(1);
+    const redis = { xgroup, xreadgroup, xack } as any;
+
+    const messages = await readOutboundMessages(redis, {
+      outboundStream: 'agent:outbound:agent-1',
+      consumerGroup: 'agent-runtime',
+      consumerName: 'agent-1-123',
+      blockMs: OUTBOUND_READ_BLOCK_MS,
+      maxDrain: 200,
+    });
+
+    // All 25 backlog entries are read + acked in a single tick, and the buried
+    // user.message (index 12) is surfaced — not left behind for a later tick.
+    expect(messages).toHaveLength(25);
+    expect(messages.some((m) => m['type'] === 'user.message')).toBe(true);
+    expect(xack).toHaveBeenCalledTimes(25);
   });
 
   it('returns an empty list when Redis yields no entries', async () => {
@@ -46,7 +92,6 @@ describe('readOutboundMessages', () => {
       consumerGroup: 'agent-runtime',
       consumerName: 'agent-1-123',
       blockMs: OUTBOUND_READ_BLOCK_MS,
-      count: 10,
     })).resolves.toEqual([]);
   });
 
@@ -62,7 +107,6 @@ describe('readOutboundMessages', () => {
       consumerGroup: 'agent-runtime',
       consumerName: 'agent-1-123',
       blockMs: OUTBOUND_READ_BLOCK_MS,
-      count: 10,
     })).rejects.toThrow('Connection is closed');
   });
 
@@ -92,7 +136,6 @@ describe('readOutboundMessages', () => {
       consumerGroup: 'agent-runtime',
       consumerName: 'agent-1-123',
       blockMs: OUTBOUND_READ_BLOCK_MS,
-      count: 10,
     })).rejects.toBeInstanceOf(Error);
   });
 
@@ -108,7 +151,6 @@ describe('readOutboundMessages', () => {
       consumerGroup: 'agent-runtime',
       consumerName: 'agent-1-123',
       blockMs: OUTBOUND_READ_BLOCK_MS,
-      count: 10,
     })).resolves.toEqual([]);
 
     const otherErrorRedis = {
@@ -122,7 +164,6 @@ describe('readOutboundMessages', () => {
       consumerGroup: 'agent-runtime',
       consumerName: 'agent-1-123',
       blockMs: OUTBOUND_READ_BLOCK_MS,
-      count: 10,
     })).rejects.toThrow('NOPERM no permissions');
   });
 });

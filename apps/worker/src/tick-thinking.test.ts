@@ -29,6 +29,47 @@ describe('classifyTickThinking', () => {
     })).toEqual({ thinking: 'light', reason: 'open_positions' });
   });
 
+  it('uses deep thinking when a user message was received', () => {
+    expect(classifyTickThinking({
+      hasOpenPositions: false,
+      incomingMessagesCount: 1,
+      userMessageReceived: true,
+      drawdownThresholdPct: -2,
+    })).toEqual({ thinking: 'deep', reason: 'user_message' });
+  });
+
+  it('prefers user_message over the generic new_runtime_event reason', () => {
+    // With incoming messages present but userMessageReceived set, the reason
+    // must be user_message (more specific), not new_runtime_event.
+    expect(classifyTickThinking({
+      hasOpenPositions: true,
+      incomingMessagesCount: 3,
+      userMessageReceived: true,
+      drawdownThresholdPct: -2,
+    })).toEqual({ thinking: 'deep', reason: 'user_message' });
+  });
+
+  it('regime flip outranks a user message (precedence)', () => {
+    expect(classifyTickThinking({
+      hasOpenPositions: false,
+      previousRegimePass: false,
+      regimePass: true,
+      incomingMessagesCount: 1,
+      userMessageReceived: true,
+      drawdownThresholdPct: -2,
+    })).toEqual({ thinking: 'deep', reason: 'regime_flip' });
+  });
+
+  it('drawdown threshold outranks a user message (precedence)', () => {
+    expect(classifyTickThinking({
+      hasOpenPositions: true,
+      incomingMessagesCount: 1,
+      userMessageReceived: true,
+      drawdownPct: -2.5,
+      drawdownThresholdPct: -2,
+    })).toEqual({ thinking: 'deep', reason: 'drawdown_threshold' });
+  });
+
   it('uses none for routine flat ticks', () => {
     expect(classifyTickThinking({
       hasOpenPositions: false,

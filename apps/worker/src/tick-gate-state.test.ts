@@ -40,7 +40,7 @@ describe('buildTickGateState', () => {
   it('falls back to the last known position side when no snapshot is present', () => {
     const state = buildTickGateState({
       tickNumber: 7,
-      incomingMessages: [{ type: 'agent.user.message', payload: { text: 'status?' } }],
+      incomingMessages: [{ type: 'instance.journal.event', payload: { journalType: 'noop' } }],
       hasOpenPositions: true,
       lastKnownPositionSide: 'short',
     });
@@ -49,6 +49,30 @@ describe('buildTickGateState', () => {
     expect(state.positionSide).toBe('short');
     expect(state.latestPrice).toBeNull();
     expect(state.portfolioPnlUsd).toBeNull();
+  });
+
+  it('sets hasWakeSignal true when a user.message is present so the tick is not skipped', () => {
+    const state = buildTickGateState({
+      tickNumber: 7,
+      incomingMessages: [{ type: 'user.message', payload: { message: 'what is my pnl?' } }],
+      hasOpenPositions: false,
+      lastKnownPositionSide: null,
+    });
+
+    expect(state.hasWakeSignal).toBe(true);
+  });
+
+  it('sets hasWakeSignal true when an agent.user.message is present so the tick is not skipped', () => {
+    const state = buildTickGateState({
+      tickNumber: 7,
+      incomingMessages: [{ type: 'agent.user.message', payload: { text: 'status?' } }],
+      hasOpenPositions: true,
+      lastKnownPositionSide: 'short',
+    });
+
+    expect(state.hasWakeSignal).toBe(true);
+    // Position fallback still works alongside the wake flag.
+    expect(state.positionSide).toBe('short');
   });
 
   it('aggregates multiple context snapshots from a reconnect batch', () => {

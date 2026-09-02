@@ -23,6 +23,29 @@ describe('resolvePreScoutDecision', () => {
     });
   });
 
+  it('forces escalation to the judge when a user message was received (no open positions)', () => {
+    // A direct user message must always reach the judge to get a reply — it must
+    // not be held at the scout triage step.
+    expect(resolvePreScoutDecision({ tickCount: 2, reminderScheduledBy: null, userMessageReceived: true, hasOpenPositions: false })).toEqual({
+      decision: { disposition: 'escalate', reason: 'user_message' },
+      source: 'forced_user_message',
+    });
+  });
+
+  it('escalates for a user message even when only a scout-scheduled reminder would otherwise run', () => {
+    expect(resolvePreScoutDecision({ tickCount: 2, reminderScheduledBy: 'scout', userMessageReceived: true })).toEqual({
+      decision: { disposition: 'escalate', reason: 'user_message' },
+      source: 'forced_user_message',
+    });
+  });
+
+  it('first-tick escalation takes priority over the user-message reason', () => {
+    expect(resolvePreScoutDecision({ tickCount: 1, reminderScheduledBy: null, userMessageReceived: true })).toEqual({
+      decision: { disposition: 'escalate', reason: 'first_tick_always_escalates' },
+      source: 'forced_first_tick',
+    });
+  });
+
   it('forces escalation when there are open positions and policy is always', () => {
     expect(resolvePreScoutDecision({ tickCount: 2, reminderScheduledBy: null, hasOpenPositions: true, openPositionEscalationToJudgePolicy: 'always' })).toEqual({
       decision: { disposition: 'escalate', reason: 'open_positions_require_active_management' },

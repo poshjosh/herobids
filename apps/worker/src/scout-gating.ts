@@ -42,12 +42,19 @@ export function resolveForcedPreScoutBillingOutcome(params: {
 
 export interface PreScoutResolution {
   decision: ScoutDecision | null;
-  source: 'forced_first_tick' | 'forced_judge_reminder' | 'forced_stale_coverage' | 'forced_open_positions' | 'scout';
+  source: 'forced_first_tick' | 'forced_user_message' | 'forced_judge_reminder' | 'forced_stale_coverage' | 'forced_open_positions' | 'scout';
 }
 
 export function resolvePreScoutDecision(params: {
   tickCount: number;
   reminderScheduledBy: 'scout' | 'judge' | null;
+  /**
+   * True when the current tick was triggered by (or carries) an inbound user
+   * message. A direct message from the user must always reach the judge so the
+   * agent can compose and send a reply — it must never be held at the scout
+   * triage step (which is designed for market-monitoring, not conversation).
+   */
+  userMessageReceived?: boolean;
   hasOpenPositions?: boolean;
   /** Per-agent open position escalation to judge policy. Defaults to 'uncovered_or_triggered' for backward compatibility. */
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
@@ -69,6 +76,15 @@ export function resolvePreScoutDecision(params: {
     return {
       decision: { disposition: 'escalate', reason: 'first_tick_always_escalates' },
       source: 'forced_first_tick',
+    };
+  }
+
+  // A user message always escalates to the judge — the scout must not hold a
+  // direct message from the user (that would leave the user with no response).
+  if (params.userMessageReceived) {
+    return {
+      decision: { disposition: 'escalate', reason: 'user_message' },
+      source: 'forced_user_message',
     };
   }
 

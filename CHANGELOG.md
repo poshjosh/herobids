@@ -17,6 +17,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Agent telegram messaging
+  - docs/bug-reports/2026/09/01/001-user-message-not-processed-until-next-scheduled-tick.md
+  - docs/bug-reports/2026/09/02/001-telegram-reply-anchor-and-user-message-gate.md
+  - docs/bug-reports/2026/09/02/002-stale-execute-tool-error-message-tests.md
+
 - Sandbox network namespace cleanup — `sandbox-exec.sh` used `exec` to run the child command, which replaced the shell and prevented the EXIT trap from firing. Each invocation leaked a veth pair and namespace, all sharing the same `10.200.0.0/30` subnet. After a few sandbox invocations, the kernel routed return traffic to a stale veth, black-holing all sandbox networking (CDP timeouts, DNS failures). Replaced `exec` with a foreground run that preserves the exit code and lets the trap clean up.
 
 - `agent-browser` socket directory owned by root — the agent container entrypoint created `/home/agent/.agent-browser/` as root, making it unwritable by the `agent` user (uid 1001). The CLI requires a writable socket directory and failed before reading any config. The entrypoint now `chown`s the directory to `agent:agent` after creation.

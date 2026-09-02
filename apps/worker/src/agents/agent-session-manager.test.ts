@@ -1013,6 +1013,73 @@ describe('AgentSessionManager', () => {
       expect(onSessionActive).toHaveBeenCalledTimes(2);
     });
 
+    it('activates and fires onSessionStarted when onSessionActive returns true with no trading actor (e.g. PA agent with no binding), and does not re-activate on the next heartbeat', async () => {
+      // Regression guard: a personal-assistant agent has no trading binding, so
+      // onSessionActive legitimately establishes the session without a trading
+      // actor and returns true. The session MUST still be marked active (so it is
+      // not re-bootstrapped as a reconnect on every heartbeat) and onSessionStarted
+      // MUST fire (this is the Telegram reply anchor). Previously the no-binding
+      // path returned false, which suppressed both — leaving PA agents unable to
+      // receive Telegram replies and looping reconnect forever.
+      const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+      const onSessionActive = vi.fn().mockResolvedValue(true); // activated, no trading actor
+      const onSessionStarted = vi.fn();
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        {} as any,
+        runtimeLauncher as any,
+        { budgets: TEST_RUNTIME_BUDGETS, onSessionActive, onSessionStarted },
+        reconnectHandler as any,
+      );
+
+      (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'sess-pa',
+        agentId: 'agent-pa',
+        status: 'starting',
+      });
+      (runtimeLauncher.hasRuntime as ReturnType<typeof vi.fn>).mockReturnValue(false);
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'agent-pa',
+        userId: 'user-1',
+        executionDefaults: null,
+        prompt: 'PA agent',
+        toolPolicy: null,
+        modelPolicy: null,
+        dailyTokenBudget: null,
+        dailyLossLimit: null,
+        maxBots: null,
+        maxSlippageBps: null,
+      });
+
+      const heartbeat = {
+        schemaVersion: 'v1' as const,
+        messageId: 'msg-pa',
+        correlationId: 'corr-pa',
+        initiatorType: 'agent' as const,
+        initiatorId: 'agent-pa',
+        type: 'agent.runtime.heartbeat' as const,
+        createdAt: new Date().toISOString(),
+        payload: {},
+      };
+
+      // First heartbeat (starting → running): activates and fires the anchor.
+      await manager.handleHeartbeat(heartbeat, { sessionId: 'sess-pa', status: 'ready' });
+      expect(onSessionActive).toHaveBeenCalledTimes(1);
+      expect(onSessionStarted).toHaveBeenCalledTimes(1);
+      expect(onSessionStarted).toHaveBeenCalledWith('agent-pa', 'sess-pa');
+
+      // Session is now recorded active. A subsequent heartbeat (now 'running')
+      // must NOT re-bootstrap — no reconnect loop, no duplicate activation.
+      (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'sess-pa',
+        agentId: 'agent-pa',
+        status: 'running',
+      });
+      await manager.handleHeartbeat(heartbeat, { sessionId: 'sess-pa', status: 'ready' });
+      expect(onSessionActive).toHaveBeenCalledTimes(1);
+      expect(onSessionStarted).toHaveBeenCalledTimes(1);
+    });
+
     it('marks the session and agent crashed when onSessionActive fails', async () => {
       const { manager, agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
       const onSessionActive = vi.fn().mockRejectedValue(new Error('actor init failed'));
