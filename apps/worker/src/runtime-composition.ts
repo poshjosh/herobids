@@ -305,6 +305,8 @@ export interface RuntimeSessionMetrics {
   pendingMarketContext: PendingMarketEvent[];
   /** Upcoming economic events for context injection. Null when calendar is disabled or unavailable. */
   macroEvents: EconomicEvent[] | null;
+  /** Timestamp (epoch ms) up to which user messages have been replied to. Null until first reply / hydration. Single coarse conversation marker. */
+  answeredUpToTs: number | null;
 }
 
 export interface RuntimeCompositionState {
@@ -1605,6 +1607,7 @@ export function createRuntimeCompositionState(
       positionCoverage: null,
       pendingMarketContext: [],
       macroEvents: null,
+      answeredUpToTs: null,
     },
   };
 }
@@ -2244,14 +2247,51 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
     .join('\n\n');
 }
 
+/**
+ * Build the `## Conversation` section: the boss dialogue split by the `answeredUpToTs` marker
+ * into an "awaiting reply" set and an answered-context set. Derived from the USER events already
+ * captured in `state.metrics.activityTimeline`. Returns null when there are no user messages.
+ *
+ * Gated on the same `activityTimeline.enabled` policy the timeline provider uses: USER events are
+ * only captured when that enrichment is active, so when it is disabled there is nothing to render
+ * and gating keeps the two views consistent.
+ */
+export function buildConversationSection(state: RuntimeCompositionState, policy?: PromptEnrichmentPolicy): string | null {
+  if (!policy?.activityTimeline.enabled) return null;
+
+  const marker = state.metrics.answeredUpToTs;
+  const userEvents = state.metrics.activityTimeline.filter((e): e is Extract<ActivityTimelineEvent, { kind: 'USER' }> => e.kind === 'USER');
+  if (userEvents.length === 0) return null;
+
+  const formatLine = (event: Extract<ActivityTimelineEvent, { kind: 'USER' }>): string => {
+    const ts = new Date(event.timestamp).toISOString().substring(11, 16); // HH:MM
+    return `${ts} [USER] ${event.text}`;
+  };
+
+  const unanswered = userEvents.filter((e) => e.timestamp > (marker ?? -Infinity));
+  const answered = marker === null ? [] : userEvents.filter((e) => e.timestamp <= marker);
+
+  const blocks: string[] = ['## Conversation'];
+  if (unanswered.length > 0) {
+    blocks.push(['Awaiting your reply (respond with send_message):', ...unanswered.map(formatLine)].join('\n'));
+  }
+  if (answered.length > 0) {
+    blocks.push(['Answered:', ...answered.map(formatLine)].join('\n'));
+  }
+
+  return blocks.join('\n\n');
+}
+
 export function buildTickUserContext(state: RuntimeCompositionState, incomingMessages: Array<Record<string, unknown>>, policy?: PromptEnrichmentPolicy): string {
   for (const message of incomingMessages) {
     applyRuntimeMessage(state, message);
   }
 
+  // Conversation (plan section 6) precedes the Situation/dynamic context (section 7).
+  const conversationSection = buildConversationSection(state, policy);
   const dynamicContext = buildContextSection(state, 'dynamic', policy);
   const progressSummary = computePerformanceSummary(state);
-  const output = [dynamicContext, progressSummary].filter(Boolean).join('\n\n');
+  const output = [conversationSection, dynamicContext, progressSummary].filter(Boolean).join('\n\n');
 
   // Reminder context and market wake context should only influence the tick immediately triggered by them.
   state.metrics.currentReminder = null;

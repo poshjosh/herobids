@@ -123,7 +123,7 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 - [DONE] Item 2 — Thread `unifiedConfig.metadata.skillPresetId` into the `RuntimeDescriptor` during descriptor construction (session manager + db `buildRuntimeDescriptor` + worker fallback).
 - [DONE] Item 3 — Add empty-job default helper / `isBlankGoal`-style check to `packages/domain/src/agent-goal.ts`.
 - [DONE] Item 4 — Restructure `buildSystemPrompt` to the employee model (Identity line from preset, `## Your Job`, non-hostile empty default, employee Instructions).
-- [PENDING] Item 5 — Add the Conversation section (answered/unanswered) to the tick user context (marker in `RuntimeSessionMetrics` + context section).
+- [DONE] Item 5 — Add the Conversation section (answered/unanswered) to the tick user context (marker in `RuntimeSessionMetrics` + context section).
 - [PENDING] Item 6 — Hydrate and advance the `answeredUpToTs` marker in `apps/worker/src/agent.ts` (tick-start Redis load; `onToolResult` advance on successful `send_message`).
 - [PENDING] Item 7 — Stop substituting the hostile `DEFAULT_BLANK_PROMPT` in `apps/web/src/features/agents/agent-payloads.ts`.
 - [PENDING] Item 8 — Add/update unit tests (prompt structure, conversation section, marker advance, preset→role mapping, blank-goal payload).
@@ -149,3 +149,8 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 - LOW: `presetToRole` doc comment says "so tests can match on it" but only `resolveAgentIdentityLine` is exported; minor doc tidy.
 - NOTE (build ordering, not a defect): worker won't type-check standalone until `@herobids/db` is rebuilt after item 2. Monorepo `pnpm build`/`pnpm lint` handles ordering.
 - EXPECTED: `runtime-composition.test.ts` has 2 failing assertions (`## Your Goal`, "Take the next concrete step...") — to be fixed in item 8.
+
+### Item 5 (Conversation section + answeredUpToTs marker field)
+- LOW: `buildConversationSection`'s `HH:MM [USER] text` formatting duplicates the activity-timeline provider's formatting; a shared `formatUserTimelineLine` helper would remove drift risk. Defer.
+- LOW: Inconsistent null-handling idiom between buckets (`marker ?? -Infinity` vs `marker === null ? []`). Both correct; cosmetic.
+- INFO: Coarse single-marker semantics (a message can be marked answered even if the reply didn't address it) is the agreed design for this slice. Advance logic is item 6.
