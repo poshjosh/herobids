@@ -124,7 +124,7 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 - [DONE] Item 3 — Add empty-job default helper / `isBlankGoal`-style check to `packages/domain/src/agent-goal.ts`.
 - [DONE] Item 4 — Restructure `buildSystemPrompt` to the employee model (Identity line from preset, `## Your Job`, non-hostile empty default, employee Instructions).
 - [DONE] Item 5 — Add the Conversation section (answered/unanswered) to the tick user context (marker in `RuntimeSessionMetrics` + context section).
-- [PENDING] Item 6 — Hydrate and advance the `answeredUpToTs` marker in `apps/worker/src/agent.ts` (tick-start Redis load; `onToolResult` advance on successful `send_message`).
+- [DONE] Item 6 — Hydrate and advance the `answeredUpToTs` marker in `apps/worker/src/agent.ts` (tick-start Redis load; `onToolResult` advance on successful `send_message`).
 - [PENDING] Item 7 — Stop substituting the hostile `DEFAULT_BLANK_PROMPT` in `apps/web/src/features/agents/agent-payloads.ts`.
 - [PENDING] Item 8 — Add/update unit tests (prompt structure, conversation section, marker advance, preset→role mapping, blank-goal payload).
 
@@ -154,3 +154,7 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 - LOW: `buildConversationSection`'s `HH:MM [USER] text` formatting duplicates the activity-timeline provider's formatting; a shared `formatUserTimelineLine` helper would remove drift risk. Defer.
 - LOW: Inconsistent null-handling idiom between buckets (`marker ?? -Infinity` vs `marker === null ? []`). Both correct; cosmetic.
 - INFO: Coarse single-marker semantics (a message can be marked answered even if the reply didn't address it) is the agreed design for this slice. Advance logic is item 6.
+
+### Item 6 (hydrate + advance answeredUpToTs marker in agent.ts)
+- LOW: Redis key literal `agent:conversation:answered_at:${AGENT_ID}` duplicated between the hydrate block (local const) and the advance branch (inlined). Consider a shared const/helper. Consistent with the existing inlined-key pattern, so optional.
+- LOW: `AGENT_ID` is `string | undefined` interpolated bare (would render `...:undefined` if unset) — identical to the adjacent `agent:memory:${AGENT_ID}` convention; not a regression.

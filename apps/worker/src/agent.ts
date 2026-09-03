@@ -2500,6 +2500,25 @@ async function runTick(): Promise<void> {
       }
     }
 
+    // ── Conversation state: hydrate the answered-up-to marker ─────────────
+    // Gated on the same activityTimeline enrichment the Conversation section reuses.
+    // Warn-and-continue: a hydrate failure must not crash the tick — the marker
+    // simply stays null (worst case is one duplicate reply, per the plan's risk note).
+    if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.activityTimeline.enabled) {
+      const conversationAnsweredKey = `agent:conversation:answered_at:${AGENT_ID}`;
+      try {
+        const raw = await redis.get(conversationAnsweredKey);
+        if (raw !== null) {
+          const parsed = Number(raw);
+          if (Number.isFinite(parsed)) {
+            runtimeState.metrics.answeredUpToTs = parsed;
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, 'Failed to load conversation answered marker');
+      }
+    }
+
     // ── Activity timeline: capture user messages ──────────────────────────
     if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.activityTimeline.enabled) {
       const maxEvents = agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents;
@@ -3748,6 +3767,35 @@ async function runTick(): Promise<void> {
             runtimeState.metrics.activityTimeline.push({ kind: 'MEMORY', key, value, timestamp: Date.now() });
             while (runtimeState.metrics.activityTimeline.length > maxEvents) {
               runtimeState.metrics.activityTimeline.shift();
+            }
+          }
+          // ── Conversation state: advance the answered-up-to marker ───────
+          // A successful send_message marks all user messages up to this tick as
+          // answered (coarse single-marker; see plan "Conversation state"). The
+          // target is the max USER-message timestamp in the timeline; if none are
+          // visible, fall back to Date.now() so a reply with no pending message
+          // still moves the marker forward harmlessly. Monotonic: never regresses.
+          if (
+            agentRuntimePolicy.promptStyle === 'enriched'
+            && agentRuntimePolicy.promptEnrichment.activityTimeline.enabled
+            && toolCall.name === 'send_message'
+            && !toolResultIndicatesFailure(toolResult)
+          ) {
+            const userTimestamps = runtimeState.metrics.activityTimeline
+              .filter((e) => e.kind === 'USER')
+              .map((e) => e.timestamp);
+            const target = userTimestamps.length > 0 ? Math.max(...userTimestamps) : Date.now();
+            const current = runtimeState.metrics.answeredUpToTs;
+            if (current === null || target > current) {
+              runtimeState.metrics.answeredUpToTs = target;
+              // Persist asynchronously; a write failure must not fail the tick —
+              // the in-memory value already advanced (worst case: duplicate reply
+              // after a restart before the write lands, per the plan's risk note).
+              void redis
+                .set(`agent:conversation:answered_at:${AGENT_ID}`, String(target))
+                .catch((err: unknown) => {
+                  logger.warn({ err }, 'Failed to persist conversation answered marker');
+                });
             }
           }
         }
