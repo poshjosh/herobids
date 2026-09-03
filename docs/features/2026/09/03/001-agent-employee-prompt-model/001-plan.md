@@ -125,7 +125,7 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 - [DONE] Item 4 — Restructure `buildSystemPrompt` to the employee model (Identity line from preset, `## Your Job`, non-hostile empty default, employee Instructions).
 - [DONE] Item 5 — Add the Conversation section (answered/unanswered) to the tick user context (marker in `RuntimeSessionMetrics` + context section).
 - [DONE] Item 6 — Hydrate and advance the `answeredUpToTs` marker in `apps/worker/src/agent.ts` (tick-start Redis load; `onToolResult` advance on successful `send_message`).
-- [PENDING] Item 7 — Stop substituting the hostile `DEFAULT_BLANK_PROMPT` in `apps/web/src/features/agents/agent-payloads.ts`.
+- [DONE] Item 7 — Stop substituting the hostile `DEFAULT_BLANK_PROMPT` in `apps/web/src/features/agents/agent-payloads.ts`.
 - [PENDING] Item 8 — Add/update unit tests (prompt structure, conversation section, marker advance, preset→role mapping, blank-goal payload).
 
 ## Outstanding Issues
@@ -158,3 +158,6 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 ### Item 6 (hydrate + advance answeredUpToTs marker in agent.ts)
 - LOW: Redis key literal `agent:conversation:answered_at:${AGENT_ID}` duplicated between the hydrate block (local const) and the advance branch (inlined). Consider a shared const/helper. Consistent with the existing inlined-key pattern, so optional.
 - LOW: `AGENT_ID` is `string | undefined` interpolated bare (would render `...:undefined` if unset) — identical to the adjacent `agent:memory:${AGENT_ID}` convention; not a regression.
+
+### Item 7 (stop substituting DEFAULT_BLANK_PROMPT)
+- LOW (pre-existing, out of scope): `agent-payloads.test.ts` has pre-existing type-loose fixtures (~58 tsc errors across the whole file) unrelated to this change; not introduced or worsened by item 7. Noted for awareness only.

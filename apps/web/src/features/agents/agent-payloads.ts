@@ -4,9 +4,6 @@ import type { TechnicalConfig } from './technical-config-helpers.js';
 import type { RuntimePolicyOverrides } from './style-mapping.js';
 import { parseTickIntervalMinutesInput } from './tick-interval.js';
 
-/** Default prompt for agents created without a user-specified goal. */
-export const DEFAULT_BLANK_PROMPT = 'You have not yet been given a goal. Do not call any tools. Do not take any action. Wait for your creator to send you instructions. If no instructions have been received, respond with a single word: "OK".';
-
 const VALID_ESCALATION_POLICIES = ['never', 'uncovered_or_triggered', 'always'] as const;
 
 export function normalizeEscalationPolicy(value: string | null | undefined): 'never' | 'uncovered_or_triggered' | 'always' | null {
@@ -247,7 +244,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
 
   return {
     name: input.name.trim(),
-    prompt: includeIntelligence ? (input.goal.trim() || DEFAULT_BLANK_PROMPT) : '',
+    prompt: includeIntelligence ? input.goal.trim() : '',
     skillIds: includeIntelligence ? [...input.skillIds] : [],
     ...((input.connectionIds ?? []).length > 0 ? { connectionIds: input.connectionIds } : {}),
     ...(input.executionVenue?.trim() ? { executionVenue: input.executionVenue.trim() } : {}),
