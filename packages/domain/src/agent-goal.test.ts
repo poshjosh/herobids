@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAgentGoalLiteralBlock, normalizeAgentGoal } from './agent-goal.js';
+import { EMPTY_JOB_DEFAULT_TEXT, formatAgentGoalLiteralBlock, isBlankAgentGoal, normalizeAgentGoal } from './agent-goal.js';
 
 describe('normalizeAgentGoal', () => {
   it('returns a clean goal unchanged', () => {
@@ -60,5 +60,41 @@ describe('normalizeAgentGoal', () => {
       'Review this snippet:\n```ts\nconsole.log("hi");\n```',
       '````',
     ].join('\n'));
+  });
+});
+
+describe('isBlankAgentGoal', () => {
+  it('treats an empty string as blank', () => {
+    expect(isBlankAgentGoal('')).toBe(true);
+  });
+
+  it('treats a whitespace-only string as blank', () => {
+    expect(isBlankAgentGoal('   ')).toBe(true);
+  });
+
+  it('treats a legacy operator-context-only prompt as blank', () => {
+    const prompt = '\n\nOperator context:\n- Selected skills: Trading.';
+    // Guard: this prompt normalizes to empty, so it must be blank.
+    expect(normalizeAgentGoal(prompt)).toBe('');
+    expect(isBlankAgentGoal(prompt)).toBe(true);
+  });
+
+  it('treats null as blank', () => {
+    expect(isBlankAgentGoal(null)).toBe(true);
+  });
+
+  it('treats undefined as blank', () => {
+    expect(isBlankAgentGoal(undefined)).toBe(true);
+  });
+
+  it('treats a real goal as non-blank', () => {
+    expect(isBlankAgentGoal('Monitor ETH')).toBe(false);
+  });
+});
+
+describe('EMPTY_JOB_DEFAULT_TEXT', () => {
+  it('is a non-hostile, non-empty default mentioning no job assigned', () => {
+    expect(EMPTY_JOB_DEFAULT_TEXT.length).toBeGreaterThan(0);
+    expect(EMPTY_JOB_DEFAULT_TEXT).toContain('No job has been assigned yet');
   });
 });

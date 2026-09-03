@@ -126,7 +126,7 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 - [DONE] Item 5 — Add the Conversation section (answered/unanswered) to the tick user context (marker in `RuntimeSessionMetrics` + context section).
 - [DONE] Item 6 — Hydrate and advance the `answeredUpToTs` marker in `apps/worker/src/agent.ts` (tick-start Redis load; `onToolResult` advance on successful `send_message`).
 - [DONE] Item 7 — Stop substituting the hostile `DEFAULT_BLANK_PROMPT` in `apps/web/src/features/agents/agent-payloads.ts`.
-- [PENDING] Item 8 — Add/update unit tests (prompt structure, conversation section, marker advance, preset→role mapping, blank-goal payload).
+- [DONE] Item 8 — Add/update unit tests (prompt structure, conversation section, marker advance, preset→role mapping, blank-goal payload).
 
 ## Outstanding Issues
 
@@ -161,3 +161,10 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 
 ### Item 7 (stop substituting DEFAULT_BLANK_PROMPT)
 - LOW (pre-existing, out of scope): `agent-payloads.test.ts` has pre-existing type-loose fixtures (~58 tsc errors across the whole file) unrelated to this change; not introduced or worsened by item 7. Noted for awareness only.
+
+### Item 8 (unit tests + marker-advance helper extraction)
+- RESOLVED: Extracted pure `computeAdvancedAnsweredMarker(state, nowTs)` in runtime-composition.ts (agent.ts now calls it), closing the marker-advance coverage gap flagged in review. Added direct unit tests (null→max, advance-past-answered, monotonic no-regress, no-user→nowTs fallback, ignores non-USER events).
+- RESOLVED: Identity line grammar fixed — `resolveAgentIdentityLine` now selects "a"/"an" by leading sound, so it renders "an autonomous assistant" (was "a autonomous assistant"). Tests updated to match.
+- LOW: `HH:MM [USER]` line formatting still duplicated across the activity-timeline provider and conversation code (deferred; see item 5 note).
+- LOW: Redis key literal still inlined (deferred; see item 6 note).
+- NOTE: Pre-existing unrelated failures in @herobids/domain config/presets.test.ts and browser-pool-feature.test.ts (YAML/asset loader) confirmed present with this change stashed — not a regression from this feature.

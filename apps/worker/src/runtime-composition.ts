@@ -2200,13 +2200,19 @@ function presetToRole(skillPresetId: string | undefined): string {
   }
 }
 
+/** Pick the indefinite article for a role phrase based on its leading sound (vowel → "an"). */
+function articleFor(role: string): 'a' | 'an' {
+  return /^[aeiou]/i.test(role) ? 'an' : 'a';
+}
+
 /**
  * Compose the employee-model identity line from the agent's preset and name.
  *
  * Pure and exported so the preset→role mapping can be unit-tested directly.
  */
 export function resolveAgentIdentityLine(skillPresetId: string | undefined, name: string): string {
-  return `You are a ${presetToRole(skillPresetId)} named "${name}".`;
+  const role = presetToRole(skillPresetId);
+  return `You are ${articleFor(role)} ${role} named "${name}".`;
 }
 
 export function buildSystemPrompt(state: RuntimeCompositionState, timing: PromptTimingContext, _toolGuidanceByName?: Record<string, string>, policy?: PromptEnrichmentPolicy): string {
@@ -2280,6 +2286,21 @@ export function buildConversationSection(state: RuntimeCompositionState, policy?
   }
 
   return blocks.join('\n\n');
+}
+
+/**
+ * Compute the next value for the conversation `answeredUpToTs` marker when a reply is sent.
+ * Advances to the max USER-message timestamp in the timeline (or `nowTs` when none are visible),
+ * but never regresses (monotonic). Returns null when no advance should occur.
+ */
+export function computeAdvancedAnsweredMarker(state: RuntimeCompositionState, nowTs: number): number | null {
+  const userTimestamps = state.metrics.activityTimeline
+    .filter((e): e is Extract<ActivityTimelineEvent, { kind: 'USER' }> => e.kind === 'USER')
+    .map((e) => e.timestamp);
+  const target = userTimestamps.length > 0 ? Math.max(...userTimestamps) : nowTs;
+  const current = state.metrics.answeredUpToTs;
+  if (current === null || target > current) return target;
+  return null;
 }
 
 export function buildTickUserContext(state: RuntimeCompositionState, incomingMessages: Array<Record<string, unknown>>, policy?: PromptEnrichmentPolicy): string {

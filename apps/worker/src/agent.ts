@@ -46,6 +46,7 @@ import {
   buildSystemPrompt as composeSystemPrompt,
   buildTickUserContext,
   buildVenueLines,
+  computeAdvancedAnsweredMarker,
   createRuntimeCompositionState,
   getVisibleToolNames,
   recordAgentMemory,
@@ -3781,18 +3782,14 @@ async function runTick(): Promise<void> {
             && toolCall.name === 'send_message'
             && !toolResultIndicatesFailure(toolResult)
           ) {
-            const userTimestamps = runtimeState.metrics.activityTimeline
-              .filter((e) => e.kind === 'USER')
-              .map((e) => e.timestamp);
-            const target = userTimestamps.length > 0 ? Math.max(...userTimestamps) : Date.now();
-            const current = runtimeState.metrics.answeredUpToTs;
-            if (current === null || target > current) {
-              runtimeState.metrics.answeredUpToTs = target;
+            const nextMarker = computeAdvancedAnsweredMarker(runtimeState, Date.now());
+            if (nextMarker !== null) {
+              runtimeState.metrics.answeredUpToTs = nextMarker;
               // Persist asynchronously; a write failure must not fail the tick —
               // the in-memory value already advanced (worst case: duplicate reply
               // after a restart before the write lands, per the plan's risk note).
               void redis
-                .set(`agent:conversation:answered_at:${AGENT_ID}`, String(target))
+                .set(`agent:conversation:answered_at:${AGENT_ID}`, String(nextMarker))
                 .catch((err: unknown) => {
                   logger.warn({ err }, 'Failed to persist conversation answered marker');
                 });
