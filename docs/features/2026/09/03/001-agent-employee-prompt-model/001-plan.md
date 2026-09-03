@@ -119,7 +119,7 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 
 ## Implementation checklist
 
-- [PENDING] Item 1 — Add optional `skillPresetId`/role identity field to `RuntimeDescriptor` (`packages/domain/src/runtime-composition.ts`).
+- [DONE] Item 1 — Add optional `skillPresetId`/role identity field to `RuntimeDescriptor` (`packages/domain/src/runtime-composition.ts`).
 - [PENDING] Item 2 — Thread `unifiedConfig.metadata.skillPresetId` into the `RuntimeDescriptor` during descriptor construction (session manager + db `buildRuntimeDescriptor` + worker fallback).
 - [PENDING] Item 3 — Add empty-job default helper / `isBlankGoal`-style check to `packages/domain/src/agent-goal.ts`.
 - [PENDING] Item 4 — Restructure `buildSystemPrompt` to the employee model (Identity line from preset, `## Your Job`, non-hostile empty default, employee Instructions).
@@ -133,3 +133,8 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 ### Item 1 (RuntimeDescriptor.skillPresetId)
 - LOW: Field typed as bare `string` rather than a shared `SkillPresetId` union. Consider lifting a `SkillPresetId` union into `packages/domain` when threading the value (Item 2) and typing this field with it.
 - LOW: Doc comment duplicates the preset list that exists elsewhere; a `@see SkillPresetId` reference could reduce drift.
+
+### Item 2 (thread skillPresetId into descriptor construction)
+- MEDIUM: Duplicated preset-extraction logic — the inline `unifiedConfig.metadata.skillPresetId` guard in `agent-session-manager.ts` duplicates the private `extractPresetMeta()` in `apps/api/src/routes/agents.ts`. Consider lifting a shared `readSkillPresetId(unifiedConfig)` reader into `@herobids/db` or `@herobids/domain` (respecting `domain ← db ← apps/*`) so both call sites share one guard. Candidate to consolidate alongside item 4.
+- LOW: `skillPresetId` param/field typed as bare `string` rather than a shared `SkillPresetId` union (same as item 1 note).
+- LOW: Doc comments hand-list preset values; risk drift from the authoritative Zod enum. Reference a shared union via `@see` once it exists.

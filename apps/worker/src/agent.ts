@@ -495,6 +495,11 @@ function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
     schemaVersion: 'v1',
     agentId: AGENT_ID!,
     name: agentConfig.name ?? AGENT_ID!,
+    // skillPresetId is intentionally omitted here: the preset lives in
+    // unifiedConfig.metadata (DB JSONB) and is threaded to the worker only via
+    // agentConfig.runtimeDescriptor.skillPresetId (built by the session manager).
+    // This fallback runs only when no runtimeDescriptor was supplied, so the
+    // preset is genuinely unavailable — the optional field's neutral default applies.
     goal: agentGoal,
     executionMode: agentConfig.executionMode ?? 'paper',
     authorizationMode: agentConfig.authorizationMode ?? 'direct',

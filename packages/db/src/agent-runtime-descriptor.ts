@@ -300,6 +300,8 @@ export async function resolveRuntimeCapabilityDescriptor(
 export function buildRuntimeDescriptor(input: {
   agentId: string;
   name?: string | null;
+  /** Product preset identifier (e.g. 'personal-assistant' | 'trading' | 'custom') sourced from unifiedConfig.metadata.skillPresetId. Threaded to the worker for identity/role derivation. */
+  skillPresetId?: string | null;
   goal: string;
   executionMode?: string | null;
   authorizationMode?: string | null;
@@ -320,6 +322,7 @@ export function buildRuntimeDescriptor(input: {
     schemaVersion: 'v1',
     agentId: input.agentId,
     name: input.name ?? input.agentId,
+    ...(input.skillPresetId ? { skillPresetId: input.skillPresetId } : {}),
     goal: input.goal,
     executionMode: input.executionMode ?? 'paper',
     authorizationMode: input.authorizationMode ?? 'direct',

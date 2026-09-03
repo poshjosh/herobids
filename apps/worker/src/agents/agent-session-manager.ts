@@ -334,9 +334,19 @@ export class AgentSessionManager {
         const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id);
         const riskPosture = (agent.risk as Record<string, unknown> | null) ?? {};
         const executionDefaults = (agent.executionDefaults as Record<string, unknown> | null) ?? {};
+        // Preset identity lives in unifiedConfig.metadata JSONB (not a typed field on
+        // UnifiedAgentConfig). Read it via a narrow guard, treating non-string / empty as absent.
+        const unifiedConfigMetadata = (agent.unifiedConfig as Record<string, unknown> | null)?.['metadata'] as
+          | Record<string, unknown>
+          | undefined;
+        const rawSkillPresetId = unifiedConfigMetadata?.['skillPresetId'];
+        const skillPresetId = typeof rawSkillPresetId === 'string' && rawSkillPresetId.length > 0
+          ? rawSkillPresetId
+          : null;
         const runtimeDescriptor = buildRuntimeDescriptor({
           agentId: agent.id,
           name: agent.name,
+          skillPresetId,
           goal: agent.prompt,
           executionMode: executionDefaults['mode'] as string | undefined,
           toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
