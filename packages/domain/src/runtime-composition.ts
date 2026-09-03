@@ -42,6 +42,8 @@ export interface RuntimeDescriptor {
   schemaVersion: 'v1';
   agentId: string;
   name?: string;
+  /** Product preset identifier used to derive the agent's identity/role in the prompt. e.g. 'personal-assistant' | 'trading' | 'direct-trading' | 'trading-assistant' | 'custom'. Optional; missing => neutral default. */
+  skillPresetId?: string;
   goal: string;
   executionMode: string;
   /** Authorization mode for agent-direct trade decisions: 'direct' (execute immediately) or 'approval_required' (require user approval). */
