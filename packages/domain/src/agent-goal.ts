@@ -1,18 +1,11 @@
 /**
  * Shared helper for normalizing stored agent goal/prompt text.
  *
- * Stored prompts may carry legacy embedded operator context appended by the
- * old web create flow. This module provides a single normalization path used
- * by the worker prompt builder and scout dispatch so both see the same clean
- * user intent regardless of when the agent was created.
+ * Provides a single normalization path used by the worker prompt builder and
+ * scout dispatch so both see the same clean user intent. Normalization trims
+ * surrounding whitespace; the stored prompt is otherwise treated as the
+ * authoritative user goal.
  */
-
-const OPERATOR_CONTEXT_MARKER = '\n\nOperator context:\n';
-const GENERATED_OPERATOR_CONTEXT_LINE = /^- (Selected skills:|Trading capability selected\.|Selected trading (?:binding|connection):|Risk tolerance:)/;
-
-// Matches the older inline-suffix format produced before the marker convention.
-const LEGACY_INLINE_CONTEXT =
-  /\s+Execution mode: (?:paper|shadow|live)\.(?:\s+Trading capability selected(?:\s+with provider hint .+?)?\.)?(?:\s+Risk tolerance: (?:conservative|moderate|aggressive)\.)?\s*$/;
 
 function resolveLiteralFence(text: string): string {
   const backtickRuns = text.match(/`+/g) ?? [];
@@ -23,25 +16,10 @@ function resolveLiteralFence(text: string): string {
 /**
  * Return the canonical user goal from a stored prompt string.
  *
- * Strips the `Operator context:` block (current format) and the older
- * inline execution-mode suffix (legacy format) when present.
- * Returns the trimmed text unchanged for clean prompts.
+ * Trims surrounding whitespace and returns the prompt text as-is.
  */
 export function normalizeAgentGoal(prompt: string): string {
-  const markerIndex = prompt.indexOf(OPERATOR_CONTEXT_MARKER);
-  if (markerIndex >= 0) {
-    const contextLines = prompt
-      .slice(markerIndex + OPERATOR_CONTEXT_MARKER.length)
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    if (contextLines.length > 0 && contextLines.every((line) => GENERATED_OPERATOR_CONTEXT_LINE.test(line))) {
-      return prompt.slice(0, markerIndex).trim();
-    }
-  }
-
-  return prompt.replace(LEGACY_INLINE_CONTEXT, '').trim();
+  return prompt.trim();
 }
 
 export function formatAgentGoalLiteralBlock(prompt: string): string {
@@ -68,8 +46,7 @@ export const EMPTY_JOB_DEFAULT_TEXT =
 /**
  * True when a stored prompt carries no actual user goal.
  *
- * Treats undefined/empty/whitespace-only and legacy operator-context-only
- * prompts (which normalize to empty) as blank.
+ * Treats undefined/empty/whitespace-only prompts as blank.
  */
 export function isBlankAgentGoal(prompt: string | null | undefined): boolean {
   return normalizeAgentGoal(prompt ?? '').length === 0;

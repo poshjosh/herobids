@@ -177,16 +177,6 @@ describe('EditAgentModal rendering', () => {
     expect(html).not.toContain(messages['agents.controls.capital.help']);
   });
 
-  it('renders only the canonical objective when the stored prompt contains legacy operator context', () => {
-    const html = renderModal({
-      prompt: 'Watch BTC and trade breakouts.\n\nOperator context:\n- Selected skills: Trading.\n- Risk tolerance: moderate.',
-    });
-
-    expect(html).toContain('Watch BTC and trade breakouts.');
-    expect(html).not.toContain('Operator context:');
-    expect(html).not.toContain('Risk tolerance: moderate.');
-  });
-
   it('shows a preservation notice for legacy non-minute cadences', () => {
     const html = renderModal({ tickIntervalMs: 30_000 });
 

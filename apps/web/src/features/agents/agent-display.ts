@@ -1,10 +1,5 @@
 import type { IntlShape } from 'react-intl';
 import type { CapabilityReadiness, Skill } from '../../lib/api-client.js';
-// These constants mirror the normalization logic in packages/domain/src/agent-goal.ts.
-// They must be kept in sync if the stored-prompt format ever changes.
-const OPERATOR_CONTEXT_MARKER = '\n\nOperator context:\n';
-const LEGACY_PROMPT_CONTEXT = /\sExecution mode: (paper|shadow|live)\.(?:\sTrading capability selected(?: with provider hint (.+?))?\.)?(?:\sRisk tolerance: (conservative|moderate|aggressive)\.)?\s*$/;
-const GENERATED_OPERATOR_CONTEXT_LINE = /^- (Selected skills:|Trading capability selected\.|Selected trading (?:binding|connection):|Risk tolerance:)/;
 
 export const EXECUTION_MODE_LABELS: Record<string, string> = {
   paper: 'Test',
@@ -215,19 +210,6 @@ export function formatCapabilitySummary(capabilities: CapabilityReadiness[], int
 }
 
 export function extractAgentObjective(prompt: string): string {
-  const markerIndex = prompt.indexOf(OPERATOR_CONTEXT_MARKER);
-  if (markerIndex >= 0) {
-    const contextLines = prompt
-      .slice(markerIndex + OPERATOR_CONTEXT_MARKER.length)
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    if (contextLines.length > 0 && contextLines.every((line) => GENERATED_OPERATOR_CONTEXT_LINE.test(line))) {
-      return prompt.slice(0, markerIndex).trim();
-    }
-  }
-
-  return prompt.replace(LEGACY_PROMPT_CONTEXT, '').trim();
+  return prompt.trim();
 }
 
