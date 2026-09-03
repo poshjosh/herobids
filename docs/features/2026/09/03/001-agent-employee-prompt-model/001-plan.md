@@ -122,7 +122,7 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 - [DONE] Item 1 — Add optional `skillPresetId`/role identity field to `RuntimeDescriptor` (`packages/domain/src/runtime-composition.ts`).
 - [DONE] Item 2 — Thread `unifiedConfig.metadata.skillPresetId` into the `RuntimeDescriptor` during descriptor construction (session manager + db `buildRuntimeDescriptor` + worker fallback).
 - [DONE] Item 3 — Add empty-job default helper / `isBlankGoal`-style check to `packages/domain/src/agent-goal.ts`.
-- [PENDING] Item 4 — Restructure `buildSystemPrompt` to the employee model (Identity line from preset, `## Your Job`, non-hostile empty default, employee Instructions).
+- [DONE] Item 4 — Restructure `buildSystemPrompt` to the employee model (Identity line from preset, `## Your Job`, non-hostile empty default, employee Instructions).
 - [PENDING] Item 5 — Add the Conversation section (answered/unanswered) to the tick user context (marker in `RuntimeSessionMetrics` + context section).
 - [PENDING] Item 6 — Hydrate and advance the `answeredUpToTs` marker in `apps/worker/src/agent.ts` (tick-start Redis load; `onToolResult` advance on successful `send_message`).
 - [PENDING] Item 7 — Stop substituting the hostile `DEFAULT_BLANK_PROMPT` in `apps/web/src/features/agents/agent-payloads.ts`.
@@ -142,3 +142,10 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 ### Item 3 (empty-job helper in agent-goal.ts)
 - RESOLVED: `isBlankAgentGoal` signature widened to `string | null | undefined` so the runtime `?? ''` guard is meaningful for downstream worker callers (item 4/7). Blank line before `EMPTY_JOB_DEFAULT_TEXT` added.
 - LOW: Doc comment for `isBlankAgentGoal` describes legacy-operator-context behavior that holds transitively via `normalizeAgentGoal`; a `@see` reference could reduce drift.
+
+### Item 4 (restructure buildSystemPrompt — employee model)
+- LOW: Plan rule text used "mandate"; implementation renders "job" throughout (self-consistent with `## Your Job` heading). Item 8 test assertions must match the shipped "job" wording.
+- LOW: `presetToRole` typed as bare `string` (same shared-`SkillPresetId`-union follow-up as items 1/2).
+- LOW: `presetToRole` doc comment says "so tests can match on it" but only `resolveAgentIdentityLine` is exported; minor doc tidy.
+- NOTE (build ordering, not a defect): worker won't type-check standalone until `@herobids/db` is rebuilt after item 2. Monorepo `pnpm build`/`pnpm lint` handles ordering.
+- EXPECTED: `runtime-composition.test.ts` has 2 failing assertions (`## Your Goal`, "Take the next concrete step...") — to be fixed in item 8.

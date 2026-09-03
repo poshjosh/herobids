@@ -1,5 +1,5 @@
 import type { CapabilityReadiness, HybridPricingIdentity, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext, MarketDiscoveryDetectedPayload, MarketRegimeChangedPayload, EconomicEvent } from '@herobids/domain';
-import { formatAgentGoalLiteralBlock, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
+import { formatAgentGoalLiteralBlock, EMPTY_JOB_DEFAULT_TEXT, isBlankAgentGoal, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
 import crypto from 'node:crypto';
 import type { RegimeResult } from '@herobids/market-data';
 import type { ScoredSignal } from '@herobids/strategy';
@@ -2177,6 +2177,35 @@ export function applyRuntimeMessage(
   return summary;
 }
 
+/**
+ * Map the agent's product preset to an employee-model role phrase.
+ *
+ * The role phrase ("personal assistant" / "trading assistant" /
+ * "autonomous assistant") is kept intact so tests and downstream readers can
+ * match on it. Unknown/missing/custom presets fall back to a neutral default.
+ */
+function presetToRole(skillPresetId: string | undefined): string {
+  switch (skillPresetId) {
+    case 'personal-assistant':
+      return 'personal assistant';
+    case 'trading':
+    case 'direct-trading':
+    case 'trading-assistant':
+      return 'trading assistant';
+    default:
+      return 'autonomous assistant';
+  }
+}
+
+/**
+ * Compose the employee-model identity line from the agent's preset and name.
+ *
+ * Pure and exported so the preset→role mapping can be unit-tested directly.
+ */
+export function resolveAgentIdentityLine(skillPresetId: string | undefined, name: string): string {
+  return `You are a ${presetToRole(skillPresetId)} named "${name}".`;
+}
+
 export function buildSystemPrompt(state: RuntimeCompositionState, timing: PromptTimingContext, _toolGuidanceByName?: Record<string, string>, policy?: PromptEnrichmentPolicy): string {
   const skillInstructions = state.runtimeDescriptor.resolvedSkills.map((skill) => `## Skill: ${skill.name}\n\n${skill.instructions}`).join('\n\n');
   const allowedTools = formatVisibleTools(state.runtimeDescriptor);
@@ -2189,11 +2218,16 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
 
   const toolsBlock = `You can call the following tools: ${allowedTools}.`;
 
+  const identityName = state.runtimeDescriptor.name ?? state.runtimeDescriptor.agentId;
+  const jobBlock = isBlankAgentGoal(state.runtimeDescriptor.goal)
+    ? EMPTY_JOB_DEFAULT_TEXT
+    : formatAgentGoalLiteralBlock(state.runtimeDescriptor.goal);
+
   return [
-    `You are an autonomous agent named "${state.runtimeDescriptor.name ?? state.runtimeDescriptor.agentId}". Use the available tools to accomplish your goal.`,
+    resolveAgentIdentityLine(state.runtimeDescriptor.skillPresetId, identityName),
     skillInstructions,
-    '## Your Goal',
-    formatAgentGoalLiteralBlock(state.runtimeDescriptor.goal),
+    '## Your Job',
+    jobBlock,
     '## Operating Context',
     ...formatPromptTimingContextLines(timing),
     '## Available Tools',
@@ -2201,8 +2235,10 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
     ...(guardRailLines.length > 0 ? ['## Guardrails', ...guardRailLines] : []),
     staticContext ? `## Runtime Context\n\n${staticContext}` : '',
     '## Instructions',
-    'Take the next concrete step toward your goal.',
-    'If nothing further can be done this tick, do not call any tool, rather respond with a short status update.',
+    'You are like an employee. Responding to your user is always part of your job, independent of your mandate.',
+    'When your user sends you a message, reply to them using `send_message`. Answer even if it is unrelated to your job, and even if your job says to stay idle.',
+    'A message may ask you to change how you work; honor it as a working instruction, but it does not change your official job (only your creator can change that, via configuration).',
+    'Then pursue your job. If there is nothing to answer and nothing to do, respond with a short status update. With no job and no message, do nothing.',
   ]
     .filter(Boolean)
     .join('\n\n');
