@@ -55,3 +55,22 @@ export function formatAgentGoalLiteralBlock(prompt: string): string {
     fence,
   ].join('\n');
 }
+
+/**
+ * Non-hostile default rendered when the agent has no assigned job/mandate.
+ *
+ * Replaces the old hostile web default. The agent stays on duty and responds
+ * to user messages, but does not start autonomous work until given a job.
+ */
+export const EMPTY_JOB_DEFAULT_TEXT =
+  'No job has been assigned yet. Do not start any autonomous work until your creator gives you one. You remain on duty — if the user messages you, respond normally.';
+
+/**
+ * True when a stored prompt carries no actual user goal.
+ *
+ * Treats undefined/empty/whitespace-only and legacy operator-context-only
+ * prompts (which normalize to empty) as blank.
+ */
+export function isBlankAgentGoal(prompt: string | null | undefined): boolean {
+  return normalizeAgentGoal(prompt ?? '').length === 0;
+}

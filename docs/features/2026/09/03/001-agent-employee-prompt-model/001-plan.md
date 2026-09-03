@@ -120,8 +120,8 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 ## Implementation checklist
 
 - [DONE] Item 1 — Add optional `skillPresetId`/role identity field to `RuntimeDescriptor` (`packages/domain/src/runtime-composition.ts`).
-- [PENDING] Item 2 — Thread `unifiedConfig.metadata.skillPresetId` into the `RuntimeDescriptor` during descriptor construction (session manager + db `buildRuntimeDescriptor` + worker fallback).
-- [PENDING] Item 3 — Add empty-job default helper / `isBlankGoal`-style check to `packages/domain/src/agent-goal.ts`.
+- [DONE] Item 2 — Thread `unifiedConfig.metadata.skillPresetId` into the `RuntimeDescriptor` during descriptor construction (session manager + db `buildRuntimeDescriptor` + worker fallback).
+- [DONE] Item 3 — Add empty-job default helper / `isBlankGoal`-style check to `packages/domain/src/agent-goal.ts`.
 - [PENDING] Item 4 — Restructure `buildSystemPrompt` to the employee model (Identity line from preset, `## Your Job`, non-hostile empty default, employee Instructions).
 - [PENDING] Item 5 — Add the Conversation section (answered/unanswered) to the tick user context (marker in `RuntimeSessionMetrics` + context section).
 - [PENDING] Item 6 — Hydrate and advance the `answeredUpToTs` marker in `apps/worker/src/agent.ts` (tick-start Redis load; `onToolResult` advance on successful `send_message`).
@@ -138,3 +138,7 @@ Rationale: the coarse alternative (infer from `capabilityMode`/skills) cannot di
 - MEDIUM: Duplicated preset-extraction logic — the inline `unifiedConfig.metadata.skillPresetId` guard in `agent-session-manager.ts` duplicates the private `extractPresetMeta()` in `apps/api/src/routes/agents.ts`. Consider lifting a shared `readSkillPresetId(unifiedConfig)` reader into `@herobids/db` or `@herobids/domain` (respecting `domain ← db ← apps/*`) so both call sites share one guard. Candidate to consolidate alongside item 4.
 - LOW: `skillPresetId` param/field typed as bare `string` rather than a shared `SkillPresetId` union (same as item 1 note).
 - LOW: Doc comments hand-list preset values; risk drift from the authoritative Zod enum. Reference a shared union via `@see` once it exists.
+
+### Item 3 (empty-job helper in agent-goal.ts)
+- RESOLVED: `isBlankAgentGoal` signature widened to `string | null | undefined` so the runtime `?? ''` guard is meaningful for downstream worker callers (item 4/7). Blank line before `EMPTY_JOB_DEFAULT_TEXT` added.
+- LOW: Doc comment for `isBlankAgentGoal` describes legacy-operator-context behavior that holds transitively via `normalizeAgentGoal`; a `@see` reference could reduce drift.
