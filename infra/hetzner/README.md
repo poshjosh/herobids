@@ -211,6 +211,7 @@ infra/hetzner/
 └── scripts/
     ├── _ssh_opts.sh                # Shared SSH options + environment helpers
     ├── provision.sh                # Terraform init + plan + apply (supports --var-file, --backend-env-file)
+    ├── destroy.sh                  # Terraform teardown for an environment (inverse of provision.sh)
     ├── push.sh                     # Deploy latest code to server (git pull → build → compose up)
     ├── setup-env.sh                # Upload .env file to server
     ├── setup-autoscale-env.sh      # Upload autoscale.env (infra secrets) to server
@@ -932,23 +933,60 @@ Environment differentiation comes from `terraform.tfvars` values (server name, d
 overlay selection, network IP range, agent node count) and environment-specific `.env` files.
 Per-environment `staging.tfvars` and `production.tfvars` templates are provided for clarity.
 
+### Tearing Down an Environment
+
+Use `scripts/destroy.sh` to tear down an entire environment. It is the inverse of
+`provision.sh`: same backend/workspace handling, but runs `terraform destroy` scoped
+to the selected workspace's isolated S3 state.
+
+```bash
+cd infra/hetzner
+
+# Tear down staging
+./scripts/destroy.sh --env staging --var-file staging.tfvars --backend-env-file .env.backend
+
+# CI/CD (skip the interactive confirm)
+./scripts/destroy.sh --env staging --var-file staging.tfvars --yes
+
+# Production requires an explicit acknowledgement flag
+./scripts/destroy.sh --env production --var-file production.tfvars --i-understand-this-is-production
+```
+
+Safety guarantees built into the script:
+
+- **No default environment.** `--env` (or `HEROBIDS_ENV`) is mandatory — there is no
+  implicit target, so you can't accidentally destroy the wrong environment.
+- **Workspace match check.** Aborts if the active Terraform workspace doesn't match `--env`.
+- **Interactive confirm.** You must type the environment name to proceed (skipped with `--yes`).
+- **Production gate.** Destroying production additionally requires `--i-understand-this-is-production`.
+- **Preserves state & DNS.** Destroys infrastructure only. The S3 state file (now empty),
+  the state bucket, and DNS records are left untouched, so you can re-provision later.
+
 ### Server Lifecycle Protection
 
-Production servers have `prevent_destroy = true` in Terraform to guard against accidental
-`terraform destroy`. Staging servers do **not** have this protection — they can be torn down
-and recreated freely for iteration.
+Both environments' control-plane servers (`hcloud_server.default`) carry a hardcoded
+`prevent_destroy = true` lifecycle guard in `main.tf`. Terraform evaluates `prevent_destroy`
+statically (it cannot be a variable), so a plain `terraform destroy` fails on that resource
+in **both** staging and production. Agent nodes (`hcloud_server.agent`) have
+`prevent_destroy = false` and destroy freely.
 
-To intentionally destroy a production server:
-1. Temporarily set `environment = "staging"` in `terraform.tfvars`, run `terraform apply`,
-   then `terraform destroy`.
-2. Or: `terraform state rm 'hcloud_server.default'` then `terraform destroy`.
+`destroy.sh` handles this automatically: it writes a temporary Terraform override file
+(`zz_destroy_override.tf`) that lifts the guard for a single run, then removes it on exit
+(success, failure, or Ctrl-C) via a `trap`. `main.tf` is never modified.
 
 This protection is enforced in `main.tf` via:
 ```hcl
 lifecycle {
-  prevent_destroy = var.environment == "production"
+  prevent_destroy = true
+  ignore_changes  = [user_data]
 }
 ```
+
+To tear down **manually** without the script (not recommended), you must lift the guard
+first — either drop an equivalent `*_override.tf` file, temporarily edit `main.tf`, or
+`terraform state rm 'hcloud_server.default'` (note: `state rm` leaves the server running
+in Hetzner and untracked, so you'd then delete it by hand). The script's override approach
+avoids that footgun.
 
 ## Prerequisites
 
