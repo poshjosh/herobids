@@ -636,7 +636,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             goalPlaceholder={intl.formatMessage({ id: resolveGoalPlaceholderKey(skillPreset) })}
             goalLabel={intl.formatMessage({ id: 'agents.edit.objective' })}
             goalError={formErrors.goal}
-            required
             pendingFiles={form.pendingFiles}
             onPendingFilesChange={(pendingFiles) => setForm((prev) => ({ ...prev, pendingFiles }))}
             existingDocs={docsQuery.data?.documents}
@@ -1089,7 +1088,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   disabled={mutation.isPending
                     || agentConnectionsQuery.isLoading
                     || !form.name.trim()
-                    || (showIntelligence && !form.goal.trim())
                     || tickIntervalError != null
                     || (modelOverrideEnabled && (!modelForm.provider || !modelForm.lightModel || !modelForm.heavyModel))}
                 >
@@ -1114,7 +1112,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             disabled={mutation.isPending
               || agentConnectionsQuery.isLoading
               || !form.name.trim()
-              || (showIntelligence && !form.goal.trim())
               || tickIntervalError != null
               || (modelOverrideEnabled && (!modelForm.provider || !modelForm.lightModel || !modelForm.heavyModel))}
           >

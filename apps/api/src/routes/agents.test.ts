@@ -2700,6 +2700,94 @@ describe('agent routes — technical config persistence', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Prompt optionality — a blank prompt is allowed (employee prompt model:
+// a no-job agent stays on duty and responds to user messages).
+// ---------------------------------------------------------------------------
+describe('agent routes — prompt optionality', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('creates an agent with an empty prompt and no technical config', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      modelPolicy: null,
+      unifiedConfig: null,
+    };
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: { name: 'no-job agent', prompt: '' },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const insert = insertedValues.find((v: Record<string, unknown>) => v.name === 'no-job agent');
+    expect(insert?.prompt).toBe('');
+  });
+
+  it('creates an agent when neither prompt nor technical config is provided', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      modelPolicy: null,
+      unifiedConfig: null,
+    };
+    const { db } = buildDb({
+      agentRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: { name: 'bare agent' },
+    });
+
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('still rejects capabilityMode=hybrid without technical config (unrelated invariant retained)', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: { name: 'hybrid-no-tech', capabilityMode: 'hybrid' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json<{ error: string; details: Array<{ path: string[]; message: string }> }>();
+    expect(body.error).toBe('validation_error');
+    expect(body.details.some((d) => d.path.includes('capabilityMode'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // POST /agents/:id/stop
 // ---------------------------------------------------------------------------
 describe('POST /agents/:id/stop', () => {

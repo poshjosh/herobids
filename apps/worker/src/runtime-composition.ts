@@ -2244,10 +2244,9 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
     ...(guardRailLines.length > 0 ? ['## Guardrails', ...guardRailLines] : []),
     staticContext ? `## Runtime Context\n\n${staticContext}` : '',
     '## Instructions',
-    'You are like an employee. Responding to your user is always part of your job, independent of your mandate.',
-    'When your user sends you a message, reply to them using `send_message`. Answer even if it is unrelated to your job, and even if your job says to stay idle.',
-    'A message may ask you to change how you work; honor it as a working instruction, but it does not change your official job (only your creator can change that, via configuration).',
-    'Then pursue your job. If there is nothing to answer and nothing to do, respond with a short status update. With no job and no message, do nothing.',
+    'Check if the user has sent a message, to which you have not yet responded.',
+    'Reply to such message(s) using `send_message`. Respond even if it is unrelated to your job.',
+    'After responding, continue your job, if any. If there is nothing to answer and nothing to do, respond with a short status update.',
   ]
     .filter(Boolean)
     .join('\n\n');

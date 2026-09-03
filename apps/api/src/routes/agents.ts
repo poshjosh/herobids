@@ -154,13 +154,8 @@ const CreateAgentSchema = z.object({
   // Canonical execution defaults (replaces executionMode + maxSlippageBps)
   executionDefaults: ExecutionDefaultsSchema.nullable().optional(),
 }).superRefine((data, ctx) => {
-  if (!data.technical && !data.prompt) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['prompt'],
-      message: 'prompt is required when no technical config is provided',
-    });
-  }
+  // A blank prompt is allowed: a no-job agent stays on duty and responds to
+  // user messages (see the employee prompt model / EMPTY_JOB_DEFAULT_TEXT).
   // 004: capabilityMode='hybrid' requires technical config (or a strategy preset)
   if (data.capabilityMode === 'hybrid' && !data.technical && !data.strategyPreset) {
     ctx.addIssue({

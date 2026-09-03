@@ -159,7 +159,7 @@ describe('runtime composition helpers', () => {
     expect(prompt).toContain('Trading Venue');
     expect(prompt).toContain('hyperliquid (perpetuals)');
     expect(prompt).toContain('trade instruments use base tickers');
-    expect(prompt).toContain('When your user sends you a message, reply to them using `send_message`. Answer even if it is unrelated to your job, and even if your job says to stay idle.');
+    expect(prompt).toContain('Reply to such message(s) using `send_message`. Respond even if it is unrelated to your job.');
     expect(prompt).toContain('Core Platform');
     expect(prompt).not.toContain('To call a tool, output a JSON object');
     expect(prompt).not.toContain('{"tool": "<tool_name>", "args": {...}}');
