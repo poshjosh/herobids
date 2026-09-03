@@ -274,7 +274,7 @@ Ask:
 
 ### Step 2-F — Fast Track: Asset Preference
 
-Ask: "What type of assets interest you? Bitcoin / Ethereum / Memecoins / Not sure"
+Ask: "What type of assets interest you? 1. Bitcoin 2. Ethereum  3. Memecoins 4. Not sure"
 
 | Answer | Venue | Strategy |
 |---|---|---|
@@ -318,7 +318,7 @@ If no same-provider connection exists, ask: "Do you have an existing wallet, or 
 
 **If no compatible connection exists and no venue preference:**
 Ask to narrow down:
-- Q1: "Which blockchain ecosystem? Solana / EVM / Not sure"
+- Q1: "Which blockchain ecosystem? 1. Solana 2. EVM 3. Not sure"
 - Q2: "Long only, or long + short?"
 
 | Q1 | Q2 | Venue |
