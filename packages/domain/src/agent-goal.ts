@@ -74,3 +74,11 @@ export const EMPTY_JOB_DEFAULT_TEXT =
 export function isBlankAgentGoal(prompt: string | null | undefined): boolean {
   return normalizeAgentGoal(prompt ?? '').length === 0;
 }
+
+/** Read the product preset id from an agent's unifiedConfig.metadata JSONB. Returns null when absent, non-string, or empty. */
+export function readSkillPresetId(unifiedConfig: unknown): string | null {
+  const uc = unifiedConfig as Record<string, unknown> | null;
+  const meta = uc?.['metadata'] as Record<string, unknown> | undefined;
+  const raw = meta?.['skillPresetId'];
+  return typeof raw === 'string' && raw.length > 0 ? raw : null;
+}

@@ -5,7 +5,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agentConnections, bots, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, userCredentials, agents } from '@herobids/db';
 import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
-import { AGENT_STREAM_MAXLEN } from '@herobids/domain';
+import { AGENT_STREAM_MAXLEN, readSkillPresetId } from '@herobids/domain';
 import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
 import { checkConnectionLimit } from '../plan-guards.js';
@@ -89,6 +89,7 @@ export async function connectionRoutes(
         risk: agents.risk,
         executionDefaults: agents.executionDefaults,
         maxBots: agents.maxBots,
+        unifiedConfig: agents.unifiedConfig,
       })
       .from(agents)
       .where(eq(agents.id, agentId));
@@ -104,6 +105,7 @@ export async function connectionRoutes(
     const runtimeDescriptor = buildRuntimeDescriptor({
       agentId,
       name: agentRow.name,
+      skillPresetId: readSkillPresetId(agentRow.unifiedConfig),
       goal: agentRow.prompt,
       executionMode: executionDefaults['mode'] as string | undefined,
       toolPolicy: (agentRow.toolPolicy as Record<string, unknown> | null) ?? {},

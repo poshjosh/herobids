@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_JOB_DEFAULT_TEXT, formatAgentGoalLiteralBlock, isBlankAgentGoal, normalizeAgentGoal } from './agent-goal.js';
+import { EMPTY_JOB_DEFAULT_TEXT, formatAgentGoalLiteralBlock, isBlankAgentGoal, normalizeAgentGoal, readSkillPresetId } from './agent-goal.js';
 
 describe('normalizeAgentGoal', () => {
   it('returns a clean goal unchanged', () => {
@@ -96,5 +96,32 @@ describe('EMPTY_JOB_DEFAULT_TEXT', () => {
   it('is a non-hostile, non-empty default mentioning no job assigned', () => {
     expect(EMPTY_JOB_DEFAULT_TEXT.length).toBeGreaterThan(0);
     expect(EMPTY_JOB_DEFAULT_TEXT).toContain('No job has been assigned yet');
+  });
+});
+
+describe('readSkillPresetId', () => {
+  it('returns the preset id from unifiedConfig.metadata', () => {
+    expect(readSkillPresetId({ metadata: { skillPresetId: 'personal-assistant' } })).toBe('personal-assistant');
+  });
+
+  it('returns null when metadata is missing', () => {
+    expect(readSkillPresetId({})).toBeNull();
+  });
+
+  it('returns null when skillPresetId is absent from metadata', () => {
+    expect(readSkillPresetId({ metadata: { other: 'x' } })).toBeNull();
+  });
+
+  it('returns null when skillPresetId is an empty string', () => {
+    expect(readSkillPresetId({ metadata: { skillPresetId: '' } })).toBeNull();
+  });
+
+  it('returns null when skillPresetId is not a string', () => {
+    expect(readSkillPresetId({ metadata: { skillPresetId: 42 } })).toBeNull();
+  });
+
+  it('returns null for null or undefined config', () => {
+    expect(readSkillPresetId(null)).toBeNull();
+    expect(readSkillPresetId(undefined)).toBeNull();
   });
 });
