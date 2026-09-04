@@ -80,13 +80,15 @@ describe('BrowserPoolConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects enabled: true with empty url', () => {
+  it('accepts enabled: true with empty url (URL resolved dynamically at runtime)', () => {
+    // browserPool.url is intentionally not required at config-validation time.
+    // When enabled but url is empty, the worker's ServiceRegistry resolves the
+    // address from Nomad service discovery at startup (and warns if unresolved).
     const result = BrowserPoolConfigSchema.safeParse({ enabled: true });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const urlIssue = result.error.issues.find((i) => i.path.includes('url'));
-      expect(urlIssue).toBeDefined();
-      expect(urlIssue!.message).toContain('browserPool.url is required');
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.enabled).toBe(true);
+      expect(result.data.url).toBe('');
     }
   });
 

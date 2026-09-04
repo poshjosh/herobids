@@ -88,17 +88,19 @@ for style in "${STYLES[@]}"; do
   http_err=$(echo "$response" | jq -r '.error // empty' 2>/dev/null || true)
   if [[ -n "$http_err" ]]; then
     log_error "[$style] API returned an error: $http_err"
-    (( FAIL += ${#EXPECTED_KEYS[@]} ))
+    # Note: use $(( ... )) assignment, not (( ... )), because under `set -e`
+    # a (( expr )) whose value is 0 returns exit status 1 and aborts the script.
+    FAIL=$(( FAIL + ${#EXPECTED_KEYS[@]} ))
     continue
   fi
 
   for key in "${EXPECTED_KEYS[@]}"; do
     if echo "$response" | jq -e ".presets[] | select(.key == \"$key\")" > /dev/null 2>&1; then
       log_ok   "[$style] $key — present"
-      (( PASS++ ))
+      PASS=$(( PASS + 1 ))
     else
       log_error "[$style] $key — MISSING"
-      (( FAIL++ ))
+      FAIL=$(( FAIL + 1 ))
     fi
   done
 done

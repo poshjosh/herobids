@@ -24,7 +24,9 @@ export interface BotCustomConfigFormState {
   maxPositionSizePct: string;
   maxOpenPositions: string;
   dailyMaxLossPct: string;
-  stopLossPct: string;
+  // Portfolio-level unrealized-loss stop (risk-contract stopLossPct), distinct
+  // from the per-trade mechanical exit target above.
+  riskStopLossPct: string;
 }
 
 export const defaultBotCustomConfig: BotCustomConfigFormState = {
@@ -41,7 +43,7 @@ export const defaultBotCustomConfig: BotCustomConfigFormState = {
   maxPositionSizePct: '',
   maxOpenPositions: '',
   dailyMaxLossPct: '',
-  stopLossPct: '',
+  riskStopLossPct: '',
 };
 
 export interface BotCustomConfigSectionProps {
@@ -328,11 +330,11 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
             style={inputStyle}
             type="number"
             placeholder="use default"
-            value={value.stopLossPct}
-            onChange={(e) => onChange({ stopLossPct: e.target.value })}
-            onBlur={() => markBlurred('stopLossPct')}
+            value={value.riskStopLossPct}
+            onChange={(e) => onChange({ riskStopLossPct: e.target.value })}
+            onBlur={() => markBlurred('riskStopLossPct')}
           />
-          {isBlurred('stopLossPct') && value.stopLossPct && isPctOutOfRange(value.stopLossPct) && (
+          {isBlurred('riskStopLossPct') && value.riskStopLossPct && isPctOutOfRange(value.riskStopLossPct) && (
             <div style={errorTextStyle}>Must be a number between 0 and 100</div>
           )}
         </div>

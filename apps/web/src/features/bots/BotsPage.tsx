@@ -31,6 +31,7 @@ function presetToCustomConfig(preset: PresetFromApi): BotCustomConfigFormState {
     positionSize: String(params['positionSize'] ?? '100'),
     positionSizeMode: (params['positionSizeMode'] as BotCustomConfigFormState['positionSizeMode']) ?? 'percent_equity',
     maxPositionSizePct: preset.risk?.maxPositionSizePct != null ? String(preset.risk.maxPositionSizePct) : '',
+    riskStopLossPct: preset.risk?.stopLossPct != null ? String(preset.risk.stopLossPct) : '',
   };
 }
 
@@ -61,7 +62,7 @@ function buildCustomBotConfig(
   const dailyLoss = parseFloat(c.dailyMaxLossPct);
   if (Number.isFinite(dailyLoss)) risk['dailyMaxLossPct'] = dailyLoss;
 
-  const maxUnrealized = parseFloat(c.stopLossPct);
+  const maxUnrealized = parseFloat(c.riskStopLossPct);
   if (Number.isFinite(maxUnrealized)) risk['stopLossPct'] = maxUnrealized;
 
   return {

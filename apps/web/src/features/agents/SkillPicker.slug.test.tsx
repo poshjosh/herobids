@@ -5,6 +5,7 @@
  */
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IntlProvider } from 'react-intl';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
 import { messages } from '../../app/i18n/locales/en.js';
 import { SkillPicker } from './SkillPicker.js';
@@ -49,14 +50,21 @@ function makeSkill(overrides: Partial<Skill> = {}): Skill {
 }
 
 function renderPicker(skills: Skill[], selectedIds: string[] = []): string {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  // Pass the skills via `initialSkills` so the picker renders them directly and
+  // its default fetch query stays disabled.
   return renderToStaticMarkup(
-    <IntlProvider locale="en" messages={messages}>
-      <SkillPicker
-        skills={skills}
-        selectedSkillIds={selectedIds}
-        onChange={() => undefined}
-      />
-    </IntlProvider>,
+    <QueryClientProvider client={queryClient}>
+      <IntlProvider locale="en" messages={messages}>
+        <SkillPicker
+          initialSkills={skills}
+          selectedSkillIds={selectedIds}
+          onChange={() => undefined}
+        />
+      </IntlProvider>
+    </QueryClientProvider>,
   );
 }
 
