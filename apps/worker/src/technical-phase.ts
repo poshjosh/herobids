@@ -622,11 +622,15 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
 
   logger.info({
     candidatesDiscovered: result.candidatesDiscovered,
+    candidatesEligible: result.eligibleCount,
+    candidatesFetched: result.fetchedCount,
     candidatesScored: result.candidatesScored,
     signalsGenerated: result.signalsGenerated,
     entriesSubmitted: result.entriesSubmitted,
     exitsSubmitted: result.exitsSubmitted,
     regimeBlocked: result.regimeBlocked,
+    unsupportedCount: result.unsupportedCount,
+    fetchFailures: result.fetchFailures,
     errorCount: result.errors.length,
   }, 'Technical phase complete');
 

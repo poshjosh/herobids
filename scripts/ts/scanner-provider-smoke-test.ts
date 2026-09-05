@@ -231,17 +231,6 @@ async function pollForScanComplete(
 // Scan log parsing
 // ---------------------------------------------------------------------------
 
-interface SymbolOutcome {
-  symbol: string;
-  instrumentId: string;
-  eligible: boolean;
-  fetched: boolean;
-  unsupported: boolean;
-  failed: boolean;
-  candleCount: number;
-  resolvedBinanceSymbol?: string;
-}
-
 interface ParsedScan {
   candidatesDiscovered: number;
   candidatesEligible: number;
@@ -249,63 +238,40 @@ interface ParsedScan {
   candidatesScored: number;
   signalsGenerated: number;
   errorCount: number;
-  symbolOutcomes: SymbolOutcome[];
+}
+
+/**
+ * Extract a numeric log field by key, tolerant of both output formats the
+ * worker can produce:
+ *   - pino-pretty (dev/default compose):  `    candidatesDiscovered: 2`
+ *   - pino JSON (production):             `"candidatesDiscovered":2`
+ * The optional-quote + flexible-whitespace pattern matches either.
+ */
+function matchField(block: string, key: string): number | null {
+  const m = block.match(new RegExp(`"?${key}"?\\s*:\\s*(\\d+)`));
+  return m ? parseInt(m[1]!, 10) : null;
 }
 
 function parseScanLogs(logs: string): ParsedScan[] {
   const scans: ParsedScan[] = [];
+  // pino-pretty prints the message line first, then indented `key: value`
+  // field lines. Splitting on the marker leaves each scan's fields in the
+  // block that FOLLOWS its marker, so we parse blocks after the first.
   const blocks = logs.split(/Technical phase complete/);
   if (blocks.length < 2) return scans;
 
   for (const block of blocks) {
-    const discoveredMatch = block.match(/candidatesDiscovered:\s*(\d+)/);
-    const eligibleMatch = block.match(/candidatesEligible:\s*(\d+)/);
-    const fetchedMatch = block.match(/candidatesFetched:\s*(\d+)/);
-    const scoredMatch = block.match(/candidatesScored:\s*(\d+)/);
-    const signalsMatch = block.match(/signalsGenerated:\s*(\d+)/);
-    const errorMatch = block.match(/errorCount:\s*(\d+)/);
-
-    if (!discoveredMatch) continue;
+    const discovered = matchField(block, 'candidatesDiscovered');
+    if (discovered === null) continue;
 
     const scan: ParsedScan = {
-      candidatesDiscovered: parseInt(discoveredMatch[1]!, 10),
-      candidatesEligible: eligibleMatch ? parseInt(eligibleMatch[1]!, 10) : 0,
-      candidatesFetched: fetchedMatch ? parseInt(fetchedMatch[1]!, 10) : 0,
-      candidatesScored: scoredMatch ? parseInt(scoredMatch[1]!, 10) : 0,
-      signalsGenerated: signalsMatch ? parseInt(signalsMatch[1]!, 10) : 0,
-      errorCount: errorMatch ? parseInt(errorMatch[1]!, 10) : 0,
-      symbolOutcomes: [],
+      candidatesDiscovered: discovered,
+      candidatesEligible: matchField(block, 'candidatesEligible') ?? 0,
+      candidatesFetched: matchField(block, 'candidatesFetched') ?? 0,
+      candidatesScored: matchField(block, 'candidatesScored') ?? 0,
+      signalsGenerated: matchField(block, 'signalsGenerated') ?? 0,
+      errorCount: matchField(block, 'errorCount') ?? 0,
     };
-
-    // Parse per-symbol outcomes from the block
-    const symbolLines = block.match(/symbolOutcomes[:\s]+\[([\s\S]*?)\]/);
-    if (symbolLines?.[1]) {
-      // Try to extract individual outcomes
-      const outcomes = symbolLines[1].match(/\{[^}]+\}/g);
-      if (outcomes) {
-        for (const outcome of outcomes) {
-          const symMatch = outcome.match(/"symbol":\s*"([^"]+)"/);
-          const instMatch = outcome.match(/"instrumentId":\s*"([^"]+)"/);
-          const eligMatch = outcome.match(/"eligible":\s*(true|false)/);
-          const fetchMatch = outcome.match(/"fetched":\s*(true|false)/);
-          const unsupMatch = outcome.match(/"unsupported":\s*(true|false)/);
-          const failMatch = outcome.match(/"failed":\s*(true|false)/);
-          const countMatch = outcome.match(/"candleCount":\s*(\d+)/);
-          const binanceMatch = outcome.match(/"resolvedBinanceSymbol":\s*"([^"]+)"/);
-
-          scan.symbolOutcomes.push({
-            symbol: symMatch?.[1] ?? 'unknown',
-            instrumentId: instMatch?.[1] ?? 'unknown',
-            eligible: eligMatch?.[1] === 'true',
-            fetched: fetchMatch?.[1] === 'true',
-            unsupported: unsupMatch?.[1] === 'true',
-            failed: failMatch?.[1] === 'true',
-            candleCount: countMatch ? parseInt(countMatch[1]!, 10) : 0,
-            resolvedBinanceSymbol: binanceMatch?.[1],
-          });
-        }
-      }
-    }
 
     scans.push(scan);
   }
@@ -489,24 +455,15 @@ async function scenario1_boundedScanCompletes(token: string): Promise<void> {
       `signalsGenerated=${lastScan.signalsGenerated} (non-zero is acceptable, not required)`);
   }
 
-  // 8. Report per-symbol outcomes
-  section('Per-Symbol Outcomes');
-  if (lastScan.symbolOutcomes.length > 0) {
-    for (const outcome of lastScan.symbolOutcomes) {
-      const status = outcome.eligible && outcome.fetched
-        ? `${GREEN}healthy${RESET}`
-        : outcome.unsupported
-          ? `${RED}unsupported${RESET}`
-          : outcome.failed
-            ? `${RED}failed${RESET}`
-            : `${YELLOW}unknown${RESET}`;
-      const binanceInfo = outcome.resolvedBinanceSymbol ? ` → ${outcome.resolvedBinanceSymbol}` : '';
-      console.log(`  ${status}  ${outcome.symbol} (${outcome.instrumentId})${binanceInfo}: eligible=${outcome.eligible}, fetched=${outcome.fetched}, candles=${outcome.candleCount}`);
-    }
-  } else {
-    warn('No per-symbol outcomes found in scan logs. The scanner may not be emitting symbolOutcomes yet.');
-    warn('This is expected if the scanner health matrix (Phase 2) has not been deployed.');
-  }
+  // 8. Report aggregate scan health (from the "Technical phase complete" log line).
+  // Per-symbol outcomes are not emitted to logs; the aggregate eligible/fetched
+  // counts are the health signal available from the deployed scanner.
+  section('Scan Health (aggregate)');
+  console.log(
+    `  discovered=${lastScan.candidatesDiscovered}, eligible=${lastScan.candidatesEligible}, ` +
+    `fetched=${lastScan.candidatesFetched}, scored=${lastScan.candidatesScored}, ` +
+    `signals=${lastScan.signalsGenerated}, errors=${lastScan.errorCount}`,
+  );
 
   // 9. Assert scan interval
   const intervalCheck = checkScanInterval(agentId, since, 30_000, 15_000);
