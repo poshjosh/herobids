@@ -80,12 +80,19 @@ export interface PlatformAssessmentReviewResults {
   }>;
 }
 
+/** A single structured validation issue, mirroring the API's Zod issue shape. */
+export interface ApiErrorDetail {
+  path: Array<string | number>;
+  message: string;
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly code: string,
     message: string,
     public readonly params?: Record<string, unknown>,
+    public readonly details?: ApiErrorDetail[],
   ) {
     super(message);
     this.name = 'ApiError';
@@ -124,23 +131,30 @@ async function requestAgainstBase<T>(baseUrl: string, path: string, init?: Reque
     let code = 'api_error';
     let message = `HTTP ${res.status}`;
     let params: Record<string, unknown> | undefined;
+    let details: ApiErrorDetail[] | undefined;
     try {
       const body = await res.json() as {
         error?: string;
         message?: string;
         params?: Record<string, unknown>;
-        details?: Array<{ message?: string }>;
+        details?: Array<{ path?: Array<string | number>; message?: string }>;
       };
       code = body.error ?? code;
       params = body.params;
+      if (Array.isArray(body.details) && body.details.length > 0) {
+        // API validation errors return structured issues — preserve path so the
+        // localizer can surface `field: message`.
+        details = body.details
+          .filter((d): d is { path?: Array<string | number>; message: string } =>
+            typeof d.message === 'string' && d.message.length > 0)
+          .map((d) => ({ path: Array.isArray(d.path) ? d.path : [], message: d.message }));
+        if (details.length === 0) details = undefined;
+      }
       if (body.message) {
         message = body.message;
-      } else if (Array.isArray(body.details) && body.details.length > 0) {
-        // API validation errors return structured details — surface all field messages
-        const msgs = body.details
-          .map((d) => d.message)
-          .filter((m): m is string => typeof m === 'string' && m.length > 0);
-        if (msgs.length > 0) message = msgs.join('; ');
+      } else if (details && details.length > 0) {
+        // Fallback flat message for display paths that don't inspect details.
+        message = details.map((d) => d.message).join('; ');
       } else if (body.error) {
         // Plain error-only responses (e.g. 'not_found', 'already_running', 'Invalid or expired exchange code')
         message = body.error;
@@ -148,7 +162,7 @@ async function requestAgainstBase<T>(baseUrl: string, path: string, init?: Reque
     } catch {
       // non-JSON error response
     }
-    throw new ApiError(res.status, code, message, params);
+    throw new ApiError(res.status, code, message, params, details);
   }
 
   // 204 No Content

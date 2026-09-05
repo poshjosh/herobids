@@ -10,6 +10,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Agent prompt max length raised from 4000 to 8000 characters (create, update, and interactive-edit routes) to match the skill `instructions` limit and reduce confusing validation failures.
 
+### Fixed
+
+- Web `validation_error` messages now name the offending field (e.g. `prompt: String must contain at most 8000 character(s)`) by plumbing API `details` through `ApiError`, and no longer render a double dot.
+
 ## v0.2.0 - 2026-09-05
 
 - Update production Creem product IDs to new live store
