@@ -1573,6 +1573,62 @@ describe('agent routes strategy preset resolution', () => {
     });
   });
 
+  // Regression (bug 2026-09-04/004): connection enrichment on create must MERGE,
+  // not replace — client-supplied filter fields (symbols, minVolume24hUsd) must
+  // survive while venue/venueType come from the connection.
+  it('merges connection venue/venueType into explicit filters on create without dropping symbols', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = { id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null };
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      connectionRows: [
+        { id: 'conn-1', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid' },
+      ],
+      skillRows: [
+        { id: 'trading', authorId: null, publicationStatus: 'published', priceCents: 0, currentRevisionId: 'rev-trading' },
+      ],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'merge-filter-agent',
+        prompt: 'trade momentum',
+        style: 'balanced',
+        skillIds: ['trading'],
+        capabilityMode: 'hybrid',
+        hybridMode: 'scanner_gated',
+        executionDefaults: { mode: 'paper' },
+        connectionIds: ['conn-1'],
+        technical: {
+          // Schema requires venue/venueType. Client supplies them here, but the
+          // connection is authoritative and overrides them below.
+          filters: { venue: 'jupiter', venueType: 'swap', symbols: ['BTC', 'ETH'], minVolume24hUsd: 1_000_000 },
+          regime: { benchmarkSymbol: 'BTC' },
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const insertedAgent = insertedValues.find((v) => v['name'] === 'merge-filter-agent');
+    expect(insertedAgent).toBeDefined();
+    const unifiedConfig = insertedAgent!['unifiedConfig'] as Record<string, unknown>;
+    const technical = unifiedConfig['technical'] as Record<string, unknown>;
+    const filters = technical['filters'] as Record<string, unknown>;
+    // Connection is authoritative for venue/venueType.
+    expect(filters['venue']).toBe('hyperliquid');
+    expect(filters['venueType']).toBe('orderbook');
+    // Client-owned fields survive the merge (the regression this locks in).
+    expect(filters['symbols']).toEqual(['BTC', 'ETH']);
+    expect(filters['minVolume24hUsd']).toBe(1_000_000);
+  });
+
   it('does NOT populate technical.filters when creating agent without connections', async () => {
     const { agentRoutes } = await import('./agents.js');
     const createdAgent = { id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null };
@@ -1855,6 +1911,81 @@ describe('agent routes strategy preset resolution', () => {
       venueType: 'orderbook',
       quoteAssetSymbol: 'USDC',
     });
+  });
+
+  // Regression (bug 2026-09-04/004): connection enrichment on PATCH must MERGE,
+  // not replace — an explicit technical.filters carrying symbols must survive
+  // while venue/venueType come from the existing connection.
+  it('merges connection venue/venueType into explicit filters on PATCH without dropping symbols', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const existingUnifiedConfig = {
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+      technical: {
+        filters: { venue: 'hyperliquid', venueType: 'orderbook' },
+        regime: { benchmarkSymbol: 'BTC' },
+        indicators: {},
+        candles: { interval: '15m', limit: 100 },
+        signalBias: 'trend-following',
+        scanIntervalMs: 30000,
+        scanBatchSize: 5,
+        autonomousExit: false,
+      },
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        modelPolicy: null,
+        unifiedConfig: existingUnifiedConfig,
+        style: 'balanced',
+      }],
+      activeLinkRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        modelPolicy: null,
+      }],
+      connectionRows: [
+        { id: 'conn-hl', userId: TEST_USER_ID, status: 'active', provider: 'hyperliquid' },
+      ],
+      agentConnectionRows: [
+        { agentId: 'agent-1', connectionId: 'conn-hl', status: 'active' },
+      ],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        technical: {
+          // Schema requires venue/venueType. Client supplies them here, but the
+          // existing connection is authoritative and overrides them below.
+          filters: { venue: 'jupiter', venueType: 'swap', symbols: ['BTC', 'ETH'], minVolume24hUsd: 1_000_000 },
+          regime: { benchmarkSymbol: 'BTC' },
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const configUpdate = updateSets.find((s) => 'unifiedConfig' in s);
+    expect(configUpdate).toBeDefined();
+    const patched = configUpdate!['unifiedConfig'] as Record<string, unknown>;
+    const technical = patched['technical'] as Record<string, unknown>;
+    const filters = technical['filters'] as Record<string, unknown>;
+    // Connection is authoritative for venue/venueType.
+    expect(filters['venue']).toBe('hyperliquid');
+    expect(filters['venueType']).toBe('orderbook');
+    // Client-owned fields survive the merge (the regression this locks in).
+    expect(filters['symbols']).toEqual(['BTC', 'ETH']);
+    expect(filters['minVolume24hUsd']).toBe(1_000_000);
   });
 
   it('exposes strategyPreset from unifiedConfig.metadata on GET', async () => {

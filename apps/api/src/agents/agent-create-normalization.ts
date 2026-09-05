@@ -192,7 +192,16 @@ export async function resolveUnifiedConfig(params: {
       .limit(1);
     if (providerRows.length > 0) {
       const venueType = venueTypeFromProvider(providerRows[0]!.provider) ?? 'orderbook';
+      // Merge, don't replace: the connection is authoritative for venue/venueType,
+      // but client-supplied filter fields (symbols, excludeSymbols, minVolume24hUsd,
+      // minLiquidityUsd, networks, quoteAssetSymbol) must be preserved. For the
+      // preset path (no explicit technical), `existing` is absent, so this is
+      // purely additive — preserving the fix from bug 2026-07-15/002.
+      const existingFilters = (finalUnifiedConfig.technical as Record<string, unknown>).filters as
+        | Record<string, unknown>
+        | undefined;
       (finalUnifiedConfig.technical as Record<string, unknown>).filters = {
+        ...(existingFilters ?? {}),
         venue: providerRows[0]!.provider,
         venueType,
       };

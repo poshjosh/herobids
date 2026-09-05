@@ -17,6 +17,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Agent create/update dropped client-supplied `technical.filters` fields — connection enrichment replaced `filters` wholesale with `{ venue, venueType }`, discarding user-set `symbols`, `excludeSymbols`, `minVolume24hUsd`, etc. Now merges: the connection stays authoritative for `venue`/`venueType` while client-owned filter fields are preserved (POST and PATCH). Regression of the 2026-07-15 filters-population fix.
+  - docs/bug-reports/2026/09/04/004-scanner-gated-agent-create-overwrites-technical-filters.md
+
 - Agent telegram messaging
   - docs/bug-reports/2026/09/01/001-user-message-not-processed-until-next-scheduled-tick.md
   - docs/bug-reports/2026/09/02/001-telegram-reply-anchor-and-user-message-gate.md

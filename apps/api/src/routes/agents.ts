@@ -1400,7 +1400,14 @@ export async function agentRoutes(
           .limit(1);
         if (providerRows.length > 0) {
           const venueType = venueTypeFromProvider(providerRows[0]!.provider) ?? 'orderbook';
+          // Merge, don't replace: the connection is authoritative for venue/venueType,
+          // but client-supplied filter fields (symbols, excludeSymbols, minVolume24hUsd,
+          // minLiquidityUsd, networks, quoteAssetSymbol) must be preserved.
+          const existingFilters = (unifiedConfigPatch.technical as Record<string, unknown>).filters as
+            | Record<string, unknown>
+            | undefined;
           (unifiedConfigPatch.technical as Record<string, unknown>).filters = {
+            ...(existingFilters ?? {}),
             venue: providerRows[0]!.provider,
             venueType,
           };

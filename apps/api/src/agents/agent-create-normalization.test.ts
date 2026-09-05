@@ -46,6 +46,22 @@ function mockDb(): Database {
   } as unknown as Database;
 }
 
+/**
+ * Mock DB whose connection lookup (step 7) returns a single active connection
+ * with the given provider — used to exercise the filters-population/merge path.
+ */
+function mockDbWithProvider(provider: string): Database {
+  return {
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([{ provider }]),
+        }),
+      }),
+    }),
+  } as unknown as Database;
+}
+
 /** A valid technical config from the momentum preset (real shape from YAML). */
 const VALID_TECHNICAL: Record<string, unknown> = {
   filters: { venue: 'hyperliquid', venueType: 'orderbook' },
@@ -179,6 +195,77 @@ describe('resolveUnifiedConfig', () => {
     expect(result).not.toBeNull();
     expect(result!['technical']).toBeDefined();
     expect(result!['hybridMode']).toBe('scanner_gated');
+  });
+
+  // ── Regression (bug 2026-09-04/004): connection enrichment must MERGE ───
+  // Populating filters from the selected connection must set venue/venueType
+  // (connection-authoritative) WITHOUT discarding client-supplied filter fields
+  // such as symbols and minVolume24hUsd.
+
+  it('merges connection venue/venueType into explicit filters without dropping client fields', async () => {
+    resolvePresetMock.mockReturnValue(null);
+
+    // Connection resolves to hyperliquid — venue/venueType come from here.
+    const db = mockDbWithProvider('hyperliquid');
+
+    const result = await resolveUnifiedConfig({
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+      connectionIds: ['conn-1'],
+      technical: {
+        ...VALID_TECHNICAL,
+        filters: {
+          // Deliberately WITHOUT venue/venueType — client owns the rest.
+          symbols: ['BTC', 'ETH'],
+          excludeSymbols: ['DOGE'],
+          minVolume24hUsd: 1_000_000,
+        },
+      },
+      db,
+    });
+
+    const tech = result!['technical'] as Record<string, unknown>;
+    const filters = tech['filters'] as Record<string, unknown>;
+
+    // Connection-authoritative fields.
+    expect(filters['venue']).toBe('hyperliquid');
+    expect(filters['venueType']).toBe('orderbook');
+
+    // Client-owned fields survive the merge (the regression).
+    expect(filters['symbols']).toEqual(['BTC', 'ETH']);
+    expect(filters['excludeSymbols']).toEqual(['DOGE']);
+    expect(filters['minVolume24hUsd']).toBe(1_000_000);
+  });
+
+  it('connection venue/venueType overrides any client-supplied venue values', async () => {
+    resolvePresetMock.mockReturnValue(null);
+
+    // Client claims jupiter/swap, but the resolved connection is hyperliquid.
+    const db = mockDbWithProvider('hyperliquid');
+
+    const result = await resolveUnifiedConfig({
+      capabilityMode: 'hybrid',
+      hybridMode: 'scanner_gated',
+      connectionIds: ['conn-1'],
+      technical: {
+        ...VALID_TECHNICAL,
+        filters: {
+          venue: 'jupiter',
+          venueType: 'swap',
+          symbols: ['BTC'],
+        },
+      },
+      db,
+    });
+
+    const tech = result!['technical'] as Record<string, unknown>;
+    const filters = tech['filters'] as Record<string, unknown>;
+
+    // Connection wins for venue/venueType.
+    expect(filters['venue']).toBe('hyperliquid');
+    expect(filters['venueType']).toBe('orderbook');
+    // Client-owned field still preserved.
+    expect(filters['symbols']).toEqual(['BTC']);
   });
 
   // ── Intelligence mode: no technical required ────────────────────────────
