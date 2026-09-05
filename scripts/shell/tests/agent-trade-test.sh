@@ -267,15 +267,50 @@ fi
 # Run
 # ---------------------------------------------------------------------------
 
-# Pre-check: verify the LLM provider has the required models loaded.
-# The agent trade test needs the agent to reason and create bots via LLM.
-# In dev environments with Ollama, models may not be pre-loaded causing timeouts.
-OLLAMA_CHECK=$(curl -s -o /dev/null -w '%{http_code}' \
-  "${OLLAMA_BASE_URL:-http://localhost:11434}/api/tags" 2>/dev/null || echo "000")
-if [[ "${LLM_PROVIDER:-}" == "ollama" && "${OLLAMA_CHECK}" != "200" ]]; then
-  warn "Ollama is not reachable at ${OLLAMA_BASE_URL:-http://localhost:11434}. Skipping agent trade test."
-  warn "Start Ollama and ensure models (${LLM_LIGHT_MODEL:-qwen3:8b}, ${LLM_HEAVY_MODEL:-qwen3.6:35b-a3b-q4_K_M}) are pulled."
-  exit 0
+# ── Pre-check: Ollama readiness (not just reachability) ──────────────────────
+# The agent trade test needs the agent to REASON via the LLM and create a bot
+# within a 30s deadline. A reachable-but-cold Ollama (models not pulled, or
+# pulled but not loaded into memory) blows that deadline and the test fails
+# spuriously. So we gate on three things and self-skip (exit 0) otherwise:
+#   1. /api/tags reachable (server up)
+#   2. the configured light + heavy models are present in /api/tags
+#   3. a warmup /api/generate on the light model responds within a deadline
+#      (this both proves responsiveness AND loads the model into memory)
+if [[ "${LLM_PROVIDER:-}" == "ollama" ]]; then
+  ollama_skip() {
+    warn "Skipping agent trade test — $1"
+    warn "Start Ollama and ensure models (${LLM_LIGHT_MODEL:-qwen3:8b}, ${LLM_HEAVY_MODEL:-qwen3.6:35b-a3b-q4_K_M}) are pulled and warm."
+    warn "Warm the stack via scripts/shell/run/reset-and-run.sh (which pulls + primes models)."
+    exit 0
+  }
+
+  OLLAMA_URL="${OLLAMA_BASE_URL:-http://localhost:11434}"
+  OLLAMA_WARMUP_TIMEOUT_S="${OLLAMA_WARMUP_TIMEOUT_S:-45}"
+
+  # 1. reachable
+  TAGS_JSON=$(curl -s --max-time 5 "${OLLAMA_URL}/api/tags" 2>/dev/null || echo "")
+  if [[ -z "${TAGS_JSON}" ]]; then
+    ollama_skip "Ollama not reachable at ${OLLAMA_URL} (/api/tags)."
+  fi
+
+  # 2. required models present (match by name, tolerant of exact tag)
+  for _m in "${LLM_LIGHT_MODEL:-qwen3:8b}" "${LLM_HEAVY_MODEL:-qwen3.6:35b-a3b-q4_K_M}"; do
+    if ! echo "${TAGS_JSON}" | grep -qF "\"${_m}\""; then
+      ollama_skip "required model '${_m}' not present in Ollama /api/tags."
+    fi
+  done
+
+  # 3. responsive: a trivial generate on the light model within the deadline.
+  #    --max-time bounds the whole request; a cold/overloaded server that can't
+  #    answer a 1-token prompt in time is not fit to run the agent reasoning.
+  WARMUP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+    --max-time "${OLLAMA_WARMUP_TIMEOUT_S}" \
+    "${OLLAMA_URL}/api/generate" \
+    -d "{\"model\":\"${LLM_LIGHT_MODEL:-qwen3:8b}\",\"prompt\":\"ok\",\"stream\":false,\"options\":{\"num_predict\":1}}" \
+    2>/dev/null || echo "000")
+  if [[ "${WARMUP_CODE}" != "200" ]]; then
+    ollama_skip "Ollama did not answer a warmup generate within ${OLLAMA_WARMUP_TIMEOUT_S}s (HTTP ${WARMUP_CODE}) — reachable but not responsive."
+  fi
 fi
 
 TS_SCRIPT="$REPO_ROOT/scripts/ts/agent-trade-test.ts"

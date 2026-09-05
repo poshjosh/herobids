@@ -13,12 +13,19 @@
 #                                     Default dev config uses 'mock' provider.
 #                                     Set in config/{staging,production}.yaml.
 #
-# agent-trade-test            Tier 5  Requires Ollama LLM models pre-loaded.
+# agent-trade-test            Tier 5  Requires Ollama LLM models pulled AND warm.
 # preset-review-gap-closure   Tier 5  These tests need the agent runtime to
-#                                     reason via LLM. In dev, Ollama models may
-#                                     not be pre-loaded or responsive enough,
-#                                     causing agent crashes and timeouts.
-#                                     Pre-check: Ollama /api/tags reachable.
+#                                     reason via LLM within tight deadlines. A
+#                                     reachable-but-cold Ollama (models absent,
+#                                     or pulled but not loaded) blows those
+#                                     deadlines and fails spuriously.
+#                                     Pre-check (readiness, not just reachable):
+#                                       1. /api/tags reachable
+#                                       2. light + heavy models present
+#                                       3. warmup /api/generate answers within
+#                                          OLLAMA_WARMUP_TIMEOUT_S (default 45s)
+#                                     If any fails → the test self-skips (exit 0).
+#                                     Warm the stack via reset-and-run.sh.
 #
 # caddy-routing-smoke         Tier 6  Requires network access to CADDY_BASE_URL
 #                                     (default: staging.openaidom.com).
