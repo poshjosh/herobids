@@ -85,7 +85,7 @@ Fields for creating a new agent. All fields are optional unless noted.
 
 name (string, required): The agent's display name. Must not be "all" or "*" (reserved for Telegram broadcast). Must be 1-200 characters.
 
-prompt (string, optional, max 4000 chars): The agent's goal/prompt text. Required when no technical config is provided.
+prompt (string, optional, max 8000 chars): The agent's goal/prompt text. Required when no technical config is provided.
 
 skillPresetId (enum, optional): Selects a preset skill bundle. Values:
 - "trading" → AI crypto trader: bot-management + trading skills
@@ -190,7 +190,7 @@ const UPDATE_AGENT_SCHEMA_ENTRY: DocsIndexEntry = {
 Fields for updating an existing agent. All fields are optional — only provided fields are updated.
 
 name (string, optional): Update the agent's display name.
-prompt (string, optional, max 4000 chars): Update the agent's goal/prompt.
+prompt (string, optional, max 8000 chars): Update the agent's goal/prompt.
 style (enum, optional, nullable): Update agent risk style. Set to null to clear.
 skillIds (string[], optional): Update skill assignments.
 toolPolicy (object, optional): Update tool access policy.

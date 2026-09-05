@@ -82,7 +82,7 @@ const TelegramWebhookUpdateSchema = z.object({
 
 const UpdateAgentSchema = z.object({
   name: z.string().min(1).max(100),
-  prompt: z.string().min(1).max(4000),
+  prompt: z.string().min(1).max(8000),
   skillIds: z.array(z.string().min(1)).optional(),
   toolPolicy: z.record(z.unknown()).optional(),
   modelPolicy: z.record(z.unknown()).optional(),

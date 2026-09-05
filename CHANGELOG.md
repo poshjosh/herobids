@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Agent prompt max length raised from 4000 to 8000 characters (create, update, and interactive-edit routes) to match the skill `instructions` limit and reduce confusing validation failures.
+
 ## v0.2.0 - 2026-09-05
 
 - Update production Creem product IDs to new live store

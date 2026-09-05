@@ -101,7 +101,7 @@ const AgentNameSchema = z.string().min(1).max(100).refine((value) => {
 
 const CreateAgentSchema = z.object({
   name: AgentNameSchema,
-  prompt: z.string().max(4000).optional(),
+  prompt: z.string().max(8000).optional(),
   technical: TechnicalConfigSchema.optional(),
   skillIds: z.array(z.string().min(1)).optional(),
   toolPolicy: z.record(z.unknown()).optional(),
@@ -187,7 +187,7 @@ const UpdateTechnicalConfigSchema = TechnicalConfigSchema.partial();
 
 const UpdateAgentSchema = z.object({
   name: AgentNameSchema.optional(),
-  prompt: z.string().max(4000).optional(),
+  prompt: z.string().max(8000).optional(),
   style: z.enum(['careful', 'balanced', 'bold']).nullable().optional(),
   skillIds: z.array(z.string().min(1)).optional(),
   toolPolicy: z.record(z.unknown()).optional(),
