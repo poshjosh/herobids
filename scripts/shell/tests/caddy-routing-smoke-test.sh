@@ -22,13 +22,14 @@ BASE_URL="${1:-${BASE_URL:-https://staging.openaidom.com}}"
 # ── Colour helpers ──────────────────────────────────────────────────────────
 
 if [[ -t 1 ]]; then
-  BOLD='\033[1m'; GREEN='\033[0;32m'; RED='\033[0;31m'; CYAN='\033[0;36m'; RESET='\033[0m'
+  BOLD='\033[1m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; CYAN='\033[0;36m'; RESET='\033[0m'
 else
-  BOLD=''; GREEN=''; RED=''; CYAN=''; RESET=''
+  BOLD=''; GREEN=''; YELLOW=''; RED=''; CYAN=''; RESET=''
 fi
 
 log()    { echo -e "${CYAN}[caddy-smoke]${RESET} $*"; }
 ok()     { echo -e "${GREEN}[caddy-smoke]${RESET} $*"; }
+warn()   { echo -e "${YELLOW}[caddy-smoke]${RESET} $*"; }
 err()    { echo -e "${RED}[caddy-smoke]${RESET} $*" >&2; }
 
 # ── State ────────────────────────────────────────────────────────────────────
