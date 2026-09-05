@@ -189,9 +189,9 @@ TEST1_OUTPUT=$(docker run --rm \
   --cap-add NET_ADMIN \
   --cap-add SYS_ADMIN \
   "${AGENT_IMAGE}" \
-  sh -c "sandbox-exec.sh sh -c 'curl -sf --connect-timeout 5 http://${BROWSER_POOL_IP}:3000/json/version 2>&1 || echo BLOCKED'" 2>&1) || true
+  sh -c "sandbox-exec.sh sh -c 'wget -q -T 5 -O - http://${BROWSER_POOL_IP}:3000/json/version 2>&1 || echo BLOCKED'" 2>&1) || true
 
-if echo "${TEST1_OUTPUT}" | grep -qi "BLOCKED\|refused\|reject\|unreachable\|timed out\|reset"; then
+if echo "${TEST1_OUTPUT}" | grep -qi "BLOCKED\|refused\|reject\|unreachable\|timed out\|can't connect\|bad address\|reset"; then
   check_pass "sandbox blocks browser-pool IP (${BROWSER_POOL_IP}) without SANDBOX_ALLOWED_HOSTS"
 else
   check_fail "sandbox did NOT block browser-pool IP without allowlist. Output: $(echo "${TEST1_OUTPUT}" | tail -3)"
@@ -209,7 +209,7 @@ TEST2_OUTPUT=$(docker run --rm \
   --cap-add SYS_ADMIN \
   -e "SANDBOX_ALLOWED_HOSTS=${BROWSER_POOL_IP}" \
   "${AGENT_IMAGE}" \
-  sh -c "sandbox-exec.sh sh -c 'curl -sf --connect-timeout 10 http://${BROWSER_POOL_IP}:3000/json/version 2>&1'" 2>&1) || true
+  sh -c "sandbox-exec.sh sh -c 'wget -q -T 10 -O - http://${BROWSER_POOL_IP}:3000/json/version 2>&1'" 2>&1) || true
 
 if echo "${TEST2_OUTPUT}" | grep -qi "Browser\|webSocketDebuggerUrl\|Chrome"; then
   check_pass "sandbox allows browser-pool IP (${BROWSER_POOL_IP}) when in SANDBOX_ALLOWED_HOSTS"
@@ -229,9 +229,9 @@ TEST3_OUTPUT=$(docker run --rm \
   --cap-add SYS_ADMIN \
   -e "SANDBOX_ALLOWED_HOSTS=${BROWSER_POOL_IP}" \
   "${AGENT_IMAGE}" \
-  sh -c "sandbox-exec.sh sh -c 'curl -sf --connect-timeout 5 http://${DECOY_IP}:80/ 2>&1 || echo BLOCKED'" 2>&1) || true
+  sh -c "sandbox-exec.sh sh -c 'wget -q -T 5 -O - http://${DECOY_IP}:80/ 2>&1 || echo BLOCKED'" 2>&1) || true
 
-if echo "${TEST3_OUTPUT}" | grep -qi "BLOCKED\|refused\|reject\|unreachable\|timed out\|reset"; then
+if echo "${TEST3_OUTPUT}" | grep -qi "BLOCKED\|refused\|reject\|unreachable\|timed out\|can't connect\|bad address\|reset"; then
   check_pass "sandbox still blocks non-allowlisted RFC 1918 IP (${DECOY_IP})"
 else
   check_fail "sandbox did NOT block decoy RFC 1918 IP (${DECOY_IP}). Output: $(echo "${TEST3_OUTPUT}" | tail -3)"
