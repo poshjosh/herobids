@@ -124,7 +124,10 @@ async function startAgent(token: string, agentId: string): Promise<void> {
   fatal(`Agent start failed: ${res.status} ${JSON.stringify(res.body)}`);
 }
 
-async function waitForAgentActive(token: string, agentId: string, maxWaitMs: number = 30_000): Promise<void> {
+// 90s budget: under burst-start (several agents created in quick succession),
+// worker-side launch latency can exceed 30s for later agents. See
+// docs/bug-reports/2026/09/05/001-agent-activation-timeout-cumulative-launch-latency.md
+async function waitForAgentActive(token: string, agentId: string, maxWaitMs: number = 90_000): Promise<void> {
   const deadline = Date.now() + maxWaitMs;
   while (Date.now() < deadline) {
     const res = await apiRequest<{ status?: string }>('GET', `/agents/${agentId}`, { token });

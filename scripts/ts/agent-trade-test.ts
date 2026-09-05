@@ -1144,8 +1144,12 @@ async function main(): Promise<void> {
       fatal(`Failed to publish to agent inbound stream: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // Poll for the bot to appear in the bot list (created by the broker)
-    const botDeadline = Date.now() + 30_000;
+    // Poll for the bot to appear in the bot list (created by the broker).
+    // 90s budget: bot creation requires the agent runtime to be fully up and to
+    // process the manage_bot message. Under burst-start, worker-side launch
+    // latency can push this past 30s. See
+    // docs/bug-reports/2026/09/05/001-agent-activation-timeout-cumulative-launch-latency.md
+    const botDeadline = Date.now() + 90_000;
     let botFound = false;
     while (Date.now() < botDeadline) {
       await sleep(3_000);
@@ -1164,7 +1168,7 @@ async function main(): Promise<void> {
     }
 
     if (!botFound) {
-      fatal('Bot was not created within 30s — broker may have rejected the manage_bot message');
+      fatal('Bot was not created within 90s — broker may have rejected the manage_bot message');
     }
   }
 
