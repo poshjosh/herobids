@@ -60,20 +60,25 @@ const DCA_ENTRY: StrategyParameterEntry = {
     'DCA (Dollar-Cost Averaging) — timer-driven execution with no signal parameters.',
 };
 
-// Register DCA for all decision modes (params are empty regardless of mode)
+// Register DCA for all decision modes (params are empty regardless of mode).
+// DCA's coverage across all modes is independent of the mechanical/agent split:
+// its params are empty in every mode, so it is registered here at module load.
 registerAllModes('dca', DCA_ENTRY);
 
 /**
- * Initialise the registry with actual Zod schemas from schema.ts.
- * Must be called once at startup before any strategy validation occurs.
+ * Initialise the registry with the mechanical param schemas from schema.ts.
+ * Must be called once at startup before any mechanical strategy validation occurs.
  *
- * @param schemas — the MechanicalParamsSchema, HybridParamsSchema, LlmParamsSchema,
- *   and a strict empty object schema for DCA.
+ * The registry is mechanical-first: this initializer only requires the mechanical
+ * schema (for momentum/range/contrarian/swing/scalper) and a strict empty object
+ * schema (for DCA). The agent decision modes (llm/hybrid) are registered separately
+ * via {@link registerAgentDecisionModes} so a mechanical-only consumer never needs
+ * the LLM/hybrid schemas to initialize the registry.
+ *
+ * @param schemas — the MechanicalParamsSchema and a strict empty object schema for DCA.
  */
 export function initStrategyRegistry(schemas: {
   mechanical: z.ZodTypeAny;
-  hybrid: z.ZodTypeAny;
-  llm: z.ZodTypeAny;
   empty: z.ZodTypeAny;
 }): void {
   // Update DCA entry with the real empty schema
@@ -94,7 +99,23 @@ export function initStrategyRegistry(schemas: {
       description: `${type} strategy — mechanical decision mode.`,
     });
   }
+}
 
+/**
+ * Register the agent decision modes (llm/hybrid) into the registry.
+ *
+ * This is the agent-side counterpart to {@link initStrategyRegistry}. It keeps the
+ * registration logic in the domain registry (so the Map stays the single source of
+ * truth) while making the llm/hybrid modes an explicit, separate step rather than a
+ * required init argument. Must be called before any llm/hybrid strategy validation
+ * occurs.
+ *
+ * @param schemas — the LlmParamsSchema and HybridParamsSchema.
+ */
+export function registerAgentDecisionModes(schemas: {
+  llm: z.ZodTypeAny;
+  hybrid: z.ZodTypeAny;
+}): void {
   // Hybrid mode: only momentum for now
   register('momentum', 'hybrid', {
     schema: schemas.hybrid,

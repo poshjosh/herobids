@@ -125,6 +125,7 @@ export {
 
 export {
   initStrategyRegistry,
+  registerAgentDecisionModes,
   getStrategyParameters,
   isStrategySupported,
   validateStrategyParams,

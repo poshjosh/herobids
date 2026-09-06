@@ -4,6 +4,7 @@ import { ok, err, type Result } from '../result.js';
 import {
   getStrategyParameters,
   initStrategyRegistry,
+  registerAgentDecisionModes,
   validateStrategyParams,
 } from './strategy-parameters.js';
 
@@ -2165,11 +2166,25 @@ export const HybridParamsSchema = z.object({
 );
 
 // Ensure strategy param validation is active in production imports.
+// The domain registry is mechanical-first: it only needs the mechanical + empty
+// schemas to initialize.
 initStrategyRegistry({
   mechanical: MechanicalParamsSchema,
-  hybrid: HybridParamsSchema,
-  llm: LlmParamsSchema,
   empty: z.object({}).strict(),
+});
+
+// Register the agent decision modes (llm/hybrid). Option B of the plan: the
+// LlmParamsSchema / HybridParamsSchema definitions remain in this domain module
+// (moving them would break the large @herobids/domain re-export surface and the
+// LlmParams/HybridParams types, and HybridParamsSchema is deeply coupled to the
+// domain indicator schemas). Registering here — at the same module-load point as
+// initStrategyRegistry — guarantees the agent modes are registered before any
+// StrategyIdentitySchema / validateStrategyParams call in EVERY herobids entrypoint
+// (both apps/api and apps/worker import @herobids/domain), including API paths that
+// validate momentum:llm / momentum:hybrid without importing @herobids/strategy.
+registerAgentDecisionModes({
+  llm: LlmParamsSchema,
+  hybrid: HybridParamsSchema,
 });
 
 /**

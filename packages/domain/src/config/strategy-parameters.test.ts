@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { z } from 'zod';
 import {
   initStrategyRegistry,
+  registerAgentDecisionModes,
   getStrategyParameters,
   isStrategySupported,
   validateStrategyParams,
@@ -23,9 +24,11 @@ describe('StrategyParameterRegistry', () => {
   beforeAll(() => {
     initStrategyRegistry({
       mechanical: testMechanicalSchema,
+      empty: z.object({}).strict(),
+    });
+    registerAgentDecisionModes({
       hybrid: testHybridSchema,
       llm: z.object({ provider: z.string() }),
-      empty: z.object({}).strict(),
     });
   });
 
