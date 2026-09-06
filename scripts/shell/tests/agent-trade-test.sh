@@ -280,7 +280,6 @@ if [[ "${LLM_PROVIDER:-}" == "ollama" ]]; then
   ollama_skip() {
     warn "Skipping agent trade test — $1"
     warn "Start Ollama and ensure models (${LLM_LIGHT_MODEL:-qwen3:8b}, ${LLM_HEAVY_MODEL:-qwen3.6:35b-a3b-q4_K_M}) are pulled and warm."
-    warn "Warm the stack via scripts/shell/run/reset-and-run.sh (which pulls + primes models)."
     exit 0
   }
 
