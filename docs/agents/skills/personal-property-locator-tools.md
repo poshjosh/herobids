@@ -50,7 +50,7 @@ The following are required. If the user has not provided them, ask.
 
 - item-type =
 - brand =
-- defining-attributes = (size, colour, model, gears, features)
+- defining-attributes = (size, colour, model, features)
 - last-seen-location =
 - last-seen-date =
 
@@ -115,7 +115,7 @@ Keep the rubric in `ranking-rubric.md` and link it from `AGENTS.md` so it is obv
 - Brand/model match — highest weight, especially for rare or distinctive brands.
 - Location proximity to the last-seen location — high weight; stolen items usually resurface nearby.
 - Listing recency (posted after the last-seen date) — meaningful weight.
-- Each matching physical attribute (size, gears, colour, features) — moderate weight each.
+- Each matching physical attribute (size, colour, features) — moderate weight each.
 - Price plausibility — small weight; flag suspiciously cheap or "quick cash sale" listings.
 
 Flag any candidate above a threshold you choose as "verify with owner".
