@@ -70,7 +70,12 @@ done
 # ─── State tracking ──────────────────────────────────────────────────────────
 
 INFRA_STARTED=false   # true if this script started postgres+redis
-STACK_STARTED=false   # true if this script started the full stack
+STACK_STARTED=false   # true if this script brought the full stack up
+STACK_CREATED=false   # true if the stack containers did NOT exist before this
+                      # script ran (script created them → safe to `down`).
+                      # When false but STACK_STARTED is true, the containers
+                      # pre-existed (stopped) and the script only started them
+                      # → only `stop`, never destroy.
 
 # ─── Cleanup on exit ─────────────────────────────────────────────────────────
 
@@ -78,9 +83,15 @@ cleanup() {
   local exit_code=$?
   echo ""
   if [[ "${STACK_STARTED}" == "true" ]]; then
-    warn "Tearing down full stack (started by this script)…"
-    docker compose -f "${ROOT}/docker-compose.yaml" \
-      down --timeout 20 2>/dev/null || true
+    if [[ "${STACK_CREATED}" == "true" ]]; then
+      warn "Tearing down full stack (created by this script)…"
+      docker compose -f "${ROOT}/docker-compose.yaml" \
+        down --timeout 20 2>/dev/null || true
+    else
+      warn "Stopping full stack (started — not created — by this script; not destroying)…"
+      docker compose -f "${ROOT}/docker-compose.yaml" \
+        stop api worker web 2>/dev/null || true
+    fi
   elif [[ "${INFRA_STARTED}" == "true" ]]; then
     warn "Tearing down postgres + redis (started by this script)…"
     docker compose -f "${ROOT}/docker-compose.yaml" \
@@ -105,6 +116,31 @@ service_healthy() {
   state=$(docker compose -f "${ROOT}/docker-compose.yaml" ps --format json "$service" 2>/dev/null \
     | grep -o '"Health":"[^"]*"' | head -1 | cut -d'"' -f4)
   [[ "$state" == "healthy" ]]
+}
+
+# ─── Helper: check if a compose service has a running container ───────────────
+# Unlike service_healthy, this does not depend on a healthcheck being defined
+# (worker and web have none), so it reliably reports whether a container is up.
+
+service_running() {
+  local service="$1"
+  local state
+  state=$(docker compose -f "${ROOT}/docker-compose.yaml" ps --format json "$service" 2>/dev/null \
+    | grep -o '"State":"[^"]*"' | head -1 | cut -d'"' -f4)
+  [[ "$state" == "running" ]]
+}
+
+# ─── Helper: check if a compose service's container exists (any state) ────────
+# `ps -a` includes stopped/created containers. Used to tell "we created this
+# container" (did not exist → safe to `down`) from "we only started an existing
+# one" (existed but was stopped → only `stop`, never destroy).
+
+service_exists() {
+  local service="$1"
+  local id
+  id=$(docker compose -f "${ROOT}/docker-compose.yaml" ps -a --format json "$service" 2>/dev/null \
+    | grep -o '"ID":"[^"]*"' | head -1 | cut -d'"' -f4)
+  [[ -n "$id" ]]
 }
 
 # ─── Helper: wait for a service to become healthy ────────────────────────────
@@ -403,9 +439,35 @@ fi
 if [[ "${RUN_E2E}" == "true" ]]; then
   header "6 / Full stack for E2E"
 
-  log "Building and starting full stack (api, worker, web)…"
-  docker compose -f "${ROOT}/docker-compose.yaml" up -d --build api worker web
-  STACK_STARTED=true
+  # Inspect the stack state BEFORE we touch it, so cleanup can do the right
+  # thing:
+  #   - already running          → reuse, leave untouched on exit
+  #   - exists but stopped        → we start it → only `stop` on exit
+  #   - does not exist            → we create it → safe to `down` on exit
+  STACK_WAS_RUNNING=true
+  STACK_PREEXISTED=true
+  for svc in api worker web; do
+    if ! service_running "$svc"; then
+      STACK_WAS_RUNNING=false
+    fi
+    if ! service_exists "$svc"; then
+      STACK_PREEXISTED=false
+    fi
+  done
+
+  if [[ "${STACK_WAS_RUNNING}" == "true" ]]; then
+    log "Full stack (api, worker, web) already running — reusing it (will not tear down)."
+  else
+    log "Building and starting full stack (api, worker, web)…"
+    docker compose -f "${ROOT}/docker-compose.yaml" up -d --build api worker web
+    STACK_STARTED=true
+    # If any service container had to be created by us, we own the containers
+    # and may fully `down`. If they all pre-existed (merely stopped), we only
+    # started them → cleanup must only `stop`, not destroy.
+    if [[ "${STACK_PREEXISTED}" == "false" ]]; then
+      STACK_CREATED=true
+    fi
+  fi
 
   # api health is the gate; web + worker follow
   wait_healthy api
