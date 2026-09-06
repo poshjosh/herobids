@@ -23,7 +23,7 @@ const BASE_FORM_STATE: AgentFormState = {
   costPreset: '',
   dailySpendBudgetUsd: '',
   tickIntervalMins: '',
-  dailyLossLimit: '',
+  dailyMaxLossPct: '',
   maxDrawdownPct: '',
   maxSlippageBps: '',
   maxOpenPositions: '',
@@ -64,7 +64,7 @@ function renderBody(overrides: Partial<Parameters<typeof AgentFormBody>[0]> = {}
           validationConstraints={{
             maxOpenPositions: 10,
             maxPositionSizePct: 100,
-            stopLossMaxUnrealizedLossPct: 100,
+            stopLossPct: 100,
           }}
           tickIntervalError={null}
           modelSlot={<div>Model slot</div>}

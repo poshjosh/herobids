@@ -6,6 +6,7 @@ import {
   applyOAuthReturnToForm,
 } from './edit-agent-oauth-draft.js';
 import type { AgentFormState } from './agent-form-state.js';
+import { defaultTechnicalConfigFormState } from './technical-config-helpers.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -36,21 +37,14 @@ function makeFormState(overrides: Partial<AgentFormState> = {}): AgentFormState 
     capabilityMode: 'intelligence',
     hybridMode: undefined,
     technicalPreFilterEnabled: false,
-    technicalConfig: {
-      filters: { venue: '', venueType: '', symbols: [], portfolioMaxPct: '', minLiquidity: '' },
-      indicators: { rsi: { enabled: false, period: 14, healthyMin: 40, healthyMax: 70, overbought: 80, weakBelow: 30 }, macd: { enabled: false, fast: 12, slow: 26, signal: 9, histogramRising: false, bullishCrossover: false, bearishCrossover: false }, volume: { enabled: false, strongRatio: 1.5, weakRatio: 0.5, recentBars: 4, avgBars: 20 }, choch: { enabled: false, swingLookback: 5, minSwingPct: 0.01, confirmBars: 2, rejectOnBearish: false }, supportResistance: { enabled: false, lookback: 50, breakoutThreshold: 0.005 }, confidence: { rsiWeight: 0.15, macdCrossoverWeight: 0.2, macdIncreasingWeight: 0.1, volumeWeight: 0.15, breakoutWeight: 0.15, chochBullishWeight: 0.15, chochBearishPenalty: 0.1, priceActionWeight: 0.1, minConfidence: 0.45, minReasons: 2 } },
-      candles: { interval: '15m', limit: 100 },
-      signalBias: 'trend-following',
-      scanIntervalMs: 60_000,
-      scanBatchSize: 5,
-    },
+    technicalConfig: defaultTechnicalConfigFormState(),
     skillIds: ['trading'],
     connectionIds: ['conn-1'],
     executionMode: 'test',
     capital: '1500',
     telegramChatId: '',
     emailDelivery: 'inherit',
-    costPreset: 'balanced',
+    costPreset: 'standard',
     dailySpendBudgetUsd: '0.5',
     tickIntervalMins: '15',
     dailyMaxLossPct: '5',
@@ -67,6 +61,7 @@ function makeFormState(overrides: Partial<AgentFormState> = {}): AgentFormState 
     subscribedSources: ['watch_threshold'],
     pendingFiles: [],
     authorizationMode: 'direct',
+    permissionLevel: 'standard',
     ...overrides,
   };
 }

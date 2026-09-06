@@ -297,9 +297,11 @@ export function presetParamsToFormState(params: Record<string, unknown>): Techni
       quoteAssetSymbol: 'USDC',
     },
     candles: {
-      interval: (['5m', '15m', '1h', '4h', '1d'] as const).includes(params['candleInterval'] as string)
-        ? (params['candleInterval'] as TechnicalConfigFormState['candles']['interval'])
-        : '15m',
+      interval: ((): TechnicalConfigFormState['candles']['interval'] => {
+        const valid = ['5m', '15m', '1h', '4h', '1d'] as const;
+        const raw = params['candleInterval'];
+        return valid.includes(raw as typeof valid[number]) ? (raw as typeof valid[number]) : '15m';
+      })(),
       limit: String(params['candleLimit'] ?? 100),
     },
     signalBias: (params['signalBias'] as 'trend-following' | 'mean-reverting' | undefined) ?? 'trend-following',

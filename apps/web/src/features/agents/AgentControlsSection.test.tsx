@@ -6,6 +6,7 @@ import { AgentControlsSection, TradingGuardrailsFields, type AgentControlsFormVa
 
 const EMPTY_GUARDRAILS: TradingGuardrailsFormValue = {
   dailyMaxLossPct: '',
+  maxDrawdownPct: '',
   maxSlippageBps: '',
   maxOpenPositions: '',
   maxPositionSizePct: '',

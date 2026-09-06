@@ -50,8 +50,8 @@ interface BillingDetailsProps {
   spendCapsError: string | null;
   setSpendCapsError: (v: string | null) => void;
   spendCapsMutation: UseMutationResult<
-    { success: boolean; status: string },
-    Error,
+    { success: boolean; status: UsageBillingAccount['status'] },
+    unknown,
     { softCapCents?: number | null; hardCapCents?: number | null }
   >;
   usageAccount: UsageBillingAccount | null;

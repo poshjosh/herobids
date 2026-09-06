@@ -5,6 +5,15 @@ import type { BillingGateResult } from './canUseGuidedSetup.js';
 
 const GUIDED_SETUP_THREAD_KEY = 'guided-setup-thread-id-v1';
 
+const BILLING_GATE_REASONS: readonly BillingGateResult['reason'][] = ['ok', 'hard_limited', 'suspended', 'no_available_credit'];
+
+/** Narrows an unknown API param to a known billing gate reason, defaulting to 'no_available_credit'. */
+function toBillingGateReason(value: unknown): BillingGateResult['reason'] {
+  return typeof value === 'string' && (BILLING_GATE_REASONS as readonly string[]).includes(value)
+    ? (value as BillingGateResult['reason'])
+    : 'no_available_credit';
+}
+
 function saveThreadId(threadId: string): void {
   try {
     window.sessionStorage.setItem(GUIDED_SETUP_THREAD_KEY, threadId);
@@ -139,7 +148,7 @@ export function useGuidedSetup({ skipAutoInit = false }: { skipAutoInit?: boolea
           sending: false,
           billingBlocked: {
             blocked: true,
-            reason: (err.params?.reason as string) ?? 'no_available_credit',
+            reason: toBillingGateReason(err.params?.reason),
             message: err.message,
           },
         }));
@@ -176,7 +185,7 @@ export function useGuidedSetup({ skipAutoInit = false }: { skipAutoInit?: boolea
           sending: false,
           billingBlocked: {
             blocked: true,
-            reason: (err.params?.reason as string) ?? 'no_available_credit',
+            reason: toBillingGateReason(err.params?.reason),
             message: err.message,
           },
         }));

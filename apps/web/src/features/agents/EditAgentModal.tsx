@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
+import { getAllowedReasoningLevels, RUNTIME_POLICY_CEILINGS, ReasoningLevelSchema } from '@herobids/domain';
 import { agents as agentsApi, capabilities as capabilitiesApi, connections as connectionsApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, auth as authApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholderKey, type SkillPresetId } from './agent-display.js';
@@ -12,7 +12,7 @@ import { buildUpdateAgentPayload, normalizeEscalationPolicy } from './agent-payl
 import { validateCreateAgentForm, validateEditAgentConnections, type ValidationConstraints } from './form-validation.js';
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval, parseTickIntervalMinutesInput } from './tick-interval.js';
-import { type CapabilityMode, type HybridMode } from './CapabilitySelector.js';
+import { type CapabilityMode } from './CapabilitySelector.js';
 import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
 
 const STYLE_LABEL_KEYS: Record<AgentStyleValue, string> = {
@@ -175,25 +175,27 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const effectiveJudgeReasoning = (resolvedRuntimeOverrides.judgeReasoning as string | null) ?? null;
 
   function setScoutReasoning(value: string | null) {
+    const level = ReasoningLevelSchema.safeParse(value);
     setRuntimePolicyOverrides((prev) => {
-      if (value === null || value === '') {
+      if (!level.success) {
         // Remove from overrides (inherit from settings)
         const next = { ...(prev ?? {}) };
         delete next.scoutReasoning;
         return Object.keys(next).length > 0 ? (next as RuntimePolicyOverrides) : null;
       }
-      return { ...(prev ?? {}), scoutReasoning: value };
+      return { ...(prev ?? {}), scoutReasoning: level.data };
     });
   }
 
   function setJudgeReasoning(value: string | null) {
+    const level = ReasoningLevelSchema.safeParse(value);
     setRuntimePolicyOverrides((prev) => {
-      if (value === null || value === '') {
+      if (!level.success) {
         const next = { ...(prev ?? {}) };
         delete next.judgeReasoning;
         return Object.keys(next).length > 0 ? (next as RuntimePolicyOverrides) : null;
       }
-      return { ...(prev ?? {}), judgeReasoning: value };
+      return { ...(prev ?? {}), judgeReasoning: level.data };
     });
   }
   const tradingCapabilityQuery = useQuery({
@@ -423,6 +425,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       stopLossPct: form.stopLossPct,
       // In edit mode, venue is managed via trading connection — always pass as truthy
       venue: 'connected',
+      venueType: '',
       executionMode: form.executionMode,
       // Capital is optional in edit mode (blank = unlimited)
       requiresTradingSetup: false,
@@ -528,6 +531,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       maxPositionSizePct: form.maxPositionSizePct,
       stopLossPct: form.stopLossPct,
       venue: 'connected',
+      venueType: '',
       executionMode: form.executionMode,
       requiresTradingSetup: false,
     }, validationConstraints);
@@ -638,7 +642,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             goalError={formErrors.goal}
             pendingFiles={form.pendingFiles}
             onPendingFilesChange={(pendingFiles) => setForm((prev) => ({ ...prev, pendingFiles }))}
-            existingDocs={docsQuery.data?.documents}
+            existingDocs={docsQuery.data}
             onDeleteExistingDoc={async (docId) => {
               try {
                 await agentsApi.deleteDocument(agentId, docId);
@@ -1022,7 +1026,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   {(requiresTradingSetup || hasTradingCapability) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '48px' }}>
                       <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
-                      <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.executionMode} onChange={(e) => { executionModeTouchedRef.current = true; setForm((prev) => ({ ...prev, executionMode: e.target.value })); }}>
+                      <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.executionMode} onChange={(e) => { executionModeTouchedRef.current = true; const executionMode = e.target.value as AgentFormState['executionMode']; setForm((prev) => ({ ...prev, executionMode })); }}>
                         <option value="">{intl.formatMessage({ id: 'agents.edit.executionModeUnset' })}</option>
                         <option value="test">{intl.formatMessage({ id: 'agents.create.executionMode.test' })}</option>
                         <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>

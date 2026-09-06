@@ -61,7 +61,6 @@ interface TradingGuardrailsFieldsProps {
 export function AgentControlsSection({
   value,
   onChange,
-  showBotControls,
   tickIntervalError = null,
   tickIntervalNotice = null,
   effectiveTickIntervalMs = null,

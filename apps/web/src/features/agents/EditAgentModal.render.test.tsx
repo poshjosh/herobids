@@ -96,8 +96,7 @@ function renderModal(options: {
             dailyLlmTokenBudget: 45000,
             telegramChatId: null,
             executionMode: 'paper',
-            dailyTokenBudget: 45000,
-            dailyMaxLossPct: options.dailyMaxLossPct ?? '250',
+            dailyLossLimit: options.dailyMaxLossPct ?? '250',
             maxDrawdownPct: options.maxDrawdownPct ?? null,
             maxSlippageBps: options.maxSlippageBps === '' ? null : (options.maxSlippageBps ?? 25),
             maxOpenPositions: options.maxOpenPositions === '' ? null : (options.maxOpenPositions ?? 5),
@@ -108,8 +107,11 @@ function renderModal(options: {
             tickIntervalMs: options.tickIntervalMs ?? null,
             technical: options.technical ?? null,
             strategyPreset: null,
+            strategyPresetName: null,
             capital: options.capital ?? '1500',
             style: null,
+            runtimePolicyOverrides: null,
+            resolvedRuntimePolicy: null,
             openPositionEscalationToJudgePolicy: null,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -207,7 +209,7 @@ describe('EditAgentModal rendering', () => {
     });
 
     expect(html).not.toContain(messages['agents.executionMode.label']);
-    expect(html).not.toContain(messages['agents.edit.executionModeHelp'].replace('{mode}', ''));
+    expect(html).not.toContain((messages['agents.edit.executionModeHelp'] ?? '').replace('{mode}', ''));
   });
 
   it('shows the add-connection empty state for non-trading agents with no existing connections', () => {
@@ -298,8 +300,7 @@ describe('EditAgentModal rendering', () => {
               dailyLlmTokenBudget: 45000,
               telegramChatId: null,
               executionMode: 'paper',
-              dailyTokenBudget: 45000,
-              dailyMaxLossPct: '250',
+              dailyLossLimit: '250',
               maxDrawdownPct: null,
               maxSlippageBps: 25,
               maxOpenPositions: 5,
@@ -310,8 +311,11 @@ describe('EditAgentModal rendering', () => {
               tickIntervalMs: null,
               technical: TECHNICAL_CONFIG,
               strategyPreset: null,
+              strategyPresetName: null,
               capital: '1500',
               style: null,
+              runtimePolicyOverrides: null,
+              resolvedRuntimePolicy: null,
               openPositionEscalationToJudgePolicy: null,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),

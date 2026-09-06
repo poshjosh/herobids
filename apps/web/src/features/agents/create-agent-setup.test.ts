@@ -39,6 +39,7 @@ describe('Create Agent — inline setup auto-select logic', () => {
         label: 'My Account',
         status: 'active',
         credentialId: 'cred-1',
+        resolvedVenueAccountId: null,
         createdAt: '2026-06-10T00:00:00Z',
       },
     };
@@ -169,21 +170,21 @@ describe('Create Agent — review gate and model summary', () => {
   it('treats unchanged saved settings as inherited instead of an explicit override', () => {
     expect(createAgentUsesInheritedModels(
       { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
-      { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+      { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: null, judgeReasoning: null, adaptScoutReasoning: null, adaptJudgeReasoning: null },
     )).toBe(true);
   });
 
   it('omits model override fields from create payload when the selection still matches saved settings', () => {
     expect(resolveCreateAgentModelPayload(
       { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
-      { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+      { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: null, judgeReasoning: null, adaptScoutReasoning: null, adaptJudgeReasoning: null },
     )).toEqual({ inherits: true });
   });
 
   it('sends explicit override fields when the selection differs from saved settings', () => {
     expect(resolveCreateAgentModelPayload(
       { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' },
-      { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+      { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', scoutReasoning: null, judgeReasoning: null, adaptScoutReasoning: null, adaptJudgeReasoning: null },
     )).toEqual({
       inherits: false,
       provider: 'anthropic',

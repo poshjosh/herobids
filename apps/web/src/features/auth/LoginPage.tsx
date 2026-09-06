@@ -264,11 +264,9 @@ export function LoginPage() {
                   opacity: pending || !email ? 0.5 : 1,
                 }}
               >
-                {pending && pageState === 'sendingLoginLink'
-                  ? intl.formatMessage({ id: 'common.loading' })
-                  : newUser
-                    ? intl.formatMessage({ id: 'auth.sendRegistrationLink' })
-                    : intl.formatMessage({ id: isMobile ? 'auth.sendLoginLink.mobile' : 'auth.sendLoginLink' })}
+                {newUser
+                  ? intl.formatMessage({ id: 'auth.sendRegistrationLink' })
+                  : intl.formatMessage({ id: isMobile ? 'auth.sendLoginLink.mobile' : 'auth.sendLoginLink' })}
               </button>
               <button
                 type="submit"

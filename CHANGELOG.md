@@ -13,6 +13,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Web `validation_error` messages now name the offending field (e.g. `prompt: String must contain at most 8000 character(s)`) by plumbing API `details` through `ApiError`, and no longer render a double dot.
+- Cleared ~134 accumulated `apps/web` TypeScript errors (stale test fixtures and type drift) so the web package type-checks cleanly again — no runtime behavior changed.
 
 ## v0.2.0 - 2026-09-05
 

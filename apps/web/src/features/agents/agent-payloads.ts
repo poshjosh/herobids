@@ -205,7 +205,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   capital?: string;
   capabilityMode?: CapabilityMode;
   hybridMode?: HybridMode;
-  technical?: TechnicalConfig;
+  technical?: Record<string, unknown>;
   strategyPreset?: string;
   style?: string;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
@@ -265,7 +265,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.strategyPreset !== undefined ? { strategyPreset: input.strategyPreset } : {}),
     ...(normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) ? { openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) } : {}),
     ...(input.runtimePolicyOverrides ? { runtimePolicyOverrides: input.runtimePolicyOverrides } : {}),
-    ...(includeTechnical && input.technical ? { technical: input.technical } : {}),
+    ...(includeTechnical && input.technical ? { technical: { ...input.technical } } : {}),
     ...(wakePreferences ? { wakePreferences } : {}),
     capabilityMode: input.capabilityMode,
     ...(input.capabilityMode === 'hybrid' ? { hybridMode: input.hybridMode } : {}),
@@ -286,7 +286,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   skillIds: string[];
   connectionIds?: string[];
   telegramChatId: string | null;
-  costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom' | null;
+  costPreset: 'minimal' | 'standard' | 'premium' | 'custom' | null;
   dailySpendBudgetUsd: number | null;
   risk?: Record<string, unknown> | null;
   executionDefaults?: Record<string, unknown> | null;
@@ -297,7 +297,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   heavyModel: string | null;
   capabilityMode?: CapabilityMode;
   hybridMode?: HybridMode | null;
-  technical?: TechnicalConfig | null;
+  technical?: Record<string, unknown> | null;
   strategyPreset?: string | null;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
   style?: string | null;
@@ -369,7 +369,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     lightModel: includeIntelligence && input.modelOverrideEnabled ? input.modelForm.lightModel || null : null,
     heavyModel: includeIntelligence && input.modelOverrideEnabled ? input.modelForm.heavyModel || null : null,
     // Send technical: null to explicitly remove it when switching away from technical mode
-    ...(includeTechnical ? { technical: input.technical } : { technical: null }),
+    ...(includeTechnical ? { technical: input.technical ? { ...input.technical } : null } : { technical: null }),
     ...(input.style ? { style: input.style } : {}),
     ...(input.strategyPreset !== undefined ? { strategyPreset: input.strategyPreset } : {}),
     ...(input.runtimePolicyOverrides ? { runtimePolicyOverrides: input.runtimePolicyOverrides } : {}),

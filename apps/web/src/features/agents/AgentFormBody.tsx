@@ -138,7 +138,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
   const intl = useIntl();
   const [advancedExpandSeq, setAdvancedExpandSeq] = useState(0);
   const [advancedErrorTabIdx, setAdvancedErrorTabIdx] = useState(1);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [, setAdvancedOpen] = useState(false);
 
   const hasBotManagementSkill = props.value.skillIds.includes('bot-management');
 

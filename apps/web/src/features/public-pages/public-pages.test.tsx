@@ -16,7 +16,7 @@ function renderFooter(): string {
 
 describe('public pages docs groups', () => {
   it('exposes docs group landing pages through the registry flattening helper', () => {
-    const docsPages = getSectionPages(PUBLIC_PAGE_REGISTRY.docs);
+    const docsPages = getSectionPages(PUBLIC_PAGE_REGISTRY.docs!);
 
     expect(docsPages.agents?.title).toBe('Agents');
     expect(docsPages.messaging?.title).toBe('Messaging');

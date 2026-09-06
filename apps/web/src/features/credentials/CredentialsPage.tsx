@@ -114,7 +114,7 @@ export function CredentialsPage() {
                 <div>
                   <div style={{ fontWeight: '500', marginBottom: '2px' }}>{credential.label}</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
-                    {intl.formatMessage({ id: 'credentials.providerLabel' }, { provider: findProviderDisplayName(catalogQuery.data?.providers, credential.provider) })}
+                    {intl.formatMessage({ id: 'credentials.providerLabel' }, { provider: findProviderDisplayName(catalogQuery.data?.providers, credential.venue) })}
                   </div>
                   <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'credentials.idLabel' }, { id: credential.id })}</div>
                 </div>

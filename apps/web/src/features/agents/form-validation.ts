@@ -35,7 +35,6 @@ export function validateCreateAgentForm(
   constraints: ValidationConstraints,
 ): ValidationResult {
   const errors: Record<string, string> = {};
-  const showIntelligence = intent.capabilityMode === 'intelligence' || intent.capabilityMode === 'hybrid';
 
   // name: required
   if (!intent.name.trim()) {

@@ -683,7 +683,7 @@ export const venueAccounts = {
 
 export interface Bot {
   id: string;
-  status: 'stopped' | 'running' | 'crashed';
+  status: 'stopped' | 'running' | 'starting' | 'crashed';
   venueAccountId: string;
   creatorType: string;
   creatorId: string;
@@ -711,7 +711,7 @@ export interface PresetFromApi {
   name: string;
   description: string;
   strategy: { type: string; decisionMode: 'mechanical' | 'llm' | 'hybrid'; params: Record<string, unknown> };
-  risk?: { maxPositionSizePct?: number };
+  risk?: { maxPositionSizePct?: number; stopLossPct?: number };
   execution?: { mode: 'paper' | 'shadow' | 'live' };
 }
 

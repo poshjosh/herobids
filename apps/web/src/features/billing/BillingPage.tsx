@@ -202,17 +202,6 @@ export function BillingPage() {
     },
   });
 
-  const portalMutation = useMutation({
-    mutationFn: () => billing.createPortalSession(),
-    onSuccess: (data) => {
-      setPortalError(null);
-      window.location.href = data.url;
-    },
-    onError: (err: unknown) => {
-      setPortalError(localizeApiError(intl, err, 'common.errorTitle'));
-    },
-  });
-
   const cancelMutation = useMutation({
     mutationFn: () => billing.cancelSubscription(),
     onSuccess: () => {

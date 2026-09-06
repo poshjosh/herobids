@@ -276,8 +276,9 @@ describe('technicalConfigToFormState', () => {
 
     const payload = technicalFormStateToPayload(state);
     expect(payload).not.toBeNull();
+    if (payload === null) throw new Error('expected non-null payload');
 
-    const restored = technicalConfigToFormState(payload as Record<string, unknown>);
+    const restored = technicalConfigToFormState({ ...payload });
 
     expect(restored.candles.interval).toBe(state.candles.interval);
     expect(restored.signalBias).toBe(state.signalBias);

@@ -10,7 +10,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IntlProvider } from 'react-intl';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { messages } from '../../app/i18n/locales/en.js';
 import { ConnectionsPage } from './ConnectionsPage.js';
 import { ApiError } from '../../lib/api-client.js';

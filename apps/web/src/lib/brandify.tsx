@@ -24,7 +24,12 @@ export function Brandify({ children }: { children: ReactNode }): ReactNode {
     // Don't descend into code blocks — keep them verbatim.
     if (tag === 'code' || tag === 'pre') return children;
 
-    const branded = Children.map(children.props.children, (child) => (
+    const props: unknown = children.props;
+    const childChildren =
+      typeof props === 'object' && props !== null && 'children' in props
+        ? (props as { children?: ReactNode }).children
+        : undefined;
+    const branded = Children.map(childChildren, (child) => (
       <Brandify>{child}</Brandify>
     ));
     return cloneElement(children, {}, ...(branded ?? []));

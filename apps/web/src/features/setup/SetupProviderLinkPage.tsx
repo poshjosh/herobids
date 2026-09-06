@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { auth } from '../../lib/api-client.js';
+import { auth, type ProviderSetupResult } from '../../lib/api-client.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
-import { ProviderSetupForm, type ProviderSetupResult } from './ProviderSetupForm.js';
+import { ProviderSetupForm } from './ProviderSetupForm.js';
 import { WalletCreatedStep } from './WalletCreatedStep.js';
-import type { LocalizedApiError } from '../../lib/localize-api-error.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { useIntl } from 'react-intl';
 

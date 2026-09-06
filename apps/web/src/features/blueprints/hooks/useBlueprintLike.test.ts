@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ── Mocks (vi.hoisted for ESM safety — runs before imports) ────────────────
 
 const { mockLike, mockUnlike } = vi.hoisted(() => ({
-  mockLike: vi.fn<[string], Promise<{ liked: boolean; likeCount: number }>>(),
-  mockUnlike: vi.fn<[string], Promise<{ liked: boolean; likeCount: number }>>(),
+  mockLike: vi.fn<(id: string) => Promise<{ liked: boolean; likeCount: number }>>(),
+  mockUnlike: vi.fn<(id: string) => Promise<{ liked: boolean; likeCount: number }>>(),
 }));
 
 vi.mock('../../../lib/api-client.js', () => ({

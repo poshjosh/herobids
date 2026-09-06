@@ -20,7 +20,7 @@ interface TechnicalConfigSectionProps {
  * confidence weights. This removes the second, competing frontend-only preset
  * system that previously lived here.
  */
-export function TechnicalConfigSection({ value, onChange, showErrors, onClearFieldError, disabled }: TechnicalConfigSectionProps) {
+export function TechnicalConfigSection({ value, onChange, disabled }: TechnicalConfigSectionProps) {
   const intl = useIntl();
 
   const set = (patch: Partial<TechnicalConfigFormState>) => { if (!disabled) onChange({ ...value, ...patch }); };

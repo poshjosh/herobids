@@ -418,9 +418,17 @@ export function RelativeTime({ timestamp }: { timestamp: string | null }) {
 // Form helpers (also used by SettingsPage and other features)
 // ---------------------------------------------------------------------------
 
-export function FieldLabel({ children }: { children: React.ReactNode }) {
+export function FieldLabel({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
+  const labelStyle = { fontSize: '0.8125rem', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '8px', letterSpacing: '0.02em' } as const;
+  if (htmlFor) {
+    return (
+      <label htmlFor={htmlFor} style={{ display: 'block', ...labelStyle }}>
+        {children}
+      </label>
+    );
+  }
   return (
-    <div style={{ fontSize: '0.8125rem', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '8px', letterSpacing: '0.02em' }}>
+    <div style={labelStyle}>
       {children}
     </div>
   );

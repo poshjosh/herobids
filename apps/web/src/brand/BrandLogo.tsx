@@ -174,7 +174,6 @@ function TypographicMark({ size, variant }: { size: BrandSize; variant: BrandVar
 
 function TypographicWordmark({
   size,
-  variant,
   responsive,
 }: {
   size: BrandSize;

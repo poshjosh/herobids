@@ -243,7 +243,7 @@ describe('AuthCallbackPage component rendering', () => {
       { code: 'test-code', next: null },
     ];
 
-    for (const { next } of cases) {
+    for (let i = 0; i < cases.length; i++) {
       // The component reads from window.location.href — the sanitizer tests
       // above already validate sanitizeNextParam. Here we just confirm the
       // component doesn't crash with the standard renderPage setup.
