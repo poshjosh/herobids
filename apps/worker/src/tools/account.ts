@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
+import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { createLogger } from '../logger.js';
 
@@ -9,14 +9,14 @@ const logger = createLogger('tools:account');
 
 const GetAccountSummaryParamsSchema = z.object({});
 
-const getAccountSummaryTool: AgentTool = {
+const getAccountSummaryTool: AgentTool<TradingToolContext> = {
   name: 'get_account_summary',
   description: 'Get a summary of the agent\'s trading account including usable capital, equity, open positions, P&L, and risk limits. Use this to compute appropriate position sizes (targetSize) before calling submit_decision, or to determine sizing for position sizing configuration.',
   parametersSchema: GetAccountSummaryParamsSchema,
   parameters: convertZodToJsonSchema(GetAccountSummaryParamsSchema),
   category: 'read-database',
   promptGuidance: 'Call get_account_summary before submit_decision to see available capital and open positions. targetSize is in base units — the amount of the asset being bought or sold. If capital is unavailable, omit targetSize to let the engine use a safe default.',
-  async execute(_params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(_params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     if (!ctx.botRepo) {
       return {
         success: false,
@@ -61,13 +61,13 @@ const getAccountSummaryTool: AgentTool = {
       let fixedPositionSize: string | null = null;
       let positionSizeMode: string | null = null;
 
-      if (ctx.agentConfigOps) {
+      if (ctx.executionConfig) {
         try {
-          const config = await ctx.agentConfigOps.getCurrentConfig();
+          const config = await ctx.executionConfig.getExecutionConfig();
           if (config) {
-            executionMode = config.execution?.mode ?? null;
-            fixedPositionSize = config.execution?.fixedPositionSize ?? null;
-            positionSizeMode = config.execution?.positionSizeMode ?? null;
+            executionMode = config.mode ?? null;
+            fixedPositionSize = config.fixedPositionSize ?? null;
+            positionSizeMode = config.positionSizeMode ?? null;
           }
         } catch (err) {
           warnings.push('agent_config_unavailable');
@@ -139,4 +139,4 @@ const getAccountSummaryTool: AgentTool = {
   },
 };
 
-export const accountTools: AgentTool[] = [getAccountSummaryTool];
+export const accountTools: AgentTool<TradingToolContext>[] = [getAccountSummaryTool];

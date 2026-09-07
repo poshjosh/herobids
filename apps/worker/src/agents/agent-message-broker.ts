@@ -1283,6 +1283,17 @@ export class AgentMessageBroker {
       },
       publishToInbound: async () => {},
       agentConfigOps,
+      executionConfig: {
+        async getExecutionConfig() {
+          const config = await agentConfigOps.getCurrentConfig();
+          if (!config) return null;
+          return {
+            mode: config.execution?.mode ?? null,
+            positionSizeMode: config.execution?.positionSizeMode ?? null,
+            fixedPositionSize: config.execution?.fixedPositionSize ?? null,
+          };
+        },
+      },
       db: db as unknown,
       permissionLevel: 'standard',
     };

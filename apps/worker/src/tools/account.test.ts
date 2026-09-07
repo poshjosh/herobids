@@ -68,15 +68,13 @@ describe('get_account_summary', () => {
           stopLossCooldownMs: { effectiveValue: 300000, source: 'default' },
         })),
       } as unknown as ToolContext['riskContractOps'],
-      agentConfigOps: {
-        getCurrentConfig: vi.fn(async () => ({
-          execution: {
-            mode: 'paper',
-            positionSizeMode: 'percent_equity',
-            fixedPositionSize: '100',
-          },
+      executionConfig: {
+        getExecutionConfig: vi.fn(async () => ({
+          mode: 'paper',
+          positionSizeMode: 'percent_equity',
+          fixedPositionSize: '100',
         })),
-      } as unknown as ToolContext['agentConfigOps'],
+      } as unknown as ToolContext['executionConfig'],
       agentRepo: {
         getAgent: vi.fn(async () => ({ capital: '10000' })),
       } as unknown as ToolContext['agentRepo'],
@@ -111,7 +109,7 @@ describe('get_account_summary', () => {
         getOpenPositionsByCreator: vi.fn(async () => []),
       } as unknown as ToolContext['botRepo'],
       riskContractOps: undefined,
-      agentConfigOps: undefined,
+      executionConfig: undefined,
       agentRepo: undefined,
     });
 
@@ -144,11 +142,11 @@ describe('get_account_summary', () => {
           throw new Error('Redis down');
         }),
       } as unknown as ToolContext['riskContractOps'],
-      agentConfigOps: {
-        getCurrentConfig: vi.fn(async () => {
+      executionConfig: {
+        getExecutionConfig: vi.fn(async () => {
           throw new Error('DB error');
         }),
-      } as unknown as ToolContext['agentConfigOps'],
+      } as unknown as ToolContext['executionConfig'],
       agentRepo: {
         getAgent: vi.fn(async () => {
           throw new Error('DB timeout');

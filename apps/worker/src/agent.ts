@@ -1787,6 +1787,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
   })();
 
   // Build tool context from agent runtime state
+  const agentConfigOps = buildAgentConfigOps();
   const toolContext: ToolContext = {
     agentId: AGENT_ID!,
     sessionId: SESSION_ID!,
@@ -1817,7 +1818,20 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     sessionMetrics,
     priceService: priceService ?? undefined,
     riskContractOps: buildRiskContractOps(),
-    agentConfigOps: buildAgentConfigOps(),
+    agentConfigOps,
+    executionConfig: agentConfigOps
+      ? {
+          async getExecutionConfig() {
+            const config = await agentConfigOps.getCurrentConfig();
+            if (!config) return null;
+            return {
+              mode: config.execution?.mode ?? null,
+              positionSizeMode: config.execution?.positionSizeMode ?? null,
+              fixedPositionSize: config.execution?.fixedPositionSize ?? null,
+            };
+          },
+        }
+      : undefined,
     instrumentRepo: instrumentRepo
       ? {
           search: (opts) => instrumentRepo.search(opts),

@@ -225,6 +225,14 @@ export interface TradingToolContext {
   agentRepo?: {
     getAgent(agentId: string): Promise<{ capital: string | null; risk: Record<string, unknown> | null } | null>;
   };
+  /** Trading-owned execution-config lookup for account summaries (mode + position sizing). */
+  executionConfig?: {
+    getExecutionConfig(): Promise<{
+      mode: string | null;
+      positionSizeMode: string | null;
+      fixedPositionSize: string | null;
+    } | null>;
+  };
   /** Operator-configured risk defaults for the running agent (from agentRiskDefaults config). */
   operatorDefaults?: {
     maxDrawdownPct: number;
