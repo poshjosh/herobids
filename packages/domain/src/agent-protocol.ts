@@ -1,9 +1,40 @@
 import { z } from 'zod';
-import { MarketAssessmentIdentitySchema } from './market-assessment.js';
 import {
   AssessStrategyPresetParamsSchema,
   ChangeStrategyPresetParamsSchema,
 } from './tool-schemas.js';
+// Trading-owned protocol/enums relocated to a trading-owned module for trading-layer
+// independence (source-fix request 002). Imported here for internal use (schema
+// composition + message-type map) and re-exported below so the public API surface of
+// agent-protocol.js is unchanged.
+import {
+  WatchPurposeEnum,
+  ContextSnapshotPayloadSchema,
+  AgentWakePayloadSchema,
+} from './trading/watch-protocol.js';
+
+// Re-export the locally-used symbols so `./agent-protocol.js` importers keep working.
+export { WatchPurposeEnum, ContextSnapshotPayloadSchema, AgentWakePayloadSchema };
+
+// Re-export the remaining relocated symbols (not referenced internally here).
+export {
+  WATCH_PURPOSE_VALUES,
+  type WatchPurpose,
+  type ContextSnapshotPayload,
+  WakePrioritySchema,
+  type WakePriority,
+  ReminderWakeContextSchema,
+  type ReminderWakeContext,
+  WatchThresholdWakeContextSchema,
+  type WatchThresholdWakeContext,
+  DiscoveryDeltaWakeContextSchema,
+  type DiscoveryDeltaWakeContext,
+  RegimeChangeWakeContextSchema,
+  type RegimeChangeWakeContext,
+  ScannerWakeContextSchema,
+  type ScannerWakeContext,
+  type AgentWakePayload,
+} from './trading/watch-protocol.js';
 
 /**
  * Agent protocol message schemas — canonical v1 Zod definitions.
@@ -176,34 +207,6 @@ export type ManageAgentSkillsPayload = z.infer<typeof ManageAgentSkillsPayloadSc
 
 // --- Trading Instance → Agent Messages ---
 
-export const ContextSnapshotPayloadSchema = z.object({
-  snapshotId: z.string().min(1),
-  symbol: z.string().min(1),
-  price: z.string(),
-  timestamp: z.string().datetime(),
-  marketData: z.record(z.unknown()).optional(),
-  position: z.object({
-    side: z.string(),
-    size: z.string(),
-    entryPrice: z.string(),
-    realizedPnl: z.string(),
-  }).nullable(),
-  /** Per-instrument unrealized PnL in USD. Computed as (markPrice - entryPrice) * size * direction.
-   * Used by the runtime tick gate and composition layer for portfolio-level aggregation.
-   * Omitted when mark price is unavailable (degraded snapshots). */
-  pnl: z.union([z.string(), z.number()]).optional(),
-  referenceMark: z.object({
-    price: z.string(),
-    source: z.string(),
-  }),
-  strategyParams: z.record(z.unknown()),
-  executionMode: z.enum(['paper', 'shadow', 'live']),
-  guardrails: z.record(z.unknown()),
-  artifacts: z.array(z.record(z.unknown())).optional(),
-});
-
-export type ContextSnapshotPayload = z.infer<typeof ContextSnapshotPayloadSchema>;
-
 export const DecisionAcceptedPayloadSchema = z.object({
   decisionId: z.string().min(1),
   acceptedAt: z.string().datetime(),
@@ -309,10 +312,6 @@ export type ToolResultPayload = z.infer<typeof ToolResultPayloadSchema>;
 
 // --- Market Monitor Payload Schemas ---
 
-export const WATCH_PURPOSE_VALUES = ['entry', 'exit', 'stop_loss', 'take_profit', 'monitor', 'alert'] as const;
-export const WatchPurposeEnum = z.enum(WATCH_PURPOSE_VALUES);
-export type WatchPurpose = z.infer<typeof WatchPurposeEnum>;
-
 export const MarketWatchTriggeredPayloadSchema = z.object({
   eventId: z.string().min(1),
   monitorType: z.literal('watch_threshold'),
@@ -364,131 +363,8 @@ export const MarketRegimeChangedPayloadSchema = z.object({
 
 export type MarketRegimeChangedPayload = z.infer<typeof MarketRegimeChangedPayloadSchema>;
 
-export const WakePrioritySchema = z.enum(['low', 'normal', 'high']);
-export type WakePriority = z.infer<typeof WakePrioritySchema>;
-
 export const AgentWakeSourceSchema = z.enum(['reminder', 'watch_threshold', 'discovery_delta', 'regime_change', 'scanner']);
 export type AgentWakeSource = z.infer<typeof AgentWakeSourceSchema>;
-
-// --- Source-specific wake context schemas ---
-
-export const ReminderWakeContextSchema = z.object({
-  reminderId: z.string().min(1),
-  message: z.string().min(1),
-  scheduledBy: z.enum(['scout', 'judge']),
-});
-export type ReminderWakeContext = z.infer<typeof ReminderWakeContextSchema>;
-
-export const WatchThresholdWakeContextSchema = z.object({
-  watchId: z.string().min(1),
-  symbol: z.string().min(1),
-  chain: z.string().min(1),
-  condition: z.enum(['above', 'below']),
-  thresholdPrice: z.number(),
-  currentPrice: z.number(),
-  stale: z.boolean(),
-  triggeredAt: z.string().datetime(),
-  note: z.string().optional(),
-  purpose: WatchPurposeEnum.optional(),
-  instrumentVenue: z.string().optional(),
-  instrumentId: z.string().optional(),
-  positionKey: z.string().optional(),
-  /** Schema version from the triggering watch entry. Undefined for legacy watches. */
-  schemaVersion: z.number().int().positive().optional(),
-});
-export type WatchThresholdWakeContext = z.infer<typeof WatchThresholdWakeContextSchema>;
-
-export const DiscoveryDeltaWakeContextSchema = z.object({
-  symbol: z.string().min(1),
-  network: z.string().min(1),
-  address: z.string().min(1),
-  reason: z.string().min(1),
-  rank: z.number().int().optional(),
-  liquidityUsd: z.number().optional(),
-  volume24hUsd: z.number().optional(),
-  detectedAt: z.string().datetime(),
-});
-export type DiscoveryDeltaWakeContext = z.infer<typeof DiscoveryDeltaWakeContextSchema>;
-
-export const RegimeChangeWakeContextSchema = z.object({
-  benchmarkSymbol: z.string().min(1),
-  previousState: z.string().min(1),
-  currentState: z.string().min(1),
-  changedAt: z.string().datetime(),
-  details: z.unknown().optional(),
-});
-export type RegimeChangeWakeContext = z.infer<typeof RegimeChangeWakeContextSchema>;
-
-export const ScannerWakeContextSchema = z.discriminatedUnion('scannerKind', [
-  z.object({
-    scannerKind: z.literal('signal_scoring'),
-    signalCount: z.number().int().min(0),
-    topSymbol: z.string().optional(),
-    topConfidence: z.number().min(0).max(1).optional(),
-    regimePass: z.boolean().nullable().optional(),
-  }),
-  z.object({
-    scannerKind: z.literal('preset_review'),
-    /** Reference to the market assessment artifact that triggered this review. */
-    assessmentRef: z.string().min(1),
-    /** The preset key recommended by the platform assessor. */
-    recommendedPreset: z.string().min(1),
-    /** The agent's current preset key at the time of the assessment. */
-    currentPreset: z.string().min(1),
-    /** The relative score uplift of the recommended preset over the current one. Must be non-negative. */
-    relativeUplift: z.number().min(0),
-    /** The platform assessor's confidence in the recommendation (0-1). */
-    confidence: z.number().min(0).max(1),
-  }),
-  z.object({
-    scannerKind: z.literal('assessment_review'),
-    /** Bounded advice list — at most one entry per canonical identity. */
-    advice: z.array(z.object({
-      /** Canonical per-symbol identity for the advised candidate. */
-      identity: MarketAssessmentIdentitySchema,
-      /** Position in the deterministic scanner ranking (1-based). */
-      candidateRank: z.number().int().min(1),
-      /** The agent's active preset key at check time. */
-      activePreset: z.string().min(1),
-      /** Mechanically-derived behavior version at check time. */
-      presetBehaviorVersion: z.string().min(1),
-      /** Deterministic reason(s) the candidate was advised — cheap facts only, no LLM. */
-      reasons: z.array(z.string().min(1)).min(1),
-      /** The market assessment artifact ID, if a synchronous assessment was performed. */
-      assessmentArtifactId: z.string().min(1).optional(),
-      /** The preset key recommended by the platform assessor, if available. */
-      recommendedPreset: z.string().min(1).nullable().optional(),
-      /** The platform assessor's confidence (0-1), if available. */
-      confidence: z.number().min(0).max(1).optional(),
-      /** When the assessment artifact expires, if available. */
-      expiresAt: z.string().datetime().optional(),
-    })).min(1),
-    /** When the deterministic pre-check ran. */
-    checkedAt: z.string().datetime(),
-    /** When the next review is eligible. */
-    nextEligibleAt: z.string().datetime(),
-  }),
-]);
-export type ScannerWakeContext = z.infer<typeof ScannerWakeContextSchema>;
-
-const AgentWakePayloadBaseSchema = z.object({
-  wakeId: z.string().min(1),
-  reason: z.string().min(1),
-  eventIds: z.array(z.string().min(1)),
-  priority: WakePrioritySchema,
-  requestedAt: z.string().datetime(),
-  notBefore: z.string().datetime().optional(),
-});
-
-export const AgentWakePayloadSchema = z.discriminatedUnion('source', [
-  AgentWakePayloadBaseSchema.extend({ source: z.literal('reminder'), context: ReminderWakeContextSchema }),
-  AgentWakePayloadBaseSchema.extend({ source: z.literal('watch_threshold'), context: WatchThresholdWakeContextSchema }),
-  AgentWakePayloadBaseSchema.extend({ source: z.literal('discovery_delta'), context: DiscoveryDeltaWakeContextSchema }),
-  AgentWakePayloadBaseSchema.extend({ source: z.literal('regime_change'), context: RegimeChangeWakeContextSchema }),
-  AgentWakePayloadBaseSchema.extend({ source: z.literal('scanner'), context: ScannerWakeContextSchema }),
-]);
-
-export type AgentWakePayload = z.infer<typeof AgentWakePayloadSchema>;
 
 // --- Hybrid Agent Decision Schema (single-shot LLM response) ---
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AgentWakeSourceSchema } from '../agent-protocol.js';
+import { TradingSessionNameSchema, type TradingSessionName } from '../trading/watch-protocol.js';
 import { ok, err, type Result } from '../result.js';
 import {
   getStrategyParameters,
@@ -188,15 +189,14 @@ export const LlmThinkingConfigSchema = z.object({
 
 // ── Per-agent runtime policy ────────────────────────────────────────────────
 
-export const TRADING_SESSION_NAMES = [
-  'asia',
-  'london',
-  'ny-morning',
-  'ny-mid',
-  'ny-afternoon',
-] as const;
-export type TradingSessionName = typeof TRADING_SESSION_NAMES[number];
-export const TradingSessionNameSchema = z.enum(TRADING_SESSION_NAMES);
+// Trading session windows relocated to a trading-owned module (source-fix request 002).
+// `TradingSessionNameSchema` is used internally below; all three are re-exported so
+// `./schema.js` importers (config barrel) keep resolving them.
+export {
+  TRADING_SESSION_NAMES,
+  type TradingSessionName,
+} from '../trading/watch-protocol.js';
+export { TradingSessionNameSchema };
 
 /** Operator ceilings — the absolute max any agent can be configured with.
  *  For ordered string enums like reasoning levels, the ceiling caps the position
