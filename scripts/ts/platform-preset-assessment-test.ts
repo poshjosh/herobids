@@ -119,7 +119,16 @@ async function startAgent(token: string, agentId: string): Promise<void> {
 async function stopAndDeleteAgent(token: string, agentId: string): Promise<void> {
   try { await apiRequest('POST', `/agents/${agentId}/stop`, { token }); } catch { /* ok */ }
   await sleep(5000);
-  try { await apiRequest('DELETE', `/agents/${agentId}`, { token }); } catch { /* ok */ }
+  const del = await apiRequest('DELETE', `/agents/${agentId}`, { token });
+  if (del.status === 204 || del.status === 404) { await sleep(1000); return; }
+  // Agent could not be deleted via API (e.g. status='crashed' → 409 agent_not_stopped).
+  // Force the row to a deletable state and retry, so a crashed agent from one
+  // scenario cannot leak and exhaust the plan's agent limit in the next scenario.
+  warn(`DELETE /agents/${agentId} → ${del.status}; forcing DB stop + retry`);
+  try {
+    dbExec(`UPDATE agents SET status = 'stopped' WHERE id = '${agentId}'`);
+    await apiRequest('DELETE', `/agents/${agentId}`, { token });
+  } catch { /* best-effort cleanup */ }
   await sleep(1000);
 }
 
