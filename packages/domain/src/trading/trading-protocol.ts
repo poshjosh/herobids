@@ -1,5 +1,6 @@
 // Trading-owned protocol/enums relocated from agent-protocol.ts for trading-layer
-// independence (behaviour-preserving; source-fix request 002).
+// independence (behaviour-preserving; source-fix request
+// docs/features/2026/09/07/001-relocate-trading-types-out-of-agent-protocol.md).
 
 import { z } from 'zod';
 import { MarketAssessmentIdentitySchema } from '../market-assessment.js';

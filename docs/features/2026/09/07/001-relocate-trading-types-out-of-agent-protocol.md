@@ -120,6 +120,6 @@ behaviour — that would need a separate decision.
 
 ### Item: Relocate trading-owned types (LOW severity, non-blocking)
 
-1. **Module naming** — `watch-protocol.ts` under-describes its contents. The module holds watch taxonomy, context snapshots, the full agent-wake payload family, wake priority, AND trading-session windows. A name like `trading-protocol.ts` or splitting session-windows into a separate `trading/session-windows.ts` would read more truthfully. (The plan left the filename to the implementer's judgment.)
-2. **Source-fix reference mismatch** — Header comments cite "source-fix request 002" but the plan document is titled `001-relocate-trading-types...`. Harmless, but worth aligning to avoid future confusion.
-3. **Group B placement** — The trading-session block sits at the very bottom of `watch-protocol.ts`, slightly detached from the rest. A short section divider is already present; no action needed.
+1. ~~**Module naming** — `watch-protocol.ts` under-describes its contents.~~ **RESOLVED** — module renamed to `trading/trading-protocol.ts`.
+2. ~~**Source-fix reference mismatch** — Header comments cite "source-fix request 002" but the plan document is titled `001-...`.~~ **RESOLVED** — header now references the plan document path directly.
+3. **Group B placement** — The trading-session block sits at the very bottom of `trading-protocol.ts`, slightly detached from the rest. A short section divider is already present; no action needed.

@@ -11,7 +11,7 @@ import {
   WatchPurposeEnum,
   ContextSnapshotPayloadSchema,
   AgentWakePayloadSchema,
-} from './trading/watch-protocol.js';
+} from './trading/trading-protocol.js';
 
 // Re-export the locally-used symbols so `./agent-protocol.js` importers keep working.
 export { WatchPurposeEnum, ContextSnapshotPayloadSchema, AgentWakePayloadSchema };
@@ -34,7 +34,7 @@ export {
   ScannerWakeContextSchema,
   type ScannerWakeContext,
   type AgentWakePayload,
-} from './trading/watch-protocol.js';
+} from './trading/trading-protocol.js';
 
 /**
  * Agent protocol message schemas — canonical v1 Zod definitions.

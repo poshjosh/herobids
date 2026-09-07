@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { AgentWakeSourceSchema } from '../agent-protocol.js';
-import { TradingSessionNameSchema, type TradingSessionName } from '../trading/watch-protocol.js';
+import { TradingSessionNameSchema, type TradingSessionName } from '../trading/trading-protocol.js';
 import { ok, err, type Result } from '../result.js';
 import {
   getStrategyParameters,
@@ -195,7 +195,7 @@ export const LlmThinkingConfigSchema = z.object({
 export {
   TRADING_SESSION_NAMES,
   type TradingSessionName,
-} from '../trading/watch-protocol.js';
+} from '../trading/trading-protocol.js';
 export { TradingSessionNameSchema };
 
 /** Operator ceilings — the absolute max any agent can be configured with.
