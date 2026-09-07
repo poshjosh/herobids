@@ -192,9 +192,11 @@ changing behaviour.
 Recorded by the implementation coordinator. None are CRITICAL/HIGH; all acceptance criteria are met and `pnpm build` + `pnpm lint` + `pnpm test` are green with zero test edits.
 
 ### [Acceptance checklist — trading tool ctx narrowing]
-- **LOW / out-of-scope for this request:** The `TradingToolContext` narrowing was applied to 7 trading tool files (`analytics.ts`, `find-instrument.ts`, `market-data.ts`, `price.ts`, `resolvers.ts`, `risk-limits.ts`, `watch.ts`). Some other trading-domain tool files still annotate `ctx: ToolContext` / `: AgentTool`:
-  - `account.ts`, `memory.ts` — could optionally be narrowed later for fuller trading-layer purity. Harmless today (the full `ToolContext` is a superset of `TradingToolContext`).
+- **RESOLVED (follow-up):** `TradingToolContext` narrowing now covers 8 trading tool files — the original 7 (`analytics.ts`, `find-instrument.ts`, `market-data.ts`, `price.ts`, `resolvers.ts`, `risk-limits.ts`, `watch.ts`) plus `schema.ts` (`get_schema`), which uses no ctx fields and narrows trivially.
+- Remaining trading-domain tool files that intentionally stay on the full `ToolContext`:
+  - **`account.ts` (`get_account_summary`) — CANNOT be narrowed behaviour-preservingly.** It reads `ctx.agentConfigOps` (a *platform* field, defined only on `ToolContext`, whose closure references `UnifiedAgentConfig` from `config/schema.js`) to surface `executionMode`/`positionSizeMode`/`fixedPositionSize` in the account summary. Narrowing to `TradingToolContext` would either drop that config-derived data (a behaviour change) or fail to compile. Per §4/§7 this is reported rather than forced. Downstream note: to copy `account.ts` clean, the `agentConfigOps` dependency must first be removed or the config-derived fields sourced from a trading-owned port — a separate follow-up, not part of request #3's behaviour-preserving scope.
   - `tasks.ts` — legitimately reads `ctx.phase` (a platform field), so it correctly stays on the full `ToolContext`.
+  - `memory.ts` — annotates the full `ToolContext`; uses only trading fields today and could be narrowed in a later pass. Harmless (the full `ToolContext` is a superset of `TradingToolContext`).
   - `bots.ts`, `trading.ts` — explicitly deferred by this request (§8) because they use `AGENT_MESSAGE_TYPES` (a separate mixed messaging enum handled downstream in a later step).
 
 ### [Acceptance checklist — TradingToolContext closure]

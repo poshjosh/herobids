@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
+import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { getToolSchema, listToolSchemaNames } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 
@@ -9,14 +9,14 @@ const GetSchemaParamsSchema = z.object({
   name: z.string().min(1).describe('Schema name to fetch (dot-path, e.g. "create_bot.config.strategy"). Use "all" to list all available schema names.'),
 });
 
-const getSchemaTool: AgentTool = {
+const getSchemaTool: AgentTool<TradingToolContext> = {
   name: 'get_schema',
   description: 'Fetch the JSON Schema for a named config parameter or tool sub-schema. Use this before constructing payloads for create_bot, publish_artifact, execute_code, or submit_decision. Call with name="all" to list all available schemas.',
   parametersSchema: GetSchemaParamsSchema,
   parameters: convertZodToJsonSchema(GetSchemaParamsSchema),
   category: 'read-config',
   promptGuidance: 'get_schema("all") lists available schema names. Fetch a specific schema by name before constructing payloads with optional or ambiguous fields.',
-  async execute(params: unknown, _ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, _ctx: TradingToolContext): Promise<ToolResult> {
     const { name } = params as z.infer<typeof GetSchemaParamsSchema>;
 
     if (name === 'all') {
@@ -61,4 +61,4 @@ const getSchemaTool: AgentTool = {
   },
 };
 
-export const schemaTools: AgentTool[] = [getSchemaTool];
+export const schemaTools: AgentTool<TradingToolContext>[] = [getSchemaTool];
