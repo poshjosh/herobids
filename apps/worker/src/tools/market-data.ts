@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { createLogger } from '../logger.js';
-import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
+import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import {
   evaluateRegime,
   applyTokenSearchPolicy,
@@ -21,7 +21,7 @@ const logger = createLogger('tools:market-data');
 
 async function enrichDiscoveryTokenPrices(
   tokens: Array<Record<string, unknown>>,
-  priceService: ToolContext['priceService'],
+  priceService: TradingToolContext['priceService'],
 ): Promise<Array<Record<string, unknown>>> {
   if (!priceService || tokens.length === 0) {
     return tokens;
@@ -40,7 +40,7 @@ async function enrichDiscoveryTokenPrices(
   }
 
   const uniqueLookupKeys = new Set<string>();
-  const priceResults = new Map<string, Awaited<ReturnType<NonNullable<ToolContext['priceService']>['getPrice']>>>();
+  const priceResults = new Map<string, Awaited<ReturnType<NonNullable<TradingToolContext['priceService']>['getPrice']>>>();
 
   for (const token of tokens) {
     const symbol = typeof token['symbol'] === 'string' ? token['symbol'] : null;
@@ -127,13 +127,13 @@ const SearchTokensParamsSchema = z.object({
   limit: z.coerce.number().int().positive().max(50).optional().describe('Maximum number of results to return (1-50)'),
 });
 
-const searchTokensTool: AgentTool = {
+const searchTokensTool: AgentTool<TradingToolContext> = {
   name: 'search_tokens',
   description: 'Search for tokens by name or symbol on DEX aggregators. Returns token details including liquidity, price, safety metadata, and network. Age filtering (minTokenAgeHours) only blocks tokens with known creation time below the threshold; tokens with unavailable age data pass through with safety metadata noting the gap.',
   parametersSchema: SearchTokensParamsSchema,
   parameters: convertZodToJsonSchema(SearchTokensParamsSchema),
   category: 'read-market-data',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { query, network, minLiquidityUsd, minVolume24hUsd, minTokenAgeHours, includeBlocked, limit } = params as z.infer<typeof SearchTokensParamsSchema>;
 
     if (!ctx.marketDataRegistry) {
@@ -198,13 +198,13 @@ const DiscoverTokensParamsSchema = z.object({
   minLiquidityUsd: z.coerce.number().positive().optional().describe('Minimum liquidity in USD'),
 });
 
-const discoverTokensTool: AgentTool = {
+const discoverTokensTool: AgentTool<TradingToolContext> = {
   name: 'discover_tokens',
   description: 'Discover trending or popular tokens from aggregated market data sources. Returns curated token lists with liquidity and momentum metrics.',
   parametersSchema: DiscoverTokensParamsSchema,
   parameters: convertZodToJsonSchema(DiscoverTokensParamsSchema),
   category: 'read-market-data',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     if (!ctx.marketDataRegistry) {
       return {
         success: false,
@@ -257,13 +257,13 @@ const CheckRegimeParamsSchema = z.object({
   disableWhenChoppy: z.boolean().optional().describe('Disable trading signal when ADX indicates chop'),
 });
 
-const checkRegimeTool: AgentTool = {
+const checkRegimeTool: AgentTool<TradingToolContext> = {
   name: 'check_regime',
   description: 'Evaluate market regime for a benchmark symbol using EMA alignment, ADX, VWAP, and structure filters. Useful for context-aware strategy selection.',
   parametersSchema: CheckRegimeParamsSchema,
   parameters: convertZodToJsonSchema(CheckRegimeParamsSchema),
   category: 'read-market-data',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     if (!ctx.marketDataRegistry) {
       return {
         success: false,
@@ -317,13 +317,13 @@ const GetFundingRatesParamsSchema = z.object({
   venue: z.string().optional().describe('Venue to query (e.g. "hyperliquid"). Defaults to primary venue.'),
 });
 
-const getFundingRatesTool: AgentTool = {
+const getFundingRatesTool: AgentTool<TradingToolContext> = {
   name: 'get_funding_rates',
   description: 'Get current funding rates for perpetual contracts. Useful for identifying funding arbitrage opportunities or market sentiment.',
   parametersSchema: GetFundingRatesParamsSchema,
   parameters: convertZodToJsonSchema(GetFundingRatesParamsSchema),
   category: 'read-market-data',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     if (!ctx.marketDataRegistry) {
       return {
         success: false,
@@ -354,13 +354,13 @@ const GetMarketOverviewParamsSchema = z.object({
   symbols: z.array(z.string().min(1)).optional().describe('Specific symbols to include in overview. Omit for broad market.'),
 });
 
-const getMarketOverviewTool: AgentTool = {
+const getMarketOverviewTool: AgentTool<TradingToolContext> = {
   name: 'get_market_overview',
   description: 'Get aggregated market overview including top movers, volume leaders, and market breadth metrics. Useful for broad market context.',
   parametersSchema: GetMarketOverviewParamsSchema,
   parameters: convertZodToJsonSchema(GetMarketOverviewParamsSchema),
   category: 'read-market-data',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     if (!ctx.marketDataRegistry) {
       return {
         success: false,
@@ -384,7 +384,7 @@ const getMarketOverviewTool: AgentTool = {
   },
 };
 
-export const marketDataTools: AgentTool[] = [
+export const marketDataTools: AgentTool<TradingToolContext>[] = [
   searchTokensTool,
   discoverTokensTool,
   checkRegimeTool,

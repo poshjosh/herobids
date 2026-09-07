@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
+import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 
 // Supported chain identifiers for the price tool.
@@ -90,7 +90,7 @@ const GetPriceParamsSchema = z.object({
   ),
 });
 
-const getPriceTool: AgentTool = {
+const getPriceTool: AgentTool<TradingToolContext> = {
   name: 'get_price',
   description:
     'Look up the current price of a token. For Hyperliquid perps, returns the venue mark price. For DEX tokens, returns the best available oracle price from aggregators. ' +
@@ -99,7 +99,7 @@ const getPriceTool: AgentTool = {
   parametersSchema: GetPriceParamsSchema,
   parameters: convertZodToJsonSchema(GetPriceParamsSchema),
   category: 'read-market-data',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { symbol, chain } = params as z.infer<typeof GetPriceParamsSchema>;
     const trimmedSymbol = symbol.trim();
 
@@ -156,4 +156,4 @@ const getPriceTool: AgentTool = {
   },
 };
 
-export const priceTools: AgentTool[] = [getPriceTool];
+export const priceTools: AgentTool<TradingToolContext>[] = [getPriceTool];

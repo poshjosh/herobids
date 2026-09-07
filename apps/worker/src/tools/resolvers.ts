@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
+import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 
 // --- resolve_bot ---
@@ -8,14 +8,14 @@ const ResolveBotParamsSchema = z.object({
   name: z.string().min(1).describe('Bot name or symbol to resolve (e.g. "SOL momentum", "SOL/USDC"). Performs a case-insensitive substring match against bot config symbols and IDs.'),
 });
 
-const resolveBotTool: AgentTool = {
+const resolveBotTool: AgentTool<TradingToolContext> = {
   name: 'resolve_bot',
   description: 'Resolve a bot name or symbol to its bot ID. Use this before calling stop_bot, start_bot, get_bot_status, or adjust_bot_config when you only know the bot\'s trading symbol or label, not its UUID.',
   parametersSchema: ResolveBotParamsSchema,
   parameters: convertZodToJsonSchema(ResolveBotParamsSchema),
   category: 'read-database',
   promptGuidance: 'resolve_bot looks up a bot ID by name or symbol — stop_bot, start_bot, and adjust_bot_config require a bot ID. Matches case-insensitively against bot config symbols.',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { name } = params as z.infer<typeof ResolveBotParamsSchema>;
 
     if (!ctx.botRepo) {
@@ -97,14 +97,14 @@ const ResolveWatchParamsSchema = z.object({
   symbol: z.string().optional().describe('Search watches by symbol (case-insensitive substring match)'),
 }).refine((d) => d.note || d.symbol, { message: 'At least one of note or symbol is required' });
 
-const resolveWatchTool: AgentTool = {
+const resolveWatchTool: AgentTool<TradingToolContext> = {
   name: 'resolve_watch',
   description: 'Resolve a price watch to its watch ID by searching note text or symbol. Use this before calling remove_watch when you don\'t have the exact watch UUID.',
   parametersSchema: ResolveWatchParamsSchema,
   parameters: convertZodToJsonSchema(ResolveWatchParamsSchema),
   category: 'read-memory',
   promptGuidance: 'resolve_watch looks up a watch ID by note keyword or symbol — remove_watch requires a watch ID.',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { note, symbol } = params as z.infer<typeof ResolveWatchParamsSchema>;
 
     try {
@@ -179,14 +179,14 @@ const ResolveTaskParamsSchema = z.object({
   title: z.string().min(1).describe('Search tasks by title (case-insensitive substring match)'),
 });
 
-const resolveTaskTool: AgentTool = {
+const resolveTaskTool: AgentTool<TradingToolContext> = {
   name: 'resolve_task',
   description: 'Resolve a task title to its task ID. Use this before calling complete_task when you don\'t have the exact task UUID.',
   parametersSchema: ResolveTaskParamsSchema,
   parameters: convertZodToJsonSchema(ResolveTaskParamsSchema),
   category: 'read-memory',
   promptGuidance: 'resolve_task looks up a task ID by title — complete_task requires a task ID. Matches case-insensitively.',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { title } = params as z.infer<typeof ResolveTaskParamsSchema>;
 
     try {
@@ -247,4 +247,4 @@ const resolveTaskTool: AgentTool = {
   },
 };
 
-export const resolverTools: AgentTool[] = [resolveBotTool, resolveWatchTool, resolveTaskTool];
+export const resolverTools: AgentTool<TradingToolContext>[] = [resolveBotTool, resolveWatchTool, resolveTaskTool];

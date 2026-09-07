@@ -1,18 +1,18 @@
 import { z } from 'zod';
-import type { AgentTool, ToolResult, ToolContext, ResolvedAgentRiskContract, ResolvedAgentRiskProfile, AgentRiskProfileField } from '@herobids/domain';
+import type { AgentTool, ToolResult, TradingToolContext, ResolvedAgentRiskContract, ResolvedAgentRiskProfile, AgentRiskProfileField } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 
 // --- get_risk_limits ---
 
 const GetRiskLimitsParamsSchema = z.object({});
 
-const getRiskLimitsTool: AgentTool = {
+const getRiskLimitsTool: AgentTool<TradingToolContext> = {
   name: 'get_risk_limits',
   description: 'Get the effective risk limits for this agent, including which limits are mutable (adjustable) and which are locked by the creator. Also shows current runtime state against those limits (open position count, daily P&L vs loss limit, drawdown). Shows effective values, sources, operator ceilings, and mutability for each risk field.',
   parametersSchema: GetRiskLimitsParamsSchema,
   parameters: convertZodToJsonSchema(GetRiskLimitsParamsSchema),
   category: 'read-database',
-  async execute(_params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(_params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     if (!ctx.riskContractOps) {
       return { success: false, error: 'risk contract not available in this context' };
     }
@@ -69,13 +69,13 @@ const AdjustRiskLimitsParamsSchema = z.object({
   maxDrawdownPct: z.number().min(0).max(100).optional().nullable().describe('Max peak-to-current equity drawdown % (0-100). Set null to reset to operator default.'),
 });
 
-const adjustRiskLimitsTool: AgentTool = {
+const adjustRiskLimitsTool: AgentTool<TradingToolContext> = {
   name: 'adjust_risk_limits',
   description: 'Adjust mutable risk limits for this agent. Only limits derived from operator defaults (not creator-configured) can be changed. Values cannot exceed operator ceilings. Set a field to null to reset it to the operator default. maxDrawdownPct controls peak-to-current equity drawdown (separate from dailyLossLimit which controls rolling 24h realized loss).',
   parametersSchema: AdjustRiskLimitsParamsSchema,
   parameters: convertZodToJsonSchema(AdjustRiskLimitsParamsSchema),
   category: 'write-database',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     if (!ctx.riskContractOps) {
       return { success: false, error: 'risk contract not available in this context' };
     }
@@ -124,7 +124,7 @@ const adjustRiskLimitsTool: AgentTool = {
  * - dailyMaxLossPct === 0 means "no daily loss limit configured" — treated as unlimited.
  * - drawdown is engine-only state populated during decision execution; not available here.
  */
-async function buildRuntime(ctx: ToolContext, contract: ResolvedAgentRiskContract) {
+async function buildRuntime(ctx: TradingToolContext, contract: ResolvedAgentRiskContract) {
   // --- openPositions ---
   let openPositionsCurrent = 0;
   const openPositionsLimit = contract.maxOpenPositions.effectiveValue;
@@ -247,7 +247,7 @@ function formatProfileField(field: AgentRiskProfileField) {
  * Read the current drawdown from the Redis equity cache.
  * The worker writes equity:{actorId} after each decision (see decision-intake.ts).
  */
-async function resolveDrawdownCurrent(ctx: ToolContext): Promise<string | null> {
+async function resolveDrawdownCurrent(ctx: TradingToolContext): Promise<string | null> {
   try {
     const snapshot = await ctx.redis.hgetall(`equity:${ctx.agentId}`);
     if (snapshot && snapshot['currentDrawdown'] != null) {
@@ -257,7 +257,7 @@ async function resolveDrawdownCurrent(ctx: ToolContext): Promise<string | null> 
   return null;
 }
 
-export const riskLimitsTools: AgentTool[] = [
+export const riskLimitsTools: AgentTool<TradingToolContext>[] = [
   getRiskLimitsTool,
   adjustRiskLimitsTool,
 ];

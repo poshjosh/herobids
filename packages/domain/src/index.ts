@@ -11,6 +11,25 @@ export * from './skill-resolution.js';
 export * from './platform.js';
 export * from './provider-catalog.js';
 export * from './runtime-composition.js';
+// Re-export the trading-owned tool contract EXCEPT the generic `AgentTool`
+// (default ctx = TradingToolContext). The barrel's single `AgentTool` is the
+// platform-bound one from ./tools.js (default ctx = ToolContext), so platform
+// consumers importing `AgentTool` from @herobids/domain get the full context
+// while trading consumers bind it explicitly via `AgentTool<TradingToolContext>`
+// or the `TradingAgentTool` alias.
+export {
+  type ToolCategory,
+  type ToolResult,
+  type ToolBotRecord,
+  type ToolPositionRecord,
+  type ToolAnalyticsResult,
+  type TradingToolContext,
+  type TradingAgentTool,
+  type ToolDefinition,
+  isReadOnlyCategory,
+  getCategoryOperation,
+  getCategoryTarget,
+} from './trading/tool-contract.js';
 export * from './tools.js';
 export * from './tool-schemas.js';
 export * from './agent-risk-contract.js';

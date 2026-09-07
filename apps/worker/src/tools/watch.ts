@@ -14,7 +14,7 @@
 import { z } from 'zod';
 import crypto from 'node:crypto';
 import { createLogger } from '../logger.js';
-import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
+import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { WatchPurposeEnum, type WatchPurpose } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { EXPLICIT_SUPPORTED_CHAINS, validateSymbolForChain, isOnChainAddress } from './price.js';
@@ -34,7 +34,7 @@ function watchSummaryKey(agentId: string): string {
   return `agent:watches:summary:${agentId}`;
 }
 
-async function refreshWatchSummaryCache(ctx: ToolContext): Promise<void> {
+async function refreshWatchSummaryCache(ctx: TradingToolContext): Promise<void> {
   try {
     const raw = await ctx.redis.hgetall(watchesKey(ctx.agentId));
     const watches = Object.values(raw ?? {})
@@ -111,7 +111,7 @@ function deserializeLookupKey(key: string): { chain: string; symbol: string; add
  */
 async function ensurePinnedWatchIdentity(
   watch: WatchEntry,
-  priceService: NonNullable<ToolContext['priceService']>,
+  priceService: NonNullable<TradingToolContext['priceService']>,
 ): Promise<
   | { ok: true; watch: WatchEntry }
   | { ok: false; reason: string }
@@ -200,7 +200,7 @@ const WatchTokenParamsSchema = z.object({
   ),
 });
 
-const watchTokenTool: AgentTool = {
+const watchTokenTool: AgentTool<TradingToolContext> = {
   name: 'watch_token',
   description:
     'Register a price watch for a token. When chain is "any", the tool discovers the best-matching token and pins the watch to that concrete asset — future checks will always use the pinned identity. ' +
@@ -210,7 +210,7 @@ const watchTokenTool: AgentTool = {
   parametersSchema: WatchTokenParamsSchema,
   parameters: convertZodToJsonSchema(WatchTokenParamsSchema),
   category: 'write-memory',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { symbol, chain, thresholdPrice, condition, note, purpose, coverage } =
       params as z.infer<typeof WatchTokenParamsSchema>;
     const trimmedSymbol = symbol.trim();
@@ -572,13 +572,13 @@ const watchTokenTool: AgentTool = {
 
 const ListWatchesParamsSchema = z.object({});
 
-const listWatchesTool: AgentTool = {
+const listWatchesTool: AgentTool<TradingToolContext> = {
   name: 'list_watches',
   description: 'List all active price watches registered by this agent.',
   parametersSchema: ListWatchesParamsSchema,
   parameters: convertZodToJsonSchema(ListWatchesParamsSchema),
   category: 'read-memory',
-  async execute(_params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(_params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const raw = await ctx.redis.hgetall(watchesKey(ctx.agentId));
     if (!raw) {
       return { success: true, data: { ok: true, watches: [] } };
@@ -601,13 +601,13 @@ const RemoveWatchParamsSchema = z.object({
   watchId: z.string().uuid().describe('ID of the watch to remove'),
 });
 
-const removeWatchTool: AgentTool = {
+const removeWatchTool: AgentTool<TradingToolContext> = {
   name: 'remove_watch',
   description: 'Remove a price watch by its ID. Use list_watches to find IDs.',
   parametersSchema: RemoveWatchParamsSchema,
   parameters: convertZodToJsonSchema(RemoveWatchParamsSchema),
   category: 'write-memory',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { watchId } = params as z.infer<typeof RemoveWatchParamsSchema>;
 
     const deleted = await ctx.redis.hdel(watchesKey(ctx.agentId), watchId);
@@ -641,7 +641,7 @@ const CheckWatchesParamsSchema = z.object({
     .describe('When true, automatically remove watches that have triggered. Default: false.'),
 });
 
-const checkWatchesTool: AgentTool = {
+const checkWatchesTool: AgentTool<TradingToolContext> = {
   name: 'check_watches',
   description:
     'Evaluate all active price watches against current market prices. Returns a list of watches that have triggered (threshold crossed). ' +
@@ -650,7 +650,7 @@ const checkWatchesTool: AgentTool = {
   parametersSchema: CheckWatchesParamsSchema,
   parameters: convertZodToJsonSchema(CheckWatchesParamsSchema),
   category: 'write-memory',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { removeTriggered } = params as z.infer<typeof CheckWatchesParamsSchema>;
 
     if (!ctx.priceService) {
@@ -785,7 +785,7 @@ const checkWatchesTool: AgentTool = {
   },
 };
 
-export const watchTools: AgentTool[] = [
+export const watchTools: AgentTool<TradingToolContext>[] = [
   watchTokenTool,
   listWatchesTool,
   removeWatchTool,
