@@ -9,6 +9,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - Split a trading-owned tool contract out of `@herobids/domain`'s `tools.ts`. The trading-clean contract types plus a new `TradingToolContext` (trading fields only) and a trading-context `AgentTool` now live in `packages/domain/src/trading/tool-contract.ts`; `ToolContext` becomes a platform superset (`extends TradingToolContext`). Behaviour-preserving, types/annotations only — public API surface unchanged.
+- Added a trading-owned `executionConfig` port to `TradingToolContext` so `get_account_summary` reads execution mode / position-sizing config from a trading-clean port instead of the platform `agentConfigOps`. The worker wires it from the existing config source; the account-summary output is unchanged. This lets the tool narrow to `TradingToolContext`.
 - Agent prompt max length raised from 4000 to 8000 characters (create, update, and interactive-edit routes) to match the skill `instructions` limit and reduce confusing validation failures.
 
 ### Fixed
