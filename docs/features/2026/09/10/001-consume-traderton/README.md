@@ -62,6 +62,28 @@ Non-blocking findings from the L3b code review (no CRITICAL/HIGH).
 - **L3c CANDIDATE:** `executionConfig` on `TradingToolContext` is now used by zero in-process tools once `get_account_summary` routes over the boundary. Left in place per the L3b scoping correction (§2); safe to drop in L3c/L3d once the boundary is required. `agentRepo`/`riskContractOps` still used by `risk-limits.ts`; `botRepo` still used by the L3c write tools + `resolve_bot`/`watch.ts`/`risk-limits.ts` — all KEPT.
 - **Transitional dual-path (intentional):** read tools use the boundary when configured (`baseUrl`+`hmacSecret`+`userId` all present) and fall back to direct-DB otherwise. L3c/L3d remove the fallback + the now-unused fields.
 
+#### L3b — cross-repo reviewer verification (2026-09-10, traderton-side review)
+Reviewed from the **traderton** repo (holds the 005 boundary the tools now call). Confirmed independently:
+- **Guardrails held:** traderton UNCHANGED (still `f-m2-rest` @ `b976533`, clean); herobids changes
+  branch-only (`e99cd62b` feat + `605d6ba6` docs); `main` + `watch-summary.js` untouched.
+- **Scoping correction is SOUND (verified):** grepped the L3b-untouched tools — `risk-limits.ts` uses
+  `ctx.riskContractOps`, `resolvers.ts` uses `ctx.botRepo`, `watch.ts` uses `ctx.botRepo`. Removing those
+  `ToolContext` fields in L3b WOULD have broken them, so deferring field-removal to L3c/L3d is correct
+  sequencing, not scope-dodging. The diff confirms L3b is add-only (849 insertions, 6 deletions).
+- **Boundary-vs-fallback branching CORRECT:** each rewired tool checks `ctx.tradertonBoundary` first
+  (REST via the shared `traderton-read.ts` mapper); the ORIGINAL direct-DB path remains fully intact
+  below (not a stub) → boundary-unconfigured deployments behave exactly as herobids-today (parity).
+- **Layering clean:** domain gets a structural port (no worker/HMAC/HTTP leak); the adapter binds the
+  subject VALUES + deadline and holds the client — **the HMAC secret never reaches a tool** (ports-carry-
+  values honored consumer-side). The mapper preserves `code`+`retryable` and derives `fault` sensibly
+  (content-level codes → non-fault, so they don't trip the tool circuit breaker).
+- **Parity nuance to confirm at L3e (LOW, not blocking):** the direct-DB `get_account_summary` can
+  *partially succeed* (returns `success:true` + `warnings` when risk-contract/agent-config are
+  unavailable); the boundary path is all-or-nothing (Traderton assembles the whole summary). Same `data`
+  shape, different failure granularity. Almost certainly fine (Traderton now owns the summary), but the
+  **L3e differential should assert the two paths agree** rather than assume it.
+- **Verdict: L3b APPROVED.** No CRITICAL/HIGH. Proceed to L3c on human green light.
+
 ### L3a — Traderton REST client + config + signer
 - **M1 (deferred to L3e):** the signer parity test replicates the verifier algorithm inline rather than importing the real `@traderton/boundary` `buildCanonicalString` (the sibling package is not workspace-resolvable). Risk: silent drift if Traderton changes its algorithm. Mitigation: add a shared frozen test vector (fixed method/path/timestamp/body/secret → expected signature) copied from a Traderton unit-test vector during L3e's differential/staging step so both repos assert the same literal.
 - **M2 (FIXED):** `signStatus` hard-coded a 30s fallback deadline — extracted to the named constant `STATUS_DEADLINE_FALLBACK_MS` in `sign.ts`.
