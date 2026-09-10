@@ -54,3 +54,24 @@ Non-blocking findings from the L3a code review (no CRITICAL/HIGH). Recorded per 
 - **M3 (clarity, non-defect):** `poll()` `remaining <= 0` branch uses `continue` and relies on the next iteration's deadline check to exit; at most one extra iteration, cannot hot-spin. Consider restructuring so the deadline check and the "no time left" case share one exit. Address opportunistically (likely in L3c when poll is wired to `submit_decision`).
 - **L1 (style):** `poll()` does not explicitly narrow the `in_progress` state after the `terminal` check. Safe today (closed two-state union); an explicit `else if`/exhaustive check would be more defensive.
 - **L3 (style):** `contract.ts` `TradertonActorType` intentionally duplicates the domain actor types to keep the wire-contract mirror decoupled; add a one-line comment noting the intentional duplication.
+
+### L3a — cross-repo reviewer verification (2026-09-10, traderton-side review)
+Reviewed from the **traderton** repo (which holds the boundary + the 005 verifier), so a check the
+herobids-side tests structurally cannot do was possible:
+- **Signer byte-parity PROVEN.** Computed a signature for a fixed vector (method/path/timestamp/body/
+  secret) using BOTH the herobids signer algorithm (`apps/worker/src/traderton/sign.ts`
+  `buildCanonicalString`+HMAC) AND the traderton verifier algorithm
+  (`traderton/packages/boundary/src/auth.ts` `buildCanonicalString`+HMAC): canonical string identical,
+  `sha256=<hex>` signature identical → **BYTE-PARITY CONFIRMED.** This substantially de-risks the
+  deferred **M1** (a request signed by herobids passes the traderton verifier today); M1's frozen-vector
+  test is still worth adding at L3e to catch *future* drift, but the current algorithm is verified equal.
+- **Guardrails held:** traderton was NOT edited during L3a (still `f-m2-rest` @ `b976533`, clean tree);
+  herobids changes are confined to `consume-traderton` (`3c4833c3` feat + `edcf0d0e` docs); `main` +
+  the stray `watch-summary.js` untouched. (NOTE: the docs still lack an explicit "the herobids agent must
+  not edit traderton" guardrail — the agent respected it anyway, but consider stating it.)
+- **Client conformance:** the client's envelope + response mapping match the 005 contract as implemented
+  in traderton's boundary; `code`+`retryable` are preserved for the L3b/L3c callers. One minor note: in
+  `poll()` the deadline-expiry failure synthesizes `deadline.expired` client-side (the boundary didn't
+  return it) — sensible, but it conflates "boundary rejected on deadline" with "I stopped polling"; fine
+  for now, revisit when poll is wired to `submit_decision` at L3c.
+- **Verdict: L3a APPROVED.** No CRITICAL/HIGH. Proceed to L3b on human green light.
