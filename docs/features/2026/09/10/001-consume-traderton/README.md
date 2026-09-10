@@ -29,3 +29,17 @@ repo-of-record moves to herobids (a working-location change — Traderton is NOT
 - [x] Spec + L3a prompt written.
 - [ ] L3a — REST client + config + signer.  ← **next**
 - [ ] L3b reads → L3c writes → L3d delete trading packages → L3e differential + staging + merge gate.
+
+## Handoff note (read this — you are picking up mid-project)
+This work began in the **traderton** repo (extraction + the M2 REST boundary F, all complete) and
+**handed off to here** at the start of L3. Nothing in the consumption work is implemented yet —
+**no rewire, no deletion; only this spec + the L3a prompt exist.** Your first action is **L3a**
+(`001-l3a-implementer-prompt.md`): build the Traderton REST client + config + signer, unit-tested
+against a stubbed boundary. Run the loop — investigate → (the prompt is the plan) → implement →
+review → test → **pause for the human before L3b.** Do not skip ahead to rewiring/deleting trading
+code; the slice order is deliberate (read path before write path; delete last).
+
+The full decision record (D1–D5, the repo-of-record/doc-placement plan) is authoritative in the
+sibling repo: `traderton/docs/CANONICAL-STATE.md` §3.1 (L3 decisions) + §5.1 (doc placement +
+repo-of-record moves to herobids AT CUTOVER — a working-location change; Traderton is NOT absorbed).
+Treat CANONICAL-STATE as the source of truth for state/decisions/invariants until cutover.
