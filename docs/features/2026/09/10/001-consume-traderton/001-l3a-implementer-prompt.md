@@ -5,9 +5,9 @@
 **shared HMAC signer**, unit-tested against a **stubbed boundary**. **NO rewire, NO deletion** — this
 slice only ADDS the client; nothing calls it in production yet (that is L3b/L3c).
 **Reads:** the L3 spec `000-l3-consumption-spec.md` (this dir); the contract
-[../../../../traderton/docs/005-consumer-boundary-contract.md](../../../../traderton/docs/005-consumer-boundary-contract.md);
-the byte-parity reference `../../../../traderton/packages/boundary/src/dev/sign.ts` (the committed dev
-signer) + `../../../../traderton/packages/boundary/src/auth.ts` (the verifier — the canonical string it
+`traderton/docs/005-consumer-boundary-contract.md` (sibling repo);
+the byte-parity reference `traderton/packages/boundary/src/dev/sign.ts` (the committed dev
+signer) + `traderton/packages/boundary/src/auth.ts` (the verifier — the canonical string it
 checks).
 
 ---
@@ -43,7 +43,7 @@ Signature header: `X-Traderton-Signature: sha256=<hex HMAC-SHA256(secret, canoni
 headers: `Content-Type: application/json`, `X-Traderton-Consumer-Id`, `X-Traderton-Key-Id`,
 `X-Traderton-Timestamp` (RFC3339 UTC), `X-Traderton-Signature`, `X-Request-Deadline-At` (= `body.deadlineAt`).
 
-- **MIRROR the Traderton dev signer** `../../../../traderton/packages/boundary/src/dev/sign.ts` (READ it) so
+- **MIRROR the Traderton dev signer** `traderton/packages/boundary/src/dev/sign.ts` (READ it) so
   the signed bytes match the verifier exactly. Key parity points from that signer + `auth.ts`:
   - the PATH is the path only, **no query string**;
   - the SHA256 hashes the **raw body bytes** that are ALSO the wire payload (serialize once, sign + send the

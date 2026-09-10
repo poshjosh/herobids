@@ -10,10 +10,10 @@ untouchable.** Merging this branch to `main` = **cutover**, and requires explici
 This is the herobids-side **working spec**. The **invariants, the law, and the settled cross-repo
 decisions live in Traderton** and are the source of truth **until cutover**:
 
-- **[../../../../traderton/docs/CANONICAL-STATE.md](../../../../traderton/docs/CANONICAL-STATE.md)** — the
+- **`traderton/docs/CANONICAL-STATE.md` (sibling repo)** — the
   single source of truth for state/decisions/invariants (see its §3.1 for the L3 decisions, §5/§5.1 for the
   read-only exception + the repo-of-record transition).
-- **[../../../../traderton/docs/005-consumer-boundary-contract.md](../../../../traderton/docs/005-consumer-boundary-contract.md)**
+- **`traderton/docs/005-consumer-boundary-contract.md` (sibling repo)**
   — the REST/HMAC contract herobids calls (endpoints, envelope, canonical string, failure codes,
   idempotency, health).
 - The full investigation + proposal (the seam map this spec is built on) is
@@ -132,7 +132,7 @@ authors no risk/planner/executor logic.
   preserving all reply statuses. `pending_approval` stays a **herobids** outcome produced by the platform
   approval gate *before* the boundary call (the boundary only executes an already-approved decision).
   *Polling's shortcoming + the push/webhook alternative are backlog B10 in Traderton's
-  [010-improvement-backlog](../../../../traderton/docs/010-improvement-backlog.md).*
+  `traderton/docs/010-improvement-backlog.md` (sibling repo).*
 - **D4 — sub-phasing (§7).**
 - **D5 — docs:** this working spec + the per-slice prompts live here (herobids); the canonical/invariant
   docs stay in Traderton until cutover; repo-of-record migrates at cutover (CANONICAL-STATE §5.1).
