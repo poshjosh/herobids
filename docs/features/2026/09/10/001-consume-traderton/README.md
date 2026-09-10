@@ -34,7 +34,7 @@ repo-of-record moves to herobids (a working-location change — Traderton is NOT
 ## Progress
 - [x] Spec + L3a prompt written.
 - [x] L3a — REST client + config + signer.  ← **DONE** (committed on `consume-traderton`)
-- [ ] L3b — rewire the READ path to the client.  ← **PENDING (in progress)** (prompt: `002-l3b-implementer-prompt.md`)
+- [x] L3b — rewire the READ path to the client.  ← **DONE** (committed on `consume-traderton`; prompt: `002-l3b-implementer-prompt.md`)
 - [ ] L3c writes → L3d delete trading packages → L3e differential + staging + merge gate.
 
 ## Handoff note (read this — you are picking up mid-project)
