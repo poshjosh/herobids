@@ -1,8 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { ToolContext } from '@herobids/domain';
+import type { ToolContext, TradertonReadResult } from '@herobids/domain';
 import { accountTools } from './account.js';
 
 const getAccountSummary = accountTools.find((t) => t.name === 'get_account_summary')!;
+
+/** A stubbed tradertonBoundary whose invoke returns a fixed result + records calls. */
+function stubBoundary(result: TradertonReadResult) {
+  const invoke = vi.fn(async () => result);
+  return { boundary: { invoke }, invoke };
+}
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -205,5 +211,91 @@ describe('get_account_summary', () => {
     const data = result.data as Record<string, unknown>;
     expect(data.capital).toBeNull();
     expect(data.guidance).toEqual(expect.stringContaining('Capital information unavailable'));
+  });
+});
+
+describe('get_account_summary — Traderton boundary (L3b)', () => {
+  it('routes over the boundary when present, forwarding an empty payload', async () => {
+    const { boundary, invoke } = stubBoundary({ kind: 'success', data: { ok: true, capital: '10000' } });
+    const ctx = makeCtx({ tradertonBoundary: boundary });
+
+    const result = await getAccountSummary.execute({}, ctx);
+
+    expect(invoke).toHaveBeenCalledWith({ toolName: 'get_account_summary', payload: {} });
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ ok: true, capital: '10000' });
+  });
+
+  it('does NOT touch the DB when the boundary is present', async () => {
+    const { boundary } = stubBoundary({ kind: 'success', data: { ok: true } });
+    const getOpenPositionsByCreator = vi.fn(async () => []);
+    const ctx = makeCtx({
+      tradertonBoundary: boundary,
+      botRepo: { getOpenPositionsByCreator } as unknown as ToolContext['botRepo'],
+    });
+
+    await getAccountSummary.execute({}, ctx);
+
+    expect(getOpenPositionsByCreator).not.toHaveBeenCalled();
+  });
+
+  it('maps a content-level failure (not_found) to a non-fault failure preserving code/retryable', async () => {
+    const { boundary } = stubBoundary({
+      kind: 'failure',
+      code: 'not_found.resource',
+      message: 'no account',
+      retryable: false,
+    });
+    const ctx = makeCtx({ tradertonBoundary: boundary });
+
+    const result = await getAccountSummary.execute({}, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('not_found.resource');
+    expect(result.error).toBe('no account');
+    expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
+  });
+
+  it('maps an infrastructure failure to a fault failure', async () => {
+    const { boundary } = stubBoundary({
+      kind: 'failure',
+      code: 'internal.non_retryable',
+      message: 'boom',
+      retryable: false,
+    });
+    const ctx = makeCtx({ tradertonBoundary: boundary });
+
+    const result = await getAccountSummary.execute({}, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('internal.non_retryable');
+    expect(result.fault).toBe(true);
+  });
+
+  it('maps transport_error to a retryable fault', async () => {
+    const { boundary } = stubBoundary({ kind: 'transport_error', message: 'down', retryable: true });
+    const ctx = makeCtx({ tradertonBoundary: boundary });
+
+    const result = await getAccountSummary.execute({}, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('boundary.transport_error');
+    expect(result.retryable).toBe(true);
+    expect(result.fault).toBe(true);
+  });
+
+  it('falls back to the DB path when the boundary is absent', async () => {
+    const ctx = makeCtx({
+      botRepo: {
+        getOpenPositionsByCreator: vi.fn(async () => []),
+      } as unknown as ToolContext['botRepo'],
+    });
+
+    const result = await getAccountSummary.execute({}, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.agentId).toBe('agent-1');
   });
 });

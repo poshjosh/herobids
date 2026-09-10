@@ -23,6 +23,7 @@ export {
   type ToolBotRecord,
   type ToolPositionRecord,
   type ToolAnalyticsResult,
+  type TradertonReadResult,
   type TradingToolContext,
   type TradingAgentTool,
   type ToolDefinition,

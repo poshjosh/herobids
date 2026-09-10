@@ -101,6 +101,28 @@ export interface ToolPositionRecord {
   openedAt: Date;
 }
 
+/**
+ * The result of a Traderton REST boundary invocation, as seen by a read tool
+ * (L3b). A domain-clean discriminated union mirroring the worker's
+ * `TradertonClientResult` without pulling any worker/transport type into the
+ * domain package. The worker composition root adapts its concrete
+ * `TradertonClient` result into this shape at the injection site.
+ *
+ * - `success` — a terminal success; `data` is the tool payload the boundary
+ *   returned (the same object the tool used to build locally).
+ * - `failure` — a terminal boundary failure; `code`/`message`/`retryable` are
+ *   preserved verbatim (never re-derived) so the tool can map fault semantics.
+ * - `in_progress` — the invocation has not reached a terminal outcome. A read
+ *   is synchronous, so this is unexpected but must not throw.
+ * - `transport_error` — a client/transport failure (fetch rejected, non-2xx,
+ *   unparseable body, timeout). Always retryable; carries no boundary internals.
+ */
+export type TradertonReadResult =
+  | { kind: 'success'; data: unknown }
+  | { kind: 'failure'; code: string; message: string; retryable: boolean }
+  | { kind: 'in_progress' }
+  | { kind: 'transport_error'; message: string; retryable: true };
+
 /** Analytics result returned by getAnalyticsByCreator. */
 export interface ToolAnalyticsResult {
   botCount: number;
@@ -128,6 +150,21 @@ export interface TradingToolContext {
   executionMode: 'paper' | 'shadow' | 'live';
   /** Authorization mode for agent-direct trade decisions: 'direct' (execute immediately) or 'approval_required' (require user approval). */
   authorizationMode: 'direct' | 'approval_required';
+  /**
+   * The Traderton REST boundary port (L3b). When present, read tools call the
+   * boundary instead of reading the trading DB directly. This is a structural
+   * subset the worker's `TradertonClient` (adapted at the composition root)
+   * satisfies; the domain package MUST NOT depend on worker/transport types.
+   *
+   * The tool only names a tool + forwards its already-validated payload; the
+   * subject (ownerId/actor), caller identity, deadline, and signing material
+   * are all bound by the worker adapter — the tool never sees them. When
+   * absent, read tools fall back to the existing direct-DB behaviour (a
+   * transitional L3b affordance; L3c/L3d tighten this).
+   */
+  tradertonBoundary?: {
+    invoke(input: { toolName: string; payload: unknown }): Promise<TradertonReadResult>;
+  };
   /** Redis client for agent memory, watches, and pub/sub */
   redis: {
     hset: (key: string, field: string, value: string) => Promise<number>;

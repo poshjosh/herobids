@@ -70,6 +70,8 @@ export interface DockerAgentManagerConfig {
   onAgentCrashed?: (agentId: string, sessionId?: string) => Promise<void>;
   /** Serialised external skills config (JSON) forwarded to agent containers. */
   externalSkillsConfigJson?: string;
+  /** Serialised Traderton boundary config (JSON) forwarded to agent containers (L3b). */
+  boundaryConfigJson?: string;
   /** Browser pool URL forwarded to agent containers when browser pool is enabled. */
   browserPoolUrl?: string;
   /** Browserless API key forwarded to agent containers when browser pool is enabled. */
@@ -147,6 +149,7 @@ export class DockerAgentManager {
   private readonly marketDataTimeoutMs: number | undefined;
   private readonly databaseUrl: string | undefined;
   private readonly externalSkillsConfigJson: string | undefined;
+  private readonly boundaryConfigJson: string | undefined;
   private readonly browserPoolUrl: string | undefined;
   private readonly browserPoolApiKey: string | undefined;
   private readonly browserPoolResolvedHost: string | undefined;
@@ -192,6 +195,7 @@ export class DockerAgentManager {
     this.marketDataTimeoutMs = _config.marketDataTimeoutMs;
     this.databaseUrl = _config.databaseUrl;
     this.externalSkillsConfigJson = _config.externalSkillsConfigJson;
+    this.boundaryConfigJson = _config.boundaryConfigJson;
     this.browserPoolUrl = _config.browserPoolUrl;
     this.browserPoolApiKey = _config.browserPoolApiKey;
     this.browserPoolResolvedHost = _config.browserPoolResolvedHost;
@@ -288,6 +292,7 @@ export class DockerAgentManager {
         ...(process.env['USAGE_BILLING_RATE_CARD'] ? [`USAGE_BILLING_RATE_CARD=${process.env['USAGE_BILLING_RATE_CARD']}`] : []),
         ...(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ? [`USAGE_BILLING_RUNTIME_WINDOW_MS=${process.env['USAGE_BILLING_RUNTIME_WINDOW_MS']}`] : []),
         ...(this.externalSkillsConfigJson ? [`EXTERNAL_SKILLS_CONFIG_JSON=${this.externalSkillsConfigJson}`] : []),
+        ...(this.boundaryConfigJson ? [`BOUNDARY_CONFIG_JSON=${this.boundaryConfigJson}`] : []),
         ...(this.browserPoolUrl ? (() => {
           const browserUrl = new URL(this.browserPoolUrl);
           // Use pre-resolved IP (not Docker hostname) for the CDP URL so that

@@ -13,7 +13,7 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { scannerGatedKey } from './redis-keys.js';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber, type ReasoningLevel, AGENT_STREAM_MAXLEN, type ScannerWakeContext, type RiskPosture, OpenRouterProviderControlsSchema, inferDependsOn, tokenize, expandToken, SYSTEM_SKILL_SLUGS, ExternalSkillProviderHttp, DEFAULT_PERMISSION_LEVEL, BoundaryConfigSchema } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal, LlmArtifactRepository, skills, skillRevisions, agentSkills } from '@herobids/db';
 import { and, eq, ne, ilike, or, sql } from 'drizzle-orm';
 import { createUsageBillingService } from './usage-billing-service.js';
@@ -83,6 +83,9 @@ import { classifyTickThinking, extractDrawdownPct, toReasoningLevel, resolveScou
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { BrowserlessAdapter } from '@herobids/venues';
 import { createToolRegistry } from './tools/index.js';
+import { createTradertonClient, type TradertonClientConfig } from './traderton/client.js';
+import { createTradertonReadBoundary } from './traderton/read-adapter.js';
+import type { TradertonSubject } from './traderton/contract.js';
 import { initEmailTools } from './tools/email.js';
 import { cleanupBrowserSessions } from './tools/browser.js';
 import { extractCeilings, extractCreatorInput, resolveProfile } from './agent-risk-limits.js';
@@ -127,6 +130,9 @@ const SERVER_COST_USD_PER_HOUR = Number(process.env['LLM_SERVER_COST_USD_PER_HOU
 const TRADING_HOURS_RAW = process.env['TRADING_HOURS_JSON'];
 const EXTERNAL_SKILLS_CONFIG_JSON = process.env['EXTERNAL_SKILLS_CONFIG_JSON'];
 const BROWSER_POOL_URL = process.env['BROWSER_POOL_URL'];
+// Traderton REST boundary config (L3b). Carries the HMAC secret — never passed
+// to a tool; only the worker adapter (holding the TradertonClient) sees it.
+const BOUNDARY_CONFIG_RAW = process.env['BOUNDARY_CONFIG_JSON'];
 
 // ── HTTP/1.1 fetch for sites that block HTTP/2 (e.g. Forex Factory) ─────
 
@@ -1786,6 +1792,49 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     }
   })();
 
+  // Build the Traderton REST read boundary from forwarded config (L3b).
+  // GATE: only enable the boundary when a real baseUrl + hmacSecret are set AND
+  // the platform owner id (agentConfig.userId) is non-empty. If any is missing
+  // we leave the boundary undefined so the read tools fall back to the existing
+  // direct-DB behaviour. This is a transitional L3b affordance — L3c/L3d tighten
+  // it (require the boundary and remove the fallback). The HMAC secret lives in
+  // the client only; it never reaches a tool.
+  const tradertonReadBoundary = (() => {
+    if (!BOUNDARY_CONFIG_RAW) return undefined;
+
+    let boundaryConfig: TradertonClientConfig;
+    try {
+      const parsed = BoundaryConfigSchema.parse(JSON.parse(BOUNDARY_CONFIG_RAW));
+      boundaryConfig = {
+        baseUrl: parsed.baseUrl,
+        consumerId: parsed.consumerId,
+        keyId: parsed.keyId,
+        hmacSecret: parsed.hmacSecret,
+        requestTimeoutMs: parsed.requestTimeoutMs,
+      };
+    } catch (err) {
+      logger.warn({ err }, 'Failed to parse BOUNDARY_CONFIG_JSON — read tools fall back to direct DB');
+      return undefined;
+    }
+
+    const ownerId = agentConfig.userId ?? '';
+    if (!boundaryConfig.baseUrl || !boundaryConfig.hmacSecret || !ownerId) {
+      logger.info(
+        { hasBaseUrl: !!boundaryConfig.baseUrl, hasSecret: !!boundaryConfig.hmacSecret, hasOwnerId: !!ownerId },
+        'Traderton boundary not fully configured — read tools use direct DB (transitional L3b fallback)',
+      );
+      return undefined;
+    }
+
+    const subject: TradertonSubject = {
+      ownerId,
+      actor: { type: 'agent', id: AGENT_ID! },
+    };
+    const client = createTradertonClient(boundaryConfig);
+    logger.info({ baseUrl: boundaryConfig.baseUrl }, 'Traderton read boundary enabled — read tools route over REST');
+    return createTradertonReadBoundary(client, subject, boundaryConfig.requestTimeoutMs);
+  })();
+
   // Build tool context from agent runtime state
   const agentConfigOps = buildAgentConfigOps();
   const toolContext: ToolContext = {
@@ -1795,6 +1844,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     executionMode: (agentConfig.executionMode ?? 'paper') as 'paper' | 'shadow' | 'live',
     authorizationMode: (agentConfig.authorizationMode ?? 'direct') as 'direct' | 'approval_required',
     permissionLevel: agentPermissionLevel,
+    tradertonBoundary: tradertonReadBoundary,
     redis: {
       hset: redis.hset.bind(redis),
       hget: redis.hget.bind(redis),

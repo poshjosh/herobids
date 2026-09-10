@@ -34,7 +34,8 @@ repo-of-record moves to herobids (a working-location change — Traderton is NOT
 ## Progress
 - [x] Spec + L3a prompt written.
 - [x] L3a — REST client + config + signer.  ← **DONE** (committed on `consume-traderton`)
-- [ ] L3b reads → L3c writes → L3d delete trading packages → L3e differential + staging + merge gate.
+- [ ] L3b — rewire the READ path to the client.  ← **PENDING (in progress)** (prompt: `002-l3b-implementer-prompt.md`)
+- [ ] L3c writes → L3d delete trading packages → L3e differential + staging + merge gate.
 
 ## Handoff note (read this — you are picking up mid-project)
 This work began in the **traderton** repo (extraction + the M2 REST boundary F, all complete) and
@@ -53,6 +54,13 @@ Treat CANONICAL-STATE as the source of truth for state/decisions/invariants unti
 ## Outstanding Issues
 
 Non-blocking findings from the L3a code review (no CRITICAL/HIGH). Recorded per the coordinator loop.
+
+### L3b — rewire the READ path to the client
+Non-blocking findings from the L3b code review (no CRITICAL/HIGH).
+- **L1 (test style):** read-tool test stubs use `as unknown as ToolContext['botRepo']`. Acceptable in test files (the strict-TS ban targets source), but a typed `Partial<>`/factory would read cleaner. Optional.
+- **L2 (style):** `traderton-read.ts` `in_progress` message wording differs slightly from the prompt's suggestion — semantically identical (`errorCode: boundary.in_progress`, retryable non-fault). Fine.
+- **L3c CANDIDATE:** `executionConfig` on `TradingToolContext` is now used by zero in-process tools once `get_account_summary` routes over the boundary. Left in place per the L3b scoping correction (§2); safe to drop in L3c/L3d once the boundary is required. `agentRepo`/`riskContractOps` still used by `risk-limits.ts`; `botRepo` still used by the L3c write tools + `resolve_bot`/`watch.ts`/`risk-limits.ts` — all KEPT.
+- **Transitional dual-path (intentional):** read tools use the boundary when configured (`baseUrl`+`hmacSecret`+`userId` all present) and fall back to direct-DB otherwise. L3c/L3d remove the fallback + the now-unused fields.
 
 ### L3a — Traderton REST client + config + signer
 - **M1 (deferred to L3e):** the signer parity test replicates the verifier algorithm inline rather than importing the real `@traderton/boundary` `buildCanonicalString` (the sibling package is not workspace-resolvable). Risk: silent drift if Traderton changes its algorithm. Mitigation: add a shared frozen test vector (fixed method/path/timestamp/body/secret → expected signature) copied from a Traderton unit-test vector during L3e's differential/staging step so both repos assert the same literal.

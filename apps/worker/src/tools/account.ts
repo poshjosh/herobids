@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
+import { mapReadResultToToolResult } from './traderton-read.js';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('tools:account');
@@ -17,6 +18,14 @@ const getAccountSummaryTool: AgentTool<TradingToolContext> = {
   category: 'read-database',
   promptGuidance: 'Call get_account_summary before submit_decision to see available capital and open positions. targetSize is in base units — the amount of the asset being bought or sold. If capital is unavailable, omit targetSize to let the engine use a safe default.',
   async execute(_params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
+    // L3b: when the Traderton boundary is configured, read over REST instead of
+    // the trading DB. The boundary returns the same `data` shape this tool used
+    // to build locally.
+    if (ctx.tradertonBoundary) {
+      const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_account_summary', payload: {} });
+      return mapReadResultToToolResult(result);
+    }
+
     if (!ctx.botRepo) {
       return {
         success: false,

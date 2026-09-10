@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, TradingToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
+import { mapReadResultToToolResult } from './traderton-read.js';
 
 // --- get_analytics ---
 
@@ -17,6 +18,13 @@ const getAnalyticsTool: AgentTool<TradingToolContext> = {
   category: 'read-database',
   async execute(params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
     const { days } = params as z.infer<typeof GetAnalyticsParamsSchema>;
+
+    // L3b: route through the Traderton boundary when configured; the boundary
+    // returns the same analytics `data` shape this tool used to build.
+    if (ctx.tradertonBoundary) {
+      const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_analytics', payload: { days } });
+      return mapReadResultToToolResult(result);
+    }
 
     if (!ctx.botRepo) {
       return { success: false, error: 'direct db access not available' };
@@ -59,6 +67,12 @@ const listPositionsTool: AgentTool<TradingToolContext> = {
   parameters: convertZodToJsonSchema(ListPositionsParamsSchema),
   category: 'read-database',
   async execute(_params: unknown, ctx: TradingToolContext): Promise<ToolResult> {
+    // L3b: route through the Traderton boundary when configured.
+    if (ctx.tradertonBoundary) {
+      const result = await ctx.tradertonBoundary.invoke({ toolName: 'list_positions', payload: {} });
+      return mapReadResultToToolResult(result);
+    }
+
     if (!ctx.botRepo) {
       return { success: false, error: 'direct db access not available' };
     }

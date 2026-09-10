@@ -635,6 +635,10 @@ const agentRuntimeLauncher = await (async () => {
     ...(appConfig.externalSkills.enabled
       ? { externalSkillsConfigJson: JSON.stringify(appConfig.externalSkills) }
       : {}),
+    // Traderton boundary config (L3b): forwarded so the agent can route read
+    // tools over REST. The agent itself gates on baseUrl/hmacSecret/ownerId
+    // before enabling the boundary path.
+    boundaryConfigJson: JSON.stringify(appConfig.boundary),
     ...(resolvedBrowserPoolUrl
       ? { browserPoolUrl: resolvedBrowserPoolUrl }
       : {}),
@@ -688,6 +692,7 @@ const agentRuntimeLauncher = await (async () => {
         ...(appConfig.externalSkills.enabled
           ? { externalSkillsConfigJson: JSON.stringify(appConfig.externalSkills) }
           : {}),
+        boundaryConfigJson: JSON.stringify(appConfig.boundary),
         ...(resolvedBrowserPoolUrl
           ? { browserPoolUrl: resolvedBrowserPoolUrl }
           : {}),

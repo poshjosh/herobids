@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { AGENT_MESSAGE_TYPES, checkModeEscalation, deriveStrategyPreset, extractStrategyFromConfig } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
+import { mapReadResultToToolResult } from './traderton-read.js';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('tools:bots');
@@ -105,6 +106,13 @@ const listBotsTool: AgentTool = {
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { days } = params as z.infer<typeof ListBotsParamsSchema>;
 
+    // L3b: route through the Traderton boundary when configured. `days` is
+    // optional and forwarded as-is (undefined when not supplied).
+    if (ctx.tradertonBoundary) {
+      const result = await ctx.tradertonBoundary.invoke({ toolName: 'list_bots', payload: { days } });
+      return mapReadResultToToolResult(result);
+    }
+
     if (!ctx.botRepo) {
       return { success: false, error: 'direct db access not available', fault: false };
     }
@@ -142,6 +150,13 @@ const getBotStatusTool: AgentTool = {
   category: 'read-database',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { botId } = params as z.infer<typeof GetBotStatusParamsSchema>;
+
+    // L3b: route through the Traderton boundary when configured. Ownership +
+    // not-found are enforced boundary-side and surface as typed failures.
+    if (ctx.tradertonBoundary) {
+      const result = await ctx.tradertonBoundary.invoke({ toolName: 'get_bot_status', payload: { botId } });
+      return mapReadResultToToolResult(result);
+    }
 
     if (!ctx.botRepo) {
       return { success: false, error: 'direct db access not available', fault: false };

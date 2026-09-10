@@ -32,6 +32,13 @@ export interface AgentEnvConfig {
   openRouterProviderControlsJson?: string;
   /** Serialised external skills config (JSON) forwarded to agent containers. */
   externalSkillsConfigJson?: string;
+  /**
+   * Serialised Traderton boundary config (JSON) forwarded to agent containers
+   * (L3b). When present, the agent constructs a REST client and the read tools
+   * call the boundary instead of the trading DB. Carries the HMAC secret, so it
+   * only crosses into the agent container (never to a tool).
+   */
+  boundaryConfigJson?: string;
   /** Browser pool URL forwarded to agent containers when browser pool is enabled. */
   browserPoolUrl?: string;
   /** Browserless API key forwarded to agent containers when browser pool is enabled. */
@@ -158,6 +165,9 @@ export function buildAgentEnv(
 
   // External skills config — forwarded so agents can use the search_skills tool.
   if (config.externalSkillsConfigJson) envOut['EXTERNAL_SKILLS_CONFIG_JSON'] = config.externalSkillsConfigJson;
+
+  // Traderton boundary config — forwarded so agents route read tools over REST (L3b).
+  if (config.boundaryConfigJson) envOut['BOUNDARY_CONFIG_JSON'] = config.boundaryConfigJson;
 
   // Browser pool URL — forwarded so agents can use the browse_interactive tool.
   if (config.browserPoolUrl) {
