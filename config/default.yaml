@@ -441,6 +441,15 @@ nomad:
   terminationPollIntervalMs: 30000       # how often to poll Nomad for agent allocation crashes (ms)
   requestTimeoutMs: 10000                # Nomad HTTP API request timeout (ms)
 
+# The Traderton REST boundary herobids consumes (L3a).
+boundary:
+  baseUrl: http://localhost:8080         # local compose boundary; override: TRADERTON_BOUNDARY_URL
+  consumerId: herobids                   # override: TRADERTON_BOUNDARY_CONSUMER_ID
+  keyId: current                         # override: TRADERTON_BOUNDARY_KEY_ID
+  hmacSecret: ""                         # override: TRADERTON_BOUNDARY_HMAC_SECRET
+  requestTimeoutMs: 10000                # per-request timeout (ms); override: TRADERTON_BOUNDARY_TIMEOUT_MS
+  idempotencyRetentionHours: 168         # informational — mirrors the boundary's retention
+
 # Agent runtime — behavior policy for agent containers.
 #
 # These are OPERATOR-LEVEL FALLBACKS. Each agent can override every runtime

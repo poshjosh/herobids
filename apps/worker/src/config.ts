@@ -109,6 +109,12 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   // Nomad
   NOMAD_TOKEN: { path: 'nomad.token', type: 'string' },
   NOMAD_ADDR: { path: 'nomad.addr', type: 'string' },
+  // Traderton REST boundary (L3a)
+  TRADERTON_BOUNDARY_URL: { path: 'boundary.baseUrl', type: 'string' },
+  TRADERTON_BOUNDARY_HMAC_SECRET: { path: 'boundary.hmacSecret', type: 'string' },
+  TRADERTON_BOUNDARY_CONSUMER_ID: { path: 'boundary.consumerId', type: 'string' },
+  TRADERTON_BOUNDARY_KEY_ID: { path: 'boundary.keyId', type: 'string' },
+  TRADERTON_BOUNDARY_TIMEOUT_MS: { path: 'boundary.requestTimeoutMs', type: 'number' },
 };
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {

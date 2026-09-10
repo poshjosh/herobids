@@ -1645,6 +1645,32 @@ export const GmailIntegrationConfigSchema = z.object({
   dailySendLimit: z.number().int().min(1).max(500).default(50),
 }).default({});
 
+/**
+ * The Traderton REST boundary herobids consumes (005-consumer-boundary-contract,
+ * L3a). Transport config for the consumer side: base URL, caller identity, and
+ * the local signing secret (env-injected, like billing.stripe.webhookSecret —
+ * the YAML value is "" and TRADERTON_BOUNDARY_HMAC_SECRET supplies it).
+ *
+ * L3a only ADDS the client; nothing consumes the boundary in production yet, so
+ * baseUrl/hmacSecret stay defaulted/optional here and the startup validation is
+ * lenient. L3b/L3c will tighten this (require a real baseUrl + secret) once the
+ * read tools and submit_decision are rewired through the client.
+ */
+export const BoundaryConfigSchema = z.object({
+  /** The Traderton REST base URL. Override: TRADERTON_BOUNDARY_URL. */
+  baseUrl: z.string().url().default('http://localhost:8080'),
+  /** Consumer identity in the signed headers + envelope caller. Override: TRADERTON_BOUNDARY_CONSUMER_ID. */
+  consumerId: z.string().default('herobids'),
+  /** Active signing key identifier. Override: TRADERTON_BOUNDARY_KEY_ID. */
+  keyId: z.string().default('current'),
+  /** Resolved HMAC signing secret (never committed). Override: TRADERTON_BOUNDARY_HMAC_SECRET. */
+  hmacSecret: z.string().default(''),
+  /** Per-request timeout in ms. Override: TRADERTON_BOUNDARY_TIMEOUT_MS. */
+  requestTimeoutMs: z.number().int().min(1_000).default(10_000),
+  /** Informational — mirrors the boundary's idempotency retention window. */
+  idempotencyRetentionHours: z.number().int().min(1).default(168),
+}).default({});
+
 export const AppConfigSchema = z.object({
   app: z.object({
     port: z.number().default(3000),
@@ -1709,6 +1735,8 @@ export const AppConfigSchema = z.object({
   integrations: z.object({
     gmail: GmailIntegrationConfigSchema,
   }).default({}),
+  /** The Traderton REST boundary herobids consumes (L3a). */
+  boundary: BoundaryConfigSchema,
   alerts: AlertsConfigSchema.default({}),
   auth: AuthConfigSchema.default({}),
   plans: PlansConfigSchema.default({}),
@@ -1848,6 +1876,12 @@ export const AppConfigSchema = z.object({
     }
   }
 
+  // Traderton boundary (L3a): intentionally NO required-field validation yet.
+  // Nothing consumes the boundary in production in L3a, so baseUrl/hmacSecret
+  // stay defaulted so existing config keeps loading. L3b/L3c will tighten this
+  // (require a real baseUrl + a non-empty hmacSecret) once the read tools and
+  // submit_decision are rewired through the client.
+
     // When both primary and fallback providers are real (non-mock), validate that
     // every plan/interval in the primary mapping also exists in the fallback.
     // Without this, a failover during checkout silently lands on the first
@@ -1884,6 +1918,7 @@ export const AppConfigSchema = z.object({
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
+export type BoundaryConfig = z.infer<typeof BoundaryConfigSchema>;
 export type WorkerConfig = z.infer<typeof WorkerConfigSchema>;
 export type SessionCircuitBreakerConfig = z.infer<typeof SessionCircuitBreakerSchema>;
 export type AgentRuntimeConfig = z.infer<typeof AgentRuntimeConfigSchema>;

@@ -27,7 +27,7 @@ repo-of-record moves to herobids (a working-location change — Traderton is NOT
 
 ## Progress
 - [x] Spec + L3a prompt written.
-- [ ] L3a — REST client + config + signer.  ← **next**
+- [ ] L3a — REST client + config + signer.  ← **PENDING (in progress)**
 - [ ] L3b reads → L3c writes → L3d delete trading packages → L3e differential + staging + merge gate.
 
 ## Handoff note (read this — you are picking up mid-project)
@@ -43,3 +43,14 @@ The full decision record (D1–D5, the repo-of-record/doc-placement plan) is aut
 sibling repo: `traderton/docs/CANONICAL-STATE.md` §3.1 (L3 decisions) + §5.1 (doc placement +
 repo-of-record moves to herobids AT CUTOVER — a working-location change; Traderton is NOT absorbed).
 Treat CANONICAL-STATE as the source of truth for state/decisions/invariants until cutover.
+
+## Outstanding Issues
+
+Non-blocking findings from the L3a code review (no CRITICAL/HIGH). Recorded per the coordinator loop.
+
+### L3a — Traderton REST client + config + signer
+- **M1 (deferred to L3e):** the signer parity test replicates the verifier algorithm inline rather than importing the real `@traderton/boundary` `buildCanonicalString` (the sibling package is not workspace-resolvable). Risk: silent drift if Traderton changes its algorithm. Mitigation: add a shared frozen test vector (fixed method/path/timestamp/body/secret → expected signature) copied from a Traderton unit-test vector during L3e's differential/staging step so both repos assert the same literal.
+- **M2 (FIXED):** `signStatus` hard-coded a 30s fallback deadline — extracted to the named constant `STATUS_DEADLINE_FALLBACK_MS` in `sign.ts`.
+- **M3 (clarity, non-defect):** `poll()` `remaining <= 0` branch uses `continue` and relies on the next iteration's deadline check to exit; at most one extra iteration, cannot hot-spin. Consider restructuring so the deadline check and the "no time left" case share one exit. Address opportunistically (likely in L3c when poll is wired to `submit_decision`).
+- **L1 (style):** `poll()` does not explicitly narrow the `in_progress` state after the `terminal` check. Safe today (closed two-state union); an explicit `else if`/exhaustive check would be more defensive.
+- **L3 (style):** `contract.ts` `TradertonActorType` intentionally duplicates the domain actor types to keep the wire-contract mirror decoupled; add a one-line comment noting the intentional duplication.
