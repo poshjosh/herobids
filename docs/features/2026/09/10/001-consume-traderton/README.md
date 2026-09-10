@@ -13,6 +13,12 @@ LLM, the connection/grant layer, approvals, maxBots) stays in herobids.
 Merging this branch to `main` = **cutover**, and needs explicit human approval. Never touch the
 stray `apps/worker/src/watch-summary.js`.
 
+**Do NOT edit the sibling `traderton` repo.** It is **READ-ONLY** from here — read it (the 005
+contract, the boundary code, CANONICAL-STATE) and copy/mirror as needed, but never modify it. If a
+change to traderton is genuinely needed (e.g. the boundary or the contract), STOP and surface it to
+the human / the traderton session — traderton edits are made there, not from here (the mirror of the
+extraction-era source-fix-request rule).
+
 ## Read in order
 1. `000-l3-consumption-spec.md` — the working spec: the DELETE/KEEP/REWIRE seam, decisions
    D1–D5, and the sub-phasing (L3a → L3b → L3c → L3d → L3e).
