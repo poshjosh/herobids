@@ -329,3 +329,56 @@ reusing the L3c `buildSubmitDecisionPayload`/`mapBoundaryResultToDecisionOutcome
 
 **§C addition from L3d-1:** #16 — engine `credentialDecryptedEvent`/`credentialUsedEvent` + payload types
 (callers are DELETE-side §A slices only) → deleted with `packages/engine` at L3d-5.
+
+
+### L3d-5 — dependency map (investigation complete; deletion PENDING human decision on scope)
+
+A full trading-package + worker-slice dependency map was produced before deleting. **Decisive finding: all
+five §A packages are BLOCKED this pass** — each has a SURVIVING (KEEP/platform) importer. L3d-5's actual
+deletable surface is the **actor/runtime worker slice + the composition-root restructure only** (the deferred
+#3/#7/#8 positionals), NOT the packages.
+
+**Pivotal fact:** `apps/worker/src/market-intelligence/*` is PLATFORM and SURVIVES (wired live in the
+composition root), and it value-imports `@herobids/market-data` (`evidence-adapters.ts:evaluateRegime`,
+`getRequiredRegimeCandleCount`) and `@herobids/strategy` (`preset-scorecard-runner.ts:scoreCandidate`). So
+those two packages cannot be deleted while market-intelligence needs them.
+
+**Per-package BLOCKED verdicts + clearing follow-slice:**
+- **`venues`** — API wallet-gen (`api/index.ts`, `routes/chat.ts`, `routes/setup.ts` `generateWallet`/
+  `deriveSolanaAddress`) → **L3-P1b**; venue adapters in `routes/accounts.ts` (`HyperliquidAdapter`/
+  `JupiterSwapAdapter`/`OneInchSwapAdapter`) → **L3-P1b / venue_accounts deletion**; worker `PublicStreamPool`/
+  mark-sources (`index.ts`, `public-stream-routing.ts`) + `BrowserlessAdapter` (`agent.ts`) + scanner-candle-
+  fetcher → **unscheduled platform re-home (OPEN)**.
+- **`backtesting`** — live `/backtests` route (`routes/backtests.ts:parseCsvToFrames`) + surviving
+  `BacktestRuntime` (`index.ts:2279`) + `MarketDataRecorder` → **needs a backtesting scope DECISION (OPEN)**;
+  transitively blocks `engine` (backtesting value-imports engine internally).
+- **`market-data`** + **`strategy`** — surviving market-intelligence assessor + scanner surface →
+  **market-intelligence refactor (unscheduled, OPEN)**.
+- **`engine`** — mark-source wiring (`index.ts:createFillFirstMarkSource`/`MarkSelector`),
+  `AgentIntakeResolver` (`agent-intake-resolver.ts`, the #3 knot), ops script `backfill-realized-pnl-delta.ts`,
+  + transitive via backtesting → **composition-root restructure (partial) + backtesting decision**.
+
+**DELETABLE-NOW (the L3d-5 this-pass surface):** the actor/runtime worker slice as one coordinated
+composition-root restructure — delete `__tests__/integration/agent-native-decision.integration.test.ts`;
+remove the `intakeResolver` object + `AgentIntakeResolver` + `actorRegistry`/`ActorStateOwner` + TradingActor
+factory + `WorkerRuntime` + `lifecycleQueue` wiring + the deferred broker dead positionals (#3/#7/#8 +
+`_agentRiskDefaults`) + `agents/index.ts` type re-exports + ~5 broker test files' inline constructions; then
+delete the now-unimported slices leaf-first: `agent-trading-actor.ts` → `trading-actor.ts` →
+`execution-actor.ts` → `runtime.ts` → `venue-adapter-factory.ts` → `agent-intake-resolver.ts` (+
+`venue-instrument-cache.ts` after confirming `validate-trade-instrument.ts` survivorship;
+`technical-phase.ts`/`complete-technical-scan.ts` only if no surviving reader remains). **KEEP** the scanner
+candle/candidate/pre-filter helpers + `tick-gates.ts` (surviving assessor + agent).
+**Watch-out:** the surviving `agentDecisionHandler` (boundary path) must be confirmed to no longer exercise
+`intakeResolver`'s grant-fallback (`index.ts` ~:843–861) before #3 removal — verify it's dead post-L3c.
+
+**OPEN QUESTIONS (need a human/cross-repo decision — surfaced, not assumed):**
+1. **Backtesting disposition** — §A lists `backtesting` for deletion, but `BacktestRuntime` + the `/backtests`
+   route are LIVE and never dispositioned in §D. Keep / move behind boundary / delete the feature? Gates
+   `backtesting` + (transitively) `engine`.
+2. **market-intelligence → market-data/strategy** — is a re-home slice planned, or do those packages stay as
+   market-intelligence deps indefinitely?
+3. **venues public-stream + BrowserlessAdapter** — surviving platform uses not covered by L3-P1b; what clears
+   them?
+
+**Net:** L3d "the big subtraction" reduces, this pass, to the worker actor/runtime slice + composition-root
+restructure. The five package deletions are all carry-forward, gated on the follow-slices/decisions above.
