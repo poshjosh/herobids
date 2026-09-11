@@ -7,7 +7,8 @@ import { encryptCredential } from '../crypto.js';
 /**
  * Route-level tests for credential lifecycle:
  * - Audit events (create/rotate/delete) without secret leaks
- * - Rotation restarts dependent running instances
+ * - Rotation surfaces dependent running instances (informational) but does NOT
+ *   restart them — bot lifecycle is Traderton-owned (L3d-1; 004-l3d-plan.md §F)
  * - Delete is fail-closed (409 when credential is in use)
  */
 
@@ -65,11 +66,10 @@ vi.mock('../crypto.js', () => ({
   getEncryptionKey: vi.fn().mockReturnValue('a'.repeat(64)),
 }));
 
-vi.mock('@herobids/engine', () => ({
-  credentialCreatedEvent: vi.fn((payload) => ({ type: 'credential.created', payload })),
-  credentialRotatedEvent: vi.fn((payload) => ({ type: 'credential.rotated', payload })),
-  credentialDeletedEvent: vi.fn((payload) => ({ type: 'credential.deleted', payload })),
-}));
+// L3d-1: the credential audit-event builders were relocated to @herobids/domain
+// (from @herobids/engine). They are pure functions with no side effects, so the
+// real implementations are used here — the route emits real audit entries that
+// these tests assert against. No module mock is needed.
 
 const mockFindCredentialDependents = vi.fn().mockResolvedValue({ venueAccountIds: [], runningInstanceIds: [], activeConnectionIds: [], blockingAgentCredentials: [] });
 
@@ -130,11 +130,9 @@ function buildMockDb() {
   } as any;
 }
 
+// L3d-1: the rotate route no longer enqueues restarts, but we keep a queue-add
+// spy to assert it is NEVER called (no in-process lifecycle enqueue on rotation).
 const mockQueueAdd = vi.fn().mockResolvedValue(undefined);
-
-function buildMockQueue() {
-  return { add: mockQueueAdd } as any;
-}
 
 function makePlansConfig(): PlansConfig {
   return {
@@ -182,7 +180,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db, makePlansConfig());
+      await credentialRoutes(app, db, makePlansConfig());
 
       const res = await app.inject({
         method: 'POST',
@@ -203,7 +201,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -235,7 +233,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -254,7 +252,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -285,7 +283,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -308,7 +306,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -329,7 +327,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -348,7 +346,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -370,7 +368,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -392,7 +390,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -413,7 +411,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -437,7 +435,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -458,7 +456,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -487,7 +485,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -510,7 +508,11 @@ describe('credential audit events', () => {
       expect(JSON.stringify(journalCall)).not.toContain('new-secret-value');
     });
 
-    it('restarts dependent running instances after rotation', async () => {
+    // L3d-1: herobids no longer force-restarts running bots on rotation
+    // (Traderton owns bot lifecycle; the in-process lifecycle queue is being
+    // removed and no boundary restart surface exists). The route still surfaces
+    // the dependent instance IDs (informational) but never enqueues a restart.
+    it('reports dependent running instances but does NOT enqueue any restart', async () => {
       mockDbRows = [{ id: 'cred-1', provider: 'hyperliquid', userId: 'user-1' }];
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: ['va-1', 'va-2'],
@@ -521,9 +523,8 @@ describe('credential audit events', () => {
 
       const app = Fastify();
       const db = buildMockDb();
-      const queue = buildMockQueue();
       decorateWithAuth(app);
-      await credentialRoutes(app, queue, db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -535,20 +536,12 @@ describe('credential audit events', () => {
       const body = JSON.parse(res.body);
       expect(body.status).toBe('rotated');
       expect(body.dependentBotIds).toEqual(['inst-1', 'inst-2']);
-      expect(body.restartedBotIds).toEqual(['inst-1', 'inst-2']);
-
-      expect(mockQueueAdd).toHaveBeenCalledTimes(2);
-      expect(mockQueueAdd).toHaveBeenCalledWith('restart-instance', {
-        command: 'restart',
-        botId: 'inst-1',
-      });
-      expect(mockQueueAdd).toHaveBeenCalledWith('restart-instance', {
-        command: 'restart',
-        botId: 'inst-2',
-      });
+      // Restart is no longer driven from herobids — no restartedBotIds field.
+      expect(body.restartedBotIds).toBeUndefined();
+      expect(mockQueueAdd).not.toHaveBeenCalled();
     });
 
-    it('does not restart when no running instances depend on credential', async () => {
+    it('reports an empty dependent set when no running instances depend on the credential', async () => {
       mockDbRows = [{ id: 'cred-1', provider: 'hyperliquid', userId: 'user-1' }];
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: ['va-1'],
@@ -559,9 +552,8 @@ describe('credential audit events', () => {
 
       const app = Fastify();
       const db = buildMockDb();
-      const queue = buildMockQueue();
       decorateWithAuth(app);
-      await credentialRoutes(app, queue, db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -572,7 +564,7 @@ describe('credential audit events', () => {
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
       expect(body.dependentBotIds).toEqual([]);
-      expect(body.restartedBotIds).toEqual([]);
+      expect(body.restartedBotIds).toBeUndefined();
       expect(mockQueueAdd).not.toHaveBeenCalled();
     });
 
@@ -581,7 +573,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -598,7 +590,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -619,7 +611,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -658,7 +650,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'DELETE',
@@ -688,7 +680,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'DELETE',
@@ -720,7 +712,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'DELETE',
@@ -747,7 +739,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'DELETE',
@@ -784,7 +776,7 @@ describe('credential audit events', () => {
         blockingAgentCredentials: [],
       });
       decorateWithAuth(app);
-      await credentialRoutes(app, buildMockQueue(), db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'DELETE',
@@ -799,53 +791,18 @@ describe('credential audit events', () => {
     });
   });
 
-  describe('POST /credentials/:id/rotate (restart failure)', () => {
-    it('returns restartError when queue enqueue fails', async () => {
-      mockDbRows = [{ id: 'cred-5', provider: 'hyperliquid', userId: 'user-5' }];
-      mockFindCredentialDependents.mockResolvedValueOnce({
-        venueAccountIds: ['va-1'],
-        runningInstanceIds: ['inst-1', 'inst-2'],
-        activeConnectionIds: [],
-        blockingAgentCredentials: [],
-      });
-
-      const app = Fastify();
-      const db = buildMockDb();
-      const queue = buildMockQueue();
-      // First queue.add succeeds, second fails
-      mockQueueAdd
-        .mockResolvedValueOnce(undefined)
-        .mockRejectedValueOnce(new Error('Redis connection refused'));
-      decorateWithAuth(app);
-      await credentialRoutes(app, queue, db);
-
-      const res = await app.inject({
-        method: 'POST',
-        url: '/credentials/cred-5/rotate',
-        payload: { secrets: { apiKey: 'k', secret: 's', walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } },
-      });
-
-      expect(res.statusCode).toBe(200);
-      const body = JSON.parse(res.body);
-      expect(body.status).toBe('rotated');
-      // Full dependent set is always visible
-      expect(body.dependentBotIds).toEqual(['inst-1', 'inst-2']);
-      // Only the first instance was successfully queued
-      expect(body.restartedBotIds).toEqual(['inst-1']);
-      // Error is surfaced to the caller
-      expect(body.restartErrorCode).toBe('enqueue_failed');
-      expect(body.restartError).toContain('Failed to enqueue all restart jobs');
-    });
-
-    it('returns restartError when dependent lookup itself fails', async () => {
+  describe('POST /credentials/:id/rotate (dependent lookup failure)', () => {
+    // L3d-1: the enqueue path is gone, so there is no restart-enqueue failure to
+    // surface. A dependent-lookup failure is still reported (non-fatal) via
+    // dependentLookupError so the rotation still succeeds.
+    it('surfaces dependentLookupError when the dependent lookup fails but still succeeds', async () => {
       mockDbRows = [{ id: 'cred-6', provider: 'hyperliquid', userId: 'user-6' }];
       mockFindCredentialDependents.mockRejectedValueOnce(new Error('connection timeout'));
 
       const app = Fastify();
       const db = buildMockDb();
-      const queue = buildMockQueue();
       decorateWithAuth(app);
-      await credentialRoutes(app, queue, db);
+      await credentialRoutes(app, db);
 
       const res = await app.inject({
         method: 'POST',
@@ -856,12 +813,15 @@ describe('credential audit events', () => {
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
       expect(body.status).toBe('rotated');
-      // Dependent set is unknown — reported as empty
+      // Dependent set is unknown — reported as empty.
       expect(body.dependentBotIds).toEqual([]);
-      expect(body.restartedBotIds).toEqual([]);
-      // Error is surfaced so operator knows lookup failed
-      expect(body.restartErrorCode).toBe('lookup_failed');
-      expect(body.restartError).toContain('Failed to determine dependent instances');
+      // No restart is attempted, so no restartError / restartedBotIds fields.
+      expect(body.restartedBotIds).toBeUndefined();
+      expect(body.restartErrorCode).toBeUndefined();
+      // The lookup failure is surfaced so the operator knows the set is unknown.
+      expect(body.dependentLookupError).toContain('Failed to determine dependent instances');
+      // Rotation itself succeeded — the audit event was still emitted.
+      expect(mockQueueAdd).not.toHaveBeenCalled();
     });
   });
 });

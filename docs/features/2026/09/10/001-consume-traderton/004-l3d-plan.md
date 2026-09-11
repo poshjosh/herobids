@@ -42,6 +42,15 @@ imports `credentialCreatedEvent` / `credentialRotatedEvent` / `credentialDeleted
 platform-owned) → **relocate them to `@herobids/domain` (or a platform module), do NOT delete**, BEFORE
 `@herobids/engine` is deleted. (Consistent: they stay in herobids, just not inside the engine package.)
 
+> **DONE (L3d-1):** `credentialCreatedEvent`/`credentialRotatedEvent`/`credentialDeletedEvent` + their payload
+> types (`CredentialCreatedPayload`/`CredentialRotatedPayload`/`CredentialDeletedPayload`) were relocated to
+> `@herobids/domain` (`packages/domain/src/platform.ts`, returning a `PlatformAuditEntry` structurally
+> compatible with `PgJournal.append`) and REMOVED from `packages/engine/src/journal.ts` + its `index.ts`
+> exports — the route (`apps/api/src/routes/credentials.ts`) now imports them from `@herobids/domain`, so **no
+> KEEP-side platform code imports these from `@herobids/engine`.** Their unit tests moved to
+> `packages/domain/src/platform.test.ts`. `credentialDecryptedEvent`/`credentialUsedEvent` were NOT moved:
+> their only callers are DELETE-side §A engine slices — they stay in the engine and are deleted with it (§C #16).
+
 **New tracked follow-slices (each its own investigate→propose→pause; sequenced):**
 1. **L3d-reporting** — re-point the §D (b) consumers at boundary reads; then drop the `bots` table.
    Gated on confirming the needed boundary read surfaces exist (a possible cross-repo dependency to surface
@@ -120,6 +129,7 @@ deletions** — leaving them is the leak.
 | 13c | `apps/api/src/routes/bots.ts:validateExecutionCapability/venueTypeFromProvider (still used by PATCH /bots/:id/config capability check)` | orphaned | L3c (the capability check on the rewired write endpoints was removed; PATCH-config still uses it locally — a DELETE-side reader per §D) | L3d |
 | 14 | `apps/api/src/plan-guards.ts:checkBotLimit` | dead | L3c (last caller removed from routes/bots.ts) | L3d |
 | 15 | `apps/api/src/agents/agent-create-normalization.ts:maxBots resolution (~:368–390) + AgentCreateParams.maxBots/normalized maxBots` | dead | L3c investigation (#4 — herobids owns no bot cap; recorded, not touched in L3c) | L3d |
+| 16 | `packages/engine/src/journal.ts:credentialDecryptedEvent/credentialUsedEvent + CredentialDecryptedPayload/CredentialUsedPayload` | orphaned-once-engine-callers-gone | L3d-1 (their ONLY callers are DELETE-side §A engine slices — `venue-adapter-factory.ts`, `trading-actor.ts`, `agent-trading-actor.ts`; kept in the engine so those slices still compile until §A deletion. The platform-owned created/rotated/deleted builders were relocated to `@herobids/domain` — NOT these two, which have no KEEP-side consumer.) | L3d-5 (deleted with `packages/engine`) |
 
 ## §D — Consumer audit (from L3c; must be complete before deleting)
 
@@ -167,11 +177,11 @@ for L3d.
 | `apps/api/src/routes/actor-health.ts` | bots read (status) | (b) | bot health endpoint; re-point at boundary `get_bot_status` |
 | `apps/api/src/routes/admin.ts` | bots count | (a) | admin metric count over the bots table; deletable (or re-point at a boundary count) |
 | `apps/api/src/services/blueprint-performance-scorer.ts` | bots read (agent's bots) | (b) | scores blueprint performance from a bot's fills; re-point at boundary analytics/reporting |
-| `apps/api/src/routes/credentials.ts:PATCH credential → restart running instances (queue.add restart-instance)` | lifecycle enqueue (third path) | (a) | THIRD `trading-instance-lifecycle` enqueuing site (see investigation item 3) — credential-rotation restart; trading lifecycle — deletable with runtime.ts. NOT in L3c's five-tool scope; flagged for L3d. |
+| `apps/api/src/routes/credentials.ts:PATCH credential → restart running instances (queue.add restart-instance)` | lifecycle enqueue (third path) | (a) | **DONE (L3d-1):** the `queue.add('restart-instance', …)` enqueue was REMOVED, not rerouted — no boundary "restart bot" surface exists (verified: no restart tool in `@herobids/domain/traderton`) and Traderton owns bot lifecycle, so herobids must not drive in-process bot restarts on credential rotation (§F). The `queue`/`LifecycleJob` param was dropped from `credentialRoutes` (composition root `apps/api/src/index.ts` + functional test helper updated). **Behavioural change (accepted):** a credential rotation no longer force-restarts running bots from herobids; the route still surfaces the dependent running-instance IDs (informational, best-effort) via `dependentBotIds` (+ `dependentLookupError` on lookup failure), dropping the old `restartedBotIds`/`restartErrorCode`/`restartError` fields. Running bots continue on their prior credential until Traderton (which owns lifecycle) restarts/reloads them. |
 | `apps/api/src/index.ts:lifecycleQueue (new Queue 'trading-instance-lifecycle')` + `apps/worker/src/runtime.ts:WorkerRuntime consumer` | lifecycle queue | (a) | the queue itself + its consumer; deletable once no enqueuing site remains (broker done in L3c; API bots route done in L3c; credentials.ts + credentials restart remain → L3d) |
 | `apps/api/src/agents/agent-create-normalization.ts:maxBots resolution` | maxBots policy | (a) | #4 legal-isolation closer — herobids owns no bot cap; deletable (recorded §C #15) |
 | `apps/api/src/plan-guards.ts:checkBotLimit` | maxBots policy | (a) | #4 closer — last caller removed in L3c (§C #14) |
-| `apps/worker/src/services/approval-service.ts:ApprovalService.executeApproval (submitDecisionForExecution)` | engine submit (post-approve execute) | (b) | **SEAM/GAP:** the human-approve → execute path (D3 "on approve, call submit_decision as a plain execute") still drives the in-process engine. NOT in L3c's listed fusion points (plan §1 scopes only `handleDecisionSubmit`), so L3c did NOT rewire it. Must be re-pointed at the boundary `submit_decision` invoke (same payload build as the handler) BEFORE `@herobids/engine` is deleted — L3d prerequisite or a dedicated follow-slice. Flagged here so it is not lost. |
+| `apps/worker/src/services/approval-service.ts:ApprovalService.executeApproval (submitDecisionForExecution)` | engine submit (post-approve execute) | (b) | **DONE (L3d-1):** REWIRED to the boundary `submit_decision` invoke+poll, reusing the L3c helpers `buildSubmitDecisionPayload` + `mapBoundaryResultToDecisionOutcome` (`decision-boundary-mapping.ts`) and `TradertonSideEffectBoundary.invokeAndAwait`. Subject built as `{ ownerId: userId, actor: { type: approval.actorType, id: approval.actorId } }` — `ownerId`+`actor` ONLY, no `venueAccountId` (Traderton resolves it, D2). All platform gates/bookkeeping kept (`findById`, ownership, double-execution guard, pending-only, expiry+`updateExpired`, pending→approved `updateStatus`, `recordExecutionResult`, `recordResolutionAttempt`). Per-trade `validatePerTradeLevels` REMOVED (moved behind the boundary — Traderton owns mark-price-dependent validation). No-fallback: an unconfigured boundary returns a typed `error`/`precondition.not_ready` WITHOUT consuming the approval; the engine is NEVER invoked. `submitDecisionForExecution`/`DecisionContextHashMismatchError`/`validatePerTradeLevels` engine imports + the `intakeResolver`/`isIntakeRejection` execute-path usage were removed from this file (the `intakeResolver` dep was also dropped from `ApprovalServiceDeps` + the composition root). On `accepted` only `emitDecisionAccepted` is emitted (the boundary owns the plan/execution lifecycle and returns no order/fill/position detail synchronously, so plan-status/execution-result events are not fabricated here — mirrors the L3c direct path). **No in-process engine-drive path remains.** |
 
 ## §E — Execution order (L3d — path (B), per §F)
 
@@ -201,3 +211,34 @@ for L3d.
   (gated on L3-P1b). Any `@herobids/{engine,…}` package still imported by a KEEP route is recorded as a
   remaining tendril for its follow-slice.
 - Build + lint + full suite green. Do NOT commit — the coordinator commits. Pause for human before L3e.
+
+
+## §G — L3d sub-slice progress + review findings
+
+### L3d-1 — engine-driver rewires + credential-event relocation — DONE (committed; reviewed PASS)
+Landed §E step 2. `ApprovalService.executeApproval` rewired to the boundary (`submit_decision` invoke+poll,
+reusing the L3c `buildSubmitDecisionPayload`/`mapBoundaryResultToDecisionOutcome` + `sideEffectBoundary`);
+`credentials.ts` credential-rotation restart-enqueue removed; credential event-builders relocated
+`@herobids/engine` → `@herobids/domain` (`platform.ts`). Code review: no CRITICAL/HIGH.
+
+**Accepted deviations (both judged sound in review — recorded, no rework):**
+- **Credential rotation no longer force-restarts running bots.** No boundary "restart bot" surface exists and
+  Traderton owns lifecycle (§F), so the in-process `restart-instance` enqueue was removed, not reinvented.
+  Running bots continue on the prior credential until Traderton reloads them (old secret not leaked; it stays
+  in use by an already-running bot). Response shape changed: dropped `restartedBotIds`/`restartErrorCode`/
+  `restartError`; added `dependentBotIds` (informational) + `dependentLookupError`.
+- **Approve path emits only `decision.accepted`** (not `plan.status`/`execution.result`) — identical to the
+  L3c direct-decision handler; the boundary returns no synchronous plan/fill/position detail and Traderton
+  owns the execution event stream. Parity is with L3c and it holds; not a gap.
+
+**LOW findings (non-blocking):**
+- **LOW-1:** `platform.ts` credential builders carry a pre-existing `as unknown as Record<string,unknown>`
+  double-cast (behaviour-preserving copy from the engine). Follow-up: type the builders to return
+  `{ type; payload: CredentialXPayload }` or add an explicit mapper to drop the cast.
+- **LOW-2:** `emitPlanStatus`/`emitExecutionResult` on `InstanceEventPublisher` are now dead production
+  surface (no production caller after L3c + L3d-1). Sweep with the deferred `@herobids/engine`/event-publisher
+  cleanup.
+- **LOW-3 (FIXED):** stale `credentials.test.ts` header comment corrected to reflect no-restart behaviour.
+
+**§C addition from L3d-1:** #16 — engine `credentialDecryptedEvent`/`credentialUsedEvent` + payload types
+(callers are DELETE-side §A slices only) → deleted with `packages/engine` at L3d-5.

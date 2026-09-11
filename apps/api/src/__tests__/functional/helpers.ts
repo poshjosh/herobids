@@ -191,7 +191,7 @@ export async function buildApp() {
     };
   });
 
-  await credentialRoutes(app, lifecycleQueue, db);
+  await credentialRoutes(app, db);
 
   await authRoutes(app, authConfig, db, redisClient, 'free', testPlansConfig as any);
   await agentRoutes(app, db, testPlansConfig as any);

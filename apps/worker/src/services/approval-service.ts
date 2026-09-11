@@ -1,12 +1,9 @@
-import type { Decision, DecisionId, InstrumentId, VenueAccountId, DecisionIntent, ActorType } from '@herobids/domain';
-import { Decimal } from '@herobids/domain';
+import type { DecisionSubmitPayload, ActorType } from '@herobids/domain';
 import type { DecisionApprovalRepository } from '@herobids/db';
 import type { DecisionFailureRepository } from '@herobids/db';
-import { submitDecisionForExecution, DecisionContextHashMismatchError, validatePerTradeLevels } from '@herobids/engine';
-import { isIntakeRejection } from '../execution-actor.js';
-import type { DecisionIntakeResolver } from '../agents/agent-decision-handler.js';
 import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
-import { POSITION_GROWING_INTENTS, formatLevelValidationMessage } from '../shared/decision-validation.js';
+import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
+import { buildSubmitDecisionPayload, mapBoundaryResultToDecisionOutcome } from '../agents/decision-boundary-mapping.js';
 import { createLogger } from '../logger.js';
 import crypto from 'node:crypto';
 
@@ -14,31 +11,44 @@ const logger = createLogger('approval-service');
 
 export interface ApprovalServiceDeps {
   approvalRepo: DecisionApprovalRepository;
-  intakeResolver: DecisionIntakeResolver;
   eventPublisher: InstanceEventPublisher;
   decisionFailureRepo?: DecisionFailureRepository;
   agentApprovalsTtlMs: number;
+  // L3d-1: the Traderton side-effecting boundary. The human-approve → execute
+  // path routes `submit_decision` over REST (invoke → poll) instead of the
+  // in-process engine. When absent (unconfigured), executeApproval returns a
+  // typed precondition error — NEVER a silent fall back to the engine.
+  sideEffectBoundary?: TradertonSideEffectBoundary;
+  // Total budget (ms) for the boundary invoke + poll. Matches the decision
+  // handler's 30s deadline so the synchronous feel is preserved.
+  boundaryDeadlineMs?: number;
 }
 
 export class ApprovalService {
-  constructor(private readonly deps: ApprovalServiceDeps) {}
+  private readonly boundaryDeadlineMs: number;
+
+  constructor(private readonly deps: ApprovalServiceDeps) {
+    this.boundaryDeadlineMs = deps.boundaryDeadlineMs ?? 30_000;
+  }
 
   // ── Public API ──────────────────────────────────────────────────────────
 
   /**
-   * Execute a pending approval — reconstruct the decision from stored JSONB,
-   * run through the normal risk/execution pipeline, and record the outcome.
+   * Execute a pending approval — reconstruct the decision from stored JSONB and
+   * submit it over the Traderton REST boundary, recording the outcome.
    *
    * Ownership is validated (userId must match). Expired approvals are rejected.
-   * If execution context is unavailable, the error is recorded WITHOUT consuming
-   * the approval — the user can fix the issue (start the agent, connect venue)
-   * and try again.
+   * The pending → approved transition happens once all platform gates pass and
+   * the boundary is about to be invoked. Per-trade level validation is NOT run
+   * here — Traderton owns mark-price-dependent validation behind the boundary
+   * (004-l3d-plan.md §C). herobids injects ownerId + actor ONLY; Traderton
+   * resolves the venue account.
    */
   async executeApproval(
     approvalId: string,
     userId: string,
     resolutionSource: string,
-    effectiveAgentId: string,
+    _effectiveAgentId: string,
     effectiveBotId: string,
   ): Promise<ApprovalResolutionResult> {
     const approval = await this.deps.approvalRepo.findById(approvalId);
@@ -64,241 +74,134 @@ export class ApprovalService {
       return { kind: 'expired' };
     }
 
-    // Resolve execution context for the agent.
-    const resolveId = effectiveAgentId;
-    const intakeResult = await this.deps.intakeResolver.getIntakeDeps(resolveId, approval.instrumentId);
-    if (!intakeResult) {
-      const msg = 'No execution context — agent may not be running or has no active trading connection. Start the agent and try again.';
-      await this.recordResolutionAttempt(approvalId, 'instance_not_running', msg);
-      return { kind: 'error', code: 'instance_not_running', message: msg };
-    }
-    if (isIntakeRejection(intakeResult)) {
-      await this.recordResolutionAttempt(approvalId, intakeResult.code, intakeResult.message);
-      return { kind: 'error', code: intakeResult.code, message: intakeResult.message };
-    }
-    const intakeDeps = intakeResult;
-
-    const context = await this.deps.intakeResolver.getDecisionContext(resolveId, approval.instrumentId);
-    if (!context) {
-      const msg = 'No decision context available — actor may still be initializing or mark price unavailable';
-      await this.recordResolutionAttempt(approvalId, 'no_context', msg);
-      return { kind: 'error', code: 'no_context', message: msg };
+    // No-fallback posture (L3d-1): if the boundary is unconfigured, the approval
+    // cannot be executed — return a typed precondition WITHOUT consuming the
+    // approval (executionStatus stays null; the user can retry once the boundary
+    // is configured). The in-process engine is NEVER invoked.
+    if (!this.deps.sideEffectBoundary) {
+      const code = 'precondition.not_ready';
+      const msg = 'Trading boundary is not configured — the approved decision cannot be executed.';
+      await this.recordResolutionAttempt(approvalId, code, msg);
+      return { kind: 'error', code, message: msg };
     }
 
-    const position = await this.deps.intakeResolver.getPosition(resolveId, approval.instrumentId);
-    if (!position) {
-      const msg = 'Position state not available';
-      await this.recordResolutionAttempt(approvalId, 'no_position_state', msg);
-      return { kind: 'error', code: 'no_position_state', message: msg };
-    }
+    const decisionId = crypto.randomUUID();
 
-    // Build the Decision from the stored proposal
-    const decision: Decision = {
-      id: crypto.randomUUID() as DecisionId,
-      venueAccountId: intakeDeps.venueAccountId as VenueAccountId,
-      instrumentId: approval.instrumentId as InstrumentId,
-      intent: approval.intent as DecisionIntent,
-      targetSize: new Decimal(approval.targetSize),
-      limitPrice: approval.limitPrice ? new Decimal(approval.limitPrice) : undefined,
-      stopLoss: approval.stopLoss ? new Decimal(approval.stopLoss) : undefined,
-      takeProfit: approval.takeProfit ? new Decimal(approval.takeProfit) : undefined,
-      timestamp: approval.createdAt.toISOString(),
-      contextHash: approval.contextHash ?? undefined,
-      metadata: {
-        rationaleSummary: approval.rationaleSummary,
-        confidence: approval.confidence ? Number(approval.confidence) : null,
-        approvalId,
-        approvalResolutionSource: resolutionSource,
-      },
-      actorType: approval.actorType as ActorType,
-      actorId: approval.actorId,
-    };
-
-    // Per-trade level validation
-    if (POSITION_GROWING_INTENTS.has(decision.intent) && (decision.stopLoss || decision.takeProfit)) {
-      let validationSide: 'long' | 'short' | null = null;
-      if (decision.intent === 'go_long') {
-        validationSide = 'long';
-      } else if (decision.intent === 'go_short') {
-        validationSide = 'short';
-      } else if (decision.intent === 'increase') {
-        if (position.side === 'long' || position.side === 'short') {
-          validationSide = position.side;
-        }
-      }
-
-      if (validationSide) {
-        const markPriceStr = context.referenceMark.price;
-        let markPrice: Decimal | undefined;
-        if (markPriceStr) {
-          try {
-            markPrice = new Decimal(markPriceStr);
-          } catch {
-            logger.warn({ approvalId, markPriceStr }, 'Skipping per-trade level validation — malformed mark price');
-          }
-        }
-
-        if (markPrice) {
-          const validationError = validatePerTradeLevels({
-            side: validationSide,
-            markPrice,
-            stopLoss: decision.stopLoss,
-            takeProfit: decision.takeProfit,
-          });
-
-          if (validationError) {
-            const message = formatLevelValidationMessage(validationError);
-            const code = `level.${validationError.reason}`;
-            await this.recordResolutionAttempt(approvalId, code, message);
-            return { kind: 'error', code, message };
-          }
-        }
-      }
-    }
-
-    // Transition status to 'approved' at this point — execution context is
-    // valid and risk validation is about to proceed. This is the single authority
-    // for the pending → approved transition. If the process crashes after this
-    // point, the approval is 'approved' with executionStatus reflecting the outcome.
+    // Transition status to 'approved' — all platform gates passed and the
+    // boundary invoke is about to proceed. This is the single authority for the
+    // pending → approved transition. If the process crashes after this point, the
+    // approval is 'approved' with executionStatus reflecting the outcome.
     await this.deps.approvalRepo.updateStatus(approvalId, 'approved', {
       resolvedByUserId: userId,
       resolutionSource,
     });
 
-    // Submit through the shared engine pipeline.
+    // Build the boundary payload from the stored approval fields, reusing the
+    // handler's shared payload builder (same wire shape as the direct path).
+    const decisionPayload: DecisionSubmitPayload = {
+      decisionId,
+      instrumentId: approval.instrumentId,
+      intent: approval.intent as DecisionSubmitPayload['intent'],
+      targetSize: approval.targetSize,
+      rationaleSummary: approval.rationaleSummary,
+      ...(approval.limitPrice != null ? { limitPrice: approval.limitPrice } : {}),
+      ...(approval.stopLoss != null ? { stopLoss: approval.stopLoss } : {}),
+      ...(approval.takeProfit != null ? { takeProfit: approval.takeProfit } : {}),
+      ...(approval.confidence != null ? { confidence: Number(approval.confidence) } : {}),
+      ...(approval.contextHash != null ? { contextHash: approval.contextHash } : {}),
+    };
+    const boundaryPayload = buildSubmitDecisionPayload(decisionPayload);
+
     try {
-      const result = await submitDecisionForExecution(decision, context, position, intakeDeps);
+      // Inject ownerId + actor ONLY. Traderton resolves the venue account (D2).
+      const result = await this.deps.sideEffectBoundary.invokeAndAwait({
+        toolName: 'submit_decision',
+        payload: boundaryPayload,
+        subject: {
+          ownerId: userId,
+          actor: { type: approval.actorType as ActorType, id: approval.actorId },
+        },
+        deadlineMs: this.boundaryDeadlineMs,
+      });
+      const outcome = mapBoundaryResultToDecisionOutcome(result);
+      const planId = outcome.planId ?? null;
 
-      // Record execution outcome
-      const planId = result.plan?.id ?? null;
-      if (result.preExecutionRejection) {
+      if (outcome.status === 'accepted') {
         await this.deps.approvalRepo.recordExecutionResult(
-          approvalId, decision.id, planId, 'rejected',
+          approvalId, decisionId, planId, 'accepted',
         );
-        return {
-          kind: 'executed',
-          status: 'rejected',
-          decisionId: decision.id,
-          planId,
-          message: result.preExecutionRejection.message,
-        };
-      }
 
-      if (result.riskRejected) {
-        await this.deps.approvalRepo.recordExecutionResult(
-          approvalId, decision.id, planId, 'rejected',
-        );
-        return {
-          kind: 'executed',
-          status: 'rejected',
-          decisionId: decision.id,
-          planId,
-          message: result.riskError?.message ?? 'Decision rejected by risk gate',
-        };
-      }
-
-      if (result.executionFailed) {
-        await this.deps.approvalRepo.recordExecutionResult(
-          approvalId, decision.id, planId, 'error',
-        );
-        return {
-          kind: 'executed',
-          status: 'error',
-          decisionId: decision.id,
-          planId,
-          message: result.executionError?.message ?? 'Execution failed',
-        };
-      }
-
-      // Success
-      const execStatus = 'accepted';
-      await this.deps.approvalRepo.recordExecutionResult(
-        approvalId, decision.id, planId, execStatus,
-      );
-
-      // Emit events for activity feed
-      try {
-        await this.deps.eventPublisher.emitDecisionAccepted(effectiveBotId, {
-          decisionId: decision.id,
-          acceptedAt: new Date().toISOString(),
-          normalizedDecision: {
-            id: decision.id,
-            instrumentId: decision.instrumentId,
-            intent: decision.intent,
-            targetSize: decision.targetSize.toString(),
-            limitPrice: decision.limitPrice?.toString(),
-            actorType: decision.actorType,
-            actorId: decision.actorId,
-          },
-        });
-
-        if (result.plan) {
-          await this.deps.eventPublisher.emitPlanStatus(effectiveBotId, {
-            decisionId: decision.id,
-            planId: result.plan.id,
-            status: result.plan.status as 'created' | 'executing' | 'completed' | 'failed',
-            action: result.plan.action,
-            venue: result.plan.venue,
-            symbol: result.plan.symbol,
-            orderCount: result.plan.orders.length,
-          });
-        }
-
-        if (result.executionResult) {
-          await this.deps.eventPublisher.emitExecutionResult(effectiveBotId, {
-            decisionId: decision.id,
-            planId: result.plan?.id ?? '',
-            orders: result.executionResult.orders.map((o) => ({
-              id: o.id,
-              side: o.side,
-              type: o.type,
-              quantity: o.quantity.toString(),
-              status: o.status,
-            })),
-            fills: result.executionResult.fills.map((f) => ({
-              side: f.side,
-              quantity: f.quantity.toString(),
-              price: f.price.toString(),
-            })),
-            positionAfter: {
-              side: result.position.side,
-              size: result.position.size.toString(),
-              entryPrice: result.position.entryPrice.toString(),
+        // Emit the accepted event for the activity feed. Best-effort — a publish
+        // failure must not flip the recorded execution outcome. Only
+        // `decision.accepted` is emitted here: the boundary owns the plan /
+        // execution lifecycle and does not return order/fill/position detail on
+        // the synchronous reply, so plan-status / execution-result events (which
+        // require that detail) are emitted by Traderton's own event stream — not
+        // fabricated here (mirrors the L3c direct-decision path).
+        try {
+          await this.deps.eventPublisher.emitDecisionAccepted(effectiveBotId, {
+            decisionId,
+            acceptedAt: new Date().toISOString(),
+            normalizedDecision: {
+              id: decisionId,
+              instrumentId: approval.instrumentId,
+              intent: approval.intent,
+              targetSize: approval.targetSize,
+              limitPrice: approval.limitPrice ?? undefined,
+              actorType: approval.actorType,
+              actorId: approval.actorId,
             },
-            executionFailed: false,
-            completedAt: new Date().toISOString(),
           });
+        } catch (err) {
+          logger.error({ approvalId, decisionId, err }, 'Failed to publish approval execution events');
         }
-      } catch (err) {
-        logger.error({ approvalId, decisionId: decision.id, err }, 'Failed to publish approval execution events');
+
+        return {
+          kind: 'executed',
+          status: 'accepted',
+          decisionId,
+          planId,
+          message: 'Trade executed successfully',
+        };
       }
 
+      if (outcome.status === 'rejected') {
+        await this.deps.approvalRepo.recordExecutionResult(
+          approvalId, decisionId, planId, 'rejected',
+        );
+        return {
+          kind: 'executed',
+          status: 'rejected',
+          decisionId,
+          planId,
+          message: outcome.message ?? 'Decision rejected by the trading boundary',
+        };
+      }
+
+      // status === 'error' — in_progress after deadline, or transport error.
+      await this.deps.approvalRepo.recordExecutionResult(
+        approvalId, decisionId, planId, 'error',
+      );
       return {
         kind: 'executed',
-        status: 'accepted',
-        decisionId: decision.id,
+        status: 'error',
+        decisionId,
         planId,
-        message: 'Trade executed successfully',
+        message: outcome.message ?? 'Decision could not be processed by the trading boundary',
       };
     } catch (err) {
-      const errorMsg = err instanceof DecisionContextHashMismatchError
-        ? 'Decision context hash does not match the server-resolved context'
-        : err instanceof Error ? err.message : 'Unknown execution error';
-
+      const errorMsg = err instanceof Error ? err.message : 'Unknown execution error';
       logger.error({ approvalId, err }, 'Approval execution failed');
 
       // Record the error WITHOUT changing the status from 'approved'.
-      // The approval was already marked approved before execution.
-      // If execution fails, the executionStatus reflects the error but
-      // the approval stays 'approved' (not consumed — already resolved by user).
       await this.deps.approvalRepo.recordExecutionResult(
-        approvalId, decision.id, null, 'error',
+        approvalId, decisionId, null, 'error',
       );
 
       return {
         kind: 'executed',
         status: 'error',
-        decisionId: decision.id,
+        decisionId,
         planId: null,
         message: errorMsg,
       };

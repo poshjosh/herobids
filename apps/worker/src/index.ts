@@ -929,10 +929,14 @@ const agentDecisionHandler = new AgentDecisionHandler(
 
 const approvalService = new ApprovalService({
   approvalRepo: decisionApprovalRepo,
-  intakeResolver,
   eventPublisher,
   decisionFailureRepo,
   agentApprovalsTtlMs: appConfig.agentApprovals.ttlMs,
+  // L3d-1: the human-approve → execute path routes over the same Traderton
+  // side-effecting boundary the decision handler uses. When unconfigured,
+  // executeApproval returns a typed precondition — never the in-process engine.
+  sideEffectBoundary,
+  boundaryDeadlineMs: 30_000,
 });
 
 const snapshotResolver: ContextSnapshotResolver = {

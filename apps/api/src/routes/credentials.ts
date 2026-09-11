@@ -1,16 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { eq, and, sql } from 'drizzle-orm';
-import type { Queue } from 'bullmq';
 import type { Database } from '@herobids/db';
 import { userCredentials, PgJournal } from '@herobids/db';
-import { credentialCreatedEvent, credentialRotatedEvent, credentialDeletedEvent } from '@herobids/engine';
-import type { PlansConfig } from '@herobids/domain';
+import { credentialCreatedEvent, credentialRotatedEvent, credentialDeletedEvent, type PlansConfig } from '@herobids/domain';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { CreateCredentialSchema, RotateCredentialSchema } from '../schemas.js';
 import { findCredentialDependents } from '../credential-dependents.js';
 import { checkCredentialLimit } from '../plan-guards.js';
-import type { LifecycleJob } from '../types.js';
 import { errorPayload, type ApiErrorDetail } from '../error-payload.js';
 import { findProviderRegistryEntry } from '../providers/registry.js';
 import { canonicalizeProviderSecrets, validateProviderSecrets, type ProviderValidationError } from '../providers/validator.js';
@@ -38,7 +35,7 @@ export function validateVenueSecrets(venue: string, secrets: Record<string, stri
   return validateProviderSecrets(venue, secrets, findProviderRegistryEntry(venue)) as ProviderValidationError[];
 }
 
-export async function credentialRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, plansConfig?: PlansConfig): Promise<void> {
+export async function credentialRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig): Promise<void> {
   const journal = new PgJournal(db);
 
   function credentialValidationPayload(errors: SecretValidationError[]) {
@@ -190,42 +187,30 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       userId: request.userId,
     }), app.log);
 
-    // Best-effort restart of running dependents — rotation already succeeded above,
-    // so failures here must not mask the successful update.
-    let runningInstanceIds: string[] = [];
-    let restartedIds: string[] = [];
-    let restartError: string | undefined;
-    let restartErrorCode: 'lookup_failed' | 'enqueue_failed' | undefined;
+    // L3d-1: herobids no longer force-restarts running bots on credential
+    // rotation. Bot lifecycle is owned by Traderton (the in-process
+    // `trading-instance-lifecycle` queue is being removed), and no boundary
+    // "restart bot" surface exists to route this through — so the enqueue is
+    // dropped rather than reinvented (004-l3d-plan.md §F). Dependent instance IDs
+    // are still surfaced (informational) via a best-effort lookup so callers can
+    // see which running bots reference the rotated credential; a failed lookup is
+    // non-fatal and reported.
+    let dependentBotIds: string[] = [];
+    let dependentLookupError: string | undefined;
     try {
       const deps = await findCredentialDependents(db, id);
-      runningInstanceIds = deps.runningInstanceIds;
+      dependentBotIds = deps.runningInstanceIds;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'unknown error';
-      restartErrorCode = 'lookup_failed';
-      restartError = `Failed to determine dependent instances: ${msg}`;
+      dependentLookupError = `Failed to determine dependent instances: ${msg}`;
       app.log.error({ err, credentialId: id }, 'Failed to look up credential dependents after rotation');
-    }
-    try {
-      for (const instanceId of runningInstanceIds) {
-        await queue.add('restart-instance', {
-          command: 'restart',
-          botId: instanceId,
-        });
-        restartedIds.push(instanceId);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'unknown error';
-      restartErrorCode = 'enqueue_failed';
-      restartError = `Failed to enqueue all restart jobs: ${msg}`;
-      app.log.error({ err, credentialId: id, restartedIds, runningInstanceIds }, 'Failed to enqueue restart jobs after credential rotation');
     }
 
     return reply.send({
       status: 'rotated',
       credentialId: id,
-      dependentBotIds: runningInstanceIds,
-      restartedBotIds: restartedIds,
-      ...(restartError ? { restartErrorCode, restartError } : {}),
+      dependentBotIds,
+      ...(dependentLookupError ? { dependentLookupError } : {}),
     });
   });
 

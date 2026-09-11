@@ -129,3 +129,55 @@ export interface AgentConnectionAuditEntry {
   detail: Record<string, unknown> | null;
   createdAt: Date;
 }
+
+// ---------------------------------------------------------------------------
+// Credential audit events — platform-owned (userId-shaped)
+// ---------------------------------------------------------------------------
+
+/**
+ * PlatformAuditEntry — an audit event ready to append to the platform journal.
+ *
+ * Structurally compatible with the db `JournalEntryInput` / `PgJournal.append`
+ * shape (`{ type, payload }`). Relocated here from `@herobids/engine` (L3d-1)
+ * because these are PLATFORM audit events consumed by KEEP platform routes
+ * (`routes/credentials.ts`) — they must not live inside the trading engine
+ * package that is slated for deletion.
+ */
+export interface PlatformAuditEntry {
+  type: string;
+  payload: Record<string, unknown>;
+}
+
+export interface CredentialCreatedPayload {
+  credentialId: string;
+  venue: string;
+  userId: string;
+  label: string;
+}
+
+/** Build a `credential.created` audit event (no secrets in the payload). */
+export function credentialCreatedEvent(payload: CredentialCreatedPayload): PlatformAuditEntry {
+  return { type: 'credential.created', payload: payload as unknown as Record<string, unknown> };
+}
+
+export interface CredentialRotatedPayload {
+  credentialId: string;
+  venue: string;
+  userId?: string;
+}
+
+/** Build a `credential.rotated` audit event (no secrets in the payload). */
+export function credentialRotatedEvent(payload: CredentialRotatedPayload): PlatformAuditEntry {
+  return { type: 'credential.rotated', payload: payload as unknown as Record<string, unknown> };
+}
+
+export interface CredentialDeletedPayload {
+  credentialId: string;
+  venue: string;
+  userId?: string;
+}
+
+/** Build a `credential.deleted` audit event (no secrets in the payload). */
+export function credentialDeletedEvent(payload: CredentialDeletedPayload): PlatformAuditEntry {
+  return { type: 'credential.deleted', payload: payload as unknown as Record<string, unknown> };
+}

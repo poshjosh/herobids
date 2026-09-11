@@ -62,8 +62,11 @@ export type { FeeSimulatorConfig } from './fee-simulator.js';
 export { checkRisk } from './risk-gate.js';
 export type { RiskError, RiskLimits, RiskSnapshot, RiskCheckResult } from './risk-gate.js';
 
-export { decisionEvent, planEvent, orderEvent, fillEvent, riskEvent, liveBlockedEvent, liveArmedEvent, orderSubmittedToVenueEvent, orderAcknowledgedEvent, fillConfirmedFromStreamEvent, completionRecoveredEvent, slippageAlertEvent, computeSlippageBps, credentialCreatedEvent, credentialRotatedEvent, credentialDeletedEvent, credentialDecryptedEvent, credentialUsedEvent } from './journal.js';
-export type { Journal, JournalEntry, JournalEventType, LiveBlockedPayload, LiveArmedPayload, OrderSubmittedToVenuePayload, OrderAcknowledgedPayload, FillConfirmedFromStreamPayload, CompletionRecoveredPayload, SlippageAlertPayload, CredentialCreatedPayload, CredentialRotatedPayload, CredentialDeletedPayload, CredentialDecryptedPayload, CredentialUsedPayload } from './journal.js';
+// L3d-1: credentialCreated/Rotated/Deleted event builders + their payload types
+// relocated to @herobids/domain (platform.ts) — platform audit events consumed by
+// a KEEP route; kept out of the engine so they survive its deletion.
+export { decisionEvent, planEvent, orderEvent, fillEvent, riskEvent, liveBlockedEvent, liveArmedEvent, orderSubmittedToVenueEvent, orderAcknowledgedEvent, fillConfirmedFromStreamEvent, completionRecoveredEvent, slippageAlertEvent, computeSlippageBps, credentialDecryptedEvent, credentialUsedEvent } from './journal.js';
+export type { Journal, JournalEntry, JournalEventType, LiveBlockedPayload, LiveArmedPayload, OrderSubmittedToVenuePayload, OrderAcknowledgedPayload, FillConfirmedFromStreamPayload, CompletionRecoveredPayload, SlippageAlertPayload, CredentialDecryptedPayload, CredentialUsedPayload } from './journal.js';
 
 export { InMemoryJournal } from './journal-memory.js';
 

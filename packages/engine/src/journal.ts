@@ -276,37 +276,15 @@ export function computeSlippageBps(referencePrice: string, avgFillPrice: string,
 }
 
 // --- Credential audit event helpers ---
-
-export interface CredentialCreatedPayload {
-  credentialId: string;
-  venue: string;
-  userId: string;
-  label: string;
-}
-
-export function credentialCreatedEvent(payload: CredentialCreatedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
-  return { type: 'credential.created', payload: payload as unknown as Record<string, unknown> };
-}
-
-export interface CredentialRotatedPayload {
-  credentialId: string;
-  venue: string;
-  userId?: string;
-}
-
-export function credentialRotatedEvent(payload: CredentialRotatedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
-  return { type: 'credential.rotated', payload: payload as unknown as Record<string, unknown> };
-}
-
-export interface CredentialDeletedPayload {
-  credentialId: string;
-  venue: string;
-  userId?: string;
-}
-
-export function credentialDeletedEvent(payload: CredentialDeletedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
-  return { type: 'credential.deleted', payload: payload as unknown as Record<string, unknown> };
-}
+//
+// L3d-1: `credentialCreatedEvent` / `credentialRotatedEvent` /
+// `credentialDeletedEvent` (+ their payload types) were PLATFORM audit events
+// (userId-shaped) consumed only by the KEEP platform route
+// `apps/api/src/routes/credentials.ts`. They were relocated to
+// `@herobids/domain` (`platform.ts`) so they survive the engine deletion.
+// The `credential.created/rotated/deleted` entries in `JournalEventType` above
+// are retained (the type union is shared audit vocabulary). The decrypted/used
+// helpers below stay here — their only callers are engine-side trading slices.
 
 export interface CredentialDecryptedPayload {
   credentialId: string;

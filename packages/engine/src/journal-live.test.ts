@@ -8,9 +8,6 @@ import {
   completionRecoveredEvent,
   slippageAlertEvent,
   computeSlippageBps,
-  credentialCreatedEvent,
-  credentialRotatedEvent,
-  credentialDeletedEvent,
   credentialDecryptedEvent,
   credentialUsedEvent,
 } from './journal.js';
@@ -143,43 +140,9 @@ describe('computeSlippageBps', () => {
 });
 
 describe('credential audit event helpers', () => {
-  it('credentialCreatedEvent produces correct shape without secrets', () => {
-    const entry = credentialCreatedEvent({
-      credentialId: 'cred-1',
-      venue: 'hyperliquid',
-      userId: 'user-1',
-      label: 'prod-key',
-    });
-    expect(entry.type).toBe('credential.created');
-    expect(entry.botId).toBeUndefined();
-    expect(entry.payload).toMatchObject({
-      credentialId: 'cred-1',
-      venue: 'hyperliquid',
-      userId: 'user-1',
-      label: 'prod-key',
-    });
-  });
-
-  it('credentialRotatedEvent produces correct shape', () => {
-    const entry = credentialRotatedEvent({
-      credentialId: 'cred-2',
-      venue: 'hyperliquid',
-      userId: 'user-1',
-    });
-    expect(entry.type).toBe('credential.rotated');
-    expect(entry.payload.credentialId).toBe('cred-2');
-  });
-
-  it('credentialDeletedEvent produces correct shape', () => {
-    const entry = credentialDeletedEvent({
-      credentialId: 'cred-3',
-      venue: 'hyperliquid',
-      userId: 'user-2',
-    });
-    expect(entry.type).toBe('credential.deleted');
-    expect(entry.payload.credentialId).toBe('cred-3');
-  });
-
+  // L3d-1: credentialCreated/Rotated/Deleted moved to @herobids/domain
+  // (platform.ts) — their tests now live in packages/domain/src/platform.test.ts.
+  // Only the engine-internal decrypted/used helpers remain here.
   it('credentialDecryptedEvent includes botId and outcome', () => {
     const entry = credentialDecryptedEvent({
       credentialId: 'cred-4',

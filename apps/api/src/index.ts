@@ -273,7 +273,7 @@ await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCa
 // venue_accounts to trading bindings and further reframe bots as internals.
 await botRoutes(app, lifecycleQueue, db, redisClient, appConfig.plans, appConfig.agentRiskDefaults, tradertonBotClient);
 await venueAccountRoutes(app, db, appConfig.plans, appConfig.venues);
-await credentialRoutes(app, lifecycleQueue, db, appConfig.plans);
+await credentialRoutes(app, db, appConfig.plans);
 await journalRoutes(app, db);
 await positionRoutes(app, db);
 await reconciliationRoutes(app, db);
