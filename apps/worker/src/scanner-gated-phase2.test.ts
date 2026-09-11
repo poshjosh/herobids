@@ -4,8 +4,6 @@ import type { TechnicalPhaseDeps, DiscoveredInstrument } from './technical-phase
 import type { PositionState } from '@herobids/engine';
 import type { PriceCandle, RegimeResult } from '@herobids/market-data';
 import type { ScannerCandleTarget } from '@herobids/strategy';
-import { AgentTradingActor } from './agent-trading-actor.js';
-import type { AgentTradingActorDeps } from './agent-trading-actor.js';
 import { price, quantity, ok, type TechnicalConfig, type HybridPricingIdentity } from '@herobids/domain';
 import type { OrderId, FillId } from '@herobids/domain';
 
@@ -90,100 +88,6 @@ function makeBaseDeps(overrides: Partial<TechnicalPhaseDeps> = {}): TechnicalPha
     getOpenPositions: vi.fn().mockReturnValue([]),
     generateDecisionId: () => 'd-test',
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-    ...overrides,
-  };
-}
-
-function makeIdGen() {
-  let c = 0;
-  return {
-    orderId: () => `o-${++c}` as OrderId,
-    fillId: () => `f-${++c}` as FillId,
-    planId: () => `p-${++c}`,
-    decisionId: () => `d-${++c}`,
-  };
-}
-
-function makeRepo() {
-  return {
-    insertFill: vi.fn().mockResolvedValue(undefined),
-    getOpenByActor: vi.fn().mockResolvedValue([]),
-    getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([]),
-    upsert: vi.fn().mockResolvedValue(undefined),
-    insertPlan: vi.fn().mockResolvedValue(undefined),
-    markExecuting: vi.fn().mockResolvedValue(undefined),
-    markCompleted: vi.fn().mockResolvedValue(undefined),
-    markFailed: vi.fn().mockResolvedValue(undefined),
-    getIncomplete: vi.fn().mockResolvedValue([]),
-    getByExecutionPlanId: vi.fn().mockResolvedValue([]),
-    upsertByVenueRefId: vi.fn().mockResolvedValue(undefined),
-    insertDecision: vi.fn().mockResolvedValue(undefined),
-    insertDecisionContext: vi.fn().mockResolvedValue('ctx-id'),
-    getLastReconciledAtForInstance: vi.fn().mockResolvedValue(null),
-    getRecentByVenueAccount: vi.fn().mockResolvedValue([]),
-    getLatestByVenueAccount: vi.fn().mockResolvedValue(null),
-    getRecentByActorAndVenueAccount: vi.fn().mockResolvedValue([]),
-    insertSnapshot: vi.fn().mockResolvedValue('snap-id'),
-    insert: vi.fn().mockResolvedValue(undefined),
-    getLatestBalanceForVenueAccount: vi.fn().mockResolvedValue(null),
-    getLastReconciledAtAndSnapshotForInstance: vi.fn().mockResolvedValue(null),
-    getLatestDecisions: vi.fn().mockResolvedValue([]),
-    getOpenPositionsByActor: vi.fn().mockResolvedValue([]),
-    getBalanceSnapshotsByVenueAccount: vi.fn().mockResolvedValue([]),
-    getDecisionsByActor: vi.fn().mockResolvedValue([]),
-    getFillsByActor: vi.fn().mockResolvedValue([]),
-    getFillsByVenueAccount: vi.fn().mockResolvedValue([]),
-    getPlansByActor: vi.fn().mockResolvedValue([]),
-    getRecentReconciliations: vi.fn().mockResolvedValue([]),
-    getReconciliationEvents: vi.fn().mockResolvedValue([]),
-    upsertBalanceSnapshot: vi.fn().mockResolvedValue(undefined),
-    upsertPosition: vi.fn().mockResolvedValue(undefined),
-    getPositionByActorAndSymbol: vi.fn().mockResolvedValue(null),
-    insertOrder: vi.fn().mockResolvedValue(undefined),
-    updateOrderStatus: vi.fn().mockResolvedValue(undefined),
-    getOrdersByPlanId: vi.fn().mockResolvedValue([]),
-    getOrdersByVenueRefId: vi.fn().mockResolvedValue([]),
-    getOrdersByActorAndSymbol: vi.fn().mockResolvedValue([]),
-    getReconciliationEvent: vi.fn().mockResolvedValue(null),
-    getBalanceSnapshot: vi.fn().mockResolvedValue(null),
-    deletePosition: vi.fn().mockResolvedValue(undefined),
-    markPlanFailed: vi.fn().mockResolvedValue(undefined),
-    markPlanCompleted: vi.fn().mockResolvedValue(undefined),
-    getDecisionContext: vi.fn().mockResolvedValue(null),
-    getDecisionsByPlanId: vi.fn().mockResolvedValue([]),
-    getOpenOrdersByActor: vi.fn().mockResolvedValue([]),
-    getOrderByVenueRefId: vi.fn().mockResolvedValue(null),
-    insertReconciliationEvent: vi.fn().mockResolvedValue(undefined),
-    upsertDecisionResult: vi.fn().mockResolvedValue(undefined),
-    getLatestBalances: vi.fn().mockResolvedValue([]),
-  };
-}
-
-function makeAgentActorDeps(overrides?: Partial<AgentTradingActorDeps>): AgentTradingActorDeps {
-  const repos = makeRepo();
-  return {
-    agentId: 'agent-test',
-    executionMode: 'paper',
-    venueAccountId: 'va-test',
-    venue: 'hyperliquid',
-    venueType: 'orderbook',
-    riskLimits: { maxOpenPositions: 5, maxDrawdown: price('10000'), maxPositionSize: quantity('10'), maxPositionSizePct: 100, dailyMaxLossPct: 20, stopLossCooldownMs: 300000, stopLossMaxUnrealizedLossPct: 10, maxOrderNotional: price('10000') },
-    venueAdapterFactory: { buildOrderbookAdapter: vi.fn().mockResolvedValue({ venuePort: {}, credentials: { testnet: false, apiKey: '', secret: '', walletAddress: '' }, credentialId: 'cred-1' }), buildSwapAdapter: vi.fn() } as unknown as AgentTradingActorDeps['venueAdapterFactory'],
-    markSource: { getMark: vi.fn().mockResolvedValue(ok({ price: price('50000'), source: 'oracle', timestamp: new Date().toISOString(), stale: false })) } as unknown as AgentTradingActorDeps['markSource'],
-    journal: { append: vi.fn().mockResolvedValue(undefined) } as unknown as AgentTradingActorDeps['journal'],
-    idGen: makeIdGen(),
-    positionRepo: repos as unknown as AgentTradingActorDeps['positionRepo'],
-    fillRepo: repos as unknown as AgentTradingActorDeps['fillRepo'],
-    planRepo: repos as unknown as AgentTradingActorDeps['planRepo'],
-    orderRepo: repos as unknown as AgentTradingActorDeps['orderRepo'],
-    decisionRepo: repos as unknown as AgentTradingActorDeps['decisionRepo'],
-    balanceSnapshotRepo: repos as unknown as AgentTradingActorDeps['balanceSnapshotRepo'],
-    backtestingRepo: repos as unknown as AgentTradingActorDeps['backtestingRepo'],
-    reconciliationRepo: repos as unknown as AgentTradingActorDeps['reconciliationRepo'],
-    technicalConfig: makeTechnicalConfig(),
-    discoverCandidates: vi.fn().mockResolvedValue([makeInstrument('BTC')]),
-    fetchCandles: vi.fn().mockResolvedValue(makeCandles()),
-    isHybridMode: true,
     ...overrides,
   };
 }
@@ -537,44 +441,9 @@ describe('Phase 2: Single-flight scan guard', () => {
     vi.useRealTimers();
   });
 
-  it('scanInProgress flag resets in finally block after error', async () => {
-    const actor = new AgentTradingActor(makeAgentActorDeps({
-      technicalConfig: makeTechnicalConfig({ scanIntervalMs: 100 }),
-      discoverCandidates: vi.fn().mockRejectedValue(new Error('discovery failed')),
-      fetchCandles: vi.fn().mockResolvedValue(makeCandles()),
-    }));
-
-    await actor.start();
-
-    // Advance time to trigger scan
-    await vi.advanceTimersByTimeAsync(150);
-
-    // Flag should be reset even after error (finally block)
-    const actorAny = actor as unknown as { scanInProgress: boolean };
-    expect(actorAny.scanInProgress).toBe(false);
-
-    await actor.stop();
-    vi.advanceTimersByTime(1000); // flush pending timers
-  });
-
-  it('successful scan resets scanInProgress flag', async () => {
-    const actor = new AgentTradingActor(makeAgentActorDeps({
-      technicalConfig: makeTechnicalConfig({ scanIntervalMs: 100 }),
-      discoverCandidates: vi.fn().mockResolvedValue([makeInstrument('BTC')]),
-      fetchCandles: vi.fn().mockResolvedValue(makeCandles()),
-    }));
-
-    await actor.start();
-
-    // Advance time to trigger scan
-    await vi.advanceTimersByTimeAsync(150);
-
-    const actorAny = actor as unknown as { scanInProgress: boolean };
-    expect(actorAny.scanInProgress).toBe(false);
-
-    await actor.stop();
-    vi.advanceTimersByTime(1000);
-  });
+  // L3d-5: the two scanInProgress single-flight tests exercised the deleted
+  // in-process AgentTradingActor scan loop — removed with the actor slice. The
+  // TechnicalScanState shape check below is actor-independent and retained.
 
   it('overlapSkipped is exposed on TechnicalScanState', () => {
     // Verify that the overlapSkipped field exists on the state type by checking

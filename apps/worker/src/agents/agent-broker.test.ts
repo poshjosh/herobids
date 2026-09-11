@@ -35,14 +35,9 @@ function makeBoundaryBrokerArgs(botRepo: unknown, boundary: TradertonSideEffectB
   return [
     undefined,   // telegram
     botRepo,     // botRepo (ownership gate + bot_query reads)
-    undefined,   // _botStart (dead)
-    undefined,   // _botLimitCheck (dead)
     undefined,   // botLiveCheck
-    undefined,   // _botStop (dead)
-    undefined,   // _botRestart (dead)
     undefined,   // emailClient
     undefined,   // onAgentConfigUpdate
-    undefined,   // _agentRiskDefaults (dead)
     undefined,   // brandImageUrl
     undefined,   // db
     undefined,   // operatorModelDefaults
@@ -308,17 +303,8 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        statusChange,
       );
+      void statusChange;
       const envelope = makeEnvelope({
         type: 'agent.runtime.session_ended',
         payload: { sessionId: 'sess-001', reasonCode: 'wall_clock_expired' },
@@ -340,15 +326,8 @@ describe('AgentMessageBroker', () => {
         decisionHandler,
         sessionManager,
         eventPublisher,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        statusChange,
       );
+      void statusChange;
 
       const envelope = makeEnvelope({
         type: 'agent.runtime.session_ended',
@@ -463,11 +442,7 @@ describe('AgentMessageBroker', () => {
         eventPublisher,
         undefined,              // telegram
         undefined,              // botRepo
-        undefined,              // botStart
-        undefined,              // botLimitCheck
         undefined,              // botLiveCheck
-        undefined,              // botStop
-        undefined,              // botRestart
         emailClient as any,     // emailClient
       );
 
@@ -1801,9 +1776,9 @@ describe('AgentMessageBroker', () => {
         );
 
         const botRepo = makeBotRepo();
-        // botLiveCheck sits at positional index for the botLiveCheck param.
+        // botLiveCheck sits at index 2 of makeBoundaryBrokerArgs (telegram, botRepo, botLiveCheck, ...).
         const args = makeBoundaryBrokerArgs(botRepo, execBoundary.boundary);
-        args[4] = botLiveCheck; // botLiveCheck slot in makeBoundaryBrokerArgs
+        args[2] = botLiveCheck; // botLiveCheck slot in makeBoundaryBrokerArgs
         const brokerWithBot = new AgentMessageBroker(
           {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
           ...(args as [any]),
@@ -2591,14 +2566,9 @@ describe('handleManageAgentSkills — handler logic', () => {
         eventPublisher,
         undefined, // telegram
         undefined, // botRepo
-        undefined, // botStart
-        undefined, // botLimitCheck
         undefined, // botLiveCheck
-        undefined, // botStop
-        undefined, // botRestart
         undefined, // emailClient
         undefined, // onAgentConfigUpdate
-        undefined, // agentRiskDefaults
         undefined, // brandImageUrl
         db,        // db
       );
@@ -2644,7 +2614,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -2685,7 +2655,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -2719,7 +2689,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -2781,7 +2751,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -2833,7 +2803,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -2870,7 +2840,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -2912,7 +2882,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -2946,7 +2916,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -2987,7 +2957,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -3040,7 +3010,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -3097,7 +3067,7 @@ describe('handleManageAgentSkills — handler logic', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -3132,14 +3102,9 @@ describe('AgentMessageBroker — plansConfig constructor parameter', () => {
       mockEventPublisher(),
       undefined, // telegram
       undefined, // botRepo
-      undefined, // botStart
-      undefined, // botLimitCheck
       undefined, // botLiveCheck
-      undefined, // botStop
-      undefined, // botRestart
       undefined, // emailClient
       undefined, // onAgentConfigUpdate
-      undefined, // agentRiskDefaults
       undefined, // brandImageUrl
       undefined, // db
       undefined, // operatorModelDefaults
@@ -3330,7 +3295,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -3406,7 +3371,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -3455,7 +3420,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -3497,7 +3462,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -3539,7 +3504,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -3596,7 +3561,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -3659,7 +3624,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 
@@ -3734,7 +3699,7 @@ describe('handleManageAgentSkills — slug enrichment', () => {
         mockDecisionHandler(),
         mockSessionManager(),
         eventPublisher,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined,
         db,
       );
 

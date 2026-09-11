@@ -102,11 +102,7 @@ function makeBroker(
     {} as unknown as InstanceEventPublisher,
     telegram,
     undefined, // botRepo
-    undefined, // botStart
-    undefined, // botLimitCheck
     undefined, // botLiveCheck
-    undefined, // botStop
-    undefined, // botRestart
     emailClient,
   );
 }

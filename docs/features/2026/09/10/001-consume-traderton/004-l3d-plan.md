@@ -83,6 +83,15 @@ The trading-execution code herobids imports in-process, to delete once nothing r
 - **Worker execution slices:** `apps/worker/src/agent-trading-actor.ts`, `trading-actor.ts`,
   `execution-actor.ts`, `runtime.ts` (the `trading-instance-lifecycle` `WorkerRuntime`/BullMQ consumer), and
   the technical/scanner/tick/candle/swap/`venue-adapter-factory`/`venue-instrument-cache` helpers.
+  **DONE (L3d-5):** deleted `agent-trading-actor.ts`, `trading-actor.ts`, `execution-actor.ts`, `runtime.ts`
+  (+ `runtime.test.ts`), `venue-adapter-factory.ts`, `agents/agent-intake-resolver.ts`, and
+  `agents/actor-state-owner.ts` (the actor-state slice, importing the deleted `execution-actor.ts`). **KEPT
+  (survivorship-confirmed):** the scanner helpers (`scanner-candle-fetcher.ts`,
+  `scanner-candidate-discovery.ts`, `scanner-pre-filter.ts`, `swap-candidate-discovery.ts`), `tick-gates.ts`,
+  `technical-phase.ts` (types consumed by the surviving scanner + market-intelligence surface),
+  `complete-technical-scan.ts` + `validate-trade-instrument.ts` (harmless pure modules — no surviving prod
+  reader but self-contained + tested; left intact per the conservative KISS choice), and `venue-instrument-cache.ts`
+  (imported by the surviving `market-intelligence/assessment-identity-resolver.ts` + `validate-trade-instrument.ts`).
 - **Trading DB tables + repos** (`packages/db`): `positions`, `fills`, `orders`, `execution-plans`,
   `decisions`, `decision-*`, `balance-snapshots`, `reconciliation-events`, `backtest-runs`, `instruments`,
   **`bots`**, `venue_accounts`, `user_credentials` (the last two now Traderton-owned — deleted here once
@@ -91,6 +100,16 @@ The trading-execution code herobids imports in-process, to delete once nothing r
   `repositories.ts`).
 - **Trading-package imports** in `apps/worker/src/index.ts` (`@herobids/{engine,venues,market-data,strategy,
   backtesting}`) once the composition root no longer constructs the actor/runtime.
+  **PARTIAL (L3d-5):** the actor/runtime-only worker imports were removed from `index.ts` — `@herobids/strategy`
+  (`LlmStrategy`/`MechanicalStrategy`/`HybridStrategy`/`DcaStrategy`), `@herobids/backtesting`
+  (`MarketDataRecorder`), and the actor-only `@herobids/venues` (`OracleMarkSource`/`HyperliquidMarkSource`/
+  `HyperliquidAdapter`/`BybitAdapter`/`JupiterSwapAdapter`/`VenueCandleFetcher`) + `@herobids/engine`
+  (`createFillFirstMarkSource`/`MarkSelector`/`DecisionContext`/`IdGenerator`) imports are gone from `index.ts`.
+  **The 5 packages themselves remain (Deferred-required, §H):** `@herobids/venues` (`PublicStreamPool` still
+  wired in `index.ts` + wallet-gen/adapters in API), `@herobids/backtesting` (`BacktestRuntime` still wired),
+  `@herobids/market-data` + `@herobids/strategy` (surviving market-intelligence assessor/scanner), and
+  `@herobids/engine` (surviving type-only imports in `technical-phase.ts`/`public-stream-routing.ts`/
+  `reconciliation-orphaned-cleanup.ts`/`agent-risk-limits.ts`/`shared/decision-validation.ts`). NONE deleted.
 
 ## §B — #4-specific deletions (maxBots + bots state — the legal-isolation closers)
 
@@ -113,13 +132,13 @@ deletions** — leaving them is the leak.
 |---|---------------|------|---------|-----------|
 | 1 | `apps/worker/src/agents/agent-decision-handler.ts:import { submitDecisionForExecution, DecisionContextHashMismatchError, validatePerTradeLevels } from '@herobids/engine'` | unused-import | L3c (engine call replaced by boundary invoke+poll; per-trade validation relocated behind boundary) | ~~L3d~~ **DONE (L3d-4):** verified already removed in L3c — the import no longer exists in the file (only a descriptive comment referenced it). Nothing to delete. |
 | 2 | `apps/worker/src/agents/agent-decision-handler.ts:import type { DecisionIntakeDeps, DecisionContext, PositionState } from '@herobids/engine'` | unused-import | L3c (intake pipeline replaced by boundary payload build) | ~~L3d~~ **PARTIAL (L3d-4):** `DecisionIntakeDeps` already gone. `DecisionContext`/`PositionState` REMAIN — they type the `DecisionIntakeResolver` interface which is deferred to L3d-5 (see #3). This engine type import is deleted with the resolver in the L3d-5 composition-root restructure. |
-| 3 | `apps/worker/src/agents/agent-decision-handler.ts:DecisionIntakeResolver` + `_intakeResolver` ctor param | dead | L3c (engine-backed intake — getIntakeDeps/getDecisionContext/getPosition no longer called on the rewired direct path; retained as unused positional ctor param for composition-root/ApprovalService compat; approval-snapshot venueAccountId now from the connection grant) | ~~L3d~~ **DEFERRED → L3d-5 (composition-root restructure) (decided L3d-4):** entangled with L3d-5 delete-side code — the composition-root `intakeResolver` object (`apps/worker/src/index.ts`) is built from `AgentIntakeResolver` + `actorRegistry` + `execution-actor.ts`'s `IntakeResult` + `@herobids/engine` `DecisionContext`/`PositionState`, all §A/L3d-5; and `agent-native-decision.integration.test.ts` is a full in-process-engine pipeline test (`AgentIntakeResolver`→`AgentTradingActor`→`PaperExecutor`) deleted with §A in L3d-5. Removing the resolver + its `_intakeResolver` positional now would force editing L3d-5-doomed code/tests. Ctor signature kept stable. |
+| 3 | `apps/worker/src/agents/agent-decision-handler.ts:DecisionIntakeResolver` + `_intakeResolver` ctor param | dead | L3c (engine-backed intake — getIntakeDeps/getDecisionContext/getPosition no longer called on the rewired direct path; retained as unused positional ctor param for composition-root/ApprovalService compat; approval-snapshot venueAccountId now from the connection grant) | ~~L3d~~ **DONE (L3d-5):** removed the `_intakeResolver` positional + the `DecisionIntakeResolver` interface + the `@herobids/engine` `DecisionContext`/`PositionState` type imports (#2 tail) + the `../execution-actor.js` `IntakeResult` import + the `agents/index.ts` `DecisionIntakeResolver` re-export. Updated the composition-root construction (`index.ts`) and every test call site (`agent-decision-handler.test.ts` — dropped the `intakeResolverStub` arg + the now-dead assertion). Re-confirmed the boundary decision path never reads the resolver — no live behaviour change. |
 | 3b | `apps/worker/src/agents/agent-decision-handler.ts:actorsWithSuccessfulContext` | dead | L3c (removed — the no_context startup-vs-persistent tracking belonged to the engine intake path) | L3d (already removed in L3c) |
 | 4 | `apps/worker/src/agents/agent-decision-handler.ts:validatePerTradeLevels usage + POSITION_GROWING_INTENTS/formatLevelValidationMessage per-trade block` | relocated | L3c (per-trade stopLoss/takeProfit validation moved behind the boundary — Traderton owns mark-price-dependent validation) | ~~L3d~~ **DONE (L3d-4):** verified the per-trade block + all `validatePerTradeLevels`/`POSITION_GROWING_INTENTS`/`formatLevelValidationMessage` usage are already gone from the file (removed in L3c). Nothing to delete. |
 | 5 | `apps/worker/src/agents/agent-decision-handler.ts:equity-snapshot publish (intakeDeps.equityTracker / publishEquitySnapshot)` | relocated | L3c (equity/drawdown snapshot depended on engine-sourced equityTracker; moves behind the boundary) | ~~L3d~~ **DONE (L3d-4):** verified the equity-snapshot publish (`equityTracker`/`publishEquitySnapshot`) is already gone from the file (removed in L3c). Nothing to delete. |
 | 6 | `apps/worker/src/agents/agent-message-broker.ts:imports venueTypeFromProvider + BotConfigSchema (removed in L3c); mergeBotConfig + configsEqual functions (removed in L3c)` | unused-import/dead | L3c (venue-stamp + local bot-config validate/merge/compare moved behind the boundary — already removed in L3c) | L3d (already removed) |
-| 7 | `apps/worker/src/agents/agent-message-broker.ts:BotLimitCheckCallback + botLimitCheck ctor param` | dead | L3c (maxBots enforcement removed — Traderton owns the limit) | ~~L3d~~ **DEFERRED → L3d-5 (composition-root restructure) (decided L3d-4):** the `_botLimitCheck` positional is a dead ctor param interleaved with the LIVE `botLiveCheck` param and several other dead positionals (#8, `_agentRiskDefaults`). Removing it (and its `BotLimitCheckCallback` type) now shifts every following positional and forces edits across the composition root + ~5 broker test files with dozens of inline positional constructions. Kept stable; the whole dead-positional set + types go together in the L3d-5 restructure. |
-| 8 | `apps/worker/src/agents/agent-message-broker.ts:BotStartCallback/BotStopCallback/BotRestartCallback + botStart/botStop/botRestart ctor params` | dead | L3c (lifecycle enqueue→actor kickoff replaced by boundary invoke) | ~~L3d~~ **DEFERRED → L3d-5 (composition-root restructure) (decided L3d-4):** same churn/interleave rationale as #7 — the `_botStart`/`_botStop`/`_botRestart` dead positionals + their callback types are removed as one coordinated set with #7 in the L3d-5 restructure. **NOTE:** the composition-root callback *definitions* that fed these positionals (`botStartCallback`/`botStopCallback`/`botRestartCallback` in `index.ts`, §C #11) WERE deleted in L3d-4 — the broker call site now passes `undefined` at these slots (mirrors the L3d-3 `_botLimitCheck` treatment). Only the dead ctor params + types remain, deferred here. |
+| 7 | `apps/worker/src/agents/agent-message-broker.ts:BotLimitCheckCallback + botLimitCheck ctor param` | dead | L3c (maxBots enforcement removed — Traderton owns the limit) | ~~L3d~~ **DONE (L3d-5):** removed the `_botLimitCheck` positional + the `BotLimitCheckCallback` type (+ its `agents/index.ts` re-export). Kept the LIVE `botLiveCheck` param. Broker ctor + every call site + the ~4 broker test files (`agent-broker.test.ts` via the `makeBoundaryBrokerArgs` helper + explicit positional constructions, `agent-broker-billing.test.ts`) updated together, type-safe. |
+| 8 | `apps/worker/src/agents/agent-message-broker.ts:BotStartCallback/BotStopCallback/BotRestartCallback + botStart/botStop/botRestart ctor params` | dead | L3c (lifecycle enqueue→actor kickoff replaced by boundary invoke) | ~~L3d~~ **DONE (L3d-5):** removed the `_botStart`/`_botStop`/`_botRestart` dead positionals + their callback types (`BotStartCallback`/`BotStopCallback`/`BotRestartCallback`) + the `agents/index.ts` `BotStartCallback` re-export — as one coordinated set with #7 and the `_agentRiskDefaults` positional (+ its `AgentRiskDefaultsConfig` import). Broker ctor + composition-root call site + all broker test constructions updated together, type-safe. |
 | 9 | `apps/worker/src/agents/agent-message-broker.ts:botRepo write calls in handleManageBot (getResolvedVenueAccount/tryCreateBotWithLimit/tryMarkBotRunningWithLimit/markBotRunning/markBotStopped/updateBotConfig/restoreBot*)` | orphaned | L3c (bots-table writes removed from the rewired lifecycle path — herobids owns no bot state) | ~~L3d~~ **DONE (L3d-4):** verified all listed `botRepo` write calls are already gone from `handleManageBot` (removed in L3c — only a descriptive comment referencing the removed venue-stamp remains). Nothing to delete. The KEEP ownership READ (`isConnectionOwnedBy`) is platform authz (D2), left intact. |
 | 10 | `apps/worker/src/index.ts:botLimitCheckCallback (maxBots plan cap)` | dead | L3c (no longer passed to the broker) | ~~L3d~~ **DONE (L3d-3):** callback definition deleted; broker call site now passes `undefined` for the `_botLimitCheck` positional (broker signature kept stable — the positional stays as a dead param alongside the other dead positionals, per §B lower-risk guidance) |
 | 11 | `apps/worker/src/index.ts:botStartCallback/botStopCallback/botRestartCallback (enqueueLifecycle wrappers)` | dead | L3c (broker no longer drives the lifecycle queue for agent bots) | ~~L3d~~ **DONE (L3d-4):** verified unused after L3d-3 — the broker's `_botStart`/`_botStop`/`_botRestart` positionals are dead (never invoked), so these `lifecycleQueue.add(...)` wrapper definitions were only *passed*, never *called*. Deleted the three callback definitions; the broker call site now passes `undefined` at those slots (mirrors the L3d-3 `_botLimitCheck` treatment). `lifecycleQueue` itself KEPT — still consumed by the `WorkerRuntime` (§A, deleted in L3d-5) + closed on shutdown; §D disposition (a), deletable in L3d-5 once the runtime consumer goes. `botLiveCheckCallback` KEPT (live plan-gate param). |
@@ -129,7 +148,7 @@ deletions** — leaving them is the leak.
 | 13c | `apps/api/src/routes/bots.ts:validateExecutionCapability/venueTypeFromProvider (still used by PATCH /bots/:id/config capability check)` | orphaned | L3c (the capability check on the rewired write endpoints was removed; PATCH-config still uses it locally — a DELETE-side reader per §D) | L3d |
 | 14 | `apps/api/src/plan-guards.ts:checkBotLimit` | dead | L3c (last caller removed from routes/bots.ts) | ~~L3d~~ **DONE (L3d-3):** `checkBotLimit` + the `checkTradingInstanceLimit` alias deleted; the now-orphaned `bots` import dropped from `plan-guards.ts` |
 | 15 | `apps/api/src/agents/agent-create-normalization.ts:maxBots resolution (~:368–390) + AgentCreateParams.maxBots/normalized maxBots` | ~~dead~~ **RECLASSIFIED (L3d-3): NOT enforcement — informational** | L3c investigation (#4 — recorded, not touched in L3c) | **MOVED → informational-maxBots follow-slice (row #17).** L3d-3 found this resolution is not an enforcement/limit throw: it *clamps then persists* the informational `agents.maxBots` column (consumed by `agent-session-manager.ts`'s guardrail capability descriptor + defaulted for `chat.ts` agent create). Deleting it would break the informational maxBots field, which L3d-3 scope explicitly leaves intact. Deferred with the rest of the informational surface. |
-| 16 | `packages/engine/src/journal.ts:credentialDecryptedEvent/credentialUsedEvent + CredentialDecryptedPayload/CredentialUsedPayload` | orphaned-once-engine-callers-gone | L3d-1 (their ONLY callers are DELETE-side §A engine slices — `venue-adapter-factory.ts`, `trading-actor.ts`, `agent-trading-actor.ts`; kept in the engine so those slices still compile until §A deletion. The platform-owned created/rotated/deleted builders were relocated to `@herobids/domain` — NOT these two, which have no KEEP-side consumer.) | L3d-5 (deleted with `packages/engine`) |
+| 16 | `packages/engine/src/journal.ts:credentialDecryptedEvent/credentialUsedEvent + CredentialDecryptedPayload/CredentialUsedPayload` | orphaned-once-engine-callers-gone | L3d-1 (their ONLY callers are DELETE-side §A engine slices — `venue-adapter-factory.ts`, `trading-actor.ts`, `agent-trading-actor.ts`; kept in the engine so those slices still compile until §A deletion. The platform-owned created/rotated/deleted builders were relocated to `@herobids/domain` — NOT these two, which have no KEEP-side consumer.) | ~~L3d-5~~ **STILL DEFERRED (L3d-5):** L3d-5 deleted the callers (`venue-adapter-factory.ts`/`trading-actor.ts`/`agent-trading-actor.ts`), so these two builders are now fully orphaned inside the engine — but `packages/engine` is NOT deleted this pass (BLOCKED per §H: surviving type importers remain). Deleted together with `packages/engine` in the Deferred-required engine-deletion follow-slice. |
 | 17 | **informational `maxBots` surface** — `agents.maxBots` DB column; the agent create/edit schema (`routes/agents.ts` create `maxBots` + PATCH `maxBots`, `routes/chat.ts` agent create) + their plan-clamp; the resolution in `agent-create-normalization.ts` (§C #15) that populates the column; the guardrail capability descriptor (`agent-session-manager.ts` `maxBots` in the runtime/capability payload → `runtime-composition.ts` prompt lines); evaluation reads (`evidence-assembler.ts`, `platform-docs-data.ts`); exports/connections read-through (`routes/exports.ts`, `routes/connections.ts`); the web client field | not-enforcement (informational/config guardrail) | L3d-3 (found while deleting §B enforcement — this is NOT a bot-cap throw; it is an informational per-agent guardrail number surfaced to the agent + UI. Removing it is a larger frontend + DB-schema change beyond §B; left entirely intact per L3d-3 scope) | **dedicated maxBots-field-cleanup follow-slice** (own investigate→propose→pause: drop the `agents.maxBots` column + migration, the create/edit schema field, the capability-descriptor guardrail line, docs, and the web UI together) |
 
 ## §D — Consumer audit (from L3c; must be complete before deleting)
@@ -383,6 +402,98 @@ candle/candidate/pre-filter helpers + `tick-gates.ts` (surviving assessor + agen
 **Net:** L3d "the big subtraction" reduces, this pass, to the worker actor/runtime slice + composition-root
 restructure. The five package deletions are all carry-forward, gated on the follow-slices/decisions above.
 
+### L3d-5 — worker actor/runtime slice + composition-root restructure — DONE (implemented; not yet committed — coordinator commits)
+Executed the DELETABLE-NOW surface from the dependency map. Pure removal of dead in-process trading wiring —
+**no surviving platform behaviour changed** (verified by trace: agent decision → broker `processInbound` →
+`agentDecisionHandler.handleDecisionSubmit` → Traderton boundary invoke; the surviving path never touched any
+removed symbol).
+
+**Files DELETED (leaf-first):**
+- Integration test `apps/worker/src/__tests__/integration/agent-native-decision.integration.test.ts` (full
+  in-process-engine pipeline test).
+- Slice sources: `agent-trading-actor.ts`, `trading-actor.ts`, `execution-actor.ts`, `runtime.ts`,
+  `venue-adapter-factory.ts`, `agents/agent-intake-resolver.ts`, and `agents/actor-state-owner.ts` (the
+  `ActorStateOwner` state slice — imported the deleted `execution-actor.ts`, only consumed by the removed
+  composition-root wiring).
+- Slice tests (cover deleted code — deleting a test for deleted code is correct): `runtime.test.ts`,
+  `trading-actor.test.ts`, `cross-venue-lifecycle.test.ts`, `agent-trading-actor.test.ts`,
+  `agent-trading-actor-lifecycle.test.ts`, `venue-adapter-factory.test.ts`, `agents/agent-intake-resolver.test.ts`.
+
+**Composition-root restructure (`apps/worker/src/index.ts`) — wiring REMOVED:**
+- The `intakeResolver` object + `AgentIntakeResolver` construction/import; `actorRegistry` (`new Map<string,
+  ExecutionActor>`) + `agentState` (`ActorStateOwner`); the `WorkerRuntime` construction + its
+  `TradingActor` factory + `onStartFailed`/`onStopped`/`onStarted`/`onCrashed`/`onHalted` handlers + reclaim
+  fn + `lease` (the whole `new WorkerRuntime(...)` block); the `lifecycleQueue` (`new Queue(QUEUE_NAME)`) +
+  its shutdown `.close()`; `runtime.start()`/`runtime.shutdown()`/`runtime.handleActorCrash`; the
+  `botStopSubscriber` (`bot:stop:*` → `runtime.stopInstanceDirect`); the `botOrphanSweepInterval` (in-process
+  orphan-stop); the `healthRefreshInterval` (iterated `actorRegistry`); `actorHealthPublisher` +
+  `instanceUserIds`/`instanceExecutionModes`; the actor-only mark sources (oracle/HL-mid/`MarkSelector`
+  composite) + `createFillFirstMarkSource` usage; `createStrategy` + `reconciliationConfig`; the
+  `buildDiscoverCandidates` wrapper + `candleFetchBreaker`/`candleFetchRetry`; the actor-only trading repos
+  (`fill/position/plan/order/balanceSnapshot/reconciliation/decision/backtesting/llmArtifact/instrument`) +
+  `idGen`; the `swapTokenSafety` adapter + `tokenSafetyOverrideRepo` + `enrichTokenWithDiscovery`; the
+  `instrumentCache` warmup + `venueSymbolProviders` + `populateInstrumentsFromVenues`; and the now-dead
+  imports for all of the above (incl. `QUEUE_NAME`/`PersistedInstance`/`./runtime.js`).
+- **`cascadeStopAgentBots` + all its wiring** removed (it read the vestige `bots` table + drove
+  `runtime.stopInstanceDirect`): `onAgentCrashed` KEEPS `sessionManager.handleAgentCrashed` (non-bot,
+  survives) and drops the cascade call; `onSessionStopped` collapsed to KEEP `stopReviewSchedulerForAgent`
+  only; `AgentHealthMonitor.onTerminalSessionCleanup` callback dropped (optional field).
+- **`onSessionActive` collapsed** (surviving `AgentSessionManager` config): the in-process `AgentTradingActor`
+  construction/start/register was removed; it now resolves the agent + calls `startReviewSchedulerForAgent`
+  (the SURVIVING market-intelligence review scheduler, relocated out of the deleted trading-binding branch so
+  it runs for every activated agent — matching the boot-loop) and returns `true`. Trading agents now activate
+  with NO in-process actor (identical to a personal-assistant agent); execution routes over the boundary.
+- **`PresetTransitionService.notifyActor` collapsed** (new finding, not in the original enumerated list — it
+  referenced `AgentTradingActor` and would not compile): dropped the `actorRegistry` lookup + config
+  materialize/`applyPendingConfigUpdate`; KEEPS the visibility-only `agent.runtime.config_update` outbound
+  emit (confirmed surviving consumer: `agent.ts` → `runtime-composition.ts applyRuntimeMessage`). DB is the
+  source of truth; Traderton owns the runtime reload.
+- **`AgentReconnectHandler`** 5th arg (`snapshotResolver`) → `undefined` (the handler guards it; reconnect
+  still restores status + replays outbound events; it no longer synthesizes a local `instance.context.snapshot`).
+
+**Deferred dead ctor positionals (§C #3/#7/#8) removed as one coordinated set:**
+- `AgentDecisionHandler` `_intakeResolver` positional + the `DecisionIntakeResolver` interface + the engine
+  `DecisionContext`/`PositionState` + `../execution-actor.js` `IntakeResult` type imports (#2 tail, #3).
+- `AgentMessageBroker` dead positionals `_botStart`/`_botLimitCheck`/`_botStop`/`_botRestart`/`_agentRiskDefaults`
+  + their callback types (`BotStartCallback`/`BotStopCallback`/`BotRestartCallback`/`BotLimitCheckCallback`) +
+  the `AgentRiskDefaultsConfig` import. KEPT the LIVE `botLiveCheck`. `onAgentConfigUpdate` now passed
+  `undefined` (previously notified the in-process actor — no local actor remains).
+- `agents/index.ts` re-exports (`BotStartCallback`, `BotLimitCheckCallback`, `DecisionIntakeResolver`,
+  `AgentIntakeResolver`, `AgentIntakeResolverDeps`) removed.
+- Every call site + every constructing test updated together, type-safe: `agent-decision-handler.test.ts`,
+  `agent-broker.test.ts` (via the `makeBoundaryBrokerArgs` helper + ~all explicit positional constructions),
+  `agent-broker-billing.test.ts`. `scanner-gated-phase2.test.ts` trimmed to drop the two `AgentTradingActor`
+  single-flight tests + the actor-dep helpers (kept its `runTechnicalPhase` + `TechnicalScanState`-shape tests).
+
+**KEPT (out of scope — verified surviving platform surface):** all 5 trading packages (Deferred-required, §H);
+the scanner helpers + `tick-gates.ts`; `market-intelligence/*`; `BacktestRuntime`; `PublicStreamPool`/mark
+sources value-imports that survive; the `bots` table + repo (vestige, `botRepo` kept for ownership reads); the
+surviving `agentDecisionHandler`/`agentBroker`/`AgentHealthMonitor`/`sessionManager`; `venue-instrument-cache.ts`/
+`technical-phase.ts`/`complete-technical-scan.ts`/`validate-trade-instrument.ts` (survivorship calls above).
+
+**Re-confirmations (per §H verified facts):**
+- `agentDecisionHandler` boundary path does NOT use the removed `intakeResolver` grant-fallback — confirmed by
+  reading the handler (only comments referenced it) + the surviving decision path; removing #3 changed no live
+  behaviour.
+- **No surviving `lifecycleQueue`/`QUEUE_NAME`/`trading-instance-lifecycle` enqueuer remains** in the worker
+  after the removal (grepped: no `.add(` on the worker lifecycle queue; the only `WorkerRuntime`/`QUEUE_NAME`
+  references left are in doc comments + `backtest-runtime.ts`'s own comment). The API-side
+  `lifecycleQueue` (`apps/api/src/index.ts`) is a SEPARATE queue, only READ via `queue.getJobs` in
+  `routes/bots.ts` DELETE (no enqueue) — out of scope for this worker slice (§D disposition (a) / L3d-reporting).
+
+**Verification:** `pnpm build` ✓, `pnpm lint` ✓. Suites: worker 3225 passed / 11 skipped; api 1386 passed /
+267 skipped (functional suites skipped — need DB, matching the L3d-4 baseline); domain 995 passed (only the
+KNOWN-unrelated `packages/domain/src/config/presets.test.ts` ENOENT fixture failures, explicitly excluded).
+
+**Behaviour changes recorded + accepted (all consistent with Traderton owning execution):** trading-agent
+sessions activate with no in-process actor; reconnect no longer emits a locally-synthesized context snapshot;
+no agent/bot actor-health snapshots published to Redis (`routes/actor-health.ts` serves stale/empty until
+L3d-reporting — the plan's accepted interim state); preset transitions update the DB + emit the visibility
+event but no longer reload a local actor.
+
+**Carry-forward:** the 5 trading packages remain (Deferred-required per §H); §C #16 engine credential builders
+are now fully orphaned but stay with `packages/engine` (its deletion is the Deferred-required engine follow-slice).
+
 
 ## §H — Deferred (REQUIRED FOR CUTOVER) — the blocked package deletions + follow-slices
 
@@ -423,3 +534,13 @@ any of these survive.** Confirmed 2026-09-10 (human): classify all as `Deferred 
   is dead in-process bot-lifecycle wiring (Traderton owns lifecycle) → removed/neutralised in L3d-5 (it reads
   the vestige `bots` table + drives the deleted lifecycle path). Its `bots` READ is a §D (b)/vestige concern;
   the cascade-stop ACTION is trading-lifecycle → goes now.
+
+
+### L3d-5 review findings (code review PASS — no CRITICAL/HIGH; SAFE TO COMMIT)
+The three out-of-list collapses were independently verified behaviour-preserving:
+- **A. `onSessionActive`** — `AgentSessionManager` only checks the return `!== false`; returning `true` with no in-process actor is correct. `startReviewSchedulerForAgent` relocation preserves review-scheduler coverage. No surviving boundary path needs an in-process actor.
+- **B. `PresetTransitionService.notifyActor`** — emits the visibility-only `agent.runtime.config_update`; surviving consumer (`runtime-composition.ts:applyRuntimeMessage`) intact; DB is source of truth.
+- **C. `AgentReconnectHandler` snapshotResolver → undefined** — handler guards it; reconnect still restores status + replays events; dropping the local context snapshot is the accepted Traderton-owns-state consequence.
+Both re-confirmations held: (i) the boundary decision path never used the removed intakeResolver; (ii) no surviving worker enqueuer of the lifecycle queue.
+
+**LOW-1 (non-blocking, tracked):** stale comments in surviving files still reference the removed `AgentTradingActor` (e.g. `agent-session-manager.ts` ~:59/:73, the broker `RUNTIME_SESSION_ENDED` + `CONFIG_UPDATE` case comments). Harmless but misleading — sweep in a later doc-comment cleanup slice (fold into the deferred `@herobids/engine`/event-publisher cleanup or the maxBots-field slice).

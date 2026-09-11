@@ -9,7 +9,6 @@ import type {
   SendMessagePayload,
   ManageBotPayload,
   BotQueryPayload,
-  AgentRiskDefaultsConfig,
   ToolPositionRecord,
   AssessStrategyPresetRequestPayload,
   ChangeStrategyPresetRequestPayload,
@@ -56,26 +55,6 @@ const SEND_MESSAGE_MAX_PER_MINUTE = 10;
 const SEND_MESSAGE_MAX_BODY_LENGTH = 2000;
 
 /**
- * Callback the broker uses to enqueue a bot start job on the runtime queue.
- * Decouples the broker from BullMQ — the caller wires this to queue.add().
- * connectionId is explicit so the type system enforces the connection-first routing contract.
- */
-export type BotStartCallback = (botId: string, userId: string, connectionId: string, config: Record<string, unknown>) => Promise<void>;
-
-/** Callback used to enqueue a bot stop job on the runtime queue. */
-export type BotStopCallback = (botId: string, userId: string) => Promise<void>;
-
-/** Callback used to enqueue a bot restart job on the runtime queue. */
-export type BotRestartCallback = (botId: string, userId: string, connectionId: string, config: Record<string, unknown>) => Promise<void>;
-
-/**
- * Optional callback for enforcing a subscription-level bot cap before create.
- * Should throw with a user-facing message if the limit is exceeded.
- * Keeps the broker decoupled from plan config (which lives in the API layer).
- */
-export type BotLimitCheckCallback = (userId: string) => Promise<void>;
-
-/**
  * Optional callback for enforcing plan-level live execution eligibility.
  * Should throw with a user-facing message if live mode is not allowed for the user's plan.
  * Called before creating a bot with execution.mode = 'live'.
@@ -107,20 +86,9 @@ export class AgentMessageBroker {
     private readonly eventPublisher: InstanceEventPublisher,
     private readonly telegram?: TelegramClient,
     private readonly botRepo?: BotRepository,
-    // L3c: the bot-lifecycle callbacks (botStart/botStop/botRestart) + the maxBots
-    // limit check are DEAD — lifecycle now routes over the boundary (invokeBotLifecycle).
-    // Retained as unused positional ctor params for composition-root/test compat;
-    // deleted in L3d (see 004-l3d-plan.md §C).
-    _botStart?: BotStartCallback,
-    _botLimitCheck?: BotLimitCheckCallback,
     private readonly botLiveCheck?: BotLiveCheckCallback,
-    _botStop?: BotStopCallback,
-    _botRestart?: BotRestartCallback,
     private readonly emailClient?: EmailClient,
     readonly onAgentConfigUpdate?: (agentId: string, config: Record<string, unknown> | null) => void,
-    // L3c: agentRiskDefaults was only used for the maxBots default (removed). Kept
-    // as an unused positional ctor param; deleted in L3d.
-    _agentRiskDefaults?: AgentRiskDefaultsConfig,
     private readonly brandImageUrl?: string,
     private readonly db?: Database,
     private readonly operatorModelDefaults?: OperatorModelDefaults,

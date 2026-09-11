@@ -1,8 +1,5 @@
 import Redis from 'ioredis';
 import { createLogger } from './logger.js';
-import { Queue } from 'bullmq';
-import { WorkerRuntime, QUEUE_NAME } from './runtime.js';
-import type { PersistedInstance } from './runtime.js';
 import { BacktestRuntime } from './backtest-runtime.js';
 import { EvaluationRuntime } from './agent-evaluation/index.js';
 import { ManualReviewRuntime } from './manual-review-runtime.js';
@@ -10,49 +7,26 @@ import type { ManualReviewRunnerFactory } from './manual-review-runtime.js';
 import {
   AssessmentReviewRunner,
 } from './market-intelligence/assessment-review-runner.js';
-import { InstanceLease } from './instance-lease.js';
-import { TradingActor } from './trading-actor.js';
-import type { TradingActorDeps } from './trading-actor.js';
-import type { ExecutionActor } from './execution-actor.js';
-import { VenueAdapterFactory } from './venue-adapter-factory.js';
-import { AgentTradingActor, type SignalFingerprintStore } from './agent-trading-actor.js';
-import { CandleFetchBreaker } from './candle-fetch-breaker.js';
-import type { RetryOptions } from './candle-fetch-retry.js';
-import { createSwapTokenSafetyAdapter } from './token-safety-adapter.js';
-import { ActorStateOwner } from './agents/actor-state-owner.js';
-import { LlmStrategy, MechanicalStrategy, HybridStrategy, DcaStrategy } from '@herobids/strategy';
 import { fetchOpenRouterPricing } from '@herobids/llm';
-import { MarketDataRecorder } from '@herobids/backtesting';
-import type { RiskPosture } from '@herobids/domain';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, LlmArtifactRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, AgentDocumentsRepository, DecisionApprovalRepository, bots, users, agents, agentScanCandidates, agentScanMetrics } from '@herobids/db';
+import { createDatabase, PgJournal, AlertDeliveryRepository, AgentRepository, BotRepository, UsageBillingRepository, DecisionFailureRepository, AgentDocumentsRepository, DecisionApprovalRepository, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, HyperliquidMarkSource } from '@herobids/venues';
-import { createFillFirstMarkSource } from '@herobids/engine';
-import type { IdGenerator } from '@herobids/engine';
-import type { DecisionContext } from '@herobids/engine';
-import { MarkSelector } from '@herobids/engine';
-import { BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, AGENT_STREAM_MAXLEN, TechnicalConfigSchema, StrictTechnicalConfigSchema, type ProvidersYaml, type TechnicalConfig, type TokenSafetyConfig, ok, err } from '@herobids/domain';
+import { PublicStreamPool } from '@herobids/venues';
+import { AGENT_STREAM_MAXLEN, type ProvidersYaml, ok, err } from '@herobids/domain';
 
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
-import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
 import crypto from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, MONOREPO_CONFIG_DIR } from './config.js';
-import { assertLiveReadiness, LiveGateError } from './live-gate.js';
-import { resolveSwapAssetsFromBinding, resolveSwapNetwork } from './resolve-swap-assets.js';
-import { validateSwapScannerConfig } from './swap-startup-validation.js';
-import { resolveBotStartupContext, BotStartupError } from './startup-context.js';
-import { buildPublicStreamConnectors, createScopedStreamPoolHandle } from './public-stream-routing.js';
+import { buildPublicStreamConnectors } from './public-stream-routing.js';
 import { AlertDispatcher } from './alerting/index.js';
 import { TelegramClient, forceReply, PlatformAlertService, createEmailClient } from './alerting/index.js';
 import type { EmailClientConfig } from './alerting/index.js';
 import {
   AgentMessageBroker,
   AgentDecisionHandler,
-  AgentIntakeResolver,
   AgentRuntimeLauncher,
   AgentSessionManager,
   AgentStreamConsumer,
@@ -67,14 +41,12 @@ import {
 import { createTradertonClient } from '@herobids/domain/traderton';
 import { createTradertonSideEffectBoundary } from './traderton/write-adapter.js';
 import { ApprovalService } from './services/approval-service.js';
-import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/index.js';
 import { DockerAgentManager } from './agents/docker-agent-manager.js';
 import { DockerRuntimeDocumentMaterializer } from './agents/docker-document-materializer.js';
 import { StubRuntimeDocumentMaterializer } from './agents/stub-document-materializer.js';
 import { LocalDocumentStore } from '@herobids/documents';
 import { UserEventPublisher } from './user-event-publisher.js';
-import { ActorHealthPublisher } from './actor-health-publisher.js';
-import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler, PresetTransitionService, resolveActivePresetState, materializeEffectiveConfig, mappingToTechnicalConfig } from './market-intelligence/index.js';
+import { createMarketDataCoordinator, createMarketMonitor, createReviewScheduler, PresetTransitionService, resolveActivePresetState } from './market-intelligence/index.js';
 import type { ReviewScheduler } from './market-intelligence/index.js';
 import { createPlatformAssessor } from './market-intelligence/assessor-factory.js';
 import { createPresetCatalog } from './market-intelligence/preset-catalog-adapter.js';
@@ -83,78 +55,8 @@ import { AssessmentRequestService } from './market-intelligence/assessment-reque
 import { setAssessmentRequestPort } from './tools/assess-strategy-preset.js';
 import { setPresetTransitionPort } from './tools/change-strategy-preset.js';
 import { BrowserPoolHealthPublisher } from './browser-pool-health-publisher.js';
-import { createProviderRegistry, createPriceService, lookupCanonical, resolveTokenSafetyPolicyConfig, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type ProviderRegistry, type RedisEvalClient, type TokenInfo, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
+import { createProviderRegistry, CompositeEconomicCalendarProvider, RedisProviderResponseCache, TokenBucketRateLimiter, createScrapflyFetch, createFallbackCalendarParser, type RedisEvalClient, type ForexFactoryAdapterConfig, type CompositeEconomicCalendarConfig } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
-import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
-import { resolveSwapTokenData, type DexScreenerProvider, type CanonicalResolver } from './swap-token-resolver.js';
-import { buildAgentRiskLimits } from './agent-risk-limits.js';
-import { VenueInstrumentCache, normalizeHyperliquidSymbol, normalizeBybitSymbol, identityNormalize, type VenueSymbolProvider } from './venue-instrument-cache.js';
-import type { DiscoveredInstrument, FilterConfig } from './technical-phase.js';
-import { populateInstrumentsFromVenues } from './instrument-population.js';
-
-async function enrichTokenWithDiscovery(
-  registry: ProviderRegistry,
-  network: string,
-  resolvedAddress: string,
-  match: TokenInfo,
-): Promise<ResolvedSwapTokenData> {
-  if ((match as TokenInfo & { poolCreatedAt?: string }).poolCreatedAt) {
-    return { ...match, ageResolution: 'available', hasRealMarketData: true };
-  }
-
-  // Try a targeted DexScreener search by address first — this is a direct
-  // lookup that returns poolCreatedAt when the upstream API provides it.
-  try {
-    const directResult = await registry.dexscreener.search(resolvedAddress);
-    const directMatch = directResult.data.find((token) => (
-      token.network.toLowerCase() === network.toLowerCase()
-      && token.address.toLowerCase() === resolvedAddress.toLowerCase()
-    ));
-    if (directMatch) {
-      const poolCreatedAt = (directMatch as TokenInfo & { poolCreatedAt?: string }).poolCreatedAt;
-      return {
-        ...match,
-        poolCreatedAt: poolCreatedAt ?? (match as TokenInfo & { poolCreatedAt?: string }).poolCreatedAt,
-        ageResolution: poolCreatedAt ? 'available' : 'indeterminate',
-        hasRealMarketData: true,
-      };
-    }
-  } catch (err) {
-    // Fall through to discovery if the direct search fails.
-    console.warn('[enrichTokenWithDiscovery] direct DexScreener search failed, falling back to discovery', { network, resolvedAddress, err });
-  }
-
-  try {
-    // Discovery is a targeted lookup for a specific token address to find
-    // poolCreatedAt.  minLiquidityUsd: 0 maximises the chance of finding the
-    // token in any pool — safety thresholds are enforced downstream by
-    // evaluateTokenSafety, not here.
-    const discoveryResult = await registry.discovery.discover({
-      networks: [network],
-      maxResults: 250,
-      minLiquidityUsd: 0,
-    });
-    const discoveryMatch = discoveryResult.data.find((token) => (
-      token.network.toLowerCase() === network.toLowerCase()
-      && token.address.toLowerCase() === resolvedAddress.toLowerCase()
-    ));
-
-    if (!discoveryMatch) {
-      return { ...match, ageResolution: 'indeterminate', hasRealMarketData: true };
-    }
-
-    return {
-      ...match,
-      poolCreatedAt: discoveryMatch.poolCreatedAt ?? (match as TokenInfo & { poolCreatedAt?: string }).poolCreatedAt,
-      ageResolution: discoveryMatch.poolCreatedAt ? 'available' : 'missing',
-      hasRealMarketData: true,
-    };
-  } catch {
-    console.warn('[enrichTokenWithDiscovery] discovery lookup failed for', { network, resolvedAddress });
-    return { ...match, ageResolution: 'indeterminate', hasRealMarketData: true };
-  }
-}
-
 /** Slash commands registered with the Telegram Bot API so they appear in the client command picker. */
 const TELEGRAM_AGENT_COMMANDS: Array<{ command: string; description: string }> = [
   { command: 'help', description: 'Show all commands or detailed help for one' },
@@ -174,13 +76,6 @@ const TELEGRAM_AGENT_COMMANDS: Array<{ command: string; description: string }> =
   { command: 'disconnect', description: 'Revoke a connection' },
   { command: 'to', description: 'Send a message to an agent' },
 ];
-
-class CredentialResolutionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'CredentialResolutionError';
-  }
-}
 
 const logger = createLogger('herobids-worker');
 
@@ -203,29 +98,20 @@ const redisConnection = {
 
 // Redis client for lease management (separate from BullMQ's internal connection)
 const redisClient = new Redis(redisConnection);
-let botStopSubscriber: Redis | undefined;
 let agentCleanupSubscriber: Redis | undefined;
 let approvalExecuteSubscriber: Redis | undefined;
 let browserPoolHealthPublisher: { stop(): void } | undefined;
 const workerId = `worker-${crypto.randomUUID().slice(0, 8)}`;
-const lease = new InstanceLease(redisClient, workerId, 30);
 
 const db = createDatabase(appConfig.database.url);
 const journal = new PgJournal(db);
-const fillRepo = new FillRepository(db);
-const positionRepo = new PositionRepository(db);
-const planRepo = new ExecutionPlanRepository(db);
-const orderRepo = new OrderRepository(db);
-const balanceSnapshotRepo = new BalanceSnapshotRepository(db);
-const reconciliationRepo = new ReconciliationEventRepository(db);
-const decisionRepo = new DecisionRepository(db);
-const backtestingRepo = new BacktestingRepository(db);
-const llmArtifactRepo = new LlmArtifactRepository(db);
+// L3d-5: the trading repositories (fills/positions/plans/orders/balance-snapshots/
+// reconciliation/decisions/backtesting/llm-artifact/instrument) were only consumed
+// by the deleted in-process trading actors + engine-backed intake. Removed with the
+// actor slice. Their tables remain (deferred to a later slice per 004-l3d-plan §A).
 const alertDeliveryRepo = new AlertDeliveryRepository(db);
-const tokenSafetyOverrideRepo = new TokenSafetyOverrideRepository(db);
 const decisionFailureRepo = new DecisionFailureRepository(db);
 const decisionApprovalRepo = new DecisionApprovalRepository(db);
-const instrumentRepo = new InstrumentRepository(db);
 
 // Document store shared by API and worker — must use the same root directory.
 // Default matches the API's AGENT_DOCUMENTS_DIR default.
@@ -237,41 +123,9 @@ const sharedMarketDataRegistry = appConfig.marketData
   ? await createProviderRegistry(appConfig.marketData, { redisClient: redisClient as unknown as RedisEvalClient, discoverySeenClient: redisClient })
   : undefined;
 
-// The outer guard (appConfig.marketData && sharedMarketDataRegistry) prevents
-// creation when the registry is absent. The inner null-check defends against
-// a theoretical edge case where the closure is invoked after the module-level
-// variable is reassigned (capture-by-reference, not by value).
-const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
-  ? createSwapTokenSafetyAdapter({
-      marketDataConfig: appConfig.marketData,
-      overrideRepo: tokenSafetyOverrideRepo,
-      resolveTokenData: async (network, tokenAddress) => {
-        if (!sharedMarketDataRegistry || !appConfig.marketData) {
-          return null;
-        }
-        const canonicalResolver: CanonicalResolver = {
-          resolve: (symbol, net) => {
-            const policy = resolveTokenSafetyPolicyConfig(appConfig.marketData!);
-            return lookupCanonical(symbol, net, policy.canonicalTokens);
-          },
-        };
-        const dexScreenerProvider: DexScreenerProvider = {
-          search: (addr) => sharedMarketDataRegistry.dexscreener.search(addr),
-        };
-        const result = await resolveSwapTokenData(
-          dexScreenerProvider, network, tokenAddress, canonicalResolver,
-        );
-        if (!result) return null;
-        // Enrich with discovery data when pool creation timestamp is missing
-        // from the DexScreener result (handled by the resolver for canonical
-        // synthetic fallback, needed only for live DexScreener matches).
-        if (!result.poolCreatedAt && result.hasRealMarketData) {
-          return enrichTokenWithDiscovery(sharedMarketDataRegistry, network, result.address, result);
-        }
-        return result;
-      },
-    })
-  : undefined;
+// L3d-5: the swap token-safety adapter (swapTokenSafety) was only consumed by the
+// deleted in-process trading actors + engine-backed intake. Removed with the actor
+// slice.
 
 // ── Technical scanner infrastructure ──────────────────────────────────────────
 // Venue-aware candidate discovery, candle fetching, and pre-filtering for
@@ -279,10 +133,7 @@ const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
 // orderbook binding venue (Hyperliquid or Bybit). Candle fetching uses an
 // explicit ScannerCandleTarget — no venue-global assumptions.
 
-import { discoverScannerCandidates } from './scanner-candidate-discovery.js';
-import { discoverSwapScannerCandidates } from './swap-candidate-discovery.js';
 import { createScannerCandleFetcher } from './scanner-candle-fetcher.js';
-import { normalizeScannerCandidates } from './scanner-pre-filter.js';
 
 /** Capacity policy values sourced from operator config. */
 const scannerCapacity = appConfig.marketData?.binance?.scanner ?? {
@@ -322,153 +173,14 @@ const scannerCandleFetcher = sharedMarketDataRegistry
     })
   : undefined;
 
-// Cross-scan circuit breaker for transient candle fetch failures.
-// Uses Redis to track per-symbol fail counts and skip durations measured
-// in scan cycles (not milliseconds), so the breaker is cadence-aware.
-// Disabled when candleFetchBreaker.enabled is false — breaker dep is optional downstream.
-const candleFetchBreaker = appConfig.agentRuntime.candleFetchBreaker.enabled
-  ? new CandleFetchBreaker(redisClient, {
-      failScansBeforeOpen: appConfig.agentRuntime.candleFetchBreaker.failScansBeforeOpen,
-      baseSkipScans: appConfig.agentRuntime.candleFetchBreaker.baseSkipScans,
-      maxSkipScans: appConfig.agentRuntime.candleFetchBreaker.maxSkipScans,
-    })
-  : undefined;
+// L3d-5: the cross-scan candle-fetch circuit breaker + in-cycle retry config
+// were only wired into the deleted in-process AgentTradingActor scan loop.
+// Removed with the actor slice.
 
-// In-cycle retry config sourced from operator config.
-// Disabled when candleFetchRetry.enabled is false — retry dep is optional downstream.
-const candleFetchRetry: RetryOptions | undefined = appConfig.agentRuntime.candleFetchRetry.enabled
-  ? appConfig.agentRuntime.candleFetchRetry
-  : undefined;
-
-/**
- * Build a venue-aware discoverCandidates closure.
- *
- * Orderbook venues (Hyperliquid, Bybit) use the existing venue-specific discovery
- * paths. Swap venues (Jupiter, 1inch) use {@link registry.discovery.discover()}
- * when enabled by operator flags; when disabled they return no candidates —
- * byte-for-byte identical to pre-Phase-3 behaviour.
- *
- * Unrecognized venues are rejected with an explicit error log — the scanner does
- * not silently fall back to a different venue.
- */
-function buildDiscoverCandidates(params: {
-  bindingVenue: string;
-  bindingVenueType: 'orderbook' | 'swap';
-  /** Resolved token-safety network for swap venues (e.g. 'solana', 'base'). */
-  swapNetwork?: string;
-  /** Effective quote asset symbol for pool filtering (default 'USDC'). */
-  swapQuoteAssetSymbol?: string;
-  /** Effective quote asset address from canonical tokens for swap execution identity. */
-  swapQuoteAssetAddress?: string;
-  /** Whether swap scanning is enabled (master kill-switch + per-venue flag). */
-  swapEnabled: boolean;
-}): (filters: FilterConfig) => Promise<DiscoveredInstrument[]> {
-  const {
-    bindingVenue,
-    bindingVenueType,
-    swapNetwork,
-    swapQuoteAssetSymbol,
-    swapQuoteAssetAddress,
-    swapEnabled,
-  } = params;
-
-  // ── Orderbook path ──────────────────────────────────────────────────────
-  if (bindingVenueType === 'orderbook') {
-    // Validate that the orderbook venue is one we support for scanning.
-    if (bindingVenue !== 'hyperliquid' && bindingVenue !== 'bybit') {
-      logger.warn(
-        { venue: bindingVenue },
-        'Scanner discovery: unsupported orderbook venue — returning empty candidates',
-      );
-      return async (_filters: FilterConfig) => [];
-    }
-
-    const venue: 'hyperliquid' | 'bybit' = bindingVenue;
-
-    return async (filters: FilterConfig) => {
-      if (!sharedMarketDataRegistry) return [];
-      if (!filters) return [];
-
-      const discovered = await discoverScannerCandidates({
-        registry: sharedMarketDataRegistry,
-        filters,
-        bindingVenue: venue,
-        bindingVenueType: 'orderbook',
-        maxCandidates: scannerCapacity.maxCandidates,
-      });
-
-      const { supported, unsupportedCount } = normalizeScannerCandidates(discovered);
-
-      if (unsupportedCount > 0) {
-        logger.info(
-          { venue, discovered: discovered.length, supported: supported.length, unsupported: unsupportedCount },
-          'Scanner normalize dropped unresolvable orderbook candidates',
-        );
-      }
-
-      return supported;
-    };
-  }
-
-  // ── Swap path ───────────────────────────────────────────────────────────
-  // Gate: when swap scanning is disabled, return no candidates (pre-Phase-3 behaviour).
-  if (!swapEnabled || !swapNetwork || (bindingVenue !== 'jupiter' && bindingVenue !== '1inch')) {
-    logger.info(
-      { bindingVenue, swapEnabled, swapNetwork },
-      'Swap scanner discovery disabled — returning empty candidates',
-    );
-    return async (_filters: FilterConfig) => [];
-  }
-
-  const venue: 'jupiter' | '1inch' = bindingVenue as 'jupiter' | '1inch';
-  const quoteAssetSymbol = swapQuoteAssetSymbol ?? 'USDC';
-
-  // Startup validation guarantees swapQuoteAssetAddress is resolved when we reach
-  // this path, but emit a warning if it's missing anyway (defensive).
-  if (!swapQuoteAssetAddress) {
-    logger.warn(
-      { venue },
-      'Swap scanner: swapQuoteAssetAddress is undefined — quote address cross-validation is disabled',
-    );
-  }
-
-  return async (filters: FilterConfig) => {
-    if (!sharedMarketDataRegistry) return [];
-    if (!filters) return [];
-
-    return discoverSwapScannerCandidates({
-      discovery: sharedMarketDataRegistry.discovery,
-      venue,
-      swapNetwork,
-      quoteAssetSymbol,
-      quoteAssetAddress: swapQuoteAssetAddress,
-      filters,
-      maxCandidates: scannerCapacity.maxCandidates,
-      logger,
-    });
-  };
-}
-
-// Agent subsystem — registry + protocol stack. Created before WorkerRuntime so the
-// actor factory can subscribe streams and register actors on creation.
-const actorRegistry = new Map<string, ExecutionActor>();
-const agentState = new ActorStateOwner(actorRegistry);
-/** Maps botId → userId so the onStarted/onStartFailed callbacks can publish events. */
-const instanceUserIds = new Map<string, string>();
-/** Maps botId → execution mode for health snapshots. */
-const instanceExecutionModes = new Map<string, 'paper' | 'shadow' | 'live'>();
+// Agent subsystem — protocol stack.
 const agentRepo = new AgentRepository(db);
 const eventPublisher = new InstanceEventPublisher(redisClient);
 const userEventPublisher = new UserEventPublisher(redisClient);
-const actorHealthPublisher = new ActorHealthPublisher(redisClient);
-
-// ID generator using UUIDv7 (crypto.randomUUID as fallback)
-const idGen: IdGenerator & { planId(): string; decisionId(): string } = {
-  orderId: () => crypto.randomUUID() as OrderId,
-  fillId: () => crypto.randomUUID() as FillId,
-  planId: () => crypto.randomUUID(),
-  decisionId: () => crypto.randomUUID(),
-};
 
 // Runtime backend selection — config-driven with env var override.
 // Priority: RUNTIME_BACKEND env var > appConfig.runtimeBackend > 'docker' (default).
@@ -489,33 +201,9 @@ if (runtimeBackend === 'nomad' && !appConfig.nomad?.addr) {
   process.exit(1);
 }
 
-// Bot repository — instantiated before agentRuntimeLauncher so that the
-// cascadeStopAgentBots helper is available for onAgentCrashed wiring.
+// Bot repository — vestige read surface (Traderton owns bot lifecycle; the
+// in-process cascade-stop path was removed in L3d-5).
 const botRepo = new BotRepository(db);
-
-/**
- * Cascade-stop all running bots created by an agent.
- * No-op when the agent has no running bots. Failure to stop any individual bot
- * is logged but does not block the cascade; Promise.allSettled is used so all
- * bots get a stop attempt regardless of individual failures.
- */
-async function cascadeStopAgentBots(agentId: string): Promise<void> {
-  try {
-    const agentBots = await botRepo.getBotsByCreator('agent', agentId);
-    const runningBots = agentBots.filter((b) => b.status === 'running');
-    if (runningBots.length === 0) return;
-    logger.info({ agentId, count: runningBots.length }, 'Cascade-stopping agent bots');
-    await Promise.allSettled(
-      runningBots.map((b) =>
-        runtime.stopInstanceDirect(b.id).catch((err: unknown) =>
-          logger.error({ err, botId: b.id, agentId }, 'Failed to cascade-stop agent bot'),
-        ),
-      ),
-    );
-  } catch (err) {
-    logger.error({ err, agentId }, 'cascadeStopAgentBots query failed');
-  }
-}
 
 // Build the agentRuntimeConfigJson once — shared between the Docker manager
 // config and any future runtime adapter config.
@@ -705,7 +393,6 @@ const agentRuntimeLauncher = await (async () => {
           ? { browserPoolApiKey: appConfig.browserPool.apiKey }
           : {}),
         onAgentCrashed: async (agentId, sessionId?) => {
-          await cascadeStopAgentBots(agentId);
           await sessionManager.handleAgentCrashed(agentId, sessionId);
         },
       },
@@ -774,97 +461,10 @@ const agentRuntimeLauncher = await (async () => {
   });
 })();
 
-// Worker-scoped oracle mark source (stateless, safe to share)
-const oracleMarkSource = new OracleMarkSource({
-  baseUrl: appConfig.marking.oracleBaseUrl,
-  timeoutMs: appConfig.marking.oracleTimeoutMs,
-  vsCurrency: appConfig.marking.oracleVsCurrency,
-});
-
-// Hyperliquid venue-level mid-price source — resolves perp marks for ALL
-// Hyperliquid instruments without needing CoinGecko. Chained before the
-// CoinGecko oracle: LastFill → HyperliquidMid → CoinGecko.
-const hyperliquidMarkSource = new HyperliquidMarkSource({
-  timeoutMs: appConfig.marking.oracleTimeoutMs,
-});
-
-// Composite fallback: try Hyperliquid's own mid prices first (works for
-// all listed perps), then fall back to CoinGecko (for non-Hyperliquid
-// instruments like swaps/dex).
-const compositeFallbackSource = new MarkSelector(
-  { stalenessThresholdMs: 30_000 },
-  hyperliquidMarkSource,
-  oracleMarkSource,
-);
-
-// --- Venue instrument cache (symbol validation) ---
-// Created before AgentIntakeResolver so the cache reference is available
-// at construction time. Warmup happens later, after venue adapters are
-// available. Until isReady() flips true, validation is a no-op.
-const instrumentCache = new VenueInstrumentCache(logger);
-
-const agentIntakeResolver = new AgentIntakeResolver({
-  db,
-  agentRepo,
-  positionRepo,
-  decisionRepo,
-  planRepo,
-  fillRepo,
-  orderRepo,
-  balanceSnapshotRepo,
-  backtestingRepo,
-  journal,
-  markSource: oracleMarkSource,
-  idGen,
-  agentRiskDefaults: appConfig.agentRiskDefaults,
-  swapTokenSafety,
-  oneInchConfig: appConfig.venues['1inch'],
-  instrumentCache,
-});
-
-const intakeResolver: DecisionIntakeResolver = {
-  getIntakeDeps: async (instanceId: string, instrumentId?: string) => {
-    const actor = actorRegistry.get(instanceId);
-    if (actor?.isRunning) {
-      // Refresh actor risk limits from DB so runtime overrides take effect on the next decision
-      if (actor.updateRiskLimits) {
-        const agent = await agentRepo.getAgent(instanceId);
-        if (agent) {
-          const freshLimits = buildAgentRiskLimits({
-            capital: agent.capital ?? null,
-            riskPosture: (agent.risk as RiskPosture | null) ?? null,
-          }, appConfig.agentRiskDefaults, (agent.riskOverrides as Record<string, number> | null) ?? {});
-          actor.updateRiskLimits(freshLimits);
-        }
-      }
-      return actor.getIntakeDeps(instrumentId);
-    }
-    if (!agentState.canUseGrantFallback(instanceId)) return undefined;
-    // Fallback: resolve as agent via capability grants
-    if (instrumentId) return agentIntakeResolver.getIntakeDeps(instanceId, instrumentId);
-    return undefined;
-  },
-  getDecisionContext: (instanceId: string, instrumentId?: string): DecisionContext | undefined | Promise<DecisionContext | undefined> => {
-    const actor = actorRegistry.get(instanceId);
-    if (actor?.isRunning) return actor.getDecisionContext(instrumentId);
-    if (!agentState.canUseGrantFallback(instanceId)) return undefined;
-    // Fallback: resolve as agent
-    if (instrumentId) return agentIntakeResolver.getDecisionContext(instanceId, instrumentId);
-    return undefined;
-  },
-  getPosition: (instanceId: string, instrumentId?: string) => {
-    const actor = actorRegistry.get(instanceId);
-    if (actor?.isRunning) return actor.getPosition(instrumentId);
-    if (!agentState.canUseGrantFallback(instanceId)) return undefined;
-    // Fallback: resolve as agent
-    if (instrumentId) return agentIntakeResolver.getPosition(instanceId, instrumentId);
-    return undefined;
-  },
-  recordExecutionOutcome: (instanceId: string, success: boolean) => {
-    const actor = actorRegistry.get(instanceId);
-    if (actor?.isRunning) actor.recordExecutionOutcome?.(success);
-  },
-};
+// L3d-5: the worker-scoped mark sources (oracle / Hyperliquid mid / composite
+// MarkSelector) were only consumed by the in-process trading actors + the
+// engine-backed intake resolver — all removed with the actor slice. Mark
+// resolution is now Traderton-owned behind the boundary.
 
 // L3c: construct the Traderton side-effecting boundary from operator config
 // (appConfig.boundary). When baseUrl + hmacSecret are unset (unconfigured), leave
@@ -912,7 +512,6 @@ const approvalVenueAccountResolver = async (agentId: string): Promise<string | n
 
 const agentDecisionHandler = new AgentDecisionHandler(
   agentRepo,
-  intakeResolver,
   eventPublisher,
   decisionFailureRepo,
   {
@@ -939,66 +538,11 @@ const approvalService = new ApprovalService({
   boundaryDeadlineMs: 30_000,
 });
 
-const snapshotResolver: ContextSnapshotResolver = {
-  resolveSnapshots: async (instanceId: string) => {
-    const actor = actorRegistry.get(instanceId);
-    if (!actor?.isRunning) return [];
-    if (actor instanceof AgentTradingActor) {
-      return actor.buildReconnectSnapshots();
-    }
-    // Bot actors are single-instrument — delegate to single resolver path
-    return [];
-  },
-  resolveSnapshot: async (instanceId: string) => {
-    const actor = actorRegistry.get(instanceId);
-    if (!actor?.isRunning) return undefined;
-    if (actor instanceof AgentTradingActor) {
-      return actor.buildReconnectSnapshot();
-    }
-    if (!(actor instanceof TradingActor)) return undefined;
-    const snapshot = actor.getLastSnapshot();
-    if (!snapshot) return undefined;
-    const pos = actor.currentPosition;
-
-    // Compute per-instrument unrealized PnL when mark/snapshot is available
-    let pnl: string | undefined;
-    if (pos.side !== 'flat') {
-      const markPrice = parseFloat(snapshot.price.toString());
-      const entryPrice = parseFloat(pos.entryPrice.toString());
-      const size = parseFloat(pos.size.toString());
-      const direction = pos.side === 'long' ? 1 : -1;
-      const unrealizedPnl = (markPrice - entryPrice) * size * direction;
-      if (Number.isFinite(unrealizedPnl)) {
-        pnl = unrealizedPnl.toFixed(2);
-      }
-    }
-
-    return {
-      snapshotId: crypto.randomUUID(),
-      symbol: snapshot.symbol,
-      price: snapshot.price.toString(),
-      timestamp: snapshot.timestamp,
-      position: pos.side === 'flat' ? null : {
-        side: pos.side,
-        size: pos.size.toString(),
-        entryPrice: pos.entryPrice.toString(),
-        realizedPnl: pos.realizedPnl.toString(),
-      },
-      pnl,
-      referenceMark: (() => {
-        const lastMark = actor.getLastMarkResult();
-        return (lastMark?.ok && !lastMark.data.stale)
-          ? { price: lastMark.data.price.toString(), source: lastMark.data.source }
-          : { price: snapshot.price.toString(), source: 'snapshot' };
-      })(),
-      strategyParams: {},
-      executionMode: actor.executionMode,
-      guardrails: {},
-    };
-  },
-};
-
-const agentReconnectHandler = new AgentReconnectHandler(redisClient, agentRepo, eventPublisher, undefined, snapshotResolver);
+// L3d-5: the in-process actor-backed context-snapshot resolver was removed with
+// the actor/runtime slice — Traderton owns live market/position state. Reconnect
+// still restores session status + replays missed outbound events; it no longer
+// synthesizes a local instance.context.snapshot.
+const agentReconnectHandler = new AgentReconnectHandler(redisClient, agentRepo, eventPublisher, undefined, undefined);
 
 // Platform alert service — mandatory safety alerts to users via Telegram.
 // Uses the same bot token as the operator alert dispatcher.
@@ -1122,450 +666,26 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
       logger.error({ err, agentId }, 'Failed to publish agent status event');
     });
   },
-  onSessionActive: (agentId, executionMode, sessionId) => {
-    const mode = (executionMode === 'shadow' || executionMode === 'live') ? executionMode : 'paper';
-    // Track the session that initiated this actor so stop can correlate
-    agentState.markSessionPending(agentId, sessionId);
+  onSessionActive: (agentId, _executionMode, _sessionId) => {
+    // L3d-5: trading agents no longer spin up an in-process AgentTradingActor —
+    // execution routes over the Traderton boundary via agentDecisionHandler. A
+    // session is simply activated here (the same shape a non-trading agent has
+    // always had): mark it active + start the platform review scheduler (gated
+    // internally on hybrid + platformAssessment.enabled + operator switch). With
+    // no async actor start to protect, activation is established synchronously.
     return (async (): Promise<boolean> => {
-      const binding = await agentIntakeResolver.resolveBinding(agentId);
-      if (!agentState.isCurrentFallbackSession(agentId, sessionId)) {
-        logger.info({ agentId, sessionId }, 'Agent trading actor start abandoned — session changed during binding resolution');
-        return false;
+      const agent = await agentRepo.getAgent(agentId);
+      if (agent) {
+        // Worker startup is not the sole lifecycle hook for review schedulers
+        // (see 010-scanner-pre-check.md) — start one here for agents that opt
+        // into platform assessment and become active after boot.
+        startReviewSchedulerForAgent(agent);
       }
-      if (!binding) {
-        logger.debug({ agentId }, 'No active binding for agent — grant fallback remains disabled');
-        agentState.clearPending(agentId, sessionId);
-        // The session IS successfully activated — it simply has no trading actor
-        // (e.g. a personal-assistant agent with no trading connection). Return
-        // true so the session manager records the session as active, stops the
-        // per-heartbeat reconnect loop, and fires onSessionStarted (the Telegram
-        // reply anchor). Returning false here would (incorrectly) signal
-        // "activation not established, retry later", which suppressed the anchor
-        // and left non-trading agents unable to receive Telegram replies.
-        // The transient "session superseded" case above still returns false.
-        return true;
-      }
-
-      try {
-        // Determine venue type from venue name heuristic
-        const venueType: 'orderbook' | 'swap' = (binding.venue === 'jupiter' || binding.venue === '1inch') ? 'swap' : 'orderbook';
-        const agent = await agentRepo.getAgent(agentId);
-        const capitalStr = agent?.capital ?? null;
-        const agentDefaults = appConfig.agentRiskDefaults;
-
-        // Resolve swap asset metadata from binding for non-paper swap modes.
-        // Agents can proceed without swapAssets — decimals are resolved at decision time.
-        // Bots are validated at startup by BotConfigSchema (swapAssets required for swap venues).
-        let resolvedSwapAssets: { baseAsset: string; quoteAsset: string; baseDecimals: number; quoteDecimals: number } | undefined;
-        if (venueType === 'swap') {
-          // resolveSwapAssetsFromBinding expects BindingLike { id, bindingProfile },
-          // but the binding from resolveActiveBinding has { profile }. Remap.
-          resolvedSwapAssets = resolveSwapAssetsFromBinding({ id: binding.id, bindingProfile: binding.profile });
-        }
-
-        let actor: AgentTradingActor | undefined;
-
-        // Guard: reject unsupported 1inch chain before actor starts (mirrors bot path)
-        // Remap binding { profile } to BindingLike { bindingProfile }.
-        const bindingForSwap = { id: binding.id, bindingProfile: binding.profile };
-        const resolvedSwapNetwork = resolveSwapNetwork(binding.venue, bindingForSwap, appConfig.venues['1inch']);
-        if (venueType === 'swap' && binding.venue === '1inch' && appConfig.marketData?.tokenSafety?.enabled && !resolvedSwapNetwork) {
-          throw new CredentialResolutionError(
-            `Unsupported 1inch chain for agent ${agentId} — no token-safety network resolved from binding or config`,
-          );
-        }
-
-        // Phase 1 (scanner-gated hardening): validate persisted technical config
-        // at actor startup. The raw DB JSONB arrives without Zod defaults applied,
-        // so we gate on the agent's hybrid sub-mode:
-        //   - scanner_gated: strict validation — missing required fields → startup rejected
-        //   - mixed:         lenient validation — defaults applied as repair
-        //   - intelligence:  no technical block needed
-        const rawTechnical = agent?.unifiedConfig?.technical;
-        const capabilityMode = agent?.unifiedConfig?.capabilityMode;
-        const hybridMode = agent?.unifiedConfig?.hybridMode;
-        let technicalConfig: TechnicalConfig | undefined;
-        if (capabilityMode === 'hybrid' && hybridMode === 'scanner_gated') {
-          // Strict: reject incomplete scanner-gated configs entirely.
-          // The strict parse throws on missing required fields; the full parse
-          // then applies inner defaults (candles.interval, indicator sub-fields).
-          if (!rawTechnical) {
-            throw new CredentialResolutionError(
-              `Scanner-gated agent ${agentId} is missing technical configuration — the agent must be recreated with a strategy preset or explicit technical config`,
-            );
-          }
-          const strictParsed = StrictTechnicalConfigSchema.parse(rawTechnical);
-          technicalConfig = TechnicalConfigSchema.parse(strictParsed);
-        } else if (capabilityMode === 'hybrid' && hybridMode === 'mixed') {
-          // Lenient: apply defaults as a repair step for mixed-mode agents.
-          // Missing fields are filled from Zod defaults rather than crashing startup.
-          technicalConfig = rawTechnical
-            ? TechnicalConfigSchema.parse(rawTechnical)
-            : undefined;
-        }
-        // else: intelligence agent — no technical config, stays undefined
-
-        // Phase 1 (DEX venue completion): validate swap scanner configuration.
-        // For a swap-bound scanner_gated agent, resolve the effective quote asset
-        // from operator-owned canonical tokens and fail startup when the configuration
-        // is incoherent (unresolved network, excluded network, missing canonical quote).
-        if (
-          capabilityMode === 'hybrid'
-          && hybridMode === 'scanner_gated'
-          && venueType === 'swap'
-          && technicalConfig
-        ) {
-          const swapEnabled = appConfig.agentRuntime.scanner?.swap?.enabled ?? false;
-          if (!swapEnabled) {
-            logger.info(
-              { agentId, venue: binding.venue },
-              'Scanner swap scanning disabled by operator config (agentRuntime.scanner.swap.enabled=false) — swap-bound agent will idle',
-            );
-          } else {
-            // Check per-venue flag if present
-            const venues = appConfig.agentRuntime.scanner?.swap?.venues;
-            const venueFlag = binding.venue === 'jupiter'
-              ? venues?.jupiter
-              : binding.venue === '1inch'
-                ? venues?.['1inch']
-                : undefined;
-
-            if (venueFlag === false) {
-              logger.info(
-                { agentId, venue: binding.venue },
-                'Scanner swap scanning disabled per-venue by operator config — swap-bound agent will idle',
-              );
-            } else {
-              const canonicalTokens: TokenSafetyConfig['canonicalTokens'] | undefined =
-                appConfig.marketData?.tokenSafety?.canonicalTokens;
-
-              const result = validateSwapScannerConfig(
-                resolvedSwapNetwork,
-                binding.venue,
-                technicalConfig,
-                canonicalTokens,
-              );
-
-              if (!result.ok) {
-                throw new CredentialResolutionError(
-                  `Cannot start swap scanner for agent ${agentId}: ${result.error.message}`,
-                );
-              }
-
-              logger.info(
-                {
-                  agentId,
-                  venue: binding.venue,
-                  network: result.data.network,
-                  quoteAssetSymbol: result.data.quoteAssetSymbol,
-                },
-                'Swap scanner configuration validated',
-              );
-            }
-          }
-        }
-
-        // Construct the agent's mark source outside the constructor so it can be
-        // reused in onPersistScanCandidates for mark-coverage filtering.
-        const agentMarkSource = createFillFirstMarkSource({
-          fillLookup: fillRepo,
-          actorId: agentId,
-          fallbackSource: compositeFallbackSource,
-          stalenessThresholdMs: appConfig.marking.stalenessThresholdMs,
-        });
-
-        actor = new AgentTradingActor({
-          agentId,
-          executionMode: mode,
-          venueAccountId: binding.venueAccountId,
-          venue: binding.venue,
-          venueType,
-          riskLimits: buildAgentRiskLimits({
-            capital: agent?.capital ?? null,
-            riskPosture: (agent?.risk as RiskPosture | null) ?? null,
-          }, agentDefaults, (agent?.riskOverrides as Record<string, number> | null) ?? {}),
-          venueAdapterFactory,
-          createStreamPoolHandle: venueType !== 'swap'
-            ? (testnet: boolean) => createScopedStreamPoolHandle(publicStreamPool, binding.venue, testnet)
-            : undefined,
-          markSource: agentMarkSource,
-          journal,
-          idGen,
-          positionRepo,
-          fillRepo,
-          planRepo,
-          orderRepo,
-          decisionRepo,
-          balanceSnapshotRepo,
-          backtestingRepo,
-          reconciliationRepo,
-          reconciliationConfig,
-          streamConfig: appConfig.streams.private,
-          liveRollout: appConfig.liveRollout,
-          driftAlertOnly: appConfig.reconciliation.driftAlertOnly,
-          swapNetwork: resolvedSwapNetwork,
-          swapBaseTokenAddress: resolvedSwapAssets?.baseAsset,
-          swapAssets: resolvedSwapAssets,
-          swapTokenSafety: venueType === 'swap' ? swapTokenSafety : undefined,
-          ...(capitalStr != null ? { capital: capitalStr } : {}),
-          feeConfig: appConfig.simulation,
-          maxConsecutiveVenueErrors: appConfig.liveRollout.maxConsecutiveVenueErrors,
-          slippageAlertBps: appConfig.liveRollout.slippageAlertBps,
-          crashPolicy: appConfig.liveRollout.crashPolicy,
-          liveOrderTimeoutPolicy: {
-            limitOrderTimeoutMs: appConfig.liveRollout.limitOrderTimeoutMs,
-            marketOrderTimeoutMs: appConfig.liveRollout.marketOrderTimeoutMs,
-            checkIntervalMs: appConfig.liveRollout.timeoutCheckIntervalMs,
-          },
-          onCrashed: async (err) => {
-            agentState.deregisterOnCrash(agentId, sessionId, actor!);
-            await sessionManager.handleRuntimeFailure(sessionId, agentId, agent?.userId, err);
-          },
-          onTechnicalScanComplete: (scanAgentId, scan) => {
-            eventPublisher.emitTechnicalScanCompleted(scanAgentId, scan).catch((err: unknown) => {
-              logger.warn({ err, agentId: scanAgentId }, 'Failed to emit technical scan completed');
-            });
-          },
-          emitAgentWake: (wakeAgentId, payload) => eventPublisher.emitAgentWake(wakeAgentId, payload),
-          isHybridMode: agent?.unifiedConfig?.capabilityMode === 'hybrid',
-          instrumentCache,
-          oneInchConfig: appConfig.venues['1inch'],
-          bindingProfile: binding.profile,
-          canonicalTokens: appConfig.marketData?.tokenSafety?.canonicalTokens,
-          perTradeLevelMonitorIntervalMs: appConfig.agentRiskDefaults.perTradeLevelMonitorIntervalMs,
-          onJournalEvent: (event) => {
-            eventPublisher.emitJournalEvent(agentId, {
-              journalType: event.type,
-              detail: JSON.stringify(event.payload ?? {}),
-            }).catch((err) => logger.warn({ err, agentId, eventType: event.type }, 'Failed to emit journal event'));
-          },
-          technicalConfig,
-          discoverCandidates: buildDiscoverCandidates({
-            bindingVenue: binding.venue,
-            bindingVenueType: venueType,
-            swapNetwork: venueType === 'swap' ? resolvedSwapNetwork : undefined,
-            swapQuoteAssetSymbol: technicalConfig?.filters.quoteAssetSymbol ?? 'USDC',
-            swapQuoteAssetAddress: (() => {
-              if (venueType !== 'swap' || !resolvedSwapNetwork) return undefined;
-              const canonicalTokens = appConfig.marketData?.tokenSafety?.canonicalTokens;
-              const networkTokens = canonicalTokens?.[resolvedSwapNetwork];
-              const quoteSymbol = technicalConfig?.filters.quoteAssetSymbol ?? 'USDC';
-              return networkTokens?.[quoteSymbol]?.address;
-            })(),
-            swapEnabled: venueType === 'swap'
-              ? (appConfig.agentRuntime.scanner?.swap?.enabled ?? false)
-                && (binding.venue === 'jupiter'
-                  ? (appConfig.agentRuntime.scanner?.swap?.venues?.jupiter ?? true)
-                  : binding.venue === '1inch'
-                    ? (appConfig.agentRuntime.scanner?.swap?.venues?.['1inch'] ?? true)
-                    : false)
-              : false,
-          }),
-          fetchCandles: scannerCandleFetcher,
-          candleFetchRetry,
-          candleFetchBreaker,
-          maxConcurrentScans: scannerCapacity.maxConcurrentScans,
-          signalFingerprintStore: redisClient as unknown as SignalFingerprintStore,
-          scannerSignalDedup: appConfig.agentRuntime.scannerSignalDedup,
-          onPersistScanCandidates: async (candidates) => {
-            try {
-              if (candidates.length === 0) return;
-              // Filter: only persist candidates that can be priced.
-              // - Orderbook candidates go through the mark-coverage check
-              //   (prevents agents from submitting decisions on instruments
-              //   that will always be rejected with no_context — Bug 002).
-              // - DEX candidates use priceService.resolvePriceTarget() with
-              //   their exact on-chain identity. If pricing fails, they are
-              //   persisted anyway (defensive — DEX observations must not be
-              //   suppressed by a CoinGecko-specific SYMBOL-PERP check).
-              const pricedCandidates = [];
-              /** Lazily-created price service for DEX candidate identity resolution.
-               *  Constructed only when the first DEX candidate is encountered so
-               *  orderbook-only agents never pay the provider-registry cost. */
-              let dexPriceService: ReturnType<typeof createPriceService> | null = null;
-              // TODO(Phase 5): parallelize resolvePriceTarget calls for multi-DEX scans
-              // to avoid serial chain-of-await latency when many DEX candidates are present.
-              for (const c of candidates) {
-                if (c.instrumentKind === 'dex') {
-                  // DEX candidate: resolve exact on-chain price identity.
-                  // c.network (e.g. 'base', 'solana') passes through to
-                  // resolveDexScreenerTarget which filters by DexScreener network
-                  // field — these values are supported by the DexScreener API.
-                  if (!c.symbol || !c.network || !c.address) {
-                    logger.warn(
-                      { symbol: c.symbol, network: c.network, address: c.address },
-                      'DEX candidate missing network/address — persisting anyway (defensive)',
-                    );
-                    pricedCandidates.push(c);
-                    continue;
-                  }
-                  if (!dexPriceService && sharedMarketDataRegistry) {
-                    dexPriceService = createPriceService(sharedMarketDataRegistry);
-                  }
-                  if (dexPriceService) {
-                    try {
-                      const priceResult = await dexPriceService.resolvePriceTarget(
-                        c.symbol,
-                        c.network,
-                        c.address,
-                      );
-                      if (priceResult.ok && !priceResult.data.stale) {
-                        pricedCandidates.push(c);
-                      } else {
-                        logger.debug(
-                          { symbol: c.symbol, network: c.network, address: c.address },
-                          'DEX candidate price unavailable or stale — persisting anyway (defensive)',
-                        );
-                        pricedCandidates.push(c);
-                      }
-                    } catch {
-                      logger.debug(
-                        { symbol: c.symbol, network: c.network },
-                        'DEX candidate price lookup error — persisting anyway (defensive)',
-                      );
-                      pricedCandidates.push(c);
-                    }
-                  } else {
-                    // No market data registry — persist DEX candidates without pricing check.
-                    logger.debug(
-                      { symbol: c.symbol },
-                      'DEX candidate persisted without price check — market data registry unavailable',
-                    );
-                    pricedCandidates.push(c);
-                  }
-                  continue;
-                }
-                // Orderbook candidate: use the existing mark-coverage check.
-                const instrument = c.symbol
-                  ? `${c.symbol}-PERP`
-                  : c.address
-                    ? `${c.network ?? ''}:${c.address}`
-                    : null;
-                if (!instrument) {
-                  pricedCandidates.push(c); // No symbol/address — persist anyway (defensive)
-                  continue;
-                }
-                const markResult = await agentMarkSource.fetchMark(instrument);
-                if (markResult.ok) {
-                  pricedCandidates.push(c);
-                } else {
-                  logger.debug({ symbol: c.symbol, instrument }, 'Skipping candidate — mark unavailable');
-                }
-              }
-              if (pricedCandidates.length === 0) return;
-
-              // Batch insert persisted scanner candidate observations
-              await db.insert(agentScanCandidates).values(
-                pricedCandidates.map((c) => ({
-                  id: c.id,
-                  agentId: c.agentId,
-                  scannedAt: new Date(c.scannedAt),
-                  scanVersion: c.scanVersion,
-                  activePresetKey: c.activePresetKey,
-                  presetBehaviorVersion: c.presetBehaviorVersion,
-                  instrumentKind: c.instrumentKind,
-                  venueFamily: c.venueFamily,
-                  styleTier: c.styleTier,
-                  symbol: c.symbol ?? null,
-                  network: c.network ?? null,
-                  address: c.address ?? null,
-                  rawCandidateId: c.rawCandidateId ?? null,
-                  resolutionStatus: c.resolutionStatus ?? null,
-                  candidateRank: c.candidateRank,
-                  scanScope: c.scanScope ?? null,
-                  signalFacts: c.signalFacts,
-                  confidence: c.confidence != null ? String(c.confidence) : null,
-                  regimeBucket: c.regimeBucket ?? null,
-                  volatilityFact: c.volatilityFact != null ? String(c.volatilityFact) : null,
-                  dataFreshnessTs: c.dataFreshnessTs ? new Date(c.dataFreshnessTs) : null,
-                  disposition: c.disposition,
-                })),
-              );
-            } catch (err) {
-              logger.warn({ err, agentId, count: candidates.length }, 'Failed to persist scan candidates — non-fatal');
-            }
-          },
-          onPersistScanMetrics: async (metrics) => {
-            try {
-              await db.insert(agentScanMetrics).values({
-                id: crypto.randomUUID(),
-                agentId: metrics.agentId,
-                presetKey: metrics.presetKey,
-                presetBehaviorVersion: metrics.presetBehaviorVersion,
-                venueFamily: metrics.venueFamily,
-                styleTier: metrics.styleTier,
-                scanScope: metrics.scanScope,
-                scannedAt: new Date(metrics.scannedAt),
-                candidatesDiscovered: metrics.candidatesDiscovered,
-                candidatesScored: metrics.candidatesScored,
-                signalsGenerated: metrics.signalsGenerated,
-                scanHealth: metrics.scanHealth,
-                topConfidence: metrics.topConfidence != null ? String(metrics.topConfidence) : null,
-                regimeBucket: metrics.regimeBucket,
-              });
-            } catch (err) {
-              logger.warn({ err, agentId }, 'Failed to persist scan metrics — non-fatal');
-            }
-          },
-        });
-
-        await actor.start();
-
-        // Only register if the session is still active (not stopped during start)
-        if (agentState.isSessionPending(agentId, sessionId)) {
-          agentState.registerActor(agentId, sessionId, actor, mode, venueType);
-          instanceExecutionModes.set(agentId, mode);
-          logger.info({ agentId, mode, venue: binding.venue }, 'Agent trading actor registered');
-          // Worker startup is not the sole lifecycle hook for review schedulers
-          // (see 010-scanner-pre-check.md) — start one here too for agents that
-          // opt into platform assessment and become active after boot.
-          if (agent) {
-            startReviewSchedulerForAgent(agent);
-          }
-          void actorHealthPublisher.publish({
-            actorType: 'agent',
-            actorId: agentId,
-            status: 'healthy',
-            reasons: [],
-            executionMode: mode,
-            updatedAt: new Date().toISOString(),
-            streamState: venueType === 'orderbook' ? 'connected' : 'not_applicable',
-            reconciliationState: 'healthy',
-          });
-          return true;
-        } else {
-          // Session changed while starting — tear down immediately
-          await actor.stop();
-          logger.info({ agentId, sessionId }, 'Agent trading actor discarded — session changed during start');
-          return false;
-        }
-      } finally {
-        agentState.clearPending(agentId, sessionId);
-      }
+      return true;
     })();
   },
-  onSessionStopped: (agentId, sessionId) => {
-    const actor = agentState.handleSessionStopped(agentId, sessionId);
-    if (actor && actor instanceof AgentTradingActor) {
-      actor.stop().catch((err) => logger.error({ err, agentId }, 'Failed to stop agent trading actor'));
-    }
+  onSessionStopped: (agentId, _sessionId) => {
     stopReviewSchedulerForAgent(agentId);
-    void actorHealthPublisher.publish({
-      actorType: 'agent',
-      actorId: agentId,
-      status: 'stopped',
-      reasons: ['session_stopped'],
-      executionMode: instanceExecutionModes.get(agentId) ?? 'paper',
-      updatedAt: new Date().toISOString(),
-    });
-    instanceExecutionModes.delete(agentId);
-
-    // Cascade-stop all running bots created by this agent.
-    // This is a supplemental path — the controlling path for UI/API stops is
-    // AgentHealthMonitor.onTerminalSessionCleanup.
-    cascadeStopAgentBots(agentId).catch((err: unknown) =>
-      logger.error({ err, agentId }, 'cascadeStopAgentBots failed in onSessionStopped'),
-    );
   },
   onSessionStarted: (agentId, sessionId) => sendSessionStartedTelegramAnchor(agentId, sessionId),
   usageBillingRepo: new UsageBillingRepository(db, appConfig.usageBilling.defaultRateCardItems, providersYaml, appConfig.usageBilling.fallbackCacheReadPct),
@@ -1575,12 +695,6 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
   crashLoopGuard: appConfig.agentRuntime.crashLoopGuard,
   operatorModelDefaults: appConfig.agentRuntime.llm.modelDefaults,
 }, agentReconnectHandler, platformAlerts, redisClient);
-
-// Lifecycle queue — still consumed by the WorkerRuntime (deleted with the runtime
-// slice in L3d-5) and closed on shutdown. The broker no longer drives it: the
-// agent bot-lifecycle enqueue callbacks (botStart/botStop/botRestart) were deleted
-// in L3d-4 (§C #11) — lifecycle now routes over the Traderton boundary.
-const lifecycleQueue = new Queue(QUEUE_NAME, { connection: redisConnection });
 
 // Enforce plan-level live execution eligibility when an agent creates a live-mode bot.
 // Mirrors the API-level checkLiveEnabled gate that the agent broker path previously bypassed.
@@ -1607,19 +721,13 @@ const agentBroker = new AgentMessageBroker(
   eventPublisher,
   workerTelegram,
   botRepo,
-  undefined, // _botStart (dead — bot lifecycle routes over the boundary; deleted in L3d-4 §C #11)
-  undefined, // _botLimitCheck (dead — maxBots enforcement removed in L3d-3; Traderton owns the limit)
   botLiveCheckCallback,
-  undefined, // _botStop (dead — bot lifecycle routes over the boundary; deleted in L3d-4 §C #11)
-  undefined, // _botRestart (dead — bot lifecycle routes over the boundary; deleted in L3d-4 §C #11)
   workerEmail,
-  (agentId, config) => {
-    const actor = actorRegistry.get(agentId);
-    if (actor instanceof AgentTradingActor && actor.isRunning) {
-      actor.applyPendingConfigUpdate(config as Parameters<typeof actor.applyPendingConfigUpdate>[0]);
-    }
-  },
-  appConfig.agentRiskDefaults,
+  // L3d-5: onAgentConfigUpdate previously notified the in-process AgentTradingActor
+  // to apply a pending config update. With the actor slice removed, there is no
+  // local actor to reload — the DB is the source of truth and Traderton owns the
+  // runtime reload. Pass undefined (the broker still persists/audits the event).
+  undefined,
   appConfig.alerts.email.brandImageUrl,
   db,
   appConfig.agentRuntime.llm.modelDefaults,
@@ -1632,55 +740,18 @@ const agentHealthMonitor = new AgentHealthMonitor(
   db,
   sessionManager,
   {
+    // L3d-5: the onTerminalSessionCleanup cascade-stop of an agent's in-process
+    // bots was removed — Traderton owns bot lifecycle. No terminal-cleanup hook
+    // is needed here anymore.
     checkIntervalMs: appConfig.worker.agents.healthCheckIntervalMs,
-    onTerminalSessionCleanup: (agentId) => cascadeStopAgentBots(agentId),
   },
   agentRuntimeLauncher,
 );
 
 const reminderCoordinator = new ReminderCoordinator(redisClient, agentRepo, eventPublisher);
 
-// Strategy factory keyed by config.strategy.type (trading style) and config.strategy.decisionMode (engine)
-function createStrategy(strategyConfig: StrategyConfig, candleFetcher?: CandleFetcher): Strategy {
-  // DCA is timer-driven, no signal evaluation — route to DCA executor
-  if (strategyConfig.type === 'dca') {
-    return new DcaStrategy();
-  }
-
-  // For non-DCA, key on decisionMode to select the engine
-  switch (strategyConfig.decisionMode) {
-    case 'mechanical': {
-      if (!candleFetcher) {
-        throw new Error(`'mechanical' strategy requires marketData to be configured (CandleFetcher unavailable)`);
-      }
-      return new MechanicalStrategy(candleFetcher, null, () => idGen.decisionId());
-    }
-
-    case 'llm':
-      return new LlmStrategy(
-        () => idGen.decisionId(),
-        async (artifact) => { await llmArtifactRepo.insert({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null, source: 'llm_strategy', decisionIds: null }); },
-        appConfig.llm.openRouterProviderControls,
-      );
-
-    case 'hybrid': {
-      if (!candleFetcher) throw new Error(`'hybrid' strategy requires marketData to be configured (CandleFetcher unavailable)`);
-      const mechanical = new MechanicalStrategy(candleFetcher, null, () => idGen.decisionId());
-      const llm = new LlmStrategy(
-        () => idGen.decisionId(),
-        async (artifact) => { await llmArtifactRepo.insert({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null, source: 'llm_strategy', decisionIds: null }); },
-        appConfig.llm.openRouterProviderControls,
-      );
-      return new HybridStrategy(mechanical, llm);
-    }
-
-    default:
-      throw new Error(`Unsupported decisionMode: ${strategyConfig.decisionMode}`);
-  }
-}
-
-// Reconciliation config sourced from operator config
-const reconciliationConfig = appConfig.reconciliation;
+// L3d-5: the strategy factory (createStrategy) + reconciliation config were only
+// consumed by the deleted in-process trading actors. Removed with the actor slice.
 
 // Worker-scoped public stream pool — one WebSocket per venue, fan-out to all actors.
 // Initialised when at least one orderbook venue has a wsUrl configured.
@@ -1692,588 +763,6 @@ const publicStreamPool = streamConnectors.size > 0
   ? new PublicStreamPool(publicStreamConfig, streamConnectors)
   : undefined;
 
-// Shared venue adapter factory — used by both bot startup and agent trading actors
-const venueAdapterFactory = new VenueAdapterFactory({
-  db,
-  journal,
-  venues: appConfig.venues,
-  streamConfig: appConfig.streams.private,
-});
-
-// --- Venue instrument cache — build providers & warmup ---
-// Create lightweight adapters solely for fetchAvailableSymbols().
-// Empty/dummy credentials work because loadMarkets() (Hyperliquid/Bybit)
-// and token list fetches (Jupiter) are public endpoints.
-const venueSymbolProviders: VenueSymbolProvider[] = [];
-let hlAdapter: HyperliquidAdapter | undefined;
-let bybitAdapter: BybitAdapter | undefined;
-
-if (appConfig.venues['hyperliquid']) {
-  const hlTestnet = appConfig.venues['hyperliquid'].testnet ?? false;
-  const adapter = new HyperliquidAdapter({
-    credentials: { apiKey: '', secret: '', walletAddress: '', testnet: hlTestnet },
-  });
-  hlAdapter = adapter;
-  venueSymbolProviders.push({
-    venue: 'hyperliquid',
-    normalizeSymbol: normalizeHyperliquidSymbol,
-    fetchSymbols: async () => {
-      const result = await adapter.fetchAvailableSymbols();
-      if (!result.ok) throw new Error(`Failed to fetch Hyperliquid symbols: ${result.error.message}`);
-      return result.data;
-    },
-  });
-}
-
-if (appConfig.venues['bybit']) {
-  const bybitTestnet = appConfig.venues['bybit'].testnet ?? false;
-  const adapter = new BybitAdapter({
-    credentials: { apiKey: '', secret: '', testnet: bybitTestnet },
-  });
-  bybitAdapter = adapter;
-  venueSymbolProviders.push({
-    venue: 'bybit',
-    normalizeSymbol: normalizeBybitSymbol,
-    fetchSymbols: async () => {
-      const result = await adapter.fetchAvailableSymbols();
-      if (!result.ok) throw new Error(`Failed to fetch Bybit symbols: ${result.error.message}`);
-      return result.data;
-    },
-  });
-}
-
-if (appConfig.venues['jupiter']) {
-  const jupiterAdapter = new JupiterSwapAdapter({
-    walletAddress: 'SYMBOL_VALIDATION_ONLY',
-  });
-  venueSymbolProviders.push({
-    venue: 'jupiter',
-    normalizeSymbol: identityNormalize,
-    fetchSymbols: async () => {
-      const result = await jupiterAdapter.fetchAvailableSymbols();
-      if (!result.ok) throw new Error(`Failed to fetch Jupiter symbols: ${result.error.message}`);
-      return result.data;
-    },
-  });
-}
-
-// 1inch is intentionally skipped — its fetchAvailableSymbols() returns a
-// hardcoded curated list of token addresses per chain. Validating against
-// that list would reject legitimate tokens not in the curated set.
-// Additionally, constructing a OneInchSwapAdapter requires real credentials
-// (EvmSigner validates the private key at construction time).
-
-await instrumentCache.warmup(venueSymbolProviders);
-instrumentCache.startPeriodicRefresh(venueSymbolProviders, 60 * 60 * 1000);
-
-// Populate instruments table from venue market data via adapters (non-blocking).
-try {
-  const instrumentAdapters: Array<{
-    venue: string;
-    fetchMarketMetadata: () => ReturnType<HyperliquidAdapter['fetchMarketMetadata']>;
-  }> = [];
-  if (hlAdapter?.fetchMarketMetadata) {
-    instrumentAdapters.push({ venue: 'hyperliquid', fetchMarketMetadata: () => hlAdapter!.fetchMarketMetadata!() });
-  }
-  if (bybitAdapter?.fetchMarketMetadata) {
-    instrumentAdapters.push({ venue: 'bybit', fetchMarketMetadata: () => bybitAdapter!.fetchMarketMetadata!() });
-  }
-  await populateInstrumentsFromVenues(instrumentRepo, logger, instrumentAdapters);
-} catch (err) {
-  logger.warn({ err }, 'Instrument table population failed — continuing without instrument data');
-}
-
-const runtime = new WorkerRuntime(
-  {
-    redis: redisConnection,
-    scanIntervalMs: appConfig.worker.scanIntervalMs,
-    concurrency: appConfig.worker.concurrency,
-    onStartFailed: async (botId, error) => {
-      logger.error(
-        {
-          botId,
-          err: error.message,
-          ...(error instanceof LiveGateError && { code: error.code }),
-        },
-        'Instance start failed — marking crashed'
-      );
-      await db.update(bots)
-        .set({ status: 'crashed', stoppedAt: new Date(), updatedAt: new Date() })
-        .where(eq(bots.id, botId));
-      // Publish real-time crash event (best-effort)
-      try {
-        const userId = instanceUserIds.get(botId)
-          ?? (await db.select({ userId: bots.userId }).from(bots).where(eq(bots.id, botId)).limit(1))[0]?.userId;
-        if (userId) {
-          await userEventPublisher.publishBotStatus(userId, botId, 'crashed');
-        }
-      } catch { /* best-effort */ }
-      void actorHealthPublisher.publish({
-        actorType: 'bot',
-        actorId: botId,
-        status: 'crashed',
-        reasons: ['start_failed', error.message],
-        executionMode: instanceExecutionModes.get(botId) ?? 'paper',
-        updatedAt: new Date().toISOString(),
-      });
-      instanceUserIds.delete(botId);
-      instanceExecutionModes.delete(botId);
-    },
-    onStopped: async (instanceId: string) => {
-      // Persist stopped state to DB so bots stopped via BullMQ or worker
-      // shutdown are consistent with in-memory state. Don't let a DB failure
-      // block in-memory cleanup (plan risk mitigation).
-      try {
-        await botRepo.markBotStopped(instanceId);
-      } catch (err) {
-        logger.error({ err, instanceId }, 'Failed to persist stopped state to DB');
-      }
-
-      actorRegistry.delete(instanceId);
-      agentStreamConsumer.unsubscribe(instanceId);
-      // Sessions are agent-scoped, not instance-scoped; stop session via agentRepo.getActiveSession if needed
-      // Publish real-time stopped event (best-effort)
-      try {
-        const userId = instanceUserIds.get(instanceId)
-          ?? (await db.select({ userId: bots.userId }).from(bots).where(eq(bots.id, instanceId)).limit(1))[0]?.userId;
-        if (userId) {
-          await userEventPublisher.publishBotStatus(userId, instanceId, 'stopped');
-        }
-      } catch { /* best-effort */ }
-      void actorHealthPublisher.publish({
-        actorType: 'bot',
-        actorId: instanceId,
-        status: 'stopped',
-        reasons: ['stopped'],
-        executionMode: instanceExecutionModes.get(instanceId) ?? 'paper',
-        updatedAt: new Date().toISOString(),
-      });
-      instanceUserIds.delete(instanceId);
-      instanceExecutionModes.delete(instanceId);
-    },
-    onStarted: async (botId) => {
-      // Persist running status to DB so user-started bots (API path) and
-      // reclaim-rehydrated bots converge. Agent-created bots are pre-marked
-      // by the broker, making this a no-op for that path.
-      //
-      // For agent-created bots, use the atomic limit-enforcing path so that
-      // a race between concurrent API starts cannot bypass the maxBots guard.
-      try {
-        const [bot] = await db.select({ creatorType: bots.creatorType, creatorId: bots.creatorId })
-          .from(bots).where(eq(bots.id, botId)).limit(1);
-        if (bot?.creatorType === 'agent' && bot.creatorId) {
-          const [agentRow] = await db.select({ maxBots: agents.maxBots })
-            .from(agents).where(eq(agents.id, bot.creatorId)).limit(1);
-          const maxBots = agentRow?.maxBots ?? appConfig.agentRiskDefaults.maxBots;
-          const claimed = await botRepo.tryMarkBotRunningWithLimit(
-            botId, bot.creatorType, bot.creatorId, maxBots,
-          );
-          if (!claimed) {
-            logger.warn({ botId, maxBots }, 'Bot start denied — agent at maxBots capacity');
-            // The actor has already started; stop it to converge state.
-            throw new Error(`Agent max bots limit (${maxBots}) reached — stopping bot to converge.`);
-          }
-        } else {
-          await botRepo.markBotRunning(botId);
-        }
-      } catch (err) {
-        logger.error({ err, botId }, 'Failed to persist running state to DB');
-      }
-
-      // Publish running event after actor.start() has completed successfully.
-      // instanceUserId was stored by the factory into instanceUserIds.
-      const userId = instanceUserIds.get(botId);
-      if (userId) {
-        userEventPublisher.publishBotStatus(userId, botId, 'running').catch((err) => {
-          logger.error({ err, botId }, 'Failed to publish bot running event');
-        });
-      }
-      void actorHealthPublisher.publish({
-        actorType: 'bot',
-        actorId: botId,
-        status: 'healthy',
-        reasons: [],
-        executionMode: instanceExecutionModes.get(botId) ?? 'paper',
-        updatedAt: new Date().toISOString(),
-      });
-    },
-  },
-  async (botId, rawConfig) => {
-    // Validate instance config — fail fast on invalid config
-    const parseResult = BotConfigSchema.safeParse(rawConfig);
-    if (!parseResult.success) {
-      throw new Error(
-        `Invalid config for bot ${botId}: ${parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
-      );
-    }
-    const config = parseResult.data;
-    // venue and venueType are stamped by the broker before persistence — always
-    // present at runtime for any bot that reaches this reclaim path.
-    const venue = config.venue!;
-    const venueType = config.venueType!;
-
-    const startupContext = await resolveBotStartupContext({
-      db,
-      botRepo,
-      botId,
-      rawConfig,
-      venue,
-      venueType,
-    });
-
-    const venueAccountId = startupContext.resolvedVenueAccountId;
-    // The resolver already validated the venue-account requirement per provider type.
-    // Consume the resolver's decision here rather than re-encoding provider-specific logic.
-    if (startupContext.venueAccountRequired && !venueAccountId) {
-      throw new BotStartupError('missing_source_venue_account', `Bot ${botId} has no resolved source venue account — refusing to start`);
-    }
-    // Narrow for downstream: orderbook venues fail the throw above, supported swap
-    // venues (1inch, Jupiter) also fail it, unsupported swap venues throw separately.
-    const resolvedVenueAccountId: string = venueAccountId!;
-    const instanceUserId = startupContext.userId ?? (rawConfig['userId'] as string | undefined);
-    let testnet = false;
-    let resolvedCredentialId: string | undefined;
-    let credentialsPresent = false;
-    let signerPresent = false;
-    let venueAdapter: OrderbookVenuePort | undefined;
-    let swapVenue: SwapVenuePort | undefined;
-    let swapConfirmationPoller: import('@herobids/venues').SwapConfirmationPoller | undefined;
-
-    // Resolve adapters via shared factory
-    if (venueType !== 'swap') {
-      const result = await venueAdapterFactory.buildOrderbookAdapter({
-        venueAccountId: resolvedVenueAccountId,
-        venue,
-        actorType: 'bot',
-        actorId: botId,
-        executionMode: config.execution.mode,
-      });
-      venueAdapter = result.venuePort;
-      testnet = result.credentials.testnet;
-      resolvedCredentialId = result.credentialId;
-      credentialsPresent = !!(result.credentials.apiKey.trim() && result.credentials.secret.trim());
-    } else if (config.swapAssets) {
-      const result = await venueAdapterFactory.buildSwapAdapter({
-        venueAccountId: resolvedVenueAccountId,
-        venue,
-        swapAssets: config.swapAssets,
-        actorType: 'bot',
-        actorId: botId,
-      });
-      swapVenue = result.swapVenue;
-      signerPresent = result.signerPresent;
-      swapConfirmationPoller = result.confirmationPoller;
-    } else {
-      throw new CredentialResolutionError(
-        `swapAssets config required for swap venue bot ${botId} — cannot route swaps without explicit asset identifiers and decimals`,
-      );
-    }
-
-    // --- Live-mode startup gate (fail-closed) ---
-    const liveGateResult = assertLiveReadiness(appConfig.liveRollout, {
-      executionMode: config.execution.mode,
-      venue,
-      venueType,
-      venueAccountId: resolvedVenueAccountId,
-      credentialsFromDb: !!resolvedCredentialId,
-      credentialsPresent,
-      signerPresent,
-      driftAlertOnly: appConfig.reconciliation.driftAlertOnly,
-      instanceMaxOrderNotional: config.risk.maxOrderNotional != null ? String(config.risk.maxOrderNotional) : undefined,
-    });
-
-    // Stream config (shared between adapter construction and actor deps)
-    const streamConfig = appConfig.streams.private;
-
-    const fetchPrice = async (): Promise<MarketSnapshot | null> => {
-      if (!venueAdapter) return null; // Swap venues don't use orderbook ticker
-      const result = await venueAdapter.fetchTicker(config.symbol);
-      if (!result.ok) {
-        logger.warn({ botId, symbol: config.symbol, error: result.error }, 'fetchTicker failed');
-        return null;
-      }
-      return {
-        symbol: config.symbol,
-        price: result.data.last,
-        timestamp: result.data.timestamp,
-      };
-    };
-
-    let recordMarketSnapshot: TradingActorDeps['recordMarketSnapshot'];
-    let recordReferenceMark: TradingActorDeps['recordReferenceMark'];
-
-    if (appConfig.marketDataRecording.enabled) {
-      const recorder = new MarketDataRecorder(venue);
-      const corpusId = await backtestingRepo.insertCorpus({
-        name: `${botId}-${new Date().toISOString()}`,
-        source: 'live-recording',
-        venue,
-        symbols: [config.symbol],
-        userId: instanceUserId,
-        metadata: {
-          botId,
-          connectionId: startupContext.connectionId,
-          venueAccountId,
-          captureTrades: appConfig.marketDataRecording.captureTrades,
-          captureTopOfBook: appConfig.marketDataRecording.captureTopOfBook,
-          captureCandles: appConfig.marketDataRecording.captureCandles,
-        },
-      });
-
-      let corpusStartAt: Date | undefined;
-      let corpusEndAt: Date | undefined;
-
-      const flushRecordedEvents = async (): Promise<void> => {
-        const events = recorder.flush();
-        if (events.length === 0) return;
-
-        await backtestingRepo.insertMarketEventsBatch(events.map((event) => ({
-          corpusId,
-          venue: event.venue,
-          symbol: event.symbol,
-          eventType: event.eventType,
-          price: event.price,
-          eventAt: event.eventAt,
-          data: event.data,
-        })));
-
-        const batchStart = events[0]!.eventAt;
-        const batchEnd = events[events.length - 1]!.eventAt;
-        corpusStartAt = corpusStartAt && corpusStartAt < batchStart ? corpusStartAt : batchStart;
-        corpusEndAt = corpusEndAt && corpusEndAt > batchEnd ? corpusEndAt : batchEnd;
-        await backtestingRepo.updateCorpusWindow(corpusId, corpusStartAt, corpusEndAt);
-      };
-
-      recordMarketSnapshot = async (snapshot) => {
-        if (!appConfig.marketDataRecording.captureTopOfBook) return;
-        recorder.recordSnapshot(snapshot);
-        await flushRecordedEvents();
-      };
-
-      recordReferenceMark = async (mark) => {
-        recorder.recordMark(mark.symbol, mark.price, mark.source, mark.timestamp);
-        await flushRecordedEvents();
-      };
-    }
-
-    const swapNetwork = resolveSwapNetwork(venue, undefined, appConfig.venues['1inch']);
-
-    if (venueType === 'swap' && venue === '1inch' && appConfig.marketData?.tokenSafety?.enabled && !swapNetwork) {
-      throw new CredentialResolutionError(
-        `Unsupported 1inch chainId ${String(appConfig.venues['1inch']?.chainId)} for token safety on bot ${botId}`,
-      );
-    }
-
-    const candleFetcher: CandleFetcher | undefined = sharedMarketDataRegistry
-      ? new VenueCandleFetcher(
-          sharedMarketDataRegistry.configs.binance,
-          swapNetwork != null
-            ? { config: sharedMarketDataRegistry.configs.geckoterminal, network: swapNetwork }
-            : null,
-          venueType === 'swap' ? 'swap' : 'orderbook',
-        )
-      : undefined;
-
-    const strategy = createStrategy(config.strategy, candleFetcher);
-
-    // Determine the owning agent for this bot (for journal event routing to the agent's circuit breaker)
-    let owningAgentId: string | undefined;
-    try {
-      const [bot] = await db
-        .select({ creatorType: bots.creatorType, creatorId: bots.creatorId })
-        .from(bots)
-        .where(eq(bots.id, botId))
-        .limit(1);
-      if (bot?.creatorType === 'agent' && bot.creatorId) {
-        owningAgentId = bot.creatorId;
-      }
-    } catch { /* best-effort */ }
-
-    const deps: TradingActorDeps = {
-      strategy,
-      journal,
-      fillRepo,
-      positionRepo,
-      planRepo,
-      orderRepo,
-      decisionRepo,
-      backtestingRepo,
-      balanceSnapshotRepo,
-      reconciliationRepo,
-      riskLimits: {
-        maxOpenPositions: config.risk.maxOpenPositions ?? 5,
-        maxPositionSizePct: config.risk.maxPositionSizePct,
-        dailyMaxLossPct: config.risk.dailyMaxLossPct,
-        stopLossCooldownMs: config.risk.stopLossCooldownMs,
-        stopLossMaxUnrealizedLossPct: config.risk.stopLossPct,
-        maxOrderNotional: liveGateResult.effectiveMaxOrderNotional,
-      },
-      idGen,
-      fetchPrice,
-      venuePort: config.execution.mode === 'paper' ? undefined : (venueAdapter ?? undefined),
-      reconciliationConfig,
-      executionMode: config.execution.mode,
-      streamConfig,
-      venue,
-      symbol: config.symbol,
-      venueAccountId: resolvedVenueAccountId,
-      venueType,
-      swapAssets: config.swapAssets,
-      swapNetwork,
-      swapBaseTokenAddress: venueType === 'swap' ? config.swapAssets?.baseAsset : undefined,
-      swapVenue,
-      streamPool: venueType !== 'swap'
-        ? createScopedStreamPoolHandle(publicStreamPool, venue, testnet)
-        : undefined,
-      markSource: createFillFirstMarkSource({
-        fillLookup: fillRepo,
-        actorId: botId,
-        fallbackSource: compositeFallbackSource,
-        stalenessThresholdMs: appConfig.marking.stalenessThresholdMs,
-      }),
-      recordMarketSnapshot,
-      recordReferenceMark,
-      shadowPollIntervalMs: config.shadowPollIntervalMs ?? appConfig.execution.shadowPollIntervalMs,
-      shadowQuoteSlippageBps: appConfig.execution.shadowQuoteSlippageBps,
-      credentialId: resolvedCredentialId,
-      swapTokenSafety: config.venueType === 'swap' ? swapTokenSafety : undefined,
-      swapTokenSafetyThresholds: (config.tokenSafety?.minLiquidityUsd != null || config.tokenSafety?.minVolume24hUsd != null || config.tokenSafety?.minAgeHours != null || config.tokenSafety?.allowOverrides != null)
-        ? {
-            minLiquidityUsd: config.tokenSafety!.minLiquidityUsd,
-            minVolume24hUsd: config.tokenSafety!.minVolume24hUsd,
-            minAgeHours: config.tokenSafety!.minAgeHours,
-            allowOverrides: config.tokenSafety!.allowOverrides,
-          }
-        : undefined,
-      feeConfig: appConfig.simulation,
-      maxConsecutiveVenueErrors: appConfig.liveRollout.maxConsecutiveVenueErrors,
-      slippageAlertBps: appConfig.liveRollout.slippageAlertBps,
-      crashPolicy: appConfig.liveRollout.crashPolicy,
-      botConfigInvalidHaltThreshold: appConfig.agentRiskDefaults.botConfigInvalidHaltThreshold,
-      botExecutionErrorHaltThreshold: appConfig.agentRiskDefaults.botExecutionErrorHaltThreshold,
-      botLlmProviderErrorHaltThreshold: appConfig.agentRiskDefaults.botLlmProviderErrorHaltThreshold,
-      liveOrderTimeoutPolicy: {
-        limitOrderTimeoutMs: appConfig.liveRollout.limitOrderTimeoutMs,
-        marketOrderTimeoutMs: appConfig.liveRollout.marketOrderTimeoutMs,
-      },
-      swapConfirmationPoller,
-      candleFetcher,
-      riskPlaybook: (config.risk.maxNewPositionsPerDay != null || config.risk.avoidParabolicMovePct != null)
-        ? {
-            maxNewPositionsPerDay: config.risk.maxNewPositionsPerDay,
-            avoidParabolicMovePct: config.risk.avoidParabolicMovePct,
-          }
-        : undefined,
-      onCrashed: async (instanceId: string) => {
-          actorRegistry.delete(instanceId);
-          agentStreamConsumer.unsubscribe(instanceId);
-          await db.update(bots)
-            .set({ status: 'crashed', stoppedAt: new Date() })
-            .where(eq(bots.id, instanceId));
-          // Remove from runtime map and release lease
-          await runtime.handleActorCrash(instanceId);
-          logger.error({ botId: instanceId }, 'Bot marked as crashed in DB');
-          // Publish real-time status event (best-effort — do not fail the crash handler)
-          if (instanceUserId) {
-            userEventPublisher.publishBotStatus(instanceUserId, instanceId, 'crashed').catch((err) => {
-              logger.error({ err, botId: instanceId }, 'Failed to publish bot crash event');
-            });
-          }
-          void actorHealthPublisher.publish({
-            actorType: 'bot',
-            actorId: instanceId,
-            status: 'crashed',
-            reasons: ['runtime_crash'],
-            executionMode: instanceExecutionModes.get(instanceId) ?? 'paper',
-            updatedAt: new Date().toISOString(),
-          });
-          instanceExecutionModes.delete(instanceId);
-        },
-      onHalted: async (instanceId: string) => {
-        // Persist stopped state to DB
-        try {
-          await botRepo.markBotStopped(instanceId);
-        } catch (err) {
-          logger.error({ err, instanceId }, 'Failed to persist halted state to DB');
-        }
-
-        actorRegistry.delete(instanceId);
-        agentStreamConsumer.unsubscribe(instanceId);
-
-        // Notify owning agent via instance.status push (best-effort)
-        try {
-          const [bot] = await db
-            .select({ creatorType: bots.creatorType, creatorId: bots.creatorId })
-            .from(bots)
-            .where(eq(bots.id, instanceId))
-            .limit(1);
-          if (bot?.creatorType === 'agent' && bot.creatorId) {
-            const agentBots = await botRepo.getBotsByCreator('agent', bot.creatorId);
-            await eventPublisher.emitInstanceStatus(bot.creatorId, {
-              status: 'stopped',
-              reason: 'bot_halted_error_limit',
-              updatedAt: new Date().toISOString(),
-              managedBots: agentBots.map((b) => ({
-                id: b.id,
-                status: b.status,
-              })),
-            });
-          }
-        } catch { /* best-effort */ }
-
-        // Publish real-time user event (best-effort)
-        try {
-          const userId = instanceUserIds.get(instanceId)
-            ?? (await db.select({ userId: bots.userId }).from(bots).where(eq(bots.id, instanceId)).limit(1))[0]?.userId;
-          if (userId) {
-            await userEventPublisher.publishBotStatus(userId, instanceId, 'stopped');
-          }
-        } catch { /* best-effort */ }
-
-        void actorHealthPublisher.publish({
-          actorType: 'bot',
-          actorId: instanceId,
-          status: 'stopped',
-          reasons: ['bot_halted_error_limit'],
-          executionMode: instanceExecutionModes.get(instanceId) ?? 'paper',
-          updatedAt: new Date().toISOString(),
-        });
-        instanceUserIds.delete(instanceId);
-        instanceExecutionModes.delete(instanceId);
-      },
-      onJournalEvent: (event) => {
-        if (owningAgentId) {
-          eventPublisher.emitJournalEvent(owningAgentId, {
-            journalType: event.type,
-            detail: JSON.stringify(event.payload ?? {}),
-          }).catch((err) => logger.warn({ err, botId, eventType: event.type }, 'Failed to emit bot journal event'));
-        }
-      },
-    };
-    const actor = new TradingActor(botId, config.strategy.params as Record<string, unknown>, deps);
-    actorRegistry.set(botId, actor);
-    // Record userId so onStarted / onStartFailed / onStopped callbacks can publish events.
-    if (instanceUserId) instanceUserIds.set(botId, instanceUserId);
-    instanceExecutionModes.set(botId, config.execution.mode);
-    try {
-      await agentStreamConsumer.subscribe(botId);
-    } catch (err: unknown) {
-      actorRegistry.delete(botId);
-      instanceUserIds.delete(botId);
-      instanceExecutionModes.delete(botId);
-      throw err;
-    }
-    return actor;
-  },
-  async (): Promise<PersistedInstance[]> => {
-    const running = await db.select().from(bots).where(eq(bots.status, 'running'));
-    return running.map((row) => ({
-      id: row.id,
-      config: { ...row.config, connectionId: row.connectionId, venueAccountId: row.venueAccountId, userId: row.userId },
-    }));
-  },
-  lease,
-);
 
 // Start backtest runtime (BullMQ consumer for bounded backtest jobs)
 const backtestRuntime = new BacktestRuntime(
@@ -2508,81 +997,15 @@ setAssessmentRequestPort(assessmentRequestService);
 // ── Preset Transition Service ─────────────────────────────────────────────
 // Wire the PresetTransitionPort so tools can delegate preset transitions.
 //
-// The notifyActor callback materializes the effective technical config from
-// the resolved binding and applies it to the running actor via the existing
-// config-application path (applyPendingConfigUpdate). This is the load-bearing
-// piece of Item 10 — it ensures the actor's runtime state reflects the new
-// preset, not just the database.
+// L3d-5: the preset transition persists to the DB (the source of truth); the
+// in-process AgentTradingActor reload was removed with the actor slice —
+// Traderton owns the trading runtime and reloads its own config. notifyActor
+// now only emits the visibility-only `agent.runtime.config_update` event so the
+// agent runtime's summary/prompt reflects the new preset/binding state. A Redis
+// failure here must not fail the transition.
 const presetTransitionService = new PresetTransitionService({
   db,
-  notifyActor: async (agentId, activePresetKey, styleTier, _behaviorVersion) => {
-    const actor = actorRegistry.get(agentId);
-    if (!actor) {
-      // TODO(H3): Cross-worker reload routing via `agent.config.update` Redis
-      // message is not yet implemented. When the actor is not found locally,
-      // we should publish the config update to Redis so the worker that owns
-      // the agent can apply it. Deferred to a follow-on slice.
-      return err({
-        code: 'transition.actor_not_found',
-        message: `Actor not found in registry for agent ${agentId} — agent may be leased to another worker or not running`,
-      });
-    }
-
-    if (!(actor instanceof AgentTradingActor)) {
-      return err({
-        code: 'transition.wrong_actor_type',
-        message: `Actor for agent ${agentId} is not an AgentTradingActor`,
-      });
-    }
-
-    // Materialize the effective config from the preset catalog.
-    const materialized = materializeEffectiveConfig(activePresetKey, styleTier);
-    if (!materialized.ok) {
-      return materialized;
-    }
-
-    const mapping = materialized.data;
-
-    // Build a complete TechnicalConfig: preserve existing venue/filter config,
-    // override strategy fields from the preset.
-    const presetFieldsResult = mappingToTechnicalConfig(mapping);
-    if (!presetFieldsResult.ok) {
-      return presetFieldsResult;
-    }
-    const presetFields = presetFieldsResult.data;
-    const existingConfig = actor.getTechnicalConfig();
-
-    const mergedTechnical: TechnicalConfig = {
-      // Preserve existing filters (venue, venueType, symbols, etc.) — the
-      // preset does not carry venue info.
-      filters: existingConfig?.filters ?? { venue: '', venueType: 'orderbook', quoteAssetSymbol: 'USDC' },
-      ...(existingConfig?.regime ? { regime: existingConfig.regime } : {}),
-      // Preset-derived strategy fields:
-      indicators: presetFields.indicators,
-      candles: presetFields.candles,
-      signalBias: presetFields.signalBias,
-      scanIntervalMs: presetFields.scanIntervalMs,
-      // Preserve existing operational fields:
-      scanBatchSize: existingConfig?.scanBatchSize ?? 5,
-      autonomousExit: existingConfig?.autonomousExit ?? false,
-    };
-
-    const applyResult = actor.applyPendingConfigUpdate({ technical: mergedTechnical });
-    if (!applyResult.ok) {
-      return err({
-        code: 'transition.actor_config_rejected',
-        message: `Actor for agent ${agentId} rejected config update: ${applyResult.error.message}`,
-      });
-    }
-
-    logger.info(
-      { agentId, activePresetKey, styleTier, behaviorVersion: mapping.presetBehaviorVersion },
-      'Preset transition: actor config reloaded successfully',
-    );
-
-    // L3: Emit runtime config update event so the agent's runtime summary/prompt
-    // can reflect the new active preset/binding state. Visibility-only — a Redis
-    // failure here must not block the transition.
+  notifyActor: async (agentId, activePresetKey, styleTier, behaviorVersion) => {
     try {
       await redisClient.xadd(
         `agent:outbound:${agentId}`,
@@ -2602,7 +1025,7 @@ const presetTransitionService = new PresetTransitionService({
             reason: 'binding_changed',
             activePresetKey,
             styleTier,
-            behaviorVersion: mapping.presetBehaviorVersion,
+            behaviorVersion,
           },
         }),
       );
@@ -2844,24 +1267,6 @@ async function refreshDynamicPricing(
   }
 }
 
-// Periodic health refresh: re-publish healthy snapshots for all registered actors
-// so Redis entries do not expire while actors are running. Refresh at half the TTL.
-const HEALTH_REFRESH_INTERVAL_MS = (ACTOR_HEALTH_TTL_SECONDS / 2) * 1000;
-const healthRefreshInterval = setInterval(() => {
-  const now = new Date().toISOString();
-  for (const [id] of actorRegistry) {
-    const isAgent = agentState.getActor(id) !== undefined;
-    void actorHealthPublisher.publish({
-      actorType: isAgent ? 'agent' : 'bot',
-      actorId: id,
-      status: 'healthy',
-      reasons: [],
-      executionMode: instanceExecutionModes.get(id) ?? 'paper',
-      updatedAt: now,
-    });
-  }
-}, HEALTH_REFRESH_INTERVAL_MS);
-
 // ── LLM Pricing — refresh dynamic pricing on startup ────────────────────────
 // All provider pricing is now sourced from the OpenRouter snapshot refreshed
 // here. Formerly-static providers (OpenAI, Anthropic, DeepSeek, Google) are
@@ -2881,11 +1286,6 @@ const pricingRefreshInterval = setInterval(() => {
   });
 }, PRICING_REFRESH_INTERVAL_MS);
 
-// Declared here so the signal handlers below can safely reference it even
-// before the actual setInterval call during startup. clearInterval(undefined)
-// is a no-op per the Node.js API.
-let botOrphanSweepInterval: ReturnType<typeof setInterval> | undefined;
-
 // Register graceful shutdown handlers after all services are fully initialized.
 // Placing them here guarantees no temporal-dead-zone reference errors if a
 // signal arrives during the async startup above.
@@ -2897,13 +1297,10 @@ let botOrphanSweepInterval: ReturnType<typeof setInterval> | undefined;
 // instance picks them up via the heartbeat recovery path in AgentSessionManager.
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down...');
-  clearInterval(healthRefreshInterval);
   clearInterval(pricingRefreshInterval);
-  clearInterval(botOrphanSweepInterval);
   clearInterval(approvalExpiryInterval);
   clearInterval(economicCalendarRefreshInterval);
   browserPoolHealthPublisher?.stop();
-  instrumentCache.stop();
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
@@ -2920,10 +1317,7 @@ process.on('SIGTERM', async () => {
   await evaluationRuntime.stop();
   await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();
-  await runtime.shutdown();
   await publicStreamPool?.shutdown();
-  await lifecycleQueue.close();
-  await botStopSubscriber?.quit();
   await agentCleanupSubscriber?.quit();
   await approvalExecuteSubscriber?.quit();
   await redisClient.quit();
@@ -2932,13 +1326,10 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down...');
-  clearInterval(healthRefreshInterval);
   clearInterval(pricingRefreshInterval);
-  clearInterval(botOrphanSweepInterval);
   clearInterval(approvalExpiryInterval);
   clearInterval(economicCalendarRefreshInterval);
   browserPoolHealthPublisher?.stop();
-  instrumentCache.stop();
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
@@ -2955,10 +1346,7 @@ process.on('SIGINT', async () => {
   await evaluationRuntime.stop();
   await manualReviewRuntime.stop();
   await agentRuntimeLauncher.shutdown();
-  await runtime.shutdown();
   await publicStreamPool?.shutdown();
-  await lifecycleQueue.close();
-  await botStopSubscriber?.quit();
   await agentCleanupSubscriber?.quit();
   await approvalExecuteSubscriber?.quit();
   await redisClient.quit();
@@ -2968,24 +1356,6 @@ process.on('SIGINT', async () => {
 await agentStreamConsumer.start();
 // Start Docker event stream for crash detection (no-op in stub mode)
 await agentRuntimeLauncher.startEventStream();
-
-await runtime.start();
-
-// Subscribe to agent-originated bot stop signals (bot:stop:{botId}).
-// The agent container publishes this via Redis PUBLISH when the LLM calls stop_bot
-// directly. This causes an immediate in-process stop without waiting for a BullMQ job.
-botStopSubscriber = new Redis(redisConnection);
-botStopSubscriber.psubscribe('bot:stop:*', (err) => {
-  if (err) logger.error({ err }, 'Failed to subscribe to bot:stop:* channels');
-});
-botStopSubscriber.on('pmessage', (_pattern: string, channel: string, _message: string) => {
-  const botId = channel.replace('bot:stop:', '');
-  if (!botId) return;
-  logger.info({ botId }, 'Received bot:stop signal — stopping instance directly');
-  runtime.stopInstanceDirect(botId).catch((err: unknown) => {
-    logger.error({ err, botId }, 'Failed to stop instance via bot:stop signal');
-  });
-});
 
 // Subscribe to API-originated agent cleanup signals (agent:cleanup:{agentId}).
 // The API publishes to this channel after DELETE /agents/:id so the worker can
@@ -3050,24 +1420,4 @@ sessionManager.start();
 agentHealthMonitor.start();
 reminderCoordinator.start();
 
-// Periodic bot orphan sweep — safety net that stops running bots whose creator
-// agent is no longer active (stopped or crashed). Catches anything the immediate
-// cascade missed (worker restart, Redis pub/sub drop, crash mid-cleanup).
-botOrphanSweepInterval = setInterval(async () => {
-  try {
-    const orphans = await botRepo.listRunningBotsForInactiveAgents();
-    if (orphans.length === 0) return;
-    logger.warn({ count: orphans.length }, 'Bot orphan sweep: stopping bots for inactive agents');
-    await Promise.allSettled(
-      orphans.map((b) =>
-        runtime.stopInstanceDirect(b.id).catch((err: unknown) =>
-          logger.error({ err, botId: b.id, creatorId: b.creatorId }, 'Orphan sweep failed to stop bot'),
-        ),
-      ),
-    );
-  } catch (err) {
-    logger.error({ err }, 'Bot orphan sweep failed');
-  }
-}, appConfig.worker.agents.botOrphanSweepIntervalMs);
-
-logger.info({ workerId, queue: QUEUE_NAME }, 'Worker process started');
+logger.info({ workerId }, 'Worker process started');

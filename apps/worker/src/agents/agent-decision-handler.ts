@@ -2,12 +2,6 @@ import type { MessageEnvelope, DecisionSubmitPayload } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
 import type { DecisionFailureRepository } from '@herobids/db';
 import type { DecisionApprovalRepository } from '@herobids/db';
-// L3c: the engine intake types are still referenced by the DecisionIntakeResolver
-// interface (consumed by the deferred ApprovalService). The rewired decision path
-// no longer calls submitDecisionForExecution/validatePerTradeLevels — those moved
-// behind the boundary (see 004-l3d-plan.md §C). Kept only for the resolver type.
-import type { DecisionContext, PositionState } from '@herobids/engine';
-import type { IntakeResult } from '../execution-actor.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import type { TradertonSideEffectBoundary } from '../traderton/write-adapter.js';
 import { buildSubmitDecisionPayload, mapBoundaryResultToDecisionOutcome } from './decision-boundary-mapping.js';
@@ -34,17 +28,6 @@ function generateShortCode(): string {
 const FAILURE_ENTRY_MAX_AGE_MS = 5 * 60_000; // 5 min
 
 /**
- * Resolves the execution context needed by the decision intake pipeline.
- * Keyed by actorId (botId or agentId). Methods may be sync or async.
- */
-export interface DecisionIntakeResolver {
-  getIntakeDeps(instanceId: string, instrumentId?: string): IntakeResult | Promise<IntakeResult>;
-  getDecisionContext(instanceId: string, instrumentId?: string): DecisionContext | undefined | Promise<DecisionContext | undefined>;
-  getPosition(instanceId: string, instrumentId?: string): PositionState | undefined | Promise<PositionState | undefined>;
-  recordExecutionOutcome?(instanceId: string, success: boolean): void;
-}
-
-/**
  * AgentDecisionHandler — translates `agent.decision.submit` into the engine decision-ingestion path.
  */
 export class AgentDecisionHandler {
@@ -55,11 +38,6 @@ export class AgentDecisionHandler {
 
   constructor(
     private readonly agentRepo: AgentRepository,
-    // L3c: the engine-backed intake resolver is no longer consumed by the rewired
-    // decision path (execution goes over the boundary). Retained as a positional
-    // constructor param for the composition root / ApprovalService contract; the
-    // resolver + its interface are deleted in L3d (see 004-l3d-plan.md §C).
-    _intakeResolver: DecisionIntakeResolver,
     private readonly eventPublisher: InstanceEventPublisher,
     private readonly decisionFailureRepo?: DecisionFailureRepository,
     thresholds?: { noContext?: number; swapInstrumentFormat?: number },
