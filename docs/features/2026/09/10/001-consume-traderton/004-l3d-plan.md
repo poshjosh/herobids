@@ -544,3 +544,43 @@ The three out-of-list collapses were independently verified behaviour-preserving
 Both re-confirmations held: (i) the boundary decision path never used the removed intakeResolver; (ii) no surviving worker enqueuer of the lifecycle queue.
 
 **LOW-1 (non-blocking, tracked):** stale comments in surviving files still reference the removed `AgentTradingActor` (e.g. `agent-session-manager.ts` ~:59/:73, the broker `RUNTIME_SESSION_ENDED` + `CONFIG_UPDATE` case comments). Harmless but misleading — sweep in a later doc-comment cleanup slice (fold into the deferred `@herobids/engine`/event-publisher cleanup or the maxBots-field slice).
+
+
+### §H addendum — Q1 backtesting-drop orphans (Deferred (required for cutover))
+
+Surfaced by the Q1 backtesting-drop (`6edea61b`) and verified dead 2026-09-11 (grep: zero surviving
+non-backtesting consumers). Both are **trading residue** — dead trading schema / orphaned trading config left
+in the platform after the backtest capability was deleted. Leaving them past cutover keeps trading residue in
+herobids, which the legal-isolation cutover exists to eliminate → classified **(A) cutover obligation**, NOT
+optional polish. Recorded here so a future agent can execute without reconstructing context. Do NOT action in
+a docs slice; these are cleanup owed before/at cutover.
+
+- **`decision_contexts` table + schema** — `Deferred (required for cutover)`.
+  - **What:** the `decision_contexts` Postgres table (`packages/db/src/schema/decision-contexts.ts`) + its
+    barrel export (`packages/db/src/schema/index.ts:21` `export { decisionContexts }`).
+  - **Why dead:** a decision-replay/context table whose ONLY reader/writer was the deleted
+    `BacktestingRepository` (removed in Q1 `6edea61b`). Verified: grep finds no surviving reader/writer — only
+    the schema definition + the barrel export remain. It is written by nothing and read by nothing.
+  - **Removal touches:** delete `packages/db/src/schema/decision-contexts.ts`; remove the `decisionContexts`
+    export from `schema/index.ts`; **needs a Drizzle migration to `DROP TABLE decision_contexts`** (+ its 4
+    indexes: `idx_decision_contexts_{decision_id,context_hash,venue_account_id,actor_id}`). Live-table drop —
+    treat with the same care as the Q1 `0067` migration (it's dead/never-written, so low risk, but it is a
+    real table drop). No app-code references to update beyond the schema barrel.
+  - **Clearing:** fold into the trading-DB-table deletion follow-slice (alongside `bots`/`venue_accounts`/
+    `user_credentials` and the other trading tables in §A), or its own small migration slice.
+
+- **`marketDataRecording` config (`MarketDataRecordingConfigSchema` / `MarketDataRecorder`)** — `Deferred (required for cutover)`.
+  - **What:** the `marketDataRecording` operator-config block — `MarketDataRecordingConfigSchema` +
+    `MarketDataRecordingConfig` type + the `AppConfigSchema.marketDataRecording` wiring
+    (`packages/domain/src/config/schema.ts` ~:121/:1711/:1915), and the `marketDataRecording:` block in
+    `config/default.yaml` (~:183).
+  - **Why orphaned:** it configured `MarketDataRecorder`, which lived in the deleted `packages/backtesting/`
+    (captured market data for backtest replay). Verified: grep finds no surviving `MarketDataRecorder` usage
+    and no live reader of `appConfig.marketDataRecording` — only the schema + wiring + type remain. It is
+    trading (backtest-capture) config with no consumer.
+  - **Removal touches:** remove `MarketDataRecordingConfigSchema` + the `MarketDataRecordingConfig` type + the
+    `marketDataRecording` field on `AppConfigSchema` (`packages/domain/src/config/schema.ts`); remove the
+    `marketDataRecording:` block from `config/default.yaml` (+ any env overlay). No migration (config only).
+    Self-contained — mirror the Q1 `llmValidation`/`BacktestingConfigSchema` config-block removals.
+  - **Clearing:** a small config-cleanup slice (can ride with the trading-DB-table deletion slice or the
+    engine-deletion slice).
