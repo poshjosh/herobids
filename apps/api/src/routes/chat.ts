@@ -10,6 +10,7 @@ import { callLlmProvider } from '@herobids/llm';
 import type { LlmToolDefinition, LlmToolCall, LlmMessage } from '@herobids/llm';
 import type { AppConfig, ProvidersYaml, ModelDefaults, PlansConfig } from '@herobids/domain';
 import { normalizePersistedAiModelConfig, type AgentRiskDefaultsConfig } from '@herobids/domain';
+import type { TradertonClient } from '@herobids/domain/traderton';
 import { errorPayload } from '../error-payload.js';
 import { listProviderRegistry, getProviderWalletGenerationCapability } from '../providers/registry.js';
 import { prepareAgentCreateFields } from '../agents/agent-create-normalization.js';
@@ -938,6 +939,7 @@ export async function executeChatAction(
   plansConfig: PlansConfig | undefined = undefined,
   agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
   venues: AppConfig['venues'] = {},
+  tradertonClient: TradertonClient | undefined = undefined,
 ): Promise<string> {
   switch (toolCall.name) {
     case 'list_compatible_connections': {
@@ -1059,7 +1061,7 @@ export async function executeChatAction(
           .where(eq(users.id, userId))
           .limit(1);
 
-        const result = await createProviderLink(db, plansConfig, { venues, generateWallet }, {
+        const result = await createProviderLink(db, plansConfig, { venues, generateWallet, tradertonClient }, {
           userId,
           userPlanId: userRow?.planId ?? 'free',
           isAdmin: userRow?.isAdmin ?? false,
@@ -1538,6 +1540,7 @@ export async function invokeOnboardingLlm(
   plansConfig: PlansConfig | undefined = undefined,
   agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
   venues: AppConfig['venues'] = {},
+  tradertonClient: TradertonClient | undefined = undefined,
 ): Promise<LlmInvocationResult> {
   // Generate a per-invocation random tag name (4 hex chars = 65536 possibilities)
   const nonce = crypto.randomBytes(2).toString('hex');
@@ -1724,7 +1727,7 @@ export async function invokeOnboardingLlm(
       // ── Dispatch tool call with error guard ──
       let toolResult: string;
       try {
-        toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults, venues);
+        toolResult = await executeChatAction(tc, db, userId, providersYaml, usageBillingRepo, modelDefaults, plansConfig, agentRiskDefaults, venues, tradertonClient);
       } catch (err) {
         toolResult = JSON.stringify({
           error: 'tool_execution_failed',
@@ -1955,6 +1958,7 @@ export async function chatRoutes(
   plansConfig: PlansConfig | undefined = undefined,
   agentRiskDefaults: AgentRiskDefaultsConfig | undefined = undefined,
   venues: AppConfig['venues'] = {},
+  tradertonClient: TradertonClient | undefined = undefined,
 ): Promise<void> {
   /**
    * POST /chat/threads
@@ -2180,6 +2184,7 @@ export async function chatRoutes(
         plansConfig,
         agentRiskDefaults,
         venues,
+        tradertonClient,
       );
 
       // Record chat LLM usage for billing (fire-and-forget)
@@ -2383,6 +2388,7 @@ export async function chatRoutes(
         plansConfig,
         agentRiskDefaults,
         venues,
+        tradertonClient,
       );
 
       // Record chat LLM usage for billing (fire-and-forget)

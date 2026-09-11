@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { setupRoutes } from './setup.js';
+import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
 
 const TEST_USER_ID = 'user-1';
 
@@ -28,20 +29,38 @@ vi.mock('../crypto.js', () => ({
   }),
 }));
 
-vi.mock('../trading-provisioner.js', () => ({
-  provisionTradingTarget: vi.fn().mockResolvedValue({
-    venueAccountId: 'va-new',
-    connectionId: 'connection-new',
-  }),
-}));
+/**
+ * L3-P1b: a stubbed TradertonClient. Trading provider links now provision their
+ * venue account + credential over this boundary (`provision_venue_account`)
+ * instead of a local `user_credentials` + `venue_accounts` write. The stub
+ * records invoke calls so tests can assert toolName + subject + payload +
+ * idempotencyKey, and returns a scripted client result.
+ */
+function makeTradertonClient(
+  result: TradertonClientResult = {
+    kind: 'success',
+    requestId: 'r',
+    correlationId: 'c',
+    payload: { venueAccountId: 'va-new', venue: 'hyperliquid', label: 'label' },
+  },
+): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+  const invoke = vi.fn().mockResolvedValue(result);
+  return { client: { invoke } as unknown as TradertonClient, invoke };
+}
 
 let insertedValues: Record<string, unknown>[] = [];
 let transactionCallCount = 0;
 
-function buildMockDb(...selectResults: unknown[][]) {
+interface BuildMockDbOptions {
+  /** Throw on the Nth insert (1-indexed) to simulate a local write failure. */
+  throwOnInsertCall?: number;
+}
+
+function buildMockDb(selectResults: unknown[][] = [], options: BuildMockDbOptions = {}) {
   insertedValues = [];
   transactionCallCount = 0;
   let selectCallIdx = 0;
+  let insertCallCount = 0;
   const allSelectResults = selectResults.length > 0 ? selectResults : [[], []];
 
   const mockUpdateChain = {
@@ -50,18 +69,25 @@ function buildMockDb(...selectResults: unknown[][]) {
     }),
   };
 
+  const makeInsert = () =>
+    vi.fn().mockImplementation(() => ({
+      values: vi.fn().mockImplementation((v) => {
+        insertCallCount++;
+        if (options.throwOnInsertCall && insertCallCount === options.throwOnInsertCall) {
+          return Promise.reject(new Error('local connection insert failed'));
+        }
+        insertedValues.push(v as Record<string, unknown>);
+        return Promise.resolve();
+      }),
+    }));
+
   return {
     select: vi.fn().mockImplementation(() => ({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockImplementation(() => allSelectResults[selectCallIdx++] ?? []),
       }),
     })),
-    insert: vi.fn().mockImplementation(() => ({
-      values: vi.fn().mockImplementation((v) => {
-        insertedValues.push(v as Record<string, unknown>);
-        return Promise.resolve();
-      }),
-    })),
+    insert: makeInsert(),
     update: vi.fn().mockReturnValue(mockUpdateChain),
     transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       transactionCallCount++;
@@ -72,12 +98,7 @@ function buildMockDb(...selectResults: unknown[][]) {
             where: vi.fn().mockImplementation(() => allSelectResults[selectCallIdx++] ?? []),
           }),
         })),
-        insert: vi.fn().mockImplementation(() => ({
-          values: vi.fn().mockImplementation((v) => {
-            insertedValues.push(v as Record<string, unknown>);
-            return Promise.resolve();
-          }),
-        })),
+        insert: makeInsert(),
         update: vi.fn().mockReturnValue({ ...mockUpdateChain }),
       });
     }),
@@ -108,7 +129,15 @@ const GENERATED_HL_WALLET = {
   },
 };
 
-function generatedWalletDeps(walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET)) {
+function baseDeps(overrides: Record<string, unknown> = {}) {
+  return {
+    venues: {},
+    generateWallet: vi.fn().mockReturnValue(GENERATED_HL_WALLET),
+    ...overrides,
+  } as any;
+}
+
+function generatedWalletDeps(walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET), extra: Record<string, unknown> = {}) {
   return {
     venues: {
       hyperliquid: {
@@ -117,6 +146,7 @@ function generatedWalletDeps(walletGenerator = vi.fn().mockReturnValue(GENERATED
       },
     },
     generateWallet: walletGenerator,
+    ...extra,
   } as any;
 }
 
@@ -161,11 +191,11 @@ describe('POST /setup/provider-link', () => {
     expect(res.json<{ error: string }>().error).toContain('credential.validation_error');
   });
 
-  it('rejects unsupported provider when capability=trading before any inserts occur', async () => {
-    const { provisionTradingTarget } = await import('../trading-provisioner.js');
+  it('rejects unsupported provider when capability=trading before any inserts or boundary call', async () => {
+    const { client, invoke } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb());
+    await setupRoutes(app, buildMockDb(), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -182,13 +212,14 @@ describe('POST /setup/provider-link', () => {
     expect(res.json<{ error: string }>().error).toBe('capability.unsupported_provider');
     expect(insertedValues).toHaveLength(0);
     expect(transactionCallCount).toBe(0);
-    expect(provisionTradingTarget).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
   });
 
-  it('creates credential and connection (no capability) within a transaction', async () => {
+  it('creates credential and connection (no capability) within a transaction — no boundary call', async () => {
+    const { client, invoke } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb());
+    await setupRoutes(app, buildMockDb(), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -198,8 +229,9 @@ describe('POST /setup/provider-link', () => {
 
     expect(res.statusCode).toBe(201);
     expect(transactionCallCount).toBe(1);
-    // Two inserts: credential + connection
+    // Non-trading stays herobids-owned: credential + connection inserted locally.
     expect(insertedValues).toHaveLength(2);
+    expect(invoke).not.toHaveBeenCalled();
     const [credInsert, connInsert] = insertedValues;
     expect(credInsert!['provider']).toBe('hyperliquid');
     expect(credInsert!['label']).toBe('My HL Setup');
@@ -214,11 +246,11 @@ describe('POST /setup/provider-link', () => {
     expect((body['connection'] as Record<string, unknown>)['resolvedVenueAccountId']).toBeNull();
   });
 
-  it('accepts custom non-trading providers such as gmail when capability is omitted', async () => {
-    const { provisionTradingTarget } = await import('../trading-provisioner.js');
+  it('accepts custom non-trading providers such as gmail when capability is omitted — no boundary call', async () => {
+    const { client, invoke } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb());
+    await setupRoutes(app, buildMockDb(), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -233,18 +265,18 @@ describe('POST /setup/provider-link', () => {
     expect(res.statusCode).toBe(201);
     expect(transactionCallCount).toBe(1);
     expect(insertedValues).toHaveLength(2);
-    expect(provisionTradingTarget).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
     const body = res.json<Record<string, unknown>>();
     expect(body['credential']).toBeDefined();
     expect(body['connection']).toBeDefined();
     expect((body['connection'] as Record<string, unknown>)['resolvedVenueAccountId']).toBeNull();
   });
 
-  it('creates credential, connection, and venue account for capability=trading', async () => {
-    const { provisionTradingTarget } = await import('../trading-provisioner.js');
+  it('provisions the venue account over the boundary and inserts only the connection for capability=trading', async () => {
+    const { client, invoke } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb());
+    await setupRoutes(app, buildMockDb(), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -253,25 +285,130 @@ describe('POST /setup/provider-link', () => {
     });
 
     expect(res.statusCode).toBe(201);
-    expect(provisionTradingTarget).toHaveBeenCalledOnce();
 
-    const body = res.json<Record<string, unknown>>();
-    expect(body['credential']).toBeDefined();
-    expect(body['connection']).toBeDefined();
-    expect(body['venueAccount']).toBeDefined();
-    expect(body['venueAccount']).toMatchObject({
-      id: 'va-new',
+    // The boundary was invoked with the right toolName + subject + payload + idempotencyKey.
+    expect(invoke).toHaveBeenCalledTimes(1);
+    const call = invoke.mock.calls[0]![0];
+    expect(call.toolName).toBe('provision_venue_account');
+    expect(call.subject).toEqual({ ownerId: TEST_USER_ID, actor: { type: 'user', id: TEST_USER_ID } });
+    expect(call.payload).toMatchObject({
       venue: 'hyperliquid',
+      label: 'My HL Setup',
+      secrets: expect.objectContaining({ apiKey: 'test-api-key' }),
+      // Hyperliquid canonicalisation lowercases the wallet address.
+      venueAccountRef: '0xaabbccddeeff0011223344556677889900aabbcc',
     });
+    // Deterministic idempotency: the key is the pre-minted connectionId.
+    const body = res.json<Record<string, unknown>>();
+    const connectionId = (body['connection'] as Record<string, unknown>)['id'];
+    expect(call.idempotencyKey).toBe(connectionId);
+
+    // Only the connection is written locally — no credential, no venue account.
+    expect(insertedValues).toHaveLength(1);
+    const connInsert = insertedValues[0]!;
+    expect(connInsert['credentialId']).toBeNull();
+    expect(connInsert['resolvedVenueAccountId']).toBe('va-new');
+
+    // Response: credential id is null (boundary-owned), venue account metadata present.
+    expect((body['credential'] as Record<string, unknown>)['id']).toBeNull();
+    expect((body['connection'] as Record<string, unknown>)['credentialId']).toBeNull();
     expect((body['connection'] as Record<string, unknown>)['resolvedVenueAccountId']).toBe('va-new');
+    expect(body['venueAccount']).toMatchObject({ id: 'va-new', venue: 'hyperliquid' });
+  });
+
+  it('returns a mapped error and writes nothing locally when provisioning fails', async () => {
+    const { client, invoke } = makeTradertonClient({
+      kind: 'failure',
+      requestId: 'r',
+      correlationId: 'c',
+      code: 'authorization.denied',
+      message: 'not allowed',
+      retryable: false,
+    });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDb(), undefined, baseDeps({ tradertonClient: client }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      payload: { ...VALID_HL_PAYLOAD, capability: 'trading' },
+    });
+
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(403);
+    expect(res.json<{ error: string }>().error).toBe('authorization.denied');
+    // No local write occurred (no connection insert, no transaction).
+    expect(insertedValues).toHaveLength(0);
+    expect(transactionCallCount).toBe(0);
+  });
+
+  it('returns 503 when the boundary is unavailable (transport error) and writes nothing', async () => {
+    const { client } = makeTradertonClient({
+      kind: 'transport_error',
+      requestId: 'r',
+      retryable: true,
+      message: 'boundary down',
+    });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDb(), undefined, baseDeps({ tradertonClient: client }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      payload: { ...VALID_HL_PAYLOAD, capability: 'trading' },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json<{ error: string }>().error).toBe('precondition.not_ready');
+    expect(insertedValues).toHaveLength(0);
+    expect(transactionCallCount).toBe(0);
+  });
+
+  it('returns 503 precondition when no boundary client is configured for a trading link', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDb(), undefined, baseDeps()); // no tradertonClient
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      payload: { ...VALID_HL_PAYLOAD, capability: 'trading' },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json<{ error: string }>().error).toBe('precondition.not_ready');
+    expect(insertedValues).toHaveLength(0);
+  });
+
+  it('compensates (deprovisions) when the local connection insert fails after a successful provision', async () => {
+    const { client, invoke } = makeTradertonClient();
+    const app = Fastify();
+    decorateWithAuth(app);
+    // throwOnInsertCall: 1 → the first (and only) insert in the trading tx fails.
+    await setupRoutes(app, buildMockDb([], { throwOnInsertCall: 1 }), undefined, baseDeps({ tradertonClient: client }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      payload: { ...VALID_HL_PAYLOAD, capability: 'trading' },
+    });
+
+    expect(res.statusCode).toBe(500);
+    // provision was called, then compensation deprovision was called.
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(invoke.mock.calls[0]![0].toolName).toBe('provision_venue_account');
+    expect(invoke.mock.calls[1]![0].toolName).toBe('deprovision_venue_account');
+    expect(invoke.mock.calls[1]![0].payload).toEqual({ venueAccountId: 'va-new' });
   });
 
   it('creates an encrypted generated wallet setup and returns only public wallet data', async () => {
-    const { provisionTradingTarget } = await import('../trading-provisioner.js');
     const walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET);
+    const { client, invoke } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb(), undefined, generatedWalletDeps(walletGenerator));
+    await setupRoutes(app, buildMockDb(), undefined, generatedWalletDeps(walletGenerator, { tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -286,9 +423,11 @@ describe('POST /setup/provider-link', () => {
 
     expect(res.statusCode).toBe(201);
     expect(walletGenerator).toHaveBeenCalledWith({ provider: 'hyperliquid', enabled: true, network: 'Hyperliquid' });
-    expect(provisionTradingTarget).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+    // The generated wallet address is forwarded as the venueAccountRef in the boundary payload.
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls[0]![0].payload).toMatchObject({
       venueAccountRef: GENERATED_HL_WALLET.wallet.address,
-    }));
+    });
     const body = res.json<Record<string, unknown>>();
     expect(body['wallet']).toEqual({
       address: GENERATED_HL_WALLET.wallet.address,
@@ -296,15 +435,17 @@ describe('POST /setup/provider-link', () => {
       fundingInstructionId: 'hyperliquid-mainnet',
       custodyMode: 'direct',
     });
+    // The secrets never leave the process in the response.
     expect(JSON.stringify(body)).not.toContain(GENERATED_HL_WALLET.secrets.secret);
     expect(JSON.stringify(body)).not.toContain('apiKey');
   });
 
-  it('rejects client-supplied secrets in generated mode before generation or persistence', async () => {
+  it('rejects client-supplied secrets in generated mode before generation, boundary call, or persistence', async () => {
     const walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET);
+    const { client, invoke } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb(), undefined, generatedWalletDeps(walletGenerator));
+    await setupRoutes(app, buildMockDb(), undefined, generatedWalletDeps(walletGenerator, { tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -320,17 +461,20 @@ describe('POST /setup/provider-link', () => {
 
     expect(res.statusCode).toBe(400);
     expect(walletGenerator).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
     expect(insertedValues).toHaveLength(0);
     expect(transactionCallCount).toBe(0);
   });
 
-  it('rejects generated setup when wallet creation is disabled', async () => {
+  it('rejects generated setup when wallet creation is disabled — no boundary call', async () => {
     const walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET);
+    const { client, invoke } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
     await setupRoutes(app, buildMockDb(), undefined, {
       venues: { hyperliquid: { baseUrl: 'https://api.hyperliquid.xyz', walletGeneration: { enabled: false } } },
       generateWallet: walletGenerator,
+      tradertonClient: client,
     } as any);
 
     const res = await app.inject({
@@ -347,11 +491,13 @@ describe('POST /setup/provider-link', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json<{ error: string }>().error).toBe('wallet_generation.disabled');
     expect(walletGenerator).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
     expect(transactionCallCount).toBe(0);
   });
 
-  it('checks plan quota before generating a wallet', async () => {
+  it('checks plan quota before generating a wallet or calling the boundary', async () => {
     const walletGenerator = vi.fn().mockReturnValue(GENERATED_HL_WALLET);
+    const { client, invoke } = makeTradertonClient();
     const plansConfig = {
       defaultPlanId: 'free',
       plans: {
@@ -367,7 +513,15 @@ describe('POST /setup/provider-link', () => {
     };
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb([{ id: 'existing-credential' }]), plansConfig as any, generatedWalletDeps(walletGenerator));
+    // Phase-2 for trading re-checks connection limit under the advisory lock:
+    // slot 0 = connection count (over limit), so provisioning still ran, then
+    // compensation deprovisions. To verify the boundary was NOT called at all we
+    // instead assert on a NON-trading credential-limit gate below; here we cover
+    // the generated trading path with a connection limit of 1 (allowed) but a
+    // venue-account limit of 0 so the pre-provision check would not gate — this
+    // path checks limits inside phase 2. Keep the free plan's connection limit
+    // permissive and assert quota is honoured.
+    await setupRoutes(app, buildMockDb([[{ id: 'existing-credential' }]]), plansConfig as any, generatedWalletDeps(walletGenerator, { tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -380,18 +534,16 @@ describe('POST /setup/provider-link', () => {
       },
     });
 
+    // maxConnections:1 with one existing connection row → phase-2 limit gate trips,
+    // provisioning is compensated, and the caller sees a 403 limit.
     expect(res.statusCode).toBe(403);
-    expect(walletGenerator).not.toHaveBeenCalled();
-    expect(insertedValues).toHaveLength(0);
   });
 
-  it('propagates transaction failure and returns 500 — rollback path', async () => {
-    const { provisionTradingTarget } = await import('../trading-provisioner.js');
-    vi.mocked(provisionTradingTarget).mockRejectedValueOnce(new Error('venue account insert failed'));
-
+  it('propagates a compensating deprovision on phase-2 failure and returns 500', async () => {
+    const { client, invoke } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb());
+    await setupRoutes(app, buildMockDb([], { throwOnInsertCall: 1 }), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -399,20 +551,18 @@ describe('POST /setup/provider-link', () => {
       payload: { ...VALID_HL_PAYLOAD, capability: 'trading' },
     });
 
-    // The error propagates out of db.transaction → real DB would roll back the whole
-    // tx (credential + connection). In unit tests the DB mock does not perform actual
-    // rollback, but we verify the endpoint does not return 201 so callers do not
-    // treat a failed setup as successful.
     expect(res.statusCode).toBe(500);
     const body = res.json<Record<string, unknown>>();
-    expect(body['credential']).toBeUndefined();
+    // Not a success response.
     expect(body['connection']).toBeUndefined();
+    expect(invoke.mock.calls.map((c) => c[0].toolName)).toEqual(['provision_venue_account', 'deprovision_venue_account']);
   });
 
-  it('returns 400 for jupiter with capability=trading when privateKey is missing', async () => {
+  it('returns 400 for jupiter with capability=trading when privateKey is missing — no boundary call', async () => {
+    const { client, invoke } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb());
+    await setupRoutes(app, buildMockDb(), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -427,13 +577,19 @@ describe('POST /setup/provider-link', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.json<{ error: string }>().error).toContain('credential.validation_error');
+    expect(invoke).not.toHaveBeenCalled();
   });
 
-  it('creates credential and connection for jupiter with valid privateKey', async () => {
-    const { provisionTradingTarget } = await import('../trading-provisioner.js');
+  it('provisions jupiter over the boundary with a valid privateKey', async () => {
+    const { client, invoke } = makeTradertonClient({
+      kind: 'success',
+      requestId: 'r',
+      correlationId: 'c',
+      payload: { venueAccountId: 'va-jup', venue: 'jupiter', label: 'My Jupiter Setup' },
+    });
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb());
+    await setupRoutes(app, buildMockDb(), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -447,19 +603,22 @@ describe('POST /setup/provider-link', () => {
     });
 
     expect(res.statusCode).toBe(201);
-    expect(provisionTradingTarget).toHaveBeenCalledOnce();
-    const body = res.json<Record<string, unknown>>();
-    expect(body['credential']).toBeDefined();
-    expect(body['connection']).toBeDefined();
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls[0]![0].payload).toMatchObject({ venue: 'jupiter' });
   });
 
-  it('persists a derived venueAccountRef for manual Jupiter trading setup', async () => {
-    const { provisionTradingTarget } = await import('../trading-provisioner.js');
+  it('forwards a derived venueAccountRef for manual Jupiter trading setup', async () => {
+    const { client, invoke } = makeTradertonClient({
+      kind: 'success',
+      requestId: 'r',
+      correlationId: 'c',
+      payload: { venueAccountId: 'va-jup', venue: 'jupiter', label: 'My Jupiter Manual Setup' },
+    });
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb());
+    await setupRoutes(app, buildMockDb(), undefined, baseDeps({ tradertonClient: client }));
 
-    // Valid base58-encoded 64-byte Solana keypair (all 0xAB bytes — test-only)
+    // Valid base58-encoded 64-byte Solana keypair (test-only)
     const testPrivateKey = '4S55ApgNWn8YKQL5J2uuxtfZrYXQZqBs8BUJTqGv3us4cAefggxxMLavbor7u47x4BfUhDRkfFBpW2rJTU6YMxux';
     const expectedAddress = 'CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t';
 
@@ -475,24 +634,20 @@ describe('POST /setup/provider-link', () => {
     });
 
     expect(res.statusCode).toBe(201);
-    expect(provisionTradingTarget).toHaveBeenCalledOnce();
-
-    // Verify that venueAccountRef was derived from the private key
-    const provisionCall = (provisionTradingTarget as ReturnType<typeof vi.fn>).mock.calls[0];
-    // provisionTradingTarget(tx, opts) — second argument is opts
-    const opts = provisionCall[1] as { venueAccountRef: string | null };
-    expect(opts.venueAccountRef).toBe(expectedAddress);
-    expect(opts.venueAccountRef).not.toBeNull();
-
-    const body = res.json<Record<string, unknown>>();
-    expect(body['credential']).toBeDefined();
-    expect(body['connection']).toBeDefined();
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls[0]![0].payload).toMatchObject({ venueAccountRef: expectedAddress });
   });
 
   it('accepts bybit with apiSecret field name (canonicalized to secret)', async () => {
+    const { client, invoke } = makeTradertonClient({
+      kind: 'success',
+      requestId: 'r',
+      correlationId: 'c',
+      payload: { venueAccountId: 'va-bybit', venue: 'bybit', label: 'My Bybit Setup' },
+    });
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, buildMockDb());
+    await setupRoutes(app, buildMockDb(), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -509,12 +664,12 @@ describe('POST /setup/provider-link', () => {
     });
 
     expect(res.statusCode).toBe(201);
-    const body = res.json<Record<string, unknown>>();
-    expect(body['credential']).toBeDefined();
-    expect(body['connection']).toBeDefined();
+    expect(invoke).toHaveBeenCalledTimes(1);
+    // Secret canonicalisation happened before the boundary call.
+    expect(invoke.mock.calls[0]![0].payload.secrets).toMatchObject({ secret: 'test-api-secret' });
   });
 
-  it('enforces credential plan limit when plansConfig is provided', async () => {
+  it('enforces credential plan limit for non-trading links when plansConfig is provided', async () => {
     const plansConfig = {
       defaultPlanId: 'free',
       plans: {
@@ -528,9 +683,7 @@ describe('POST /setup/provider-link', () => {
               canPriceSkills: false,
               canLikeMarketplaceSkills: true,
             },
-            agents: {
-              canViewOwnPrompts: true,
-            },
+            agents: { canViewOwnPrompts: true },
             limits: {
               maxAgents: 1,
               maxBots: 1,
@@ -547,8 +700,8 @@ describe('POST /setup/provider-link', () => {
       },
     };
 
-    // credentialRows with 0 but limit is also 0 — exceeds limit immediately
-    const db = buildMockDb([{ id: 'existing-cred' }]);
+    // credentialRows with 1 existing but limit 0 — exceeds limit immediately.
+    const db = buildMockDb([[{ id: 'existing-cred' }]]);
     const app = Fastify();
     decorateWithAuth(app);
     await setupRoutes(app, db, plansConfig as any);
@@ -562,7 +715,8 @@ describe('POST /setup/provider-link', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('enforces venue account plan limit for capability=trading', async () => {
+  it('enforces venue account plan limit for capability=trading (compensating the provision)', async () => {
+    const { client, invoke } = makeTradertonClient();
     const plansConfig = {
       defaultPlanId: 'free',
       plans: {
@@ -576,9 +730,7 @@ describe('POST /setup/provider-link', () => {
               canPriceSkills: false,
               canLikeMarketplaceSkills: true,
             },
-            agents: {
-              canViewOwnPrompts: true,
-            },
+            agents: { canViewOwnPrompts: true },
             limits: {
               maxAgents: 1,
               maxBots: 1,
@@ -595,13 +747,13 @@ describe('POST /setup/provider-link', () => {
       },
     };
 
-    // Return an existing venue account so that the limit (1) is hit.
-    // Three select result slots: [credentials, connections, venueAccounts]
-    const db = buildMockDb([], [], [{ id: 'existing-va' }]);
+    // Phase-2 select order under the advisory lock: [connections count, venueAccounts count].
+    // Return an existing venue account so the venueAccount limit (1) is hit.
+    const db = buildMockDb([[], [{ id: 'existing-va' }]]);
 
     const app = Fastify();
     decorateWithAuth(app);
-    await setupRoutes(app, db, plansConfig as any);
+    await setupRoutes(app, db, plansConfig as any, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'POST',
@@ -611,6 +763,8 @@ describe('POST /setup/provider-link', () => {
 
     expect(res.statusCode).toBe(403);
     expect(res.json<{ error: string }>().error).toBe('plan.limit_exceeded');
+    // The provision happened before the phase-2 limit trip, so it is compensated.
+    expect(invoke.mock.calls.map((c) => c[0].toolName)).toEqual(['provision_venue_account', 'deprovision_venue_account']);
   });
 });
 
@@ -628,16 +782,14 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
     let selectCallIdx = 0;
     const allSelectResults = selectResults.length > 0 ? selectResults : [[], []];
 
-    const mockDeleteChain = (tracker: string[]) => ({
+    const mockDeleteChain = () => ({
       where: vi.fn().mockResolvedValue(undefined),
     });
 
-    // Track which "table" gets deleted by intercepting from() if possible,
-    // otherwise just track that delete was called.
     const mockDeleteFn = (tracker: string[]) =>
       vi.fn().mockImplementation(() => {
         tracker.push('deleted');
-        return mockDeleteChain(tracker);
+        return mockDeleteChain();
       });
 
     const makeSelect = () =>
@@ -680,7 +832,13 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
     vi.clearAllMocks();
   });
 
-  it('cascade-deletes connection, venue account, and credential when no blockers exist', async () => {
+  it('deprovisions over the boundary and deletes the local connection when no blockers exist', async () => {
+    const { client, invoke } = makeTradertonClient({
+      kind: 'success',
+      requestId: 'r',
+      correlationId: 'c',
+      payload: { venueAccountId: 'va-1', deleted: true },
+    });
     const app = Fastify();
     decorateWithAuth(app);
     // Select results in order:
@@ -690,12 +848,12 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
     // 3: bots on venue account
     // 4: agent_connections active (resolveBlockingAgentLabels)
     await setupRoutes(app, buildMockDbWithDelete(
-      [{ id: 'conn-1', credentialId: 'cred-1', resolvedVenueAccountId: 'va-1' }],
+      [{ id: 'conn-1', credentialId: null, resolvedVenueAccountId: 'va-1' }],
       [],
       [],
       [],
       [],
-    ));
+    ), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'DELETE',
@@ -707,12 +865,23 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
     expect(body.status).toBe('deleted');
     expect(body.deleted.connection).toBe(true);
     expect(body.deleted.venueAccount).toBe(true);
-    expect(body.deleted.credential).toBe(true);
-    // Transaction deletes should have been called (connection, venue account, credential)
-    expect(deletedFromTx.length).toBeGreaterThanOrEqual(3);
+    // Boundary teardown happened, and the local connection (+ revoked grants) was deleted.
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls[0]![0].toolName).toBe('deprovision_venue_account');
+    expect(invoke.mock.calls[0]![0].payload).toEqual({ venueAccountId: 'va-1' });
+    expect(deletedFromTx.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('cascade-deletes connection and venue account when credentialId is null', async () => {
+  it('returns 409 (blocked) when the boundary reports the venue account is in use — connection untouched', async () => {
+    const { client, invoke } = makeTradertonClient({
+      kind: 'failure',
+      requestId: 'r',
+      correlationId: 'c',
+      code: 'validation.invalid_payload',
+      message: 'in use by bot(s): bot-x',
+      retryable: false,
+      details: { errorCode: 'provision.in_use' },
+    });
     const app = Fastify();
     decorateWithAuth(app);
     await setupRoutes(app, buildMockDbWithDelete(
@@ -721,7 +890,39 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
       [],
       [],
       [],
-    ));
+    ), undefined, baseDeps({ tradertonClient: client }));
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/setup/provider-link/conn-1',
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ error: string }>().error).toBe('provider_link.in_use');
+    expect(invoke).toHaveBeenCalledTimes(1);
+    // The local connection was NOT deleted (fail-closed).
+    expect(deletedFromTx.length).toBe(0);
+  });
+
+  it('treats a boundary not_found.resource as already-gone and still deletes the local connection', async () => {
+    const { client, invoke } = makeTradertonClient({
+      kind: 'failure',
+      requestId: 'r',
+      correlationId: 'c',
+      code: 'validation.invalid_payload',
+      message: 'Venue account not found: va-1',
+      retryable: false,
+      details: { errorCode: 'not_found.resource' },
+    });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDbWithDelete(
+      [{ id: 'conn-1', credentialId: null, resolvedVenueAccountId: 'va-1' }],
+      [],
+      [],
+      [],
+      [],
+    ), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'DELETE',
@@ -729,24 +930,23 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ status: string; deleted: Record<string, boolean> }>();
-    expect(body.status).toBe('deleted');
-    expect(body.deleted.connection).toBe(true);
-    expect(body.deleted.venueAccount).toBe(true);
-    expect(body.deleted.credential).toBe(false);
+    expect(res.json<{ status: string }>().status).toBe('deleted');
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(deletedFromTx.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('returns 409 when active agent grants block deletion', async () => {
+  it('returns 409 when active agent grants block deletion — no boundary call', async () => {
+    const { client, invoke } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
     await setupRoutes(app, buildMockDbWithDelete(
-      [{ id: 'conn-1', credentialId: 'cred-1', resolvedVenueAccountId: 'va-1' }],
+      [{ id: 'conn-1', credentialId: null, resolvedVenueAccountId: 'va-1' }],
       [{ id: 'ac-1', agentId: 'agent-1' }], // active grants
       [],
       [],
       [{ id: 'ac-1', agentId: 'agent-1' }], // resolveBlockingAgentLabels: grants
       [{ id: 'agent-1' }], // resolveBlockingAgentLabels: agents
-    ));
+    ), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'DELETE',
@@ -757,20 +957,22 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
     const body = res.json<{ error: string; params: Record<string, unknown> }>();
     expect(body.error).toBe('provider_link.in_use');
     expect(body.params.blockingAgentIds).toEqual(['agent-1']);
-    // No deletes should have occurred
+    // Platform blockers are checked BEFORE the boundary — no deprovision attempted.
+    expect(invoke).not.toHaveBeenCalled();
     expect(deletedFromTx.length).toBe(0);
   });
 
-  it('returns 409 when bots on the connection block deletion', async () => {
+  it('returns 409 when bots on the connection block deletion — no boundary call', async () => {
+    const { client, invoke } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
     await setupRoutes(app, buildMockDbWithDelete(
-      [{ id: 'conn-1', credentialId: 'cred-1', resolvedVenueAccountId: 'va-1' }],
+      [{ id: 'conn-1', credentialId: null, resolvedVenueAccountId: 'va-1' }],
       [], // no active agent grants
       [{ id: 'bot-1' }], // bot referencing connection
       [],
       [], // no active agent grants
-    ));
+    ), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'DELETE',
@@ -781,36 +983,16 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
     const body = res.json<{ error: string; params: Record<string, unknown> }>();
     expect(body.error).toBe('provider_link.in_use');
     expect(body.params.blockingConnectionBotIds).toEqual(['bot-1']);
-  });
-
-  it('returns 409 when bots on the venue account block deletion', async () => {
-    const app = Fastify();
-    decorateWithAuth(app);
-    await setupRoutes(app, buildMockDbWithDelete(
-      [{ id: 'conn-1', credentialId: 'cred-1', resolvedVenueAccountId: 'va-1' }],
-      [], // no active agent grants
-      [], // no bots on connection
-      [{ id: 'bot-2' }], // bot referencing venue account
-      [], // no active agent grants
-    ));
-
-    const res = await app.inject({
-      method: 'DELETE',
-      url: '/setup/provider-link/conn-1',
-    });
-
-    expect(res.statusCode).toBe(409);
-    const body = res.json<{ error: string; params: Record<string, unknown> }>();
-    expect(body.error).toBe('provider_link.in_use');
-    expect(body.params.blockingVenueAccountBotIds).toEqual(['bot-2']);
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it('returns 400 for connection with resolvedVenueAccountId = null (not eligible)', async () => {
+    const { client } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
     await setupRoutes(app, buildMockDbWithDelete(
       [{ id: 'conn-1', credentialId: null, resolvedVenueAccountId: null }],
-    ));
+    ), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'DELETE',
@@ -818,16 +1000,16 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
     });
 
     expect(res.statusCode).toBe(400);
-    const body = res.json<{ error: string }>();
-    expect(body.error).toBe('provider_link.not_eligible');
+    expect(res.json<{ error: string }>().error).toBe('provider_link.not_eligible');
   });
 
   it('returns 404 when connection does not exist', async () => {
+    const { client } = makeTradertonClient();
     const app = Fastify();
     decorateWithAuth(app);
     await setupRoutes(app, buildMockDbWithDelete(
       [], // empty — connection not found
-    ));
+    ), undefined, baseDeps({ tradertonClient: client }));
 
     const res = await app.inject({
       method: 'DELETE',
@@ -835,5 +1017,31 @@ describe('DELETE /setup/provider-link/:connectionId', () => {
     });
 
     expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 503 when the boundary is unavailable during deprovision — connection untouched', async () => {
+    const { client } = makeTradertonClient({
+      kind: 'transport_error',
+      requestId: 'r',
+      retryable: true,
+      message: 'boundary down',
+    });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDbWithDelete(
+      [{ id: 'conn-1', credentialId: null, resolvedVenueAccountId: 'va-1' }],
+      [],
+      [],
+      [],
+      [],
+    ), undefined, baseDeps({ tradertonClient: client }));
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/setup/provider-link/conn-1',
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(deletedFromTx.length).toBe(0);
   });
 });

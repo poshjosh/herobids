@@ -2,13 +2,24 @@ import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { venueAccounts, userCredentials, bots } from '@herobids/db';
+import { venueAccounts, userCredentials } from '@herobids/db';
 import type { AppConfig, PlansConfig } from '@herobids/domain';
+import type { TradertonClient } from '@herobids/domain/traderton';
 import { HyperliquidAdapter } from '@herobids/venues';
 import { JupiterSwapAdapter, OneInchSwapAdapter } from '@herobids/venues';
 import { CreateVenueAccountSchema } from '../schemas.js';
 import { checkVenueAccountLimit } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
+
+/**
+ * Extract a tool-level errorCode from a boundary failure. The dispatcher maps a
+ * copied tool's `errorCode` (e.g. `provision.in_use`, `not_found.resource`) onto
+ * the closed wire `code` and carries the original under `details.errorCode`.
+ */
+function toolErrorCode(details: Record<string, unknown> | undefined): string | undefined {
+  const code = details?.['errorCode'];
+  return typeof code === 'string' ? code : undefined;
+}
 
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
@@ -40,6 +51,7 @@ export async function venueAccountRoutes(
   db: Database,
   plansConfig?: PlansConfig,
   venueConfigs?: AppConfig['venues'],
+  tradertonClient?: TradertonClient,
 ): Promise<void> {
   // Create venue account
   app.post('/venue-accounts', async (request, reply) => {
@@ -178,51 +190,57 @@ export async function venueAccountRoutes(
     return reply.send({ venueAccounts: accounts });
   });
 
-  // Delete venue account
+  // Delete venue account (L3-P1b: re-pointed to the Traderton boundary).
+  //
+  // venue_accounts now live behind the boundary, so herobids no longer loads
+  // the account locally to 404 on absence. The boundary owns owner-scoping,
+  // the any-bot in-use block, and the credential cascade; herobids injects the
+  // subject (ownerId = request.userId, actor = user) and maps the result:
+  //   not_found.resource → 404 (owner-scoped: unowned/absent look identical)
+  //   provision.in_use   → 409 venue_account_in_use
+  //   success            → { status: 'deleted', venueAccountId }
   app.delete<{ Params: { id: string } }>('/venue-accounts/:id', async (request, reply) => {
     const { id } = request.params;
 
-    const [account] = await db
-      .select({ id: venueAccounts.id, label: venueAccounts.label, venue: venueAccounts.venue, credentialId: venueAccounts.credentialId })
-      .from(venueAccounts)
-      .where(and(eq(venueAccounts.id, id), eq(venueAccounts.userId, request.userId)));
+    const result = tradertonClient
+      ? await tradertonClient.invoke({
+          toolName: 'deprovision_venue_account',
+          payload: { venueAccountId: id },
+          subject: { ownerId: request.userId, actor: { type: 'user', id: request.userId } },
+          deadlineMs: 30_000,
+          idempotencyKey: `deprovision:${id}`,
+        })
+      : { kind: 'transport_error' as const, requestId: '', retryable: true as const, message: 'trading boundary not configured' };
 
-    if (!account) {
-      return reply.status(404).send({ error: 'not_found' });
+    if (result.kind === 'transport_error' || result.kind === 'in_progress') {
+      return reply.status(503).send(
+        errorPayload('precondition.not_ready', 'Trading service is unavailable — the venue account was not deleted.', {}),
+      );
     }
 
-    // Block deletion if any bots reference this venue account.
-    // bots.venueAccountId has ON DELETE RESTRICT — must check before attempting delete.
-    const blockingBots = await db
-      .select({ id: bots.id })
-      .from(bots)
-      .where(eq(bots.venueAccountId, id));
-
-    if (blockingBots.length > 0) {
-      return reply.status(409).send({
-        error: 'venue_account_in_use',
-        venueAccountId: id,
-        blockingBotIds: blockingBots.map((b) => b.id),
-      });
-    }
-
-    try {
-      await db.delete(venueAccounts).where(eq(venueAccounts.id, id));
-    } catch (err: unknown) {
-      // FK violation — bot linked between pre-check and delete
-      const pgErr = err as { code?: string };
-      if (pgErr.code === '23503') {
-        const concurrentBots = await db
-          .select({ id: bots.id })
-          .from(bots)
-          .where(eq(bots.venueAccountId, id));
+    if (result.kind === 'failure') {
+      const errorCode = toolErrorCode(result.details);
+      if (errorCode === 'not_found.resource') {
+        return reply.status(404).send({ error: 'not_found' });
+      }
+      if (errorCode === 'provision.in_use') {
+        // Surface the same shape as before. blockingBotIds are derivable from
+        // the boundary's `details.botIds` when present, else omit (the boundary
+        // owns bots — herobids no longer reads them locally).
+        const botIds = Array.isArray(result.details?.['botIds'])
+          ? (result.details!['botIds'] as unknown[]).filter((b): b is string => typeof b === 'string')
+          : undefined;
         return reply.status(409).send({
           error: 'venue_account_in_use',
           venueAccountId: id,
-          blockingBotIds: concurrentBots.map((b) => b.id),
+          ...(botIds ? { blockingBotIds: botIds } : {}),
         });
       }
-      throw err;
+      const status = result.code === 'authorization.denied' ? 403
+        : result.code === 'rate_limit.exceeded' ? 429
+        : result.code === 'validation.invalid_payload' ? 400
+        : 502;
+      return reply.status(status).send(errorPayload(result.code, result.message, {}));
     }
 
     return reply.send({ status: 'deleted', venueAccountId: id });

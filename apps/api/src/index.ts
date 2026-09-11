@@ -251,7 +251,7 @@ await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPl
 await capabilityRoutes(app, db, appConfig.plans, appConfig.agentRuntime.defaultBudgets, redisClient);
 
 // ── Setup flows (guided orchestration over primitives) ────────────────────────
-await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, generateWallet });
+await setupRoutes(app, db, appConfig.plans, { venues: appConfig.venues, generateWallet, tradertonClient: tradertonBotClient });
 await providerRoutes(app, appConfig.venues);
 
 // ── Platform primitives ───────────────────────────────────────────────────
@@ -267,7 +267,7 @@ await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCa
 // These are retained as optional advanced paths. Step 21.3 will migrate
 // venue_accounts to trading bindings and further reframe bots as internals.
 await botRoutes(app, lifecycleQueue, db, redisClient, appConfig.plans, tradertonBotClient);
-await venueAccountRoutes(app, db, appConfig.plans, appConfig.venues);
+await venueAccountRoutes(app, db, appConfig.plans, appConfig.venues, tradertonBotClient);
 await credentialRoutes(app, db, appConfig.plans);
 await journalRoutes(app, db);
 await positionRoutes(app, db);
@@ -289,7 +289,7 @@ const chatUsageBillingRecorder = new ChatUsageBillingRecorder(
   appConfig.plans,
   appConfig.usageBilling?.defaultRateCardName ?? 'default',
 );
-await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.agentRiskDefaults, appConfig.venues);
+await chatRoutes(app, db, appConfig.llm, providersYaml, redisClient, chatUsageBillingRepo, chatUsageBillingRecorder, appConfig.agentRuntime?.llm?.modelDefaults, appConfig.plans, appConfig.agentRiskDefaults, appConfig.venues, tradertonBotClient);
 await skillsRoutes(app, db, appConfig.plans, (() => {
   const ext = appConfig.externalSkills;
   if (!ext.enabled) return null;

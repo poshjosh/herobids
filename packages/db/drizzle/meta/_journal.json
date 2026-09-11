@@ -477,6 +477,13 @@
       "when": 1788300000000,
       "tag": "0067_drop_backtesting_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1789162951363,
+      "tag": "0068_wild_millenium_guard",
+      "breakpoints": true
     }
   ]
 }

@@ -2,12 +2,26 @@ import { eq, and, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import {
   connections,
-  venueAccounts,
-  userCredentials,
   agentConnections,
   bots,
   agents,
 } from '@herobids/db';
+import type { TradertonClient } from '@herobids/domain/traderton';
+import { createLogger } from './logger.js';
+
+const logger = createLogger('provider-links');
+
+/**
+ * Extract a tool-level errorCode from a boundary failure. The dispatcher maps a
+ * copied tool's `errorCode` (e.g. `provision.in_use`, `not_found.resource`)
+ * onto the closed wire `code` (usually `validation.invalid_payload`) and carries
+ * the original under `details.errorCode`. Branch on this to preserve the tool's
+ * semantics (fail-closed on dependents, idempotent on already-gone).
+ */
+function toolErrorCode(details: Record<string, unknown> | undefined): string | undefined {
+  const code = details?.['errorCode'];
+  return typeof code === 'string' ? code : undefined;
+}
 
 /**
  * Linked resources resolved for a guided trading connection
@@ -108,20 +122,35 @@ export async function resolveProviderLinkDependents(
 }
 
 /**
- * Deletes a guided provider link (connection, linked venue account, and linked
- * credential) in a single transaction.
+ * Deletes a guided provider link. herobids owns the PLATFORM half (the
+ * `connections` + `agent_connections` rows); the venue account + its credential
+ * live behind the Traderton boundary and are removed via `deprovision_venue_account`
+ * (L3-P1b).
  *
  * Eligibility: the connection must have `resolvedVenueAccountId !== null`.
  *
- * Blocking rules:
- * - Active agent_connections on the connection.
- * - Bots referencing the connection.
- * - Bots referencing the linked venue account.
+ * ORDERING DECISION (fail-closed, no partial state):
+ *   1. Resolve dependents + block locally on herobids-owned dependents
+ *      (active agent grants, bots on the connection, bots on the venue account).
+ *   2. Boundary-deprovision the venue account. Traderton fail-closes on ITS
+ *      dependents (any bot referencing the account) → `provision.in_use`, which
+ *      we surface as `blocked` — the local connection is STILL INTACT, so a
+ *      blocked delete leaves herobids fully consistent. `not_found.resource` is
+ *      treated as already-gone (idempotent) so a retry after a partial delete
+ *      still converges.
+ *   3. ONLY after the boundary teardown succeeds (or reports already-gone) do we
+ *      delete the local connection + revoked agent_connections rows.
+ *
+ * This order is chosen so a boundary `in_use` failure never leaves an orphaned
+ * connection whose venue account we failed to remove; the reverse order
+ * (connection first) would strand the venue account on an `in_use` failure with
+ * no local connection to reconcile against.
  */
 export async function deleteProviderLink(
   db: Database,
   connectionId: string,
   userId: string,
+  tradertonClient?: TradertonClient,
 ): Promise<DeleteProviderLinkResult> {
   // 1. Load the connection and check eligibility.
   const resources = await resolveProviderLinkDependents(db, connectionId, userId);
@@ -131,16 +160,12 @@ export async function deleteProviderLink(
     return { kind: 'not_eligible', connectionId };
   }
 
-  // Collect blocker IDs.
-  const blockingAgentIds = await resolveBlockingAgentLabels(
-    db,
-    connectionId,
-  );
-
+  // Collect blocker IDs (herobids-owned platform dependents).
+  const blockingAgentIds = await resolveBlockingAgentLabels(db, connectionId);
   const blockingConnectionBotIds = resources.connectionBotIds;
   const blockingVenueAccountBotIds = resources.venueAccountBotIds;
 
-  // 2-4. Block if anything is in use.
+  // 2-4. Block if any platform dependent is in use.
   if (
     blockingAgentIds.length > 0 ||
     blockingConnectionBotIds.length > 0 ||
@@ -156,11 +181,59 @@ export async function deleteProviderLink(
   }
 
   const venueAccountId = resources.venueAccountId;
-  const credentialId = resources.credentialId;
 
+  // 5. Boundary teardown FIRST (fail-closed): remove the venue account + its
+  //    credential behind the boundary. A `provision.in_use` here means a
+  //    Traderton-owned bot still references the account → surface as blocked with
+  //    the local connection untouched. `not_found.resource` → already gone
+  //    (idempotent), continue to the local delete.
+  const deprovisionResult = tradertonClient
+    ? await tradertonClient.invoke({
+        toolName: 'deprovision_venue_account',
+        payload: { venueAccountId },
+        subject: { ownerId: userId, actor: { type: 'user', id: userId } },
+        deadlineMs: 30_000,
+        idempotencyKey: `deprovision:${venueAccountId}`,
+      })
+    : { kind: 'transport_error' as const, requestId: '', retryable: true as const, message: 'trading boundary not configured' };
+
+  if (deprovisionResult.kind === 'transport_error' || deprovisionResult.kind === 'in_progress') {
+    return {
+      kind: 'fault',
+      code: 'precondition.not_ready',
+      message: 'Trading service is unavailable — the provider link was not deleted.',
+    };
+  }
+  if (deprovisionResult.kind === 'failure') {
+    const errorCode = toolErrorCode(deprovisionResult.details);
+    if (errorCode === 'provision.in_use') {
+      // A Traderton-owned bot references the venue account. Preserve
+      // fail-closed-on-dependents. The local connection is intact (we have not
+      // touched it), so herobids stays consistent.
+      return {
+        kind: 'blocked',
+        connectionId,
+        blockingAgentIds: [],
+        blockingConnectionBotIds: [],
+        blockingVenueAccountBotIds: [],
+      };
+    }
+    if (errorCode !== 'not_found.resource') {
+      // Any other failure — do not delete the local connection.
+      logger.error({ connectionId, venueAccountId, code: deprovisionResult.code, errorCode }, 'deprovision_venue_account failed');
+      return {
+        kind: 'fault',
+        code: deprovisionResult.code,
+        message: deprovisionResult.message,
+      };
+    }
+    // not_found.resource → the venue account is already gone. Fall through to
+    // remove the local connection so the overall delete converges.
+  }
+
+  // 6. Local platform half — delete revoked agent_connections + the connection.
   try {
     await db.transaction(async (tx) => {
-      // 5. Clean up revoked agent_connections rows.
       await tx
         .delete(agentConnections)
         .where(
@@ -170,56 +243,14 @@ export async function deleteProviderLink(
           ),
         );
 
-      // 6. Delete the connection.
-      // connections.credentialId FK → SET NULL (so safe before credential delete).
-      // connections.resolvedVenueAccountId FK → SET NULL (so safe before venue account delete).
       await tx.delete(connections).where(eq(connections.id, connectionId));
-
-      // 7. Delete the linked venue account.
-      // venue_accounts.credentialId FK → RESTRICT, so this must happen before
-      // credential deletion. Since the connection is already gone (SET NULL on
-      // resolvedVenueAccountId), we can safely delete the venue account.
-      await tx.delete(venueAccounts).where(eq(venueAccounts.id, venueAccountId));
-
-      // 8. Delete the linked credential (if any).
-      if (credentialId) {
-        await tx.delete(userCredentials).where(eq(userCredentials.id, credentialId));
-      }
     });
   } catch (err: unknown) {
+    // The boundary rows are already gone; a local FK race (a concurrent grant/bot
+    // appeared) leaves the connection in place. Report a retryable fault.
     const pgErr = err as { code?: string };
     if (pgErr.code === '23503') {
-      // FK violation — a concurrent grant or bot appeared between check and delete.
-      const freshResources = await resolveProviderLinkDependents(
-        db,
-        connectionId,
-        userId,
-      );
-      if (!freshResources || freshResources.venueAccountId === null) {
-        return { kind: 'not_found' };
-      }
-
-      const freshBlockingAgents = await resolveBlockingAgentLabels(
-        db,
-        connectionId,
-      );
-
-      if (
-        freshBlockingAgents.length > 0 ||
-        freshResources.connectionBotIds.length > 0 ||
-        freshResources.venueAccountBotIds.length > 0
-      ) {
-        return {
-          kind: 'blocked',
-          connectionId,
-          blockingAgentIds: freshBlockingAgents,
-          blockingConnectionBotIds: freshResources.connectionBotIds,
-          blockingVenueAccountBotIds: freshResources.venueAccountBotIds,
-        };
-      }
-
-      // If the re-check shows no blockers, the FK may have been a transient race.
-      // Treat as a fault so the caller can retry.
+      logger.error({ connectionId, venueAccountId }, 'connection delete raced with a concurrent dependent');
       return {
         kind: 'fault',
         code: 'provider_link.delete_race',
@@ -235,7 +266,7 @@ export async function deleteProviderLink(
     deleted: {
       connection: true,
       venueAccount: true,
-      credential: credentialId !== null,
+      credential: resources.credentialId !== null,
     },
   };
 }

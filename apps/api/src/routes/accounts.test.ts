@@ -2,7 +2,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { venueAccountRoutes } from './accounts.js';
 import type { AppConfig } from '@herobids/domain';
+import type { TradertonClient, TradertonClientResult } from '@herobids/domain/traderton';
 import { HyperliquidAdapter } from '@herobids/venues';
+
+/**
+ * L3-P1b: a stubbed TradertonClient. DELETE /venue-accounts/:id now routes to
+ * the boundary (`deprovision_venue_account`) instead of a local venue_accounts
+ * delete. The stub records invoke calls and returns a scripted client result.
+ */
+function makeTradertonClient(
+  result: TradertonClientResult = { kind: 'success', requestId: 'r', correlationId: 'c', payload: { venueAccountId: 'va-1', deleted: true } },
+): { client: TradertonClient; invoke: ReturnType<typeof vi.fn> } {
+  const invoke = vi.fn().mockResolvedValue(result);
+  return { client: { invoke } as unknown as TradertonClient, invoke };
+}
 
 /**
  * Route-level tests for venue-account credential linkage validation.
@@ -382,18 +395,26 @@ describe('POST /venue-accounts credential validation', () => {
   });
 });
 
-describe('DELETE /venue-accounts/:id', () => {
+describe('DELETE /venue-accounts/:id (L3-P1b — boundary-owned)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     credentialLookupResult = [];
   });
 
-  it('returns 404 when venue account not found', async () => {
-    credentialLookupResult = [];
+  it('returns 404 when the boundary reports the venue account is not found', async () => {
+    const { client, invoke } = makeTradertonClient({
+      kind: 'failure',
+      requestId: 'r',
+      correlationId: 'c',
+      code: 'validation.invalid_payload',
+      message: 'Venue account not found: missing-id',
+      retryable: false,
+      details: { errorCode: 'not_found.resource' },
+    });
     const app = Fastify();
     const db = buildMockDb();
     decorateWithAuth(app);
-    await venueAccountRoutes(app, db);
+    await venueAccountRoutes(app, db, undefined, undefined, client);
 
     const res = await app.inject({
       method: 'DELETE',
@@ -403,35 +424,23 @@ describe('DELETE /venue-accounts/:id', () => {
     expect(res.statusCode).toBe(404);
     const body = JSON.parse(res.body);
     expect(body.error).toBe('not_found');
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls[0]![0].toolName).toBe('deprovision_venue_account');
+    expect(invoke.mock.calls[0]![0].payload).toEqual({ venueAccountId: 'missing-id' });
+    expect(invoke.mock.calls[0]![0].subject).toEqual({ ownerId: 'user-1', actor: { type: 'user', id: 'user-1' } });
   });
 
-  it('deletes venue account successfully when no bots reference it', async () => {
-    // Override select to control return values for the delete path
-    const selectMock = vi.fn();
-    // 1st select: find account
-    selectMock.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ id: 'va-1', label: 'Test', venue: 'hyperliquid', credentialId: null }]),
-      }),
+  it('deletes the venue account over the boundary on success', async () => {
+    const { client, invoke } = makeTradertonClient({
+      kind: 'success',
+      requestId: 'r',
+      correlationId: 'c',
+      payload: { venueAccountId: 'va-1', deleted: true },
     });
-    // 2nd select: pre-check bots (returns none)
-    selectMock.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
-      }),
-    });
-    // Remaining selects: no-op
-    selectMock.mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
-      }),
-    });
-
     const app = Fastify();
     const db = buildMockDb();
-    db.select = selectMock;
     decorateWithAuth(app);
-    await venueAccountRoutes(app, db);
+    await venueAccountRoutes(app, db, undefined, undefined, client);
 
     const res = await app.inject({
       method: 'DELETE',
@@ -442,33 +451,23 @@ describe('DELETE /venue-accounts/:id', () => {
     const body = JSON.parse(res.body);
     expect(body.status).toBe('deleted');
     expect(body.venueAccountId).toBe('va-1');
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 
-  it('returns 409 when bots reference the venue account', async () => {
-    const selectMock = vi.fn();
-    // 1st select: find account
-    selectMock.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ id: 'va-1', label: 'Test', venue: 'hyperliquid', credentialId: null }]),
-      }),
+  it('returns 409 venue_account_in_use when the boundary reports in-use (with derivable botIds)', async () => {
+    const { client } = makeTradertonClient({
+      kind: 'failure',
+      requestId: 'r',
+      correlationId: 'c',
+      code: 'validation.invalid_payload',
+      message: 'Venue account va-1 is in use by bot(s): bot-1',
+      retryable: false,
+      details: { errorCode: 'provision.in_use', botIds: ['bot-1'] },
     });
-    // 2nd select: pre-check bots (returns blocking bot)
-    selectMock.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ id: 'bot-1' }]),
-      }),
-    });
-    selectMock.mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
-      }),
-    });
-
     const app = Fastify();
     const db = buildMockDb();
-    db.select = selectMock;
     decorateWithAuth(app);
-    await venueAccountRoutes(app, db);
+    await venueAccountRoutes(app, db, undefined, undefined, client);
 
     const res = await app.inject({
       method: 'DELETE',
@@ -478,43 +477,24 @@ describe('DELETE /venue-accounts/:id', () => {
     expect(res.statusCode).toBe(409);
     const body = JSON.parse(res.body);
     expect(body.error).toBe('venue_account_in_use');
+    expect(body.venueAccountId).toBe('va-1');
     expect(body.blockingBotIds).toEqual(['bot-1']);
   });
 
-  it('returns 409 on FK violation during concurrent link (race condition)', async () => {
-    const selectMock = vi.fn();
-    // 1st select: find account
-    selectMock.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ id: 'va-1', label: 'Test', venue: 'hyperliquid', credentialId: null }]),
-      }),
+  it('returns 409 venue_account_in_use without botIds when the boundary omits them', async () => {
+    const { client } = makeTradertonClient({
+      kind: 'failure',
+      requestId: 'r',
+      correlationId: 'c',
+      code: 'validation.invalid_payload',
+      message: 'Venue account va-1 is in use',
+      retryable: false,
+      details: { errorCode: 'provision.in_use' },
     });
-    // 2nd select: pre-check bots (passes — no bots yet)
-    selectMock.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
-      }),
-    });
-    // 3rd+ selects: catch block re-queries bots (finds the raced-in bot)
-    selectMock.mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ id: 'bot-raced' }]),
-      }),
-    });
-
     const app = Fastify();
     const db = buildMockDb();
-    db.select = selectMock;
-
-    // Override delete to throw FK violation (bot linked between pre-check and delete)
-    const fkError = new Error('update or delete on table "venue_accounts" violates foreign key constraint') as Error & { code: string };
-    fkError.code = '23503';
-    db.delete = vi.fn().mockReturnValue({
-      where: vi.fn().mockRejectedValue(fkError),
-    });
-
     decorateWithAuth(app);
-    await venueAccountRoutes(app, db);
+    await venueAccountRoutes(app, db, undefined, undefined, client);
 
     const res = await app.inject({
       method: 'DELETE',
@@ -524,6 +504,43 @@ describe('DELETE /venue-accounts/:id', () => {
     expect(res.statusCode).toBe(409);
     const body = JSON.parse(res.body);
     expect(body.error).toBe('venue_account_in_use');
-    expect(body.blockingBotIds).toEqual(['bot-raced']);
+    expect(body.venueAccountId).toBe('va-1');
+    expect(body.blockingBotIds).toBeUndefined();
+  });
+
+  it('returns 503 when the trading boundary is unavailable', async () => {
+    const { client } = makeTradertonClient({
+      kind: 'transport_error',
+      requestId: 'r',
+      retryable: true,
+      message: 'boundary down',
+    });
+    const app = Fastify();
+    const db = buildMockDb();
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db, undefined, undefined, client);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/venue-accounts/va-1',
+    });
+
+    expect(res.statusCode).toBe(503);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe('precondition.not_ready');
+  });
+
+  it('returns 503 when no boundary client is configured', async () => {
+    const app = Fastify();
+    const db = buildMockDb();
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db); // no client
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/venue-accounts/va-1',
+    });
+
+    expect(res.statusCode).toBe(503);
   });
 });
