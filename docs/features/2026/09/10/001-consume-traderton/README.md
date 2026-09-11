@@ -68,6 +68,39 @@ Non-blocking findings from the L3c code review (no CRITICAL/HIGH; decisions A an
 - **Decision B (ApprovalService left on the engine — ACCEPTED for L3c):** the human-approve→execute path still drives the in-process engine; correct per plan §1 scope (only `handleDecisionSubmit`). Dispositioned in `004` §D as a SEAM/GAP and now scheduled in §E step 3 as an engine-deletion prerequisite.
 - **L1 (style):** API `botRoutes` still takes the lifecycle queue (now only used by DELETE for pending-start cleanup) — deletable in L3d (§D).
 - **L2 (style):** engine type-only import kept in the handler for the resolver interface (recorded §C #1–2, deletable L3d).
+
+#### L3c — cross-repo reviewer verification (2026-09-10, traderton-side review)
+Reviewed from the **traderton** repo (holds the 005 boundary + contract the rewired paths now call).
+Confirmed independently:
+- **Guardrails held:** traderton UNCHANGED (`l3-p1-provision` @ `c54551e`, `f-m2-rest` @ `9636d54`); herobids
+  changes branch-only (`e2b5cf77` feat + `69243f38` docs); `main` + `watch-summary.js` untouched.
+- **Both call sites cut (the dual-call-site hazard):** `agent-decision-handler.handleDecisionSubmit`,
+  `agent-message-broker.handleManageBot`, AND `apps/api/routes/bots.ts` all route to the boundary; the
+  in-process engine/actor drive is removed from these paths (no `submitDecisionForExecution` call, no
+  `botStart`/`enqueueLifecycle`, no `bots` write, no maxBots). No-fallback posture honored (unconfigured →
+  typed failure, never the in-process engine).
+- **D2/D3 match the actual 005 contract:** `decision-boundary-mapping.ts` injects `ownerId`+`actor` only
+  (NO `venueAccountId` — Traderton resolves it via `subject-resolver.ts`); `pending_approval` is pre-boundary
+  and never crosses the wire (the `TradertonToolResultV1` outcome union is `success|failure` only — verified
+  against `packages/boundary/src/contract.ts`); `retryable` preserved verbatim.
+- **Client relocation to `packages/domain/src/traderton/` (Decision A) — SOUND.** Forced by the dual
+  call site (apps can't import each other; the L3a client lived in `apps/worker`). Verified: pure move,
+  only `node:crypto`+`fetch`, exposed as a SUBPATH export (kept out of the top-level barrel → out of the
+  `apps/web` browser bundle), `domain ← apps` direction respected. A justified plan deviation, well-reasoned.
+- **The deferred-deletion guard WORKED:** `004` §C has 15+ enumerated deferred deletions (`path:symbol` +
+  reason); §D is a full `bots`-consumer audit classifying every reader (a) deletable / (b) re-point-at-
+  boundary; §E orders the L3d deletions. **It caught a live residual in-process path L3c's scope did not
+  cover — `ApprovalService.executeApproval` (the human-approve→execute path) still drives the engine** —
+  and made it a HARD L3d prerequisite (§E step 3: rewire to the boundary BEFORE deleting `@herobids/engine`),
+  rather than a silent cutover survivor. This is exactly the dropped-work hazard the register was built to
+  close. Verified `executeApproval` is real (`apps/worker/src/services/approval-service.ts`) and correctly
+  scheduled. NOTE for L3d/L3e: this residual path + the §D (b)-class reporting readers (GET /bots, costs,
+  billing, dashboard, exports, blueprint-from-bot, connection/account teardown guards) mean **L3d is larger
+  than deleting tables — it must first rewire those readers/executors to boundary reads**; all captured.
+- **Suite (parity bar):** full herobids suite green — **7972 passed / 330 skipped / 0 failed**; build + lint
+  clean.
+- **Verdict: L3c APPROVED.** No CRITICAL/HIGH. Proceed to L3d on human green light (working the `004`
+  register, §E order).
 - **L3 (style):** two "not ready" code namespaces (`precondition.not_ready` vs `boundary.*`) — intentional.
 
 ### L3b — rewire the READ path to the client
