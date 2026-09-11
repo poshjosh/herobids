@@ -135,7 +135,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), client);
 
     const res = await app.inject({
       method: 'POST',
@@ -172,7 +172,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), client);
 
     const res = await app.inject({
       method: 'POST',
@@ -200,7 +200,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free', true);
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), client);
 
     const res = await app.inject({
       method: 'POST',
@@ -230,7 +230,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), client);
 
     const res = await app.inject({
       method: 'POST',
@@ -301,7 +301,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), client);
 
     const res = await app.inject({
       method: 'POST',
@@ -335,7 +335,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), client);
 
     const res = await app.inject({
       method: 'POST',
@@ -368,7 +368,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), client);
 
     const res = await app.inject({
       method: 'POST',
@@ -432,7 +432,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), undefined, client);
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, makePlansConfig(), client);
 
     const res = await app.inject({
       method: 'POST',

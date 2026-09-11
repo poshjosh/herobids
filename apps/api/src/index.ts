@@ -271,7 +271,7 @@ await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCa
 // ── Advanced/secondary trading constructs ─────────────────────────────────
 // These are retained as optional advanced paths. Step 21.3 will migrate
 // venue_accounts to trading bindings and further reframe bots as internals.
-await botRoutes(app, lifecycleQueue, db, redisClient, appConfig.plans, appConfig.agentRiskDefaults, tradertonBotClient);
+await botRoutes(app, lifecycleQueue, db, redisClient, appConfig.plans, tradertonBotClient);
 await venueAccountRoutes(app, db, appConfig.plans, appConfig.venues);
 await credentialRoutes(app, db, appConfig.plans);
 await journalRoutes(app, db);

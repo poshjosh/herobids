@@ -1296,7 +1296,7 @@ describe('POST /bots with blueprintId', () => {
       request.userId = TEST_USER_ID;
       request.userPlanId = 'free';
     });
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, plansConfig, undefined, client);
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, plansConfig, client);
 
     const res = await app.inject({
       method: 'POST',
@@ -1372,7 +1372,7 @@ describe('POST /bots with blueprintId', () => {
       request.userId = TEST_USER_ID;
       request.userPlanId = 'free';
     });
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, plansConfig, undefined, client);
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, plansConfig, client);
 
     const res = await app.inject({
       method: 'POST',
@@ -1450,7 +1450,7 @@ describe('POST /bots with blueprintId', () => {
       request.userId = TEST_USER_ID;
       request.userPlanId = 'free';
     });
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, plansConfig, undefined, client);
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db, mockRedis, plansConfig, client);
 
     const res = await app.inject({
       method: 'POST',

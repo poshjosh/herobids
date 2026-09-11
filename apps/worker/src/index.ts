@@ -1576,29 +1576,11 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
   operatorModelDefaults: appConfig.agentRuntime.llm.modelDefaults,
 }, agentReconnectHandler, platformAlerts, redisClient);
 
-// Queue used by the broker callback to enqueue bot start jobs
+// Lifecycle queue — still consumed by the WorkerRuntime (deleted with the runtime
+// slice in L3d-5) and closed on shutdown. The broker no longer drives it: the
+// agent bot-lifecycle enqueue callbacks (botStart/botStop/botRestart) were deleted
+// in L3d-4 (§C #11) — lifecycle now routes over the Traderton boundary.
 const lifecycleQueue = new Queue(QUEUE_NAME, { connection: redisConnection });
-
-const botStartCallback = async (botId: string, userId: string, connectionId: string, config: Record<string, unknown>) => {
-  await lifecycleQueue.add('start-instance', {
-    command: 'start',
-    botId,
-    config: { ...config, connectionId, userId },
-  });
-};
-const botStopCallback = async (botId: string) => {
-  await lifecycleQueue.add('stop-instance', {
-    command: 'stop',
-    botId,
-  });
-};
-const botRestartCallback = async (botId: string, userId: string, connectionId: string, config: Record<string, unknown>) => {
-  await lifecycleQueue.add('restart-instance', {
-    command: 'restart',
-    botId,
-    config: { ...config, connectionId, userId },
-  });
-};
 
 // Enforce plan-level live execution eligibility when an agent creates a live-mode bot.
 // Mirrors the API-level checkLiveEnabled gate that the agent broker path previously bypassed.
@@ -1625,11 +1607,11 @@ const agentBroker = new AgentMessageBroker(
   eventPublisher,
   workerTelegram,
   botRepo,
-  botStartCallback,
+  undefined, // _botStart (dead — bot lifecycle routes over the boundary; deleted in L3d-4 §C #11)
   undefined, // _botLimitCheck (dead — maxBots enforcement removed in L3d-3; Traderton owns the limit)
   botLiveCheckCallback,
-  botStopCallback,
-  botRestartCallback,
+  undefined, // _botStop (dead — bot lifecycle routes over the boundary; deleted in L3d-4 §C #11)
+  undefined, // _botRestart (dead — bot lifecycle routes over the boundary; deleted in L3d-4 §C #11)
   workerEmail,
   (agentId, config) => {
     const actor = actorRegistry.get(agentId);

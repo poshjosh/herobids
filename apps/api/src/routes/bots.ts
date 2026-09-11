@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { eq, and, sql, sum, asc, inArray, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { bots, connections, blueprints, blueprintRevisions, PgJournal, fills, journalEvents } from '@herobids/db';
-import type { PlansConfig, AgentRiskDefaultsConfig } from '@herobids/domain';
+import type { PlansConfig } from '@herobids/domain';
 import {
   CreateInstanceSchema,
   UpdateInstanceConfigSchema,
@@ -33,7 +33,7 @@ function normalizeBotConfig(config: Record<string, unknown>, venue: string, symb
   return normalized;
 }
 
-export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, redis: Redis, plansConfig?: PlansConfig, _agentRiskDefaults?: AgentRiskDefaultsConfig, tradertonClient?: TradertonClient): Promise<void> {
+export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, redis: Redis, plansConfig?: PlansConfig, tradertonClient?: TradertonClient): Promise<void> {
   // L3c: route a user-initiated bot side effect to the Traderton boundary,
   // injecting ownerId + actor(type:'user') ONLY (D2). Traderton owns bots + the
   // limit and resolves the venue account from the subject. Returns the typed

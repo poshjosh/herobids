@@ -1675,9 +1675,6 @@ export class AgentMessageBroker {
   }
 }
 
-// L3c: mergeBotConfig + configsEqual were removed — the bot-config merge/compare
-// moved behind the boundary (Traderton owns the bot config). See 004-l3d-plan.md §C.
-
 function applyAgentCapitalLimit(config: Record<string, unknown>, capital: string | number | null | undefined): Record<string, unknown> {
   const capitalLimit = parsePositiveDecimal(capital);
   if (!capitalLimit) {
