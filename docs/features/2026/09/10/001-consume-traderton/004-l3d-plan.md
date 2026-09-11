@@ -382,3 +382,44 @@ candle/candidate/pre-filter helpers + `tick-gates.ts` (surviving assessor + agen
 
 **Net:** L3d "the big subtraction" reduces, this pass, to the worker actor/runtime slice + composition-root
 restructure. The five package deletions are all carry-forward, gated on the follow-slices/decisions above.
+
+
+## §H — Deferred (REQUIRED FOR CUTOVER) — the blocked package deletions + follow-slices
+
+**These are NOT optional cleanup.** Each blocked package is held alive by a surviving *platform* importer,
+and each such importer is an in-process **trading-in-platform coupling** — the exact leak the split exists to
+close. **Cross-reference the merge gate (CANONICAL-STATE §4 invariant 5): cutover to `main` CANNOT pass while
+any of these survive.** Confirmed 2026-09-10 (human): classify all as `Deferred (required for cutover)`.
+
+### Blocked §A package deletions — each `Deferred (required for cutover)`
+| package | blocking surviving PLATFORM importer(s) | clearing follow-slice |
+|---|---|---|
+| `@herobids/venues` | API wallet-gen (`api/index.ts`, `routes/chat.ts`, `routes/setup.ts`); venue adapters (`routes/accounts.ts`); worker `PublicStreamPool`/mark-sources (`index.ts`, `public-stream-routing.ts`); `BrowserlessAdapter` (`agent.ts`) | L3-P1b (wallet-gen + adapters) + Q3 venues-platform-rehome (public-stream + browserless) |
+| `@herobids/backtesting` | `/backtests` route (`routes/backtests.ts`); `BacktestRuntime` (`index.ts`); `MarketDataRecorder` | Q1 backtesting slice |
+| `@herobids/market-data` | `market-intelligence` assessor (`evidence-adapters.ts`) + scanner surface | Q2 market-intelligence re-home |
+| `@herobids/strategy` | `market-intelligence` scorecard (`preset-scorecard-runner.ts`); worker strategy construction; `BacktestRuntime` | Q2 + Q1 |
+| `@herobids/engine` | mark-source wiring (`index.ts`); `AgentIntakeResolver`; ops script `backfill-realized-pnl-delta.ts`; transitive via `backtesting` | composition-root restructure (partial, L3d-5) + Q1 |
+
+### Follow-slices — each its own investigate→propose→pause; each `Deferred (required for cutover)`
+- **Q1 — Backtesting.** Provisional disposition: **trading → belongs BEHIND THE BOUNDARY** (NOT deleted from
+  herobids until a Traderton-side backtesting capability exists; its own slice). Deferred-required. **FLAG for
+  the human:** the alternative is to DROP backtesting from the consumer entirely — that is a capability
+  decision for the human, NOT an assumption to be made here.
+- **Q2 — market-intelligence → market-data/strategy.** Own investigation: classify the actual usage of
+  `evaluateRegime`/`getRequiredRegimeCandleCount`/`scoreCandidate` as boundary-read vs stays-in-platform. Do
+  NOT resolve inside L3d-5.
+- **Q3 — venues public-stream + BrowserlessAdapter.** Own investigation: per-use classification of the
+  surviving `venues` uses; trading parts are Deferred-required.
+
+### L3d-5 restructure — survivorship facts VERIFIED (2026-09-10, before deletion)
+- **`agentDecisionHandler` does NOT use `intakeResolver`** — `_intakeResolver` is a dead unused positional
+  (prefixed `_`, referenced only in comments); the rewired boundary path never calls
+  `getIntakeDeps`/`getDecisionContext`/`getPosition`. Removing #3 changes NO live behaviour. ✓
+- **`actorRegistry`/`WorkerRuntime`/`lifecycleQueue` consumers are all actor/runtime-slice** (intakeResolver,
+  snapshotResolver, the broker `applyPendingConfigUpdate` closure, `healthRefreshInterval` iteration, the
+  TradingActor factory, shutdown `.close()`) — deleted together in the restructure.
+- **`cascadeStopAgentBots` (§D crash fan-out / cascade-stop)** — reads `botRepo.getBotsByCreator` + enqueues
+  stops; wired into `onAgentCrashed`, `onSessionStopped`, `AgentHealthMonitor.onTerminalSessionCleanup`. This
+  is dead in-process bot-lifecycle wiring (Traderton owns lifecycle) → removed/neutralised in L3d-5 (it reads
+  the vestige `bots` table + drives the deleted lifecycle path). Its `bots` READ is a §D (b)/vestige concern;
+  the cascade-stop ACTION is trading-lifecycle → goes now.
